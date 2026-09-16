@@ -504,6 +504,7 @@ impl<T: NativeType> PrimitiveArray<T> {
 impl<T: NativeType> Array for PrimitiveArray<T> {
     impl_common_array!();
 
+    #[inline(always)]
     fn validity(&self) -> Option<&Bitmap> {
         self.validity.as_ref()
     }
@@ -602,39 +603,6 @@ pub type UInt32Array = PrimitiveArray<u32>;
 pub type UInt64Array = PrimitiveArray<u64>;
 /// A type definition [`PrimitiveArray`] for `u128`
 pub type UInt128Array = PrimitiveArray<u128>;
-
-/// A type definition [`MutablePrimitiveArray`] for `i8`
-pub type Int8Vec = MutablePrimitiveArray<i8>;
-/// A type definition [`MutablePrimitiveArray`] for `i16`
-pub type Int16Vec = MutablePrimitiveArray<i16>;
-/// A type definition [`MutablePrimitiveArray`] for `i32`
-pub type Int32Vec = MutablePrimitiveArray<i32>;
-/// A type definition [`MutablePrimitiveArray`] for `i64`
-pub type Int64Vec = MutablePrimitiveArray<i64>;
-/// A type definition [`MutablePrimitiveArray`] for `i128`
-pub type Int128Vec = MutablePrimitiveArray<i128>;
-/// A type definition [`MutablePrimitiveArray`] for `i256`
-pub type Int256Vec = MutablePrimitiveArray<i256>;
-/// A type definition [`MutablePrimitiveArray`] for [`days_ms`]
-pub type DaysMsVec = MutablePrimitiveArray<days_ms>;
-/// A type definition [`MutablePrimitiveArray`] for [`months_days_ns`]
-pub type MonthsDaysNsVec = MutablePrimitiveArray<months_days_ns>;
-/// A type definition [`MutablePrimitiveArray`] for `f16`
-pub type Float16Vec = MutablePrimitiveArray<pf16>;
-/// A type definition [`MutablePrimitiveArray`] for `f32`
-pub type Float32Vec = MutablePrimitiveArray<f32>;
-/// A type definition [`MutablePrimitiveArray`] for `f64`
-pub type Float64Vec = MutablePrimitiveArray<f64>;
-/// A type definition [`MutablePrimitiveArray`] for `u8`
-pub type UInt8Vec = MutablePrimitiveArray<u8>;
-/// A type definition [`MutablePrimitiveArray`] for `u16`
-pub type UInt16Vec = MutablePrimitiveArray<u16>;
-/// A type definition [`MutablePrimitiveArray`] for `u32`
-pub type UInt32Vec = MutablePrimitiveArray<u32>;
-/// A type definition [`MutablePrimitiveArray`] for `u64`
-pub type UInt64Vec = MutablePrimitiveArray<u64>;
-/// A type definition [`MutablePrimitiveArray`] for `u128`
-pub type UInt128Vec = MutablePrimitiveArray<u128>;
 
 impl<T: NativeType> Default for PrimitiveArray<T> {
     fn default() -> Self {

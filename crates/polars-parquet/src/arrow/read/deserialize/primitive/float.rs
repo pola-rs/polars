@@ -108,6 +108,7 @@ where
 }
 
 impl<T: NativeType> utils::Decoded for (Vec<T>, BitmapBuilder) {
+    #[inline]
     fn len(&self) -> usize {
         self.0.len()
     }

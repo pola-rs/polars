@@ -9,12 +9,13 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
 use crate::dsl::Expr;
+use crate::plans::aexpr::filter_constraint::widen_over_predicates;
 use crate::plans::deep_copy::deep_copy_ir_delete_cache_id;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::visitor::AexprNode;
 use crate::plans::{AExpr, ExprIR, IR, PredicatePushDown, subplan_cost};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
-use crate::utils::aexpr_to_leaf_names;
+use crate::utils::aexpr_to_leaf_names_iter;
 
 fn get_upper_projections(
     parent: Node,
@@ -35,7 +36,7 @@ fn get_upper_projections(
         },
         IR::Filter { predicate, .. } => {
             // Also add predicate, as the projection is above the filter node.
-            names_scratch.extend(aexpr_to_leaf_names(predicate.node(), expr_arena));
+            names_scratch.extend(aexpr_to_leaf_names_iter(predicate.node(), expr_arena).cloned());
 
             true
         },
@@ -314,6 +315,7 @@ pub(crate) fn set_cache_states(
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for (cache_id, v) in cache_schema_and_children.into_iter().rev() {
             pred_pd.streaming = v.streaming;
+            let mut shared_optimized = false;
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple distinct predicates, the caches carry different filters
             // above them (predicate pushdown was blocked by the cache nodes). Removing the caches
@@ -354,12 +356,7 @@ pub(crate) fn set_cache_states(
                     }
 
                     // The filter (if any) that blocked pushdown sits directly above the cache.
-                    let filter_predicate = get_filter_node(*parents, lp_arena).map(|filter_node| {
-                        let IR::Filter { predicate, .. } = lp_arena.get(filter_node) else {
-                            unreachable!()
-                        };
-                        predicate.clone()
-                    });
+                    let filter_predicate = get_filter_predicate(*parents, lp_arena).cloned();
 
                     // Copy the subplan with this cache removed and re-run predicate pushdown on
                     // the copy. Nested caches of other ids are preserved.
@@ -391,6 +388,12 @@ pub(crate) fn set_cache_states(
                 // materialized rows for every reference that reads and filters them.
                 let keep_cost = if remove_caches && removal_cost.is_some() {
                     let child = *v.children.first().unwrap();
+                    // Caches block pushdown, so their children may still contain cross joins.
+                    // Range selectivity is unknown, so common bounds are applied after costing.
+                    let lp = lp_arena.take(child);
+                    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
+                    lp_arena.replace(child, lp);
+                    shared_optimized = true;
                     subplan_cost(child, lp_arena, expr_arena)
                         .map(|c| c.work + v.cache_nodes.len() as f64 * c.rows)
                 } else {
@@ -485,16 +488,76 @@ pub(crate) fn set_cache_states(
                 }
             } else {
                 let child = *v.children.first().unwrap();
-                let child_lp = lp_arena.take(child);
-                let lp = pred_pd.optimize(child_lp, lp_arena, expr_arena)?;
-                lp_arena.replace(child, lp.clone());
-                for &child in &v.children[1..] {
-                    lp_arena.replace(child, lp.clone());
+                let input = narrow_shared_subplan(
+                    &v.children,
+                    &v.parents,
+                    pushdown_maintain_errors,
+                    lp_arena,
+                    expr_arena,
+                )
+                .unwrap_or(child);
+                if input != child || !shared_optimized {
+                    let lp = lp_arena.take(input);
+                    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
+                    lp_arena.replace(input, lp);
+                }
+                for &cache in &v.cache_nodes {
+                    let IR::Cache {
+                        input: cache_input, ..
+                    } = lp_arena.get_mut(cache)
+                    else {
+                        unreachable!()
+                    };
+                    *cache_input = input;
                 }
             }
         }
     }
     Ok(())
+}
+
+/// Filters the shared subplan by a conjunction that every reference's filter
+/// implies, so rows no reference keeps are not materialized. Each reference keeps
+/// its own filter above.
+///
+/// Returns the node the caches should read, or `None` when a reference has no
+/// filter above it - it needs every row - or when the filters share no bound.
+fn narrow_shared_subplan(
+    children: &[Node],
+    parents: &[TwoParents],
+    maintain_errors: bool,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<Node> {
+    let predicates = parents
+        .iter()
+        .map(|parents| Some(get_filter_predicate(*parents, lp_arena)?.node()))
+        .collect::<Option<Vec<_>>>()?;
+
+    let input = *children.first().unwrap();
+    let schema = lp_arena.get(input).schema(lp_arena).into_owned();
+    let widened = widen_over_predicates(&predicates, &schema, maintain_errors, expr_arena);
+    if widened.is_empty() {
+        return None;
+    }
+
+    // One filter per comparison: pushdown moves a conjunct only when it stands alone.
+    let mut node = input;
+    for predicate in widened {
+        node = lp_arena.add(IR::Filter {
+            input: node,
+            predicate: ExprIR::from_node(predicate, expr_arena),
+        });
+    }
+    Some(node)
+}
+
+fn get_filter_predicate(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<&ExprIR> {
+    let filter = get_filter_node(parents, lp_arena)?;
+    let IR::Filter { predicate, .. } = lp_arena.get(filter) else {
+        unreachable!()
+    };
+    Some(predicate)
 }
 
 fn get_filter_node(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<Node> {

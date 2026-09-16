@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import subprocess
 import sys
 from functools import partial
@@ -65,6 +66,89 @@ def test_write_mkdir(tmp_path: Path) -> None:
     df.write_parquet(f, mkdir=True)
 
     assert_frame_equal(pl.read_parquet(f), df)
+
+
+skip_if_permissions_unenforced = pytest.mark.skipif(
+    sys.platform == "win32" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    reason="file permissions are not enforced here",
+)
+
+
+def _read_only_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A read-only directory, reachable by a relative path from the working directory.
+
+    Paths over 88 characters are truncated out of IO error messages, which `tmp_path`
+    alone already exceeds on some platforms. Sinking relative to it keeps the paths
+    short enough that the assertions below see them in full.
+    """
+    d = tmp_path / "read-only"
+    d.mkdir()
+    d.chmod(0o555)
+    monkeypatch.chdir(tmp_path)
+    return Path("read-only")
+
+
+@skip_if_permissions_unenforced
+@pytest.mark.write_disk
+def test_mkdir_permission_denied_names_the_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    d = _read_only_dir(tmp_path, monkeypatch) / "a"
+
+    with pytest.raises(PermissionError) as exc_info:
+        df.lazy().sink_parquet(d / "file", mkdir=True)
+
+    # The directory that could not be created, not the file underneath it.
+    assert str(exc_info.value).endswith(str(d))
+
+
+@skip_if_permissions_unenforced
+@pytest.mark.write_disk
+def test_partitioned_mkdir_permission_denied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The partitioned sink must report why the directory could not be made.
+
+    It used to discard that error and let the file open fail afterwards, reporting a
+    missing directory instead of the permissions that stopped it being created.
+    """
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    base = _read_only_dir(tmp_path, monkeypatch) / "a"
+
+    with pytest.raises(PermissionError) as exc_info:
+        df.lazy().sink_parquet(pl.PartitionBy(base, key="a"))
+
+    # A partition directory, not a file inside one - opening the file is what used to
+    # raise, and it named `<base>/a=<key>/<part>.parquet`. Which key fails first is not
+    # deterministic.
+    assert re.search(rf"{re.escape(str(base))}/a=\d+$", str(exc_info.value))
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+@pytest.mark.write_disk
+def test_mkdir_resolves_homedir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, partitioned: bool
+) -> None:
+    """`mkdir` must create the resolved directory, not a literal `~`."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    # Any literal `~` is created relative to the working directory, so keep that inside
+    # `tmp_path` - a regression must not leave one behind in the repository.
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    if partitioned:
+        df.lazy().sink_parquet(pl.PartitionBy("~/sink-homedir", key="a"))
+        out = pl.read_parquet(tmp_path / "sink-homedir").sort("a")
+    else:
+        df.lazy().sink_parquet("~/sink-homedir/file.parquet", mkdir=True)
+        out = pl.read_parquet(tmp_path / "sink-homedir" / "file.parquet")
+
+    assert_frame_equal(out, df)
+    assert not (cwd / "~").exists()
 
 
 @pytest.mark.parametrize(("scan", "sink"), SINKS)

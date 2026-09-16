@@ -49,6 +49,7 @@ impl LazyFrame {
                 rechunk: false,
                 cache: false,
                 glob: false,
+                expand_paths: true,
                 hidden_file_prefix: None,
                 projection: None,
                 column_mapping: None,
@@ -62,6 +63,7 @@ impl LazyFrame {
                 deletion_files: None,
                 table_statistics: None,
                 row_count: None,
+                source_sizes: None,
             },
         )?
         .build()

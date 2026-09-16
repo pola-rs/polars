@@ -161,6 +161,7 @@ where
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
 {
+    #[inline]
     fn metadata(&self) -> &M {
         &self.metadata
     }
@@ -340,6 +341,7 @@ mod std_shim {
         }
 
         // Decrement the reference count of the Arc on drop
+        #[inline]
         unsafe fn drop_waker<W: Wake + Send + Sync>(waker: *const ()) {
             unsafe { Arc::decrement_strong_count(waker as *const W) };
         }

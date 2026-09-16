@@ -27,12 +27,12 @@ fn canonicalize_maps_rec(series: &Series) -> PolarsResult<Option<Series>> {
         DataType::Map(_, _) => {
             let map = series.map().unwrap();
 
-            // Parent keys are row-encoded, so canonicalize nested maps first.
+            // Visit children first so canonicalization row-encodes normalized keys.
             let nested = canonicalize_maps_rec(map.storage())?;
             let storage = nested.as_ref().unwrap_or(map.storage());
-            let deduped = canonicalize_map_storage(storage)?;
+            let changed = canonicalize_map_storage(storage)?;
 
-            match deduped.or(nested) {
+            match changed.or(nested) {
                 None => Ok(None),
                 Some(storage) => Ok(Some(
                     unsafe { MapChunked::from_storage_unchecked(map.dtype().clone(), storage) }
@@ -78,10 +78,8 @@ fn canonicalize_maps_rec(series: &Series) -> PolarsResult<Option<Series>> {
             Ok(Some(out.into_series()))
         },
         #[cfg(feature = "dtype-extension")]
-        DataType::Extension(typ, _) => {
-            let ext = series.ext().unwrap();
-            Ok(canonicalize_maps_rec(ext.storage())?.map(|s| s.into_extension(typ.clone())))
-        },
+        DataType::Extension(typ, _) => Ok(canonicalize_maps_rec(series.ext().unwrap().storage())?
+            .map(|s| s.into_extension(typ.clone()))),
         _ => Ok(None),
     }
 }

@@ -10,6 +10,7 @@ use pyo3::exceptions::{
     PyRuntimeError, PyUserWarning,
 };
 use pyo3::prelude::*;
+use pyo3::pyclass::PyClassGuardError;
 
 use crate::Wrap;
 use crate::exceptions::{
@@ -54,6 +55,12 @@ impl From<PolarsError> for PyPolarsErr {
 impl From<PyErr> for PyPolarsErr {
     fn from(err: PyErr) -> Self {
         PyPolarsErr::Python(err)
+    }
+}
+
+impl<'a, 'py> From<PyClassGuardError<'a, 'py>> for PyPolarsErr {
+    fn from(err: PyClassGuardError) -> Self {
+        PyPolarsErr::from(PyErr::from(err))
     }
 }
 

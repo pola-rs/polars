@@ -191,6 +191,8 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::UniqueCounts => false,
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => false,
+        #[cfg(feature = "approx_quantile")]
+        F::ApproxQuantile { .. } => true,
         F::Coalesce => false,
         #[cfg(feature = "diff")]
         F::Diff(_) => false,
@@ -215,7 +217,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "peaks")]
         F::PeakMin | F::PeakMax => false,
         #[cfg(feature = "cutqcut")]
-        F::Cut { .. } | F::QCut { .. } => false,
+        F::Cut { .. } | F::QCut { .. } | F::Bin(_) => false,
         #[cfg(feature = "rle")]
         F::RLE | F::RLEID => false,
         F::ToPhysical => false,

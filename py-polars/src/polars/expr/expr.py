@@ -15,6 +15,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
+    Literal,
     NoReturn,
     TypeVar,
 )
@@ -93,6 +94,8 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, LazyFrame, Series
     from polars._typing import (
+        ApproxQuantileErrorBound,
+        ApproxQuantileMethod,
         ClosedInterval,
         FillNullStrategy,
         InterpolationMethod,
@@ -3822,6 +3825,131 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.approx_n_unique())
 
+    @unstable()
+    def approx_quantile(
+        self,
+        quantile: float | list_[float] | Expr,
+        *,
+        method: ApproxQuantileMethod = "auto",
+        error: float = 0.001,
+        error_tightness: ApproxQuantileErrorBound = "empirical",
+    ) -> Expr:
+        """
+        Compute approximate quantile(s) of an expression.
+
+        .. engine-support:: in-memory
+
+        Parameters
+        ----------
+        quantile
+            A single quantile, a list of quantiles, or an expression that
+            resolves to a list of quantiles. The dtype of the expression must
+            be a floating point value.
+        method
+            Specifies which approximate-quantile algorithm is to be used.
+            When set to 'auto', polars will use KLL if the quantiles are all
+            in `[0.05, 0.95]` or one of the REQ variants if any of the quantiles
+            falls outside of the middle range.
+
+            When set to `'kll'`, Polars will use the KLL method. This is generally
+            the most efficient algorithm. In this case, the `error` will specify
+            the absolute maximum error of the *rank* of the quantile value that is
+            returned. This will break down at the edges of the domain (e.g., when
+            the quantile is 95% or greater).
+
+            In the cases that you need to retain the accuracy at the edges of the
+            domain, use `'req_lo'` (for quantiles close to `0`), `'req_hi'` (for
+            quantiles close to `1`), or `'req_both'` which computes a REQ sketch for
+            both variants.
+
+            If the method is `'auto'`, and the `quantile` is a non-literal expression,
+            Polars will select `'req_both'`.
+
+        error
+            The allowed rank error as a factor of the number of rows in the expression.
+            For example: if `error=0.01`, and the approximate quantile is computed
+            over 1000 rows, the rank of the returned quantile value is (with probability
+            >99.7%) guaranteed to be at most 10 rows apart from the actual quantile.
+
+        error_tightness
+            The accuracy of the approximate-quantile algorithms is calibrated on
+            shuffled inputs. However, the error bound is not mathematically sound for
+            all possible inputs (e.g., if any of them has an adversarially "bad" order).
+            Set this value to `'formal'` to use a (looser) mathematically-sound error
+            bound, in return for slower performance.
+
+        Notes
+        -----
+        * As long as your data can fit in RAM, it is always more efficient to use the
+          regular :meth:`quantile` function instead.
+
+        * NaN values are regarded as larger than any finite number (and equal to one
+          another). As a result, ``NaN`` values are treated as the largest values when
+          computing quantiles, which can lead to surprising results.
+
+          For example, the median of ``[1.0, 2.0, NaN, NaN, NaN, 6.0, 7.0]`` is ``7.0``,
+          not ``4.0``. To exclude ``NaN`` values from the calculation, use
+          :func:`Expr.drop_nans`.
+
+        Examples
+        --------
+        >>> lf = pl.select(a=pl.arange(10_000)).lazy()
+
+        >>> # Get the approximate median
+        >>> lf.select(pl.col("a").approx_quantile(0.5)).collect()  # doctest: +SKIP
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 5000 │
+        └──────┘
+
+        >>> # Allow for a large error (10% of the rank)
+        >>> lf.select(
+        ...     pl.col("a").approx_quantile(0.5, error=0.1)
+        ... ).collect()  # doctest: +SKIP
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 4997 │
+        └──────┘
+
+        >>> # Explicitly use an algorithm that is accurate at the high tail
+        >>> lf.select(
+        ...     pl.col("a").approx_quantile(0.999, method="req_hi", error=0.1)
+        ... ).collect()  # doctest: +SKIP
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 9989 │
+        └──────┘
+        """
+        if method not in {"auto", "kll", "req_lo", "req_hi", "req_both"}:
+            msg = f"`method` must be one of {{'auto', 'kll', 'req_lo', 'req_hi', 'req_both'}}, got {method!r}"
+            raise ValueError(msg)
+
+        if error_tightness not in {"empirical", "formal"}:
+            msg = f"`error_tightness` must be one of {{'empirical', 'formal'}}, got {error_tightness!r}"
+            raise ValueError(msg)
+
+        q = quantile._pyexpr if isinstance(quantile, pl.Expr) else quantile
+        return wrap_expr(
+            self._pyexpr.approx_quantile(
+                q,
+                method,
+                error,
+                use_formal_bound=error_tightness == "formal",
+            )
+        )
+
     def null_count(self) -> Expr:
         """
         Count null values.
@@ -4853,6 +4981,264 @@ class Expr(metaclass=_Meta):
                 quantiles, labels, left_closed, allow_duplicates, include_breaks
             )
 
+        return wrap_expr(pyexpr)
+
+    @unstable()
+    def bin_intervals(
+        self,
+        intervals: Sequence[Any] | Series | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+        right_closed: bool = False,
+    ) -> Expr:
+        """
+        Bin values into discrete intervals delimited by breakpoints.
+
+        .. engine-support:: in-memory, streaming
+
+        .. warning::
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        intervals
+            Strictly ascending breakpoints, or a positive integer giving the number of
+            equal-width bins over `[min, max]`. Explicit breakpoints may have any
+            orderable (non-nested) data type; an integer requires numeric input.
+        labels
+            One label per bin, or `False` to return the integer bin index.
+        include_intervals
+            Return a struct with fields `bin`, `left`, and `right`. The first bin's left
+            and last bin's right boundary are null.
+        right_closed
+            Use right-closed `(left, right]` rather than left-closed `[left, right)`
+            bins.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Enum`, or :class:`UInt32` if `labels` is
+            `False`, or :class:`Struct` if `include_intervals` is set.
+
+        Notes
+        -----
+        Explicit breakpoints make this elementwise. An integer derives breakpoints from
+        the data, so bins are computed per group in group and window contexts.
+
+        A derived breakpoint is rounded to a value the input data type can represent, so
+        membership right at a bin edge depends on the data type.
+
+        See Also
+        --------
+        bin_ranks
+        bin_quantiles
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [-2, -1, 0, 1, 2]})
+        >>> df.with_columns(
+        ...     pl.col("foo")
+        ...     .bin_intervals([-1, 1], labels=["a", "b", "c"])
+        ...     .alias("bin")
+        ... )
+        shape: (5, 2)
+        ┌─────┬──────┐
+        │ foo ┆ bin  │
+        │ --- ┆ ---  │
+        │ i64 ┆ enum │
+        ╞═════╪══════╡
+        │ -2  ┆ a    │
+        │ -1  ┆ b    │
+        │ 0   ┆ b    │
+        │ 1   ┆ c    │
+        │ 2   ┆ c    │
+        └─────┴──────┘
+        """
+        labels_arg = None if labels is False else list(labels)
+        if isinstance(intervals, int):
+            pyexpr = self._pyexpr.bin_intervals_uniform(
+                intervals, labels_arg, include_intervals, right_closed
+            )
+        else:
+            breaks = (
+                intervals
+                if isinstance(intervals, pl.Series)
+                else pl.Series("breaks", intervals)
+            )
+            pyexpr = self._pyexpr.bin_intervals(
+                breaks._s, labels_arg, include_intervals, right_closed
+            )
+        return wrap_expr(pyexpr)
+
+    @unstable()
+    def bin_quantiles(
+        self,
+        quantiles: Sequence[float] | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+        right_closed: bool = False,
+    ) -> Expr:
+        """
+        Bin values into discrete intervals delimited by quantiles of the data.
+
+        .. engine-support:: in-memory, streaming
+
+        .. warning::
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        quantiles
+            Non-decreasing quantiles in `[0, 1]`, or a positive integer giving the
+            number of bins. Two equal quantiles delimit an empty bin. Input must be
+            numeric. For quantile `q`, the value of the breakpoint is the sorted value
+            at `floor(q * (len - 1))`.
+        labels
+            One label per bin, or `False` to return the integer bin index.
+        include_intervals
+            Return a struct with fields `bin`, `left`, and `right`. The first bin's left
+            and last bin's right boundary are null.
+        right_closed
+            Use right-closed `(left, right]` rather than left-closed `[left, right)`
+            bins.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Enum`, or :class:`UInt32` if `labels` is
+            `False`, or :class:`Struct` if `include_intervals` is set.
+
+        Notes
+        -----
+        Breakpoints are input values and are computed per group in group and window
+        contexts. The integer form is computed directly rather than by expanding it to
+        potentially inexact floating-point quantiles.
+
+        See Also
+        --------
+        bin_intervals
+        bin_ranks
+
+        Examples
+        --------
+        Unlike :meth:`bin_ranks`, all equal values remain in the same bin, so a bin can
+        be empty. Here the breakpoints are `1`, `1`, and `2`, giving the bins
+        `[-inf, 1)`, `[1, 1)`, `[1, 2)`, and `[2, inf)`. The first is empty because a
+        left-closed bin excludes its right boundary, and the second because the
+        breakpoint `1` repeats.
+
+        >>> df = pl.DataFrame({"x": [1, 1, 2, 2]})
+        >>> df.with_columns(
+        ...     pl.col("x")
+        ...     .bin_quantiles([0.1, 0.25, 0.75], labels=["a", "b", "c", "d"])
+        ...     .alias("bin")
+        ... )
+        shape: (4, 2)
+        ┌─────┬──────┐
+        │ x   ┆ bin  │
+        │ --- ┆ ---  │
+        │ i64 ┆ enum │
+        ╞═════╪══════╡
+        │ 1   ┆ c    │
+        │ 1   ┆ c    │
+        │ 2   ┆ d    │
+        │ 2   ┆ d    │
+        └─────┴──────┘
+        """
+        labels_arg = None if labels is False else list(labels)
+        if isinstance(quantiles, int):
+            pyexpr = self._pyexpr.bin_quantiles_uniform(
+                quantiles, labels_arg, include_intervals, right_closed
+            )
+        else:
+            pyexpr = self._pyexpr.bin_quantiles(
+                list(quantiles), labels_arg, include_intervals, right_closed
+            )
+        return wrap_expr(pyexpr)
+
+    @unstable()
+    def bin_ranks(
+        self,
+        ranks: Sequence[float] | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+    ) -> Expr:
+        """
+        Bin values by their position in sorted order.
+
+        Input must have an orderable data type; nested types (List, Array, and Struct)
+        are not supported.
+
+        .. engine-support:: in-memory, streaming
+
+        .. warning::
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        ranks
+            Non-decreasing cumulative fractions in `[0, 1]`, or a positive integer
+            giving the number of near-equal-sized bins. Two equal fractions delimit an
+            empty bin. For an integer, earlier bins receive any remainder.
+        labels
+            One label per bin, or `False` to return the integer bin index.
+        include_intervals
+            Return a struct with fields `bin`, `left`, and `right`. Boundaries are input
+            values, not ranks; the first bin's left and last bin's right boundary are
+            null.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Enum`, or :class:`UInt32` if `labels` is
+            `False`, or :class:`Struct` if `include_intervals` is set.
+
+        Notes
+        -----
+        Membership is positional, so equal values may be split across adjacent bins in
+        input order. Bins are computed per group in group and window contexts.
+
+        See Also
+        --------
+        bin_intervals
+        bin_quantiles
+
+        Examples
+        --------
+        Unlike :meth:`bin_quantiles`, rank bins may split equal values. Here, the bins
+        contain 25%, 50%, and 25% of the values.
+
+        >>> df = pl.DataFrame({"x": [1, 1, 2, 2]})
+        >>> df.with_columns(
+        ...     pl.col("x")
+        ...     .bin_ranks([0.25, 0.75], labels=["low", "mid", "high"])
+        ...     .alias("bin")
+        ... )
+        shape: (4, 2)
+        ┌─────┬──────┐
+        │ x   ┆ bin  │
+        │ --- ┆ ---  │
+        │ i64 ┆ enum │
+        ╞═════╪══════╡
+        │ 1   ┆ low  │
+        │ 1   ┆ mid  │
+        │ 2   ┆ mid  │
+        │ 2   ┆ high │
+        └─────┴──────┘
+        """
+        labels_arg = None if labels is False else list(labels)
+        if isinstance(ranks, int):
+            pyexpr = self._pyexpr.bin_ranks_uniform(
+                ranks, labels_arg, include_intervals
+            )
+        else:
+            pyexpr = self._pyexpr.bin_ranks(list(ranks), labels_arg, include_intervals)
         return wrap_expr(pyexpr)
 
     def rle(self) -> Expr:

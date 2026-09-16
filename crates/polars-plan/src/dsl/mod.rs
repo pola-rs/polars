@@ -72,6 +72,8 @@ pub use meta::*;
 pub use name::*;
 pub use options::*;
 pub use plan::*;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
@@ -87,6 +89,7 @@ pub use struct_::*;
 pub use udf::UserDefinedFunction;
 mod file_scan;
 pub use file_scan::*;
+pub mod dsl_resolver;
 use functions::lit;
 pub use scan_sources::{ScanSource, ScanSourceIter, ScanSourceRef, ScanSources};
 
@@ -981,6 +984,25 @@ impl Expr {
         self.map_unary(FunctionExpr::ApproxNUnique)
     }
 
+    /// Get the approximate quantile value.
+    #[cfg(feature = "approx_quantile")]
+    pub fn approx_quantile<E: Into<Expr>>(
+        self,
+        quantile: E,
+        error: f64,
+        use_formal_bound: bool,
+        method: ApproxQuantileMethod,
+    ) -> Self {
+        self.map_binary(
+            FunctionExpr::ApproxQuantile {
+                method,
+                error,
+                use_formal_bound,
+            },
+            quantile.into(),
+        )
+    }
+
     /// Bitwise "and" operation.
     pub fn and<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::And, expr.into())
@@ -1416,6 +1438,12 @@ impl Expr {
             allow_duplicates,
             include_breaks,
         })
+    }
+
+    #[cfg(feature = "cutqcut")]
+    /// Assign each value to a bin.
+    pub fn bin(self, options: BinOptions) -> Expr {
+        self.map_unary(FunctionExpr::Bin(options))
     }
 
     #[cfg(feature = "rle")]

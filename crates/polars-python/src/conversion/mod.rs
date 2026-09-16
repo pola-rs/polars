@@ -21,6 +21,8 @@ use polars::prelude::default_values::DefaultFieldValues;
 use polars::prelude::deletion::{DeletionFilesList, DeltaDeletionVectorProvider};
 use polars::series::ops::NullBehavior;
 use polars_buffer::Buffer;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::decimal::dec128_verify_prec_scale;
 use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
@@ -32,6 +34,7 @@ use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_plan::dsl::default_values::IcebergDefaultFieldValues;
 use polars_plan::dsl::deletion::IcebergDeletes;
+use polars_plan::dsl::dsl_resolver::ResolvedDsl;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonObject;
@@ -115,6 +118,63 @@ pub(crate) fn get_df(obj: &Bound<'_, PyAny>) -> PyResult<DataFrame> {
 pub(crate) fn get_lf(obj: &Bound<'_, PyAny>) -> PyResult<LazyFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_ldf"))?;
     Ok(pydf.extract::<PyLazyFrame>()?.ldf.into_inner())
+}
+
+pub(crate) fn extract_py_resolved_dsl(
+    py: Python<'_>,
+    // pl.LazyFrame | tuple[pl.LazyFrame | None, polars.lazyframe_resolver.ResolvedLazyFrameProps]
+    py_resolved_lazyframe: Py<PyAny>,
+) -> PolarsResult<ResolvedDsl> {
+    let mut ret = ResolvedDsl::default();
+
+    let ResolvedDsl {
+        dsl,
+        version_key,
+        applied_filters,
+        slice_offset_applied: _,
+    } = &mut ret;
+
+    let mut py_lf: Option<Py<PyAny>> = None;
+    let mut props: Option<Py<PyAny>> = None;
+
+    if py_resolved_lazyframe
+        .getattr(py, intern!(py, "_ldf"))
+        .is_ok()
+    {
+        py_lf = Some(py_resolved_lazyframe);
+    } else {
+        let py_lf_: Py<PyAny>;
+        let props_: Py<PyAny>;
+
+        (py_lf_, props_) = py_resolved_lazyframe.extract(py)?;
+
+        if !py_lf_.is_none(py) {
+            py_lf = Some(py_lf_)
+        }
+
+        props = Some(props_);
+    }
+
+    if let Some(lf) = py_lf {
+        let plf: PyLazyFrame = lf.getattr(py, intern!(py, "_ldf"))?.extract(py)?;
+        *dsl = Some(plf.ldf.into_inner().logical_plan);
+    }
+
+    if let Some(props) = props {
+        *version_key = props
+            .getattr(py, intern!(py, "version_key"))?
+            .extract::<Option<Wrap<PlSmallStr>>>(py)?
+            .map(|x| x.0);
+
+        *applied_filters = props
+            .getattr(py, intern!(py, "applied_filters"))?
+            .bind(py)
+            .try_iter()?
+            .map(|x| x.and_then(|x| x.extract::<usize>()))
+            .collect::<PyResult<PlIndexSet<usize>>>()?;
+    }
+
+    Ok(ret)
 }
 
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
@@ -1129,6 +1189,27 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<IndexOrder> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`order` must be one of {{'fortran', 'c'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+#[cfg(feature = "approx_quantile")]
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ApproxQuantileMethod> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "auto" => ApproxQuantileMethod::Auto,
+            "kll" => ApproxQuantileMethod::KLL,
+            "req_lo" => ApproxQuantileMethod::ReqSketch { hra: false },
+            "req_hi" => ApproxQuantileMethod::ReqSketch { hra: true },
+            "req_both" => ApproxQuantileMethod::DoubleReqSketch,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`method` must be one of {{'auto', 'kll', 'req_lo', 'req_hi', 'req_both'}}, got {v}",
                 )));
             },
         };

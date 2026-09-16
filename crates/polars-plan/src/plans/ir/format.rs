@@ -11,6 +11,7 @@ use recursive::recursive;
 
 use self::ir::dot::ScanSourcesDisplay;
 use crate::dsl::deletion::DeletionFilesList;
+use crate::dsl::dsl_resolver::ResolverExplainHeadingDisplay;
 use crate::prelude::*;
 
 const INDENT_INCREMENT: usize = 2;
@@ -247,7 +248,17 @@ impl<'a> IRDisplay<'a> {
                     write!(f, "\n{:indent$}END {name} JOIN", "")
                 } else {
                     let how = &options.args.how;
-                    write!(f, "{:indent$}{how} JOIN:{build_side}", "")?;
+                    let fused_predicate = match options.options.fused_predicate() {
+                        Some(fused_predicate) => {
+                            format!(
+                                "\n{:indent$}FUSED PREDICATE: {}",
+                                "",
+                                self.display_expr(fused_predicate)
+                            )
+                        },
+                        None => String::new(),
+                    };
+                    write!(f, "{:indent$}{how} JOIN:{build_side}{fused_predicate}", "")?;
                     write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
                     self.with_root(*input_left)
                         ._format(f, sub_indent, seen_caches)?;
@@ -1049,6 +1060,10 @@ pub fn write_ir_non_recursive(
                 write!(f, "{:indent$}{how} JOIN", "")?;
                 write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
                 write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
+                if let Some(fused_predicate) = options.options.fused_predicate() {
+                    let fused_predicate = fused_predicate.display(expr_arena);
+                    write!(f, "\n{:indent$}FUSED PREDICATE: {fused_predicate}", "")?;
+                }
             }
 
             Ok(())
@@ -1127,6 +1142,21 @@ pub fn write_ir_non_recursive(
             arg_map: _,
             operation,
         } => write!(f, "{:indent$}DISPATCH {operation}", ""),
+        IR::Resolver {
+            resolver,
+            resolved_dsl,
+            ..
+        } => {
+            write!(
+                f,
+                "{}",
+                ResolverExplainHeadingDisplay {
+                    indent,
+                    resolver,
+                    resolved_dsl
+                }
+            )
+        },
         IR::Invalid => write!(f, "{:indent$}INVALID", ""),
     }
 }

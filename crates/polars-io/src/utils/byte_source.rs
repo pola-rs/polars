@@ -2,7 +2,7 @@ use std::ops::Range;
 #[cfg(target_os = "linux")]
 use std::os::fd::AsRawFd;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use dio_align::DioAlign;
 use futures::{StreamExt, TryStreamExt};
@@ -31,6 +31,9 @@ mod direct_io;
 #[allow(async_fn_in_trait)]
 pub trait ByteSource: Send + Sync {
     async fn get_size(&self) -> PolarsResult<usize>;
+    /// Fetch the last `n` bytes and the total size of the source, in a single request. Returns
+    /// fewer than `n` bytes if the source is smaller than `n`.
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)>;
     /// # Panics
     /// Panics if `range` is not in bounds.
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>>;
@@ -68,6 +71,11 @@ impl ByteSource for BufferByteSource {
         Ok(self.0.as_ref().len())
     }
 
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        let len = self.0.as_ref().len();
+        Ok((self.0.clone().sliced(len.saturating_sub(n)..len), len))
+    }
+
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         let out = self.0.clone().sliced(range);
         Ok(out)
@@ -95,6 +103,17 @@ pub struct FileByteSource {
     // File size.
     size: u64,
     io_metrics: OptIOMetrics,
+}
+
+/// Each permit pins a tokio blocking thread for the duration of a `pread`.
+pub fn global_read_permits() -> Arc<Semaphore> {
+    static PERMITS: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
+        Arc::new(Semaphore::new(
+            polars_config::config().file_read_concurrency().max(1) as usize,
+        ))
+    });
+
+    PERMITS.clone()
 }
 
 #[derive(Clone)]
@@ -132,17 +151,13 @@ fn _fadvise(file: &std::fs::File, advice: FileAdvice) {
     }
 }
 
-#[cfg(unix)]
-pub(crate) fn pread_exact(
-    file: &std::fs::File,
-    buf: &mut [u8],
-    offset: u64,
-) -> std::io::Result<()> {
+#[cfg(all(unix, not(feature = "nightly")))]
+fn pread_exact(file: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
     use std::os::unix::fs::FileExt;
     file.read_exact_at(buf, offset)
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, not(feature = "nightly")))]
 fn pread_exact(file: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
     use std::os::windows::fs::FileExt;
     let mut filled = 0;
@@ -155,6 +170,61 @@ fn pread_exact(file: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Re
     Ok(())
 }
 
+/// `pread_exact` into uninitialized memory, so that `read_buffered` does not
+/// have to zero the buffer the read is about to overwrite anyway.
+#[cfg(all(feature = "nightly", unix))]
+fn pread_exact_uninit(
+    file: &std::fs::File,
+    buf: std::io::BorrowedCursor<'_, u8>,
+    offset: u64,
+) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    file.read_buf_exact_at(buf, offset)
+}
+
+#[cfg(all(feature = "nightly", windows))]
+fn pread_exact_uninit(
+    file: &std::fs::File,
+    mut buf: std::io::BorrowedCursor<'_, u8>,
+    mut offset: u64,
+) -> std::io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    // `seek_read_buf` is the short-read variant; loop it to fill the cursor.
+    while buf.capacity() > 0 {
+        let written = buf.written();
+        file.seek_read_buf(buf.reborrow(), offset)?;
+        match buf.written() - written {
+            0 => return Err(std::io::ErrorKind::UnexpectedEof.into()),
+            n => offset += n as u64,
+        }
+    }
+    Ok(())
+}
+
+/// Read `len` bytes at `offset` through the page cache.
+///
+/// Under `nightly` the destination is left uninitialized and filled by the read
+/// itself; on stable it must be zeroed first, which memsets the whole range
+/// before the kernel overwrites it.
+#[cfg(feature = "nightly")]
+fn read_buffered(file: &std::fs::File, offset: u64, len: usize) -> PolarsResult<Buffer<u8>> {
+    let mut v: Vec<u8> = Vec::with_capacity(len);
+
+    let filled = {
+        let mut buf = std::io::BorrowedBuf::from(&mut v.spare_capacity_mut()[..len]);
+        pread_exact_uninit(file, buf.unfilled(), offset)?;
+        buf.len()
+    };
+
+    debug_assert_eq!(filled, len);
+    // Safety: `pread_exact_uninit` filled the cursor, so the first `filled`
+    // bytes of the allocation are initialized.
+    unsafe { v.set_len(filled) };
+
+    Ok(Buffer::from(v))
+}
+
+#[cfg(not(feature = "nightly"))]
 fn read_buffered(file: &std::fs::File, offset: u64, len: usize) -> PolarsResult<Buffer<u8>> {
     let mut buf = vec![0u8; len];
     pread_exact(file, &mut buf, offset)?;
@@ -342,6 +412,12 @@ impl ByteSource for FileByteSource {
             .map_err(|_| polars_err!(ComputeError: "file size {} does not fit in usize", self.size))
     }
 
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        let size = self.get_size().await?;
+        let bytes = self.get_range(size.saturating_sub(n)..size).await?;
+        Ok((bytes, size))
+    }
+
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         assert!(range.end as u64 <= self.size);
 
@@ -488,6 +564,10 @@ impl ByteSource for ObjectStoreByteSource {
             .size as usize)
     }
 
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        self.store.get_suffix(&self.path, n, self.config).await
+    }
+
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         self.store.get_range(&self.path, range, self.config).await
     }
@@ -562,6 +642,15 @@ impl ByteSource for DynByteSource {
             Self::File(v) => v.get_size().await,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v.get_size().await,
+        }
+    }
+
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        match self {
+            Self::Buffer(v) => v.get_suffix(n).await,
+            Self::File(v) => v.get_suffix(n).await,
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => v.get_suffix(n).await,
         }
     }
 

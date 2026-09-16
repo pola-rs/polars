@@ -981,6 +981,12 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::UniqueCounts => F::UniqueCounts,
         #[cfg(feature = "approx_unique")]
         IF::ApproxNUnique => F::ApproxNUnique,
+        #[cfg(feature = "approx_quantile")]
+        IF::ApproxQuantile { method, error } => F::ApproxQuantile {
+            method,
+            error,
+            use_formal_bound: true,
+        },
         IF::Coalesce => F::Coalesce,
         #[cfg(feature = "diff")]
         IF::Diff(nb) => F::Diff(nb),
@@ -1066,6 +1072,30 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             allow_duplicates,
             include_breaks,
         },
+        #[cfg(feature = "cutqcut")]
+        IF::Bin(IRBinOptions {
+            method,
+            labels,
+            include_intervals,
+        }) => F::Bin(BinOptions {
+            method: match method {
+                IRBinMethod::Intervals { spec, right_closed } => BinMethod::Intervals {
+                    spec: match spec {
+                        IntervalSpec::Breaks(breaks) => {
+                            DslIntervalSpec::Breaks(breaks.into_series())
+                        },
+                        IntervalSpec::Count(n_bins) => DslIntervalSpec::Count(n_bins),
+                    },
+                    right_closed,
+                },
+                IRBinMethod::Quantiles { spec, right_closed } => {
+                    BinMethod::Quantiles { spec, right_closed }
+                },
+                IRBinMethod::Ranks { spec } => BinMethod::Ranks { spec },
+            },
+            labels,
+            include_intervals,
+        }),
         #[cfg(feature = "rle")]
         IF::RLE => F::RLE,
         #[cfg(feature = "rle")]

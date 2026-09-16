@@ -6,7 +6,6 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud
 def test_invalid_broadcast() -> None:
     df = pl.DataFrame(

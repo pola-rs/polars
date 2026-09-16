@@ -281,6 +281,15 @@ impl IRFunctionExpr {
             CumMax { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile { .. } => {
+                // A list of quantiles in, a list of estimates out.
+                let quantiles_are_list = mapper.args()[1].dtype().is_list();
+                mapper.map_dtype(|dtype| match quantiles_are_list {
+                    true => DataType::List(Box::new(dtype.clone())),
+                    false => dtype.clone(),
+                })
+            },
             #[cfg(feature = "hist")]
             Hist {
                 include_category,
@@ -352,7 +361,9 @@ impl IRFunctionExpr {
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "exp")?
                 .map_to_float_dtype(),
             #[cfg(feature = "log")]
-            Log => mapper.log_dtype(),
+            Log => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log")?
+                .log_dtype(),
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Round { .. } | RoundSF { .. } | Truncate { .. } | Floor | Ceil => {
@@ -424,6 +435,33 @@ impl IRFunctionExpr {
                     ),
                 ]);
                 mapper.with_dtype(struct_dt)
+            },
+            #[cfg(feature = "cutqcut")]
+            Bin(options) => {
+                let n_bins = options.method.n_bins();
+                let bin_dtype = match &options.labels {
+                    None => DataType::UInt32,
+                    Some(labels) => {
+                        polars_ensure!(
+                            labels.len() == n_bins,
+                            ShapeMismatch: "`{}` produces {} bins but got {} labels",
+                            options.method.name(), n_bins, labels.len()
+                        );
+                        DataType::from_frozen_categories(FrozenCategories::new(
+                            labels.iter().map(|s| s.as_str()),
+                        )?)
+                    },
+                };
+                if !options.include_intervals {
+                    return mapper.with_dtype(bin_dtype);
+                }
+                // The input has been converted to the correct type during DSL -> IR conversion.
+                let bound = mapper.args()[0].dtype().clone();
+                mapper.with_dtype(DataType::Struct(vec![
+                    Field::new(PlSmallStr::from_static("bin"), bin_dtype),
+                    Field::new(PlSmallStr::from_static("left"), bound.clone()),
+                    Field::new(PlSmallStr::from_static("right"), bound),
+                ]))
             },
             #[cfg(feature = "rle")]
             RLE => mapper.map_dtype(|dt| {

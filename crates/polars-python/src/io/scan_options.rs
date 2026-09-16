@@ -6,6 +6,7 @@ use polars::prelude::{
     CastColumnsPolicy, CloudScheme, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy,
     PlSmallStr, Schema, TableStatistics, UnifiedScanArgs,
 };
+use polars_buffer::Buffer;
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
@@ -54,6 +55,7 @@ impl PyScanOptions<'_> {
             missing_columns: Wrap<MissingColumnsPolicy>,
             include_file_paths: Option<Wrap<PlSmallStr>>,
             glob: bool,
+            expand_paths: bool,
             hidden_file_prefix: Option<Vec<PyBackedStr>>,
             column_mapping: Option<Wrap<ColumnMapping>>,
             default_values: Option<Wrap<DefaultFieldValues>>,
@@ -67,6 +69,7 @@ impl PyScanOptions<'_> {
             deletion_files: Option<Wrap<DeletionFilesList>>,
             table_statistics: Option<Wrap<TableStatistics>>,
             row_count: Option<(u64, u64)>,
+            source_sizes: Option<Vec<u64>>,
         }
 
         let Extract {
@@ -79,6 +82,7 @@ impl PyScanOptions<'_> {
             column_mapping,
             default_values,
             glob,
+            expand_paths,
             hidden_file_prefix,
             hive_partitioning,
             hive_schema,
@@ -90,6 +94,7 @@ impl PyScanOptions<'_> {
             deletion_files,
             table_statistics,
             row_count,
+            source_sizes,
         } = self.0.extract()?;
 
         let cloud_options =
@@ -120,6 +125,7 @@ impl PyScanOptions<'_> {
             rechunk,
             cache,
             glob,
+            expand_paths,
             hidden_file_prefix: hidden_file_prefix
                 .map(|x| x.into_iter().map(|x| (*x).into()).collect()),
             projection: None,
@@ -136,6 +142,7 @@ impl PyScanOptions<'_> {
             deletion_files,
             table_statistics: table_statistics.map(|x| x.0),
             row_count,
+            source_sizes: source_sizes.map(Buffer::from),
         };
 
         Ok(unified_scan_args)
