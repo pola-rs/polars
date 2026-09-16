@@ -1,8 +1,7 @@
 use std::ops::BitAnd;
 
 use polars_core::prelude::*;
-
-use crate::series::ClosedInterval;
+use polars_defs::expr::ClosedInterval;
 
 pub fn is_between(
     s: &Series,

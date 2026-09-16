@@ -57,4 +57,4 @@ jobs:
             --profile dev
             --features numa
             --interpreter python3.10
-          maturin-version: 1.7.4
+          maturin-version: 1.15.0

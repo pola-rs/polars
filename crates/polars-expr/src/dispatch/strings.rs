@@ -771,10 +771,7 @@ pub(super) fn replace(s: &[Column], literal: bool, n: i64) -> PolarsResult<Colum
 }
 
 #[cfg(feature = "string_normalize")]
-pub(super) fn normalize(
-    s: &Column,
-    form: polars_ops::prelude::UnicodeForm,
-) -> PolarsResult<Column> {
+pub(super) fn normalize(s: &Column, form: polars_defs::expr::UnicodeForm) -> PolarsResult<Column> {
     let ca = s.str()?;
     Ok(ca.str_normalize(form).into_column())
 }

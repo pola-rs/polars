@@ -21,6 +21,7 @@ mod join_build_side;
 mod join_order;
 mod join_predicate_fusion;
 mod join_pushthrough;
+mod join_runtime_filter;
 mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;
@@ -276,6 +277,9 @@ pub fn optimize(
     // Needs the final join order and the pushed-down projections.
     if opt_flags.contains(OptFlags::ROW_ESTIMATE) && get_or_init_members!().has_joins_or_unions {
         join_build_side::set_join_build_sides(root, ir_arena, expr_arena);
+        if opt_flags.streaming() {
+            join_runtime_filter::attach_join_runtime_filters(root, ir_arena, expr_arena);
+        }
     }
 
     if opt_flags.cluster_with_columns() && get_or_init_members!().with_columns_count > 1 {

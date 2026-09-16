@@ -1,15 +1,17 @@
-pub(crate) const DAYS_PER_MONTH: [[i64; 12]; 2] = [
+//! Calendar constants and helpers.
+
+pub const DAYS_PER_MONTH: [[i64; 12]; 2] = [
     //J   F   M   A   M   J   J   A   S   O   N   D
     [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31], // non-leap year
     [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31], // leap year
 ];
 
-pub(crate) const fn is_leap_year(year: i32) -> bool {
+pub const fn is_leap_year(year: i32) -> bool {
     year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 }
 
 /// Get the number of days in the given month of the given year
-pub(crate) const fn days_in_month(year: i32, month: u8) -> u8 {
+pub const fn days_in_month(year: i32, month: u8) -> u8 {
     DAYS_PER_MONTH[is_leap_year(year) as usize][(month - 1) as usize] as u8
 }
 

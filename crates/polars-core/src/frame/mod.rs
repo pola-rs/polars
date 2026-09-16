@@ -1406,6 +1406,8 @@ impl DataFrame {
         by: impl IntoIterator<Item = impl AsRef<str>>,
         sort_options: SortMultipleOptions,
     ) -> PolarsResult<&mut Self> {
+        // The keys share the frame's chunks, so one rechunk serves both.
+        self.rechunk_mut_par();
         let by_column = self.select_to_vec(by)?;
 
         let mut out = self.sort_impl(by_column, sort_options, None)?;
