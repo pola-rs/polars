@@ -7,7 +7,7 @@ import math
 import re
 import zlib
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal as D
 from io import BytesIO
 from typing import TYPE_CHECKING
@@ -826,3 +826,61 @@ def test_ndjson_large_u64_infer_25894() -> None:
         df,
         pl.DataFrame({"id": pl.Series("id", [14933243513335727983], dtype=pl.Int128)}),
     )
+
+
+def test_read_json_datetime_tz_offset_29262() -> None:
+    data = """[
+        {"a": "2020-01-01T12:34+05:00"},
+        {"a": "2020-01-01T12:34+06:00"},
+        {"a": "2020-01-01T12:34-05:00"},
+        {"a": "2020-01-01T12:34Z"},
+        {"a": "2020-01-01T12:34+00:00"},
+        {"a": "2020-01-01T12:34"},
+        {"a": null},
+        {"a": "2020-01-01T01:00+05:30"},
+        {"a": "2020-01-01T23:30-05:00"}
+    ]"""
+    result = pl.read_json(io.StringIO(data), schema={"a": pl.Datetime})
+    expected = pl.DataFrame(
+        {
+            "a": [
+                datetime(2020, 1, 1, 7, 34),
+                datetime(2020, 1, 1, 6, 34),
+                datetime(2020, 1, 1, 17, 34),
+                datetime(2020, 1, 1, 12, 34),
+                datetime(2020, 1, 1, 12, 34),
+                datetime(2020, 1, 1, 12, 34),
+                None,
+                datetime(2019, 12, 31, 19, 30),
+                datetime(2020, 1, 2, 4, 30),
+            ]
+        },
+        schema={"a": pl.Datetime},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_read_json_datetime_schema_utc_29262() -> None:
+    data = """[
+        {"a": "2020-01-01T12:34+05:00"},
+        {"a": "2020-01-01T07:34Z"},
+        {"a": "2020-01-01T12:34:56.123456+05:00"},
+        {"a": "2020-01-01T12:34:56+05:45"},
+        {"a": "2020-01-01T12:34:56-03:30"}
+    ]"""
+    result = pl.read_json(
+        io.StringIO(data), schema={"a": pl.Datetime(time_unit="us", time_zone="UTC")}
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [
+                datetime(2020, 1, 1, 7, 34, tzinfo=timezone.utc),
+                datetime(2020, 1, 1, 7, 34, tzinfo=timezone.utc),
+                datetime(2020, 1, 1, 7, 34, 56, 123456, tzinfo=timezone.utc),
+                datetime(2020, 1, 1, 6, 49, 56, tzinfo=timezone.utc),
+                datetime(2020, 1, 1, 16, 4, 56, tzinfo=timezone.utc),
+            ]
+        },
+        schema={"a": pl.Datetime(time_unit="us", time_zone="UTC")},
+    )
+    assert_frame_equal(result, expected)
