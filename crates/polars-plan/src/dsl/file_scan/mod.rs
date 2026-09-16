@@ -1,5 +1,5 @@
-use std::num::NonZeroU32;
 use std::hash::Hash;
+use std::num::NonZeroU32;
 use std::sync::Mutex;
 
 use deletion::DeletionFilesList;
@@ -618,13 +618,20 @@ pub struct UnifiedScanArgs {
     /// count. Requires [`Self::source_sizes`], which path expansion fills in for
     /// free; without sizes this is a no-op.
     ///
-    /// `N` is a dial, not just a fact about the topology. At `N` = the part
-    /// count, every unsplit source is under one fair share, which bounds the
-    /// makespan at `2x` the ideal. Raising it to `k` times the part count bounds
-    /// unsplit sources at `1/k` of a fair share, for a makespan within
-    /// `1 + 1/k`, at up to `k` times as many footer reads. Since a wave of
-    /// footer reads costs about one round trip up to the concurrency budget, a
-    /// small multiple is usually worth it.
+    /// `N` is a dial, not just a fact about the topology. Whole files, and once
+    /// resolved whole row groups, are indivisible, so a contiguous split is
+    /// bounded by the ideal plus the largest remaining unit rather than by the
+    /// ideal alone. Raising `N` to `k` times the part count shrinks the largest
+    /// *unresolved* unit to `1/k` of a fair share, at up to `k` times as many
+    /// footer reads.
+    ///
+    /// It does not shrink the resolved ones. A file split by row group is only
+    /// as divisible as whoever wrote it made it, and a single oversized row
+    /// group bounds the makespan whatever `N` is. So `1 + 1/k` of the divisible
+    /// ideal is what this buys when every remaining unit is under
+    /// `1 / (k * parts)` of the total, not a guarantee it delivers. Since a wave
+    /// of footer reads costs about one round trip up to the concurrency budget,
+    /// a small multiple is usually worth it.
     pub resolve_heavy_sources: Option<NonZeroU32>,
 }
 

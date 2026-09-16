@@ -4532,6 +4532,76 @@ def test_resolve_metadata_sampled_byte_weighted(
 
 
 @pytest.mark.write_disk
+def test_resolve_metadata_cache_distinguishes_source_sets(tmp_path: Path) -> None:
+    # Resolved metadata is cached per scan and shared within one plan. The cached
+    # value holds a footer and a byte size for *every* source, so two scans that
+    # merely start at the same file must not share an entry -- the second would
+    # otherwise describe its own files with the first's metadata, which shows up
+    # as a wrong row count and, on a real read, a byte range past the file's end.
+    rows = [2, 2, 1000]
+    paths = [tmp_path / f"part_{i}.parquet" for i in range(len(rows))]
+    for path, n in zip(paths, rows, strict=True):
+        pl.DataFrame({"x": range(n)}).write_parquet(path)
+
+    def scan(*indices: int) -> pl.LazyFrame:
+        selected = [paths[i] for i in indices]
+        return pl.scan_parquet(
+            selected,
+            _source_sizes=[p.stat().st_size for p in selected],
+            _resolve_heavy_sources=4,
+        ).select(pl.len())
+
+    # Both start at `part_0` and diverge after it. Sub-plan elimination is off so
+    # the two scans survive as separate nodes and actually contend for the cache.
+    combined = pl.concat([scan(0, 1), scan(0, 2)])
+    assert combined.collect(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=False)
+    ).to_dict(as_series=False) == {"len": [rows[0] + rows[1], rows[0] + rows[2]]}
+
+
+@pytest.mark.write_disk
+def test_resolve_metadata_cache_distinguishes_resolution_strength(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # Same sources, different resolution requests. A scan that asked to resolve
+    # its heavy sources must not be handed a weaker cached result from one that
+    # did not, or the extra footers it paid for are silently missing.
+    rows = [2, 2, 2, 1000]
+    paths = [tmp_path / f"part_{i}.parquet" for i in range(len(rows))]
+    for path, n in zip(paths, rows, strict=True):
+        pl.DataFrame({"x": range(n)}).write_parquet(path)
+    sizes = [p.stat().st_size for p in paths]
+
+    plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", "sampled")
+    plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "2")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    def scan(heavy: int | None) -> pl.LazyFrame:
+        return pl.scan_parquet(
+            paths, _source_sizes=sizes, _resolve_heavy_sources=heavy
+        ).select(pl.len())
+
+    capfd.readouterr()
+    pl.concat([scan(None), scan(4)]).explain(optimized=True)
+    traces = [
+        ln
+        for ln in capfd.readouterr().err.splitlines()
+        if "parquet sampled resolve" in ln
+    ]
+
+    # Two resolves, not one: the weaker entry must not answer the stronger ask.
+    # Conversion order is not the concat order, so match on the set.
+    assert len(traces) == 2, traces
+    assert any("read 2 / 4 footers" in trace for trace in traces), traces
+    # The big file is over a quarter of the total, so splitting four ways pulls
+    # its footer in on top of the pinned two-footer wave.
+    assert sizes[3] * 4 >= sum(sizes)
+    assert any("read 3 / 4 footers" in trace for trace in traces), traces
+
+
+@pytest.mark.write_disk
 def test_resolve_metadata_sampled_heavy_files(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],

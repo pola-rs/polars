@@ -1,5 +1,5 @@
-use std::num::NonZeroU32;
 use std::io::{BufReader, Cursor};
+use std::num::NonZeroU32;
 use std::sync::{LazyLock, RwLock};
 
 use either::Either;
@@ -1491,12 +1491,30 @@ pub async fn ndjson_file_info(
     ))
 }
 
-// Add flags that influence metadata/schema here
+// Add flags that influence metadata/schema here.
+//
+// Every per-source field of the cached value must be reachable from the key.
+// This held when the parquet value carried only the first file's footer, and
+// stopped holding when it became `metadata_per_source` and `bytes_per_source`.
 #[derive(Eq, Hash, PartialEq)]
 enum CachedSourceKey {
     ParquetIpc {
-        first_path: PlRefPath,
+        /// The complete ordered source list.
+        ///
+        /// Keying on the first path alone lets `[a, b]` and `[a, c]` collide, so
+        /// the second scan reads `c` with `b`'s footer and byte size -- wrong row
+        /// counts, wrong distribution weights, and a panicking byte range when a
+        /// read is issued past the real file's end.
+        paths: Buffer<PlRefPath>,
         schema_overwrite: Option<SchemaRef>,
+        /// How much footer resolution the scan asked for.
+        ///
+        /// Two scans over the same sources resolve different numbers of footers
+        /// depending on this, so without it a weaker cached resolution satisfies
+        /// a stronger request and the extra footers are silently missing. The
+        /// resolve level and sample limit are process-global rather than
+        /// per-scan, so they cannot differ between two scans of one plan.
+        resolve_heavy_sources: Option<NonZeroU32>,
     },
     CsvJson {
         paths: Buffer<PlRefPath>,
@@ -1836,8 +1854,9 @@ impl SourcesToFileInfo {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { options } => {
                 let key = CachedSourceKey::ParquetIpc {
-                    first_path: paths[0].clone(),
+                    paths: paths.clone(),
                     schema_overwrite: options.schema.clone(),
+                    resolve_heavy_sources: unified_scan_args.resolve_heavy_sources,
                 };
 
                 let guard = self.inner.read().unwrap();
@@ -1847,8 +1866,11 @@ impl SourcesToFileInfo {
             #[cfg(feature = "ipc")]
             FileScanDsl::Ipc { options: _ } => {
                 let key = CachedSourceKey::ParquetIpc {
-                    first_path: paths[0].clone(),
+                    paths: paths.clone(),
                     schema_overwrite: None,
+                    // IPC resolves no parquet footers, so this cannot change its
+                    // cached value.
+                    resolve_heavy_sources: None,
                 };
 
                 let guard = self.inner.read().unwrap();
