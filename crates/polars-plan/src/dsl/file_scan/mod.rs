@@ -603,17 +603,6 @@ pub struct UnifiedScanArgs {
     pub source_sizes: Option<Buffer<u64>>,
     /// Resolve the footer of every source at least `1 / N` of the scan's total
     /// bytes, on top of what the resolve mode reads anyway.
-    ///
-    /// A distributed planner assigns whole files, so a source over a fair share
-    /// pins one worker; splitting it needs the row groups in its footer. At most
-    /// `N` sources can qualify, so the extra reads are bounded by `N` rather
-    /// than by file count. A fraction rather than a byte count because the total
-    /// is only known once paths are expanded. Requires [`Self::source_sizes`].
-    ///
-    /// `N` is a dial: raising it to `k` times the part count shrinks the largest
-    /// *unresolved* source to `1/k` of a fair share. It cannot shrink the
-    /// resolved ones -- a file is only as divisible as its row groups, so one
-    /// oversized row group still bounds the makespan.
     pub resolve_heavy_sources: Option<NonZeroU32>,
 }
 

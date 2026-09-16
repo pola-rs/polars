@@ -361,17 +361,13 @@ pub(super) async fn parquet_file_info(
 
                 // On top of the stratified sample, resolve every source at
                 // least `1 / n_parts` of the total: a distributed planner can
-                // only split such a file if it knows its row groups. Derived
-                // here because the total is only known once paths are expanded.
+                // only split such a file if it knows its row groups.
                 if let Some(n_parts) = resolve_heavy_sources
                     && let Some(bytes) = bytes_per_source
                 {
                     debug_assert_eq!(bytes.len(), n_sources);
                     let total: u128 = bytes.iter().map(|&b| b as u128).sum();
                     let n_parts = n_parts.get() as u128;
-                    // Multiplied out rather than divided: the floored quotient
-                    // sits below the real bar and would admit more than
-                    // `n_parts` sources. All-empty sources have no heavy source.
                     if total > 0 {
                         // Source 0 is always read.
                         indices.extend(
@@ -1484,13 +1480,8 @@ pub async fn ndjson_file_info(
 #[derive(Eq, Hash, PartialEq)]
 enum CachedSourceKey {
     ParquetIpc {
-        /// Keying on the first path alone would let `[a, b]` and `[a, c]`
-        /// collide, giving the second scan the first's per-source metadata.
         paths: Buffer<PlRefPath>,
         schema_overwrite: Option<SchemaRef>,
-        /// Without this, a weaker cached resolution answers a stronger request.
-        /// The resolve level and sample limit are process-global, so they cannot
-        /// differ between two scans of one plan.
         resolve_heavy_sources: Option<NonZeroU32>,
     },
     CsvJson {
