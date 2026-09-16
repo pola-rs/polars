@@ -561,7 +561,7 @@ impl SampleState {
             );
         }
 
-        Ok(Some(self.into_build(
+        Ok(Some(self.start_build(
             left_is_build,
             params,
             state,
@@ -571,7 +571,7 @@ impl SampleState {
 
     /// Start building from `left_is_build`, feeding it the morsels sampled from
     /// that side; the other side's samples are probed first later.
-    fn into_build(
+    fn start_build(
         &mut self,
         left_is_build: bool,
         params: &mut EquiJoinParams,
@@ -1626,7 +1626,7 @@ impl ComputeNode for EquiJoinNode {
                 if config::verbose() {
                     eprintln!("preferred build side done with {len} rows, building it");
                 }
-                let build_state = sample_state.into_build(
+                let build_state = sample_state.start_build(
                     prefer_left,
                     &mut self.params,
                     state,
