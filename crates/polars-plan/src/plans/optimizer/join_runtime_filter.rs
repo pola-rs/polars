@@ -116,41 +116,45 @@ fn process_join(
     // Try the right side first when candidates rank equally.
     let mut sides: Vec<BuildSide> = [false, true]
         .into_iter()
-        .filter_map(|left| {
+        .flat_map(|left| {
             let (stats, width) = if left {
                 (&left_stats, left_width)
             } else {
                 (&right_stats, right_width)
             };
-            let (rows, forced) = build_rows(stats, width)?;
-            Some(BuildSide { left, rows, forced })
+            build_rows(stats, width)
+                .into_iter()
+                .map(move |(rows, forced)| BuildSide { left, rows, forced })
         })
         .collect();
     sides.sort_by(|a, b| b.forced.cmp(&a.forced).then(a.rows.total_cmp(&b.rows)));
 
+    // A side is traced once, as a forced and a preferred candidate share the trace.
+    let mut traced: [Option<(Vec<TracedKey>, f64)>; 2] = [None, None];
     let chosen = sides.into_iter().find_map(|side| {
-        let probe_input = if side.left { input_right } else { input_left };
-        let probe_keys: Vec<Option<PlSmallStr>> = on
-            .iter()
-            .map(|(left_key, right_key)| {
-                let key = if side.left { right_key } else { left_key };
-                into_column(key.node(), expr_arena).cloned()
-            })
-            .collect();
-        let filters = trace_probe_keys(probe_input, probe_keys, ir_arena, expr_arena, scratch);
-        if filters.is_empty() {
-            return None;
-        }
-        let other = if side.left { &right_stats } else { &left_stats };
-        let probe_rows = filters
-            .iter()
-            .filter_map(|f| side_stats(f.scan, ir_arena, expr_arena, stats))
-            .fold(other.filtered, |acc, (scan, _)| acc.max(scan.filtered));
-        (probe_rows >= LOPSIDED_FACTOR * side.rows).then_some((side, filters))
+        let (filters, probe_rows) = traced[side.left as usize].get_or_insert_with(|| {
+            let probe_input = if side.left { input_right } else { input_left };
+            let probe_keys: Vec<Option<PlSmallStr>> = on
+                .iter()
+                .map(|(left_key, right_key)| {
+                    let key = if side.left { right_key } else { left_key };
+                    into_column(key.node(), expr_arena).cloned()
+                })
+                .collect();
+            let filters = trace_probe_keys(probe_input, probe_keys, ir_arena, expr_arena, scratch);
+            let other = if side.left { &right_stats } else { &left_stats };
+            let probe_rows = filters
+                .iter()
+                .filter_map(|f| side_stats(f.scan, ir_arena, expr_arena, stats))
+                .fold(other.filtered, |acc, (scan, _)| acc.max(scan.filtered));
+            (filters, probe_rows)
+        });
+        (!filters.is_empty() && *probe_rows >= LOPSIDED_FACTOR * side.rows).then_some(side)
     });
-    let Some((BuildSide { left, forced, .. }, filters)) = chosen else {
+    let Some(BuildSide { left, forced, .. }) = chosen else {
         return;
     };
+    let (filters, _) = traced[left as usize].take().unwrap();
 
     let mut runtime_filters = Vec::with_capacity(filters.len());
     for filter in filters {
@@ -181,19 +185,22 @@ struct BuildSide {
     forced: bool,
 }
 
-/// The rows a side is built from when it is filtered and fits the byte budget:
-/// its bound, which makes it a forced build side, else its estimate, which makes it
-/// a preferred one.
-fn build_rows(stats: &NodeStats, width: f64) -> Option<(f64, bool)> {
+/// The rows a filtered side may be built from: its bound when that fits the byte
+/// budget, which makes it a forced build side, and its estimate when that fits,
+/// which makes it a preferred one.
+fn build_rows(stats: &NodeStats, width: f64) -> Vec<(f64, bool)> {
+    let mut rows = Vec::new();
     if stats.filtered >= stats.unfiltered {
-        return None;
+        return rows;
     }
     let fits = |rows: f64| rows * width <= BUILD_BYTES;
-    match stats.max_rows() {
-        Some(bound) if fits(bound) => Some((bound, true)),
-        _ if fits(stats.filtered) => Some((stats.filtered, false)),
-        _ => None,
+    if let Some(bound) = stats.max_rows().filter(|b| fits(*b)) {
+        rows.push((bound, true));
     }
+    if fits(stats.filtered) {
+        rows.push((stats.filtered, false));
+    }
+    rows
 }
 
 /// A probe key that reached a scan.
