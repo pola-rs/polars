@@ -321,9 +321,10 @@ impl ParquetReadImpl {
         let target_values_per_thread = self.config.target_values_per_thread;
         let predicate = self.predicate.clone();
 
-        let mut use_prefiltered = matches!(self.options.parallel, ParallelStrategy::Prefiltered);
-        use_prefiltered |=
-            predicate.is_some() && matches!(self.options.parallel, ParallelStrategy::Auto);
+        let filters_rows = predicate.as_ref().is_some_and(|p| p.filters_rows);
+        let mut use_prefiltered =
+            filters_rows && matches!(self.options.parallel, ParallelStrategy::Prefiltered);
+        use_prefiltered |= filters_rows && matches!(self.options.parallel, ParallelStrategy::Auto);
 
         let predicate_field_indices: Arc<[usize]> =
             if use_prefiltered && let Some(predicate) = predicate.as_ref() {

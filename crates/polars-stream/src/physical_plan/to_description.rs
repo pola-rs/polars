@@ -1,6 +1,9 @@
 use std::collections::VecDeque;
 
 use polars_core::prelude::SortMultipleOptions;
+use polars_defs::join::JoinType;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::DynamicGroupOptions;
 #[cfg(feature = "iejoin")]
 use polars_descriptions::InequalityOperatorDescription;
 #[cfg(feature = "python")]
@@ -9,7 +12,6 @@ use polars_descriptions::{
     FileProviderDescription, PhysicalNodeDescription, PhysicalPropsDescription,
     PredicateFileSkipDescription, SortColumnDescription,
 };
-use polars_ops::frame::JoinType;
 use polars_plan::dsl::{
     FileSinkOptions, PartitionStrategyIR, PartitionedSinkOptionsIR, UnifiedSinkArgs,
 };
@@ -19,8 +21,6 @@ use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::options::JoinTypeOptionsIR;
 #[cfg(feature = "python")]
 use polars_plan::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
-#[cfg(feature = "dynamic_group_by")]
-use polars_time::DynamicGroupOptions;
 use polars_utils::aliases::{InitHashMaps, PlIndexSet};
 use polars_utils::arena::Arena;
 use polars_utils::index::idxsize_to_u64;
@@ -520,6 +520,7 @@ pub fn phys_props(
             right_on,
             args,
             fused_predicate,
+            runtime_filters: _,
         } => (
             PhysicalPropsDescription::EquiJoin {
                 how: format!("{}", args.how),
@@ -603,7 +604,7 @@ pub fn phys_props(
             let props = match &args.how {
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(asof_options) => {
-                    use polars_ops::prelude::AsOfOptions;
+                    use polars_defs::join::AsOfOptions;
 
                     let AsOfOptions {
                         strategy,
@@ -684,7 +685,7 @@ pub fn phys_props(
             let props = match &args.how {
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(asof_options) => {
-                    use polars_ops::prelude::AsOfOptions;
+                    use polars_defs::join::AsOfOptions;
 
                     let AsOfOptions {
                         strategy,
@@ -723,13 +724,13 @@ pub fn phys_props(
                 JoinType::IEJoin => match options {
                     JoinTypeOptionsIR::IEJoin {
                         ie_options:
-                            polars_ops::frame::IEJoinOptions {
+                            polars_defs::join::IEJoinOptions {
                                 operator1,
                                 operator2,
                             },
                         ..
                     } => {
-                        use polars_ops::prelude::InequalityOperator;
+                        use polars_defs::join::InequalityOperator;
 
                         let to_description = |o: &InequalityOperator| match o {
                             InequalityOperator::Lt => InequalityOperatorDescription::Lt,

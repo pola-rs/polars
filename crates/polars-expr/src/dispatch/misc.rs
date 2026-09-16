@@ -6,11 +6,11 @@ use polars_core::prelude::*;
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::series::ops::NullBehavior;
-use polars_ops::prelude::ListNameSpaceImpl;
 #[cfg(feature = "interpolate")]
-use polars_ops::series::InterpolationMethod;
+use polars_defs::expr::InterpolationMethod;
 #[cfg(feature = "rank")]
-use polars_ops::series::RankOptions;
+use polars_defs::expr::RankOptions;
+use polars_ops::prelude::ListNameSpaceImpl;
 use polars_ops::series::{ArgAgg, NullStrategy, SeriesMethods};
 #[cfg(feature = "dtype-array")]
 use polars_plan::dsl::ReshapeDimension;
@@ -871,8 +871,9 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
     #[cfg(all(feature = "rank", feature = "propagate_nans"))]
     fn spearman_rank_corr(s: &[Column], propagate_nans: bool) -> PolarsResult<Column> {
         use polars_core::utils::coalesce_nulls_columns;
+        use polars_defs::expr::RankMethod;
         use polars_ops::chunked_array::nan_propagating_aggregate::nan_max_s;
-        use polars_ops::series::{RankMethod, SeriesRank};
+        use polars_ops::series::SeriesRank;
         let a = &s[0];
         let b = &s[1];
 
@@ -1011,7 +1012,10 @@ pub(super) fn ewm_var(s: &Column, options: polars_ops::series::EWMOptions) -> Po
 }
 
 #[cfg(feature = "ewma_by")]
-pub(super) fn ewm_mean_by(s: &[Column], half_life: polars_time::Duration) -> PolarsResult<Column> {
+pub(super) fn ewm_mean_by(
+    s: &[Column],
+    half_life: polars_defs::time::duration::Duration,
+) -> PolarsResult<Column> {
     use polars_ops::series::SeriesMethods;
 
     let time_zone = match s[1].dtype() {
@@ -1019,7 +1023,7 @@ pub(super) fn ewm_mean_by(s: &[Column], half_life: polars_time::Duration) -> Pol
         _ => None,
     };
     polars_ensure!(!half_life.negative(), InvalidOperation: "half_life cannot be negative");
-    polars_time::prelude::ensure_is_constant_duration(half_life, time_zone, "half_life")?;
+    polars_defs::time::duration::ensure_is_constant_duration(half_life, time_zone, "half_life")?;
     // `half_life` is a constant duration so we can safely use `duration_ns()`.
     let half_life = half_life.duration_ns();
     let values = &s[0];
@@ -1037,7 +1041,10 @@ pub(super) fn ewm_mean_by(s: &[Column], half_life: polars_time::Duration) -> Pol
 }
 
 #[cfg(feature = "ewma_by")]
-pub(super) fn ewm_sum_by(s: &[Column], half_life: polars_time::Duration) -> PolarsResult<Column> {
+pub(super) fn ewm_sum_by(
+    s: &[Column],
+    half_life: polars_defs::time::duration::Duration,
+) -> PolarsResult<Column> {
     use polars_ops::series::SeriesMethods;
 
     let time_zone = match s[1].dtype() {
@@ -1045,7 +1052,7 @@ pub(super) fn ewm_sum_by(s: &[Column], half_life: polars_time::Duration) -> Pola
         _ => None,
     };
     polars_ensure!(!half_life.negative(), InvalidOperation: "half_life cannot be negative");
-    polars_time::prelude::ensure_is_constant_duration(half_life, time_zone, "half_life")?;
+    polars_defs::time::duration::ensure_is_constant_duration(half_life, time_zone, "half_life")?;
     let half_life = half_life.duration_ns();
     let values = &s[0];
     let times = &s[1];
@@ -1183,4 +1190,8 @@ pub(super) fn bin(s: &Column, options: IRBinOptions) -> PolarsResult<Column> {
         },
     }
     .map(Column::from)
+}
+
+pub fn dynamic_skip_batch(columns: &[Column], pred: &DynamicPredWeakRef) -> PolarsResult<Column> {
+    pred.evaluate_stats(&columns[0], &columns[1], &columns[2])
 }

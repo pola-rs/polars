@@ -2,6 +2,7 @@ use std::hash::BuildHasher;
 
 use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use arrow::legacy::utils::CustomIterTools;
+use polars_defs::join::JoinValidation;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;
@@ -9,6 +10,7 @@ use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 use polars_utils::unitvec;
 
 use super::*;
+use crate::frame::join::validation::validate_build;
 
 pub(crate) fn create_hash_and_keys_threaded_vectorized<I, T>(
     iters: Vec<I>,
@@ -216,7 +218,7 @@ where
         let expected_size = build.iter().map(|i| i.size_hint().0).sum();
         let hash_tbls = prepare_hashed_relation_threaded(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
-        validate.validate_build(build_size, expected_size, swapped)?;
+        validate_build(validate, build_size, expected_size, swapped)?;
         hash_tbls
     } else {
         prepare_hashed_relation_threaded(build)

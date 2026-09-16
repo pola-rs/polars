@@ -2,6 +2,7 @@ use polars_core::utils::{
     _set_partition_size, CustomIterTools, NoNull, accumulate_dataframes_vertical_unchecked,
     concat_df_unchecked, par_iter_bounded, split,
 };
+use polars_defs::join::{CrossJoinOptions, JoinType, MaintainOrderJoin};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;

@@ -6,7 +6,8 @@ use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
-use polars_ops::frame::{_finish_join, IEJoinOptions, InequalityOperator, JoinArgs, JoinBuildSide};
+use polars_defs::join::{IEJoinOptions, InequalityOperator, JoinArgs, JoinBuildSide};
+use polars_ops::frame::_finish_join;
 use polars_ops::series::{SearchSortedSide, search_sorted};
 
 use crate::execute::StreamingExecutionState;

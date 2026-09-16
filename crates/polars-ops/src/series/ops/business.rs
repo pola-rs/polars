@@ -6,21 +6,11 @@ use polars_core::prelude::*;
 #[cfg(feature = "dtype-date")]
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 use polars_core::{binary_output_height, ternary_output_height};
+use polars_defs::expr::Roll;
 use polars_utils::binary_search::{find_first_ge_index, find_first_gt_index};
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "timezones")]
 use crate::prelude::replace_time_zone;
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum Roll {
-    Forward,
-    Backward,
-    Raise,
-}
 
 macro_rules! empty_or_all_null {
     ($c:expr) => {

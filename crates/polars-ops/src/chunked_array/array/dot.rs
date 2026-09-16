@@ -8,10 +8,6 @@ use polars_core::prelude::*;
 
 type ArrayDotKernel = fn(&ArrayChunked, &ArrayChunked, usize) -> PolarsResult<Series>;
 
-pub fn is_supported_array_dot_dtype(dtype: &DataType) -> bool {
-    array_dot_kernel(dtype).is_some()
-}
-
 #[inline]
 fn multiply_then_add<T>(acc: T::Sum, lhs: T, rhs: T) -> T::Sum
 where
@@ -232,6 +228,10 @@ pub(super) fn array_dot(lhs: &ArrayChunked, rhs: &ArrayChunked) -> PolarsResult<
     assert_eq!(
         lhs_inner, rhs_inner,
         "arr.dot requires matching inner dtypes, got {lhs_inner} and {rhs_inner}"
+    );
+    debug_assert_eq!(
+        array_dot_kernel(lhs_inner).is_some(),
+        lhs_inner.is_supported_array_dot_input()
     );
     let Some(kernel) = array_dot_kernel(lhs_inner) else {
         polars_bail!(

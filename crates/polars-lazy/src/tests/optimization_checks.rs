@@ -1,4 +1,4 @@
-use polars_ops::frame::MaintainOrderJoin;
+use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 
 use super::*;
 
