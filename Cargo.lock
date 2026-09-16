@@ -3070,6 +3070,7 @@ dependencies = [
  "polars-buffer",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-expr",
  "polars-io",
@@ -3267,6 +3268,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-defs"
+version = "0.55.1"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "polars-arrow",
+ "polars-compute",
+ "polars-core",
+ "polars-error",
+ "polars-utils",
+ "schemars",
+ "serde",
+ "strum_macros 0.28.0",
+]
+
+[[package]]
 name = "polars-descriptions"
 version = "0.55.1"
 dependencies = [
@@ -3351,6 +3368,7 @@ dependencies = [
  "polars-buffer",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-io",
  "polars-json",
  "polars-ops",
@@ -3465,6 +3483,7 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-defs",
  "polars-expr",
  "polars-io",
  "polars-json",
@@ -3490,6 +3509,7 @@ dependencies = [
  "memmap2",
  "polars-arrow",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-expr",
  "polars-io",
@@ -3558,6 +3578,7 @@ dependencies = [
  "polars-buffer",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-json",
  "polars-schema",
@@ -3648,6 +3669,7 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-defs",
  "polars-descriptions",
  "polars-error",
  "polars-ffi",
@@ -3697,6 +3719,7 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-defs",
  "polars-descriptions",
  "polars-dtype",
  "polars-error",
@@ -3794,6 +3817,7 @@ dependencies = [
  "hex",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-lazy",
  "polars-ops",
@@ -3830,6 +3854,7 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-defs",
  "polars-descriptions",
  "polars-error",
  "polars-expr",
@@ -3878,6 +3903,7 @@ dependencies = [
  "polars-arrow",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-ops",
  "polars-utils",

@@ -4,12 +4,14 @@ use polars_core::chunked_array::ops::row_encode::{
 use polars_core::series::BitRepr;
 use polars_core::utils::split;
 use polars_core::with_match_physical_float_polars_type;
+use polars_defs::join::JoinValidation;
 use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::DirtyHash;
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 use super::*;
+use crate::frame::join::validation::validate_probe;
 use crate::series::SeriesSealed;
 
 pub trait SeriesJoin: SeriesSealed + Sized {
@@ -22,7 +24,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
     ) -> PolarsResult<LeftJoinIds> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, false, nulls_equal)?;
+        validate_probe(validate, &lhs, &rhs, false, nulls_equal)?;
 
         let lhs_dtype = lhs.dtype();
         let rhs_dtype = rhs.dtype();
@@ -238,7 +240,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
     ) -> PolarsResult<(InnerJoinIds, bool)> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, true, nulls_equal)?;
+        validate_probe(validate, &lhs, &rhs, true, nulls_equal)?;
 
         let lhs_dtype = lhs.dtype();
         let rhs_dtype = rhs.dtype();
@@ -363,7 +365,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
     ) -> PolarsResult<(PlPrimitiveArray<IdxSize>, PlPrimitiveArray<IdxSize>)> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, true, nulls_equal)?;
+        validate_probe(validate, &lhs, &rhs, true, nulls_equal)?;
 
         let lhs_dtype = lhs.dtype();
         let rhs_dtype = rhs.dtype();

@@ -49,6 +49,7 @@ test:  ## Run tests
 		-p polars-array \
 		-p polars-compute \
 		-p polars-core \
+		-p polars-defs \
 		-p polars-dtype \
 		-p polars-io \
 		-p polars-lazy \
@@ -67,6 +68,7 @@ nextest:  ## Run tests with nextest
 	cargo nextest run --all-features \
 		-p polars-compute \
 		-p polars-core \
+		-p polars-defs \
 		-p polars-dtype \
 		-p polars-io \
 		-p polars-lazy \
@@ -125,6 +127,7 @@ publish:  ## Publish Polars crates
 	 -p polars-row \
 	 -p polars-json \
 	 -p polars-core \
+	 -p polars-defs \
 	 -p polars-ffi \
 	 -p polars-ops \
 	 -p polars-testing \
@@ -152,6 +155,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-row
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
+	cargo publish --allow-dirty -p polars-defs
 	cargo publish --allow-dirty -p polars-ffi
 	cargo publish --allow-dirty -p polars-ops
 	cargo publish --allow-dirty -p polars-testing

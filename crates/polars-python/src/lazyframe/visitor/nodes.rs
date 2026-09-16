@@ -2,10 +2,10 @@ use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::python_dsl::PythonScanSource;
 use polars::prelude::{ColumnMapping, PredicateFileSkip};
 use polars_core::prelude::IdxSize;
-use polars_io::cloud::CloudOptions;
 #[cfg(feature = "asof_join")]
-use polars_ops::prelude::AsofStrategy;
-use polars_ops::prelude::JoinType;
+use polars_defs::join::AsofStrategy;
+use polars_defs::join::JoinType;
+use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};
 #[cfg(feature = "iejoin")]

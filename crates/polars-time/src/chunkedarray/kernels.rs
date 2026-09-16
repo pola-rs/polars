@@ -4,8 +4,8 @@ use arrow::temporal_conversions::date32_to_date_opt;
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time_opt;
 use chrono::{Datelike, Timelike};
+use polars_utils::time::{days_in_month, is_leap_year};
 
-use super::super::windows::calendar::*;
 use super::*;
 
 trait PolarsIso {

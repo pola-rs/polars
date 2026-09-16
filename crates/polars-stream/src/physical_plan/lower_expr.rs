@@ -9,11 +9,11 @@ use polars_core::prelude::{
 };
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaExt};
+use polars_defs::join::{JoinArgs, JoinType};
 use polars_error::{PolarsResult, feature_gated};
 use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
-use polars_ops::frame::{JoinArgs, JoinType};
 use polars_ops::series::{RLE_LENGTH_COLUMN_NAME, RLE_VALUE_COLUMN_NAME};
 use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};

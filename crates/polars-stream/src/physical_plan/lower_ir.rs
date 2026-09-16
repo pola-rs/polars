@@ -9,12 +9,11 @@ use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet, StringChu
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::{SchemaExtPl, config};
+use polars_defs::join::{JoinType, MaintainOrderJoin};
 use polars_error::{PolarsResult, polars_ensure};
 use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
-use polars_ops::frame::JoinType;
-use polars_ops::prelude::MaintainOrderJoin;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
@@ -1065,6 +1064,7 @@ pub fn lower_ir(
             let mut tmp_left_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
+            let runtime_filters = options.runtime_filters.clone();
             let options = options.options.clone();
             // Only the hash equi join evaluates a fused predicate natively; other strategies get
             // a `Filter` on top, and the in-memory fallback applies it from `options`.
@@ -1394,6 +1394,7 @@ pub fn lower_ir(
                                 right_on: trans_right_on,
                                 args: args.clone(),
                                 fused_predicate: native,
+                                runtime_filters: runtime_filters.clone(),
                             },
                         ))
                     },

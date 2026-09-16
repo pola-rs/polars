@@ -1,7 +1,9 @@
 use polars_core::utils::Container;
+use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 
 use super::*;
-use crate::prelude::*;
+#[cfg(feature = "chunked_ids")]
+use crate::prelude::TakeChunkedHorPar;
 
 pub(super) fn left_join_from_series(
     left: DataFrame,
