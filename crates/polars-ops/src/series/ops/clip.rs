@@ -184,14 +184,24 @@ where
     T: PolarsNumericType,
     T::Native: PartialOrd,
 {
-    match (min.len(), max.len()) {
-        (1, 1) => match (min.get(0), max.get(0)) {
+    // A bound reaches this kernel already broadcast to the column's length, so a literal bound is
+    // a chunk that repeats one value rather than a column of one element. Ask what each bound
+    // repeats: one bound settles the clamp for every row and leaves a unary walk. Only a bound
+    // standing for one row or for as many rows as the column has may settle it, since a longer
+    // bound beside a one-element column is what the output's length comes from.
+    let repeated = |b: &ChunkedArray<T>| {
+        (b.len() == 1 || b.len() == ca.len())
+            .then(|| b.scalar_value())
+            .flatten()
+    };
+    match (repeated(min), repeated(max)) {
+        (Some(min), Some(max)) => match (min, max) {
             (Some(min), Some(max)) => clip_unary(ca, |v| clamp(v, min, max)),
             (Some(min), None) => clip_unary(ca, |v| clamp_min(v, min)),
             (None, Some(max)) => clip_unary(ca, |v| clamp_max(v, max)),
             (None, None) => ca.clone(),
         },
-        (1, _) => match min.get(0) {
+        (Some(min), None) => match min {
             Some(min) => binary_elementwise(ca, max, |opt_s, opt_max| match (opt_s, opt_max) {
                 (Some(s), Some(max)) => Some(clamp(s, min, max)),
                 (Some(s), None) => Some(clamp_min(s, min)),
@@ -203,7 +213,7 @@ where
                 (None, _) => None,
             }),
         },
-        (_, 1) => match max.get(0) {
+        (None, Some(max)) => match max {
             Some(max) => binary_elementwise(ca, min, |opt_s, opt_min| match (opt_s, opt_min) {
                 (Some(s), Some(min)) => Some(clamp(s, min, max)),
                 (Some(s), None) => Some(clamp_max(s, max)),
@@ -215,7 +225,7 @@ where
                 (None, _) => None,
             }),
         },
-        _ => clip_ternary(ca, min, max),
+        (None, None) => clip_ternary(ca, min, max),
     }
 }
 
@@ -229,12 +239,14 @@ where
     T::Native: PartialOrd,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
-    match bound.len() {
-        1 => match bound.get(0) {
-            Some(bound) => clip_unary(ca, |v| op(v, bound)),
-            None => ca.clone(),
-        },
-        _ => binary_elementwise(ca, bound, |opt_s, opt_bound| match (opt_s, opt_bound) {
+    // See `clip_helper_both_bounds`: the bound may repeat one value over the whole column.
+    let repeated = (bound.len() == 1 || bound.len() == ca.len())
+        .then(|| bound.scalar_value())
+        .flatten();
+    match repeated {
+        Some(Some(bound)) => clip_unary(ca, |v| op(v, bound)),
+        Some(None) => ca.clone(),
+        None => binary_elementwise(ca, bound, |opt_s, opt_bound| match (opt_s, opt_bound) {
             (Some(s), Some(bound)) => Some(op(s, bound)),
             (Some(s), None) => Some(s),
             (None, _) => None,
