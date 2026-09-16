@@ -7,6 +7,14 @@ use super::ListNameSpaceImpl;
 use crate::series::convert_and_bound_idx_ca;
 
 pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> PolarsResult<Column> {
+    // A literal index reaches this kernel already broadcast over the lists, so ask what the index
+    // column repeats rather than how long it is: one index reads the same slot out of every list,
+    // which the arm below answers without building an index per row.
+    let settled = (index.len() == ca.len())
+        .then(|| index.settled_to_one_element())
+        .flatten();
+    let index = settled.as_ref().unwrap_or(index);
+
     match index.len() {
         1 => {
             let index = index.get(0);
