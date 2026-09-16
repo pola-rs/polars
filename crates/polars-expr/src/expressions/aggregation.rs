@@ -208,6 +208,16 @@ impl PhysicalExpr for AggregationExpr {
             return Ok(ac);
         }
 
+        // Fast path: first/last/item on scalar.
+        if matches!(&ac.state, AggState::AggregatedScalar(_)) {
+            match self.agg_type.groupby {
+                GroupByMethod::First => return Ok(ac),
+                GroupByMethod::Last => return Ok(ac),
+                GroupByMethod::Item { allow_empty: _ } => return Ok(ac),
+                _ => {},
+            }
+        }
+
         // AggregatedScalar has no defined group structure. We fix it up here, so that we can
         // reliably call `agg_*` functions with the groups.
         ac.set_groups_for_undefined_agg_states();

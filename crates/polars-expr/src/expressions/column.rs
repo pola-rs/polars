@@ -119,7 +119,17 @@ impl PhysicalExpr for ColumnExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let c = self.evaluate(df, state)?;
-        Ok(AggregationContext::new(c, Cow::Borrowed(groups), false))
+
+        // When a column expression is evaluated inside a `{list,arr}.{eval,agg}` expression,
+        // `state.element` is `Some` and the eval machinery has already aligned `df` to the groups
+        // (one row per group, with any null outer rows dropped). We therefore expose the column as
+        // a scalar-per-group value.
+        let aggregated = state.element.is_some();
+        Ok(AggregationContext::new(
+            c,
+            Cow::Borrowed(groups),
+            aggregated,
+        ))
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
