@@ -69,7 +69,7 @@ where
     } else {
         build_tables(build, nulls_equal)
     };
-    try_raise_keyboard_interrupt();
+    try_raise_polars_abort();
 
     let n_tables = hash_tbls.len();
     let offsets = probe_to_offsets(&probe);

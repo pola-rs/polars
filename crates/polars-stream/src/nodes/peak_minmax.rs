@@ -112,7 +112,9 @@ impl ComputeNode for PeakMinMaxNode {
                     )?
                     .into_column();
                     let df = unsafe { DataFrame::new_unchecked(column.len(), vec![column]) };
-                    _ = send.send(Morsel::new(df, seq, SourceToken::new())).await;
+                    _ = send
+                        .send(Morsel::new_unregistered(df, seq, SourceToken::new()))
+                        .await;
 
                     self.state = State::Done;
                     Ok(())
@@ -125,7 +127,8 @@ impl ComputeNode for PeakMinMaxNode {
                     let source_token = SourceToken::new();
 
                     while let Ok(m) = recv.recv().await {
-                        let (df, seq, in_source_token, in_wait_token) = m.into_inner();
+                        let (sf, seq, in_source_token, in_wait_token) = m.into_inner();
+                        let df = sf.into_df().await;
                         drop(in_wait_token);
                         if df.height() == 0 {
                             continue;
@@ -152,11 +155,8 @@ impl ComputeNode for PeakMinMaxNode {
                             .into_column();
 
                         let wg = WaitGroup::default();
-                        let mut m = Morsel::new(
-                            unsafe { DataFrame::new_unchecked(out.len(), vec![out]) },
-                            prev_seq,
-                            source_token.clone(),
-                        );
+                        let out = unsafe { DataFrame::new_unchecked(out.len(), vec![out]) };
+                        let mut m = Morsel::new_unregistered(out, prev_seq, source_token.clone());
                         m.set_consume_token(wg.token());
 
                         if send.send(m).await.is_err() {

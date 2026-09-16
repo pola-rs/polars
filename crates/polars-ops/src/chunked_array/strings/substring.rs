@@ -1,8 +1,10 @@
 use arrow::array::View;
 use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary_elementwise};
 use polars_core::prelude::{ChunkFullNull, Int64Chunked, StringChunked, UInt64Chunked};
+use polars_core::series::IsSorted;
 use polars_error::{PolarsResult, polars_ensure};
 
+#[inline(always)]
 fn is_utf8_codepoint_start(b: u8) -> bool {
     // The top two bits of a continuation byte are 10. Any other value is a
     // starting byte. We can use signed comparison to test for this in one
@@ -53,6 +55,7 @@ pub fn char_to_byte_idx_or_cp_count(s: &str, char_idx: usize) -> Result<usize, u
 /// equivalent offset in bytes.
 ///
 /// If `char_idx` would be out-of-bounds s.len() is returned.
+#[inline]
 pub fn char_to_byte_idx(s: &str, char_idx: usize) -> usize {
     if char_idx >= s.len() {
         // No need to even count.
@@ -248,12 +251,17 @@ pub(super) fn substring(
                 return StringChunked::full_null(ca.name().clone(), ca.len());
             };
 
-            unsafe {
+            let mut out = unsafe {
                 ca.apply_views(|view, val| {
                     let (start, end) = substring_ternary_offsets_value(val, offset, length);
                     update_view(view, start, end, val)
                 })
+            };
+            // the array only remains sorted if we take a prefix
+            if offset != 0 {
+                out.set_sorted_flag(IsSorted::Not);
             }
+            out
         },
         (1, _, 1) => {
             let str_val = ca.get(0);
@@ -329,12 +337,14 @@ pub(super) fn tail(ca: &StringChunked, n: &Int64Chunked) -> PolarsResult<StringC
             let Some(n) = n else {
                 return Ok(StringChunked::full_null(ca.name().clone(), len));
             };
-            unsafe {
+            let mut out = unsafe {
                 ca.apply_views(|view, val| {
                     let start = tail_binary_values(val, n);
                     update_view(view, start, val.len(), val)
                 })
-            }
+            };
+            out.set_sorted_flag(IsSorted::Not);
+            out
         },
         // TODO! below should also work on only views
         (1, _) => {

@@ -1,12 +1,33 @@
 #![allow(unused)]
-use polars_core::error::{PolarsResult, polars_bail};
+use polars_core::error::{PolarsResult, polars_bail, polars_err};
 use polars_core::schema::*;
+use polars_ops::frame::{JoinBuildSide, JoinValidation};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{AExpr, aexpr_to_leaf_names_iter};
 use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
-use crate::plans::{ExprIR, OutputName};
+use crate::plans::{ExprIR, JoinOptionsIR, JoinTypeOptionsIR, OutputName};
+use crate::prelude::{JoinArgs, JoinType, MaintainOrderJoin};
+
+/// Nothing about the join pins it to its inputs as written: no slice, no order to
+/// keep, no side named for validation, no forced build side.
+pub(super) fn unconstrained(args: &JoinArgs) -> bool {
+    args.slice.is_none()
+        && matches!(args.maintain_order, MaintainOrderJoin::None)
+        && matches!(args.validation, JoinValidation::ManyToMany)
+        && matches!(
+            args.build_side,
+            None | Some(JoinBuildSide::PreferLeft | JoinBuildSide::PreferRight)
+        )
+}
+
+/// An inner join on keys alone, free to be placed elsewhere in a chain of joins.
+pub(super) fn plain_inner_equi_join(options: &JoinOptionsIR) -> bool {
+    matches!(options.args.how, JoinType::Inner)
+        && unconstrained(&options.args)
+        && matches!(&options.options, JoinTypeOptionsIR::Equi { on, fused_predicate: None } if !on.is_empty())
+}
 
 /// Join origin of an expression
 #[derive(Debug, Clone, PartialEq, Copy)]
@@ -81,7 +102,22 @@ impl ExprOrigin {
             {
                 ExprOrigin::Right
             } else {
-                polars_bail!(ColumnNotFound: "{column_name}")
+                let suggestion = polars_utils::levenshtein::did_you_mean(
+                    column_name,
+                    left_schema
+                        .iter_names()
+                        .chain(right_schema.iter_names())
+                        .map(|s| s.as_str()),
+                );
+                let available: Vec<_> = left_schema
+                    .iter_names()
+                    .chain(right_schema.iter_names())
+                    .collect();
+                return Err(if let Some(s) = suggestion {
+                    polars_err!(ColumnNotFound: "unable to find column {:?}; valid columns: {:?}\n\nDid you mean {:?}?", column_name, available, s)
+                } else {
+                    polars_err!(ColumnNotFound: "unable to find column {:?}; valid columns: {:?}", column_name, available)
+                });
             },
         )
     }

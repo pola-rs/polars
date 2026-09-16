@@ -4,7 +4,7 @@ use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
 use polars_async::executor::{self};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
-use polars_core::prelude::ArrowSchema;
+use polars_core::prelude::{ArrowSchema, DataType};
 use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
@@ -13,9 +13,10 @@ use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::{BufferByteSource, DynByteSource, DynByteSourceBuilder};
-use polars_parquet::read::schema::infer_schema_with_options;
+use polars_parquet::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
+use polars_utils::aliases::PlHashMap;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::slice_enum::Slice;
 
@@ -23,6 +24,7 @@ use super::multi_scan::reader_interface::output::{FileReaderOutputRecv, FileRead
 use super::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, calc_row_position_after_slice,
 };
+use super::shared::pipeline_budget::PipelineBudget;
 use crate::metrics::OptIOMetrics;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
@@ -46,6 +48,7 @@ pub struct ParquetFileReader {
     config: Arc<ParquetOptions>,
     /// Set by the builder if we have metadata left over from DSL conversion.
     metadata: Option<Arc<FileMetadata>>,
+    file_size: Option<usize>,
     byte_source_builder: DynByteSourceBuilder,
     row_group_prefetch_sync: RowGroupPrefetchSync,
     io_metrics: OptIOMetrics,
@@ -55,11 +58,53 @@ pub struct ParquetFileReader {
     init_data: Option<InitializedState>,
 }
 
-struct RowGroupPrefetchSync {
-    prefetch_limit: usize,
-    prefetch_semaphore: Arc<tokio::sync::Semaphore>,
-    shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+fn schema_inference_options(config: &ParquetOptions) -> SchemaInferenceOptions {
+    let Some(schema) = config.schema.as_ref() else {
+        return SchemaInferenceOptions::default();
+    };
+    let default = Arc::new(SchemaInferenceOptions::default());
 
+    SchemaInferenceOptions {
+        int96_coerce_to_timeunit: default.int96_coerce_to_timeunit,
+        nested: schema
+            .iter()
+            .map(|(name, dtype)| (name.clone(), int96_options(dtype, &default)))
+            .collect(),
+        default: Some(default),
+    }
+}
+
+fn int96_options(
+    mut dtype: &DataType,
+    default: &Arc<SchemaInferenceOptions>,
+) -> SchemaInferenceOptions {
+    while let Some(inner) = dtype.inner_dtype() {
+        dtype = inner;
+    }
+
+    let (int96_coerce_to_timeunit, nested) = match dtype {
+        DataType::Datetime(time_unit, _) => (time_unit.to_arrow(), PlHashMap::default()),
+        DataType::Struct(fields) => (
+            default.int96_coerce_to_timeunit,
+            fields
+                .iter()
+                .map(|f| (f.name().clone(), int96_options(f.dtype(), default)))
+                .collect(),
+        ),
+        _ => (default.int96_coerce_to_timeunit, PlHashMap::default()),
+    };
+
+    SchemaInferenceOptions {
+        int96_coerce_to_timeunit,
+        nested,
+        default: Some(default.clone()),
+    }
+}
+
+struct RowGroupPrefetchSync {
+    /// Pipeline throttling, by count and by memory.
+    pipeline_budget: PipelineBudget,
+    shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     /// Waits for the previous reader to finish spawning prefetches.
     prev_all_spawned: Option<WaitGroup>,
     /// Dropped once the current reader has finished spawning prefetches.
@@ -87,6 +132,7 @@ impl FileReader for ParquetFileReader {
         let byte_source_builder = self.byte_source_builder.clone();
         let cloud_options = self.cloud_options.clone();
         let io_metrics = self.io_metrics.clone();
+        let file_size = self.file_size;
 
         let byte_source = ASYNC
             .spawn(async move {
@@ -112,7 +158,12 @@ impl FileReader for ParquetFileReader {
 
                 ASYNC
                     .spawn(async move {
-                        metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose).await
+                        metadata_utils::read_parquet_metadata_bytes(
+                            &byte_source,
+                            file_size,
+                            verbose,
+                        )
+                        .await
                     })
                     .await
                     .unwrap()?
@@ -127,7 +178,10 @@ impl FileReader for ParquetFileReader {
             )?)
         };
 
-        let file_schema = Arc::new(infer_schema_with_options(&file_metadata, &None)?);
+        let file_schema = Arc::new(infer_schema_with_options(
+            &file_metadata,
+            &schema_inference_options(&self.config),
+        )?);
 
         self.init_data = Some(InitializedState {
             file_metadata,
@@ -177,6 +231,8 @@ impl FileReader for ParquetFileReader {
             pre_slice,
             predicate: None,
             cast_columns_policy: _,
+            extra_columns_policy: _,
+            missing_columns_policy: _,
             num_pipelines: _,
             disable_morsel_split: true,
             last_morsel_pipelines: _,
@@ -206,6 +262,8 @@ impl FileReader for ParquetFileReader {
             pre_slice: pre_slice_arg,
             predicate,
             cast_columns_policy,
+            extra_columns_policy: _,
+            missing_columns_policy: _,
             num_pipelines,
             disable_morsel_split,
             last_morsel_pipelines,
@@ -284,7 +342,7 @@ impl FileReader for ParquetFileReader {
                 file_schema.len(),
                 pre_slice_arg,
                 normalized_pre_slice,
-                &row_index,
+                row_index,
                 predicate.as_ref().map(|_| "<predicate>"),
             )
         }
@@ -294,7 +352,7 @@ impl FileReader for ParquetFileReader {
 
             let handle = executor::spawn(TaskPriority::Low, async move {
                 let _ = tx
-                    .send_morsel(Morsel::new(
+                    .send_morsel(Morsel::new_unregistered(
                         DataFrame::empty_with_height(single_morsel_height),
                         MorselSeq::default(),
                         SourceToken::default(),
@@ -311,7 +369,8 @@ impl FileReader for ParquetFileReader {
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
         let row_group_prefetch_size = self
             .row_group_prefetch_sync
-            .prefetch_limit
+            .pipeline_budget
+            .count_limit()
             .min(file_metadata.row_groups.len())
             .max(1);
 
@@ -344,7 +403,8 @@ impl FileReader for ParquetFileReader {
             verbose,
             memory_prefetch_func,
             row_index,
-            rg_prefetch_semaphore: Arc::clone(&self.row_group_prefetch_sync.prefetch_semaphore),
+
+            pipeline_budget: self.row_group_prefetch_sync.pipeline_budget.clone(),
             rg_prefetch_prev_all_spawned: Option::take(
                 &mut self.row_group_prefetch_sync.prev_all_spawned,
             ),
@@ -437,7 +497,7 @@ struct ParquetReadImpl {
     memory_prefetch_func: fn(&[u8]) -> (),
     row_index: Option<RowIndex>,
 
-    rg_prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    pipeline_budget: PipelineBudget,
     rg_prefetch_prev_all_spawned: Option<WaitGroup>,
     rg_prefetch_current_all_spawned: Option<WaitToken>,
     disable_morsel_split: bool,
@@ -459,7 +519,7 @@ struct Config {
 impl ParquetReadImpl {
     fn run(mut self) -> AsyncTaskData {
         if self.verbose {
-            eprintln!("[ParquetFileReader]: {:?}", &self.config);
+            eprintln!("[ParquetFileReader]: {:?}", self.config);
         }
 
         self.init_morsel_distributor()

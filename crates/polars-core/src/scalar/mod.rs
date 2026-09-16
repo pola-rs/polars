@@ -13,7 +13,7 @@ use crate::chunked_array::cast::CastOptions;
 use crate::datatypes::{AnyValue, DataType};
 use crate::prelude::{Column, Series};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Scalar {
     dtype: DataType,
     value: AnyValue<'static>,

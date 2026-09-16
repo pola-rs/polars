@@ -54,17 +54,15 @@ fn cast_rhs(
             })?;
         }
 
-        if s.len() != length {
+        if allow_broadcast {
+            // broadcast JIT
+            s.broadcast_in_place_to(length)?;
+        } else {
             polars_ensure!(
-                s.len() == 1,
+                s.len() == length || s.len() == 1,
                 ShapeMismatch: "series length {} does not match expected length of {}",
                 s.len(), length
             );
-            if allow_broadcast {
-                // broadcast JIT
-                *s = s.new_from_index(0, length)
-            }
-            // else do nothing
         }
     }
     Ok(())
@@ -547,7 +545,7 @@ pub trait ListNameSpaceImpl: AsList {
         &self,
         n: &Series,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
@@ -612,7 +610,7 @@ pub trait ListNameSpaceImpl: AsList {
         &self,
         fraction: &Series,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
@@ -892,7 +890,7 @@ fn sample_n_broadcast_list(
     single_list: Option<Series>,
     n: &IdxCa,
     with_replacement: bool,
-    shuffle: bool,
+    shuffle: Option<bool>,
     seed: Option<u64>,
     target_len: usize,
     name: PlSmallStr,
@@ -929,7 +927,7 @@ fn sample_frac_broadcast_list(
     single_list: Option<Series>,
     fraction: &Float64Chunked,
     with_replacement: bool,
-    shuffle: bool,
+    shuffle: Option<bool>,
     seed: Option<u64>,
     target_len: usize,
     name: PlSmallStr,

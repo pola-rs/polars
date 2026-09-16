@@ -16,12 +16,14 @@ use crate::series::implementations::null::NullChunked;
 pub struct NonNull<T>(pub T);
 
 impl<T: TotalEq> TotalEq for NonNull<T> {
+    #[inline]
     fn tot_eq(&self, other: &Self) -> bool {
         self.0.tot_eq(&other.0)
     }
 }
 
 impl<T: TotalOrd> TotalOrd for NonNull<T> {
+    #[inline]
     fn tot_cmp(&self, other: &Self) -> Ordering {
         self.0.tot_cmp(&other.0)
     }
@@ -31,9 +33,12 @@ impl<T> IsNull for NonNull<T> {
     const HAS_NULLS: bool = false;
     type Inner = T;
 
+    #[inline(always)]
     fn is_null(&self) -> bool {
         false
     }
+
+    #[inline(always)]
     fn unwrap_inner(self) -> Self::Inner {
         self.0
     }
@@ -46,6 +51,8 @@ pub trait GetInner {
 
 impl<'a, T: PolarsDataType> GetInner for &'a ChunkedArray<T> {
     type Item = Option<T::Physical<'a>>;
+
+    #[inline(always)]
     unsafe fn get_unchecked(&self, idx: usize) -> Self::Item {
         ChunkedArray::get_unchecked(self, idx)
     }
@@ -53,6 +60,8 @@ impl<'a, T: PolarsDataType> GetInner for &'a ChunkedArray<T> {
 
 impl<'a, T: StaticArray> GetInner for &'a T {
     type Item = Option<T::ValueT<'a>>;
+
+    #[inline(always)]
     unsafe fn get_unchecked(&self, idx: usize) -> Self::Item {
         <T as StaticArray>::get_unchecked(self, idx)
     }
@@ -60,6 +69,8 @@ impl<'a, T: StaticArray> GetInner for &'a T {
 
 impl<'a, T: PolarsDataType> GetInner for NonNull<&'a ChunkedArray<T>> {
     type Item = NonNull<T::Physical<'a>>;
+
+    #[inline(always)]
     unsafe fn get_unchecked(&self, idx: usize) -> Self::Item {
         NonNull(self.0.value_unchecked(idx))
     }
@@ -67,59 +78,10 @@ impl<'a, T: PolarsDataType> GetInner for NonNull<&'a ChunkedArray<T>> {
 
 impl<'a, T: StaticArray> GetInner for NonNull<&'a T> {
     type Item = NonNull<T::ValueT<'a>>;
+
+    #[inline(always)]
     unsafe fn get_unchecked(&self, idx: usize) -> Self::Item {
         NonNull(self.0.value_unchecked(idx))
-    }
-}
-
-pub trait TotalEqInner: Send + Sync {
-    /// # Safety
-    /// Does not do any bound checks.
-    unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool;
-}
-
-impl<T> TotalEqInner for T
-where
-    T: GetInner + Send + Sync,
-    T::Item: TotalEq,
-{
-    #[inline]
-    unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
-        self.get_unchecked(idx_a).tot_eq(&self.get_unchecked(idx_b))
-    }
-}
-
-impl TotalEqInner for &NullChunked {
-    unsafe fn eq_element_unchecked(&self, _idx_a: usize, _idx_b: usize) -> bool {
-        true
-    }
-}
-
-/// Create a type that implements TotalEqInner.
-pub(crate) trait IntoTotalEqInner<'a> {
-    /// Create a type that implements `TakeRandom`.
-    fn into_total_eq_inner(self) -> Box<dyn TotalEqInner + 'a>;
-}
-
-impl<'a> IntoTotalEqInner<'a> for &'a NullChunked {
-    fn into_total_eq_inner(self) -> Box<dyn TotalEqInner + 'a> {
-        Box::new(self)
-    }
-}
-
-/// We use a trait object because we want to call this from Series and cannot use a typed enum.
-impl<'a, T> IntoTotalEqInner<'a> for &'a ChunkedArray<T>
-where
-    T: PolarsDataType,
-    T::Physical<'a>: TotalEq,
-{
-    fn into_total_eq_inner(self) -> Box<dyn TotalEqInner + 'a> {
-        match self.layout() {
-            ChunkedArrayLayout::SingleNoNull(arr) => Box::new(NonNull(arr)),
-            ChunkedArrayLayout::Single(arr) => Box::new(arr),
-            ChunkedArrayLayout::MultiNoNull(ca) => Box::new(NonNull(ca)),
-            ChunkedArrayLayout::Multi(ca) => Box::new(ca),
-        }
     }
 }
 

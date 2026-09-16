@@ -193,7 +193,7 @@ def test_linear_space_incompatible_dtypes(
 
 def test_linear_space_expr_wrong_length() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-    msg = "unable to add a column of length 6 to a DataFrame of height 5"
+    msg = "can't broadcast Series 'literal' of length 6 to length 5"
     streaming_msg = "zip node received non-equal length inputs"
     with pytest.raises(ShapeError, match=rf"({msg})|({streaming_msg})"):
         df.with_columns(pl.linear_space(0, 1, 6))

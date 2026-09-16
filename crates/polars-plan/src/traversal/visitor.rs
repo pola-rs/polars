@@ -3,8 +3,12 @@ use std::ops::ControlFlow;
 
 use crate::traversal::edge_provider::NodeEdgesProvider;
 
+/// Controls whether a [`NodeVisitor`] visits the inputs of the current node.
 pub enum SubtreeVisit {
+    /// Visit the current node's inputs before calling [`NodeVisitor::post_visit`].
     Visit,
+    /// Skip visitor callbacks for the current node's input subtree, then call
+    /// [`NodeVisitor::post_visit`] for the current node.
     Skip,
 }
 
@@ -32,6 +36,7 @@ pub trait NodeVisitor {
     /// to that node, that node will not be visited.
     ///
     /// Called before pre_visit of each node.
+    #[inline]
     fn is_deleted_edge(&mut self, _edge: &Self::Edge) -> Option<bool> {
         None
     }

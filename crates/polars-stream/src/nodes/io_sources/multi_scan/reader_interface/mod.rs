@@ -13,7 +13,7 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::CastColumnsPolicy;
+use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
@@ -147,6 +147,8 @@ pub struct BeginReadArgs {
     ///
     /// This can be ignored by the reader, as the policy is also applied in post.
     pub cast_columns_policy: CastColumnsPolicy,
+    pub extra_columns_policy: ExtraColumnsPolicy,
+    pub missing_columns_policy: MissingColumnsPolicy,
 
     pub num_pipelines: usize,
     pub disable_morsel_split: bool,
@@ -172,6 +174,8 @@ impl Default for BeginReadArgs {
             predicate: None,
             // TODO: Use less restrictive default
             cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
+            extra_columns_policy: ExtraColumnsPolicy::Raise,
+            missing_columns_policy: MissingColumnsPolicy::Raise,
             num_pipelines: 1,
             disable_morsel_split: false,
             last_morsel_pipelines: 1,

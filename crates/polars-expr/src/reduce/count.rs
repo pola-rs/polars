@@ -110,12 +110,21 @@ impl GroupedReduction for CountReduce {
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
-        let ca: IdxCa = self
-            .counts
-            .drain(..)
-            .map(|l| IdxSize::try_from(l).expect(LENGTH_LIMIT_MSG))
-            .collect_ca(PlSmallStr::EMPTY);
-        Ok(ca.into_series())
+        let v: Vec<u64> = core::mem::take(&mut self.counts);
+        let len = v.len();
+
+        let v: Vec<IdxSize> = v
+            .into_iter()
+            .filter_map(|x| IdxSize::try_from(x).ok())
+            .collect();
+
+        polars_ensure!(
+            v.len() == len,
+            ComputeError:
+            LENGTH_LIMIT_MSG
+        );
+
+        Ok(IdxCa::from_vec(PlSmallStr::EMPTY, v).into_series())
     }
 
     fn as_any(&self) -> &dyn Any {

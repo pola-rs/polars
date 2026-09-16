@@ -593,7 +593,7 @@ def test_list_eval_after_filter_in_agg_25361(
 )
 def test_list_eval_after_arange_in_agg_25361(series_a: list[list[int]]) -> None:
     df = pl.DataFrame({"a": series_a})
-    inner = pl.arange(pl.len()).cast(pl.List(pl.Int64))
+    inner = pl.list(pl.arange(pl.len()))
     expected = df.select(inner)
     q = df.lazy().select(inner.list.eval(pl.element()).over([True]))
     assert_frame_equal(q.collect(), expected)

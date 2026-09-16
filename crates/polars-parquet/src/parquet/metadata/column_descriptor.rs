@@ -101,6 +101,7 @@ pub(crate) struct ColumnDescriptorRef {
 }
 
 impl ColumnDescriptorRef {
+    #[inline]
     pub(crate) fn new(descrs: Arc<Vec<ColumnDescriptor>>, idx: usize) -> Self {
         Self { descrs, idx }
     }

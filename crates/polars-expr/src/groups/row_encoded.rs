@@ -71,6 +71,7 @@ impl Grouper for RowEncodedHashGrouper {
         self.idx_map.reserve(additional);
     }
 
+    #[inline]
     fn num_groups(&self) -> IdxSize {
         self.idx_map.len()
     }

@@ -39,9 +39,6 @@ pub use index::*;
     feature = "range",
     any(feature = "dtype-date", feature = "dtype-datetime")
 ))]
-pub use range::date_range; // This shouldn't be necessary, but clippy complains about dead code
-#[cfg(all(feature = "range", feature = "dtype-time"))]
-pub use range::time_range; // This shouldn't be necessary, but clippy complains about dead code
 #[cfg(feature = "range")]
 pub use range::*;
 pub use repeat::*;

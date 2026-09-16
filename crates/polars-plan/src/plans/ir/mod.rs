@@ -1,5 +1,10 @@
+#[cfg(feature = "cse")]
+mod canonical;
 mod dot;
+mod equality;
 mod format;
+#[cfg(feature = "cse")]
+mod hash;
 pub mod inputs;
 mod schema;
 pub(crate) mod tree_format;
@@ -7,9 +12,16 @@ mod unoptimized;
 
 use std::borrow::Cow;
 use std::fmt;
+use std::sync::Mutex;
 
+#[cfg(feature = "cse")]
+pub(crate) use canonical::{CanonicalIRId, CanonicalIRMap};
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
+pub use equality::ExpressionComparator;
 pub use format::{ExprIRDisplay, IRDisplay, write_group_by, write_ir_non_recursive};
+#[cfg(feature = "cse")]
+pub use hash::ExpressionHasher;
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
@@ -19,6 +31,7 @@ use strum_macros::IntoStaticStr;
 pub use unoptimized::{FunctionArgMap, UnoptimizedOperation};
 
 use self::hive::HivePartitionsDf;
+use crate::dsl::dsl_resolver::{DslResolver, ResolveDslArgs, ResolvedDsl};
 use crate::prelude::*;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
@@ -112,8 +125,7 @@ pub enum IR {
         input_left: Node,
         input_right: Node,
         schema: SchemaRef,
-        left_on: Vec<ExprIR>,
-        right_on: Vec<ExprIR>,
+        /// Holds the match condition, including the join keys.
         options: Arc<JoinOptionsIR>,
     },
     Gather {
@@ -146,11 +158,6 @@ pub enum IR {
         schema: SchemaRef,
         options: HConcatOptions,
     },
-    ExtContext {
-        input: Node,
-        contexts: Vec<Node>,
-        schema: SchemaRef,
-    },
     Sink {
         input: Node,
         payload: SinkTypeIR,
@@ -164,13 +171,29 @@ pub enum IR {
     MergeSorted {
         input_left: Node,
         input_right: Node,
-        key: PlSmallStr,
+        key: Arc<[PlSmallStr]>,
         maintain_order: bool,
     },
     UnoptimizedDispatch {
         inputs: Vec<Node>,
         arg_map: FunctionArgMap,
         operation: UnoptimizedOperation,
+    },
+    Resolver {
+        resolver: Arc<DslResolver>,
+        resolver_schema: SchemaRef,
+
+        projection: Option<Buffer<PlSmallStr>>,
+        slice: Option<(i64, u64)>,
+        filters: Buffer<ExprIR>,
+        filter_drop_columns_idx: Option<usize>,
+
+        // Note: Mutex from DslPlan this IR was created with. So that we cache
+        // on repeated `collect()`s in  notebook environments.
+        resolved_dsl: Arc<Mutex<PlIndexMap<ResolveDslArgs, ResolvedDsl>>>,
+        // This should be tied to `resolved_dsl`, but it is stored outside the
+        // Mutex as we need to be able to provide mutable references to the `Node`.
+        resolved_ir: Option<Node>,
     },
     #[default]
     Invalid,

@@ -2,6 +2,7 @@ use arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, NANOSECONDS, SECON
 use polars_core::datatypes::{AnyValue, DataType, TimeUnit};
 use polars_core::prelude::Column;
 use polars_error::PolarsResult;
+use polars_utils::broadcast::broadcast_len;
 
 pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> {
     if s.iter().any(|s| s.is_empty()) {
@@ -30,12 +31,10 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
     let is_zero_scalar = |s: &Column| is_scalar(s) && is_zero(s.get(0).unwrap());
 
     // Process subseconds
-    let max_len = s.iter().map(|s| s.len()).max().unwrap();
+    let max_len = broadcast_len(s.iter())?;
     let mut duration = match time_unit {
         TimeUnit::Microseconds => {
-            if is_scalar(&microseconds) {
-                microseconds = microseconds.new_from_index(0, max_len);
-            }
+            microseconds.broadcast_in_place_to(max_len)?;
             if !is_zero_scalar(&nanoseconds) {
                 microseconds = (microseconds + (nanoseconds.wrapping_trunc_div_scalar(1_000)))?;
             }
@@ -45,9 +44,7 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
             microseconds
         },
         TimeUnit::Nanoseconds => {
-            if is_scalar(&nanoseconds) {
-                nanoseconds = nanoseconds.new_from_index(0, max_len);
-            }
+            nanoseconds.broadcast_in_place_to(max_len)?;
             if !is_zero_scalar(&microseconds) {
                 nanoseconds = (nanoseconds + microseconds * 1_000)?;
             }
@@ -57,9 +54,7 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
             nanoseconds
         },
         TimeUnit::Milliseconds => {
-            if is_scalar(&milliseconds) {
-                milliseconds = milliseconds.new_from_index(0, max_len);
-            }
+            milliseconds.broadcast_in_place_to(max_len)?;
             if !is_zero_scalar(&nanoseconds) {
                 milliseconds = (milliseconds + (nanoseconds.wrapping_trunc_div_scalar(1_000_000)))?;
             }

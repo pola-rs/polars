@@ -5,7 +5,7 @@ use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_plan::dsl::{FileScanIR, ScanSources};
-use polars_plan::plans::{AnonymousScan, AnonymousScanArgs, FileInfo, IR};
+use polars_plan::plans::{AnonymousScan, AnonymousScanArgs, FileInfo, IR, ScanStats};
 use polars_plan::prelude::{AnonymousScanOptions, UnifiedScanArgs};
 
 /// Used to insert a dataframe into in-memory-engine query plan after the query
@@ -27,7 +27,7 @@ impl LateMaterializedDataFrame {
         });
         IR::Scan {
             sources: ScanSources::Paths(Default::default()),
-            file_info: FileInfo::new(schema, None, (None, usize::MAX)),
+            file_info: FileInfo::new(schema, None, ScanStats::unknown()),
             hive_parts: None,
             predicate: None,
             predicate_file_skip_applied: None,

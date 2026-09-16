@@ -20,14 +20,14 @@ use crate::plans::{
 
 /// Container for sortedness state at each stage in an IR plan.
 #[derive(Debug)]
-pub struct IRPlanSorted(PlHashMap<Node, IRSorted>);
+pub struct IRPlanSorted(PlIndexMap<Node, IRSorted>);
 
 impl IRPlanSorted {
     pub fn resolve(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Self {
-        let mut seen = PlHashSet::default();
-        let mut sortedness = PlHashMap::default();
-        let mut cache_proxy = PlHashMap::default();
-        let mut names_set_scratch = ScratchHashSet::default();
+        let mut seen = PlIndexSet::default();
+        let mut sortedness = PlIndexMap::default();
+        let mut cache_proxy = PlIndexMap::default();
+        let mut names_set_scratch = ScratchIndexSet::default();
         is_sorted_rec(
             root,
             ir_arena,
@@ -68,7 +68,7 @@ impl IRPlanSorted {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Debug, Default, PartialEq, Clone, Copy, Hash)]
+#[derive(Debug, Default, PartialEq, Clone, Copy, Hash, Eq)]
 pub struct AExprSorted {
     /// If `Some(true)`, the expression is sorted in descending order.
     /// If `Some(false)`, the expression is sorted in ascending order.
@@ -168,10 +168,10 @@ pub fn expr_is_sorted(
 }
 
 pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IRSorted> {
-    let mut seen = PlHashSet::default();
-    let mut sortedness = PlHashMap::default();
-    let mut cache_proxy = PlHashMap::default();
-    let mut names_set_scratch = ScratchHashSet::default();
+    let mut seen = PlIndexSet::default();
+    let mut sortedness = PlIndexMap::default();
+    let mut cache_proxy = PlIndexMap::default();
+    let mut names_set_scratch = ScratchIndexSet::default();
 
     is_sorted_rec(
         root,
@@ -191,10 +191,10 @@ fn is_sorted_rec(
     root: Node,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
-    seen: &mut PlHashSet<Node>,
-    sortedness: &mut PlHashMap<Node, IRSorted>,
-    cache_proxy: &mut PlHashMap<UniqueId, Option<IRSorted>>,
-    names_set_scratch: &mut ScratchHashSet<PlSmallStr>,
+    seen: &mut PlIndexSet<Node>,
+    sortedness: &mut PlIndexMap<Node, IRSorted>,
+    cache_proxy: &mut PlIndexMap<UniqueId, Option<IRSorted>>,
+    names_set_scratch: &mut ScratchIndexSet<PlSmallStr>,
     create_full_map: bool,
 ) -> Option<IRSorted> {
     if let Some(s) = sortedness.get(&root) {
@@ -239,23 +239,35 @@ fn is_sorted_rec(
             predicate: _,
         } => rec!(*input),
         IR::Scan { .. } => None,
-        IR::DataFrameScan { df, .. } => {
+        IR::DataFrameScan {
+            df, output_schema, ..
+        } => {
             let last_is_null = |c: &Column| Some(c.get(c.len().checked_sub(1)?).ok()?.is_null());
             let sorted_cols = df
                 .columns()
                 .iter()
-                .filter_map(|c| match c.is_sorted_flag() {
-                    IsSorted::Not => None,
-                    IsSorted::Ascending => Some(Sorted {
-                        column: c.name().clone(),
-                        descending: Some(false),
-                        nulls_last: Some(last_is_null(c).unwrap_or(false)),
-                    }),
-                    IsSorted::Descending => Some(Sorted {
-                        column: c.name().clone(),
-                        descending: Some(true),
-                        nulls_last: Some(last_is_null(c).unwrap_or(false)),
-                    }),
+                .filter_map(|c| {
+                    // Skip projected-out columns.
+                    if output_schema
+                        .as_ref()
+                        .is_some_and(|schema| !schema.contains(c.name()))
+                    {
+                        return None;
+                    }
+
+                    match c.is_sorted_flag() {
+                        IsSorted::Not => None,
+                        IsSorted::Ascending => Some(Sorted {
+                            column: c.name().clone(),
+                            descending: Some(false),
+                            nulls_last: Some(last_is_null(c).unwrap_or(false)),
+                        }),
+                        IsSorted::Descending => Some(Sorted {
+                            column: c.name().clone(),
+                            descending: Some(true),
+                            nulls_last: Some(last_is_null(c).unwrap_or(false)),
+                        }),
+                    }
                 })
                 .collect_vec();
             (!sorted_cols.is_empty()).then(|| IRSorted(sorted_cols.into()))
@@ -508,7 +520,7 @@ fn is_sorted_rec(
                     }
                 },
             }
-            Some(input_sorted)
+            Some(IRSorted(out_sorted.into()))
         },
         IR::MapFunction { input, function } => match function {
             FunctionIR::Hint(hint) => match hint {
@@ -557,17 +569,17 @@ fn is_sorted_rec(
         },
         IR::Union { .. } => None,
         IR::HConcat { .. } => None,
-        IR::ExtContext { .. } => None,
         IR::Sink { .. } => None,
         IR::SinkMultiple { .. } => None,
         #[cfg(feature = "merge_sorted")]
         IR::MergeSorted { key, .. } => Some(IRSorted(
-            [Sorted {
-                column: key.clone(),
-                descending: None,
-                nulls_last: None,
-            }]
-            .into(),
+            key.iter()
+                .map(|column| Sorted {
+                    column: column.clone(),
+                    descending: None,
+                    nulls_last: None,
+                })
+                .collect(),
         )),
         IR::Distinct { input, options } => {
             if !options.maintain_order {
@@ -578,6 +590,13 @@ fn is_sorted_rec(
             rec!(input)
         },
         IR::UnoptimizedDispatch { .. } => None,
+        IR::Resolver { resolved_ir, .. } => {
+            if let Some(node) = *resolved_ir {
+                rec!(node)
+            } else {
+                None
+            }
+        },
         IR::Invalid => unreachable!(),
     };
 
@@ -696,17 +715,7 @@ pub fn function_expr_sortedness(
             descending: Some(false),
             nulls_last: Some(false),
         }),
-        IRFunctionExpr::SetSortedFlag(sortedness) => match sortedness.descending {
-            Some(false) => Some(AExprSorted {
-                descending: Some(false),
-                nulls_last: None,
-            }),
-            Some(true) => Some(AExprSorted {
-                descending: Some(true),
-                nulls_last: None,
-            }),
-            None => None,
-        },
+        IRFunctionExpr::SetSortedFlag(sortedness) => sortedness.descending.map(|_| *sortedness),
 
         IRFunctionExpr::Unique(true)
         | IRFunctionExpr::DropNulls
@@ -757,15 +766,8 @@ pub fn function_expr_sortedness(
                 return None;
             };
 
-            let mut sortedness = rec_ae!(e.node())?;
-
-            if let Some(d) = &mut sortedness.descending {
-                *d = !*d;
-            }
-            if let Some(n) = &mut sortedness.nulls_last {
-                *n ^= !*n;
-            }
-            Some(sortedness)
+            let sortedness = rec_ae!(e.node())?;
+            Some(sortedness.reverse())
         },
 
         #[cfg(all(feature = "strings", feature = "concat_str"))]

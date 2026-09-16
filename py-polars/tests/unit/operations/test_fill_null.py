@@ -180,3 +180,8 @@ def test_fill_null_null_dtype_24451() -> None:
     # Values are filled with the fill value
     assert result["col1"].to_list() == ["rabbit", "rabbit", "rabbit"]
     assert result["col2"].to_list() == ["rabbit", "rabbit", "rabbit"]
+
+
+def test_fill_null_arr_nonull_cat_28247() -> None:
+    s = pl.Series([["a", "b"]], dtype=pl.Array(pl.Categorical, 2))
+    assert_series_equal(s, s.arr.eval(pl.element().fill_null(strategy="forward")))

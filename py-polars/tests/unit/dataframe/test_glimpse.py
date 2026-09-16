@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
 
 TEST_DF = pl.DataFrame(
     {
@@ -61,13 +62,11 @@ TEST_EXPECTED = textwrap.dedent(
 )
 
 
-def test_glimpse(capsys: Any) -> None:
-    for result in (
-        # check deprecated parameter still works
-        TEST_DF.glimpse(return_as_string=True),  # type: ignore[call-overload]
-        TEST_DF.glimpse(return_type="string"),
-    ):
-        assert result == TEST_EXPECTED
+def test_glimpse() -> None:
+    with pytest.raises(ArgumentRemovedError):
+        TEST_DF.glimpse(return_as_string=True)  # type: ignore[call-overload]
+
+    assert TEST_DF.glimpse(return_type="string") == TEST_EXPECTED
 
 
 @pytest.mark.parametrize("return_type", [None, "self"])

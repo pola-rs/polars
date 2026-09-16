@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", &dataset);
+    println!("{}", dataset);
     // --8<-- [end:dataframe]
 
     // --8<-- [start:basic]

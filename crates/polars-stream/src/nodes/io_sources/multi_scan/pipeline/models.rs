@@ -11,7 +11,7 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSource};
+use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::row_counter::RowCounter;
@@ -80,9 +80,11 @@ pub(super) struct StartReaderArgsConstant {
     pub(super) reader_capabilities: ReaderCapabilities,
     pub(super) file_projection_builder: ProjectionBuilder,
     pub(super) cast_columns_policy: CastColumnsPolicy,
+    pub(super) extra_columns_policy: ExtraColumnsPolicy,
     pub(super) missing_columns_policy: MissingColumnsPolicy,
     pub(super) forbid_extra_columns: Option<ForbidExtraColumns>,
     pub(super) num_pipelines: usize,
+    pub(super) max_concurrent_scans: usize,
     pub(super) disable_morsel_split: bool,
     /// Precomputed last-morsel split factor; see `BeginReadArgs::last_morsel_pipelines`.
     pub(super) last_morsel_pipelines: usize,

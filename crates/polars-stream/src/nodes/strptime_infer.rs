@@ -4,7 +4,7 @@ use polars_time::chunkedarray::StringMethods;
 use polars_time::chunkedarray::string::Pattern;
 use polars_time::chunkedarray::string::infer::{
     DatetimeInfer, TryFromWithUnit, coerce_string_to_date, coerce_string_to_datetime,
-    infer_pattern_date_single, infer_pattern_datetime_single, sniff_time_fmt,
+    infer_from_values, infer_pattern_date_single, infer_pattern_datetime_single, sniff_time_fmt,
 };
 
 use super::compute_node_prelude::*;
@@ -14,6 +14,9 @@ pub struct StrptimeInferNode {
     options: StrptimeOptions,
     infer: Option<FormatInfer>,
     phase: Phase,
+
+    /// Name to report parse failures against; the input carries an internal one.
+    input_name: PlSmallStr,
 
     /// Ambiguous can be `raise`, `earliest`, `latest` and `null`.
     ///
@@ -43,12 +46,18 @@ enum FormatInfer {
 }
 
 impl StrptimeInferNode {
-    pub fn new(dtype: DataType, options: StrptimeOptions, ambiguous_is_raise: bool) -> Self {
+    pub fn new(
+        dtype: DataType,
+        options: StrptimeOptions,
+        input_name: PlSmallStr,
+        ambiguous_is_raise: bool,
+    ) -> Self {
         Self {
             dtype,
             options,
             infer: None,
             phase: Phase::Inferring,
+            input_name,
             ambiguous_is_raise,
         }
     }
@@ -56,14 +65,14 @@ impl StrptimeInferNode {
 
 impl FormatInfer {
     fn try_new(
-        val: &str,
+        ca: &StringChunked,
         dtype: &DataType,
         options: &StrptimeOptions,
     ) -> PolarsResult<Option<Self>> {
         match dtype {
             #[cfg(feature = "dtype-date")]
             DataType::Date => {
-                let Some(pattern) = infer_pattern_date_single(val) else {
+                let Some(pattern) = infer_from_values(ca, infer_pattern_date_single) else {
                     return Ok(None);
                 };
                 let infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None)?;
@@ -71,7 +80,7 @@ impl FormatInfer {
             },
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(tu, tz) => {
-                let Some(pattern) = infer_pattern_datetime_single(val) else {
+                let Some(pattern) = infer_from_values(ca, infer_pattern_datetime_single) else {
                     return Ok(None);
                 };
                 if matches!(pattern, Pattern::DatetimeYMDZ) && tz.is_none() {
@@ -81,7 +90,10 @@ impl FormatInfer {
                 Ok(Some(FormatInfer::Datetime(infer, tz.clone())))
             },
             #[cfg(feature = "dtype-time")]
-            DataType::Time => Ok(sniff_time_fmt(val).map(|f| FormatInfer::Time(f, options.cache))),
+            DataType::Time => {
+                Ok(infer_from_values(ca, sniff_time_fmt)
+                    .map(|f| FormatInfer::Time(f, options.cache)))
+            },
             _ => Ok(None),
         }
     }
@@ -91,6 +103,7 @@ impl FormatInfer {
         col: &Column,
         ambiguous: &StringChunked,
         strict: bool,
+        input_name: &PlSmallStr,
     ) -> PolarsResult<Column> {
         let ca = col.str()?;
         let name = col.name().clone();
@@ -119,9 +132,11 @@ impl FormatInfer {
         };
 
         if strict && col.null_count() != result.null_count() {
+            // reported against the name the user wrote, not the internal alias
+            let reported = result.clone().with_name(input_name.clone());
             polars_core::utils::handle_casting_failures(
                 col.as_materialized_series(),
-                result.as_materialized_series(),
+                reported.as_materialized_series(),
             )?;
         }
 
@@ -174,14 +189,25 @@ impl ComputeNode for StrptimeInferNode {
 
                 let dtype = &self.dtype;
                 let options = &self.options;
+                let input_name = &self.input_name;
                 let infer_slot = &mut self.infer;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = recv.recv().await {
                         if infer_slot.is_none() {
-                            let ca = morsel.df().columns()[0].str()?;
-                            if let Some(idx) = ca.first_non_null() {
-                                *infer_slot =
-                                    FormatInfer::try_new(ca.get(idx).unwrap(), dtype, options)?;
+                            let df = morsel.df().await;
+                            let ca = df.columns()[0].str()?;
+                            if ca.null_count() != ca.len() {
+                                *infer_slot = FormatInfer::try_new(ca, dtype, options)?;
+
+                                let unit = if matches!(dtype, DataType::Time) {
+                                    "time"
+                                } else {
+                                    "date"
+                                };
+                                polars_ensure!(
+                                    infer_slot.is_some() || !options.strict,
+                                    parse_fmt_idk = unit
+                                );
                             }
                         }
 
@@ -190,19 +216,23 @@ impl ComputeNode for StrptimeInferNode {
                             morsel.source_token().stop();
                         }
 
-                        let morsel = morsel.try_map(|df| {
-                            let cols = df.columns();
-                            if let Some(ref mut infer) = *infer_slot {
-                                infer
-                                    .apply(&cols[0], &ambiguous, options.strict)
-                                    .map(Column::into_frame)
-                            } else {
-                                Ok(
-                                    Column::full_null(cols[0].name().clone(), cols[0].len(), dtype)
-                                        .into_frame(),
-                                )
-                            }
-                        })?;
+                        let morsel = morsel
+                            .try_map(|df| {
+                                let cols = df.columns();
+                                if let Some(ref mut infer) = *infer_slot {
+                                    infer
+                                        .apply(&cols[0], &ambiguous, options.strict, input_name)
+                                        .map(Column::into_frame)
+                                } else {
+                                    Ok(Column::full_null(
+                                        cols[0].name().clone(),
+                                        cols[0].len(),
+                                        dtype,
+                                    )
+                                    .into_frame())
+                                }
+                            })
+                            .await?;
                         if send.send(morsel).await.is_err() {
                             break;
                         }
@@ -216,16 +246,19 @@ impl ComputeNode for StrptimeInferNode {
                 let senders = send_ports[0].take().unwrap().parallel();
                 for (mut recv, mut send) in receivers.into_iter().zip(senders) {
                     let strict = self.options.strict;
+                    let input_name = self.input_name.clone();
                     let ambiguous = ambiguous.clone();
                     let mut infer = self.infer.clone().unwrap();
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                         while let Ok(morsel) = recv.recv().await {
-                            let morsel = morsel.try_map(|df| {
-                                let cols = df.columns();
-                                infer
-                                    .apply(&cols[0], &ambiguous, strict)
-                                    .map(Column::into_frame)
-                            })?;
+                            let morsel = morsel
+                                .try_map(|df| {
+                                    let cols = df.columns();
+                                    infer
+                                        .apply(&cols[0], &ambiguous, strict, &input_name)
+                                        .map(Column::into_frame)
+                                })
+                                .await?;
                             if send.send(morsel).await.is_err() {
                                 break;
                             }

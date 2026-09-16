@@ -1,7 +1,9 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_core::datatypes::{DataType, Field};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
@@ -28,6 +30,8 @@ pub struct CsvReadOptions {
     pub projection: Option<Arc<Vec<usize>>>,
     pub schema: Option<SchemaRef>,
     pub schema_overwrite: Option<SchemaRef>,
+    /// Override the names from the file. This is Python `scan_csv(new_columns=...)`
+    pub column_names_overwrite: Option<Buffer<PlSmallStr>>,
     pub dtype_overwrite: Option<Arc<Vec<DataType>>>,
     // CSV-specific options
     pub parse_options: Arc<CsvParseOptions>,
@@ -39,9 +43,15 @@ pub struct CsvReadOptions {
     pub skip_lines: usize,
     pub skip_rows_after_header: usize,
     pub infer_schema_length: Option<usize>,
+    #[cfg_attr(feature = "serde", serde(default = "nonzero_usize_max"))]
+    pub infer_schema_files: NonZeroUsize,
     pub raise_if_empty: bool,
     pub ignore_errors: bool,
     pub fields_to_cast: Vec<Field>,
+}
+
+const fn nonzero_usize_max() -> NonZeroUsize {
+    NonZeroUsize::MAX
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -76,6 +86,7 @@ impl Default for CsvReadOptions {
             projection: None,
             schema: None,
             schema_overwrite: None,
+            column_names_overwrite: None,
             dtype_overwrite: None,
 
             parse_options: Default::default(),
@@ -85,6 +96,7 @@ impl Default for CsvReadOptions {
             skip_lines: 0,
             skip_rows_after_header: 0,
             infer_schema_length: Some(100),
+            infer_schema_files: const { NonZeroUsize::new(10).unwrap() },
             raise_if_empty: true,
             ignore_errors: false,
             fields_to_cast: vec![],
@@ -178,6 +190,15 @@ impl CsvReadOptions {
         self
     }
 
+    /// Overwrite the column names inferred from the file.
+    pub fn with_column_names_overwrite(
+        mut self,
+        column_names_overwrite: Buffer<PlSmallStr>,
+    ) -> Self {
+        self.column_names_overwrite = Some(column_names_overwrite);
+        self
+    }
+
     /// Overwrite the dtypes in the schema in the order of the slice that's given.
     /// This is useful if you don't know the column names beforehand
     pub fn with_dtype_overwrite(mut self, dtype_overwrite: Option<Arc<Vec<DataType>>>) -> Self {
@@ -231,6 +252,11 @@ impl CsvReadOptions {
     /// Setting to [None] will do a full table scan, which is very slow.
     pub fn with_infer_schema_length(mut self, infer_schema_length: Option<usize>) -> Self {
         self.infer_schema_length = infer_schema_length;
+        self
+    }
+
+    pub fn with_infer_schema_files(mut self, infer_schema_files: NonZeroUsize) -> Self {
+        self.infer_schema_files = infer_schema_files;
         self
     }
 

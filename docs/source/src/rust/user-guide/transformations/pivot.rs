@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "bar"=> ["k", "l", "m", "n", "o"],
             "N"=> [1, 2, 2, 4, 2],
     )?;
-    println!("{}", &df);
+    println!("{}", df);
     // --8<-- [end:df]
 
     // --8<-- [start:eager]
@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             PivotColumnNaming::Auto,
         )
         .collect()?;
-    println!("{}", &out);
+    println!("{}", out);
     // --8<-- [end:eager]
 
     // --8<-- [start:lazy]
@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         PivotColumnNaming::Auto,
     );
     let out = q2.collect()?;
-    println!("{}", &out);
+    println!("{}", out);
     // --8<-- [end:lazy]
 
     // --8<-- [start:lazy-on-columns]
@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         PivotColumnNaming::Auto,
     );
     let out = q2.collect()?;
-    println!("{}", &out);
+    println!("{}", out);
     // --8<-- [end:lazy-on-columns]
 
     Ok(())
