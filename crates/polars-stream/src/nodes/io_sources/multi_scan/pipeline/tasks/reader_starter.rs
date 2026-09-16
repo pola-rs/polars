@@ -602,6 +602,10 @@ async fn start_reader_impl(
                         ));
 
                         Arc::make_mut(&mut predicate.column_predicates).is_sumwise_complete = false;
+                        if let Some(staged) = &mut predicate.staged {
+                            Arc::make_mut(&mut staged.column_predicates).is_sumwise_complete =
+                                false;
+                        }
                     }
                 },
                 MissingColumnsPolicy::Raise => return Err(missing_column_err(missing_col_name)),

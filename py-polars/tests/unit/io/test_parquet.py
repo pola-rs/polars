@@ -1977,6 +1977,169 @@ def test_row_index_prefiltering(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df.with_row_index("ri", 42).filter(expr))
 
 
+@given(
+    df=dataframes(
+        min_size=0,
+        max_size=40,
+        min_cols=1,
+        max_cols=4,
+        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum],
+        include_cols=[
+            column("filter_col", pl.Int8, st.integers(0, 3), allow_null=False),
+            column("a", pl.Int32, allow_null=True),
+            column("b", pl.Int32, allow_null=True),
+        ],
+    ),
+)
+def test_staged_prefiltering(df: pl.DataFrame) -> None:
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=7)
+
+    expr = (pl.col("filter_col") == 0) & ((pl.col("a") > 3) | (pl.col("b") > 3))
+
+    f.seek(0)
+    result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+    assert_frame_equal(result, df.filter(expr))
+
+
+def _staged_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "a": [1, 5, None, 7, 2, 9, None, 3, 8, 4, 6, 0],
+            "q": [0, 1, 0, None, 0, 1, 0, 0, 1, 0, None, 0],
+            "b": [3, 3, None, 3, 3, 3, 3, None, 3, 3, 3, 3],
+            "c": [str(i) for i in range(12)],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        # Only the second pass reads `a` and `b`.
+        (pl.col("q") == 0) & (pl.col("a") < pl.col("b")),
+        # `q` is read by both passes.
+        (pl.col("q") >= 0) & (pl.col("q") < pl.col("a")),
+        # The first pass alone reads every predicate column: no staging.
+        (pl.col("a") > 0) & (pl.col("b") > 0) & (pl.col("a") > pl.col("b")),
+        # First pass keeps every row / no row.
+        (pl.col("q").is_not_null() | pl.col("q").is_null()) & (pl.col("a") < pl.col("b")),
+        (pl.col("q") > 100) & (pl.col("a") < pl.col("b")),
+        # Every second-pass column is already read by the first pass: no staging.
+        (pl.col("q") == 0) & (pl.col("a") > 0) & ((pl.col("q") + pl.col("a")) < 5),
+    ],
+)
+@pytest.mark.parametrize("q_dtype", [pl.Int64, pl.Float64, pl.Decimal(7, 2)])
+@pytest.mark.parametrize("projection", [None, ["a", "q", "b"], ["c", "b", "q", "a"]])
+@pytest.mark.parametrize("row_index", [False, True])
+def test_staged_prefiltering_passes(
+    expr: pl.Expr,
+    q_dtype: pl.DataType,
+    projection: list[str] | None,
+    row_index: bool,
+    tmp_path: Path,
+) -> None:
+    df = _staged_df().with_columns(pl.col("q").cast(q_dtype))
+    path = tmp_path / "staged.parquet"
+    df.write_parquet(path, row_group_size=4)
+
+    def scan(head: int | None) -> pl.LazyFrame:
+        lf = pl.scan_parquet(
+            path,
+            parallel="prefiltered",
+            row_index_name="ri" if row_index else None,
+        )
+        if projection is not None:
+            lf = lf.select((["ri"] if row_index else []) + projection)
+        if head is not None:
+            lf = lf.head(head)
+        return lf.filter(expr)
+
+    expected = df.with_row_index("ri") if row_index else df
+    if projection is not None:
+        expected = expected.select((["ri"] if row_index else []) + projection)
+
+    for engine in ("streaming", "in-memory"):
+        assert_frame_equal(scan(None).collect(engine=engine), expected.filter(expr))
+        # Row groups 0-1 are complete, row group 2 is partial.
+        assert_frame_equal(
+            scan(9).collect(engine=engine), expected.head(9).filter(expr)
+        )
+
+
+@pytest.mark.parametrize("q_dtype", [pl.Int64, pl.Float64])
+def test_staged_prefiltering_dense_first_pass(q_dtype: pl.DataType) -> None:
+    # The first row group's first pass keeps every row, which turns staging off for
+    # the row groups decoded after it.
+    df = pl.DataFrame(
+        {
+            "a": list(range(24)),
+            "q": [0] * 8 + [0, 1, None, 0] * 4,
+            "b": [5, None] * 12,
+            "c": [str(i) for i in range(24)],
+        }
+    ).with_columns(pl.col("q").cast(q_dtype))
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=4)
+    expr = (pl.col("q") == 0) & (pl.col("a") < pl.col("b"))
+
+    f.seek(0)
+    result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+    assert_frame_equal(result, df.filter(expr))
+
+
+def test_staged_prefiltering_nested_column() -> None:
+    df = _staged_df().with_columns(s=pl.struct(pl.col("a"), pl.col("c")))
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=4)
+    expr = (pl.col("q") == 0) & (pl.col("a") < pl.col("b"))
+
+    f.seek(0)
+    result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+    assert_frame_equal(result, df.filter(expr))
+
+
+def test_staged_prefiltering_hive_and_missing_columns(tmp_path: Path) -> None:
+    df = _staged_df()
+    for part in [1, 2]:
+        d = tmp_path / f"part={part}"
+        d.mkdir()
+        cols = df.columns if part == 1 else ["a", "q", "c"]
+        df.select(cols).write_parquet(d / "0.parquet", row_group_size=4)
+
+    full = pl.concat(
+        [
+            df.with_columns(part=pl.lit(1, pl.Int64)),
+            df.with_columns(b=pl.lit(None, pl.Int64), part=pl.lit(2, pl.Int64)),
+        ]
+    )
+
+    exprs = [
+        # The hive column stays inside the second pass.
+        (pl.col("q") == 0) & ((pl.col("part") == 1) | (pl.col("a") > 5)),
+        # A missing column read by the second pass.
+        (pl.col("q") == 0) & (pl.col("a") < pl.col("b").fill_null(4)),
+        # A missing column read by the first pass.
+        pl.col("b").is_null() & (pl.col("q") < pl.col("a")),
+    ]
+    for expr in exprs:
+        result = (
+            pl.scan_parquet(
+                tmp_path,
+                parallel="prefiltered",
+                hive_partitioning=True,
+                missing_columns="insert",
+            )
+            .filter(expr)
+            .collect()
+        )
+        assert_frame_equal(
+            result.sort("part", "c"),
+            full.filter(expr).sort("part", "c"),
+            check_column_order=False,
+        )
+
+
 def test_empty_parquet() -> None:
     f_pd = io.BytesIO()
     f_pl = io.BytesIO()
