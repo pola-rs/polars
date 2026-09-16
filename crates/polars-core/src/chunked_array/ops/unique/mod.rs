@@ -81,30 +81,80 @@ fn reads_as_one_element<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
     matches!(ca.chunks().as_slice(), [chunk] if chunk.is_scalar())
 }
 
-fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
+/// [`arg_unique_chunk`] over one contiguous run of values.
+///
+/// It is its own function, and holds nothing but the loop, so that the hash set's `insert` has
+/// room to be inlined into it: the walk costs a third more when it is left as a call.
+fn arg_unique_slice<T>(
+    vals: &[T],
+    offset: IdxSize,
+    set: &mut PlHashSet<<T as ToTotalOrd>::TotalOrdItem>,
+    unique: &mut Vec<IdxSize>,
+) -> IdxSize
+where
+    T: ToTotalOrd + Copy,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
+{
+    for (idx, val) in vals.iter().enumerate() {
+        if set.insert(val.to_total_ord()) {
+            unique.push(offset + idx as IdxSize)
+        }
+    }
+    offset + vals.len() as IdxSize
+}
+
+/// Walk one chunk, recording where each value this column has not held before first appears.
+///
+/// `offset` is how many elements the chunks already walked hold, and carries on into the next.
+fn arg_unique_chunk<T>(
+    a: impl Iterator<Item = T>,
+    offset: IdxSize,
+    set: &mut PlHashSet<<T as ToTotalOrd>::TotalOrdItem>,
+    unique: &mut Vec<IdxSize>,
+) -> IdxSize
 where
     T: ToTotalOrd,
     <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
-    let mut set = PlHashSet::new();
-    let mut unique = Vec::with_capacity(capacity);
-    a.enumerate().for_each(|(idx, val)| {
+    // The index is a local, not a `&mut` the caller lends: the loop keeps it in a register and
+    // hands the next chunk's starting point back.
+    let mut idx = offset;
+    a.for_each(|val| {
         if set.insert(val.to_total_ord()) {
-            unique.push(idx as IdxSize)
+            unique.push(idx)
         }
+        idx += 1;
     });
-    unique
+    idx
 }
 
 macro_rules! arg_unique_ca {
     ($ca:expr) => {{
-        if reads_as_one_element($ca) {
+        let ca = $ca;
+        if reads_as_one_element(ca) {
             vec![0]
         } else {
-            match $ca.has_nulls() {
-                false => arg_unique($ca.no_null_iter(), $ca.len()),
-                _ => arg_unique($ca.iter(), $ca.len()),
+            // One chunk at a time, not `ca.iter()` over the column: a chunk's own iterator
+            // resolves its representation once for the whole chunk in `fold`, and the flattening
+            // adapters between the column and it cost more per element than they hoist -- this
+            // loop carries the element index itself instead of asking `enumerate` for it.
+            let mut unique = Vec::with_capacity(ca.len());
+            let mut offset: IdxSize = 0;
+            match ca.has_nulls() {
+                false => {
+                    let mut set = PlHashSet::new();
+                    for arr in ca.downcast_iter() {
+                        offset = arg_unique_chunk(arr.values_iter(), offset, &mut set, &mut unique);
+                    }
+                },
+                _ => {
+                    let mut set = PlHashSet::new();
+                    for arr in ca.downcast_iter() {
+                        offset = arg_unique_chunk(arr.iter(), offset, &mut set, &mut unique);
+                    }
+                },
             }
+            unique
         }
     }};
 }
@@ -159,6 +209,22 @@ where
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        // A flat chunk with no nulls in it is a slice of values, and walking each chunk's slice
+        // leaves no representation test in the loop at all -- which the column's own iterator
+        // cannot promise, however well each adapter between it and the chunk forwards `fold`.
+        if !reads_as_one_element(self)
+            && self.null_count() == 0
+            && let Some(flat) = self.as_flat()
+        {
+            let mut set = PlHashSet::new();
+            let mut unique = Vec::with_capacity(self.len());
+            let mut offset: IdxSize = 0;
+            for vals in flat.chunks_flat_values() {
+                offset = arg_unique_slice(vals, offset, &mut set, &mut unique);
+            }
+            return Ok(IdxCa::from_vec(self.name().clone(), unique));
+        }
+
         Ok(IdxCa::from_vec(self.name().clone(), arg_unique_ca!(self)))
     }
 
@@ -477,6 +543,44 @@ mod test {
             ChunkedArray::<Int32Type>::from_slice(PlSmallStr::from_static("a"), &[1, 2, 1, 1, 3]);
         assert_eq!(
             ca.arg_unique().unwrap().iter().collect::<Vec<_>>(),
+            vec![Some(0), Some(1), Some(4)]
+        );
+    }
+
+    #[test]
+    fn arg_unique_is_the_same_however_the_column_is_laid_out() {
+        let name = PlSmallStr::from_static("a");
+        let values = [1i32, 2, 1, 1, 3, 2, 4];
+        let expected = vec![Some(0), Some(1), Some(4), Some(6)];
+
+        // One chunk, walked as the slice it is.
+        let flat = ChunkedArray::<Int32Type>::from_slice(name.clone(), &values);
+        assert_eq!(
+            flat.arg_unique().unwrap().iter().collect::<Vec<_>>(),
+            expected
+        );
+
+        // The same elements over three chunks: the index carries on across them.
+        let mut chunked = ChunkedArray::<Int32Type>::from_slice(name.clone(), &values[..2]);
+        chunked
+            .append(&ChunkedArray::from_slice(name.clone(), &values[2..5]))
+            .unwrap();
+        chunked
+            .append(&ChunkedArray::from_slice(name.clone(), &values[5..]))
+            .unwrap();
+        assert_eq!(chunked.chunks().len(), 3);
+        assert_eq!(
+            chunked.arg_unique().unwrap().iter().collect::<Vec<_>>(),
+            expected
+        );
+
+        // Nulls are an element of their own, and the first of them is the one that is kept.
+        let with_nulls = ChunkedArray::<Int32Type>::from_slice_options(
+            name,
+            &[Some(1), None, Some(1), None, Some(2)],
+        );
+        assert_eq!(
+            with_nulls.arg_unique().unwrap().iter().collect::<Vec<_>>(),
             vec![Some(0), Some(1), Some(4)]
         );
     }
