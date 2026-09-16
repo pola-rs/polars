@@ -1,3 +1,5 @@
+use polars_core::utils::try_get_supertype;
+
 use super::*;
 
 #[derive(Debug)]

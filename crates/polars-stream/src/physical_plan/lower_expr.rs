@@ -1785,7 +1785,9 @@ fn lower_exprs_with_ctx(
                         separator.as_str()
                     )
                 });
-                let map = Arc::new(move |df| unnest_fn.evaluate(df));
+                let map = Arc::new(move |df| {
+                    polars_mem_engine::function_ir::evaluate_function_ir(&unnest_fn, df)
+                });
                 let node_kind = PhysNodeKind::Map {
                     input: stream,
                     map,

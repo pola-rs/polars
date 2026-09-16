@@ -1,4 +1,5 @@
 mod any_value;
+pub mod cut;
 pub mod flatten;
 pub(crate) mod series;
 mod supertype;

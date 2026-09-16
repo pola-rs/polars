@@ -419,7 +419,9 @@ pub fn lower_ir(
                 },
 
                 function if function.is_streamable() => {
-                    let map = Arc::new(move |df| function.evaluate(df));
+                    let map = Arc::new(move |df| {
+                        polars_mem_engine::function_ir::evaluate_function_ir(&function, df)
+                    });
                     let format_str = ctx.prepare_visualization.then(|| {
                         let mut buffer = String::new();
                         write_ir_non_recursive(
@@ -471,7 +473,7 @@ pub fn lower_ir(
                             }
                         }
 
-                        function.evaluate(df)
+                        polars_mem_engine::function_ir::evaluate_function_ir(&function, df)
                     });
                     PhysNodeKind::InMemoryMap {
                         input: phys_input,
