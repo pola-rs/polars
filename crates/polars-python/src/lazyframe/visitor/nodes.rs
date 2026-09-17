@@ -5,11 +5,11 @@ use polars::prelude::{
 };
 use polars_core::prelude::IdxSize;
 use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, IcebergSchema};
+#[cfg(feature = "asof_join")]
+use polars_defs::join::AsofStrategy;
+use polars_defs::join::JoinType;
 use polars_io::HiveOptions;
 use polars_io::cloud::CloudOptions;
-#[cfg(feature = "asof_join")]
-use polars_ops::prelude::AsofStrategy;
-use polars_ops::prelude::JoinType;
 use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};

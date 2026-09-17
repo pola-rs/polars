@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use polars_defs::join::JoinType;
+
 use super::*;
 
 fn cached_before_root(q: LazyFrame) {
