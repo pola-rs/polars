@@ -3838,7 +3838,7 @@ class Expr(metaclass=_Meta):
         """
         Compute approximate quantile(s) of an expression.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
