@@ -1,4 +1,4 @@
-use arrow::bitmap::utils::fmt;
+use polars_arrow::bitmap::utils::fmt;
 
 struct A<'a>(&'a [u8], usize, usize);
 

@@ -1,9 +1,9 @@
 use std::ops::{AddAssign, DivAssign, MulAssign};
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::trusted_len::TrustedLen;
-use arrow::types::NativeType;
 use num_traits::Float;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::trusted_len::TrustedLen;
+use polars_arrow::types::NativeType;
 
 use crate::ewm::EwmStateUpdate;
 

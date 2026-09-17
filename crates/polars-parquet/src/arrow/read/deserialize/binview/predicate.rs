@@ -1,7 +1,7 @@
 //! Specialized kernels to do predicate evaluation directly on the `BinView` Parquet data.
 
-use arrow::array::View;
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::array::View;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_utils::aliases::PlIndexSet;
 
 use crate::parquet::error::ParquetResult;

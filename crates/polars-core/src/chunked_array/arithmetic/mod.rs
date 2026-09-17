@@ -5,9 +5,9 @@ mod numeric;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use arrow::compute::utils::combine_validities_and;
 use num_traits::{Num, NumCast, ToPrimitive};
 pub use numeric::ArithmeticChunked;
+use polars_arrow::compute::utils::combine_validities_and;
 
 use crate::prelude::arity::unary_elementwise_values;
 use crate::prelude::*;

@@ -1,7 +1,7 @@
 use std::cell::LazyCell;
 use std::sync::Arc;
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 use polars_core::config;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{

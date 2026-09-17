@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::datatypes::ArrowSchemaRef;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_async::executor::{self, TaskPriority};
 use polars_async::primitives::connector;
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;

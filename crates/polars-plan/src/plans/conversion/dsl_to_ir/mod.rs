@@ -1,11 +1,11 @@
 use std::pin::Pin;
 use std::sync::LazyLock;
 
-use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::rewrite_projections;
 use futures::stream::FuturesUnordered;
 use hive::hive_partitions_from_paths;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
 use polars_core::runtime::ASYNC;

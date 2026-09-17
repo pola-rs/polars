@@ -1,5 +1,5 @@
-use arrow::array::{Array, PrimitiveArray};
-use arrow::types::NativeType;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::types::NativeType;
 
 use crate::ewm::EwmStateUpdate;
 

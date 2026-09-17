@@ -1,6 +1,8 @@
-use arrow::array::{Int32Array, ListArray, MutableListArray, MutablePrimitiveArray, TryExtend};
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{
+    Int32Array, ListArray, MutableListArray, MutablePrimitiveArray, TryExtend,
+};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
 
 use super::test_equal;
 

@@ -7,7 +7,7 @@ use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::SchemaRef;
-use polars_core::utils::arrow::io::ipc::write::WriteOptions;
+use polars_core::utils::polars_arrow::io::ipc::write::WriteOptions;
 use polars_error::PolarsResult;
 use polars_io::ipc::IpcWriterOptions;
 use polars_io::utils::bytes_bufferer::BytesBuffererConfig;

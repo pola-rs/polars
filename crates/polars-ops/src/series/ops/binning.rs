@@ -1,4 +1,4 @@
-use arrow::compute::concatenate::concatenate_validities;
+use polars_arrow::compute::concatenate::concatenate_validities;
 use polars_core::chunked_array::ops::binning::{FractionSpec, IntervalSpec};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;

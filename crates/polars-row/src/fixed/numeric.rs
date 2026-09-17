@@ -2,10 +2,10 @@
 use std::fmt::Debug;
 use std::mem::MaybeUninit;
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
-use arrow::types::NativeType;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 use polars_utils::slice::*;
 use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};

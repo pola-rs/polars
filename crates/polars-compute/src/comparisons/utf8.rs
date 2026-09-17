@@ -1,6 +1,6 @@
-use arrow::array::Utf8Array;
-use arrow::bitmap::Bitmap;
-use arrow::types::Offset;
+use polars_arrow::array::Utf8Array;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::types::Offset;
 
 use super::{TotalEqKernel, TotalOrdKernel};
 

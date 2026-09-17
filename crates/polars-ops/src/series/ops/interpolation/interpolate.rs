@@ -1,8 +1,8 @@
 use std::ops::{Add, Div, Mul, Sub};
 
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::MutableBitmap;
 use num_traits::{NumCast, Zero};
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
 use polars_defs::expr::InterpolationMethod;

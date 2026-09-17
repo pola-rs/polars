@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::builder::ShareStrategy;
+use polars_arrow::array::builder::ShareStrategy;
 use polars_utils::IdxSize;
 
 use crate::frame::DataFrame;

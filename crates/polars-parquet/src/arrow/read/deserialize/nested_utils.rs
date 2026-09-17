@@ -1,5 +1,5 @@
-use arrow::bitmap::utils::BitmapIter;
-use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
+use polars_arrow::bitmap::utils::BitmapIter;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 
 use super::utils::PageDecoder;
 use super::{Filter, utils};

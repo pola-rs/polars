@@ -1,5 +1,5 @@
-use arrow::temporal_conversions::{NANOSECONDS, NANOSECONDS_IN_DAY};
 use chrono::{Datelike, Timelike};
+use polars_arrow::temporal_conversions::{NANOSECONDS, NANOSECONDS_IN_DAY};
 use polars_utils::array;
 
 use super::*;

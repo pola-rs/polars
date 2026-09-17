@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::ops::Deref;
 use std::sync::Mutex;
 
-use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_error::feature_gated;
 use polars_utils::idx_vec::UnitVec;

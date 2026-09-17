@@ -159,10 +159,10 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferCompression(err)))?;
 
     match compression {
-        arrow_format::ipc::CompressionType::Lz4Frame => {
+        polars_arrow_format::ipc::CompressionType::Lz4Frame => {
             compression::decompress_lz4(&scratch[8..], out_slice)?;
         },
-        arrow_format::ipc::CompressionType::Zstd => {
+        polars_arrow_format::ipc::CompressionType::Zstd => {
             compression::decompress_zstd(&scratch[8..], out_slice)?;
         },
     }
@@ -336,10 +336,10 @@ fn read_compressed_bitmap<R: Read + Seek>(
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferCompression(err)))?;
 
     match compression {
-        arrow_format::ipc::CompressionType::Lz4Frame => {
+        polars_arrow_format::ipc::CompressionType::Lz4Frame => {
             compression::decompress_lz4(&scratch[8..], &mut buffer)?;
         },
-        arrow_format::ipc::CompressionType::Zstd => {
+        polars_arrow_format::ipc::CompressionType::Zstd => {
             compression::decompress_zstd(&scratch[8..], &mut buffer)?;
         },
     }

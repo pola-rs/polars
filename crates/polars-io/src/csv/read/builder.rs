@@ -1,4 +1,4 @@
-use arrow::array::MutableBinaryViewArray;
+use polars_arrow::array::MutableBinaryViewArray;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::str_to_dec128;
 #[cfg(feature = "dtype-categorical")]

@@ -1,6 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::legacy::utils::CustomIterTools;
 use num_traits::ToPrimitive;
+use polars_arrow::legacy::utils::CustomIterTools;
 use polars_error::polars_ensure;
 
 use super::QuantileMethod::*;

@@ -1,12 +1,12 @@
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryViewArray, DictionaryArray, DictionaryKey, PrimitiveArray, Utf8ViewArray,
 };
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::compute::aggregate::estimated_bytes_size;
-use arrow::datatypes::{ArrowDataType, IntegerType, PhysicalType};
-use arrow::legacy::utils::CustomIterTools;
-use arrow::trusted_len::TrustMyLength;
-use arrow::types::NativeType;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::compute::aggregate::estimated_bytes_size;
+use polars_arrow::datatypes::{ArrowDataType, IntegerType, PhysicalType};
+use polars_arrow::legacy::utils::CustomIterTools;
+use polars_arrow::trusted_len::TrustMyLength;
+use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_compute::min_max::MinMaxKernel;
 use polars_error::{PolarsResult, polars_bail};
@@ -219,7 +219,7 @@ pub(crate) fn encode_as_dictionary_optional(
         ));
     }
 
-    use arrow::types::PrimitiveType as PT;
+    use polars_arrow::types::PrimitiveType as PT;
     let fast_dictionary = match array.dtype().to_physical_type() {
         PhysicalType::Primitive(pt) => match pt {
             PT::Int8 => min_max_integer_encode_as_dictionary_optional::<_, i8>(array),

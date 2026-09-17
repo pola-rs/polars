@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use arrow::array::PrimitiveArray;
 use num_traits::Zero;
+use polars_arrow::array::PrimitiveArray;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add};
 use polars_core::error::constants::LENGTH_LIMIT_MSG;

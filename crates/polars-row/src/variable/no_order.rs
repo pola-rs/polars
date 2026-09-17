@@ -10,8 +10,8 @@
 /// After the sentinel value (and possible length), the data is then given.
 use std::mem::MaybeUninit;
 
-use arrow::array::{BinaryViewArray, MutableBinaryViewArray};
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::array::{BinaryViewArray, MutableBinaryViewArray};
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;

@@ -1,4 +1,4 @@
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 
 #[test]
 fn from_slice() {

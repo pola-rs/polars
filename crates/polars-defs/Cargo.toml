@@ -9,7 +9,7 @@ repository = { workspace = true }
 description = "Shared option, argument and enum definitions for the Polars DataFrame library"
 
 [dependencies]
-arrow = { workspace = true }
+polars-arrow = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
@@ -43,7 +43,7 @@ dtype-date = ["polars-core/dtype-date", "temporal"]
 dtype-datetime = ["polars-core/dtype-datetime", "temporal"]
 dtype-time = ["polars-core/dtype-time", "temporal"]
 dtype-duration = ["polars-core/dtype-duration", "temporal"]
-timezones = ["dep:chrono-tz", "dtype-datetime", "polars-core/timezones", "arrow/timezones"]
+timezones = ["dep:chrono-tz", "dtype-datetime", "polars-core/timezones", "polars-arrow/timezones"]
 
 [lints]
 workspace = true

@@ -214,9 +214,9 @@ impl From<simdutf8::basic::Utf8Error> for PolarsError {
         polars_err!(ComputeError: "invalid utf8: {}", value)
     }
 }
-#[cfg(feature = "arrow-format")]
-impl From<arrow_format::ipc::planus::Error> for PolarsError {
-    fn from(err: arrow_format::ipc::planus::Error) -> Self {
+#[cfg(feature = "polars-arrow-format")]
+impl From<polars_arrow_format::ipc::planus::Error> for PolarsError {
+    fn from(err: polars_arrow_format::ipc::planus::Error) -> Self {
         polars_err!(ComputeError: "parquet error: {err:?}")
     }
 }

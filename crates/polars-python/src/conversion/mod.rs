@@ -26,8 +26,8 @@ use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::decimal::dec128_verify_prec_scale;
 use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
-use polars_core::utils::arrow::array::Array;
 use polars_core::utils::materialize_dyn_int;
+use polars_core::utils::polars_arrow::array::Array;
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;

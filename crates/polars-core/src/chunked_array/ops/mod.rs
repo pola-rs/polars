@@ -1,5 +1,5 @@
 //! Traits for miscellaneous operations on ChunkedArray
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_compute::rolling::QuantileMethod;
 
 use crate::prelude::*;

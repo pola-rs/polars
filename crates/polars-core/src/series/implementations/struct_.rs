@@ -1,6 +1,6 @@
 use std::ops::Not;
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 
 use super::*;
 use crate::chunked_array::StructChunked;

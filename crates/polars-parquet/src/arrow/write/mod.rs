@@ -2,7 +2,7 @@
 //!
 //! # Arrow/Parquet Interoperability
 //! As of [parquet-format v2.9](https://github.com/apache/parquet-format/blob/master/LogicalTypes.md)
-//! there are Arrow [DataTypes](arrow::datatypes::ArrowDataType) which do not have a parquet
+//! there are Arrow [DataTypes](polars_arrow::datatypes::ArrowDataType) which do not have a parquet
 //! representation. These include but are not limited to:
 //! * `ArrowDataType::Timestamp(TimeUnit::Second, _)`
 //! * `ArrowDataType::Int64`
@@ -25,12 +25,12 @@ mod row_group;
 mod schema;
 mod utils;
 
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::*;
-use arrow::types::{NativeType, days_ms, i256};
 pub use nested::{num_values, write_rep_and_def};
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::*;
+use polars_arrow::types::{NativeType, days_ms, i256};
 use polars_config::config;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -100,10 +100,10 @@ pub struct WriteOptions {
     pub data_page_size: Option<usize>,
 }
 
-use arrow::compute::aggregate::estimated_bytes_size;
-use arrow::match_integer_type;
 pub use file::FileWriter;
 pub use pages::{Nested, array_to_columns};
+use polars_arrow::compute::aggregate::estimated_bytes_size;
+use polars_arrow::match_integer_type;
 use polars_error::{PolarsResult, polars_bail};
 pub use row_group::{RowGroupIterator, row_group_iter};
 pub use schema::{schema_to_metadata_key, to_parquet_type};
@@ -1133,7 +1133,7 @@ fn array_to_page_nested(
 }
 
 fn get_encodings_recursive(dtype: &ArrowDataType, encodings: &mut Vec<Encoding>) {
-    use arrow::datatypes::PhysicalType::*;
+    use polars_arrow::datatypes::PhysicalType::*;
     match dtype.to_physical_type() {
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
         | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => {
