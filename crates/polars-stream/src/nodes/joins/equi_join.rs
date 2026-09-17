@@ -528,6 +528,10 @@ impl SampleState {
                     eprintln!("preferred build side done with {len} rows, publishing its ranges");
                 }
                 self.publish_runtime_filters(left, params, state)?;
+                // Nothing can match an empty side; the other side is never read.
+                if len == 0 {
+                    return Ok(Some(self.start_build(left, params, state, spill_ctx)?));
+                }
             } else {
                 return Ok(None);
             }
@@ -833,6 +837,13 @@ impl BuildState {
             local.morsels.push((morsel.seq(), sf, hash_keys));
         }
         Ok(())
+    }
+
+    /// Whether no row was built, sampled morsels included.
+    fn is_empty(&self) -> bool {
+        self.local_builders
+            .iter()
+            .all(|b| b.morsels.iter().all(|(_, _, keys)| keys.len() == 0))
     }
 
     /// Hand the range of every build key with a runtime filter to the scans
@@ -1733,9 +1744,18 @@ impl ComputeNode for EquiJoinNode {
         let probe_idx = 1 - build_idx;
 
         // If we are building and the build input is done, transition to probing.
+        // An inner join with nothing to probe against is done without reading
+        // the probe side.
         if let EquiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
                 build_state.publish_runtime_filters(&self.params);
+                if self.params.args.how == JoinType::Inner && build_state.is_empty() {
+                    self.state = EquiJoinState::Done;
+                }
+            }
+        }
+        if let EquiJoinState::Build(build_state) = &mut self.state {
+            if recv[build_idx] == PortState::Done {
                 let probe_state = if self.params.preserve_order_build {
                     build_state.finalize_ordered(&self.params, &*self.table)
                 } else {

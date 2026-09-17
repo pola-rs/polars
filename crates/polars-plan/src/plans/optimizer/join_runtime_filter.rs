@@ -40,6 +40,7 @@ use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::StatsCache;
 use crate::plans::{
     AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator, into_column,
+    is_inherently_nondeterministic,
 };
 use crate::prelude::{JoinType, MaintainOrderJoin};
 use crate::utils::has_aexpr;
@@ -93,7 +94,7 @@ fn process_join(
         return;
     };
     let (input_left, input_right) = (*input_left, *input_right);
-    if !is_eligible_join(options)
+    if !is_eligible_join(options, expr_arena)
         || matches!(
             options.args.build_side,
             Some(JoinBuildSide::ForceLeft | JoinBuildSide::ForceRight)
@@ -248,10 +249,18 @@ fn trace_probe_keys(
 /// Whether the join may publish a range or be crossed by one: an inner equi join
 /// the streaming engine can run as a hash join that blocks its probe side until
 /// the build is done. Sorted inputs may still make it a merge join, which drops
-/// the range.
-fn is_eligible_join(options: &JoinOptionsIR) -> bool {
+/// the range. A key that may evaluate differently each time gives no range, as
+/// the join evaluates it again when it builds.
+fn is_eligible_join(options: &JoinOptionsIR, expr_arena: &Arena<AExpr>) -> bool {
     let args = &options.args;
-    matches!(&options.options, JoinTypeOptionsIR::Equi { on, .. } if !on.is_empty())
+    let JoinTypeOptionsIR::Equi { on, .. } = &options.options else {
+        return false;
+    };
+    !on.is_empty()
+        && on.iter().all(|(left, right)| {
+            !is_inherently_nondeterministic(left.node(), expr_arena)
+                && !is_inherently_nondeterministic(right.node(), expr_arena)
+        })
         && args.how == JoinType::Inner
         && args.maintain_order == MaintainOrderJoin::None
         && !args.nulls_equal
@@ -357,7 +366,7 @@ fn scan_origin(
                     Some(JoinBuildSide::PreferLeft) if sequential => false,
                     _ => return None,
                 };
-                if !is_eligible_join(options) {
+                if !is_eligible_join(options, expr_arena) {
                     return None;
                 }
                 let name = column_name(predicate, expr_arena).clone();

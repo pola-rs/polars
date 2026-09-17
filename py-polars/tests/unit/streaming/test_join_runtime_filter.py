@@ -219,9 +219,10 @@ def test_slice_on_an_intermediate_join_is_a_barrier(
 def test_empty_build_side_reads_nothing(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
+    # An inner join with an empty build side is done; the scan is never opened.
     q = fact.join(dim(-1), on="k")
     out, groups = row_groups_read(q, plmonkeypatch, capfd)
-    assert groups == "0 / 10 row groups"
+    assert groups is None
     assert out.height == 0
     assert_matches_in_memory(q, out)
 
@@ -677,7 +678,8 @@ def test_int96_timestamps_have_no_bounds(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     # Statistics of INT96 timestamps are not ordered as polars orders datetimes;
-    # the range is published but skips nothing, except when it is empty.
+    # the range is published but skips nothing. An empty build side ends the join
+    # before the scan opens.
     import pyarrow.parquet as pq
 
     stamps = [datetime(2020, 1, 1) + timedelta(days=i) for i in range(20)]
@@ -700,7 +702,7 @@ def test_int96_timestamps_have_no_bounds(
 
     empty = build.filter(pl.col("k").is_in([datetime(1999, 1, 1)]))
     out, groups = row_groups_read(fact.join(empty, on="k"), plmonkeypatch, capfd)
-    assert groups == "0 / 4 row groups"
+    assert groups is None
     assert out.height == 0
 
 
@@ -762,7 +764,7 @@ def test_empty_preferred_build_side_reads_nothing(
     q = fact.join(unbounded_dim(-1), on="k")
     assert "BUILD SIDE: Prefer" in q.explain(engine="streaming")
     out, groups = row_groups_read(q, plmonkeypatch, capfd)
-    assert groups == "0 / 10 row groups"
+    assert groups is None
     assert out.height == 0
 
 
@@ -878,7 +880,9 @@ def test_published_range_holds_when_the_other_side_is_built(
     q = fact.filter(pl.col("v") % 500 == 220).join(
         unbounded_dim(*range(200, 400, 20)), on="k"
     )
-    assert "BUILD SIDE: Prefer" in q.explain(engine="streaming")
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: Prefer" in plan
+    other = "right" if "BUILD SIDE: PreferLeft" in plan else "left"
 
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
@@ -886,5 +890,47 @@ def test_published_range_holds_when_the_other_side_is_built(
     err = capfd.readouterr().err
     assert "Predicate pushdown: reading 2 / 10 row groups" in err
     assert "publishing its ranges" in err
+    assert f"build side chosen: {other}" in err
     assert out.get_column("k").to_list() == [220]
     assert_matches_in_memory(q, out)
+
+
+@pytest.mark.parametrize("dim_left", [False, True])
+def test_empty_preferred_side_never_reads_the_other(
+    tmp_path: Path,
+    dim_left: bool,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Without statistics the range cannot skip anything, so the join itself must
+    # finish once the empty side is read.
+    path = tmp_path / "fact.parquet"
+    pl.DataFrame({"k": range(1000), "v": range(1000)}).write_parquet(
+        path, row_group_size=ROWS_PER_GROUP, statistics=False
+    )
+    fact = pl.scan_parquet(path, use_statistics=False)
+    dim = unbounded_dim(-1)
+    q = dim.join(fact, on="k") if dim_left else fact.join(dim, on="k")
+    assert "BUILD SIDE: Prefer" in q.explain(engine="streaming")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    assert "preferred build side done with 0 rows" in err
+    assert "[ParquetFileReader]" not in err
+    assert out.height == 0
+
+
+def test_a_key_that_may_change_gets_no_range(fact: pl.LazyFrame) -> None:
+    # The range would come from one evaluation of the key and the build from
+    # another.
+    dim = pl.LazyFrame({"ks": [[220, 720], [220, 720]], "d": [1, 2]}).filter(
+        pl.col("d") > 0
+    )
+    key = pl.col("ks").list.sample(1, seed=1).list.first()
+    q = fact.join(dim, left_on="k", right_on=key)
+    assert "dynamic_predicate" not in q.explain(engine="streaming")
+    out = q.collect(engine="streaming")
+    assert out.height == 2
+    assert set(out.get_column("k").to_list()) <= {220, 720}
