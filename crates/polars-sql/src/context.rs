@@ -3242,10 +3242,14 @@ impl SQLContext {
                     projection_overrides
                         .insert(alias.as_ref(), col(name.clone()).alias(alias.clone()));
                 } else if !is_non_group_key_expr && !group_by_keys_schema.contains(alias) {
-                    projection_aliases.insert(alias.as_ref());
+                    projection_aliases.insert(alias.clone());
                 }
             }
             let field = e_inner.to_field(&schema_before)?;
+            if !matches!(e, Expr::Alias(..)) && !matches_group_key && is_constant_expr(e) {
+                // Unaliased constants are re-evaluated on the aggregated frame.
+                projection_aliases.insert(field.name.clone());
+            }
             if is_non_group_key_expr {
                 // Window functions run on the aggregated frame; only the aggregates
                 // inside them run in the group context. The same holds for anything
@@ -3383,7 +3387,7 @@ impl SQLContext {
                         col(key_name.clone()).alias(name.clone())
                     }
                 } else if group_by_keys_schema.get(name).is_some()
-                    || projection_aliases.contains(name.as_str())
+                    || projection_aliases.contains(name)
                     || group_key_aliases.contains(name.as_str())
                 {
                     if has_expr(projection_expr, |e| {
@@ -4290,6 +4294,23 @@ fn requires_group_processing(expr: &Expr, group_by_keys_schema: &Schema) -> bool
                 |e| matches!(e, Expr::Column(name) if !group_by_keys_schema.contains(name)),
             )
         },
+        _ => false,
+    })
+}
+
+/// Whether a SELECT projection is a constant: it references no columns and
+/// contains nothing that must run in the group context.
+fn is_constant_expr(expr: &Expr) -> bool {
+    !has_expr(expr, |e| match e {
+        Expr::Column(_)
+        | Expr::Selector(_)
+        | Expr::Agg(_)
+        | Expr::Len
+        | Expr::Over { .. }
+        | Expr::AnonymousFunction { .. }
+        | Expr::SubPlan(..) => true,
+        #[cfg(feature = "dynamic_group_by")]
+        Expr::Rolling { .. } => true,
         _ => false,
     })
 }
