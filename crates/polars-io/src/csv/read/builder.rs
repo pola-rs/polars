@@ -3,14 +3,14 @@ use arrow::array::MutableBinaryViewArray;
 use polars_compute::decimal::str_to_dec128;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::chunked_array::builder::CategoricalChunkedBuilder;
-use polars_core::prelude::*;
-use polars_error::to_compute_err;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::chunkedarray::string::Pattern;
-#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::string::infer::{
+use polars_core::chunked_array::temporal::string::infer::{
     DatetimeInfer, StrpTimeParser, TryFromWithUnit, infer_pattern_single,
 };
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
+use polars_core::chunked_array::temporal::string::patterns::Pattern;
+use polars_core::prelude::*;
+use polars_error::to_compute_err;
 #[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;
 use polars_utils::vec::PushUnchecked;

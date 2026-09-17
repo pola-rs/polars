@@ -3,6 +3,7 @@
     allow(unused, dead_code, irrefutable_let_patterns)
 )] // Maybe be caused by some feature
 mod executors;
+pub mod function_ir;
 mod planner;
 mod prelude;
 pub mod scan_predicate;

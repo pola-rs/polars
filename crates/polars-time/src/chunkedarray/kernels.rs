@@ -8,8 +8,8 @@ use arrow::temporal_conversions::{
     timestamp_us_to_datetime_opt,
 };
 use chrono::{Datelike, Timelike};
+use polars_utils::time::{days_in_month, is_leap_year};
 
-use super::super::windows::calendar::*;
 use super::*;
 
 trait PolarsIso {

@@ -560,7 +560,7 @@ async fn start_reader_impl(
                 hp.df()
                     .columns()
                     .iter()
-                    .filter(|c| predicate.live_columns.contains(c.name()))
+                    .filter(|c| predicate.skip_batch_columns.contains(c.name()))
                     .map(|c| {
                         (
                             c.name().clone(),
@@ -593,7 +593,7 @@ async fn start_reader_impl(
         {
             match &missing_columns_policy {
                 MissingColumnsPolicy::Insert => {
-                    if predicate.live_columns.contains(missing_col_name) {
+                    if predicate.skip_batch_columns.contains(missing_col_name) {
                         external_predicate_cols.push((
                             missing_col_name.clone(),
                             default_value

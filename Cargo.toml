@@ -120,6 +120,7 @@ polars-buffer = { version = "0.55.1", path = "crates/polars-buffer", default-fea
 polars-compute = { version = "0.55.1", path = "crates/polars-compute", default-features = false }
 polars-config = { version = "0.55.1", path = "crates/polars-config", default-features = false }
 polars-core = { version = "0.55.1", path = "crates/polars-core", default-features = false }
+polars-defs = { version = "0.55.1", path = "crates/polars-defs", default-features = false }
 polars-descriptions = { version = "0.55.1", path = "crates/polars-descriptions", default-features = false }
 polars-dtype = { version = "0.55.1", path = "crates/polars-dtype", default-features = false }
 polars-dylib = { version = "0.55.1", path = "crates/polars-dylib", default-features = false }

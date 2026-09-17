@@ -608,6 +608,21 @@ impl DataType {
         self.is_primitive_numeric() || self.is_bool() || self.is_null()
     }
 
+    /// Whether `arr.dot` has a kernel for this inner dtype.
+    pub fn is_supported_array_dot_input(&self) -> bool {
+        use DataType::*;
+        match self {
+            Int8 | Int16 | Int32 | Int64 => true,
+            #[cfg(feature = "dtype-i128")]
+            Int128 => true,
+            UInt8 | UInt16 | UInt32 | UInt64 => true,
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => true,
+            Float32 | Float64 => true,
+            _ => false,
+        }
+    }
+
     /// Check if this [`DataType`] is a logical type
     pub fn is_logical(&self) -> bool {
         self != &self.to_physical()

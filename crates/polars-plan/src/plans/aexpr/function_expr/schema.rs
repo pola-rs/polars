@@ -332,9 +332,9 @@ impl IRFunctionExpr {
                     polars_ensure!(l.len() == breaks.len() + 1, ShapeMismatch: "provide len(breaks) + 1 labels");
                     l.clone()
                 } else {
-                    use polars_ops::series::compute_labels;
+                    use polars_core::utils::cut::compute_cut_labels;
 
-                    compute_labels(breaks, *left_closed)?
+                    compute_cut_labels(breaks, *left_closed)?
                 };
                 let enum_dtype = DataType::from_frozen_categories(FrozenCategories::new(
                     cut_labels.iter().map(|s| s.as_str()),
@@ -518,7 +518,7 @@ impl IRFunctionExpr {
             }),
             #[cfg(feature = "dtype-struct")]
             RowDecode(fields, _) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
-            DynamicPred { .. } => mapper.with_dtype(DataType::Boolean),
+            DynamicPred { .. } | DynamicSkipBatch { .. } => mapper.with_dtype(DataType::Boolean),
         }
     }
 

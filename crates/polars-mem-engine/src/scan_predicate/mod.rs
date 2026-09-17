@@ -23,8 +23,16 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 pub struct ScanPredicate {
     pub predicate: Arc<dyn PhysicalExpr>,
 
+    /// Whether `predicate` filters rows at all. False when every part of the
+    /// predicate is only consulted to skip batches by their statistics.
+    pub filters_rows: bool,
+
     /// Column names that are used in the predicate.
     pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
+
+    /// Column names whose statistics the skip-batch predicate reads. A superset of
+    /// the live columns: a dynamic predicate may only be consulted for skipping.
+    pub skip_batch_columns: Arc<PlIndexSet<PlSmallStr>>,
 
     /// A predicate expression used to skip record batches based on its statistics.
     ///
@@ -115,6 +123,7 @@ impl ScanPredicate {
         let constant_columns = constant_columns.into_iter();
 
         let mut live_columns = self.live_columns.as_ref().clone();
+        let mut skip_batch_columns = self.skip_batch_columns.as_ref().clone();
         let mut skip_batch_predicate_constants =
             Vec::with_capacity(if self.skip_batch_predicate.is_some() {
                 1 + constant_columns.size_hint().0 * 3
@@ -124,7 +133,8 @@ impl ScanPredicate {
 
         let predicate_constants = constant_columns
             .filter_map(|(name, scalar): (PlSmallStr, Scalar)| {
-                if !live_columns.swap_remove(&name) {
+                let in_skip_batch = skip_batch_columns.swap_remove(&name);
+                if !live_columns.swap_remove(&name) && !in_skip_batch {
                     return None;
                 }
 
@@ -161,7 +171,9 @@ impl ScanPredicate {
 
         Self {
             predicate,
+            filters_rows: self.filters_rows,
             live_columns: Arc::new(live_columns),
+            skip_batch_columns: Arc::new(skip_batch_columns),
             skip_batch_predicate,
             column_predicates: self.column_predicates.clone(), // Q? Maybe this should cull
             // predicates.
@@ -189,7 +201,9 @@ impl ScanPredicate {
     ) -> ScanIOPredicate {
         ScanIOPredicate {
             predicate: phys_expr_to_io_expr(self.predicate.clone()),
+            filters_rows: self.filters_rows,
             live_columns: self.live_columns.clone(),
+            skip_batch_columns: self.skip_batch_columns.clone(),
             skip_batch_predicate: skip_batch_predicate
                 .cloned()
                 .or_else(|| self.to_dyn_skip_batch_predicate(schema)),

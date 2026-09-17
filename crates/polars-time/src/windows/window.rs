@@ -5,6 +5,8 @@ use chrono::NaiveDateTime;
 use chrono::TimeZone;
 use now::DateTimeNow;
 use polars_core::prelude::*;
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::{ClosedWindow, StartBy};
 
 use crate::prelude::*;
 

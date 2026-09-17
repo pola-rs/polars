@@ -378,6 +378,11 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             use MapFunction as M;
             F::MapExpr(match f {
                 IM::Entries => M::Entries,
+                IM::Keys => M::Keys,
+                IM::Values => M::Values,
+                IM::Length => M::Length,
+                IM::ContainsKey => M::ContainsKey,
+                IM::Get => M::Get,
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -1209,7 +1214,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),
             v,
         ),
-        IF::DynamicPred { pred } => {
+        IF::DynamicPred { pred, .. } | IF::DynamicSkipBatch { pred } => {
             return Expr::Display {
                 inputs: input,
                 fmt_str: Box::new(format_pl_smallstr!("{pred:?}")),

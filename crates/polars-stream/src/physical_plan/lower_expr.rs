@@ -9,11 +9,11 @@ use polars_core::prelude::{
 };
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaExt};
+use polars_defs::join::{JoinArgs, JoinType};
 use polars_error::{PolarsResult, feature_gated};
 use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
-use polars_ops::frame::{JoinArgs, JoinType};
 use polars_ops::series::{RLE_LENGTH_COLUMN_NAME, RLE_VALUE_COLUMN_NAME};
 use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
@@ -33,7 +33,7 @@ use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_group_by::{
     GroupByLowerKind, build_group_by_stream, try_build_streaming_group_by,
 };
-use crate::physical_plan::lower_ir::{build_filter_stream, build_row_idx_stream};
+use crate::physical_plan::lower_ir::{build_filter_stream_with_ctx, build_row_idx_stream};
 
 type ExprNodeKey = Node;
 
@@ -53,14 +53,14 @@ impl ExprCache {
     }
 }
 
-struct LowerExprContext<'a> {
-    prepare_visualization: bool,
-    sortedness: &'a IRPlanSorted,
-    expr_arena: &'a mut Arena<AExpr>,
-    phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
-    cache: &'a mut ExprCache,
-    node_scratch: &'a mut ScratchVec<Node>,
-    ae_height_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
+pub(crate) struct LowerExprContext<'a> {
+    pub(crate) prepare_visualization: bool,
+    pub(crate) sortedness: &'a IRPlanSorted,
+    pub(crate) expr_arena: &'a mut Arena<AExpr>,
+    pub(crate) phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
+    pub(crate) cache: &'a mut ExprCache,
+    pub(crate) node_scratch: &'a mut ScratchVec<Node>,
+    pub(crate) ae_height_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
 }
 
 impl<'a> From<LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
@@ -768,13 +768,10 @@ fn lower_exprs_with_ctx(
 
                         let predicate =
                             ExprIR::from_column_name(distinct_name.clone(), ctx.expr_arena);
-                        let uniq_stream = build_filter_stream(
+                        let uniq_stream = build_filter_stream_with_ctx(
                             PhysStream::first(is_first_distinct_node),
                             predicate,
-                            ctx.expr_arena,
-                            ctx.phys_sm,
-                            ctx.cache,
-                            StreamingLowerIRContext::from(&*ctx),
+                            ctx,
                         )?;
                         input_streams.insert(uniq_stream);
                     });
@@ -1785,7 +1782,9 @@ fn lower_exprs_with_ctx(
                         separator.as_str()
                     )
                 });
-                let map = Arc::new(move |df| unnest_fn.evaluate(df));
+                let map = Arc::new(move |df| {
+                    polars_mem_engine::function_ir::evaluate_function_ir(&unnest_fn, df)
+                });
                 let node_kind = PhysNodeKind::Map {
                     input: stream,
                     map,
@@ -2327,14 +2326,11 @@ fn lower_exprs_with_ctx(
                 let row_index =
                     build_row_idx_stream(predicate, out_name.clone(), None, ctx.phys_sm);
 
-                let filter_stream = build_filter_stream(
+                let filter_stream = build_filter_stream_with_ctx(
                     row_index,
                     AExprBuilder::col(predicate_name.clone(), ctx.expr_arena)
                         .expr_ir(predicate_name),
-                    ctx.expr_arena,
-                    ctx.phys_sm,
-                    ctx.cache,
-                    StreamingLowerIRContext::from(&*ctx),
+                    ctx,
                 )?;
                 input_streams.insert(filter_stream);
                 transformed_exprs.push(AExprBuilder::col(out_name.clone(), ctx.expr_arena).node());
@@ -2371,14 +2367,8 @@ fn lower_exprs_with_ctx(
 
                 let eq_node = AExprBuilder::col(col_name.clone(), ctx.expr_arena)
                     .eq_validity(AExprBuilder::col(val_name, ctx.expr_arena), ctx.expr_arena);
-                let filter_stream = build_filter_stream(
-                    row_index_stream,
-                    eq_node.expr_ir(col_name),
-                    ctx.expr_arena,
-                    ctx.phys_sm,
-                    ctx.cache,
-                    StreamingLowerIRContext::from(&*ctx),
-                )?;
+                let filter_stream =
+                    build_filter_stream_with_ctx(row_index_stream, eq_node.expr_ir(col_name), ctx)?;
 
                 let first_node = AExprBuilder::col(idx_name, ctx.expr_arena)
                     .first(ctx.expr_arena)
@@ -2861,16 +2851,33 @@ pub fn build_hstack_stream(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
-    let input_schema = input.output_schema(phys_sm);
+    let mut ctx = LowerExprContext {
+        expr_arena,
+        phys_sm,
+        cache: expr_cache,
+        prepare_visualization: ctx.prepare_visualization,
+        sortedness: ctx.sortedness,
+        node_scratch: &mut Default::default(),
+        ae_height_scratch: &mut Default::default(),
+    };
+    build_hstack_stream_with_ctx(input, exprs, &mut ctx)
+}
+
+pub(crate) fn build_hstack_stream_with_ctx(
+    input: PhysStream,
+    exprs: &[ExprIR],
+    ctx: &mut LowerExprContext,
+) -> PolarsResult<PhysStream> {
+    let input_schema = input.output_schema(ctx.phys_sm);
     if exprs
         .iter()
-        .all(|e| is_elementwise_rec_cached(e.node(), expr_arena, expr_cache))
+        .all(|e| is_elementwise_rec_cached(e.node(), ctx.expr_arena, ctx.cache))
     {
         let mut output_schema = input_schema.as_ref().clone();
         for expr in exprs {
             output_schema.insert(
                 expr.output_name().clone(),
-                expr.dtype(input_schema, expr_arena)?
+                expr.dtype(input_schema, ctx.expr_arena)?
                     .clone()
                     .materialize_unknown(true)?,
             );
@@ -2884,7 +2891,7 @@ pub fn build_hstack_stream(
             extend_original: true,
             rechunk_input: false,
         };
-        let node_key = phys_sm.insert(PhysNode::new(output_schema, kind));
+        let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
 
         Ok(PhysStream::first(node_key))
     } else {
@@ -2893,7 +2900,7 @@ pub fn build_hstack_stream(
         let mut selectors = PlIndexMap::with_capacity(input_schema.len() + exprs.len());
         for name in input_schema.iter_names() {
             let col_name = name.clone();
-            let col_expr = expr_arena.add(AExpr::Column(col_name.clone()));
+            let col_expr = ctx.expr_arena.add(AExpr::Column(col_name.clone()));
             selectors.insert(
                 name.clone(),
                 ExprIR::new(col_expr, OutputName::ColumnLhs(col_name)),
@@ -2903,37 +2910,23 @@ pub fn build_hstack_stream(
             selectors.insert(expr.output_name().clone(), expr.clone());
         }
         let selectors = selectors.into_values().collect_vec();
-        build_length_preserving_select_stream(
-            input, &selectors, expr_arena, phys_sm, expr_cache, ctx,
-        )
+        build_length_preserving_select_stream_with_ctx(input, &selectors, ctx)
     }
 }
 
 /// Builds a new selection node given an input stream and the expressions to
 /// select for, if needed. Preserves the length of the input, like in with_columns.
-pub fn build_length_preserving_select_stream(
+fn build_length_preserving_select_stream_with_ctx(
     input: PhysStream,
     exprs: &[ExprIR],
-    expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
-    expr_cache: &mut ExprCache,
-    ctx: StreamingLowerIRContext<'_>,
+    ctx: &mut LowerExprContext,
 ) -> PolarsResult<PhysStream> {
-    let mut ctx = LowerExprContext {
-        expr_arena,
-        phys_sm,
-        cache: expr_cache,
-        prepare_visualization: ctx.prepare_visualization,
-        sortedness: ctx.sortedness,
-        node_scratch: &mut Default::default(),
-        ae_height_scratch: &mut Default::default(),
-    };
     let already_length_preserving = exprs
         .iter()
-        .any(|expr| is_length_preserving_ctx(expr.node(), &mut ctx));
+        .any(|expr| is_length_preserving_ctx(expr.node(), ctx));
     let input_schema = input.output_schema(ctx.phys_sm);
     if exprs.is_empty() || already_length_preserving {
-        return build_select_stream_with_ctx(input, exprs, &mut ctx);
+        return build_select_stream_with_ctx(input, exprs, ctx);
     }
 
     // Hacky work-around: append an input column with a temporary name, but
@@ -2969,12 +2962,12 @@ pub fn build_length_preserving_select_stream(
     tmp_exprs.extend(exprs.iter().cloned());
     tmp_exprs.push(ExprIR::new(height_col, OutputName::Alias(tmp_name.clone())));
 
-    let out_stream = build_select_stream_with_ctx(input, &tmp_exprs, &mut ctx)?;
+    let out_stream = build_select_stream_with_ctx(input, &tmp_exprs, ctx)?;
     let PhysNodeKind::Select { selectors, .. } = &mut ctx.phys_sm[out_stream.node].kind else {
         unreachable!()
     };
     assert!(selectors.pop().unwrap().output_name() == &tmp_name);
-    let out_schema = Arc::make_mut(out_stream.output_schema_mut(phys_sm));
+    let out_schema = Arc::make_mut(out_stream.output_schema_mut(ctx.phys_sm));
     out_schema.shift_remove(tmp_name.as_ref()).unwrap();
     Ok(out_stream)
 }

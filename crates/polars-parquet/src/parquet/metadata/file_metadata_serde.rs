@@ -17,7 +17,7 @@ use super::compact::{
     ByteRange, CompactColumnChunk, CompactColumnMetaData, CompactRowGroup, CompactStatistics,
 };
 use super::schema_descriptor::SchemaDescriptor;
-use super::{ColumnChunkMetadata, FileMetadata, RowGroupMetadata};
+use super::{ColumnChunkMetadata, ColumnOrder, FileMetadata, RowGroupMetadata};
 use crate::parquet::compression::Compression;
 
 #[derive(Serialize, Deserialize)]
@@ -25,6 +25,7 @@ struct FileMetadataWire {
     version: i32,
     schema_descr: SchemaDescriptor,
     row_groups: Vec<RowGroupWire>,
+    column_orders: Option<Vec<ColumnOrder>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -76,16 +77,16 @@ struct ChunkWire {
     statistics: Option<StatWire>,
 }
 
-/// Stat wire entry. Drops fields with zero read-path consumers:
-/// - `distinct_count`: 0 callers in polars's read or predicate paths
-/// - `is_min_value_exact` / `is_max_value_exact`: 0 callers
-///
-/// On deserialize these are set to `None`.
+/// Stat wire entry. Drops `distinct_count`, which has no read-path consumer;
+/// it is `None` after deserialize. The exactness flags decide whether a bound
+/// is used at all, so they travel.
 #[derive(Serialize, Deserialize)]
 struct StatWire {
     null_count: Option<i64>,
     min_value: Option<Vec<u8>>,
     max_value: Option<Vec<u8>>,
+    is_min_value_exact: Option<bool>,
+    is_max_value_exact: Option<bool>,
 }
 
 impl Serialize for FileMetadata {
@@ -102,6 +103,7 @@ impl Serialize for FileMetadata {
             version: self.version,
             schema_descr: self.schema_descr.clone(),
             row_groups,
+            column_orders: self.column_orders.clone(),
         };
         wire.serialize(s)
     }
@@ -129,6 +131,8 @@ fn chunk_to_wire(c: &ColumnChunkMetadata, footer: &[u8]) -> ChunkWire {
         null_count: s.null_count,
         min_value: s.min_value.map(|r| r.resolve(footer).to_vec()),
         max_value: s.max_value.map(|r| r.resolve(footer).to_vec()),
+        is_min_value_exact: s.is_min_value_exact,
+        is_max_value_exact: s.is_max_value_exact,
     });
     // Pre-resolve byte_range so wire form has just (offset, len). The
     // reader's only consumers of these fields go through `byte_range()`,
@@ -177,6 +181,9 @@ impl<'de> Deserialize<'de> for FileMetadata {
         // Wire form already carries a built SchemaDescriptor; per-row-group
         // metadata is rebuilt via RowGroupMetadata::from_compact below.
         let schema_descr = wire.schema_descr;
+        let column_orders = wire
+            .column_orders
+            .filter(|o| o.len() == schema_descr.columns().len());
 
         let footer_buf = Buffer::from_vec(footer);
 
@@ -200,7 +207,7 @@ impl<'de> Deserialize<'de> for FileMetadata {
             row_groups,
             key_value_metadata: None,
             schema_descr,
-            column_orders: None,
+            column_orders,
             footer_buf,
         })
     }
@@ -234,8 +241,8 @@ fn chunk_from_wire(c: ChunkWire, footer: &mut Vec<u8>) -> CompactColumnChunk {
             distinct_count: None,
             max_value,
             min_value,
-            is_max_value_exact: None,
-            is_min_value_exact: None,
+            is_max_value_exact: s.is_max_value_exact,
+            is_min_value_exact: s.is_min_value_exact,
         }
     });
 

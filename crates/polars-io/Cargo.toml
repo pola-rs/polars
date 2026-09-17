@@ -17,7 +17,6 @@ polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
 polars-schema = { workspace = true }
-polars-time = { workspace = true, features = [], optional = true }
 polars-utils = { workspace = true, features = ['mmap', 'sysinfo'] }
 
 arrow = { workspace = true }
@@ -86,7 +85,13 @@ serde = [
   "polars-parquet/serde",
   "polars-utils/serde",
 ]
-dsl-schema = ["dep:schemars", "polars-core/dsl-schema", "polars-parquet/dsl-schema", "polars-utils/dsl-schema"]
+dsl-schema = [
+  "dep:schemars",
+  "polars-buffer/schemars",
+  "polars-core/dsl-schema",
+  "polars-parquet/dsl-schema",
+  "polars-utils/dsl-schema",
+]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrows streaming ipc file parsing
@@ -103,25 +108,25 @@ dtype-i16 = ["polars-core/dtype-i16"]
 dtype-i128 = ["polars-core/dtype-i128"]
 dtype-f16 = ["polars-core/dtype-f16"]
 dtype-categorical = ["polars-core/dtype-categorical"]
-dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
+dtype-date = ["polars-core/dtype-date"]
 dtype-extension = ["polars-core/dtype-extension"]
 dtype-map = ["polars-core/dtype-map"]
 object = ["polars-core/object"]
 dtype-datetime = [
   "polars-core/dtype-datetime",
   "polars-core/temporal",
-  "polars-time/dtype-datetime",
   "chrono",
 ]
 timezones = [
   "chrono-tz",
   "dtype-datetime",
   "arrow/timezones",
+  "polars-core/timezones",
   "polars-json?/chrono-tz",
   "polars-json?/timezones",
 ]
-dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
-dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration"]
+dtype-time = ["polars-core/dtype-time"]
+dtype-duration = ["polars-core/dtype-duration"]
 dtype-struct = ["polars-core/dtype-struct"]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-json?/dtype-decimal"]
 fmt = ["polars-core/fmt"]

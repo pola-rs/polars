@@ -3,8 +3,8 @@ use std::sync::Arc;
 use arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::schema::Schema;
+use polars_defs::join::{JoinArgs, JoinBuildSide, MaintainOrderJoin};
 use polars_error::polars_warn;
-use polars_ops::frame::{JoinArgs, JoinBuildSide, MaintainOrderJoin};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 

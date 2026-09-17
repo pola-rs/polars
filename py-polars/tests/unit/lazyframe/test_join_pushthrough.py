@@ -240,6 +240,7 @@ def test_name_collision_with_the_null_extended_side_is_left_alone() -> None:
     )
 
 
+@pytest.mark.slow
 def test_expanding_inner_join_is_left_alone() -> None:
     fact, returns, _ = frames()
     wide = pl.LazyFrame({"w_key": [i % 50 for i in range(5000)], "w_v": range(5000)})

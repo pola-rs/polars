@@ -170,10 +170,10 @@ fn from_byte_array(
         (Some(PrimitiveLogicalType::String), _) => ArrowDataType::Utf8View,
         (Some(PrimitiveLogicalType::Json), _) => ArrowDataType::BinaryView,
         (Some(PrimitiveLogicalType::Bson), _) => ArrowDataType::BinaryView,
-        (Some(PrimitiveLogicalType::Enum), _) => ArrowDataType::BinaryView,
+        (Some(PrimitiveLogicalType::Enum), _) => ArrowDataType::Utf8View,
         (_, Some(PrimitiveConvertedType::Json)) => ArrowDataType::BinaryView,
         (_, Some(PrimitiveConvertedType::Bson)) => ArrowDataType::BinaryView,
-        (_, Some(PrimitiveConvertedType::Enum)) => ArrowDataType::BinaryView,
+        (_, Some(PrimitiveConvertedType::Enum)) => ArrowDataType::Utf8View,
         (_, Some(PrimitiveConvertedType::Utf8)) => ArrowDataType::Utf8View,
         (_, _) => ArrowDataType::BinaryView,
     }

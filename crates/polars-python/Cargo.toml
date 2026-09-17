@@ -13,6 +13,7 @@ polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
+polars-defs = { workspace = true }
 polars-descriptions = { workspace = true, optional = true }
 polars-dtype = { workspace = true }
 polars-error = { workspace = true }

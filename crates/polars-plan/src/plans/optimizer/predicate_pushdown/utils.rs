@@ -68,7 +68,7 @@ pub(super) fn insert_predicate_dedup(
         .or_insert_with(|| predicate.clone());
 }
 
-pub(super) fn temporary_unique_key(acc_predicates: &PlIndexMap<PlSmallStr, ExprIR>) -> PlSmallStr {
+pub(crate) fn temporary_unique_key(acc_predicates: &PlIndexMap<PlSmallStr, ExprIR>) -> PlSmallStr {
     // TODO: Don't heap allocate during construction.
     let mut out_key = '\u{1D17A}'.to_string();
     let mut existing_keys = acc_predicates.keys();
@@ -503,7 +503,7 @@ pub(crate) fn ir_removes_rows(ir: &IR) -> bool {
 /// predicates.
 ///
 /// This will add a new expression tree in the arena (i.e. it won't mutate the existing node in-place).
-pub(super) fn map_column_references(
+pub(crate) fn map_column_references(
     expr: &mut ExprIR,
     expr_arena: &mut Arena<AExpr>,
     rename_map: &PlIndexMap<PlSmallStr, PlSmallStr>,

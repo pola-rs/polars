@@ -6,11 +6,12 @@ use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::rolling::{QuantileMethod, RollingFnParams};
 use polars_core::chunked_array::ops::FillNullStrategy;
 #[cfg(feature = "string_normalize")]
-use polars_ops::chunked_array::UnicodeForm;
-use polars_ops::prelude::RankMethod;
+use polars_defs::expr::UnicodeForm;
+use polars_defs::expr::{ClosedInterval, InterpolationMethod, RankMethod};
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
-use polars_ops::series::{ClosedInterval, InterpolationMethod};
 use polars_plan::dsl::DateRangeArgs;
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
@@ -23,8 +24,6 @@ use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
 use polars_plan::prelude::{
     AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
 };
-use polars_time::prelude::RollingGroupOptions;
-use polars_time::{ClosedWindow, Duration, DynamicGroupOptions};
 use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyNotImplementedError;
@@ -2198,8 +2197,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::RowDecode(..) => {
                     return Err(PyNotImplementedError::new_err("row_decode"));
                 },
-                IRFunctionExpr::DynamicPred { pred } => {
+                IRFunctionExpr::DynamicPred { pred, .. } => {
                     ("dynamic_pred", pred.id().map(|u| u.as_u128())).into_py_any(py)
+                },
+                IRFunctionExpr::DynamicSkipBatch { pred } => {
+                    ("dynamic_skip_batch", pred.id().map(|u| u.as_u128())).into_py_any(py)
                 },
             }?,
             options: py.None(),

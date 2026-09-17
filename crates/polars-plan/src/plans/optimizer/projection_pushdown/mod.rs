@@ -8,8 +8,8 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, PlIndexMap, ScratchIndexMap, ScratchIndexSet};
 use polars_core::schema::Schema;
+use polars_defs::join::{JoinCoalesce, JoinType};
 use polars_io::RowIndex;
-use polars_ops::frame::{JoinCoalesce, JoinType};
 #[allow(clippy::disallowed_types)]
 use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
