@@ -335,7 +335,8 @@ pub struct StagedScanIOPredicate {
     pub first: Arc<dyn PhysicalIoExpr>,
     pub first_columns: Arc<PlIndexSet<PlSmallStr>>,
     pub second: Arc<dyn PhysicalIoExpr>,
-    /// Partial predicates for each column of `first`.
+    /// Partial predicates for each column of `first`. Complete when they add up to
+    /// `first`, whether or not [`ScanIOPredicate::column_predicates`] is complete.
     pub column_predicates: Arc<ColumnPredicates>,
 }
 

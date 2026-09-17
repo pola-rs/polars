@@ -2069,24 +2069,51 @@ def test_staged_prefiltering_passes(
 
 
 @pytest.mark.parametrize("q_dtype", [pl.Int64, pl.Float64])
-def test_staged_prefiltering_dense_first_pass(q_dtype: pl.DataType) -> None:
-    # The first row group's first pass keeps every row, which turns staging off for
-    # the row groups decoded after it.
+@pytest.mark.parametrize("projection", [None, ["q", "b", "s", "a"]])
+def test_staged_prefiltering_density_changes(
+    q_dtype: pl.DataType,
+    projection: list[str] | None,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Row groups of 4 rows alternate between a first pass that keeps every row and
+    # one that keeps a single row, which turns the two passes off and on again.
+    # Every row group keeps at least one row.
+    dense = [0, 0, 0, 0]
+    selective = [0, 1, 1, 1]
     df = pl.DataFrame(
         {
-            "a": list(range(24)),
-            "q": [0] * 8 + [0, 1, None, 0] * 4,
-            "b": [5, None] * 12,
-            "c": [str(i) for i in range(24)],
+            "a": [1, 9, 1, 9] * 8,
+            "q": (dense + selective) * 4,
+            "b": [5] * 32,
+            "s": [1, 2, 3, 4] * 8,
+            "c": [str(i) for i in range(32)],
         }
     ).with_columns(pl.col("q").cast(q_dtype))
     f = io.BytesIO()
     df.write_parquet(f, row_group_size=4)
-    expr = (pl.col("q") == 0) & (pl.col("a") < pl.col("b"))
+    # `q` and `s` are read first, `a` and `b` are between them in the file.
+    expr = (pl.col("q") == 0) & (pl.col("s") > 0) & (pl.col("a") < pl.col("b"))
+
+    expected = df if projection is None else df.select(projection)
+    assert expected.filter(expr).height == 12
 
     f.seek(0)
-    result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
-    assert_frame_equal(result, df.filter(expr))
+    lf = pl.scan_parquet(f, parallel="prefiltered", use_statistics=False)
+    if projection is not None:
+        lf = lf.select(projection)
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        result = lf.filter(expr).collect()
+        capture = capfd.readouterr().err
+
+    non_live = 1 if projection is None else 0
+    assert (
+        f"Pre-filtered decode enabled (4 live [2 pass-1, 2 pass-2], {non_live} non-live)"
+        in capture
+    )
+    assert_frame_equal(result, expected.filter(expr))
 
 
 def test_staged_prefiltering_nested_column() -> None:
@@ -2122,6 +2149,8 @@ def test_staged_prefiltering_hive_and_missing_columns(tmp_path: Path) -> None:
         (pl.col("q") == 0) & (pl.col("a") < pl.col("b").fill_null(4)),
         # A missing column read by the first pass.
         pl.col("b").is_null() & (pl.col("q") < pl.col("a")),
+        # The second pass reads only constant columns in the second file.
+        (pl.col("q") == 0) & ((pl.col("part") == 2) | pl.col("b").is_null()),
     ]
     for expr in exprs:
         result = (

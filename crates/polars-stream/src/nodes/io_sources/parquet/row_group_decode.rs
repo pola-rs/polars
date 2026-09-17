@@ -40,7 +40,8 @@ enum Passes<'a> {
 }
 
 /// `columns` holds the first-pass columns, then the second-pass columns, each in
-/// field order. Yields them in `field_order`.
+/// field order. Yields them in `field_order`. `first_fields` and `field_order` are
+/// sorted and `first_fields` is a subset of `field_order`.
 fn merge_passes<'a>(
     mut columns: Vec<Column>,
     first_fields: &'a [usize],
@@ -67,7 +68,8 @@ pub(super) struct RowGroupDecoder {
     pub(super) row_index: Option<RowIndex>,
     pub(super) predicate: Option<ScanIOPredicate>,
     pub(super) use_prefiltered: bool,
-    /// Whether the predicate is evaluated in two passes.
+    /// Whether this file can read the predicate in two passes. `Passes` picks how
+    /// each row group is read.
     pub(super) use_staged: bool,
     /// Set while the first pass keeps most rows; cleared once it rejects enough again.
     pub(super) staging_off: AtomicBool,
