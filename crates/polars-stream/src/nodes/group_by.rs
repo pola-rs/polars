@@ -560,6 +560,11 @@ impl GroupBySinkState {
                         }
                     }
 
+                    // Each input only resizes its own reductions, so ensure all have the right length.
+                    for r in &mut p_reductions {
+                        r.resize(p_grouper.num_groups());
+                    }
+
                     // We're done, help others out by doing drops.
                     drop(drop_q_send); // So we don't deadlock trying to receive from ourselves.
                     while let Ok(to_drop) = drop_q_recv.recv().await {

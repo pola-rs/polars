@@ -23,7 +23,7 @@ use polars_utils::scratch_vec::ScratchVec;
 use crate::dsl::dsl_resolver::{DslResolverTrait as _, ResolveDslArgs, ResolvedDsl};
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::optimizer::predicate_pushdown::combine_predicates;
-use crate::plans::{AExpr, IR, OptFlags, node_to_expr, optimize, to_alp};
+use crate::plans::{AExpr, ExecutionHooks, IR, OptFlags, node_to_expr, optimize, to_alp};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 use crate::utils::aexpr_to_leaf_names_iter;
 
@@ -32,11 +32,7 @@ pub(super) fn call_dsl_resolvers(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     opt_flags: OptFlags,
-    apply_scan_predicate_to_scan_ir: fn(
-        Node,
-        &mut Arena<IR>,
-        &mut Arena<AExpr>,
-    ) -> PolarsResult<()>,
+    hooks: ExecutionHooks,
 ) -> PolarsResult<()> {
     let mut resolve_tasks: FuturesUnordered<Pin<Box<dyn Future<Output = _>>>> =
         FuturesUnordered::new();
@@ -62,7 +58,7 @@ pub(super) fn call_dsl_resolvers(
                 match (|| {
                     let IR::Resolver {
                         resolver,
-                        resolver_schema: _,
+                        resolver_schema,
                         projection,
                         slice,
                         filters,
@@ -136,6 +132,7 @@ pub(super) fn call_dsl_resolvers(
                         filters.clone(),
                         existing_resolved_version_key,
                         expr_arena,
+                        resolver_schema.clone(),
                         #[cfg(feature = "python")]
                         Arc::clone(&py_lazyframe_resolve_threadpool),
                     )?;
@@ -344,7 +341,7 @@ pub(super) fn call_dsl_resolvers(
                     ir_arena,
                     expr_arena,
                     optimize_scratch.get(),
-                    apply_scan_predicate_to_scan_ir,
+                    hooks,
                 )?;
 
                 let IR::Resolver { resolved_ir, .. } = ir_arena.get_mut(node) else {

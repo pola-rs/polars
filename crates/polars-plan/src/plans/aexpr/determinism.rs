@@ -164,7 +164,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         // Ordinal) are deterministic.
         #[cfg(all(feature = "rank", feature = "random"))]
         F::Rank { options, .. } => {
-            matches!(options.method, polars_ops::series::RankMethod::Random)
+            matches!(options.method, polars_defs::expr::RankMethod::Random)
         },
         #[cfg(all(feature = "rank", not(feature = "random")))]
         F::Rank { .. } => false,
@@ -246,7 +246,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::FoldHorizontal { .. } | F::ReduceHorizontal { .. } => true,
         #[cfg(feature = "dtype-struct")]
         F::CumFoldHorizontal { .. } | F::CumReduceHorizontal { .. } => true,
-        F::DynamicPred { .. } => true,
+        F::DynamicPred { .. } | F::DynamicSkipBatch { .. } => true,
     }
 }
 
