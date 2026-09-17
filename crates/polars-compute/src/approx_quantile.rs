@@ -988,12 +988,6 @@ pub mod req {
 
 /// H-way merge-sort of the per-level sorted runs into a single sorted run, and
 /// the inclusive cumulative weight of every merged item.
-///
-/// `levels[i]` holds the items of level `i`, each standing for `2^i` ingested
-/// items, so the last cumulative weight is the total number of ingested items.
-///
-/// The merged items are written into `out`, which is cleared first so that
-/// callers can hand over a scratch buffer.
 fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
     levels: &[&[T]],
     out: &mut Vec<T>,
