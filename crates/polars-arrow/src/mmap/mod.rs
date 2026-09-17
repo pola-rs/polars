@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 mod array;
 
-use arrow_format::ipc::planus::ReadAsRoot;
-use arrow_format::ipc::{Block, DictionaryBatchRef, MessageRef, RecordBatchRef};
+use polars_arrow_format::ipc::planus::ReadAsRoot;
+use polars_arrow_format::ipc::{Block, DictionaryBatchRef, MessageRef, RecordBatchRef};
 use polars_error::{PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -21,7 +21,7 @@ use crate::record_batch::RecordBatchT;
 
 fn read_message(
     mut bytes: &[u8],
-    block: arrow_format::ipc::Block,
+    block: polars_arrow_format::ipc::Block,
 ) -> PolarsResult<(MessageRef<'_>, usize)> {
     let offset: usize = block.offset.try_into().map_err(
         |_err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength),
@@ -45,7 +45,7 @@ fn read_message(
         |_err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength),
     )?;
 
-    let message = arrow_format::ipc::MessageRef::read_as_root(&bytes[..message_length])
+    let message = polars_arrow_format::ipc::MessageRef::read_as_root(&bytes[..message_length])
         .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
 
     Ok((message, offset + block_length))
@@ -227,7 +227,7 @@ pub unsafe fn mmap_dictionaries_unchecked<T: AsRef<[u8]> + Send + Sync + 'static
 pub(crate) unsafe fn mmap_dictionaries_unchecked2<T: AsRef<[u8]> + Send + Sync + 'static>(
     schema: &ArrowSchema,
     ipc_fields: &[IpcField],
-    dictionaries: Option<&Vec<arrow_format::ipc::Block>>,
+    dictionaries: Option<&Vec<polars_arrow_format::ipc::Block>>,
     data: Arc<T>,
 ) -> PolarsResult<Dictionaries> {
     let blocks = if let Some(blocks) = &dictionaries {

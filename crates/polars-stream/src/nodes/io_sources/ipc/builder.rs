@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use arrow::io::ipc::read::FileMetadata;
+use polars_arrow::io::ipc::read::FileMetadata;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;

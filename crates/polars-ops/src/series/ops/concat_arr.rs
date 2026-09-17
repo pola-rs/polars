@@ -1,5 +1,5 @@
-use arrow::array::FixedSizeListArray;
-use arrow::compute::utils::combine_validities_and;
+use polars_arrow::array::FixedSizeListArray;
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_compute::horizontal_flatten::horizontal_flatten_unchecked;
 use polars_core::prelude::{ArrayChunked, Column, CompatLevel, DataType, IntoColumn};
 use polars_core::series::Series;

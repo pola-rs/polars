@@ -1,10 +1,10 @@
 use std::fmt::Write;
 
-use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as TimeZoneTrait;
+use polars_arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
 
 use super::*;
 use crate::prelude::DataType::Datetime;

@@ -1,7 +1,7 @@
-use arrow::bitmap::MutableBitmap;
 use either::Either;
 use parking_lot::RwLock;
 use polars::prelude::*;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_ffi::version_0::SeriesExport;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;

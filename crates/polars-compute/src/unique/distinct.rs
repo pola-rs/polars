@@ -1,9 +1,9 @@
 /// Implementations for {n,arg}-unique on [`Array`] that can be amortized over several invocations.
-use arrow::array::{Array, BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray};
-use arrow::bitmap::bitmask::BitMask;
-use arrow::datatypes::ArrowDataType;
-use arrow::legacy::prelude::LargeBinaryArray;
-use arrow::types::{NativeType, PrimitiveType};
+use polars_arrow::array::{Array, BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray};
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::legacy::prelude::LargeBinaryArray;
+use polars_arrow::types::{NativeType, PrimitiveType};
 use polars_utils::aliases::{InitHashMaps, PlHashSet};
 use polars_utils::float16::pf16;
 use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
@@ -60,7 +60,7 @@ pub trait AmortizedUnique: Send + Sync + 'static {
 }
 
 pub fn amortized_unique_from_dtype(dtype: &ArrowDataType) -> Box<dyn AmortizedUnique> {
-    use arrow::datatypes::PhysicalType as P;
+    use polars_arrow::datatypes::PhysicalType as P;
     match dtype.to_physical_type() {
         P::Null => Box::new(NullUnique) as _,
         P::Boolean => Box::new(BooleanUnique) as _,

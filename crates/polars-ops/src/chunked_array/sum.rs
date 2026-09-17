@@ -1,5 +1,5 @@
-use arrow::types::NativeType;
 use num_traits::{NumCast, ToPrimitive};
+use polars_arrow::types::NativeType;
 
 pub(super) fn sum_slice<T, S>(values: &[T]) -> S
 where

@@ -791,6 +791,31 @@ def test_window_multi_arg_aggregate_partition_by(agg: str) -> None:
     )
 
 
+def test_window_approx_quantile_partition_by() -> None:
+    # not compared against a reference backend: other engines use a different sketch
+    lf = pl.LazyFrame(
+        {
+            "i": [0, 1, 2, 3, 4],
+            "g": ["a", "a", "a", "b", "b"],
+            "a": [1, 2, 3, 4, 5],
+        }
+    )
+    assert_sql_matches(
+        {"df": lf},
+        query="""
+            SELECT i, g, APPROX_QUANTILE(a, 0.5) OVER (PARTITION BY g) AS res
+            FROM df
+            ORDER BY i
+        """,
+        compare_with=None,
+        expected={
+            "i": [0, 1, 2, 3, 4],
+            "g": ["a", "a", "a", "b", "b"],
+            "res": [2, 2, 2, 5, 5],
+        },
+    )
+
+
 def test_window_array_agg_partition_by() -> None:
     lf = pl.LazyFrame(
         {

@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use arrow::bitmap::bitmask::nth_set_bit_u32;
+use polars_arrow::bitmap::bitmask::nth_set_bit_u32;
 #[cfg(feature = "dtype-categorical")]
 use polars_dtype::categorical::{Categories, FrozenCategories};
 use proptest::prelude::*;

@@ -176,7 +176,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use arrow::datatypes::ArrowDataType;
+    use polars_arrow::datatypes::ArrowDataType;
     use polars_buffer::Buffer;
 
     use super::*;

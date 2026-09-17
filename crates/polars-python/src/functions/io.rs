@@ -14,7 +14,7 @@ use crate::io::cloud_options::OptPyCloudOptions;
 #[cfg(feature = "ipc")]
 #[pyfunction]
 pub fn read_ipc_schema(py: Python<'_>, py_f: Py<PyAny>) -> PyResult<Bound<'_, PyDict>> {
-    use arrow::io::ipc::read::read_file_metadata;
+    use polars_arrow::io::ipc::read::read_file_metadata;
     let metadata = match get_either_file(py_f, false)? {
         EitherRustPythonFile::Rust(r) => {
             read_file_metadata(&mut BufReader::new(r)).map_err(PyPolarsErr::from)?

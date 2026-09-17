@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_async::executor;
 use polars_core::prelude::*;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::Schema;
+use polars_defs::join::{JoinArgs, JoinType};
 use polars_expr::groups::{Grouper, new_hash_grouper};
 use polars_expr::hash_keys::HashKeys;
-use polars_ops::frame::{JoinArgs, JoinType};
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;

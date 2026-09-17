@@ -1,3 +1,4 @@
+use polars_defs::join::{JoinArgs, JoinTypeOptions};
 use polars_ops::frame::DataFrameJoinOps;
 use recursive::recursive;
 

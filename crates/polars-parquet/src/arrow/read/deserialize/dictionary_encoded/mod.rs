@@ -1,6 +1,6 @@
-use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::types::{
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::types::{
     AlignedBytes, Bytes1Alignment1, Bytes2Alignment2, Bytes4Alignment4, NativeType,
 };
 use polars_compute::filter::filter_boolean_kernel;

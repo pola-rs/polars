@@ -4,9 +4,9 @@ pub mod builder;
 pub mod capabilities;
 pub mod output;
 
-use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
 use output::FileReaderOutputRecv;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_async::executor::JoinHandle;
 use polars_async::primitives::oneshot_channel;
 use polars_core::schema::SchemaRef;

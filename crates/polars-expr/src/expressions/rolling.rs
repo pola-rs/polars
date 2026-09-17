@@ -1,6 +1,8 @@
-use arrow::array::PrimitiveArray;
+use polars_arrow::array::PrimitiveArray;
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::{ClosedWindow, RollingGroupOptions};
+use polars_time::PolarsTemporalGroupby;
 use polars_time::prelude::RollingWindower;
-use polars_time::{ClosedWindow, Duration, PolarsTemporalGroupby, RollingGroupOptions};
 use polars_utils::UnitVec;
 
 use super::*;

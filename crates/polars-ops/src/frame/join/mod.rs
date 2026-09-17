@@ -10,17 +10,14 @@ mod iejoin;
 pub mod merge_join;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
+mod validation;
 
 use std::borrow::Cow;
-use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 pub use args::*;
-use arrow::trusted_len::TrustedLen;
 #[cfg(feature = "asof_join")]
-pub use asof::{
-    _check_asof_columns, _join_asof_dispatch, AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy,
-};
+pub use asof::{_check_asof_columns, _join_asof_dispatch, AsofJoin, AsofJoinBy};
 pub use cross_join::CrossJoin;
 #[cfg(feature = "chunked_ids")]
 use either::Either;
@@ -29,10 +26,9 @@ use general::create_chunked_index_mapping;
 pub use general::{_coalesce_full_join, _finish_join, _join_suffix_name};
 pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
-#[cfg(feature = "iejoin")]
-pub use iejoin::{IEJoinOptions, InequalityOperator};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
+use polars_arrow::trusted_len::TrustedLen;
 #[allow(unused_imports)]
 use polars_core::chunked_array::ops::row_encode::{
     encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
@@ -45,6 +41,9 @@ pub(super) use polars_core::series::IsSorted;
 use polars_core::utils::slice_offsets;
 #[allow(unused_imports)]
 use polars_core::utils::slice_slice;
+use polars_defs::join::{
+    JoinArgs, JoinCoalesce, JoinType, JoinTypeOptions, JoinValidation, MaintainOrderJoin,
+};
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
@@ -63,6 +62,7 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```no_run
     /// # use polars_core::prelude::*;
+    /// # use polars_defs::join::{JoinArgs, JoinType};
     /// # use polars_ops::prelude::*;
     /// let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
     ///                          "Phosphorus (mg/100g)" => &[11, 22, 12])?;

@@ -1,14 +1,14 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use arrow::array::TryExtend;
-use arrow::io::ipc::read::{Dictionaries, ProjectionInfo};
-use arrow::io::ipc::write::KeyValueRef;
+use polars_arrow::array::TryExtend;
+use polars_arrow::io::ipc::read::{Dictionaries, ProjectionInfo};
+use polars_arrow::io::ipc::write::KeyValueRef;
 use polars_core::chunked_array::flags::StatisticsFlags;
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
-use polars_core::utils::arrow::io::ipc::read::common::apply_projection;
-use polars_core::utils::arrow::io::ipc::read::{BlockReader, FileMetadata, read_batch};
+use polars_core::utils::polars_arrow::io::ipc::read::common::apply_projection;
+use polars_core::utils::polars_arrow::io::ipc::read::{BlockReader, FileMetadata, read_batch};
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_io::RowIndex;
 use polars_utils::IdxSize;

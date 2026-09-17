@@ -4,7 +4,6 @@ use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{RwLock, Weak};
 
-use polars_core::frame::column::ScalarColumn;
 use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
@@ -15,16 +14,26 @@ pub trait PredicateExpr: Send + Sync + Any {
     // Invariant: output column must be of type `Boolean`. If true a value is
     // included, if false it is filtered out. If None is returned it is assumed
     // all values are needed.
-    fn evaluate(&self, columns: &[Column]) -> PolarsResult<Option<Column>>;
+    fn evaluate(&self, _columns: &[Column]) -> PolarsResult<Option<Column>> {
+        Ok(None)
+    }
+
+    // Whether a batch with these per-column `min`, `max` and `null_count`
+    // statistics can be skipped entirely. True skips the batch. None means the
+    // statistics do not settle it.
+    fn evaluate_stats(
+        &self,
+        _min: &Column,
+        _max: &Column,
+        _null_count: &Column,
+    ) -> PolarsResult<Option<Column>> {
+        Ok(None)
+    }
 }
 
 pub struct TrivialPredicateExpr;
 
-impl PredicateExpr for TrivialPredicateExpr {
-    fn evaluate(&self, _columns: &[Column]) -> PolarsResult<Option<Column>> {
-        Ok(None)
-    }
-}
+impl PredicateExpr for TrivialPredicateExpr {}
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 struct Inner {
@@ -111,6 +120,10 @@ impl DynamicPred {
         }
         self.inner.is_set.store(true, Ordering::Release);
     }
+
+    pub fn is_set(&self) -> bool {
+        self.inner.is_set.load(Ordering::Acquire)
+    }
 }
 
 impl DynamicPredWeakRef {
@@ -129,19 +142,54 @@ impl DynamicPredWeakRef {
             }
         }
 
-        let s = Scalar::new(DataType::Boolean, AnyValue::Boolean(true));
-        Ok(Column::Scalar(ScalarColumn::new(
-            columns[0].name().clone(),
-            s,
-            columns[0].len(),
-        )))
+        Ok(all_of(columns[0].name().clone(), columns[0].len(), true))
+    }
+
+    pub fn evaluate_stats(
+        &self,
+        min: &Column,
+        max: &Column,
+        null_count: &Column,
+    ) -> PolarsResult<Column> {
+        if let Some(inner) = self.inner.upgrade()
+            && inner.is_set.load(Ordering::Acquire)
+        {
+            let guard = inner.pred.read().unwrap();
+            let dyn_func = guard.as_ref().unwrap();
+            if let Some(skip) = dyn_func.evaluate_stats(min, max, null_count)? {
+                return Ok(skip);
+            }
+        }
+
+        Ok(all_of(min.name().clone(), min.len(), false))
     }
 }
 
+fn all_of(name: PlSmallStr, len: usize, value: bool) -> Column {
+    Column::new_scalar(name, Scalar::from(value), len)
+}
+
+/// A predicate over `node` whose value a producer sets at run time, evaluated
+/// per row wherever it lands.
 pub fn new_dynamic_pred(node: Node, arena: &mut Arena<AExpr>) -> (Node, DynamicPred) {
+    dynamic_pred_node(node, false, arena)
+}
+
+/// A predicate over `node` whose value a producer sets at run time, which a scan
+/// only uses to skip batches by their statistics and never evaluates per row.
+pub fn new_batch_only_dynamic_pred(node: Node, arena: &mut Arena<AExpr>) -> (Node, DynamicPred) {
+    dynamic_pred_node(node, true, arena)
+}
+
+fn dynamic_pred_node(
+    node: Node,
+    batch_only: bool,
+    arena: &mut Arena<AExpr>,
+) -> (Node, DynamicPred) {
     let pred = DynamicPred::new();
     let function = IRFunctionExpr::DynamicPred {
         pred: pred.downgrade(),
+        batch_only,
     };
     let options = function.function_options();
     let aexpr = AExpr::Function {

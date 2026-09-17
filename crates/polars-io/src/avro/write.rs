@@ -1,9 +1,9 @@
 use std::io::Write;
 
 pub use Compression as AvroCompression;
-pub use arrow::io::avro::avro_schema::file::Compression;
-use arrow::io::avro::avro_schema::{self};
-use arrow::io::avro::write;
+pub use polars_arrow::io::avro::avro_schema::file::Compression;
+use polars_arrow::io::avro::avro_schema::{self};
+use polars_arrow::io::avro::write;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 

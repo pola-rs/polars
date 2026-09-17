@@ -1145,6 +1145,24 @@ def test_parquet_statistics_uint64_16683() -> None:
     assert statistics.max == u64_max
 
 
+def test_parquet_decimal_statistics_29347() -> None:
+    # The bug needs a precision of 19 or more, so that the values are stored as a fixed
+    # length byte array rather than an INT64, a chunk spanning more than one page, and a
+    # page holding values of only one sign.
+    n = 4000
+    values = [Decimal(i) for i in range(-(n // 2), n // 2)]
+    df = pl.Series("a", values, dtype=pl.Decimal(19, 0)).to_frame()
+
+    file = io.BytesIO()
+    df.write_parquet(file, statistics=True, row_group_size=n, data_page_size=1024)
+    file.seek(0)
+    statistics = pq.read_metadata(file).row_group(0).column(0).statistics
+
+    assert statistics.min <= statistics.max
+    assert statistics.min == values[0]
+    assert statistics.max == values[-1]
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("nullable", [True, False])
 def test_read_byte_stream_split(nullable: bool) -> None:
@@ -1975,6 +1993,199 @@ def test_row_index_prefiltering(df: pl.DataFrame) -> None:
         .collect()
     )
     assert_frame_equal(result, df.with_row_index("ri", 42).filter(expr))
+
+
+@given(
+    df=dataframes(
+        min_size=0,
+        max_size=40,
+        min_cols=1,
+        max_cols=4,
+        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum],
+        include_cols=[
+            column("filter_col", pl.Int8, st.integers(0, 3), allow_null=False),
+            column("a", pl.Int32, allow_null=True),
+            column("b", pl.Int32, allow_null=True),
+        ],
+    ),
+)
+def test_staged_prefiltering(df: pl.DataFrame) -> None:
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=7)
+
+    expr = (pl.col("filter_col") == 0) & ((pl.col("a") > 3) | (pl.col("b") > 3))
+
+    f.seek(0)
+    result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+    assert_frame_equal(result, df.filter(expr))
+
+
+def _staged_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "a": [1, 5, None, 7, 2, 9, None, 3, 8, 4, 6, 0],
+            "q": [0, 1, 0, None, 0, 1, 0, 0, 1, 0, None, 0],
+            "b": [3, 3, None, 3, 3, 3, 3, None, 3, 3, 3, 3],
+            "c": [str(i) for i in range(12)],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        # Only the second pass reads `a` and `b`.
+        (pl.col("q") == 0) & (pl.col("a") < pl.col("b")),
+        # `q` is read by both passes.
+        (pl.col("q") >= 0) & (pl.col("q") < pl.col("a")),
+        # The first pass alone reads every predicate column: no staging.
+        (pl.col("a") > 0) & (pl.col("b") > 0) & (pl.col("a") > pl.col("b")),
+        # First pass keeps every row / no row.
+        (pl.col("q").is_not_null() | pl.col("q").is_null())
+        & (pl.col("a") < pl.col("b")),
+        (pl.col("q") > 100) & (pl.col("a") < pl.col("b")),
+        # Every second-pass column is already read by the first pass: no staging.
+        (pl.col("q") == 0) & (pl.col("a") > 0) & ((pl.col("q") + pl.col("a")) < 5),
+    ],
+)
+@pytest.mark.parametrize("q_dtype", [pl.Int64, pl.Float64, pl.Decimal(7, 2)])
+@pytest.mark.parametrize("projection", [None, ["a", "q", "b"], ["c", "b", "q", "a"]])
+@pytest.mark.parametrize("row_index", [False, True])
+def test_staged_prefiltering_passes(
+    expr: pl.Expr,
+    q_dtype: pl.DataType,
+    projection: list[str] | None,
+    row_index: bool,
+    tmp_path: Path,
+) -> None:
+    df = _staged_df().with_columns(pl.col("q").cast(q_dtype))
+    path = tmp_path / "staged.parquet"
+    df.write_parquet(path, row_group_size=4)
+
+    def scan(head: int | None) -> pl.LazyFrame:
+        lf = pl.scan_parquet(
+            path,
+            parallel="prefiltered",
+            row_index_name="ri" if row_index else None,
+        )
+        if projection is not None:
+            lf = lf.select((["ri"] if row_index else []) + projection)
+        if head is not None:
+            lf = lf.head(head)
+        return lf.filter(expr)
+
+    expected = df.with_row_index("ri") if row_index else df
+    if projection is not None:
+        expected = expected.select((["ri"] if row_index else []) + projection)
+
+    for engine in ("streaming", "in-memory"):
+        assert_frame_equal(scan(None).collect(engine=engine), expected.filter(expr))
+        # Row groups 0-1 are complete, row group 2 is partial.
+        assert_frame_equal(
+            scan(9).collect(engine=engine), expected.head(9).filter(expr)
+        )
+
+
+@pytest.mark.parametrize("q_dtype", [pl.Int64, pl.Float64])
+@pytest.mark.parametrize("projection", [None, ["q", "b", "s", "a"]])
+def test_staged_prefiltering_density_changes(
+    q_dtype: pl.DataType,
+    projection: list[str] | None,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Row groups of 4 rows alternate between a first pass that keeps every row and
+    # one that keeps a single row, which turns the two passes off and on again.
+    # Every row group keeps at least one row.
+    dense = [0, 0, 0, 0]
+    selective = [0, 1, 1, 1]
+    df = pl.DataFrame(
+        {
+            "a": [1, 9, 1, 9] * 8,
+            "q": (dense + selective) * 4,
+            "b": [5] * 32,
+            "s": [1, 2, 3, 4] * 8,
+            "c": [str(i) for i in range(32)],
+        }
+    ).with_columns(pl.col("q").cast(q_dtype))
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=4)
+    # `q` and `s` are read first, `a` and `b` are between them in the file.
+    expr = (pl.col("q") == 0) & (pl.col("s") > 0) & (pl.col("a") < pl.col("b"))
+
+    expected = df if projection is None else df.select(projection)
+    assert expected.filter(expr).height == 12
+
+    f.seek(0)
+    lf = pl.scan_parquet(f, parallel="prefiltered", use_statistics=False)
+    if projection is not None:
+        lf = lf.select(projection)
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        result = lf.filter(expr).collect()
+        capture = capfd.readouterr().err
+
+    non_live = 1 if projection is None else 0
+    assert (
+        f"Pre-filtered decode enabled (4 live [2 pass-1, 2 pass-2], {non_live} non-live)"
+        in capture
+    )
+    assert_frame_equal(result, expected.filter(expr))
+
+
+def test_staged_prefiltering_nested_column() -> None:
+    df = _staged_df().with_columns(s=pl.struct(pl.col("a"), pl.col("c")))
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=4)
+    expr = (pl.col("q") == 0) & (pl.col("a") < pl.col("b"))
+
+    f.seek(0)
+    result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+    assert_frame_equal(result, df.filter(expr))
+
+
+def test_staged_prefiltering_hive_and_missing_columns(tmp_path: Path) -> None:
+    df = _staged_df()
+    for part in [1, 2]:
+        d = tmp_path / f"part={part}"
+        d.mkdir()
+        cols = df.columns if part == 1 else ["a", "q", "c"]
+        df.select(cols).write_parquet(d / "0.parquet", row_group_size=4)
+
+    full = pl.concat(
+        [
+            df.with_columns(part=pl.lit(1, pl.Int64)),
+            df.with_columns(b=pl.lit(None, pl.Int64), part=pl.lit(2, pl.Int64)),
+        ]
+    )
+
+    exprs = [
+        # The hive column stays inside the second pass.
+        (pl.col("q") == 0) & ((pl.col("part") == 1) | (pl.col("a") > 5)),
+        # A missing column read by the second pass.
+        (pl.col("q") == 0) & (pl.col("a") < pl.col("b").fill_null(4)),
+        # A missing column read by the first pass.
+        pl.col("b").is_null() & (pl.col("q") < pl.col("a")),
+        # The second pass reads only constant columns in the second file.
+        (pl.col("q") == 0) & ((pl.col("part") == 2) | pl.col("b").is_null()),
+    ]
+    for expr in exprs:
+        result = (
+            pl.scan_parquet(
+                tmp_path,
+                parallel="prefiltered",
+                hive_partitioning=True,
+                missing_columns="insert",
+            )
+            .filter(expr)
+            .collect()
+        )
+        assert_frame_equal(
+            result.sort("part", "c"),
+            full.filter(expr).sort("part", "c"),
+            check_column_order=False,
+        )
 
 
 def test_empty_parquet() -> None:
@@ -3672,6 +3883,31 @@ def test_scan_parquet_skip_row_groups_struct(
     assert f"Predicate pushdown: reading {reading} row groups" in capfd.readouterr().err
 
 
+@pytest.mark.parametrize("dtype", [pl.Int128, pl.UInt128])
+def test_skip_row_groups_without_bounds_uses_null_count(
+    dtype: pl.DataType,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # 128-bit statistics give no min/max, but their null counts still prune.
+    df = pl.DataFrame({"k": pl.Series([1, None, 3, 4, 5, 6, 7, 8], dtype=dtype)})
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=2, statistics="full")
+    f.seek(0)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = pl.scan_parquet(f).filter(pl.col("k").is_null()).collect(engine="streaming")
+    assert out.height == 1
+    assert "Predicate pushdown: reading 1 / 4 row groups" in capfd.readouterr().err
+
+    f.seek(0)
+    capfd.readouterr()
+    out = pl.scan_parquet(f).filter(pl.col("k") > 6).collect(engine="streaming")
+    assert out.get_column("k").to_list() == [7, 8]
+    assert "Predicate pushdown: reading 4 / 4 row groups" in capfd.readouterr().err
+
+
 @pytest.mark.may_fail_cloud  # reason: looks at stdout
 def test_is_in_string_pushdown_27416(
     plmonkeypatch: PlMonkeyPatch,
@@ -4796,3 +5032,78 @@ def test_scan_parquet_from_file_handle(
         assert_frame_equal(
             pl.scan_parquet(f).select("a", "c").collect(), expect.select("a", "c")
         )
+
+
+def _write_enum_parquet(path: Path, *, logical_type: bool) -> None:
+    # No writer reachable from Python emits the ENUM logical type, so rewrite a
+    # string column's SchemaElement in the footer. Thrift encodes a field header
+    # as a nibble of id-delta and a nibble of type, so the edits below keep the
+    # surrounding footer intact.
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    I32, STRUCT, STOP = 5, 12, b"\x00"
+
+    def header(prev_id: int, field_id: int, field_type: int) -> bytes:
+        return bytes([(field_id - prev_id) << 4 | field_type])
+
+    def schema_element(converted_type: int, logical_type_id: int | None) -> bytes:
+        # SchemaElement.name is field 4, converted_type 6 and logicalType 10.
+        out = header(3, 4, 8) + b"\x05color" + header(4, 6, I32)
+        out += bytes([converted_type << 1])  # zigzag varint, single byte
+        if logical_type_id is not None:
+            # LogicalType is a union, so its variant is a struct-typed field.
+            out += header(6, 10, STRUCT) + header(0, logical_type_id, STRUCT)
+            out += STOP + STOP
+        return out
+
+    utf8, enum = 0, 4  # ConvertedType
+    string_type, enum_type = 1, 4  # LogicalType union
+
+    pq.write_table(
+        pa.table({"color": pa.array(["RED", "GREEN", "BLUE", "RED", "BLUE"])}),
+        path,
+    )
+
+    old = schema_element(utf8, string_type)
+    new = schema_element(enum, enum_type if logical_type else None)
+    data = path.read_bytes()
+    assert data.count(old) == 1
+    data = data.replace(old, new)
+
+    # The footer length trailing the file must account for any dropped bytes.
+    footer_len = int.from_bytes(data[-8:-4], "little") - (len(old) - len(new))
+    path.write_bytes(data[:-8] + footer_len.to_bytes(4, "little") + b"PAR1")
+
+    assert pq.ParquetFile(path).metadata.schema.column(0).converted_type == "ENUM"
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("logical_type", [True, False])
+def test_scan_parquet_enum_logical_type_29235(
+    tmp_path: Path, logical_type: bool
+) -> None:
+    # The ENUM logical type annotates BYTE_ARRAY and must be UTF-8 encoded, so
+    # it reads back as String. Polars itself writes String; ENUM comes from
+    # writers converting out of Avro, Thrift or Protobuf.
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "enum.parquet"
+    _write_enum_parquet(path, logical_type=logical_type)
+
+    expect = pl.DataFrame({"color": ["RED", "GREEN", "BLUE", "RED", "BLUE"]})
+
+    assert pl.scan_parquet(path).collect_schema() == {"color": pl.String}
+    assert_frame_equal(pl.read_parquet(path), expect)
+    assert_frame_equal(pl.scan_parquet(path).collect(), expect)
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_enum_invalid_utf8_29235(tmp_path: Path) -> None:
+    # The UTF-8 requirement is verified, not assumed.
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "enum.parquet"
+    _write_enum_parquet(path, logical_type=True)
+    path.write_bytes(path.read_bytes().replace(b"RED", b"R\xffD"))
+
+    with pytest.raises(pl.exceptions.ComputeError, match=r"(?i)invalid utf-?8"):
+        pl.read_parquet(path)

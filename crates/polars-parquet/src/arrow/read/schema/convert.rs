@@ -1,7 +1,9 @@
 //! This module has entry points, [`parquet_to_arrow_schema`] and the more configurable [`parquet_to_arrow_schema_with_options`].
 use std::sync::Arc;
 
-use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, IntervalUnit, Metadata, TimeUnit};
+use polars_arrow::datatypes::{
+    ArrowDataType, ArrowSchema, Field, IntervalUnit, Metadata, TimeUnit,
+};
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -170,10 +172,10 @@ fn from_byte_array(
         (Some(PrimitiveLogicalType::String), _) => ArrowDataType::Utf8View,
         (Some(PrimitiveLogicalType::Json), _) => ArrowDataType::BinaryView,
         (Some(PrimitiveLogicalType::Bson), _) => ArrowDataType::BinaryView,
-        (Some(PrimitiveLogicalType::Enum), _) => ArrowDataType::BinaryView,
+        (Some(PrimitiveLogicalType::Enum), _) => ArrowDataType::Utf8View,
         (_, Some(PrimitiveConvertedType::Json)) => ArrowDataType::BinaryView,
         (_, Some(PrimitiveConvertedType::Bson)) => ArrowDataType::BinaryView,
-        (_, Some(PrimitiveConvertedType::Enum)) => ArrowDataType::BinaryView,
+        (_, Some(PrimitiveConvertedType::Enum)) => ArrowDataType::Utf8View,
         (_, Some(PrimitiveConvertedType::Utf8)) => ArrowDataType::Utf8View,
         (_, _) => ArrowDataType::BinaryView,
     }

@@ -5,11 +5,12 @@ use polars_core::prelude::{
     DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit, polars_bail,
     polars_err,
 };
-use polars_lazy::dsl::Expr;
 #[cfg(feature = "rank")]
-use polars_lazy::prelude::{RankMethod, RankOptions};
-use polars_ops::chunked_array::UnicodeForm;
-use polars_ops::series::RoundMode;
+use polars_defs::expr::{RankMethod, RankOptions};
+use polars_defs::expr::{RoundMode, UnicodeForm};
+use polars_lazy::dsl::Expr;
+#[cfg(feature = "approx_quantile")]
+use polars_lazy::prelude::ApproxQuantileMethod;
 use polars_plan::dsl::functions::{
     as_struct, coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal,
     min_horizontal, when,
@@ -559,6 +560,16 @@ pub(crate) enum PolarsSQLFunctions {
     // ----
     // Aggregate functions
     // ----
+    /// SQL 'approx_quantile' function.
+    /// Returns an approximation of the given quantile of the grouping, with an optional
+    /// allowed rank error and sketch method.
+    /// ```sql
+    /// SELECT APPROX_QUANTILE(col1, 0.5) FROM df;
+    /// SELECT APPROX_QUANTILE(col1, 0.5, 0.01) FROM df;
+    /// SELECT APPROX_QUANTILE(col1, 0.5, 0.01, 'kll') FROM df;
+    /// ```
+    #[cfg(feature = "approx_quantile")]
+    ApproxQuantile,
     /// SQL 'avg' function.
     /// Returns the average (mean) of all the elements in the grouping.
     /// ```sql
@@ -834,6 +845,7 @@ impl PolarsSQLFunctions {
             "abs",
             "acos",
             "acosd",
+            "approx_quantile",
             "array_contains",
             "array_dot_product",
             "array_get",
@@ -1082,6 +1094,8 @@ impl PolarsSQLFunctions {
             // ----
             // Aggregate functions
             // ----
+            #[cfg(feature = "approx_quantile")]
+            "approx_quantile" => Self::ApproxQuantile,
             "avg" => Self::Avg,
             "corr" => Self::Corr,
             "count" => Self::Count,
@@ -1659,6 +1673,8 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Aggregate functions
             // ----
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile => self.visit_approx_quantile(),
             Avg => self.visit_avg(),
             Corr => self.visit_binary(sql_corr),
             Count => self.visit_count(),
@@ -1678,26 +1694,12 @@ impl SQLFunctionVisitor<'_> {
                 let args = extract_args(function)?;
                 match args.len() {
                     2 => self.try_visit_binary(|e, q| {
-                        let value = match q {
-                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) => {
-                                if (0.0..=1.0).contains(&f) {
-                                    Expr::from(f)
-                                } else {
-                                    polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, args[1])
-                                }
-                            },
-                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
-                                if (0..=1).contains(&n) {
-                                    Expr::from(n as f64)
-                                } else {
-                                    polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, args[1])
-                                }
-                            },
-                            _ => polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, args[1])
-                        };
+                        let value = parse_quantile_literal(q, fname, args[1])?;
                         Ok(e.quantile(value, method))
                     }),
-                    _ => polars_bail!(SQLSyntax: "{} expects 2 arguments (found {})", fname, args.len()),
+                    _ => {
+                        polars_bail!(SQLSyntax: "{} expects 2 arguments (found {})", fname, args.len())
+                    },
                 }
             },
             Min => self.visit_min_max(Expr::min, Expr::cum_min),
@@ -2270,6 +2272,57 @@ impl SQLFunctionVisitor<'_> {
         }
     }
 
+    #[cfg(feature = "approx_quantile")]
+    fn visit_approx_quantile(&mut self) -> PolarsResult<Expr> {
+        /// Matches the default of `Expr.approx_quantile` in Python.
+        const DEFAULT_ERROR: f64 = 0.001;
+
+        let args = extract_args(self.func)?;
+        let (value_arg, quantile_arg, error_arg, method_arg) = match args.as_slice() {
+            [FunctionArgExpr::Expr(v), FunctionArgExpr::Expr(q)] => (v, q, None, None),
+            [
+                FunctionArgExpr::Expr(v),
+                FunctionArgExpr::Expr(q),
+                FunctionArgExpr::Expr(e),
+            ] => (v, q, Some(e), None),
+            [
+                FunctionArgExpr::Expr(v),
+                FunctionArgExpr::Expr(q),
+                FunctionArgExpr::Expr(e),
+                FunctionArgExpr::Expr(m),
+            ] => (v, q, Some(e), Some(m)),
+            _ => polars_bail!(
+                SQLSyntax: "APPROX_QUANTILE expects 2-4 arguments (found {})",
+                args.len()
+            ),
+        };
+
+        let expr = self.parse_sql_arg(value_arg)?;
+        // Parameters are not subject to an active FILTER clause; only the values are.
+        let quantile = parse_sql_expr(quantile_arg, self.ctx, self.active_schema)?;
+        let quantile = parse_quantile_literal(quantile, "APPROX_QUANTILE", args[1])?;
+
+        let error = match error_arg {
+            Some(e) => match parse_sql_expr(e, self.ctx, self.active_schema)? {
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) => f,
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => n as f64,
+                _ => {
+                    polars_bail!(SQLSyntax: "invalid error value for APPROX_QUANTILE ({})", args[2])
+                },
+            },
+            None => DEFAULT_ERROR,
+        };
+        let method = match method_arg {
+            Some(m) => String::from_sql_arg(m, self)?.parse()?,
+            None => ApproxQuantileMethod::Auto,
+        };
+
+        self.apply_window_spec(
+            expr.approx_quantile(quantile, error, false, method),
+            &self.func.over,
+        )
+    }
+
     fn visit_string_agg(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct, clauses) = extract_args_and_clauses(self.func)?;
         let (sql_expr, separator) = match args.as_slice() {
@@ -2714,6 +2767,26 @@ fn is_non_null_literal(expr: &SQLExpr) -> bool {
             ..
         }) if !matches!(v, SQLValue::Null)
     )
+}
+
+/// Parse a literal quantile argument, validating that it lies in [0, 1].
+fn parse_quantile_literal(
+    quantile: Expr,
+    fname: &str,
+    arg: &FunctionArgExpr,
+) -> PolarsResult<Expr> {
+    match quantile {
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) if (0.0..=1.0).contains(&f) => {
+            Ok(Expr::from(f))
+        },
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if (0..=1).contains(&n) => {
+            Ok(Expr::from(n as f64))
+        },
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_) | DynLiteralValue::Int(_))) => {
+            polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, arg)
+        },
+        _ => polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, arg),
+    }
 }
 
 fn extract_args(func: &SQLFunction) -> PolarsResult<Vec<&FunctionArgExpr>> {

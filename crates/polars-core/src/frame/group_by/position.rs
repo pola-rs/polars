@@ -1,7 +1,7 @@
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_utils::idx_vec::IdxVec;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
