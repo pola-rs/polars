@@ -846,6 +846,7 @@ fn to_graph_rec<'a>(
 
         MultiScan {
             scan_sources,
+            bytes_per_source: _,
             file_reader_builder,
             cloud_options,
             file_projection_builder,

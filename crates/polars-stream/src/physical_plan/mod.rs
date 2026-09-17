@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 #[cfg(any(
     feature = "dtype-date",
@@ -389,6 +390,8 @@ pub enum PhysNodeKind {
 
     MultiScan {
         scan_sources: ScanSources,
+        /// Bytes per source if loaded. For cloud visualization.
+        bytes_per_source: Option<Buffer<u64>>,
 
         file_reader_builder: Arc<dyn FileReaderBuilder>,
         cloud_options: Option<Arc<CloudOptions>>,
