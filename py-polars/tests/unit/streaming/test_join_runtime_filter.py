@@ -866,3 +866,25 @@ def test_range_is_judged_against_the_scan_it_prunes(
     assert groups == "1 / 10 row groups"
     assert out.get_column("k").to_list() == [540]
     assert_matches_in_memory(q, out)
+
+
+def test_published_range_holds_when_the_other_side_is_built(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The preferred side ends first and publishes its range; the scan behind the
+    # other side then reads two row groups, of which one row survives the filter,
+    # so the sample builds that side instead. The range still holds: no key of
+    # the other side outside it can match.
+    q = fact.filter(pl.col("v") % 500 == 220).join(
+        unbounded_dim(*range(200, 400, 20)), on="k"
+    )
+    assert "BUILD SIDE: Prefer" in q.explain(engine="streaming")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    assert "Predicate pushdown: reading 2 / 10 row groups" in err
+    assert "publishing its ranges" in err
+    assert out.get_column("k").to_list() == [220]
+    assert_matches_in_memory(q, out)

@@ -9,10 +9,12 @@
 //!
 //! A forced join blocks its probe input until the build is done, so its range is
 //! always published before the scan opens. A preferred join with a filter reads its
-//! preferred side first and builds from it if it stays under the sample limit;
-//! otherwise it samples both sides, may build the other one, and its filter stays
-//! unset. Either way the result is exact, only the pruning is lost. A predicate is
-//! only carried across joins that read their sides in this order.
+//! preferred side first; when that side ends under the sample limit its range is
+//! published before the other side is read, and the sample then decides which side
+//! to build. When it reaches the limit both sides are sampled and the filter is
+//! only set if the preferred side is built. Either way the result is exact, only
+//! the pruning is lost. A predicate is only carried across joins that read their
+//! sides in this order.
 //!
 //! Only a scan that skips batches by their statistics can use the range, so a plan
 //! without one is left alone, and a join is only given a build side once a key

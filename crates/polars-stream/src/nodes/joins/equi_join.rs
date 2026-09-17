@@ -194,6 +194,8 @@ struct EquiJoinParams {
     // Build-key min/max ranges to publish once the build is done.
     // This will be used to skip row-groups at scan of the probe side.
     runtime_filters: Vec<RuntimeFilter>,
+    /// Whether the runtime filters were already set from a complete sample.
+    runtime_filters_published: bool,
     random_state: PlRandomState,
     sample_limit: usize,
 }
@@ -213,10 +215,12 @@ impl EquiJoinParams {
         build_side_left(self.args.build_side.as_ref())
     }
 
-    /// Whether the build keys' ranges go to the runtime filters: the filters exist
-    /// and describe the side being built.
+    /// Whether the build keys' ranges go to the runtime filters: the filters exist,
+    /// were not set from a sample, and describe the side being built.
     fn publishes_runtime_filters(&self) -> bool {
-        !self.runtime_filters.is_empty() && self.left_is_build == self.planned_build_left()
+        !self.runtime_filters.is_empty()
+            && !self.runtime_filters_published
+            && self.left_is_build == self.planned_build_left()
     }
 
     /// Should we emit unmatched rows from the build side?
@@ -358,17 +362,25 @@ async fn select_keys(
         .0)
 }
 
+async fn select_key_columns(
+    df: &DataFrame,
+    key_selectors: &[StreamExpr],
+    state: &ExecutionState,
+) -> PolarsResult<DataFrame> {
+    let mut key_columns = Vec::new();
+    for selector in key_selectors {
+        key_columns.push(selector.evaluate(df, state).await?.into_column());
+    }
+    unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns) }
+}
+
 async fn select_keys_with_columns(
     df: &DataFrame,
     key_selectors: &[StreamExpr],
     params: &EquiJoinParams,
     state: &ExecutionState,
 ) -> PolarsResult<(HashKeys, DataFrame)> {
-    let mut key_columns = Vec::new();
-    for selector in key_selectors {
-        key_columns.push(selector.evaluate(df, state).await?.into_column());
-    }
-    let keys = unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns)? };
+    let keys = select_key_columns(df, key_selectors, state).await?;
     let hash_keys = HashKeys::from_df(
         &keys,
         params.random_state.clone(),
@@ -456,7 +468,8 @@ struct SampleState {
     right: Vec<Morsel>,
     right_len: usize,
     /// The only side being read: the preferred build side of a join with runtime
-    /// filters, until it ends or reaches the sample limit.
+    /// filters, until it ends or reaches the sample limit. A side that ends is
+    /// complete, so its key ranges are published before the other side is read.
     only_side: Option<bool>,
 }
 
@@ -510,15 +523,15 @@ impl SampleState {
                 if config::verbose() {
                     eprintln!("preferred build side reached the sample limit, sampling both sides");
                 }
-                self.only_side = None;
             } else if recv[idx] == PortState::Done {
                 if config::verbose() {
-                    eprintln!("preferred build side done with {len} rows, building it");
+                    eprintln!("preferred build side done with {len} rows, publishing its ranges");
                 }
-                return Ok(Some(self.start_build(left, params, state, spill_ctx)?));
+                self.publish_runtime_filters(left, params, state)?;
             } else {
                 return Ok(None);
             }
+            self.only_side = None;
         }
 
         let left_saturated = self.left_len >= params.sample_limit;
@@ -601,6 +614,60 @@ impl SampleState {
             state,
             spill_ctx,
         )?))
+    }
+
+    /// Hand the key ranges of a completely sampled side to the runtime filters.
+    /// The range holds whichever side is built later, as no key of the other
+    /// side outside it can match.
+    fn publish_runtime_filters(
+        &self,
+        left: bool,
+        params: &mut EquiJoinParams,
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
+        let (morsels, key_selectors, key_schema) = if left {
+            (
+                &self.left,
+                &params.left_key_selectors,
+                &params.left_key_schema,
+            )
+        } else {
+            (
+                &self.right,
+                &params.right_key_selectors,
+                &params.right_key_schema,
+            )
+        };
+        let mut ranges: Vec<KeyRange> = params
+            .runtime_filters
+            .iter()
+            .map(|_| KeyRange::default())
+            .collect();
+        for morsel in morsels {
+            let df = morsel.df_blocking();
+            let keys = ASYNC.block_on(select_key_columns(
+                &df,
+                key_selectors,
+                &state.in_memory_exec_state,
+            ))?;
+            for (filter, range) in params.runtime_filters.iter().zip(&mut ranges) {
+                range.extend(&keys.columns()[filter.key_idx])?;
+            }
+        }
+        for (filter, range) in params.runtime_filters.iter().zip(ranges) {
+            if config::verbose() {
+                let name = key_schema
+                    .get_at_index(filter.key_idx)
+                    .map(|(n, _)| n.as_str());
+                eprintln!(
+                    "publishing runtime filter for key {}: {range:?}",
+                    name.unwrap_or("?")
+                );
+            }
+            filter.pred.set(Arc::new(range));
+        }
+        params.runtime_filters_published = true;
+        Ok(())
     }
 
     /// Start building from `left_is_build`, feeding it the morsels sampled from
@@ -1618,6 +1685,7 @@ impl EquiJoinNode {
                 args,
                 fused_predicate,
                 runtime_filters,
+                runtime_filters_published: false,
                 random_state: PlRandomState::default(),
                 sample_limit,
             },
