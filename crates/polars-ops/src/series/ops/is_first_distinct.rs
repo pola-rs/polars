@@ -46,7 +46,7 @@ fn is_first_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
     BooleanChunked::from_chunk_iter(ca.name().clone(), chunks)
 }
 
-fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
+pub(super) fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
     let mut out = MutableBitmap::with_capacity(ca.len());
     out.extend_constant(ca.len(), false);
 
