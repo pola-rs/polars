@@ -882,15 +882,19 @@ def test_published_range_holds_when_the_other_side_is_built(
     )
     plan = q.explain(engine="streaming")
     assert "BUILD SIDE: Prefer" in plan
-    other = "right" if "BUILD SIDE: PreferLeft" in plan else "left"
+    dim_left = "BUILD SIDE: PreferLeft" in plan
+    other = "right" if dim_left else "left"
+    lengths = "10 vs. 1" if dim_left else "1 vs. 10"
 
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
     out = q.collect(engine="streaming")
     err = capfd.readouterr().err
-    assert "Predicate pushdown: reading 2 / 10 row groups" in err
-    assert "publishing its ranges" in err
-    assert f"build side chosen: {other}" in err
+    # The dimension's own join logs its choice too, before the publication.
+    after = err.split("publishing its ranges", 1)[1]
+    assert "Predicate pushdown: reading 2 / 10 row groups" in after
+    assert f"sample lengths are: {lengths}" in after
+    assert f"build side chosen: {other}" in after
     assert out.get_column("k").to_list() == [220]
     assert_matches_in_memory(q, out)
 
