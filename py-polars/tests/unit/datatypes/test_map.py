@@ -2305,6 +2305,59 @@ def test_map_get_narrows_a_wider_integer_key() -> None:
     assert_map_method(s, "contains_key", pl.Series("m", [False]), out_of_range)
 
 
+@pytest.mark.parametrize(
+    ("key_dtype", "needle"),
+    [
+        pytest.param(pl.UInt128, 7, id="u128-python-int"),
+        pytest.param(pl.UInt128, pl.lit(7, pl.Int8), id="u128-i8"),
+        pytest.param(pl.UInt128, pl.lit(7, pl.Int64), id="u128-i64"),
+        pytest.param(pl.UInt64, pl.lit(7, pl.Int64), id="u64-i64"),
+        pytest.param(pl.Int64, pl.lit(7, pl.UInt128), id="i64-u128"),
+        pytest.param(pl.Int8, pl.lit(7, pl.UInt64), id="i8-u64"),
+    ],
+)
+def test_map_get_integer_key_without_a_common_supertype(
+    key_dtype: PolarsDataType, needle: Any
+) -> None:
+    s = map_of(key_dtype, 7)
+
+    assert_map_method(s, "get", pl.Series("m", [42], dtype=pl.Int64), needle)
+    assert_map_method(s, "contains_key", pl.Series("m", [True]), needle)
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "needle"),
+    [
+        pytest.param(pl.UInt128, -1, id="u128-python-int"),
+        pytest.param(pl.UInt128, pl.lit(-1, pl.Int64), id="u128-i64"),
+        pytest.param(pl.Int8, pl.lit(2**64 - 1, pl.UInt64), id="i8-u64"),
+    ],
+)
+def test_map_get_integer_key_outside_the_key_range_is_absent(
+    key_dtype: PolarsDataType, needle: Any
+) -> None:
+    s = map_of(key_dtype, 7)
+
+    assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), needle)
+    assert_map_method(s, "contains_key", pl.Series("m", [False]), needle)
+
+
+def test_map_get_integer_key_column_without_a_common_supertype() -> None:
+    df = pl.DataFrame(
+        {
+            "m": map_of(pl.UInt128, 7).gather([0, 0, 0]),
+            "k": pl.Series([7, -1, None], dtype=pl.Int64),
+        }
+    )
+
+    out = df.select(
+        pl.col("m").map.get(pl.col("k")).alias("v"),
+        pl.col("m").map.contains_key(pl.col("k")).alias("has"),
+    )
+    assert out["v"].to_list() == [42, None, None]
+    assert out["has"].to_list() == [True, False, False]
+
+
 def map_with_keys(key_dtype: PolarsDataType, keys: list[Any]) -> pl.Series:
     """A one-row map whose entries are `keys`, numbered from 0."""
     entries = pl.Series(

@@ -77,6 +77,15 @@ pub(super) fn resolve_map_key(
         return Ok(Some(result));
     }
 
+    // Integers do not need to share a common supertype, but casting them is always safe
+    // (we get null if the cast fails, which is not a valid key, so we treat it as absent)
+    let materialized_needle = needle.clone().materialize_unknown(false)?;
+    if materialized_needle.is_integer() && key.is_integer() && materialized_needle != **key {
+        return Ok(Some(IsInTypeCoercionResult::LenientSelfCast(
+            (**key).clone(),
+        )));
+    }
+
     Ok(Some(
         match resolve_is_in(
             input,
@@ -95,13 +104,6 @@ pub(super) fn resolve_map_key(
                     dtype: supertype,
                     strict: false,
                 }
-            },
-            // The needle is the wider integer. Narrowing it is exact or null, and a null needle
-            // matches nothing, so an out-of-range key is simply absent.
-            Some(IsInTypeCoercionResult::SuperType(_, _))
-                if needle.is_integer() && key.is_integer() =>
-            {
-                IsInTypeCoercionResult::LenientSelfCast((**key).clone())
             },
             Some(
                 IsInTypeCoercionResult::SuperType(_, _)
