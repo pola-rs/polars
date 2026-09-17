@@ -120,6 +120,10 @@ impl DynamicPred {
         }
         self.inner.is_set.store(true, Ordering::Release);
     }
+
+    pub fn is_set(&self) -> bool {
+        self.inner.is_set.load(Ordering::Acquire)
+    }
 }
 
 impl DynamicPredWeakRef {

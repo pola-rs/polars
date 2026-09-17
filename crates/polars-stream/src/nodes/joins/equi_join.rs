@@ -194,7 +194,6 @@ struct EquiJoinParams {
     // Key min/max ranges for the scans below the planned probe side, set once
     // from a complete sample of the planned build side or from its build.
     runtime_filters: Vec<RuntimeFilter>,
-    runtime_filters_published: bool,
     random_state: PlRandomState,
     sample_limit: usize,
 }
@@ -218,7 +217,7 @@ impl EquiJoinParams {
     /// were not set from a sample, and describe the side being built.
     fn publishes_runtime_filters(&self) -> bool {
         !self.runtime_filters.is_empty()
-            && !self.runtime_filters_published
+            && !self.runtime_filters[0].pred.is_set()
             && self.left_is_build == self.planned_build_left()
     }
 
@@ -241,7 +240,14 @@ impl EquiJoinParams {
             }
             filter.pred.set(Arc::new(range));
         }
-        self.runtime_filters_published = true;
+    }
+
+    /// Widen the range of every runtime filter with its key column.
+    fn extend_key_ranges(&self, keys: &DataFrame, ranges: &mut [KeyRange]) -> PolarsResult<()> {
+        for (filter, range) in self.runtime_filters.iter().zip(ranges) {
+            range.extend(&keys.columns()[filter.key_idx])?;
+        }
+        Ok(())
     }
 
     /// Should we emit unmatched rows from the build side?
@@ -655,22 +661,27 @@ impl SampleState {
         } else {
             (&self.right, &params.right_key_selectors)
         };
-        let mut ranges: Vec<KeyRange> = params
-            .runtime_filters
-            .iter()
-            .map(|_| KeyRange::default())
-            .collect();
-        for morsel in morsels {
-            let df = morsel.df_blocking();
-            let keys = ASYNC.block_on(select_key_columns(
-                &df,
-                key_selectors,
-                &state.in_memory_exec_state,
-            ))?;
-            for (filter, range) in params.runtime_filters.iter().zip(&mut ranges) {
-                range.extend(&keys.columns()[filter.key_idx])?;
-            }
-        }
+        let new_ranges = || vec![KeyRange::default(); params.runtime_filters.len()];
+        let ranges = RAYON.install(|| {
+            morsels
+                .par_iter()
+                .try_fold(new_ranges, |mut ranges, morsel| {
+                    let df = morsel.df_blocking();
+                    let keys = ASYNC.block_on(select_key_columns(
+                        &df,
+                        key_selectors,
+                        &state.in_memory_exec_state,
+                    ))?;
+                    params.extend_key_ranges(&keys, &mut ranges)?;
+                    PolarsResult::Ok(ranges)
+                })
+                .try_reduce(new_ranges, |mut a, b| {
+                    for (a, b) in a.iter_mut().zip(b) {
+                        a.merge(b);
+                    }
+                    Ok(a)
+                })
+        })?;
         params.publish_runtime_filters(left, ranges);
         Ok(())
     }
@@ -817,9 +828,7 @@ impl BuildState {
                 select_keys_with_columns(&df, key_selectors, params, &state.in_memory_exec_state)
                     .await?;
             if publishes_runtime_filters {
-                for (filter, range) in params.runtime_filters.iter().zip(&mut local.key_ranges) {
-                    range.extend(&keys.columns()[filter.key_idx])?;
-                }
+                params.extend_key_ranges(&keys, &mut local.key_ranges)?;
             }
             let mut payload = select_payload(df.clone(), payload_selector);
             payload.rechunk_mut();
@@ -844,7 +853,7 @@ impl BuildState {
     fn is_empty(&self) -> bool {
         self.local_builders
             .iter()
-            .all(|b| b.morsels.iter().all(|(_, _, keys)| keys.len() == 0))
+            .all(|b| b.morsels.iter().all(|(_, _, keys)| keys.is_empty()))
     }
 
     /// Hand the range of every build key to the runtime filters. Filters set
@@ -1687,7 +1696,6 @@ impl EquiJoinNode {
                 args,
                 fused_predicate,
                 runtime_filters,
-                runtime_filters_published: false,
                 random_state: PlRandomState::default(),
                 sample_limit,
             },
