@@ -34,6 +34,7 @@ polars-lazy = { workspace = true, features = ["streaming"] }
 [features]
 default = []
 nightly = ["polars-lazy/nightly"]
+approx_quantile = ["polars-lazy/approx_quantile"]
 binary_encoding = ["polars-lazy/binary_encoding"]
 bitwise = ["polars-lazy/bitwise"]
 csv = ["polars-lazy/csv"]
