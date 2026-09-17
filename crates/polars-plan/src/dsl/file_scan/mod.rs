@@ -132,11 +132,6 @@ pub struct PartialMetadata {
 
 #[cfg(feature = "parquet")]
 impl PartialMetadata {
-    /// Source indices corresponding to the resolved footers, in ascending order.
-    pub fn indices(&self) -> &[usize] {
-        &self.indices
-    }
-
     fn new(indices: Vec<usize>, metadata: Vec<FileMetadataRef>) -> Self {
         assert!(!indices.is_empty());
         assert_eq!(indices.len(), metadata.len());
@@ -200,6 +195,20 @@ impl MetadataPerSource {
             Self::Partial(p) => &p.metadata,
             Self::Full(s) => s,
         }
+    }
+
+    /// The resolved footers paired with their source index, ascending.
+    pub fn iter_resolved(&self) -> impl Iterator<Item = (usize, &FileMetadataRef)> {
+        let (indices, metadata): (&[usize], &[FileMetadataRef]) = match self {
+            Self::Unresolved => (&[], &[]),
+            Self::Partial(p) => (&p.indices, &p.metadata),
+            Self::Full(s) => (&[], s),
+        };
+        // `Full` carries no index list; there a footer's position is its source index.
+        metadata
+            .iter()
+            .enumerate()
+            .map(move |(j, md)| (indices.get(j).copied().unwrap_or(j), md))
     }
 
     /// Re-index to the sources surviving a filter.
