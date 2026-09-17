@@ -1,4 +1,3 @@
-use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 
 use arrow::array::{
@@ -11,10 +10,8 @@ use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_type;
+use polars_defs::expr::SetOperation;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash, TotalOrdWrap};
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
 
 trait MaterializeValues<K> {
     // extends the iterator to the values and returns the current offset
@@ -106,29 +103,6 @@ fn copied_wrapper_opt<T: Copy + TotalEq + TotalHash>(
     v: Option<&T>,
 ) -> <Option<T> as ToTotalOrd>::TotalOrdItem {
     v.copied().to_total_ord()
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[strum(serialize_all = "snake_case")]
-pub enum SetOperation {
-    Intersection,
-    Union,
-    Difference,
-    SymmetricDifference,
-}
-
-impl Display for SetOperation {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            SetOperation::Intersection => "intersection",
-            SetOperation::Union => "union",
-            SetOperation::Difference => "difference",
-            SetOperation::SymmetricDifference => "symmetric_difference",
-        };
-        write!(f, "{s}")
-    }
 }
 
 fn primitive<T>(

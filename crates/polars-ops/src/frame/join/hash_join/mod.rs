@@ -10,6 +10,7 @@ pub(super) mod sort_merge;
 use arrow::array::ArrayRef;
 use polars_core::runtime::RAYON;
 use polars_core::utils::_set_partition_size;
+use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::index::ChunkId;
 use polars_utils::unique_column_name;
 pub(super) use single_keys::*;

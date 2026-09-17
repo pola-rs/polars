@@ -3,7 +3,7 @@ use either::Either;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::utils::{get_numeric_upcast_supertype_lossless, try_get_supertype};
-use polars_ops::prelude::JoinValidation;
+use polars_defs::join::JoinValidation;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 
@@ -345,7 +345,7 @@ pub fn resolve_join(
         // prepare the tolerance
         // we must ensure that we use the right units
         if let Some(tol) = &options.tolerance_str {
-            let duration = polars_time::Duration::try_parse(tol)?;
+            let duration = polars_defs::time::duration::Duration::try_parse(tol)?;
             polars_ensure!(
                 duration.months() == 0,
                 ComputeError: "cannot use month offset in timedelta of an asof join; \

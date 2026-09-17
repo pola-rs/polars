@@ -1,3 +1,5 @@
+use polars_defs::time::group_by::DynamicGroupOptions;
+
 use super::*;
 
 #[cfg_attr(not(feature = "dynamic_group_by"), allow(dead_code))]

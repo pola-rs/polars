@@ -37,6 +37,8 @@ bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct ScanFlags : u32 {
         const SPECIALIZED_PREDICATE_FILTER = 0x01;
+        /// The reader skips whole batches by their statistics.
+        const SKIPS_BATCHES_BY_STATISTICS = 0x02;
     }
 }
 
@@ -349,7 +351,9 @@ impl FileScanIR {
             #[cfg(feature = "ipc")]
             Self::Ipc { .. } => ScanFlags::empty(),
             #[cfg(feature = "parquet")]
-            Self::Parquet { .. } => ScanFlags::SPECIALIZED_PREDICATE_FILTER,
+            Self::Parquet { .. } => {
+                ScanFlags::SPECIALIZED_PREDICATE_FILTER | ScanFlags::SKIPS_BATCHES_BY_STATISTICS
+            },
             #[cfg(feature = "json")]
             Self::NDJson { .. } => ScanFlags::empty(),
             #[allow(unreachable_patterns)]

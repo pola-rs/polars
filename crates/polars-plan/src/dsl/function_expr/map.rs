@@ -5,6 +5,11 @@ use super::*;
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub enum MapFunction {
     Entries,
+    Keys,
+    Values,
+    Length,
+    ContainsKey,
+    Get,
 }
 
 impl Display for MapFunction {
@@ -13,6 +18,11 @@ impl Display for MapFunction {
 
         let name = match self {
             Entries => "entries",
+            Keys => "keys",
+            Values => "values",
+            Length => "len",
+            ContainsKey => "contains_key",
+            Get => "get",
         };
         write!(f, "map.{name}")
     }

@@ -20,6 +20,7 @@ polars-schema = { workspace = true }
 polars-utils = { workspace = true }
 
 arrow = { workspace = true }
+atoi_simd = { workspace = true, optional = true }
 bitflags = { workspace = true }
 boxcar = { workspace = true }
 bytemuck = { workspace = true }
@@ -66,7 +67,7 @@ simd = ["arrow/simd", "polars-compute/simd"]
 nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "arrow/nightly"]
 avx512 = []
 docs = []
-temporal = ["regex", "chrono", "polars-error/regex"]
+temporal = ["regex", "chrono", "atoi_simd", "polars-error/regex"]
 proptest = ["dep:proptest", "dtype-u8", "dtype-u16", "dtype-i8", "dtype-i16", "dtype-u128", "dtype-i128"]
 random = ["rand", "rand_distr"]
 algorithm_group_by = []
@@ -114,7 +115,7 @@ product = []
 unique_counts = []
 partition_by = ["algorithm_group_by"]
 describe = []
-timezones = ["temporal", "chrono", "chrono-tz", "arrow/chrono-tz", "arrow/timezones"]
+timezones = ["temporal", "chrono", "chrono-tz", "arrow/chrono-tz", "arrow/timezones", "dtype-datetime"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
 list_arithmetic = []
 array_arithmetic = ["dtype-array"]

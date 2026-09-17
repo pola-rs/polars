@@ -134,7 +134,7 @@ jobs:
           args: >
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
             --out dist
-          maturin-version: 1.8.3
+          maturin-version: 1.15.0
 
       - name: Test sdist
         run: |
@@ -353,7 +353,7 @@ jobs:
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
             --out dist
           manylinux: auto
-          maturin-version: 1.8.3
+          maturin-version: 1.15.0
 
       - name: Test wheel
         # Testing on entire matrix except musl targets, which are missing on all ubuntu-x images.

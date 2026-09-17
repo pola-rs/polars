@@ -1406,6 +1406,12 @@ impl DataFrame {
         by: impl IntoIterator<Item = impl AsRef<str>>,
         sort_options: SortMultipleOptions,
     ) -> PolarsResult<&mut Self> {
+        let by: Vec<_> = by.into_iter().collect();
+        // Several keys are sorted through a row encoding of single chunks; one
+        // key may skip the sort by its sorted flag.
+        if by.len() > 1 {
+            self.rechunk_mut_par();
+        }
         let by_column = self.select_to_vec(by)?;
 
         let mut out = self.sort_impl(by_column, sort_options, None)?;
@@ -2771,6 +2777,33 @@ mod test {
         let s0 = Column::new("days".into(), [0, 1, 2].as_ref());
         let s1 = Column::new("temp".into(), [22.1, 19.9, 7.].as_ref());
         DataFrame::new_infer_height(vec![s0, s1]).unwrap()
+    }
+
+    #[test]
+    fn sort_in_place_keeps_the_chunks_of_a_frame_sorted_by_one_key() {
+        let mut df = df!("a" => [1, 2], "b" => [1, 1]).unwrap();
+        df.vstack_mut(&df!("a" => [3, 4], "b" => [1, 1]).unwrap())
+            .unwrap();
+        df.apply("a", |c| {
+            let mut c = c.clone();
+            c.set_sorted_flag(IsSorted::Ascending);
+            c
+        })
+        .unwrap();
+        assert_eq!(df.first_col_n_chunks(), 2);
+
+        df.sort_in_place(["a"], SortMultipleOptions::default())
+            .unwrap();
+        assert_eq!(df.first_col_n_chunks(), 2);
+
+        df.sort_in_place(["a", "b"], SortMultipleOptions::default())
+            .unwrap();
+        assert_eq!(df.first_col_n_chunks(), 1);
+        let a = df.column("a").unwrap().as_materialized_series();
+        assert_eq!(
+            a.i32().unwrap().to_vec(),
+            [Some(1), Some(2), Some(3), Some(4)]
+        );
     }
 
     #[test]

@@ -1,9 +1,9 @@
 #[cfg(feature = "dtype-array")]
 pub mod array;
 mod binary;
-#[cfg(feature = "timezones")]
-pub mod datetime;
 pub mod list;
+#[cfg(feature = "dtype-map")]
+pub mod map;
 #[cfg(feature = "propagate_nans")]
 pub mod nan_propagating_aggregate;
 #[cfg(feature = "peaks")]
@@ -28,13 +28,13 @@ mod hist;
 mod repeat_by;
 
 pub use binary::*;
-#[cfg(feature = "timezones")]
-pub use datetime::*;
 #[cfg(feature = "chunked_ids")]
 pub use gather::*;
 #[cfg(feature = "hist")]
 pub use hist::*;
 pub use list::*;
+#[cfg(feature = "dtype-map")]
+pub use map::*;
 #[allow(unused_imports)]
 use polars_core::prelude::*;
 #[cfg(feature = "repeat_by")]

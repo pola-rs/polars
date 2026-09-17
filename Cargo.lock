@@ -3070,6 +3070,7 @@ dependencies = [
  "polars-buffer",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-expr",
  "polars-io",
@@ -3211,6 +3212,7 @@ dependencies = [
 name = "polars-core"
 version = "0.55.1"
 dependencies = [
+ "atoi_simd",
  "bincode",
  "bitflags",
  "boxcar",
@@ -3250,6 +3252,22 @@ dependencies = [
  "uuid",
  "version_check",
  "xxhash-rust",
+]
+
+[[package]]
+name = "polars-defs"
+version = "0.55.1"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "polars-arrow",
+ "polars-compute",
+ "polars-core",
+ "polars-error",
+ "polars-utils",
+ "schemars",
+ "serde",
+ "strum_macros 0.28.0",
 ]
 
 [[package]]
@@ -3329,6 +3347,7 @@ dependencies = [
  "polars-buffer",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-io",
  "polars-json",
  "polars-ops",
@@ -3387,7 +3406,6 @@ dependencies = [
  "polars-json",
  "polars-parquet",
  "polars-schema",
- "polars-time",
  "polars-utils",
  "pyo3",
  "rand 0.10.2",
@@ -3442,6 +3460,7 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-defs",
  "polars-expr",
  "polars-io",
  "polars-json",
@@ -3466,7 +3485,9 @@ dependencies = [
  "futures",
  "memmap2",
  "polars-arrow",
+ "polars-config",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-expr",
  "polars-io",
@@ -3521,7 +3542,6 @@ dependencies = [
  "base64 0.22.1",
  "bytemuck",
  "chrono",
- "chrono-tz",
  "either",
  "hashbrown 0.17.1",
  "hex",
@@ -3534,6 +3554,7 @@ dependencies = [
  "polars-buffer",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-json",
  "polars-schema",
@@ -3624,14 +3645,13 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-defs",
  "polars-descriptions",
  "polars-error",
  "polars-ffi",
  "polars-io",
  "polars-json",
- "polars-ops",
  "polars-parquet",
- "polars-time",
  "polars-utils",
  "pyo3",
  "rayon",
@@ -3673,6 +3693,7 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-defs",
  "polars-descriptions",
  "polars-dtype",
  "polars-error",
@@ -3770,12 +3791,12 @@ dependencies = [
  "hex",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-lazy",
  "polars-ops",
  "polars-plan",
  "polars-testing",
- "polars-time",
  "polars-utils",
  "regex",
  "serde",
@@ -3805,6 +3826,7 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-defs",
  "polars-descriptions",
  "polars-error",
  "polars-expr",
@@ -3843,7 +3865,6 @@ dependencies = [
 name = "polars-time"
 version = "0.55.1"
 dependencies = [
- "atoi_simd",
  "bytemuck",
  "chrono",
  "chrono-tz",
@@ -3852,6 +3873,7 @@ dependencies = [
  "polars-arrow",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-ops",
  "polars-utils",

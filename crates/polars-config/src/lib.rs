@@ -122,6 +122,9 @@ const DEFAULT_NUMA_MOCK_REGIONS: u64 = 0;
 const DISABLE_HTTP_RATE_LIMIT: &str = "POLARS_DISABLE_HTTP_RATE_LIMIT";
 const DEFAULT_DISABLE_HTTP_RATE_LIMIT: bool = false;
 
+const HTTP_SKIP_SYSTEM_CERTIFICATES: &str = "POLARS_HTTP_SKIP_SYSTEM_CERTIFICATES";
+const DEFAULT_HTTP_SKIP_SYSTEM_CERTIFICATES: bool = false;
+
 /// Use direct I/O (Linux: `O_DIRECT`), bypassing the page cache.
 const DIRECT_IO: &str = "POLARS_DIRECT_IO";
 const DEFAULT_DIRECT_IO: bool = false;
@@ -188,6 +191,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     NUMA_AWARE,
     NUMA_MOCK_REGIONS,
     DISABLE_HTTP_RATE_LIMIT,
+    HTTP_SKIP_SYSTEM_CERTIFICATES,
     DIRECT_IO,
     FILE_READ_CONCURRENCY,
     FILE_POSIX_FADV,
@@ -227,6 +231,7 @@ pub struct Config {
     numa_aware: AtomicBool,
     numa_mock_regions: AtomicU64,
     disable_http_rate_limit: AtomicBool,
+    http_skip_system_certificates: AtomicBool,
     direct_io: AtomicBool,
     file_read_concurrency: AtomicU64,
     file_posix_fadv: AtomicU8,
@@ -285,6 +290,7 @@ impl Config {
             numa_aware: AtomicBool::new(DEFAULT_NUMA_AWARE),
             numa_mock_regions: AtomicU64::new(DEFAULT_NUMA_MOCK_REGIONS),
             disable_http_rate_limit: AtomicBool::new(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
+            http_skip_system_certificates: AtomicBool::new(DEFAULT_HTTP_SKIP_SYSTEM_CERTIFICATES),
             direct_io: AtomicBool::new(DEFAULT_DIRECT_IO),
             file_read_concurrency: AtomicU64::new(DEFAULT_FILE_READ_CONCURRENCY),
             file_posix_fadv: AtomicU8::new(DEFAULT_FILE_POSIX_FADV as u8),
@@ -487,6 +493,11 @@ impl Config {
             DISABLE_HTTP_RATE_LIMIT => self.disable_http_rate_limit.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
+                Ordering::Relaxed,
+            ),
+            HTTP_SKIP_SYSTEM_CERTIFICATES => self.http_skip_system_certificates.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_HTTP_SKIP_SYSTEM_CERTIFICATES),
                 Ordering::Relaxed,
             ),
             DIRECT_IO => self.direct_io.store(
@@ -701,6 +712,13 @@ impl Config {
     #[inline(always)]
     pub fn disable_http_rate_limit(&self) -> bool {
         self.disable_http_rate_limit.load(Ordering::Relaxed)
+    }
+
+    /// Whether cleartext `http` clients skip the system trust store. Such a client fails the
+    /// handshake on a redirect to `https`.
+    #[inline(always)]
+    pub fn http_skip_system_certificates(&self) -> bool {
+        self.http_skip_system_certificates.load(Ordering::Relaxed)
     }
 
     #[inline(always)]

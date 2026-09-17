@@ -53,6 +53,12 @@ impl ColumnChunkMetadata {
         &self.column_descr
     }
 
+    /// Position of this column among the leaves of the file's schema.
+    #[inline]
+    pub fn leaf_index(&self) -> usize {
+        self.column_descr.leaf_index()
+    }
+
     /// The [`PhysicalType`] of this column.
     pub fn physical_type(&self) -> PhysicalType {
         self.descriptor().descriptor.primitive_type.physical_type

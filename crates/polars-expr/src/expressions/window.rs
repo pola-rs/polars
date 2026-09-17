@@ -11,6 +11,8 @@ use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
+use polars_defs::expr::{RankMethod, RankOptions};
+use polars_defs::join::JoinValidation;
 use polars_ops::frame::SeriesJoin;
 use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::*;

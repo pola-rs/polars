@@ -332,8 +332,16 @@ impl PhysicalIoExpr for PhysicalExprWithConstCols<Arc<dyn PhysicalIoExpr>> {
 pub struct ScanIOPredicate {
     pub predicate: Arc<dyn PhysicalIoExpr>,
 
+    /// Whether `predicate` filters rows at all. False when the predicate only
+    /// carries parts a reader consults to skip batches by their statistics.
+    pub filters_rows: bool,
+
     /// Column names that are used in the predicate.
     pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
+
+    /// Column names whose statistics the skip-batch predicate reads. A superset of
+    /// the live columns.
+    pub skip_batch_columns: Arc<PlIndexSet<PlSmallStr>>,
 
     /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
@@ -354,10 +362,13 @@ impl ScanIOPredicate {
         }
 
         let mut live_columns = self.live_columns.as_ref().clone();
+        let mut skip_batch_columns = self.skip_batch_columns.as_ref().clone();
         for (c, _) in constant_columns.iter() {
             live_columns.swap_remove(c);
+            skip_batch_columns.swap_remove(c);
         }
         self.live_columns = Arc::new(live_columns);
+        self.skip_batch_columns = Arc::new(skip_batch_columns);
 
         if let Some(skip_batch_predicate) = self.skip_batch_predicate.take() {
             let mut sbp_constant_columns = Vec::with_capacity(constant_columns.len() * 3);

@@ -149,6 +149,7 @@ mod tests {
                 on: Vec::new(),
                 fused_predicate: None,
             },
+            runtime_filters: Vec::new(),
         })
     }
 

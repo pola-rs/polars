@@ -10,9 +10,10 @@ use chrono_tz::Tz;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_core::prelude::*;
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::ClosedWindow;
 
-use crate::windows::duration::Duration;
-use crate::windows::group_by::{ClosedWindow, group_by_values_iter};
+use crate::windows::group_by::group_by_values_iter;
 
 pub(crate) trait RollingAggWindow<T: NativeType, Out: NativeType> {
     /// # Safety

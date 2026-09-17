@@ -481,7 +481,7 @@ impl PySeries {
                 let ambiguous = ambiguous.series.into_inner();
                 let ambiguous = ambiguous.str()?;
 
-                polars_time::prelude::string::infer::to_datetime_with_inferred_tz(
+                polars_core::chunked_array::temporal::string::infer::to_datetime_with_inferred_tz(
                     datetime_strings,
                     time_unit.map_or(TimeUnit::Microseconds, |v| v.0),
                     strict,

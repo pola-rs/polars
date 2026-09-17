@@ -1,15 +1,15 @@
 use arrow::legacy::time_zone::Tz;
 use chrono::NaiveDateTime;
+#[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::{try_localize_datetime, unlocalize_datetime};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{
     MILLISECONDS, SECONDS_IN_DAY, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
     timestamp_us_to_datetime,
 };
+use polars_defs::time::duration::Duration;
 
 use crate::month_start::roll_backward;
-#[cfg(feature = "timezones")]
-use crate::utils::{try_localize_datetime, unlocalize_datetime};
-use crate::windows::duration::Duration;
 
 // roll forward to the last day of the month
 fn roll_forward(

@@ -1,4 +1,5 @@
 mod any_value;
+pub mod cut;
 use arrow::compute::concatenate::concatenate_validities;
 use arrow::compute::utils::combine_validities_and;
 pub mod flatten;

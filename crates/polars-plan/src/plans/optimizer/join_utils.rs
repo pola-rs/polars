@@ -1,7 +1,7 @@
 #![allow(unused)]
 use polars_core::error::{PolarsResult, polars_bail, polars_err};
 use polars_core::schema::*;
-use polars_ops::frame::{JoinBuildSide, JoinValidation};
+use polars_defs::join::{JoinBuildSide, JoinValidation};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 

@@ -2,42 +2,10 @@
 use arrow::array::BooleanArray;
 use arrow::compute::concatenate::concatenate_validities;
 use polars_core::prelude::*;
+use polars_defs::expr::{RankMethod, RankOptions};
 use rand::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::prelude::SeriesSealed;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum RankMethod {
-    Average,
-    Min,
-    Max,
-    Dense,
-    Ordinal,
-    #[cfg(feature = "random")]
-    Random,
-}
-
-// We might want to add a `nulls_last` or `null_behavior` field.
-#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct RankOptions {
-    pub method: RankMethod,
-    pub descending: bool,
-}
-
-impl Default for RankOptions {
-    fn default() -> Self {
-        Self {
-            method: RankMethod::Dense,
-            descending: false,
-        }
-    }
-}
 
 unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &BooleanArray, mut flush_ties: F) {
     let mut ties_indices = Vec::with_capacity(128);

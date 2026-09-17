@@ -4,6 +4,7 @@ use arrow::legacy::kernels::sorted_join;
 use polars_core::utils::_split_offsets;
 #[cfg(feature = "performant")]
 use polars_core::utils::flatten::flatten_par;
+use polars_defs::join::JoinValidation;
 
 use super::*;
 
