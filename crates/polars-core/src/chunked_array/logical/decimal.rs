@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 use polars_compute::decimal::{
     DEC128_MAX_PREC, dec128_fits, dec128_mul, dec128_rescale, dec128_verify_prec_scale,
     i128_to_dec128,

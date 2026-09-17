@@ -1,9 +1,11 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::hash::BuildHasher;
 
-use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array};
-use arrow::bitmap::Bitmap;
-use arrow::compute::utils::combine_validities_and_many;
+use polars_arrow::array::{
+    Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array,
+};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::compute::utils::combine_validities_and_many;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};
@@ -284,6 +286,39 @@ impl HashKeys {
         }
     }
 
+    /// Same as gen_idxs_per_partition, but only at the given subset indices.
+    ///
+    /// # Safety
+    /// The subset indices must be in-bounds.
+    pub unsafe fn gen_idxs_per_partition_subset(
+        &self,
+        subset: &[IdxSize],
+        partitioner: &HashPartitioner,
+        partition_idxs: &mut [Vec<IdxSize>],
+        sketches: &mut [CardinalitySketch],
+        partition_nulls: bool,
+    ) {
+        unsafe {
+            if sketches.is_empty() {
+                self.gen_idxs_per_partition_subset_impl::<false>(
+                    subset,
+                    partitioner,
+                    partition_idxs,
+                    sketches,
+                    partition_nulls | self.null_is_valid(),
+                );
+            } else {
+                self.gen_idxs_per_partition_subset_impl::<true>(
+                    subset,
+                    partitioner,
+                    partition_idxs,
+                    sketches,
+                    partition_nulls | self.null_is_valid(),
+                );
+            }
+        }
+    }
+
     fn gen_idxs_per_partition_impl<const BUILD_SKETCHES: bool>(
         &self,
         partitioner: &HashPartitioner,
@@ -311,6 +346,36 @@ impl HashKeys {
                 }
             }
         });
+    }
+
+    /// # Safety
+    /// The subset indices must be in-bounds.
+    unsafe fn gen_idxs_per_partition_subset_impl<const BUILD_SKETCHES: bool>(
+        &self,
+        subset: &[IdxSize],
+        partitioner: &HashPartitioner,
+        partition_idxs: &mut [Vec<IdxSize>],
+        sketches: &mut [CardinalitySketch],
+        partition_nulls: bool,
+    ) {
+        assert!(partition_idxs.len() == partitioner.num_partitions());
+        assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
+
+        let null_p = partitioner.null_partition();
+        unsafe {
+            self.for_each_hash_subset(subset, |idx, opt_h| {
+                if let Some(h) = opt_h {
+                    // SAFETY: we assured the number of partitions matches.
+                    let p = partitioner.hash_to_partition(h);
+                    partition_idxs.get_unchecked_mut(p).push(idx);
+                    if BUILD_SKETCHES {
+                        sketches.get_unchecked_mut(p).insert(h);
+                    }
+                } else if partition_nulls {
+                    partition_idxs.get_unchecked_mut(null_p).push(idx);
+                }
+            });
+        }
     }
 
     pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
@@ -359,7 +424,7 @@ impl RowEncodedKeys {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
-        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        let idx_arr = polars_arrow::ffi::mmap::slice(idxs);
         Self {
             hashes: polars_compute::gather::primitive::take_primitive_unchecked(
                 &self.hashes,
@@ -439,7 +504,7 @@ impl BinviewKeys {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
-        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        let idx_arr = polars_arrow::ffi::mmap::slice(idxs);
         Self {
             hashes: polars_compute::gather::primitive::take_primitive_unchecked(
                 &self.hashes,

@@ -1,8 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::error::Error;
 
-use arrow::array::{Array, MutablePlString, StaticArray};
-use arrow::compute::utils::combine_validities_and;
+use polars_arrow::array::{Array, MutablePlString, StaticArray};
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 

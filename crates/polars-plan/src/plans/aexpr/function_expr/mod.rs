@@ -1,6 +1,8 @@
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
+#[cfg(feature = "cutqcut")]
+mod binning;
 #[cfg(feature = "bitwise")]
 mod bitwise;
 mod boolean;
@@ -19,6 +21,8 @@ mod extension;
 #[cfg(feature = "fused")]
 mod fused;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
 #[cfg(feature = "ffi_plugin")]
 pub mod plugin;
 mod pow;
@@ -49,6 +53,8 @@ pub use correlation::IRCorrelationMethod;
 #[cfg(feature = "fused")]
 pub use fused::FusedOperator;
 pub use list::IRListFunction;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
@@ -58,6 +64,8 @@ pub use random::IRRandomMethod;
 use schema::FieldsMapper;
 
 pub use self::binary::IRBinaryFunction;
+#[cfg(feature = "cutqcut")]
+pub use self::binning::{FractionSpec, IRBinMethod, IRBinOptions, IntervalSpec};
 #[cfg(feature = "bitwise")]
 pub use self::bitwise::IRBitwiseFunction;
 pub use self::boolean::IRBooleanFunction;
@@ -69,6 +77,8 @@ pub use self::cat::IRCategoricalFunction;
 pub use self::datetime::IRTemporalFunction;
 #[cfg(feature = "dtype-extension")]
 pub use self::extension::IRExtensionFunction;
+#[cfg(feature = "dtype-map")]
+pub use self::map::IRMapFunction;
 pub use self::pow::IRPowFunction;
 #[cfg(feature = "range")]
 pub use self::range::IRRangeFunction;
@@ -99,6 +109,8 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "dtype-extension")]
     Extension(IRExtensionFunction),
     ListExpr(IRListFunction),
+    #[cfg(feature = "dtype-map")]
+    MapExpr(IRMapFunction),
     #[cfg(feature = "strings")]
     StringExpr(IRStringFunction),
     #[cfg(feature = "dtype-struct")]
@@ -237,6 +249,15 @@ pub enum IRFunctionExpr {
     UniqueCounts,
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
+    #[cfg(feature = "approx_quantile")]
+    ApproxQuantileSketch {
+        method: ApproxQuantileMethod,
+        error: f64,
+    },
+    #[cfg(feature = "approx_quantile")]
+    ApproxQuantileEstimate {
+        values_dtype: DataType,
+    },
     Coalesce,
     #[cfg(feature = "diff")]
     Diff(NullBehavior),
@@ -303,6 +324,8 @@ pub enum IRFunctionExpr {
         allow_duplicates: bool,
         include_breaks: bool,
     },
+    #[cfg(feature = "cutqcut")]
+    Bin(IRBinOptions),
     #[cfg(feature = "rle")]
     RLE,
     #[cfg(feature = "rle")]
@@ -402,6 +425,14 @@ pub enum IRFunctionExpr {
     RowDecode(Vec<Field>, RowEncodingVariant),
     DynamicPred {
         pred: DynamicPredWeakRef,
+        /// A scan only consults it to skip batches by their statistics, and never
+        /// evaluates it per row.
+        batch_only: bool,
+    },
+    /// Batch-skipping form of `DynamicPred`, over the `min`, `max` and null count
+    /// statistics of its column. True means the batch can be skipped.
+    DynamicSkipBatch {
+        pred: DynamicPredWeakRef,
     },
 }
 
@@ -419,6 +450,8 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "dtype-extension")]
             Extension(f) => f.hash(state),
             ListExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-map")]
+            MapExpr(f) => f.hash(state),
             #[cfg(feature = "strings")]
             StringExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-struct")]
@@ -599,6 +632,13 @@ impl Hash for IRFunctionExpr {
             UniqueCounts => {},
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantileSketch { method, error } => {
+                method.hash(state);
+                error.to_bits().hash(state);
+            },
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantileEstimate { values_dtype } => values_dtype.hash(state),
             Coalesce => {},
             #[cfg(feature = "pct_change")]
             PctChange => {},
@@ -664,6 +704,8 @@ impl Hash for IRFunctionExpr {
                 allow_duplicates.hash(state);
                 include_breaks.hash(state);
             },
+            #[cfg(feature = "cutqcut")]
+            Bin(options) => options.hash(state),
             #[cfg(feature = "rle")]
             RLE => {},
             #[cfg(feature = "rle")]
@@ -713,7 +755,11 @@ impl Hash for IRFunctionExpr {
                 fs.hash(state);
                 variants.hash(state);
             },
-            DynamicPred { pred } => {
+            DynamicPred { pred, batch_only } => {
+                pred.id().hash(state);
+                batch_only.hash(state);
+            },
+            DynamicSkipBatch { pred } => {
                 pred.id().hash(state);
             },
         }
@@ -733,6 +779,8 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "dtype-extension")]
             Extension(func) => return write!(f, "{func}"),
             ListExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-map")]
+            MapExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "strings")]
             StringExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
@@ -836,6 +884,10 @@ impl Display for IRFunctionExpr {
             Reverse => "reverse",
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantileSketch { .. } => "approx_quantile_sketch",
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantileEstimate { .. } => "approx_quantile_estimate",
             Coalesce => "coalesce",
             #[cfg(feature = "diff")]
             Diff(_) => "diff",
@@ -883,6 +935,8 @@ impl Display for IRFunctionExpr {
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
             QCut { .. } => "qcut",
+            #[cfg(feature = "cutqcut")]
+            Bin(options) => options.method.name(),
             #[cfg(feature = "dtype-array")]
             Reshape(_) => "reshape",
             #[cfg(feature = "repeat_by")]
@@ -937,6 +991,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "dtype-struct")]
             RowDecode(..) => "row_decode",
             DynamicPred { .. } => "dynamic_predicate",
+            DynamicSkipBatch { .. } => "dynamic_skip_batch",
         };
         write!(f, "{s}")
     }
@@ -1036,6 +1091,8 @@ impl IRFunctionExpr {
             #[cfg(feature = "dtype-extension")]
             F::Extension(e) => e.function_options(),
             F::ListExpr(e) => e.function_options(),
+            #[cfg(feature = "dtype-map")]
+            F::MapExpr(e) => e.function_options(),
             #[cfg(feature = "strings")]
             F::StringExpr(e) => e.function_options(),
             #[cfg(feature = "dtype-struct")]
@@ -1163,6 +1220,12 @@ impl IRFunctionExpr {
             F::ApproxNUnique => {
                 FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
+            #[cfg(feature = "approx_quantile")]
+            F::ApproxQuantileSketch { .. } => {
+                FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
+            },
+            #[cfg(feature = "approx_quantile")]
+            F::ApproxQuantileEstimate { .. } => FunctionOptions::elementwise(),
             F::Coalesce => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)
                 .with_supertyping(Default::default()),
@@ -1212,6 +1275,35 @@ impl IRFunctionExpr {
             },
             #[cfg(feature = "cutqcut")]
             F::QCut { .. } => FunctionOptions::length_preserving()
+                .with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY),
+            #[cfg(feature = "cutqcut")]
+            F::Bin(IRBinOptions {
+                method:
+                    IRBinMethod::Intervals {
+                        spec: IntervalSpec::Breaks(_),
+                        ..
+                    },
+                ..
+            }) => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY)
+            },
+            #[cfg(feature = "cutqcut")]
+            F::Bin(IRBinOptions {
+                method:
+                    IRBinMethod::Intervals {
+                        spec: IntervalSpec::Count(_),
+                        ..
+                    }
+                    | IRBinMethod::Quantiles { .. },
+                ..
+            }) => FunctionOptions::length_preserving().with_flags(|f| {
+                f | FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::NON_ORDER_OBSERVING
+            }),
+            #[cfg(feature = "cutqcut")]
+            F::Bin(IRBinOptions {
+                method: IRBinMethod::Ranks { .. },
+                ..
+            }) => FunctionOptions::length_preserving()
                 .with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY),
             #[cfg(feature = "rle")]
             F::RLE => FunctionOptions::groupwise(),
@@ -1281,7 +1373,7 @@ impl IRFunctionExpr {
             F::RowEncode(..) => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-struct")]
             F::RowDecode(..) => FunctionOptions::elementwise(),
-            F::DynamicPred { .. } => FunctionOptions::elementwise(),
+            F::DynamicPred { .. } | F::DynamicSkipBatch { .. } => FunctionOptions::elementwise(),
         }
     }
 }

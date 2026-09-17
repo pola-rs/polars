@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::PrimitiveArray;
-use arrow::compute::utils::combine_validities_and;
-use arrow::types::NativeType;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::compute::utils::combine_validities_and;
+use polars_arrow::types::NativeType;
 
 /// To reduce codegen we use these helpers where the input and output arrays
 /// may overlap. These are marked to never be inlined, this way only a single

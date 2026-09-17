@@ -1,6 +1,6 @@
-use arrow::array::*;
-use arrow::datatypes::*;
-use arrow::scalar::new_scalar;
+use polars_arrow::array::*;
+use polars_arrow::datatypes::*;
+use polars_arrow::scalar::new_scalar;
 
 #[test]
 fn test_simple_iter() {

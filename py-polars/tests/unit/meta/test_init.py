@@ -41,7 +41,7 @@ def test_version() -> None:
     rhs = importlib.metadata.version("polars")
 
     assert lhs == rhs, (
-        f"`static PYPOLARS_VERSION` ({lhs}) at `crates/polars-python/src/c_api/mod.rs` "
+        f"`static PYPOLARS_VERSION` ({lhs}) at `crates/polars-python/src/lib.rs` "
         f"does not match importlib package metadata version ({rhs})"
     )
 

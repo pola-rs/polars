@@ -6,6 +6,7 @@ use polars_utils::format_list_truncated;
 use polars_utils::unique_id::UniqueId;
 
 use crate::constants;
+use crate::dsl::dsl_resolver::ResolverExplainHeadingDisplay;
 use crate::plans::ir::IRPlanRef;
 use crate::plans::visitor::{VisitRecursion, Visitor};
 use crate::prelude::ir::format::ColumnsDisplay;
@@ -447,6 +448,29 @@ impl<'a> TreeFmtNode<'a> {
                         .map(|(input_idx, _col_idx, _arg_name)| &inputs[input_idx])
                         .map(|input| self.lp_node(None, *input))
                         .collect(),
+                ),
+                Resolver {
+                    resolver,
+                    resolved_dsl,
+                    resolved_ir,
+                    ..
+                } => ND(
+                    wh(
+                        h,
+                        &format!(
+                            "{}",
+                            ResolverExplainHeadingDisplay {
+                                indent: 0,
+                                resolver,
+                                resolved_dsl
+                            }
+                        ),
+                    ),
+                    if let Some(node) = *resolved_ir {
+                        vec![self.lp_node(None, node)]
+                    } else {
+                        vec![]
+                    },
                 ),
                 Invalid => ND(wh(h, "INVALID"), vec![]),
             },

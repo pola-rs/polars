@@ -1,4 +1,4 @@
-use arrow::array::Array;
+use polars_arrow::array::Array;
 use polars_row::RowEncodingOptions;
 use polars_utils::idx_map::bytes_idx_map::{BytesIndexMap, Entry};
 use polars_utils::itertools::Itertools;
@@ -71,6 +71,7 @@ impl Grouper for RowEncodedHashGrouper {
         self.idx_map.reserve(additional);
     }
 
+    #[inline]
     fn num_groups(&self) -> IdxSize {
         self.idx_map.len()
     }

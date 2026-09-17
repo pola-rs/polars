@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::arity::{unary_elementwise, unary_elementwise_values};
 use polars_core::prelude::*;
 use polars_core::{with_match_categorical_physical_type, with_match_physical_numeric_polars_type};
@@ -121,7 +121,7 @@ where
                 let validity = match (validity, ca_in.rechunk_validity()) {
                     (None, None) => None,
                     (Some(v), None) | (None, Some(v)) => Some(v),
-                    (Some(l), Some(r)) => Some(arrow::bitmap::and(&l, &r)),
+                    (Some(l), Some(r)) => Some(polars_arrow::bitmap::and(&l, &r)),
                 };
 
                 let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
@@ -208,7 +208,7 @@ where
                 let validity = match (validity, ca_in.rechunk_validity()) {
                     (None, None) => None,
                     (Some(v), None) | (None, Some(v)) => Some(v),
-                    (Some(l), Some(r)) => Some(arrow::bitmap::and(&l, &r)),
+                    (Some(l), Some(r)) => Some(polars_arrow::bitmap::and(&l, &r)),
                 };
 
                 let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
@@ -633,7 +633,7 @@ fn is_in_row_encoded(
         validity = match (validity, s.rechunk_validity()) {
             (None, None) => None,
             (Some(v), None) | (None, Some(v)) => Some(v),
-            (Some(l), Some(r)) => Some(arrow::bitmap::and(&l, &r)),
+            (Some(l), Some(r)) => Some(polars_arrow::bitmap::and(&l, &r)),
         };
     }
 

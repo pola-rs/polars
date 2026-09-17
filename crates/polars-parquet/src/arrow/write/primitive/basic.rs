@@ -1,6 +1,6 @@
-use arrow::array::{Array, PrimitiveArray};
-use arrow::scalar::PrimitiveScalar;
-use arrow::types::NativeType;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::scalar::PrimitiveScalar;
+use polars_arrow::types::NativeType;
 use polars_error::{PolarsResult, polars_bail};
 
 use super::super::{WriteOptions, utils};

@@ -86,11 +86,15 @@ where
         if !(self.start..self.end).contains(&idx) {
             panic!("index out of bounds");
         }
+        // Null cannot have a rank, so explicitly fail.
+        if !self.validity.get(idx).unwrap() {
+            return None;
+        }
         self.policy.rank(&self.ost, &self.slice[idx])
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
-        self.validity.get(self.end - 1).unwrap() && self.ost.len() >= min_periods
+        self.ost.len() >= min_periods
     }
 
     fn slice_len(&self) -> usize {

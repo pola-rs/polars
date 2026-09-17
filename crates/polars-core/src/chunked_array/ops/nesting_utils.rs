@@ -1,4 +1,4 @@
-use arrow::array::{Array, IntoBoxedArray};
+use polars_arrow::array::{Array, IntoBoxedArray};
 use polars_compute::find_validity_mismatch::find_validity_mismatch;
 use polars_utils::IdxSize;
 
@@ -50,7 +50,9 @@ impl ChunkNestingUtils for ListChunked {
         }
 
         // If we found a chunk that needs propagating, create a new ListChunked
-        if !chunks.is_empty() {
+        let out = if chunks.is_empty() {
+            None
+        } else {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
                 match propagate_nulls_list(chunk) {
                     None => chunk.to_boxed(),
@@ -59,16 +61,12 @@ impl ChunkNestingUtils for ListChunked {
             }));
 
             // SAFETY: The length and null_count should remain the same.
-            let mut ca = unsafe {
+            Some(unsafe {
                 Self::new_with_dims(self.field.clone(), chunks, self.length, self.null_count)
-            };
-            ca.set_flags(flags | StatisticsFlags::HAS_PROPAGATED_NULLS);
-            return Some(ca);
-        }
+            })
+        };
 
-        self.flags
-            .set(flags | StatisticsFlags::HAS_PROPAGATED_NULLS);
-        None
+        finish_propagate_nulls(out, self, flags)
     }
 
     fn trim_lists_to_normalized_offsets(&self) -> Option<Self> {
@@ -154,8 +152,9 @@ impl ChunkNestingUtils for super::ArrayChunked {
             }
         }
 
-        // If we found a chunk that needs propagating, create a new ListChunked
-        if !chunks.is_empty() {
+        let out = if chunks.is_empty() {
+            None
+        } else {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
                 match propagate_nulls_fsl(chunk) {
                     None => chunk.to_boxed(),
@@ -164,16 +163,12 @@ impl ChunkNestingUtils for super::ArrayChunked {
             }));
 
             // SAFETY: The length and null_count should remain the same.
-            let mut ca = unsafe {
+            Some(unsafe {
                 Self::new_with_dims(self.field.clone(), chunks, self.length, self.null_count)
-            };
-            ca.set_flags(flags | StatisticsFlags::HAS_PROPAGATED_NULLS);
-            return Some(ca);
-        }
+            })
+        };
 
-        self.flags
-            .set(flags | StatisticsFlags::HAS_PROPAGATED_NULLS);
-        None
+        finish_propagate_nulls(out, self, flags)
     }
 
     fn trim_lists_to_normalized_offsets(&self) -> Option<Self> {
@@ -260,8 +255,9 @@ impl ChunkNestingUtils for super::StructChunked {
             }
         }
 
-        // If we found a chunk that needs propagating, create a new ListChunked
-        if !chunks.is_empty() {
+        let out = if chunks.is_empty() {
+            None
+        } else {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
                 match propagate_nulls_struct(chunk) {
                     None => chunk.to_boxed(),
@@ -270,16 +266,12 @@ impl ChunkNestingUtils for super::StructChunked {
             }));
 
             // SAFETY: The length and null_count should remain the same.
-            let mut ca = unsafe {
+            Some(unsafe {
                 Self::new_with_dims(self.field.clone(), chunks, self.length, self.null_count)
-            };
-            ca.set_flags(flags | StatisticsFlags::HAS_PROPAGATED_NULLS);
-            return Some(ca);
-        }
+            })
+        };
 
-        self.flags
-            .set(flags | StatisticsFlags::HAS_PROPAGATED_NULLS);
-        None
+        finish_propagate_nulls(out, self, flags)
     }
 
     fn trim_lists_to_normalized_offsets(&self) -> Option<Self> {
@@ -339,6 +331,25 @@ impl ChunkNestingUtils for super::StructChunked {
             }
             offset += l.len() as IdxSize;
         }
+    }
+}
+
+/// Mark `out` or `orig` as having propagated nulls.
+fn finish_propagate_nulls<T: PolarsDataType>(
+    out: Option<ChunkedArray<T>>,
+    orig: &ChunkedArray<T>,
+    flags: StatisticsFlags,
+) -> Option<ChunkedArray<T>> {
+    match out {
+        Some(mut ca) => {
+            ca.set_flags(flags | StatisticsFlags::HAS_PROPAGATED_NULLS);
+            Some(ca)
+        },
+        None => {
+            orig.flags
+                .set(flags | StatisticsFlags::HAS_PROPAGATED_NULLS);
+            None
+        },
     }
 }
 

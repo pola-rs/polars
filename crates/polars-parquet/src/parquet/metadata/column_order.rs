@@ -19,6 +19,9 @@ pub enum ColumnOrder {
     /// non-null values are NaN); NaN presence is reported by the mandatory
     /// `nan_count` statistic.
     IEEE754TotalOrder,
+    /// A column order this reader does not know. The file's `min_value` and
+    /// `max_value` say nothing about the column.
+    Unsupported,
     /// Undefined column order, means legacy behaviour before parquet-format 2.4.0.
     /// Sort order is always SIGNED.
     Undefined,
@@ -31,6 +34,7 @@ impl ColumnOrder {
             ColumnOrder::TypeDefinedOrder(order) => order,
             // Not signed comparison: total order positions NaNs and -0.0 < +0.0.
             ColumnOrder::IEEE754TotalOrder => SortOrder::IEEE754TotalOrder,
+            ColumnOrder::Unsupported => SortOrder::Undefined,
             ColumnOrder::Undefined => SortOrder::Signed,
         }
     }
@@ -42,4 +46,6 @@ impl ColumnOrder {
 pub(crate) enum ColumnOrderTag {
     TypeDefined,
     IEEE754TotalOrder,
+    /// A union variant this reader does not know.
+    Unsupported,
 }

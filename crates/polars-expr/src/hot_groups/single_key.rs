@@ -1,7 +1,7 @@
 use std::hash::BuildHasher;
 
-use arrow::array::Array;
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalEq, TotalHash};
 use polars_utils::vec::PushUnchecked;
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import hypothesis.strategies as st
@@ -254,7 +255,9 @@ def test_join_where_predicates(range_constraint: list[pl.Expr]) -> None:
 
     explained = q.explain()
     assert "INNER JOIN" in explained
-    assert "FILTER" in explained
+    # The equality becomes the join key; the range constraint stays a separate
+    # condition, fused into the join as its fused predicate.
+    assert "FUSED PREDICATE" in explained
     actual = q.collect()
 
     expected = (
@@ -972,3 +975,23 @@ def test_cross_join_validity_bitmap_offset_26925(
     )
 
     assert_frame_equal(actual, expected, check_exact=True)
+
+
+def test_join_where_decimal_vs_float() -> None:
+    left = pl.LazyFrame(
+        {"k": [1, 1, 2], "amount": ["1.50", "4.00", "9.00"]}
+    ).with_columns(pl.col("amount").cast(pl.Decimal(38, 2)))
+    right = pl.LazyFrame({"k": [1, 2], "limit": [3.0, 10.0]})
+
+    actual = left.join_where(
+        right,
+        pl.col("k") == pl.col("k_right"),
+        pl.col("amount") <= pl.col("limit"),
+    ).collect()
+
+    assert actual.sort("amount").to_dict(as_series=False) == {
+        "k": [1, 2],
+        "amount": [Decimal("1.50"), Decimal("9.00")],
+        "k_right": [1, 2],
+        "limit": [3.0, 10.0],
+    }

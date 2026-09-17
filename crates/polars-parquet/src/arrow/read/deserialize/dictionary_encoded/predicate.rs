@@ -1,4 +1,4 @@
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 
 use super::{oob_dict_idx, verify_dict_indices};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};

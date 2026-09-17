@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::BitmapBuilder;
-use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 use numpy::{Element, PyArray1, PyArrayMethods, PyUntypedArrayMethods};
 use polars::prelude::*;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::types::NativeType;
 use polars_buffer::{Buffer, SharedStorage};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -235,10 +235,11 @@ fn convert_to_avs(
     values: &Bound<'_, PyAny>,
     strict: bool,
     allow_object: bool,
+    dtype: Option<&DataType>,
 ) -> PyResult<Vec<AnyValue<'static>>> {
     values
         .try_iter()?
-        .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object))
+        .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object, dtype))
         .collect()
 }
 
@@ -248,7 +249,7 @@ impl PySeries {
     fn new_from_any_values(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
         let any_values_result = values
             .try_iter()?
-            .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, true))
+            .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, true, None))
             .collect::<PyResult<Vec<AnyValue>>>();
 
         let result = any_values_result.and_then(|avs| {
@@ -281,7 +282,7 @@ impl PySeries {
         dtype: Wrap<DataType>,
         strict: bool,
     ) -> PyResult<Self> {
-        let avs = convert_to_avs(values, strict, false)?;
+        let avs = convert_to_avs(values, strict, false, Some(&dtype.0))?;
         let s = Series::from_any_values_and_dtype(name.into(), avs.as_slice(), &dtype.0, strict)
             .map_err(|e| {
                 PyTypeError::new_err(format!(

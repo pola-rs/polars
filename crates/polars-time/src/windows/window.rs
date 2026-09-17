@@ -1,10 +1,12 @@
-use arrow::legacy::time_zone::Tz;
-use arrow::temporal_conversions::*;
 use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
 use now::DateTimeNow;
+use polars_arrow::legacy::time_zone::Tz;
+use polars_arrow::temporal_conversions::*;
 use polars_core::prelude::*;
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::{ClosedWindow, StartBy};
 
 use crate::prelude::*;
 

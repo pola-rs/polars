@@ -1,9 +1,9 @@
 use std::sync::Mutex;
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::MutableBitmap;
-use arrow::types::NativeType;
 use polars::prelude::*;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::types::NativeType;
 use polars_python::PyDataType;
 use pyo3::{pyclass, pyfunction};
 use pyo3_polars::export::polars_core::datatypes::{DataType, PolarsDataType};

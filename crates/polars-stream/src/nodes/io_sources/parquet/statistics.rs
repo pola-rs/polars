@@ -1,8 +1,8 @@
 use std::ops::Range;
 
-use arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray, StructArray};
-use arrow::bitmap::Bitmap;
-use arrow::pushable::Pushable;
+use polars_arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray, StructArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::pushable::Pushable;
 use polars_async::executor::{self, TaskPriority};
 use polars_core::prelude::*;
 use polars_io::RowIndex;
@@ -102,7 +102,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
 
     let num_row_groups = row_group_slice.len();
     let metadata = metadata.clone();
-    let live_columns = predicate.live_columns.clone();
+    let skip_batch_columns = predicate.skip_batch_columns.clone();
 
     // Note: We are spawning here onto the computational async runtime because the caller is being run
     // on a tokio async thread.
@@ -117,7 +117,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
             }
         }
 
-        let mut columns = Vec::with_capacity(1 + live_columns.len() * 3);
+        let mut columns = Vec::with_capacity(1 + skip_batch_columns.len() * 3);
 
         let lengths: Vec<IdxSize> = row_groups_slice
             .iter()
@@ -129,12 +129,12 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
         for projection in projected_arrow_fields.iter() {
             let c = projection.output_name();
 
-            if !live_columns.contains(c) {
+            if !skip_batch_columns.contains(c) {
                 continue;
             }
 
             let mut statistics =
-                load_parquet_column_statistics(row_groups_slice, projection, &metadata.footer_buf)?;
+                load_parquet_column_statistics(&metadata, row_group_slice.clone(), projection)?;
 
             // Note: Order is important here. We re-use the transform for the output column, meaning
             // that it may set the column name.
@@ -184,10 +184,10 @@ struct StructStatisticsArrays {
 /// unsupported leaf type (e.g. a nested list), or if the leaves run out before the fields do.
 fn build_struct_statistics_arrays(
     field: &ArrowField,
+    metadata: &FileMetadata,
     row_groups: &[RowGroupMetadata],
     leaf_idxs: &[usize],
     cursor: &mut usize,
-    footer_buf: &[u8],
 ) -> PolarsResult<Option<StructStatisticsArrays>> {
     let height = row_groups.len();
     match field.dtype() {
@@ -206,9 +206,8 @@ fn build_struct_statistics_arrays(
             // from the same parquet schema, so their leaf orders match; the caller's `cursor`
             // length check catches a leaf-count mismatch.
             for child in children {
-                let Some(child) = build_struct_statistics_arrays(
-                    child, row_groups, leaf_idxs, cursor, footer_buf,
-                )?
+                let Some(child) =
+                    build_struct_statistics_arrays(child, metadata, row_groups, leaf_idxs, cursor)?
                 else {
                     return Ok(None);
                 };
@@ -244,7 +243,13 @@ fn build_struct_statistics_arrays(
             let idx = leaf_idxs[*cursor];
             *cursor += 1;
 
-            match deserialize_all(field, row_groups, idx, footer_buf)? {
+            match deserialize_all(
+                field,
+                row_groups,
+                idx,
+                metadata.column_order(idx),
+                &metadata.footer_buf,
+            )? {
                 Some(statistics) => Ok(Some(StructStatisticsArrays {
                     min: statistics.min_value,
                     max: statistics.max_value,
@@ -259,22 +264,16 @@ fn build_struct_statistics_arrays(
 
 fn load_struct_column_statistics(
     arrow_field: &ArrowField,
+    metadata: &FileMetadata,
     row_groups: &[RowGroupMetadata],
     leaf_idxs: &[usize],
-    footer_buf: &[u8],
 ) -> PolarsResult<Option<StatisticsColumns>> {
     let mut cursor = 0;
     let Some(StructStatisticsArrays {
         min,
         max,
         null_count,
-    }) = build_struct_statistics_arrays(
-        arrow_field,
-        row_groups,
-        leaf_idxs,
-        &mut cursor,
-        footer_buf,
-    )?
+    }) = build_struct_statistics_arrays(arrow_field, metadata, row_groups, leaf_idxs, &mut cursor)?
     else {
         return Ok(None);
     };
@@ -313,11 +312,12 @@ fn load_struct_column_statistics(
 }
 
 fn load_parquet_column_statistics(
-    row_groups: &[RowGroupMetadata],
+    metadata: &FileMetadata,
+    row_group_slice: Range<usize>,
     projection: &ArrowFieldProjection,
-    footer_buf: &[u8],
 ) -> PolarsResult<StatisticsColumns> {
     let arrow_field = projection.arrow_field();
+    let row_groups = &metadata.row_groups[row_group_slice];
 
     let null_statistics = || {
         Ok(StatisticsColumns::new_null(
@@ -336,7 +336,7 @@ fn load_parquet_column_statistics(
     // shaped) null statistics if any leaf is unsupported.
     if matches!(arrow_field.dtype(), ArrowDataType::Struct(_)) {
         let Some(statistics) =
-            load_struct_column_statistics(arrow_field, row_groups, idxs, footer_buf)?
+            load_struct_column_statistics(arrow_field, metadata, row_groups, idxs)?
         else {
             return null_statistics();
         };
@@ -352,7 +352,14 @@ fn load_parquet_column_statistics(
 
     let idx = idxs[0];
 
-    let Some(statistics) = deserialize_all(arrow_field, row_groups, idx, footer_buf)? else {
+    let Some(statistics) = deserialize_all(
+        arrow_field,
+        row_groups,
+        idx,
+        metadata.column_order(idx),
+        &metadata.footer_buf,
+    )?
+    else {
         return null_statistics();
     };
 

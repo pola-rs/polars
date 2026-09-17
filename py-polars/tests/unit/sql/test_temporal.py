@@ -530,3 +530,144 @@ def test_typed_timestamp_literal_precision(precision: int, time_unit: str) -> No
             f"SELECT TIMESTAMP({precision}) '2020-01-01 08:00:00.123' AS x FROM tbl"
         )
     assert res.schema["x"] == pl.Datetime(time_unit)  # type: ignore[arg-type]
+
+
+def test_date_plus_integer_days() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [date(2020, 1, 1), date(2020, 2, 28), date(2021, 2, 28)],
+            "n": [5, 2, 2],
+        }
+    )
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              dt + 5 AS plus_lit,
+              5 + dt AS lit_plus,
+              dt - 5 AS minus_lit,
+              dt + n AS plus_col,
+              dt - n AS minus_col
+            FROM tbl
+            """
+        )
+    assert res.to_dict(as_series=False) == {
+        "plus_lit": [date(2020, 1, 6), date(2020, 3, 4), date(2021, 3, 5)],
+        "lit_plus": [date(2020, 1, 6), date(2020, 3, 4), date(2021, 3, 5)],
+        "minus_lit": [date(2019, 12, 27), date(2020, 2, 23), date(2021, 2, 23)],
+        "plus_col": [date(2020, 1, 6), date(2020, 3, 1), date(2021, 3, 2)],
+        "minus_col": [date(2019, 12, 27), date(2020, 2, 26), date(2021, 2, 26)],
+    }
+
+
+def test_date_integer_arithmetic_in_filter() -> None:
+    df = pl.DataFrame({"dt": [date(2020, 1, 1), date(2020, 1, 8), date(2020, 1, 15)]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute("SELECT dt FROM tbl WHERE dt > DATE '2020-01-01' + 7")
+    assert res.to_series().to_list() == [date(2020, 1, 15)]
+
+
+def test_date_arithmetic_leaves_other_dtypes_alone() -> None:
+    df = pl.DataFrame({"a": [1, 2], "dt": [date(2020, 1, 1), date(2020, 3, 5)]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute("SELECT a + 5 AS x, dt - dt AS y FROM tbl")
+    assert res.schema["x"] == pl.Int64
+    assert res.schema["y"] == pl.Duration("us")
+
+
+@pytest.mark.parametrize("fn", ["TIMESTAMP", "DATETIME"])
+def test_typed_timestamp_literal_bare_date(fn: str) -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [
+                datetime(1993, 12, 31, 23, 59),
+                datetime(1994, 1, 1),
+                datetime(1994, 1, 2),
+            ]
+        }
+    )
+    assert_sql_matches(
+        df,
+        query=f"SELECT ts FROM self WHERE ts >= {fn} '1994-01-01' ORDER BY ts",
+        expected={"ts": [datetime(1994, 1, 1), datetime(1994, 1, 2)]},
+        compare_with="duckdb",
+    )
+
+
+def test_interval_leading_field() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [date(1994, 1, 1), date(1994, 3, 31), date(1994, 4, 1)],
+            "dtm": [
+                datetime(1994, 1, 1),
+                datetime(1994, 1, 1, 2),
+                datetime(1994, 1, 1, 3),
+            ],
+        }
+    )
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              dt + INTERVAL '3' MONTH AS m3,
+              dt + INTERVAL 1 YEAR AS y1,
+              dt - INTERVAL '2' DAY AS d2,
+              dtm + INTERVAL '90' MINUTE AS min90
+            FROM self
+            WHERE dt < DATE '1994-01-01' + INTERVAL '3' MONTH
+              AND dtm < TIMESTAMP '1994-01-01' + INTERVAL 2 HOUR
+            ORDER BY dt
+        """,
+        expected={
+            "m3": [date(1994, 4, 1)],
+            "y1": [date(1995, 1, 1)],
+            "d2": [date(1993, 12, 30)],
+            "min90": [datetime(1994, 1, 1, 1, 30)],
+        },
+        compare_with="duckdb",
+    )
+    with pytest.raises(SQLSyntaxError, match="invalid interval"):
+        df.sql("SELECT dt + INTERVAL '1 2' MONTH FROM self")
+
+
+def test_date_part_functions() -> None:
+    df = pl.DataFrame(
+        {
+            "dtm": [
+                datetime(1994, 3, 6, 13, 45, 30),
+                datetime(2000, 12, 31, 0, 1, 2),
+            ]
+        }
+    )
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              YEAR(dtm) AS y,
+              QUARTER(dtm) AS q,
+              MONTH(dtm) AS mo,
+              WEEK(dtm) AS w,
+              DAY(dtm) AS d,
+              DAYOFWEEK(dtm) AS dow,
+              DAYOFYEAR(dtm) AS doy,
+              HOUR(dtm) AS h,
+              MINUTE(dtm) AS mi,
+              SECOND(dtm) AS s
+            FROM self
+            WHERE YEAR(dtm) IN (1994, 2000)
+            ORDER BY dtm
+        """,
+        expected={
+            "y": [1994, 2000],
+            "q": [1, 4],
+            "mo": [3, 12],
+            "w": [9, 52],
+            "d": [6, 31],
+            "dow": [0, 0],
+            "doy": [65, 366],
+            "h": [13, 0],
+            "mi": [45, 1],
+            "s": [30, 2],
+        },
+        compare_with="duckdb",
+    )

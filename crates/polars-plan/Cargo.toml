@@ -13,21 +13,20 @@ doctest = false
 
 [dependencies]
 libloading = { workspace = true, optional = true }
+polars-arrow = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }
-polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
+polars-core = { workspace = true, features = ["algorithm_group_by", "lazy", "zip_with", "random"] }
+polars-defs = { workspace = true }
 polars-descriptions = { workspace = true }
 polars-error = { workspace = true }
 polars-ffi = { workspace = true, optional = true }
 polars-io = { workspace = true, features = ["lazy", "csv", "async"] }
 polars-json = { workspace = true, optional = true }
-polars-ops = { workspace = true, features = [] }
 polars-parquet = { workspace = true, optional = true }
-polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
-arrow = { workspace = true }
 bitflags = { workspace = true }
 blake3 = { workspace = true }
 bytemuck = { workspace = true }
@@ -67,13 +66,13 @@ debugging = []
 python = ["dep:pyo3", "polars-utils/python", "polars-ffi", "polars-core/object", "serde"]
 serde = [
   "dep:serde",
+  "dep:serde_json",
   "polars-buffer/serde",
   "polars-config/serde",
   "polars-core/serde-lazy",
   "polars-core/serde",
-  "polars-time/serde",
+  "polars-defs/serde",
   "polars-io/serde",
-  "polars-ops/serde",
   "polars-utils/serde",
   "polars-compute/serde",
   "either/serde",
@@ -88,6 +87,7 @@ csv = ["polars-io/csv"]
 temporal = [
   "chrono",
   "polars-core/temporal",
+  "polars-defs/temporal",
   "polars-core/dtype-date",
   "polars-core/dtype-datetime",
   "polars-core/dtype-time",
@@ -96,136 +96,138 @@ temporal = [
 ]
 # debugging purposes
 fmt = ["polars-core/fmt"]
-strings = ["polars-core/strings", "polars-ops/strings"]
+strings = ["polars-core/strings"]
 future = []
 dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
-dtype-u128 = ["polars-core/dtype-u128", "polars-ops/dtype-u128"]
+dtype-u128 = ["polars-core/dtype-u128"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i128 = ["polars-core/dtype-i128"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-f16 = ["polars-core/dtype-f16"]
-dtype-decimal = ["polars-core/dtype-decimal", "polars-ops/dtype-decimal", "dtype-i128"]
-dtype-date = ["polars-time/dtype-date", "temporal"]
-dtype-datetime = ["polars-time/dtype-datetime", "temporal"]
-dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "temporal", "polars-ops/dtype-duration"]
-dtype-time = ["polars-time/dtype-time", "temporal"]
-dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
+dtype-decimal = ["polars-core/dtype-decimal", "dtype-i128"]
+dtype-date = ["polars-defs/dtype-date", "temporal"]
+dtype-datetime = ["polars-defs/dtype-datetime", "temporal"]
+dtype-duration = [
+  "polars-core/dtype-duration",
+  "polars-defs/dtype-duration",
+  "temporal",
+]
+dtype-time = ["polars-defs/dtype-time", "temporal"]
+dtype-array = ["polars-core/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
-dtype-extension = ["polars-core/dtype-extension", "polars-ops/dtype-extension"]
+dtype-extension = ["polars-core/dtype-extension"]
+dtype-map = ["polars-core/dtype-map"]
 dtype-struct = ["polars-core/dtype-struct"]
-object = ["polars-core/object", "polars-ops/object"]
-list_filter = ["polars-ops/list_filter"]
-list_gather = ["polars-ops/list_gather"]
-list_count = ["polars-ops/list_count"]
-array_count = ["polars-ops/array_count", "dtype-array"]
+object = ["polars-core/object"]
+list_filter = []
+list_gather = []
+list_count = []
+array_count = ["dtype-array"]
 trigonometry = []
 sign = []
-timezones = ["chrono-tz", "polars-time/timezones", "polars-core/timezones", "regex"]
-binary_encoding = ["polars-ops/binary_encoding"]
-string_encoding = ["polars-ops/string_encoding"]
+timezones = ["chrono-tz", "polars-defs/timezones", "polars-core/timezones", "regex"]
+binary_encoding = []
+string_encoding = []
 true_div = []
-nightly = ["polars-utils/nightly", "polars-ops/nightly"]
-extract_jsonpath = ["polars-ops/extract_jsonpath"]
+nightly = ["polars-utils/nightly"]
+extract_jsonpath = []
 dsl-schema = [
   "dep:schemars",
   "dep:sha2",
   "dep:serde_json",
   "serde_json/preserve_order",
   "serde",
-  "arrow/dsl-schema",
+  "polars-arrow/dsl-schema",
   "polars-buffer/schemars",
   "polars-core/dsl-schema",
-  "polars-time/dsl-schema",
+  "polars-defs/dsl-schema",
   "polars-io/dsl-schema",
-  "polars-ops/dsl-schema",
   "polars-utils/dsl-schema",
   "polars-compute/dsl-schema",
 ]
 
 # operations
-bitwise = ["polars-core/bitwise", "polars-ops/bitwise"]
-approx_unique = ["polars-ops/approx_unique", "polars-core/approx_unique"]
-is_in = ["polars-ops/is_in"]
-repeat_by = ["polars-ops/repeat_by"]
-round_series = ["polars-ops/round_series"]
-is_first_distinct = ["polars-core/is_first_distinct", "polars-ops/is_first_distinct"]
-is_last_distinct = ["polars-core/is_last_distinct", "polars-ops/is_last_distinct"]
-is_unique = ["polars-ops/is_unique"]
-is_between = ["polars-ops/is_between"]
-is_close = ["polars-ops/is_close"]
-cross_join = ["polars-ops/cross_join"]
-asof_join = ["polars-time", "polars-ops/asof_join"]
-iejoin = ["polars-ops/iejoin"]
+bitwise = ["polars-core/bitwise"]
+approx_unique = ["polars-core/approx_unique"]
+approx_quantile = ["polars-compute/approx_quantile"]
+is_in = []
+repeat_by = []
+round_series = []
+is_first_distinct = ["polars-core/is_first_distinct"]
+is_last_distinct = ["polars-core/is_last_distinct"]
+is_unique = []
+is_between = []
+is_close = []
+cross_join = []
+asof_join = ["polars-defs/asof_join"]
+iejoin = ["polars-defs/iejoin"]
 concat_str = []
-business = ["polars-ops/business"]
+business = []
 range = ["dtype-array"]
-mode = ["polars-ops/mode"]
-cum_agg = ["polars-ops/cum_agg"]
-interpolate = ["polars-ops/interpolate"]
-interpolate_by = ["polars-ops/interpolate_by"]
+mode = []
+cum_agg = []
+interpolate = []
+interpolate_by = []
 rolling_window = [
   "polars-core/rolling_window",
-  "polars-time/rolling_window",
-  "polars-ops/rolling_window",
 ]
 rolling_window_by = [
   "polars-core/rolling_window_by",
-  "polars-time/rolling_window_by",
-  "polars-ops/rolling_window_by",
+  "polars-defs/rolling_window_by",
 ]
-rank = ["polars-ops/rank"]
-diff = ["polars-ops/diff"]
-pct_change = ["polars-ops/pct_change"]
-moment = ["polars-ops/moment"]
-abs = ["polars-ops/abs"]
-random = ["polars-core/random", "polars-ops/random"]
+rank = []
+diff = []
+pct_change = []
+moment = []
+abs = []
+random = ["polars-core/random", "polars-defs/random"]
 dynamic_group_by = ["polars-core/dynamic_group_by", "dtype-date", "dtype-datetime"]
-ewma = ["polars-ops/ewma"]
-ewma_by = ["polars-ops/ewma_by"]
+ewma = []
+ewma_by = []
 dot_diagram = []
-unique_counts = ["polars-ops/unique_counts"]
-log = ["polars-ops/log"]
+unique_counts = []
+log = []
 chunked_ids = []
-list_to_struct = ["polars-ops/list_to_struct"]
-array_to_struct = ["polars-ops/array_to_struct"]
-row_hash = ["polars-core/row_hash", "polars-ops/hash"]
-reinterpret = ["polars-core/reinterpret", "polars-ops/reinterpret"]
-string_pad = ["polars-ops/string_pad"]
-string_normalize = ["polars-ops/string_normalize"]
-string_reverse = ["polars-ops/string_reverse"]
-string_to_integer = ["polars-ops/string_to_integer"]
+list_to_struct = []
+array_to_struct = []
+row_hash = ["polars-core/row_hash"]
+reinterpret = ["polars-core/reinterpret"]
+string_pad = []
+string_normalize = []
+string_reverse = []
+string_to_integer = []
 arg_where = []
-index_of = ["polars-ops/index_of"]
-search_sorted = ["polars-ops/search_sorted"]
-merge_sorted = ["polars-ops/merge_sorted"]
+index_of = []
+search_sorted = []
+merge_sorted = []
 meta = []
-pivot = ["polars-core/rows", "polars-ops/pivot"]
-top_k = ["polars-ops/top_k"]
-semi_anti_join = ["polars-ops/semi_anti_join"]
+pivot = ["polars-core/rows"]
+top_k = []
+semi_anti_join = ["polars-defs/semi_anti_join"]
 cse = []
-propagate_nans = ["polars-ops/propagate_nans"]
+propagate_nans = []
 coalesce = []
-fused = ["polars-ops/fused"]
-list_sets = ["polars-ops/list_sets"]
-list_drop_nulls = ["polars-ops/list_drop_nulls"]
-list_sample = ["polars-ops/list_sample"]
-cutqcut = ["polars-ops/cutqcut"]
-rle = ["polars-ops/rle"]
-extract_groups = ["regex", "dtype-struct", "polars-ops/extract_groups"]
+fused = []
+list_sets = []
+list_drop_nulls = []
+list_sample = []
+cutqcut = []
+rle = []
+extract_groups = ["regex", "dtype-struct"]
 ffi_plugin = ["libloading", "polars-ffi"]
 hive_partitions = []
-peaks = ["polars-ops/peaks"]
-cov = ["polars-ops/cov"]
-hist = ["polars-ops/hist"]
-replace = ["polars-ops/replace"]
-find_many = ["polars-ops/find_many"]
-month_start = ["polars-time/month_start"]
-month_end = ["polars-time/month_end"]
-offset_by = ["polars-time/offset_by"]
-allow_unused = ["polars-io/allow_unused", "polars-ops/allow_unused", "polars-time?/allow_unused"]
+peaks = []
+cov = []
+hist = []
+replace = []
+find_many = []
+month_start = []
+month_end = []
+offset_by = []
+allow_unused = ["polars-io/allow_unused"]
 
-bigidx = ["polars-core/bigidx", "polars-utils/bigidx"]
+bigidx = ["polars-core/bigidx", "polars-utils/bigidx", "dtype-i128"]
 polars_cloud_client = ["serde"]
 polars_cloud_server = ["serde"]
 ir_serde = ["serde", "polars-utils/ir_serde"]
@@ -280,6 +282,7 @@ features = [
   "hist",
   "object",
   "approx_unique",
+  "approx_quantile",
   "dtype-categorical",
   "merge_sorted",
   "bigidx",

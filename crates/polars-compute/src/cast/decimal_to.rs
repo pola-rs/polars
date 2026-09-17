@@ -1,7 +1,7 @@
-use arrow::array::*;
-use arrow::datatypes::ArrowDataType;
-use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float, NumCast};
+use polars_arrow::array::*;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::types::NativeType;
 use polars_error::PolarsResult;
 
 use crate::decimal::{dec128_fits, dec128_rescale, dec128_to_f64, dec128_to_i128};

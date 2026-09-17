@@ -1,15 +1,15 @@
 use std::collections::VecDeque;
 
 use polars_core::prelude::SortMultipleOptions;
+use polars_defs::join::JoinType;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "python")]
 use polars_descriptions::PythonPredicateDescription;
 use polars_descriptions::{
     IrNodeDescription, IrPropsDescription, PredicateFileSkipDescription, SinkDestDescription,
     SortColumnDescription,
 };
-use polars_ops::frame::JoinType;
-#[cfg(feature = "dynamic_group_by")]
-use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 use polars_utils::aliases::{InitHashMaps, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::index::idxsize_to_u64;
@@ -184,6 +184,10 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 how: args.how.to_string(),
                 left_on: fmt_exprs(&left_on, expr_arena),
                 right_on: fmt_exprs(&right_on, expr_arena),
+                fused_predicate: o
+                    .options
+                    .fused_predicate()
+                    .map(|fused_predicate| fmt_predicate(fused_predicate, expr_arena)),
                 nulls_equal: args.nulls_equal,
                 coalesce: fmt_from_static_str(args.coalesce),
                 maintain_order: fmt_from_static_str(args.maintain_order),
@@ -206,7 +210,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 },
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(asof_options) => {
-                    use polars_ops::prelude::AsOfOptions;
+                    use polars_defs::join::AsOfOptions;
 
                     let AsOfOptions {
                         strategy,
@@ -245,7 +249,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 JoinType::IEJoin => match &o.options {
                     JoinTypeOptionsIR::IEJoin {
                         ie_options:
-                            polars_ops::frame::IEJoinOptions {
+                            polars_defs::join::IEJoinOptions {
                                 operator1,
                                 operator2,
                             },

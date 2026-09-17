@@ -1,8 +1,9 @@
-use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
+use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{Column, DataType, IntoColumn, TimeUnit};
 use polars_core::series::Series;
-use polars_time::prelude::{RollingOptionsDynamicWindow, SeriesOpsTime};
+use polars_defs::time::rolling::RollingOptionsDynamicWindow;
+use polars_time::prelude::SeriesOpsTime;
 
 fn roll_by_with_temporal_conversion<F: FnOnce(&Series, &Series) -> PolarsResult<Series>>(
     s: &[Column],

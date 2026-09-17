@@ -13,7 +13,6 @@ repository = { workspace = true }
 description = "Apache Parquet I/O operations for Polars"
 
 [dependencies]
-arrow = { workspace = true, features = ["io_ipc"] }
 base64 = { workspace = true }
 bytemuck = { workspace = true }
 ethnum = { workspace = true }
@@ -21,6 +20,7 @@ fallible-streaming-iterator = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 num-traits = { workspace = true }
+polars-arrow = { workspace = true, features = ["compute_aggregate", "io_ipc"] }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true, features = ["approx_unique", "cast"] }
 polars-config = { workspace = true }
@@ -74,7 +74,7 @@ serde = ["dep:serde", "polars-buffer/serde", "polars-utils/serde"]
 dsl-schema = ["dep:schemars"]
 simd = ["polars-compute/simd"]
 
-proptest = ["dep:proptest", "arrow/proptest"]
+proptest = ["dep:proptest", "polars-arrow/proptest"]
 
 [lints]
 workspace = true

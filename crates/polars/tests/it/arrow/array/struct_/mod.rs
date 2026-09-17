@@ -1,8 +1,8 @@
 mod iterator;
 
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::*;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::*;
 
 fn array() -> StructArray {
     let boolean = BooleanArray::from_slice([false, false, true, true]).boxed();

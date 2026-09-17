@@ -1,6 +1,6 @@
 use std::hash::BuildHasher;
 
-use arrow::bitmap::utils::get_bit_unchecked;
+use polars_arrow::bitmap::utils::get_bit_unchecked;
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};

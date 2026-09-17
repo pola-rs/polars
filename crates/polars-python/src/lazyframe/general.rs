@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
-use arrow::ffi::export_iterator;
 use either::Either;
 use parking_lot::Mutex;
 #[cfg(feature = "pivot")]
 use polars::frame::PivotColumnNaming;
 use polars::io::RowIndex;
 use polars::prelude::iceberg_sink_state::IcebergSinkState;
-use polars::time::*;
+use polars_arrow::ffi::export_iterator;
 #[cfg(feature = "csv")]
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
@@ -16,6 +15,7 @@ use polars_core::query_result::QueryResult;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
+use polars_plan::dsl::dsl_resolver::DslResolver;
 use polars_plan::plans::{AExpr, HintIR, IR, Sorted};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::python_function::PythonObject;
@@ -419,6 +419,20 @@ impl PyLazyFrame {
         let lf =
             LazyFrame::from(DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build())
                 .into();
+
+        Ok(lf)
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (resolver))]
+    fn from_lazyframe_resolver(resolver: Py<PyAny>) -> PyResult<Self> {
+        let lf = LazyFrame::from(
+            DslBuilder::from_dsl_resolver(Arc::new(DslResolver::new_python(PythonObject(
+                resolver,
+            ))))
+            .build(),
+        )
+        .into();
 
         Ok(lf)
     }
@@ -1678,7 +1692,7 @@ impl Iterator for ArrowStreamIterator {
             Some(Ok(df)) => {
                 let height = df.height();
                 let arrays = df.rechunk_into_arrow(CompatLevel::newest());
-                Some(Ok(Box::new(arrow::array::StructArray::new(
+                Some(Ok(Box::new(polars_arrow::array::StructArray::new(
                     self.dtype.clone(),
                     height,
                     arrays,

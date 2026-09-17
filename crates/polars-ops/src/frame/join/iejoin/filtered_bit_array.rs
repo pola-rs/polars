@@ -1,6 +1,6 @@
 use std::cmp::min;
 
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::bitmap::MutableBitmap;
 
 /// Bit array with a filter to speed up searching for set bits when sparse,
 /// based on section 4.1 from Khayyat et al. 2015,

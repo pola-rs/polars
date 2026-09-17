@@ -1,6 +1,6 @@
-use arrow::array::builder::StaticArrayBuilder;
-use arrow::array::{BinaryViewArrayGenericBuilder, PrimitiveArray, View};
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::array::builder::StaticArrayBuilder;
+use polars_arrow::array::{BinaryViewArrayGenericBuilder, PrimitiveArray, View};
+use polars_arrow::bitmap::MutableBitmap;
 use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 

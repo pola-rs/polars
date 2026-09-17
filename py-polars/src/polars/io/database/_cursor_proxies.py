@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from inspect import iscoroutinefunction
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from polars._dependencies import import_optional
+from polars._utils.various import parse_version
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
@@ -154,10 +156,22 @@ class SurrealDBCursorProxy:
 class OracleCursorProxy:
     """Cursor proxy for `python-oracledb` connections."""
 
+    minimum_version: ClassVar[str] = "3.4.0"
+
     def __init__(self, connection: Any) -> None:
         self.connection = connection
         self.execute_options: dict[str, Any] = {}
         self.query: str | None = None
+
+    @classmethod
+    def supports_arrow(cls, connection: Any) -> bool:
+        """Check if the given connection can serve Arrow data through this proxy."""
+        fetch_df_all = getattr(connection, "fetch_df_all", None)
+        if fetch_df_all is None or iscoroutinefunction(fetch_df_all):
+            return False
+
+        oracledb = import_optional("oracledb")
+        return parse_version(oracledb.__version__) >= parse_version(cls.minimum_version)
 
     def close(self) -> None:
         """Close the cursor."""

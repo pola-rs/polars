@@ -1,4 +1,4 @@
-use arrow::datatypes::ArrowSchemaRef;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::CompatLevel;
 use polars_parquet::write::{
     BrotliLevel, CompressionOptions, GzipLevel, StatisticsOptions, ZstdLevel,

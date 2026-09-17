@@ -1,8 +1,9 @@
-use arrow::legacy::error::PolarsResult;
 use either::Either;
+use polars_arrow::legacy::error::PolarsResult;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::utils::{get_numeric_upcast_supertype_lossless, try_get_supertype};
+use polars_defs::join::JoinValidation;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 
@@ -155,6 +156,27 @@ pub fn resolve_join(
     // Re-evaluate because of mutable borrows earlier.
     let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
     let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
+
+    // Inner-joining on the same non-null constant on both sides pairs every row with every
+    // row: a cross join (unless the key multiplicity is to be validated).
+    let same_constant_key = |l: &ExprIR, r: &ExprIR| match (
+        ctxt.expr_arena.get(l.node()),
+        ctxt.expr_arena.get(r.node()),
+    ) {
+        (AExpr::Literal(l), AExpr::Literal(r)) => l.is_scalar() && !l.is_null() && l == r,
+        _ => false,
+    };
+    if options.args.how == JoinType::Inner
+        && options.args.validation == JoinValidation::ManyToMany
+        && left_on
+            .iter()
+            .zip(&right_on)
+            .all(|(l, r)| same_constant_key(l, r))
+    {
+        options.args.how = JoinType::Cross;
+        left_on.clear();
+        right_on.clear();
+    }
 
     // # Resolve scalars
     //
@@ -318,12 +340,12 @@ pub fn resolve_join(
 
     #[cfg(feature = "asof_join")]
     if let JoinType::AsOf(options) = &mut options.args.how {
-        use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+        use polars_core::utils::polars_arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 
         // prepare the tolerance
         // we must ensure that we use the right units
         if let Some(tol) = &options.tolerance_str {
-            let duration = polars_time::Duration::try_parse(tol)?;
+            let duration = polars_defs::time::duration::Duration::try_parse(tol)?;
             polars_ensure!(
                 duration.months() == 0,
                 ComputeError: "cannot use month offset in timedelta of an asof join; \
@@ -369,7 +391,10 @@ pub fn resolve_join(
         match &options.args.how {
             #[cfg(feature = "asof_join")]
             JoinType::AsOf(_) => JoinTypeOptionsIR::AsOf { on },
-            _ => JoinTypeOptionsIR::Equi { on },
+            _ => JoinTypeOptionsIR::Equi {
+                on,
+                fused_predicate: None,
+            },
         }
     };
 
@@ -659,8 +684,12 @@ fn build_upcast_node_list(
                             right.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
                         if dtype_left != dtype_right {
                             // Ensure that we have a lossless cast between the two types.
-                            let dt = if dtype_left.is_primitive_numeric()
-                                || dtype_right.is_primitive_numeric()
+                            // Decimal has no lossless numeric upcast.
+                            let either_decimal =
+                                dtype_left.is_decimal() || dtype_right.is_decimal();
+                            let dt = if !either_decimal
+                                && (dtype_left.is_primitive_numeric()
+                                    || dtype_right.is_primitive_numeric())
                             {
                                 get_numeric_upcast_supertype_lossless(&dtype_left, &dtype_right)
                                     .ok_or(PolarsError::SchemaMismatch(

@@ -8,18 +8,18 @@ pub mod statistics;
 
 use std::io::{Read, Seek};
 
-use arrow::types::{NativeType, i256};
 pub use deserialize::{
     Filter, InitNested, NestedState, PredicateFilter, column_iter_to_arrays, create_list,
-    create_map, get_page_iterator, init_nested, n_columns,
+    create_map, init_nested, n_columns,
 };
 #[cfg(feature = "async")]
 use futures::{AsyncRead, AsyncSeek};
+use polars_arrow::types::{NativeType, i256};
 use polars_error::PolarsResult;
 pub use schema::{FileMetadata, infer_schema};
 
 #[cfg(feature = "async")]
-pub use crate::parquet::read::{get_page_stream, read_metadata_async as _read_metadata_async};
+pub use crate::parquet::read::read_metadata_async as _read_metadata_async;
 // re-exports of crate::parquet's relevant APIs
 pub use crate::parquet::{
     FallibleStreamingIterator,
@@ -38,21 +38,6 @@ pub use crate::parquet::{
     types::int96_to_i64_ns,
 };
 
-/// Returns all [`ColumnChunkMetadata`] associated to `field_name`.
-/// For non-nested parquet types, this returns a single column
-pub fn get_field_pages<'a, T>(
-    columns: &'a [ColumnChunkMetadata],
-    items: &'a [T],
-    field_name: &str,
-) -> Vec<&'a T> {
-    columns
-        .iter()
-        .zip(items)
-        .filter(|(metadata, _)| metadata.descriptor().path_in_schema[0].as_str() == field_name)
-        .map(|(_, item)| item)
-        .collect()
-}
-
 /// Reads parquets' metadata synchronously.
 pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetadata> {
     Ok(_read_metadata(reader)?)
@@ -70,8 +55,8 @@ fn convert_year_month(value: &[u8]) -> i32 {
     i32::from_le_bytes(value[..4].try_into().unwrap())
 }
 
-fn convert_days_ms(value: &[u8]) -> arrow::types::days_ms {
-    arrow::types::days_ms(
+fn convert_days_ms(value: &[u8]) -> polars_arrow::types::days_ms {
+    polars_arrow::types::days_ms(
         i32::from_le_bytes(value[4..8].try_into().unwrap()),
         i32::from_le_bytes(value[8..12].try_into().unwrap()),
     )

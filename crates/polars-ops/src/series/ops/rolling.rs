@@ -17,7 +17,11 @@ where
     T: PolarsFloatType,
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
-    use arrow::array::Array;
+    use polars_arrow::array::Array;
+
+    if ca.is_empty() {
+        return Ok(ca.clone());
+    }
 
     let ca = ca.rechunk();
     let arr = ca.downcast_get(0).unwrap();
@@ -77,7 +81,11 @@ where
     T: PolarsFloatType,
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
-    use arrow::array::Array;
+    use polars_arrow::array::Array;
+
+    if ca.is_empty() {
+        return Ok(ca.clone());
+    }
 
     let ca = ca.rechunk();
     let arr = ca.downcast_get(0).unwrap();

@@ -1,5 +1,5 @@
-use arrow::array::{PrimitiveArray as PArr, StaticArray};
-use arrow::compute::utils::{combine_validities_and, combine_validities_and3};
+use polars_arrow::array::{PrimitiveArray as PArr, StaticArray};
+use polars_arrow::compute::utils::{combine_validities_and, combine_validities_and3};
 use polars_utils::floor_divmod::FloorDivMod;
 use strength_reduce::*;
 

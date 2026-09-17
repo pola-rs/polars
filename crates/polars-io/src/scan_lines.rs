@@ -1,6 +1,6 @@
-use arrow::array::builder::StaticArrayBuilder;
-use arrow::array::{BINVIEW_MAX_ROW_BYTE_LEN, BinaryViewArrayGenericBuilder};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::builder::StaticArrayBuilder;
+use polars_arrow::array::{BINVIEW_MAX_ROW_BYTE_LEN, BinaryViewArrayGenericBuilder};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_core::prelude::DataType;
 use polars_core::series::Series;
 use polars_error::{PolarsResult, polars_ensure};

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -18,7 +19,11 @@ from tests.conftest import PlMonkeyPatch
 
 
 @pytest.mark.write_disk
-def test_register_plugin_function_invalid_plugin_path(tmp_path: Path) -> None:
+def test_register_plugin_function_invalid_plugin_path(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    # The full path is shown in verbose mode; tmp_path may be long enough to truncate.
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     tmp_path.mkdir(exist_ok=True)
     plugin_path = tmp_path / "lib.so"
     plugin_path.touch()
@@ -27,8 +32,38 @@ def test_register_plugin_function_invalid_plugin_path(tmp_path: Path) -> None:
         plugin_path=plugin_path, function_name="hello", args=5
     )
 
-    with pytest.raises(ComputeError, match="error loading dynamic library"):
+    with pytest.raises(
+        ComputeError,
+        match=f"error loading dynamic library: .*: {re.escape(str(plugin_path))}$",
+    ):
         pl.select(expr)
+
+
+@pytest.mark.write_disk
+def test_register_plugin_function_invalid_plugin_long_path(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "0")
+    plugin_dir = tmp_path / ("a" * 100)
+    plugin_dir.mkdir()
+    plugin_path = plugin_dir / "lib.so"
+    plugin_path.touch()
+
+    expr = register_plugin_function(
+        plugin_path=plugin_path, function_name="hello", args=5
+    )
+
+    # Long paths are truncated from the front, keeping the tail and a hint.
+    # Match either path separator, as Windows joins paths with a backslash.
+    with pytest.raises(
+        ComputeError,
+        match=(
+            r"error loading dynamic library: .*: \.\.\.a+[\\/]lib\.so "
+            r"\(set POLARS_VERBOSE=1 to see full path\)"
+        ),
+    ) as exc_info:
+        pl.select(expr)
+    assert str(plugin_path) not in str(exc_info.value)
 
 
 @pytest.mark.parametrize(

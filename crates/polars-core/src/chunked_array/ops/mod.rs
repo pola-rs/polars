@@ -1,5 +1,5 @@
 //! Traits for miscellaneous operations on ChunkedArray
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_compute::rolling::QuantileMethod;
 
 use crate::prelude::*;
@@ -11,6 +11,7 @@ mod apply;
 #[cfg(feature = "approx_unique")]
 mod approx_n_unique;
 pub mod arity;
+pub mod binning;
 mod bit_repr;
 mod bits;
 #[cfg(feature = "bitwise")]
@@ -101,10 +102,6 @@ pub trait ChunkExplode {
         &self,
         options: ExplodeOptions,
     ) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
-}
-
-pub trait ChunkBytes {
-    fn to_byte_slices(&self) -> Vec<&[u8]>;
 }
 
 /// This differs from ChunkWindowCustom and ChunkWindow
@@ -666,20 +663,4 @@ pub trait ChunkApplyKernel<A: Array> {
     fn apply_kernel_cast<S>(&self, f: &dyn Fn(&A) -> ArrayRef) -> ChunkedArray<S>
     where
         S: PolarsDataType;
-}
-
-#[cfg(feature = "is_first_distinct")]
-/// Mask the first unique values as `true`
-pub trait IsFirstDistinct<T: PolarsDataType> {
-    fn is_first_distinct(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_first_distinct, T::get_static_dtype());
-    }
-}
-
-#[cfg(feature = "is_last_distinct")]
-/// Mask the last unique values as `true`
-pub trait IsLastDistinct<T: PolarsDataType> {
-    fn is_last_distinct(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_last_distinct, T::get_static_dtype());
-    }
 }

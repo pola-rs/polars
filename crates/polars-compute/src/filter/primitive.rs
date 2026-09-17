@@ -1,5 +1,5 @@
-use arrow::bitmap::Bitmap;
 use bytemuck::{Pod, cast_slice, cast_vec};
+use polars_arrow::bitmap::Bitmap;
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
 use polars_utils::cpuid::is_avx512_enabled;
 

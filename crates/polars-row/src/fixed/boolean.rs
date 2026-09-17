@@ -11,9 +11,9 @@
 
 use std::mem::MaybeUninit;
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
 
 use crate::row::RowEncodingOptions;
 

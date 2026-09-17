@@ -1,10 +1,10 @@
 use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "python")]
-use arrow::array::ListArray;
-use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::array::ListArray;
+use polars_arrow::array::{Array, BooleanArray};
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
@@ -71,6 +71,7 @@ impl DeletionFilesProvider {
         match deletion_files {
             Some(DeletionFilesList::Iceberg(paths)) => feature_gated!("parquet", {
                 let reader_builder = ParquetReaderBuilder {
+                    bytes_per_source: None,
                     first_metadata: None,
                     options: Arc::new(polars_io::prelude::ParquetOptions {
                         schema: Some(Arc::new(Schema::from_iter([
@@ -84,6 +85,7 @@ impl DeletionFilesProvider {
                     }),
                     pipeline_budget: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),
+                    file_read_context: std::sync::OnceLock::new(),
                     io_metrics: io_metrics.map(OnceLock::from).unwrap_or_default(),
                 };
 
@@ -641,7 +643,7 @@ fn load_iceberg_puffin_deletes(
     {
         use std::sync::LazyLock;
 
-        use arrow::array::UInt64Array;
+        use polars_arrow::array::UInt64Array;
         use polars_error::constants::LENGTH_LIMIT_MSG;
         use polars_error::polars_ensure;
         use polars_utils::index::idxsize_try_from;
