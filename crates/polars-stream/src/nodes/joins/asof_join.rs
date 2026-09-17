@@ -8,12 +8,10 @@ use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::utils::{Container, accumulate_dataframes_vertical_unchecked};
+use polars_defs::join::{AsOfOptions, AsofStrategy, JoinArgs, JoinType};
 use polars_ooc::RandomSpillContext;
 use polars_ops::frame::is_sorted::DataFrameIsSorted;
-use polars_ops::frame::{
-    _check_asof_columns, _finish_join, _join_asof_dispatch, AsOfOptions, AsofStrategy, JoinArgs,
-    JoinType,
-};
+use polars_ops::frame::{_check_asof_columns, _finish_join, _join_asof_dispatch};
 use polars_ops::series::{rle_lengths, rle_lengths_helper_ca};
 use polars_utils::itertools::Itertools;
 use polars_utils::scratch_vec::ScratchVec;

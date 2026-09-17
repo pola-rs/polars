@@ -6,8 +6,9 @@ use arrow::temporal_conversions::{
 };
 use chrono::NaiveDateTime;
 use chrono_tz::UTC;
-use polars_core::chunked_array::ops::arity::try_binary_elementwise;
-use polars_core::prelude::*;
+
+use crate::chunked_array::ops::arity::try_binary_elementwise;
+use crate::prelude::*;
 
 pub fn replace_time_zone(
     datetime: &Logical<DatetimeType, Int64Type>,

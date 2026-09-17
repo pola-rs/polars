@@ -129,7 +129,7 @@ fn is_duplicated(s: &Column) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "is_between")]
-fn is_between(s: &[Column], closed: polars_ops::series::ClosedInterval) -> PolarsResult<Column> {
+fn is_between(s: &[Column], closed: polars_defs::expr::ClosedInterval) -> PolarsResult<Column> {
     let ser = &s[0];
     let lower = &s[1];
     let upper = &s[2];

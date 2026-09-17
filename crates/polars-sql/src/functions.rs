@@ -5,11 +5,10 @@ use polars_core::prelude::{
     DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit, polars_bail,
     polars_err,
 };
-use polars_lazy::dsl::Expr;
 #[cfg(feature = "rank")]
-use polars_lazy::prelude::{RankMethod, RankOptions};
-use polars_ops::chunked_array::UnicodeForm;
-use polars_ops::series::RoundMode;
+use polars_defs::expr::{RankMethod, RankOptions};
+use polars_defs::expr::{RoundMode, UnicodeForm};
+use polars_lazy::dsl::Expr;
 use polars_plan::dsl::functions::{
     as_struct, coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal,
     min_horizontal, when,

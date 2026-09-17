@@ -7,13 +7,13 @@ use base64::engine::general_purpose;
 #[cfg(feature = "string_to_integer")]
 use num_traits::Num;
 use polars_core::prelude::arity::*;
+#[cfg(feature = "string_normalize")]
+use polars_defs::expr::UnicodeForm;
 use polars_utils::regex_cache::{compile_regex, with_regex_cache};
 
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
-#[cfg(feature = "string_normalize")]
-use crate::prelude::strings::normalize::UnicodeForm;
 
 // We need this to infer the right lifetimes for the match closure.
 #[inline(always)]

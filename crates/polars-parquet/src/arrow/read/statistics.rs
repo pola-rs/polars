@@ -3,7 +3,7 @@
 use arrow::array::{
     Array, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, MutableBinaryViewArray,
     MutableBooleanArray, MutableFixedSizeBinaryArray, MutablePrimitiveArray, NullArray,
-    PrimitiveArray, Utf8ViewArray,
+    PrimitiveArray, Utf8ViewArray, new_null_array,
 };
 use arrow::datatypes::{ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit};
 use arrow::types::{days_ms, i256};
@@ -13,13 +13,14 @@ use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{ParquetTimeUnit, RowGroupMetadata};
+use super::{FileMetadata, ParquetTimeUnit, RowGroupMetadata};
 use crate::parquet::error::{ParquetError, ParquetResult};
+use crate::parquet::metadata::{ColumnOrder, SortOrder};
 use crate::parquet::schema::types::PhysicalType as ParquetPhysicalType;
 use crate::parquet::statistics::Statistics as ParquetStatistics;
 use crate::read::{
     ColumnChunkMetadata, PrimitiveLogicalType, convert_days_ms, convert_i128, convert_i256,
-    convert_year_month, int96_to_i64_ns,
+    convert_year_month,
 };
 
 /// Parquet statistics for a nesting level
@@ -41,9 +42,65 @@ pub struct ColumnStatistics {
 
     logical_type: Option<PrimitiveLogicalType>,
     physical_type: ParquetPhysicalType,
+    column_order: ColumnOrder,
 
     /// Statistics of the leaf array of the column
     statistics: ParquetStatistics,
+}
+
+/// The sort order the statistics of a leaf must have been collected with for its
+/// `min_value` and `max_value` to bound the values polars decodes as `dtype`, or `None`
+/// when no such order exists.
+fn required_sort_order(
+    dtype: &ArrowDataType,
+    physical_type: &ParquetPhysicalType,
+) -> Option<SortOrder> {
+    use ArrowDataType as D;
+    use ParquetPhysicalType as P;
+    use SortOrder as O;
+    Some(match (dtype, physical_type) {
+        (D::Boolean, P::Boolean) => O::Unsigned,
+        (D::Int8 | D::Int16 | D::Int32 | D::Date32 | D::Time32(_), P::Int32) => O::Signed,
+        (D::Int64 | D::Time64(_) | D::Duration(_) | D::Timestamp(..), P::Int64) => O::Signed,
+        (D::Date64, P::Int32 | P::Int64) => O::Signed,
+        (D::UInt8 | D::UInt16 | D::UInt32, P::Int32) => O::Unsigned,
+        (D::UInt32 | D::UInt64, P::Int64) => O::Unsigned,
+        (D::Float16, P::FixedLenByteArray(2)) => O::Signed,
+        (D::Float32, P::Float) | (D::Float64, P::Double) => O::Signed,
+        (D::Decimal(..) | D::Decimal256(..), P::Int32 | P::Int64 | P::FixedLenByteArray(_)) => {
+            O::Signed
+        },
+        (
+            D::Binary | D::LargeBinary | D::BinaryView | D::Utf8 | D::LargeUtf8 | D::Utf8View,
+            P::ByteArray,
+        ) => O::Unsigned,
+        (D::FixedSizeBinary(width), P::FixedLenByteArray(len)) if width == len => O::Unsigned,
+        _ => return None,
+    })
+}
+
+/// Whether the `min_value` and `max_value` of a leaf bound the values polars decodes
+/// as `dtype`: the file declares an order for the leaf, and it is the one polars
+/// compares the decoded values with.
+fn bounds_are_usable(
+    column_order: ColumnOrder,
+    physical_type: &ParquetPhysicalType,
+    dtype: &ArrowDataType,
+) -> bool {
+    let Some(required) = required_sort_order(dtype, physical_type) else {
+        return false;
+    };
+    match column_order {
+        ColumnOrder::TypeDefinedOrder(order) => order == required,
+        // Total order agrees with the float comparison on every non-NaN value.
+        ColumnOrder::IEEE754TotalOrder => {
+            matches!(
+                physical_type,
+                ParquetPhysicalType::Float | ParquetPhysicalType::Double
+            )
+        },
+        ColumnOrder::Unsupported | ColumnOrder::Undefined => false,
+    }
 }
 
 /// Arrow-deserialized parquet statistics of a leaf-column
@@ -163,6 +220,15 @@ impl ColumnStatistics {
             }};
         }
 
+        if !bounds_are_usable(self.column_order, &self.physical_type, self.field.dtype()) {
+            return Ok(ArrowColumnStatistics {
+                null_count,
+                distinct_count,
+                min_value: None,
+                max_value: None,
+            });
+        }
+
         use ArrowDataType as D;
         use ParquetPhysicalType as PPT;
         let (min_value, max_value) = match (self.field.dtype(), &self.physical_type) {
@@ -202,11 +268,6 @@ impl ColumnStatistics {
             (D::UInt32, PPT::Int64) => rmap!(expect_int64, @prim i64 as u32),
             (D::UInt64, _) => rmap!(expect_int64, @prim i64 as u64),
 
-            (D::Timestamp(time_unit, _), PPT::Int96) => {
-                rmap!(expect_int96, @prim [u32; 3], |x| {
-                    timestamp(self.logical_type.as_ref(), *time_unit, int96_to_i64_ns(x).unwrap_or(i64::MAX))
-                })
-            },
             (D::Timestamp(time_unit, _), PPT::Int64) => {
                 rmap!(expect_int64, @prim i64, |x| {
                     timestamp(self.logical_type.as_ref(), *time_unit, x)
@@ -270,7 +331,7 @@ impl ColumnStatistics {
                 ))
             },
 
-            other => todo!("{:?}", other),
+            _ => (None, None),
         };
 
         Ok(ArrowColumnStatistics {
@@ -283,6 +344,28 @@ impl ColumnStatistics {
     }
 }
 
+/// Null bounds for every row group, with the null counts the chunks report.
+fn unavailable_bounds(
+    field: &Field,
+    row_groups: &[RowGroupMetadata],
+    field_idx: usize,
+) -> ArrowColumnStatisticsArrays {
+    let mut null_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
+    let mut distinct_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
+    for rg in row_groups {
+        let column = &rg.parquet_columns()[field_idx];
+        null_count.push(column.null_count().map(|v| v as IdxSize));
+        distinct_count.push(column.distinct_count().map(|v| v as IdxSize));
+    }
+    let nulls = || new_null_array(field.dtype().clone(), row_groups.len());
+    ArrowColumnStatisticsArrays {
+        null_count: null_count.freeze(),
+        distinct_count: distinct_count.freeze(),
+        min_value: nulls(),
+        max_value: nulls(),
+    }
+}
+
 /// Deserializes the statistics in the column chunks from a single `row_group`
 /// into [`Statistics`] associated from `field`'s name.
 ///
@@ -292,6 +375,7 @@ pub fn deserialize_all(
     field: &Field,
     row_groups: &[RowGroupMetadata],
     field_idx: usize,
+    column_order: ColumnOrder,
     footer_buf: &[u8],
 ) -> ParquetResult<Option<ArrowColumnStatisticsArrays>> {
     assert!(!row_groups.is_empty());
@@ -304,10 +388,6 @@ pub fn deserialize_all(
         D::Struct(..) => Ok(None),
 
         _ => {
-            let mut null_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
-            let mut distinct_count =
-                MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
-
             let primitive_type = &row_groups[0].parquet_columns()[field_idx]
                 .descriptor()
                 .descriptor
@@ -315,6 +395,16 @@ pub fn deserialize_all(
 
             let logical_type = &primitive_type.logical_type;
             let physical_type = &primitive_type.physical_type;
+
+            if !matches!(field.dtype(), D::Null)
+                && !bounds_are_usable(column_order, physical_type, field.dtype())
+            {
+                return Ok(Some(unavailable_bounds(field, row_groups, field_idx)));
+            }
+
+            let mut null_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
+            let mut distinct_count =
+                MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
 
             macro_rules! rmap {
                 ($expect:ident, $map:expr, $arr:ty$(, $arg:expr)?) => {{
@@ -460,11 +550,6 @@ pub fn deserialize_all(
                     rmap!(expect_int64, MutablePrimitiveArray::<u64>, @prim i64 as u64)
                 },
 
-                (D::Timestamp(time_unit, _), PPT::Int96) => {
-                    rmap!(expect_int96, MutablePrimitiveArray::<i64>, @prim [u32; 3], |x| {
-                        timestamp(logical_type.as_ref(), *time_unit, int96_to_i64_ns(x).unwrap_or(i64::MAX))
-                    })
-                },
                 (D::Timestamp(time_unit, _), PPT::Int64) => {
                     rmap!(expect_int64, MutablePrimitiveArray::<i64>, @prim i64, |x| {
                         timestamp(logical_type.as_ref(), *time_unit, x)
@@ -542,7 +627,7 @@ pub fn deserialize_all(
                     )
                 },
 
-                other => todo!("{:?}", other),
+                _ => return Ok(Some(unavailable_bounds(field, row_groups, field_idx))),
             };
 
             Ok(Some(ArrowColumnStatisticsArrays {
@@ -563,31 +648,31 @@ pub fn deserialize_all(
 pub fn deserialize<'a>(
     field: &Field,
     columns: &mut impl ExactSizeIterator<Item = &'a ColumnChunkMetadata>,
-    footer_buf: &[u8],
+    metadata: &FileMetadata,
 ) -> ParquetResult<Option<Statistics>> {
     use ArrowDataType as D;
     match field.dtype() {
         D::List(field) | D::LargeList(field) | D::Map(field, _) => Ok(Some(Statistics::List(
-            deserialize(field.as_ref(), columns, footer_buf)?.map(Box::new),
+            deserialize(field.as_ref(), columns, metadata)?.map(Box::new),
         ))),
         D::Dictionary(key, dtype, ordered) => Ok(Some(Statistics::Dictionary(
             *key,
             deserialize(
                 &Field::new(PlSmallStr::EMPTY, dtype.as_ref().clone(), true),
                 columns,
-                footer_buf,
+                metadata,
             )?
             .map(Box::new),
             *ordered,
         ))),
         D::FixedSizeList(field, width) => Ok(Some(Statistics::FixedSizeList(
-            deserialize(field.as_ref(), columns, footer_buf)?.map(Box::new),
+            deserialize(field.as_ref(), columns, metadata)?.map(Box::new),
             *width,
         ))),
         D::Struct(fields) => {
             let field_columns = fields
                 .iter()
-                .map(|f| deserialize(f, columns, footer_buf))
+                .map(|f| deserialize(f, columns, metadata))
                 .collect::<ParquetResult<_>>()?;
             Ok(Some(Statistics::Struct(field_columns)))
         },
@@ -595,7 +680,7 @@ pub fn deserialize<'a>(
             let column = columns.next().unwrap();
 
             Ok(column
-                .statistics(footer_buf)
+                .statistics(&metadata.footer_buf)
                 .transpose()?
                 .map(|statistics| {
                     let primitive_type = &column.descriptor().descriptor.primitive_type;
@@ -605,10 +690,103 @@ pub fn deserialize<'a>(
 
                         logical_type: primitive_type.logical_type,
                         physical_type: primitive_type.physical_type,
+                        column_order: metadata.column_order(column.leaf_index()),
 
                         statistics,
                     }))
                 }))
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bounds_need_the_order_polars_compares_with() {
+        use ArrowDataType as D;
+        use ParquetPhysicalType as P;
+        let typed = |order| ColumnOrder::TypeDefinedOrder(order);
+
+        assert!(bounds_are_usable(
+            typed(SortOrder::Signed),
+            &P::Int64,
+            &D::Int64
+        ));
+        assert!(bounds_are_usable(
+            typed(SortOrder::Unsigned),
+            &P::Int64,
+            &D::UInt64
+        ));
+        assert!(bounds_are_usable(
+            typed(SortOrder::Unsigned),
+            &P::ByteArray,
+            &D::Utf8View
+        ));
+        assert!(bounds_are_usable(
+            typed(SortOrder::Signed),
+            &P::Int32,
+            &D::Date32
+        ));
+        assert!(bounds_are_usable(
+            typed(SortOrder::Signed),
+            &P::FixedLenByteArray(16),
+            &D::Decimal(38, 2)
+        ));
+        assert!(bounds_are_usable(
+            ColumnOrder::IEEE754TotalOrder,
+            &P::Double,
+            &D::Float64
+        ));
+
+        // Unsigned values compared as signed, and the other way round.
+        assert!(!bounds_are_usable(
+            typed(SortOrder::Signed),
+            &P::Int64,
+            &D::UInt64
+        ));
+        assert!(!bounds_are_usable(
+            typed(SortOrder::Unsigned),
+            &P::Int32,
+            &D::Int32
+        ));
+        // A total order on integers, and orders the file does not declare.
+        assert!(!bounds_are_usable(
+            ColumnOrder::IEEE754TotalOrder,
+            &P::Int64,
+            &D::Int64
+        ));
+        assert!(!bounds_are_usable(
+            ColumnOrder::Undefined,
+            &P::Int64,
+            &D::Int64
+        ));
+        assert!(!bounds_are_usable(
+            ColumnOrder::Unsupported,
+            &P::Int64,
+            &D::Int64
+        ));
+        // Types polars cannot bound from statistics, or that do not match the leaf.
+        assert!(!bounds_are_usable(
+            typed(SortOrder::Signed),
+            &P::Int96,
+            &D::Timestamp(TimeUnit::Nanosecond, None)
+        ));
+        assert!(!bounds_are_usable(
+            typed(SortOrder::Unsigned),
+            &P::FixedLenByteArray(16),
+            &D::Int128
+        ));
+        assert!(!bounds_are_usable(
+            typed(SortOrder::Signed),
+            &P::Int32,
+            &D::Int64
+        ));
+        assert!(!bounds_are_usable(
+            typed(SortOrder::Undefined),
+            &P::FixedLenByteArray(12),
+            &D::Interval(IntervalUnit::DayTime)
+        ));
     }
 }

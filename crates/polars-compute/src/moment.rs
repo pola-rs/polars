@@ -142,9 +142,8 @@ impl CovState {
         }
 
         let weight = x.len() as f64;
-        let inv_weight = 1.0 / weight;
-        let mean_x = alg_sum_f64(x.iter().copied()) * inv_weight;
-        let mean_y = alg_sum_f64(y.iter().copied()) * inv_weight;
+        let mean_x = alg_sum_f64(x.iter().copied()) / weight;
+        let mean_y = alg_sum_f64(y.iter().copied()) / weight;
         Self {
             weight,
             mean_x,
@@ -211,9 +210,8 @@ impl PearsonState {
         }
 
         let weight = x.len() as f64;
-        let inv_weight = 1.0 / weight;
-        let mean_x = alg_sum_f64(x.iter().copied()) * inv_weight;
-        let mean_y = alg_sum_f64(y.iter().copied()) * inv_weight;
+        let mean_x = alg_sum_f64(x.iter().copied()) / weight;
+        let mean_y = alg_sum_f64(y.iter().copied()) / weight;
         let mut dp_xx = 0.0;
         let mut dp_xy = 0.0;
         let mut dp_yy = 0.0;
