@@ -14,14 +14,59 @@ use polars_expr::prelude::{AggregationContext, PhysicalExpr, phys_expr_to_io_exp
 use polars_expr::state::ExecutionState;
 use polars_io::predicates::{
     ColumnPredicates, ScanIOPredicate, SkipBatchPredicate, SpecializedColumnPredicate,
+    StagedScanIOPredicate,
 };
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
+
+/// [`ScanPredicate::predicate`] as two conjunctions, see [`StagedScanIOPredicate`].
+#[derive(Clone)]
+pub struct StagedScanPredicate {
+    pub first: Arc<dyn PhysicalExpr>,
+    pub first_columns: Arc<PlIndexSet<PlSmallStr>>,
+    pub second: Arc<dyn PhysicalExpr>,
+    /// Partial predicates for each column of `first`.
+    pub column_predicates: PhysicalColumnPredicates,
+}
+
+impl StagedScanPredicate {
+    fn with_constant_columns(&self, constants: &[(PlSmallStr, Scalar)]) -> Self {
+        let mut first_columns = self.first_columns.as_ref().clone();
+        let mut column_predicates = self.column_predicates.clone();
+        for (name, _) in constants {
+            first_columns.swap_remove(name);
+            column_predicates.predicates.remove(name);
+        }
+        Self {
+            first: Arc::new(PhysicalExprWithConstCols {
+                constants: constants.to_vec(),
+                child: self.first.clone(),
+            }),
+            first_columns: Arc::new(first_columns),
+            second: Arc::new(PhysicalExprWithConstCols {
+                constants: constants.to_vec(),
+                child: self.second.clone(),
+            }),
+            column_predicates,
+        }
+    }
+
+    fn to_io(&self) -> StagedScanIOPredicate {
+        StagedScanIOPredicate {
+            first: phys_expr_to_io_expr(self.first.clone()),
+            first_columns: self.first_columns.clone(),
+            second: phys_expr_to_io_expr(self.second.clone()),
+            column_predicates: self.column_predicates.to_io(),
+        }
+    }
+}
 
 /// All the expressions and metadata used to filter out rows using predicates.
 #[derive(Clone)]
 pub struct ScanPredicate {
     pub predicate: Arc<dyn PhysicalExpr>,
+
+    pub staged: Option<StagedScanPredicate>,
 
     /// Whether `predicate` filters rows at all. False when every part of the
     /// predicate is only consulted to skip batches by their statistics.
@@ -61,6 +106,19 @@ pub struct PhysicalColumnPredicates {
     pub predicates:
         PlHashMap<PlSmallStr, (Arc<dyn PhysicalExpr>, Option<SpecializedColumnPredicate>)>,
     pub is_sumwise_complete: bool,
+}
+
+impl PhysicalColumnPredicates {
+    fn to_io(&self) -> Arc<ColumnPredicates> {
+        Arc::new(ColumnPredicates {
+            predicates: self
+                .predicates
+                .iter()
+                .map(|(n, (p, s))| (n.clone(), (phys_expr_to_io_expr(p.clone()), s.clone())))
+                .collect(),
+            is_sumwise_complete: self.is_sumwise_complete,
+        })
+    }
 }
 
 /// Helper to implement [`SkipBatchPredicate`].
@@ -131,7 +189,7 @@ impl ScanPredicate {
                 Default::default()
             });
 
-        let predicate_constants = constant_columns
+        let predicate_constants: Vec<(PlSmallStr, Scalar)> = constant_columns
             .filter_map(|(name, scalar): (PlSmallStr, Scalar)| {
                 let in_skip_batch = skip_batch_columns.swap_remove(&name);
                 if !live_columns.swap_remove(&name) && !in_skip_batch {
@@ -158,6 +216,10 @@ impl ScanPredicate {
             })
             .collect();
 
+        let staged = self
+            .staged
+            .as_ref()
+            .map(|staged| staged.with_constant_columns(&predicate_constants));
         let predicate = Arc::new(PhysicalExprWithConstCols {
             constants: predicate_constants,
             child: self.predicate.clone(),
@@ -171,6 +233,7 @@ impl ScanPredicate {
 
         Self {
             predicate,
+            staged,
             filters_rows: self.filters_rows,
             live_columns: Arc::new(live_columns),
             skip_batch_columns: Arc::new(skip_batch_columns),
@@ -201,21 +264,14 @@ impl ScanPredicate {
     ) -> ScanIOPredicate {
         ScanIOPredicate {
             predicate: phys_expr_to_io_expr(self.predicate.clone()),
+            staged: self.staged.as_ref().map(StagedScanPredicate::to_io),
             filters_rows: self.filters_rows,
             live_columns: self.live_columns.clone(),
             skip_batch_columns: self.skip_batch_columns.clone(),
             skip_batch_predicate: skip_batch_predicate
                 .cloned()
                 .or_else(|| self.to_dyn_skip_batch_predicate(schema)),
-            column_predicates: Arc::new(ColumnPredicates {
-                predicates: self
-                    .column_predicates
-                    .predicates
-                    .iter()
-                    .map(|(n, (p, s))| (n.clone(), (phys_expr_to_io_expr(p.clone()), s.clone())))
-                    .collect(),
-                is_sumwise_complete: self.column_predicates.is_sumwise_complete,
-            }),
+            column_predicates: self.column_predicates.to_io(),
             hive_predicate: self.hive_predicate.clone().map(phys_expr_to_io_expr),
             hive_predicate_is_full_predicate: self.hive_predicate_is_full_predicate,
         }
