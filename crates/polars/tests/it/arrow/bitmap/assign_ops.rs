@@ -1,4 +1,4 @@
-use arrow::bitmap::{Bitmap, MutableBitmap, binary_assign, unary_assign};
+use polars_arrow::bitmap::{Bitmap, MutableBitmap, binary_assign, unary_assign};
 use proptest::prelude::*;
 
 use super::bitmap_strategy;

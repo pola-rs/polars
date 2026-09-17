@@ -1,8 +1,8 @@
-use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::Bitmap;
-use arrow::legacy::utils::CustomIterTools;
-use arrow::types::NativeType;
 use num_traits::{NumCast, ToPrimitive};
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::legacy::utils::CustomIterTools;
+use polars_arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_utils::float16::pf16;
 

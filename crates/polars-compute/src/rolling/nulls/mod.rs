@@ -5,10 +5,10 @@ mod quantile;
 mod rank;
 mod sum;
 
-use arrow::legacy::utils::CustomIterTools;
 pub use mean::*;
 pub use min_max::*;
 pub use moment::*;
+use polars_arrow::legacy::utils::CustomIterTools;
 pub use quantile::*;
 pub use rank::*;
 pub use sum::*;
@@ -99,8 +99,8 @@ where
 
 #[cfg(test)]
 mod test {
-    use arrow::array::{Array, Int32Array};
-    use arrow::datatypes::ArrowDataType;
+    use polars_arrow::array::{Array, Int32Array};
+    use polars_arrow::datatypes::ArrowDataType;
     use polars_buffer::Buffer;
     use polars_utils::min_max::MaxIgnoreNan;
 

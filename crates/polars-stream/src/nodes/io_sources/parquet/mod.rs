@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_async::executor::{self};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::prelude::{ArrowSchema, DataType};

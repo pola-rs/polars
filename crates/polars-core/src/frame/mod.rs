@@ -2,7 +2,7 @@
 //! DataFrame module.
 use std::borrow::Cow;
 
-use arrow::datatypes::ArrowSchemaRef;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_utils::UnitVec;
 use polars_utils::itertools::Itertools;
@@ -42,7 +42,7 @@ mod top_k;
 mod upstream_traits;
 mod validation;
 
-use arrow::record_batch::{RecordBatch, RecordBatchT};
+use polars_arrow::record_batch::{RecordBatch, RecordBatchT};
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

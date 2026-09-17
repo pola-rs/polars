@@ -1,9 +1,9 @@
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::utils::set_bit_unchecked;
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::index::IdxArr;
-use arrow::legacy::utils::CustomIterTools;
-use arrow::types::NativeType;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::utils::set_bit_unchecked;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::legacy::index::IdxArr;
+use polars_arrow::legacy::utils::CustomIterTools;
+use polars_arrow::types::NativeType;
 use polars_utils::index::NullCount;
 
 pub(super) unsafe fn take_values_and_validity_unchecked<T: NativeType>(

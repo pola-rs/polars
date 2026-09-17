@@ -1,6 +1,6 @@
-use arrow::array::{GenericBinaryArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::offset::{Offset, Offsets, OffsetsBuffer};
+use polars_arrow::array::{GenericBinaryArray, PrimitiveArray};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::offset::{Offset, Offsets, OffsetsBuffer};
 use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 

@@ -1,9 +1,11 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::hash::BuildHasher;
 
-use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array};
-use arrow::bitmap::Bitmap;
-use arrow::compute::utils::combine_validities_and_many;
+use polars_arrow::array::{
+    Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array,
+};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::compute::utils::combine_validities_and_many;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};
@@ -422,7 +424,7 @@ impl RowEncodedKeys {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
-        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        let idx_arr = polars_arrow::ffi::mmap::slice(idxs);
         Self {
             hashes: polars_compute::gather::primitive::take_primitive_unchecked(
                 &self.hashes,
@@ -502,7 +504,7 @@ impl BinviewKeys {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
-        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        let idx_arr = polars_arrow::ffi::mmap::slice(idxs);
         Self {
             hashes: polars_compute::gather::primitive::take_primitive_unchecked(
                 &self.hashes,

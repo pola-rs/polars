@@ -15,9 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use arrow::array::{self, ArrayFromIterDtype, ListArray, StaticArray};
-use arrow::datatypes::IdxArr;
-use arrow::offset::Offset;
+use polars_arrow::array::{self, ArrayFromIterDtype, ListArray, StaticArray};
+use polars_arrow::datatypes::IdxArr;
+use polars_arrow::offset::Offset;
 
 /// `take` implementation for ListArrays
 pub(super) unsafe fn take_unchecked<I: Offset>(

@@ -3,7 +3,7 @@ use std::collections::BinaryHeap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use arrow::array::builder::ShareStrategy;
+use polars_arrow::array::builder::ShareStrategy;
 use polars_async::executor;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;

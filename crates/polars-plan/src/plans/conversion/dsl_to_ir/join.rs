@@ -1,5 +1,5 @@
-use arrow::legacy::error::PolarsResult;
 use either::Either;
+use polars_arrow::legacy::error::PolarsResult;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::utils::{get_numeric_upcast_supertype_lossless, try_get_supertype};
@@ -340,7 +340,7 @@ pub fn resolve_join(
 
     #[cfg(feature = "asof_join")]
     if let JoinType::AsOf(options) = &mut options.args.how {
-        use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+        use polars_core::utils::polars_arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 
         // prepare the tolerance
         // we must ensure that we use the right units

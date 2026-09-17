@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
-use arrow::datatypes::ArrowDataType;
 use parking_lot::Mutex;
+use polars_arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor::ALLOW_RAYON_THREADS;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};

@@ -1,4 +1,4 @@
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_compute::gather::take_unchecked;
 
 use super::*;

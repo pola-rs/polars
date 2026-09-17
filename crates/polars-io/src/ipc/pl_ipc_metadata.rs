@@ -13,7 +13,7 @@ impl PlIpcMetadata {
     /// Reads the Polars metadata out of an already parsed IPC footer.
     ///
     /// `None` for a file that was not written by Polars.
-    pub fn from_ipc_footer(metadata: &arrow::io::ipc::read::FileMetadata) -> Option<Self> {
+    pub fn from_ipc_footer(metadata: &polars_arrow::io::ipc::read::FileMetadata) -> Option<Self> {
         #[cfg(feature = "serde")]
         {
             let raw = metadata

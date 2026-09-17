@@ -1,7 +1,9 @@
 //! This module has entry points, [`parquet_to_arrow_schema`] and the more configurable [`parquet_to_arrow_schema_with_options`].
 use std::sync::Arc;
 
-use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, IntervalUnit, Metadata, TimeUnit};
+use polars_arrow::datatypes::{
+    ArrowDataType, ArrowSchema, Field, IntervalUnit, Metadata, TimeUnit,
+};
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;

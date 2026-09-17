@@ -1,11 +1,11 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::{
+use polars_arrow::array::{
     Array, ArrayCollectIterExt, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray,
     ListArray, NullArray, PrimitiveArray, StaticArray, StructArray, Utf8ViewArray,
 };
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::{ArrowDataType, PhysicalType};
-use arrow::with_match_primitive_type_full;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::{ArrowDataType, PhysicalType};
+use polars_arrow::with_match_primitive_type_full;
 use strength_reduce::StrengthReducedUsize;
 mod struct_;
 

@@ -1,8 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::*;
-use arrow::bitmap::utils::set_bit_unchecked;
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::array::SlicedArray;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::utils::set_bit_unchecked;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::legacy::array::SlicedArray;
 
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;

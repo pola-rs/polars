@@ -2,8 +2,8 @@ mod primitive;
 
 use std::borrow::Cow;
 
-use arrow_format::ipc;
-use arrow_format::ipc::FieldNode;
+use polars_arrow_format::ipc;
+use polars_arrow_format::ipc::FieldNode;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_utils::scratch_vec::ScratchVec;

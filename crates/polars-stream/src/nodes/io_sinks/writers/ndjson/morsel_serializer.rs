@@ -1,5 +1,5 @@
-use arrow::array::{Array, StructArray};
-use arrow::datatypes::{ArrowDataType, Field as ArrowField};
+use polars_arrow::array::{Array, StructArray};
+use polars_arrow::datatypes::{ArrowDataType, Field as ArrowField};
 use polars_async::executor::{self, TaskPriority};
 use polars_async::primitives::connector;
 use polars_core::frame::DataFrame;

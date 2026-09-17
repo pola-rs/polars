@@ -318,7 +318,7 @@ pub enum FileScanIR {
     Ipc {
         options: IpcScanOptions,
         #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
-        metadata: Option<Arc<arrow::io::ipc::read::FileMetadata>>,
+        metadata: Option<Arc<polars_arrow::io::ipc::read::FileMetadata>>,
     },
 
     #[cfg(feature = "python")]

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use arrow::array::Array;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::types::AlignedBytes;
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::types::AlignedBytes;
 
 #[derive(Clone)]
 pub enum ParquetScalar {

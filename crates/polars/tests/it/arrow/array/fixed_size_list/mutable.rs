@@ -1,5 +1,5 @@
-use arrow::array::*;
-use arrow::datatypes::{ArrowDataType, Field};
+use polars_arrow::array::*;
+use polars_arrow::datatypes::{ArrowDataType, Field};
 
 #[test]
 fn primitive() {

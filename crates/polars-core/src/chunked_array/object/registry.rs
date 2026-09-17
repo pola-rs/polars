@@ -7,9 +7,9 @@ use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 use std::sync::{Arc, LazyLock, RwLock};
 
-use arrow::array::builder::ArrayBuilder;
-use arrow::array::{Array, ArrayRef};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::builder::ArrayBuilder;
+use polars_arrow::array::{Array, ArrayRef};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;

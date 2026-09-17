@@ -16,7 +16,6 @@ use std::borrow::Cow;
 use std::hash::Hash;
 
 pub use args::*;
-use arrow::trusted_len::TrustedLen;
 #[cfg(feature = "asof_join")]
 pub use asof::{_check_asof_columns, _join_asof_dispatch, AsofJoin, AsofJoinBy};
 pub use cross_join::CrossJoin;
@@ -29,6 +28,7 @@ pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
+use polars_arrow::trusted_len::TrustedLen;
 #[allow(unused_imports)]
 use polars_core::chunked_array::ops::row_encode::{
     encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,

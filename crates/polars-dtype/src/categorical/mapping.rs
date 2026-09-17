@@ -2,9 +2,9 @@ use std::fmt;
 use std::hash::BuildHasher;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use arrow::array::builder::StaticArrayBuilder;
-use arrow::array::{Array, MutableUtf8Array, Utf8Array, Utf8ViewArrayBuilder};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::builder::StaticArrayBuilder;
+use polars_arrow::array::{Array, MutableUtf8Array, Utf8Array, Utf8ViewArrayBuilder};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::aliases::{PlFixedStateQuality, PlSeedableRandomStateQuality};
 use polars_utils::parma::raw::RawTable;

@@ -1,6 +1,6 @@
-use arrow::array::PrimitiveArray;
 use chrono::format::ParseErrorKind;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
+use polars_arrow::array::PrimitiveArray;
 
 use super::patterns::{self, Pattern};
 use super::strptime::StrpTimeState;

@@ -1,6 +1,6 @@
 use std::io::{Read, Seek};
 
-use arrow_format::ipc::KeyValueRef;
+use polars_arrow_format::ipc::KeyValueRef;
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::bool::UnsafeBool;
 
@@ -171,7 +171,7 @@ impl<R: Read + Seek> FileReader<R> {
 
     pub fn next_record_batch(
         &mut self,
-    ) -> Option<PolarsResult<arrow_format::ipc::RecordBatchRef<'_>>> {
+    ) -> Option<PolarsResult<polars_arrow_format::ipc::RecordBatchRef<'_>>> {
         let block = self.metadata.blocks.get(self.current_block)?;
         self.current_block += 1;
         let message = get_message_from_block(&mut self.reader, block, &mut self.message_scratch);
