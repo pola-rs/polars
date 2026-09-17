@@ -480,7 +480,6 @@ where
         table_statistics,
         row_count,
         source_sizes: _,
-        // Scalar, not per-source, so filtering sources does not affect it.
         resolve_heavy_sources: _,
     } = unified_scan_args.as_mut();
 

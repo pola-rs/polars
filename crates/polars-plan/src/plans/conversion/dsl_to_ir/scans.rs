@@ -345,9 +345,8 @@ pub(super) async fn parquet_file_info(
     } else {
         use polars_config::ResolveMode;
 
-        // Indices of the footers to be sampled. `Some` only when coverage is
-        // incomplete; a set spanning every source falls through to the
-        // read-everything arm, which reports an exact size.
+        // Sampled source indices. If all sources are selected, resolve an exact
+        // row count instead of estimating it.
         let partial_sample = matches!(mode, ResolveMode::Sampled)
             .then(|| {
                 // Default cap: the IO concurrency budget floored at
@@ -357,11 +356,12 @@ pub(super) async fn parquet_file_info(
                     || (polars_io::pl_async::get_concurrency_limit() as usize).max(SAMPLE_FLOOR),
                     |o| o as usize,
                 );
-                let mut indices = sampled_source_indices(n_sources, sample_size(n_sources, limit));
+                // Sample limit including source 0, which is read separately.
+                let budget = sample_size(n_sources, limit);
 
-                // On top of the stratified sample, resolve every source at
-                // least `1 / n_parts` of the total: a distributed planner can
-                // only split such a file if it knows its row groups.
+                // Prioritize heavy sources so the distributed planner has their
+                // row-group metadata available for splitting.
+                let mut indices = Vec::new();
                 if let Some(n_parts) = resolve_heavy_sources
                     && let Some(bytes) = bytes_per_source
                 {
@@ -373,11 +373,24 @@ pub(super) async fn parquet_file_info(
                         indices.extend(
                             (1..n_sources).filter(|&i| bytes[i] as u128 * n_parts >= total),
                         );
-                        indices.sort_unstable();
-                        indices.dedup();
+                        // Keep the largest sources that fit within the sample limit.
+                        indices.sort_unstable_by_key(|&i| std::cmp::Reverse(bytes[i]));
+                        let heavy = indices.len();
+                        indices.truncate(budget - 1);
+                        if verbose() {
+                            eprintln!(
+                                "parquet sampled resolve: pinned {} / {heavy} heavy \
+                                 sources (footer budget {budget})",
+                                indices.len(),
+                            );
+                        }
                     }
                 }
 
+                // Use the remaining budget for stratified sampling.
+                indices.extend(sampled_source_indices(n_sources, budget - indices.len()));
+                indices.sort_unstable();
+                indices.dedup();
                 indices
             })
             // `+ 1` for source 0, which is read separately.
@@ -1475,8 +1488,7 @@ pub async fn ndjson_file_info(
     ))
 }
 
-// Add flags that influence metadata/schema here. Every per-source field of the
-// cached value must be reachable from the key.
+// Include all sources and options that affect the cached schema or metadata.
 #[derive(Eq, Hash, PartialEq)]
 enum CachedSourceKey {
     ParquetIpc {
@@ -1836,7 +1848,6 @@ impl SourcesToFileInfo {
                 let key = CachedSourceKey::ParquetIpc {
                     paths: paths.clone(),
                     schema_overwrite: None,
-                    // IPC resolves no footers, so this cannot affect its value.
                     resolve_heavy_sources: None,
                 };
 

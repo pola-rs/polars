@@ -130,8 +130,7 @@ pub struct PartialMetadata {
 
 #[cfg(feature = "parquet")]
 impl PartialMetadata {
-    /// Source indices of the resolved footers; `resolved_metadata` is dense and
-    /// carries no mapping of its own.
+    /// Source indices corresponding to the resolved footers, in ascending order.
     pub fn indices(&self) -> &[usize] {
         &self.indices
     }
@@ -601,8 +600,8 @@ pub struct UnifiedScanArgs {
     /// Note, intentionally store u64 instead of IdxSize to avoid erroring if it's unused.
     pub row_count: Option<(u64, u64)>,
     pub source_sizes: Option<Buffer<u64>>,
-    /// Resolve the footer of every source at least `1 / N` of the scan's total
-    /// bytes, on top of what the resolve mode reads anyway.
+    /// In sampled Parquet resolution, prioritize sources at least `1 / N` of the
+    /// total byte size, largest first, within the sample limit. Requires known sizes.
     pub resolve_heavy_sources: Option<NonZeroU32>,
 }
 

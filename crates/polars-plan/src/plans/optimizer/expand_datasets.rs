@@ -340,7 +340,6 @@ fn expand_python_dataset(
                 table_statistics,
                 row_count,
                 source_sizes,
-                // A dataset resolver does not override the split factor.
                 resolve_heavy_sources: _,
             } = resolved_unified_scan_args.as_ref()
             else {
