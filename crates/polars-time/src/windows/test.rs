@@ -1,6 +1,8 @@
 use arrow::temporal_conversions::timestamp_ns_to_datetime;
 use chrono::prelude::*;
 use polars_core::prelude::*;
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::ClosedWindow;
 
 use crate::prelude::*;
 
