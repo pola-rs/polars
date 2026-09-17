@@ -3,10 +3,10 @@ use arrow::temporal_conversions::{
 };
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as _;
+#[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone;
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
-#[cfg(feature = "timezones")]
-use polars_ops::chunked_array::datetime::replace_time_zone;
 
 use super::*;
 

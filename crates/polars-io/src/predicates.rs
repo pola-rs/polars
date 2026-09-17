@@ -343,9 +343,47 @@ impl PhysicalIoExpr for PhysicalExprWithConstCols<Arc<dyn PhysicalIoExpr>> {
     }
 }
 
+/// The row predicate split into two conjunctions a reader may evaluate one after the
+/// other: rows that fail `first` never need the columns only `second` reads.
+#[derive(Clone)]
+pub struct StagedScanIOPredicate {
+    pub first: Arc<dyn PhysicalIoExpr>,
+    pub first_columns: Arc<PlIndexSet<PlSmallStr>>,
+    pub second: Arc<dyn PhysicalIoExpr>,
+    /// Partial predicates for each column of `first`. Complete when they add up to
+    /// `first`, whether or not [`ScanIOPredicate::column_predicates`] is complete.
+    pub column_predicates: Arc<ColumnPredicates>,
+}
+
+impl StagedScanIOPredicate {
+    fn with_constant_columns(&self, constants: &[(PlSmallStr, Scalar)]) -> Self {
+        let mut first_columns = self.first_columns.as_ref().clone();
+        let mut column_predicates = self.column_predicates.as_ref().clone();
+        for (c, _) in constants {
+            first_columns.swap_remove(c);
+            column_predicates.predicates.remove(c);
+        }
+        Self {
+            first: Arc::new(PhysicalExprWithConstCols {
+                constants: constants.to_vec(),
+                child: self.first.clone(),
+            }),
+            first_columns: Arc::new(first_columns),
+            second: Arc::new(PhysicalExprWithConstCols {
+                constants: constants.to_vec(),
+                child: self.second.clone(),
+            }),
+            column_predicates: Arc::new(column_predicates),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ScanIOPredicate {
     pub predicate: Arc<dyn PhysicalIoExpr>,
+
+    /// `predicate` as two conjunctions when `first` leaves some of the live columns unread.
+    pub staged: Option<StagedScanIOPredicate>,
 
     /// Whether `predicate` filters rows at all. False when the predicate only
     /// carries parts a reader consults to skip batches by their statistics.
@@ -361,7 +399,7 @@ pub struct ScanIOPredicate {
     /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
 
-    /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
+    /// Partial predicates for each column of `predicate`.
     pub column_predicates: Arc<ColumnPredicates>,
 
     /// Predicate parts only referring to hive columns.
@@ -409,6 +447,10 @@ impl ScanIOPredicate {
             column_predicates.predicates.remove(c);
         }
         self.column_predicates = Arc::new(column_predicates);
+
+        if let Some(staged) = self.staged.as_mut() {
+            *staged = staged.with_constant_columns(&constant_columns);
+        }
 
         self.predicate = Arc::new(PhysicalExprWithConstCols {
             constants: constant_columns,

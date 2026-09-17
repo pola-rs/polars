@@ -639,7 +639,7 @@ pub fn array_to_page_simple(
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_size_binary::build_statistics_decimal256_with_i128(
+                    let stats = fixed_size_binary::build_statistics_i256_big_endian_low(
                         array,
                         type_.clone(),
                         size,
@@ -667,12 +667,16 @@ pub fn array_to_page_simple(
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
-                let statistics = if options.has_statistics() {
-                    let stats = fixed_size_binary::build_statistics_decimal256(
+                // Can't write min/max statistics for an unannotated 256-bit decimal, see #25965.
+                let mut no_mm_options = options;
+                no_mm_options.statistics.min_value = false;
+                no_mm_options.statistics.max_value = false;
+                let statistics = if no_mm_options.has_statistics() {
+                    let stats = fixed_size_binary::build_statistics_i256_big_endian(
                         array,
                         type_.clone(),
                         size,
-                        &options.statistics,
+                        &no_mm_options.statistics,
                     );
                     Some(stats)
                 } else {
@@ -689,7 +693,7 @@ pub fn array_to_page_simple(
                     array.validity().cloned(),
                 );
 
-                fixed_size_binary::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::array_to_page(&array, no_mm_options, type_, statistics)
             }
         },
         ArrowDataType::Decimal(precision, _) => {
@@ -734,7 +738,7 @@ pub fn array_to_page_simple(
                 let size = decimal_length_from_precision(precision);
 
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_size_binary::build_statistics_decimal(
+                    let stats = fixed_size_binary::build_statistics_big_endian(
                         array,
                         type_.clone(),
                         size,
@@ -761,7 +765,7 @@ pub fn array_to_page_simple(
         ArrowDataType::UInt128 => {
             let array: &PrimitiveArray<u128> = array.as_any().downcast_ref().unwrap();
             let statistics = if options.has_statistics() {
-                let stats = fixed_size_binary::build_statistics_decimal(
+                let stats = fixed_size_binary::build_statistics_big_endian(
                     array,
                     type_.clone(),
                     16,
@@ -780,12 +784,16 @@ pub fn array_to_page_simple(
         },
         ArrowDataType::Int128 => {
             let array: &PrimitiveArray<i128> = array.as_any().downcast_ref().unwrap();
-            let statistics = if options.has_statistics() {
-                let stats = fixed_size_binary::build_statistics_decimal(
+            // Can't write min/max statistics for signed 128-bit integer, see #25965.
+            let mut no_mm_options = options;
+            no_mm_options.statistics.min_value = false;
+            no_mm_options.statistics.max_value = false;
+            let statistics = if no_mm_options.has_statistics() {
+                let stats = fixed_size_binary::build_statistics_big_endian(
                     array,
                     type_.clone(),
                     16,
-                    &options.statistics,
+                    &no_mm_options.statistics,
                 );
                 Some(stats)
             } else {
@@ -796,7 +804,7 @@ pub fn array_to_page_simple(
                 array.values().clone().try_transmute().unwrap(),
                 array.validity().cloned(),
             );
-            fixed_size_binary::array_to_page(&array, options, type_, statistics)
+            fixed_size_binary::array_to_page(&array, no_mm_options, type_, statistics)
         },
         ArrowDataType::Extension(ext) => {
             let mut boxed = array.to_boxed();
@@ -954,7 +962,7 @@ fn array_to_page_nested(
                 let size = decimal_length_from_precision(precision);
 
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_size_binary::build_statistics_decimal(
+                    let stats = fixed_size_binary::build_statistics_big_endian(
                         array,
                         type_.clone(),
                         size,
@@ -1015,7 +1023,7 @@ fn array_to_page_nested(
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_size_binary::build_statistics_decimal256_with_i128(
+                    let stats = fixed_size_binary::build_statistics_i256_big_endian_low(
                         array,
                         type_.clone(),
                         size,
@@ -1043,12 +1051,16 @@ fn array_to_page_nested(
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
-                let statistics = if options.has_statistics() {
-                    let stats = fixed_size_binary::build_statistics_decimal256(
+                // Can't write min/max statistics for an unannotated 256-bit decimal, see #25965.
+                let mut no_mm_options = options;
+                no_mm_options.statistics.min_value = false;
+                no_mm_options.statistics.max_value = false;
+                let statistics = if no_mm_options.has_statistics() {
+                    let stats = fixed_size_binary::build_statistics_i256_big_endian(
                         array,
                         type_.clone(),
                         size,
-                        &options.statistics,
+                        &no_mm_options.statistics,
                     );
                     Some(stats)
                 } else {
@@ -1065,7 +1077,13 @@ fn array_to_page_nested(
                     array.validity().cloned(),
                 );
 
-                fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
+                fixed_size_binary::nested_array_to_page(
+                    &array,
+                    no_mm_options,
+                    type_,
+                    nested,
+                    statistics,
+                )
             }
         },
         Int128 => {
@@ -1075,7 +1093,7 @@ fn array_to_page_nested(
             no_mm_options.statistics.min_value = false;
             no_mm_options.statistics.max_value = false;
             let statistics = if no_mm_options.has_statistics() {
-                let stats = fixed_size_binary::build_statistics_decimal(
+                let stats = fixed_size_binary::build_statistics_big_endian(
                     array,
                     type_.clone(),
                     16,
@@ -1101,7 +1119,7 @@ fn array_to_page_nested(
         UInt128 => {
             let array: &PrimitiveArray<u128> = array.as_any().downcast_ref().unwrap();
             let statistics = if options.has_statistics() {
-                let stats = fixed_size_binary::build_statistics_decimal(
+                let stats = fixed_size_binary::build_statistics_big_endian(
                     array,
                     type_.clone(),
                     16,

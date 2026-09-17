@@ -17,7 +17,6 @@ polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "concat_
 polars-ops = { workspace = true, features = ["iejoin"] }
 polars-plan = { workspace = true, features = ["iejoin"] }
 polars-testing = { workspace = true }
-polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
 bitflags = { workspace = true }

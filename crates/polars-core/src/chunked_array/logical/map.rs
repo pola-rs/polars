@@ -174,10 +174,21 @@ impl MapChunked {
         self.entry_field(&MAP_VALUE_NAME)
     }
 
-    /// Flatten one entry field over live rows without filtering the other field.
-    fn entry_field(&self, name: &PlSmallStr) -> Series {
-        let storage = self.storage.list().unwrap();
-        let DataType::Struct(fields) = storage.inner_dtype() else {
+    /// Entries each row contributes to [`Self::keys`] and [`Self::values`], in row order.
+    ///
+    /// A null row contributes none, whatever its offset window retains. Reads the offsets in
+    /// place, so pairing this with a flat accessor never materializes the other field.
+    pub fn live_row_lengths(&self) -> impl Iterator<Item = usize> + '_ {
+        self.storage
+            .list()
+            .unwrap()
+            .downcast_iter()
+            .flat_map(live_lengths)
+    }
+
+    /// Position and dtype of the named entry field.
+    fn entry_field_index(&self, name: &PlSmallStr) -> (usize, DataType) {
+        let DataType::Struct(fields) = self.storage.list().unwrap().inner_dtype() else {
             unreachable!("map entries are a struct")
         };
         // Reversed fields are legal input to the `List(Struct) -> Map` cast.
@@ -185,30 +196,79 @@ impl MapChunked {
             .iter()
             .position(|field| field.name() == name)
             .expect("map entries have canonical key and value fields");
+        (i, fields[i].dtype().clone())
+    }
 
-        let chunks = storage
+    /// Flatten one entry field over live rows without filtering the other field.
+    fn entry_field(&self, name: &PlSmallStr) -> Series {
+        let (i, dtype) = self.entry_field_index(name);
+        let chunks = self
+            .storage
+            .list()
+            .unwrap()
             .downcast_iter()
-            .map(|arr| {
-                // The rows are read as the windows they tile the entries with, which a chunk whose
-                // rows all read the one range they hold does not lay out.
-                let flat = arr.to_flat();
-                let arr = flat.as_array();
-
-                let entries = windowed_entries_array(arr);
-                let entries = entries
-                    .as_any()
-                    .downcast_ref::<PlStructArray>()
-                    .expect("map entries are a struct");
-                let field = entries.fields()[i].clone();
-                match live_entry_mask(&flat) {
-                    Some(mask) => filter_with_bitmap(&*field, PlBitmapRef::new(&mask, mask.len())),
-                    None => field,
-                }
-            })
+            .map(|arr| live_entry_field_chunk(arr, i))
             .collect();
 
         // SAFETY: the chunks are one entry field, filtered to the entries of live rows.
-        unsafe { Series::from_chunks_and_dtype_unchecked(name.clone(), chunks, fields[i].dtype()) }
+        unsafe { Series::from_chunks_and_dtype_unchecked(name.clone(), chunks, &dtype) }
+    }
+
+    /// One list of keys per row: `List(key_dtype)`.
+    ///
+    /// Preserves rows, validity and entry order; null rows have empty windows.
+    pub fn key_lists(&self) -> ListChunked {
+        self.entry_field_lists(&MAP_KEY_NAME)
+    }
+
+    /// One list of values per row: `List(value_dtype)`.
+    ///
+    /// Preserves rows, validity and entry order; null rows have empty windows.
+    pub fn value_lists(&self) -> ListChunked {
+        self.entry_field_lists(&MAP_VALUE_NAME)
+    }
+
+    /// The rows of [`Self::entry_field`], with their boundaries kept.
+    ///
+    /// Reads the chunks itself rather than reusing the flat field: a `Null` field collapses
+    /// to a single chunk when it becomes a [`Series`], which would lose the row layout.
+    fn entry_field_lists(&self, name: &PlSmallStr) -> ListChunked {
+        let (i, dtype) = self.entry_field_index(name);
+        let chunks = self
+            .storage
+            .list()
+            .unwrap()
+            .downcast_iter()
+            .map(|arr| {
+                let values = live_entry_field_chunk(arr, i);
+                // Where no row is null the entries are the ones the rows already window, so the
+                // offsets they are windowed by carry over -- a chunk whose rows all read the one
+                // range they hold keeps reading it.
+                if arr
+                    .validity()
+                    .is_none_or(|validity| validity.unset_bits() == 0)
+                {
+                    return rebuild_entries(arr, values).into_boxed();
+                }
+
+                let validity = arr.validity().map(PlBitmap::from);
+                // SAFETY: the offsets count the entries kept for every row in turn, laid end to
+                // end, so they are non-decreasing, start at zero and end at the entry count.
+                unsafe {
+                    PlListArray::new_unchecked(values, live_offsets(arr), arr.len(), validity)
+                }
+                .into_boxed()
+            })
+            .collect();
+
+        // SAFETY: the chunks are the original rows over one entry field.
+        unsafe {
+            ListChunked::from_chunks_and_dtype_unchecked(
+                self.storage.name().clone(),
+                chunks,
+                DataType::List(Box::new(dtype)),
+            )
+        }
     }
 
     /// Replace live entry values.
@@ -529,6 +589,51 @@ fn rebuild_entries(arr: &PlListArray, values: PlArrayRef) -> PlListArray {
     }
 }
 
+/// One chunk's entries of the field at `i`, restricted to the entries of live rows.
+///
+/// Leaves the other field alone, so flattening keys never materializes values.
+fn live_entry_field_chunk(arr: &PlListArray, i: usize) -> PlArrayRef {
+    // The rows are read as the windows they tile the entries with, which a chunk whose rows all
+    // read the one range they hold does not lay out.
+    let flat = arr.to_flat();
+    let arr = flat.as_array();
+
+    let entries = windowed_entries_array(arr);
+    let entries = entries
+        .as_any()
+        .downcast_ref::<PlStructArray>()
+        .expect("map entries are a struct");
+    let field = entries.fields()[i].clone();
+    match live_entry_mask(&flat) {
+        Some(mask) => filter_with_bitmap(&*field, PlBitmapRef::new(&mask, mask.len())),
+        None => field,
+    }
+}
+
+/// Zero-based row offsets over the live entries of `arr`, with null rows emptied.
+///
+/// Matches what flattening the entries of live rows produces, so the two can be recombined.
+fn live_offsets(arr: &PlListArray) -> Buffer<u64> {
+    let mut offsets = Vec::with_capacity(arr.len() + 1);
+    let mut kept = 0u64;
+    offsets.push(kept);
+    for length in live_lengths(arr) {
+        kept += length as u64;
+        offsets.push(kept);
+    }
+    offsets.into()
+}
+
+/// Entries each row of one chunk owns, in row order, with null rows emptied.
+fn live_lengths(arr: &PlListArray) -> impl Iterator<Item = usize> + '_ {
+    let validity = arr.validity().filter(|v| v.unset_bits() > 0);
+    (0..arr.len()).map(move |row| match validity {
+        Some(validity) if !validity.get(row) => 0,
+        // SAFETY: the row is in bounds of the chunk it is counted over.
+        _ => unsafe { arr.value_range_unchecked(row) }.len(),
+    })
+}
+
 /// Filter out entries under null rows and rebuild offsets; `None` if unchanged.
 pub(crate) fn compact_null_rows_chunk(arr: &PlListArray) -> Option<PlListArray> {
     // A row is mapped onto the window of entries it covers, one each, which a chunk whose rows all
@@ -541,23 +646,12 @@ pub(crate) fn compact_null_rows_chunk(arr: &PlListArray) -> Option<PlListArray> 
     let arr = arr.as_array();
     let entries = windowed_entries_array(arr);
     let entries = filter_with_bitmap(&*entries, PlBitmapRef::new(&mask, mask.len()));
-
     let validity = arr.validity().expect("a masked chunk has null rows");
-    let mut offsets = Vec::with_capacity(arr.len() + 1);
-    let mut kept = 0u64;
-    offsets.push(kept);
-    for row in 0..arr.len() {
-        if validity.get(row) {
-            // SAFETY: `row` is in bounds of `arr`.
-            kept += unsafe { arr.value_range_unchecked(row) }.len() as u64;
-        }
-        offsets.push(kept);
-    }
 
     // SAFETY: the offsets count the entries kept for every row in turn, laid end to end, so they
     // are non-decreasing, start at zero and end at however many entries were kept.
     Some(unsafe {
-        PlListArray::new_unchecked(entries, offsets.into(), arr.len(), Some(validity.into()))
+        PlListArray::new_unchecked(entries, live_offsets(arr), arr.len(), Some(validity.into()))
     })
 }
 

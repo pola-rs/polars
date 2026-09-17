@@ -356,7 +356,7 @@ zip_with = ["polars-core/zip_with"]
 bigidx = [
   "polars-core/bigidx",
   "polars-lazy?/bigidx",
-  "polars-ops/big_idx",
+  "polars-ops/bigidx",
   "polars-plan?/bigidx",
   "polars-utils/bigidx",
 ]

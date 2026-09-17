@@ -18,7 +18,6 @@ polars-error = { workspace = true }
 polars-ops = { workspace = true }
 polars-utils = { workspace = true }
 
-atoi_simd = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
@@ -59,7 +58,6 @@ timezones = [
   "dtype-datetime",
   "polars-core/timezones",
   "arrow/timezones",
-  "polars-ops/timezones",
   "polars-defs/timezones",
 ]
 

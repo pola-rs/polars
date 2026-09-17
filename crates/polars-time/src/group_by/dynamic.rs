@@ -443,6 +443,7 @@ impl Wrap<&DataFrame> {
 #[cfg(test)]
 mod test {
     use polars_compute::rolling::QuantileMethod;
+    use polars_core::chunked_array::temporal::string::StringMethods;
     use polars_defs::time::duration::Duration;
     use polars_defs::time::group_by::RollingGroupOptions;
     use polars_ops::prelude::*;
