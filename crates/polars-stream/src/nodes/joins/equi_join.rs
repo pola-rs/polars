@@ -191,10 +191,9 @@ struct EquiJoinParams {
     right_payload_schema: Arc<Schema>,
     args: JoinArgs,
     fused_predicate: Option<FusedPredicate>,
-    // Build-key min/max ranges to publish once the build is done.
-    // This will be used to skip row-groups at scan of the probe side.
+    // Key min/max ranges for the scans below the planned probe side, set once
+    // from a complete sample of the planned build side or from its build.
     runtime_filters: Vec<RuntimeFilter>,
-    /// Whether the runtime filters were already set from a complete sample.
     runtime_filters_published: bool,
     random_state: PlRandomState,
     sample_limit: usize,
@@ -221,6 +220,28 @@ impl EquiJoinParams {
         !self.runtime_filters.is_empty()
             && !self.runtime_filters_published
             && self.left_is_build == self.planned_build_left()
+    }
+
+    /// Set every runtime filter to the range of its key on the given side.
+    fn publish_runtime_filters(&mut self, left: bool, ranges: Vec<KeyRange>) {
+        let key_schema = if left {
+            &self.left_key_schema
+        } else {
+            &self.right_key_schema
+        };
+        for (filter, range) in self.runtime_filters.iter().zip(ranges) {
+            if config::verbose() {
+                let name = key_schema
+                    .get_at_index(filter.key_idx)
+                    .map(|(n, _)| n.as_str());
+                eprintln!(
+                    "publishing runtime filter for key {}: {range:?}",
+                    name.unwrap_or("?")
+                );
+            }
+            filter.pred.set(Arc::new(range));
+        }
+        self.runtime_filters_published = true;
     }
 
     /// Should we emit unmatched rows from the build side?
@@ -629,18 +650,10 @@ impl SampleState {
         params: &mut EquiJoinParams,
         state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
-        let (morsels, key_selectors, key_schema) = if left {
-            (
-                &self.left,
-                &params.left_key_selectors,
-                &params.left_key_schema,
-            )
+        let (morsels, key_selectors) = if left {
+            (&self.left, &params.left_key_selectors)
         } else {
-            (
-                &self.right,
-                &params.right_key_selectors,
-                &params.right_key_schema,
-            )
+            (&self.right, &params.right_key_selectors)
         };
         let mut ranges: Vec<KeyRange> = params
             .runtime_filters
@@ -658,19 +671,7 @@ impl SampleState {
                 range.extend(&keys.columns()[filter.key_idx])?;
             }
         }
-        for (filter, range) in params.runtime_filters.iter().zip(ranges) {
-            if config::verbose() {
-                let name = key_schema
-                    .get_at_index(filter.key_idx)
-                    .map(|(n, _)| n.as_str());
-                eprintln!(
-                    "publishing runtime filter for key {}: {range:?}",
-                    name.unwrap_or("?")
-                );
-            }
-            filter.pred.set(Arc::new(range));
-        }
-        params.runtime_filters_published = true;
+        params.publish_runtime_filters(left, ranges);
         Ok(())
     }
 
@@ -846,33 +847,23 @@ impl BuildState {
             .all(|b| b.morsels.iter().all(|(_, _, keys)| keys.len() == 0))
     }
 
-    /// Hand the range of every build key with a runtime filter to the scans
-    /// below the probe side. A filter of a side that was not built stays unset,
-    /// which skips nothing.
-    fn publish_runtime_filters(&mut self, params: &EquiJoinParams) {
+    /// Hand the range of every build key to the runtime filters. Filters set
+    /// from a sample keep their range, whichever side is built; filters of a
+    /// side that was not built stay unset, which skips nothing.
+    fn publish_runtime_filters(&mut self, params: &mut EquiJoinParams) {
         if !params.publishes_runtime_filters() {
             return;
         }
-        for (i, filter) in params.runtime_filters.iter().enumerate() {
-            let mut range = KeyRange::default();
-            for local in &mut self.local_builders {
-                range.merge(std::mem::take(&mut local.key_ranges[i]));
-            }
-            if config::verbose() {
-                let keys = if params.left_is_build.unwrap() {
-                    &params.left_key_schema
-                } else {
-                    &params.right_key_schema
-                };
-                eprintln!(
-                    "publishing runtime filter for build key {}: {range:?}",
-                    keys.get_at_index(filter.key_idx)
-                        .map(|(n, _)| n.as_str())
-                        .unwrap_or("?")
-                );
-            }
-            filter.pred.set(Arc::new(range));
-        }
+        let ranges = (0..params.runtime_filters.len())
+            .map(|i| {
+                let mut range = KeyRange::default();
+                for local in &mut self.local_builders {
+                    range.merge(std::mem::take(&mut local.key_ranges[i]));
+                }
+                range
+            })
+            .collect();
+        params.publish_runtime_filters(params.left_is_build.unwrap(), ranges);
     }
 
     fn finalize_ordered(&mut self, params: &EquiJoinParams, table: &dyn IdxTable) -> ProbeState {
@@ -1748,20 +1739,14 @@ impl ComputeNode for EquiJoinNode {
         // the probe side.
         if let EquiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
-                build_state.publish_runtime_filters(&self.params);
-                if self.params.args.how == JoinType::Inner && build_state.is_empty() {
-                    self.state = EquiJoinState::Done;
-                }
-            }
-        }
-        if let EquiJoinState::Build(build_state) = &mut self.state {
-            if recv[build_idx] == PortState::Done {
-                let probe_state = if self.params.preserve_order_build {
-                    build_state.finalize_ordered(&self.params, &*self.table)
+                build_state.publish_runtime_filters(&mut self.params);
+                self.state = if self.params.args.how == JoinType::Inner && build_state.is_empty() {
+                    EquiJoinState::Done
+                } else if self.params.preserve_order_build {
+                    EquiJoinState::Probe(build_state.finalize_ordered(&self.params, &*self.table))
                 } else {
-                    build_state.finalize_unordered(&self.params, &*self.table)
+                    EquiJoinState::Probe(build_state.finalize_unordered(&self.params, &*self.table))
                 };
-                self.state = EquiJoinState::Probe(probe_state);
             }
         }
 

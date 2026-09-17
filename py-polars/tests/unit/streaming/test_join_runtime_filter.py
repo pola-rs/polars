@@ -771,9 +771,10 @@ def test_empty_preferred_build_side_reads_nothing(
 @pytest.mark.parametrize(
     ("limit", "groups"),
     [
-        # The preferred side is read first; it is built from when it ends under the
-        # limit, and both sides are sampled once it reaches the limit, by which time
-        # the scan has already opened.
+        # The preferred side is sampled first. When it ends under the limit its
+        # range is published before the other side is sampled and a build side is
+        # chosen. When it reaches the limit both sides are sampled and the scan
+        # has already opened.
         ("3", "1 / 10 row groups"),
         ("2", "10 / 10 row groups"),
         ("1", "10 / 10 row groups"),

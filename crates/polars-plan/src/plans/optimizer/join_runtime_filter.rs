@@ -117,19 +117,8 @@ fn process_join(
     // A bounded side before an estimated one, the smaller of two alike; the first
     // whose range prunes a scan much larger than itself is taken.
     // Try the right side first when candidates rank equally.
-    let mut sides: Vec<BuildSide> = [false, true]
-        .into_iter()
-        .flat_map(|left| {
-            let (stats, width) = if left {
-                (&left_stats, left_width)
-            } else {
-                (&right_stats, right_width)
-            };
-            build_rows(stats, width)
-                .into_iter()
-                .map(move |(rows, forced)| BuildSide { left, rows, forced })
-        })
-        .collect();
+    let mut sides = build_candidates(false, &right_stats, right_width);
+    sides.extend(build_candidates(true, &left_stats, left_width));
     sides.sort_by(|a, b| b.forced.cmp(&a.forced).then(a.rows.total_cmp(&b.rows)));
 
     // A side is traced once, as a forced and a preferred candidate share the trace.
@@ -154,7 +143,7 @@ fn process_join(
         });
         (!filters.is_empty() && *probe_rows >= LOPSIDED_FACTOR * side.rows).then_some(side)
     });
-    let Some(BuildSide { left, forced, .. }) = chosen else {
+    let Some(BuildCandidate { left, forced, .. }) = chosen else {
         return;
     };
     let (filters, _) = traced[left as usize].take().unwrap();
@@ -181,29 +170,36 @@ fn process_join(
 }
 
 /// A side of the join that could be built from.
-struct BuildSide {
+struct BuildCandidate {
     left: bool,
     /// Its bound when forced, else its estimate.
     rows: f64,
     forced: bool,
 }
 
-/// The rows a filtered side may be built from: its bound when that fits the byte
-/// budget, which makes it a forced build side, and its estimate when that fits,
-/// which makes it a preferred one.
-fn build_rows(stats: &NodeStats, width: f64) -> Vec<(f64, bool)> {
-    let mut rows = Vec::new();
+/// The ways a filtered side may be built from: forced when its bound fits the
+/// byte budget, preferred when its estimate fits.
+fn build_candidates(left: bool, stats: &NodeStats, width: f64) -> Vec<BuildCandidate> {
+    let mut candidates = Vec::new();
     if stats.filtered >= stats.unfiltered {
-        return rows;
+        return candidates;
     }
     let fits = |rows: f64| rows * width <= BUILD_BYTES;
-    if let Some(bound) = stats.max_rows().filter(|b| fits(*b)) {
-        rows.push((bound, true));
+    if let Some(rows) = stats.max_rows().filter(|b| fits(*b)) {
+        candidates.push(BuildCandidate {
+            left,
+            rows,
+            forced: true,
+        });
     }
     if fits(stats.filtered) {
-        rows.push((stats.filtered, false));
+        candidates.push(BuildCandidate {
+            left,
+            rows: stats.filtered,
+            forced: false,
+        });
     }
-    rows
+    candidates
 }
 
 /// A probe key that reached a scan.
