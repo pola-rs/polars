@@ -2023,7 +2023,8 @@ def _staged_df() -> pl.DataFrame:
         # The first pass alone reads every predicate column: no staging.
         (pl.col("a") > 0) & (pl.col("b") > 0) & (pl.col("a") > pl.col("b")),
         # First pass keeps every row / no row.
-        (pl.col("q").is_not_null() | pl.col("q").is_null()) & (pl.col("a") < pl.col("b")),
+        (pl.col("q").is_not_null() | pl.col("q").is_null())
+        & (pl.col("a") < pl.col("b")),
         (pl.col("q") > 100) & (pl.col("a") < pl.col("b")),
         # Every second-pass column is already read by the first pass: no staging.
         (pl.col("q") == 0) & (pl.col("a") > 0) & ((pl.col("q") + pl.col("a")) < 5),
