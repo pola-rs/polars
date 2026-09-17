@@ -491,7 +491,10 @@ impl PyDataFrame {
                 // Without any columns to compare all rows are identical.
                 0 => PolarsResult::Ok(df.height().min(1)),
                 1 => subset.columns()[0].n_unique(),
-                _ => subset.into_struct(PlSmallStr::EMPTY).into_column().n_unique(),
+                _ => subset
+                    .into_struct(PlSmallStr::EMPTY)
+                    .into_column()
+                    .n_unique(),
             }
         })
     }
