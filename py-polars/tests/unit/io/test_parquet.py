@@ -1145,6 +1145,24 @@ def test_parquet_statistics_uint64_16683() -> None:
     assert statistics.max == u64_max
 
 
+def test_parquet_decimal_statistics_29347() -> None:
+    # The bug needs a precision of 19 or more, so that the values are stored as a fixed
+    # length byte array rather than an INT64, a chunk spanning more than one page, and a
+    # page holding values of only one sign.
+    n = 4000
+    values = [Decimal(i) for i in range(-(n // 2), n // 2)]
+    df = pl.Series("a", values, dtype=pl.Decimal(19, 0)).to_frame()
+
+    file = io.BytesIO()
+    df.write_parquet(file, statistics=True, row_group_size=n, data_page_size=1024)
+    file.seek(0)
+    statistics = pq.read_metadata(file).row_group(0).column(0).statistics
+
+    assert statistics.min <= statistics.max
+    assert statistics.min == values[0]
+    assert statistics.max == values[-1]
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("nullable", [True, False])
 def test_read_byte_stream_split(nullable: bool) -> None:
