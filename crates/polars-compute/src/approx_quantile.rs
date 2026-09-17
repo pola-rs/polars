@@ -98,15 +98,27 @@ pub struct FinalizedSketch<T: fmt::Debug + Clone + TotalOrd> {
     /// Inclusive cumulative weight, i.e. `cum_weight[i]` is the 1-based rank of
     /// `items[i]`. `None` when every item has weight 1.
     cum_weight: Option<Box<[u64]>>,
+    /// Number of times the weights count every ingested item.
+    weight_factor: u64,
 }
 
 impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
     fn new(items: Box<[T]>, cum_weight: Option<Box<[u64]>>) -> Self {
-        Self { items, cum_weight }
+        Self {
+            items,
+            cum_weight,
+            weight_factor: 1,
+        }
     }
 
     /// The number of items this sketch ingested.
     fn num_items(&self) -> u64 {
+        debug_assert!(self.total_weight().is_multiple_of(self.weight_factor));
+        self.total_weight() / self.weight_factor
+    }
+
+    /// The summed weight of all retained items.
+    fn total_weight(&self) -> u64 {
         match &self.cum_weight {
             Some(cum_weight) => cum_weight.last().copied().unwrap_or(0),
             None => self.items.len() as u64,
@@ -118,13 +130,18 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
             (0.0..=1.0).contains(&quantile),
             ComputeError: "`quantile` should be between 0.0 and 1.0",
         );
-        if self.items.is_empty() {
-            return Ok(None);
-        }
         // We round with ties toward ∞ for consistency with the regular quantile.
-        let estimated_rank =
-            (quantile * self.num_items().saturating_sub(1) as f64).round() as u64 + 1;
-        let idx = estimate_quantile_index(self.cum_weight.as_deref(), estimated_rank);
+        let num_items = self.num_items();
+        let item_rank = (quantile * num_items.saturating_sub(1) as f64).round();
+        let weighted_rank = match num_items {
+            0 => return Ok(None),
+            1 => 1,
+            _ => {
+                1 + (item_rank * (self.total_weight() - 1) as f64 / (num_items - 1) as f64).round()
+                    as u64
+            },
+        };
+        let idx = estimate_quantile_index(self.cum_weight.as_deref(), weighted_rank);
         Ok(Some(&self.items[idx]))
     }
 
@@ -148,6 +165,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
     /// Combine two sketches of the same items into one, summing their weights.
     fn merge_halves(s1: Self, s2: Self) -> Self {
         assert_eq!(s1.num_items(), s2.num_items());
+        let weight_factor = s1.weight_factor + s2.weight_factor;
 
         if s1.cum_weight.is_none() && s2.cum_weight.is_none() {
             let mut items = Vec::new();
@@ -157,7 +175,11 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
                 s2.items.into_vec().into_iter(),
                 TotalOrd::tot_cmp,
             );
-            return Self::new(items.into_boxed_slice(), None);
+            return Self {
+                items: items.into_boxed_slice(),
+                cum_weight: None,
+                weight_factor,
+            };
         }
 
         let (items1, weights1) = s1.into_items_and_weights();
@@ -180,10 +202,11 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
             cum_weights.push(cum_weight);
         }
 
-        Self::new(
-            items.into_boxed_slice(),
-            Some(cum_weights.into_boxed_slice()),
-        )
+        Self {
+            items: items.into_boxed_slice(),
+            cum_weight: Some(cum_weights.into_boxed_slice()),
+            weight_factor,
+        }
     }
 }
 
