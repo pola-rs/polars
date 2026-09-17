@@ -1,7 +1,6 @@
 use arrow::array::*;
-use arrow::datatypes::{ArrowDataType, Field, UnionMode, UnionType};
 use arrow::bitmap::Bitmap;
-use arrow::datatypes::{ArrowDataType, Field, IntegerType};
+use arrow::datatypes::{ArrowDataType, Field, IntegerType, UnionMode, UnionType};
 use arrow::ffi;
 use arrow::offset::OffsetsBuffer;
 use polars_buffer::Buffer;
@@ -56,7 +55,6 @@ fn binview_nullable_buffered() -> PolarsResult<()> {
     test_round_trip(data)
 }
 
-<<<<<<< HEAD
 /// Explicit `ids`: the C format string always carries type ids, so `None` would not round-trip.
 fn union(mode: UnionMode) -> UnionArray {
     let fields = vec![
@@ -84,7 +82,8 @@ fn union_sparse() -> PolarsResult<()> {
 #[test]
 fn union_dense() -> PolarsResult<()> {
     test_round_trip(union(UnionMode::Dense))
-=======
+}
+
 #[test]
 fn primitive_nullable() -> PolarsResult<()> {
     let data = PrimitiveArray::<i32>::from([Some(1), None, Some(3), Some(4), None]);
@@ -265,5 +264,4 @@ fn dictionary_nullable() -> PolarsResult<()> {
         Box::new(Utf8Array::<i64>::from_slice(["x", "yy"])),
     )?;
     test_round_trip(data)
->>>>>>> db5916558f (fix(rust): Fix Arrow C interop offset for sliced `Utf8`/`Binary` arrays)
 }
