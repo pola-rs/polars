@@ -142,10 +142,9 @@ macro_rules! arg_unique_ca {
             // resolves its representation once for the whole chunk in `fold`, and the flattening
             // adapters between the column and it cost more per element than they hoist.
             match ca.has_nulls() {
-                false => arg_unique_chunks(
-                    ca.downcast_iter().map(|arr| arr.values_iter()),
-                    ca.len(),
-                ),
+                false => {
+                    arg_unique_chunks(ca.downcast_iter().map(|arr| arr.values_iter()), ca.len())
+                },
                 _ => arg_unique_chunks(ca.downcast_iter().map(|arr| arr.iter()), ca.len()),
             }
         }
