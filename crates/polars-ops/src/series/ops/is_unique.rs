@@ -24,14 +24,15 @@ where
     let len = ca.len();
     let mut idx_key = PlHashMap::new();
 
-    // Instead of group_tuples, which allocates a full Vec per group, we now
-    // just toggle a boolean that's false if a group has multiple entries.
-    ca.iter().enumerate().for_each(|(idx, key)| {
-        idx_key
-            .entry(key.to_total_ord())
-            .and_modify(|v: &mut (IdxSize, bool)| v.1 = false)
-            .or_insert((idx as IdxSize, true));
-    });
+    // One chunk at a time, not `ca.iter()` over the column: a chunk's own iterator resolves its
+    // representation once for the whole chunk in `fold`, and the flattening adapters between the
+    // column and it cost more per element than they hoist -- 1M booleans read 19 instructions an
+    // element more that way. The element index is a local the loop keeps in a register rather
+    // than one `enumerate` hands over alongside each element.
+    let mut offset: IdxSize = 0;
+    for arr in ca.downcast_iter() {
+        offset = is_unique_chunk(arr.iter(), offset, &mut idx_key);
+    }
 
     let unique_idx = idx_key
         .into_iter()
@@ -44,6 +45,32 @@ where
         unsafe { values.set_unchecked(idx as usize, setter) }
     }
     BooleanChunked::from_bitmap(ca.name().clone(), values.into())
+}
+
+/// Walks one chunk, recording where each value first appears and whether it appears just once.
+///
+/// Instead of `group_tuples`, which allocates a full `Vec` per group, a boolean is toggled to
+/// false as soon as a group has a second entry. `offset` is how many elements the chunks already
+/// walked hold, and carries on into the next.
+fn is_unique_chunk<V, I>(
+    values: I,
+    offset: IdxSize,
+    idx_key: &mut PlHashMap<<Option<V> as ToTotalOrd>::TotalOrdItem, (IdxSize, bool)>,
+) -> IdxSize
+where
+    I: Iterator<Item = Option<V>>,
+    Option<V>: ToTotalOrd,
+    <Option<V> as ToTotalOrd>::TotalOrdItem: Hash + Eq,
+{
+    let mut idx = offset;
+    values.for_each(|key| {
+        idx_key
+            .entry(key.to_total_ord())
+            .and_modify(|v: &mut (IdxSize, bool)| v.1 = false)
+            .or_insert((idx, true));
+        idx += 1;
+    });
+    idx
 }
 
 fn is_unique_nested(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
