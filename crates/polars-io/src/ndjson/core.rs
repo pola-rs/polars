@@ -1,8 +1,8 @@
 use std::io::Cursor;
 use std::num::NonZeroUsize;
 
-pub use arrow::array::StructArray;
 use num_traits::pow::Pow;
+pub use polars_arrow::array::StructArray;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::accumulate_dataframes_vertical;

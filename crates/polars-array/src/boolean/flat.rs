@@ -1,7 +1,7 @@
 //! What a [`PlBooleanArray`] gains from being known to be [`Flat`].
 
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::utils::BitmapIter;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::utils::BitmapIter;
 
 use super::{PlBooleanArray, PlBooleanIter};
 use crate::flat::Flat;

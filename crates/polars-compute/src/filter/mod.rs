@@ -7,15 +7,15 @@ mod scalar;
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
 mod avx512;
 
-use arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
-use arrow::array::{
-    Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray, new_empty_array,
-};
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::utils::SlicesIterator;
-use arrow::with_match_primitive_type;
 pub use boolean::filter_boolean_kernel;
 pub use pl_array::{filter, filter_with_bitmap};
+use polars_arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
+use polars_arrow::array::{
+    Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray, new_empty_array,
+};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::utils::SlicesIterator;
+use polars_arrow::with_match_primitive_type;
 
 /// Keeps the elements of `array` at which `mask` is set.
 pub fn filter_arrow_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
@@ -42,7 +42,7 @@ pub fn filter_arrow_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Arr
         return array.to_boxed();
     }
 
-    use arrow::datatypes::PhysicalType::*;
+    use polars_arrow::datatypes::PhysicalType::*;
     match array.dtype().to_physical_type() {
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let array: &PrimitiveArray<$T> = array.as_any().downcast_ref().unwrap();
@@ -78,7 +78,7 @@ pub fn filter_arrow_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Arr
             let (views, validity) = primitive::filter_values_and_validity(views, validity, mask);
             unsafe {
                 BinaryViewArray::new_unchecked_unknown_md(
-                    arrow::datatypes::ArrowDataType::BinaryView,
+                    polars_arrow::datatypes::ArrowDataType::BinaryView,
                     views.into(),
                     array.data_buffers().clone(),
                     validity,

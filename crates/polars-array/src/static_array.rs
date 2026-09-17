@@ -2,9 +2,9 @@
 
 use std::borrow::Cow;
 
-use arrow::trusted_len::TrustedLen;
-use arrow::types::NativeType;
 use bytemuck::Zeroable;
+use polars_arrow::trusted_len::TrustedLen;
+use polars_arrow::types::NativeType;
 
 use crate::array::PlArray;
 use crate::binary::{PlBinaryIter, PlBinaryValuesIter};

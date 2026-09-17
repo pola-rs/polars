@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
-use arrow::bitmap::MutableBitmap;
-use arrow::legacy::utils::CustomIterTools;
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::utils::NoNull;

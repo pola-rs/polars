@@ -1,9 +1,9 @@
 //! Implementations of upstream traits for [`ChunkedArray<T>`]
 use std::borrow::{Borrow, Cow};
 
-#[cfg(feature = "object")]
-use arrow::bitmap::BitmapBuilder;
 use polars_array::PlBinaryViewArrayBuilder;
+#[cfg(feature = "object")]
+use polars_arrow::bitmap::BitmapBuilder;
 
 use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
 #[cfg(feature = "object")]

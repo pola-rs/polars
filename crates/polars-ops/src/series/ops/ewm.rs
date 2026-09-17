@@ -1,5 +1,5 @@
-use arrow::bitmap::BitmapBuilder;
 use num_traits::Zero;
+use polars_arrow::bitmap::BitmapBuilder;
 pub use polars_compute::ewm::EWMOptions;
 use polars_compute::ewm::mean::ewm_mean as kernel_ewm_mean;
 use polars_compute::ewm::sum::ewm_sum as kernel_ewm_sum;

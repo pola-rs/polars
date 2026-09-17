@@ -1,6 +1,6 @@
 //! The builder of a [`PlFixedSizeBinaryArray`].
 
-use arrow::bitmap::OptBitmapBuilder;
+use polars_arrow::bitmap::OptBitmapBuilder;
 use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 

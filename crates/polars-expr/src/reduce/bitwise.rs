@@ -1,7 +1,7 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
-use arrow::types::NativeType;
 use num_traits::Zero;
+use polars_arrow::types::NativeType;
 use polars_compute::bitwise::BitwiseKernel;
 use polars_core::with_match_physical_integer_polars_type;
 

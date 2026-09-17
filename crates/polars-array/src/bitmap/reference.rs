@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::bitmap::PlBitmapIter;
@@ -308,7 +308,7 @@ pub(super) fn fmt_bits(
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
+    use polars_arrow::bitmap::Bitmap;
 
     use crate::bitmap::PlBitmap;
 

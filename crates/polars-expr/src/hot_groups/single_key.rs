@@ -1,6 +1,6 @@
 use std::hash::BuildHasher;
 
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalEq, TotalHash};
 use polars_utils::vec::PushUnchecked;
 

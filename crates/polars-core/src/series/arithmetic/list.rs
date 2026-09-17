@@ -141,11 +141,11 @@ use inner::ListNumericOpHelper;
 
 #[cfg(feature = "list_arithmetic")]
 mod inner {
-    use arrow::bitmap::{Bitmap, MutableBitmap};
-    use arrow::offset::OffsetsBuffer;
     use either::Either;
     use list_utils::with_match_pl_num_arith;
     use num_traits::Zero;
+    use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+    use polars_arrow::offset::OffsetsBuffer;
     use polars_buffer::Buffer;
     use polars_compute::arithmetic::pl_num::PlNumArithmetic;
     use polars_utils::float::IsFloat;

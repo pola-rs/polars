@@ -1,8 +1,8 @@
 //! The comparison kernels over a [`PlPrimitiveArray`] of unknown representation.
 
-use arrow::bitmap::Bitmap;
-use arrow::types::NativeType;
 use polars_array::{Flat, PlBitmap, PlBitmapRef, PlPrimitiveArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 

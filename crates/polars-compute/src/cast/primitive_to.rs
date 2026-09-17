@@ -1,6 +1,5 @@
 //! Casting the primitive arrays of `polars-array`, which every fixed-width type is held by.
 
-use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 #[cfg(feature = "dtype-decimal")]
 use num_traits::{Float, NumCast, ToPrimitive};
@@ -8,6 +7,7 @@ use polars_array::{
     PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBitmap, PlBooleanArray, PlPrimitiveArray,
     PlUtf8ViewArray, StaticArrayBuilder,
 };
+use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 
 use super::{map_values, map_values_fallible, mask_where};

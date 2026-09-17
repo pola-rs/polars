@@ -17,10 +17,10 @@ polars-dtype = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 
-arrow = { workspace = true }
+polars-arrow = { workspace = true }
 
 [dev-dependencies]
-arrow = { workspace = true, features = ["proptest"] }
+polars-arrow = { workspace = true, features = ["proptest"] }
 proptest = { workspace = true }
 
 [lints]

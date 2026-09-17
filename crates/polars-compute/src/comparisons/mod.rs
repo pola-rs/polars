@@ -1,7 +1,7 @@
-#[cfg(feature = "dtype-array")]
-use arrow::bitmap::utils::count_zeros;
-use arrow::bitmap::{self, Bitmap};
 use polars_array::{PlBitmap, PlBitmapRef};
+#[cfg(feature = "dtype-array")]
+use polars_arrow::bitmap::utils::count_zeros;
+use polars_arrow::bitmap::{self, Bitmap};
 
 pub trait TotalEqKernel: Sized {
     type Scalar: ?Sized;
@@ -353,7 +353,7 @@ mod view;
 
 #[cfg(feature = "simd")]
 mod _simd_dtypes {
-    use arrow::types::{days_ms, i256, months_days_ns};
+    use polars_arrow::types::{days_ms, i256, months_days_ns};
 
     use crate::NotSimdPrimitive;
 

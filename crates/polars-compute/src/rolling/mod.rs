@@ -16,11 +16,11 @@ use std::hash::Hash;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
 pub use arg_min_max::{ArgMaxWindow, ArgMinMaxWindow, ArgMinWindow};
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::types::NativeType;
 pub use mean::MeanWindow;
 use num_traits::{Bounded, Float, NumCast, One, Zero};
 use polars_array::{ArrayCollectIterExt, NoNulls, PlArray, PlPrimitiveArray};
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::types::NativeType;
 use polars_utils::float::IsFloat;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

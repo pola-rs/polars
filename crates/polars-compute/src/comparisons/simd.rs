@@ -1,11 +1,11 @@
 use std::ptr;
 use std::simd::prelude::{Simd, SimdPartialEq, SimdPartialOrd};
 
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::Bitmap;
-use arrow::types::NativeType;
 use bytemuck::Pod;
 use polars_array::{Flat, PlPrimitiveArray};
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::types::NativeType;
 
 use super::{TotalEqKernel, TotalOrdKernel};
 

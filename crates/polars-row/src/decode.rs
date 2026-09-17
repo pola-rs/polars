@@ -1,11 +1,11 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
-use arrow::types::NativeType;
 use polars_array::{
     PlArray, PlBinaryArray, PlBitmap, PlFixedSizeListArray, PlListArray, PlNullArray,
     PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
 };
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_dtype::categorical::CatNative;
 

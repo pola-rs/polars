@@ -1,5 +1,5 @@
-use arrow::types::NativeType;
 use polars_array::{ArrayCollectIterExt, PlPrimitiveArray, StaticArray};
+use polars_arrow::types::NativeType;
 use polars_utils::IdxSize;
 use polars_utils::min_max::{MaxPropagateNan, MinMaxPolicy, MinPropagateNan};
 

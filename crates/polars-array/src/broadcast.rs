@@ -1,6 +1,6 @@
 //! The rules governing the flat and scalar representations.
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::slice_broadcast_iter::SliceBroadcastIter;

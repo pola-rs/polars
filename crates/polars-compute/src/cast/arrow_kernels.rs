@@ -1,10 +1,10 @@
 //! Casting the Arrow arrays, over the arrays of `polars-array` that hold their values.
 
-use arrow::array::*;
-use arrow::datatypes::{ArrowDataType, TimeUnit};
-use arrow::offset::Offset;
 use polars_array::arrow::{export, import};
 use polars_array::{PlArray, PlUtf8ViewArray};
+use polars_arrow::array::*;
+use polars_arrow::datatypes::{ArrowDataType, TimeUnit};
+use polars_arrow::offset::Offset;
 use polars_dtype::DataType;
 use polars_error::{PolarsResult, polars_bail};
 

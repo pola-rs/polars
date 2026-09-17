@@ -4,12 +4,12 @@ use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use arrow::bitmap::MutableBitmap;
 use polars_array::builder::ShareStrategy;
 use polars_array::{
     ArrayFromIter, Flat, PlArray, PlArrayType, PlBitmap, PlBitmapRef, StaticArray,
     StaticArrayBuilder, ZeroableArrayFromIter,
 };
+use polars_arrow::bitmap::MutableBitmap;
 use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::total_ord::TotalHash;

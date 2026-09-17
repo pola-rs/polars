@@ -1,4 +1,4 @@
-use arrow::legacy::time_zone::Tz;
+use polars_arrow::legacy::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;

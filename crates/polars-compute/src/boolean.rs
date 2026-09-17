@@ -1,6 +1,6 @@
-use arrow::bitmap::{Bitmap, binary_fold, quaternary, ternary};
 use polars_array::bitmap::combine_validities_and;
 use polars_array::{Flat, PlBitmap, PlBooleanArray};
+use polars_arrow::bitmap::{Bitmap, binary_fold, quaternary, ternary};
 
 /// The validity mask of `arr`, if it holds one bit per element.
 pub(crate) fn flat_validity(arr: &PlBooleanArray) -> Option<&Bitmap> {

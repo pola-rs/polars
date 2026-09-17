@@ -1,13 +1,13 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::mem::MaybeUninit;
 
-use arrow::datatypes::{ArrowDataType, PhysicalType};
-use arrow::types::{NativeType, PrimitiveType};
-use arrow::with_match_primitive_type;
 use polars_array::{
     PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmapRef, PlBooleanArray,
     PlFixedSizeListArray, PlListArray, PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
 };
+use polars_arrow::datatypes::{ArrowDataType, PhysicalType};
+use polars_arrow::types::{NativeType, PrimitiveType};
+use polars_arrow::with_match_primitive_type;
 use polars_dtype::categorical::CatNative;
 use polars_utils::float16::pf16;
 
@@ -1024,8 +1024,8 @@ pub fn fixed_size(
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::Array;
-    use arrow::array::proptest::{
+    use polars_arrow::array::Array;
+    use polars_arrow::array::proptest::{
         ArrayArbitraryOptions, ArrowDataTypeArbitraryOptions, ArrowDataTypeArbitrarySelection,
         array_with_options,
     };

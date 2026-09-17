@@ -1,8 +1,8 @@
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::types::NativeType;
 use num_traits::Zero;
 use polars_array::PlPrimitiveArray;
 use polars_array::bitmap::PlBitmap;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::types::NativeType;
 use polars_compute::arithmetic::pl_num::PlNumArithmetic;
 use polars_compute::sum::WrappingAdd;
 use polars_core::prelude::*;

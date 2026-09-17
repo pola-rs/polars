@@ -1,13 +1,13 @@
 //! Casting the offset-backed binary arrays of `polars-array`.
 
-use arrow::array::{BINVIEW_MAX_ROW_BYTE_LEN, View};
-use arrow::types::NativeType;
 #[cfg(feature = "dtype-f16")]
 use num_traits::AsPrimitive;
 use polars_array::{
     PlBinaryArray, PlBinaryViewArray, PlBitmap, PlFixedSizeBinaryArray, PlListArray,
     PlPrimitiveArray,
 };
+use polars_arrow::array::{BINVIEW_MAX_ROW_BYTE_LEN, View};
+use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_utils::unitvec;
 

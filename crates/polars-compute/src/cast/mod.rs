@@ -9,7 +9,6 @@ mod nested;
 mod primitive_to;
 pub mod temporal;
 
-use arrow::with_match_primitive_type;
 pub use arrow_kernels::*;
 pub use dictionary_to::*;
 use polars_array::bitmap::combine_validities_and;
@@ -17,6 +16,7 @@ use polars_array::{
     PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef, PlBooleanArray,
     PlNullArray, PlPrimitiveArray, PlUtf8ViewArray,
 };
+use polars_arrow::with_match_primitive_type;
 use polars_dtype::{DataType, with_match_physical_numeric_type};
 // Only the decimal casts dispatch on just the integer or just the float types.
 #[cfg(feature = "dtype-decimal")]
@@ -615,8 +615,8 @@ fn downcast<A: PlArray + 'static>(array: &dyn PlArray) -> &A {
 /// Applies `op` to every value of `from`, reading a scalar chunk's one value once.
 fn map_values<I, O, F>(from: &PlPrimitiveArray<I>, op: F) -> PlPrimitiveArray<O>
 where
-    I: arrow::types::NativeType,
-    O: arrow::types::NativeType,
+    I: polars_arrow::types::NativeType,
+    O: polars_arrow::types::NativeType,
     F: Fn(I) -> O,
 {
     match from.scalar_value_ignore_validity() {
@@ -630,8 +630,8 @@ where
 /// Applies `op` to every value of `from`, leaving a null wherever it answers `None`.
 fn map_values_fallible<I, O, F>(from: &PlPrimitiveArray<I>, op: F) -> PlPrimitiveArray<O>
 where
-    I: arrow::types::NativeType,
-    O: arrow::types::NativeType,
+    I: polars_arrow::types::NativeType,
+    O: polars_arrow::types::NativeType,
     F: Fn(I) -> Option<O>,
 {
     // The one value every element of a scalar chunk reads is cast once, and the answer repeats it
@@ -669,7 +669,7 @@ fn map_bytes_fallible<'a, O, F>(
     op: F,
 ) -> PlPrimitiveArray<O>
 where
-    O: arrow::types::NativeType,
+    O: polars_arrow::types::NativeType,
     F: Fn(&[u8]) -> Option<O>,
 {
     // The one value every element of a scalar chunk reads is cast once, and the answer repeats it
@@ -700,7 +700,7 @@ where
 /// Unsets the mask wherever `keep` does not hold, which is how a narrowing cast reports a miss.
 fn mask_where<T, F>(array: &PlPrimitiveArray<T>, keep: F) -> PlPrimitiveArray<T>
 where
-    T: arrow::types::NativeType,
+    T: polars_arrow::types::NativeType,
     F: Fn(T) -> bool,
 {
     if let Some(value) = array.scalar_value_ignore_validity() {
@@ -725,7 +725,7 @@ where
 }
 
 /// And `mask` into `validity`, which is how a cast reports the values it dropped.
-fn and_validity(validity: Option<PlBitmapRef<'_>>, mask: arrow::bitmap::Bitmap) -> PlBitmap {
+fn and_validity(validity: Option<PlBitmapRef<'_>>, mask: polars_arrow::bitmap::Bitmap) -> PlBitmap {
     // The cast's own mask holds one bit per element, but the array's comes in whichever
     // representation it is in, which can settle the `and` on a single bit.
     let length = mask.len();
@@ -737,14 +737,14 @@ fn and_validity(validity: Option<PlBitmapRef<'_>>, mask: arrow::bitmap::Bitmap) 
 
 /// Collects the bit a cast set for each element, answering `None` if it set them all.
 struct MaskBuilder {
-    builder: arrow::bitmap::BitmapBuilder,
+    builder: polars_arrow::bitmap::BitmapBuilder,
     all_set: bool,
 }
 
 impl MaskBuilder {
     fn with_capacity(capacity: usize) -> Self {
         Self {
-            builder: arrow::bitmap::BitmapBuilder::with_capacity(capacity),
+            builder: polars_arrow::bitmap::BitmapBuilder::with_capacity(capacity),
             all_set: true,
         }
     }
@@ -755,7 +755,7 @@ impl MaskBuilder {
         self.builder.push(bit);
     }
 
-    fn finish(self) -> Option<arrow::bitmap::Bitmap> {
+    fn finish(self) -> Option<polars_arrow::bitmap::Bitmap> {
         (!self.all_set).then(|| self.builder.freeze())
     }
 }

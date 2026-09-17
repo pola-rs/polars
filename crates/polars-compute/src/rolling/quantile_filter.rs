@@ -5,9 +5,9 @@ use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Add, Div, Mul, Sub};
 
-use arrow::pushable::Pushable;
-use arrow::types::NativeType;
 use num_traits::NumCast;
+use polars_arrow::pushable::Pushable;
+use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 use polars_utils::index::{Bounded, Indexable, NullCount};
 use polars_utils::nulls::IsNull;

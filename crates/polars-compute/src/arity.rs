@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::compute::utils::combine_validities_and;
-use arrow::types::NativeType;
 use polars_array::{Flat, PlBitmap, PlPrimitiveArray};
+use polars_arrow::compute::utils::combine_validities_and;
+use polars_arrow::types::NativeType;
 
 /// The array a kernel reads: flat, so its every buffer holds one slot per element.
 type PArr<T> = Flat<PlPrimitiveArray<T>>;

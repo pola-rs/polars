@@ -1,5 +1,5 @@
-use arrow::bitmap::BitmapBuilder;
 use polars_array::builder::{PlArrayBuilder, ShareStrategy, builder_like};
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::chunked_array::builder::fixed_size_list::get_fixed_size_list_builder;
 use polars_core::utils::slice_offsets;
 

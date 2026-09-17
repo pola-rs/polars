@@ -1,5 +1,5 @@
-use arrow::array::*;
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::*;
+use polars_arrow::datatypes::ArrowDataType;
 use polars_buffer::Buffer;
 
 fn array() -> BinaryViewArrayGeneric<str> {

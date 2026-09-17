@@ -1,8 +1,8 @@
 //! What an arithmetic kernel does with a chunk before it reads it.
 
-use arrow::types::NativeType;
 use polars_array::bitmap::combine_validities_and;
 use polars_array::{PlBitmap, PlPrimitiveArray};
+use polars_arrow::types::NativeType;
 
 use super::{PArr, POut};
 

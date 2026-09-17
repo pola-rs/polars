@@ -1,5 +1,5 @@
-use arrow::array::LIST_VALUES_NAME;
 use polars_array::PlBitmap;
+use polars_arrow::array::LIST_VALUES_NAME;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::chunked_array::flags::StatisticsFlags;
 use polars_core::prelude::{Column, DataType, IntoColumn, PlArrayRef};

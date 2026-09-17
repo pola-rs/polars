@@ -372,7 +372,7 @@ mod test {
         .physical()
         .clone()
         .with_validity(Some(PlBitmap::from_bitmap(
-            arrow::bitmap::Bitmap::from_trusted_len_iter(values.iter().map(|v| v.is_some())),
+            polars_arrow::bitmap::Bitmap::from_trusted_len_iter(values.iter().map(|v| v.is_some())),
         )));
         let mut masked = masked;
         // The repeat came sorted; the mask it was just given is not.

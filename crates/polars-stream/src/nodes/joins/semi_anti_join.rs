@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_async::executor;
 use polars_core::prelude::*;
 use polars_core::runtime::ASYNC;

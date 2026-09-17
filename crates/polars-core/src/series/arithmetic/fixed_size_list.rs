@@ -87,14 +87,14 @@ use inner::NumericFixedSizeListOpHelper;
 
 #[cfg(feature = "array_arithmetic")]
 mod inner {
-    use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
-    // The level validities below this leaf are plain bitmaps, one bit per element throughout, so
-    // combining them is the Arrow one; the *leaf* mask carries its own representation and is
-    // combined with `polars_array`'s.
-    use arrow::compute::utils::combine_validities_and;
     use fixed_size_list::NumericFixedSizeListOp;
     use list_utils::with_match_pl_num_arith;
     use num_traits::Zero;
+    use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
+    // The level validities below this leaf are plain bitmaps, one bit per element throughout, so
+    // combining them is the Arrow one; the *leaf* mask carries its own representation and is
+    // combined with `polars_array`'s.
+    use polars_arrow::compute::utils::combine_validities_and;
     use polars_compute::arithmetic::pl_num::PlNumArithmetic;
     use polars_utils::float::IsFloat;
 

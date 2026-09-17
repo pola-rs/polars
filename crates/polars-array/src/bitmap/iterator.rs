@@ -1,7 +1,7 @@
 use std::ops::Range;
 
-use arrow::bitmap::utils::{BitmapIter, get_bit_unchecked};
-use arrow::trusted_len::TrustedLen;
+use polars_arrow::bitmap::utils::{BitmapIter, get_bit_unchecked};
+use polars_arrow::trusted_len::TrustedLen;
 
 use crate::bitmap::PlBitmapRef;
 

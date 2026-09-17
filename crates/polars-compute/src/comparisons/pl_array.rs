@@ -1,10 +1,10 @@
 //! The comparison kernels over the arrays of `polars-array` whose kernel is still the Arrow one.
 
-use arrow::bitmap::Bitmap;
 use polars_array::arrow::bridge::ToArrow;
 use polars_array::{
     Flat, PlArray, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef, PlUtf8ViewArray,
 };
+use polars_arrow::bitmap::Bitmap;
 use polars_utils::total_ord::TotalEq;
 
 use super::{IN_PLACE_COMPARISON_LIMIT, PlTotalEqKernel, TotalEqKernel, TotalOrdKernel};

@@ -1,9 +1,9 @@
 //! macros that define the extraction of `week`, `weekday`, `year`, `hour` etc. from one value.
-#[cfg(feature = "dtype-date")]
-use arrow::temporal_conversions::date32_to_date_opt;
-#[cfg(feature = "dtype-time")]
-use arrow::temporal_conversions::time64ns_to_time_opt;
 use chrono::{Datelike, Timelike};
+#[cfg(feature = "dtype-date")]
+use polars_arrow::temporal_conversions::date32_to_date_opt;
+#[cfg(feature = "dtype-time")]
+use polars_arrow::temporal_conversions::time64ns_to_time_opt;
 use polars_utils::time::{days_in_month, is_leap_year};
 
 use super::*;

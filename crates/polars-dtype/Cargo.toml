@@ -9,7 +9,7 @@ repository.workspace = true
 description = "Low-level datatype definitions of the Polars project."
 
 [dependencies]
-arrow = { workspace = true }
+polars-arrow = { workspace = true }
 boxcar = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
 hashbrown = { workspace = true }
@@ -30,20 +30,20 @@ uuid = { workspace = true, features = ["js"] }
 
 [features]
 default = []
-serde = ["dep:serde", "arrow/serde", "arrow/io_ipc", "polars-utils/serde"]
+serde = ["dep:serde", "polars-arrow/serde", "polars-arrow/io_ipc", "polars-utils/serde"]
 serde-lazy = ["serde"]
-dsl-schema = ["dep:schemars", "arrow/dsl-schema", "arrow/io_ipc", "polars-utils/dsl-schema"]
+dsl-schema = ["dep:schemars", "polars-arrow/dsl-schema", "polars-arrow/io_ipc", "polars-utils/dsl-schema"]
 
-bigidx = ["arrow/bigidx", "polars-utils/bigidx", "dtype-i128"]
+bigidx = ["polars-arrow/bigidx", "polars-utils/bigidx", "dtype-i128"]
 object = []
 rows = []
-timezones = ["dep:chrono-tz", "arrow/timezones", "arrow/chrono-tz"]
+timezones = ["dep:chrono-tz", "polars-arrow/timezones", "polars-arrow/chrono-tz"]
 
-dtype-array = ["arrow/dtype-array"]
+dtype-array = ["polars-arrow/dtype-array"]
 dtype-categorical = []
 dtype-date = []
 dtype-datetime = []
-dtype-decimal = ["arrow/dtype-decimal", "dtype-i128"]
+dtype-decimal = ["polars-arrow/dtype-decimal", "dtype-i128"]
 dtype-duration = []
 dtype-extension = []
 dtype-f16 = []

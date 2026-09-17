@@ -3,13 +3,13 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use arrow::array::Array;
-use arrow::datatypes::{ArrowSchema, ArrowSchemaRef, Field as ArrowField};
-use arrow::io::ipc::read::{StreamReader, StreamState, read_stream_metadata};
-use arrow::io::ipc::write::{StreamWriter, WriteOptions};
-use arrow::record_batch::RecordBatchT;
 use polars_array::PlUtf8ViewArray;
 use polars_array::arrow::{export, import};
+use polars_arrow::array::Array;
+use polars_arrow::datatypes::{ArrowSchema, ArrowSchemaRef, Field as ArrowField};
+use polars_arrow::io::ipc::read::{StreamReader, StreamState, read_stream_metadata};
+use polars_arrow::io::ipc::write::{StreamWriter, WriteOptions};
+use polars_arrow::record_batch::RecordBatchT;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::pl_str::PlSmallStr;
 use serde::de::Error as _;
@@ -26,7 +26,7 @@ pub struct SerializableCategories(pub PlUtf8ViewArray);
 fn schema() -> ArrowSchemaRef {
     Arc::new(ArrowSchema::from_iter([ArrowField::new(
         COLUMN_NAME,
-        arrow::datatypes::ArrowDataType::Utf8View,
+        polars_arrow::datatypes::ArrowDataType::Utf8View,
         false,
     )]))
 }

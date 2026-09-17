@@ -1,6 +1,6 @@
 //! What the `distinct` family answers of a chunked array whose one chunk repeats a single element.
 
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::prelude::*;
 
 /// `length`, if every one of the `length` elements `chunks` holds is the same one.

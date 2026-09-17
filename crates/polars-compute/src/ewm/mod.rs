@@ -2,11 +2,11 @@ pub mod cov;
 pub mod mean;
 pub mod options;
 pub mod sum;
-use arrow::types::NativeType;
 pub use cov::{EwmCovState, EwmStdState, EwmVarState, ewm_std, ewm_var};
 pub use mean::{EwmMeanState, ewm_mean};
 pub use options::EWMOptions;
 use polars_array::{PlArray, PlPrimitiveArray};
+use polars_arrow::types::NativeType;
 pub use sum::{EwmSumState, ewm_sum};
 
 /// A stateful exponentially weighted kernel, folded over the chunks of a column in order.

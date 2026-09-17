@@ -1,8 +1,8 @@
 use std::ops::Range;
 
-use arrow::trusted_len::TrustedLen;
-use arrow::types::NativeType;
 use polars_array::bitmap::combine_validities_and;
+use polars_arrow::trusted_len::TrustedLen;
+use polars_arrow::types::NativeType;
 use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;

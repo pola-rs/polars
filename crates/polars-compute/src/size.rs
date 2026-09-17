@@ -1,11 +1,11 @@
 //! The kernels that measure what an array holds.
 
-use arrow::with_match_primitive_type;
 use polars_array::{
     PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef, PlBooleanArray,
     PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlPrimitiveArray, PlStructArray,
     PlUtf8ViewArray,
 };
+use polars_arrow::with_match_primitive_type;
 
 /// The length in bytes of every element, read off the views.
 pub fn binary_size_bytes(array: &PlBinaryViewArray) -> PlPrimitiveArray<u32> {

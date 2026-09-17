@@ -1,12 +1,12 @@
 use std::simd::prelude::*;
 use std::simd::{Select, SimdElement};
 
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::types::NativeType;
 use polars_array::PlPrimitiveArray;
 use polars_array::arrow::bridge::ToArrow;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::types::NativeType;
 use polars_utils::min_max::MinMax;
 
 use super::MinMaxKernel;

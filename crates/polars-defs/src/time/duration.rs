@@ -5,13 +5,6 @@ use std::ops::Add;
 use std::ops::{Mul, Neg};
 
 #[cfg(feature = "timezones")]
-use arrow::legacy::kernels::{Ambiguous, NonExistent};
-use arrow::legacy::time_zone::Tz;
-use arrow::temporal_conversions::{
-    MICROSECONDS, MILLISECONDS, NANOSECONDS, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
-    timestamp_us_to_datetime,
-};
-#[cfg(feature = "timezones")]
 use chrono::TimeDelta;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as ChronoTimeZone;
@@ -20,6 +13,13 @@ use chrono::offset::LocalResult;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 #[cfg(feature = "timezones")]
 use chrono_tz::OffsetComponents;
+#[cfg(feature = "timezones")]
+use polars_arrow::legacy::kernels::{Ambiguous, NonExistent};
+use polars_arrow::legacy::time_zone::Tz;
+use polars_arrow::temporal_conversions::{
+    MICROSECONDS, MILLISECONDS, NANOSECONDS, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
+    timestamp_us_to_datetime,
+};
 #[cfg(feature = "temporal")]
 use polars_core::chunked_array::temporal::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us,

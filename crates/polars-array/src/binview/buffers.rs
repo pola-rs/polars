@@ -1,6 +1,6 @@
 //! The data buffers a [`PlBinaryViewArray`](super::PlBinaryViewArray) copies its bytes into.
 
-use arrow::array::{BINVIEW_ARROW_BUFFER_LEN_LIMIT, BINVIEW_MAX_ROW_BYTE_LEN, View};
+use polars_arrow::array::{BINVIEW_ARROW_BUFFER_LEN_LIMIT, BINVIEW_MAX_ROW_BYTE_LEN, View};
 
 /// The capacity the first data buffer is allocated with, and the smallest any of them gets.
 const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;

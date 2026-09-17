@@ -1,7 +1,7 @@
 use std::cmp::max_by;
 
-use arrow::compute::utils::combine_validities_and;
 use num_traits::AsPrimitive;
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_core::prelude::arity::apply_binary_kernel_broadcast_flat;
 use polars_core::prelude::*;
 

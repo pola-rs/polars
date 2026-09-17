@@ -1,8 +1,8 @@
 use std::hash::BuildHasher;
 
-use arrow::legacy::utils::CustomIterTools;
 use polars_array::builder::StaticArrayBuilder;
 use polars_array::{PlPrimitiveArray, PlPrimitiveArrayBuilder};
+use polars_arrow::legacy::utils::CustomIterTools;
 use polars_defs::join::JoinValidation;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::IdxVec;

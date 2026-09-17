@@ -1,7 +1,7 @@
 use std::ops::Range;
 
-use arrow::array::Splitable;
-use arrow::bitmap::Bitmap;
+use polars_arrow::array::Splitable;
+use polars_arrow::bitmap::Bitmap;
 
 use crate::read::expr::ParquetColumnExprRef;
 

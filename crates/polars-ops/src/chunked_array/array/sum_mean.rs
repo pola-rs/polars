@@ -1,6 +1,6 @@
-use arrow::legacy::utils::CustomIterTools;
-use arrow::types::NativeType;
 use num_traits::{NumCast, ToPrimitive};
+use polars_arrow::legacy::utils::CustomIterTools;
+use polars_arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_utils::float16::pf16;
 

@@ -1,9 +1,9 @@
 //! Building arrays element by element, or array by array.
 
 /// Whether a builder may adopt the buffers of the arrays it appends, rather than copy them.
-pub use arrow::array::builder::ShareStrategy;
-use arrow::bitmap::OptBitmapBuilder;
-use arrow::types::{days_ms, i256, months_days_ns};
+pub use polars_arrow::array::builder::ShareStrategy;
+use polars_arrow::bitmap::OptBitmapBuilder;
+use polars_arrow::types::{days_ms, i256, months_days_ns};
 use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
 use polars_utils::index::ChunkId;

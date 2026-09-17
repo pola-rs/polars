@@ -71,7 +71,7 @@ pub fn dyn_int_dtype(v: i128) -> DataType {
 pub mod object {
     use std::sync::RwLock;
 
-    use arrow::datatypes::ArrowDataType;
+    use polars_arrow::datatypes::ArrowDataType;
 
     static OBJECT_PHYSICAL_DTYPE: RwLock<Option<ArrowDataType>> = RwLock::new(None);
 
@@ -93,7 +93,7 @@ pub mod object {
 /// Whether `dtype` is the `Struct {key, value}` a [`Map`](DataType::Map)'s entries are held as.
 #[cfg(feature = "dtype-map")]
 pub fn ensure_map_entries_dtype(dtype: &DataType) -> polars_error::PolarsResult<()> {
-    use arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
+    use polars_arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
     use polars_error::{polars_bail, polars_ensure};
     use polars_utils::pl_str::PlSmallStr;
 

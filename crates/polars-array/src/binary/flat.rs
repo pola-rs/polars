@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 use polars_buffer::Buffer;
 
 use super::PlBinaryArray;

@@ -6,7 +6,7 @@ use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IntoColumn};
 use polars_core::series::Series;
-use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_core::utils::polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::{
@@ -631,7 +631,7 @@ impl RowGroupDecoder {
             (filtered, mask)
         };
         // The prefilter hands the mask to the parquet decoders as `read::Filter::Mask`, which is
-        // an `arrow::Bitmap` read a word at a time by each of them -- the reader's Arrow boundary,
+        // an `polars_arrow::Bitmap` read a word at a time by each of them -- the reader's Arrow boundary,
         // as `polars_compute`'s module doc puts it. So a mask that repeats one bit is written out
         // here, at one bit per row against a whole row group's decode.
         mask.rechunk_mut();

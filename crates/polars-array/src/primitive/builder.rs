@@ -1,7 +1,7 @@
 //! The builder of a [`PlPrimitiveArray`].
 
-use arrow::bitmap::OptBitmapBuilder;
-use arrow::types::{AlignedBytes, NativeType};
+use polars_arrow::bitmap::OptBitmapBuilder;
+use polars_arrow::types::{AlignedBytes, NativeType};
 use polars_utils::IdxSize;
 use polars_utils::index::ChunkId;
 use polars_utils::vec::PushUnchecked;

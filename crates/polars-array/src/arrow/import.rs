@@ -2,14 +2,14 @@
 
 use std::any::Any;
 
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryArray, BinaryViewArrayGeneric, BooleanArray, FixedSizeBinaryArray,
     FixedSizeListArray, ListArray, NullArray, PrimitiveArray, StructArray, Utf8Array, View,
     ViewType,
 };
-use arrow::datatypes::{PhysicalType, PrimitiveType};
-use arrow::offset::OffsetsBuffer;
-use arrow::types::{NativeType, Offset, days_ms, i256, months_days_ns};
+use polars_arrow::datatypes::{PhysicalType, PrimitiveType};
+use polars_arrow::offset::OffsetsBuffer;
+use polars_arrow::types::{NativeType, Offset, days_ms, i256, months_days_ns};
 use polars_buffer::Buffer;
 use polars_utils::float16::pf16;
 

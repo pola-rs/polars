@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::builder::ShareStrategy;
+use polars_arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinArgs, JoinBuildSide, MaintainOrderJoin};

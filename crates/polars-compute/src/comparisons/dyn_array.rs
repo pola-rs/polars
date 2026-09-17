@@ -39,15 +39,17 @@ macro_rules! with_array_pair {
             A::Boolean => call_binary!(::polars_array::PlBooleanArray),
             // Dispatched on the element type the array type names, not on the concrete array,
             // so that the arms are exactly the primitives a `PlArrayType::Primitive` can hold.
-            A::Primitive(primitive) => ::arrow::with_match_primitive_type!(primitive, |$T| {
-                let $lhs = $crate::comparisons::dyn_array::downcast::<
-                    ::polars_array::PlPrimitiveArray<$T>,
-                >(lhs);
-                let $rhs = $crate::comparisons::dyn_array::downcast::<
-                    ::polars_array::PlPrimitiveArray<$T>,
-                >(rhs);
-                $body
-            }),
+            A::Primitive(primitive) => {
+                ::polars_arrow::with_match_primitive_type!(primitive, |$T| {
+                    let $lhs = $crate::comparisons::dyn_array::downcast::<
+                        ::polars_array::PlPrimitiveArray<$T>,
+                    >(lhs);
+                    let $rhs = $crate::comparisons::dyn_array::downcast::<
+                        ::polars_array::PlPrimitiveArray<$T>,
+                    >(rhs);
+                    $body
+                })
+            },
             A::Binary => call_binary!(::polars_array::PlBinaryArray),
             A::BinaryView => call_binary!(::polars_array::PlBinaryViewArray),
             A::Utf8View => call_binary!(::polars_array::PlUtf8ViewArray),

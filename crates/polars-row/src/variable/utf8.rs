@@ -10,10 +10,10 @@
 //! This allows the string row encoding to have a constant 1 byte overhead.
 use std::mem::MaybeUninit;
 
-use arrow::bitmap::BitmapBuilder;
-use arrow::types::NativeType;
 use polars_array::builder::StaticArrayBuilder;
 use polars_array::{PlBitmap, PlPrimitiveArray, PlUtf8ViewArray, PlUtf8ViewArrayBuilder};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::types::NativeType;
 use polars_dtype::categorical::{CatNative, CategoricalMapping};
 
 use crate::row::RowEncodingOptions;

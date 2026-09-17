@@ -2,9 +2,9 @@
 
 use std::borrow::Cow;
 
-use arrow::bitmap::BitmapBuilder;
-use arrow::trusted_len::TrustedLen;
-use arrow::types::NativeType;
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::trusted_len::TrustedLen;
+use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 

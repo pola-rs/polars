@@ -1,9 +1,9 @@
 //! Finding the elements two chunks disagree about being null.
 
-use arrow::bitmap::Bitmap;
 use polars_array::{
     PlArray, PlArrayType, PlBitmap, PlBitmapRef, PlFixedSizeListArray, PlListArray, PlStructArray,
 };
+use polars_arrow::bitmap::Bitmap;
 use polars_utils::IdxSize;
 
 use crate::nesting::{covered_range, downcast};
@@ -109,7 +109,7 @@ fn extend_mismatches(
     // or its inverse, and never a mask written out from a single bit.
     let mismatches = match (left, right) {
         (Some(left), Some(right)) => match (left.flat_bitmap(), right.flat_bitmap()) {
-            (Some(left), Some(right)) => arrow::bitmap::xor(left, right),
+            (Some(left), Some(right)) => polars_arrow::bitmap::xor(left, right),
             (Some(flat), None) => disagreements_with(flat, right.scalar_value().unwrap()),
             (None, Some(flat)) => disagreements_with(flat, left.scalar_value().unwrap()),
             (None, None) => unreachable!("two scalar masks are answered for above"),

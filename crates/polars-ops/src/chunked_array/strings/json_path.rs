@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use arrow::array::ValueSize;
 use jsonpath_lib::PathCompiled;
+use polars_arrow::array::ValueSize;
 use polars_core::prelude::arity::{broadcast_try_binary_elementwise_amortized, unary_elementwise};
 use serde_json::Value;
 
@@ -168,7 +168,7 @@ impl Utf8JsonPathImpl for StringChunked {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
+    use polars_arrow::bitmap::Bitmap;
 
     use super::*;
 

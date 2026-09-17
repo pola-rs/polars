@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;

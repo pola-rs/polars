@@ -1,14 +1,14 @@
-use arrow::datatypes::{IntervalUnit, Metadata};
-use arrow::offset::OffsetsBuffer;
+use polars_array::arrow::{export, import};
+use polars_arrow::datatypes::{IntervalUnit, Metadata};
+use polars_arrow::offset::OffsetsBuffer;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
     feature = "dtype-time",
     feature = "dtype-duration"
 ))]
-use arrow::temporal_conversions::*;
-use arrow::types::months_days_ns;
-use polars_array::arrow::{export, import};
+use polars_arrow::temporal_conversions::*;
+use polars_arrow::types::months_days_ns;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::dec128_fits;
 use polars_error::feature_gated;
@@ -455,7 +455,7 @@ impl Series {
             },
             ArrowDataType::Decimal256(precision, scale) => {
                 feature_gated!("dtype-decimal", {
-                    use arrow::types::i256;
+                    use polars_arrow::types::i256;
 
                     polars_compute::decimal::dec128_verify_prec_scale(*precision, *scale)?;
 
@@ -470,7 +470,7 @@ impl Series {
                         // The Arrow arrays' own collect, the trait of `polars-array` being the
                         // one that is in scope.
                         let arr_128: PrimitiveArray<i128> =
-                            arrow::array::ArrayCollectIterExt::try_collect_arr_trusted(
+                            polars_arrow::array::ArrayCollectIterExt::try_collect_arr_trusted(
                                 arr.iter().map(|opt_v| {
                             if let Some(v) = opt_v {
                                 let smaller: Option<i128> = (*v).try_into().ok();
@@ -938,10 +938,10 @@ unsafe fn to_physical_and_dtype(
 unsafe fn import_arrow_dictionary_array(
     name: PlSmallStr,
     arr: Box<dyn Array>,
-    key_type: &arrow::datatypes::IntegerType,
+    key_type: &polars_arrow::datatypes::IntegerType,
     polars_dtype: &DataType,
 ) -> PolarsResult<Series> {
-    use arrow::datatypes::IntegerType as I;
+    use polars_arrow::datatypes::IntegerType as I;
 
     if matches!(
         polars_dtype,

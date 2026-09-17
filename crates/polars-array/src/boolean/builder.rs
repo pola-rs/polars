@@ -1,6 +1,6 @@
 //! The builder of a [`PlBooleanArray`].
 
-use arrow::bitmap::{BitmapBuilder, OptBitmapBuilder};
+use polars_arrow::bitmap::{BitmapBuilder, OptBitmapBuilder};
 use polars_utils::IdxSize;
 
 use super::PlBooleanArray;

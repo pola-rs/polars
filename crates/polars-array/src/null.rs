@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::sync::LazyLock;
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 use polars_utils::IdxSize;
 
 use crate::array::PlArray;

@@ -1,10 +1,10 @@
 //! Casting the nested arrays of `polars-array`, which hold the values of their children.
 
-use arrow::array::BINVIEW_MAX_ROW_BYTE_LEN;
 use polars_array::{
     PlArray, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlFixedSizeListArray, PlListArray,
     PlPrimitiveArray,
 };
+use polars_arrow::array::BINVIEW_MAX_ROW_BYTE_LEN;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::IdxSize;

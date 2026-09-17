@@ -1,4 +1,4 @@
-use arrow::legacy::utils::CustomIterTools;
+use polars_arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::datatypes::CategoricalPhysical;
 use polars_core::frame::column::ScalarColumn;

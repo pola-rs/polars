@@ -1,7 +1,7 @@
 //! The builder of a [`PlBinaryViewArray`].
 
-use arrow::array::View;
-use arrow::bitmap::OptBitmapBuilder;
+use polars_arrow::array::View;
+use polars_arrow::bitmap::OptBitmapBuilder;
 use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::aliases::PlHashMap;

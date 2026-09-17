@@ -1,6 +1,6 @@
 //! What a [`PlListArray`] gains from being known to be [`Flat`].
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 use polars_buffer::Buffer;
 
 use super::PlListArray;

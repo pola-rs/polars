@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
-use arrow::bitmap::BitmapBuilder;
 use polars_array::bitmap::combine_validities_and;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::arity::{unary_elementwise, unary_elementwise_values};
 use polars_core::prelude::*;
 use polars_core::{with_match_categorical_physical_type, with_match_physical_numeric_polars_type};

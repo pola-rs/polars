@@ -18,12 +18,12 @@
 
 //! Defines take kernel for [`Array`]
 
-use arrow::array::{
+use polars_arrow::array::{
     self, Array, ArrayCollectIterExt, ArrayFromIterDtype, BinaryViewArray, NullArray, StaticArray,
     Utf8ViewArray, new_empty_array,
 };
-use arrow::datatypes::{ArrowDataType, IdxArr};
-use arrow::types::Index;
+use polars_arrow::datatypes::{ArrowDataType, IdxArr};
+use polars_arrow::types::Index;
 
 pub mod binary;
 pub mod binview;
@@ -37,8 +37,8 @@ pub mod primitive;
 pub mod structure;
 pub mod sublist;
 
-use arrow::with_match_primitive_type;
 pub use pl_array::take_unchecked;
+use polars_arrow::with_match_primitive_type;
 
 /// Returns a new [`Array`] with only indices at `indices`. Null indices are taken as nulls.
 /// The returned array has a length equal to `indices.len()`.
@@ -49,7 +49,7 @@ pub unsafe fn take_arrow_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<
         return new_empty_array(values.dtype().clone());
     }
 
-    use arrow::datatypes::PhysicalType::*;
+    use polars_arrow::datatypes::PhysicalType::*;
     match values.dtype().to_physical_type() {
         Null => Box::new(NullArray::new(values.dtype().clone(), indices.len())),
         Boolean => {

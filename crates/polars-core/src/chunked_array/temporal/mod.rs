@@ -13,8 +13,6 @@ pub mod string;
 #[cfg(feature = "dtype-time")]
 mod time;
 
-#[cfg(feature = "timezones")]
-use arrow::legacy::kernels::{Ambiguous, NonExistent, convert_to_naive_local};
 #[cfg(feature = "dtype-date")]
 use chrono::NaiveDate;
 use chrono::NaiveDateTime;
@@ -24,6 +22,8 @@ use chrono::NaiveTime;
 use chrono::TimeZone as _;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+#[cfg(feature = "timezones")]
+use polars_arrow::legacy::kernels::{Ambiguous, NonExistent, convert_to_naive_local};
 #[cfg(feature = "timezones")]
 use polars_error::PolarsResult;
 #[cfg(feature = "timezones")]

@@ -1,10 +1,10 @@
 mod basic;
 mod nested;
 
-use arrow::array::{Array, FixedSizeBinaryArray, Float16Array, PrimitiveArray};
-use arrow::types::{NativeType, i256};
 pub use basic::array_to_page;
 pub use nested::array_to_page as nested_array_to_page;
+use polars_arrow::array::{Array, FixedSizeBinaryArray, Float16Array, PrimitiveArray};
+use polars_arrow::types::{NativeType, i256};
 use polars_compute::min_max::MinMaxKernel;
 
 use super::{EncodeNullability, StatisticsOptions};

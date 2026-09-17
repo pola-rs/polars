@@ -1,9 +1,9 @@
 use std::ops::{Div, Range};
 
-use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
-use arrow::types::NativeType;
 use num_traits::{NumCast, ToPrimitive};
 use polars_array::bitmap::combine_validities_and;
+use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
+use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 
 use super::*;

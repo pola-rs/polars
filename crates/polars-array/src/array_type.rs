@@ -1,4 +1,4 @@
-pub use arrow::types::PrimitiveType;
+pub use polars_arrow::types::PrimitiveType;
 
 /// The set of physical representations an array in this crate can have.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

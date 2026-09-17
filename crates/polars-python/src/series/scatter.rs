@@ -1,4 +1,5 @@
 use polars::prelude::*;
+use polars_arrow::array::Array;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::prelude::*;
 

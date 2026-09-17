@@ -667,7 +667,7 @@ unsafe fn list_with_values(
     offsets: polars_buffer::Buffer<u64>,
     offsets_are_scalar: bool,
     length: usize,
-    validity: Option<arrow::bitmap::Bitmap>,
+    validity: Option<polars_arrow::bitmap::Bitmap>,
 ) -> PlListArray {
     let validity = validity.map(|validity| PlBitmap::new_broadcast(validity, length));
     unsafe {

@@ -5,16 +5,16 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "dtype-categorical")]
 use std::sync::Arc;
 
-use arrow::array::LIST_VALUES_NAME;
+use polars_array::{PlArrayType, PrimitiveType};
+use polars_arrow::array::LIST_VALUES_NAME;
 #[cfg(feature = "dtype-map")]
-use arrow::array::{MAP_ENTRIES_NAME, MAP_KEY_NAME, MAP_VALUE_NAME};
+use polars_arrow::array::{MAP_ENTRIES_NAME, MAP_KEY_NAME, MAP_VALUE_NAME};
 #[cfg(feature = "dtype-categorical")]
-use arrow::datatypes::IntegerType;
-use arrow::datatypes::{
+use polars_arrow::datatypes::IntegerType;
+use polars_arrow::datatypes::{
     ArrowDataType, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW,
     Field as ArrowField, MAINTAIN_PL_TYPE, Metadata, PL_KEY, TimeUnit as ArrowTimeUnit,
 };
-use polars_array::{PlArrayType, PrimitiveType};
 #[cfg(any(
     feature = "dtype-array",
     feature = "dtype-map",
@@ -1433,7 +1433,7 @@ impl DataType {
             },
             #[cfg(feature = "dtype-extension")]
             Extension(typ, inner) => Ok(ArrowDataType::Extension(Box::new(
-                arrow::datatypes::ExtensionType {
+                polars_arrow::datatypes::ExtensionType {
                     name: typ.name().into(),
                     inner: inner.try_to_arrow(compat_level)?,
                     metadata: typ.serialize_metadata().map(|m| m.into()),

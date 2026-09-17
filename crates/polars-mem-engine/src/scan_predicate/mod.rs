@@ -4,6 +4,7 @@ use core::fmt;
 use std::sync::Arc;
 
 pub use functions::{create_scan_predicate, initialize_scan_predicate};
+use polars_arrow::bitmap::Bitmap;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     AnyValue, Column, Field, GroupPositions, PlBitmap, PlHashMap, PlIndexSet,

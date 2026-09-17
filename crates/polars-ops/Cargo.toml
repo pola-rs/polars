@@ -21,7 +21,7 @@ polars-utils = { workspace = true }
 
 aho-corasick = { workspace = true, optional = true }
 argminmax = { workspace = true }
-arrow = { workspace = true }
+polars-arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }

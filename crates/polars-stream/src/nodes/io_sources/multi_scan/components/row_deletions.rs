@@ -1,8 +1,8 @@
 use std::sync::{Arc, OnceLock};
 
-use arrow::bitmap::MutableBitmap;
-use arrow::bitmap::bitmask::BitMask;
 use polars_array::PlBitmap;
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::bitmap::bitmask::BitMask;
 use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;

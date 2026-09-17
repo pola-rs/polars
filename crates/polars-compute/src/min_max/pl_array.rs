@@ -1,11 +1,11 @@
 //! The min/max kernels over the arrays of `polars-array`.
 
-use arrow::bitmap::Bitmap;
-use arrow::types::NativeType;
 use polars_array::{
     PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlPrimitiveArray, PlUtf8ViewArray,
     StaticArray,
 };
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::types::NativeType;
 use polars_utils::min_max::MinMax;
 
 use super::MinMaxKernel;

@@ -1,13 +1,13 @@
 //! The {n,arg}-unique kernels over a chunk, amortized over the several groups they answer for.
 
-use arrow::array::View;
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::types::NativeType;
 use polars_array::{
     PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmapRef, PlBooleanArray,
     PlPrimitiveArray, PrimitiveType, with_match_pl_primitive_array_type,
 };
+use polars_arrow::array::View;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::types::NativeType;
 use polars_utils::aliases::{InitHashMaps, PlHashSet};
 use polars_utils::float16::pf16;
 use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};

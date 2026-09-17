@@ -1,6 +1,6 @@
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::utils::count_zeros;
-use arrow::legacy::utils::CustomIterTools;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::utils::count_zeros;
+use polars_arrow::legacy::utils::CustomIterTools;
 
 use super::*;
 

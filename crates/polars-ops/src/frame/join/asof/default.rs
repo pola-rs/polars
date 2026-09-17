@@ -1,5 +1,5 @@
-use arrow::bitmap::Bitmap;
 use num_traits::Zero;
+use polars_arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::total_ord::TotalOrd;

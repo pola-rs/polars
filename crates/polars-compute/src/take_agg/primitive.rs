@@ -1,11 +1,11 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 //! Gather-and-reduce over a [`PlPrimitiveArray`].
 
-use arrow::bitmap::Bitmap;
-use arrow::types::NativeType;
 use either::Either;
 use num_traits::ToPrimitive;
 use polars_array::PlPrimitiveArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::types::NativeType;
 use polars_utils::IdxSize;
 
 /// The mask of `arr` as one bit per element, or [`None`] where every element is null.

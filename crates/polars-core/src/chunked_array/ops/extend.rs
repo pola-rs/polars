@@ -1,7 +1,7 @@
-use arrow::Either;
 use polars_array::PlBooleanArrayBuilder;
 use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
 use polars_array::concatenate::concatenate;
+use polars_arrow::Either;
 
 use crate::prelude::append::update_sorted_flag_before_append;
 use crate::prelude::*;

@@ -1,8 +1,8 @@
-use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt, timestamp_us_to_datetime_opt,
-};
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as _;
+use polars_arrow::temporal_conversions::{
+    timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt, timestamp_us_to_datetime_opt,
+};
 #[cfg(feature = "timezones")]
 use polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone;
 use polars_core::prelude::arity::unary_elementwise;

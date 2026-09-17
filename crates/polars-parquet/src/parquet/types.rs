@@ -1,7 +1,7 @@
-use arrow::types::{
+use num_traits::{FromBytes, ToBytes, Zero};
+use polars_arrow::types::{
     AlignedBytes, Bytes2Alignment2, Bytes4Alignment4, Bytes8Alignment8, Bytes12Alignment4,
 };
-use num_traits::{FromBytes, ToBytes, Zero};
 use polars_utils::float16::pf16;
 
 use crate::parquet::schema::types::PhysicalType;

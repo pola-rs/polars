@@ -3,8 +3,8 @@ pub(super) mod iterator;
 
 use std::borrow::Cow;
 
-use arrow::bitmap::BitmapBuilder;
 use polars_array::concatenate::concatenate;
+use polars_arrow::bitmap::BitmapBuilder;
 
 use super::align_inner_chunks;
 use crate::chunked_array::new_empty_chunk;

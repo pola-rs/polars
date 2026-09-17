@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::bitmap::utils::set_bit_unchecked;
-use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
+use polars_arrow::bitmap::utils::set_bit_unchecked;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_buffer::Buffer;
 
 use crate::prelude::*;

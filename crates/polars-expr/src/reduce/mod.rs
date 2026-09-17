@@ -27,11 +27,11 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 pub use convert::into_reduction;
 pub use min_max::{new_max_reduction, new_min_reduction};
 use polars_array::PlBooleanArray;
 use polars_array::bitmap::PlBitmap;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 use polars_core::prelude::*;
 
 use crate::EvictIdx;

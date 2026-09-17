@@ -1,7 +1,7 @@
 //! The if-then-else kernel over a [`PlBooleanArray`], whose values are a mask of their own.
 
-use arrow::bitmap::{self, Bitmap};
 use polars_array::{Flat, PlBitmap, PlBitmapRef, PlBooleanArray};
+use polars_arrow::bitmap::{self, Bitmap};
 
 use super::{IfThenElseKernel, if_then_else_validity};
 

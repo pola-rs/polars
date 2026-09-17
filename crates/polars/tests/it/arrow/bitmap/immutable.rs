@@ -1,5 +1,5 @@
-use arrow::array::Splitable;
-use arrow::bitmap::Bitmap;
+use polars_arrow::array::Splitable;
+use polars_arrow::bitmap::Bitmap;
 
 #[test]
 fn as_slice() {

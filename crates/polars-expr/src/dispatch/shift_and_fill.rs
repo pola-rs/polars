@@ -20,7 +20,7 @@ where
     feature = "dtype-categorical"
 ))]
 fn shift_and_fill_with_mask(s: &Column, n: i64, fill_value: &Column) -> PolarsResult<Column> {
-    use arrow::bitmap::BitmapBuilder;
+    use polars_arrow::bitmap::BitmapBuilder;
     use polars_core::prelude::{BooleanChunked, PlBooleanArray};
 
     let mask: BooleanChunked = if n > 0 {

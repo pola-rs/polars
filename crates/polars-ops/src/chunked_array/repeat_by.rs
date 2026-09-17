@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::BitmapBuilder;
 use polars_array::builder::{PlArrayBuilder, ShareStrategy, builder_like};
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;

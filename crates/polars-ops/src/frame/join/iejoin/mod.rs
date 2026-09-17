@@ -4,9 +4,9 @@ mod l1_l2;
 
 use std::cmp::min;
 
-use arrow::bitmap::MutableBitmap;
 use filtered_bit_array::FilteredBitArray;
 use l1_l2::*;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::chunked_array::ChunkedArray;
 use polars_core::datatypes::{IdxCa, NumericNative, PolarsNumericType};
 use polars_core::frame::DataFrame;

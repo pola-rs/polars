@@ -1,9 +1,9 @@
 //! The `arr.get` kernels over the arrays of `polars-array`.
 
-use arrow::legacy::index::IndexToUsize;
 use polars_array::bitmap::combine_validities_and;
 use polars_array::builder::new_full_null_like;
 use polars_array::{PlArray, PlBitmapRef, PlFixedSizeListArray, PlPrimitiveArray};
+use polars_arrow::legacy::index::IndexToUsize;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::IdxSize;
 

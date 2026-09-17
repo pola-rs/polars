@@ -1,9 +1,5 @@
 //! The if-then-else kernels over the arrays of `polars-array`.
 
-use arrow::array::{Array, LIST_VALUES_NAME};
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::{ArrowDataType, Field};
-use arrow::types::NativeType;
 #[cfg(feature = "dtype-array")]
 use polars_array::PlFixedSizeListArray;
 use polars_array::arrow::bridge::{chunk_from_arrow, flat_to_arrow};
@@ -13,6 +9,10 @@ use polars_array::{
     Flat, PlArray, PlBinaryViewArray, PlBitmap, PlBitmapRef, PlListArray, PlPrimitiveArray,
     PlUtf8ViewArray, StaticArray,
 };
+use polars_arrow::array::{Array, LIST_VALUES_NAME};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::{ArrowDataType, Field};
+use polars_arrow::types::NativeType;
 
 use super::IfThenElseArrowKernel;
 
@@ -312,7 +312,7 @@ macro_rules! arrow_if_then_else_kernel {
 
 impl<T: NativeType> IfThenElseKernel for PlPrimitiveArray<T>
 where
-    arrow::array::PrimitiveArray<T>: for<'a> IfThenElseArrowKernel<Scalar<'a> = T>,
+    polars_arrow::array::PrimitiveArray<T>: for<'a> IfThenElseArrowKernel<Scalar<'a> = T>,
 {
     arrow_if_then_else_kernel!(std::convert::identity, |_t, _f| T::PRIMITIVE.into());
 }

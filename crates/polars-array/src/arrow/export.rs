@@ -1,12 +1,12 @@
 //! Exporting the arrays of this crate as the Arrow arrays of `polars-arrow`.
 
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, FixedSizeListArray,
     ListArray, NullArray, PrimitiveArray, StructArray, Utf8ViewArray,
 };
-use arrow::datatypes::{ArrowDataType, Field};
-use arrow::offset::OffsetsBuffer;
-use arrow::types::NativeType;
+use polars_arrow::datatypes::{ArrowDataType, Field};
+use polars_arrow::offset::OffsetsBuffer;
+use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_utils::format_pl_smallstr;
 

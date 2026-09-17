@@ -1,8 +1,8 @@
-use arrow::array::View;
-use arrow::bitmap::MutableBitmap;
 use polars_array::bitmap::PlBitmap;
 use polars_array::builder::StaticArrayBuilder;
 use polars_array::{PlBinaryViewArrayBuilder, PlPrimitiveArray};
+use polars_arrow::array::View;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 

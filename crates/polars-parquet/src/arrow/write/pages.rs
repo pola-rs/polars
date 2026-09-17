@@ -1,9 +1,9 @@
 use std::fmt::Debug;
 
-use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::datatypes::{ArrowDataType, PhysicalType};
-use arrow::offset::{Offset, OffsetsBuffer};
+use polars_arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::datatypes::{ArrowDataType, PhysicalType};
+use polars_arrow::offset::{Offset, OffsetsBuffer};
 use polars_error::{PolarsResult, polars_bail};
 
 use super::{Encoding, WriteOptions, array_to_pages};
@@ -578,8 +578,8 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::*;
-    use arrow::datatypes::*;
+    use polars_arrow::array::*;
+    use polars_arrow::datatypes::*;
 
     use super::super::{FieldInfo, ParquetPhysicalType};
     use super::*;

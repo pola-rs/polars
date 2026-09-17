@@ -5,11 +5,11 @@ use std::simd::Select;
 #[cfg(feature = "simd")]
 use std::simd::prelude::*;
 
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::types::NativeType;
 use num_traits::Zero;
 use polars_array::PlPrimitiveArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 
 macro_rules! wrapping_impl {

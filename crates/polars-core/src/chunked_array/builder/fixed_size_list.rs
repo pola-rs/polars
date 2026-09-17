@@ -1,6 +1,6 @@
-use arrow::types::NativeType;
 use polars_array::builder::{ShareStrategy, StaticArrayBuilder, builder_like};
 use polars_array::{PlFixedSizeListArrayBuilder, PlPrimitiveArrayBuilder};
+use polars_arrow::types::NativeType;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::chunked_array::new_empty_chunk;

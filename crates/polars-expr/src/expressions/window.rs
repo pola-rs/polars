@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
-use arrow::bitmap::Bitmap;
-use arrow::trusted_len::TrustMyLength;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::trusted_len::TrustMyLength;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::error::feature_gated;
 use polars_core::prelude::row_encode::encode_rows_unordered;
@@ -1001,7 +1001,7 @@ impl PhysicalExpr for WindowExpr {
 
 fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Column {
     {
-        use arrow::Either;
+        use polars_arrow::Either;
         use polars_ops::chunked_array::TakeChunked;
 
         match join_opt_ids {

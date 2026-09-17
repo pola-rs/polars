@@ -1,8 +1,8 @@
 use std::ops::{Add, Div, Mul, Sub};
 
-use arrow::bitmap::MutableBitmap;
 use bytemuck::allocation::zeroed_vec;
 use num_traits::{NumCast, Zero};
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::prelude::*;
 use polars_utils::slice::SliceAble;
 

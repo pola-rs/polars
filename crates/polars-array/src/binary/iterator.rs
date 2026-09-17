@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::slice;
 
-use arrow::trusted_len::TrustedLen;
+use polars_arrow::trusted_len::TrustedLen;
 
 use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 use crate::broadcast::is_flat_offsets_len;

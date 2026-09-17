@@ -1,4 +1,5 @@
 use num_traits::Float;
+use polars_arrow::bitmap::Bitmap;
 use polars_compute::nan::{is_nan, is_not_nan};
 use polars_compute::set::set_at_nulls;
 use polars_utils::float16::pf16;

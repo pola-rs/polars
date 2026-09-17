@@ -17,15 +17,15 @@ impl PySeries {
         let chunks = chunks
             .into_iter()
             .map(|(schema_ptr, array_ptr)| {
-                let schema_ptr = schema_ptr as *mut arrow::ffi::ArrowSchema;
-                let array_ptr = array_ptr as *mut arrow::ffi::ArrowArray;
+                let schema_ptr = schema_ptr as *mut polars_arrow::ffi::ArrowSchema;
+                let array_ptr = array_ptr as *mut polars_arrow::ffi::ArrowArray;
 
                 // Don't take the box from raw as the other process must deallocate that memory.
                 let array = std::ptr::read_unaligned(array_ptr);
                 let schema = &*schema_ptr;
 
-                let field = arrow::ffi::import_field_from_c(schema).unwrap();
-                arrow::ffi::import_array_from_c(array, field.dtype).unwrap()
+                let field = polars_arrow::ffi::import_field_from_c(schema).unwrap();
+                polars_arrow::ffi::import_array_from_c(array, field.dtype).unwrap()
             })
             .collect::<Vec<_>>();
 
@@ -52,8 +52,8 @@ unsafe fn export_chunk(
 
     // The chunk carries no logical type, so it is `Series::to_arrow` that exports it as the
     // Arrow array the schema below promises.
-    let c_array = arrow::ffi::export_array_to_c(s.to_arrow(0, CompatLevel::newest()));
-    let out_ptr = out_ptr as *mut arrow::ffi::ArrowArray;
+    let c_array = polars_arrow::ffi::export_array_to_c(s.to_arrow(0, CompatLevel::newest()));
+    let out_ptr = out_ptr as *mut polars_arrow::ffi::ArrowArray;
     *out_ptr = c_array;
 
     let field = ArrowField::new(
@@ -61,9 +61,9 @@ unsafe fn export_chunk(
         s.dtype().to_arrow(CompatLevel::newest()),
         true,
     );
-    let c_schema = arrow::ffi::export_field_to_c(&field);
+    let c_schema = polars_arrow::ffi::export_field_to_c(&field);
 
-    let out_schema_ptr = out_schema_ptr as *mut arrow::ffi::ArrowSchema;
+    let out_schema_ptr = out_schema_ptr as *mut polars_arrow::ffi::ArrowSchema;
     *out_schema_ptr = c_schema;
     Ok(())
 }

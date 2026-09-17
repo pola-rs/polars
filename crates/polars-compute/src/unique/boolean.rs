@@ -1,9 +1,9 @@
 //! The unique kernel over booleans, of which there are only ever three: `false`, `true` and null.
 
-use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
 use polars_array::{PlBitmap, PlBitmapRef, PlBooleanArray};
+use polars_arrow::array::{Array, BooleanArray};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
 
 use super::{GenericUniqueKernel, RangedUniqueKernel};
 
@@ -144,16 +144,16 @@ impl GenericUniqueKernel for BooleanArray {
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::{BooleanArray, MutableBooleanArray, boolean_array};
     use polars_array::arrow::bridge::chunk_from_arrow;
+    use polars_arrow::array::{BooleanArray, MutableBooleanArray, boolean_array};
     use proptest::prelude::*;
 
     use super::*;
 
     #[test]
     fn test_boolean_distinct_count() {
-        use arrow::bitmap::Bitmap;
-        use arrow::datatypes::ArrowDataType;
+        use polars_arrow::bitmap::Bitmap;
+        use polars_arrow::datatypes::ArrowDataType;
 
         macro_rules! assert_bool_dc {
             ($values:expr, $validity:expr => $dc:expr) => {

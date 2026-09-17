@@ -1,7 +1,7 @@
 //! APIs to handle Parquet <-> Arrow schemas.
 use std::sync::Arc;
 
-use arrow::datatypes::{ArrowSchema, TimeUnit};
+use polars_arrow::datatypes::{ArrowSchema, TimeUnit};
 
 mod convert;
 mod metadata;

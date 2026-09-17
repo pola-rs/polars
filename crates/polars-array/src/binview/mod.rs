@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::array::View;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
 use buffers::{copy_only_value, copy_value, own_only_value};
+use polars_arrow::array::View;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 

@@ -1,7 +1,7 @@
 //! What a [`PlBinaryViewArray`] gains from being known to be [`Flat`].
 
-use arrow::array::View;
-use arrow::bitmap::Bitmap;
+use polars_arrow::array::View;
+use polars_arrow::bitmap::Bitmap;
 use polars_buffer::Buffer;
 
 use super::{PlBinaryViewArray, PlBinaryViewIter};

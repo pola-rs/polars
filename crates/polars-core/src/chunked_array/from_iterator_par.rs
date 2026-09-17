@@ -14,15 +14,15 @@
 use std::collections::LinkedList;
 use std::sync::Mutex;
 
-use arrow::bitmap::Bitmap;
-// A marker trait, not an array: it is what keeps the `Ptr` impls below from overlapping the
-// `Option<Ptr>` ones, which the compiler cannot rule out on its own.
-use arrow::pushable::NoOption;
 use polars_array::builder::StaticArrayBuilder;
 use polars_array::{
     PlBinaryViewArrayBuilder, PlBooleanArrayBuilder, PlPrimitiveArrayBuilder,
     PlUtf8ViewArrayBuilder,
 };
+use polars_arrow::bitmap::Bitmap;
+// A marker trait, not an array: it is what keeps the `Ptr` impls below from overlapping the
+// `Option<Ptr>` ones, which the compiler cannot rule out on its own.
+use polars_arrow::pushable::NoOption;
 use rayon::prelude::*;
 
 use super::from_iterator::PolarsAsRef;

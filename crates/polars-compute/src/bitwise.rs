@@ -1,8 +1,8 @@
 use std::convert::identity;
 
-use arrow::bitmap::binary_fold;
-use arrow::types::NativeType;
 use polars_array::{PlBitmap, PlBooleanArray, PlPrimitiveArray};
+use polars_arrow::bitmap::binary_fold;
+use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 
 use crate::boolean::{all, any, flat_validity};

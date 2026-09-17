@@ -2,9 +2,9 @@
 mod quantile;
 mod var;
 
-use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float, One, ToPrimitive, Zero};
 use polars_array::bitmap::combine_validities_and;
+use polars_arrow::types::NativeType;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_compute::float_sum;

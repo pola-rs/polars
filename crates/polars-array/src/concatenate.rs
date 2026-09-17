@@ -1,8 +1,8 @@
 //! Concatenation of arrays into a single array of the same physical representation.
 
-use arrow::array::View;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::types::NativeType;
+use polars_arrow::array::View;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
@@ -1106,7 +1106,7 @@ fn concatenate_primitive_as<T: NativeType>(
 
 #[cfg(test)]
 mod test {
-    use arrow::bitmap::Bitmap;
+    use polars_arrow::bitmap::Bitmap;
 
     use super::*;
 

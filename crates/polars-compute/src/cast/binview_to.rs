@@ -1,11 +1,11 @@
 //! Casting the view-backed byte arrays of `polars-array`, which every string is held by.
 
-use arrow::types::NativeType;
 use num_traits::FromBytes;
 use polars_array::{
     PlArray, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlFixedSizeBinaryArray,
     PlFixedSizeBinaryArrayBuilder, PlFixedSizeListArray, PlPrimitiveArray, StaticArrayBuilder,
 };
+use polars_arrow::types::NativeType;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
 use super::binary_to::Parse;

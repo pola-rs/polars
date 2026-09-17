@@ -1,7 +1,7 @@
-use arrow::bitmap::BitmapBuilder;
 use num_traits::{Bounded, ToPrimitive, Zero};
 use polars_array::bitmap::combine_validities_and;
 use polars_array::{PlBitmap, PlPrimitiveArray};
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::prelude::{ChunkedArray, IdxCa, IdxSize, PolarsIntegerType, Series};
 use polars_core::with_match_physical_integer_polars_type;

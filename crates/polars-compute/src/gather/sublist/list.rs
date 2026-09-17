@@ -2,10 +2,10 @@
 
 use std::ops::Range;
 
-use arrow::bitmap::bitmask::BitMask;
-use arrow::legacy::index::IndexToUsize;
 use polars_array::builder::new_full_null_like;
 use polars_array::{PlArray, PlListArray, PlPrimitiveArray};
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::legacy::index::IndexToUsize;
 use polars_utils::IdxSize;
 
 use crate::gather::take_unchecked;

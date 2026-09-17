@@ -1,10 +1,10 @@
 //! Handing a chunk to an Arrow kernel, and taking the result back.
 
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray, NullArray,
     PrimitiveArray, StructArray, Utf8ViewArray,
 };
-use arrow::types::NativeType;
+use polars_arrow::types::NativeType;
 
 use crate::arrow::{export, import};
 use crate::{

@@ -1,6 +1,6 @@
-use arrow::bitmap::bitmask::BitMask;
 use bytemuck::allocation::zeroed_vec;
 use polars_array::concatenate::concatenate_validities;
+use polars_arrow::bitmap::bitmask::BitMask;
 use polars_core::prelude::gather::check_bounds_ca;
 use polars_core::prelude::*;
 use polars_utils::index::check_bounds;

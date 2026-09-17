@@ -29,10 +29,10 @@
 
 #![allow(clippy::collapsible_else_if)]
 
-use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 use polars_array::PlPrimitiveArray;
 use polars_array::bitmap::combine_validities_and;
+use polars_arrow::types::NativeType;
 use polars_utils::algebraic_ops::*;
 
 const CHUNK_SIZE: usize = 128;

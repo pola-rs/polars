@@ -1,5 +1,5 @@
-use arrow::bitmap::bitmask::BitMask;
 use polars_array::bitmap::combine_validities_and;
+use polars_arrow::bitmap::bitmask::BitMask;
 use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;

@@ -1,6 +1,6 @@
-use arrow::array::BINVIEW_MAX_ROW_BYTE_LEN;
 use polars_array::builder::StaticArrayBuilder;
 use polars_array::{PlBinaryViewArrayBuilder, PlUtf8ViewArray};
+use polars_arrow::array::BINVIEW_MAX_ROW_BYTE_LEN;
 use polars_core::prelude::{DataType, StringChunked};
 use polars_core::series::{IntoSeries, Series};
 use polars_error::{PolarsResult, polars_ensure};

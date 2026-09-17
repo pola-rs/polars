@@ -1,9 +1,9 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 //! Gather-and-reduce to a variance over a [`PlPrimitiveArray`].
 
-use arrow::types::NativeType;
 use num_traits::ToPrimitive;
 use polars_array::PlPrimitiveArray;
+use polars_arrow::types::NativeType;
 
 use super::primitive::flat_validity;
 

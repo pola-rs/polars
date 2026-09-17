@@ -1,6 +1,6 @@
 //! What a [`PlFixedSizeListArray`] gains from being known to be [`Flat`].
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 
 use super::PlFixedSizeListArray;
 use crate::array::PlArray;

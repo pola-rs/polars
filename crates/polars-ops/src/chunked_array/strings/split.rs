@@ -1,8 +1,8 @@
-use arrow::array::ValueSize;
 #[cfg(feature = "dtype-struct")]
 use polars_array::PlUtf8ViewArrayBuilder;
 #[cfg(feature = "dtype-struct")]
 use polars_array::builder::StaticArrayBuilder;
+use polars_arrow::array::ValueSize;
 use polars_core::chunked_array::ops::arity::binary_elementwise_for_each;
 use polars_core::prelude::*;
 use polars_utils::regex_cache::compile_regex;

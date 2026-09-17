@@ -3,8 +3,8 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::bitmap::Bitmap;
 use polars_array::bitmap::combine_validities_and;
+use polars_arrow::bitmap::Bitmap;
 use polars_compute::filter::filter_with_bitmap;
 use polars_utils::broadcast::BroadcastLength;
 

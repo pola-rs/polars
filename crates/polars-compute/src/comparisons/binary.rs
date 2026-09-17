@@ -1,7 +1,7 @@
-use arrow::array::BinaryArray;
-use arrow::bitmap::Bitmap;
-use arrow::types::Offset;
 use polars_array::{PlBitmap, PlBitmapRef, PlFixedSizeBinaryArray};
+use polars_arrow::array::BinaryArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::types::Offset;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 use super::{PlTotalEqKernel, TotalEqKernel, TotalOrdKernel, repeated};

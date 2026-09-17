@@ -2,12 +2,12 @@
 
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
-use arrow::bitmap::BitmapBuilder;
-use arrow::legacy::error::PolarsResult;
-use arrow::types::NativeType;
 use num_traits::{Bounded, Float, Num, NumCast, One, Zero};
 use polars_array::concatenate::concatenate;
 use polars_array::{PlArray, PlBitmap, PlPrimitiveArray, StaticArray};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::legacy::error::PolarsResult;
+use polars_arrow::types::NativeType;
 use polars_utils::float::IsFloat;
 
 use super::{RollingFnParams, RollingRankMethod, no_nulls, nulls, quantile_filter};
@@ -301,9 +301,9 @@ mod test {
             PlPrimitiveArray::new_full_null(LEN),
             flat_chunk(
                 vec![VALUE; LEN],
-                Some(PlBitmap::from_bitmap(arrow::bitmap::Bitmap::new_zeroed(
-                    LEN,
-                ))),
+                Some(PlBitmap::from_bitmap(
+                    polars_arrow::bitmap::Bitmap::new_zeroed(LEN),
+                )),
             ),
         )
     }

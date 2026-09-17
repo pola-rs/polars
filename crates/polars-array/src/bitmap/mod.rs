@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::array::Splitable;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::array::Splitable;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::broadcast::{

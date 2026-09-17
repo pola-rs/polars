@@ -1,5 +1,5 @@
-use arrow::array::View;
-use arrow::trusted_len::TrustedLen;
+use polars_arrow::array::View;
+use polars_arrow::trusted_len::TrustedLen;
 use polars_buffer::Buffer;
 use polars_utils::slice_broadcast_iter::SliceBroadcastIter;
 

@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use arrow::temporal_conversions::date32_to_date;
+use polars_arrow::temporal_conversions::date32_to_date;
 
 use super::*;
 use crate::prelude::*;

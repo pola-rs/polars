@@ -24,9 +24,6 @@ use std::sync::Arc;
 mod schema;
 pub use aliases::*;
 pub use any_value::*;
-pub use arrow::datatypes::reshape::*;
-pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
-use arrow::types::NativeType;
 use bytemuck::Zeroable;
 pub use dtype_ext::*;
 pub use into_scalar::*;
@@ -36,6 +33,9 @@ use polars_array::{
     PlArray, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeListArray, PlListArray,
     PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
 };
+pub use polars_arrow::datatypes::reshape::*;
+pub use polars_arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
+use polars_arrow::types::NativeType;
 use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 use polars_compute::float_sum::FloatSum;
 #[cfg(feature = "dtype-categorical")]

@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-use arrow::bitmap::utils::SlicesIterator;
+use polars_arrow::bitmap::utils::SlicesIterator;
 use polars_core::prelude::*;
 use polars_core::series::{BitRepr, IsSorted};
 use polars_core::with_match_physical_float_polars_type;
@@ -261,7 +261,7 @@ pub fn rle_id(s: &Column) -> PolarsResult<Column> {
 
 #[cfg(test)]
 mod test {
-    use arrow::bitmap::Bitmap;
+    use polars_arrow::bitmap::Bitmap;
 
     use super::*;
 

@@ -11,8 +11,8 @@
 
 use std::mem::MaybeUninit;
 
-use arrow::bitmap::Bitmap;
 use polars_array::{PlBitmap, PlBooleanArray};
+use polars_arrow::bitmap::Bitmap;
 
 use crate::row::RowEncodingOptions;
 

@@ -1,9 +1,9 @@
-use arrow::array::{
-    Array, BinaryArray, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8Array, Utf8ViewArray,
-};
-use arrow::types::{NativeType, Offset};
 use polars_array::arrow::bridge::ToArrow;
 use polars_array::{PlBooleanArray, PlPrimitiveArray};
+use polars_arrow::array::{
+    Array, BinaryArray, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8Array, Utf8ViewArray,
+};
+use polars_arrow::types::{NativeType, Offset};
 use polars_utils::min_max::MinMax;
 
 use super::MinMaxKernel;

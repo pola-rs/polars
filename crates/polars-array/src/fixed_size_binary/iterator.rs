@@ -1,4 +1,4 @@
-use arrow::trusted_len::TrustedLen;
+use polars_arrow::trusted_len::TrustedLen;
 
 use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 use crate::broadcast::is_flat_fixed_size_values_len;

@@ -1,8 +1,8 @@
-use arrow::bitmap::OptBitmapBuilder;
 use polars_array::builder::{
     ShareStrategy, StaticArrayBuilder, gather_extend_validity, opt_gather_extend_validity,
     subslice_extend_each_repeated_validity, subslice_extend_validity,
 };
+use polars_arrow::bitmap::OptBitmapBuilder;
 use polars_utils::vec::PushUnchecked;
 
 use super::*;

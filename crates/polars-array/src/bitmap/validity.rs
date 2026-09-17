@@ -26,7 +26,7 @@ pub fn combine_validities_and(
                 (Some(false), None) | (None, Some(false)) => {
                     Some(PlBitmap::new_scalar(false, length))
                 },
-                (None, None) => arrow::compute::utils::combine_validities_and(
+                (None, None) => polars_arrow::compute::utils::combine_validities_and(
                     Some(&lhs.to_flat()),
                     Some(&rhs.to_flat()),
                 )

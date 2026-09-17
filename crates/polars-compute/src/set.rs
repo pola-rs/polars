@@ -3,10 +3,10 @@
 
 use std::ops::BitOr;
 
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::utils::SlicesIterator;
-use arrow::types::NativeType;
 use polars_array::{PlBitmap, PlBooleanArray, PlPrimitiveArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::utils::SlicesIterator;
+use polars_arrow::types::NativeType;
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
 

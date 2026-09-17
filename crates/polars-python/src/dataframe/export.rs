@@ -1,6 +1,6 @@
-use arrow::datatypes::IntegerType;
-use arrow::record_batch::RecordBatch;
 use polars::prelude::*;
+use polars_arrow::datatypes::IntegerType;
+use polars_arrow::record_batch::RecordBatch;
 use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;

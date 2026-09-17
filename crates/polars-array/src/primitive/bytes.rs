@@ -1,7 +1,7 @@
 //! The byte class of an element type, which is all a routine that only moves bytes is taken over.
 
-use arrow::Either;
-use arrow::types::{AlignedBytes, NativeType};
+use polars_arrow::Either;
+use polars_arrow::types::{AlignedBytes, NativeType};
 use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::vec::PushUnchecked;

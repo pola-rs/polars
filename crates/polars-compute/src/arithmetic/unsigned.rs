@@ -1,5 +1,5 @@
-use arrow::compute::utils::{combine_validities_and, combine_validities_and3};
 use polars_array::PlBitmap;
+use polars_arrow::compute::utils::{combine_validities_and, combine_validities_and3};
 use strength_reduce::*;
 
 use super::{PArr, POut, PrimitiveArithmeticKernelImpl};

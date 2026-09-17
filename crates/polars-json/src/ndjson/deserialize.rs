@@ -1,12 +1,12 @@
-use arrow::array::Array;
-use arrow::compute::concatenate::concatenate_unchecked;
+use polars_arrow::array::Array;
+use polars_arrow::compute::concatenate::concatenate_unchecked;
 use simd_json::BorrowedValue;
 
 use super::*;
 
 /// Deserializes an iterator of rows into an [`Array`][Array] of [`DataType`].
 ///
-/// [Array]: arrow::array::Array
+/// [Array]: polars_arrow::array::Array
 ///
 /// # Implementation
 /// This function is CPU-bounded.

@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::Either;
-use arrow::bitmap::{Bitmap, BitmapBuilder, OptBitmapBuilder};
-use arrow::types::NativeType;
+use polars_arrow::Either;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder, OptBitmapBuilder};
+use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::vec::PushUnchecked;

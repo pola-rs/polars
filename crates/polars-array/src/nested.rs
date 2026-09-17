@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::ops::Range;
 use std::ptr::NonNull;
 
-use arrow::trusted_len::TrustedLen;
+use polars_arrow::trusted_len::TrustedLen;
 
 use crate::array::PlArray;
 use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};

@@ -12,7 +12,7 @@ description = "Physical expression implementation of the Polars project."
 version_check = { workspace = true }
 
 [dependencies]
-arrow = { workspace = true }
+polars-arrow = { workspace = true }
 bitflags = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
 hashbrown = { workspace = true }

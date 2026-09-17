@@ -2,10 +2,10 @@
 
 use std::fmt::Debug;
 
-use arrow::legacy::error::PolarsResult;
-use arrow::legacy::utils::CustomIterTools;
-use arrow::types::NativeType;
 use num_traits::{Float, Num, NumCast};
+use polars_arrow::legacy::error::PolarsResult;
+use polars_arrow::legacy::utils::CustomIterTools;
+use polars_arrow::types::NativeType;
 
 mod mean;
 mod min_max;

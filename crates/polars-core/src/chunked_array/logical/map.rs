@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_buffer::Buffer;
 use polars_compute::filter::filter_with_bitmap;
 use polars_compute::gather::take_unchecked;
@@ -1015,8 +1015,8 @@ fn canonicalize_list_chunk(
 /// Check storage invariants directly, before higher-level operations can mask them.
 #[cfg(test)]
 mod test {
-    use arrow::array::PrimitiveArray;
-    use arrow::bitmap::Bitmap;
+    use polars_arrow::array::PrimitiveArray;
+    use polars_arrow::bitmap::Bitmap;
 
     use super::*;
     use crate::frame::column::Column;
@@ -1367,7 +1367,7 @@ mod test {
 
     /// Simulate a live Arrow row with a null entry/key; PyArrow aborts on this input.
     fn malformed_arrow_map(null_key: bool) -> ArrayRef {
-        use arrow::array::{MapArray, StructArray, Utf8ViewArray};
+        use polars_arrow::array::{MapArray, StructArray, Utf8ViewArray};
 
         let fields = vec![
             ArrowField::new(PlSmallStr::from_static("k"), ArrowDataType::Utf8View, false),
@@ -1408,7 +1408,7 @@ mod test {
 
     #[test]
     fn arrow_import_rejects_live_row_nulls_at_every_depth() {
-        use arrow::array::{ListArray, MapArray, StructArray, Utf8ViewArray};
+        use polars_arrow::array::{ListArray, MapArray, StructArray, Utf8ViewArray};
 
         let nest_in_list = |arr: ArrayRef| -> ArrayRef {
             ListArray::<i64>::new(

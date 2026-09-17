@@ -1,9 +1,9 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::View;
+use polars_arrow::array::View;
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
-use polars_core::utils::arrow::bitmap::MutableBitmap;
-use polars_core::utils::arrow::types::NativeType;
+use polars_core::utils::polars_arrow::bitmap::MutableBitmap;
+use polars_core::utils::polars_arrow::types::NativeType;
 use polars_utils::index::check_bounds;
 
 pub trait ChunkedSet<T: Copy> {

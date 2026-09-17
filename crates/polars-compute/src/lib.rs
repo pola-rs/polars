@@ -1,7 +1,7 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 //! The compute kernels of Polars.
 
-use arrow::types::NativeType;
+use polars_arrow::types::NativeType;
 
 #[cfg(feature = "approx_quantile")]
 pub mod approx_quantile;

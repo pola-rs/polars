@@ -1,7 +1,7 @@
 use std::ops::Range;
 
-use arrow::Either;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::Either;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_compute::set::{scatter_single_non_null, set_with_mask};
 
 use crate::prelude::*;

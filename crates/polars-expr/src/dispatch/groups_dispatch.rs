@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::bitmap::bitmask::BitMask;
-use arrow::trusted_len::TrustMyLength;
 use polars_array::PlBitmap;
 #[cfg(feature = "moment")]
 use polars_array::PlPrimitiveArray;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_like};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};

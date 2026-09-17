@@ -5,6 +5,7 @@ use std::sync::OnceLock;
 use polars::chunked_array::object::ObjectArray;
 use polars::prelude::file_provider::FileProviderReturn;
 use polars::prelude::*;
+use polars_arrow::array::Array;
 use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
 use polars_core::chunked_array::object::{registry, set_polars_allow_extension};

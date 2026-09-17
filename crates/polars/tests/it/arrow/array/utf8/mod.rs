@@ -1,7 +1,7 @@
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 

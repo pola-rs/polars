@@ -1,9 +1,9 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::fmt::Debug;
 
-use arrow::bitmap::BitmapBuilder;
 use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
 use polars_array::static_array::StaticArray;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;

@@ -1,8 +1,8 @@
 use std::ops::{AddAssign, DivAssign, MulAssign};
 
-use arrow::types::NativeType;
 use num_traits::Float;
 use polars_array::{PlArray, PlPrimitiveArray, StaticArray};
+use polars_arrow::types::NativeType;
 
 use crate::ewm::{EwmStateUpdate, chunk_of};
 

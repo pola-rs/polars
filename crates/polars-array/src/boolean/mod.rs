@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array_type::PlArrayType;

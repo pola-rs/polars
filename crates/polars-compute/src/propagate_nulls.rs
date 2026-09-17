@@ -2,12 +2,12 @@
 
 use std::ops::Range;
 
-use arrow::bitmap::BitmapBuilder;
-use arrow::bitmap::bitmask::BitMask;
 use polars_array::bitmap::combine_validities_and;
 use polars_array::{
     PlArray, PlArrayType, PlBitmap, PlBitmapRef, PlFixedSizeListArray, PlListArray, PlStructArray,
 };
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::bitmask::BitMask;
 
 use crate::nesting::{
     covered_range, downcast, fsl_with_values, list_with_values, struct_with_fields,

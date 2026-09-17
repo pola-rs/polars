@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_array::PlBitmap;
 use polars_array::bitmap::{combine_validities_and, invert};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_compute::if_then_else::{IfThenElseKernel, if_then_else_validity};
 use polars_error::PolarsContext;
 use polars_utils::broadcast::broadcast_len;
@@ -380,11 +380,14 @@ impl ChunkZip<StructType> for StructChunked {
 
                     let combine = if if_true.null_count() == 0 {
                         |if_false: Option<&Bitmap>, m: &Bitmap| {
-                            if_false.map(|v| arrow::bitmap::or(v, m))
+                            if_false.map(|v| polars_arrow::bitmap::or(v, m))
                         }
                     } else {
                         |if_false: Option<&Bitmap>, m: &Bitmap| {
-                            Some(if_false.map_or_else(|| !m, |v| arrow::bitmap::and_not(v, m)))
+                            Some(
+                                if_false
+                                    .map_or_else(|| !m, |v| polars_arrow::bitmap::and_not(v, m)),
+                            )
                         }
                     };
 
@@ -419,11 +422,14 @@ impl ChunkZip<StructType> for StructChunked {
 
                     let combine = if if_false.null_count() == 0 {
                         |if_true: Option<&Bitmap>, m: &Bitmap| {
-                            if_true.map(|v| arrow::bitmap::or_not(v, m))
+                            if_true.map(|v| polars_arrow::bitmap::or_not(v, m))
                         }
                     } else {
                         |if_true: Option<&Bitmap>, m: &Bitmap| {
-                            Some(if_true.map_or_else(|| m.clone(), |v| arrow::bitmap::and(v, m)))
+                            Some(
+                                if_true
+                                    .map_or_else(|| m.clone(), |v| polars_arrow::bitmap::and(v, m)),
+                            )
                         }
                     };
 

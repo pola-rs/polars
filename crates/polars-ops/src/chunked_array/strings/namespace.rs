@@ -1,10 +1,10 @@
-use arrow::array::ValueSize;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
 #[cfg(feature = "string_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "string_to_integer")]
 use num_traits::Num;
+use polars_arrow::array::ValueSize;
 use polars_core::prelude::arity::*;
 #[cfg(feature = "string_normalize")]
 use polars_defs::expr::UnicodeForm;

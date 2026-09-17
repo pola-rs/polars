@@ -1,10 +1,10 @@
 //! Packing the Arrow dictionaries, whose elements no array of `polars-array` holds.
 
-use arrow::array::*;
-use arrow::datatypes::ArrowDataType;
-use arrow::match_integer_type;
-use arrow::types::NativeType;
 use polars_array::arrow::{export, import};
+use polars_arrow::array::*;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::match_integer_type;
+use polars_arrow::types::NativeType;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 
 use super::arrow_kernels::{binview_to_arrow_large_binary, utf8view_to_arrow_large_utf8};
@@ -34,7 +34,7 @@ pub fn cast_to_dictionary(
 /// Reads the keys of a dictionary as keys of another width, which leaves its values as they are.
 fn recast_dictionary<F: DictionaryKey + num_traits::NumCast>(
     array: &DictionaryArray<F>,
-    to_index_type: &arrow::datatypes::IntegerType,
+    to_index_type: &polars_arrow::datatypes::IntegerType,
     to_value_type: &ArrowDataType,
     to_type: &ArrowDataType,
 ) -> PolarsResult<Box<dyn Array>> {

@@ -1,6 +1,6 @@
 //! The builder of a [`PlStructArray`].
 
-use arrow::bitmap::OptBitmapBuilder;
+use polars_arrow::bitmap::OptBitmapBuilder;
 use polars_utils::IdxSize;
 
 use super::PlStructArray;

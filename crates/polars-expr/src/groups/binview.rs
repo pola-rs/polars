@@ -1,7 +1,7 @@
-use arrow::array::View;
-use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_array::bitmap::PlBitmap;
 use polars_array::{PlBinaryViewArray, PlUtf8ViewArray};
+use polars_arrow::array::View;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_buffer::Buffer;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 

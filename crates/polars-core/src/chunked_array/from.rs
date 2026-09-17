@@ -210,7 +210,9 @@ where
     pub unsafe fn mmap_slice(name: PlSmallStr, values: &[T::Native]) -> Self {
         Self::with_chunk(
             name,
-            polars_array::arrow::import::primitive_from_arrow(&arrow::ffi::mmap::slice(values)),
+            polars_array::arrow::import::primitive_from_arrow(&polars_arrow::ffi::mmap::slice(
+                values,
+            )),
         )
     }
 }

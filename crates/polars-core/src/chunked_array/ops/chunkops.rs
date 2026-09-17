@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::cell::Cell;
 
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;

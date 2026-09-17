@@ -1,4 +1,4 @@
-use arrow::legacy::error::PolarsResult;
+use polars_arrow::legacy::error::PolarsResult;
 use polars_core::utils::{SuperTypeFlags, try_get_supertype, try_get_supertype_with_options};
 use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;

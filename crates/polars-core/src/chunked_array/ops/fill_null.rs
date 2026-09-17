@@ -1,6 +1,6 @@
-use arrow::bitmap::{Bitmap, BitmapBuilder};
 use bytemuck::Zeroable;
 use num_traits::{NumCast, One, Zero};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_compute::set::set_at_nulls;
 use polars_utils::itertools::Itertools;
 

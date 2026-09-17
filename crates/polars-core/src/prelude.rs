@@ -1,10 +1,8 @@
 //! Everything you need to get started with Polars.
 pub use std::sync::Arc;
 
-pub use arrow::array::ArrayRef;
-pub(crate) use arrow::array::*;
 // The explicit imports of the array crate shadow the glob above: a `ChunkedArray` is backed by the
-// arrays of `polars-array`, and `arrow::array` is only what it is imported from and exported to.
+// arrays of `polars-array`, and `polars_arrow::array` is only what it is imported from and exported to.
 pub use polars_array::arrow::bridge::ToArrow;
 pub use polars_array::{
     Flat, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef,
@@ -12,12 +10,14 @@ pub use polars_array::{
     PlPrimitiveArray, PlStructArray, PlUtf8ViewArray, PlUtf8ViewArrayBuilder, StaticArrayBuilder,
     ZeroableArrayFromIter,
 };
+pub use polars_arrow::array::ArrayRef;
+pub(crate) use polars_arrow::array::*;
 
 /// An owned, cheaply cloneable chunk of a [`ChunkedArray`], carrying no logical type of its own.
 pub type PlArrayRef = Box<dyn PlArray>;
-pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
-pub use arrow::legacy::prelude::*;
-pub(crate) use arrow::trusted_len::TrustedLen;
+pub use polars_arrow::datatypes::{ArrowSchema, Field as ArrowField};
+pub use polars_arrow::legacy::prelude::*;
+pub(crate) use polars_arrow::trusted_len::TrustedLen;
 pub use polars_compute::rolling::{
     QuantileMethod, RollingFnParams, RollingRankMethod, RollingVarParams,
 };

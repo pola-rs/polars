@@ -6,8 +6,8 @@
 
 use std::mem::MaybeUninit;
 
-use arrow::bitmap::BitmapBuilder;
 use polars_array::{PlBitmap, PlPrimitiveArray};
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;

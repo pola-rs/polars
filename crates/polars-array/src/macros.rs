@@ -518,7 +518,7 @@ macro_rules! impl_optional_iter {
 
         // SAFETY: the values are trusted to yield as many elements as they say they will, and the
         // mask is walked alongside them.
-        unsafe impl<'a, $($generics)*> ::arrow::trusted_len::TrustedLen for $iter {}
+        unsafe impl<'a, $($generics)*> ::polars_arrow::trusted_len::TrustedLen for $iter {}
     };
     ($(#[$meta:meta])* $iter:ty, $($rest:tt)*) => {
         $crate::impl_optional_iter!($(#[$meta])* [] $iter, $($rest)*);
@@ -608,7 +608,7 @@ macro_rules! impl_mapped_iter {
 
         // SAFETY: the iterator underneath is trusted, and mapping its items does not change how
         // many there are.
-        unsafe impl<'a, $($generics)*> ::arrow::trusted_len::TrustedLen for $iter {}
+        unsafe impl<'a, $($generics)*> ::polars_arrow::trusted_len::TrustedLen for $iter {}
     };
     // A newtype walks the one field it has, and reads nothing else.
     (
@@ -632,8 +632,8 @@ macro_rules! with_match_pl_primitive_array_type {(
     $array:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use ::arrow::array::View;
-    use ::arrow::types::{days_ms, i256, months_days_ns};
+    use ::polars_arrow::array::View;
+    use ::polars_arrow::types::{days_ms, i256, months_days_ns};
     use ::polars_utils::float16::pf16;
 
     // `NativeType` is a sealed trait, so this list of element types is exhaustive.
@@ -701,10 +701,10 @@ macro_rules! impl_flat_methods {
     };
     ([$($generics:tt)*] $array:ty $(,)?) => {
         impl<$($generics)*> $crate::flat::Flat<$array> {
-            /// The validity mask, if any element may be null, as a [`Bitmap`](::arrow::bitmap::Bitmap)
+            /// The validity mask, if any element may be null, as a [`Bitmap`](::polars_arrow::bitmap::Bitmap)
             /// of one bit per element.
             #[inline]
-            pub fn validity(&self) -> Option<&::arrow::bitmap::Bitmap> {
+            pub fn validity(&self) -> Option<&::polars_arrow::bitmap::Bitmap> {
                 self.as_array().validity.as_ref()
             }
 

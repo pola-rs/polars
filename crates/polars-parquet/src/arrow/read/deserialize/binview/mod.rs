@@ -1,6 +1,6 @@
-use arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray, View};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::{ArrowDataType, PhysicalType};
+use polars_arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray, View};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_utils::aliases::PlIndexSet;
 
 use super::dictionary_encoded::{append_validity, constrain_page_validity};

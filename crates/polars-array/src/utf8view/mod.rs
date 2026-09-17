@@ -3,7 +3,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use arrow::array::View;
+use polars_arrow::array::View;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_err};
 

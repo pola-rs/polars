@@ -1,8 +1,8 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use arrow::bitmap::BitmapBuilder;
 use polars_array::bitmap::combine_validities_and;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_compute::rolling::QuantileMethod;
 
 use crate::chunked_array::cast::CastOptions;
