@@ -1,7 +1,76 @@
+use std::cmp::Ordering;
+
+use polars_utils::float16::pf16;
+
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::schema::types::PhysicalType;
+use crate::parquet::metadata::{SortOrder, get_sort_order};
+use crate::parquet::schema::types::{PhysicalType, PrimitiveLogicalType, PrimitiveType};
 use crate::parquet::statistics::*;
 use crate::parquet::types::NativeType;
+
+/// How the byte encoded bounds of a column are compared while merging statistics.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BoundsOrder {
+    /// Unsigned comparison of the bytes.
+    Bytes,
+    /// Comparison as big-endian two's complement values.
+    SignedBytes,
+    /// Comparison as little-endian half floats.
+    Float16,
+    /// The bounds have no defined order and must be dropped.
+    Undefined,
+}
+
+fn bounds_order(primitive_type: &PrimitiveType) -> BoundsOrder {
+    if primitive_type.logical_type == Some(PrimitiveLogicalType::Float16) {
+        return BoundsOrder::Float16;
+    }
+
+    match get_sort_order(
+        &primitive_type.logical_type,
+        &primitive_type.converted_type,
+        &primitive_type.physical_type,
+    ) {
+        // Float and double are never encoded as bytes, so their total order is not reachable here.
+        SortOrder::Unsigned | SortOrder::IEEE754TotalOrder => BoundsOrder::Bytes,
+        SortOrder::Signed => BoundsOrder::SignedBytes,
+        SortOrder::Undefined => BoundsOrder::Undefined,
+    }
+}
+
+/// Compares two big-endian two's complement values, which may have different lengths.
+fn compare_signed_bytes(x: &[u8], y: &[u8]) -> Ordering {
+    let is_negative = |v: &[u8]| v.first().is_some_and(|b| b & 0x80 != 0);
+    match (is_negative(x), is_negative(y)) {
+        (true, false) => return Ordering::Less,
+        (false, true) => return Ordering::Greater,
+        _ => {},
+    }
+
+    // Sign-extend the shorter value to the length of the longer one.
+    let fill = if is_negative(x) { 0xff } else { 0x00 };
+    let len = x.len().max(y.len());
+    let byte_at = |v: &[u8], i: usize| {
+        let offset = len - v.len();
+        if i < offset { fill } else { v[i - offset] }
+    };
+    (0..len)
+        .map(|i| byte_at(x, i).cmp(&byte_at(y, i)))
+        .find(|o| o.is_ne())
+        .unwrap_or(Ordering::Equal)
+}
+
+fn compare_bounds(order: BoundsOrder, x: &[u8], y: &[u8]) -> Ordering {
+    match order {
+        BoundsOrder::Bytes | BoundsOrder::Undefined => x.cmp(y),
+        BoundsOrder::SignedBytes => compare_signed_bytes(x, y),
+        BoundsOrder::Float16 => {
+            let to_f16 =
+                |v: &[u8]| <pf16 as NativeType>::from_le_bytes(v.try_into().unwrap_or_default());
+            to_f16(x).ord(&to_f16(y))
+        },
+    }
+}
 
 #[inline]
 fn reduce_single<T, F: Fn(T, T) -> T>(lhs: Option<T>, rhs: Option<T>, op: F) -> Option<T> {
@@ -14,14 +83,26 @@ fn reduce_single<T, F: Fn(T, T) -> T>(lhs: Option<T>, rhs: Option<T>, op: F) -> 
 }
 
 #[inline]
-fn reduce_vec8(lhs: Option<Vec<u8>>, rhs: &Option<Vec<u8>>, max: bool) -> Option<Vec<u8>> {
-    let take_min = !max;
+fn reduce_vec8(
+    lhs: Option<Vec<u8>>,
+    rhs: &Option<Vec<u8>>,
+    max: bool,
+    order: BoundsOrder,
+) -> Option<Vec<u8>> {
+    if order == BoundsOrder::Undefined {
+        return None;
+    }
 
+    let take_min = !max;
     match (lhs, rhs) {
         (None, None) => None,
         (Some(x), None) => Some(x),
         (None, Some(x)) => Some(x.clone()),
-        (Some(x), Some(y)) => Some(if (&x <= y) == take_min { x } else { y.clone() }),
+        (Some(x), Some(y)) => Some(if compare_bounds(order, &x, y).is_le() == take_min {
+            x
+        } else {
+            y.clone()
+        }),
     }
 }
 
@@ -54,9 +135,13 @@ pub fn reduce(stats: &[&Option<Statistics>]) -> ParquetResult<Option<Statistics>
         T::Int64 => reduce_primitive(stats.iter().map(|x| x.expect_as_int64())).into(),
         T::Float => reduce_primitive(stats.iter().map(|x| x.expect_as_float())).into(),
         T::Double => reduce_primitive(stats.iter().map(|x| x.expect_as_double())).into(),
-        T::ByteArray => reduce_binary(stats.iter().map(|x| x.expect_as_binary())).into(),
+        T::ByteArray => {
+            let order = bounds_order(&stats[0].expect_as_binary().primitive_type);
+            reduce_binary(stats.iter().map(|x| x.expect_as_binary()), order).into()
+        },
         T::FixedLenByteArray(_) => {
-            reduce_fix_len_binary(stats.iter().map(|x| x.expect_as_fixedlen())).into()
+            let order = bounds_order(&stats[0].expect_as_fixedlen().primitive_type);
+            reduce_fix_len_binary(stats.iter().map(|x| x.expect_as_fixedlen()), order).into()
         },
         _ => todo!(),
     };
@@ -64,11 +149,14 @@ pub fn reduce(stats: &[&Option<Statistics>]) -> ParquetResult<Option<Statistics>
     Ok(Some(stats))
 }
 
-fn reduce_binary<'a, I: Iterator<Item = &'a BinaryStatistics>>(mut stats: I) -> BinaryStatistics {
+fn reduce_binary<'a, I: Iterator<Item = &'a BinaryStatistics>>(
+    mut stats: I,
+    order: BoundsOrder,
+) -> BinaryStatistics {
     let initial = stats.next().unwrap().clone();
     stats.fold(initial, |mut acc, new| {
-        acc.min_value = reduce_vec8(acc.min_value, &new.min_value, false);
-        acc.max_value = reduce_vec8(acc.max_value, &new.max_value, true);
+        acc.min_value = reduce_vec8(acc.min_value, &new.min_value, false, order);
+        acc.max_value = reduce_vec8(acc.max_value, &new.max_value, true, order);
         acc.null_count = reduce_single(acc.null_count, new.null_count, |x, y| x + y);
         acc.distinct_count = None;
         acc
@@ -77,11 +165,12 @@ fn reduce_binary<'a, I: Iterator<Item = &'a BinaryStatistics>>(mut stats: I) -> 
 
 fn reduce_fix_len_binary<'a, I: Iterator<Item = &'a FixedLenStatistics>>(
     mut stats: I,
+    order: BoundsOrder,
 ) -> FixedLenStatistics {
     let initial = stats.next().unwrap().clone();
     stats.fold(initial, |mut acc, new| {
-        acc.min_value = reduce_vec8(acc.min_value, &new.min_value, false);
-        acc.max_value = reduce_vec8(acc.max_value, &new.max_value, true);
+        acc.min_value = reduce_vec8(acc.min_value, &new.min_value, false, order);
+        acc.max_value = reduce_vec8(acc.max_value, &new.max_value, true, order);
         acc.null_count = reduce_single(acc.null_count, new.null_count, |x, y| x + y);
         acc.distinct_count = None;
         acc
@@ -140,7 +229,6 @@ fn reduce_primitive<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parquet::schema::types::PrimitiveType;
 
     #[test]
     fn binary() -> ParquetResult<()> {
@@ -160,7 +248,7 @@ mod tests {
                 max_value: None,
             },
         ];
-        let a = reduce_binary(iter.iter());
+        let a = reduce_binary(iter.iter(), BoundsOrder::Bytes);
 
         assert_eq!(
             a,
@@ -200,7 +288,7 @@ mod tests {
                 max_value: None,
             },
         ];
-        let a = reduce_fix_len_binary(iter.iter());
+        let a = reduce_fix_len_binary(iter.iter(), BoundsOrder::Bytes);
 
         assert_eq!(
             a,
@@ -297,7 +385,7 @@ mod tests {
             },
         ];
 
-        let a = reduce_binary(iter.iter());
+        let a = reduce_binary(iter.iter(), BoundsOrder::Bytes);
 
         assert_eq!(a.min_value, Some(vec![1, 2]));
         assert_eq!(a.max_value, Some(vec![1, 2, 0]));
@@ -313,11 +401,12 @@ mod tests {
         let b = vec![1, 2, 0];
 
         // For max=true, we expect the longer (lexicographically larger) value.
-        let max_val = reduce_vec8(Some(a.clone()), &Some(b.clone()), true).unwrap();
+        let max_val =
+            reduce_vec8(Some(a.clone()), &Some(b.clone()), true, BoundsOrder::Bytes).unwrap();
         assert_eq!(max_val, b);
 
         // For max=false, we expect the shorter (lexicographically smaller) value.
-        let min_val = reduce_vec8(Some(a.clone()), &Some(b), false).unwrap();
+        let min_val = reduce_vec8(Some(a.clone()), &Some(b), false, BoundsOrder::Bytes).unwrap();
         assert_eq!(min_val, a);
 
         Ok(())

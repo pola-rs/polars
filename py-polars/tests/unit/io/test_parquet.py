@@ -1146,6 +1146,25 @@ def test_parquet_statistics_uint64_16683() -> None:
 
 
 @pytest.mark.slow
+def test_parquet_decimal_statistics_29347() -> None:
+    # A precision of 19 or more is stored as a fixed length byte array, and enough
+    # sorted values are needed for the row group to span several pages, some of which
+    # hold only negative values.
+    n = 100_000
+    values = [Decimal(i) for i in range(-(n // 2), n // 2)]
+    df = pl.Series("a", values, dtype=pl.Decimal(19, 0)).to_frame()
+
+    file = io.BytesIO()
+    df.write_parquet(file, statistics=True, row_group_size=n)
+    file.seek(0)
+    statistics = pq.read_metadata(file).row_group(0).column(0).statistics
+
+    assert statistics.min <= statistics.max
+    assert statistics.min == values[0]
+    assert statistics.max == values[-1]
+
+
+@pytest.mark.slow
 @pytest.mark.parametrize("nullable", [True, False])
 def test_read_byte_stream_split(nullable: bool) -> None:
     rng = np.random.default_rng(123)
