@@ -1271,6 +1271,46 @@ class PyExpr:
         allow_duplicates: bool,
         include_breaks: bool,
     ) -> PyExpr: ...
+    def bin_intervals(
+        self,
+        intervals: PySeries,
+        labels: Sequence[str] | None,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> PyExpr: ...
+    def bin_intervals_uniform(
+        self,
+        n_bins: int,
+        labels: Sequence[str] | None,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> PyExpr: ...
+    def bin_quantiles(
+        self,
+        quantiles: Sequence[float],
+        labels: Sequence[str] | None,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> PyExpr: ...
+    def bin_quantiles_uniform(
+        self,
+        n_bins: int,
+        labels: Sequence[str] | None,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> PyExpr: ...
+    def bin_ranks(
+        self,
+        ranks: Sequence[float],
+        labels: Sequence[str] | None,
+        include_intervals: bool,
+    ) -> PyExpr: ...
+    def bin_ranks_uniform(
+        self,
+        n_bins: int,
+        labels: Sequence[str] | None,
+        include_intervals: bool,
+    ) -> PyExpr: ...
     def rle(self) -> PyExpr: ...
     def rle_id(self) -> PyExpr: ...
     def count(self) -> PyExpr: ...
@@ -1991,6 +2031,11 @@ class PyExpr:
 
     # map
     def map_entries(self) -> PyExpr: ...
+    def map_keys(self) -> PyExpr: ...
+    def map_values(self) -> PyExpr: ...
+    def map_len(self) -> PyExpr: ...
+    def map_contains_key(self, key: PyExpr) -> PyExpr: ...
+    def map_get(self, key: PyExpr) -> PyExpr: ...
 
     # extension
     def ext_to(self, dtype: PyDataTypeExpr) -> PyExpr: ...

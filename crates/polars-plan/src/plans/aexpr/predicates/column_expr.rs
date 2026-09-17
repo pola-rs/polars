@@ -4,8 +4,8 @@ use polars_core::datatypes::DataType;
 use polars_core::prelude::AnyValue;
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
+use polars_defs::expr::ClosedInterval;
 use polars_io::predicates::SpecializedColumnPredicate;
-use polars_ops::series::ClosedInterval;
 use polars_utils::aliases::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -74,7 +74,7 @@ pub fn aexpr_to_column_predicates(
                 is_sumwise_complete = false;
                 continue;
             },
-            D::Float32 | D::Float64 => {
+            D::Float32 | D::Float64 | D::Int128 | D::UInt128 => {
                 is_sumwise_complete = false;
                 continue;
             },

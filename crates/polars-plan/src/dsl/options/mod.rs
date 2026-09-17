@@ -8,6 +8,11 @@ pub mod iceberg_sink_state;
 pub mod sink;
 pub use polars_config::Engine;
 use polars_core::prelude::*;
+use polars_defs::join::{JoinArgs, JoinType};
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::DynamicGroupOptions;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::RollingGroupOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
@@ -16,11 +21,6 @@ use polars_io::ipc::IpcWriterOptions;
 use polars_io::ndjson::NDJsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
-use polars_ops::prelude::{JoinArgs, JoinType};
-#[cfg(feature = "dynamic_group_by")]
-use polars_time::DynamicGroupOptions;
-#[cfg(feature = "dynamic_group_by")]
-use polars_time::RollingGroupOptions;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]

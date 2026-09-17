@@ -1,9 +1,9 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::temporal;
 use polars_compute::cast::{CastOptionsImpl, cast};
-use polars_core::prelude::*;
 #[cfg(feature = "timezones")]
-use polars_ops::chunked_array::datetime::replace_time_zone;
+use polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone;
+use polars_core::prelude::*;
 
 use super::*;
 
@@ -48,7 +48,7 @@ pub trait DatetimeMethods: AsDatetime {
         };
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
+            DataType::Datetime(_, Some(_)) => &replace_time_zone(
                 ca,
                 None,
                 &StringChunked::new("".into(), ["raise"]),
@@ -69,7 +69,7 @@ pub trait DatetimeMethods: AsDatetime {
         };
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
+            DataType::Datetime(_, Some(_)) => &replace_time_zone(
                 ca,
                 None,
                 &StringChunked::new("".into(), ["raise"]),
@@ -107,7 +107,7 @@ pub trait DatetimeMethods: AsDatetime {
         };
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
+            DataType::Datetime(_, Some(_)) => &replace_time_zone(
                 ca,
                 None,
                 &StringChunked::new("".into(), ["raise"]),
@@ -176,7 +176,7 @@ pub trait DatetimeMethods: AsDatetime {
         };
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
+            DataType::Datetime(_, Some(_)) => &replace_time_zone(
                 ca,
                 None,
                 &StringChunked::new("".into(), ["raise"]),
