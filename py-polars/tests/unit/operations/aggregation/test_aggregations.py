@@ -545,7 +545,7 @@ def test_approx_quantile_smallest_error(method: ApproxQuantileMethod) -> None:
 def test_approx_quantile_lossless_rank(method: ApproxQuantileMethod) -> None:
     for n in range(16):
         quantiles = [0.0, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9, 1.0]
-        s = pl.Series("a", _shuffled(n))
+        s = pl.Series("a", _shuffled(n), dtype=pl.Float64)
         got = (
             s.to_frame()
             .select(
