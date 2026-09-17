@@ -359,6 +359,12 @@ pub(super) async fn parquet_file_info(
                 // Sample limit including source 0, which is read separately.
                 let budget = sample_size(n_sources, limit);
 
+                // Nothing to sample when the budget covers every source; say so and
+                // let the caller's coverage check route this to a full resolve.
+                if budget >= n_sources {
+                    return (1..n_sources).collect();
+                }
+
                 // Prioritize heavy sources so the distributed planner has their
                 // row-group metadata available for splitting.
                 let mut indices = Vec::new();
@@ -387,10 +393,21 @@ pub(super) async fn parquet_file_info(
                     }
                 }
 
-                // Use the remaining budget for stratified sampling.
-                indices.extend(sampled_source_indices(n_sources, budget - indices.len()));
+                // Spend what is left of the budget on a stratified sample of the
+                // sources that are not pinned already: sampling over all of them would
+                // re-pick pinned ones and lose the budget those duplicates cost.
                 indices.sort_unstable();
-                indices.dedup();
+                let rest: Vec<usize> = (1..n_sources)
+                    .filter(|i| indices.binary_search(i).is_err())
+                    .collect();
+                indices.extend(
+                    // `rest` stands in for `1..rest.len() + 1`, so the stride is over
+                    // positions in it rather than over source indices.
+                    sampled_source_indices(rest.len() + 1, budget - indices.len())
+                        .into_iter()
+                        .map(|pos| rest[pos - 1]),
+                );
+                indices.sort_unstable();
                 indices
             })
             // `+ 1` for source 0, which is read separately.

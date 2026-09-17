@@ -417,7 +417,9 @@ fn expand_python_dataset(
                 #[cfg(feature = "parquet")]
                 FileScanDsl::Parquet { options } => FileScanIR::Parquet {
                     options,
-                    // Metadata is resolved later in `parquet_file_info`.
+                    // No footers: `parquet_file_info` resolves them during DSL-to-IR
+                    // conversion, which has already run by the time this pass expands
+                    // the dataset, and nothing resolves them afterwards.
                     metadata_per_source: Unresolved,
                     bytes_per_source: source_sizes.clone(),
                 },
