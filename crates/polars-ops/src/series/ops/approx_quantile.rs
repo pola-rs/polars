@@ -133,7 +133,13 @@ pub fn approx_quantile_estimate(
             .to_unit_list()
             .into_series()
     };
-    let quantiles = quantiles.broadcast_to(sketch.len())?.list()?.to_owned();
+    // The estimates are written one per row, and they are read out of the values the rows window
+    // -- which a chunk whose rows all read the one range they hold holds once, and `get_inner`
+    // hands over as it finds them. Laying the rows out here lines the two up again.
+    let quantiles = quantiles
+        .broadcast_to(sketch.len())?
+        .list()?
+        .to_flat_layout();
     polars_ensure!(
         !quantiles.has_nulls(),
         ComputeError: "`quantile` should not be null",
