@@ -766,15 +766,6 @@ fn is_in_row_encoded(
     Ok(mask)
 }
 
-/// Whether every element of `s` reads the one element its single chunk repeats.
-fn repeats_one_element(s: &Series) -> bool {
-    let [chunk] = s.chunks().as_slice() else {
-        return false;
-    };
-
-    s.len() > 1 && chunk.is_scalar()
-}
-
 /// The answer of the one pair of elements both sides read, repeated over the whole column.
 ///
 /// Both sides have to hand every element the same one, either because the side repeats it or
@@ -792,7 +783,7 @@ fn repeat_one_answer(
         return None;
     }
 
-    let reads_one = |s: &Series| s.len() == 1 || repeats_one_element(s);
+    let reads_one = |s: &Series| s.len() == 1 || s.repeats_one_element();
     if !reads_one(needle) || !reads_one(haystack) {
         return None;
     }

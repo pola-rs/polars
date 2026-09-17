@@ -63,7 +63,7 @@ impl<T: PolarsObject> ChunkUnique for ObjectChunked<T> {
 
 /// Whether every element of this chunked array is the same one.
 ///
-/// One chunk that repeats a single element is the same value throughout, or the same null
+/// A column that repeats a single element is the same value throughout, or the same null
 /// throughout; a column with nothing but nulls in it is the same null throughout too, however
 /// many chunks they are spread over. Either way it has exactly one distinct element, and the
 /// whole unique family is answered off the first of them without hashing a single one. See also
@@ -78,7 +78,7 @@ fn reads_as_one_element<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
         return true;
     }
 
-    matches!(ca.chunks().as_slice(), [chunk] if chunk.is_scalar())
+    ca.repeats_one_element()
 }
 
 /// [`arg_unique_chunk`] over one contiguous run of values.

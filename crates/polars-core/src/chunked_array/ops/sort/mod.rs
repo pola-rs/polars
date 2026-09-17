@@ -102,22 +102,18 @@ pub(crate) fn sort_in_parallel(len: usize, parallel: bool) -> bool {
     parallel && len >= PARALLEL_SORT_LIMIT && RAYON.current_num_threads() > 1
 }
 
-/// Whether `ca` holds its elements as one chunk that repeats a single one of them.
+/// Whether `ca` repeats a single one of its elements over all of them.
 ///
-/// Every element of such a chunk is the same one — the same value throughout, or a null
-/// throughout — so they already stand in every order at once: sorting it answers with the chunk
+/// Every element of such a column is the same one — the same value throughout, or a null
+/// throughout — so they already stand in every order at once: sorting it answers with the column
 /// itself, and `arg_sort` with `0..len`.
 ///
 /// `Struct`, `List`, `Array` and `Map` are the ones that have to be told. A sort of theirs is a
 /// row encoding of the whole column that is then sorted, and the encoding writes one row per
-/// element whatever the column holds; the flat sorts read this off the sorted flag such a chunk
+/// element whatever the column holds; the flat sorts read this off the sorted flag such a column
 /// carries instead — see `sort_with_fast_path`.
 pub(crate) fn repeats_one_element<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
-    let [chunk] = ca.chunks().as_slice() else {
-        return false;
-    };
-
-    ca.len() > 1 && chunk.is_scalar()
+    ca.repeats_one_element()
 }
 
 /// `0..length`: what an `arg_sort` over elements that are all the same one answers, in the order

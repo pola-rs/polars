@@ -32,11 +32,11 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
 
     let s = s.as_materialized_series();
 
-    // A single chunk that repeats one element is one run of that element, whatever the element
-    // is: the typed helpers below would read the repeat out one element at a time to say so.
-    if let [chunk] = s.chunks().as_slice()
-        && chunk.is_scalar()
-    {
+    // A column that repeats one element is one run of that element, whatever the element is: the
+    // typed helpers below would read the repeat out one element at a time to say so. Several
+    // chunks that all repeat the same element are still the one run, which is the shape the
+    // streaming engine hands this op.
+    if s.repeats_one_element() {
         lengths.push(s.len() as IdxSize);
         return Ok(());
     }

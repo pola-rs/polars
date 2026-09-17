@@ -611,6 +611,49 @@ where
         }
     }
 
+    /// Whether every element of this column reads one and the same element.
+    ///
+    /// The array twin of [`Series::repeats_one_element`], and the same answer: an op that reads
+    /// such a column element by element reads the same element every time, so it may read that
+    /// one and repeat what it makes of it.
+    ///
+    /// More than one chunk still answers, as long as each of them repeats and they all repeat the
+    /// same element. That is the shape a column takes when the streaming engine hands a whole
+    /// column to an op that cannot be split — one chunk per morsel, each of them a repeat.
+    /// Comparing the chunks costs one element per chunk, against the walk it stands in for.
+    pub fn repeats_one_element(&self) -> bool {
+        if self.len() <= 1 {
+            return false;
+        }
+
+        match self.chunks.as_slice() {
+            [chunk] => chunk.is_scalar(),
+            // Comparing the chunks against each other goes through a series, which two dtypes
+            // cannot be read back as: an object column carries pointers only one chunk of it may
+            // hold, and an unknown one has no reading at all. Neither of them answers here.
+            chunks
+                if !matches!(self.dtype(), DataType::Unknown(_))
+                    && !self.dtype().is_object()
+                    && chunks
+                        .iter()
+                        .all(|chunk| chunk.is_empty() || chunk.is_scalar()) =>
+            {
+                // Only worth asking whether the chunks repeat the *same* element once every one
+                // of them is known to repeat at all.
+                unsafe {
+                    // SAFETY: the chunks and the dtype are this column's own.
+                    Series::from_chunks_and_dtype_unchecked(
+                        self.name().clone(),
+                        self.chunks.clone(),
+                        self.dtype(),
+                    )
+                }
+                .repeats_one_element()
+            },
+            _ => false,
+        }
+    }
+
     /// This column narrowed to the single element it repeats, where it stands for one.
     ///
     /// An argument written as a literal reaches a kernel already broadcast to the length of the

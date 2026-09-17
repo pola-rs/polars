@@ -676,11 +676,10 @@ impl Column {
         match self {
             // A scalar column is one value and a length: there is nothing else in it.
             Self::Scalar(_) => true,
-            // Nulls are all the same element whatever the chunks look like; otherwise it takes a
-            // single chunk that repeats one element to say as much.
+            // Nulls are all the same element whatever the chunks look like; otherwise it takes
+            // a column that repeats one element to say as much.
             Self::Series(series) => {
-                series.null_count() == series.len()
-                    || matches!(series.chunks().as_slice(), [chunk] if chunk.is_scalar())
+                series.null_count() == series.len() || series.repeats_one_element()
             },
         }
     }

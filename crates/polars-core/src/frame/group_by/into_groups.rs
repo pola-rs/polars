@@ -34,9 +34,8 @@ pub(crate) fn scalar_groups<T: PolarsDataType>(ca: &ChunkedArray<T>) -> Option<G
     }
 
     // Nulls all fall into one group, so a column of nothing else is one group whatever its
-    // chunks look like; otherwise it takes one chunk repeating one element to say as much.
-    let one_element = ca.null_count() == ca.len()
-        || matches!(ca.chunks().as_slice(), [chunk] if chunk.is_scalar());
+    // chunks look like; otherwise it takes a column repeating one element to say as much.
+    let one_element = ca.null_count() == ca.len() || ca.repeats_one_element();
     if !one_element {
         return None;
     }

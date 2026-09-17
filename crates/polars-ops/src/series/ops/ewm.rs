@@ -50,11 +50,21 @@ where
     T::Native: EwmFloat,
 {
     // A column of one element is answered by the kernel as cheaply as here.
-    (ca.len() > 1)
-        .then(|| ca.scalar_value())
-        .flatten()
-        .flatten()
-        .filter(|value| value.is_finite())
+    if ca.len() <= 1 {
+        return None;
+    }
+
+    let value = match ca.chunks().as_slice() {
+        [_] => ca.scalar_value()?,
+        // Several chunks that all repeat the same element are that one value throughout as well,
+        // which is the shape the streaming engine hands this op.
+        _ => ca
+            .repeats_one_element()
+            // SAFETY: the column was just seen to hold more than one element.
+            .then(|| unsafe { ca.get_unchecked(0) })?,
+    };
+
+    value.filter(|value| value.is_finite())
 }
 
 /// `length` elements of `value`, the first `nulls` of them null instead.

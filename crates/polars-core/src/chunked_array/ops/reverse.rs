@@ -11,18 +11,22 @@ fn reversed_sorted_flag<T: PolarsDataType>(ca: &ChunkedArray<T>) -> IsSorted {
     }
 }
 
-/// A chunked array that is its own reverse, if it is one: a single chunk repeating one element.
+/// A chunked array that is its own reverse, if it is one: a column repeating one element.
 ///
 /// The elements come back in the places they were already in, but the sorted flag still turns
 /// over. One element repeated stands in both orders at once, so either flag is the truth — and
 /// `sort_with`'s fast path reaches `reverse` precisely to be handed the *other* one, so a caller
 /// that asked for a descending sort of an ascending column must not get an ascending one back.
 fn reverses_to_itself<T: PolarsDataType>(ca: &ChunkedArray<T>) -> Option<ChunkedArray<T>> {
-    let [chunk] = ca.chunks().as_slice() else {
-        return None;
+    let repeats = match ca.chunks().as_slice() {
+        [chunk] => PlArray::is_scalar(&**chunk),
+        // Several chunks that all repeat the same element hold it in every place too, so the
+        // reversed column is the one that came in — with the chunks in the other order, which
+        // says nothing about the elements.
+        _ => ca.repeats_one_element(),
     };
 
-    PlArray::is_scalar(&**chunk).then(|| ca.with_sorted_flag(reversed_sorted_flag(ca)))
+    repeats.then(|| ca.with_sorted_flag(reversed_sorted_flag(ca)))
 }
 
 /// Reverses `ca` a chunk at a time: every chunk reversed by `reversed`, in the opposite order.

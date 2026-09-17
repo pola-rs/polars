@@ -72,12 +72,8 @@ fn repeats_one_element(column: &Column) -> bool {
         Column::Scalar(_) => true,
         // A column of one element repeats that element, however its chunk holds it.
         _ if column.len() <= 1 => true,
-        _ => {
-            let chunks = column.as_materialized_series().chunks();
-            // Every chunk of a column that repeats one element repeats the *same* one, which two
-            // of them no longer say on their own: only a single chunk answers here.
-            matches!(chunks.as_slice(), [chunk] if chunk.is_scalar())
-        },
+        // Several chunks answer too, as long as they all repeat the same element.
+        _ => column.as_materialized_series().repeats_one_element(),
     }
 }
 
