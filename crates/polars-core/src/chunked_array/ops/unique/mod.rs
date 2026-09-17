@@ -81,51 +81,55 @@ fn reads_as_one_element<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
     ca.repeats_one_element()
 }
 
-/// [`arg_unique_chunk`] over one contiguous run of values.
+/// [`arg_unique_chunks`] over contiguous runs of values.
 ///
-/// It is its own function, and holds nothing but the loop, so that the hash set's `insert` has
-/// room to be inlined into it: the walk costs a third more when it is left as a call.
-fn arg_unique_slice<T>(
-    vals: &[T],
-    offset: IdxSize,
-    set: &mut PlHashSet<<T as ToTotalOrd>::TotalOrdItem>,
-    unique: &mut Vec<IdxSize>,
-) -> IdxSize
+/// The set is this function's own, for the same reason it is in [`arg_unique_chunks`]: read out
+/// of a `&mut` a caller lends, it costs 4 instructions an element more over a flat `Float64`
+/// column of one repeated value, where the probe itself is a cache hit every time.
+fn arg_unique_slices<'a, T>(chunks: impl Iterator<Item = &'a [T]>, capacity: usize) -> Vec<IdxSize>
 where
-    T: ToTotalOrd + Copy,
+    T: ToTotalOrd + Copy + 'a,
     <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
-    for (idx, val) in vals.iter().enumerate() {
-        if set.insert(val.to_total_ord()) {
-            unique.push(offset + idx as IdxSize)
+    let mut set = PlHashSet::new();
+    let mut unique = Vec::with_capacity(capacity);
+    let mut offset: IdxSize = 0;
+    for vals in chunks {
+        for (idx, val) in vals.iter().enumerate() {
+            if set.insert(val.to_total_ord()) {
+                unique.push(offset + idx as IdxSize)
+            }
         }
+        offset += vals.len() as IdxSize;
     }
-    offset + vals.len() as IdxSize
+    unique
 }
 
-/// Walk one chunk, recording where each value this column has not held before first appears.
+/// Where each value this column has not held before first appears, over its chunks in turn.
 ///
-/// `offset` is how many elements the chunks already walked hold, and carries on into the next.
-fn arg_unique_chunk<T>(
-    a: impl Iterator<Item = T>,
-    offset: IdxSize,
-    set: &mut PlHashSet<<T as ToTotalOrd>::TotalOrdItem>,
-    unique: &mut Vec<IdxSize>,
-) -> IdxSize
+/// The set and the answer are this function's own, not `&mut`s a caller lends: a hash set behind
+/// a reference has to be read out of memory on every element, where a local one stays in
+/// registers for the whole walk. 1M booleans cost 7 instructions an element more the other way.
+fn arg_unique_chunks<T, I>(chunks: impl Iterator<Item = I>, capacity: usize) -> Vec<IdxSize>
 where
+    I: Iterator<Item = T>,
     T: ToTotalOrd,
     <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
-    // The index is a local, not a `&mut` the caller lends: the loop keeps it in a register and
-    // hands the next chunk's starting point back.
-    let mut idx = offset;
-    a.for_each(|val| {
-        if set.insert(val.to_total_ord()) {
-            unique.push(idx)
-        }
-        idx += 1;
-    });
-    idx
+    let mut set = PlHashSet::new();
+    let mut unique = Vec::with_capacity(capacity);
+    // The index is a local the loop keeps in a register, rather than one `enumerate` hands over
+    // alongside each element.
+    let mut idx: IdxSize = 0;
+    for a in chunks {
+        a.for_each(|val| {
+            if set.insert(val.to_total_ord()) {
+                unique.push(idx)
+            }
+            idx += 1;
+        });
+    }
+    unique
 }
 
 macro_rules! arg_unique_ca {
@@ -136,25 +140,14 @@ macro_rules! arg_unique_ca {
         } else {
             // One chunk at a time, not `ca.iter()` over the column: a chunk's own iterator
             // resolves its representation once for the whole chunk in `fold`, and the flattening
-            // adapters between the column and it cost more per element than they hoist -- this
-            // loop carries the element index itself instead of asking `enumerate` for it.
-            let mut unique = Vec::with_capacity(ca.len());
-            let mut offset: IdxSize = 0;
+            // adapters between the column and it cost more per element than they hoist.
             match ca.has_nulls() {
-                false => {
-                    let mut set = PlHashSet::new();
-                    for arr in ca.downcast_iter() {
-                        offset = arg_unique_chunk(arr.values_iter(), offset, &mut set, &mut unique);
-                    }
-                },
-                _ => {
-                    let mut set = PlHashSet::new();
-                    for arr in ca.downcast_iter() {
-                        offset = arg_unique_chunk(arr.iter(), offset, &mut set, &mut unique);
-                    }
-                },
+                false => arg_unique_chunks(
+                    ca.downcast_iter().map(|arr| arr.values_iter()),
+                    ca.len(),
+                ),
+                _ => arg_unique_chunks(ca.downcast_iter().map(|arr| arr.iter()), ca.len()),
             }
-            unique
         }
     }};
 }
@@ -216,13 +209,10 @@ where
             && self.null_count() == 0
             && let Some(flat) = self.as_flat()
         {
-            let mut set = PlHashSet::new();
-            let mut unique = Vec::with_capacity(self.len());
-            let mut offset: IdxSize = 0;
-            for vals in flat.chunks_flat_values() {
-                offset = arg_unique_slice(vals, offset, &mut set, &mut unique);
-            }
-            return Ok(IdxCa::from_vec(self.name().clone(), unique));
+            return Ok(IdxCa::from_vec(
+                self.name().clone(),
+                arg_unique_slices(flat.chunks_flat_values(), self.len()),
+            ));
         }
 
         Ok(IdxCa::from_vec(self.name().clone(), arg_unique_ca!(self)))
