@@ -915,6 +915,7 @@ pub fn lower_ir(
                         .and_then(|files| DeletionFilesList::filter_empty(Some(files)));
 
                     let bytes_per_source = match &*scan_type {
+                        #[cfg(feature = "parquet")]
                         FileScanIR::Parquet {
                             bytes_per_source, ..
                         } => bytes_per_source.clone(),
