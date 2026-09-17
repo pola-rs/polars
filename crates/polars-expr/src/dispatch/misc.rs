@@ -136,7 +136,15 @@ pub(super) fn replace_time_zone(
     let s1 = &s[0];
     let ca = s1.datetime().unwrap();
     let s2 = &s[1].str()?;
-    Ok(polars_ops::prelude::replace_time_zone(ca, time_zone, s2, non_existent)?.into_column())
+    Ok(
+        polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone(
+            ca,
+            time_zone,
+            s2,
+            non_existent,
+        )?
+        .into_column(),
+    )
 }
 
 #[cfg(feature = "dtype-struct")]
