@@ -394,6 +394,14 @@ def test_decimal_aggregations() -> None:
     assert_frame_equal(df.describe(), description)
 
 
+def test_decimal_mean_engine_consistency() -> None:
+    # Scaling by `1 / 10**scale` rounds the reciprocal first, so it must not be used.
+    df = pl.DataFrame({"a": pl.Series([D("0.1"), D("0.2")], dtype=pl.Decimal(38, 18))})
+
+    assert df.select(pl.col("a").mean()).item() == 0.15
+    assert df.group_by(pl.lit(1)).agg(pl.col("a").mean())["a"].item() == 0.15
+
+
 def test_decimal_cumulative_aggregations() -> None:
     df = pl.Series("a", [D("2.2"), D("1.1"), D("3.3")]).to_frame()
     result = df.select(

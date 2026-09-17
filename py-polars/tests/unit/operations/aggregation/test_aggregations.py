@@ -70,6 +70,29 @@ def test_boolean_aggs() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("days", "expected"),
+    [
+        # The exact mean is 14:24:00, but the days mean is not representable in f64
+        # and the microsecond conversion truncates. Both engines must agree on it.
+        (
+            [20000, 20000, 20000, 20000, 20003],
+            datetime(2024, 10, 4, 14, 23, 59, 999999),
+        ),
+        ([32768, 32768, 32768, 32768, 32772], datetime(2059, 9, 19, 19, 12)),
+    ],
+)
+def test_date_mean_engine_consistency_29357(
+    days: list[int], expected: datetime
+) -> None:
+    df = pl.DataFrame({"a": pl.Series(days, dtype=pl.Int32)}).select(
+        pl.col("a").cast(pl.Date)
+    )
+
+    assert df.select(pl.col("a").mean()).item() == expected
+    assert df.group_by(pl.lit(1)).agg(pl.col("a").mean())["a"].item() == expected
+
+
 def test_duration_aggs() -> None:
     df = pl.DataFrame(
         {
