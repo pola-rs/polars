@@ -1242,6 +1242,27 @@ mod test {
         let s = Series::from_any_values_and_dtype("".into(), &empties, &dtype, false).unwrap();
         assert_eq!(s.len(), 3);
     }
+
+    #[test]
+    #[cfg(feature = "dtype-struct")]
+    fn from_arrow_struct_duplicate_field_names_24899() {
+        // https://github.com/pola-rs/polars/issues/24899
+        // Importing an Arrow struct with duplicate field names must raise a
+        // `DuplicateError` instead of panicking.
+        let fields = vec![
+            ArrowField::new("x".into(), ArrowDataType::Int64, true),
+            ArrowField::new("x".into(), ArrowDataType::Int64, true),
+        ];
+        let values: Vec<ArrayRef> = vec![
+            Box::new(Int64Array::from_slice([1])),
+            Box::new(Int64Array::from_slice([2])),
+        ];
+        let arr = StructArray::new(ArrowDataType::Struct(fields), 1, values, None);
+
+        let result = Series::from_arrow(PlSmallStr::from_static("s"), arr.boxed());
+        assert!(matches!(result, Err(PolarsError::Duplicate(_))));
+    }
+
     #[test]
     fn new_series_from_arrow_primitive_array() {
         let array = UInt32Array::from_slice([1, 2, 3, 4, 5]);
