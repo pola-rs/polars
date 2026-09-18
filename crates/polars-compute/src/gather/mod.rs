@@ -37,7 +37,7 @@ pub mod primitive;
 pub mod structure;
 pub mod sublist;
 
-pub use pl_array::take_unchecked;
+pub use pl_array::{gather_validity, gather_validity_slice, take_unchecked};
 use polars_arrow::with_match_primitive_type;
 
 /// Returns a new [`Array`] with only indices at `indices`. Null indices are taken as nulls.

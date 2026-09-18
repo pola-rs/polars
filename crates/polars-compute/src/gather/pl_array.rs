@@ -6,7 +6,7 @@ use polars_array::builder::new_full_null_like;
 use polars_array::{PlArray, PlBitmap, PlBitmapRef, PlPrimitiveArray};
 use polars_utils::IdxSize;
 
-use super::bitmap::take_bitmap_nulls_unchecked;
+use super::bitmap::{take_bitmap_nulls_unchecked, take_bitmap_unchecked};
 use super::take_arrow_unchecked;
 
 /// Returns the elements of `values` at `indices`, reading a null index as a null element.
@@ -66,10 +66,11 @@ pub unsafe fn take_unchecked(
 }
 
 /// The validity of a gather from a chunk whose values are stored in the scalar representation:
+/// the mask alone is gathered, since every element picked reads the same value.
 ///
 /// # Safety
 /// Every non-null index must be in bounds of `validity`.
-unsafe fn gather_validity(
+pub unsafe fn gather_validity(
     validity: Option<PlBitmapRef<'_>>,
     indices: &PlPrimitiveArray<IdxSize>,
 ) -> Option<PlBitmap> {
@@ -83,6 +84,23 @@ unsafe fn gather_validity(
     });
 
     combine_validities_and(gathered.as_ref().map(PlBitmap::as_ref), indices.validity())
+}
+
+/// As [`gather_validity`], where the indices are a slice and so none of them is null.
+///
+/// # Safety
+/// Every index must be in bounds of `validity`.
+pub unsafe fn gather_validity_slice(
+    validity: Option<PlBitmapRef<'_>>,
+    indices: &[IdxSize],
+) -> Option<PlBitmap> {
+    validity.map(|validity| match validity.scalar_value() {
+        // One bit says the same of every element, and therefore of every element gathered.
+        Some(bit) => PlBitmap::new_scalar(bit, indices.len()),
+        None => PlBitmap::from_bitmap(unsafe {
+            take_bitmap_unchecked(validity.flat_bitmap().unwrap(), indices)
+        }),
+    })
 }
 
 /// `array` with `mask` folded into its validity mask.

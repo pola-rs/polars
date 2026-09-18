@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 use polars_array::builder::{ShareStrategy, builder_like};
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::bitmap::bitmask::BitMask;
-use polars_compute::gather::take_unchecked;
+use polars_compute::gather::{gather_validity, gather_validity_slice, take_unchecked};
 use polars_error::polars_ensure;
 use polars_utils::index::check_bounds;
 
@@ -126,6 +126,16 @@ unsafe fn target_get_unchecked<'a, A: StaticArray>(
     arr.get_unchecked(arr_idx)
 }
 
+/// The chunk's values on their own, if they are one slot every element of it reads.
+///
+/// [`PlArray::is_scalar`] answers for the mask as well, so a chunk that repeats a value under a
+/// bit per element -- what a `when`/`then` over a literal builds -- does not read as scalar by it
+/// although its values do stand for every element.
+fn values_repeated<A: StaticArray>(target: &A) -> Option<A> {
+    let values = target.clone().with_validity_typed(None);
+    PlArray::is_scalar(&values).then_some(values)
+}
+
 unsafe fn gather_idx_array_unchecked<A>(targets: &[&A], has_nulls: bool, indices: &[IdxSize]) -> A
 where
     A: StaticArray
@@ -135,10 +145,17 @@ where
     let it = indices.iter().copied();
     if targets.len() == 1 {
         let target = targets.first().unwrap();
-        if !indices.is_empty() && !target.is_empty() && PlArray::is_scalar(*target) {
-            // Every element of the chunk reads the same value and is null or not alongside it, so
-            // whichever elements the indices pick, the answer is that element again.
-            return target.new_from_index_typed(0, indices.len());
+        if !indices.is_empty()
+            && !target.is_empty()
+            && let Some(repeated) = values_repeated(*target)
+        {
+            // Every element of the chunk reads the same value, so whichever elements the indices
+            // pick, the answer is that value again: the values are handed over as they are and it
+            // is the mask alone that is gathered.
+            let validity = unsafe { gather_validity_slice(target.validity(), indices) };
+            return repeated
+                .new_from_index_typed(0, indices.len())
+                .with_validity_typed(validity);
         }
 
         if has_nulls {
@@ -223,20 +240,24 @@ where
         let targets_have_nulls = ca.null_count() > 0;
         let targets: Vec<_> = ca.downcast_iter().collect();
 
-        let mut out = if let [target] = targets[..]
-            && target.is_scalar()
-        {
-            let target_is_null = target.is_null(0);
+        let repeated = match targets[..] {
+            [target] if !target.is_empty() => {
+                values_repeated(target).map(|values| (target, values))
+            },
+            _ => None,
+        };
+
+        let mut out = if let Some((target, values)) = repeated {
+            // The values are one slot every element of the chunk reads, so they stand for the
+            // gathered elements as they are; what is gathered is the mask, which a null index
+            // adds to.
             ChunkedArray::from_chunk_iter_like(
                 ca,
                 indices.downcast_iter().map(|idx_arr| {
-                    let mut arr = target.new_from_index_typed(0, idx_arr.len());
-
-                    if !target_is_null {
-                        arr = arr.with_validity_typed(idx_arr.validity().map(Into::into))
-                    }
-
-                    arr
+                    let validity = unsafe { gather_validity(target.validity(), idx_arr) };
+                    values
+                        .new_from_index_typed(0, idx_arr.len())
+                        .with_validity_typed(validity)
                 }),
             )
         } else {
