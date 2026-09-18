@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import (
+        EngineType,
         ParallelStrategy,
         ParquetCompression,
         ParquetMetadata,
@@ -5107,3 +5108,60 @@ def test_scan_parquet_enum_invalid_utf8_29235(tmp_path: Path) -> None:
 
     with pytest.raises(pl.exceptions.ComputeError, match=r"(?i)invalid utf-?8"):
         pl.read_parquet(path)
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.parametrize(
+    ("nested", "enum_statistics"), [(False, False), (True, False), (False, True)]
+)
+def test_enum_table_statistics(
+    engine: EngineType, nested: bool, enum_statistics: bool
+) -> None:
+    # String bounds [a, c] must include b, which precedes a in enum order.
+    df = pl.DataFrame(
+        {"e": ["a", "b", "c", None]}, schema={"e": pl.Enum(["b", "a", "c"])}
+    )
+    bounds = pl.col("e") if enum_statistics else pl.col("e").cast(pl.String)
+    stats = df.select(
+        pl.len(),
+        bounds.min().alias("e_min"),
+        bounds.max().alias("e_max"),
+        pl.col("e").null_count().alias("e_nc"),
+    )
+    col = pl.col("e")
+    if nested:
+        df = df.select(pl.struct("e").alias("s"))
+        stats = stats.select(
+            "len",
+            *(
+                pl.struct(pl.col(f"e_{suffix}").alias("e")).alias(f"s_{suffix}")
+                for suffix in ["min", "max", "nc"]
+            ),
+        )
+        col = pl.col("s").struct.field("e")
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    predicate = col < "a"
+    out = (
+        pl.scan_parquet(f, _table_statistics=stats)
+        .filter(predicate)
+        .collect(engine=engine)
+    )
+    assert_frame_equal(out, df.filter(predicate))
+
+
+def test_enum_table_statistics_prune() -> None:
+    dtype = pl.Enum(["b", "a", "c"])
+    stats = pl.DataFrame(
+        {"len": [1], "e_min": ["b"], "e_max": ["b"], "e_nc": [0]},
+        schema_overrides={"len": pl.get_index_type(), "e_nc": pl.get_index_type()},
+    )
+    # Pruning must avoid reading the invalid file: b < a in enum order.
+    out = (
+        pl.scan_parquet(b"unreadable", schema={"e": dtype}, _table_statistics=stats)
+        .filter(pl.col("e") > "a")
+        .collect(engine="streaming")
+    )
+    assert_frame_equal(out, pl.DataFrame(schema={"e": dtype}))
