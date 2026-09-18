@@ -128,7 +128,7 @@ impl PySeries {
     pub fn from_arrow_c_array(_cls: &Bound<PyType>, ob: &Bound<'_, PyAny>) -> PyResult<Self> {
         let (schema_capsule, array_capsule) = call_arrow_c_array(ob)?;
         let (field, array) = import_array_pycapsules(&schema_capsule, &array_capsule)?;
-        let s = Series::try_from((&field, array)).unwrap();
+        let s = Series::try_from((&field, array)).map_err(PyPolarsErr::from)?;
         Ok(PySeries::new(s))
     }
 
