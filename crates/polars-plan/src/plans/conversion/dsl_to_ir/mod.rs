@@ -33,7 +33,7 @@ mod expr_expansion;
 mod expr_to_ir;
 mod functions;
 mod join;
-mod scans;
+pub(crate) mod scans;
 mod utils;
 pub use expr_expansion::{expand_expression, is_regex_projection, prepare_projection};
 pub use expr_to_ir::{ExprToIRContext, to_expr_ir};

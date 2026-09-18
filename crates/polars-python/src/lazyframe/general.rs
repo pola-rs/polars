@@ -413,14 +413,26 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[pyo3(signature = (
-        dataset_object
+        dataset_object,
+        resolve_heavy_sources = None,
     ))]
-    fn new_from_dataset_object(dataset_object: Py<PyAny>) -> PyResult<Self> {
-        let lf =
-            LazyFrame::from(DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build())
-                .into();
+    fn new_from_dataset_object(
+        dataset_object: Py<PyAny>,
+        // Same knob as `scan_parquet(_resolve_heavy_sources=)`, for a dataset whose
+        // expansion yields a Parquet scan.
+        resolve_heavy_sources: Option<u32>,
+    ) -> PyResult<Self> {
+        let mut dsl = DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build();
 
-        Ok(lf)
+        if let Some(n_parts) = resolve_heavy_sources.and_then(std::num::NonZeroU32::new)
+            && let polars_plan::dsl::DslPlan::Scan {
+                unified_scan_args, ..
+            } = &mut dsl
+        {
+            unified_scan_args.resolve_heavy_sources = Some(n_parts);
+        }
+
+        Ok(LazyFrame::from(dsl).into())
     }
 
     #[staticmethod]

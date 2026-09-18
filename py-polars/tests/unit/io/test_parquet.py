@@ -4814,10 +4814,12 @@ def test_resolve_metadata_cache_distinguishes_resolution_strength(
 
     capfd.readouterr()
     pl.concat([scan(None), scan(4)]).explain(optimized=True)
+    # Picking the heavy sources is shared with the dataset path, which does not
+    # sample, so that line is logged under the plainer prefix.
     traces = [
         ln
         for ln in capfd.readouterr().err.splitlines()
-        if "parquet sampled resolve" in ln
+        if ln.startswith(("parquet resolve: ", "parquet sampled resolve: "))
     ]
 
     # Each scan must resolve its own metadata.
@@ -4849,18 +4851,22 @@ def test_resolve_metadata_sampled_heavy_files(
     plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "2")
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    prefix = "parquet sampled resolve: "
+    # Picking the heavy sources is shared with the dataset path, which does not
+    # sample, so that line is logged under the plainer prefix.
+    prefixes = ("parquet resolve: ", "parquet sampled resolve: ")
 
     def resolve_traces(lf: pl.LazyFrame) -> list[str]:
         capfd.readouterr()
         # Build the plan to trigger metadata resolution.
         lf.explain(optimized=True)
         err = capfd.readouterr().err
-        return [
-            ln[len(prefix) :].split(",")[0]
-            for ln in err.splitlines()
-            if ln.startswith(prefix)
-        ]
+        traces = []
+        for ln in err.splitlines():
+            for prefix in prefixes:
+                if ln.startswith(prefix):
+                    traces.append(ln[len(prefix) :].split(",")[0])
+                    break
+        return traces
 
     glob = tmp_path / "part_*.parquet"
 

@@ -14,6 +14,9 @@ from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
+
+    from tests.conftest import PlMonkeyPatch
 
 
 class CapturingDataset:
@@ -322,3 +325,65 @@ def test_dataset_provider_predicate_partial(df: pl.DataFrame) -> None:
         )
         == "(pa.compute.field('id') > 3)"
     )
+
+
+class ParquetDataset:
+    """Dataset provider that expands to a Parquet scan, the way Iceberg does."""
+
+    def __init__(self, paths: list[Path]) -> None:
+        self.paths = paths
+        self.arrow_schema = pl.scan_parquet(paths[0]).collect_schema().to_arrow()
+
+    def schema(self) -> pa.Schema:
+        return self.arrow_schema
+
+    def to_dataset_scan(self, **_kwargs: Any) -> tuple[pl.LazyFrame, str]:
+        # The manifest knows the sizes, so the expansion does not have to list them.
+        sizes = [p.stat().st_size for p in self.paths]
+        lf = pl.scan_parquet(self.paths, _source_sizes=sizes)
+        return lf, "v1"
+
+
+def test_python_dataset_resolves_heavy_footers(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # A dataset is expanded into a Parquet scan by the optimizer, after the point where
+    # a globbed scan would have resolved its footers. Without the resolve in
+    # `expand_datasets` the distributed planner has no row groups to cut the heavy file
+    # between, however much of the table it holds.
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    paths = []
+    for i, n in enumerate([1, 1, 4000]):
+        path = tmp_path / f"{i}.parquet"
+        pl.DataFrame({"x": range(n)}).write_parquet(path, row_group_size=500)
+        paths.append(path)
+
+    dataset = ParquetDataset(paths)
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
+
+    assert lf.collect().height == 4002
+
+    captured = capfd.readouterr().err
+    assert "parquet resolve: pinned 1 / 1 heavy sources" in captured
+
+
+def test_python_dataset_leaves_footers_alone_without_the_flag(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    paths = []
+    for i, n in enumerate([1, 4000]):
+        path = tmp_path / f"{i}.parquet"
+        pl.DataFrame({"x": range(n)}).write_parquet(path, row_group_size=500)
+        paths.append(path)
+
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(ParquetDataset(paths)))
+
+    assert lf.collect().height == 4001
+    assert "heavy sources" not in capfd.readouterr().err
