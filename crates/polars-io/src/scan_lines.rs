@@ -47,8 +47,6 @@ fn split_lines_to_rows_impl(bytes: Buffer<u8>, max_row_size: usize) -> PolarsRes
     // line is a slice of at a line terminator and so is UTF-8 in turn.
     let mut views: Vec<View> = Vec::with_capacity(n_lines_estimate);
     let mut data_buffers: Vec<Buffer<u8>> = Vec::new();
-    let mut total_bytes_len: usize = 0;
-    let mut total_buffer_len: usize = 0;
     let mut active_buffer: Option<(usize, usize)> = None;
 
     let bytes = if bytes.last() == Some(&LF) {
@@ -82,8 +80,6 @@ fn split_lines_to_rows_impl(bytes: Buffer<u8>, max_row_size: usize) -> PolarsRes
             len, max_row_size,
         );
 
-        total_bytes_len += len;
-
         let line_bytes = unsafe { slice.get_unchecked(start..end) };
 
         let view = if len <= View::MAX_INLINE_SIZE as usize {
@@ -94,7 +90,6 @@ fn split_lines_to_rows_impl(bytes: Buffer<u8>, max_row_size: usize) -> PolarsRes
                 && (end - buffer_start > BINVIEW_ARROW_BUFFER_LEN_LIMIT
                     || start - buffer_end > BUFFER_SPLIT_THRESHOLD)
             {
-                total_buffer_len += buffer_end - buffer_start;
                 data_buffers.push(bytes.clone().sliced(buffer_start..buffer_end));
                 active_buffer = None;
             }
@@ -115,7 +110,6 @@ fn split_lines_to_rows_impl(bytes: Buffer<u8>, max_row_size: usize) -> PolarsRes
     }
 
     if let Some((buffer_start, buffer_end)) = active_buffer {
-        total_buffer_len += buffer_end - buffer_start;
         data_buffers.push(bytes.sliced(buffer_start..buffer_end));
     }
 
