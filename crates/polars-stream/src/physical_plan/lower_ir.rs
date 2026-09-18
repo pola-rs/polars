@@ -838,6 +838,7 @@ pub fn lower_ir(
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
                             io_metrics: std::sync::OnceLock::new(),
+                            file_read_context: std::sync::OnceLock::new(),
                         }) as _
                     },
 

@@ -75,7 +75,7 @@ json = [
   "dtype-struct",
   "csv",
 ]
-scan_lines = []
+scan_lines = ["simdutf8"]
 serde = [
   "dep:serde",
   "serde_json",
