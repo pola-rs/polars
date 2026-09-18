@@ -1136,6 +1136,7 @@ fn lower_exprs_with_ctx(
                         build_side: None,
                     },
                     output_bool: true,
+                    pass_through_above: None,
                 };
 
                 // SemiAntiJoin with output_bool returns a column with the same name as the first

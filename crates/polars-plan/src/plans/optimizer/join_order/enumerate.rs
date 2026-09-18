@@ -150,6 +150,7 @@ mod tests {
                 fused_predicate: None,
             },
             runtime_filters: Vec::new(),
+            pass_through_above: None,
         })
     }
 
