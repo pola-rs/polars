@@ -288,10 +288,10 @@ def test_list_broadcast_leading_scalar() -> None:
 
     # Leading scalar should broadcast to match column length
     result = df.select(pl.list(pl.lit(1), pl.col("x")))
-    expected = pl.DataFrame({"": [[1, 10], [1, 20], [1, 30]]})
+    expected = pl.DataFrame({"literal": [[1, 10], [1, 20], [1, 30]]})
     assert_frame_equal(result, expected)
 
     # Reversed order should also work
     result_reversed = df.select(pl.list(pl.col("x"), pl.lit(1)))
-    expected_reversed = pl.DataFrame({"": [[10, 1], [20, 1], [30, 1]]})
+    expected_reversed = pl.DataFrame({"literal": [[10, 1], [20, 1], [30, 1]]})
     assert_frame_equal(result_reversed, expected_reversed)
