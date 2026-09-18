@@ -365,3 +365,21 @@ def test_ewm_methods(
             ewm_var_pl = s.ewm_var(bias=bias, **pl_params).fill_nan(None)
             ewm_var_pd = pl.Series(p.ewm(**pd_params).var(bias=bias))
             assert_series_equal(ewm_var_pl, ewm_var_pd, abs_tol=1e-07)
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_ewm_mean_over_a_repeated_negative_zero(dtype: pl.DataType) -> None:
+    n = 5
+    repeated = pl.select(pl.repeat(-0.0, n, dtype=dtype).alias("x")).to_series()
+    flat = pl.Series("x", [-0.0] * n, dtype=dtype)
+
+    # The kernel's weighted sum starts at zero and `0.0 + -0.0` is `+0.0`, so only the
+    # first element keeps the sign. A scalar fast path may not repeat a sign it lacks.
+    assert_series_equal(repeated.ewm_mean(alpha=0.3), flat.ewm_mean(alpha=0.3))
+    assert [str(v) for v in repeated.ewm_mean(alpha=0.3).to_list()] == [
+        "-0.0",
+        "0.0",
+        "0.0",
+        "0.0",
+        "0.0",
+    ]

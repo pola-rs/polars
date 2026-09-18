@@ -15,12 +15,18 @@ fn check_alpha(alpha: f64) -> PolarsResult<()> {
 trait EwmFloat: Copy {
     /// Whether this value is neither infinite nor `NaN`.
     fn is_finite(self) -> bool;
+    /// Whether this value is `-0.0`.
+    fn is_negative_zero(self) -> bool;
 }
 
 impl EwmFloat for f32 {
     #[inline]
     fn is_finite(self) -> bool {
         f32::is_finite(self)
+    }
+    #[inline]
+    fn is_negative_zero(self) -> bool {
+        self == 0.0 && self.is_sign_negative()
     }
 }
 
@@ -29,6 +35,10 @@ impl EwmFloat for f64 {
     fn is_finite(self) -> bool {
         f64::is_finite(self)
     }
+    #[inline]
+    fn is_negative_zero(self) -> bool {
+        self == 0.0 && self.is_sign_negative()
+    }
 }
 
 #[cfg(feature = "dtype-f16")]
@@ -36,6 +46,10 @@ impl EwmFloat for polars_utils::float16::pf16 {
     #[inline]
     fn is_finite(self) -> bool {
         polars_utils::float16::pf16::is_finite(self)
+    }
+    #[inline]
+    fn is_negative_zero(self) -> bool {
+        self.to_bits() == 0x8000
     }
 }
 
@@ -91,6 +105,12 @@ where
     T::Native: EwmFloat,
 {
     let value = one_finite_value(ca)?;
+    // The kernel carries a weighted sum that starts at zero, and `0.0 + -0.0` is `+0.0`: a column
+    // of `-0.0` is `-0.0` at the first element and `+0.0` at every one after it. Leave it to the
+    // kernel rather than repeat a sign the flat path does not.
+    if value.is_negative_zero() {
+        return None;
+    }
     let nulls = options.min_periods.saturating_sub(1);
     Some(repeat_from(ca.name().clone(), value, nulls, ca.len()))
 }

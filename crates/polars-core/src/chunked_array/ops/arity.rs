@@ -1398,6 +1398,8 @@ where
 }
 
 /// [`apply_binary_kernel_broadcast`] for a kernel whose scalar form answers differently from its
+/// flat one, so only a side that is genuinely broadcast against a longer one may reach it: two
+/// sides of the same length take the flat kernel even when that length is one.
 pub fn apply_binary_kernel_broadcast_single<'l, 'r, L, R, O, K, LK, RK>(
     lhs: &'l ChunkedArray<L>,
     rhs: &'r ChunkedArray<R>,
@@ -1418,6 +1420,9 @@ where
         .expect("cannot apply operation on arrays of different lengths");
 
     let out = match (lhs.len(), rhs.len()) {
+        (a, b) if a == b => {
+            binary_mut_with_options(lhs, rhs, |lhs, rhs| kernel(lhs, rhs), name.clone())
+        },
         (_, 1) if lhs.len() == length => match rhs.get(0) {
             None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
             Some(rhs) => unary_kernel(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
@@ -1471,6 +1476,8 @@ where
 }
 
 /// [`apply_binary_kernel_broadcast_owned`] for a kernel whose scalar form answers differently
+/// from its flat one; like [`apply_binary_kernel_broadcast_single`], equal lengths take the flat
+/// kernel.
 pub fn apply_binary_kernel_broadcast_single_owned<L, R, O, K, LK, RK>(
     lhs: ChunkedArray<L>,
     rhs: ChunkedArray<R>,
@@ -1491,6 +1498,7 @@ where
         .expect("cannot apply operation on arrays of different lengths");
 
     let out = match (lhs.len(), rhs.len()) {
+        (a, b) if a == b => binary_owned(lhs, rhs, kernel),
         (_, 1) if lhs.len() == length => match rhs.get(0) {
             None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
             Some(rhs) => unary_kernel_owned(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
