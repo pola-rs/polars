@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
-use arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use num_traits::{AsPrimitive, Zero};
+use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;

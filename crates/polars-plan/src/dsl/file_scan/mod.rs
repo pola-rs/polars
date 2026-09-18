@@ -2,6 +2,7 @@ use std::hash::Hash;
 use std::sync::Mutex;
 
 use deletion::DeletionFilesList;
+use polars_buffer::Buffer;
 use polars_core::schema::iceberg::IcebergSchemaRef;
 use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_io::cloud::CloudOptions;
@@ -36,6 +37,8 @@ bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct ScanFlags : u32 {
         const SPECIALIZED_PREDICATE_FILTER = 0x01;
+        /// The reader skips whole batches by their statistics.
+        const SKIPS_BATCHES_BY_STATISTICS = 0x02;
     }
 }
 
@@ -179,6 +182,20 @@ impl MetadataPerSource {
         }
     }
 
+    /// Whether every source's footer is resolved.
+    pub fn is_full(&self) -> bool {
+        matches!(self, Self::Full(_))
+    }
+
+    /// The resolved footers, ascending by source index.
+    pub fn resolved_metadata(&self) -> &[FileMetadataRef] {
+        match self {
+            Self::Unresolved => &[],
+            Self::Partial(p) => &p.metadata,
+            Self::Full(s) => s,
+        }
+    }
+
     /// Re-index to the sources surviving a filter.
     ///
     /// The `surviving` yields ascending pre-filter source indices.
@@ -294,14 +311,14 @@ pub enum FileScanIR {
         /// per source in `sources` order; `Some` only when every source has
         /// a known size.
         #[cfg_attr(feature = "dsl-schema", serde(skip))]
-        bytes_per_source: Option<Arc<[u64]>>,
+        bytes_per_source: Option<Buffer<u64>>,
     },
 
     #[cfg(feature = "ipc")]
     Ipc {
         options: IpcScanOptions,
         #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
-        metadata: Option<Arc<arrow::io::ipc::read::FileMetadata>>,
+        metadata: Option<Arc<polars_arrow::io::ipc::read::FileMetadata>>,
     },
 
     #[cfg(feature = "python")]
@@ -334,7 +351,9 @@ impl FileScanIR {
             #[cfg(feature = "ipc")]
             Self::Ipc { .. } => ScanFlags::empty(),
             #[cfg(feature = "parquet")]
-            Self::Parquet { .. } => ScanFlags::SPECIALIZED_PREDICATE_FILTER,
+            Self::Parquet { .. } => {
+                ScanFlags::SPECIALIZED_PREDICATE_FILTER | ScanFlags::SKIPS_BATCHES_BY_STATISTICS
+            },
             #[cfg(feature = "json")]
             Self::NDJson { .. } => ScanFlags::empty(),
             #[allow(unreachable_patterns)]
@@ -554,6 +573,7 @@ pub struct UnifiedScanArgs {
     pub rechunk: bool,
     pub cache: bool,
     pub glob: bool,
+    pub expand_paths: bool,
     /// Files with these prefixes will not be read.
     pub hidden_file_prefix: Option<Arc<[PlSmallStr]>>,
 
@@ -577,6 +597,7 @@ pub struct UnifiedScanArgs {
     ///
     /// Note, intentionally store u64 instead of IdxSize to avoid erroring if it's unused.
     pub row_count: Option<(u64, u64)>,
+    pub source_sizes: Option<Buffer<u64>>,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -605,6 +626,7 @@ impl Default for UnifiedScanArgs {
             rechunk: false,
             cache: false,
             glob: true,
+            expand_paths: true,
             hidden_file_prefix: None,
             projection: None,
             column_mapping: None,
@@ -618,6 +640,7 @@ impl Default for UnifiedScanArgs {
             deletion_files: None,
             table_statistics: None,
             row_count: None,
+            source_sizes: None,
         }
     }
 }
@@ -647,8 +670,8 @@ mod _file_scan_eq_hash {
     }
 
     /// # Hash / Eq safety
-    /// * All usizes originate from `Arc<>`s, and the lifetime of this enum is bound to that of the
-    ///   input ref.
+    /// * All usizes originate from `Arc<>`s or `Buffer<>`s, and the lifetime of this enum is bound
+    ///   to that of the input ref.
     #[derive(PartialEq, Hash)]
     pub enum FileScanEqHashWrap<'a> {
         #[cfg(feature = "csv")]
@@ -665,7 +688,7 @@ mod _file_scan_eq_hash {
         Parquet {
             options: &'a polars_io::prelude::ParquetOptions,
             metadata_per_source: Option<usize>,
-            bytes_per_source: Option<usize>,
+            bytes_per_source: Option<(usize, usize)>,
         },
 
         #[cfg(feature = "ipc")]
@@ -716,7 +739,9 @@ mod _file_scan_eq_hash {
                 } => FileScanEqHashWrap::Parquet {
                     options,
                     metadata_per_source: metadata_per_source.as_arc_ptr(),
-                    bytes_per_source: bytes_per_source.as_ref().map(arc_as_ptr),
+                    bytes_per_source: bytes_per_source
+                        .as_ref()
+                        .map(|v| (v.as_ptr() as usize, v.len())),
                 },
 
                 #[cfg(feature = "ipc")]
@@ -873,6 +898,12 @@ impl CastColumnsPolicy {
         }
 
         if let DataType::List(target_inner) = target_dtype {
+            #[cfg(feature = "dtype-map")]
+            if let Some(incoming_entries) = incoming_dtype.map_entries_dtype() {
+                self.should_cast_column(column_name, target_inner, &incoming_entries)?;
+                return Ok(true);
+            }
+
             let DataType::List(incoming_inner) = incoming_dtype else {
                 return mismatch_err("");
             };
@@ -891,6 +922,25 @@ impl CastColumnsPolicy {
             }
 
             return self.should_cast_column(column_name, target_inner, incoming_inner);
+        }
+
+        #[cfg(feature = "dtype-map")]
+        if let DataType::Map(target_key, target_value) = target_dtype {
+            if let DataType::List(incoming_inner) = incoming_dtype {
+                let target_entries = target_dtype.map_entries_dtype().unwrap();
+                self.should_cast_column(column_name, &target_entries, incoming_inner)?;
+                return Ok(true);
+            }
+
+            let DataType::Map(incoming_key, incoming_value) = incoming_dtype else {
+                return mismatch_err("");
+            };
+
+            let Ok(cast_key) = incoming_key.matches_schema_type(target_key) else {
+                return mismatch_err("Map key types are not castable");
+            };
+            let cast_value = self.should_cast_column(column_name, target_value, incoming_value)?;
+            return Ok(cast_key || cast_value);
         }
 
         // Eq here should be cheap as we have intercepted all nested types above.

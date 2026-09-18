@@ -1,9 +1,17 @@
 use polars_buffer::Buffer;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_core::chunked_array::temporal::string::infer as date_infer;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_core::chunked_array::temporal::string::patterns::Pattern;
 use polars_core::prelude::*;
-#[cfg(feature = "polars-time")]
-use polars_time::chunkedarray::string::infer as date_infer;
-#[cfg(feature = "polars-time")]
-use polars_time::prelude::string::Pattern;
 use polars_utils::format_pl_smallstr;
 
 use super::splitfields::SplitFields;
@@ -21,6 +29,8 @@ pub(super) fn infer_file_schema_impl(
     parse_options: &CsvParseOptions,
     column_names_overwrite: Option<&[PlSmallStr]>,
     schema_overwrite: Option<&Schema>,
+    ignore_extra_columns: bool,
+    insert_missing_columns: bool,
 ) -> PolarsResult<Schema> {
     let mut headers = if let Some(header_line) = header_line {
         infer_headers(header_line, parse_options)?
@@ -46,12 +56,33 @@ pub(super) fn infer_file_schema_impl(
     }
 
     if let Some(column_names_overwrite) = column_names_overwrite {
-        // 2.0: Replace with checks against missing/extra columns policy.
-        polars_ensure!(
-            column_names_overwrite.len() <= headers.len(),
-            ShapeMismatch:
-            "The length of the new names list should be equal to or less than the original column length",
-        );
+        let mut err_hint: String = String::new();
+
+        if column_names_overwrite.len() < headers.len() && !ignore_extra_columns {
+            let n = headers.len() - column_names_overwrite.len();
+            err_hint = format!("pass extra_columns='ignore' to ignore ({n}) extra columns.")
+        }
+
+        if column_names_overwrite.len() > headers.len() && !insert_missing_columns {
+            let n = column_names_overwrite.len() - headers.len();
+            err_hint = format!(
+                "pass missing_columns='insert' to create ({n}) missing columns with all-NULL values."
+            );
+        }
+
+        if !err_hint.is_empty() {
+            polars_bail!(
+                SchemaMismatch:
+                "provided `new_columns` does not match number of columns in file ({} != {} in file). \
+                Ensure the number of names match, or {err_hint}",
+                column_names_overwrite.len(),
+                headers.len(),
+            )
+        }
+
+        headers.truncate(column_names_overwrite.len());
+        column_types.truncate(column_names_overwrite.len());
+
         for (i, name) in column_names_overwrite.iter().cloned().enumerate() {
             if i < headers.len() {
                 headers[i] = name
@@ -309,7 +340,11 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
     let bytes = string.as_bytes();
     if bytes.len() >= 2 && *bytes.first().unwrap() == b'"' && *bytes.last().unwrap() == b'"' {
         if try_parse_dates {
-            #[cfg(feature = "polars-time")]
+            #[cfg(any(
+                feature = "dtype-date",
+                feature = "dtype-datetime",
+                feature = "dtype-time"
+            ))]
             {
                 match date_infer::infer_pattern_single(&string[1..string.len() - 1]) {
                     Some(pattern_with_offset) => match pattern_with_offset {
@@ -325,7 +360,11 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
                     None => DataType::String,
                 }
             }
-            #[cfg(not(feature = "polars-time"))]
+            #[cfg(not(any(
+                feature = "dtype-date",
+                feature = "dtype-datetime",
+                feature = "dtype-time"
+            )))]
             {
                 panic!("activate one of {{'dtype-date', 'dtype-datetime', dtype-time'}} features")
             }
@@ -354,7 +393,11 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
             }
         }
     } else if try_parse_dates {
-        #[cfg(feature = "polars-time")]
+        #[cfg(any(
+            feature = "dtype-date",
+            feature = "dtype-datetime",
+            feature = "dtype-time"
+        ))]
         {
             match date_infer::infer_pattern_single(string) {
                 Some(pattern_with_offset) => match pattern_with_offset {
@@ -370,7 +413,11 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
                 None => DataType::String,
             }
         }
-        #[cfg(not(feature = "polars-time"))]
+        #[cfg(not(any(
+            feature = "dtype-date",
+            feature = "dtype-datetime",
+            feature = "dtype-time"
+        )))]
         {
             panic!("activate one of {{'dtype-date', 'dtype-datetime', dtype-time'}} features")
         }
@@ -380,7 +427,7 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
 }
 
 fn column_name(i: usize) -> PlSmallStr {
-    format_pl_smallstr!("column_{}", i + 1)
+    format_pl_smallstr!("column_{}", i)
 }
 
 #[cfg(test)]

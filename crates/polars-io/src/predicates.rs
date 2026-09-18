@@ -1,14 +1,12 @@
 use std::fmt;
 
-use arrow::array::Array;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
 use polars_utils::format_pl_smallstr;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 pub trait PhysicalIoExpr: Send + Sync {
     /// Take a [`DataFrame`] and produces a boolean [`Series`] that serves
@@ -172,7 +170,7 @@ fn cast_to_parquet_scalar(scalar: Scalar) -> Option<ParquetScalar> {
         A::Int32(v) => P::Int32(v),
         A::Int64(v) => P::Int64(v),
 
-        #[cfg(feature = "dtype-time")]
+        #[cfg(feature = "dtype-date")]
         A::Date(v) => P::Int32(v),
         #[cfg(feature = "dtype-datetime")]
         A::Datetime(v, _, _) | A::DatetimeOwned(v, _, _) => P::Int64(v),
@@ -215,168 +213,6 @@ pub fn apply_predicate(
         }
     }
     Ok(())
-}
-
-/// Statistics of the values in a column.
-///
-/// The following statistics are tracked for each row group:
-/// - Null count
-/// - Minimum value
-/// - Maximum value
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct ColumnStats {
-    field: Field,
-    // Each Series contains the stats for each row group.
-    null_count: Option<Series>,
-    min_value: Option<Series>,
-    max_value: Option<Series>,
-}
-
-impl ColumnStats {
-    /// Constructs a new [`ColumnStats`].
-    pub fn new(
-        field: Field,
-        null_count: Option<Series>,
-        min_value: Option<Series>,
-        max_value: Option<Series>,
-    ) -> Self {
-        Self {
-            field,
-            null_count,
-            min_value,
-            max_value,
-        }
-    }
-
-    /// Constructs a new [`ColumnStats`] with only the [`Field`] information and no statistics.
-    pub fn from_field(field: Field) -> Self {
-        Self {
-            field,
-            null_count: None,
-            min_value: None,
-            max_value: None,
-        }
-    }
-
-    /// Constructs a new [`ColumnStats`] from a single-value Series.
-    pub fn from_column_literal(s: Series) -> Self {
-        debug_assert_eq!(s.len(), 1);
-        Self {
-            field: s.field().into_owned(),
-            null_count: None,
-            min_value: Some(s.clone()),
-            max_value: Some(s),
-        }
-    }
-
-    pub fn field_name(&self) -> &PlSmallStr {
-        self.field.name()
-    }
-
-    /// Returns the [`DataType`] of the column.
-    pub fn dtype(&self) -> &DataType {
-        self.field.dtype()
-    }
-
-    /// Returns the null count of each row group of the column.
-    pub fn get_null_count_state(&self) -> Option<&Series> {
-        self.null_count.as_ref()
-    }
-
-    /// Returns the minimum value of each row group of the column.
-    pub fn get_min_state(&self) -> Option<&Series> {
-        self.min_value.as_ref()
-    }
-
-    /// Returns the maximum value of each row group of the column.
-    pub fn get_max_state(&self) -> Option<&Series> {
-        self.max_value.as_ref()
-    }
-
-    /// Returns the null count of the column.
-    pub fn null_count(&self) -> Option<usize> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => None,
-            _ => {
-                let s = self.get_null_count_state()?;
-                // if all null, there are no statistics.
-                if s.null_count() != s.len() {
-                    s.sum().ok()
-                } else {
-                    None
-                }
-            },
-        }
-    }
-
-    /// Returns the minimum and maximum values of the column as a single [`Series`].
-    pub fn to_min_max(&self) -> Option<Series> {
-        let min_val = self.get_min_state()?;
-        let max_val = self.get_max_state()?;
-        let dtype = self.dtype();
-
-        if !use_min_max(dtype) {
-            return None;
-        }
-
-        let mut min_max_values = min_val.clone();
-        min_max_values.append(max_val).unwrap();
-        if min_max_values.null_count() > 0 {
-            None
-        } else {
-            Some(min_max_values)
-        }
-    }
-
-    /// Returns the minimum value of the column as a single-value [`Series`].
-    ///
-    /// Returns `None` if no maximum value is available.
-    pub fn to_min(&self) -> Option<&Series> {
-        // @scalar-opt
-        let min_val = self.min_value.as_ref()?;
-        let dtype = min_val.dtype();
-
-        if !use_min_max(dtype) || min_val.len() != 1 {
-            return None;
-        }
-
-        if min_val.null_count() > 0 {
-            None
-        } else {
-            Some(min_val)
-        }
-    }
-
-    /// Returns the maximum value of the column as a single-value [`Series`].
-    ///
-    /// Returns `None` if no maximum value is available.
-    pub fn to_max(&self) -> Option<&Series> {
-        // @scalar-opt
-        let max_val = self.max_value.as_ref()?;
-        let dtype = max_val.dtype();
-
-        if !use_min_max(dtype) || max_val.len() != 1 {
-            return None;
-        }
-
-        if max_val.null_count() > 0 {
-            None
-        } else {
-            Some(max_val)
-        }
-    }
-}
-
-/// Returns whether the [`DataType`] supports minimum/maximum operations.
-fn use_min_max(dtype: &DataType) -> bool {
-    dtype.is_primitive_numeric()
-        || dtype.is_temporal()
-        || matches!(
-            dtype,
-            DataType::String | DataType::Binary | DataType::Boolean
-        )
 }
 
 pub struct ColumnStatistics {
@@ -492,17 +328,63 @@ impl PhysicalIoExpr for PhysicalExprWithConstCols<Arc<dyn PhysicalIoExpr>> {
     }
 }
 
+/// The row predicate split into two conjunctions a reader may evaluate one after the
+/// other: rows that fail `first` never need the columns only `second` reads.
+#[derive(Clone)]
+pub struct StagedScanIOPredicate {
+    pub first: Arc<dyn PhysicalIoExpr>,
+    pub first_columns: Arc<PlIndexSet<PlSmallStr>>,
+    pub second: Arc<dyn PhysicalIoExpr>,
+    /// Partial predicates for each column of `first`. Complete when they add up to
+    /// `first`, whether or not [`ScanIOPredicate::column_predicates`] is complete.
+    pub column_predicates: Arc<ColumnPredicates>,
+}
+
+impl StagedScanIOPredicate {
+    fn with_constant_columns(&self, constants: &[(PlSmallStr, Scalar)]) -> Self {
+        let mut first_columns = self.first_columns.as_ref().clone();
+        let mut column_predicates = self.column_predicates.as_ref().clone();
+        for (c, _) in constants {
+            first_columns.swap_remove(c);
+            column_predicates.predicates.remove(c);
+        }
+        Self {
+            first: Arc::new(PhysicalExprWithConstCols {
+                constants: constants.to_vec(),
+                child: self.first.clone(),
+            }),
+            first_columns: Arc::new(first_columns),
+            second: Arc::new(PhysicalExprWithConstCols {
+                constants: constants.to_vec(),
+                child: self.second.clone(),
+            }),
+            column_predicates: Arc::new(column_predicates),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ScanIOPredicate {
     pub predicate: Arc<dyn PhysicalIoExpr>,
 
+    /// `predicate` as two conjunctions when `first` leaves some of the live columns unread.
+    pub staged: Option<StagedScanIOPredicate>,
+
+    /// Whether `predicate` filters rows at all. False when the predicate only
+    /// carries parts a reader consults to skip batches by their statistics.
+    pub filters_rows: bool,
+
     /// Column names that are used in the predicate.
     pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
+
+    /// Column names whose statistics the skip-batch predicate reads. A superset of
+    /// the live columns.
+    pub skip_batch_columns: Arc<PlIndexSet<PlSmallStr>>,
 
     /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
 
-    /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
+    /// Partial predicates for each column of `predicate`.
     pub column_predicates: Arc<ColumnPredicates>,
 
     /// Predicate parts only referring to hive columns.
@@ -518,10 +400,13 @@ impl ScanIOPredicate {
         }
 
         let mut live_columns = self.live_columns.as_ref().clone();
+        let mut skip_batch_columns = self.skip_batch_columns.as_ref().clone();
         for (c, _) in constant_columns.iter() {
             live_columns.swap_remove(c);
+            skip_batch_columns.swap_remove(c);
         }
         self.live_columns = Arc::new(live_columns);
+        self.skip_batch_columns = Arc::new(skip_batch_columns);
 
         if let Some(skip_batch_predicate) = self.skip_batch_predicate.take() {
             let mut sbp_constant_columns = Vec::with_capacity(constant_columns.len() * 3);
@@ -547,6 +432,10 @@ impl ScanIOPredicate {
             column_predicates.predicates.remove(c);
         }
         self.column_predicates = Arc::new(column_predicates);
+
+        if let Some(staged) = self.staged.as_mut() {
+            *staged = staged.with_constant_columns(&constant_columns);
+        }
 
         self.predicate = Arc::new(PhysicalExprWithConstCols {
             constants: constant_columns,

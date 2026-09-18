@@ -76,10 +76,12 @@ pub enum SendError<T> {
     Closed(T),
 }
 
-pub enum RecvError {
+pub enum TryRecvError {
     Empty,
     Closed,
 }
+
+pub struct RecvError;
 
 // SAFETY: all the send methods may only be called from a single sender at a
 // time, and similarly for all the recv methods from a single receiver.
@@ -136,7 +138,7 @@ impl<T, S> Connector<T, S> {
         Ok(())
     }
 
-    unsafe fn poll_recv(&self, waker: &Waker) -> Poll<Result<T, ()>> {
+    unsafe fn poll_recv(&self, waker: &Waker) -> Poll<Result<T, RecvError>> {
         let mut state = self.state.load(Ordering::Acquire);
         if state & FULL_BIT == 0 {
             self.recv_waker.register(waker);
@@ -151,12 +153,12 @@ impl<T, S> Connector<T, S> {
 
         match self.try_recv_impl(state) {
             Ok(v) => Poll::Ready(Ok(v)),
-            Err(RecvError::Empty) => Poll::Pending,
-            Err(RecvError::Closed) => Poll::Ready(Err(())),
+            Err(TryRecvError::Empty) => Poll::Pending,
+            Err(TryRecvError::Closed) => Poll::Ready(Err(RecvError)),
         }
     }
 
-    unsafe fn try_recv_impl(&self, state: u8) -> Result<T, RecvError> {
+    unsafe fn try_recv_impl(&self, state: u8) -> Result<T, TryRecvError> {
         if state & FULL_BIT == FULL_BIT {
             unsafe {
                 let ret = self.value.get().read().assume_init();
@@ -175,17 +177,17 @@ impl<T, S> Connector<T, S> {
         // Check closed bit last so we do receive any last element sent before
         // closing sender.
         if state & CLOSED_BIT == CLOSED_BIT {
-            return Err(RecvError::Closed);
+            return Err(TryRecvError::Closed);
         }
 
-        Err(RecvError::Empty)
+        Err(TryRecvError::Empty)
     }
 
     unsafe fn try_send(&self, value: T) -> Result<(), SendError<T>> {
         self.try_send_impl(value, self.state.load(Ordering::Acquire))
     }
 
-    unsafe fn try_recv(&self) -> Result<T, RecvError> {
+    unsafe fn try_recv(&self) -> Result<T, TryRecvError> {
         self.try_recv_impl(self.state.load(Ordering::Acquire))
     }
 
@@ -293,7 +295,7 @@ impl<T: Send, S: Sync> ReceiverExt<T, S> {
     }
 
     #[allow(unused)]
-    pub fn try_recv(&mut self) -> Result<T, RecvError> {
+    pub fn try_recv(&mut self) -> Result<T, TryRecvError> {
         unsafe { self.connector.try_recv() }
     }
 
@@ -303,7 +305,7 @@ impl<T: Send, S: Sync> ReceiverExt<T, S> {
 }
 
 impl<T, S> std::future::Future for RecvFuture<'_, T, S> {
-    type Output = Result<T, ()>;
+    type Output = Result<T, RecvError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         assert!(

@@ -1,4 +1,4 @@
-use arrow::array::BinaryArray;
+use polars_arrow::array::BinaryArray;
 
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;

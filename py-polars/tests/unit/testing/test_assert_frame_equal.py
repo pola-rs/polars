@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 
 import pytest
 from hypothesis import given
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -395,15 +397,16 @@ def test_assert_frame_not_equal() -> None:
         assert_frame_not_equal(lf, lf)
 
 
-def test_assert_frame_equal_check_dtype_deprecated() -> None:
+def test_assert_frame_equal_check_dtype_removed() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     df2 = pl.DataFrame({"a": [1.0, 2.0]})
     df3 = pl.DataFrame({"a": [2, 1]})
 
-    with pytest.deprecated_call():
+    msg = "It was renamed to 'check_dtypes'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         assert_frame_equal(df1, df2, check_dtype=False)  # type: ignore[call-arg]
 
-    with pytest.deprecated_call():
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         assert_frame_not_equal(df1, df3, check_dtype=False)  # type: ignore[call-arg]
 
 

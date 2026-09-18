@@ -1,7 +1,8 @@
 use std::hash::BuildHasher;
 
-use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
-use arrow::legacy::utils::CustomIterTools;
+use polars_arrow::array::{MutablePrimitiveArray, PrimitiveArray};
+use polars_arrow::legacy::utils::CustomIterTools;
+use polars_defs::join::JoinValidation;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;
@@ -9,6 +10,7 @@ use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 use polars_utils::unitvec;
 
 use super::*;
+use crate::frame::join::validation::validate_build;
 
 pub(crate) fn create_hash_and_keys_threaded_vectorized<I, T>(
     iters: Vec<I>,
@@ -50,49 +52,44 @@ where
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    RAYON.install(|| {
-        (0..n_partitions)
-            .into_par_iter()
-            .map(|partition_no| {
-                let hashes_and_keys = &hashes_and_keys;
-                let mut hash_tbl: PlHashMap<T::TotalOrdItem, (bool, IdxVec)> =
-                    PlHashMap::with_hasher(build_hasher.clone());
+    par_map_collect(n_partitions, &|partition_no| {
+        let hashes_and_keys = &hashes_and_keys;
+        let mut hash_tbl: PlHashMap<T::TotalOrdItem, (bool, IdxVec)> =
+            PlHashMap::with_hasher(build_hasher.clone());
 
-                let mut offset = 0;
-                for hashes_and_keys in hashes_and_keys {
-                    let len = hashes_and_keys.len();
-                    hashes_and_keys
-                        .iter()
-                        .enumerate()
-                        .for_each(|(idx, (h, k))| {
-                            let k = k.to_total_ord();
-                            let idx = idx as IdxSize;
-                            // partition hashes by thread no.
-                            // So only a part of the hashes go to this hashmap
-                            if partition_no == hash_to_partition(*h, n_partitions) {
-                                let idx = idx + offset;
-                                let entry = hash_tbl
-                                    .raw_entry_mut()
-                                    // uses the key to check equality to find and entry
-                                    .from_key_hashed_nocheck(*h, &k);
+        let mut offset = 0;
+        for hashes_and_keys in hashes_and_keys {
+            let len = hashes_and_keys.len();
+            hashes_and_keys
+                .iter()
+                .enumerate()
+                .for_each(|(idx, (h, k))| {
+                    let k = k.to_total_ord();
+                    let idx = idx as IdxSize;
+                    // partition hashes by thread no.
+                    // So only a part of the hashes go to this hashmap
+                    if partition_no == hash_to_partition(*h, n_partitions) {
+                        let idx = idx + offset;
+                        let entry = hash_tbl
+                            .raw_entry_mut()
+                            // uses the key to check equality to find and entry
+                            .from_key_hashed_nocheck(*h, &k);
 
-                                match entry {
-                                    RawEntryMut::Vacant(entry) => {
-                                        entry.insert_hashed_nocheck(*h, k, (false, unitvec![idx]));
-                                    },
-                                    RawEntryMut::Occupied(mut entry) => {
-                                        let (_k, v) = entry.get_key_value_mut();
-                                        v.1.push(idx);
-                                    },
-                                }
-                            }
-                        });
+                        match entry {
+                            RawEntryMut::Vacant(entry) => {
+                                entry.insert_hashed_nocheck(*h, k, (false, unitvec![idx]));
+                            },
+                            RawEntryMut::Occupied(mut entry) => {
+                                let (_k, v) = entry.get_key_value_mut();
+                                v.1.push(idx);
+                            },
+                        }
+                    }
+                });
 
-                    offset += len as IdxSize;
-                }
-                hash_tbl
-            })
-            .collect()
+            offset += len as IdxSize;
+        }
+        hash_tbl
     })
 }
 
@@ -221,7 +218,7 @@ where
         let expected_size = build.iter().map(|i| i.size_hint().0).sum();
         let hash_tbls = prepare_hashed_relation_threaded(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
-        validate.validate_build(build_size, expected_size, swapped)?;
+        validate_build(validate, build_size, expected_size, swapped)?;
         hash_tbls
     } else {
         prepare_hashed_relation_threaded(build)

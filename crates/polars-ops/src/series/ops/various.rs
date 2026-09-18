@@ -1,4 +1,3 @@
-use num_traits::Bounded;
 #[cfg(feature = "dtype-struct")]
 use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::arity::unary_elementwise_values;
@@ -418,7 +417,9 @@ fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(
 
 fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOptions) -> bool {
     if let Ok(vals) = ca.cont_slice() {
-        let mut previous = vals[0];
+        let Some(mut previous) = vals.first().copied() else {
+            return true;
+        };
         return if options.descending {
             check_cmp(vals, |prev, c| prev.tot_ge(c), &mut previous)
         } else {
@@ -427,10 +428,11 @@ fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOpt
     };
 
     if ca.null_count() == 0 {
-        let mut previous = if options.descending {
-            T::Native::max_value()
-        } else {
-            T::Native::min_value()
+        let Some(mut previous) = ca
+            .downcast_iter()
+            .find_map(|arr| arr.values().first().copied())
+        else {
+            return true;
         };
         for arr in ca.downcast_iter() {
             let vals = arr.values();

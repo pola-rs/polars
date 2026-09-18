@@ -50,6 +50,12 @@ macro_rules! impl_eq_compare {
                     Ok(rhs.cat::<$C>().unwrap().$method(lhs.str().unwrap()))
                 })
             },
+            #[cfg(feature = "dtype-map")]
+            (ldt @ Map(_, _), rdt @ Map(_, _)) if ldt == rdt => {
+                let lhs = lhs.map().unwrap();
+                let rhs = rhs.map().unwrap();
+                return lhs.storage().$method(rhs.storage());
+            },
 
             #[cfg(feature = "dtype-extension")]
             (le @ Extension(_, _), re @ Extension(_, _)) if le == re => {
@@ -169,6 +175,10 @@ macro_rules! impl_ineq_compare {
                     rhs.cat::<$C>().unwrap().$rev_method(lhs.str().unwrap())
                 })
             },
+            // Delegating to the storage would report the `List(Struct)` dtypes.
+            #[cfg(feature = "dtype-map")]
+            (Map(_, _), _) | (_, Map(_, _)) => bail_invalid_ineq!(lhs, rhs, $op),
+
             #[cfg(feature = "dtype-extension")]
             (le @ Extension(_, _), re @ Extension(_, _)) if le == re => {
                 let lhs = lhs.ext().unwrap();

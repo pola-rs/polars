@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+from bisect import bisect_left, bisect_right
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, cast
 from zoneinfo import ZoneInfo
@@ -7,8 +9,10 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pytest
 from hypothesis import given
+from hypothesis import strategies as st
 
 import polars as pl
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
@@ -18,7 +22,12 @@ if TYPE_CHECKING:
 
     import numpy.typing as npt
 
-    from polars._typing import PolarsDataType, TimeUnit
+    from polars._typing import (
+        ApproxQuantileMethod,
+        PolarsDataType,
+        TimeUnit,
+    )
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_quantile_expr_input() -> None:
@@ -336,6 +345,344 @@ def test_quantile_vs_numpy(tp: type, n: int) -> None:
     result = df.select(pl.col.a.quantile([0.25, 0.75]).alias("quantiles"))
 
     assert_frame_equal(expected, result)
+
+
+APPROX_QUANTILE_METHODS: list[ApproxQuantileMethod] = [
+    "auto",
+    "kll",
+    "req_lo",
+    "req_hi",
+    "req_both",
+]
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        (list(range(20)), pl.Int64),
+        (list(range(20)), pl.Int32),
+        (list(range(20)), pl.UInt64),
+        ([float(i) for i in range(20)], pl.Float64),
+        ([float(i) for i in range(20)], pl.Float32),
+        ([date(2020, 1, 1) + timedelta(days=i) for i in range(20)], pl.Date),
+        ([datetime(2020, 1, 1) + timedelta(hours=i) for i in range(20)], pl.Datetime),
+        ([timedelta(seconds=i) for i in range(20)], pl.Duration),
+        ([f"{i:04d}" for i in range(20)], pl.String),
+        ([i % 3 == 0 for i in range(20)], pl.Boolean),
+        (list(range(20)), pl.Decimal(10, 2)),
+    ],
+)
+def test_approx_quantile_dtypes(values: list[Any], dtype: PolarsDataType) -> None:
+    s = pl.Series("a", values, dtype=dtype)
+    lf = s.to_frame().lazy().select(pl.col("a").approx_quantile(0.5))
+
+    # The sketch returns a retained item, so the dtype is preserved rather than
+    # widened to Float64 the way exact quantile does.
+    assert lf.collect_schema()["a"] == dtype
+    result = lf.collect()
+    assert result.schema["a"] == dtype
+
+    value = result.item()
+    assert value is not None
+    assert value in s.to_list()
+
+
+def test_approx_quantile_dyn_literal_input() -> None:
+    for expr, dtype in (
+        (pl.lit(1).approx_quantile(0.5), pl.Int32),
+        (pl.lit(1.5).approx_quantile(0.5), pl.Float64),
+        (pl.lit(1).approx_quantile([0.5]), pl.List(pl.Int32)),
+    ):
+        lf = pl.LazyFrame().select(expr)
+        assert lf.collect_schema()["literal"] == dtype
+        assert lf.collect().schema["literal"] == dtype
+
+
+def test_approx_quantile_empty() -> None:
+    # Matches exact quantile: no values to draw from means null, not an error.
+    for s in (
+        pl.Series("a", [], dtype=pl.Float64),
+        pl.Series("a", [None, None, None], dtype=pl.Float64),
+    ):
+        assert s.to_frame().select(pl.col("a").quantile(0.5)).item() is None
+        assert s.to_frame().select(pl.col("a").approx_quantile(0.5)).item() is None
+
+
+def test_approx_quantile_empty_group() -> None:
+    df = pl.DataFrame(
+        {"a": [1.0, 2.0, 3.0, None, None], "g": ["x", "x", "x", "n", "n"]}
+    )
+    result = (
+        df.group_by("g").agg(pl.col("a").approx_quantile(0.5)).sort("g")["a"].to_list()
+    )
+    assert result == [None, 2.0]
+
+
+def test_approx_quantile_unsupported_dtype() -> None:
+    s = pl.Series("a", [b"a", b"b", b"c"], dtype=pl.Binary)
+    with pytest.raises(InvalidOperationError):
+        s.to_frame().select(pl.col("a").approx_quantile(0.5))
+
+
+def test_approx_quantile_bad_method() -> None:
+    with pytest.raises(ValueError, match="`method` must be one of"):
+        pl.col("a").approx_quantile(0.5, method="nope")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("error", [0.0, 1.0, -0.1, 2.0, float("nan"), 1e-18])
+def test_approx_quantile_bad_error(error: float) -> None:
+    s = pl.Series("a", [1.0, 2.0, 3.0])
+    with pytest.raises(InvalidOperationError, match=r"`error` must be in the range"):
+        s.to_frame().select(pl.col("a").approx_quantile(0.5, error=error))
+
+
+def test_approx_quantile_null_quantile() -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
+    with pytest.raises(ComputeError, match=r"`quantile` should not be null"):
+        df.select(pl.col("a").approx_quantile(pl.lit(None, dtype=pl.List(pl.Float64))))
+
+
+@pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
+def test_approx_quantile_empty_quantile(dtype: PolarsDataType) -> None:
+    df = pl.DataFrame(schema={"a": pl.Float64, "q": dtype})
+    with pytest.raises(ComputeError, match="got an empty input"):
+        df.select(pl.col("a").approx_quantile(pl.col("q")))
+
+
+@pytest.mark.parametrize(
+    ("quantile", "expected"),
+    [
+        (pl.lit(pl.Series([0.5])), 3.0),
+        (pl.lit(pl.Series([[0.1, 0.9]])), [1.0, 5.0]),
+    ],
+)
+def test_approx_quantile_series_literal_quantile(
+    quantile: pl.Expr, expected: float | list[float]
+) -> None:
+    # A one-row Series literal is broadcast like a scalar.
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0]})
+    out = df.select(pl.col("a").approx_quantile(quantile))
+    assert out.to_series().to_list() == [expected]
+
+
+def test_quantile_null_quantile() -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
+    with pytest.raises(ComputeError, match="quantile expression contains null values"):
+        df.select(pl.col("a").quantile(pl.lit(None, dtype=pl.List(pl.Float64))))
+
+
+@pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
+def test_quantile_empty_quantile(dtype: PolarsDataType) -> None:
+    df = pl.DataFrame(schema={"a": pl.Float64, "q": dtype})
+    with pytest.raises(ComputeError, match="got an empty input"):
+        df.select(pl.col("a").quantile(pl.col("q")))
+
+
+def test_quantile_empty_quantile_group_by() -> None:
+    df = pl.DataFrame(schema={"g": pl.Int64, "a": pl.Float64, "q": pl.Float64})
+    with pytest.raises(ComputeError, match="got an empty input"):
+        df.group_by("g").agg(pl.col("a").quantile(pl.col("q")))
+
+
+@pytest.mark.parametrize("quantile", [-0.1, 1.1])
+def test_approx_quantile_out_of_range(quantile: float) -> None:
+    s = pl.Series("a", [1.0, 2.0, 3.0])
+    with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
+        s.to_frame().select(pl.col("a").approx_quantile(quantile))
+
+
+def _shuffled(n: int) -> list[float]:
+    return np.random.default_rng(0).permutation(n).astype(float).tolist()  # type: ignore[no-any-return]
+
+
+# The rank `quantile` asks for out of `n` items. Ties round toward infinity,
+# so this is not Python's banker's rounding.
+def _rank(quantile: float, n: int) -> int:
+    return math.floor(quantile * (n - 1) + 0.5)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)
+def test_approx_quantile_is_monotone(method: ApproxQuantileMethod) -> None:
+    # An error this loose keeps the sketches small, so 2_000 items already
+    # compact many times over for every method.
+    df = pl.DataFrame({"a": _shuffled(2_000)})
+    results = df.select(
+        pl.col("a").approx_quantile(q, error=0.1, method=method).alias(f"q{i}")
+        for i, q in enumerate([0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
+    ).row(0)
+    assert list(results) == sorted(results)
+
+
+@pytest.mark.slow
+def test_approx_quantile_is_monotone_around_median() -> None:
+    # `req_both` answers below and above 0.5 from two separate sketches; the
+    # other methods never split there.
+    df = pl.DataFrame({"a": _shuffled(2_000)})
+    quantiles = [0.49, 0.499999, 0.5, 0.500001, 0.51]
+    results = df.select(
+        pl.col("a").approx_quantile(quantiles, error=0.1, method="req_both")
+    )["a"].explode()
+    assert results.to_list() == sorted(results.to_list())
+
+
+@pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)
+def test_approx_quantile_smallest_error(method: ApproxQuantileMethod) -> None:
+    s = pl.Series("a", [float(i) for i in range(20)])
+    got = (
+        s.to_frame()
+        .select(
+            pl.col("a").approx_quantile(
+                [0.0, 0.5, 1.0], error=2**-32, method=method, error_tightness="formal"
+            )
+        )["a"]
+        .explode()
+    )
+    assert got.to_list() == [0.0, 10.0, 19.0]
+
+
+@pytest.mark.slow
+def test_approx_quantile_protected_tail_is_exact() -> None:
+    # This is what picking a method buys: `req_lo` keeps the low ranks exact and
+    # `req_hi` the high ranks, where `kll` spreads its error evenly instead.
+    n = 5_000
+    df = pl.DataFrame({"a": _shuffled(n)})
+    got = df.select(
+        pl.col("a")
+        .approx_quantile(quantile, error=0.1, method=method)  # type: ignore[arg-type]
+        .alias(f"{method}{quantile}")
+        for method, quantile in (
+            ("req_lo", 0.0),
+            ("req_both", 0.0),
+            ("req_hi", 1.0),
+            ("req_both", 1.0),
+        )
+    ).row(0)
+    assert got == (0.0, 0.0, float(n - 1), float(n - 1))
+
+
+@pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)
+def test_approx_quantile_group_by_is_exact(
+    method: ApproxQuantileMethod, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # More groups than the hot table holds, so this covers the eviction and
+    # pre-aggregate paths of the streaming group-by. Every group still fits in a
+    # sketch, so the estimate is the exact rank.
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+    groups, per_group = 10, 5
+    df = pl.DataFrame(
+        {
+            "a": _shuffled(per_group) * groups,
+            "g": [g for g in range(groups) for _ in range(per_group)],
+        }
+    )
+    quantiles = [0.0, 0.25, 0.5, 1.0]
+    # Lazy, so that the streaming engine picks this up when it is the one under test.
+    result = (
+        df.lazy()
+        .group_by("g")
+        .agg(pl.col("a").approx_quantile(quantiles, method=method))
+        .sort("g")
+        .collect()
+    )
+
+    expected = [float(_rank(q, per_group)) for q in quantiles]
+    assert result["g"].to_list() == list(range(groups))
+    assert result["a"].to_list() == [expected] * groups
+
+
+@pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)
+def test_approx_quantile_expression_quantile(method: ApproxQuantileMethod) -> None:
+    # The quantile comes from an aggregation of its own, so it is only known
+    # once the input is exhausted.
+    n = 20
+    df = pl.DataFrame(
+        {
+            "a": _shuffled(n) * 2,
+            "g": [0] * n + [1] * n,
+            "q": [0.25] * n + [0.75] * n,
+        }
+    )
+    whole = df.select(pl.col("a").approx_quantile(pl.col("q").mean(), method=method))
+    assert whole.item() == float(_rank(0.5, n))
+
+    per_group = (
+        df.group_by("g")
+        .agg(pl.col("a").approx_quantile(pl.col("q").first(), method=method))
+        .sort("g")["a"]
+        .to_list()
+    )
+    assert per_group == [float(_rank(0.25, n)), float(_rank(0.75, n))]
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)
+def test_approx_quantile_merged_rank_error(method: ApproxQuantileMethod) -> None:
+    # `n` must stay at `build_sketch`'s `THREAD_BOUNDARY`, or a release build
+    # never takes the parallel merge path this test is here for.
+    n, error, quantile = 100_000, 0.01, 0.5
+    values = _shuffled(n)
+    got = (
+        pl.DataFrame({"a": values})
+        .select(pl.col("a").approx_quantile(quantile, error=error, method=method))
+        .item()
+    )
+
+    # `values` is a permutation of `0..n`, so an item's rank is its own value.
+    assert got in values
+    assert abs(got - _rank(quantile, n)) / n <= error
+
+
+@pytest.mark.slow
+@given(
+    values=st.lists(
+        st.floats(allow_nan=False, allow_infinity=False, width=64),
+        min_size=1,
+        max_size=1_000,
+    ),
+    quantile=st.floats(min_value=0.0, max_value=1.0),
+    method=st.sampled_from(APPROX_QUANTILE_METHODS),
+    error=st.sampled_from([0.01, 0.1, 0.5]),
+)
+def test_approx_quantile_rank_error(
+    values: list[float],
+    quantile: float,
+    method: ApproxQuantileMethod,
+    error: float,
+) -> None:
+    s = pl.Series("a", values, dtype=pl.Float64)
+    got = (
+        s.to_frame()
+        .select(pl.col("a").approx_quantile(quantile, error=error, method=method))
+        .item()
+    )
+
+    # The sketch only ever returns an item it actually saw.
+    assert got in values
+
+    # And that item sits within `error` of the requested rank. Duplicates make
+    # the rank an interval rather than a point, so measure the distance to it.
+    # The 2/n slack absorbs the rounding of `quantile * (n - 1)` on short inputs.
+    n = len(values)
+    ordered = sorted(values)
+    lo = bisect_left(ordered, got)
+    hi = bisect_right(ordered, got) - 1
+    want_rank = round(quantile * (n - 1))
+    distance = max(0, lo - want_rank, want_rank - hi)
+    assert distance / n <= error + 2 / n
+
+
+@pytest.mark.parametrize("fn", [pl.Expr.quantile, pl.Expr.approx_quantile])
+def test_quantile_varying_quantiles_unsupported(
+    fn: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0], "q": [0.1, 0.5, 0.9]})
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"does not support varying (approximate )?quantiles",
+    ):
+        df.select(fn(pl.col("a"), pl.col("q")))
 
 
 def test_mean_overflow() -> None:
@@ -1075,6 +1422,7 @@ def test_agg_with_slice_then_cast_23682(
     ],
 )
 @pytest.mark.parametrize("grouped", [False, True])
+@pytest.mark.may_fail_lazy_schema  # TODO: uint128
 def test_agg_invalid_same_engines_behavior(
     op: str, expr: pl.Expr, df: pl.DataFrame, grouped: bool
 ) -> None:
@@ -1084,10 +1432,6 @@ def test_agg_invalid_same_engines_behavior(
     if isinstance(df.schema["a"], pl.Struct) and op in {"any", "all"}:
         # TODO: Remove this exception when #24509 is resolved
         pytest.skip("polars/#24509")
-
-    if isinstance(df.schema["a"], pl.Duration) and op in {"std", "var"}:
-        # TODO: Remove this exception when std & var are implemented for Duration
-        pytest.skip(f"'{op}' aggregation not yet implemented for Duration")
 
     inmemory_result, inmemory_error = None, None
     streaming_result, streaming_error = None, None
@@ -1439,7 +1783,6 @@ def test_grouped_minmax_after_reverse_on_sorted_column_26141(
     assert_frame_equal(out, expected_df)
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
 def test_min_max_by_series_length_mismatch_26049(
     agg_by: Callable[[pl.Expr, pl.Expr], pl.Expr],
@@ -1610,3 +1953,26 @@ def test_unordered_implode_reduction_27373(
         pl.col("val").map_elements(sorted, return_dtype=pl.List(dtype))
     )
     assert_frame_equal(actual, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_max_sorted_all_nan_with_nulls(dtype: pl.DataType) -> None:
+    nan = float("nan")
+
+    for values in ([None, nan, nan], [None, None, nan]):
+        unsorted = pl.Series("a", values, dtype=dtype)
+        ascending = unsorted.sort()
+        assert ascending.flags["SORTED_ASC"]
+        assert math.isnan(cast("float", unsorted.max()))
+        assert math.isnan(cast("float", ascending.max()))
+
+    for values in ([nan, nan, None], [nan, None, None]):
+        unsorted = pl.Series("a", values, dtype=dtype)
+        descending = unsorted.sort(descending=True, nulls_last=True)
+        assert descending.flags["SORTED_DESC"]
+        assert math.isnan(cast("float", unsorted.max()))
+        assert math.isnan(cast("float", descending.max()))
+
+    mixed = pl.Series("a", [None, 1.0, nan], dtype=dtype).sort()
+    assert mixed.flags["SORTED_ASC"]
+    assert mixed.max() == 1.0

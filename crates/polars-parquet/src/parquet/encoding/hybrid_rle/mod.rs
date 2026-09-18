@@ -57,6 +57,7 @@ impl HybridRleChunk<'_> {
 
 impl<'a> HybridRleDecoder<'a> {
     /// Returns a new [`HybridRleDecoder`]
+    #[inline]
     pub fn new(data: &'a [u8], num_bits: u32, num_values: usize) -> Self {
         Self {
             data,
@@ -65,10 +66,12 @@ impl<'a> HybridRleDecoder<'a> {
         }
     }
 
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.num_values
     }
 
+    #[inline(always)]
     pub fn num_bits(&self) -> usize {
         self.num_bits
     }
@@ -182,6 +185,7 @@ impl<'a> HybridRleDecoder<'a> {
         }))
     }
 
+    #[inline]
     pub fn limit_to(&mut self, length: usize) {
         self.num_values = self.num_values.min(length);
     }

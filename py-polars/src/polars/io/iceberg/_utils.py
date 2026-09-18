@@ -53,6 +53,30 @@ _temporal_conversions: dict[str, Callable[..., datetime | date]] = {
 ICEBERG_TIME_TO_NS: int = 1000
 
 
+def _new_pyiceberg_scan(
+    tbl: Table,
+    *,
+    snapshot_id: int | None,
+    from_snapshot_id_exclusive: int | None,
+    to_snapshot_id_inclusive: int | None,
+    selected_fields: tuple[str, ...] = ("*",),
+    limit: int | None = None,
+) -> Any:
+    if from_snapshot_id_exclusive is None and to_snapshot_id_inclusive is None:
+        return tbl.scan(
+            snapshot_id=snapshot_id,
+            selected_fields=selected_fields,
+            limit=limit,
+        )
+
+    return tbl.incremental_append_scan(
+        from_snapshot_id_exclusive=from_snapshot_id_exclusive,
+        to_snapshot_id_inclusive=to_snapshot_id_inclusive,
+        selected_fields=selected_fields,
+        limit=limit,
+    )
+
+
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
 def _normalize_windows_iceberg_file_uri(path: str) -> str:
     if path.startswith("file://") and not path.startswith("file:///"):
@@ -67,6 +91,8 @@ def _scan_pyarrow_dataset_impl(
     iceberg_table_filter: Any | None = None,
     n_rows: int | None = None,
     snapshot_id: int | None = None,
+    from_snapshot_id_exclusive: int | None = None,
+    to_snapshot_id_inclusive: int | None = None,
     **kwargs: Any,  # noqa: ARG001
 ) -> tuple[Iterable[DataFrame], bool]:
     """
@@ -84,6 +110,10 @@ def _scan_pyarrow_dataset_impl(
         Materialize only n rows from the arrow dataset.
     snapshot_id:
         The snapshot ID to scan from.
+    from_snapshot_id_exclusive
+        The exclusive start of an incremental append scan.
+    to_snapshot_id_inclusive
+        The inclusive end of an incremental append scan.
     batch_size
         The maximum row count for scanned pyarrow record batches.
     kwargs:
@@ -98,7 +128,13 @@ def _scan_pyarrow_dataset_impl(
     that could not be converted
     to pyarrow and need to be applied as post-predicate.
     """
-    scan = tbl.scan(limit=n_rows, snapshot_id=snapshot_id)
+    scan = _new_pyiceberg_scan(
+        tbl,
+        snapshot_id=snapshot_id,
+        from_snapshot_id_exclusive=from_snapshot_id_exclusive,
+        to_snapshot_id_inclusive=to_snapshot_id_inclusive,
+        limit=n_rows,
+    )
 
     if with_columns is not None:
         if not with_columns:
@@ -136,12 +172,39 @@ def _ensure_boolean_expression(result: Any) -> Any:
 
 
 def try_convert_pyarrow_predicate(pyarrow_predicate: str) -> Any | None:
-    with contextlib.suppress(Exception):
+    try:
         expr_ast = _to_ast(pyarrow_predicate)
-        result = _convert_predicate(expr_ast)
-        return _ensure_boolean_expression(result)
+    except Exception:
+        return None
 
-    return None
+    # Polars hands us a conjunction of independently converted minterms, and
+    # PyIceberg has no equivalent for some of them (arithmetic, for one). Keep
+    # the conjuncts that do convert: dropping one only widens the filter, and
+    # the engine re-applies the full predicate after the scan.
+    converted: list[Any] = []
+
+    for conjunct in _split_conjuncts(expr_ast):
+        with contextlib.suppress(Exception):
+            converted.append(_ensure_boolean_expression(_convert_predicate(conjunct)))
+
+    if not converted:
+        return None
+
+    result = converted[0]
+
+    for expr in converted[1:]:
+        result = pyiceberg.expressions.And(result, expr)
+
+    return result
+
+
+def _split_conjuncts(a: ast.expr) -> Iterable[ast.expr]:
+    """Yield the operands of a (possibly nested) top-level `&`."""
+    if isinstance(a, BinOp) and isinstance(a.op, BitAnd):
+        yield from _split_conjuncts(a.left)
+        yield from _split_conjuncts(a.right)
+    else:
+        yield a
 
 
 def _to_ast(expr: str) -> ast.expr:
@@ -531,7 +594,7 @@ class IcebergStatisticsLoader:
             column_stats_df = stat_builder.finish(expected_height, p)
             out.append(column_stats_df)
 
-        return pl.concat(out, how="horizontal", strict=True)
+        return pl.concat(out, how="horizontal")
 
 
 @dataclass

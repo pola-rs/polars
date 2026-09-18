@@ -16,6 +16,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_compute::cast::cast_unchecked;
+use polars_compute::rebuild_list::rebuild_list_shallow;
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
 
 use crate::prelude::{
@@ -40,6 +41,27 @@ macro_rules! primitive_to_boxed_with_logical {
         let arr: &PrimitiveArray<$physical> = $array.as_any().downcast_ref().unwrap();
         arr.clone().to($logical_arrow_dtype).to_boxed()
     }};
+}
+
+/// Drop the entries no live row owns and rebase the offsets onto the rest; `None` if the
+/// chunk already spans exactly its child.
+fn normalize_map_entries(arr: &ListArray<i64>) -> Option<ListArray<i64>> {
+    #[cfg(feature = "dtype-map")]
+    if let Some(compacted) = crate::chunked_array::logical::compact_null_rows_chunk(arr) {
+        return Some(compacted);
+    }
+
+    let offsets = arr.offsets();
+    let first = *offsets.first() as usize;
+    let len = offsets.range() as usize;
+    if first == 0 && len == arr.values().len() {
+        return None;
+    }
+    Some(rebuild_list_shallow(
+        arr,
+        arr.dtype().clone(),
+        arr.values().sliced(first, len),
+    ))
 }
 
 fn ensure_no_nulls(array: &dyn Array) -> PolarsResult<()> {
@@ -142,7 +164,7 @@ impl ToArrowConverter {
         Ok(match (polars_dtype, arrow_field.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(struct_fields), ArrowDataType::Struct(arrow_struct_fields)) => {
-                use arrow::array::StructArray;
+                use polars_arrow::array::StructArray;
                 let arr: &StructArray = array.as_any().downcast_ref().unwrap();
 
                 polars_ensure!(
@@ -217,9 +239,22 @@ impl ToArrowConverter {
 
                 Box::new(arr)
             },
+            #[cfg(feature = "dtype-map")]
+            (DataType::Map(_, _), ArrowDataType::Map(_, _)) => {
+                let entries_dtype = polars_dtype.map_entries_dtype().unwrap();
+                self.map_array_to_arrow(array, &entries_dtype, arrow_field)?
+            },
+            (DataType::List(entries_dtype), ArrowDataType::Map(_, _)) => {
+                self.map_array_to_arrow(array, entries_dtype, arrow_field)?
+            },
+            #[cfg(feature = "dtype-map")]
+            (DataType::Map(_, _), ArrowDataType::LargeList(_)) => {
+                let storage_dtype = polars_dtype.map_storage_dtype().unwrap();
+                self.array_to_arrow_impl(array, &storage_dtype, arrow_field)?
+            },
             #[cfg(feature = "dtype-array")]
             (DataType::Array(item_dtype, width), ArrowDataType::FixedSizeList(_, arrow_width)) => {
-                use arrow::array::FixedSizeListArray;
+                use polars_arrow::array::FixedSizeListArray;
                 let arr: &FixedSizeListArray = array.as_any().downcast_ref().unwrap();
 
                 polars_ensure!(
@@ -368,7 +403,7 @@ impl ToArrowConverter {
                 DataType::Extension(pl_ext_type, storage_dtype),
                 ArrowDataType::Extension(arrow_ext_type),
             ) => {
-                use arrow::datatypes::ExtensionType;
+                use polars_arrow::datatypes::ExtensionType;
 
                 let ExtensionType {
                     name,
@@ -423,6 +458,57 @@ impl ToArrowConverter {
                 array.to_boxed()
             },
         })
+    }
+
+    /// Export a list of map entries as a `MapArray`.
+    fn map_array_to_arrow(
+        &mut self,
+        array: &dyn Array,
+        entries_dtype: &DataType,
+        arrow_field: Cow<'_, ArrowField>,
+    ) -> PolarsResult<Box<dyn Array>> {
+        use polars_arrow::array::MapArray;
+        use polars_arrow::offset::OffsetsBuffer;
+
+        let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
+        // Arrow's MAP entries and keys are non-nullable, and entries that no live row owns
+        // may be null, so normalize before the child is read: those entries are dropped.
+        let normalized = normalize_map_entries(arr);
+        let arr = normalized.as_ref().unwrap_or(arr);
+
+        let mut arrow_dtype = to_owned_dtype(arrow_field);
+
+        let ArrowDataType::Map(arrow_entries_field, _keys_sorted) = &mut arrow_dtype else {
+            unreachable!()
+        };
+
+        self.attach_pl_field_metadata(std::iter::once((
+            entries_dtype,
+            arrow_entries_field.as_mut(),
+        )));
+
+        let entries = self.array_to_arrow(
+            arr.values().as_ref(),
+            entries_dtype,
+            Cow::Borrowed(arrow_entries_field.as_ref()),
+        )?;
+
+        // Arrow's MAP offsets are `i32`, a Polars list's are `i64`.
+        let offsets = OffsetsBuffer::<i32>::try_from(arr.offsets()).map_err(|_| {
+            polars_err!(
+                InvalidOperation:
+                "to_arrow() conversion failed: {} map entries overflow the i32 offsets \
+                of the arrow MAP type",
+                arr.offsets().last(),
+            )
+        })?;
+
+        Ok(Box::new(MapArray::try_new(
+            arrow_dtype,
+            offsets,
+            entries,
+            arr.validity().cloned(),
+        )?))
     }
 
     #[inline]

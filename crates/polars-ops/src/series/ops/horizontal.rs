@@ -85,6 +85,7 @@ fn min_max_binary_columns(left: &Column, right: &Column, min: bool) -> PolarsRes
     if left.dtype().to_physical().is_primitive_numeric()
         && right.dtype().to_physical().is_primitive_numeric()
     {
+        let height = broadcast_len([left, right])?;
         let left_s = left.as_materialized_series_maintain_scalar();
         let right_s = right.as_materialized_series_maintain_scalar();
         let (lhs, rhs) = coerce_lhs_rhs(&left_s, &right_s)?;
@@ -105,6 +106,7 @@ fn min_max_binary_columns(left: &Column, right: &Column, min: bool) -> PolarsRes
                 }
             }
         })
+        .and_then(|s| s.broadcast_owned_to(height))
         .map(Column::from)
     } else {
         let mut mask = if min {

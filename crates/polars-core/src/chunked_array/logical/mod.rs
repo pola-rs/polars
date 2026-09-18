@@ -22,6 +22,10 @@ pub use duration::*;
 mod extension;
 #[cfg(feature = "dtype-extension")]
 pub use extension::*;
+#[cfg(feature = "dtype-map")]
+mod map;
+#[cfg(feature = "dtype-map")]
+pub use map::*;
 #[cfg(feature = "dtype-time")]
 mod time;
 use std::marker::PhantomData;
@@ -53,6 +57,7 @@ impl<K: PolarsDataType, T: PolarsDataType> Clone for Logical<K, T> {
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T> {
     /// # Safety
     /// You must uphold the logical types' invariants.
+    #[inline]
     pub unsafe fn new_logical(phys: ChunkedArray<T>, dtype: DataType) -> Logical<K, T> {
         Logical {
             phys,

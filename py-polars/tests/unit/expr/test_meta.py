@@ -27,3 +27,21 @@ def test_meta_eq_tot_cmp_28469() -> None:
     a = pl.lit(float("nan"))
     b = pl.lit(float("nan"))
     assert a.meta.eq(b)
+
+
+def test_meta_properties() -> None:
+    e = pl.col("foo").sum()
+    assert e.meta.is_scalar()
+    assert e.meta.is_known_length()
+    assert not e.meta.is_literal()
+    assert not e.meta.is_row_separable()
+
+    e = pl.col("foo") * pl.col("bar")
+    assert e.meta.is_length_preserving()
+    assert e.meta.is_row_separable()
+    assert e.meta.is_known_length()
+    e = (pl.col("foo") * pl.col("bar")).list.explode(empty_as_null=False)
+    assert not e.meta.is_known_length()
+    assert not e.meta.is_length_preserving()
+    assert e.meta.is_row_separable()
+    assert not e.meta.is_scalar()

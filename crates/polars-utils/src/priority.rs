@@ -5,18 +5,21 @@ use std::cmp::Ordering;
 pub struct Priority<P, T>(pub P, pub T);
 
 impl<P: Ord + Eq, T> Ord for Priority<P, T> {
+    #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         self.0.cmp(&other.0)
     }
 }
 
 impl<P: Ord + Eq, T> PartialOrd for Priority<P, T> {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<P: Eq, T> PartialEq for Priority<P, T> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }

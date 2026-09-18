@@ -16,7 +16,6 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.combine
     Series.dt.convert_time_zone
     Series.dt.date
-    Series.dt.datetime
     Series.dt.day
     Series.dt.days_in_month
     Series.dt.dst_offset
@@ -26,8 +25,6 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.is_leap_year
     Series.dt.iso_year
     Series.dt.max
-    Series.dt.mean
-    Series.dt.median
     Series.dt.microsecond
     Series.dt.millennium
     Series.dt.millisecond
@@ -58,5 +55,4 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.truncate
     Series.dt.week
     Series.dt.weekday
-    Series.dt.with_time_unit
     Series.dt.year

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::compute::utils::combine_validities_and_many;
+use polars_arrow::compute::utils::combine_validities_and_many;
 use polars_row::{RowEncodingContext, RowEncodingOptions, RowsEncoded, convert_columns};
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
@@ -146,6 +146,21 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
 
             Some(RowEncodingContext::Struct(ctxts))
         },
+
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(key, value) => {
+            let ctxts = vec![
+                get_row_encoding_context(key),
+                get_row_encoding_context(value),
+            ];
+
+            if ctxts.iter().all(Option::is_none) {
+                return None;
+            }
+
+            Some(RowEncodingContext::Struct(ctxts))
+        },
+
         #[cfg(feature = "dtype-extension")]
         DataType::Extension(_, storage) => get_row_encoding_context(storage),
     }

@@ -6,10 +6,10 @@ Aggregation
 .. autosummary::
    :toctree: api/
 
-    Expr.agg_groups
     Expr.all
     Expr.any
     Expr.approx_n_unique
+    Expr.approx_quantile
     Expr.arg_max
     Expr.arg_min
     Expr.bitwise_and

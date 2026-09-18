@@ -57,15 +57,3 @@ def test_expression_json_13991() -> None:
 
     round_tripped = pl.Expr.deserialize(io.StringIO(json), format="json")
     assert round_tripped.meta == expr
-
-
-def test_expr_write_json_from_json_deprecated() -> None:
-    expr = pl.col("foo").sum().over("bar")
-
-    with pytest.deprecated_call():
-        json = expr.meta.write_json()
-
-    with pytest.deprecated_call():
-        round_tripped = pl.Expr.from_json(json)
-
-    assert round_tripped.meta == expr

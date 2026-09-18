@@ -22,8 +22,9 @@ impl OptimizationRule for FilterConstraintRule {
         let input = *input;
         let predicate_node = predicate.node();
 
+        let schema = lp_arena.get(input).schema(lp_arena).into_owned();
         let Some(new_predicate_node) =
-            merge_filter_constraints(predicate_node, self.maintain_errors, expr_arena)
+            merge_filter_constraints(predicate_node, &schema, self.maintain_errors, expr_arena)
         else {
             return Ok(None);
         };

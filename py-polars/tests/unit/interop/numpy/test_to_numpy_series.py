@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as D
 from pathlib import Path
@@ -11,6 +12,7 @@ from hypothesis import given, settings
 from numpy.testing import assert_array_equal
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 
@@ -22,9 +24,10 @@ if TYPE_CHECKING:
 
 
 def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
+    """Assert that `arr` points at the values buffer of `s`."""
     if s.len() == 0:
         return
-    s_ptr = s._get_buffers()["values"]._get_buffer_info()[0]
+    s_ptr = s.to_arrow().buffers()[1].address
     arr_ptr = arr.__array_interface__["data"][0]
     assert s_ptr == arr_ptr
 
@@ -372,12 +375,11 @@ def test_to_numpy_chunked_temporal_nested() -> None:
     assert_allow_copy_false_raises(s)
 
 
-def test_zero_copy_only_deprecated() -> None:
-    values = [1, 2]
+def test_zero_copy_only_removed() -> None:
     s = pl.Series([1, 2])
-    with pytest.deprecated_call():
-        result: npt.NDArray[np.generic] = s.to_numpy(zero_copy_only=True)
-    assert result.tolist() == values
+    msg = "Use the `allow_copy` parameter instead"
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.to_numpy(zero_copy_only=True)  # type: ignore[call-arg]
 
 
 def test_series_to_numpy_temporal() -> None:

@@ -2,18 +2,18 @@ use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use arrow::io::ipc::write::arrow_ipc_block;
-use arrow::io::ipc::write::schema::serialize_schema;
-use arrow::io::ipc::write2::footer::serialize_ipc_footer_and_magic_bytes;
-use arrow::io::ipc::write2::message::finish_ipc_message_bytes;
-use arrow::io::ipc::write2::schema::serialize_ipc_schema_message_bytes;
-use arrow::io::ipc::{ARROW_MAGIC_V2_PADDED, IpcField};
 use bytes::Bytes;
+use polars_arrow::io::ipc::write::arrow_ipc_block;
+use polars_arrow::io::ipc::write::schema::serialize_schema;
+use polars_arrow::io::ipc::write2::footer::serialize_ipc_footer_and_magic_bytes;
+use polars_arrow::io::ipc::write2::message::finish_ipc_message_bytes;
+use polars_arrow::io::ipc::write2::schema::serialize_ipc_schema_message_bytes;
+use polars_arrow::io::ipc::{ARROW_MAGIC_V2_PADDED, IpcField};
 use polars_async::executor;
 use polars_async::primitives::wait_group::WaitToken;
 use polars_buffer::Buffer;
 use polars_core::schema::SchemaRef;
-use polars_core::utils::arrow;
+use polars_core::utils::polars_arrow;
 use polars_error::{PolarsResult, to_compute_err};
 use polars_io::ipc::IpcWriterOptions;
 use polars_io::ipc::pl_ipc_metadata::{POLARS_IPC_METADATA_KEY, PlIpcMetadata};
@@ -120,9 +120,7 @@ impl IOWriter {
                 .await?;
 
             if let Some(md) = custom_pl_metadata.as_mut() {
-                if let Some(end_offset) =
-                    num_rows.checked_add(md.record_batch_cum_len.last().copied().unwrap_or(0))
-                {
+                if let Some(end_offset) = num_rows.checked_add(md.num_rows().unwrap_or(0)) {
                     md.record_batch_cum_len.push(end_offset);
                 } else {
                     custom_pl_metadata = None;

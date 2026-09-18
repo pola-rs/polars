@@ -415,9 +415,11 @@ async fn start_reader_impl(
         reader_capabilities,
         file_projection_builder,
         cast_columns_policy,
+        extra_columns_policy,
         missing_columns_policy,
         forbid_extra_columns,
         num_pipelines,
+        max_concurrent_scans,
         disable_morsel_split,
         last_morsel_pipelines,
         verbose,
@@ -558,7 +560,7 @@ async fn start_reader_impl(
                 hp.df()
                     .columns()
                     .iter()
-                    .filter(|c| predicate.live_columns.contains(c.name()))
+                    .filter(|c| predicate.skip_batch_columns.contains(c.name()))
                     .map(|c| {
                         (
                             c.name().clone(),
@@ -591,7 +593,7 @@ async fn start_reader_impl(
         {
             match &missing_columns_policy {
                 MissingColumnsPolicy::Insert => {
-                    if predicate.live_columns.contains(missing_col_name) {
+                    if predicate.skip_batch_columns.contains(missing_col_name) {
                         external_predicate_cols.push((
                             missing_col_name.clone(),
                             default_value
@@ -599,7 +601,13 @@ async fn start_reader_impl(
                                 .unwrap_or_else(|| Scalar::null(dtype.clone())),
                         ));
 
+                        // The column predicates of the full predicate and of the first
+                        // stage each lose this column.
                         Arc::make_mut(&mut predicate.column_predicates).is_sumwise_complete = false;
+                        if let Some(staged) = &mut predicate.staged {
+                            Arc::make_mut(&mut staged.column_predicates).is_sumwise_complete =
+                                false;
+                        }
                     }
                 },
                 MissingColumnsPolicy::Raise => return Err(missing_column_err(missing_col_name)),
@@ -615,6 +623,8 @@ async fn start_reader_impl(
         pre_slice,
         predicate,
         cast_columns_policy: cast_columns_policy.clone(),
+        missing_columns_policy,
+        extra_columns_policy,
         num_pipelines,
         disable_morsel_split,
         last_morsel_pipelines,
@@ -691,6 +701,7 @@ async fn start_reader_impl(
                 first_morsel,
                 first_morsel_position,
                 num_pipelines,
+                max_concurrent_scans,
             }
             .run();
 

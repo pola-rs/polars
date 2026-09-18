@@ -80,7 +80,7 @@ def test_string_concat_errors(invalid_concat: str) -> None:
         SQLSyntaxError,
         match=r"CONCAT.*expects at least \d argument[s]? \(found \d\)",
     ):
-        pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data")
+        pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data").collect()
 
 
 def test_string_left_right_reverse() -> None:
@@ -367,7 +367,7 @@ def test_string_replace() -> None:
         with pytest.raises(
             SQLSyntaxError, match=r"REPLACE expects 3 arguments \(found 2\)"
         ):
-            ctx.execute("SELECT REPLACE(words,'coffee') FROM df")
+            ctx.execute("SELECT REPLACE(words,'coffee') FROM df").collect()
 
 
 def test_string_split() -> None:
@@ -438,7 +438,7 @@ def test_string_substr() -> None:
                 SQLSyntaxError,
                 match=r"SUBSTR does not support negative length \(-99\)",
             ):
-                ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df")
+                ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df").collect()
 
             with pytest.raises(
                 SQLSyntaxError,
@@ -512,4 +512,6 @@ def test_string_trim(foods_ipc_path: Path) -> None:
         match="unsupported TRIM syntax",
     ):
         # currently unsupported (snowflake-style) trim syntax
-        lf.sql("SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM self")
+        lf.sql(
+            "SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM self"
+        ).collect()

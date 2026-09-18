@@ -396,6 +396,7 @@ impl BooleanArray {
 impl Array for BooleanArray {
     impl_common_array!();
 
+    #[inline]
     fn validity(&self) -> Option<&Bitmap> {
         self.validity.as_ref()
     }

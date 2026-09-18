@@ -119,7 +119,7 @@ def repeat(
 
     >>> pl.select(pl.repeat("z", n=3)).to_series()
     shape: (3,)
-    Series: 'repeat' [str]
+    Series: 'literal' [str]
     [
             "z"
             "z"
@@ -130,7 +130,7 @@ def repeat(
 
     >>> pl.repeat(3, n=3, dtype=pl.Int8, eager=True)
     shape: (3,)
-    Series: 'repeat' [i8]
+    Series: 'literal' [i8]
     [
             3
             3

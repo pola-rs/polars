@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLSyntaxError
+from polars.exceptions import InvalidOperationError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -888,3 +888,210 @@ def test_correlated_subquery_in_group_by_select_list() -> None:
         compare_with="duckdb",
         expected={"k": [1, 2, 3], "s": [12, 9, None]},
     )
+
+
+def test_group_by_same_column_from_two_relation_aliases() -> None:
+    frames = {
+        "sales": pl.DataFrame(
+            {
+                "bill_addr": [10, 10, 11],
+                "ship_addr": [20, 21, 20],
+                "amount": [5, 7, 9],
+            }
+        ),
+        "addr": pl.DataFrame(
+            {
+                "addr_sk": [10, 11, 20, 21],
+                "street": ["main", "oak", "elm", "ash"],
+                "city": ["ams", "ams", "rtm", "utr"],
+            }
+        ),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT a1.street AS b_street, a2.street AS c_street, SUM(amount) AS total
+            FROM sales, addr a1, addr a2
+            WHERE bill_addr = a1.addr_sk AND ship_addr = a2.addr_sk
+            GROUP BY a1.street, a2.street
+            ORDER BY b_street, c_street
+        """,
+        compare_with="duckdb",
+        expected={
+            "b_street": ["main", "main", "oak"],
+            "c_street": ["ash", "elm", "elm"],
+            "total": [7, 5, 9],
+        },
+    )
+
+
+def test_group_by_relation_alias_key_not_projected() -> None:
+    frames = {
+        "sales": pl.DataFrame({"bill_addr": [10, 10, 11], "amount": [5, 7, 9]}),
+        "addr": pl.DataFrame({"addr_sk": [10, 11], "city": ["ams", "rtm"]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT SUM(amount) AS total
+            FROM sales, addr a1
+            WHERE bill_addr = a1.addr_sk
+            GROUP BY a1.city
+            ORDER BY total
+        """,
+        compare_with="duckdb",
+        expected={"total": [9, 12]},
+    )
+
+
+def test_group_by_relation_alias_key_projected_unqualified() -> None:
+    frames = {
+        "sales": pl.DataFrame({"a1k": [10, 11, 10], "a2k": [20, 21, 21]}),
+        "addr": pl.DataFrame({"addr_sk": [10, 11, 20, 21], "city": [*"abcd"]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT a2.city, COUNT(*) AS n
+            FROM sales, addr a1, addr a2
+            WHERE a1k = a1.addr_sk AND a2k = a2.addr_sk
+            GROUP BY a2.city
+            ORDER BY city
+        """,
+        compare_with="duckdb",
+        expected={"city": ["c", "d"], "n": [1, 2]},
+    )
+
+
+def test_group_by_approx_quantile() -> None:
+    # small groups are exact, so the approximation is checked against known values
+    df = pl.DataFrame(
+        {
+            "g": ["a"] * 5 + ["b"] * 5,
+            "x": [1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0],
+        }
+    )
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT g, APPROX_QUANTILE(x, 0.5) AS q FROM self
+            GROUP BY g ORDER BY g
+        """,
+        compare_with=None,
+        expected={"g": ["a", "b"], "q": [3.0, 30.0]},
+    )
+
+
+def test_group_by_approx_quantile_having() -> None:
+    df = pl.DataFrame(
+        {
+            "g": ["a"] * 5 + ["b"] * 5,
+            "x": [1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0],
+        }
+    )
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT g FROM self
+            GROUP BY g HAVING APPROX_QUANTILE(x, 0.5) > 10 ORDER BY g
+        """,
+        compare_with=None,
+        expected={"g": ["b"]},
+    )
+
+
+@pytest.mark.parametrize("quantile", [0.25, 0.5, 0.75])
+def test_approx_quantile_matches_expr_api(quantile: float) -> None:
+    df = pl.DataFrame({"x": [1000.0, 2000.0, 3000.0, 4000.0, 5000.0, 6000.0]})
+    assert_frame_equal(
+        df.sql(f"SELECT APPROX_QUANTILE(x, {quantile}) AS q FROM self"),
+        df.select(pl.col("x").approx_quantile(quantile).alias("q")),
+    )
+    assert_frame_equal(
+        df.sql(f"SELECT APPROX_QUANTILE(x, {quantile}, 0.01) AS q FROM self"),
+        df.select(pl.col("x").approx_quantile(quantile, error=0.01).alias("q")),
+    )
+
+
+@pytest.mark.parametrize("method", ["auto", "kll", "req_lo", "req_hi", "req_both"])
+def test_approx_quantile_method_arg(method: str) -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]})
+    assert_frame_equal(
+        df.sql(f"SELECT APPROX_QUANTILE(x, 0.5, 0.01, '{method}') AS q FROM self"),
+        df.select(
+            pl.col("x").approx_quantile(0.5, error=0.01, method=method).alias("q")  # type: ignore[arg-type]
+        ),
+    )
+
+
+@pytest.mark.parametrize("quantile", ["-1", "2", "-0.01", "1.01", "1.5"])
+def test_approx_quantile_out_of_range(quantile: str) -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0]})
+    with pytest.raises(
+        SQLSyntaxError, match="APPROX_QUANTILE value must be between 0 and 1"
+    ):
+        df.sql(f"SELECT APPROX_QUANTILE(x, {quantile}) FROM self")
+
+
+@pytest.mark.parametrize("error", ["0.0", "1.0", "2.0", "-0.1", "-1"])
+def test_approx_quantile_bad_error(error: str) -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0]})
+    with pytest.raises(InvalidOperationError, match="`error` must be in the range"):
+        df.sql(f"SELECT APPROX_QUANTILE(x, 0.5, {error}) FROM self")
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        ("x, 0.5", 3.0),
+        ("x, 0.5, 0.01", 3.0),
+        ("x, 0.5, 0.01, 'kll'", 3.0),
+        ("x, 0.99, 0.01, 'req_hi'", 5.0),
+    ],
+)
+def test_approx_quantile_optional_args(args: str, expected: float) -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]})
+    assert_sql_matches(
+        df,
+        query=f"SELECT APPROX_QUANTILE({args}) AS q FROM self",
+        compare_with=None,
+        expected={"q": [expected]},
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "exc", "match"),
+    [
+        (
+            "SELECT APPROX_QUANTILE(x, y) FROM self",
+            SQLSyntaxError,
+            "invalid value for APPROX_QUANTILE",
+        ),
+        (
+            "SELECT APPROX_QUANTILE(x) FROM self",
+            SQLSyntaxError,
+            "APPROX_QUANTILE expects 2-4 arguments",
+        ),
+        (
+            "SELECT APPROX_QUANTILE(x, 0.5, 0.01, 'kll', 1) FROM self",
+            SQLSyntaxError,
+            "APPROX_QUANTILE expects 2-4 arguments",
+        ),
+        (
+            "SELECT APPROX_QUANTILE(x, 0.5, 0.01, 'nope') FROM self",
+            InvalidOperationError,
+            "`method` must be one of",
+        ),
+        (
+            "SELECT APPROX_QUANTILE(x, 0.5, y) FROM self",
+            SQLSyntaxError,
+            "invalid error value for APPROX_QUANTILE",
+        ),
+    ],
+)
+def test_approx_quantile_invalid_args(
+    query: str, exc: type[Exception], match: str
+) -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [0.5, 0.5, 0.5]})
+    with pytest.raises(exc, match=match):
+        df.sql(query)

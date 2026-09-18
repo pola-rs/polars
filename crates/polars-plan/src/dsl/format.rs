@@ -174,7 +174,6 @@ impl fmt::Debug for Expr {
                     },
                     NUnique(expr) => write!(f, "{expr:?}.n_unique()"),
                     Sum(expr) => write!(f, "{expr:?}.sum()"),
-                    AggGroups(expr) => write!(f, "{expr:?}.groups()"),
                     Count {
                         input,
                         include_nulls: false,

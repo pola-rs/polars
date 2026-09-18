@@ -28,10 +28,6 @@ impl PyExpr {
         self.inner.clone().dt().offset_by(by.inner).into()
     }
 
-    fn dt_with_time_unit(&self, time_unit: Wrap<TimeUnit>) -> Self {
-        self.inner.clone().dt().with_time_unit(time_unit.0).into()
-    }
-
     #[cfg(feature = "timezones")]
     fn dt_convert_time_zone(&self, time_zone: String) -> PyResult<Self> {
         use crate::utils::to_py_err;
@@ -181,9 +177,6 @@ impl PyExpr {
     }
     fn dt_date(&self) -> Self {
         self.inner.clone().dt().date().into()
-    }
-    fn dt_datetime(&self) -> Self {
-        self.inner.clone().dt().datetime().into()
     }
     fn dt_hour(&self) -> Self {
         self.inner.clone().dt().hour().into()

@@ -1,17 +1,19 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use polars_async::executor::TaskPriority;
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IntoColumn};
 use polars_core::series::Series;
-use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_core::utils::polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::{
-    ColumnPredicateExpr, ColumnPredicates, ScanIOPredicate, SpecializedColumnPredicate,
+    ColumnPredicateExpr, ColumnPredicates, PhysicalIoExpr, ScanIOPredicate,
+    SpecializedColumnPredicate, StagedScanIOPredicate,
 };
-pub use polars_io::prelude::_internal::PrefilterMaskSetting;
+use polars_io::prelude::_internal::canonicalize_parquet_maps;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, PredicateFilter, PrimitiveLogicalType};
 use polars_utils::pl_str::PlSmallStr;
@@ -20,6 +22,44 @@ use polars_utils::{IdxSize, UnitVec};
 use super::row_group_data_fetch::RowGroupData;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
+/// Above this share of rows kept by the first pass, a row group is read in one pass.
+const STAGED_MAX_KEPT_PERCENT: usize = 85;
+
+fn keeps_most_rows(kept: usize, total: usize) -> bool {
+    kept * 100 > STAGED_MAX_KEPT_PERCENT * total
+}
+
+/// How the predicate columns of one row group are decoded.
+#[derive(Clone, Copy)]
+enum Passes<'a> {
+    One,
+    /// One pass, but the halves are still evaluated apart to see whether two passes
+    /// would pay off again.
+    OneOfSplit(&'a StagedScanIOPredicate),
+    Two(&'a StagedScanIOPredicate),
+}
+
+/// `columns` holds the first-pass columns, then the second-pass columns, each in
+/// field order. Yields them in `field_order`. `first_fields` and `field_order` are
+/// sorted and `first_fields` is a subset of `field_order`.
+fn merge_passes<'a>(
+    mut columns: Vec<Column>,
+    first_fields: &'a [usize],
+    field_order: &'a [usize],
+) -> impl Iterator<Item = Column> + 'a {
+    let mut second_pass = columns.split_off(first_fields.len()).into_iter();
+    let mut first_pass = columns.into_iter();
+    let mut first_fields = first_fields.iter().peekable();
+    field_order.iter().map(move |field| {
+        if first_fields.next_if_eq(&field).is_some() {
+            first_pass.next()
+        } else {
+            second_pass.next()
+        }
+        .unwrap()
+    })
+}
+
 /// Turns row group data into DataFrames.
 pub(super) struct RowGroupDecoder {
     pub(super) num_pipelines: usize,
@@ -27,9 +67,18 @@ pub(super) struct RowGroupDecoder {
     pub(super) allow_column_predicates: bool,
     pub(super) row_index: Option<RowIndex>,
     pub(super) predicate: Option<ScanIOPredicate>,
-    pub(super) use_prefiltered: Option<PrefilterMaskSetting>,
+    pub(super) use_prefiltered: bool,
+    /// Whether this file can read the predicate in two passes. `Passes` picks how
+    /// each row group is read.
+    pub(super) use_staged: bool,
+    /// Set while the first pass keeps most rows; cleared once it rejects enough again.
+    pub(super) staging_off: AtomicBool,
     /// Indices into `projected_arrow_fields. This must be sorted.
     pub(super) predicate_field_indices: Arc<[usize]>,
+    /// Sorted. All of `predicate_field_indices` when the predicate is not split.
+    pub(super) first_pass_field_indices: Arc<[usize]>,
+    /// Sorted. Empty when the predicate is not split.
+    pub(super) second_pass_field_indices: Arc<[usize]>,
     /// Indices into `projected_arrow_fields. This must be sorted.
     pub(super) non_predicate_field_indices: Arc<[usize]>,
     pub(super) target_values_per_thread: usize,
@@ -46,7 +95,7 @@ impl RowGroupDecoder {
             slice.0 == 0 && slice.1 >= row_group_data.row_group_metadata.num_rows()
         });
 
-        if self.use_prefiltered.is_some()
+        if self.use_prefiltered
             && row_group_data.slice.is_none()
             && !self.predicate_field_indices.is_empty()
         {
@@ -93,7 +142,7 @@ impl RowGroupDecoder {
 
         let df = unsafe { DataFrame::new_unchecked(projection_height, out_columns) };
 
-        let df = if let Some(predicate) = self.predicate.as_ref() {
+        let df = if let Some(predicate) = self.predicate.as_ref().filter(|p| p.filters_rows) {
             let mask = predicate.predicate.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
 
@@ -278,6 +327,7 @@ fn decode_column(
     }
 
     let mut series = Series::try_from((arrow_field, arrays))?;
+    canonicalize_parquet_maps(&mut series)?;
 
     if let Some(col_idxs) = row_group_data
         .row_group_metadata
@@ -402,25 +452,25 @@ impl RowGroupDecoder {
         let row_group_data = Arc::new(row_group_data);
         let projection_height = row_group_data.row_group_metadata.num_rows();
 
-        let mut live_columns = Vec::with_capacity(
-            self.row_index.is_some() as usize
-                + self.predicate_field_indices.len()
-                + self.non_predicate_field_indices.len(),
-        );
-        let mut masks = Vec::with_capacity(
-            self.row_index.is_some() as usize + self.predicate_field_indices.len(),
-        );
-
-        if let Some(s) = self.materialize_row_index(
-            row_group_data.as_ref(),
-            0..row_group_data.row_group_metadata.num_rows(),
-        )? {
-            live_columns.push(s);
-        }
-
         let scan_predicate = self.predicate.as_ref().unwrap();
+        let passes = match &scan_predicate.staged {
+            None => Passes::One,
+            Some(split) if self.use_staged && !self.staging_off.load(Ordering::Relaxed) => {
+                Passes::Two(split)
+            },
+            Some(split) => Passes::OneOfSplit(split),
+        };
+        let first_pass_field_indices = match passes {
+            Passes::Two(_) => &self.first_pass_field_indices,
+            _ => &self.predicate_field_indices,
+        };
+        let column_predicates = match passes {
+            Passes::Two(split) => &split.column_predicates,
+            _ => &scan_predicate.column_predicates,
+        };
 
         let use_column_predicates = self.allow_column_predicates
+            && column_predicates.is_sumwise_complete
             && !row_group_data
                 .row_group_metadata
                 .parquet_columns()
@@ -437,29 +487,44 @@ impl RowGroupDecoder {
             .len()
             .div_ceil(self.num_pipelines))
         .max(1);
+
+        let mut live_columns = Vec::with_capacity(
+            self.row_index.is_some() as usize
+                + self.predicate_field_indices.len()
+                + self.non_predicate_field_indices.len(),
+        );
+        let mut masks = Vec::with_capacity(first_pass_field_indices.len());
+
+        if let Some(s) = self.materialize_row_index(
+            row_group_data.as_ref(),
+            0..row_group_data.row_group_metadata.num_rows(),
+        )? {
+            live_columns.push(s);
+        }
+
         let task_handles = {
-            let predicate_field_indices = self.predicate_field_indices.clone();
+            let first_pass_field_indices = first_pass_field_indices.clone();
             let projected_arrow_fields = self.projected_arrow_fields.clone();
             let row_group_data = row_group_data.clone();
 
             parallelize_first_to_local(
                 TaskPriority::Low,
-                (0..self.predicate_field_indices.len())
+                (0..first_pass_field_indices.len())
                     .step_by(cols_per_thread)
                     .map(move |offset| {
                         let row_group_data = row_group_data.clone();
-                        let predicate_field_indices = predicate_field_indices.clone();
+                        let first_pass_field_indices = first_pass_field_indices.clone();
                         let projected_arrow_fields = projected_arrow_fields.clone();
-                        let column_predicates = scan_predicate.column_predicates.clone();
+                        let column_predicates = column_predicates.clone();
 
                         async move {
                             (offset
                                 ..offset
                                     .saturating_add(cols_per_thread)
-                                    .min(predicate_field_indices.len()))
+                                    .min(first_pass_field_indices.len()))
                                 .map(|i| {
                                     let projection =
-                                        &projected_arrow_fields[predicate_field_indices[i]];
+                                        &projected_arrow_fields[first_pass_field_indices[i]];
 
                                     if use_column_predicates {
                                         debug_assert!(matches!(
@@ -493,13 +558,15 @@ impl RowGroupDecoder {
             }
         }
 
-        let (live_df_filtered, mut mask) = if use_column_predicates {
-            assert!(scan_predicate.column_predicates.is_sumwise_complete);
+        // The part of the predicate still to evaluate on a second pass.
+        let mut second_pending = match passes {
+            Passes::Two(split) => Some(split),
+            _ => None,
+        };
+        let (mut live_columns, mut mask) = if use_column_predicates {
             if let [mask] = masks.as_slice() {
-                (
-                    unsafe { DataFrame::new_unchecked_infer_height(live_columns) },
-                    BooleanChunked::from_bitmap(PlSmallStr::EMPTY, mask.clone()),
-                )
+                let mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, mask.clone());
+                (live_columns, mask)
             } else {
                 let mut mask = MutableBitmap::new();
                 mask.extend_from_bitmap(masks.first().unwrap());
@@ -520,118 +587,209 @@ impl RowGroupDecoder {
                     })
                     .collect();
 
-                (
-                    unsafe { DataFrame::new_unchecked_infer_height(live_columns) },
-                    mask,
-                )
+                (live_columns, mask)
             }
         } else {
-            let mut live_df = unsafe {
-                DataFrame::new_unchecked(row_group_data.row_group_metadata.num_rows(), live_columns)
+            let live_df = unsafe { DataFrame::new_unchecked(projection_height, live_columns) };
+            let predicate = match passes {
+                Passes::One => &scan_predicate.predicate,
+                Passes::OneOfSplit(split) | Passes::Two(split) => &split.first,
             };
+            let mut mask_bitmap = evaluate_mask(predicate.as_ref(), &live_df)?;
+            let mut columns = live_df.into_columns();
 
-            let mask = scan_predicate.predicate.evaluate_io(&live_df)?;
-            let mask = mask.bool().unwrap();
-
-            unsafe {
-                live_df.columns_mut().truncate(
-                    self.row_index.is_some() as usize + self.predicate_field_indices.len(),
-                )
+            let second_now = match passes {
+                Passes::One => None,
+                Passes::OneOfSplit(split) => {
+                    if !keeps_most_rows(mask_bitmap.set_bits(), projection_height) {
+                        self.staging_off.store(false, Ordering::Relaxed);
+                    }
+                    Some(split)
+                },
+                Passes::Two(split)
+                    if keeps_most_rows(mask_bitmap.set_bits(), projection_height) =>
+                {
+                    self.staging_off.store(true, Ordering::Relaxed);
+                    let second_columns = self
+                        .decode_fields(&self.second_pass_field_indices, &row_group_data, None)
+                        .await?;
+                    columns.extend(second_columns);
+                    second_pending = None;
+                    Some(split)
+                },
+                Passes::Two(_) => None,
+            };
+            if let Some(split) = second_now {
+                let df = unsafe { DataFrame::new_unchecked(projection_height, columns) };
+                mask_bitmap = &mask_bitmap & &evaluate_mask(split.second.as_ref(), &df)?;
+                columns = df.into_columns();
             }
 
-            let filtered =
-                filter_cols(live_df.into_columns(), mask, self.target_values_per_thread).await?;
+            let mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, mask_bitmap);
+            let filtered = filter_cols(columns, &mask, self.target_values_per_thread).await?;
 
-            let filtered_height = if let Some(fst) = filtered.first() {
-                fst.len()
-            } else {
-                mask.num_trues()
-            };
-
-            (
-                unsafe { DataFrame::new_unchecked(filtered_height, filtered) },
-                mask.clone(),
-            )
+            (filtered, mask)
         };
-
-        if self.non_predicate_field_indices.is_empty() {
-            // User or test may have explicitly requested prefiltering
-            return Ok(live_df_filtered);
+        let mut mask_bitmap = mask.downcast_as_array().values().clone();
+        assert_eq!(mask_bitmap.len(), projection_height);
+        let mut expected_num_rows = mask_bitmap.set_bits();
+        if second_pending.is_some() && keeps_most_rows(expected_num_rows, projection_height) {
+            self.staging_off.store(true, Ordering::Relaxed);
         }
 
-        mask.rechunk_mut();
-        let mask_bitmap = mask.downcast_as_array();
-        let mask_bitmap = match mask_bitmap.validity() {
-            None => mask_bitmap.values().clone(),
-            Some(v) => mask_bitmap.values() & v,
-        };
+        if let Some(split) = second_pending {
+            let second_pass = self
+                .decode_fields(
+                    &self.second_pass_field_indices,
+                    &row_group_data,
+                    Some((&mask, &mask_bitmap, expected_num_rows)),
+                )
+                .await?;
+            live_columns.extend(second_pass);
 
-        assert_eq!(mask_bitmap.len(), projection_height);
+            let df = unsafe { DataFrame::new_unchecked(expected_num_rows, live_columns) };
+            let second_mask_bitmap = evaluate_mask(split.second.as_ref(), &df)?;
+            assert_eq!(second_mask_bitmap.len(), expected_num_rows);
+            let second_mask =
+                BooleanChunked::from_bitmap(PlSmallStr::EMPTY, second_mask_bitmap.clone());
 
-        let expected_num_rows = mask_bitmap.set_bits();
+            live_columns = filter_cols(
+                df.into_columns(),
+                &second_mask,
+                self.target_values_per_thread,
+            )
+            .await?;
+            expected_num_rows = second_mask_bitmap.set_bits();
+            mask_bitmap = compose_masks(&mask_bitmap, &second_mask_bitmap);
+            mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, mask_bitmap.clone());
+        }
 
+        // Output order is `predicate_field_indices`, then the other columns, like
+        // `decode_projected_columns`.
+        if let Passes::Two(_) = passes {
+            let by_pass = live_columns.split_off(self.row_index.is_some() as usize);
+            live_columns.extend(merge_passes(
+                by_pass,
+                &self.first_pass_field_indices,
+                &self.predicate_field_indices,
+            ));
+        }
+
+        let dead_cols = self
+            .decode_fields(
+                &self.non_predicate_field_indices,
+                &row_group_data,
+                Some((&mask, &mask_bitmap, expected_num_rows)),
+            )
+            .await?;
+
+        drop(row_group_data);
+
+        live_columns.extend(dead_cols);
+        let df = unsafe { DataFrame::new_unchecked(expected_num_rows, live_columns) };
+        Ok(df)
+    }
+
+    /// Decodes the projected fields at `field_indices`, keeping only the rows set in
+    /// the mask when one is given.
+    async fn decode_fields(
+        &self,
+        field_indices: &Arc<[usize]>,
+        row_group_data: &Arc<RowGroupData>,
+        mask: Option<(&BooleanChunked, &Bitmap, usize)>,
+    ) -> PolarsResult<Vec<Column>> {
         let cols_per_thread = (self
             .predicate_field_indices
             .len()
             .div_ceil(self.num_pipelines))
         .max(1);
+        let projection_height = row_group_data.row_group_metadata.num_rows();
+        let mask = mask.map(|(mask, bitmap, expected_num_rows)| {
+            (mask.clone(), bitmap.clone(), expected_num_rows)
+        });
 
         let task_handles = {
-            let non_predicate_field_indices = self.non_predicate_field_indices.clone();
-            let non_predicate_len = non_predicate_field_indices.len();
+            let field_indices = field_indices.clone();
+            let n_fields = field_indices.len();
             let projected_arrow_fields = self.projected_arrow_fields.clone();
             let row_group_data = row_group_data.clone();
 
             parallelize_first_to_local(
                 TaskPriority::Low,
-                (0..non_predicate_len)
-                    .step_by(cols_per_thread)
-                    .map(move |offset| {
-                        let row_group_data = row_group_data.clone();
-                        let non_predicate_field_indices = non_predicate_field_indices.clone();
-                        let projected_arrow_fields = projected_arrow_fields.clone();
-                        let mask = mask.clone();
-                        let mask_bitmap = mask_bitmap.clone();
+                (0..n_fields).step_by(cols_per_thread).map(move |offset| {
+                    let row_group_data = row_group_data.clone();
+                    let field_indices = field_indices.clone();
+                    let projected_arrow_fields = projected_arrow_fields.clone();
+                    let mask = mask.clone();
 
-                        async move {
-                            (offset
-                                ..offset
-                                    .saturating_add(cols_per_thread)
-                                    .min(non_predicate_len))
-                                .map(|i| {
-                                    let projection =
-                                        &projected_arrow_fields[non_predicate_field_indices[i]];
+                    async move {
+                        (offset..offset.saturating_add(cols_per_thread).min(n_fields))
+                            .map(|i| {
+                                let projection = &projected_arrow_fields[field_indices[i]];
 
-                                    let col = decode_column_prefiltered(
-                                        projection.arrow_field(),
-                                        row_group_data.as_ref(),
-                                        &mask,
-                                        &mask_bitmap,
-                                        expected_num_rows,
-                                    )?;
+                                let col = match &mask {
+                                    Some((mask, mask_bitmap, expected_num_rows)) => {
+                                        decode_column_prefiltered(
+                                            projection.arrow_field(),
+                                            row_group_data.as_ref(),
+                                            mask,
+                                            mask_bitmap,
+                                            *expected_num_rows,
+                                        )?
+                                    },
+                                    None => {
+                                        decode_column(
+                                            projection.arrow_field(),
+                                            row_group_data.as_ref(),
+                                            None,
+                                            projection_height,
+                                        )?
+                                        .0
+                                    },
+                                };
 
-                                    projection.apply_transform(col)
-                                })
-                                .collect::<PolarsResult<UnitVec<_>>>()
-                        }
-                    }),
+                                projection.apply_transform(col)
+                            })
+                            .collect::<PolarsResult<UnitVec<_>>>()
+                    }
+                }),
             )
         };
 
-        drop(row_group_data);
-
-        let live_columns = live_df_filtered.into_columns();
-
-        let mut dead_cols = Vec::with_capacity(self.non_predicate_field_indices.len());
+        let mut out = Vec::with_capacity(field_indices.len());
         for fut in task_handles {
-            dead_cols.extend(fut.await?);
+            out.extend(fut.await?);
         }
-
-        let mut merged = live_columns;
-        merged.extend(dead_cols);
-        let df = unsafe { DataFrame::new_unchecked(expected_num_rows, merged) };
-        Ok(df)
+        Ok(out)
     }
+}
+
+/// Evaluates a row predicate and returns its set rows as a bitmap, treating null as
+/// unset.
+fn evaluate_mask(predicate: &dyn PhysicalIoExpr, df: &DataFrame) -> PolarsResult<Bitmap> {
+    let mut mask = predicate.evaluate_io(df)?.bool().unwrap().clone();
+    mask.rechunk_mut();
+    let arr = mask.downcast_as_array();
+    Ok(match arr.validity() {
+        None => arr.values().clone(),
+        Some(validity) => arr.values() & validity,
+    })
+}
+
+/// Narrows `outer` by `inner`, which holds one bit per set bit of `outer`.
+fn compose_masks(outer: &Bitmap, inner: &Bitmap) -> Bitmap {
+    assert_eq!(inner.len(), outer.set_bits());
+    if inner.unset_bits() == 0 {
+        return outer.clone();
+    }
+    let mut out = MutableBitmap::from_len_zeroed(outer.len());
+    for (idx, keep) in outer.true_idx_iter().zip(inner.iter()) {
+        if keep {
+            // SAFETY: `idx` indexes `outer`, which has the same length as `out`.
+            unsafe { out.set_unchecked(idx, true) };
+        }
+    }
+    out.freeze()
 }
 
 fn decode_column_prefiltered(
@@ -687,11 +845,14 @@ fn decode_column_prefiltered(
         }
     }
 
-    let series = if !prefilter {
+    let mut series = if !prefilter {
         series.filter(mask)?
     } else {
         series
     };
+
+    // Done after the filter so that discarded rows cost nothing.
+    canonicalize_parquet_maps(&mut series)?;
 
     assert_eq!(series.len(), expected_num_rows);
 

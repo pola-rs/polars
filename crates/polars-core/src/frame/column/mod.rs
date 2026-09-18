@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::trusted_len::TrustMyLength;
 use num_traits::{Num, NumCast};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_error::{PolarsContext, PolarsResult};
 use polars_utils::aliases::PlSeedableRandomStateQuality;
@@ -11,14 +11,14 @@ use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
 pub use scalar::ScalarColumn;
 
-use self::compare_inner::{TotalEqInner, TotalOrdInner};
+use self::compare_inner::TotalOrdInner;
 use self::gather::check_bounds_ca;
 use self::series::SeriesColumn;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::ReshapeDimension;
 use crate::prelude::*;
-use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
+use crate::series::{BitRepr, IsSorted};
 use crate::utils::{Container, slice_offsets};
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
@@ -244,6 +244,15 @@ impl Column {
         match self {
             Column::Series(s) => Some(s),
             _ => None,
+        }
+    }
+
+    /// Get the [`ScalarColumn`] as [`Series`] if it was already materialized.
+    #[inline]
+    pub fn lazy_as_materialized_series(&self) -> Option<&Series> {
+        match self {
+            Column::Series(s) => Some(s),
+            Column::Scalar(s) => s.lazy_as_materialized_series(),
         }
     }
     #[inline]
@@ -705,13 +714,10 @@ impl Column {
                     scalar.into_nulls().into_column()
                 } else {
                     let validity = indices.rechunk_validity();
-                    let series = scalar.take_materialized_series();
-                    let name = series.name().clone();
-                    let dtype = series.dtype().clone();
-                    let mut chunks = series.into_chunks();
-                    assert_eq!(chunks.len(), 1);
-                    chunks[0] = chunks[0].with_validity(validity);
-                    unsafe { Series::from_chunks_and_dtype_unchecked(name, chunks, &dtype) }
+                    // Use dtype-aware validity updates so Struct fields see the nulls.
+                    scalar
+                        .take_materialized_series()
+                        .with_validity(validity)
                         .into_column()
                 }
             },
@@ -791,14 +797,9 @@ impl Column {
                 };
                 validity.extend_trusted_len_iter(iter);
 
-                let mut s = scalar_col.take_materialized_series().rechunk();
-                // SAFETY: We perform a compute_len afterwards.
-                let chunks = unsafe { s.chunks_mut() };
-                let arr = &mut chunks[0];
-                *arr = arr.with_validity(validity.into_opt_validity());
-                s.compute_len();
-
-                s.into_column()
+                // Use dtype-aware validity updates so Struct fields see the nulls.
+                let s = scalar_col.take_materialized_series().rechunk();
+                s.with_validity(validity.into_opt_validity()).into_column()
             },
         }
     }
@@ -971,7 +972,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub fn agg_valid_count(&self, groups: &GroupsType) -> Self {
+    pub unsafe fn agg_valid_count(&self, groups: &GroupsType) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_valid_count(groups) }.into()
     }
@@ -1544,11 +1545,6 @@ impl Column {
         self.as_materialized_series().product()
     }
 
-    pub fn phys_iter(&self) -> SeriesPhysIter<'_> {
-        // @scalar-opt
-        self.as_materialized_series().phys_iter()
-    }
-
     #[inline]
     pub fn get(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         polars_ensure!(index < self.len(), oob = index, self.len());
@@ -1875,6 +1871,8 @@ impl Column {
     pub fn n_chunks(&self) -> usize {
         match self {
             Column::Series(s) => s.n_chunks(),
+            // A materialized scalar column can hold more than one chunk, and those
+            // chunks still have to take part in alignment.
             Column::Scalar(s) => s.lazy_as_materialized_series().map_or(1, |x| x.n_chunks()),
         }
     }
@@ -1883,11 +1881,6 @@ impl Column {
     pub(crate) fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         // @scalar-opt
         self.as_materialized_series().into_total_ord_inner()
-    }
-    #[expect(unused, clippy::wrong_self_convention)]
-    pub(crate) fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        // @scalar-opt
-        self.as_materialized_series().into_total_eq_inner()
     }
 
     pub fn rechunk_to_arrow(self, compat_level: CompatLevel) -> Box<dyn Array> {

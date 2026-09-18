@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import re
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -13,7 +14,11 @@ from numpy import nan
 
 import polars as pl
 from polars._utils.convert import parse_as_duration_string
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ArgumentRemovedError,
+    ComputeError,
+    InvalidOperationError,
+)
 from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
@@ -267,6 +272,12 @@ def test_rolling_kurtosis() -> None:
     )
 
 
+@pytest.mark.parametrize("rolling_fn", ["rolling_skew", "rolling_kurtosis"])
+def test_rolling_skew_kurtosis_empty_28515(rolling_fn: str) -> None:
+    result = getattr(pl.Series("x", [], dtype=pl.Int32), rolling_fn)(window_size=3)
+    assert_series_equal(result, pl.Series("x", [], dtype=pl.Float64))
+
+
 @pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 @pytest.mark.parametrize(
     ("rolling_fn", "expected_values", "expected_dtype"),
@@ -283,7 +294,7 @@ def test_rolling_kurtosis() -> None:
 def test_rolling_crossing_dst(
     time_zone: str | None,
     rolling_fn: str,
-    expected_values: list[int | None | float],
+    expected_values: list[int | float | None],
     expected_dtype: PolarsDataType,
 ) -> None:
     ts = pl.datetime_range(
@@ -760,12 +771,8 @@ def test_rolling_cov_corr_nulls() -> None:
         }
     )
 
-    val_1 = df1.select(
-        pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5, ddof=1)
-    )
-    val_2 = df2.select(
-        pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5, ddof=1)
-    )
+    val_1 = df1.select(pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5))
+    val_2 = df2.select(pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5))
 
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.62204709]})
     df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.62204709]})
@@ -773,12 +780,8 @@ def test_rolling_cov_corr_nulls() -> None:
     assert_frame_equal(val_1, df1_expected, abs_tol=0.0000001)
     assert_frame_equal(val_2, df2_expected, abs_tol=0.0000001)
 
-    val_1 = df1.select(
-        pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5, ddof=1)
-    )
-    val_2 = df2.select(
-        pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5, ddof=1)
-    )
+    val_1 = df1.select(pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5))
+    val_2 = df2.select(pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5))
 
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.009445]})
     df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.009445]})
@@ -1930,6 +1933,66 @@ def test_rolling_median_23480() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_rolling_weighted_median_center_29170() -> None:
+    # A centered window is truncated at the tail, but the weighted kernel used to read
+    # `window_size` values past the window start regardless, running off the end of the
+    # array.
+    s = pl.Series([1.0, 2.0, 3.0])
+
+    result = s.rolling_median(
+        window_size=3, min_samples=1, weights=[1.0, 1.0, 1.0], center=True
+    )
+
+    # Windows are [1, 2], [1, 2, 3] and [2, 3].
+    expected = pl.Series([1.5, 2.0, 2.5])
+    assert_series_equal(result, expected)
+    # Uniform weights must agree with the unweighted kernel.
+    assert_series_equal(
+        result, s.rolling_median(window_size=3, min_samples=1, center=True)
+    )
+
+
+def test_rolling_weighted_median_partial_window_29170() -> None:
+    # With `min_samples` below `window_size` the leading windows are shorter than
+    # `window_size`. The weighted kernel used to fill them with values from *after* the
+    # window instead, so a backwards-looking rolling median looked forwards.
+    s = pl.Series([1.0, 2.0, 3.0])
+
+    result = s.rolling_median(window_size=3, min_samples=1, weights=[1.0, 1.0, 1.0])
+
+    # Windows are [1], [1, 2] and [1, 2, 3].
+    expected = pl.Series([1.0, 1.5, 2.0])
+    assert_series_equal(result, expected)
+    # Uniform weights must agree with the unweighted kernel.
+    assert_series_equal(result, s.rolling_median(window_size=3, min_samples=1))
+
+
+def test_rolling_weighted_median_all_zero_weights_in_window() -> None:
+    # A truncated window can cover only zero weights,
+    # leaving nothing to take a quantile over.
+    # The result is undefined, represented as a null.
+    s = pl.Series([1.0, 2.0, 3.0])
+    result = s.rolling_median(window_size=3, min_samples=1, weights=[1.0, 0.0, 0.0])
+
+    # The first window covers only the last weight, which is zero.
+    # The second covers the last two, also both zero.
+    # The third now has a valid weight.
+    expected = pl.Series([None, None, 1.0], dtype=pl.Float64)
+    assert_series_equal(result, expected)
+
+
+def test_rolling_weighted_median_all_zero_weights_in_centered_window_29170() -> None:
+    s = pl.Series([1.0, 2.0, 3.0])
+    result = s.rolling_median(
+        window_size=5, min_samples=1, weights=[1.0, 0.0, 0.0, 0.0, 1.0], center=True
+    )
+
+    # The windows cover weights[2:5], weights[1:4] and weights[0:3]; only the middle one
+    # is left without a value to take a quantile over.
+    expected = pl.Series([3.0, None, 1.0], dtype=pl.Float64)
+    assert_series_equal(result, expected)
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("with_nulls", [True, False])
 def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
@@ -2348,6 +2411,32 @@ def test_rolling_rank_closed_left_26147() -> None:
     assert_frame_equal(actual, expected)
 
 
+def test_rolling_rank_by_null_in_shared_window() -> None:
+    # All `by` values are equal, so every row is ranked against the same
+    # window. A null in that window must only null out its own row.
+    df = pl.DataFrame(
+        {"index": [0, 0, 0, 0], "x": [1, 2, None, 4], "y": [1, 2, 4, None]}
+    )
+    actual = df.with_columns(
+        x_ranked=pl.col("x").rolling_rank_by("index", window_size="4i"),
+        y_ranked=pl.col("y").rolling_rank_by("index", window_size="4i"),
+    )
+    expected = df.with_columns(
+        x_ranked=pl.Series([1.0, 2.0, None, 3.0]),
+        y_ranked=pl.Series([1.0, 2.0, 3.0, None]),
+    )
+    assert_frame_equal(actual, expected)
+
+
+def test_rolling_rank_by_unsorted_by() -> None:
+    df = pl.DataFrame({"index": [3, 1, 2], "x": [30, None, 20]})
+    actual = df.with_columns(
+        x_ranked=pl.col("x").rolling_rank_by("index", window_size="3i"),
+    )
+    expected = df.with_columns(x_ranked=pl.Series([2.0, None, 1.0]))
+    assert_frame_equal(actual, expected)
+
+
 def test_rolling_cov_no_panic_26741() -> None:
     result = (
         pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [1, 2, 3]})
@@ -2415,18 +2504,6 @@ def test_rolling_corr_ddof_invariant_27013() -> None:
     r1 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5))["x"][-1]
     assert r1 == pytest.approx(1.0)
 
-    with pytest.warns(DeprecationWarning, match="ddof"):
-        r0 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5, ddof=0))[
-            "x"
-        ][-1]
-    with pytest.warns(DeprecationWarning, match="ddof"):
-        r2 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5, ddof=2))[
-            "x"
-        ][-1]
-
-    assert r0 == pytest.approx(1.0)
-    assert r2 == pytest.approx(1.0)
-
 
 def test_rolling_streaming_ensures_sorted_27231(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
@@ -2449,3 +2526,53 @@ def test_rolling_rank_min_samples_28102() -> None:
     assert_series_equal(
         out, pl.Series("a", [None, None, None, 3, 3], dtype=pl.get_index_type())
     )
+
+
+def test_min_periods_removed() -> None:
+    msg = "It was renamed to 'min_samples'."
+    s = pl.Series("a", [1.0, 2.0, 3.0])
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.cumulative_eval(pl.element().sum(), min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_min(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_max(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_mean(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_sum(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_std(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_var(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_map(lambda x: x.sum(), 2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_median(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_quantile(0.5, window_size=2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.ewm_mean(com=1, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.ewm_std(com=1, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.ewm_var(com=1, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.rolling_cov("a", "b", window_size=2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.rolling_corr("a", "b", window_size=2, min_periods=1)  # type: ignore[call-arg]

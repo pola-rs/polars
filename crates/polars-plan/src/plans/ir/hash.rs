@@ -39,6 +39,8 @@ impl IR {
                         predicate,
                         validate_schema,
                         is_pure,
+                        explain_name: _,
+                        explain_detail: _,
                     },
             } => {
                 // Hash the Python function object using the pointer to the object.
@@ -161,12 +163,8 @@ impl IR {
                 input_left: _,
                 input_right: _,
                 schema: _,
-                left_on,
-                right_on,
                 options,
             } => {
-                hash_exprs(left_on, state);
-                hash_exprs(right_on, state);
                 options.shallow_hash(state, expr_hash);
             },
             IR::Gather {
@@ -199,11 +197,6 @@ impl IR {
             } => {
                 options.hash(state);
             },
-            IR::ExtContext {
-                input: _,
-                contexts: _,
-                schema: _,
-            } => {},
             IR::Sink { input: _, payload } => {
                 payload.shallow_hash(state, expr_hash);
             },
@@ -251,6 +244,21 @@ impl IR {
                 UnoptimizedOperation::DynamicSlice { output_name } => {
                     output_name.hash(state);
                 },
+            },
+            IR::Resolver {
+                resolver,
+                resolver_schema: _,
+                projection,
+                slice,
+                filters,
+                filter_drop_columns_idx: _,
+                resolved_dsl: _,
+                resolved_ir: _,
+            } => {
+                resolver.hash(state);
+                projection.hash(state);
+                slice.hash(state);
+                hash_exprs(filters, state);
             },
             IR::Invalid => unreachable!(),
         }

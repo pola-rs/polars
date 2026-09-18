@@ -179,6 +179,8 @@ impl FileReader for BatchFnReader {
             pre_slice: None,
             predicate: None,
             cast_columns_policy: _,
+            extra_columns_policy: _,
+            missing_columns_policy: _,
             num_pipelines: _,
             disable_morsel_split: _,
             last_morsel_pipelines: _,

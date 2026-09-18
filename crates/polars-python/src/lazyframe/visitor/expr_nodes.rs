@@ -4,11 +4,12 @@ use polars::series::ops::NullBehavior;
 use polars_compute::rolling::{QuantileMethod, RollingFnParams};
 use polars_core::chunked_array::ops::FillNullStrategy;
 #[cfg(feature = "string_normalize")]
-use polars_ops::chunked_array::UnicodeForm;
-use polars_ops::prelude::RankMethod;
+use polars_defs::expr::UnicodeForm;
+use polars_defs::expr::{ClosedInterval, InterpolationMethod, RankMethod};
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
-use polars_ops::series::{ClosedInterval, InterpolationMethod};
 use polars_plan::dsl::DateRangeArgs;
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
@@ -16,11 +17,11 @@ use polars_plan::plans::{
     IRRandomMethod, IRRangeFunction, IRRollingFunction, IRRollingFunctionBy, IRStringFunction,
     IRStructFunction, IRTemporalFunction,
 };
+#[cfg(feature = "cutqcut")]
+use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
 use polars_plan::prelude::{
     AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
 };
-use polars_time::prelude::RollingGroupOptions;
-use polars_time::{ClosedWindow, Duration, DynamicGroupOptions};
 use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyNotImplementedError;
@@ -1040,11 +1041,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: ddof.into_py_any(py)?,
             },
-            IRAggExpr::AggGroups(n) => Agg {
-                name: "agg_groups".into_py_any(py)?,
-                arguments: vec![n.0],
-                options: py.None(),
-            },
         }
         .into_py_any(py),
         AExpr::Ternary {
@@ -1115,14 +1111,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     // Callable name generators are deprecated in favor of explicit field names and
                     // cannot be represented in the typed view.
-                    IRArrayFunction::ToStruct(name_generator) => match name_generator {
-                        None => (PyArrayFunction::ToStruct, py.None()).into_py_any(py),
-                        Some(_) => {
-                            return Err(PyNotImplementedError::new_err(
-                                "array to_struct with a name generator",
-                            ));
-                        },
-                    },
+                    IRArrayFunction::ToStruct { fields } => (
+                        PyArrayFunction::ToStruct,
+                        fields.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                    )
+                        .into_py_any(py),
                 },
                 IRFunctionExpr::BinaryExpr(_) => {
                     return Err(PyNotImplementedError::new_err("binary expr"));
@@ -1132,6 +1125,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 },
                 IRFunctionExpr::Extension(_) => {
                     return Err(PyNotImplementedError::new_err("extension expr"));
+                },
+                IRFunctionExpr::MapExpr(f) => {
+                    return Err(PyNotImplementedError::new_err(format!("{f}")));
                 },
                 IRFunctionExpr::ListExpr(listfun) => match listfun {
                     IRListFunction::Concat => (PyListFunction::Concat,).into_py_any(py),
@@ -1209,6 +1205,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         names.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     )
                         .into_py_any(py),
+                    IRListFunction::ToMap => {
+                        return Err(PyNotImplementedError::new_err(format!("{listfun}")));
+                    },
                 },
                 IRFunctionExpr::Bitwise(bitwisefun) => {
                     let py_function = match bitwisefun {
@@ -1460,7 +1459,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     IRTemporalFunction::Time => (PyTemporalFunction::Time,).into_py_any(py),
                     IRTemporalFunction::Date => (PyTemporalFunction::Date,).into_py_any(py),
-                    IRTemporalFunction::Datetime => (PyTemporalFunction::Datetime,).into_py_any(py),
                     IRTemporalFunction::Duration(time_unit) => {
                         (PyTemporalFunction::Duration, Wrap(*time_unit)).into_py_any(py)
                     },
@@ -1505,9 +1503,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     IRTemporalFunction::CastTimeUnit(time_unit) => {
                         (PyTemporalFunction::CastTimeUnit, Wrap(*time_unit)).into_py_any(py)
-                    },
-                    IRTemporalFunction::WithTimeUnit(time_unit) => {
-                        (PyTemporalFunction::WithTimeUnit, Wrap(*time_unit)).into_py_any(py)
                     },
                     #[cfg(feature = "timezones")]
                     IRTemporalFunction::ConvertTimeZone(time_zone) => {
@@ -1619,9 +1614,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRPowFunction::Sqrt => ("sqrt",).into_py_any(py),
                     IRPowFunction::Cbrt => ("cbrt",).into_py_any(py),
                 },
-                IRFunctionExpr::Hash(seed, seed_1, seed_2, seed_3) => {
-                    ("hash", seed, seed_1, seed_2, seed_3).into_py_any(py)
-                },
+                IRFunctionExpr::Hash(seed) => ("hash", seed).into_py_any(py),
                 IRFunctionExpr::ArgWhere => ("argwhere",).into_py_any(py),
                 #[cfg(feature = "index_of")]
                 IRFunctionExpr::IndexOf => ("index_of",).into_py_any(py),
@@ -1833,7 +1826,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     )
                         .into_py_any(py)
                 },
-                IRFunctionExpr::Rechunk => ("rechunk",).into_py_any(py),
                 IRFunctionExpr::ShiftAndFill => ("shift_and_fill",).into_py_any(py),
                 IRFunctionExpr::Shift => ("shift",).into_py_any(py),
                 IRFunctionExpr::DropNans => ("drop_nans",).into_py_any(py),
@@ -1959,9 +1951,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                 },
                 #[cfg(feature = "peaks")]
-                IRFunctionExpr::PeakMin => ("peak_max",).into_py_any(py),
+                IRFunctionExpr::PeakMin => ("peak_min",).into_py_any(py),
                 #[cfg(feature = "peaks")]
-                IRFunctionExpr::PeakMax => ("peak_min",).into_py_any(py),
+                IRFunctionExpr::PeakMax => ("peak_max",).into_py_any(py),
                 #[cfg(feature = "cutqcut")]
                 IRFunctionExpr::Cut {
                     breaks,
@@ -1996,6 +1988,62 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     include_breaks,
                 )
                     .into_py_any(py),
+                #[cfg(feature = "cutqcut")]
+                IRFunctionExpr::Bin(options) => {
+                    let labels = options
+                        .labels
+                        .as_ref()
+                        .map(|l| l.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+                    let include_intervals = options.include_intervals;
+                    match &options.method {
+                        IRBinMethod::Intervals { spec, right_closed } => match spec {
+                            IntervalSpec::Breaks(breaks) => (
+                                "bin_intervals",
+                                PySeries::new((**breaks).clone()),
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                            IntervalSpec::Count(n_bins) => (
+                                "bin_intervals_uniform",
+                                n_bins.get(),
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                        },
+                        IRBinMethod::Quantiles { spec, right_closed } => match spec {
+                            FractionSpec::Explicit(probs) => (
+                                "bin_quantiles",
+                                probs.to_vec(),
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                            FractionSpec::Count(n_bins) => (
+                                "bin_quantiles_uniform",
+                                n_bins.get(),
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                        },
+                        IRBinMethod::Ranks { spec } => match spec {
+                            FractionSpec::Explicit(fractions) => {
+                                ("bin_ranks", fractions.to_vec(), labels, include_intervals)
+                                    .into_py_any(py)
+                            },
+                            FractionSpec::Count(n_bins) => {
+                                ("bin_ranks_uniform", n_bins.get(), labels, include_intervals)
+                                    .into_py_any(py)
+                            },
+                        },
+                    }
+                },
                 #[cfg(feature = "rle")]
                 IRFunctionExpr::RLE => ("rle",).into_py_any(py),
                 #[cfg(feature = "rle")]
@@ -2136,8 +2184,19 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::RowDecode(..) => {
                     return Err(PyNotImplementedError::new_err("row_decode"));
                 },
-                IRFunctionExpr::DynamicPred { pred } => {
+                #[cfg(feature = "approx_quantile")]
+                IRFunctionExpr::ApproxQuantileSketch { .. } => {
+                    return Err(PyNotImplementedError::new_err("approx_quantile_sketch"));
+                },
+                #[cfg(feature = "approx_quantile")]
+                IRFunctionExpr::ApproxQuantileEstimate { .. } => {
+                    return Err(PyNotImplementedError::new_err("approx_quantile_estimate"));
+                },
+                IRFunctionExpr::DynamicPred { pred, .. } => {
                     ("dynamic_pred", pred.id().map(|u| u.as_u128())).into_py_any(py)
+                },
+                IRFunctionExpr::DynamicSkipBatch { pred } => {
+                    ("dynamic_skip_batch", pred.id().map(|u| u.as_u128())).into_py_any(py)
                 },
             }?,
             options: py.None(),

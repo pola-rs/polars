@@ -1,26 +1,21 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 import polars._reexport as pl
-from polars._utils.deprecation import deprecated
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.serde import serialize_polars_object
+from polars._utils.unstable import unstable
 from polars._utils.various import display_dot_graph
 from polars._utils.wrap import wrap_expr
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
-    import sys
     from io import IOBase
     from pathlib import Path
 
     from polars import Expr
     from polars._typing import SchemaDict, SerializationFormat
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 
 class ExprMetaNameSpace:
@@ -182,8 +177,99 @@ class ExprMetaNameSpace:
         >>> e = pl.lit(datetime.now()).alias("bar")
         >>> e.meta.is_literal(allow_aliasing=True)
         True
+
         """
         return self._pyexpr.meta_is_literal(allow_aliasing)
+
+    @unstable()
+    def is_scalar(self) -> bool:
+        """
+        Whether or not this expressions produces a scalar.
+
+        Examples
+        --------
+        >>> e = pl.col("foo").sum()
+        >>> e.meta.is_scalar()
+        True
+        >>> e = pl.col("foo").unique()
+        >>> e.meta.is_scalar()
+        False
+
+        """
+        return self._pyexpr.meta_is_scalar()
+
+    @unstable()
+    def is_length_preserving(self) -> bool:
+        """
+        Whether or not this expression produces an output is length preserving.
+
+        By length preserving we mean the same length as it's input.
+
+        Examples
+        --------
+        >>> e = pl.col("foo").sum()
+        >>> e.meta.is_length_preserving()
+        False
+        >>> e = pl.col("foo").unique()
+        >>> e.meta.is_length_preserving()
+        False
+        >>> e = pl.col("foo") * pl.col("bar")
+        >>> e.meta.is_length_preserving()
+        True
+
+        """
+        return self._pyexpr.meta_is_length_preserving()
+
+    @unstable()
+    def is_known_length(self) -> bool:
+        """
+        Whether or not we can define output length.
+
+        Output length we consider known:
+         - column length
+         - scalar
+         - ranges
+
+        Examples
+        --------
+        >>> e = pl.col("foo").sum()
+        >>> e.meta.is_known_length()
+        True
+        >>> e = pl.col("foo").unique()
+        >>> e.meta.is_known_length()
+        False
+        >>> e = pl.col("foo") * pl.col("bar")
+        >>> e.meta.is_known_length()
+        True
+
+        """
+        return self._pyexpr.meta_is_known_length()
+
+    @unstable()
+    def is_row_separable(self) -> bool:
+        """
+        Whether or not we split the expression by rows during execution.
+
+        Row separable expressions will produce a correct output
+        if ran in batches.
+
+        Examples
+        --------
+        >>> e = pl.col("foo").sum()
+        >>> e.meta.is_row_separable()
+        False
+        >>> e = pl.col("foo").unique()
+        >>> e.meta.is_row_separable()
+        False
+        >>> e = pl.col("foo") * pl.col("bar")
+        >>> e.meta.is_row_separable()
+        True
+        >>> e = pl.col("foo").explode()
+        >>> e.meta.is_row_separable()
+        True
+
+        """
+        return self._pyexpr.meta_is_row_separable()
 
     @overload
     def output_name(self, *, raise_if_undetermined: Literal[True] = True) -> str: ...
@@ -365,22 +451,6 @@ class ExprMetaNameSpace:
         return serialize_polars_object(serializer, file, format)
 
     @overload
-    def write_json(self, file: None = ...) -> str: ...
-
-    @overload
-    def write_json(self, file: IOBase | str | Path) -> None: ...
-
-    @deprecated("`meta.write_json` was renamed; use `meta.serialize` instead")
-    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
-        """
-        Write expression to json.
-
-        .. deprecated:: 0.20.11
-            This method has been renamed to :meth:`serialize`.
-        """
-        return self.serialize(file, format="json")
-
-    @overload
     def tree_format(
         self,
         *,
@@ -466,3 +536,14 @@ class ExprMetaNameSpace:
 
     def _replace_element(self, expr: Expr) -> Expr:
         return wrap_expr(self._pyexpr.meta_replace_element(expr._pyexpr))
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {"write_json": "use `meta.serialize` instead."},
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)

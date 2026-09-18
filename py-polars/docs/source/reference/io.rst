@@ -25,17 +25,9 @@ CSV
    :toctree: api/
 
    read_csv
-   read_csv_batched
    scan_csv
    DataFrame.write_csv
    LazyFrame.sink_csv
-
-.. currentmodule:: polars.io.csv.batched_reader
-
-.. autosummary::
-   :toctree: api/
-
-    BatchedCsvReader.next_batches
 
 .. currentmodule:: polars
 

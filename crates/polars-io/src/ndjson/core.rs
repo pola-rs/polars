@@ -1,8 +1,8 @@
 use std::io::Cursor;
 use std::num::NonZeroUsize;
 
-pub use arrow::array::StructArray;
 use num_traits::pow::Pow;
+pub use polars_arrow::array::StructArray;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::accumulate_dataframes_vertical;
@@ -268,16 +268,7 @@ pub fn parse_ndjson(
     )
 }
 
-pub fn estimate_n_lines_in_file(file_bytes: &[u8], sample_size: usize) -> usize {
-    if let Some((mean, std)) = get_line_stats_json(file_bytes, sample_size) {
-        (file_bytes.len() as f32 / (mean - 0.01 * std)) as usize
-    } else {
-        estimate_n_lines_in_chunk(file_bytes)
-    }
-}
-
-/// Total len divided by max len of first and last non-empty lines. This is intended to be cheaper
-/// than `estimate_n_lines_in_file`.
+/// Total len divided by max len of first and last non-empty lines.
 pub fn estimate_n_lines_in_chunk(chunk: &[u8]) -> usize {
     chunk
         .split(|&c| c == b'\n')

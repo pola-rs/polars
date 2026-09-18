@@ -194,19 +194,14 @@ impl ComputeNode for ShiftNode {
                 let offset_frame = offset.get_output()?.unwrap();
                 polars_ensure!(offset_frame.height() == 1, ComputeError: "got more than one value for 'n' in shift");
                 let offset_item = offset_frame.columns()[0].get(0)?;
-                let offset = if offset_item.is_null() {
-                    polars_warn!(
-                        Deprecation, // @2.0
-                        "shift value 'n' is null, which currently returns a column of null values. This will become an error in the future.",
-                    );
-                    // @2.0: Currently we still require the entire output to become null
-                    // if the shift is null, simulate this with an infinite negative shift.
-                    *fill = None;
-                    i64::MIN
-                } else {
-                    offset_item.extract::<i64>().ok_or_else(
-                        || polars_err!(ComputeError: "invalid value of 'n' in shift: {:?}", offset_item),
-                    )?
+                if offset_item.is_null() {
+                    polars_bail!(ComputeError: "shift value 'n' must not be null.");
+                }
+                let offset = match offset_item.extract::<i64>() {
+                    Some(offset) => offset,
+                    None => {
+                        polars_bail!(ComputeError: "invalid value of 'n' in shift: {:?}", offset_item)
+                    },
                 };
 
                 let fill_frame = if let Some(fill) = fill {

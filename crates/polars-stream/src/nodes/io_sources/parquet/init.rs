@@ -1,11 +1,11 @@
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor;
 use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
-use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::ParallelStrategy;
 use polars_utils::IdxSize;
 
@@ -322,9 +322,10 @@ impl ParquetReadImpl {
         let target_values_per_thread = self.config.target_values_per_thread;
         let predicate = self.predicate.clone();
 
-        let mut use_prefiltered = matches!(self.options.parallel, ParallelStrategy::Prefiltered);
-        use_prefiltered |=
-            predicate.is_some() && matches!(self.options.parallel, ParallelStrategy::Auto);
+        let filters_rows = predicate.as_ref().is_some_and(|p| p.filters_rows);
+        let mut use_prefiltered =
+            filters_rows && matches!(self.options.parallel, ParallelStrategy::Prefiltered);
+        use_prefiltered |= filters_rows && matches!(self.options.parallel, ParallelStrategy::Auto);
 
         let predicate_field_indices: Arc<[usize]> =
             if use_prefiltered && let Some(predicate) = predicate.as_ref() {
@@ -342,9 +343,7 @@ impl ParquetReadImpl {
                 Default::default()
             };
 
-        let use_prefiltered = use_prefiltered.then(PrefilterMaskSetting::init_from_env);
-
-        let non_predicate_field_indices: Arc<[usize]> = if use_prefiltered.is_some() {
+        let non_predicate_field_indices: Arc<[usize]> = if use_prefiltered {
             filtered_range(
                 predicate_field_indices.as_ref(),
                 projected_arrow_fields.len(),
@@ -354,19 +353,50 @@ impl ParquetReadImpl {
             Default::default()
         };
 
-        if use_prefiltered.is_some() && self.verbose {
+        // Runtime constants (hive, missing columns) may leave the first pass without any
+        // column of this file. Then there is one pass and the column predicates, which
+        // only cover the first pass, cannot be used.
+        let (use_staged, first_pass_field_indices, second_pass_field_indices): (
+            bool,
+            Arc<[usize]>,
+            Arc<[usize]>,
+        ) = match predicate.as_ref().and_then(|p| p.staged.as_ref()) {
+            Some(staged) if use_prefiltered => {
+                let (first, second): (Vec<usize>, Vec<usize>) =
+                    predicate_field_indices.iter().copied().partition(|&i| {
+                        staged
+                            .first_columns
+                            .contains(projected_arrow_fields[i].output_name())
+                    });
+                if first.is_empty() {
+                    (false, predicate_field_indices.clone(), Default::default())
+                } else {
+                    (true, first.into(), second.into())
+                }
+            },
+            _ => (false, predicate_field_indices.clone(), Default::default()),
+        };
+
+        if use_prefiltered && self.verbose {
             eprintln!(
-                "[ParquetFileReader]: Pre-filtered decode enabled ({} live, {} non-live)",
+                "[ParquetFileReader]: Pre-filtered decode enabled ({} live [{} pass-1, {} pass-2], {} non-live)",
                 predicate_field_indices.len(),
+                first_pass_field_indices.len(),
+                second_pass_field_indices.len(),
                 non_predicate_field_indices.len()
             )
         }
 
         let allow_column_predicates = predicate.as_ref().is_some_and(|p| {
-            p.column_predicates.is_sumwise_complete
+            let column_predicates = if use_staged {
+                &p.staged.as_ref().unwrap().column_predicates
+            } else {
+                &p.column_predicates
+            };
+            column_predicates.is_sumwise_complete
                 && !projected_arrow_fields.iter().any(|f| {
                     matches!(f.arrow_field().dtype(), ArrowDataType::FixedSizeBinary(_))
-                        && p.column_predicates.predicates.contains_key(f.output_name())
+                        && column_predicates.predicates.contains_key(f.output_name())
                 })
         }) && row_index.is_none()
             && !projected_arrow_fields.iter().any(|x| {
@@ -381,7 +411,11 @@ impl ParquetReadImpl {
             predicate,
             allow_column_predicates,
             use_prefiltered,
+            use_staged,
+            staging_off: AtomicBool::new(false),
             predicate_field_indices,
+            first_pass_field_indices,
+            second_pass_field_indices,
             non_predicate_field_indices,
             target_values_per_thread,
         }

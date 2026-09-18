@@ -181,10 +181,20 @@ pub(super) fn to_aexpr_impl(
             options,
         } => {
             let (expr, output_name) = recurse_arc!(expr)?;
+            let dtype = dtype.into_datatype(ctx.schema)?;
+
+            // Casting to `Unknown(Any)` carries no information and
+            // the engine treats it as a no-op (see `Series::cast_with_options`), so
+            // don't create a cast node at all. This keeps the planner schema
+            // consistent with the engine (GH issue #24431).
+            if let DataType::Unknown(UnknownKind::Any) = dtype {
+                return Ok((expr, output_name));
+            }
+
             (
                 AExpr::Cast {
                     expr,
-                    dtype: dtype.into_datatype(ctx.schema)?,
+                    dtype,
                     options,
                 },
                 output_name,
@@ -334,10 +344,6 @@ pub(super) fn to_aexpr_impl(
                 AggExpr::Var(input, ddof) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Var(input, ddof), output_name)
-                },
-                AggExpr::AggGroups(input) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::AggGroups(input), output_name)
                 },
             };
             (AExpr::Agg(a_agg), output_name)

@@ -1,6 +1,8 @@
 //! The PDSH files only got ten rows, so after all the joins filters there is not data
 //! Still we can use this to test the schema, operation correctness on empty data, and optimizations
 //! taken.
+use polars_defs::join::JoinType;
+
 use super::*;
 
 const fn base_path() -> &'static str {
@@ -74,7 +76,7 @@ fn test_q2() -> PolarsResult<()> {
             [col("p_partkey"), col("ps_supplycost")],
             [col("p_partkey"), col("ps_supplycost")],
             JoinType::Inner.into(),
-        )
+        )?
         .select([cols([
             "s_acctbal",
             "s_name",

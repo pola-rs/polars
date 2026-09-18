@@ -1,9 +1,9 @@
 use std::borrow::{Borrow, Cow};
 
-use arrow_format::ipc;
-use arrow_format::ipc::KeyValue;
-use arrow_format::ipc::planus::Builder;
 use bytes::Bytes;
+use polars_arrow_format::ipc;
+use polars_arrow_format::ipc::KeyValue;
+use polars_arrow_format::ipc::planus::Builder;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::compression::ZstdLevel;
 
@@ -221,15 +221,15 @@ pub fn encode_chunk_amortized(
 
 pub(crate) fn serialize_compression(
     compression: Option<Compression>,
-) -> Option<Box<arrow_format::ipc::BodyCompression>> {
+) -> Option<Box<polars_arrow_format::ipc::BodyCompression>> {
     if let Some(compression) = compression {
         let codec = match compression {
-            Compression::LZ4 => arrow_format::ipc::CompressionType::Lz4Frame,
-            Compression::ZSTD(_) => arrow_format::ipc::CompressionType::Zstd,
+            Compression::LZ4 => polars_arrow_format::ipc::CompressionType::Lz4Frame,
+            Compression::ZSTD(_) => polars_arrow_format::ipc::CompressionType::Zstd,
         };
-        Some(Box::new(arrow_format::ipc::BodyCompression {
+        Some(Box::new(polars_arrow_format::ipc::BodyCompression {
             codec,
-            method: arrow_format::ipc::BodyCompressionMethod::Buffer,
+            method: polars_arrow_format::ipc::BodyCompressionMethod::Buffer,
         }))
     } else {
         None
@@ -267,6 +267,16 @@ fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
         ArrowDataType::FixedSizeList(_, _) => {
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             set_variadic_buffer_counts(counts, array.values().as_ref())
+        },
+        ArrowDataType::Map(_, _) => {
+            let array = array.as_any().downcast_ref::<MapArray>().unwrap();
+            let offsets = array.offsets().buffer();
+            let first = *offsets.first().unwrap();
+            let last = *offsets.last().unwrap();
+            let subslice = array
+                .field()
+                .sliced(first.to_usize(), last.to_usize() - first.to_usize());
+            set_variadic_buffer_counts(counts, &*subslice)
         },
         // Don't traverse dictionary values as those are set when the `Dictionary` IPC struct
         // is read.
@@ -334,8 +344,8 @@ pub fn encode_record_batch(
     options: &WriteOptions,
     encoded_message: &mut EncodedData,
 ) {
-    let mut nodes: Vec<arrow_format::ipc::FieldNode> = vec![];
-    let mut buffers: Vec<arrow_format::ipc::Buffer> = vec![];
+    let mut nodes: Vec<polars_arrow_format::ipc::FieldNode> = vec![];
+    let mut buffers: Vec<polars_arrow_format::ipc::Buffer> = vec![];
     encoded_message.arrow_data.clear();
 
     let mut offset = 0;
@@ -380,17 +390,17 @@ pub fn commit_encoded_arrays(
 
     let compression = serialize_compression(options.compression);
 
-    let message = arrow_format::ipc::Message {
-        version: arrow_format::ipc::MetadataVersion::V5,
-        header: Some(arrow_format::ipc::MessageHeader::RecordBatch(Box::new(
-            arrow_format::ipc::RecordBatch {
+    let message = polars_arrow_format::ipc::Message {
+        version: polars_arrow_format::ipc::MetadataVersion::V5,
+        header: Some(polars_arrow_format::ipc::MessageHeader::RecordBatch(
+            Box::new(polars_arrow_format::ipc::RecordBatch {
                 length: array_len as i64,
                 nodes: Some(nodes),
                 buffers: Some(buffers),
                 compression,
                 variadic_buffer_counts,
-            },
-        ))),
+            }),
+        )),
         body_length: encoded_message.arrow_data.len() as i64,
         custom_metadata,
     };
@@ -405,8 +415,8 @@ pub fn encode_dictionary_values(
     values_array: &dyn Array,
     options: &WriteOptions,
 ) -> PolarsResult<EncodedData> {
-    let mut nodes: Vec<arrow_format::ipc::FieldNode> = vec![];
-    let mut buffers: Vec<arrow_format::ipc::Buffer> = vec![];
+    let mut nodes: Vec<polars_arrow_format::ipc::FieldNode> = vec![];
+    let mut buffers: Vec<polars_arrow_format::ipc::Buffer> = vec![];
     let mut arrow_data: Vec<u8> = vec![];
     let mut variadic_buffer_counts = vec![];
     set_variadic_buffer_counts(&mut variadic_buffer_counts, values_array);
@@ -429,12 +439,12 @@ pub fn encode_dictionary_values(
 
     let compression = serialize_compression(options.compression);
 
-    let message = arrow_format::ipc::Message {
-        version: arrow_format::ipc::MetadataVersion::V5,
-        header: Some(arrow_format::ipc::MessageHeader::DictionaryBatch(Box::new(
-            arrow_format::ipc::DictionaryBatch {
+    let message = polars_arrow_format::ipc::Message {
+        version: polars_arrow_format::ipc::MetadataVersion::V5,
+        header: Some(polars_arrow_format::ipc::MessageHeader::DictionaryBatch(
+            Box::new(polars_arrow_format::ipc::DictionaryBatch {
                 id: dict_id,
-                data: Some(Box::new(arrow_format::ipc::RecordBatch {
+                data: Some(Box::new(polars_arrow_format::ipc::RecordBatch {
                     length: values_array.len() as i64,
                     nodes: Some(nodes),
                     buffers: Some(buffers),
@@ -442,8 +452,8 @@ pub fn encode_dictionary_values(
                     variadic_buffer_counts,
                 })),
                 is_delta: false,
-            },
-        ))),
+            }),
+        )),
         body_length: arrow_data.len() as i64,
         custom_metadata: None,
     };
@@ -589,8 +599,8 @@ pub fn arrow_ipc_block(
     offset: usize,
     meta_data_length: usize,
     body_length: usize,
-) -> arrow_format::ipc::Block {
-    arrow_format::ipc::Block {
+) -> polars_arrow_format::ipc::Block {
+    polars_arrow_format::ipc::Block {
         offset: i64::try_from(offset).unwrap(),
         meta_data_length: i32::try_from(meta_data_length).unwrap(),
         body_length: i64::try_from(body_length).unwrap(),

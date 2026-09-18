@@ -8,6 +8,7 @@ use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
 use super::format::ExprIRSliceDisplay;
+use crate::dsl::dsl_resolver::ResolverExplainHeadingDisplay;
 use crate::prelude::ir::format::ColumnsDisplay;
 use crate::prelude::*;
 
@@ -263,20 +264,20 @@ impl<'a> IRDotDisplay<'a> {
             Join {
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 options,
                 ..
             } => {
                 recurse!(*input_left);
                 recurse!(*input_right);
 
+                let (left_keys, right_keys) = options.options.key_vecs();
+
                 write_label(f, id, |f| {
                     write!(f, "JOIN {}", options.args.how)?;
 
-                    if !left_on.is_empty() {
-                        let left_on = self.display_exprs(left_on);
-                        let right_on = self.display_exprs(right_on);
+                    if !left_keys.is_empty() {
+                        let left_on = self.display_exprs(&left_keys);
+                        let right_on = self.display_exprs(&right_keys);
                         write!(f, "\nleft: {left_on};\nright: {right_on}")?
                     }
                     Ok(())
@@ -296,10 +297,6 @@ impl<'a> IRDotDisplay<'a> {
             } => {
                 recurse!(*input);
                 write_label(f, id, |f| write!(f, "{function}"))?;
-            },
-            ExtContext { input, .. } => {
-                recurse!(*input);
-                write_label(f, id, |f| f.write_str("EXTERNAL_CONTEXT"))?;
             },
             Sink { input, payload, .. } => {
                 recurse!(*input);
@@ -361,6 +358,28 @@ impl<'a> IRDotDisplay<'a> {
                     recurse!(*input);
                 }
                 write_label(f, id, |f| write!(f, "DISPATCH {operation}"))?;
+            },
+            Resolver {
+                resolver,
+                resolved_dsl,
+                resolved_ir,
+                ..
+            } => {
+                if let Some(node) = *resolved_ir {
+                    recurse!(node);
+                };
+
+                write_label(f, id, |f| {
+                    write!(
+                        f,
+                        "{}",
+                        ResolverExplainHeadingDisplay {
+                            indent: 0,
+                            resolver,
+                            resolved_dsl
+                        }
+                    )
+                })?;
             },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }

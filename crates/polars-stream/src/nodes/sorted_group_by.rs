@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
-use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::GroupsType;
@@ -12,6 +11,7 @@ use polars_expr::state::ExecutionState;
 use polars_ops::series::{SearchSortedSide, rle_lengths, search_sorted};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::ComputeNode;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
@@ -20,6 +20,7 @@ use crate::expression::StreamExpr;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::{RecvPort, SendPort};
+use crate::utils::morsel_distributor::morsel_distributor;
 
 pub struct SortedGroupBy {
     buf_df: DataFrame,
@@ -30,6 +31,7 @@ pub struct SortedGroupBy {
     aggs: Arc<[(PlSmallStr, StreamExpr)]>,
 
     slice: Option<(IdxSize, IdxSize)>,
+    seq_offset: Arc<RelaxedCell<u64>>,
 }
 impl SortedGroupBy {
     pub fn new(
@@ -45,6 +47,7 @@ impl SortedGroupBy {
             key,
             aggs,
             slice,
+            seq_offset: Arc::default(),
         }
     }
 
@@ -167,7 +170,7 @@ impl ComputeNode for SortedGroupBy {
                 _ = send
                     .send(Morsel::new_unregistered(
                         df,
-                        self.seq.successor(),
+                        self.seq.successor().offset_by_u64(self.seq_offset.load()),
                         SourceToken::new(),
                     ))
                     .await;
@@ -180,9 +183,10 @@ impl ComputeNode for SortedGroupBy {
         let mut recv = recv.serial();
         let send = send_ports[0].take().unwrap().parallel();
 
-        let (mut distributor, rxs) = distributor_channel::<(Morsel, (IdxSize, IdxSize))>(
+        let (mut distributor, rxs) = morsel_distributor(
             send.len(),
             *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
+            self.seq_offset.clone(),
         );
 
         // Worker tasks.

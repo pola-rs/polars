@@ -17,10 +17,12 @@ from polars import (
     Int16,
     Int32,
     Int64,
+    Int128,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
 )
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_schema_equal, assert_series_equal
@@ -29,7 +31,83 @@ from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, UNSIGNED_INTEGER
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import PolarsIntegerType
+    from polars._typing import EngineType, PolarsIntegerType
+
+
+@pytest.mark.parametrize(
+    ("dtype1", "dtype2", "supertype"),
+    [
+        (Int8, Int8, Int8),
+        (Int8, Int16, Int16),
+        (Int8, Int32, Int32),
+        (Int8, Int64, Int64),
+        (Int8, Int128, Int128),
+        (Int8, UInt8, Int16),
+        (Int8, UInt16, Int32),
+        (Int8, UInt32, Int64),
+        (Int8, UInt64, Int128),
+        (Int8, UInt128, Int128),
+        (Int16, Int16, Int16),
+        (Int16, Int32, Int32),
+        (Int16, Int64, Int64),
+        (Int16, Int128, Int128),
+        (Int16, UInt8, Int16),
+        (Int16, UInt16, Int32),
+        (Int16, UInt32, Int64),
+        (Int16, UInt64, Int128),
+        (Int16, UInt128, Int128),
+        (Int32, Int32, Int32),
+        (Int32, Int64, Int64),
+        (Int32, Int128, Int128),
+        (Int32, UInt8, Int32),
+        (Int32, UInt16, Int32),
+        (Int32, UInt32, Int64),
+        (Int32, UInt64, Int128),
+        (Int32, UInt128, Int128),
+        (Int64, Int64, Int64),
+        (Int64, Int128, Int128),
+        (Int64, UInt8, Int64),
+        (Int64, UInt16, Int64),
+        (Int64, UInt32, Int64),
+        (Int64, UInt64, Int128),
+        (Int64, UInt128, Int128),
+        (Int128, Int128, Int128),
+        (Int128, UInt128, Int128),
+        (UInt8, Int128, Int128),
+        (UInt8, UInt8, UInt8),
+        (UInt8, UInt16, UInt16),
+        (UInt8, UInt32, UInt32),
+        (UInt8, UInt64, UInt64),
+        (UInt8, UInt128, UInt128),
+        (UInt16, Int128, Int128),
+        (UInt16, UInt16, UInt16),
+        (UInt16, UInt32, UInt32),
+        (UInt16, UInt64, UInt64),
+        (UInt16, UInt128, UInt128),
+        (UInt32, Int128, Int128),
+        (UInt32, UInt32, UInt32),
+        (UInt32, UInt64, UInt64),
+        (UInt32, UInt128, UInt128),
+        (UInt64, Int128, Int128),
+        (UInt64, UInt64, UInt64),
+        (UInt64, UInt128, UInt128),
+        (UInt128, UInt128, UInt128),
+    ],
+)
+def test_arithmetic_supertype(
+    dtype1: PolarsIntegerType, dtype2: PolarsIntegerType, supertype: PolarsIntegerType
+) -> None:
+    lf1 = pl.LazyFrame(
+        {"a": [1, 2, 3], "b": [1, 2, 3]},
+        schema={"a": dtype1, "b": dtype2},
+    )
+    expected = pl.LazyFrame({"result": [2, 4, 6]}, schema={"result": supertype})
+    q1 = lf1.select((pl.col("a") + pl.col("b")).alias("result"))
+    q2 = lf1.select((pl.col("b") + pl.col("a")).alias("result"))
+    assert q1.collect_schema() == expected.collect_schema()
+    assert q2.collect_schema() == expected.collect_schema()
+    assert_frame_equal(q1, expected)
+    assert_frame_equal(q2, expected)
 
 
 def test_sqrt_neg_inf() -> None:
@@ -174,7 +252,8 @@ def test_series_expr_arithm() -> None:
     assert (s % pl.col("a")).meta == pl.lit(s) % pl.col("a")
 
 
-def test_fused_arithm() -> None:
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_fused_arithm(engine: EngineType) -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3],
@@ -192,18 +271,18 @@ def test_fused_arithm() -> None:
         """col("a").fma([col("b"), col("c")]), col("b").fma([col("c"), col("a")]).alias("2")"""
         in q.explain()
     )
-    assert q.collect().to_dict(as_series=False) == {
+    assert q.collect(engine=engine).to_dict(as_series=False) == {
         "a": [15, 45, 95],
         "2": [51, 102, 153],
     }
     # fsm
     q = df.lazy().select(pl.col("a") - pl.col("b") * pl.col("c"))
     assert """col("a").fsm([col("b"), col("c")])""" in q.explain()
-    assert q.collect()["a"].to_list() == [-49, -98, -147]
+    assert q.collect(engine=engine)["a"].to_list() == [-49, -98, -147]
     # fms
     q = df.lazy().select(pl.col("a") * pl.col("b") - pl.col("c"))
     assert """col("a").fms([col("b"), col("c")])""" in q.explain()
-    assert q.collect()["a"].to_list() == [5, 35, 85]
+    assert q.collect(engine=engine)["a"].to_list() == [5, 35, 85]
 
     # check if we constant fold instead of fma
     q = df.lazy().select(pl.lit(1) * pl.lit(2) - pl.col("c"))
@@ -222,6 +301,22 @@ def test_fused_arithm() -> None:
         assert all(el not in q.explain() for el in ["fms", "fsm", "fma"]), (
             f"Fused Arithmetic applied on literal {expr}: {q.explain()}"
         )
+
+    for expr, values in (
+        (pl.col("a") * pl.col("b") + pl.struct("c"), [15, 45, 95]),
+        (pl.struct("c") + pl.col("a") * pl.col("b"), [15, 45, 95]),
+        (pl.col("a") * pl.col("b") - pl.struct("c"), [5, 35, 85]),
+        (pl.struct("c") - pl.col("a") * pl.col("b"), [-5, -35, -85]),
+    ):
+        q = df.lazy().select(expr.alias("result"))
+        expected = pl.Series(
+            "result",
+            [{"c": value} for value in values],
+            dtype=pl.Struct({"c": pl.Int64}),
+        )
+        assert all(fused not in q.explain() for fused in ("fma", "fms", "fsm"))
+        assert q.collect_schema() == {"result": expected.dtype}
+        assert_series_equal(q.collect(engine=engine).to_series(), expected)
 
 
 def test_literal_no_upcast() -> None:
@@ -991,7 +1086,7 @@ def test_log_broadcast(dtype: pl.DataType) -> None:
     [(operator.and_, "&"), (operator.or_, "|"), (operator.xor, "^")],
     ids=["and", "or", "xor"],
 )
-def test_bitwise_bool_ops_deprecated(
+def test_bitwise_bool_ops_unsupported(
     op: Callable[[Any, Any], Any], op_str: str
 ) -> None:
     lf = pl.LazyFrame(
@@ -999,18 +1094,12 @@ def test_bitwise_bool_ops_deprecated(
     )
     hint = "Hint: cast the Boolean to Int32 using pl.Expr.cast()."
 
-    msg = (
-        f"{op_str} on Boolean and Int32 is deprecated and will raise a ComputeError in Polars 2.0\n"
-        + hint
-    )
-    with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
+    msg = f"{op_str} on Boolean and Int32 is not supported\n" + hint
+    with pytest.raises(pl.exceptions.ComputeError, match=rf"^{re.escape(msg)}"):
         lf.select(op(pl.col("bool"), pl.col("int"))).collect_schema()
 
-    msg = (
-        f"{op_str} on Int32 and Boolean is deprecated and will raise a ComputeError in Polars 2.0\n"
-        + hint
-    )
-    with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
+    msg = f"{op_str} on Int32 and Boolean is not supported\n" + hint
+    with pytest.raises(pl.exceptions.ComputeError, match=rf"^{re.escape(msg)}"):
         lf.select(op(pl.col("int"), pl.col("bool"))).collect_schema()
 
 

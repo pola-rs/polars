@@ -42,7 +42,7 @@ def test_repeat(
     dtype: PolarsDataType,
     expected_dtype: PolarsDataType,
 ) -> None:
-    expected = pl.Series("repeat", [value] * n).cast(expected_dtype)
+    expected = pl.Series("literal", [value] * n).cast(expected_dtype)
 
     result_eager = pl.repeat(value, n=n, dtype=dtype, eager=True)
     assert_series_equal(result_eager, expected)
@@ -53,14 +53,14 @@ def test_repeat(
 
 def test_repeat_expr_input_eager() -> None:
     result = pl.select(pl.repeat(1, n=pl.lit(3), eager=True)).to_series()
-    expected = pl.Series("repeat", [1, 1, 1], dtype=pl.Int32)
+    expected = pl.Series("literal", [1, 1, 1], dtype=pl.Int32)
     assert_series_equal(result, expected)
 
 
 def test_repeat_expr_input_lazy() -> None:
     df = pl.DataFrame({"a": [3, 2, 1]})
     result = df.select(pl.repeat(1, n=pl.col("a").first())).to_series()
-    expected = pl.Series("repeat", [1, 1, 1], dtype=pl.Int32)
+    expected = pl.Series("literal", [1, 1, 1], dtype=pl.Int32)
     assert_series_equal(result, expected)
 
     df = pl.DataFrame({"a": [3, 2, 1]})

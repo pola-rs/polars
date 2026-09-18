@@ -171,15 +171,6 @@ def test_deprecated() -> None:
     )
 
 
-def test_deprecated_parameter_join_nulls() -> None:
-    df = pl.DataFrame({"a": [1, None]})
-    with pytest.deprecated_call(
-        match=r"the argument `join_nulls` for `DataFrame.join` is deprecated. It was renamed to `nulls_equal`"
-    ):
-        result = df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]
-    assert_frame_equal(result, df, check_row_order=False)
-
-
 def test_join_on_expressions() -> None:
     df_a = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -672,25 +663,40 @@ def test_join_concat_projection_pd_case_7071() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming  # legacy full join is not order-preserving whereas new-streaming is
-def test_join_sorted_fast_paths_null() -> None:
+def test_join_sorted_fast_paths_null_8269() -> None:
     df1 = pl.DataFrame({"x": [0, 1, 0]}).sort("x")
     df2 = pl.DataFrame({"x": [0, None], "y": [0, 1]})
-    assert df1.join(df2, on="x", how="inner").to_dict(as_series=False) == {
-        "x": [0, 0],
-        "y": [0, 0],
-    }
-    assert df1.join(df2, on="x", how="left").to_dict(as_series=False) == {
-        "x": [0, 0, 1],
-        "y": [0, 0, None],
-    }
-    assert df1.join(df2, on="x", how="anti").to_dict(as_series=False) == {"x": [1]}
-    assert df1.join(df2, on="x", how="semi").to_dict(as_series=False) == {"x": [0, 0]}
-    assert df1.join(df2, on="x", how="full").to_dict(as_series=False) == {
-        "x": [0, 0, 1, None],
-        "x_right": [0, 0, None, None],
-        "y": [0, 0, None, 1],
-    }
+    assert_frame_equal(
+        df1.join(df2, on="x", how="inner"),
+        pl.DataFrame({"x": [0, 0], "y": [0, 0]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df1.join(df2, on="x", how="left"),
+        pl.DataFrame({"x": [0, 0, 1], "y": [0, 0, None]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df1.join(df2, on="x", how="anti"),
+        pl.DataFrame({"x": [1]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df1.join(df2, on="x", how="semi"),
+        pl.DataFrame({"x": [0, 0]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df1.join(df2, on="x", how="full"),
+        pl.DataFrame(
+            {
+                "x": [0, 0, 1, None],
+                "x_right": [0, 0, None, None],
+                "y": [0, 0, None, 1],
+            }
+        ),
+        check_row_order=False,
+    )
 
 
 def test_full_outer_join_list_() -> None:
@@ -996,6 +1002,23 @@ def test_join_4_columns_with_validity() -> None:
         115,
         4,
     )
+
+
+def test_join_4_columns_with_all_null_validity() -> None:
+    # join on 4 columns so we trigger combine validities
+    # use only None values so every chunk has an all-unset validity bitmap
+    keys = ["a", "b", "c", "d"]
+    df = pl.DataFrame(
+        {key: [None] * 8 for key in keys},
+        schema=dict.fromkeys(keys, pl.Int64),
+    )
+    result = df.join(
+        df,
+        on=keys,
+        how="inner",
+        nulls_equal=False,
+    )
+    assert result.is_empty()
 
 
 @pytest.mark.release
@@ -1309,24 +1332,9 @@ def test_join_preserve_order_inner() -> None:
     assert inner_right.get_column("a").equals(inner_right_left.get_column("a"))
 
 
-# The new streaming engine does not provide the same maintain_order="none"
-# ordering guarantee that is currently kept for compatibility on the in-memory
-# engine.
-@pytest.mark.may_fail_auto_streaming
 def test_join_preserve_order_left() -> None:
     left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
     right = pl.LazyFrame({"a": [1, None, 2, 6], "b": [6, 7, 8, 9]})
-
-    # Right now the left join algorithm is ordered without explicitly setting any order
-    # This behaviour is deprecated but can only be removed in 2.0
-    left_none = left.join(right, on="a", how="left", maintain_order="none").collect()
-    assert left_none.get_column("a").cast(pl.UInt32).to_list() == [
-        None,
-        2,
-        1,
-        1,
-        5,
-    ]
 
     left_left = left.join(right, on="a", how="left", maintain_order="left").collect()
     assert left_left.get_column("a").cast(pl.UInt32).to_list() == [
@@ -1486,6 +1494,7 @@ def test_join_preserve_order_full() -> None:
     ],
 )  # fmt: skip
 @pytest.mark.parametrize("swap", [True, False])
+@pytest.mark.may_fail_lazy_schema  # TODO: upcast
 def test_join_numeric_key_upcast_15338(
     dtypes: tuple[str, str, str], swap: bool
 ) -> None:
@@ -1677,9 +1686,8 @@ def test_join_where_predicate_type_coercion_21009() -> None:
     )
 
     plan = q1.explain().splitlines()
-    assert plan[0].strip().startswith("FILTER")
-    assert plan[1] == "FROM"
-    assert plan[2].strip().startswith("INNER JOIN")
+    assert plan[0].strip().startswith("INNER JOIN")
+    assert plan[1].strip().startswith("FUSED PREDICATE")
 
     q2 = left_frame.join_where(
         right_frame,
@@ -1688,9 +1696,8 @@ def test_join_where_predicate_type_coercion_21009() -> None:
     )
 
     plan = q2.explain().splitlines()
-    assert plan[0].strip().startswith("FILTER")
-    assert plan[1] == "FROM"
-    assert plan[2].strip().startswith("INNER JOIN")
+    assert plan[0].strip().startswith("INNER JOIN")
+    assert plan[1].strip().startswith("FUSED PREDICATE")
 
     assert_frame_equal(q1.collect(), q2.collect())
 
@@ -2621,8 +2628,6 @@ def test_join_filter_pushdown_inner_join() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
     # Filters don't pass if they refer to columns from both tables
-    # TODO: In the optimizer we can add additional equalities into the join
-    # condition itself for some cases.
     q = lhs.join(rhs, on=["a"], how="inner", maintain_order="left_right").filter(
         pl.col("b") == pl.col("b_right")
     )
@@ -2639,12 +2644,13 @@ def test_join_filter_pushdown_inner_join() -> None:
 
     plan = q.explain()
 
+    # An equality spanning both sides becomes another key pair.
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
-        'FILTER col("b") == col("b_right")',
-        'LEFT PLAN ON: [col("a")]',
-        'RIGHT PLAN ON: [col("a")]',
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'RIGHT PLAN ON: [col("a"), col("b").alias("__POLARS_JOIN_KEY_0_b")]',
     ]
+    assert "FUSED PREDICATE" not in plan
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
@@ -4252,6 +4258,7 @@ def test_join_lazyframe_with_itself_after_sort_25395() -> None:
     assert_frame_equal(result, pl.DataFrame({"a": [1]}))
 
 
+@pytest.mark.may_fail_lazy_schema  # TODO: pushdown
 def test_join_right_with_cast_predicate_pushdown() -> None:
     lhs = pl.LazyFrame({"x": [0, 1], "z": [4, 5]})
     rhs = pl.LazyFrame({"y": [2, 3]}).cast(pl.Int32)
@@ -4488,3 +4495,46 @@ def test_join_coalesce_empty_suffix_28783() -> None:
     lf = left.join(right, on="k", how="inner", suffix="")
     expected = pl.LazyFrame({"k": [1], "a": [2], "b": [3]})
     assert_frame_equal(lf, expected)
+
+
+def test_empty_join_result_with_chunked_array_29093() -> None:
+    lhs = pl.DataFrame(
+        {
+            "x": [1, 2, 3],
+            "y": pl.Series(
+                [[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=pl.Array(pl.Int64, 3)
+            ),
+        }
+    )
+    lhs = pl.concat([lhs[:1], lhs[1:]])
+    assert lhs.n_chunks() == 2
+
+    rhs = pl.DataFrame({"x": [0]})
+    result = lhs.join(rhs, on="x")
+    expected = pl.DataFrame(schema={"x": pl.Int64, "y": pl.Array(pl.Int64, 3)})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("coalesce", [True, False])
+def test_merge_join_coalesce_right_payload_name_collision(
+    how: JoinStrategy, coalesce: bool
+) -> None:
+    # The right payload `a` shares its name with the left key, which the merge join
+    # must not confuse with its own key `b`.
+    left = pl.LazyFrame({"a": [1, 2, 3], "p": [10, 20, 30]}).sort("a")
+    right = pl.LazyFrame({"b": [1, 2, 4], "a": [7, 8, 9]}).sort("b")
+    q = left.join(
+        right,
+        left_on="a",
+        right_on="b",
+        how=how,
+        coalesce=coalesce,
+        maintain_order="left_right",
+    )
+
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )

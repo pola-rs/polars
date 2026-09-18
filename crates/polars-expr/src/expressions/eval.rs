@@ -3,7 +3,7 @@ use std::cell::LazyCell;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
 use polars_core::error::{PolarsResult, feature_gated, polars_ensure};
 use polars_core::frame::DataFrame;

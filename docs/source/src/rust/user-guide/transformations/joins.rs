@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             [col("property_name")],
             [col("property_name")],
             JoinArgs::default(),
-        )
+        )?
         .collect()?;
     println!("{result}");
     // --8<-- [end:equi-join]
@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             [col("property_name")],
             [col("name").str().to_lowercase()],
             JoinArgs::default(),
-        )
+        )?
         .collect()?;
     println!("{result}");
     // --8<-- [end:join-key-expression]
@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             [col("property_name")],
             [col("property_name")],
             JoinArgs::new(JoinType::Inner),
-        )
+        )?
         .collect()?;
     println!("{result}");
     // --8<-- [end:inner-join]
@@ -94,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             [col("property_name")],
             [col("property_name")],
             JoinArgs::new(JoinType::Left),
-        )
+        )?
         .collect()?;
     println!("{result}");
     // --8<-- [end:left-join]
@@ -108,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             [col("property_name")],
             [col("property_name")],
             JoinArgs::new(JoinType::Right),
-        )
+        )?
         .collect()?;
     println!("{result}");
     // --8<-- [end:right-join]
@@ -125,7 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 [col("property_name")],
                 [col("property_name")],
                 JoinArgs::new(JoinType::Left),
-            )
+            )?
             .select([
                 // Reorder the columns to match the order of `result`.
                 col("group"),
@@ -146,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             [col("property_name")],
             [col("property_name")],
             JoinArgs::new(JoinType::Full),
-        )
+        )?
         .collect()?;
     println!("{result}");
     // --8<-- [end:full-join]
@@ -160,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             [col("property_name")],
             [col("property_name")],
             JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
-        )
+        )?
         .collect()?;
     println!("{result}");
     // --8<-- [end:full-join-coalesce]
@@ -174,7 +174,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             [col("property_name")],
             [col("property_name")],
             JoinArgs::new(JoinType::Semi),
-        )
+        )?
         .collect()?;
     println!("{result}");
     // --8<-- [end:semi-join]
@@ -187,7 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             [col("property_name")],
             [col("property_name")],
             JoinArgs::new(JoinType::Anti),
-        )
+        )?
         .collect()?;
     println!("{result}");
     // --8<-- [end:anti-join]

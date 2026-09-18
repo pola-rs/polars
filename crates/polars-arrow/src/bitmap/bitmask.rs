@@ -226,10 +226,12 @@ impl<'a> BitMask<'a> {
         }
     }
 
+    #[inline(always)]
     pub fn unset_bits(&self) -> usize {
         count_zeros(self.bytes, self.offset, self.len)
     }
 
+    #[inline(always)]
     pub fn set_bits(&self) -> usize {
         self.len - self.unset_bits()
     }

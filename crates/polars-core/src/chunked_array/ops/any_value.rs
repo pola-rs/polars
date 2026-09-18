@@ -134,6 +134,19 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             let v = arr.value_unchecked(idx);
             AnyValue::Decimal(v, *precision, *scale)
         },
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(_, _) => {
+            let entries_dtype = dtype.map_entries_dtype().unwrap();
+            let v: ArrayRef = downcast!(LargeListArray);
+            let s = Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![v],
+                &entries_dtype.to_physical(),
+            )
+            .from_physical_unchecked(&entries_dtype)
+            .unwrap();
+            AnyValue::Map(s)
+        },
         #[cfg(feature = "dtype-extension")]
         DataType::Extension(typ, storage) => arr_to_any_value(arr, idx, storage),
         #[cfg(feature = "object")]

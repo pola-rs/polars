@@ -6,6 +6,7 @@ use polars_utils::format_list_truncated;
 use polars_utils::unique_id::UniqueId;
 
 use crate::constants;
+use crate::dsl::dsl_resolver::ResolverExplainHeadingDisplay;
 use crate::plans::ir::IRPlanRef;
 use crate::plans::visitor::{VisitRecursion, Visitor};
 use crate::prelude::ir::format::ColumnsDisplay;
@@ -325,19 +326,19 @@ impl<'a> TreeFmtNode<'a> {
                 Join {
                     input_left,
                     input_right,
-                    left_on,
-                    right_on,
                     options,
                     ..
                 } => ND(
                     wh(h, &format!("{} JOIN", options.args.how)),
-                    left_on
-                        .iter()
+                    options
+                        .options
+                        .left_on()
                         .map(|expr| self.expr_node(Some("left on:".to_string()), expr))
                         .chain([self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)])
                         .chain(
-                            right_on
-                                .iter()
+                            options
+                                .options
+                                .right_on()
                                 .map(|expr| self.expr_node(Some("right on:".to_string()), expr)),
                         )
                         .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
@@ -380,9 +381,6 @@ impl<'a> TreeFmtNode<'a> {
                     wh(h, &format!("{function}")),
                     vec![self.lp_node(None, *input)],
                 ),
-                ExtContext { input, .. } => {
-                    ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
-                },
                 Sink { input, payload } => ND(
                     wh(
                         h,
@@ -450,6 +448,29 @@ impl<'a> TreeFmtNode<'a> {
                         .map(|(input_idx, _col_idx, _arg_name)| &inputs[input_idx])
                         .map(|input| self.lp_node(None, *input))
                         .collect(),
+                ),
+                Resolver {
+                    resolver,
+                    resolved_dsl,
+                    resolved_ir,
+                    ..
+                } => ND(
+                    wh(
+                        h,
+                        &format!(
+                            "{}",
+                            ResolverExplainHeadingDisplay {
+                                indent: 0,
+                                resolver,
+                                resolved_dsl
+                            }
+                        ),
+                    ),
+                    if let Some(node) = *resolved_ir {
+                        vec![self.lp_node(None, node)]
+                    } else {
+                        vec![]
+                    },
                 ),
                 Invalid => ND(wh(h, "INVALID"), vec![]),
             },

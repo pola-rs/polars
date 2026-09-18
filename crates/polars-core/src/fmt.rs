@@ -6,12 +6,6 @@ use std::num::IntErrorKind;
 use std::sync::RwLock;
 use std::{fmt, str};
 
-#[cfg(any(
-    feature = "dtype-date",
-    feature = "dtype-datetime",
-    feature = "dtype-time"
-))]
-use arrow::temporal_conversions::*;
 #[cfg(feature = "dtype-datetime")]
 use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
@@ -23,6 +17,12 @@ use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
 use num_traits::{Num, NumCast};
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_arrow::temporal_conversions::*;
 use polars_error::feature_gated;
 use polars_utils::relaxed_cell::RelaxedCell;
 
@@ -73,7 +73,7 @@ pub fn get_thousands_separator() -> String {
 }
 #[cfg(feature = "dtype-decimal")]
 pub fn get_trim_decimal_zeros() -> bool {
-    arrow::compute::decimal::get_trim_decimal_zeros()
+    polars_arrow::compute::decimal::get_trim_decimal_zeros()
 }
 
 // Numeric formatting setters
@@ -91,7 +91,7 @@ pub fn set_thousands_separator(sep: Option<char>) {
 }
 #[cfg(feature = "dtype-decimal")]
 pub fn set_trim_decimal_zeros(trim: Option<bool>) {
-    arrow::compute::decimal::set_trim_decimal_zeros(trim)
+    polars_arrow::compute::decimal::set_trim_decimal_zeros(trim)
 }
 
 /// Parses an environment variable value as a limit or set a default.
@@ -449,6 +449,11 @@ impl Debug for Series {
                     self.name(),
                     "Series"
                 )
+            },
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(_, _) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(f, self.map().unwrap(), &dt, self.name(), "Series")
             },
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(_, _) => {
@@ -1212,6 +1217,8 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-array")]
             AnyValue::Array(s, _size) => write!(f, "{}", s.fmt_list()),
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
+            #[cfg(feature = "dtype-map")]
+            AnyValue::Map(s) => fmt_map(f, s),
             #[cfg(feature = "object")]
             AnyValue::Object(v) => write!(f, "{v}"),
             #[cfg(feature = "object")]
@@ -1262,6 +1269,33 @@ impl Display for PlTzAware<'_> {
             panic!("activate 'timezones' feature")
         }
     }
+}
+
+/// Renders a map row as `{"a": 1, "b": 2}`
+#[cfg(feature = "dtype-map")]
+fn fmt_map(f: &mut Formatter<'_>, entries: &Series) -> fmt::Result {
+    let (keys, values) =
+        try_unpack_map_entries(entries).expect("Map entries have canonical key and value fields");
+
+    // Same truncation as `Series::fmt_list`.
+    let max_items = get_list_len_limit();
+    let ellipsis = get_ellipsis();
+    let shown = max_items.min(entries.len());
+
+    write!(f, "{{")?;
+    for i in 0..shown {
+        if i > 0 {
+            write!(f, ", ")?;
+        }
+        write!(f, "{}: {}", keys.get(i).unwrap(), values.get(i).unwrap())?;
+    }
+    if shown < entries.len() {
+        if shown > 0 {
+            write!(f, ", ")?;
+        }
+        write!(f, "{ellipsis}")?;
+    }
+    write!(f, "}}")
 }
 
 #[cfg(feature = "dtype-struct")]

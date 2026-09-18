@@ -6,7 +6,7 @@ use polars_async::primitives::wait_group::WaitToken;
 use polars_buffer::Buffer;
 use polars_config::config;
 use polars_core::runtime::ASYNC;
-use polars_core::utils::arrow::io::ipc::read::{BlockReader, FileMetadata};
+use polars_core::utils::polars_arrow::io::ipc::read::{BlockReader, FileMetadata};
 use polars_error::constants::LENGTH_LIMIT_MSG;
 use polars_error::{PolarsResult, polars_err};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};

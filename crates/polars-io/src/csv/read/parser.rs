@@ -94,6 +94,8 @@ pub fn count_rows_from_reader_par(
     let (_, mut leftover) = read_until_start_and_infer_schema(
         &reader_options,
         None,
+        true,
+        true,
         decompressed_size_hint,
         None,
         &mut reader,
@@ -108,9 +110,8 @@ pub fn count_rows_from_reader_par(
     let count = CountLines::new(quote_char, eol_char, comment_prefix.cloned());
     RAYON.install(|| {
         let mut states = Vec::new();
-        let eof_unterminated_row;
 
-        if comment_prefix.is_none() {
+        let eof_unterminated_row = if comment_prefix.is_none() {
             let mut last_slice = Buffer::new();
             let mut err = None;
 
@@ -150,7 +151,7 @@ pub fn count_rows_from_reader_par(
 
             // Technically this is broken if the input has a comment line at the end that is longer
             // than `BYTES_PER_CHUNK`, but in practice this ought to be fine.
-            eof_unterminated_row = ends_in_unterminated_row(&last_slice, eol_char, comment_prefix);
+            ends_in_unterminated_row(&last_slice, eol_char, comment_prefix)
         } else {
             // For the non-compressed case this is a zero-copy op.
             // TODO: Implement streaming chunk logic.
@@ -189,8 +190,8 @@ pub fn count_rows_from_reader_par(
                 })
                 .collect_into_vec(&mut states);
 
-            eof_unterminated_row = ends_in_unterminated_row(&bytes, eol_char, comment_prefix);
-        }
+            ends_in_unterminated_row(&bytes, eol_char, comment_prefix)
+        };
 
         let mut n = 0;
         let mut in_string = false;

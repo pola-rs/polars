@@ -164,7 +164,7 @@ pub fn decompress(
         #[cfg(feature = "gzip")]
         Compression::Gzip => {
             use std::io::Read;
-            let mut decoder = flate2::read::GzDecoder::new(input_buf);
+            let mut decoder = flate2::read::MultiGzDecoder::new(input_buf);
             decoder.read_exact(output_buf).map_err(|e| e.into())
         },
         #[cfg(not(feature = "gzip"))]

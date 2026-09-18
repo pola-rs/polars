@@ -37,6 +37,11 @@ pip install polars[gpu]
     pip install polars cudf-polars-cu13
     ```
 
+    `cudf-polars` supports a bounded range of Polars versions. If the Polars version is
+    not pinned, the package resolver may select an older compatible Polars release. Pin
+    the required Polars version when such fallback is unacceptable; incompatible
+    combinations will then fail dependency resolution.
+
 ### Usage
 
 Having built a query using the lazy API [as normal](lazy/index.md), GPU-enabled execution is

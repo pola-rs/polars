@@ -326,32 +326,17 @@ impl<'a> IRBuilder<'a> {
         Ok(self.add_alp(lp))
     }
 
-    pub fn join(
-        self,
-        other: Node,
-        left_on: Vec<ExprIR>,
-        right_on: Vec<ExprIR>,
-        options: Arc<JoinOptionsIR>,
-    ) -> Self {
+    pub fn join(self, other: Node, options: Arc<JoinOptionsIR>) -> Self {
         let schema_left = self.schema();
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);
 
-        let schema = det_join_schema(
-            &schema_left,
-            &schema_right,
-            &left_on,
-            &right_on,
-            &options,
-            self.expr_arena,
-        )
-        .unwrap();
+        let schema =
+            det_join_schema(&schema_left, &schema_right, &options, self.expr_arena).unwrap();
 
         let lp = IR::Join {
             input_left: self.root,
             input_right: other,
             schema,
-            left_on,
-            right_on,
             options,
         };
 

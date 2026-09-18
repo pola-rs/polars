@@ -317,22 +317,20 @@ impl SimplifyIRNodeOrder<'_> {
                 input_left: _,
                 input_right: _,
                 schema: _,
-                left_on,
-                right_on,
                 options,
             } => {
-                use polars_ops::prelude::JoinType;
+                use polars_defs::join::JoinType;
 
                 let ([in_edge_lhs, in_edge_rhs], [out_edge]) = unpack_edges!(3);
 
                 let mut eos = expr_order_simplifier!();
 
                 let ae_nodes_scratch = self.ae_nodes_scratch.get();
-                ae_nodes_scratch.extend(left_on.iter().map(|eir| eir.node()));
+                ae_nodes_scratch.extend(options.options.left_on().map(|eir| eir.node()));
                 let left_keys_observable = eos.simplify_projected_exprs(ae_nodes_scratch, false);
 
                 ae_nodes_scratch.clear();
-                ae_nodes_scratch.extend(right_on.iter().map(|eir| eir.node()));
+                ae_nodes_scratch.extend(options.options.right_on().map(|eir| eir.node()));
                 let right_keys_observable = eos.simplify_projected_exprs(ae_nodes_scratch, false);
 
                 // Join keys should be elementwise.
@@ -352,7 +350,7 @@ impl SimplifyIRNodeOrder<'_> {
                     return false;
                 }
 
-                use polars_ops::prelude::MaintainOrderJoin as JO;
+                use polars_defs::join::MaintainOrderJoin as JO;
 
                 if out_edge.is_unordered() || options.args.maintain_order == JO::None {
                     *out_edge = Edge::Unordered;
@@ -471,7 +469,7 @@ impl SimplifyIRNodeOrder<'_> {
                 }
             },
 
-            IR::HConcat { .. } | IR::Slice { .. } | IR::ExtContext { .. } => {
+            IR::HConcat { .. } | IR::Slice { .. } => {
                 if in_edges.iter().all(|k| get_edge!(*k).is_unordered()) {
                     for k in out_edges.iter() {
                         *get_edge_mut!(*k) = Edge::Unordered
@@ -524,7 +522,10 @@ impl SimplifyIRNodeOrder<'_> {
             #[cfg(feature = "python")]
             IR::PythonScan { .. } => {},
 
-            IR::Scan { .. } | IR::DataFrameScan { .. } | IR::UnoptimizedDispatch { .. } => {},
+            IR::Scan { .. }
+            | IR::DataFrameScan { .. }
+            | IR::UnoptimizedDispatch { .. }
+            | IR::Resolver { .. } => {},
             IR::SinkMultiple { .. } | IR::Invalid => unreachable!(),
         };
 

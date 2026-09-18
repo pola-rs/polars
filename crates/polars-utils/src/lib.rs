@@ -68,9 +68,12 @@ pub mod small_bytes;
 pub mod sort;
 pub mod sparse_init_vec;
 pub mod sync;
+pub mod tick_counter;
+pub mod time;
 pub mod total_ord;
 pub mod unique_id;
 pub mod vec;
+pub mod version;
 pub mod with_drop;
 
 #[cfg(feature = "async-utils")]
@@ -83,6 +86,10 @@ pub mod pl_serialize;
 pub mod python_convert_registry;
 #[cfg(feature = "python")]
 pub mod python_function;
+#[cfg(feature = "python")]
+pub mod python_interns;
+#[cfg(feature = "python")]
+pub mod python_thread_pool;
 #[cfg(feature = "sysinfo")]
 pub mod sys;
 

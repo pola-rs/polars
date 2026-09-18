@@ -1,7 +1,7 @@
-use arrow::array::Array;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::compute::concatenate::concatenate_validities;
 use bytemuck::allocation::zeroed_vec;
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::compute::concatenate::concatenate_validities;
 use polars_core::prelude::gather::check_bounds_ca;
 use polars_core::prelude::*;
 use polars_utils::index::check_bounds;
@@ -170,7 +170,7 @@ mod test {
 
     fn random_filter<T: Clone, R: Rng>(rng: &mut R, v: &[T], pr: Range<f64>) -> Vec<Option<T>> {
         let p = rng.random_range(pr);
-        let rand_filter = |x| Some(x).filter(|_| rng.random::<f64>() < p);
+        let rand_filter = |x| (rng.random::<f64>() < p).then_some(x);
         v.iter().cloned().map(rand_filter).collect()
     }
 

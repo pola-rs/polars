@@ -9,7 +9,7 @@ on:
   push:
     branches:
       - main
-      - "2.0"
+      - "1.x"
     paths:
       - '**.rs'
       - '**.py'
@@ -70,6 +70,7 @@ jobs:
           -p polars-arrow
           -p polars-compute
           -p polars-core
+          -p polars-defs
           -p polars-io
           -p polars-lazy
           -p polars-ops
@@ -164,28 +165,27 @@ jobs:
           -k 'not test_polars_import'
           --cov --cov-report xml:main.xml --cov-fail-under=0
 
-      - name: Run Python tests - streaming
+      - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
         working-directory: py-polars
         env:
-          POLARS_AUTO_STREAMING: 1
+          POLARS_ENGINE_AFFINITY: in-memory
           POLARS_TIMEOUT_MS: 60000
         run: >
           pytest
           -n auto
-          -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not benchmark and not docs"
+          -m "not release and not benchmark and not docs"
           -k 'not test_polars_import'
-          --cov --cov-report xml:auto-streaming.xml --cov-fail-under=0
+          --cov --cov-report xml:in-memory.xml --cov-fail-under=0
 
-      - name: Run Python tests - streaming with morsel size 4
+      - name: Run Python tests - morsel size 4
         working-directory: py-polars
         env:
-          POLARS_AUTO_STREAMING: 1
           POLARS_IDEAL_MORSEL_SIZE: 4
           POLARS_TIMEOUT_MS: 60000
         run: >
           pytest
           -n auto
-          -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not benchmark and not docs"
+          -m "not slow and not write_disk and not release and not benchmark and not docs"
           -k 'not test_polars_import'
           --cov --cov-report xml:small-morsel.xml --cov-fail-under=0
 
@@ -210,7 +210,7 @@ jobs:
           path: |
             coverage-python.lcov
             py-polars/main.xml
-            py-polars/auto-streaming.xml
+            py-polars/in-memory.xml
             py-polars/small-morsel.xml
             py-polars/async.xml
 

@@ -5,7 +5,11 @@ in which the query is executed immediately. In the lazy API, the query is only e
 _collected_. Deferring the execution to the last minute can have significant performance advantages
 and is why the lazy API is preferred in most cases. Let us demonstrate this with an example:
 
-{{code_block('user-guide/concepts/lazy-vs-eager','eager',['read_csv'])}}
+{{ code_header("python", [], ["read_csv"]) }}
+
+```python
+--8<-- "python/user-guide/concepts/lazy-vs-eager.py:eager"
+```
 
 In this example we use the eager API to:
 

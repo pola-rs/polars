@@ -1,13 +1,13 @@
-use arrow::datatypes::{IntervalUnit, Metadata};
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::datatypes::{IntervalUnit, Metadata};
+use polars_arrow::offset::OffsetsBuffer;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
     feature = "dtype-time",
     feature = "dtype-duration"
 ))]
-use arrow::temporal_conversions::*;
-use arrow::types::months_days_ns;
+use polars_arrow::temporal_conversions::*;
+use polars_arrow::types::months_days_ns;
 use polars_compute::cast::cast_unchecked as cast;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::dec128_fits;
@@ -33,21 +33,38 @@ impl Series {
         }
     }
 
+    /// Construct a Series from a chunk holding the physical representation of `dtype`.
+    ///
+    /// Checks the physical dtype and validates values through [`Series::try_from_physical`].
     pub fn from_chunk_and_dtype(
         name: PlSmallStr,
         chunk: ArrayRef,
         dtype: &DataType,
     ) -> PolarsResult<Self> {
-        if &dtype.to_physical().to_arrow(CompatLevel::newest()) != chunk.dtype() {
+        // Reject objects before construction can reinterpret the chunk as pointers.
+        polars_ensure!(
+            !dtype.contains_objects(),
+            InvalidOperation: "cannot create a series of type '{dtype}' from an arrow chunk: objects are process-local"
+        );
+        polars_ensure!(
+            !dtype.contains_unknown(),
+            InvalidOperation: "cannot create a series of type '{dtype}' from an arrow chunk"
+        );
+        #[cfg(feature = "dtype-map")]
+        dtype.ensure_valid_map_dtypes()?;
+
+        let physical = dtype.to_physical();
+        if &physical.to_arrow(CompatLevel::newest()) != chunk.dtype() {
             polars_bail!(
                 InvalidOperation: "cannot create a series of type '{dtype}' of arrow chunk with type '{:?}'",
                 chunk.dtype()
             );
         }
 
-        // SAFETY: We check that the datatype matches.
-        let series = unsafe { Self::from_chunks_and_dtype_unchecked(name, vec![chunk], dtype) };
-        Ok(series)
+        // SAFETY: the chunk matches the physical dtype, checked above.
+        let physical =
+            unsafe { Self::from_chunks_and_dtype_unchecked(name, vec![chunk], &physical) };
+        physical.try_from_physical(dtype)
     }
 
     /// Takes chunks and a polars datatype and constructs the Series.
@@ -57,6 +74,13 @@ impl Series {
     /// # Safety
     ///
     /// The caller must ensure that the given `dtype`'s physical type matches all the `ArrayRef` dtypes.
+    ///
+    /// Payloads must also be safe to read as the logical dtype:
+    ///
+    /// - `Categorical` / `Enum`: every non-null code names a category;
+    /// - `Object`: chunks originate from this process;
+    /// - `Map`: storage satisfies the `MapChunked` storage safety contract, so entries and
+    ///   keys are non-null within the offset windows of live rows. Keys may repeat.
     pub unsafe fn from_chunks_and_dtype_unchecked(
         name: PlSmallStr,
         chunks: Vec<ArrayRef>,
@@ -124,6 +148,15 @@ impl Series {
                 Series::from_chunks_and_dtype_unchecked(name, chunks, storage),
             )
             .into_series(),
+            #[cfg(feature = "dtype-map")]
+            Map(_, _) => {
+                let storage = Series::from_chunks_and_dtype_unchecked(
+                    name,
+                    chunks,
+                    &dtype.map_storage_dtype().unwrap(),
+                );
+                MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series()
+            },
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let mut ca =
@@ -202,7 +235,7 @@ impl Series {
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             },
             ArrowDataType::List(_) | ArrowDataType::LargeList(_) => {
-                let (chunks, dtype) = to_physical_and_dtype(chunks, md);
+                let (chunks, dtype) = to_physical_and_dtype(chunks, md)?;
                 unsafe {
                     Ok(
                         ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype)
@@ -212,7 +245,7 @@ impl Series {
             },
             #[cfg(feature = "dtype-array")]
             ArrowDataType::FixedSizeList(_, _) => {
-                let (chunks, dtype) = to_physical_and_dtype(chunks, md);
+                let (chunks, dtype) = to_physical_and_dtype(chunks, md)?;
                 unsafe {
                     Ok(
                         ArrayChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype)
@@ -390,7 +423,7 @@ impl Series {
             },
             ArrowDataType::Decimal256(precision, scale) => {
                 feature_gated!("dtype-decimal", {
-                    use arrow::types::i256;
+                    use polars_arrow::types::i256;
 
                     polars_compute::decimal::dec128_verify_prec_scale(*precision, *scale)?;
 
@@ -499,7 +532,7 @@ impl Series {
 
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(_) => {
-                let (chunks, dtype) = to_physical_and_dtype(chunks, md);
+                let (chunks, dtype) = to_physical_and_dtype(chunks, md)?;
 
                 unsafe {
                     let mut ca =
@@ -512,7 +545,7 @@ impl Series {
                 let chunks = cast_chunks(&chunks, &DataType::Binary, CastOptions::NonStrict)?;
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             },
-            ArrowDataType::Map(field, _is_ordered) => {
+            ArrowDataType::Map(field, _keys_sorted) => {
                 let struct_arrays = chunks
                     .iter()
                     .map(|arr| {
@@ -521,8 +554,32 @@ impl Series {
                     })
                     .collect::<Vec<_>>();
 
-                let (phys_struct_arrays, dtype) =
-                    to_physical_and_dtype(struct_arrays, field.metadata.as_deref());
+                let (phys_struct_arrays, entries_dtype) =
+                    to_physical_and_dtype(struct_arrays, field.metadata.as_deref())?;
+
+                #[cfg(feature = "dtype-map")]
+                let map_dtype = entries_dtype.map_from_positional_entries_dtype();
+                #[cfg(not(feature = "dtype-map"))]
+                let map_dtype: Option<DataType> = None;
+
+                #[cfg(feature = "dtype-map")]
+                let phys_struct_arrays: Vec<ArrayRef> = if map_dtype.is_some() {
+                    phys_struct_arrays
+                        .into_iter()
+                        .map(|mut entries| {
+                            rename_map_entries(&mut entries);
+                            entries
+                        })
+                        .collect()
+                } else {
+                    phys_struct_arrays
+                };
+
+                let storage_dtype = match &map_dtype {
+                    #[cfg(feature = "dtype-map")]
+                    Some(dtype) => dtype.map_storage_dtype().unwrap(),
+                    _ => DataType::List(Box::new(entries_dtype)),
+                };
 
                 let chunks = chunks
                     .iter()
@@ -542,14 +599,27 @@ impl Series {
                     })
                     .collect();
 
-                unsafe {
-                    let out = ListChunked::from_chunks_and_dtype_unchecked(
-                        name,
-                        chunks,
-                        DataType::List(Box::new(dtype)),
-                    );
+                let storage = unsafe {
+                    ListChunked::from_chunks_and_dtype_unchecked(name, chunks, storage_dtype)
+                }
+                .into_series();
 
-                    Ok(out.into_series())
+                match map_dtype {
+                    #[cfg(feature = "dtype-map")]
+                    Some(dtype) => {
+                        use crate::chunked_array::logical::ensure_live_entries_non_null;
+
+                        // Entries a null row spans are left where the producer put them, so
+                        // the import stays zero-copy. Trust the producer's key uniqueness.
+                        ensure_live_entries_non_null(storage.list().unwrap())?;
+                        // SAFETY: dtype and imported children are valid; live rows own no
+                        // null entries or keys.
+                        Ok(
+                            unsafe { MapChunked::from_storage_unchecked(dtype, storage) }
+                                .into_series(),
+                        )
+                    },
+                    _ => Ok(storage),
                 }
             },
             ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
@@ -580,25 +650,24 @@ impl Series {
         dtype: &DataType,
         strict: bool,
     ) -> PolarsResult<Series> {
+        use std::borrow::Cow;
+
         let phys = dtype.cat_physical()?;
         let phys_dtype = DataType::from(phys);
+
+        let mut casted = Cow::Borrowed(cats);
         if cats.dtype() != &phys_dtype {
-            polars_bail!(
-                SchemaMismatch:
-                "cannot convert column of type {} to {} with physical type {}; \
-                column dtype must match the enum/categorical's physical type",
-                cats.dtype(), dtype, phys_dtype
-            )
+            casted = Cow::Owned(cats.cast(&phys_dtype)?);
         }
 
         let out = with_match_categorical_physical_type!(phys, |$C| {
             // SAFETY: we are guarded by the type system.
             type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
-            let ca: &PhysCa = cats.as_ref().as_ref();
+            let ca: &PhysCa = casted.as_ref().as_ref().as_ref();
             CategoricalChunked::<$C>::from_cats_and_dtype(ca.clone(), dtype.clone()).into_series()
         });
 
-        if strict && out.null_count() != cats.null_count() {
+        if strict && out.null_count() != casted.null_count() {
             polars_bail!(
                 ComputeError:
                 "found invalid category value when converting from physical to {dtype}",
@@ -613,20 +682,36 @@ fn convert<F: Fn(&dyn Array) -> ArrayRef>(arr: &[ArrayRef], f: F) -> Vec<ArrayRe
     arr.iter().map(|arr| f(&**arr)).collect()
 }
 
+/// Normalize the field names of one chunk of map entries. Only the names change, so the
+/// buffers stay valid.
+#[cfg(feature = "dtype-map")]
+fn rename_map_entries(entries: &mut ArrayRef) {
+    let ArrowDataType::Struct(fields) = entries.dtype_mut() else {
+        unreachable!("map entries are a struct")
+    };
+    let [key, value] = fields.as_mut_slice() else {
+        unreachable!("map entries have two fields")
+    };
+    key.name = MAP_KEY_NAME;
+    value.name = MAP_VALUE_NAME;
+}
+
 /// Converts to physical types and bubbles up the correct [`DataType`].
+///
+/// Errors propagate from the nested logical imports, e.g. a malformed `Map` child.
 #[allow(clippy::only_used_in_recursion)]
 unsafe fn to_physical_and_dtype(
     arrays: Vec<ArrayRef>,
     md: Option<&Metadata>,
-) -> (Vec<ArrayRef>, DataType) {
+) -> PolarsResult<(Vec<ArrayRef>, DataType)> {
     match arrays[0].dtype() {
         ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => {
             let chunks = cast_chunks(&arrays, &DataType::String, CastOptions::NonStrict).unwrap();
-            (chunks, DataType::String)
+            Ok((chunks, DataType::String))
         },
         ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::FixedSizeBinary(_) => {
             let chunks = cast_chunks(&arrays, &DataType::Binary, CastOptions::NonStrict).unwrap();
-            (chunks, DataType::Binary)
+            Ok((chunks, DataType::Binary))
         },
         #[allow(unused_variables)]
         dt @ ArrowDataType::Dictionary(_, _, _) => {
@@ -634,9 +719,8 @@ unsafe fn to_physical_and_dtype(
                 let s = unsafe {
                     let dt = dt.clone();
                     Series::_try_from_arrow_unchecked_with_md(PlSmallStr::EMPTY, arrays, &dt, md)
-                }
-                .unwrap();
-                (s.chunks().clone(), s.dtype().clone())
+                }?;
+                Ok((s.chunks().clone(), s.dtype().clone()))
             })
         },
         dt @ ArrowDataType::Extension(_) => {
@@ -644,9 +728,8 @@ unsafe fn to_physical_and_dtype(
                 let s = unsafe {
                     let dt = dt.clone();
                     Series::_try_from_arrow_unchecked_with_md(PlSmallStr::EMPTY, arrays, &dt, md)
-                }
-                .unwrap();
-                (s.chunks().clone(), s.dtype().clone())
+                }?;
+                Ok((s.chunks().clone(), s.dtype().clone()))
             })
         },
         ArrowDataType::List(field) => {
@@ -666,7 +749,7 @@ unsafe fn to_physical_and_dtype(
                 .collect::<Vec<_>>();
 
             let (converted_values, dtype) =
-                to_physical_and_dtype(values, field.metadata.as_deref());
+                to_physical_and_dtype(values, field.metadata.as_deref())?;
 
             let arrays = arrays
                 .iter()
@@ -683,7 +766,7 @@ unsafe fn to_physical_and_dtype(
                     )) as ArrayRef
                 })
                 .collect();
-            (arrays, DataType::Array(Box::new(dtype), *size))
+            Ok((arrays, DataType::Array(Box::new(dtype), *size)))
         },
         ArrowDataType::LargeList(field) => {
             let values = arrays
@@ -695,7 +778,7 @@ unsafe fn to_physical_and_dtype(
                 .collect::<Vec<_>>();
 
             let (converted_values, dtype) =
-                to_physical_and_dtype(values, field.metadata.as_deref());
+                to_physical_and_dtype(values, field.metadata.as_deref())?;
 
             let arrays = arrays
                 .iter()
@@ -712,57 +795,49 @@ unsafe fn to_physical_and_dtype(
                     )) as ArrayRef
                 })
                 .collect();
-            (arrays, DataType::List(Box::new(dtype)))
+            Ok((arrays, DataType::List(Box::new(dtype))))
         },
         ArrowDataType::Struct(_fields) => {
             feature_gated!("dtype-struct", {
                 let mut pl_fields = None;
-                let arrays = arrays
-                    .iter()
-                    .map(|arr| {
-                        let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
-                        let (values, dtypes): (Vec<_>, Vec<_>) = arr
-                            .values()
-                            .iter()
-                            .zip(_fields.iter())
-                            .map(|(value, field)| {
-                                let mut out = to_physical_and_dtype(
-                                    vec![value.clone()],
-                                    field.metadata.as_deref(),
-                                );
-                                (out.0.pop().unwrap(), out.1)
-                            })
-                            .unzip();
+                let mut out_arrays = Vec::with_capacity(arrays.len());
+                for arr in &arrays {
+                    let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                    let mut values = Vec::with_capacity(_fields.len());
+                    let mut dtypes = Vec::with_capacity(_fields.len());
+                    for (value, field) in arr.values().iter().zip(_fields.iter()) {
+                        let (mut value, dtype) =
+                            to_physical_and_dtype(vec![value.clone()], field.metadata.as_deref())?;
+                        values.push(value.pop().unwrap());
+                        dtypes.push(dtype);
+                    }
 
-                        let arrow_fields = values
-                            .iter()
-                            .zip(_fields.iter())
-                            .map(|(arr, field)| {
-                                ArrowField::new(field.name.clone(), arr.dtype().clone(), true)
-                            })
-                            .collect();
-                        let arrow_array = Box::new(StructArray::new(
-                            ArrowDataType::Struct(arrow_fields),
-                            arr.len(),
-                            values,
-                            arr.validity().cloned(),
-                        )) as ArrayRef;
+                    let arrow_fields = values
+                        .iter()
+                        .zip(_fields.iter())
+                        .map(|(arr, field)| {
+                            ArrowField::new(field.name.clone(), arr.dtype().clone(), true)
+                        })
+                        .collect();
+                    out_arrays.push(Box::new(StructArray::new(
+                        ArrowDataType::Struct(arrow_fields),
+                        arr.len(),
+                        values,
+                        arr.validity().cloned(),
+                    )) as ArrayRef);
 
-                        if pl_fields.is_none() {
-                            pl_fields = Some(
-                                _fields
-                                    .iter()
-                                    .zip(dtypes)
-                                    .map(|(field, dtype)| Field::new(field.name.clone(), dtype))
-                                    .collect_vec(),
-                            )
-                        }
+                    if pl_fields.is_none() {
+                        pl_fields = Some(
+                            _fields
+                                .iter()
+                                .zip(dtypes)
+                                .map(|(field, dtype)| Field::new(field.name.clone(), dtype))
+                                .collect_vec(),
+                        )
+                    }
+                }
 
-                        arrow_array
-                    })
-                    .collect_vec();
-
-                (arrays, DataType::Struct(pl_fields.unwrap()))
+                Ok((out_arrays, DataType::Struct(pl_fields.unwrap())))
             })
         },
         // Use Series architecture to convert nested logical types to physical.
@@ -775,13 +850,13 @@ unsafe fn to_physical_and_dtype(
         | ArrowDataType::Date64
         | ArrowDataType::Map(_, _)) => {
             let dt = dt.clone();
-            let mut s = Series::_try_from_arrow_unchecked(PlSmallStr::EMPTY, arrays, &dt).unwrap();
+            let mut s = Series::_try_from_arrow_unchecked(PlSmallStr::EMPTY, arrays, &dt)?;
             let dtype = s.dtype().clone();
-            (std::mem::take(s.chunks_mut()), dtype)
+            Ok((std::mem::take(s.chunks_mut()), dtype))
         },
         dt => {
             let dtype = DataType::from_arrow(dt, md);
-            (arrays, dtype)
+            Ok((arrays, dtype))
         },
     }
 }
@@ -790,10 +865,10 @@ unsafe fn to_physical_and_dtype(
 unsafe fn import_arrow_dictionary_array(
     name: PlSmallStr,
     arr: Box<dyn Array>,
-    key_type: &arrow::datatypes::IntegerType,
+    key_type: &polars_arrow::datatypes::IntegerType,
     polars_dtype: &DataType,
 ) -> PolarsResult<Series> {
-    use arrow::datatypes::IntegerType as I;
+    use polars_arrow::datatypes::IntegerType as I;
 
     if matches!(
         polars_dtype,
@@ -1061,6 +1136,7 @@ unsafe impl IntoSeries for Series {
         true
     }
 
+    #[inline]
     fn into_series(self) -> Series {
         self
     }

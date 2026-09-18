@@ -80,13 +80,182 @@ def test_equal_not_equal() -> None:
     }
 
 
+def test_string_compared_with_integer_literals() -> None:
+    # integer literals tested for (in)equality against a string are compared as strings
+    df = pl.DataFrame({"phone": ["13-123", "31-456", "22-789", "22"]})
+    res = df.sql(
+        """
+        SELECT phone
+        FROM self
+        WHERE SUBSTRING(phone, 1, 2) IN (13, 31)
+           OR phone = 22
+           OR 13 <> SUBSTRING(phone, 1, 2)
+        ORDER BY phone
+        """
+    )
+    assert res.to_series().to_list() == ["13-123", "22", "22-789", "31-456"]
+
+    res = df.sql("SELECT phone FROM self WHERE phone NOT IN (22, 13)")
+    assert res.to_series().to_list() == ["13-123", "31-456", "22-789"]
+
+    # aggregate / non-literal IN lists take the OR-chain path
+    res = df.sql(
+        """
+        SELECT
+          MAX(phone) IN (31, 13) AS agg_in,
+          MIN(phone) IN (31, MAX(phone)) AS agg_in_expr
+        FROM self
+        """
+    )
+    assert res.row(0) == (False, False)
+    res = df.sql("SELECT phone IN (22, LEFT(phone, 2)) AS x FROM self")
+    assert res.to_series().to_list() == [False, False, False, True]
+
+
+@pytest.mark.parametrize(
+    ("condition", "keeps_rows"),
+    [
+        ("1 = 1", True),
+        ("1 = 1.0", True),
+        ("'13' = 13", True),
+        ("('13' = 13)", True),
+        ("'13' <> 13", False),
+        ("1 < 2 AND 'a' = 'b'", False),
+        ("NULL = NULL", False),
+        ("NULL IS NULL", True),
+    ],
+)
+def test_constant_where_condition(condition: str, keeps_rows: bool) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    res = df.sql(f"SELECT a FROM self WHERE {condition}")
+    assert res.height == (3 if keeps_rows else 0)
+
+
+@pytest.mark.parametrize(
+    ("condition", "verdict"),
+    [
+        ("TRUE", True),
+        ("FALSE", False),
+        ("1 = 1", True),
+        ("1 = 0", False),
+        ("NULL = NULL", None),
+        ("NULL", None),
+        ("UPPER('x') = 'X'", True),
+        ("CASE WHEN 1 < 2 THEN FALSE ELSE TRUE END", False),
+        # non-boolean constants are cast to boolean
+        ("1", True),
+        ("0", False),
+        ("1 + 1", True),
+        ("2 IN (1, 2)", True),
+        ("ARRAY_LENGTH(ARRAY[1, 2])", True),
+        ("ARRAY_CONTAINS(ARRAY[1, 2], 3)", False),
+    ],
+)
+@pytest.mark.parametrize("empty", [False, True])
+def test_constant_condition_select_and_delete(
+    condition: str, verdict: bool | None, empty: bool
+) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    if empty:
+        df = df.clear()
+    ctx = pl.SQLContext(frames={"tbl": df.lazy()})
+
+    selected = ctx.execute(f"SELECT * FROM tbl WHERE {condition}").collect()
+    deleted = ctx.execute(f"DELETE FROM tbl WHERE {condition}").collect()
+    assert selected.schema == df.schema
+    assert deleted.schema == df.schema
+    # an unknown condition keeps nothing in SELECT and removes nothing in DELETE
+    assert selected.height == (df.height if verdict else 0)
+    assert deleted.height == (0 if verdict else df.height)
+
+
+def test_constant_where_condition_is_planned_not_executed() -> None:
+    # translating the query must not run the frame or any user function in it
+    def boom(df: pl.DataFrame) -> pl.DataFrame:
+        msg = "executed"
+        raise RuntimeError(msg)
+
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).map_batches(boom, schema={"a": pl.Int64})
+    ctx = pl.SQLContext(frames={"tbl": lf, "other": lf})
+    for query in [
+        "SELECT a FROM tbl WHERE 1 = 1 AND UPPER('x') = 'X'",
+        "SELECT * FROM tbl JOIN other ON 1 = 1",
+        "SELECT * FROM tbl LEFT JOIN other ON FALSE",
+    ]:
+        planned = ctx.execute(query)
+        with pytest.raises(RuntimeError, match="executed"):
+            planned.collect()
+
+    # a false condition never reads the input at all
+    res = ctx.execute("SELECT a FROM tbl WHERE 1 = 0").collect()
+    assert res.schema == {"a": pl.Int64}
+    assert res.height == 0
+
+    # constant conditions are folded by the planner: a true filter disappears
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    ctx = pl.SQLContext(frames={"tbl": lf})
+    plan = ctx.execute("SELECT a FROM tbl WHERE 1 = 1").explain()
+    assert "FILTER" not in plan
+    plan = ctx.execute("SELECT a FROM tbl WHERE 1 = 0").explain()
+    assert "FILTER" not in plan
+
+
+@pytest.mark.parametrize(
+    ("condition", "expected"),
+    [
+        ("ROW_NUMBER() OVER () <= 2", [1, 2]),
+        ("COUNT(1) > 1", [1, 2, 3]),
+        ("COLUMNS('^a$') > 1", [2, 3]),
+    ],
+)
+def test_where_condition_without_column_names(
+    condition: str, expected: list[int]
+) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    res = df.sql(f"SELECT a FROM self WHERE {condition}")
+    assert res.to_series().to_list() == expected
+
+
+def test_join_key_string_compared_with_integer_literal() -> None:
+    frames = {
+        "a": pl.DataFrame({"s": ["13", "31", "22"]}),
+        "b": pl.DataFrame({"k": [1, 2]}),
+    }
+    res = pl.SQLContext(frames=frames).execute(
+        "SELECT s, k FROM a JOIN b ON a.s = 13 AND b.k = 2", eager=True
+    )
+    assert res.rows() == [("13", 2)]
+
+    # a clashing column name with a different dtype per table
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "x": ["13", "31"]}),
+        "b": pl.DataFrame({"k": [1, 2], "x": [13, 31]}),
+    }
+    res = pl.SQLContext(frames=frames).execute(
+        "SELECT a.k, a.x, b.x AS bx FROM a JOIN b ON a.k = b.k AND b.x = 13 AND a.x = 13",
+        eager=True,
+    )
+    assert res.rows() == [(1, "13", 13)]
+
+    # a nested comparison inside a join key operand resolves against its own table too
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "x": ["13", "31"], "flag": [True, True]}),
+        "b": pl.DataFrame({"k": [1, 2], "x": [13, 31]}),
+    }
+    res = pl.SQLContext(frames=frames).execute(
+        "SELECT a.k FROM a JOIN b ON a.k = b.k AND a.flag = (b.x = 13)",
+        eager=True,
+    )
+    assert res.rows() == [(1,)]
+
+
 @pytest.mark.parametrize(
     "in_clause",
     [
         "values NOT IN ([0], [3,4], [7,8], [6,6,6])",
         "values IN ([0], [5,6], [1,2], [8,8,8,8])",
-        "dt NOT IN ('1950-12-24', '1997-07-05')",
-        "dt IN ('2020-10-10', '2077-03-18')",
+        "dt NOT IN (DATE '1950-12-24', DATE '1997-07-05')",
+        "dt IN (DATE '2020-10-10', DATE '2077-03-18')",
         "rowid NOT IN (1, 3)",
         "rowid IN (4, 2)",
     ],
@@ -389,7 +558,7 @@ def test_logical_not() -> None:
     }
 
     # expect failure when applying logical 'NOT' to an incompatible dtype
-    for invalid_literal in ("'foo'", "'2026-12-31'::date"):
+    for invalid_literal in ("'foo'", "DATE('2026-12-31')"):
         with pytest.raises(
             InvalidOperationError,
             match=r"cast.* to Boolean not supported",
@@ -416,16 +585,14 @@ def test_starts_with() -> None:
     ]
 
 
-@pytest.mark.parametrize("match_float", [False, True])
-def test_unary_ops_8890(match_float: bool) -> None:
+def test_unary_ops_8890() -> None:
     with pl.SQLContext(
         df=pl.DataFrame({"a": [-2, -1, 1, 2], "b": ["w", "x", "y", "z"]}),
     ) as ctx:
-        in_values = "(-3.0, -1.0, +2.0, +4.0)" if match_float else "(-3, -1, +2, +4)"
         res = ctx.execute(
-            f"""
+            """
             SELECT *, -(3) as c, (+4) as d
-            FROM df WHERE a IN {in_values}
+            FROM df WHERE a IN (-3, -1, +2, +4)
             """
         )
         assert res.collect().to_dict(as_series=False) == {

@@ -101,7 +101,21 @@ fn timeout_thread(recv: Receiver<TimeoutRequest>) {
     }
 }
 
-pub fn schedule_polars_timeout(traceback: Option<String>) -> Option<u64> {
+/// Cancels the timeout it was scheduled for when dropped.
+pub struct PolarsTimeoutGuard {
+    id: u64,
+}
+
+impl Drop for PolarsTimeoutGuard {
+    fn drop(&mut self) {
+        TIMEOUT_REQUEST_HANDLER
+            .send(TimeoutRequest::Cancel(self.id))
+            .unwrap();
+    }
+}
+
+#[must_use]
+pub fn schedule_polars_timeout(traceback: Option<String>) -> Option<PolarsTimeoutGuard> {
     static TIMEOUT_ID: RelaxedCell<u64> = RelaxedCell::new_u64(0);
 
     let timeout = get_timeout()?;
@@ -109,13 +123,5 @@ pub fn schedule_polars_timeout(traceback: Option<String>) -> Option<u64> {
     TIMEOUT_REQUEST_HANDLER
         .send(TimeoutRequest::Start(timeout, id, traceback))
         .unwrap();
-    Some(id)
-}
-
-pub fn cancel_polars_timeout(opt_id: Option<u64>) {
-    if let Some(id) = opt_id {
-        TIMEOUT_REQUEST_HANDLER
-            .send(TimeoutRequest::Cancel(id))
-            .unwrap();
-    }
+    Some(PolarsTimeoutGuard { id })
 }

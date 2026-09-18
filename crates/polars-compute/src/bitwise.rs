@@ -1,9 +1,9 @@
 use std::convert::identity;
 
-use arrow::array::{Array, BooleanArray, PrimitiveArray};
-use arrow::bitmap::binary_fold;
-use arrow::datatypes::ArrowDataType;
-use arrow::legacy::utils::CustomIterTools;
+use polars_arrow::array::{Array, BooleanArray, PrimitiveArray};
+use polars_arrow::bitmap::binary_fold;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::legacy::utils::CustomIterTools;
 use polars_utils::float16::pf16;
 
 use crate::boolean::{all, any};

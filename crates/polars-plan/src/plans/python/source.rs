@@ -31,6 +31,10 @@ pub struct PythonOptions {
     pub validate_schema: bool,
     /// Whether this scan is free of side effects (allows for CSE when that is the case).
     pub is_pure: bool,
+    /// Optional custom name for explain header.
+    pub explain_name: Option<PlSmallStr>,
+    /// Optional single-line detail to include in explain.
+    pub explain_detail: Option<PlSmallStr>,
 }
 
 #[derive(Clone, PartialEq, Debug, Default)]

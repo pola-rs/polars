@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
+from polars._utils.expired import (
+    RemovedParameter,
+    getattr_fallback,
+    raise_for_removed_attributes,
+    removed_parameters,
+)
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import (
@@ -15,13 +20,11 @@ from polars._utils.various import (
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_expr
-from polars._warnings import find_stacklevel, issue_warning
+from polars._warnings import find_stacklevel
 from polars.datatypes import Date, Datetime, Int64, Time, parse_into_datatype_expr
 from polars.exceptions import ChronoFormatWarning
 
 if TYPE_CHECKING:
-    import sys
-
     from polars import Expr
     from polars._typing import (
         Ambiguous,
@@ -35,11 +38,6 @@ if TYPE_CHECKING:
         UnicodeForm,
     )
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 
 class ExprStringNameSpace(_NamespaceSuggestMixin):
@@ -331,7 +329,6 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             msg = "`dtype` must be of type {Date, Datetime, Time}"
             raise ValueError(msg)
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     @unstable()
     def to_decimal(self, *, scale: int) -> Expr:
         """
@@ -342,9 +339,6 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-
-        .. versionchanged:: 1.20.0
-            Parameter `inference_length` should now be passed as a keyword argument.
 
         .. versionchanged:: 1.33.0
             Parameter `inference_length` was removed and `scale` was made non-optional.
@@ -1299,12 +1293,12 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         prefix_pyexpr = parse_into_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_starts_with(prefix_pyexpr))
 
-    def json_decode(
-        self,
-        dtype: PolarsDataType | pl.DataTypeExpr,
-        *,
-        infer_schema_length: int | None = None,
-    ) -> Expr:
+    @removed_parameters(
+        RemovedParameter(
+            name="infer_schema_length", deprecated_in="1.33.0", removed_in="2.0"
+        )
+    )
+    def json_decode(self, dtype: PolarsDataType | pl.DataTypeExpr) -> Expr:
         """
         Parse string values as JSON.
 
@@ -1312,16 +1306,14 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
 
         .. engine-support:: in-memory, streaming, distributed
 
+        .. versionchanged:: 1.33.0
+            Parameter `infer_schema_length` was removed and `dtype` was made
+            non-optional to ensure that the planner can determine the output datatype.
+
         Parameters
         ----------
         dtype
             The dtype to cast the extracted value to.
-        infer_schema_length
-            Deprecated and ignored.
-
-            .. versionchanged:: 1.33.0
-                Deprecate `infer_schema_length` and make `dtype` non-optional to
-                ensure that the planner can determine the output datatype.
 
         See Also
         --------
@@ -1349,12 +1341,6 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         if dtype is None:
             msg = "`Expr.str.json_decode` needs an explicitly given `dtype` otherwise Polars is not able to determine the output type. If you want to eagerly infer datatype you can use `Series.str.json_decode`."
             raise TypeError(msg)
-
-        if infer_schema_length is not None:
-            issue_warning(
-                "`Expr.str.json_decode` with `infer_schema_length` is deprecated and has no effect on execution.",
-                DeprecationWarning,
-            )
 
         dtype_expr = parse_into_datatype_expr(dtype)._pydatatype_expr
         return wrap_expr(self._pyexpr.str_json_decode(dtype_expr))
@@ -1613,7 +1599,7 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         ...         +           # 'one or more' quantifier
         ...         """
         ...     )
-        ...     .list.to_struct(fields=["name", "domain"])
+        ...     .list.to_struct(["name", "domain"])
         ...     .alias("email_parts")
         ... ).unnest("email_parts")
         shape: (3, 3)
@@ -2558,43 +2544,6 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.str_tail(n_pyexpr))
 
-    @deprecated(
-        '`str.explode` is deprecated; use `str.split("").explode(empty_as_null=False)` instead.'
-    )
-    def explode(self) -> Expr:
-        """
-        Returns a column with a separate row for every string character.
-
-        .. deprecated:: 0.20.31
-            '`str.explode` is deprecated; use
-            `str.split("").explode(empty_as_null=False)` instead.'
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`String`.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": ["foo", "bar"]})
-        >>> df.select(pl.col("a").str.explode())  # doctest: +SKIP
-        shape: (6, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ f   │
-        │ o   │
-        │ o   │
-        │ b   │
-        │ a   │
-        │ r   │
-        └─────┘
-        """
-        split = self.split("")
-        return F.when(split.ne_missing([])).then(split).otherwise([""]).explode()
-
     def to_integer(
         self,
         *,
@@ -3153,62 +3102,6 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.str_join(delimiter, ignore_nulls=ignore_nulls))
 
-    @deprecated(
-        "`str.concat` is deprecated; use `str.join` instead. Note also that the "
-        "default `delimiter` for `str.join` is an empty string, not a hyphen."
-    )
-    def concat(
-        self, delimiter: str | None = None, *, ignore_nulls: bool = True
-    ) -> Expr:
-        """
-        Vertically concatenate the string values in the column to a single string value.
-
-        .. deprecated:: 1.0.0
-            Use :meth:`join` instead. Note that the default `delimiter` for :meth:`join`
-            is an empty string instead of a hyphen.
-
-        Parameters
-        ----------
-        delimiter
-            The delimiter to insert between consecutive string values.
-        ignore_nulls
-            Ignore null values (default).
-            If set to `False`, null values will be propagated. This means that
-            if the column contains any null values, the output is null.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`String`.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, None, 2]})
-        >>> df.select(pl.col("foo").str.concat("-"))  # doctest: +SKIP
-        shape: (1, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ 1-2 │
-        └─────┘
-        >>> df.select(
-        ...     pl.col("foo").str.concat("-", ignore_nulls=False)
-        ... )  # doctest: +SKIP
-        shape: (1, 1)
-        ┌──────┐
-        │ foo  │
-        │ ---  │
-        │ str  │
-        ╞══════╡
-        │ null │
-        └──────┘
-        """
-        if delimiter is None:
-            delimiter = "-"
-        return self.join(delimiter, ignore_nulls=ignore_nulls)
-
     def escape_regex(self) -> Expr:
         r"""
         Returns string values with all regular expression meta characters escaped.
@@ -3275,6 +3168,20 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         └──────┴─────┴──────┘
         """  # noqa: RUF002
         return wrap_expr(self._pyexpr.str_normalize(form))
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "concat": "use `str.join` instead. Note also that the default "
+                    "`delimiter` for `str.join` is an empty string, not a hyphen."
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
 
 
 def _validate_format_argument(format: str | None) -> None:

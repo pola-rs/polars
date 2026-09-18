@@ -72,7 +72,7 @@ else:
             Examples
             --------
             >>> df = pl.DataFrame({"a": [1, 1, 1]})
-            >>> pl.concat([df, df], how="horizontal", strict=True)
+            >>> pl.concat([df, df], how="horizontal")
             polars.exceptions.DuplicateError: unable to hstack, column with name "a" already exists
             """  # noqa: W505
 
@@ -218,9 +218,19 @@ class UnstableWarning(PolarsWarning):
     """Warning issued when unstable functionality is used."""
 
 
+class ArgumentRemovedError(TypeError):
+    """Exception raised when a function argument has been removed."""
+
+
+class AttributeRemovedError(AttributeError):
+    """Exception raised when an attribute has been removed from a class."""
+
+
 __all__ = [
     # Errors
     "PolarsError",
+    "ArgumentRemovedError",
+    "AttributeRemovedError",
     "ColumnNotFoundError",
     "ComputeError",
     "DuplicateError",

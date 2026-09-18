@@ -159,3 +159,53 @@ def test_truncate_table(truncate_sql: str, test_frame: pl.LazyFrame) -> None:
 
         res = ctx.execute("SELECT * FROM frame")
         assert_frame_equal(res, expected)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # unquoted identifiers are case-insensitive, so a relation need not be
+        # referenced with the case it was declared with
+        "SELECT s.x FROM (SELECT x FROM tbl) S",
+        "SELECT S.x FROM (SELECT x FROM tbl) s",
+        "SELECT SUB.x FROM (SELECT x FROM tbl) sub",
+        "SELECT TBL.x FROM tbl",
+        "SELECT t.x FROM tbl T",
+        "WITH cte AS (SELECT x FROM tbl) SELECT c.x FROM CTE c",
+    ],
+)
+def test_relation_name_case_insensitivity(query: str) -> None:
+    lf = pl.LazyFrame({"x": [1, 2, 3]})
+    with pl.SQLContext(tbl=lf, eager=True) as ctx:
+        assert ctx.execute(query).to_series().to_list() == [1, 2, 3]
+
+
+def test_cte_shadows_registered_table() -> None:
+    # a CTE takes precedence over a registered table of the same name, as does
+    # a FROM alias naming that CTE
+    registered = pl.LazyFrame({"x": [-1, -2]})
+    source = pl.LazyFrame({"x": [1, 2, 3]})
+
+    with pl.SQLContext(tbl=source, store=registered, eager=True) as ctx:
+        assert ctx.execute(
+            "WITH store AS (SELECT x FROM tbl) SELECT x FROM store"
+        ).to_series().to_list() == [1, 2, 3]
+
+        assert ctx.execute(
+            "WITH c AS (SELECT x FROM tbl) SELECT store.x FROM c store"
+        ).to_series().to_list() == [1, 2, 3]
+
+        # the registered table is still reachable when nothing shadows it
+        assert ctx.execute("SELECT x FROM store").to_series().to_list() == [-1, -2]
+
+
+def test_cte_shadows_derived_table_from_earlier_query() -> None:
+    # a derived table stays registered after its query, but must not shadow a
+    # CTE that a later query defines under the same name
+    lf = pl.LazyFrame({"x": [1, 2, 3]})
+    with pl.SQLContext(tbl=lf, eager=True) as ctx:
+        ctx.execute("SELECT SUM(x) AS total FROM (SELECT x FROM tbl) agg")
+        assert "agg" in ctx.tables()
+
+        res = ctx.execute("WITH agg AS (SELECT x FROM tbl) SELECT a.x FROM agg a")
+        assert res.to_series().to_list() == [1, 2, 3]

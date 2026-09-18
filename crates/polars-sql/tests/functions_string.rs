@@ -118,7 +118,7 @@ fn test_array_to_string() {
 #[test]
 fn test_array_literal() {
     let mut context = SQLContext::new();
-    context.register("df", DataFrame::empty().lazy());
+    context.register("df", df! {"x" => &[0]}.unwrap().lazy());
 
     let sql = "SELECT [100,200,300] AS arr FROM df";
     let df_sql = context.execute(sql).unwrap().collect().unwrap();

@@ -11,10 +11,11 @@ repository = { workspace = true }
 description = "DataFrame library based on Apache Arrow"
 
 [dependencies]
-arrow = { workspace = true }
+polars-arrow = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
+polars-defs = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true, optional = true }
 polars-io = { workspace = true, optional = true }
@@ -28,13 +29,15 @@ polars-utils = { workspace = true }
 
 [dev-dependencies]
 apache-avro = { version = "0.21", features = ["snappy"] }
-arrow = { workspace = true }
 avro-schema = { workspace = true, features = ["async"] }
 chrono = { workspace = true }
 either = { workspace = true }
 ethnum = "1"
 futures = { workspace = true }
 object_store = { workspace = true }
+polars-arrow = { workspace = true }
+# needed for some tests
+polars-plan = { workspace = true, optional = false }
 # used to run formal property testing
 proptest = { workspace = true }
 rand = { workspace = true }
@@ -61,6 +64,7 @@ simd = [
 avx512 = ["polars-core/avx512"]
 nightly = [
   "polars-core/nightly",
+  "polars-io?/nightly",
   "polars-ops?/nightly",
   "simd",
   "polars-lazy?/nightly",
@@ -189,6 +193,11 @@ approx_unique = [
   "polars-lazy?/approx_unique",
   "polars-ops/approx_unique",
   "polars-core/approx_unique",
+]
+approx_quantile = [
+  "polars-lazy?/approx_quantile",
+  "polars-ops/approx_quantile",
+  "polars-sql?/approx_quantile",
 ]
 arg_where = ["polars-lazy?/arg_where"]
 asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join"]
@@ -348,7 +357,7 @@ zip_with = ["polars-core/zip_with"]
 bigidx = [
   "polars-core/bigidx",
   "polars-lazy?/bigidx",
-  "polars-ops/big_idx",
+  "polars-ops/bigidx",
   "polars-plan?/bigidx",
   "polars-utils/bigidx",
 ]
@@ -390,6 +399,7 @@ dtype-full = [
   "dtype-f16",
   "dtype-categorical",
   "dtype-struct",
+  "dtype-map",
 ]
 
 # sensible minimal set of opt-in datatypes
@@ -500,10 +510,18 @@ dtype-struct = [
 ]
 dtype-extension = [
   "polars-core/dtype-extension",
-  "polars-expr/dtype-extension",
+  "polars-expr?/dtype-extension",
   "polars-lazy?/dtype-extension",
   "polars-ops/dtype-extension",
-  "polars-plan/dtype-extension",
+  "polars-plan?/dtype-extension",
+]
+dtype-map = [
+  "polars-core/dtype-map",
+  "polars-expr?/dtype-map",
+  "polars-io/dtype-map",
+  "polars-lazy?/dtype-map",
+  "polars-ops/dtype-map",
+  "polars-plan?/dtype-map",
 ]
 hist = ["polars-ops/hist", "polars-lazy/hist"]
 
@@ -570,6 +588,7 @@ docs-selection = [
   "extract_groups",
   "replace",
   "approx_unique",
+  "approx_quantile",
   "unique_counts",
   "polars_cloud_client",
   "serde",

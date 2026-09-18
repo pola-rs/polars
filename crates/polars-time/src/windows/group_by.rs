@@ -1,79 +1,23 @@
 use std::collections::VecDeque;
 
-use arrow::legacy::time_zone::Tz;
-use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
-use arrow::trusted_len::TrustedLen;
 use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as _;
 use now::DateTimeNow;
+use polars_arrow::legacy::time_zone::Tz;
+use polars_arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
+use polars_arrow::trusted_len::TrustedLen;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::{ClosedWindow, StartBy};
 use rayon::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
 
 use crate::prelude::*;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[strum(serialize_all = "snake_case")]
-pub enum ClosedWindow {
-    Left,
-    Right,
-    Both,
-    None,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[strum(serialize_all = "snake_case")]
-pub enum Label {
-    Left,
-    Right,
-    DataPoint,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[strum(serialize_all = "snake_case")]
-#[derive(Default)]
-pub enum StartBy {
-    #[default]
-    WindowBound,
-    DataPoint,
-    /// only useful if periods are weekly
-    Monday,
-    Tuesday,
-    Wednesday,
-    Thursday,
-    Friday,
-    Saturday,
-    Sunday,
-}
-
-impl StartBy {
-    pub fn weekday(&self) -> Option<u32> {
-        match self {
-            StartBy::Monday => Some(0),
-            StartBy::Tuesday => Some(1),
-            StartBy::Wednesday => Some(2),
-            StartBy::Thursday => Some(3),
-            StartBy::Friday => Some(4),
-            StartBy::Saturday => Some(5),
-            StartBy::Sunday => Some(6),
-            _ => None,
-        }
-    }
-}
 
 #[allow(clippy::too_many_arguments)]
 fn update_groups_and_bounds(

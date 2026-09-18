@@ -69,13 +69,6 @@ def test_unpivot() -> None:
     for unpivoted in [df.unpivot(), df.lazy().unpivot().collect()]:
         assert set(unpivoted.iter_rows()) == expected_full
 
-    with pytest.deprecated_call(match="unpivot"):
-        for unpivoted in [
-            df.melt(value_name="foo", variable_name="bar"),
-            df.lazy().melt(value_name="foo", variable_name="bar").collect(),
-        ]:
-            assert set(unpivoted.iter_rows()) == expected_full
-
 
 def test_unpivot_projection_pd_7747() -> None:
     df = pl.LazyFrame(
@@ -85,13 +78,12 @@ def test_unpivot_projection_pd_7747() -> None:
             "weight": [100, 103, 95, 90, 110],
         }
     )
-    with pytest.deprecated_call(match="unpivot"):
-        result = (
-            df.with_columns(pl.col("age").alias("wgt"))
-            .melt(id_vars="number", value_vars="wgt")
-            .select("number", "value")
-            .collect()
-        )
+    result = (
+        df.with_columns(pl.col("age").alias("wgt"))
+        .unpivot(index="number", on="wgt")
+        .select("number", "value")
+        .collect()
+    )
     expected = pl.DataFrame(
         {
             "number": [1, 2, 1, 2, 1],

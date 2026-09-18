@@ -1,9 +1,9 @@
 use std::io::{Read, Seek};
 use std::sync::Arc;
 
-use arrow::datatypes::Metadata;
-use arrow::io::ipc::read::{StreamReader, StreamState, read_stream_metadata};
-use arrow::io::ipc::write::WriteOptions;
+use polars_arrow::datatypes::Metadata;
+use polars_arrow::io::ipc::read::{StreamReader, StreamState, read_stream_metadata};
+use polars_arrow::io::ipc::write::WriteOptions;
 use polars_error::{PolarsResult, polars_err, to_compute_err};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_serialize::deserialize_map_bytes;
@@ -21,6 +21,14 @@ use crate::utils::accumulate_dataframes_vertical_unchecked;
 const FLAGS_KEY: PlSmallStr = PlSmallStr::from_static("_PL_FLAGS");
 
 impl DataFrame {
+    pub fn serialize_into_json(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        serde_json::to_writer(writer, self).map_err(to_compute_err)
+    }
+
+    pub fn deserialize_from_json(json: &[u8]) -> PolarsResult<Self> {
+        serde_json::from_slice(json).map_err(to_compute_err)
+    }
+
     pub fn serialize_into_writer(&mut self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
         let schema = self.schema();
 
@@ -31,8 +39,10 @@ impl DataFrame {
             ));
         }
 
-        let mut ipc_writer =
-            arrow::io::ipc::write::StreamWriter::new(writer, WriteOptions { compression: None });
+        let mut ipc_writer = polars_arrow::io::ipc::write::StreamWriter::new(
+            writer,
+            WriteOptions { compression: None },
+        );
 
         ipc_writer.set_custom_schema_metadata(Arc::new(Metadata::from_iter(
             self.columns().iter().map(|c| {
@@ -66,13 +76,6 @@ impl DataFrame {
         ipc_writer.finish()?;
 
         Ok(())
-    }
-
-    pub fn serialize_to_bytes(&mut self) -> PolarsResult<Vec<u8>> {
-        let mut buf = vec![];
-        self.serialize_into_writer(&mut buf)?;
-
-        Ok(buf)
     }
 
     pub fn deserialize_from_reader<T: Read + Seek>(reader: &mut T) -> PolarsResult<Self> {

@@ -1,15 +1,10 @@
-use arrow::legacy::time_zone::Tz;
-use chrono::{Datelike, NaiveDateTime, NaiveTime};
+use chrono::{NaiveDateTime, NaiveTime};
+use polars_arrow::legacy::time_zone::Tz;
 use polars_core::chunked_array::temporal::time_to_time64ns;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-
-use crate::prelude::*;
-
-pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
-    // ~584 year around 1970
-    !(ndt.year() > 2554 || ndt.year() < 1386)
-}
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::ClosedWindow;
 
 /// Create a [`DatetimeChunked`] from a given `start` and `end` date and a given `interval`.
 pub fn date_range(

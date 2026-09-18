@@ -1,12 +1,11 @@
 //! Note: Currently only used for Iceberg / Delta.
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
 use polars::prelude::{DslPlan, PlSmallStr, Schema, SchemaRef};
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_plan::plans::PyScanResolveThreadPool;
 use polars_utils::python_function::PythonObject;
-use pyo3::call::PyCallArgs;
 use pyo3::conversion::FromPyObject;
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
@@ -34,56 +33,62 @@ pub fn schema(
     py_scan_resolve_threadpool: &PyScanResolveThreadPool,
 ) -> PolarsResult<SchemaRef> {
     Python::attach(|py| {
-        let pyarrow_schema_cls = py
-            .import("pyarrow")
-            .ok()
-            .and_then(|pa| pa.getattr("Schema").ok());
-
-        let schema_obj = py_spawn_call(
+        extract_schema(
             py,
-            &dataset_object.getattr(py, "schema")?,
-            (),
-            None,
-            py_scan_resolve_threadpool,
-        )?;
-        let schema_cls = schema_obj.getattr(py, interned::DUNDER_CLASS.get(py))?;
-
-        // PyIceberg returns arrow schemas, we convert them here.
-        if let Some(pyarrow_schema_cls) = pyarrow_schema_cls {
-            if schema_cls.is(&pyarrow_schema_cls) {
-                if config::verbose() {
-                    eprintln!("python dataset: convert from arrow schema");
-                }
-
-                let mut iter = schema_obj
-                    .bind(py)
-                    .try_iter()?
-                    .map(|x| x.and_then(field_to_rust));
-
-                let mut last_err = None;
-
-                let schema =
-                    Schema::from_iter_check_duplicates(std::iter::from_fn(|| match iter.next() {
-                        Some(Ok(v)) => Some(v),
-                        Some(Err(e)) => {
-                            last_err = Some(e);
-                            None
-                        },
-                        None => None,
-                    }))?;
-
-                if let Some(last_err) = last_err {
-                    return Err(last_err.into());
-                }
-
-                return Ok(Arc::new(schema));
-            }
-        }
-
-        let Wrap(schema) = Wrap::<Schema>::extract(schema_obj.bind_borrowed(py))?;
-
-        Ok(Arc::new(schema))
+            py_scan_resolve_threadpool.spawn_call(
+                py,
+                &dataset_object.getattr(py, "schema")?,
+                (),
+                None,
+            )?,
+        )
     })
+    .map_err(Into::into)
+}
+
+pub fn extract_schema(py: Python<'_>, schema_obj: Py<PyAny>) -> PolarsResult<SchemaRef> {
+    let pyarrow_schema_cls = py
+        .import("pyarrow")
+        .ok()
+        .and_then(|pa| pa.getattr("Schema").ok());
+
+    let schema_cls = schema_obj.getattr(py, interned::DUNDER_CLASS.get(py))?;
+
+    // PyIceberg returns arrow schemas, we convert them here.
+    if let Some(pyarrow_schema_cls) = pyarrow_schema_cls {
+        if schema_cls.is(&pyarrow_schema_cls) {
+            if config::verbose() {
+                eprintln!("python dataset: convert from arrow schema");
+            }
+
+            let mut iter = schema_obj
+                .bind(py)
+                .try_iter()?
+                .map(|x| x.and_then(field_to_rust));
+
+            let mut last_err = None;
+
+            let schema =
+                Schema::from_iter_check_duplicates(std::iter::from_fn(|| match iter.next() {
+                    Some(Ok(v)) => Some(v),
+                    Some(Err(e)) => {
+                        last_err = Some(e);
+                        None
+                    },
+                    None => None,
+                }))?;
+
+            if let Some(last_err) = last_err {
+                return Err(last_err.into());
+            }
+
+            return Ok(Arc::new(schema));
+        }
+    }
+
+    let Wrap(schema) = Wrap::<Schema>::extract(schema_obj.bind_borrowed(py))?;
+
+    Ok(Arc::new(schema))
 }
 
 pub fn to_dataset_scan(
@@ -131,14 +136,15 @@ pub fn to_dataset_scan(
             kwargs.set_item(intern!(py, "pyarrow_predicate"), pyarrow_predicate)?;
         }
 
-        let Some((scan, version)): Option<(Py<PyAny>, Wrap<PlSmallStr>)> = py_spawn_call(
-            py,
-            &dataset_object.getattr(py, intern!(py, "to_dataset_scan"))?,
-            (),
-            Some(&kwargs),
-            py_scan_resolve_threadpool,
-        )?
-        .extract(py)?
+        let Some((scan, version)): Option<(Py<PyAny>, Wrap<PlSmallStr>)> =
+            py_scan_resolve_threadpool
+                .spawn_call(
+                    py,
+                    &dataset_object.getattr(py, intern!(py, "to_dataset_scan"))?,
+                    (),
+                    Some(&kwargs),
+                )?
+                .extract(py)?
         else {
             return Ok(None);
         };
@@ -151,36 +157,4 @@ pub fn to_dataset_scan(
 
         Ok(Some((lf.logical_plan, version.0)))
     })
-}
-
-fn py_spawn_call<'a>(
-    py: Python<'a>,
-    function: &Py<PyAny>,
-    args: impl PyCallArgs<'a>,
-    kwargs: Option<&pyo3::Bound<'a, PyDict>>,
-    py_scan_resolve_threadpool: &PyScanResolveThreadPool,
-) -> PyResult<Py<PyAny>> {
-    if LazyLock::get(&FN_POOL_WRAP_CLS).is_none() {
-        // Initialization needs GIL, so we must release it to avoid deadlock.
-        py.detach(|| {
-            LazyLock::force(&FN_POOL_WRAP_CLS);
-        })
-    }
-
-    return FN_POOL_WRAP_CLS
-        .call1(py, (function, py_scan_resolve_threadpool))?
-        .call(py, args, kwargs);
-
-    static FN_POOL_WRAP_CLS: LazyLock<Py<PyAny>> = LazyLock::new(|| {
-        Python::attach(|py| {
-            (|| {
-                PyResult::Ok(
-                    py.import("polars._utils.threading")?
-                        .getattr("FnPoolWrap")?
-                        .unbind(),
-                )
-            })()
-            .unwrap()
-        })
-    });
 }

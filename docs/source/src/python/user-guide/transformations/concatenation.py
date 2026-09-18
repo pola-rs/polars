@@ -46,7 +46,6 @@ df_horizontal_concat = pl.concat(
         df_h2,
     ],
     how="horizontal",
-    strict=True,
 )
 print(df_horizontal_concat)
 # --8<-- [end:horizontal]

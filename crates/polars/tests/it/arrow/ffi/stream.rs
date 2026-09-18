@@ -1,6 +1,6 @@
-use arrow::array::*;
-use arrow::datatypes::Field;
-use arrow::ffi;
+use polars_arrow::array::*;
+use polars_arrow::datatypes::Field;
+use polars_arrow::ffi;
 use polars_error::{PolarsError, PolarsResult};
 
 fn _test_round_trip(arrays: Vec<Box<dyn Array>>) -> PolarsResult<()> {

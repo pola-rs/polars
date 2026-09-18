@@ -7,6 +7,10 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 inf = float("inf")
 
+# `cut` is deprecated in favour of `bin_intervals`/`bin_quantiles`/`bin_ranks`,
+# but remains covered until it is removed.
+pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+
 
 def test_cut() -> None:
     s = pl.Series("a", [-2, -1, 0, 1, 2])
@@ -140,3 +144,14 @@ def test_cut_fast_unique_15981(
     assert_series_equal(s_cut.cast(pl.String), expected_labels)
     assert s_cut.n_unique() == s_cut.to_physical().n_unique() == expected_unique
     s_cut.to_frame().group_by(s.name).len()
+
+
+@pytest.mark.filterwarnings("default::DeprecationWarning")
+def test_cut_deprecated() -> None:
+    s = pl.Series("a", [-2, -1, 0, 1, 2])
+
+    with pytest.deprecated_call(match=r"`cut` is deprecated; use `bin_intervals`"):
+        s.cut([-1, 1])
+
+    with pytest.deprecated_call(match=r"`cut` is deprecated; use `bin_intervals`"):
+        pl.select(pl.lit(s).cut([-1, 1]))

@@ -143,3 +143,17 @@ def test_datetime_from_empty_column() -> None:
 
     assert df.select(datetime=pl.datetime("year", 1, 1)).shape == (0, 1)
     assert df.with_columns(datetime=pl.datetime("year", 1, 1)).shape == (0, 2)
+
+
+def test_datetime_name() -> None:
+    df = pl.DataFrame(
+        {
+            "year": [2001, 2002, 2003],
+            "month": [1, 2, 3],
+            "day": [1, 2, 3],
+            "hour": [23, 12, 8],
+        }
+    )
+
+    assert df.select(pl.datetime("year", "month", "day", "hour")).columns == ["year"]
+    assert df.select(pl.datetime(2024, "month", "day", "hour")).columns == ["literal"]

@@ -39,6 +39,7 @@ impl EvictIdx {
         (self.0 >> (IdxSize::BITS - 1)) != 0
     }
 
+    #[inline]
     pub fn cast_slice(idxs: &[IdxSize]) -> &[EvictIdx] {
         // SAFETY: same size and align, repr(transparent).
         unsafe { std::slice::from_raw_parts(idxs.as_ptr() as *const EvictIdx, idxs.len()) }

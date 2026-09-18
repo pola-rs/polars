@@ -8,7 +8,6 @@ from typing import (
     Any,
     Literal,
     Protocol,
-    TypedDict,
     TypeVar,
     Union,
 )
@@ -245,6 +244,8 @@ PivotAgg: TypeAlias = Literal[
 QuantileMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear", "equiprobable"
 ]
+ApproxQuantileMethod: TypeAlias = Literal["auto", "kll", "req_lo", "req_hi", "req_both"]
+ApproxQuantileErrorBound: TypeAlias = Literal["empirical", "formal"]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
 RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero", "to_zero"]
@@ -285,8 +286,9 @@ AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofS
 ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
 InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
-    "inner", "left", "right", "full", "semi", "anti", "cross", "outer"
+    "inner", "left", "right", "full", "semi", "anti", "cross"
 ]  # JoinType
+JoinWhereStrategy: TypeAlias = Literal["inner", "left", "right"]  # JoinType
 ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side
@@ -372,18 +374,9 @@ ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
 # typevars for core polars types
 PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
-BufferInfo: TypeAlias = tuple[int, int, int]
 
 # type alias for supported spreadsheet engines
 ExcelSpreadsheetEngine: TypeAlias = Literal["calamine", "openpyxl", "xlsx2csv"]
-
-
-class SeriesBuffers(TypedDict):
-    """Underlying buffers of a Series."""
-
-    values: Series
-    validity: Series | None
-    offsets: Series | None
 
 
 # minimal protocol definitions that can reasonably represent
@@ -475,7 +468,6 @@ JSONEncoder = Callable[[Any], bytes] | Callable[[Any], str]
 DeprecationType: TypeAlias = Literal[
     "function",
     "renamed_parameter",
-    "streaming_parameter",
     "nonkeyword_arguments",
     "parameter_as_multi_positional",
 ]
@@ -484,12 +476,13 @@ DeprecationType: TypeAlias = Literal[
 __all__ = [
     "Alignment",
     "Ambiguous",
+    "ApproxQuantileErrorBound",
+    "ApproxQuantileMethod",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
     "AsofJoinStrategy",
     "AvroCompression",
     "BooleanMask",
-    "BufferInfo",
     "CategoricalOrdering",
     "ClosedInterval",
     "ColumnFormatDict",
@@ -528,8 +521,8 @@ __all__ = [
     "JaxExportType",
     "JoinStrategy",
     "JoinValidation",
+    "JoinWhereStrategy",
     "Label",
-    "ListToStructWidthStrategy",
     "MaintainOrderJoin",
     "MapElementsStrategy",
     "MultiColSelector",
@@ -563,7 +556,6 @@ __all__ = [
     "SearchSortedSide",
     "SelectorType",
     "SerializationFormat",
-    "SeriesBuffers",
     "SingleColSelector",
     "SingleIndexSelector",
     "SingleNameSelector",

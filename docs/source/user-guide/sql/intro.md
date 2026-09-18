@@ -61,8 +61,8 @@ Dataframes with:
 SQL queries are always executed in lazy mode to take advantage of the full set of query planning
 optimizations, so we have two options to collect the result:
 
-- Set the parameter `eager_execution` to True in `SQLContext`; this ensures that Polars
-  automatically collects the LazyFrame results from `execute` calls.
+- Set the parameter `eager` to True in `SQLContext`; this ensures that Polars automatically collects
+  the LazyFrame results from `execute` calls.
 - Set the parameter `eager` to True when executing a query with `execute`, or explicitly collect the
   result using `collect`.
 

@@ -48,8 +48,15 @@ impl ColumnChunkMetadata {
 
     /// The [`ColumnDescriptor`] for this column. This descriptor contains
     /// the physical and logical type of the pages.
+    #[inline]
     pub fn descriptor(&self) -> &ColumnDescriptor {
         &self.column_descr
+    }
+
+    /// Position of this column among the leaves of the file's schema.
+    #[inline]
+    pub fn leaf_index(&self) -> usize {
+        self.column_descr.leaf_index()
     }
 
     /// The [`PhysicalType`] of this column.
@@ -78,8 +85,19 @@ impl ColumnChunkMetadata {
     /// Total number of values in this column chunk. Note that this is not
     /// necessarily the number of rows. E.g. the (nested) array `[[1, 2], [3]]`
     /// has 2 rows and 3 values.
+    #[inline]
     pub fn num_values(&self) -> i64 {
         self.compact_metadata().num_values
+    }
+
+    /// Null count from the chunk statistics
+    pub fn null_count(&self) -> Option<i64> {
+        self.compact_metadata().statistics.as_ref()?.null_count
+    }
+
+    /// Distinct count from the chunk statistics
+    pub fn distinct_count(&self) -> Option<i64> {
+        self.compact_metadata().statistics.as_ref()?.distinct_count
     }
 
     /// [`Compression`] for this column.
@@ -93,6 +111,7 @@ impl ColumnChunkMetadata {
     }
 
     /// Returns the total uncompressed data size of this column chunk.
+    #[inline]
     pub fn uncompressed_size(&self) -> i64 {
         self.compact_metadata().total_uncompressed_size
     }
@@ -155,6 +174,7 @@ impl ColumnChunkMetadata {
     /// Build from a [`CompactColumnChunk`] + descriptor handle.
     /// Infallible: the decoder rejects malformed chunks (missing
     /// `meta_data`) up front, so by here the invariant is type-enforced.
+    #[inline]
     pub(crate) fn from_compact(
         column_descr: ColumnDescriptorRef,
         column_chunk: CompactColumnChunk,

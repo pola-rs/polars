@@ -215,10 +215,6 @@ fn create_physical_expr_inner(
             let group_by =
                 create_physical_expressions_from_nodes(&partition_by, expr_arena, schema, state)?;
             let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
-            // sort and then dedup removes consecutive duplicates == all duplicates
-            apply_columns.sort();
-            apply_columns.dedup();
-
             if apply_columns.is_empty() {
                 if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
                     apply_columns.push(get_literal_name())

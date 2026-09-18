@@ -13,6 +13,7 @@ from polars.exceptions import ComputeError
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
+    _new_pyiceberg_scan,
     _normalize_windows_iceberg_file_uri,
     extract_field_initial_default,
     try_convert_pyarrow_predicate,
@@ -209,6 +210,8 @@ class IcebergScanResolver:
 
     table: IcebergTableWrap
     snapshot_id: int | None
+    from_snapshot_id_exclusive: int | None
+    to_snapshot_id_inclusive: int | None
     reader_override: Literal["native", "pyiceberg"] | None
     use_metadata_statistics: bool
     fast_deletion_count: bool
@@ -220,7 +223,26 @@ class IcebergScanResolver:
 
     def schema(self) -> pa.schema:
         """Fetch the schema of the table."""
-        return self.table.arrow_schema()
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        if self.snapshot_id is None:
+            return self.table.arrow_schema()
+
+        snapshot = self.table.get().snapshot_by_id(self.snapshot_id)
+
+        if snapshot is None:
+            msg = f"iceberg snapshot ID not found: {self.snapshot_id}"
+            raise ValueError(msg)
+
+        schema_id = snapshot.schema_id
+
+        if schema_id is None:
+            msg = (
+                f"IcebergScanResolver: requested snapshot {self.snapshot_id} "
+                "did not contain a schema ID"
+            )
+            raise ValueError(msg)
+        return schema_to_pyarrow(self.table.get().schemas()[schema_id])
 
     def to_dataset_scan(
         self,
@@ -280,6 +302,8 @@ class IcebergScanResolver:
             eprint(
                 "IcebergScanResolver: to_dataset_scan(): "
                 f"snapshot ID: {self.snapshot_id}, "
+                f"from snapshot ID exclusive: {self.from_snapshot_id_exclusive}, "
+                f"to snapshot ID inclusive: {self.to_snapshot_id_inclusive}, "
                 f"limit: {limit}, "
                 f"projection: {projection}, "
                 f"filter_columns: {filter_columns}, "
@@ -303,6 +327,10 @@ class IcebergScanResolver:
             )
 
         snapshot_id = self.snapshot_id
+        is_incremental = (
+            self.from_snapshot_id_exclusive is not None
+            or self.to_snapshot_id_inclusive is not None
+        )
         schema_id = None
 
         if snapshot_id is not None:
@@ -327,8 +355,19 @@ class IcebergScanResolver:
             iceberg_schema = tbl.schema()
             schema_id = tbl.metadata.current_schema_id
 
+            current_snapshot_id = (
+                v.snapshot_id if (v := tbl.current_snapshot()) is not None else None
+            )
+            resolved_end_snapshot_id = (
+                self.to_snapshot_id_inclusive
+                if self.to_snapshot_id_inclusive is not None
+                else current_snapshot_id
+            )
             snapshot_id_key = (
-                f"{v.snapshot_id}" if (v := tbl.current_snapshot()) is not None else ""
+                f"incremental:{self.from_snapshot_id_exclusive}:"
+                f"{resolved_end_snapshot_id}:schema:{schema_id}"
+                if is_incremental
+                else f"{current_snapshot_id or ''}"
             )
 
         if (
@@ -381,6 +420,7 @@ class IcebergScanResolver:
         }
 
         sources = []
+        source_sizes = []
         missing_field_defaults = IdentityTransformedPartitionValuesBuilder(
             tbl,
             projected_iceberg_schema,
@@ -405,8 +445,11 @@ class IcebergScanResolver:
 
             start_time = perf_counter()
 
-            scan = tbl.scan(
+            scan = _new_pyiceberg_scan(
+                tbl,
                 snapshot_id=snapshot_id,
+                from_snapshot_id_exclusive=self.from_snapshot_id_exclusive,
+                to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,
                 limit=limit,
                 selected_fields=selected_fields,
             )
@@ -478,6 +521,7 @@ class IcebergScanResolver:
                 sources.append(
                     _normalize_windows_iceberg_file_uri(file_info.file.file_path)
                 )
+                source_sizes.append(file_info.file.file_size_in_bytes)
 
             if verbose:
                 elapsed = perf_counter() - start_time
@@ -520,6 +564,7 @@ class IcebergScanResolver:
 
             return _NativeIcebergScanData(
                 sources=sources,
+                source_sizes=source_sizes,
                 projected_iceberg_schema=projected_iceberg_schema,
                 column_mapping=column_mapping,
                 default_values=(identity_transformed_values, initial_defaults),
@@ -555,6 +600,8 @@ class IcebergScanResolver:
             polars.io.iceberg._utils._scan_pyarrow_dataset_impl,
             tbl,
             snapshot_id=snapshot_id,
+            from_snapshot_id_exclusive=self.from_snapshot_id_exclusive,
+            to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,
             n_rows=limit,
             with_columns=projection,
             iceberg_table_filter=iceberg_table_filter,
@@ -582,6 +629,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     """Resolved parameters for a native Iceberg scan."""
 
     sources: list[str]
+    source_sizes: list[int]
     projected_iceberg_schema: pyiceberg.schema.Schema
     column_mapping: pa.Schema
     default_values: tuple[dict[int, pl.Series | str], dict[int, pl.Series]]
@@ -603,6 +651,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
 
         return scan_parquet(
             self.sources,
+            glob=False,
             cast_options=ScanCastOptions._default_iceberg(),
             missing_columns="insert",
             extra_columns="ignore",
@@ -615,6 +664,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
             ),
             _table_statistics=self.min_max_statistics,
             _row_count=self.row_count,
+            _source_sizes=self.source_sizes,
         )
 
 

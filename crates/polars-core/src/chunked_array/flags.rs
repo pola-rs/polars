@@ -53,26 +53,34 @@ impl From<StatisticsFlags> for StatisticsFlagsIM {
 }
 
 impl StatisticsFlagsIM {
+    #[inline]
     pub fn new(value: StatisticsFlags) -> Self {
         Self {
             inner: RelaxedCell::from(value.bits()),
         }
     }
 
+    #[inline]
     pub fn empty() -> Self {
         Self::new(StatisticsFlags::empty())
     }
 
+    #[inline]
     pub fn get_mut(&mut self) -> StatisticsFlags {
         StatisticsFlags::from_bits(*self.inner.get_mut()).unwrap()
     }
+
+    #[inline]
     pub fn set_mut(&mut self, value: StatisticsFlags) {
         *self.inner.get_mut() = value.bits();
     }
 
+    #[inline]
     pub fn get(&self) -> StatisticsFlags {
         StatisticsFlags::from_bits(self.inner.load()).unwrap()
     }
+
+    #[inline]
     pub fn set(&self, value: StatisticsFlags) {
         self.inner.store(value.bits());
     }
@@ -104,6 +112,7 @@ impl StatisticsFlags {
         self.insert(is_sorted);
     }
 
+    #[inline]
     pub fn is_sorted_any(&self) -> bool {
         self.contains(Self::IS_SORTED_ASC) | self.contains(Self::IS_SORTED_DSC)
     }

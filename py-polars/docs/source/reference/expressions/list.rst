@@ -50,6 +50,7 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.sum
     Expr.list.tail
     Expr.list.to_array
+    Expr.list.to_map
     Expr.list.to_struct
     Expr.list.unique
     Expr.list.var

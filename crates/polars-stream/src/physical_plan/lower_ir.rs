@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
-use arrow::datatypes::ArrowDataType;
 use parking_lot::Mutex;
+use polars_arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor::ALLOW_RAYON_THREADS;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
@@ -10,11 +10,11 @@ use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_core::{SchemaExtPl, config};
+use polars_defs::join::{JoinType, MaintainOrderJoin};
 use polars_error::{PolarsResult, polars_ensure};
 use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
-use polars_ops::frame::JoinType;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
@@ -41,7 +41,10 @@ use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::Forb
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::ZipBehavior;
-use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
+use crate::physical_plan::lower_expr::{
+    ExprCache, LowerExprContext, build_hstack_stream_with_ctx, build_select_stream,
+    is_elementwise_rec_cached, lower_exprs,
+};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -83,45 +86,51 @@ pub fn build_filter_stream(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
-    let predicate = predicate;
-    let cols_and_predicate = input
-        .output_schema(phys_sm)
-        .iter_names()
-        .cloned()
-        .map(|name| {
-            ExprIR::new(
-                expr_arena.add(AExpr::Column(name.clone())),
-                OutputName::ColumnLhs(name),
-            )
-        })
-        .chain([predicate])
-        .collect_vec();
-    let (trans_input, mut trans_cols_and_predicate) = lower_exprs(
-        input,
-        &cols_and_predicate,
+    let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
-        expr_cache,
-        ctx,
-    )?;
-
-    let filter_schema = trans_input.output_schema(phys_sm).clone();
-    let filter = PhysNodeKind::Filter {
-        input: trans_input,
-        predicate: trans_cols_and_predicate.last().unwrap().clone(),
-        projection: None,
+        cache: expr_cache,
+        prepare_visualization: ctx.prepare_visualization,
+        sortedness: ctx.sortedness,
+        node_scratch: &mut Default::default(),
+        ae_height_scratch: &mut Default::default(),
     };
+    build_filter_stream_with_ctx(input, predicate, &mut ctx)
+}
 
-    let post_filter = phys_sm.insert(PhysNode::new(filter_schema, filter));
-    trans_cols_and_predicate.pop(); // Remove predicate.
-    build_select_stream(
-        PhysStream::first(post_filter),
-        &trans_cols_and_predicate,
-        expr_arena,
-        phys_sm,
-        expr_cache,
-        ctx,
-    )
+pub(crate) fn build_filter_stream_with_ctx(
+    input: PhysStream,
+    predicate: ExprIR,
+    ctx: &mut LowerExprContext,
+) -> PolarsResult<PhysStream> {
+    let input_schema = input.output_schema(ctx.phys_sm).clone();
+
+    if is_elementwise_rec_cached(predicate.node(), ctx.expr_arena, ctx.cache) {
+        let kind = PhysNodeKind::Filter {
+            input,
+            predicate,
+            projection: None,
+        };
+        return Ok(PhysStream::first(
+            ctx.phys_sm.insert(PhysNode::new(input_schema, kind)),
+        ));
+    }
+
+    let pred_name = unique_column_name();
+    let with_pred =
+        build_hstack_stream_with_ctx(input, &[predicate.with_alias(pred_name.clone())], ctx)?;
+
+    let kind = PhysNodeKind::Filter {
+        input: with_pred,
+        predicate: ExprIR::from_column_name(pred_name, ctx.expr_arena),
+        projection: Some((
+            input_schema.iter_names_cloned().collect(),
+            input_schema.len() + 1,
+        )),
+    };
+    Ok(PhysStream::first(
+        ctx.phys_sm.insert(PhysNode::new(input_schema, kind)),
+    ))
 }
 
 /// Creates a new PhysStream with row index attached with the given name.
@@ -192,6 +201,7 @@ pub fn lower_ir(
 
     let ir_node = ir_arena.get(node);
     let output_schema = IR::schema_with_cache(node, ir_arena, schema_cache);
+
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
             disable_morsel_split.get_or_insert(true);
@@ -419,7 +429,9 @@ pub fn lower_ir(
                 },
 
                 function if function.is_streamable() => {
-                    let map = Arc::new(move |df| function.evaluate(df));
+                    let map = Arc::new(move |df| {
+                        polars_mem_engine::function_ir::evaluate_function_ir(&function, df)
+                    });
                     let format_str = ctx.prepare_visualization.then(|| {
                         let mut buffer = String::new();
                         write_ir_non_recursive(
@@ -471,7 +483,7 @@ pub fn lower_ir(
                             }
                         }
 
-                        function.evaluate(df)
+                        polars_mem_engine::function_ir::evaluate_function_ir(&function, df)
                     });
                     PhysNodeKind::InMemoryMap {
                         input: phys_input,
@@ -757,13 +769,15 @@ pub fn lower_ir(
                         // time; it only takes source 0's footer as its
                         // initial hint.
                         metadata_per_source,
-                        bytes_per_source: _,
+                        bytes_per_source,
                     } => Arc::new(
                         crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
                             options: Arc::new(options.clone()),
                             first_metadata: metadata_per_source.first_metadata().cloned(),
+                            bytes_per_source: bytes_per_source.clone(),
                             pipeline_budget: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
+                            file_read_context: std::sync::OnceLock::new(),
                             io_metrics: std::sync::OnceLock::new(),
                         },
                     ) as _,
@@ -829,7 +843,16 @@ pub fn lower_ir(
 
                     FileScanIR::ExpandedPaths { name: _ } => unreachable!(),
 
-                    FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
+                    FileScanIR::Anonymous { .. } => {
+                        return lower_subtree_to_inmem_engine(
+                            node,
+                            output_schema,
+                            ir_arena,
+                            expr_arena,
+                            phys_sm,
+                            ctx,
+                        );
+                    },
                 };
 
                 {
@@ -865,6 +888,8 @@ pub fn lower_ir(
                     let extra_columns_policy = match &*scan_type {
                         #[cfg(feature = "parquet")]
                         FileScanIR::Parquet { .. } => unified_scan_args.extra_columns_policy,
+                        #[cfg(feature = "csv")]
+                        FileScanIR::Csv { .. } => unified_scan_args.extra_columns_policy,
 
                         _ => {
                             if unified_scan_args.projection.is_some() {
@@ -901,6 +926,7 @@ pub fn lower_ir(
                         predicate_file_skip_applied,
                         hive_parts,
                         cast_columns_policy: unified_scan_args.cast_columns_policy,
+                        extra_columns_policy: unified_scan_args.extra_columns_policy,
                         missing_columns_policy: unified_scan_args.missing_columns_policy,
                         forbid_extra_columns,
                         include_file_paths: unified_scan_args.include_file_paths,
@@ -1035,31 +1061,29 @@ pub fn lower_ir(
             input_left,
             input_right,
             schema: _,
-            left_on,
-            right_on,
             options,
         } => {
-            if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate: _ }) = &options.options {
-                // Should not have been created by the optimizer.
-                panic!()
-            };
-
             #[cfg(feature = "iejoin")]
             const RANGE_JOIN_PREFER_DESCENDING: bool = false;
+
+            options.ensure_executable()?;
 
             #[allow(unused_mut)]
             let (mut input_left, mut input_right) = (*input_left, *input_right);
             let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
             let input_right_schema = IR::schema_with_cache(input_right, ir_arena, schema_cache);
-            let left_on = left_on.clone();
-            let right_on = right_on.clone();
+            let (left_on, right_on) = options.options.key_vecs();
             let get_expr_name = |e: &ExprIR| e.output_name().clone();
             let left_on_names = left_on.iter().map(get_expr_name).collect_vec();
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
             let mut tmp_left_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
+            let runtime_filters = options.runtime_filters.clone();
             let options = options.options.clone();
+            // Only the hash equi join evaluates a fused predicate natively; other strategies get
+            // a `Filter` on top, and the in-memory fallback applies it from `options`.
+            let mut fused_predicate = options.fused_predicate().cloned();
             #[cfg(feature = "asof_join")]
             let asof_options = || match args.how {
                 JoinType::AsOf(ref asof_options) => asof_options,
@@ -1198,11 +1222,17 @@ pub fn lower_ir(
             #[cfg(not(feature = "asof_join"))]
             let use_streaming_asof_join = false;
 
+            // A non-equality match condition is native to the range-join node, and to the
+            // equi join as a fused predicate; anything else falls back to the in-memory engine.
+            let match_condition_supported =
+                options.is_pure_equi() || options.has_fused_predicate() || args.how.is_range();
+
             if (args.how.is_equi()
                 || args.how.is_semi_anti()
                 || args.how.is_cross()
                 || use_streaming_asof_join
                 || args.how.is_range())
+                && match_condition_supported
                 && !args.validation.needs_checks()
             {
                 // When lowering the expressions for the keys we need to ensure we keep around the
@@ -1294,7 +1324,11 @@ pub fn lower_ir(
                     _ if args.how.is_range() => {
                         use crate::nodes::joins::range_join::left_is_point;
 
-                        let Some(JoinTypeOptionsIR::IEJoin(range_options)) = options else {
+                        let JoinTypeOptionsIR::Range {
+                            ie_options: range_options,
+                            ..
+                        } = options
+                        else {
                             unreachable!()
                         };
 
@@ -1360,16 +1394,25 @@ pub fn lower_ir(
                             output_bool: false,
                         },
                     )),
-                    _ if args.how.is_equi() => phys_sm.insert(PhysNode::new(
-                        output_schema,
-                        PhysNodeKind::EquiJoin {
-                            input_left: trans_input_left,
-                            input_right: trans_input_right,
-                            left_on: trans_left_on,
-                            right_on: trans_right_on,
-                            args: args.clone(),
-                        },
-                    )),
+                    _ if args.how.is_equi() => {
+                        // Only the unordered probe evaluates a fused predicate in bulk.
+                        let native = match args.maintain_order {
+                            MaintainOrderJoin::None => fused_predicate.take(),
+                            _ => None,
+                        };
+                        phys_sm.insert(PhysNode::new(
+                            output_schema,
+                            PhysNodeKind::EquiJoin {
+                                input_left: trans_input_left,
+                                input_right: trans_input_right,
+                                left_on: trans_left_on,
+                                right_on: trans_right_on,
+                                args: args.clone(),
+                                fused_predicate: native,
+                                runtime_filters: runtime_filters.clone(),
+                            },
+                        ))
+                    },
                     _ if args.how.is_cross() => phys_sm.insert(PhysNode::new(
                         output_schema,
                         PhysNodeKind::CrossJoin {
@@ -1381,6 +1424,19 @@ pub fn lower_ir(
                     _ => unreachable!(),
                 };
                 let mut stream = PhysStream::first(node);
+                // Anything the join did not take over is applied as a filter instead.
+                if let Some(fused_predicate) = fused_predicate {
+                    // A fused predicate join never carries a slice.
+                    debug_assert!(args.slice.is_none());
+                    stream = build_filter_stream(
+                        stream,
+                        fused_predicate,
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
+                    )?;
+                }
                 if let Some((offset, len)) = args.slice {
                     stream = build_slice_stream(stream, offset, len, phys_sm);
                 }
@@ -1389,8 +1445,6 @@ pub fn lower_ir(
                 PhysNodeKind::InMemoryJoin {
                     input_left: phys_left,
                     input_right: phys_right,
-                    left_on,
-                    right_on,
                     args,
                     options,
                 }
@@ -1423,8 +1477,14 @@ pub fn lower_ir(
             // by with an aggregate for each column.
             let input_schema = phys_input.output_schema(phys_sm);
             if input_schema.is_empty() {
-                // Can't group (or have duplicates) if dataframe has zero-width.
-                return Ok(phys_input);
+                // With zero width every row is identical to every other row, so
+                // at most a single row remains. This matches the zero-width case
+                // of `DataFrame::unique_impl`.
+                let mut stream = build_slice_stream(phys_input, 0, 1, phys_sm);
+                if let Some((offset, length)) = options.slice {
+                    stream = build_slice_stream(stream, offset, length, phys_sm);
+                }
+                return Ok(stream);
             }
 
             // Create the key expressions.
@@ -1637,7 +1697,6 @@ pub fn lower_ir(
 
             return Ok(stream);
         },
-        IR::ExtContext { .. } => todo!(),
         IR::UnoptimizedDispatch {
             inputs,
             arg_map,
@@ -1782,6 +1841,10 @@ pub fn lower_ir(
                 },
             }
         },
+        IR::Resolver { resolved_ir, .. } => {
+            let node = resolved_ir.expect("IR::Resolver not resolved at lower_ir");
+            return lower_ir!(node);
+        },
         IR::Invalid => unreachable!(),
     };
 
@@ -1872,4 +1935,57 @@ fn append_sorted_key_column(
         (phys_input, None)
     };
     Ok((phys_output, key_exprs, key_col_name))
+}
+
+/// Lowers the IR tree rooted at `ir_node` to the in-memory engine.
+fn lower_subtree_to_inmem_engine(
+    ir_node: Node,
+    ir_node_output_schema: Arc<Schema>,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    ctx: StreamingLowerIRContext<'_>,
+) -> PolarsResult<PhysStream> {
+    let mem_engine_executor = create_physical_plan(
+        ir_node,
+        ir_arena,
+        expr_arena,
+        Some(crate::dispatch::build_streaming_query_executor),
+    )?;
+
+    let input = phys_sm.insert(PhysNode::new(
+        Arc::new(Default::default()),
+        PhysNodeKind::InMemorySource {
+            df: Arc::new(DataFrame::empty_with_height(1)),
+            disable_morsel_split: true,
+        },
+    ));
+
+    let format_str = ctx.prepare_visualization.then(|| {
+        format!(
+            "{}",
+            IRPlanRef {
+                lp_top: ir_node,
+                lp_arena: ir_arena,
+                expr_arena,
+            }
+            .display()
+        )
+    });
+
+    let exec = parking_lot::Mutex::new(Some(mem_engine_executor));
+
+    Ok(PhysStream::first(phys_sm.insert(PhysNode::new(
+        ir_node_output_schema,
+        PhysNodeKind::InMemoryMap {
+            input: PhysStream::first(input),
+            map: Arc::new(move |_| {
+                exec.lock()
+                    .take()
+                    .unwrap()
+                    .execute(&mut ExecutionState::new())
+            }),
+            format_str,
+        },
+    ))))
 }

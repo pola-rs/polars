@@ -10,7 +10,7 @@ on:
   push:
     branches:
       - main
-      - "2.0"
+      - "1.x"
     paths:
       - crates/**
       - examples/**
@@ -58,6 +58,7 @@ jobs:
           -p polars-arrow
           -p polars-compute
           -p polars-core
+          -p polars-defs
           -p polars-io
           -p polars-lazy
           -p polars-ops
@@ -75,6 +76,7 @@ jobs:
           -p polars-arrow
           -p polars-compute
           -p polars-core
+          -p polars-defs
           -p polars-io
           -p polars-lazy
           -p polars-ops

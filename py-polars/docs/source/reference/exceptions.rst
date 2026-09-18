@@ -11,6 +11,7 @@ Errors
     :nosignatures:
 
     PolarsError
+    AttributeRemovedError
     ColumnNotFoundError
     ComputeError
     DuplicateError

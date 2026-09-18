@@ -13,8 +13,7 @@ from polars._utils.convert import parse_as_duration_string
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import RoundMode
-    from polars.type_aliases import TimeUnit
+    from polars._typing import RoundMode, TimeUnit
 
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])

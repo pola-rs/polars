@@ -2,6 +2,8 @@
 
 import pytest
 
+import polars as pl
+
 
 @pytest.mark.xfail
 def test_memory_usage() -> None:
@@ -36,3 +38,28 @@ def test_memory_usage() -> None:
     # del arr
     # peak = memory_usage.get_peak()
     # assert 1_400_000 < peak < 1_500_000
+
+
+@pytest.fixture
+def _lying_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make every `DataFrame.schema` disagree with what `collect_schema()` resolves."""
+    monkeypatch.setattr(
+        pl.DataFrame, "schema", property(lambda self: pl.Schema({"a": pl.String}))
+    )
+
+
+@pytest.mark.usefixtures("_lying_schema")
+def test_lazy_schema_check_fires() -> None:
+    with pytest.raises(AssertionError, match="Schemas are different"):
+        pl.LazyFrame({"a": [1, 2, 3]}).collect()
+
+
+@pytest.mark.may_fail_lazy_schema  # reason: deliberate
+@pytest.mark.usefixtures("_lying_schema")
+def test_lazy_schema_check_marker_suppresses() -> None:
+    pl.LazyFrame({"a": [1, 2, 3]}).collect()
+
+
+def test_lazy_schema_check_leaves_collect_errors_alone() -> None:
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        pl.LazyFrame({"a": [1]}).select(pl.col("nope")).collect()

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_utils::itertools::Itertools;
 
 use super::IR;
+use crate::dsl::dsl_resolver::DslResolverTrait;
 use crate::plans::ExprIR;
 #[cfg(feature = "python")]
 use crate::plans::{PythonOptions, PythonPredicate};
@@ -59,6 +60,8 @@ impl IR {
                     predicate: l_predicate,
                     validate_schema: l_validate_schema,
                     is_pure: l_is_pure,
+                    explain_name: _,
+                    explain_detail: _,
                 } = l_options;
                 let PythonOptions {
                     scan_fn: r_scan_fn,
@@ -70,6 +73,8 @@ impl IR {
                     predicate: r_predicate,
                     validate_schema: r_validate_schema,
                     is_pure: r_is_pure,
+                    explain_name: _,
+                    explain_detail: _,
                 } = r_options;
 
                 let scan_fn_eq = l_scan_fn.as_ref().map(|l| l.0.as_ptr())
@@ -254,24 +259,18 @@ impl IR {
                 input_left: _,
                 input_right: _,
                 schema: _,
-                left_on: l_left_on,
-                right_on: l_right_on,
                 options: l_options,
             } => {
                 let IR::Join {
                     input_left: _,
                     input_right: _,
                     schema: _,
-                    left_on: r_left_on,
-                    right_on: r_right_on,
                     options: r_options,
                 } = other
                 else {
                     return false;
                 };
-                expr_iter_eq!(l_left_on, r_left_on)
-                    && expr_iter_eq!(l_right_on, r_right_on)
-                    && l_options.shallow_eq(r_options, expression_cmp)
+                l_options.shallow_eq(r_options, expression_cmp)
             },
             IR::Gather {
                 input: _,
@@ -359,15 +358,6 @@ impl IR {
                 };
                 l_options == r_options
             },
-            IR::ExtContext {
-                input: _,
-                contexts: _,
-                schema: _,
-            } => {
-                // `input` and `contexts` are both traversal inputs (see `IR::inputs`), so they
-                // are compared via child ids. `schema` is derivative. Nothing left to compare.
-                true
-            },
             IR::Sink {
                 input: _,
                 payload: l_payload,
@@ -423,6 +413,35 @@ impl IR {
                     return false;
                 };
                 l_operation == r_operation && l_arg_map == r_arg_map
+            },
+            IR::Resolver {
+                resolver,
+                resolver_schema: _,
+                projection,
+                slice,
+                filters,
+                filter_drop_columns_idx: _,
+                resolved_dsl: _,
+                resolved_ir: _,
+            } => {
+                let IR::Resolver {
+                    resolver: r_resolver,
+                    resolver_schema: _,
+                    projection: r_projection,
+                    slice: r_slice,
+                    filters: r_filters,
+                    filter_drop_columns_idx: _,
+                    resolved_dsl: _,
+                    resolved_ir: _,
+                } = other
+                else {
+                    return false;
+                };
+
+                projection == r_projection
+                    && slice == r_slice
+                    && expr_iter_eq!(filters.iter(), r_filters.iter())
+                    && resolver.cse_eq(r_resolver).ok() == Some(true)
             },
             IR::Invalid => unreachable!("cannot compare `IR::Invalid`"),
         }

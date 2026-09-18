@@ -19,6 +19,7 @@ This page gives an overview of all public Series methods.
    export
    extension
    list
+   map
    modify_select
    miscellaneous
    operators

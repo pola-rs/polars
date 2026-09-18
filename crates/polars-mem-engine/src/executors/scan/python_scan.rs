@@ -95,24 +95,8 @@ impl Executor for PythonScanExec {
 
                 match self.options.python_source {
                     PythonScanSource::Cuda => {
-                        let args = (
-                            with_columns,
-                            predicate,
-                            n_rows,
-                            // If this boolean is true, callback should return
-                            // a dataframe and list of timings [(start, end,
-                            // name)]
-                            state.has_node_timer(),
-                        );
-                        let result = python_scan_function.call1(args)?;
-                        let df = if state.has_node_timer() {
-                            let df = result.get_item(0);
-                            let timing_info: Vec<(u64, u64, String)> = result.get_item(1)?.extract()?;
-                            state.record_raw_timings(&timing_info);
-                            df?
-                        } else {
-                            result
-                        };
+                        let args = (with_columns, predicate, n_rows);
+                        let df = python_scan_function.call1(args)?;
                         self.finish_df(py, df, state)
                     },
                     PythonScanSource::IOPlugin | PythonScanSource::Pyarrow => {
@@ -152,9 +136,7 @@ impl Executor for PythonScanExec {
                                     chunks.push(df)
                                 },
                                 Err(err) if err.matches(py, PyStopIteration::type_object(py))? => break,
-                                Err(err) => {
-                                    polars_bail!(ComputeError: "caught exception during execution of a Python source, exception: {}", err)
-                                },
+                                Err(err) => return Err(err.into()),
                             }
                         }
                         if chunks.is_empty() {

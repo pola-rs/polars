@@ -1,7 +1,10 @@
 use polars::prelude::*;
 
 #[test]
+#[cfg(feature = "concat_str")]
 fn test_datetime_parse_overflow_7631() {
+    use polars::datatypes::{AnyValue, TimeUnit};
+
     let df = df![
         "year"=> &[2020, 2021, 2022],
         "month"=> &[1, 2, 3],

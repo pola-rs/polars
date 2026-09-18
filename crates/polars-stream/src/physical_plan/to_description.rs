@@ -1,6 +1,9 @@
 use std::collections::VecDeque;
 
 use polars_core::prelude::SortMultipleOptions;
+use polars_defs::join::JoinType;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::DynamicGroupOptions;
 #[cfg(feature = "iejoin")]
 use polars_descriptions::InequalityOperatorDescription;
 #[cfg(feature = "python")]
@@ -9,18 +12,15 @@ use polars_descriptions::{
     FileProviderDescription, PhysicalNodeDescription, PhysicalPropsDescription,
     PredicateFileSkipDescription, SortColumnDescription,
 };
-use polars_ops::frame::JoinType;
-#[cfg(feature = "iejoin")]
-use polars_plan::dsl::JoinTypeOptionsIR;
 use polars_plan::dsl::{
     FileSinkOptions, PartitionStrategyIR, PartitionedSinkOptionsIR, UnifiedSinkArgs,
 };
 use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::ExprIR;
+#[cfg(feature = "iejoin")]
+use polars_plan::plans::options::JoinTypeOptionsIR;
 #[cfg(feature = "python")]
 use polars_plan::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
-#[cfg(feature = "dynamic_group_by")]
-use polars_time::DynamicGroupOptions;
 use polars_utils::aliases::{InitHashMaps, PlIndexSet};
 use polars_utils::arena::Arena;
 use polars_utils::index::idxsize_to_u64;
@@ -493,14 +493,18 @@ pub fn phys_props(
         PhysNodeKind::GroupBy {
             inputs,
             key_per_input,
+            fused_agg_inputs_per_input,
             aggs_per_input,
-            ..
         } => (
             PhysicalPropsDescription::GroupBy {
                 num_inputs: inputs.len(),
                 key_per_input: key_per_input
                     .iter()
                     .map(|k| fmt_exprs(k, expr_arena))
+                    .collect(),
+                fused_agg_inputs_per_input: fused_agg_inputs_per_input
+                    .iter()
+                    .map(|f| fmt_exprs(f, expr_arena))
                     .collect(),
                 aggs_per_input: aggs_per_input
                     .iter()
@@ -515,12 +519,16 @@ pub fn phys_props(
             left_on,
             right_on,
             args,
-            ..
+            fused_predicate,
+            runtime_filters: _,
         } => (
             PhysicalPropsDescription::EquiJoin {
                 how: format!("{}", args.how),
                 left_on: fmt_exprs(left_on, expr_arena),
                 right_on: fmt_exprs(right_on, expr_arena),
+                fused_predicate: fused_predicate
+                    .as_ref()
+                    .map(|r| fmt_exprs(std::slice::from_ref(r), expr_arena)),
                 nulls_equal: args.nulls_equal,
                 coalesce: fmt_from_static_str(args.coalesce),
                 maintain_order: fmt_from_static_str(args.maintain_order),
@@ -596,7 +604,7 @@ pub fn phys_props(
             let props = match &args.how {
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(asof_options) => {
-                    use polars_ops::prelude::AsOfOptions;
+                    use polars_defs::join::AsOfOptions;
 
                     let AsOfOptions {
                         strategy,
@@ -658,17 +666,14 @@ pub fn phys_props(
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
-            left_on,
-            right_on,
             args,
-            #[cfg(feature = "iejoin")]
             options,
-            ..
         } => {
+            let (left_on, right_on) = options.key_vecs();
             let generic_join = || PhysicalPropsDescription::InMemoryJoin {
                 how: format!("{}", args.how),
-                left_on: fmt_exprs(left_on, expr_arena),
-                right_on: fmt_exprs(right_on, expr_arena),
+                left_on: fmt_exprs(&left_on, expr_arena),
+                right_on: fmt_exprs(&right_on, expr_arena),
                 nulls_equal: args.nulls_equal,
                 coalesce: fmt_from_static_str(args.coalesce),
                 maintain_order: fmt_from_static_str(args.maintain_order),
@@ -680,7 +685,7 @@ pub fn phys_props(
             let props = match &args.how {
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(asof_options) => {
-                    use polars_ops::prelude::AsOfOptions;
+                    use polars_defs::join::AsOfOptions;
 
                     let AsOfOptions {
                         strategy,
@@ -693,8 +698,8 @@ pub fn phys_props(
                     } = asof_options.as_ref();
 
                     PhysicalPropsDescription::InMemoryAsOfJoin {
-                        left_on: fmt_exprs(left_on, expr_arena),
-                        right_on: fmt_exprs(right_on, expr_arena),
+                        left_on: fmt_exprs(&left_on, expr_arena),
+                        right_on: fmt_exprs(&right_on, expr_arena),
                         left_by: left_by
                             .as_ref()
                             .map(|v| v.iter().map(ToString::to_string).collect()),
@@ -717,11 +722,15 @@ pub fn phys_props(
                 },
                 #[cfg(feature = "iejoin")]
                 JoinType::IEJoin => match options {
-                    Some(JoinTypeOptionsIR::IEJoin(polars_ops::frame::IEJoinOptions {
-                        operator1,
-                        operator2,
-                    })) => {
-                        use polars_ops::prelude::InequalityOperator;
+                    JoinTypeOptionsIR::IEJoin {
+                        ie_options:
+                            polars_defs::join::IEJoinOptions {
+                                operator1,
+                                operator2,
+                            },
+                        ..
+                    } => {
+                        use polars_defs::join::InequalityOperator;
 
                         let to_description = |o: &InequalityOperator| match o {
                             InequalityOperator::Lt => InequalityOperatorDescription::Lt,
@@ -731,8 +740,8 @@ pub fn phys_props(
                         };
 
                         PhysicalPropsDescription::InMemoryIEJoin {
-                            left_on: fmt_exprs(left_on, expr_arena),
-                            right_on: fmt_exprs(right_on, expr_arena),
+                            left_on: fmt_exprs(&left_on, expr_arena),
+                            right_on: fmt_exprs(&right_on, expr_arena),
                             inequality_operators: if let Some(operator2) = operator2 {
                                 vec![to_description(operator1), to_description(operator2)]
                             } else {

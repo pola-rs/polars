@@ -7,7 +7,6 @@ pub struct StackExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) has_windows: bool,
     pub(crate) exprs: Vec<Arc<dyn PhysicalExpr>>,
-    pub(crate) input_schema: SchemaRef,
     pub(crate) output_schema: SchemaRef,
     pub(crate) options: ProjectionOptions,
     // Can run all operations elementwise
@@ -70,7 +69,7 @@ impl StackExec {
                 // possibly mismatching column lengths.
                 unsafe { df.columns_mut() }.extend(res);
             } else {
-                let (df_height, df_width) = df.shape();
+                let df_height = df.height();
 
                 // When we have CSE we cannot verify scalars yet.
                 let verify_scalar = if !df.columns().is_empty() {
@@ -82,7 +81,7 @@ impl StackExec {
                 };
                 for (i, c) in res.iter().enumerate() {
                     let len = c.len();
-                    if verify_scalar && len != df_height && len == 1 && df_width > 0 {
+                    if verify_scalar && len != df_height && len == 1 {
                         #[allow(clippy::collapsible_if)]
                         if !self.exprs[i].is_scalar()
                             && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1")
@@ -119,24 +118,6 @@ impl Executor for StackExec {
             }
         }
         let df = self.input.execute(state)?;
-
-        let profile_name = if state.has_node_timer() {
-            let by = self
-                .exprs
-                .iter()
-                .map(|s| profile_name(s.as_ref(), self.input_schema.as_ref()))
-                .collect::<PolarsResult<Vec<_>>>()?;
-            let name = comma_delimited("with_column".to_string(), &by);
-            Cow::Owned(name)
-        } else {
-            Cow::Borrowed("")
-        };
-
-        if state.has_node_timer() {
-            let new_state = state.clone();
-            new_state.record(|| self.execute_impl(state, df), profile_name)
-        } else {
-            self.execute_impl(state, df)
-        }
+        self.execute_impl(state, df)
     }
 }

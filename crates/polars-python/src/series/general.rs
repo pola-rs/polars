@@ -1,7 +1,6 @@
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
-use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -43,18 +42,6 @@ impl PySeries {
             Err(_) => false,
             Ok(list) => list._can_fast_explode(),
         }
-    }
-
-    pub fn cat_uses_lexical_ordering(&self) -> PyResult<bool> {
-        Ok(true)
-    }
-
-    pub fn cat_is_local(&self) -> PyResult<bool> {
-        Ok(false)
-    }
-
-    pub fn cat_to_local(&self, _py: Python) -> PyResult<Self> {
-        Ok(self.clone())
     }
 
     fn estimated_size(&self) -> usize {
@@ -460,7 +447,7 @@ impl PySeries {
     #[pyo3(signature = (offset, length))]
     fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         let s = self.series.read();
-        let length = length.unwrap_or_else(|| s.len());
+        let length = length.unwrap_or(usize::MAX);
         s.slice(offset, length).into()
     }
 
@@ -494,7 +481,7 @@ impl PySeries {
                 let ambiguous = ambiguous.series.into_inner();
                 let ambiguous = ambiguous.str()?;
 
-                polars_time::prelude::string::infer::to_datetime_with_inferred_tz(
+                polars_core::chunked_array::temporal::string::infer::to_datetime_with_inferred_tz(
                     datetime_strings,
                     time_unit.map_or(TimeUnit::Microseconds, |v| v.0),
                     strict,
@@ -512,33 +499,6 @@ impl PySeries {
             let ca = s.str()?;
             ca.to_decimal_infer(inference_length).map(Series::from)
         })
-    }
-
-    pub fn list_to_struct(
-        &self,
-        py: Python<'_>,
-        width_strat: Wrap<ListToStructWidthStrategy>,
-        name_gen: Option<Py<PyAny>>,
-    ) -> PyResult<Self> {
-        py.enter_polars(|| {
-            let get_index_name =
-                name_gen.map(|f| PlanCallback::<usize, String>::new_python(PythonObject(f)));
-            let get_index_name = get_index_name.map(|f| {
-                NameGenerator(Arc::new(move |i| f.call(i).map(PlSmallStr::from)) as Arc<_>)
-            });
-            self.series
-                .read()
-                .list()?
-                .to_struct(&ListToStructArgs::InferWidth {
-                    infer_field_strategy: width_strat.0,
-                    get_index_name,
-                    max_fields: None,
-                })
-                .map(IntoSeries::into_series)
-        })
-        .map(Into::into)
-        .map_err(PyPolarsErr::from)
-        .map_err(PyErr::from)
     }
 
     #[cfg(feature = "extract_jsonpath")]

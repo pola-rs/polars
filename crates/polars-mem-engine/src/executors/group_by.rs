@@ -26,7 +26,6 @@ pub struct GroupByExec {
     aggs: Vec<Arc<dyn PhysicalExpr>>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     maintain_order: bool,
-    input_schema: SchemaRef,
     output_schema: SchemaRef,
     slice: Option<(i64, usize)>,
 }
@@ -39,7 +38,6 @@ impl GroupByExec {
         aggs: Vec<Arc<dyn PhysicalExpr>>,
         apply: Option<PlanCallback<DataFrame, DataFrame>>,
         maintain_order: bool,
-        input_schema: SchemaRef,
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
@@ -49,7 +47,6 @@ impl GroupByExec {
             aggs,
             apply,
             maintain_order,
-            input_schema,
             output_schema,
             slice,
         }
@@ -130,24 +127,6 @@ impl Executor for GroupByExec {
             eprintln!("keys/aggregates are not partitionable: running default HASH AGGREGATION")
         }
         let df = self.input.execute(state)?;
-
-        let profile_name = if state.has_node_timer() {
-            let by = self
-                .keys
-                .iter()
-                .map(|s| Ok(s.to_field(&self.input_schema)?.name))
-                .collect::<PolarsResult<Vec<_>>>()?;
-            let name = comma_delimited("group_by".to_string(), &by);
-            Cow::Owned(name)
-        } else {
-            Cow::Borrowed("")
-        };
-
-        if state.has_node_timer() {
-            let new_state = state.clone();
-            new_state.record(|| self.execute_impl(state, df), profile_name)
-        } else {
-            self.execute_impl(state, df)
-        }
+        self.execute_impl(state, df)
     }
 }

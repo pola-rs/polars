@@ -6,7 +6,7 @@
 # BUILD
 # -----
 
-maturin<=1.12.4  # https://github.com/PyO3/maturin/issues/3106
+maturin>=1.13.0  # 1.12.5/1.12.6 regress macOS build times: https://github.com/PyO3/maturin/issues/3106
 # extra dependency for maturin (linux-only)
 patchelf; platform_system == 'Linux'
 pip
@@ -36,7 +36,7 @@ azure-identity
 boto3
 cloudpickle
 fsspec
-pyiceberg>=0.9.0; python_version < '3.13'
+pyiceberg>=0.12.0; python_version < '3.13'
 pyiceberg-core!=0.9.0  # 0.9.0 is missing a wheel
 s3fs>=2026.2.0
 # Spreadsheet
@@ -65,7 +65,6 @@ orjson
 # TOOLING
 # -------
 
-tomlkit
 pytest==9.0.3
 pytest-cov==7.1.0
 pytest-xdist==3.8.0

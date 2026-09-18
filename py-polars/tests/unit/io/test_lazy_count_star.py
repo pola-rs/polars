@@ -419,6 +419,7 @@ def test_scan_select_len_overflow_28351(plmonkeypatch: PlMonkeyPatch) -> None:
 
     for f in files:
         s.to_frame().write_ipc(f)
+        f.seek(0)
 
     assert (
         pl.scan_ipc(files).head((1 << 32) - 1).select(pl.len()).collect().item()

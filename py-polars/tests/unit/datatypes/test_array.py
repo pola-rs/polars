@@ -1,4 +1,5 @@
 import datetime
+import re
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -6,7 +7,12 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ArgumentRemovedError,
+    AttributeRemovedError,
+    ComputeError,
+    InvalidOperationError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -28,22 +34,6 @@ def test_cast_list_array() -> None:
         ComputeError, match=r"not all elements have the specified width"
     ):
         s.cast(pl.Array(pl.Int64, 2))
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_array_in_group_by_iter() -> None:
-    df = pl.DataFrame(
-        [
-            pl.Series("id", [1, 2]),
-            pl.Series("list", [[1, 2], [5, 5]], dtype=pl.Array(pl.UInt8, 2)),
-        ]
-    )
-
-    assert df.lazy().group_by("id").agg(b=pl.col("id").agg_groups()).collect_schema()[
-        "b"
-    ] == pl.List(pl.get_index_type())
-    result = next(iter(df.group_by(["id"], maintain_order=True)))[1]["list"]
-    assert result.to_list() == [[1, 2]]
 
 
 def test_array_in_group_by() -> None:
@@ -226,18 +216,12 @@ def test_arr_std(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").arr.std().name.suffix("_std"),
         pl.col("float").arr.std().name.suffix("_std"),
-        pl.col("duration").arr.std().name.suffix("_std"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_std", [1.5811388300841898], dtype=pl.Float64),
             pl.Series("float_std", [1.5811388300841898], dtype=pl.Float64),
-            pl.Series(
-                "duration_std",
-                [timedelta(microseconds=1581)],
-                dtype=pl.Duration(time_unit="us"),
-            ),
         ]
     )
 
@@ -313,7 +297,7 @@ def test_arr_median(data_dispersion: pl.DataFrame) -> None:
 def test_array_repeat() -> None:
     dtype = pl.Array(pl.UInt8, shape=1)
     s = pl.repeat([42], n=3, dtype=dtype, eager=True)
-    expected = pl.Series("repeat", [[42], [42], [42]], dtype=dtype)
+    expected = pl.Series("literal", [[42], [42], [42]], dtype=dtype)
     assert s.dtype == dtype
     assert_series_equal(s, expected)
 
@@ -350,11 +334,13 @@ def test_ndarray_construction() -> None:
     assert (s.to_numpy() == a).all()
 
 
-def test_array_width_deprecated() -> None:
-    with pytest.deprecated_call():
-        dtype = pl.Array(pl.Int8, width=2)
-    with pytest.deprecated_call():
-        assert dtype.width == 2
+def test_array_width_removed() -> None:
+    with pytest.raises(ArgumentRemovedError, match=re.escape("use `shape` instead.")):
+        dtype = pl.Array(pl.Int8, width=2)  # type: ignore[call-arg]
+
+    dtype = pl.Array(pl.Int8, shape=2)
+    with pytest.raises(AttributeRemovedError, match=re.escape("use `size` instead.")):
+        assert dtype.width == 2  # type: ignore[attr-defined]
 
 
 def test_array_inner_recursive() -> None:
@@ -433,9 +419,7 @@ def test_zero_width_array(fn: str) -> None:
 
                 series_f(a, b)
 
-                df = pl.concat(
-                    [a.to_frame(), b.to_frame()], how="horizontal", strict=True
-                )
+                df = pl.concat([a.to_frame(), b.to_frame()], how="horizontal")
                 df.select(c=expr_f(pl.col.a, pl.col.b))
 
 

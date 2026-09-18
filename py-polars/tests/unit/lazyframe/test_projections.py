@@ -1,4 +1,5 @@
 import io
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
@@ -101,7 +102,7 @@ def test_unnest_projection_pushdown() -> None:
 def test_hconcat_projection_pushdown() -> None:
     lf1 = pl.LazyFrame({"a": [0, 1, 2], "b": [3, 4, 5]})
     lf2 = pl.LazyFrame({"c": [6, 7, 8], "d": [9, 10, 11]})
-    query = pl.concat([lf1, lf2], how="horizontal", strict=True).select(["a", "d"])
+    query = pl.concat([lf1, lf2], how="horizontal").select(["a", "d"])
 
     explanation = query.explain()
     assert explanation.count("1/2 COLUMNS") == 2
@@ -140,12 +141,11 @@ def test_unnest_columns_available() -> None:
         }
     ).lazy()
 
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        q = df.with_columns(
-            pl.col("genres")
-            .str.split("|")
-            .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
-        ).unnest("genres")
+    q = df.with_columns(
+        pl.col("genres")
+        .str.split("|")
+        .list.to_struct(["genre1", "genre2", "genre3", "genre4"])
+    ).unnest("genres")
 
     out = q.collect()
     assert out.to_dict(as_series=False) == {
@@ -892,6 +892,10 @@ def test_projection_pushdown_filter_len_to_sum() -> None:
 def test_projection_pushdown_union_len_pushdown_28657(
     union_fn: Callable[..., pl.LazyFrame],
 ) -> None:
+    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
+    if morsel_size is not None and int(morsel_size) < 1000:
+        pytest.skip("test is too slow for small morsel sizes")
+
     lf = union_fn(
         [
             pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]})

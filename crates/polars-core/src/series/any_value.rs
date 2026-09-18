@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
-use arrow::bitmap::Bitmap;
 use num_traits::AsPrimitive;
+use polars_arrow::bitmap::Bitmap;
 use polars_compute::cast::SerPrimitive;
 
 #[cfg(feature = "dtype-categorical")]
@@ -155,6 +155,27 @@ impl Series {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
+            },
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(_, _) => {
+                let entries_dtype = dtype.map_entries_dtype().unwrap();
+                let entries = values
+                    .iter()
+                    .map(|av| match av {
+                        AnyValue::Map(entries) => Ok(AnyValue::List(entries.clone())),
+                        // An empty list of entries carries no field information.
+                        AnyValue::List(entries) if entries.dtype().is_nested_null() => {
+                            Ok(AnyValue::List(entries.clone()))
+                        },
+                        AnyValue::List(entries) => {
+                            ensure_map_entries_dtype(entries.dtype())?;
+                            Ok(AnyValue::List(entries.clone()))
+                        },
+                        av => Ok(av.clone()),
+                    })
+                    .collect::<PolarsResult<Vec<AnyValue>>>()?;
+                let storage = any_values_to_list(&entries, &entries_dtype, strict)?.into_series();
+                MapChunked::try_from_storage(dtype.clone(), storage)?.into_series()
             },
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(typ, storage) => {

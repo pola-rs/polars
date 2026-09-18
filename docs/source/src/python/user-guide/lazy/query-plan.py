@@ -47,9 +47,15 @@ with open("docs/assets/images/query_plan_optimized.png", "rb") as f:
 # --8<-- [end:createplan2]
 
 """
-# --8<-- [start:show]
+# --8<-- [start:showir]
 q1.show_graph(plan_stage="ir")
-# --8<-- [end:show]
+# --8<-- [end:showir]
+"""
+
+"""
+# --8<-- [start:showphysical]
+q1.show_graph(plan_stage="physical")
+# --8<-- [end:showphysical]
 """
 
 # --8<-- [start:optimized]

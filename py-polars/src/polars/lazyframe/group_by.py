@@ -1,24 +1,18 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
-from polars._utils.deprecation import deprecated
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_df, wrap_ldf
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable, Iterable
 
     from polars import DataFrame, LazyFrame
     from polars._plr import PyLazyGroupBy
     from polars._typing import IntoExpr, QuantileMethod, SchemaDict
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 
 class LazyGroupBy:
@@ -423,37 +417,6 @@ class LazyGroupBy:
             len_expr = len_expr.alias(name)
         return self.agg(len_expr)
 
-    @deprecated("`count` was renamed; use `len` instead")
-    def count(self) -> LazyFrame:
-        """
-        Return the number of rows in each group.
-
-        .. deprecated:: 0.20.5
-            This method has been renamed to :func:`LazyGroupBy.len`.
-
-        Rows containing null values count towards the total.
-
-        Examples
-        --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": ["Apple", "Apple", "Orange"],
-        ...         "b": [1, None, 2],
-        ...     }
-        ... )
-        >>> lf.group_by("a").count().collect()  # doctest: +SKIP
-        shape: (2, 2)
-        ┌────────┬───────┐
-        │ a      ┆ count │
-        │ ---    ┆ ---   │
-        │ str    ┆ u32   │
-        ╞════════╪═══════╡
-        │ Apple  ┆ 2     │
-        │ Orange ┆ 1     │
-        └────────┴───────┘
-        """
-        return self.agg(F.len().alias("count"))
-
     def first(self, *, ignore_nulls: bool = False) -> LazyFrame:
         """
         Aggregate the first values in the group.
@@ -745,3 +708,16 @@ class LazyGroupBy:
         └────────┴─────┴──────┴─────┘
         """
         return self.agg(F.all().sum())
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "count": "`GroupBy.count` was renamed; use `GroupBy.len` instead.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)

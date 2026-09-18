@@ -4,9 +4,9 @@ pub(crate) mod polars_extension;
 
 use std::mem;
 
-use arrow::array::FixedSizeBinaryArray;
-use arrow::bitmap::BitmapBuilder;
-use arrow::datatypes::ExtensionType;
+use polars_arrow::array::FixedSizeBinaryArray;
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::datatypes::ExtensionType;
 use polars_buffer::Buffer;
 use polars_extension::PolarsExtension;
 use polars_utils::format_pl_smallstr;
@@ -47,8 +47,9 @@ struct ExtensionSentinel {
 
 impl Drop for ExtensionSentinel {
     fn drop(&mut self) {
-        let mut drop_fn = self.drop_fn.take().unwrap();
-        drop_fn()
+        if let Some(mut drop_fn) = self.drop_fn.take() {
+            (drop_fn)()
+        }
     }
 }
 

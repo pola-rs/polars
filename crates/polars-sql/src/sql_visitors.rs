@@ -7,7 +7,9 @@ use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
 use sqlparser::ast::{
-    Expr as SQLExpr, ObjectName, Query, SetExpr, Visit, Visitor as SQLVisitor, visit_expressions,
+    Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentList,
+    FunctionArguments, ObjectName, Query, SetExpr, Statement, TableFactor, Visit,
+    Visitor as SQLVisitor, visit_expressions,
 };
 use sqlparser::keywords::ALL_KEYWORDS;
 
@@ -323,10 +325,26 @@ impl SQLVisitor for ColumnRefFinder {
     type Break = ();
 
     fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
-        if matches!(
-            expr,
-            SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_)
-        ) {
+        let is_column_ref = match expr {
+            SQLExpr::Identifier(_)
+            | SQLExpr::CompoundIdentifier(_)
+            | SQLExpr::Wildcard(_)
+            | SQLExpr::QualifiedWildcard(..) => true,
+            // wildcard arguments, eg: COUNT(*) / COLUMNS(*)
+            SQLExpr::Function(func) => match &func.args {
+                FunctionArguments::List(args) => args.args.iter().any(|arg| {
+                    matches!(
+                        arg,
+                        FunctionArg::Unnamed(
+                            FunctionArgExpr::Wildcard | FunctionArgExpr::QualifiedWildcard(_)
+                        )
+                    )
+                }),
+                _ => false,
+            },
+            _ => false,
+        };
+        if is_column_ref {
             ControlFlow::Break(())
         } else {
             ControlFlow::Continue(())
@@ -340,17 +358,118 @@ pub(crate) fn expr_references_any_column(expr: &SQLExpr) -> bool {
     expr.visit(&mut ColumnRefFinder).is_break()
 }
 
+/// Whether this expression node is itself a subquery, in any of its forms.
+pub(crate) fn is_subquery_expr(expr: &SQLExpr) -> bool {
+    matches!(
+        expr,
+        SQLExpr::Subquery(_) | SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. }
+    )
+}
+
 /// Check if a SQL expression contains a subquery, in any of its forms.
 pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
     visit_expressions(expr, |e| {
-        if matches!(
-            e,
-            SQLExpr::Subquery(_) | SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. }
-        ) {
+        if is_subquery_expr(e) {
             ControlFlow::Break(())
         } else {
             ControlFlow::Continue(())
         }
     })
     .is_break()
+}
+
+/// The argument expressions of a `GROUPING()` / `GROUPING_ID()` call; `None` for
+/// any other function or an argument list that is not plain expressions.
+pub(crate) fn grouping_call_args(func: &SQLFunction) -> Option<Vec<SQLExpr>> {
+    let is_grouping = func
+        .name
+        .0
+        .last()
+        .and_then(|p| p.as_ident())
+        .is_some_and(|i| {
+            i.value.eq_ignore_ascii_case("grouping") || i.value.eq_ignore_ascii_case("grouping_id")
+        });
+    if !is_grouping {
+        return None;
+    }
+    let FunctionArguments::List(FunctionArgumentList { args, .. }) = &func.args else {
+        return None;
+    };
+    args.iter()
+        .map(|arg| match arg {
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(e)) => Some(e.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Collect the argument lists of the `GROUPING()` calls in a SQL expression,
+/// leaving out those inside subqueries, which belong to their own query block.
+pub(crate) fn collect_grouping_calls(expr: &SQLExpr) -> Vec<Vec<SQLExpr>> {
+    struct Collector {
+        subquery_depth: usize,
+        calls: Vec<Vec<SQLExpr>>,
+    }
+    impl SQLVisitor for Collector {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.subquery_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.subquery_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            if self.subquery_depth == 0 {
+                if let SQLExpr::Function(f) = expr {
+                    if let Some(args) = grouping_call_args(f) {
+                        self.calls.push(args);
+                    }
+                }
+            }
+            ControlFlow::Continue(())
+        }
+    }
+    let mut collector = Collector {
+        subquery_depth: 0,
+        calls: Vec::new(),
+    };
+    let _ = expr.visit(&mut collector);
+    collector.calls
+}
+
+// ---------------------------------------------------------------------------
+// TableRegisteringFinder
+// ---------------------------------------------------------------------------
+
+/// Visitor that detects a relation whose execution inserts into the context's table map:
+/// an aliased derived table, an aliased `UNNEST`, or a table function.
+struct TableRegisteringFinder;
+
+impl SQLVisitor for TableRegisteringFinder {
+    type Break = ();
+
+    fn pre_visit_table_factor(&mut self, table_factor: &TableFactor) -> ControlFlow<Self::Break> {
+        let registers = match table_factor {
+            TableFactor::Derived { alias, .. } | TableFactor::UNNEST { alias, .. } => {
+                alias.is_some()
+            },
+            TableFactor::Table { args, .. } => args.is_some(),
+            _ => false,
+        };
+        if registers {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    }
+}
+
+/// Check whether executing `stmt` registers a relation into the context's table map.
+pub(crate) fn statement_registers_table(stmt: &Statement) -> bool {
+    stmt.visit(&mut TableRegisteringFinder).is_break()
 }

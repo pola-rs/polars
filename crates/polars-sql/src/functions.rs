@@ -2,14 +2,15 @@ use std::ops::{Add, Sub};
 
 use polars_core::chunked_array::ops::{FillNullStrategy, SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
-    DataType, ExplodeOptions, PolarsResult, QuantileMethod, Schema, TimeUnit, polars_bail,
+    DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit, polars_bail,
     polars_err,
 };
-use polars_lazy::dsl::Expr;
 #[cfg(feature = "rank")]
-use polars_lazy::prelude::{RankMethod, RankOptions};
-use polars_ops::chunked_array::UnicodeForm;
-use polars_ops::series::RoundMode;
+use polars_defs::expr::{RankMethod, RankOptions};
+use polars_defs::expr::{RoundMode, UnicodeForm};
+use polars_lazy::dsl::Expr;
+#[cfg(feature = "approx_quantile")]
+use polars_lazy::prelude::ApproxQuantileMethod;
 use polars_plan::dsl::functions::{
     as_struct, coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal,
     min_horizontal, when,
@@ -27,7 +28,12 @@ use sqlparser::ast::{
 use sqlparser::tokenizer::Span;
 
 use crate::SQLContext;
-use crate::sql_expr::{adjust_one_indexed_param, parse_extract_date_part, parse_sql_expr};
+use crate::grouping_sets::MAX_GROUPING_ARGS;
+use crate::sql_expr::{
+    adjust_one_indexed_param, order_by_sort_options, parse_extract_date_part, parse_sql_array,
+    parse_sql_expr,
+};
+use crate::sql_visitors::grouping_call_args;
 
 pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
@@ -310,6 +316,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT DATE_PART('year', col1) FROM df;
     /// SELECT DATE_PART('day', col1) FROM df;
     DatePart,
+    /// SQL date part accessor functions ('YEAR', 'MONTH', 'DAY', 'HOUR', etc).
+    /// Shorthand for DATE_PART with a fixed part.
+    /// ```sql
+    /// SELECT YEAR(col1), MONTH(col1), DAYOFWEEK(col1) FROM df;
+    /// ```
+    DatePartOf(DateTimeField),
     /// SQL 'strftime' function.
     /// Converts a datetime to a string using a format string.
     /// ```sql
@@ -548,6 +560,16 @@ pub(crate) enum PolarsSQLFunctions {
     // ----
     // Aggregate functions
     // ----
+    /// SQL 'approx_quantile' function.
+    /// Returns an approximation of the given quantile of the grouping, with an optional
+    /// allowed rank error and sketch method.
+    /// ```sql
+    /// SELECT APPROX_QUANTILE(col1, 0.5) FROM df;
+    /// SELECT APPROX_QUANTILE(col1, 0.5, 0.01) FROM df;
+    /// SELECT APPROX_QUANTILE(col1, 0.5, 0.01, 'kll') FROM df;
+    /// ```
+    #[cfg(feature = "approx_quantile")]
+    ApproxQuantile,
     /// SQL 'avg' function.
     /// Returns the average (mean) of all the elements in the grouping.
     /// ```sql
@@ -587,6 +609,15 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT FIRST(col1) FROM df;
     /// ```
     First,
+    /// SQL 'grouping' function.
+    /// Returns, for each argument, whether the current row's grouping set omits
+    /// that key, as bits with the last argument in the least significant position.
+    /// ```sql
+    /// SELECT col1, GROUPING(col1) FROM df GROUP BY ROLLUP(col1);
+    /// ```
+    Grouping,
+    /// SQL 'grouping_id' function; an alias for `GROUPING`.
+    GroupingId,
     /// SQL 'last' function.
     /// Returns the last element of the grouping.
     /// ```sql
@@ -730,6 +761,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT ARRAY_CONTAINS(col1, 'foo') FROM df;
     /// ```
     ArrayContains,
+    /// SQL 'array_inner_product' function (also known as `array_dot_product`).
+    /// Returns the inner product of two fixed-size arrays.
+    /// ```sql
+    /// SELECT ARRAY_INNER_PRODUCT(col1, col2) FROM df;
+    /// ```
+    ArrayInnerProduct,
     /// SQL 'unnest' function.
     /// Unnest/explodes an array column into multiple rows.
     /// ```sql
@@ -808,8 +845,11 @@ impl PolarsSQLFunctions {
             "abs",
             "acos",
             "acosd",
+            "approx_quantile",
             "array_contains",
+            "array_dot_product",
             "array_get",
+            "array_inner_product",
             "array_length",
             "array_lower",
             "array_mean",
@@ -850,6 +890,10 @@ impl PolarsSQLFunctions {
             "covar_samp",
             "date",
             "date_part",
+            "day",
+            "dayofmonth",
+            "dayofweek",
+            "dayofyear",
             "degrees",
             "dense_rank",
             "ends_with",
@@ -858,6 +902,7 @@ impl PolarsSQLFunctions {
             "first_value",
             "floor",
             "greatest",
+            "hour",
             "if",
             "ifnull",
             "initcap",
@@ -878,9 +923,10 @@ impl PolarsSQLFunctions {
             "ltrim",
             "max",
             "median",
-            "quantile_disc",
             "min",
+            "minute",
             "mod",
+            "month",
             "nullif",
             "octet_length",
             "pi",
@@ -888,6 +934,7 @@ impl PolarsSQLFunctions {
             "power",
             "quantile_cont",
             "quantile_disc",
+            "quarter",
             "radians",
             "rank",
             "regexp_like",
@@ -898,6 +945,7 @@ impl PolarsSQLFunctions {
             "row_number",
             "rpad",
             "rtrim",
+            "second",
             "sign",
             "sin",
             "sind",
@@ -920,6 +968,8 @@ impl PolarsSQLFunctions {
             "var",
             "var_samp",
             "variance",
+            "week",
+            "year",
         ]
     }
 }
@@ -997,6 +1047,16 @@ impl PolarsSQLFunctions {
             // ----
             "date" => Self::Date,
             "date_part" => Self::DatePart,
+            "year" => Self::DatePartOf(DateTimeField::Year),
+            "quarter" => Self::DatePartOf(DateTimeField::Quarter),
+            "month" => Self::DatePartOf(DateTimeField::Month),
+            "week" => Self::DatePartOf(DateTimeField::IsoWeek),
+            "day" | "dayofmonth" => Self::DatePartOf(DateTimeField::Day),
+            "dayofweek" => Self::DatePartOf(DateTimeField::DayOfWeek),
+            "dayofyear" => Self::DatePartOf(DateTimeField::DayOfYear),
+            "hour" => Self::DatePartOf(DateTimeField::Hour),
+            "minute" => Self::DatePartOf(DateTimeField::Minute),
+            "second" => Self::DatePartOf(DateTimeField::Second),
             "strftime" => Self::Strftime,
             "timestamp" | "datetime" => Self::Timestamp,
 
@@ -1034,12 +1094,16 @@ impl PolarsSQLFunctions {
             // ----
             // Aggregate functions
             // ----
+            #[cfg(feature = "approx_quantile")]
+            "approx_quantile" => Self::ApproxQuantile,
             "avg" => Self::Avg,
             "corr" => Self::Corr,
             "count" => Self::Count,
             "covar_pop" => Self::CovarPop,
             "covar_samp" | "covar" => Self::CovarSamp,
             "first" => Self::First,
+            "grouping" => Self::Grouping,
+            "grouping_id" => Self::GroupingId,
             "last" => Self::Last,
             "max" => Self::Max,
             "median" => Self::Median,
@@ -1057,6 +1121,7 @@ impl PolarsSQLFunctions {
             // ----
             "array_agg" => Self::ArrayAgg,
             "array_contains" => Self::ArrayContains,
+            "array_dot_product" | "array_inner_product" => Self::ArrayInnerProduct,
             "array_get" => Self::ArrayGet,
             "array_length" => Self::ArrayLength,
             "array_lower" => Self::ArrayMin,
@@ -1273,6 +1338,7 @@ impl SQLFunctionVisitor<'_> {
                     },
                 }
             }),
+            DatePartOf(field) => self.try_visit_unary(|e| parse_extract_date_part(e, &field)),
             Strftime => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -1607,12 +1673,15 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Aggregate functions
             // ----
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile => self.visit_approx_quantile(),
             Avg => self.visit_avg(),
             Corr => self.visit_binary(sql_corr),
             Count => self.visit_count(),
             CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
             CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
             First => self.visit_unary(Expr::first),
+            Grouping | GroupingId => self.visit_grouping(),
             Last => self.visit_unary(Expr::last),
             Max => self.visit_min_max(Expr::max, Expr::cum_max),
             Median => self.visit_unary(Expr::median),
@@ -1625,26 +1694,12 @@ impl SQLFunctionVisitor<'_> {
                 let args = extract_args(function)?;
                 match args.len() {
                     2 => self.try_visit_binary(|e, q| {
-                        let value = match q {
-                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) => {
-                                if (0.0..=1.0).contains(&f) {
-                                    Expr::from(f)
-                                } else {
-                                    polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, args[1])
-                                }
-                            },
-                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
-                                if (0..=1).contains(&n) {
-                                    Expr::from(n as f64)
-                                } else {
-                                    polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, args[1])
-                                }
-                            },
-                            _ => polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, args[1])
-                        };
+                        let value = parse_quantile_literal(q, fname, args[1])?;
                         Ok(e.quantile(value, method))
                     }),
-                    _ => polars_bail!(SQLSyntax: "{} expects 2 arguments (found {})", fname, args.len()),
+                    _ => {
+                        polars_bail!(SQLSyntax: "{} expects 2 arguments (found {})", fname, args.len())
+                    },
                 }
             },
             Min => self.visit_min_max(Expr::min, Expr::cum_min),
@@ -1659,6 +1714,7 @@ impl SQLFunctionVisitor<'_> {
             // ----
             ArrayAgg => self.visit_arr_agg(),
             ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s, true)),
+            ArrayInnerProduct => self.visit_array_inner_product(),
             ArrayGet => {
                 // note: SQL is 1-indexed, not 0-indexed
                 self.visit_binary(|e, idx: Expr| {
@@ -1761,13 +1817,13 @@ impl SQLFunctionVisitor<'_> {
                         polars_bail!(SQLSyntax: "{} requires an OVER clause with ORDER BY", func_name)
                     },
                 };
-                let (order_exprs, all_desc) =
+                let (order_exprs, sort_opts) =
                     self.parse_order_by_in_window(&window_spec.order_by)?;
                 let rank_expr = if order_exprs.len() == 1 {
                     order_exprs[0].clone().rank(
                         RankOptions {
                             method: rank_method,
-                            descending: all_desc,
+                            descending: sort_opts.descending,
                         },
                         None,
                     )
@@ -1775,7 +1831,7 @@ impl SQLFunctionVisitor<'_> {
                     as_struct(order_exprs).rank(
                         RankOptions {
                             method: rank_method,
-                            descending: all_desc,
+                            descending: sort_opts.descending,
                         },
                         None,
                     )
@@ -1847,12 +1903,14 @@ impl SQLFunctionVisitor<'_> {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        Ok(self
+        let expr = self
             .ctx
             .function_registry
             .get_udf(func_name)?
             .ok_or_else(|| polars_err!(SQLInterface: "UDF {} not found", func_name))?
-            .call(args))
+            .call(args);
+
+        self.apply_window_spec(expr, &self.func.over)
     }
 
     /// Validate window frame specifications.
@@ -1946,8 +2004,7 @@ impl SQLFunctionVisitor<'_> {
         self.validate_window_frame(window_frame)?;
 
         if !order_by.is_empty() {
-            // Extract ORDER BY exprs and sort direction
-            let (order_by_exprs, all_desc) = self.parse_order_by_in_window(order_by)?;
+            let (order_by_exprs, sort_opts) = self.parse_order_by_in_window(order_by)?;
 
             // Get the base expr/column
             let args = extract_args(self.func)?;
@@ -1971,7 +2028,6 @@ impl SQLFunctionVisitor<'_> {
             // Apply cumulative function; the forward-fill ensures we match SQL semantics
             let cumulative_expr = cumulative_fn(base_expr, false)
                 .fill_null_with_strategy(FillNullStrategy::Forward(None));
-            let sort_opts = SortOptions::default().with_order_descending(all_desc);
             cumulative_expr.over_with_options(
                 partition_by_exprs,
                 Some((order_by_exprs, sort_opts)),
@@ -1988,10 +2044,39 @@ impl SQLFunctionVisitor<'_> {
     /// active `FILTER (WHERE …)` clause from the surrounding call.
     fn parse_sql_arg(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
         let parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
-        Ok(match &self.filter {
-            Some(pred) => parsed.filter(pred.clone()),
-            None => parsed,
-        })
+        Ok(self.apply_filter(parsed))
+    }
+
+    fn apply_filter(&self, expr: Expr) -> Expr {
+        match &self.filter {
+            Some(pred) => expr.filter(pred.clone()),
+            None => expr,
+        }
+    }
+
+    fn parse_array_inner_product_arg(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        // Keep ordinary SQL arrays List-backed. Only direct literals in this
+        // function become scalar Arrays so native arr.dot can broadcast them.
+        let array_expr = match expr {
+            SQLExpr::Array(_) => expr,
+            SQLExpr::Nested(inner) => return self.parse_array_inner_product_arg(inner),
+            _ => return self.parse_sql_arg(expr),
+        };
+        let values = parse_sql_array(array_expr, self.ctx)?;
+        let width = values.len();
+        Ok(self.apply_filter(lit(Scalar::new_array(values, width))))
+    }
+
+    fn visit_array_inner_product(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        match args.as_slice() {
+            [FunctionArgExpr::Expr(lhs), FunctionArgExpr::Expr(rhs)] => Ok(self
+                .parse_array_inner_product_arg(lhs)?
+                .arr()
+                .dot(self.parse_array_inner_product_arg(rhs)?)),
+            _ => self.not_supported_error(),
+        }
+        .and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
 
     fn visit_unary(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
@@ -2068,6 +2153,7 @@ impl SQLFunctionVisitor<'_> {
             },
             _ => self.not_supported_error(),
         }
+        .and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
 
     fn visit_variadic(&mut self, f: impl Fn(&[Expr]) -> Expr) -> PolarsResult<Expr> {
@@ -2087,7 +2173,7 @@ impl SQLFunctionVisitor<'_> {
                 return self.not_supported_error();
             };
         }
-        f(&expr_args)
+        f(&expr_args).and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
 
     fn try_visit_ternary<Arg: FromSQLExpr>(
@@ -2108,6 +2194,7 @@ impl SQLFunctionVisitor<'_> {
             },
             _ => self.not_supported_error(),
         }
+        .and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
 
     fn visit_nullary(&self, f: impl Fn() -> Expr) -> PolarsResult<Expr> {
@@ -2177,12 +2264,63 @@ impl SQLFunctionVisitor<'_> {
                     sql_expr,
                     "ARRAY_AGG",
                 )?;
-                Ok(base.implode(true))
+                self.apply_window_spec(base.implode(true), &self.func.over)
             },
             _ => {
                 polars_bail!(SQLSyntax: "ARRAY_AGG must have exactly one argument; found {}", args.len())
             },
         }
+    }
+
+    #[cfg(feature = "approx_quantile")]
+    fn visit_approx_quantile(&mut self) -> PolarsResult<Expr> {
+        /// Matches the default of `Expr.approx_quantile` in Python.
+        const DEFAULT_ERROR: f64 = 0.001;
+
+        let args = extract_args(self.func)?;
+        let (value_arg, quantile_arg, error_arg, method_arg) = match args.as_slice() {
+            [FunctionArgExpr::Expr(v), FunctionArgExpr::Expr(q)] => (v, q, None, None),
+            [
+                FunctionArgExpr::Expr(v),
+                FunctionArgExpr::Expr(q),
+                FunctionArgExpr::Expr(e),
+            ] => (v, q, Some(e), None),
+            [
+                FunctionArgExpr::Expr(v),
+                FunctionArgExpr::Expr(q),
+                FunctionArgExpr::Expr(e),
+                FunctionArgExpr::Expr(m),
+            ] => (v, q, Some(e), Some(m)),
+            _ => polars_bail!(
+                SQLSyntax: "APPROX_QUANTILE expects 2-4 arguments (found {})",
+                args.len()
+            ),
+        };
+
+        let expr = self.parse_sql_arg(value_arg)?;
+        // Parameters are not subject to an active FILTER clause; only the values are.
+        let quantile = parse_sql_expr(quantile_arg, self.ctx, self.active_schema)?;
+        let quantile = parse_quantile_literal(quantile, "APPROX_QUANTILE", args[1])?;
+
+        let error = match error_arg {
+            Some(e) => match parse_sql_expr(e, self.ctx, self.active_schema)? {
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) => f,
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => n as f64,
+                _ => {
+                    polars_bail!(SQLSyntax: "invalid error value for APPROX_QUANTILE ({})", args[2])
+                },
+            },
+            None => DEFAULT_ERROR,
+        };
+        let method = match method_arg {
+            Some(m) => String::from_sql_arg(m, self)?.parse()?,
+            None => ApproxQuantileMethod::Auto,
+        };
+
+        self.apply_window_spec(
+            expr.approx_quantile(quantile, error, false, method),
+            &self.func.over,
+        )
     }
 
     fn visit_string_agg(&mut self) -> PolarsResult<Expr> {
@@ -2225,9 +2363,12 @@ impl SQLFunctionVisitor<'_> {
             .list()
             .join(separator, true);
 
-        Ok(when(base.clone().null_count().lt(base.len()))
-            .then(joined)
-            .otherwise(lit(LiteralValue::untyped_null())))
+        self.apply_window_spec(
+            when(base.clone().null_count().lt(base.len()))
+                .then(joined)
+                .otherwise(lit(LiteralValue::untyped_null())),
+            &self.func.over,
+        )
     }
 
     fn visit_arr_to_string(&mut self) -> PolarsResult<Expr> {
@@ -2261,6 +2402,29 @@ impl SQLFunctionVisitor<'_> {
                 polars_bail!(SQLSyntax: "ARRAY_TO_STRING expects 2-3 arguments (found {})", args.len())
             },
         }
+    }
+
+    /// `GROUPING(k1, ..., kn)` stands for a value that depends on the grouping set a
+    /// row came from, so it is registered with the query and bound to its keys when
+    /// the `GROUP BY` clause is processed.
+    fn visit_grouping(&mut self) -> PolarsResult<Expr> {
+        if self.func.over.is_some() {
+            polars_bail!(SQLSyntax: "GROUPING() cannot be used as a window function");
+        }
+        if self.func.filter.is_some() {
+            polars_bail!(SQLSyntax: "GROUPING() does not support a FILTER clause");
+        }
+        let n_args = extract_args(self.func)?.len();
+        if n_args == 0 || n_args > MAX_GROUPING_ARGS {
+            polars_bail!(
+                SQLSyntax: "GROUPING() expects between 1 and {} arguments; found {}", MAX_GROUPING_ARGS, n_args
+            );
+        }
+        let Some(args) = grouping_call_args(self.func) else {
+            polars_bail!(SQLSyntax: "GROUPING() expects column expressions; found {}", self.func)
+        };
+        let name = PlSmallStr::from_string(self.func.to_string());
+        Ok(col(self.ctx.register_grouping_call(args)).alias(name))
     }
 
     fn visit_avg(&mut self) -> PolarsResult<Expr> {
@@ -2324,7 +2488,7 @@ impl SQLFunctionVisitor<'_> {
                 match args.as_slice() {
                     _ if is_count_star => {
                         // COUNT(*) / COUNT(1) with ORDER BY -> map to `int_range`
-                        let (order_by_exprs, all_desc) =
+                        let (order_by_exprs, sort_opts) =
                             self.parse_order_by_in_window(&spec.order_by)?;
                         let partition_by_exprs = if spec.partition_by.is_empty() {
                             None
@@ -2336,7 +2500,6 @@ impl SQLFunctionVisitor<'_> {
                                     .collect::<PolarsResult<Vec<_>>>()?,
                             )
                         };
-                        let sort_opts = SortOptions::default().with_order_descending(all_desc);
                         let row_number = int_range(lit(0), len(), 1, DataType::Int64).add(lit(1)); // SQL is 1-indexed
 
                         return row_number.over_with_options(
@@ -2470,14 +2633,13 @@ impl SQLFunctionVisitor<'_> {
         let mut nulls_last = Vec::with_capacity(order_by.len());
 
         for ob in order_by {
-            // Note: if not specified 'NULLS FIRST' is default for DESC, 'NULLS LAST' otherwise
-            // https://www.postgresql.org/docs/current/queries-order.html. Also: ORDER BY exprs
-            // share their length with the (possibly filtered) base, so they have to go through
-            // `parse_sql_arg` to apply any active FILTER.
-            let desc_order = !ob.options.asc.unwrap_or(true);
+            // Note: ORDER BY exprs share their length with the (possibly filtered) base,
+            // so they have to go through `parse_sql_arg` to apply any active FILTER.
             by.push(self.parse_sql_arg(&ob.expr)?);
-            nulls_last.push(!ob.options.nulls_first.unwrap_or(desc_order));
-            descending.push(desc_order);
+
+            let options = order_by_sort_options(&ob.options);
+            nulls_last.push(options.nulls_last);
+            descending.push(options.descending);
         }
         Ok(expr.sort_by(
             by,
@@ -2495,42 +2657,41 @@ impl SQLFunctionVisitor<'_> {
     ) -> PolarsResult<Expr> {
         // If ORDER BY references the base expression, use .sort() directly
         if order_by.len() == 1 && order_by[0].expr == *base_sql_expr {
-            let desc_order = !order_by[0].options.asc.unwrap_or(true);
-            let nulls_last = !order_by[0].options.nulls_first.unwrap_or(desc_order);
-            return Ok(expr.sort(
-                SortOptions::default()
-                    .with_order_descending(desc_order)
-                    .with_nulls_last(nulls_last),
-            ));
+            return Ok(expr.sort(order_by_sort_options(&order_by[0].options)));
         }
         // Otherwise, fall back to `sort_by` (may need to handle further edge-cases later)
         self.apply_order_by(expr, order_by)
     }
 
-    /// Parse ORDER BY (in OVER clause), validating uniform direction.
+    /// Parse ORDER BY (in OVER clause), validating that all keys sort alike.
     fn parse_order_by_in_window(
         &mut self,
         order_by: &[OrderByExpr],
-    ) -> PolarsResult<(Vec<Expr>, bool)> {
-        if order_by.is_empty() {
-            return Ok((Vec::new(), false));
-        }
-        // Parse expressions and validate uniform direction
-        let all_ascending = order_by[0].options.asc.unwrap_or(true);
+    ) -> PolarsResult<(Vec<Expr>, SortOptions)> {
+        let Some(first) = order_by.first() else {
+            return Ok((Vec::new(), SortOptions::default()));
+        };
+        // TODO: per-key sort options are not currently supported; we need to
+        //  enhance `over_with_options` to take SortMultipleOptions
+        let sort_options = order_by_sort_options(&first.options);
         let mut exprs = Vec::with_capacity(order_by.len());
         for o in order_by {
-            if all_ascending != o.options.asc.unwrap_or(true) {
-                // TODO: mixed sort directions are not currently supported; we
-                //  need to enhance `over_with_options` to take SortMultipleOptions
+            let options = order_by_sort_options(&o.options);
+            if options.descending != sort_options.descending {
                 polars_bail!(
                     SQLSyntax:
                     "OVER does not (yet) support mixed asc/desc directions for ORDER BY"
                 )
             }
-            let expr = parse_sql_expr(&o.expr, self.ctx, self.active_schema)?;
-            exprs.push(expr);
+            if options.nulls_last != sort_options.nulls_last {
+                polars_bail!(
+                    SQLSyntax:
+                    "OVER does not (yet) support mixed NULLS FIRST/LAST ordering for ORDER BY"
+                )
+            }
+            exprs.push(parse_sql_expr(&o.expr, self.ctx, self.active_schema)?);
         }
-        Ok((exprs, !all_ascending))
+        Ok((exprs, sort_options))
     }
 
     fn apply_window_spec(
@@ -2558,13 +2719,16 @@ impl SQLFunctionVisitor<'_> {
         let order_by = if window_spec.order_by.is_empty() {
             None
         } else {
-            let (order_exprs, all_desc) = self.parse_order_by_in_window(&window_spec.order_by)?;
-            let sort_opts = SortOptions::default().with_order_descending(all_desc);
+            let (order_exprs, sort_opts) = self.parse_order_by_in_window(&window_spec.order_by)?;
             Some((order_exprs, sort_opts))
         };
 
-        // Apply window spec
+        // Apply window spec; under a GROUP BY an empty window still has to be
+        // told apart from a group aggregate.
         Ok(match (partition_by, order_by) {
+            (None, None) if self.ctx.group_scope.parsing_group_input => {
+                expr.over([col(self.ctx.whole_frame_partition())])?
+            },
             (None, None) => expr,
             (Some(part), None) => expr.over(part)?,
             (part, Some(order)) => expr.over_with_options(part, Some(order), Default::default())?,
@@ -2603,6 +2767,26 @@ fn is_non_null_literal(expr: &SQLExpr) -> bool {
             ..
         }) if !matches!(v, SQLValue::Null)
     )
+}
+
+/// Parse a literal quantile argument, validating that it lies in [0, 1].
+fn parse_quantile_literal(
+    quantile: Expr,
+    fname: &str,
+    arg: &FunctionArgExpr,
+) -> PolarsResult<Expr> {
+    match quantile {
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) if (0.0..=1.0).contains(&f) => {
+            Ok(Expr::from(f))
+        },
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if (0..=1).contains(&n) => {
+            Ok(Expr::from(n as f64))
+        },
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_) | DynLiteralValue::Int(_))) => {
+            polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, arg)
+        },
+        _ => polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, arg),
+    }
 }
 
 fn extract_args(func: &SQLFunction) -> PolarsResult<Vec<&FunctionArgExpr>> {

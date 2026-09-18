@@ -1,8 +1,8 @@
 use std::fmt::Write;
 
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::Bitmap;
-use arrow::trusted_len::TrustMyLength;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::trusted_len::TrustMyLength;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::error::feature_gated;
 use polars_core::prelude::row_encode::encode_rows_unordered;
@@ -11,6 +11,8 @@ use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
+use polars_defs::expr::{RankMethod, RankOptions};
+use polars_defs::join::JoinValidation;
 use polars_ops::frame::SeriesJoin;
 use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::*;
@@ -56,7 +58,7 @@ impl WindowExpr {
         out_column: Column,
         flattened: &Column,
         mut ac: AggregationContext,
-        gb: GroupBy,
+        gb: &GroupBy,
     ) -> PolarsResult<IdxCa> {
         // idx (new-idx, original-idx)
         let mut idx_mapping = Vec::with_capacity(out_column.len());
@@ -129,7 +131,7 @@ impl WindowExpr {
         flattened: &Column,
         mut ac: AggregationContext,
         group_by_columns: &[Column],
-        gb: GroupBy,
+        gb: &GroupBy,
         cache_key: String,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
@@ -520,18 +522,13 @@ impl PhysicalExpr for WindowExpr {
                     empty_as_null: true,
                     keep_nulls: true,
                 })?;
-                // we extend the lifetime as we must convince the compiler that ac lives
-                // long enough. We drop `GrouBy` when we are done with `ac`.
-                let ac = unsafe {
-                    std::mem::transmute::<AggregationContext<'_>, AggregationContext<'static>>(ac)
-                };
                 self.map_by_arg_sort(
                     df,
                     out_column,
                     &flattened,
                     ac,
                     &group_by_columns,
-                    gb,
+                    &gb,
                     cache_key,
                     state,
                 )
@@ -1011,7 +1008,7 @@ impl PhysicalExpr for WindowExpr {
 
 fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Column {
     {
-        use arrow::Either;
+        use polars_arrow::Either;
         use polars_ops::chunked_array::TakeChunked;
 
         match join_opt_ids {

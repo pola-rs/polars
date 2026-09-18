@@ -25,7 +25,6 @@ pub fn temporal_func_to_udf(func: IRTemporalFunction) -> SpecialEq<Arc<dyn Colum
         OrdinalDay => map!(datetime::ordinal_day),
         Time => map!(datetime::time),
         Date => map!(datetime::date),
-        Datetime => map!(datetime::datetime),
         Hour => map!(datetime::hour),
         Minute => map!(datetime::minute),
         Second => map!(datetime::second),
@@ -64,7 +63,6 @@ pub fn temporal_func_to_udf(func: IRTemporalFunction) -> SpecialEq<Arc<dyn Colum
         TimeStamp(tu) => map!(datetime::timestamp, tu),
         #[cfg(feature = "timezones")]
         ConvertTimeZone(tz) => map!(datetime::convert_time_zone, &tz),
-        WithTimeUnit(tu) => map!(datetime::with_time_unit, tu),
         CastTimeUnit(tu) => map!(datetime::cast_time_unit, tu),
         Truncate => {
             map_as_slice!(datetime::truncate)
@@ -198,13 +196,15 @@ pub(super) fn combine(s: &[Column], tu: TimeUnit) -> PolarsResult<Column> {
     let result_naive = datetime + duration;
     match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => Ok(polars_ops::prelude::replace_time_zone(
-            result_naive?.datetime().unwrap(),
-            Some(tz),
-            &StringChunked::from_iter(std::iter::once("raise")),
-            NonExistent::Raise,
-        )?
-        .into_column()),
+        Some(tz) => Ok(
+            polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone(
+                result_naive?.datetime().unwrap(),
+                Some(tz),
+                &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
+            )?
+            .into_column(),
+        ),
         _ => result_naive,
     }
 }

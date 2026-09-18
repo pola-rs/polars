@@ -1,6 +1,6 @@
-use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::types::{
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::types::{
     AlignedBytes, Bytes1Alignment1, Bytes2Alignment2, Bytes4Alignment4, NativeType,
 };
 use polars_compute::filter::filter_boolean_kernel;
@@ -25,9 +25,12 @@ pub trait IndexMapping {
         self.len() == 0
     }
     fn len(&self) -> usize;
+
+    #[inline(always)]
     fn get(&self, idx: u32) -> Option<Self::Output> {
         ((idx as usize) < self.len()).then(|| unsafe { self.get_unchecked(idx) })
     }
+
     unsafe fn get_unchecked(&self, idx: u32) -> Self::Output;
 }
 

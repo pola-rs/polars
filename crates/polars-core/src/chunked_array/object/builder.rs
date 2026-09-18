@@ -1,6 +1,6 @@
-use arrow::array::builder::{ArrayBuilder, ShareStrategy};
-use arrow::bitmap::BitmapBuilder;
-use arrow::datatypes::ExtensionType;
+use polars_arrow::array::builder::{ArrayBuilder, ShareStrategy};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::datatypes::ExtensionType;
 use polars_utils::vec::PushUnchecked;
 
 use super::*;
@@ -40,15 +40,6 @@ where
     pub fn append_null(&mut self) {
         self.values.push(T::default());
         self.bitmask_builder.push(false);
-    }
-
-    #[inline]
-    pub fn append_value_from_any(&mut self, v: &dyn Any) -> PolarsResult<()> {
-        let Some(v) = v.downcast_ref::<T>() else {
-            polars_bail!(SchemaMismatch: "cannot downcast any in ObjectBuilder");
-        };
-        self.append_value(v.clone());
-        Ok(())
     }
 
     #[inline]

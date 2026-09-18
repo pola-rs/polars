@@ -8,6 +8,7 @@ Computation
 
     Expr.abs
     Expr.approx_n_unique
+    Expr.approx_quantile
     Expr.arccos
     Expr.arccosh
     Expr.arcsin

@@ -36,6 +36,8 @@ pub use builder::AExprBuilder;
 pub use evaluate::{constant_evaluate, into_column};
 pub use properties::*;
 pub use schema::ToFieldContext;
+#[cfg(feature = "dtype-struct")]
+pub(crate) use schema::get_struct_numeric_dtype;
 
 use crate::constants::LEN;
 use crate::prelude::*;
@@ -74,7 +76,6 @@ pub enum IRAggExpr {
     },
     Std(Node, u8),
     Var(Node, u8),
-    AggGroups(Node),
 }
 
 impl Hash for IRAggExpr {
@@ -139,7 +140,6 @@ impl From<IRAggExpr> for GroupByMethod {
             } => GroupByMethod::Count { include_nulls },
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
-            AggGroups(_) => GroupByMethod::Groups,
         }
     }
 }
@@ -194,9 +194,10 @@ pub enum AExpr {
     },
     Agg(IRAggExpr),
     Ternary {
-        predicate: Node,
+        /// `truthy` and `falsy` come before `predicate` as they determine the output name.
         truthy: Node,
         falsy: Node,
+        predicate: Node,
     },
     AnonymousAgg {
         input: Vec<ExprIR>,

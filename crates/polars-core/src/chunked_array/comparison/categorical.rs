@@ -322,7 +322,7 @@ where
 
 impl<T: PolarsCategoricalType> ChunkCompareEq<&StringChunked> for CategoricalChunked<T>
 where
-    ChunkedArray<T::PolarsPhysical>: for<'a> ChunkCompareEq<T::Native, Item = BooleanChunked>,
+    ChunkedArray<T::PolarsPhysical>: ChunkCompareEq<T::Native, Item = BooleanChunked>,
 {
     type Item = BooleanChunked;
 
@@ -425,7 +425,7 @@ impl<T: PolarsCategoricalType> ChunkCompareIneq<&StringChunked> for CategoricalC
 
 impl<T: PolarsCategoricalType> ChunkCompareEq<&str> for CategoricalChunked<T>
 where
-    ChunkedArray<T::PolarsPhysical>: for<'a> ChunkCompareEq<T::Native, Item = BooleanChunked>,
+    ChunkedArray<T::PolarsPhysical>: ChunkCompareEq<T::Native, Item = BooleanChunked>,
 {
     type Item = BooleanChunked;
 

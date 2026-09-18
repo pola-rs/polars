@@ -16,7 +16,7 @@ from polars.testing.asserts.frame import assert_frame_equal
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn
 
-    from polars._typing import TimeUnit
+    from polars._typing import EngineType, TimeUnit
 
 
 DATE_FORMATS = ["%Y{}%m{}%d", "%d{}%m{}%Y"]
@@ -329,3 +329,49 @@ def test_to_datetime_inexact_unicode_multibyte() -> None:
     assert_frame_equal(
         out, pl.DataFrame({"a": [datetime(2020, 2, 3, 12, 53, 11), None]})
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("method", "dtype"),
+    [
+        ("to_date", pl.Date),
+        ("to_datetime", pl.Datetime("us")),
+        ("to_time", pl.Time),
+    ],
+)
+def test_strptime_uninferrable_format(
+    engine: EngineType, method: str, dtype: pl.DataType
+) -> None:
+    lf = pl.LazyFrame({"s": ["not a temporal value"]})
+
+    non_strict = getattr(pl.col("s").str, method)(strict=False)
+    assert_frame_equal(
+        lf.select(non_strict).collect(engine=engine),
+        pl.DataFrame({"s": [None]}, schema={"s": dtype}),
+    )
+
+    strict = getattr(pl.col("s").str, method)(strict=True)
+    with pytest.raises(ComputeError, match="could not find an appropriate format"):
+        lf.select(strict).collect(engine=engine)
+
+
+STRPTIME_INFERENCE_CASES = [
+    ("to_date", pl.Date, "2020-01-01"),
+    ("to_datetime", pl.Datetime("us"), "2020-01-01 10:00:00"),
+    ("to_time", pl.Time, "10:00:00"),
+]
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(("method", "dtype", "good"), STRPTIME_INFERENCE_CASES)
+def test_strptime_strict_reports_original_column_name(
+    engine: EngineType, method: str, dtype: pl.DataType, good: str
+) -> None:
+    n = 200_000
+    values = ["not a temporal value"] + [good] * n
+
+    strict = getattr(pl.col("s").str, method)(strict=True)
+    with pytest.raises(InvalidOperationError, match="in column 's'"):
+        pl.LazyFrame({"s": values}).select(strict).collect(engine=engine)

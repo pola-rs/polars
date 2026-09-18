@@ -17,6 +17,7 @@ where
     F: FnOnce(T),
 {
     #[must_use]
+    #[inline]
     pub const fn new(inner: T, f: F) -> Self {
         Self {
             inner: ManuallyDrop::new(inner),
@@ -51,6 +52,7 @@ where
 {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &T {
         &self.inner
     }
@@ -60,6 +62,7 @@ impl<T, F> DerefMut for WithDrop<T, F>
 where
     F: FnOnce(T),
 {
+    #[inline]
     fn deref_mut(&mut self) -> &mut T {
         &mut self.inner
     }

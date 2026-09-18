@@ -1,3 +1,5 @@
+use polars_utils::pl_str::PlSmallStr;
+
 use super::specification::try_check_offsets_bounds;
 use super::{Array, Splitable, new_empty_array};
 use crate::bitmap::Bitmap;
@@ -9,6 +11,13 @@ pub(super) mod fmt;
 mod iterator;
 
 use polars_error::{PolarsResult, polars_bail};
+
+/// Canonical name of the entries field of an Arrow map.
+pub const MAP_ENTRIES_NAME: PlSmallStr = PlSmallStr::from_static("entries");
+/// Canonical name of the key field of an Arrow map's entries struct.
+pub const MAP_KEY_NAME: PlSmallStr = PlSmallStr::from_static("key");
+/// Canonical name of the value field of an Arrow map's entries struct.
+pub const MAP_VALUE_NAME: PlSmallStr = PlSmallStr::from_static("value");
 
 /// An array representing a (key, value), both of arbitrary logical types.
 #[derive(Clone)]

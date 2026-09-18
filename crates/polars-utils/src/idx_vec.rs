@@ -56,6 +56,7 @@ impl<T> UnitVec<T> {
         }
     }
 
+    #[inline(always)]
     pub fn is_inline(&self) -> bool {
         self.capacity.get() == 1
     }
@@ -265,24 +266,28 @@ impl<T> Default for UnitVec<T> {
 impl<T> Deref for UnitVec<T> {
     type Target = [T];
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.as_slice()
     }
 }
 
 impl<T> DerefMut for UnitVec<T> {
+    #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut_slice()
     }
 }
 
 impl<T> AsRef<[T]> for UnitVec<T> {
+    #[inline(always)]
     fn as_ref(&self) -> &[T] {
         unsafe { std::slice::from_raw_parts(self.data_ptr(), self.len as usize) }
     }
 }
 
 impl<T> AsMut<[T]> for UnitVec<T> {
+    #[inline(always)]
     fn as_mut(&mut self) -> &mut [T] {
         unsafe { std::slice::from_raw_parts_mut(self.data_ptr_mut(), self.len as usize) }
     }

@@ -1,7 +1,7 @@
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::builder::CategoricalChunkedBuilder;
 use polars_core::prelude::*;
-use polars_utils::format_pl_smallstr;
+use polars_core::utils::cut::compute_cut_labels;
 
 fn map_enum_cats(
     s: &Series,
@@ -131,23 +131,6 @@ fn map_categorical_cats(
     }
 }
 
-pub fn compute_labels(breaks: &[f64], left_closed: bool) -> PolarsResult<Vec<PlSmallStr>> {
-    let lo = std::iter::once(&f64::NEG_INFINITY).chain(breaks.iter());
-    let hi = breaks.iter().chain(std::iter::once(&f64::INFINITY));
-
-    let ret = lo
-        .zip(hi)
-        .map(|(l, h)| {
-            if left_closed {
-                format_pl_smallstr!("[{}, {})", l, h)
-            } else {
-                format_pl_smallstr!("({}, {}]", l, h)
-            }
-        })
-        .collect();
-    Ok(ret)
-}
-
 pub fn cut(
     s: &Series,
     mut breaks: Vec<f64>,
@@ -169,7 +152,7 @@ pub fn cut(
         polars_ensure!(l.len() == breaks.len() + 1, ShapeMismatch: "provide len(quantiles) + 1 labels");
         l
     } else {
-        compute_labels(&breaks, left_closed)?
+        compute_cut_labels(&breaks, left_closed)?
     };
     map_enum_cats(s, &cut_labels, &breaks, left_closed, include_breaks)
 }
@@ -233,7 +216,7 @@ pub fn qcut(
         polars_ensure!(l.len() == qbreaks.len() + 1, ShapeMismatch: "provide len(quantiles) + 1 labels");
         l
     } else {
-        compute_labels(&qbreaks, left_closed)?
+        compute_cut_labels(&qbreaks, left_closed)?
     };
 
     map_categorical_cats(&s, &cut_labels, &qbreaks, left_closed, include_breaks)

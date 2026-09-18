@@ -732,14 +732,6 @@ impl ExprOrderSimplifier<'_> {
 
                         O::empty()
                     },
-
-                    IRAggExpr::AggGroups(node) => {
-                        let node = *node;
-                        let input_observable = self.rec(node, RS::NO_DEORDER);
-                        self.internal_observe(input_observable);
-
-                        input_observable | O::INDEPENDENT
-                    },
                 };
 
                 cache_output!(output_observable);

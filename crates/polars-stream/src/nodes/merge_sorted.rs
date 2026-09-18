@@ -265,36 +265,22 @@ impl ComputeNode for MergeSortedNode {
                 if left_unmerged.is_empty() && right_unmerged.is_empty() =>
             {
                 let recv = port.parallel();
-                let inner_handles = recv
-                    .into_iter()
-                    .zip(send)
-                    .map(|(mut recv, mut send)| {
-                        let morsel_offset = *seq;
-                        scope.spawn_task(TaskPriority::High, async move {
-                            let mut max_seq = morsel_offset;
-                            while let Ok(mut morsel) = recv.recv().await {
-                                // Ensure the morsel sequence id stream is monotone non-decreasing.
-                                let seq = morsel.seq().offset_by(morsel_offset);
-                                max_seq = max_seq.max(seq);
+                join_handles.extend(recv.into_iter().zip(send).map(|(mut recv, mut send)| {
+                    let seq = *seq;
+                    scope.spawn_task(TaskPriority::High, async move {
+                        while let Ok(mut morsel) = recv.recv().await {
+                            // Ensure the morsel sequence id stream is monotone non-decreasing.
+                            let seq = morsel.seq().offset_by(seq);
+                            morsel.set_seq(seq);
 
-                                remove_key_column(&mut *morsel.df_mut().await);
-
-                                morsel.set_seq(seq);
-                                if send.send(morsel).await.is_err() {
-                                    break;
-                                }
+                            remove_key_column(&mut *morsel.df_mut().await);
+                            if send.send(morsel).await.is_err() {
+                                break;
                             }
-                            max_seq
-                        })
-                    })
-                    .collect::<Vec<_>>();
+                        }
 
-                join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                    // Update our global maximum.
-                    for handle in inner_handles {
-                        *seq = (*seq).max(handle.await);
-                    }
-                    Ok(())
+                        Ok(())
+                    })
                 }));
             },
 

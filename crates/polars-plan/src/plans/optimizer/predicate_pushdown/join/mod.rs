@@ -5,6 +5,7 @@ mod predicate_pruning;
 use hive::rewrite_hive;
 use predicate_pruning::*;
 
+use crate::plans::aexpr::or_factoring::or_implied_predicates;
 use crate::plans::optimizer::join_utils::remove_suffix;
 
 const IEJOIN_MAX_PREDICATES: usize = 2;
@@ -16,8 +17,6 @@ pub(super) fn process_join(
     expr_arena: &mut Arena<AExpr>,
     mut input_left: Node,
     mut input_right: Node,
-    mut left_on: Vec<ExprIR>,
-    mut right_on: Vec<ExprIR>,
     mut schema: SchemaRef,
     mut options: Arc<JoinOptionsIR>,
     mut acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
@@ -28,8 +27,6 @@ pub(super) fn process_join(
             IR::Join {
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 schema,
                 options,
             },
@@ -57,10 +54,10 @@ pub(super) fn process_join(
         &schema_left,
         &schema_right,
         &mut schema,
-        &options,
-        &mut left_on,
-        &mut right_on,
+        &mut options,
     )?;
+
+    let (mut left_on, mut right_on) = options.options.key_vecs();
 
     let opt_post_select = try_rewrite_join_type(
         &schema_left,
@@ -87,8 +84,6 @@ pub(super) fn process_join(
             IR::Join {
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 schema,
                 options,
             },
@@ -221,61 +216,66 @@ pub(super) fn process_join(
             Default::default()
         };
 
+    // These maps encode that `left_on[i]` and `right_on[i]` hold equal values in the
+    // output, which is only true for an equality match condition.
     let mut output_key_to_left_input_map: PlIndexMap<PlSmallStr, PlSmallStr> =
         PlIndexMap::with_capacity(get_lhs_column_keys_iter().len());
     let mut output_key_to_right_input_map: PlIndexMap<PlSmallStr, PlSmallStr> =
         PlIndexMap::with_capacity(get_rhs_column_keys_iter().len());
 
-    for (lhs_input_key, rhs_input_key) in get_lhs_column_keys_iter().zip(get_rhs_column_keys_iter())
-    {
-        let (Some(lhs_input_key), Some(rhs_input_key)) = (lhs_input_key, rhs_input_key) else {
-            continue;
-        };
-
-        // lhs_input_key: Column name within the left table.
-        use JoinType::*;
-        // Map output name of an LHS join key output to an input key column of the right table.
-        // This will cause predicates referring to LHS join keys to also be pushed to the RHS table.
-        if match &options.args.how {
-            Left | Inner | Full => true,
-
-            #[cfg(feature = "asof_join")]
-            AsOf(_) => true,
-            #[cfg(feature = "semi_anti_join")]
-            Semi | Anti => true,
-
-            // NOTE: Right-join is excluded.
-            Right => false,
-
-            #[cfg(feature = "iejoin")]
-            IEJoin | Range => false,
-
-            Cross => unreachable!(), // Cross left/right_on should be empty
-        } {
-            // Note: `lhs_input_key` maintains its name in the output column for all cases except
-            // for a coalescing right-join.
-            output_key_to_right_input_map.insert(lhs_input_key.clone(), rhs_input_key.clone());
-        }
-
-        // Map output name of an RHS join key output to a key column of the left table.
-        // This will cause predicates referring to RHS join keys to also be pushed to the LHS table.
-        if match &options.args.how {
-            JoinType::Right => true,
-            // Non-coalesced output columns of an inner join are equivalent between LHS and RHS.
-            JoinType::Inner => !options.args.should_coalesce(),
-            _ => false,
-        } {
-            let rhs_output_key: PlSmallStr = if schema_left.contains(rhs_input_key.as_str())
-                && !coalesced_to_right.contains(rhs_input_key.as_str())
-            {
-                format_pl_smallstr!("{}{}", rhs_input_key, options.args.suffix())
-            } else {
-                rhs_input_key.clone()
+    if options.is_pure_equi() {
+        for (lhs_input_key, rhs_input_key) in
+            get_lhs_column_keys_iter().zip(get_rhs_column_keys_iter())
+        {
+            let (Some(lhs_input_key), Some(rhs_input_key)) = (lhs_input_key, rhs_input_key) else {
+                continue;
             };
 
-            assert!(schema.contains(&rhs_output_key));
+            // lhs_input_key: Column name within the left table.
+            use JoinType::*;
+            // Map output name of an LHS join key output to an input key column of the right table.
+            // This will cause predicates referring to LHS join keys to also be pushed to the RHS table.
+            if match &options.args.how {
+                Left | Inner | Full => true,
 
-            output_key_to_left_input_map.insert(rhs_output_key.clone(), lhs_input_key.clone());
+                #[cfg(feature = "asof_join")]
+                AsOf(_) => true,
+                #[cfg(feature = "semi_anti_join")]
+                Semi | Anti => true,
+
+                // NOTE: Right-join is excluded.
+                Right => false,
+
+                #[cfg(feature = "iejoin")]
+                IEJoin | Range => false,
+
+                Cross => unreachable!(), // Cross left/right_on should be empty
+            } {
+                // Note: `lhs_input_key` maintains its name in the output column for all cases except
+                // for a coalescing right-join.
+                output_key_to_right_input_map.insert(lhs_input_key.clone(), rhs_input_key.clone());
+            }
+
+            // Map output name of an RHS join key output to a key column of the left table.
+            // This will cause predicates referring to RHS join keys to also be pushed to the LHS table.
+            if match &options.args.how {
+                JoinType::Right => true,
+                // Non-coalesced output columns of an inner join are equivalent between LHS and RHS.
+                JoinType::Inner => !options.args.should_coalesce(),
+                _ => false,
+            } {
+                let rhs_output_key: PlSmallStr = if schema_left.contains(rhs_input_key.as_str())
+                    && !coalesced_to_right.contains(rhs_input_key.as_str())
+                {
+                    format_pl_smallstr!("{}{}", rhs_input_key, options.args.suffix())
+                } else {
+                    rhs_input_key.clone()
+                };
+
+                assert!(schema.contains(&rhs_output_key));
+
+                output_key_to_left_input_map.insert(rhs_output_key.clone(), lhs_input_key.clone());
+            }
         }
     }
 
@@ -285,7 +285,14 @@ pub(super) fn process_join(
         init_indexmap(Some(acc_predicates.len()));
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
-    for (_, predicate) in acc_predicates {
+    // Which sides of the join a predicate can be pushed to, and whether it has to
+    // stay above the join as well.
+    struct Placement {
+        push_left: bool,
+        push_right: bool,
+        keep_local: bool,
+    }
+    let classify = |predicate: &ExprIR, expr_arena: &Arena<AExpr>| {
         let mut push_left = true;
         let mut push_right = true;
 
@@ -371,11 +378,18 @@ pub(super) fn process_join(
             JoinType::IEJoin | JoinType::Range => !(push_left || push_right),
         };
 
-        if has_residual {
-            local_predicates.push(predicate.clone())
+        Placement {
+            push_left,
+            push_right,
+            keep_local: has_residual,
         }
+    };
 
-        if push_left {
+    let mut push = |predicate: ExprIR,
+                    placement: &Placement,
+                    expr_arena: &mut Arena<AExpr>,
+                    opt: &mut PredicatePushDown| {
+        if placement.push_left {
             let mut predicate = predicate.clone();
             map_column_references(&mut predicate, expr_arena, &output_key_to_left_input_map);
             insert_predicate_dedup(
@@ -386,7 +400,7 @@ pub(super) fn process_join(
             );
         }
 
-        if push_right {
+        if placement.push_right {
             let mut predicate = predicate;
             map_column_references(&mut predicate, expr_arena, &output_key_to_right_input_map);
             remove_suffix(
@@ -402,6 +416,25 @@ pub(super) fn process_join(
                 &mut opt.dedup_state,
             );
         }
+    };
+
+    for (_, predicate) in acc_predicates {
+        let placement = classify(&predicate, expr_arena);
+        if !placement.keep_local {
+            push(predicate, &placement, expr_arena, opt);
+            continue;
+        }
+
+        // A disjunction spanning both sides stays here, but what it implies about
+        // either side alone can still go down.
+        for derived in or_implied_predicates(predicate.node(), expr_arena) {
+            let derived = ExprIR::from_node(derived, expr_arena);
+            let placement = classify(&derived, expr_arena);
+            if !placement.keep_local {
+                push(derived, &placement, expr_arena, opt);
+            }
+        }
+        local_predicates.push(predicate);
     }
 
     opt.pushdown_and_assign(input_left, pushdown_left, lp_arena, expr_arena)?;
@@ -411,8 +444,6 @@ pub(super) fn process_join(
         IR::Join {
             input_left,
             input_right,
-            left_on,
-            right_on,
             schema,
             options,
         },
@@ -432,6 +463,7 @@ pub(super) fn process_join(
                 run_parallel: false,
                 duplicate_check: false,
                 should_broadcast: false,
+                maintain_dataframe_height: false,
             },
         }
     } else {
@@ -457,6 +489,7 @@ fn apply_join_key_reduction_select(
                 run_parallel: false,
                 duplicate_check: false,
                 should_broadcast: false,
+                maintain_dataframe_height: false,
             },
         }
     } else {
@@ -474,13 +507,13 @@ fn try_reduce_redundant_join_keys(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
     output_schema: &mut SchemaRef,
-    options: &Arc<JoinOptionsIR>,
-    left_on: &mut Vec<ExprIR>,
-    right_on: &mut Vec<ExprIR>,
+    options: &mut Arc<JoinOptionsIR>,
 ) -> PolarsResult<Option<(Vec<ExprIR>, SchemaRef)>> {
-    if left_on.len() <= 1 {
+    if options.options.left_on_len() <= 1 {
         return Ok(None);
     }
+
+    let (left_on, right_on) = options.options.key_vecs();
 
     // Only filter a side when removed rows from that side cannot contribute to the join output.
     let reduce_left = match options.args.how {
@@ -506,8 +539,8 @@ fn try_reduce_redundant_join_keys(
 
     if reduce_left {
         collect_redundant_join_key_filters(
-            left_on,
-            right_on,
+            &left_on,
+            &right_on,
             options.args.nulls_equal,
             &mut remove_key,
             &mut pushdown_left,
@@ -518,8 +551,8 @@ fn try_reduce_redundant_join_keys(
 
     if reduce_right {
         collect_redundant_join_key_filters(
-            right_on,
-            left_on,
+            &right_on,
+            &left_on,
             options.args.nulls_equal,
             &mut remove_key,
             &mut pushdown_right,
@@ -551,17 +584,11 @@ fn try_reduce_redundant_join_keys(
             new_right_on.push(r.clone());
         }
     }
-    *left_on = new_left_on;
-    *right_on = new_right_on;
+    Arc::make_mut(options)
+        .options
+        .set_keys(new_left_on, new_right_on);
 
-    *output_schema = det_join_schema(
-        schema_left,
-        schema_right,
-        left_on,
-        right_on,
-        options,
-        expr_arena,
-    )?;
+    *output_schema = det_join_schema(schema_left, schema_right, options, expr_arena)?;
 
     let original_names = original_schema.iter_names().collect::<Vec<_>>();
     let new_names = output_schema.iter_names().collect::<Vec<_>>();

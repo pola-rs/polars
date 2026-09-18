@@ -1,24 +1,31 @@
-#[cfg(feature = "iejoin")]
-use polars::prelude::JoinTypeOptionsIR;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::python_dsl::PythonScanSource;
-use polars::prelude::{ColumnMapping, PredicateFileSkip};
+use polars::prelude::{
+    CastColumnsPolicy, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy, PredicateFileSkip,
+};
 use polars_core::prelude::IdxSize;
-use polars_io::cloud::CloudOptions;
+use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, IcebergSchema};
 #[cfg(feature = "asof_join")]
-use polars_ops::prelude::AsofStrategy;
-use polars_ops::prelude::JoinType;
+use polars_defs::join::AsofStrategy;
+use polars_defs::join::JoinType;
+use polars_io::HiveOptions;
+use polars_io::cloud::CloudOptions;
+use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};
+#[cfg(feature = "iejoin")]
+use polars_plan::prelude::JoinTypeOptionsIR;
 use polars_plan::prelude::{FileScanIR, FunctionIR, PythonPredicate, UnifiedScanArgs};
+use polars_utils::pl_str::PlSmallStr;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyString};
 
 use super::expr_nodes::PyGroupbyOptions;
-use crate::PyDataFrame;
 use crate::lazyframe::visit::PyExprIR;
+use crate::series::PySeries;
+use crate::{PyDataFrame, Wrap};
 
 fn scan_type_to_pyobject(
     py: Python<'_>,
@@ -130,8 +137,10 @@ impl PyFileOptions {
         self.inner.rechunk
     }
     #[getter]
-    fn hive_options(&self, _py: Python<'_>) -> PyResult<Py<PyAny>> {
-        Err(PyNotImplementedError::new_err("hive options"))
+    fn hive_options(&self) -> Option<Wrap<HiveOptions>> {
+        let hive_options = &self.inner.hive_options;
+
+        (hive_options.enabled == Some(true)).then(|| Wrap(hive_options.clone()))
     }
     #[getter]
     fn include_file_paths(&self, _py: Python<'_>) -> Option<&str> {
@@ -186,15 +195,143 @@ impl PyFileOptions {
 
     /// One of:
     /// * None
-    /// * ("iceberg-column-mapping", <unimplemented>)
+    /// * ("iceberg-column-mapping", dict[int, column])
     #[getter]
     fn column_mapping(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.column_mapping {
             None => py.None().into_any(),
 
-            Some(ColumnMapping::Iceberg { .. }) => unimplemented!(),
+            Some(ColumnMapping::Iceberg(schema)) => (
+                "iceberg-column-mapping",
+                iceberg_schema_to_pyobject(py, schema)?,
+            )
+                .into_pyobject(py)?
+                .into_any()
+                .unbind(),
         })
     }
+
+    /// One of:
+    /// * None
+    /// * (
+    ///     "iceberg",
+    ///     (
+    ///       dict[int, Series | str],  # identity transformed partition fields
+    ///       dict[int, Series],        # V3 initial-default values
+    ///     )
+    ///   )
+    ///
+    #[getter]
+    fn default_values(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        Ok(match &self.inner.default_values {
+            None => py.None().into_any(),
+
+            Some(DefaultFieldValues::Iceberg(default_values)) => {
+                let IcebergDefaultFieldValues {
+                    identity_transformed_partition_fields,
+                    initial_defaults,
+                } = default_values.as_ref();
+
+                let partition_fields = PyDict::new(py);
+
+                for (physical_id, value) in identity_transformed_partition_fields.iter() {
+                    let value = match value {
+                        Ok(column) => PySeries::new(column.as_materialized_series().clone())
+                            .into_py_any(py)?,
+                        Err(err_msg) => err_msg.into_py_any(py)?,
+                    };
+
+                    partition_fields.set_item(*physical_id, value)?;
+                }
+
+                let defaults = PyDict::new(py);
+
+                for (physical_id, scalar) in initial_defaults.iter() {
+                    defaults.set_item(
+                        *physical_id,
+                        PySeries::new(scalar.clone().into_series(PlSmallStr::EMPTY)),
+                    )?;
+                }
+
+                ("iceberg", (partition_fields, defaults))
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind()
+            },
+        })
+    }
+
+    #[getter]
+    fn table_statistics(&self) -> Option<PyDataFrame> {
+        self.inner
+            .table_statistics
+            .as_ref()
+            .map(|table_statistics| PyDataFrame::new(table_statistics.0.as_ref().clone()))
+    }
+
+    #[getter]
+    fn row_count(&self) -> Option<(u64, u64)> {
+        self.inner.row_count
+    }
+
+    #[getter]
+    fn missing_columns_policy(&self) -> Wrap<MissingColumnsPolicy> {
+        Wrap(self.inner.missing_columns_policy)
+    }
+
+    #[getter]
+    fn extra_columns_policy(&self) -> Wrap<ExtraColumnsPolicy> {
+        Wrap(self.inner.extra_columns_policy)
+    }
+
+    #[getter]
+    fn cast_columns_policy(&self) -> Wrap<CastColumnsPolicy> {
+        Wrap(self.inner.cast_columns_policy.clone())
+    }
+}
+
+fn iceberg_schema_to_pyobject(py: Python<'_>, schema: &IcebergSchema) -> PyResult<Py<PyAny>> {
+    let out = PyDict::new(py);
+
+    for (physical_id, column) in schema.iter() {
+        out.set_item(*physical_id, iceberg_column_to_pyobject(py, column)?)?;
+    }
+
+    Ok(out.into_any().unbind())
+}
+
+fn iceberg_column_to_pyobject(py: Python<'_>, column: &IcebergColumn) -> PyResult<Py<PyAny>> {
+    let IcebergColumn {
+        name,
+        physical_id,
+        type_,
+    } = column;
+
+    let type_ = match type_ {
+        IcebergColumnType::Primitive { dtype } => {
+            ("primitive", Wrap(dtype.clone())).into_py_any(py)?
+        },
+        IcebergColumnType::List(inner) => {
+            ("list", iceberg_column_to_pyobject(py, inner)?).into_py_any(py)?
+        },
+        IcebergColumnType::FixedSizeList(inner, width) => (
+            "fixed-size-list",
+            iceberg_column_to_pyobject(py, inner)?,
+            *width,
+        )
+            .into_py_any(py)?,
+        IcebergColumnType::Map(key, value) => (
+            "map",
+            iceberg_column_to_pyobject(py, key)?,
+            iceberg_column_to_pyobject(py, value)?,
+        )
+            .into_py_any(py)?,
+        IcebergColumnType::Struct(fields) => {
+            ("struct", iceberg_schema_to_pyobject(py, fields)?).into_py_any(py)?
+        },
+    };
+
+    (name.as_str(), *physical_id, type_).into_py_any(py)
 }
 
 #[pyclass(frozen)]
@@ -212,6 +349,8 @@ pub struct Scan {
     file_options: PyFileOptions,
     #[pyo3(get)]
     scan_type: Py<PyAny>,
+    #[pyo3(get)]
+    source_sizes: Option<Vec<u64>>,
 }
 
 #[pyclass(frozen)]
@@ -376,14 +515,6 @@ pub struct HConcat {
     #[pyo3(get)]
     options: Py<PyAny>,
 }
-#[pyclass(frozen)]
-/// This allows expressions to access other tables
-pub struct ExtContext {
-    #[pyo3(get)]
-    input: usize,
-    #[pyo3(get)]
-    contexts: Vec<usize>,
-}
 
 #[pyclass(frozen)]
 pub struct Sink {
@@ -495,6 +626,19 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     inner: (**unified_scan_args).clone(),
                 },
                 scan_type: scan_type_to_pyobject(py, scan_type, &unified_scan_args.cloud_options)?,
+                source_sizes: {
+                    let bytes_per_source = match &**scan_type {
+                        #[cfg(feature = "parquet")]
+                        FileScanIR::Parquet {
+                            bytes_per_source, ..
+                        } => bytes_per_source.as_ref(),
+                        _ => None,
+                    };
+
+                    bytes_per_source
+                        .or(unified_scan_args.source_sizes.as_ref())
+                        .map(|sizes| sizes.iter().copied().collect())
+                },
             }
         }
         .into_py_any(py),
@@ -578,15 +722,13 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             input_left,
             input_right,
             schema: _,
-            left_on,
-            right_on,
             options,
         } => {
             Join {
                 input_left: input_left.0,
                 input_right: input_right.0,
-                left_on: left_on.iter().map(|e| e.into()).collect(),
-                right_on: right_on.iter().map(|e| e.into()).collect(),
+                left_on: options.options.left_on().map(|e| e.into()).collect(),
+                right_on: options.options.right_on().map(|e| e.into()).collect(),
                 options: {
                     let how = &options.args.how;
                     let name = Into::<&str>::into(how).into_pyobject(py)?;
@@ -622,7 +764,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                             },
                             #[cfg(feature = "iejoin")]
                             JoinType::IEJoin => {
-                                let Some(JoinTypeOptionsIR::IEJoin(ie_options)) = &options.options
+                                let JoinTypeOptionsIR::IEJoin { ie_options, .. } = &options.options
                                 else {
                                     unreachable!()
                                 };
@@ -638,8 +780,13 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                             },
                             // This is a cross join fused with a predicate. Shown in the IR::explain as
                             // NESTED LOOP JOIN
-                            JoinType::Cross if options.options.is_some() => {
+                            JoinType::Cross if options.is_non_equi() => {
                                 return Err(PyNotImplementedError::new_err("nested loop join"));
+                            },
+                            _ if options.options.has_fused_predicate() => {
+                                return Err(PyNotImplementedError::new_err(
+                                    "join with a fused predicate",
+                                ));
                             },
                             _ => name.into_any().unbind(),
                         },
@@ -802,15 +949,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 .into_py_any(py)?,
         }
         .into_py_any(py),
-        IR::ExtContext {
-            input,
-            contexts,
-            schema: _,
-        } => ExtContext {
-            input: input.0,
-            contexts: contexts.iter().map(|n| n.0).collect(),
-        }
-        .into_py_any(py),
         IR::Sink { input, payload } => Sink {
             input: input.0,
             payload: PyString::new(
@@ -839,6 +977,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         IR::UnoptimizedDispatch { .. } => Err(PyNotImplementedError::new_err(
             "Not expecting to see a UnoptimizedDispatch node",
+        )),
+        IR::Resolver { .. } => Err(PyNotImplementedError::new_err(
+            "not implemented: IR::Resolver to Python conversion",
         )),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }

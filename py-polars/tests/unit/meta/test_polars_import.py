@@ -122,5 +122,5 @@ def test_unknown_extension_type_behavior_invalid_does_not_panic_27004() -> None:
         },
     )
     assert result.returncode == 0, result.stderr
-    assert "POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR" in result.stderr
+    assert result.stderr == "", result.stderr
     assert "PanicException" not in result.stderr

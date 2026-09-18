@@ -2,11 +2,11 @@ use std::fmt;
 use std::sync::Mutex;
 
 use polars_buffer::{Buffer, SharedStorage};
+#[cfg(feature = "temporal")]
+use polars_core::chunked_array::temporal::string::StringMethods;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
-#[cfg(feature = "polars-time")]
-use polars_time::prelude::*;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
 
@@ -219,6 +219,8 @@ impl<'a> CoreReader<'a> {
         let (inferred_schema, leftover) = read_until_start_and_infer_schema_from_compressed_reader(
             &read_options,
             None,
+            false,
+            false,
             None,
             &mut compressed_reader,
         )?;

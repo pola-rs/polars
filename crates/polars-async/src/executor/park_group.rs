@@ -38,10 +38,12 @@ const ACTIVE_RECRUITER_BIT: u64 = 1 << 32;
 const PREPARING_TO_PARK_BIT: u64 = 1 << 33;
 const VERSION_UNIT: u64 = 1 << 34;
 
+#[inline(always)]
 fn state_num_idle(state: u64) -> u32 {
     state as u32
 }
 
+#[inline(always)]
 fn state_version(state: u64) -> u32 {
     (state >> 34) as u32
 }
@@ -85,6 +87,7 @@ impl ParkGroup {
     /// Also cancels in-progress park attempts.
     ///
     /// Returns whether there was at least one idle worker.
+    #[inline]
     pub fn unpark_one(&self) -> bool {
         self.inner.unpark_one()
     }

@@ -216,7 +216,9 @@ pub fn python_scan_predicate(
                         )?;
                         let mut combined: Option<Bound<'_, PyAny>> = None;
                         for node in MintermIter::new(e.node(), expr_arena) {
-                            if let Some(pa) = aexpr_to_pyarrow(py, &pc, node, expr_arena) {
+                            if let Some(pa) =
+                                aexpr_to_pyarrow(py, &pc, node, expr_arena, &options.schema)
+                            {
                                 convertible_nodes.push(node);
                                 // Combine with and operator:
                                 // Need to catch error to satisfy rust, but I'm not sure how this would fail without
@@ -545,7 +547,6 @@ fn create_physical_plan_impl(
                 input,
                 expr: phys_expr,
                 has_windows: state.has_windows,
-                input_schema,
                 #[cfg(test)]
                 schema: _schema,
                 options,
@@ -634,7 +635,6 @@ fn create_physical_plan_impl(
                     keys: phys_keys,
                     aggs: phys_aggs,
                     options,
-                    input_schema,
                     output_schema,
                     slice: _slice,
                     apply,
@@ -649,7 +649,6 @@ fn create_physical_plan_impl(
                     keys: phys_keys,
                     aggs: phys_aggs,
                     options,
-                    input_schema,
                     output_schema,
                     slice: _slice,
                     apply,
@@ -699,7 +698,6 @@ fn create_physical_plan_impl(
                     phys_aggs,
                     apply,
                     maintain_order,
-                    input_schema,
                     output_schema,
                     options.slice,
                 )))
@@ -708,12 +706,12 @@ fn create_physical_plan_impl(
         Join {
             input_left,
             input_right,
-            left_on,
-            right_on,
             options,
             schema,
             ..
         } => {
+            options.ensure_executable()?;
+
             let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
             let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 
@@ -733,14 +731,15 @@ fn create_physical_plan_impl(
                 options.allow_parallel
             };
 
+            let (key_left, key_right) = options.options.key_vecs();
             let left_on = create_physical_expressions_from_irs(
-                &left_on,
+                &key_left,
                 expr_arena,
                 &schema_left,
                 &mut ExpressionConversionState::new(true),
             )?;
             let right_on = create_physical_expressions_from_irs(
-                &right_on,
+                &key_right,
                 expr_arena,
                 &schema_right,
                 &mut ExpressionConversionState::new(true),
@@ -749,28 +748,22 @@ fn create_physical_plan_impl(
 
             // Convert the join options, to the physical join options. This requires the physical
             // planner, so we do this last minute.
-            let join_type_options = options
-                .options
-                .map(|o| {
-                    o.compile(|e| {
-                        let phys_expr = create_physical_expr(
-                            e,
-                            expr_arena,
-                            &schema,
-                            &mut ExpressionConversionState::new(false),
-                        )?;
+            let join_type_options = options.options.compile(|e| {
+                let phys_expr = create_physical_expr(
+                    e,
+                    expr_arena,
+                    &schema,
+                    &mut ExpressionConversionState::new(false),
+                )?;
 
-                        let execution_state = ExecutionState::default();
+                let execution_state = ExecutionState::default();
 
-                        Ok(Arc::new(move |df: DataFrame| {
-                            let mask = phys_expr.evaluate(&df, &execution_state)?;
-                            let mask = mask.as_materialized_series();
-                            let mask = mask.bool()?;
-                            df.filter_seq(mask)
-                        }))
-                    })
-                })
-                .transpose()?;
+                Ok(Arc::new(move |df: &DataFrame| {
+                    let mask = phys_expr.evaluate(df, &execution_state)?;
+                    let mask = mask.as_materialized_series();
+                    PolarsResult::Ok(mask.bool()?.clone())
+                }))
+            })?;
 
             Ok(Box::new(executors::JoinExec::new(
                 input_left,
@@ -822,7 +815,6 @@ fn create_physical_plan_impl(
                 input,
                 has_windows: state.has_windows,
                 exprs: phys_exprs,
-                input_schema,
                 output_schema,
                 options,
                 allow_vertical_parallelism,
@@ -833,16 +825,6 @@ fn create_physical_plan_impl(
         } => {
             let input = recurse!(input, state)?;
             Ok(Box::new(executors::UdfExec { input, function }))
-        },
-        ExtContext {
-            input, contexts, ..
-        } => {
-            let input = recurse!(input, state)?;
-            let contexts = contexts
-                .into_iter()
-                .map(|node| recurse!(node, state))
-                .collect::<PolarsResult<_>>()?;
-            Ok(Box::new(executors::ExternalContext { input, contexts }))
         },
         SimpleProjection { input, columns } => {
             let input = recurse!(input, state)?;
@@ -874,6 +856,10 @@ fn create_physical_plan_impl(
             Ok(Box::new(exec))
         },
         UnoptimizedDispatch { .. } => get_streaming_executor_builder()(root, lp_arena, expr_arena),
+        Resolver { resolved_ir, .. } => {
+            let node = resolved_ir.expect("IR::Resolver not resolved at create_physical_plan_impl");
+            recurse!(node, state)
+        },
         Invalid => unreachable!(),
     }
 }

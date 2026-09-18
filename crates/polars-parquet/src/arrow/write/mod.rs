@@ -2,7 +2,7 @@
 //!
 //! # Arrow/Parquet Interoperability
 //! As of [parquet-format v2.9](https://github.com/apache/parquet-format/blob/master/LogicalTypes.md)
-//! there are Arrow [DataTypes](arrow::datatypes::ArrowDataType) which do not have a parquet
+//! there are Arrow [DataTypes](polars_arrow::datatypes::ArrowDataType) which do not have a parquet
 //! representation. These include but are not limited to:
 //! * `ArrowDataType::Timestamp(TimeUnit::Second, _)`
 //! * `ArrowDataType::Int64`
@@ -25,12 +25,12 @@ mod row_group;
 mod schema;
 mod utils;
 
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::*;
-use arrow::types::{NativeType, days_ms, i256};
 pub use nested::{num_values, write_rep_and_def};
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::*;
+use polars_arrow::types::{NativeType, days_ms, i256};
 use polars_config::config;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -100,10 +100,10 @@ pub struct WriteOptions {
     pub data_page_size: Option<usize>,
 }
 
-use arrow::compute::aggregate::estimated_bytes_size;
-use arrow::match_integer_type;
 pub use file::FileWriter;
-pub use pages::{Nested, array_to_columns, arrays_to_columns};
+pub use pages::{Nested, array_to_columns};
+use polars_arrow::compute::aggregate::estimated_bytes_size;
+use polars_arrow::match_integer_type;
 use polars_error::{PolarsResult, polars_bail};
 pub use row_group::{RowGroupIterator, row_group_iter};
 pub use schema::{schema_to_metadata_key, to_parquet_type};
@@ -201,31 +201,6 @@ pub(crate) fn row_slice_ranges(
         })
 }
 
-/// returns offset and length to slice the leaf values
-pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
-    // find the deepest recursive dremel structure as that one determines how many values we must
-    // take
-    let mut out = (0, 0);
-    for nested in nested.iter().rev() {
-        match nested {
-            Nested::LargeList(l_nested) => {
-                let start = *l_nested.offsets.first();
-                let end = *l_nested.offsets.last();
-                return (start as usize, (end - start) as usize);
-            },
-            Nested::List(l_nested) => {
-                let start = *l_nested.offsets.first();
-                let end = *l_nested.offsets.last();
-                return (start as usize, (end - start) as usize);
-            },
-            Nested::FixedSizeList(nested) => return (0, nested.length * nested.width),
-            Nested::Primitive(nested) => out = (0, nested.length),
-            Nested::Struct(_) => {},
-        }
-    }
-    out
-}
-
 fn decimal_length_from_precision(precision: usize) -> usize {
     // digits = floor(log_10(2^(8*n - 1) - 1))
     // ceil(digits) = log10(2^(8*n - 1) - 1)
@@ -311,20 +286,6 @@ pub fn slice_parquet_array(
             },
         }
     }
-}
-
-/// Get the length of [`Array`] that should be sliced.
-pub fn get_max_length(nested: &[Nested]) -> usize {
-    let mut length = 0;
-    for nested in nested.iter() {
-        match nested {
-            Nested::LargeList(l_nested) => length += l_nested.offsets.range() as usize,
-            Nested::List(l_nested) => length += l_nested.offsets.range() as usize,
-            Nested::FixedSizeList(nested) => length += nested.length * nested.width,
-            _ => {},
-        }
-    }
-    length
 }
 
 /// Returns an iterator of [`Page`].
@@ -673,7 +634,7 @@ pub fn array_to_page_simple(
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_size_binary::build_statistics_decimal256_with_i128(
+                    let stats = fixed_size_binary::build_statistics_i256_big_endian_low(
                         array,
                         type_.clone(),
                         size,
@@ -701,12 +662,16 @@ pub fn array_to_page_simple(
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
-                let statistics = if options.has_statistics() {
-                    let stats = fixed_size_binary::build_statistics_decimal256(
+                // Can't write min/max statistics for an unannotated 256-bit decimal, see #25965.
+                let mut no_mm_options = options;
+                no_mm_options.statistics.min_value = false;
+                no_mm_options.statistics.max_value = false;
+                let statistics = if no_mm_options.has_statistics() {
+                    let stats = fixed_size_binary::build_statistics_i256_big_endian(
                         array,
                         type_.clone(),
                         size,
-                        &options.statistics,
+                        &no_mm_options.statistics,
                     );
                     Some(stats)
                 } else {
@@ -723,7 +688,7 @@ pub fn array_to_page_simple(
                     array.validity().cloned(),
                 );
 
-                fixed_size_binary::array_to_page(&array, options, type_, statistics)
+                fixed_size_binary::array_to_page(&array, no_mm_options, type_, statistics)
             }
         },
         ArrowDataType::Decimal(precision, _) => {
@@ -768,7 +733,7 @@ pub fn array_to_page_simple(
                 let size = decimal_length_from_precision(precision);
 
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_size_binary::build_statistics_decimal(
+                    let stats = fixed_size_binary::build_statistics_big_endian(
                         array,
                         type_.clone(),
                         size,
@@ -795,7 +760,7 @@ pub fn array_to_page_simple(
         ArrowDataType::UInt128 => {
             let array: &PrimitiveArray<u128> = array.as_any().downcast_ref().unwrap();
             let statistics = if options.has_statistics() {
-                let stats = fixed_size_binary::build_statistics_decimal(
+                let stats = fixed_size_binary::build_statistics_big_endian(
                     array,
                     type_.clone(),
                     16,
@@ -814,12 +779,16 @@ pub fn array_to_page_simple(
         },
         ArrowDataType::Int128 => {
             let array: &PrimitiveArray<i128> = array.as_any().downcast_ref().unwrap();
-            let statistics = if options.has_statistics() {
-                let stats = fixed_size_binary::build_statistics_decimal(
+            // Can't write min/max statistics for signed 128-bit integer, see #25965.
+            let mut no_mm_options = options;
+            no_mm_options.statistics.min_value = false;
+            no_mm_options.statistics.max_value = false;
+            let statistics = if no_mm_options.has_statistics() {
+                let stats = fixed_size_binary::build_statistics_big_endian(
                     array,
                     type_.clone(),
                     16,
-                    &options.statistics,
+                    &no_mm_options.statistics,
                 );
                 Some(stats)
             } else {
@@ -830,7 +799,7 @@ pub fn array_to_page_simple(
                 array.values().clone().try_transmute().unwrap(),
                 array.validity().cloned(),
             );
-            fixed_size_binary::array_to_page(&array, options, type_, statistics)
+            fixed_size_binary::array_to_page(&array, no_mm_options, type_, statistics)
         },
         ArrowDataType::Extension(ext) => {
             let mut boxed = array.to_boxed();
@@ -984,7 +953,7 @@ fn array_to_page_nested(
                 let size = decimal_length_from_precision(precision);
 
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_size_binary::build_statistics_decimal(
+                    let stats = fixed_size_binary::build_statistics_big_endian(
                         array,
                         type_.clone(),
                         size,
@@ -1045,7 +1014,7 @@ fn array_to_page_nested(
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
                 let statistics = if options.has_statistics() {
-                    let stats = fixed_size_binary::build_statistics_decimal256_with_i128(
+                    let stats = fixed_size_binary::build_statistics_i256_big_endian_low(
                         array,
                         type_.clone(),
                         size,
@@ -1073,12 +1042,16 @@ fn array_to_page_nested(
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
-                let statistics = if options.has_statistics() {
-                    let stats = fixed_size_binary::build_statistics_decimal256(
+                // Can't write min/max statistics for an unannotated 256-bit decimal, see #25965.
+                let mut no_mm_options = options;
+                no_mm_options.statistics.min_value = false;
+                no_mm_options.statistics.max_value = false;
+                let statistics = if no_mm_options.has_statistics() {
+                    let stats = fixed_size_binary::build_statistics_i256_big_endian(
                         array,
                         type_.clone(),
                         size,
-                        &options.statistics,
+                        &no_mm_options.statistics,
                     );
                     Some(stats)
                 } else {
@@ -1095,7 +1068,13 @@ fn array_to_page_nested(
                     array.validity().cloned(),
                 );
 
-                fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
+                fixed_size_binary::nested_array_to_page(
+                    &array,
+                    no_mm_options,
+                    type_,
+                    nested,
+                    statistics,
+                )
             }
         },
         Int128 => {
@@ -1105,7 +1084,7 @@ fn array_to_page_nested(
             no_mm_options.statistics.min_value = false;
             no_mm_options.statistics.max_value = false;
             let statistics = if no_mm_options.has_statistics() {
-                let stats = fixed_size_binary::build_statistics_decimal(
+                let stats = fixed_size_binary::build_statistics_big_endian(
                     array,
                     type_.clone(),
                     16,
@@ -1131,7 +1110,7 @@ fn array_to_page_nested(
         UInt128 => {
             let array: &PrimitiveArray<u128> = array.as_any().downcast_ref().unwrap();
             let statistics = if options.has_statistics() {
-                let stats = fixed_size_binary::build_statistics_decimal(
+                let stats = fixed_size_binary::build_statistics_big_endian(
                     array,
                     type_.clone(),
                     16,
@@ -1154,7 +1133,7 @@ fn array_to_page_nested(
 }
 
 fn get_encodings_recursive(dtype: &ArrowDataType, encodings: &mut Vec<Encoding>) {
-    use arrow::datatypes::PhysicalType::*;
+    use polars_arrow::datatypes::PhysicalType::*;
     match dtype.to_physical_type() {
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
         | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => {

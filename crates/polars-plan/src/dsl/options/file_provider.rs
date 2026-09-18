@@ -3,7 +3,8 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType};
+use polars_core::prelude::Column;
+use polars_core::prelude::row_encode::_get_rows_encoded_ca_unordered;
 use polars_error::PolarsResult;
 use polars_io::hive::HivePathFormatter;
 use polars_io::utils::file::Writable;
@@ -136,18 +137,9 @@ impl IcebergPathProvider {
         let mut partition_keys_hash = None;
 
         if partition_keys.width() != 0 {
-            let mut hasher = blake3::Hasher::new();
-
-            for column in partition_keys.columns() {
-                let column = column.cast(&DataType::String).unwrap();
-
-                let value = column.str().unwrap().get(0);
-
-                hasher.update(&[value.is_some() as u8]);
-                hasher.update(value.unwrap_or_default().as_bytes());
-            }
-
-            partition_keys_hash = Some(hasher.finalize().to_hex());
+            let encoded =
+                _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, partition_keys.columns())?;
+            partition_keys_hash = Some(blake3::hash(encoded.get(0).unwrap()).to_hex());
         }
 
         let partition_key_prefix: &str = partition_keys_hash.as_ref().map_or("", |x| &x[..32]);
@@ -191,47 +183,67 @@ impl FileProviderFunction {
         match self {
             Self::Rust(func) => (func)(args),
             #[cfg(feature = "python")]
-            Self::Python(object) => pyo3::Python::attach(|py| {
-                use polars_error::PolarsError;
-                use pyo3::intern;
-                use pyo3::types::{PyAnyMethods, PyDict};
+            Self::Python(object) => {
+                pyo3::Python::attach(|py| {
+                    use polars_error::PolarsError;
+                    use pyo3::intern;
+                    use pyo3::types::{PyAnyMethods, PyDict};
 
-                let FileProviderArgs {
-                    index_in_partition,
-                    partition_keys,
-                } = args;
+                    let FileProviderArgs {
+                        index_in_partition,
+                        partition_keys,
+                    } = args;
 
-                let convert_registry =
-                    polars_utils::python_convert_registry::get_python_convert_registry();
+                    let convert_registry =
+                        polars_utils::python_convert_registry::get_python_convert_registry();
 
-                let partition_keys = convert_registry
-                    .to_py
-                    .df_to_wrapped_pydf(partition_keys.as_ref())
-                    .map_err(PolarsError::from)?;
+                    let partition_keys = convert_registry
+                        .to_py
+                        .df_to_wrapped_pydf(partition_keys.as_ref())
+                        .map_err(PolarsError::from)?;
 
-                let kwargs = PyDict::new(py);
-                kwargs.set_item(intern!(py, "index_in_partition"), index_in_partition)?;
-                kwargs.set_item(intern!(py, "partition_keys"), partition_keys)?;
+                    let kwargs = PyDict::new(py);
+                    kwargs.set_item(intern!(py, "index_in_partition"), index_in_partition)?;
+                    kwargs.set_item(intern!(py, "partition_keys"), partition_keys)?;
 
-                let args_dataclass = convert_registry.py_file_provider_args_dataclass().call(
-                    py,
-                    (),
-                    Some(&kwargs),
-                )?;
+                    let args_dataclass = convert_registry
+                        .py_file_provider_args_dataclass(py)
+                        .call(py, (), Some(&kwargs))?;
 
-                let out = object.call1(py, (args_dataclass,))?;
-                let out = (convert_registry.from_py.file_provider_result)(out)?;
-                let out: FileProviderReturn = *out.downcast().unwrap();
+                    let out = object.call1(py, (args_dataclass,))?;
+                    let out = (convert_registry.from_py.file_provider_result)(out)?;
+                    let out: FileProviderReturn = *out.downcast().unwrap();
 
-                PolarsResult::Ok(out)
-            }),
+                    PolarsResult::Ok(out)
+                })
+            },
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::object_storage_path;
+    use std::sync::Arc;
+
+    use polars_core::frame::DataFrame;
+    use polars_core::prelude::Column;
+
+    use super::{
+        FileProviderArgs, IcebergPathProvider, IcebergPathProviderLayout, object_storage_path,
+    };
+
+    fn iceberg_path(partition_keys: DataFrame) -> String {
+        IcebergPathProvider {
+            extension: "parquet".into(),
+            file_part_prefix: "part".to_owned(),
+            layout: IcebergPathProviderLayout::Simple,
+        }
+        .get_path(FileProviderArgs {
+            index_in_partition: 0,
+            partition_keys: Arc::new(partition_keys),
+        })
+        .unwrap()
+    }
 
     #[test]
     fn iceberg_object_storage_paths_match_reference_hashes() {
@@ -251,5 +263,38 @@ mod tests {
             object_storage_path("test.parquet".to_owned(), false),
             "0110/1010/0011/11101000-test.parquet"
         );
+    }
+
+    #[test]
+    fn iceberg_partition_paths_support_arbitrary_binary() {
+        let binary_a = Column::new("key".into(), [&b"\xff"[..]]);
+        let binary_b = Column::new("key".into(), [&b"\xfe"[..]]);
+
+        let path_a = iceberg_path(DataFrame::new(1, vec![binary_a]).unwrap());
+        let path_b = iceberg_path(DataFrame::new(1, vec![binary_b]).unwrap());
+
+        assert_ne!(path_a, path_b);
+    }
+
+    #[test]
+    fn iceberg_compound_partition_paths_are_unambiguous() {
+        let keys_a = DataFrame::new(
+            1,
+            vec![
+                Column::new("first".into(), ["a"]),
+                Column::new("second".into(), ["\u{1}b"]),
+            ],
+        )
+        .unwrap();
+        let keys_b = DataFrame::new(
+            1,
+            vec![
+                Column::new("first".into(), ["a\u{1}"]),
+                Column::new("second".into(), ["b"]),
+            ],
+        )
+        .unwrap();
+
+        assert_ne!(iceberg_path(keys_a), iceberg_path(keys_b));
     }
 }

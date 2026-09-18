@@ -19,7 +19,6 @@ These functions are available from the Polars module root and can be used as exp
    approx_n_unique
    arange
    arctan2
-   arctan2d
    arg_sort_by
    arg_where
    business_day_count
@@ -49,7 +48,6 @@ These functions are available from the Polars module root and can be used as exp
    fold
    format
    from_epoch
-   groups
    head
    implode
    int_range

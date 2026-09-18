@@ -1,13 +1,13 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::mem::MaybeUninit;
 
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray,
     PrimitiveArray, StructArray, UInt8Array, UInt16Array, UInt32Array, Utf8Array, Utf8ViewArray,
 };
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
-use arrow::types::{NativeType, Offset};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::types::{NativeType, Offset};
 use polars_dtype::categorical::CatNative;
 use polars_utils::float16::pf16;
 
@@ -61,6 +61,9 @@ pub fn convert_columns_amortized_no_order(
     );
 }
 
+/// Number of rows encoded across all columns at a time.
+const ENCODE_ROW_TILE: usize = 1024;
+
 pub fn convert_columns_amortized<'a>(
     num_rows: usize,
     columns: &[ArrayRef],
@@ -97,18 +100,38 @@ pub fn convert_columns_amortized<'a>(
 
     let masked_out_write_offset = total_num_bytes;
     let mut scratches = EncodeScratches::default();
-    for (encoder, (opt, dict)) in encoders.iter_mut().zip(fields) {
-        unsafe {
-            encode_array(
-                buffer,
-                encoder,
-                opt,
-                dict,
-                &mut offsets[1..],
-                masked_out_write_offset,
-                &mut scratches,
-            )
-        };
+    if encoders.len() > 1 && encoders.iter().all(|e| e.state.is_none()) {
+        let mut start = 0;
+        while start < num_rows {
+            let len = ENCODE_ROW_TILE.min(num_rows - start);
+            for (encoder, (opt, dict)) in encoders.iter().zip(fields.clone()) {
+                let array = encoder.array.sliced(start, len);
+                unsafe {
+                    encode_flat_array(
+                        buffer,
+                        array.as_ref(),
+                        opt,
+                        dict,
+                        &mut offsets[1 + start..1 + start + len],
+                    )
+                };
+            }
+            start += len;
+        }
+    } else {
+        for (encoder, (opt, dict)) in encoders.iter_mut().zip(fields) {
+            unsafe {
+                encode_array(
+                    buffer,
+                    encoder,
+                    opt,
+                    dict,
+                    &mut offsets[1..],
+                    masked_out_write_offset,
+                    &mut scratches,
+                )
+            };
+        }
     }
     // SAFETY: All the bytes in out up to total_num_bytes should now be initialized.
     unsafe {
@@ -988,7 +1011,7 @@ pub fn fixed_size(
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::proptest::{
+    use polars_arrow::array::proptest::{
         ArrayArbitraryOptions, ArrowDataTypeArbitraryOptions, ArrowDataTypeArbitrarySelection,
         array_with_options,
     };

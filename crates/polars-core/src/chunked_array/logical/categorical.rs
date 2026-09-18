@@ -1,8 +1,8 @@
 use std::hash::BuildHasher;
 use std::marker::PhantomData;
 
-use arrow::bitmap::BitmapBuilder;
 use num_traits::Zero;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 
 use crate::chunked_array::cast::CastOptions;
@@ -296,16 +296,11 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
                 )
             },
 
-            // LEGACY
-            // TODO @ cat-rework: remove after exposing to/from physical functions.
             dt if dt.is_integer() => {
-                polars_warn!(
-                    Deprecation,
-                    "casting from {:?} to {dtype:?} is deprecated.\n\
+                polars_bail!(
+                    ComputeError: "cannot cast categorical types to {dtype:?}.\n\
                     Instead of `.cast({dtype:?})`, use `.cat.physical()`.",
-                    self.dtype
                 );
-                self.phys.clone().cast_with_options(dtype, options)
             },
 
             _ => polars_bail!(ComputeError: "cannot cast categorical types to {dtype:?}"),

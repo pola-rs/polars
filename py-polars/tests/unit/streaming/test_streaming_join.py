@@ -470,6 +470,20 @@ def test_merge_join(
     assert_frame_equal(actual, expected, check_row_order=check_row_order)
 
 
+def test_merge_join_ignores_projected_out_dataframe_columns() -> None:
+    left = pl.LazyFrame({"key": [10, 11]}).with_row_index()
+    right = pl.LazyFrame({"unused": [20, 21]}).with_row_index().select("index")
+    q = left.join(right, on="index")
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert "merge-join" in dot, "merge-join not used in plan"
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
 @pytest.mark.parametrize(
     ("keys", "dtype"),
     [
@@ -570,7 +584,7 @@ def test_merge_join_exprs() -> None:
         left_on="key",
         right_on=pl.concat_str(pl.col("key"), ignore_nulls=False),
         how="full",
-        maintain_order="none",
+        maintain_order="left_right",
     )
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert "merge-join" in dot, "merge-join not used in plan"

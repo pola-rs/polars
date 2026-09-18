@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-use arrow::bitmap::Bitmap;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::prelude::*;
@@ -23,9 +22,6 @@ pub trait SchemaExt {
     fn iter_fields(&self) -> impl ExactSizeIterator<Item = Field> + '_;
 
     fn to_supertype(&mut self, other: &Schema) -> PolarsResult<bool>;
-
-    /// Select fields using a bitmap.
-    fn project_select(&self, select: &Bitmap) -> Self;
 
     fn contains_dtype(&self, dtype: &DataType, recursive: bool) -> bool;
 }
@@ -97,15 +93,6 @@ impl SchemaExt for Schema {
         Ok(changed)
     }
 
-    fn project_select(&self, select: &Bitmap) -> Self {
-        assert_eq!(self.len(), select.len());
-        self.iter()
-            .zip(select.iter())
-            .filter(|(_, select)| *select)
-            .map(|((n, dt), _)| (n.clone(), dt.clone()))
-            .collect()
-    }
-
     fn contains_dtype(&self, dtype: &DataType, recursive: bool) -> bool {
         if !recursive {
             self.iter_values().any(|dt| dt == dtype)
@@ -145,55 +132,4 @@ impl SchemaNamesAndDtypes for Schema {
     ) -> impl ExactSizeIterator<Item = (&PlSmallStr, &Self::DataType)> {
         self.iter()
     }
-}
-
-pub fn ensure_matching_schema<F, M>(
-    lhs: &polars_schema::Schema<F, M>,
-    rhs: &polars_schema::Schema<F, M>,
-) -> PolarsResult<()>
-where
-    polars_schema::Schema<F, M>: SchemaNamesAndDtypes,
-{
-    let lhs = lhs.iter_names_and_dtypes();
-    let rhs = rhs.iter_names_and_dtypes();
-
-    if lhs.len() != rhs.len() {
-        polars_bail!(
-            SchemaMismatch:
-            "schemas contained differing number of columns: {} != {}",
-            lhs.len(), rhs.len(),
-        );
-    }
-
-    for (i, ((l_name, l_dtype), (r_name, r_dtype))) in lhs.zip(rhs).enumerate() {
-        if l_name != r_name {
-            polars_bail!(
-                SchemaMismatch:
-                "schema names differ at index {}: {} != {}",
-                i, l_name, r_name
-            )
-        }
-        if l_dtype != r_dtype
-            && (!polars_schema::Schema::<F, M>::IS_ARROW
-                || unsafe {
-                    // For timezone normalization. Easier than writing out the entire PartialEq.
-                    DataType::from_arrow_dtype(std::mem::transmute::<
-                        &<polars_schema::Schema<F, M> as SchemaNamesAndDtypes>::DataType,
-                        &ArrowDataType,
-                    >(l_dtype))
-                        != DataType::from_arrow_dtype(std::mem::transmute::<
-                            &<polars_schema::Schema<F, M> as SchemaNamesAndDtypes>::DataType,
-                            &ArrowDataType,
-                        >(r_dtype))
-                })
-        {
-            polars_bail!(
-                SchemaMismatch:
-                "schema dtypes differ at index {} for column {}: {:?} != {:?}",
-                i, l_name, l_dtype, r_dtype
-            )
-        }
-    }
-
-    Ok(())
 }

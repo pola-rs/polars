@@ -3,9 +3,9 @@ use std::sync::Arc;
 use num_traits::AsPrimitive;
 use parking_lot::Mutex;
 use polars_core::config;
-use polars_core::prelude::PlRandomState;
+use polars_core::prelude::{InitHashMaps, PlHashSet, PlIndexSet, PlRandomState};
 use polars_core::schema::{Schema, SchemaRef};
-use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_error::{PolarsResult, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
 use polars_expr::reduce::into_reduction;
@@ -13,11 +13,13 @@ use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_mem_engine::scan_predicate::create_scan_predicate;
 use polars_plan::dsl::{
-    FileSinkOptions, JoinOptionsIR, PartitionStrategyIR, PartitionedSinkOptionsIR, ScanSources,
+    FileSinkOptions, PartitionStrategyIR, PartitionedSinkOptionsIR, ScanSources,
 };
 use polars_plan::plans::expr_ir::ExprIR;
+use polars_plan::plans::options::JoinOptionsIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
 use polars_plan::prelude::FunctionFlags;
+use polars_plan::utils::aexpr_to_leaf_names_iter;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
@@ -38,6 +40,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderB
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::joins::merge_join::MergeJoinNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
+use crate::physical_plan::lower_group_by::augmented_group_by_input_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 fn has_potential_recurring_entrance(node: Node, arena: &Arena<AExpr>) -> bool {
@@ -226,6 +229,7 @@ fn to_graph_rec<'a>(
             selectors,
             input,
             extend_original,
+            rechunk_input,
         } => {
             let input_schema = input.output_schema(ctx.phys_sm);
             let phys_selectors = selectors
@@ -238,6 +242,7 @@ fn to_graph_rec<'a>(
                     phys_selectors,
                     node.output_schema(0).clone(),
                     *extend_original,
+                    *rechunk_input,
                 ),
                 [(input_key, input.port)],
             )
@@ -560,6 +565,7 @@ fn to_graph_rec<'a>(
             input,
             dtype,
             options,
+            input_name,
             ambiguous_is_raise,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -567,6 +573,7 @@ fn to_graph_rec<'a>(
                 nodes::strptime_infer::StrptimeInferNode::new(
                     dtype.clone(),
                     options.clone(),
+                    input_name.clone(),
                     *ambiguous_is_raise,
                 ),
                 [(input_key, input.port)],
@@ -848,6 +855,7 @@ fn to_graph_rec<'a>(
             predicate,
             predicate_file_skip_applied,
             hive_parts,
+            extra_columns_policy,
             missing_columns_policy,
             cast_columns_policy,
             include_file_paths,
@@ -889,6 +897,7 @@ fn to_graph_rec<'a>(
             let pre_slice = pre_slice.clone();
             let hive_parts = hive_parts.map(Arc::new);
             let include_file_paths = include_file_paths.clone();
+            let extra_columns_policy = *extra_columns_policy;
             let missing_columns_policy = *missing_columns_policy;
             let forbid_extra_columns = forbid_extra_columns.clone();
             let cast_columns_policy = cast_columns_policy.clone();
@@ -911,6 +920,7 @@ fn to_graph_rec<'a>(
                     predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
+                    extra_columns_policy,
                     missing_columns_policy,
                     forbid_extra_columns,
                     cast_columns_policy,
@@ -930,6 +940,7 @@ fn to_graph_rec<'a>(
         GroupBy {
             inputs,
             key_per_input,
+            fused_agg_inputs_per_input,
             aggs_per_input,
         } => {
             let mut key_ports = Vec::new();
@@ -938,8 +949,14 @@ fn to_graph_rec<'a>(
             let mut reductions_per_input = Vec::new();
             let mut grouped_reductions = Vec::new();
             let mut grouped_reduction_cols = Vec::new();
+            let mut payload_per_input = Vec::new();
             let mut has_order_sensitive_agg = false;
-            for ((input, key), aggs) in inputs.iter().zip(key_per_input).zip(aggs_per_input) {
+            for (((input, key), fused), aggs) in inputs
+                .iter()
+                .zip(key_per_input)
+                .zip(fused_agg_inputs_per_input)
+                .zip(aggs_per_input)
+            {
                 let input_key = to_graph_rec(input.node, ctx)?;
                 key_ports.push((input_key, input.port));
 
@@ -953,6 +970,11 @@ fn to_graph_rec<'a>(
                     .try_collect_vec()?;
                 key_selectors_per_input.push(key_selectors);
 
+                let augmented_schema =
+                    augmented_group_by_input_schema(input_schema, fused, ctx.expr_arena)?;
+                let fused_names: PlHashSet<PlSmallStr> =
+                    fused.iter().map(|e| e.output_name().clone()).collect();
+
                 let mut reductions_for_this_input = Vec::new();
                 for agg in aggs {
                     has_order_sensitive_agg |= matches!(
@@ -965,8 +987,8 @@ fn to_graph_rec<'a>(
                         )
                     );
                     let (reduction, input_nodes) =
-                        into_reduction(agg.node(), ctx.expr_arena, input_schema, true)?;
-                    let cols = input_nodes
+                        into_reduction(agg.node(), ctx.expr_arena, &augmented_schema, true)?;
+                    let cols: Vec<PlSmallStr> = input_nodes
                         .iter()
                         .map(|node| {
                             let AExpr::Column(col) = ctx.expr_arena.get(*node) else {
@@ -980,6 +1002,51 @@ fn to_graph_rec<'a>(
                     grouped_reduction_cols.push(cols);
                 }
 
+                // Columns of the input which must be kept (and spilled): every non-fused
+                // reduction input, plus the leaves the fused expressions are computed from.
+                let mut stored_cols = PlIndexSet::new();
+                let mut gather_cols = PlIndexSet::new();
+                let mut direct_reductions = Vec::new();
+                let mut fused_reductions = Vec::new();
+                for red_idx in &reductions_for_this_input {
+                    let cols = &grouped_reduction_cols[*red_idx];
+                    let touches_fused = cols.iter().any(|c| fused_names.contains(c));
+                    if touches_fused {
+                        fused_reductions.push(*red_idx);
+                    } else {
+                        direct_reductions.push(*red_idx);
+                    }
+                    for col in cols {
+                        if fused_names.contains(col) {
+                            continue;
+                        }
+                        stored_cols.insert(col.clone());
+                        if touches_fused {
+                            gather_cols.insert(col.clone());
+                        }
+                    }
+                }
+                for e in fused {
+                    for leaf in aexpr_to_leaf_names_iter(e.node(), ctx.expr_arena) {
+                        stored_cols.insert(leaf.clone());
+                        gather_cols.insert(leaf.clone());
+                    }
+                }
+
+                let gather_cols: Vec<PlSmallStr> = gather_cols.into_iter().collect();
+                let gather_schema = Arc::new(input_schema.try_project(gather_cols.iter())?);
+                let fused_selectors = fused
+                    .iter()
+                    .map(|e| create_stream_expr(e, ctx, &gather_schema))
+                    .try_collect_vec()?;
+
+                payload_per_input.push(nodes::group_by::InputPayload {
+                    stored_cols: stored_cols.into_iter().collect(),
+                    direct_reductions,
+                    fused_selectors,
+                    gather_cols,
+                    fused_reductions,
+                });
                 reductions_per_input.push(reductions_for_this_input);
             }
 
@@ -994,6 +1061,7 @@ fn to_graph_rec<'a>(
                     reductions_per_input,
                     grouper,
                     grouped_reduction_cols,
+                    payload_per_input,
                     grouped_reductions,
                     node.output_schema(0).clone(),
                     PlRandomState::default(),
@@ -1088,8 +1156,6 @@ fn to_graph_rec<'a>(
         InMemoryJoin {
             input_left,
             input_right,
-            left_on,
-            right_on,
             args,
             options,
         } => {
@@ -1109,13 +1175,12 @@ fn to_graph_rec<'a>(
                 input_left: left_node,
                 input_right: right_node,
                 schema: node.output_schema(0).clone(),
-                left_on: left_on.clone(),
-                right_on: right_on.clone(),
                 options: Arc::new(JoinOptionsIR {
                     allow_parallel: true,
                     force_parallel: false,
                     args: args.clone(),
                     options: options.clone(),
+                    runtime_filters: Vec::new(),
                 }),
             });
 
@@ -1150,6 +1215,8 @@ fn to_graph_rec<'a>(
             left_on,
             right_on,
             args,
+            fused_predicate: _,
+            runtime_filters: _,
         }
         | SemiAntiJoin {
             input_left,
@@ -1225,24 +1292,54 @@ fn to_graph_rec<'a>(
                         (right_input_key, input_right.port),
                     ],
                 ),
-                _ => ctx.graph.add_node(
-                    nodes::joins::equi_join::EquiJoinNode::new(
-                        left_input_schema,
-                        right_input_schema,
-                        left_key_schema,
-                        right_key_schema,
-                        unique_key_schema,
-                        output_schema,
-                        left_key_selectors,
-                        right_key_selectors,
-                        args,
-                        ctx.num_pipelines,
-                    )?,
-                    [
-                        (left_input_key, input_left.port),
-                        (right_input_key, input_right.port),
-                    ],
-                ),
+                EquiJoin {
+                    ref fused_predicate,
+                    ref runtime_filters,
+                    ..
+                } => {
+                    // Compiled against a narrow frame of exactly the columns it reads, in
+                    // the order the node gathers them.
+                    let fused_predicate = fused_predicate
+                        .as_ref()
+                        .map(|fused_predicate| {
+                            let mut names =
+                                aexpr_to_leaf_names_iter(fused_predicate.node(), ctx.expr_arena)
+                                    .cloned()
+                                    .collect::<Vec<_>>();
+                            names.sort_unstable();
+                            names.dedup();
+
+                            let fused_predicate_schema =
+                                Arc::new(output_schema.try_project(names.iter())?);
+                            PolarsResult::Ok((
+                                create_stream_expr(fused_predicate, ctx, &fused_predicate_schema)?,
+                                fused_predicate_schema,
+                            ))
+                        })
+                        .transpose()?;
+
+                    ctx.graph.add_node(
+                        nodes::joins::equi_join::EquiJoinNode::new(
+                            left_input_schema,
+                            right_input_schema,
+                            left_key_schema,
+                            right_key_schema,
+                            unique_key_schema,
+                            output_schema,
+                            left_key_selectors,
+                            right_key_selectors,
+                            fused_predicate,
+                            runtime_filters.clone(),
+                            args,
+                            ctx.num_pipelines,
+                        )?,
+                        [
+                            (left_input_key, input_left.port),
+                            (right_input_key, input_right.port),
+                        ],
+                    )
+                },
+                _ => unreachable!(),
             }
         },
 
@@ -1527,9 +1624,7 @@ fn to_graph_rec<'a>(
                                 {
                                     Ok(None)
                                 },
-                                Err(err) => polars_bail!(
-                                    ComputeError: "caught exception during execution of a Python source, exception: {err}"
-                                ),
+                                Err(err) => Err(err.into()),
                             }
                         })?;
 
@@ -1564,7 +1659,7 @@ fn to_graph_rec<'a>(
                 },
             };
 
-            use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy};
+            use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
 
             use crate::nodes::io_sources::batch::builder::BatchFnReaderBuilder;
             use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
@@ -1598,6 +1693,7 @@ fn to_graph_rec<'a>(
             let predicate_file_skip_applied = None;
             let hive_parts = None;
             let include_file_paths = None;
+            let extra_columns_policy = ExtraColumnsPolicy::Raise;
             let missing_columns_policy = MissingColumnsPolicy::Raise;
             let forbid_extra_columns = None;
             let cast_columns_policy = CastColumnsPolicy::ERROR_ON_MISMATCH;
@@ -1619,6 +1715,7 @@ fn to_graph_rec<'a>(
                     predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
+                    extra_columns_policy,
                     missing_columns_policy,
                     forbid_extra_columns,
                     cast_columns_policy,

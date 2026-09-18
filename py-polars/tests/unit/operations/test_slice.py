@@ -6,7 +6,11 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, ShapeError
-from polars.testing import assert_frame_equal, assert_frame_not_equal
+from polars.testing import (
+    assert_frame_equal,
+    assert_frame_not_equal,
+    assert_series_equal,
+)
 
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
@@ -148,7 +152,7 @@ def test_hconcat_slice_pushdown() -> None:
         pl.LazyFrame({f"column_{i}": list(range(i, i + 10))}) for i in range(num_dfs)
     ]
 
-    out = pl.concat(lfs, how="horizontal", strict=True).slice(2, 3)
+    out = pl.concat(lfs, how="horizontal").slice(2, 3)
     plan = out.explain()
 
     assert not plan.startswith("SLICE")
@@ -177,15 +181,15 @@ def test_hconcat_tail_unequal_heights_27552() -> None:
 
 def test_hconcat_tail_unequal_heights_strict_raises_27552() -> None:
     # Regression for https://github.com/pola-rs/polars/issues/27552
-    # With strict=True, concat of unequal-height inputs must raise, even when
-    # followed by a negative-offset slice. Before the fix, the slice was pushed
-    # into each input and equalised their post-slice heights,
+    # With `how="horizontal"`, concat of unequal-height inputs must raise, even
+    # when followed by a negative-offset slice. Before the fix, the slice was
+    # pushed into each input and equalised their post-slice heights,
     # silently bypassing the strict-mode height check.
     a = pl.LazyFrame({"x": [1, 2, 3, 4, 5]})
     b = pl.LazyFrame({"y": [10, 20, 30]})
 
     with pytest.raises(ShapeError):
-        pl.concat([a, b], how="horizontal", strict=True).tail(2).collect()
+        pl.concat([a, b], how="horizontal").tail(2).collect()
 
 
 @pytest.mark.parametrize(
@@ -224,7 +228,7 @@ def test_slice_pushdown_literal_projection_14349() -> None:
     assert_frame_equal(expect, out)
 
     assert pl.LazyFrame().select(x=1).head(1).collect().height == 1
-    assert pl.LazyFrame().with_columns(x=1).head(1).collect().height == 1
+    assert pl.LazyFrame(height=1).with_columns(x=1).head(1).collect().height == 1
 
     q = lf.select(x=1).head(1)
     assert q.collect().height == 1
@@ -567,3 +571,13 @@ def test_slice_negative_offset_none_len_26150() -> None:
 
 def test_n_rows_slice_pushdown_26656() -> None:
     assert pl.scan_csv(b"x\n" * 20, n_rows=5).head(10).collect().height == 5
+
+
+def test_series_slice_neg_offset_29183() -> None:
+    a = pl.Series([1, 2, 3])
+    assert_series_equal(a.slice(-1), pl.Series([3]))
+    assert_series_equal(a.slice(-2), pl.Series([2, 3]))
+    assert_series_equal(a.slice(-3), a)
+    assert_series_equal(a.slice(-4), a)
+    assert_series_equal(a.slice(-5), a)
+    assert_series_equal(a.slice(-500), a)

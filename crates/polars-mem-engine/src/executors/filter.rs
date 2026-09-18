@@ -124,22 +124,6 @@ impl Executor for FilterExec {
             }
         }
         let df = self.input.execute(state)?;
-
-        let profile_name = if state.has_node_timer() {
-            Cow::Owned(format!(".filter({})", self.predicate.as_ref()))
-        } else {
-            Cow::Borrowed("")
-        };
-
-        state.clone().record(
-            || {
-                let df = self.execute_impl(df, state);
-                if state.verbose() {
-                    eprintln!("dataframe filtered");
-                }
-                df
-            },
-            profile_name,
-        )
+        self.execute_impl(df, state)
     }
 }

@@ -1,12 +1,12 @@
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryViewArray, DictionaryArray, DictionaryKey, PrimitiveArray, Utf8ViewArray,
 };
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::compute::aggregate::estimated_bytes_size;
-use arrow::datatypes::{ArrowDataType, IntegerType, PhysicalType};
-use arrow::legacy::utils::CustomIterTools;
-use arrow::trusted_len::TrustMyLength;
-use arrow::types::NativeType;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::compute::aggregate::estimated_bytes_size;
+use polars_arrow::datatypes::{ArrowDataType, IntegerType, PhysicalType};
+use polars_arrow::legacy::utils::CustomIterTools;
+use polars_arrow::trusted_len::TrustMyLength;
+use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_compute::min_max::MinMaxKernel;
 use polars_error::{PolarsResult, polars_bail};
@@ -219,7 +219,7 @@ pub(crate) fn encode_as_dictionary_optional(
         ));
     }
 
-    use arrow::types::PrimitiveType as PT;
+    use polars_arrow::types::PrimitiveType as PT;
     let fast_dictionary = match array.dtype().to_physical_type() {
         PhysicalType::Primitive(pt) => match pt {
             PT::Int8 => min_max_integer_encode_as_dictionary_optional::<_, i8>(array),
@@ -386,7 +386,7 @@ fn serialize_keys_range<K: DictionaryKey>(
     array: &DictionaryArray<K>,
     type_: &PrimitiveType,
     nested: &[Nested],
-    statistics: Option<ParquetStatistics>,
+    mut statistics: Option<ParquetStatistics>,
     options: WriteOptions,
 ) -> PolarsResult<Page> {
     let mut buffer = vec![];
@@ -412,11 +412,17 @@ fn serialize_keys_range<K: DictionaryKey>(
         (nested::num_values(nested), nested[0].len())
     };
 
+    let null_count = validity.as_ref().map_or(0, Bitmap::unset_bits);
+
+    if let Some(statistics) = statistics.as_mut() {
+        statistics.null_count = options.statistics.null_count.then_some(null_count as i64);
+    }
+
     utils::build_plain_page(
         buffer,
         num_values,
         num_rows,
-        array.null_count(),
+        null_count,
         repetition_levels_byte_length,
         definition_levels_byte_length,
         statistics,
@@ -435,12 +441,11 @@ macro_rules! dyn_prim {
             primitive_encode_plain::<$from, $to>(values, EncodeNullability::new(false), vec![]);
 
         let stats: Option<ParquetStatistics> = if !$options.statistics.is_empty() {
-            let mut stats = primitive_build_statistics::<$from, $to>(
+            let stats = primitive_build_statistics::<$from, $to>(
                 values,
                 $type_.clone(),
                 &$options.statistics,
             );
-            stats.null_count = Some($array.null_count() as i64);
             Some(stats.serialize())
         } else {
             None
@@ -462,7 +467,7 @@ pub fn array_to_pages<K: DictionaryKey>(
     match encoding {
         Encoding::PlainDictionary | Encoding::RleDictionary => {
             // write DictPage
-            let (dict_page, mut statistics): (_, Option<ParquetStatistics>) = match array
+            let (dict_page, statistics): (_, Option<ParquetStatistics>) = match array
                 .values()
                 .dtype()
                 .to_storage()
@@ -601,10 +606,6 @@ pub fn array_to_pages<K: DictionaryKey>(
                     )
                 },
             };
-
-            if let Some(stats) = &mut statistics {
-                stats.null_count = Some(array.null_count() as i64)
-            }
 
             // write DataPages pointing to DictPage
             let data_pages = serialize_keys(array, type_, nested, statistics, options);

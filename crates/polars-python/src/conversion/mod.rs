@@ -7,6 +7,7 @@ use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 
 pub use categorical::PyCategories;
 #[cfg(feature = "object")]
@@ -21,19 +22,21 @@ use polars::prelude::default_values::DefaultFieldValues;
 use polars::prelude::deletion::{DeletionFilesList, DeltaDeletionVectorProvider};
 use polars::series::ops::NullBehavior;
 use polars_buffer::Buffer;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::decimal::dec128_verify_prec_scale;
 use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
-use polars_core::utils::arrow::array::Array;
 use polars_core::utils::materialize_dyn_int;
+use polars_core::utils::polars_arrow::array::Array;
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_plan::dsl::default_values::IcebergDefaultFieldValues;
 use polars_plan::dsl::deletion::IcebergDeletes;
+use polars_plan::dsl::dsl_resolver::ResolvedDsl;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
-use polars_utils::pl_serialize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonObject;
 use polars_utils::total_ord::{TotalEq, TotalHash};
@@ -41,11 +44,9 @@ use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::pybacked::{PyBackedBytes, PyBackedStr};
+use pyo3::pybacked::PyBackedStr;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{IntoPyDict, PyBytes, PyDict, PyList, PySequence, PyString};
-use serde::Serialize;
-use serde::de::DeserializeOwned;
+use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
@@ -120,6 +121,63 @@ pub(crate) fn get_lf(obj: &Bound<'_, PyAny>) -> PyResult<LazyFrame> {
     Ok(pydf.extract::<PyLazyFrame>()?.ldf.into_inner())
 }
 
+pub(crate) fn extract_py_resolved_dsl(
+    py: Python<'_>,
+    // pl.LazyFrame | tuple[pl.LazyFrame | None, polars.lazyframe_resolver.ResolvedLazyFrameProps]
+    py_resolved_lazyframe: Py<PyAny>,
+) -> PolarsResult<ResolvedDsl> {
+    let mut ret = ResolvedDsl::default();
+
+    let ResolvedDsl {
+        dsl,
+        version_key,
+        applied_filters,
+        slice_offset_applied: _,
+    } = &mut ret;
+
+    let mut py_lf: Option<Py<PyAny>> = None;
+    let mut props: Option<Py<PyAny>> = None;
+
+    if py_resolved_lazyframe
+        .getattr(py, intern!(py, "_ldf"))
+        .is_ok()
+    {
+        py_lf = Some(py_resolved_lazyframe);
+    } else {
+        let py_lf_: Py<PyAny>;
+        let props_: Py<PyAny>;
+
+        (py_lf_, props_) = py_resolved_lazyframe.extract(py)?;
+
+        if !py_lf_.is_none(py) {
+            py_lf = Some(py_lf_)
+        }
+
+        props = Some(props_);
+    }
+
+    if let Some(lf) = py_lf {
+        let plf: PyLazyFrame = lf.getattr(py, intern!(py, "_ldf"))?.extract(py)?;
+        *dsl = Some(plf.ldf.into_inner().logical_plan);
+    }
+
+    if let Some(props) = props {
+        *version_key = props
+            .getattr(py, intern!(py, "version_key"))?
+            .extract::<Option<Wrap<PlSmallStr>>>(py)?
+            .map(|x| x.0);
+
+        *applied_filters = props
+            .getattr(py, intern!(py, "applied_filters"))?
+            .bind(py)
+            .try_iter()?
+            .map(|x| x.and_then(|x| x.extract::<usize>()))
+            .collect::<PyResult<PlIndexSet<usize>>>()?;
+    }
+
+    Ok(ret)
+}
+
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
     let s = obj.getattr(intern!(obj.py(), "_s"))?;
     Ok(s.extract::<PySeries>()?.series.into_inner())
@@ -129,30 +187,6 @@ pub(crate) fn to_series(py: Python<'_>, s: PySeries) -> PyResult<Bound<'_, PyAny
     let series = pl_series(py).bind(py);
     let constructor = series.getattr(intern!(py, "_from_pyseries"))?;
     constructor.call1((s,))
-}
-
-pub(crate) fn serde_pickle<'py, T: Serialize>(
-    val: &T,
-    py: Python<'py>,
-) -> PyResult<Bound<'py, PyBytes>> {
-    // For pickling we set FC is false, as that is used for caching (compact is faster) and is not
-    // intended to be used across different versions.
-    let mut writer: Vec<u8> = vec![];
-    pl_serialize::SerializeOptions::default()
-        .serialize_into_writer::<_, _, false>(&mut writer, &val)
-        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
-    Ok(PyBytes::new(py, &writer))
-}
-
-pub(crate) fn serde_unpickle<T: DeserializeOwned>(
-    val: &mut T,
-    state: &Bound<PyAny>,
-) -> PyResult<()> {
-    let bytes = state.extract::<PyBackedBytes>()?;
-    *val = pl_serialize::SerializeOptions::default()
-        .deserialize_from_reader::<_, _, false>(&*bytes)
-        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
-    Ok(())
 }
 
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PlSmallStr> {
@@ -352,6 +386,12 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Null"))?;
                 class.call0()
             },
+            DataType::Map(key, value) => {
+                let class = pl.getattr(intern!(py, "Map"))?;
+                let key = Wrap(*key.clone());
+                let value = Wrap(*value.clone());
+                class.call1((&key, &value))
+            },
             DataType::Extension(typ, storage) => {
                 let py_storage = Wrap((**storage).clone()).into_pyobject(py)?;
                 let py_typ = pl
@@ -437,6 +477,14 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                     "List" => DataType::List(Box::new(DataType::Null)),
                     "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "Struct" => DataType::Struct(vec![]),
+                    #[cfg(feature = "dtype-map")]
+                    "Map" => {
+                        // `Map(Null, _)` is not a valid dtype, so there is no bare
+                        // stand-in the way `List` has `List(Null)`.
+                        return Err(PyTypeError::new_err(
+                            "Map requires a key and a value type, e.g. `pl.Map(pl.String, pl.Int64)`",
+                        ));
+                    },
                     "Null" => DataType::Null,
                     #[cfg(feature = "object")]
                     "Object" => DataType::Object(OBJECT_NAME),
@@ -519,6 +567,16 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                 let inner = inner.extract::<Wrap<DataType>>()?;
                 let size = size.extract::<usize>()?;
                 DataType::Array(Box::new(inner.0), size)
+            },
+            #[cfg(feature = "dtype-map")]
+            "Map" => {
+                let key = ob.getattr(intern!(py, "key"))?;
+                let value = ob.getattr(intern!(py, "value"))?;
+                let key = key.extract::<Wrap<DataType>>()?;
+                let value = value.extract::<Wrap<DataType>>()?;
+                let dtype = DataType::Map(Box::new(key.0), Box::new(value.0));
+                dtype.ensure_valid_map_dtype().map_err(PyPolarsErr::from)?;
+                dtype
             },
             "Struct" => {
                 let fields = ob.getattr(intern!(py, "fields"))?;
@@ -1050,23 +1108,6 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Label> {
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ListToStructWidthStrategy> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
-            "max_width" => ListToStructWidthStrategy::MaxWidth,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "`n_field_strategy` must be one of {{'first_non_null', 'max_width'}}, got {v}",
-                )));
-            },
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<NonExistent> {
     type Error = PyErr;
 
@@ -1152,6 +1193,18 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<IndexOrder> {
                 )));
             },
         };
+        Ok(Wrap(parsed))
+    }
+}
+
+#[cfg(feature = "approx_quantile")]
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ApproxQuantileMethod> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let s = ob.extract::<PyBackedStr>()?;
+        let parsed =
+            ApproxQuantileMethod::from_str(&s).map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Wrap(parsed))
     }
 }
@@ -1627,6 +1680,85 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
     }
 }
 
+impl<'py> IntoPyObject<'py> for Wrap<CastColumnsPolicy> {
+    type Target = PyDict;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let CastColumnsPolicy {
+            integer_upcast,
+            integer_to_float_cast,
+            float_upcast,
+            float_downcast,
+            datetime_nanoseconds_downcast,
+            datetime_microseconds_downcast,
+            datetime_milliseconds_upcast,
+            datetime_microseconds_upcast,
+            datetime_convert_timezone,
+            null_upcast,
+            categorical_to_string,
+            missing_struct_fields,
+            extra_struct_fields,
+        } = self.0;
+
+        let out = PyDict::new(py);
+        out.set_item("integer_upcast", integer_upcast)?;
+        out.set_item("integer_to_float_cast", integer_to_float_cast)?;
+        out.set_item("float_upcast", float_upcast)?;
+        out.set_item("float_downcast", float_downcast)?;
+        out.set_item(
+            "datetime_nanoseconds_downcast",
+            datetime_nanoseconds_downcast,
+        )?;
+        out.set_item(
+            "datetime_microseconds_downcast",
+            datetime_microseconds_downcast,
+        )?;
+        out.set_item("datetime_milliseconds_upcast", datetime_milliseconds_upcast)?;
+        out.set_item("datetime_microseconds_upcast", datetime_microseconds_upcast)?;
+        out.set_item("datetime_convert_timezone", datetime_convert_timezone)?;
+        out.set_item("null_upcast", null_upcast)?;
+        out.set_item("categorical_to_string", categorical_to_string)?;
+        out.set_item("missing_struct_fields", Wrap(missing_struct_fields))?;
+        out.set_item("extra_struct_fields", Wrap(extra_struct_fields))?;
+
+        Ok(out)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Wrap<HiveOptions> {
+    type Target = PyDict;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let HiveOptions {
+            enabled,
+            hive_start_idx,
+            schema,
+            try_parse_dates,
+        } = self.0;
+
+        let out = PyDict::new(py);
+        out.set_item("enabled", enabled)?;
+        out.set_item("hive_start_idx", hive_start_idx)?;
+        out.set_item(
+            "schema",
+            match schema {
+                None => py.None(),
+                Some(schema) => Wrap(schema.as_ref().clone())
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            },
+        )?;
+        out.set_item("try_parse_dates", try_parse_dates)?;
+
+        Ok(out)
+    }
+}
+
 pub(crate) fn parse_fill_null_strategy(
     strategy: &str,
     limit: FillNullLimit,
@@ -1813,6 +1945,20 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ExtraColumnsPolicy> {
     }
 }
 
+impl<'py> IntoPyObject<'py> for Wrap<ExtraColumnsPolicy> {
+    type Target = PyString;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match self.0 {
+            ExtraColumnsPolicy::Ignore => "ignore",
+            ExtraColumnsPolicy::Raise => "raise",
+        }
+        .into_pyobject(py)
+    }
+}
+
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<MissingColumnsPolicy> {
     type Error = PyErr;
 
@@ -1827,6 +1973,20 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<MissingColumnsPolicy> {
             },
         };
         Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Wrap<MissingColumnsPolicy> {
+    type Target = PyString;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match self.0 {
+            MissingColumnsPolicy::Insert => "insert",
+            MissingColumnsPolicy::Raise => "raise",
+        }
+        .into_pyobject(py)
     }
 }
 

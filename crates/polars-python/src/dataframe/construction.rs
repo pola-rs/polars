@@ -54,10 +54,20 @@ impl PyDataFrame {
 
         // read (or infer) field names, then extract row values
         let names = get_schema_names(data, schema.as_ref(), infer_schema_length, from_mapping)?;
+        // A dict value needs its target dtype to be read as a Map rather than a Struct.
+        let dtypes: Vec<Option<&DataType>> = names
+            .iter()
+            .map(|name| {
+                schema_overrides
+                    .as_ref()
+                    .and_then(|s| s.get(name.as_str()))
+                    .or_else(|| schema.as_ref().and_then(|s| s.get(name.as_str())))
+            })
+            .collect();
         let rows = if from_mapping {
-            mappings_to_rows(data, &names, strict)?
+            mappings_to_rows(data, &names, &dtypes, strict)?
         } else {
-            dicts_to_rows(data, &names, strict)?
+            dicts_to_rows(data, &names, &dtypes, strict)?
         };
 
         let schema = schema.or_else(|| {
@@ -150,6 +160,7 @@ where
 fn dicts_to_rows(
     data: &Bound<'_, PyAny>,
     names: &[String],
+    dtypes: &[Option<&DataType>],
     strict: bool,
 ) -> PyResult<Vec<Row<'static>>> {
     let py = data.py();
@@ -166,10 +177,12 @@ fn dicts_to_rows(
         } else {
             let d = d.cast::<PyDict>()?;
             let mut row = Vec::with_capacity(names.len());
-            for k in &py_keys {
+            for (k, dtype) in py_keys.iter().zip(dtypes) {
                 let val = match d.get_item(k)? {
                     None => AnyValue::Null,
-                    Some(py_val) => py_object_to_any_value(&py_val.as_borrowed(), strict, true)?,
+                    Some(py_val) => {
+                        py_object_to_any_value(&py_val.as_borrowed(), strict, true, *dtype)?
+                    },
                 };
                 row.push(val)
             }
@@ -182,6 +195,7 @@ fn dicts_to_rows(
 fn mappings_to_rows(
     data: &Bound<'_, PyAny>,
     names: &[String],
+    dtypes: &[Option<&DataType>],
     strict: bool,
 ) -> PyResult<Vec<Row<'static>>> {
     let py = data.py();
@@ -198,12 +212,12 @@ fn mappings_to_rows(
         } else {
             let d = d.cast::<PyMapping>()?;
             let mut row = Vec::with_capacity(names.len());
-            for k in &py_keys {
+            for (k, dtype) in py_keys.iter().zip(dtypes) {
                 let py_val = d.get_item(k)?;
                 let val = if py_val.is_none() {
                     AnyValue::Null
                 } else {
-                    py_object_to_any_value(&py_val, strict, true)?
+                    py_object_to_any_value(&py_val, strict, true, *dtype)?
                 };
                 row.push(val)
             }

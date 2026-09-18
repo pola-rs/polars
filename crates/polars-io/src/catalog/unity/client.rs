@@ -20,7 +20,7 @@ impl CatalogClient {
     pub async fn list_catalogs(&self) -> PolarsResult<Vec<CatalogInfo>> {
         ListCatalogs(PageWalker::new(self.http_client.get(format!(
             "{}{}",
-            &self.workspace_url, "/api/2.1/unity-catalog/catalogs"
+            self.workspace_url, "/api/2.1/unity-catalog/catalogs"
         ))))
         .read_all_pages()
         .await
@@ -31,7 +31,7 @@ impl CatalogClient {
             self.http_client
                 .get(format!(
                     "{}{}",
-                    &self.workspace_url, "/api/2.1/unity-catalog/schemas"
+                    self.workspace_url, "/api/2.1/unity-catalog/schemas"
                 ))
                 .query(&[("catalog_name", catalog_name)]),
         ))
@@ -48,7 +48,7 @@ impl CatalogClient {
             self.http_client
                 .get(format!(
                     "{}{}",
-                    &self.workspace_url, "/api/2.1/unity-catalog/tables"
+                    self.workspace_url, "/api/2.1/unity-catalog/tables"
                 ))
                 .query(&[("catalog_name", catalog_name), ("schema_name", namespace)]),
         ))
@@ -73,7 +73,7 @@ impl CatalogClient {
             self.http_client
                 .get(format!(
                     "{}{}{}",
-                    &self.workspace_url, "/api/2.1/unity-catalog/tables/", full_table_name
+                    self.workspace_url, "/api/2.1/unity-catalog/tables/", full_table_name
                 ))
                 .query(&[("full_name", full_table_name)]),
         )
@@ -93,7 +93,7 @@ impl CatalogClient {
             self.http_client
                 .post(format!(
                     "{}{}",
-                    &self.workspace_url, "/api/2.1/unity-catalog/temporary-table-credentials"
+                    self.workspace_url, "/api/2.1/unity-catalog/temporary-table-credentials"
                 ))
                 .json(&Body {
                     table_id,
@@ -123,7 +123,7 @@ impl CatalogClient {
             self.http_client
                 .post(format!(
                     "{}{}",
-                    &self.workspace_url, "/api/2.1/unity-catalog/catalogs"
+                    self.workspace_url, "/api/2.1/unity-catalog/catalogs"
                 ))
                 .json(&Body {
                     name: catalog_name,
@@ -150,7 +150,7 @@ impl CatalogClient {
             self.http_client
                 .delete(format!(
                     "{}{}{}",
-                    &self.workspace_url, "/api/2.1/unity-catalog/catalogs/", catalog_name
+                    self.workspace_url, "/api/2.1/unity-catalog/catalogs/", catalog_name
                 ))
                 .query(&[("force", force)]),
         )
@@ -170,7 +170,7 @@ impl CatalogClient {
             self.http_client
                 .post(format!(
                     "{}{}",
-                    &self.workspace_url, "/api/2.1/unity-catalog/schemas"
+                    self.workspace_url, "/api/2.1/unity-catalog/schemas"
                 ))
                 .json(&Body {
                     name: namespace,
@@ -208,7 +208,7 @@ impl CatalogClient {
             self.http_client
                 .delete(format!(
                     "{}{}{}",
-                    &self.workspace_url, "/api/2.1/unity-catalog/schemas/", full_name
+                    self.workspace_url, "/api/2.1/unity-catalog/schemas/", full_name
                 ))
                 .query(&[("force", force)]),
         )
@@ -238,7 +238,7 @@ impl CatalogClient {
             self.http_client
                 .post(format!(
                     "{}{}",
-                    &self.workspace_url, "/api/2.1/unity-catalog/tables"
+                    self.workspace_url, "/api/2.1/unity-catalog/tables"
                 ))
                 .json(&Body {
                     name: table_name,
@@ -286,7 +286,7 @@ impl CatalogClient {
 
         do_request(self.http_client.delete(format!(
             "{}{}{}",
-            &self.workspace_url, "/api/2.1/unity-catalog/tables/", full_name
+            self.workspace_url, "/api/2.1/unity-catalog/tables/", full_name
         )))
         .await?;
 

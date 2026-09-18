@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import io
 import os
 import pickle
-from typing import TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any
 
 import pytest
 
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import EngineType
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -52,7 +54,7 @@ def test_collect_async_streaming_warns_unstable(lf: pl.LazyFrame) -> None:
         pl.Config().warn_unstable(False)
 
 
-def test_sink_forwards_optimizations(tmp_path: Path, lf: pl.LazyFrame) -> None:
+def test_sink_forwards_optimizations(lf: pl.LazyFrame) -> None:
     # Non-lazy sinks used to apply the caller's optimizations to the sink plan and
     # then call `collect(engine=...)` without passing them on; `forward_old_opt_flags`
     # substituted the defaults and `collect` re-applied them, replacing the flags
@@ -67,9 +69,7 @@ def test_sink_forwards_optimizations(tmp_path: Path, lf: pl.LazyFrame) -> None:
             return super().collect(lf, optimizations=optimizations, **kwargs)
 
     optimizations = pl.QueryOptFlags(predicate_pushdown=False)
-    lf.sink_parquet(
-        tmp_path / "out.parquet", engine=RecordingEngine(), optimizations=optimizations
-    )
+    lf.sink_parquet(io.BytesIO(), engine=RecordingEngine(), optimizations=optimizations)
 
     assert len(seen) == 1
     assert seen[0] is optimizations
@@ -77,7 +77,7 @@ def test_sink_forwards_optimizations(tmp_path: Path, lf: pl.LazyFrame) -> None:
 
 
 def test_collect_all_async_honors_engine_affinity(
-    monkeypatch: pytest.MonkeyPatch, lf: pl.LazyFrame
+    plmonkeypatch: PlMonkeyPatch, lf: pl.LazyFrame
 ) -> None:
     seen: list[Any] = []
     original = plr.collect_all_with_callback
@@ -86,9 +86,8 @@ def test_collect_all_async_honors_engine_affinity(
         seen.append(engine)
         return original(lfs, engine, optflags, callback)
 
-    monkeypatch.setattr(plr, "collect_all_with_callback", spy)
-    monkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
-    plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
+    plmonkeypatch.setattr(plr, "collect_all_with_callback", spy)
+    plmonkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
 
     async def run() -> None:
         await pl.collect_all_async([lf])
@@ -119,6 +118,10 @@ def test_collect_batches_accepts_gpu_engine_object(lf: pl.LazyFrame) -> None:
     ],
 )
 def test_select_engine(spelling: EngineType, expected: str) -> None:
+    if os.environ.get("POLARS_ENGINE_AFFINITY") is not None:
+        pytest.skip(
+            "POLARS_ENGINE_AFFINITY is set; this may override the test's expectations"
+        )
     selected = _select_engine(spelling)
     assert isinstance(selected, pl.Engine)
     assert selected.name == expected
@@ -135,18 +138,16 @@ def test_select_engine_invalid_raises() -> None:
         _select_engine("bogus")  # type: ignore[arg-type]
 
 
-def test_select_engine_honors_affinity(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
-    plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
+def test_select_engine_honors_affinity(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
 
     assert _select_engine("auto").name == "streaming"
     # an explicit engine still wins over the affinity
     assert _select_engine("in-memory").name == "in-memory"
 
 
-def test_eager_engine_ignores_affinity(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
-    plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
+def test_eager_engine_ignores_affinity(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
 
     # internal eager operations always run in-memory
     assert _eager_engine().name == "in-memory"
@@ -252,14 +253,13 @@ def test_minimal_engine_supports_collect_and_execute(lf: pl.LazyFrame) -> None:
     assert engine.collected == 1
 
 
-def test_in_process_engine_inherits_working_sinks(
-    tmp_path: Path, lf: pl.LazyFrame
-) -> None:
+def test_in_process_engine_inherits_working_sinks(lf: pl.LazyFrame) -> None:
     engine = _LocalCountingEngine()
-    path = tmp_path / "out.parquet"
-    lf.sink_parquet(path, engine=engine)
+    out = io.BytesIO()
+    lf.sink_parquet(out, engine=engine)
 
-    assert_frame_equal(pl.read_parquet(path), lf.collect())
+    out.seek(0)
+    assert_frame_equal(pl.read_parquet(out), lf.collect())
     assert engine.collected == 1
 
 
@@ -282,12 +282,60 @@ def test_capability_gated_operations_raise(
         call(lf, engine)
 
 
+# `_CountingEngine` has no sinks, so a lazy sink that resolved the affinity would raise
+# `NotImplementedError`. A lazy sink only builds a plan, so it must not resolve one.
+@pytest.mark.parametrize(
+    "sink",
+    [
+        lambda lf, out: lf.sink_parquet(out, lazy=True),
+        lambda lf, out: lf.sink_ipc(out, lazy=True),
+        lambda lf, out: lf.sink_csv(out, lazy=True),
+        lambda lf, out: lf.sink_ndjson(out, lazy=True),
+        lambda lf, _out: lf.sink_batches(print, lazy=True),
+    ],
+)
+def test_lazy_sink_does_not_resolve_an_engine(
+    lf: pl.LazyFrame, sink: Callable[[pl.LazyFrame, IO[bytes]], Any]
+) -> None:
+    with pl.Config(engine_affinity=_CountingEngine()):
+        assert isinstance(sink(lf, io.BytesIO()), pl.LazyFrame)
+
+
+def test_lazy_sink_plan_is_independent_of_the_engine(
+    tmp_path: Path, lf: pl.LazyFrame
+) -> None:
+    # we need to use a real file: `serialize` refuses to encode an
+    # in-memory sink target, and comparing plan bytes is the whole point
+    path = tmp_path / "out.parquet"
+    engines: list[EngineType] = [
+        "auto",
+        "in-memory",
+        "streaming",
+        pl.StreamingEngine(),
+    ]
+    plans = {lf.sink_parquet(path, lazy=True, engine=e).serialize() for e in engines}
+    assert len(plans) == 1
+
+
+def test_lazy_sink_plan_executes(lf: pl.LazyFrame) -> None:
+    out = io.BytesIO()
+    with pl.Config(engine_affinity=_CountingEngine()):
+        lf.sink_parquet(out, lazy=True).collect()
+    out.seek(0)
+    assert_frame_equal(pl.read_parquet(out), lf.collect(engine="in-memory"))
+
+
+def test_lazy_sink_still_rejects_an_invalid_engine_name(lf: pl.LazyFrame) -> None:
+    with pytest.raises(ValueError, match="Invalid engine argument"):
+        lf.sink_parquet(io.BytesIO(), lazy=True, engine="nonsense")  # type: ignore[call-overload]
+
+
 @pytest.mark.parametrize(
     ("name", "engine"),
     [("in-memory", pl.InMemoryEngine()), ("streaming", pl.StreamingEngine())],
 )
 def test_string_and_object_spellings_agree(
-    tmp_path: Path, lf: pl.LazyFrame, name: EngineType, engine: pl.Engine
+    lf: pl.LazyFrame, name: EngineType, engine: pl.Engine
 ) -> None:
     assert_frame_equal(lf.collect(engine=name), lf.collect(engine=engine))
     assert lf.explain(engine=name) == lf.explain(engine=engine)
@@ -302,9 +350,11 @@ def test_string_and_object_spellings_agree(
         pl.concat(lf.collect_batches(engine=engine)),
     )
 
-    by_name, by_object = tmp_path / "name.parquet", tmp_path / "object.parquet"
+    by_name, by_object = io.BytesIO(), io.BytesIO()
     lf.sink_parquet(by_name, engine=name)
     lf.sink_parquet(by_object, engine=engine)
+    by_name.seek(0)
+    by_object.seek(0)
     assert_frame_equal(pl.read_parquet(by_name), pl.read_parquet(by_object))
 
 
@@ -323,10 +373,10 @@ def test_engine_sink_signature_matches_lazyframe(method_name: str) -> None:
     assert "engine" in {p.name for p in lf_params}
     assert "engine" not in {p.name for p in engine_params}
 
-    # LazyFrame: (self, <target>, *, ..., engine, ...)
+    # LazyFrame: (self, <target>, *, ..., lazy, engine, ...)
     # Engine:    (self, lf, <target>, *, ...)
     assert engine_params[1].name == "lf"
-    expected = [p for p in lf_params[1:] if p.name != "engine"]
+    expected = [p for p in lf_params[1:] if p.name not in {"engine", "lazy"}]
     actual = engine_params[2:]
 
     def key(p: inspect.Parameter) -> tuple[str, Any]:

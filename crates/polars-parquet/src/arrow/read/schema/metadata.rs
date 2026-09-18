@@ -1,11 +1,11 @@
-use arrow::datatypes::{
+use base64::Engine as _;
+use base64::engine::general_purpose;
+use polars_arrow::datatypes::{
     ArrowDataType, ArrowSchema, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW,
     DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, Field, IntegerType, MAINTAIN_PL_TYPE,
     Metadata, PL_KEY,
 };
-use arrow::io::ipc::read::deserialize_schema;
-use base64::Engine as _;
-use base64::engine::general_purpose;
+use polars_arrow::io::ipc::read::deserialize_schema;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -95,13 +95,7 @@ fn convert_dtype(mut dtype: ArrowDataType) -> ArrowDataType {
         Extension(ref mut ext) => {
             ext.inner = convert_dtype(std::mem::take(&mut ext.inner));
         },
-        Map(mut field, _ordered) => {
-            // Polars doesn't support Map.
-            // A map is physically a `List<Struct<K, V>>`
-            // So we read as list.
-            convert_field(field.as_mut());
-            dtype = LargeList(field);
-        },
+        Map(ref mut field, _ordered) => convert_field(field.as_mut()),
         _ => {},
     }
 

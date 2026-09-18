@@ -1,13 +1,13 @@
 use std::fmt::Write;
 
-use polars_ops::frame::JoinArgs;
+use polars_defs::join::JoinArgs;
+use polars_defs::time::group_by::ClosedWindow;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::DynamicGroupOptions;
 use polars_plan::dsl::PartitionStrategyIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileWriteFormat;
-use polars_time::ClosedWindow;
-#[cfg(feature = "dynamic_group_by")]
-use polars_time::DynamicGroupOptions;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
 use polars_utils::slice_enum::Slice;
@@ -213,6 +213,7 @@ fn visualize_plan_rec(
             input,
             selectors,
             extend_original,
+            rechunk_input: _,
         } => {
             let label = if *extend_original {
                 "with-columns"
@@ -541,6 +542,7 @@ fn visualize_plan_rec(
             hive_parts,
             include_file_paths,
             cast_columns_policy: _,
+            extra_columns_policy: _,
             missing_columns_policy: _,
             forbid_extra_columns: _,
             deletion_files,
@@ -609,14 +611,32 @@ fn visualize_plan_rec(
         PhysNodeKind::GroupBy {
             inputs,
             key_per_input,
+            fused_agg_inputs_per_input,
             aggs_per_input,
         } => {
             let mut out = String::from("group-by");
-            for (key, aggs) in key_per_input.iter().zip(aggs_per_input) {
+            for ((key, fused), aggs) in key_per_input
+                .iter()
+                .zip(fused_agg_inputs_per_input)
+                .zip(aggs_per_input)
+            {
                 write!(
                     &mut out,
-                    "\\nkey:\\n{}\\naggs:\\n{}",
+                    "\\nkey:\\n{}",
                     fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
+                )
+                .ok();
+                if !fused.is_empty() {
+                    write!(
+                        &mut out,
+                        "\\nfused agg inputs:\\n{}",
+                        fmt_exprs_to_label(fused, expr_arena, FormatExprStyle::Select),
+                    )
+                    .ok();
+                }
+                write!(
+                    &mut out,
+                    "\\naggs:\\n{}",
                     fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
                 )
                 .ok();
@@ -630,7 +650,7 @@ fn visualize_plan_rec(
             aggs,
             slice,
         } => {
-            use polars_time::prelude::{Label, StartBy};
+            use polars_defs::time::group_by::{Label, StartBy};
 
             let DynamicGroupOptions {
                 index_column,
@@ -753,17 +773,25 @@ fn visualize_plan_rec(
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
-            left_on,
-            right_on,
             args,
-            ..
-        }
-        | PhysNodeKind::EquiJoin {
+            options,
+        } => {
+            let (left_on, right_on) = options.key_vecs();
+            let label = fmt_join_label(
+                "in-memory-join",
+                &fmt_exprs_to_label(&left_on, expr_arena, FormatExprStyle::NoAliases),
+                &fmt_exprs_to_label(&right_on, expr_arena, FormatExprStyle::NoAliases),
+                args,
+            );
+            (label, &[*input_left, *input_right][..])
+        },
+        PhysNodeKind::EquiJoin {
             input_left,
             input_right,
             left_on,
             right_on,
             args,
+            ..
         }
         | PhysNodeKind::SemiAntiJoin {
             input_left,
@@ -776,7 +804,6 @@ fn visualize_plan_rec(
             let base_label = match phys_sm[node_key].kind {
                 PhysNodeKind::MergeJoin { .. } => "merge-join",
                 PhysNodeKind::EquiJoin { .. } => "equi-join",
-                PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: false, ..
                 } if args.how.is_semi() => "semi-join",
@@ -791,12 +818,24 @@ fn visualize_plan_rec(
                 } if args.how.is_anti() => "is-not-in",
                 _ => unreachable!(),
             };
-            let label = fmt_join_label(
+            let mut label = fmt_join_label(
                 base_label,
                 &fmt_exprs_to_label(left_on, expr_arena, FormatExprStyle::NoAliases),
                 &fmt_exprs_to_label(right_on, expr_arena, FormatExprStyle::NoAliases),
                 args,
             );
+            if let PhysNodeKind::EquiJoin {
+                fused_predicate: Some(fused_predicate),
+                ..
+            } = &phys_sm[node_key].kind
+            {
+                let fused_predicate = fmt_exprs_to_label(
+                    std::slice::from_ref(fused_predicate),
+                    expr_arena,
+                    FormatExprStyle::NoAliases,
+                );
+                label.push_str(&format!("\nfused predicate: {fused_predicate}"));
+            }
             (label, &[*input_left, *input_right][..])
         },
         #[cfg(feature = "iejoin")]

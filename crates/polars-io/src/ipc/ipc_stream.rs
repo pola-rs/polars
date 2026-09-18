@@ -36,10 +36,10 @@
 use std::io::{Read, Seek, Write};
 use std::path::PathBuf;
 
-use arrow::datatypes::Metadata;
-use arrow::io::ipc::read::{StreamMetadata, StreamState};
-use arrow::io::ipc::write::WriteOptions;
-use arrow::io::ipc::{read, write};
+use polars_arrow::datatypes::Metadata;
+use polars_arrow::io::ipc::read::{StreamMetadata, StreamState};
+use polars_arrow::io::ipc::write::WriteOptions;
+use polars_arrow::io::ipc::{read, write};
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 
@@ -229,7 +229,7 @@ pub struct IpcStreamWriter<W> {
     custom_schema_metadata: Option<Arc<Metadata>>,
 }
 
-use arrow::record_batch::RecordBatch;
+use polars_arrow::record_batch::RecordBatch;
 
 use crate::RowIndex;
 

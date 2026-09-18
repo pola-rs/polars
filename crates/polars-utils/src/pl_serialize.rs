@@ -3,6 +3,8 @@
 //! Currently provides two serialization scheme's.
 //! - Self-describing (and thus more forward compatible) activated with `FC: true`
 //! - Compact activated with `FC: false`
+use std::io::{Read, Write};
+
 use polars_error::{PolarsResult, to_compute_err};
 
 fn config() -> bincode::config::Configuration {
@@ -11,13 +13,12 @@ fn config() -> bincode::config::Configuration {
         .with_variable_int_encoding()
 }
 
-fn serialize_impl<W, T, const FC: bool>(mut writer: W, value: &T) -> PolarsResult<()>
+fn serialize_impl<T, const FC: bool>(mut writer: &mut dyn Write, value: &T) -> PolarsResult<()>
 where
-    W: std::io::Write,
     T: serde::ser::Serialize,
 {
     if FC {
-        let mut s = rmp_serde::Serializer::new(writer).with_struct_map();
+        let mut s = rmp_serde::Serializer::new(&mut *writer).with_struct_map();
         value.serialize(&mut s).map_err(to_compute_err)
     } else {
         bincode::serde::encode_into_std_write(value, &mut writer, config())
@@ -26,13 +27,12 @@ where
     }
 }
 
-pub fn deserialize_impl<T, R, const FC: bool>(mut reader: R) -> PolarsResult<T>
+fn deserialize_impl<T, const FC: bool>(mut reader: &mut dyn Read) -> PolarsResult<T>
 where
     T: serde::de::DeserializeOwned,
-    R: std::io::Read,
 {
     if FC {
-        rmp_serde::from_read(reader).map_err(to_compute_err)
+        rmp_serde::from_read(&mut *reader).map_err(to_compute_err)
     } else {
         bincode::serde::decode_from_std_read(&mut reader, config()).map_err(to_compute_err)
     }
@@ -53,7 +53,7 @@ impl SerializeOptions {
 
     pub fn serialize_into_writer<W, T, const FC: bool>(
         &self,
-        writer: W,
+        mut writer: W,
         value: &T,
     ) -> PolarsResult<()>
     where
@@ -61,22 +61,24 @@ impl SerializeOptions {
         T: serde::ser::Serialize,
     {
         if self.compression {
-            let writer = flate2::write::ZlibEncoder::new(writer, flate2::Compression::fast());
-            serialize_impl::<_, _, FC>(writer, value)
+            let mut compr_writer =
+                flate2::write::ZlibEncoder::new(writer, flate2::Compression::fast());
+            serialize_impl::<_, FC>(&mut compr_writer, value)
         } else {
-            serialize_impl::<_, _, FC>(writer, value)
+            serialize_impl::<_, FC>(&mut writer, value)
         }
     }
 
-    pub fn deserialize_from_reader<T, R, const FC: bool>(&self, reader: R) -> PolarsResult<T>
+    pub fn deserialize_from_reader<T, R, const FC: bool>(&self, mut reader: R) -> PolarsResult<T>
     where
         T: serde::de::DeserializeOwned,
         R: std::io::Read,
     {
         if self.compression {
-            deserialize_impl::<_, _, FC>(flate2::read::ZlibDecoder::new(reader))
+            let mut compr_reader = flate2::read::ZlibDecoder::new(reader);
+            deserialize_impl::<_, FC>(&mut compr_reader)
         } else {
-            deserialize_impl::<_, _, FC>(reader)
+            deserialize_impl::<_, FC>(&mut reader)
         }
     }
 
@@ -99,20 +101,20 @@ impl Default for SerializeOptions {
     }
 }
 
-pub fn serialize_into_writer<W, T, const FC: bool>(writer: W, value: &T) -> PolarsResult<()>
+pub fn serialize_into_writer<W, T, const FC: bool>(mut writer: W, value: &T) -> PolarsResult<()>
 where
     W: std::io::Write,
     T: serde::ser::Serialize,
 {
-    serialize_impl::<_, _, FC>(writer, value)
+    serialize_impl::<_, FC>(&mut writer, value)
 }
 
-pub fn deserialize_from_reader<T, R, const FC: bool>(reader: R) -> PolarsResult<T>
+pub fn deserialize_from_reader<T, R, const FC: bool>(mut reader: R) -> PolarsResult<T>
 where
     T: serde::de::DeserializeOwned,
     R: std::io::Read,
 {
-    deserialize_impl::<_, _, FC>(reader)
+    deserialize_impl::<_, FC>(&mut reader)
 }
 
 pub fn serialize_to_bytes<T, const FC: bool>(value: &T) -> PolarsResult<Vec<u8>>
@@ -120,29 +122,29 @@ where
     T: serde::ser::Serialize,
 {
     let mut v = vec![];
-
     serialize_into_writer::<_, _, FC>(&mut v, value)?;
-
     Ok(v)
 }
 
 /// Serialize function customized for `DslPlan`, with stack overflow protection.
-pub fn serialize_dsl<W, T>(writer: W, value: &T) -> PolarsResult<()>
+pub fn serialize_dsl<W, T>(mut writer: W, value: &T) -> PolarsResult<()>
 where
     W: std::io::Write,
     T: serde::ser::Serialize,
 {
+    let writer: &mut dyn std::io::Write = &mut writer;
     let mut s = rmp_serde::Serializer::new(writer).with_struct_map();
     let s = serde_stacker::Serializer::new(&mut s);
     value.serialize(s).map_err(to_compute_err)
 }
 
 /// Deserialize function customized for `DslPlan`, with stack overflow protection.
-pub fn deserialize_dsl<T, R>(reader: R) -> PolarsResult<T>
+pub fn deserialize_dsl<T, R>(mut reader: R) -> PolarsResult<T>
 where
     T: serde::de::DeserializeOwned,
     R: std::io::Read,
 {
+    let reader: &mut dyn std::io::Read = &mut reader;
     let mut de = rmp_serde::Deserializer::new(reader);
     de.set_max_depth(usize::MAX);
     let de = serde_stacker::Deserializer::new(&mut de);

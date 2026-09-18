@@ -1,13 +1,17 @@
-use polars_async::primitives::distributor_channel::distributor_channel;
+use std::sync::Arc;
+
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_error::polars_ensure;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::compute_node_prelude::*;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
+use crate::utils::morsel_distributor::morsel_distributor;
 
 pub struct GatherEveryNode {
     n: usize,
     offset: usize,
+    seq_offset: Arc<RelaxedCell<u64>>,
 }
 
 impl GatherEveryNode {
@@ -17,7 +21,11 @@ impl GatherEveryNode {
         assert!(i64::try_from(n).unwrap() > 0);
         assert!(i64::try_from(offset).unwrap() >= 0);
 
-        Ok(Self { n, offset })
+        Ok(Self {
+            n,
+            offset,
+            seq_offset: Arc::default(),
+        })
     }
 }
 
@@ -49,8 +57,11 @@ impl ComputeNode for GatherEveryNode {
         let mut receiver = recv_ports[0].take().unwrap().serial();
         let senders = send_ports[0].take().unwrap().parallel();
 
-        let (mut distributor, distr_receivers) =
-            distributor_channel(senders.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+        let (mut distributor, distr_receivers) = morsel_distributor(
+            senders.len(),
+            *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
+            self.seq_offset.clone(),
+        );
 
         let n = self.n;
 

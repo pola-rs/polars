@@ -94,7 +94,7 @@ requirements:  ## Install/refresh Python project requirements
 	   -r py-polars/requirements-lint.txt \
 	   -r py-polars/docs/requirements-docs.txt \
 	   -r docs/source/requirements.txt \
-	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode "pyiceberg>=0.7.1" pyiceberg-core!=0.9.0 \
+	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode "pyiceberg>=0.12.0" pyiceberg-core!=0.9.0 \
 	&& $(VENV_BIN)/uv pip install --no-deps -e py-polars \
 	&& $(VENV_BIN)/uv pip uninstall polars-runtime-compat polars-runtime-64  ## Uninstall runtimes which might take precedence over polars-runtime-32
 
@@ -103,8 +103,8 @@ requirements-all:  ## Install/refresh all Python requirements (including those n
 	$(MAKE) requirements EXTRA_REQUIREMENTS=py-polars/requirements-ci.txt
 	
 # We set environment variables which will cause unnecessary re-builds if other cargo commands
-# (not run through maturin/Makefile) are ran. By updating .cargo/config.toml those environment
-# variables are sticky.
+# (not run through maturin/Makefile) are ran. By updating .cargo/config.generated.toml (which is
+# gitignored and included from .cargo/config.toml) those environment variables are sticky.
 .PHONY: update-cargo-env
 update-cargo-env: $(VENV_BIN)/python
 	@RUSTFLAGS="$(RUSTFLAGS)" CFLAGS="$(CFLAGS)" $(VENV_BIN)/python tools/update-cargo-env.py
@@ -134,6 +134,12 @@ build-release: update-cargo-env  ## Compile and install Python Polars binary wit
 build-nodebug-release: update-cargo-env  ## Same as build-release, but without any debug symbols at all (a bit faster to build)
 	@unset CONDA_PREFIX \
 	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile nodebug-release $(ARGS) --uv \
+	$(FILTER_PIP_WARNINGS)
+
+.PHONY: build-fast-release
+build-fast-release: update-cargo-env  ## Same as build-release, but without LTO (much faster to build, a bit slower to run)
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile fast-release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-debug-release

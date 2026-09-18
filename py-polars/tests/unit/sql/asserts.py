@@ -13,7 +13,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping, Sequence
 
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import EngineType, PolarsDataType
+
 
 _POLARS_TO_SQLITE_: dict[PolarsDataType, str] = {
     # SQLite has limited type support (primitive scalar types only)
@@ -91,6 +92,7 @@ def assert_sql_matches(
     check_row_order: bool = True,
     check_column_names: bool = True,
     expected: pl.DataFrame | dict[str, Sequence[Any]] | None = None,
+    engines: Sequence[EngineType] | None = None,
 ) -> bool:
     """
     Assert that a Polars SQL query produces the same result as a reference backend.
@@ -123,6 +125,9 @@ def assert_sql_matches(
         An optional DataFrame (or dictionary) containing the expected result;
         with this we can confirm both that the result matches the reference
         implementation *and* that those results match expectation.
+    engines
+        Collect the Polars query with each of these engines and require that they
+        agree, instead of the single default (eager) execution.
 
     Examples
     --------
@@ -153,8 +158,16 @@ def assert_sql_matches(
     if isinstance(frames, (pl.DataFrame, pl.LazyFrame)):
         frames = {"self": frames}
 
-    with pl.SQLContext(frames=frames, eager=True) as ctx:
-        polars_result = ctx.execute(query=query, eager=True)
+    if engines:
+        with pl.SQLContext(frames=frames, eager=False) as ctx:
+            plan = ctx.execute(query=query, eager=False)
+        results = [plan.collect(engine=engine) for engine in engines]
+        polars_result = results[0]
+        for other in results[1:]:
+            assert_frame_equal(polars_result, other, check_row_order=check_row_order)
+    else:
+        with pl.SQLContext(frames=frames, eager=True) as ctx:
+            polars_result = ctx.execute(query=query, eager=True)
 
     if not compare_with:
         if expected is None:
