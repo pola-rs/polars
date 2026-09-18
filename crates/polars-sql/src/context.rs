@@ -3224,8 +3224,11 @@ impl SQLContext {
         for (e, group_key) in projections.iter().zip(&projection_group_key) {
             let matches_group_key = group_key.is_some();
             // `Len` represents COUNT(*) so we treat as an aggregation here.
-            let is_non_group_key_expr =
-                !matches_group_key && requires_group_processing(e, &group_by_keys_schema);
+            // Aggregates lowered to plain functions (e.g. COVAR_SAMP) are found by
+            // `is_reduction`, which also covers constant arguments.
+            let is_non_group_key_expr = !matches_group_key
+                && (requires_group_processing(e, &group_by_keys_schema)
+                    || splitter.is_reduction(&strip_outer_alias(e)));
 
             // Note: if simple aliased expression we defer aliasing until after the group_by.
             // Use `e_inner` to track the potentially unwrapped expression for field lookup.
@@ -3246,7 +3249,11 @@ impl SQLContext {
                 }
             }
             let field = e_inner.to_field(&schema_before)?;
-            if !matches!(e, Expr::Alias(..)) && !matches_group_key && is_constant_expr(e) {
+            if !is_non_group_key_expr
+                && !matches_group_key
+                && !matches!(e, Expr::Alias(..))
+                && !references_columns(e)
+            {
                 // Unaliased constants are re-evaluated on the aggregated frame.
                 projection_aliases.insert(field.name.clone());
             }
@@ -4298,20 +4305,9 @@ fn requires_group_processing(expr: &Expr, group_by_keys_schema: &Schema) -> bool
     })
 }
 
-/// Whether a SELECT projection is a constant: it references no columns and
-/// contains nothing that must run in the group context.
-fn is_constant_expr(expr: &Expr) -> bool {
-    !has_expr(expr, |e| match e {
-        Expr::Column(_)
-        | Expr::Selector(_)
-        | Expr::Agg(_)
-        | Expr::Len
-        | Expr::Over { .. }
-        | Expr::AnonymousFunction { .. }
-        | Expr::SubPlan(..) => true,
-        #[cfg(feature = "dynamic_group_by")]
-        Expr::Rolling { .. } => true,
-        _ => false,
+fn references_columns(expr: &Expr) -> bool {
+    has_expr(expr, |e| {
+        matches!(e, Expr::Column(_) | Expr::Selector(_) | Expr::SubPlan(..))
     })
 }
 

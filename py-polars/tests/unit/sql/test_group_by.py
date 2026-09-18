@@ -1218,6 +1218,36 @@ def test_group_by_constants_with_keys_and_aggregates(grouped: pl.DataFrame) -> N
     )
 
 
+def test_group_by_constant_argument_aggregates(grouped: pl.DataFrame) -> None:
+    # aggregates over constants still run in the group context, also those
+    # that lower to plain functions rather than `Expr::Agg` (COVAR_POP)
+    assert_group_by_matches(
+        grouped,
+        "SELECT a, COVAR_POP(1, 2), AVG(1), MIN(3), 7 FROM t GROUP BY a ORDER BY a",
+        pl.DataFrame(
+            {
+                "a": [0, 1, 2],
+                "literal": [0.0, 0.0, 0.0],
+                "literal:1": [1.0, 1.0, 1.0],
+                "literal:2": [3, 3, 3],
+                "literal:3": [7, 7, 7],
+            },
+            schema={
+                "a": pl.Int64,
+                "literal": pl.Float64,
+                "literal:1": pl.Float64,
+                "literal:2": pl.Int32,
+                "literal:3": pl.Int32,
+            },
+        ),
+    )
+    plan = pl.SQLContext(t=grouped).execute(
+        "SELECT a, COVAR_POP(1, 2) FROM t GROUP BY a"
+    )
+    assert "covariance" in plan.explain(optimized=False).split("AGGREGATE")[1]
+    assert "covariance" not in plan.explain(optimized=False).split("AGGREGATE")[0]
+
+
 def test_group_by_constants_empty_and_having(grouped: pl.DataFrame) -> None:
     empty = pl.DataFrame({"literal": []}, schema={"literal": pl.Int32})
     assert_group_by_matches(grouped.clear(), "SELECT 2 FROM t GROUP BY a", empty)
