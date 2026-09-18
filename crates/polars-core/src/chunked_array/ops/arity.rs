@@ -782,11 +782,26 @@ where
         .map(|(lhs_arr, rhs_arr)| {
             let validity = combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
 
-            let array: V::Array = match (lhs_arr.as_slice(), rhs_arr.as_slice()) {
-                (Some(lhs_values), Some(rhs_values)) => lhs_values
+            // A side that repeats one value is read once here: in the zip below it would be
+            // resolved per element, which also keeps the loop from vectorising.  Chunks reach
+            // this even when the column as a whole is not scalar, because a column of several
+            // repeated chunks has no one element.
+            let array: V::Array = match (
+                (lhs_arr.as_slice(), lhs_arr.scalar_value_ignore_validity()),
+                (rhs_arr.as_slice(), rhs_arr.scalar_value_ignore_validity()),
+            ) {
+                ((Some(lhs_values), _), (Some(rhs_values), _)) => lhs_values
                     .iter()
                     .zip(rhs_values)
                     .map(|(lhs_val, rhs_val)| op(lhs_val.clone(), rhs_val.clone()))
+                    .collect_arr(),
+                ((Some(lhs_values), _), (_, Some(rhs_val))) => lhs_values
+                    .iter()
+                    .map(|lhs_val| op(lhs_val.clone(), rhs_val.clone()))
+                    .collect_arr(),
+                ((_, Some(lhs_val)), (Some(rhs_values), _)) => rhs_values
+                    .iter()
+                    .map(|rhs_val| op(lhs_val.clone(), rhs_val.clone()))
                     .collect_arr(),
                 _ => lhs_arr
                     .values_iter()

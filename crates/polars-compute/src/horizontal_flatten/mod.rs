@@ -1,7 +1,11 @@
 //! The kernel behind `concat_arr`, which lays a row of arrays out end to end.
 
-use polars_array::builder::{ShareStrategy, builder_like};
-use polars_array::{PlArray, PlArrayBuilder, PlArrayType};
+use polars_array::builder::{ShareStrategy, StaticArrayBuilder, builder_like};
+use polars_array::{
+    PlArray, PlArrayBuilder, PlArrayType, PlBinaryArrayBuilder, PlBinaryViewArrayBuilder,
+    PlBooleanArrayBuilder, PlPrimitiveArrayBuilder, PlUtf8ViewArrayBuilder,
+    with_match_pl_primitive_array_type,
+};
 
 mod struct_;
 
@@ -49,6 +53,37 @@ pub fn horizontal_flatten(
         ));
     }
 
+    // A row is a handful of values, so entering the builder is the whole cost: through
+    // `dyn PlArrayBuilder` each of the `output_height * arrays.len()` calls resolves the
+    // builder's array type and downcasts the array to it again.  Resolve it once where the
+    // builder needs nothing from the array to be constructed.
+    macro_rules! typed {
+        ($builder:expr) => {
+            return flatten_typed($builder, arrays, widths, &repeats, output_height, out_len)
+        };
+    }
+
+    match arrays[0].array_type() {
+        PlArrayType::Primitive(_) => {
+            return with_match_pl_primitive_array_type!(&*arrays[0], |$T| {
+                flatten_typed(
+                    PlPrimitiveArrayBuilder::<$T>::new(),
+                    arrays,
+                    widths,
+                    &repeats,
+                    output_height,
+                    out_len,
+                )
+            })
+            .expect("a primitive array has a primitive element type");
+        },
+        PlArrayType::Boolean => typed!(PlBooleanArrayBuilder::new()),
+        PlArrayType::BinaryView => typed!(PlBinaryViewArrayBuilder::new()),
+        PlArrayType::Utf8View => typed!(PlUtf8ViewArrayBuilder::new()),
+        PlArrayType::Binary => typed!(PlBinaryArrayBuilder::new()),
+        _ => {},
+    }
+
     let mut builder = builder_like(&*arrays[0]);
     builder.reserve(out_len);
 
@@ -60,6 +95,36 @@ pub fn horizontal_flatten(
     }
 
     builder.freeze()
+}
+
+/// Lays the rows out through a builder whose array type is already known.
+fn flatten_typed<B: StaticArrayBuilder>(
+    mut builder: B,
+    arrays: &[Box<dyn PlArray>],
+    widths: &[usize],
+    repeats: &[bool],
+    output_height: usize,
+    out_len: usize,
+) -> Box<dyn PlArray> {
+    let typed: Vec<&B::Array> = arrays
+        .iter()
+        .map(|array| {
+            array
+                .as_any()
+                .downcast_ref::<B::Array>()
+                .expect("the arrays all hold the array type dispatched on")
+        })
+        .collect();
+
+    builder.reserve(out_len);
+    for row in 0..output_height {
+        for ((array, &width), &repeats) in typed.iter().zip(widths).zip(repeats) {
+            let start = if repeats { 0 } else { row * width };
+            builder.subslice_extend(array, start, width, ShareStrategy::Always);
+        }
+    }
+
+    Box::new(builder.freeze())
 }
 
 /// Whether `array` holds the one row of `width` values it stands for at every output row.
