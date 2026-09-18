@@ -22,7 +22,7 @@
 
 use std::sync::Arc;
 
-use polars_core::prelude::PlIndexMap;
+use polars_core::prelude::{PlIndexMap, PlIndexSet};
 use polars_defs::join::JoinBuildSide;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
@@ -60,8 +60,13 @@ pub(super) fn attach_join_runtime_filters(
     // an outer one tries to carry a predicate through it.
     let mut joins = Vec::new();
     let mut has_pruning_scan = false;
+    let mut seen = PlIndexSet::default();
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
+        // A cached subtree is reached from each of its readers.
+        if !seen.insert(node) {
+            continue;
+        }
         let ir = ir_arena.get(node);
         match ir {
             IR::Join { .. } => joins.push(node),

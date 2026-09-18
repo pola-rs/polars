@@ -497,6 +497,7 @@ pub enum PhysNodeKind {
         right_on: Vec<ExprIR>,
         args: JoinArgs,
         output_bool: bool,
+        pass_through_above: Option<usize>,
     },
 
     CrossJoin {
