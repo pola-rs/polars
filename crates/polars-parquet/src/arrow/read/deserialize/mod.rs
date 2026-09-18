@@ -18,6 +18,7 @@ use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::{ArrowDataType, Field};
 use polars_arrow::offset::Offsets;
 use simple::page_iter_to_array;
+pub(crate) use simple::unify_timestamp_unit;
 
 pub use self::nested_utils::{InitNested, NestedState, init_nested};
 pub use self::utils::filter::{Filter, PredicateFilter};

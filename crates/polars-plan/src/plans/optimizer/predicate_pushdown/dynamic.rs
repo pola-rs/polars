@@ -4,6 +4,7 @@ use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{RwLock, Weak};
 
+use polars_io::predicates::{RuntimeRange, RuntimeRangeSource};
 use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,12 @@ pub trait PredicateExpr: Send + Sync + Any {
         _null_count: &Column,
     ) -> PolarsResult<Option<Column>> {
         Ok(None)
+    }
+
+    // The range of values that can match, for a reader that skips batches by
+    // their statistics. Only a predicate that is exactly a range gives one.
+    fn runtime_range(&self) -> RuntimeRange {
+        RuntimeRange::Disabled
     }
 }
 
@@ -162,6 +169,19 @@ impl DynamicPredWeakRef {
         }
 
         Ok(all_of(min.name().clone(), min.len(), false))
+    }
+}
+
+impl RuntimeRangeSource for DynamicPredWeakRef {
+    fn runtime_range(&self) -> RuntimeRange {
+        let Some(inner) = self.inner.upgrade() else {
+            return RuntimeRange::Disabled;
+        };
+        if !inner.is_set.load(Ordering::Acquire) {
+            return RuntimeRange::Pending;
+        }
+        let guard = inner.pred.read().unwrap();
+        guard.as_ref().unwrap().runtime_range()
     }
 }
 

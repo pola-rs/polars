@@ -646,7 +646,7 @@ pub fn page_iter_to_array(
 
 /// Unify the timestamp unit from parquet TimeUnit into arrow's TimeUnit
 /// Returns (a int64 factor, is_multiplier)
-fn unify_timestamp_unit(
+pub(crate) fn unify_timestamp_unit(
     logical_type: &Option<PrimitiveLogicalType>,
     time_unit: TimeUnit,
 ) -> (i64, bool) {
