@@ -1220,7 +1220,7 @@ class ExprArrayNameSpace:
         Parameters
         ----------
         expr
-            Expression to run. Note that you can select an element with `pl.element()`
+            Expression to run. Note that you can select an element with `pl.element()`.
         as_list
             Collect the resulting data as a list. This allows for expressions which
             output a variable amount of data.
