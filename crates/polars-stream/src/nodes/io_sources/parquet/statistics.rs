@@ -611,7 +611,7 @@ mod tests {
         assert!(Bound::from_arrow(ArrowBound::Float64(1.0), 1).is_none());
         // Bytes and integers have no order between them.
         let bytes = Bound::from_arrow(ArrowBound::Str("abc"), 1).unwrap();
-        assert!(bytes < Bound::Bytes(b"abd".to_vec()));
+        assert!(bytes < Bound::Bytes(b"abz".to_vec()));
         assert!(bytes.partial_cmp(&int(0)).is_none());
     }
 }
