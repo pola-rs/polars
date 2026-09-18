@@ -421,9 +421,17 @@ impl PyLazyFrame {
         // Equivalent to `scan_parquet(_resolve_heavy_sources=)` for expanded datasets.
         resolve_heavy_sources: Option<u32>,
     ) -> PyResult<Self> {
+        let resolve_heavy_sources = resolve_heavy_sources
+            .map(|n| {
+                std::num::NonZeroU32::new(n).ok_or_else(|| {
+                    PyValueError::new_err("resolve_heavy_sources must be at least 1")
+                })
+            })
+            .transpose()?;
+
         let mut dsl = DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build();
 
-        if let Some(n_parts) = resolve_heavy_sources.and_then(std::num::NonZeroU32::new)
+        if let Some(n_parts) = resolve_heavy_sources
             && let polars_plan::dsl::DslPlan::Scan {
                 unified_scan_args, ..
             } = &mut dsl
@@ -537,6 +545,48 @@ impl PyLazyFrame {
 
     fn describe_optimized_plan_tree(&self, py: Python) -> PyResult<String> {
         py.enter_polars(|| self.ldf.read().describe_optimized_plan_tree())
+    }
+
+    /// Retained Parquet footers per scan, for tests.
+    ///
+    /// Optimizes the plan, then returns `(source index, row group count)` for
+    /// every resolved footer, one list per Parquet scan in pre-order.
+    #[cfg(feature = "parquet")]
+    fn _retained_parquet_footers(&self, py: Python) -> PyResult<Vec<Vec<(usize, usize)>>> {
+        use polars_plan::dsl::FileScanIR;
+        use polars_plan::plans::IR;
+
+        py.enter_polars(|| {
+            let plan = self.ldf.read().clone().to_alp_optimized()?;
+
+            let mut stack = vec![plan.lp_top];
+            let mut out = Vec::new();
+            let mut inputs = Vec::new();
+
+            while let Some(node) = stack.pop() {
+                let ir = plan.lp_arena.get(node);
+
+                inputs.clear();
+                ir.copy_inputs(&mut inputs);
+                stack.extend(inputs.iter().rev().copied());
+
+                if let IR::Scan { scan_type, .. } = ir
+                    && let FileScanIR::Parquet {
+                        metadata_per_source,
+                        ..
+                    } = scan_type.as_ref()
+                {
+                    out.push(
+                        metadata_per_source
+                            .iter_resolved()
+                            .map(|(i, md)| (i, md.row_groups.len()))
+                            .collect(),
+                    );
+                }
+            }
+
+            PolarsResult::Ok(out)
+        })
     }
 
     fn to_dot(&self, py: Python<'_>, optimized: bool) -> PyResult<String> {

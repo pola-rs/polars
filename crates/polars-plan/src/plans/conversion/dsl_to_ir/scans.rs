@@ -16,6 +16,11 @@ use polars_io::utils::stream_buf_reader::ReaderSource;
 use super::*;
 #[cfg(feature = "parquet")]
 use crate::dsl::MetadataPerSource::Unresolved;
+#[cfg(feature = "parquet")]
+use crate::plans::parquet_footers::{
+    read_footers, read_parquet_metadata, read_parquet_num_rows, resolve_for_splitting,
+    select_footer_indices,
+};
 
 pub(super) async fn dsl_to_ir(
     sources: ScanSources,
@@ -348,41 +353,7 @@ pub(super) async fn parquet_file_info(
         // Use exact statistics when the sample covers every source.
         let partial_sample = matches!(mode, ResolveMode::Sampled)
             .then(|| {
-                // Footer budget including source 0, which is read separately.
-                let budget = footer_budget(n_sources);
-
-                if budget >= n_sources {
-                    return (1..n_sources).collect();
-                }
-
-                // Prioritize heavy files for distributed row-group splitting.
-                let mut indices = resolve_heavy_sources
-                    .zip(bytes_per_source)
-                    .map(|(n_parts, bytes)| {
-                        debug_assert_eq!(bytes.len(), n_sources);
-                        heavy_source_indices(bytes, n_parts, budget)
-                    })
-                    .unwrap_or_default();
-
-                // Use the remaining budget for a stratified sample.
-                let left = budget - indices.len();
-                if indices.is_empty() {
-                    return sampled_source_indices(n_sources, left);
-                }
-                if left > 1 {
-                    // Sample only unselected sources to avoid wasting the budget.
-                    let rest: Vec<usize> = (1..n_sources)
-                        .filter(|i| indices.binary_search(i).is_err())
-                        .collect();
-                    // Add a dummy source 0, then map sampled positions to source indices.
-                    indices.extend(
-                        sampled_source_indices(rest.len() + 1, left)
-                            .into_iter()
-                            .map(|pos| rest[pos - 1]),
-                    );
-                    indices.sort_unstable();
-                }
-                indices
+                select_footer_indices(n_sources, bytes_per_source, resolve_heavy_sources, true)
             })
             // `+ 1` for source 0, which is read separately.
             .filter(|indices| indices.len() + 1 != n_sources);
@@ -440,25 +411,10 @@ pub(super) async fn parquet_file_info(
                     debug_assert!(b.iter().all(|&size| size > 0));
                 });
                 let rest_fut = async move {
-                    let mut futures = sample
+                    let pairs = read_footers(sources, sample, cloud_options).await;
+                    let rows = pairs
                         .iter()
-                        .map(|&i| async move {
-                            (
-                                i,
-                                read_parquet_metadata(sources.at(i), cloud_options)
-                                    .await
-                                    .ok(),
-                            )
-                        })
-                        .collect::<FuturesUnordered<_>>();
-                    let mut pairs: Vec<(usize, FileMetadataRef)> = Vec::with_capacity(sample.len());
-                    let mut rows = 0usize;
-                    while let Some((i, meta)) = futures.next().await {
-                        if let Some(m) = meta {
-                            rows = rows.saturating_add(m.num_rows);
-                            pairs.push((i, m));
-                        }
-                    }
+                        .fold(0usize, |acc, (_, m)| acc.saturating_add(m.num_rows));
                     PolarsResult::Ok((pairs, rows))
                 };
                 let ((reader_schema, first_num_rows, first_metadata), (mut pairs, other_rows)) =
@@ -797,128 +753,6 @@ fn is_unsigned_int(primitive_type: &polars_parquet::parquet::schema::types::Prim
                 | PrimitiveConvertedType::Uint64
         )
     )
-}
-
-/// Minimum sample so a scan still extrapolates from enough files; below this,
-/// two-mode datasets can miss a mode entirely and misestimate badly.
-#[cfg(feature = "parquet")]
-const SAMPLE_FLOOR: usize = 16;
-
-/// Maximum footers to read, including source 0.
-///
-/// The default limit is the I/O concurrency budget, at least [`SAMPLE_FLOOR`].
-/// `POLARS_RESOLVE_SAMPLE_LIMIT` overrides it, even below the floor.
-#[cfg(feature = "parquet")]
-pub(crate) fn footer_budget(n_sources: usize) -> usize {
-    let limit = polars_config::config().resolve_sample_limit().map_or_else(
-        || (polars_io::pl_async::get_concurrency_limit() as usize).max(SAMPLE_FLOOR),
-        |o| o as usize,
-    );
-    sample_size(n_sources, limit)
-}
-
-/// Select sources containing at least `1 / n_parts` of the total bytes.
-///
-/// Keep the largest sources that fit `budget`, returning indices in source order.
-/// Source 0 is read separately: it counts toward the budget but is not returned.
-#[cfg(feature = "parquet")]
-pub(crate) fn heavy_source_indices(
-    bytes: &[u64],
-    n_parts: NonZeroU32,
-    budget: usize,
-) -> Vec<usize> {
-    let total: u128 = bytes.iter().map(|&b| b as u128).sum();
-    if total == 0 {
-        return Vec::new();
-    }
-
-    let n_parts = u128::from(n_parts.get());
-    let mut indices: Vec<usize> = (1..bytes.len())
-        .filter(|&i| u128::from(bytes[i]) * n_parts >= total)
-        .collect();
-
-    indices.sort_unstable_by_key(|&i| std::cmp::Reverse(bytes[i]));
-    let heavy = indices.len();
-    indices.truncate(budget.saturating_sub(1));
-    if verbose() {
-        eprintln!(
-            "parquet resolve: pinned {} / {heavy} heavy sources (footer budget {budget})",
-            indices.len(),
-        );
-    }
-
-    indices.sort_unstable();
-    indices
-}
-
-/// Footer-wave size (incl. file 0) for [`ResolveMode::Sampled`]: `sqrt(n)`,
-/// floored at `SAMPLE_FLOOR`, capped at `limit`, never above the file count.
-#[cfg(feature = "parquet")]
-fn sample_size(n_sources: usize, limit: usize) -> usize {
-    // `limit` last so it stays a hard ceiling.
-    ((n_sources as f64).sqrt().ceil() as usize)
-        .max(SAMPLE_FLOOR)
-        .min(limit.max(1))
-        .min(n_sources)
-}
-
-/// Evenly-strided sample of `k - 1` indices in `1..n_sources` (file 0 is
-/// read separately).
-#[cfg(feature = "parquet")]
-fn sampled_source_indices(n_sources: usize, k: usize) -> Vec<usize> {
-    if k <= 1 {
-        return Vec::new();
-    }
-    let extra = k - 1;
-    let span = n_sources - 1;
-    (0..extra).map(|j| 1 + (j * span) / extra).collect()
-}
-
-/// Read one source's full Parquet footer.
-#[cfg(feature = "parquet")]
-pub(crate) async fn read_parquet_metadata(
-    source: ScanSourceRef<'_>,
-    #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
-) -> PolarsResult<FileMetadataRef> {
-    use polars_core::error::feature_gated;
-
-    if source.is_cloud_url() {
-        let path = source.as_path().unwrap();
-        feature_gated!("cloud", {
-            let mut reader =
-                ParquetObjectStore::from_uri(path.clone(), cloud_options, None).await?;
-            reader.get_metadata().await.cloned()
-        })
-    } else {
-        let memslice = source.to_memslice()?;
-        let mut cursor = Cursor::new(memslice);
-        let md = polars_parquet::parquet::read::read_metadata(&mut cursor)?;
-        Ok(Arc::new(md))
-    }
-}
-
-/// Fetch one source's `num_rows` (thrift field 3 only); skips
-/// schema, row_groups, and the rest. Used by [`parquet_file_info`]
-/// in `RowCounts` resolve mode.
-#[cfg(feature = "parquet")]
-async fn read_parquet_num_rows(
-    source: ScanSourceRef<'_>,
-    #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
-) -> PolarsResult<i64> {
-    use polars_core::error::feature_gated;
-
-    if source.is_cloud_url() {
-        let path = source.as_path().unwrap();
-        feature_gated!("cloud", {
-            let mut reader =
-                ParquetObjectStore::from_uri(path.clone(), cloud_options, None).await?;
-            reader.num_rows_only().await
-        })
-    } else {
-        let memslice = source.to_memslice()?;
-        let mut cursor = Cursor::new(memslice);
-        polars_parquet::parquet::read::read_num_rows(&mut cursor).map_err(Into::into)
-    }
 }
 
 pub fn max_metadata_scan_cached() -> usize {
@@ -1533,6 +1367,8 @@ enum CachedSourceKey {
         paths: Buffer<PlRefPath>,
         schema_overwrite: Option<SchemaRef>,
         resolve_heavy_sources: Option<NonZeroU32>,
+        // Heavy-source selection depends on the sizes, not just the paths.
+        bytes_per_source: Option<Buffer<u64>>,
     },
     CsvJson {
         paths: Buffer<PlRefPath>,
@@ -1579,9 +1415,18 @@ impl SourcesToFileInfo {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { options } => {
                 if let Some(schema) = &options.schema {
-                    // We were passed a schema, we don't have to call `parquet_file_info`,
-                    // but this does mean we don't have scan statistics or any
-                    // resolved footer metadata.
+                    // We were passed a schema, so `parquet_file_info` is not needed
+                    // and this scan has no statistics. Footers are read only for
+                    // splitting, and only when heavy-source resolution is requested.
+                    let metadata_per_source = match (
+                        unified_scan_args.resolve_heavy_sources,
+                        bytes_per_source.as_deref(),
+                    ) {
+                        (Some(n_parts), Some(bytes)) => {
+                            resolve_for_splitting(sources, bytes, n_parts, cloud_options).await
+                        },
+                        _ => Unresolved,
+                    };
 
                     (
                         FileInfo {
@@ -1594,7 +1439,7 @@ impl SourcesToFileInfo {
                         },
                         FileScanIR::Parquet {
                             options,
-                            metadata_per_source: Unresolved,
+                            metadata_per_source,
                             bytes_per_source: bytes_per_source.clone(),
                         },
                     )
@@ -1875,6 +1720,7 @@ impl SourcesToFileInfo {
                     paths: paths.clone(),
                     schema_overwrite: options.schema.clone(),
                     resolve_heavy_sources: unified_scan_args.resolve_heavy_sources,
+                    bytes_per_source: bytes_per_source.clone(),
                 };
 
                 let guard = self.inner.read().unwrap();
@@ -1887,6 +1733,7 @@ impl SourcesToFileInfo {
                     paths: paths.clone(),
                     schema_overwrite: None,
                     resolve_heavy_sources: None,
+                    bytes_per_source: None,
                 };
 
                 let guard = self.inner.read().unwrap();

@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from functools import partial
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote
 
 import polars as pl
 from polars._utils.logging import eprint
@@ -29,34 +28,31 @@ if TYPE_CHECKING:
     from polars.lazyframe.frame import LazyFrame
 
 
-def _source_sizes_from_add_actions(
-    paths: list[str], add_actions: pl.DataFrame
+def _table_root(table_uri: str) -> str:
+    """Normalise the table URI into the prefix `file_uris()` paths carry."""
+    # file_uris() drops the file:// scheme; lakefs:// is rewritten to s3://,
+    # matching the rewrite applied to the paths.
+    root = table_uri.removeprefix("file://").replace("lakefs://", "s3://", 1)
+    return root if root.endswith("/") else root + "/"
+
+
+def _source_sizes(
+    paths: list[str], root: str, sizes: dict[str, int]
 ) -> list[int] | None:
-    """Return sizes if the add actions match the scan paths in order; otherwise None.
+    """Look up each scan path's size by its path relative to the table root.
 
-    Ordering is not guaranteed. Validate it before using sizes to locate footers.
+    Returns None if any path is outside the root or has no logged size, so the
+    scan runs without sizes rather than with wrong ones.
     """
-    if "size_bytes" not in add_actions.columns or len(add_actions) != len(paths):
-        return None
-
-    # Decode the action's relative URI once: p=a%2520b becomes p=a%20b,
-    # matching the partition directory in the absolute scan path.
-    roots = set()
-
-    for path, action in zip(paths, add_actions["path"], strict=True):
-        relative = unquote(action)
-
-        if not path.endswith(relative):
+    out = []
+    for path in paths:
+        if not path.startswith(root):
             return None
-
-        roots.add(path[: len(path) - len(relative)])
-
-    # Require one table root: suffix checks alone can accept reordered paths
-    # such as /t/part.parquet and /t/t/part.parquet.
-    if len(roots) > 1:
-        return None
-
-    return add_actions["size_bytes"].to_list()
+        size = sizes.get(path[len(root) :])
+        if size is None:
+            return None
+        out.append(size)
+    return out
 
 
 @dataclass(kw_only=True)
@@ -193,19 +189,21 @@ class DeltaDataset:
                 f"path expansion time: {elapsed:.3f}s"
             )
 
-        add_actions = pl.DataFrame(table.get_add_actions())
-
-        source_sizes = _source_sizes_from_add_actions(paths, add_actions)
+        # `get_add_file_sizes()` is private API (deltalake 1.6.3 `RawDeltaTable`), but
+        # it maps relative path to size directly, without materializing add actions.
+        source_sizes = _source_sizes(
+            paths, _table_root(table.table_uri), table._table.get_add_file_sizes()
+        )
 
         if source_sizes is None and verbose:
             eprint(
                 "DeltaDataset: to_dataset_scan(): "
-                "cannot pair add actions with file_uris(), skipping sizes"
+                "cannot pair add file sizes with file_uris(), skipping sizes"
             )
 
         table_statistics = (
             _extract_table_statistics_from_delta_add_actions(
-                add_actions,
+                pl.DataFrame(table.get_add_actions()),
                 filter_columns=filter_columns,
                 schema=schema,
                 verbose=verbose,

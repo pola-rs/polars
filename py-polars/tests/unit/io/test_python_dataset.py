@@ -364,6 +364,8 @@ def test_python_dataset_resolves_heavy_footers(
     dataset = ParquetDataset(paths)
     lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
 
+    # Source 0 is retained for the partial invariant; source 2 is the heavy file.
+    assert lf._ldf._retained_parquet_footers() == [[(0, 1), (2, 8)]]
     assert lf.collect().height == 4002
 
     captured = capfd.readouterr().err
@@ -385,6 +387,7 @@ def test_python_dataset_leaves_footers_alone_without_the_flag(
 
     lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(ParquetDataset(paths)))
 
+    assert lf._ldf._retained_parquet_footers() == [[]]
     assert lf.collect().height == 4001
     assert "heavy sources" not in capfd.readouterr().err
 
@@ -397,4 +400,67 @@ def test_python_dataset_with_no_sources_resolves_nothing() -> None:
         )
     )
 
+    assert lf._ldf._retained_parquet_footers() == [[]]
     assert lf.collect().height == 0
+
+
+@pytest.mark.parametrize("mode", ["none", "row_counts"])
+def test_python_dataset_heavy_footers_disabled_by_the_resolve_mode(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    plmonkeypatch: PlMonkeyPatch,
+    mode: str,
+) -> None:
+    # These modes opt out of reading footers; an expanded dataset needs none.
+    plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", mode)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    paths = []
+    for i, n in enumerate([20, 4000, 20]):
+        path = tmp_path / f"{i}.parquet"
+        pl.DataFrame({"x": range(n)}).write_parquet(path, row_group_size=500)
+        paths.append(path)
+
+    capfd.readouterr()
+    lf = wrap_ldf(
+        PyLazyFrame.new_from_dataset_object(
+            ParquetDataset(paths), resolve_heavy_sources=4
+        )
+    )
+
+    assert lf._ldf._retained_parquet_footers() == [[]]
+    assert "heavy sources" not in capfd.readouterr().err
+
+
+def test_python_dataset_survives_an_unreadable_heavy_footer(tmp_path: Path) -> None:
+    # A heavy footer that fails to read leaves its source unresolved; planning
+    # still succeeds and the error surfaces at execution.
+    paths = []
+    for i, n in enumerate([20, 4000, 20]):
+        path = tmp_path / f"{i}.parquet"
+        pl.DataFrame({"x": range(n)}).write_parquet(path, row_group_size=500)
+        paths.append(path)
+
+    # Keep the byte size, which the dataset reports, consistent with the file.
+    size = paths[1].stat().st_size
+    with paths[1].open("r+b") as f:
+        f.write(b"x" * size)
+
+    lf = wrap_ldf(
+        PyLazyFrame.new_from_dataset_object(
+            ParquetDataset(paths, pl.Schema({"x": pl.Int64})), resolve_heavy_sources=4
+        )
+    )
+
+    lf.explain(optimized=True)
+    assert lf._ldf._retained_parquet_footers() == [[(0, 1)]]
+
+    with pytest.raises(pl.exceptions.ComputeError, match="parquet magic bytes"):
+        lf.collect()
+
+
+def test_python_dataset_rejects_zero_heavy_sources() -> None:
+    with pytest.raises(ValueError, match="must be at least 1"):
+        PyLazyFrame.new_from_dataset_object(
+            ParquetDataset([], pl.Schema({"x": pl.Int64})), resolve_heavy_sources=0
+        )

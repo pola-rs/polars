@@ -1,5 +1,5 @@
 mod convert_utils;
-pub(crate) mod dsl_to_ir;
+mod dsl_to_ir;
 mod ir_to_dsl;
 mod stack_opt;
 

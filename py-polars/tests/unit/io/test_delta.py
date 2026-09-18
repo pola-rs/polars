@@ -25,7 +25,8 @@ from polars.io.cloud.credential_provider._builder import (
 )
 from polars.io.delta._dataset import (
     DeltaDataset,
-    _source_sizes_from_add_actions,
+    _source_sizes,
+    _table_root,
 )
 from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
 from polars.meta import get_index_type
@@ -1501,6 +1502,12 @@ def test_scan_delta_resolves_heavy_footers(
     capfd.readouterr()
     lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
 
+    retained = lf._ldf._retained_parquet_footers()
+    # Source 0 is retained for the partial invariant; the heavy commit has 8 groups.
+    assert len(retained) == 1
+    assert retained[0][0][1] == 1
+    assert sorted(rg for _, rg in retained[0]) == [1, 8]
+
     assert lf.collect().height == 4040
     assert "parquet resolve: pinned 1 / 1 heavy sources" in capfd.readouterr().err
 
@@ -1520,41 +1527,39 @@ def test_scan_delta_source_sizes_match_the_file_list(
 
     table = DeltaTable(tmp_path)
     uris = table.file_uris()
-    actions = pl.DataFrame(table.get_add_actions())
 
-    assert _source_sizes_from_add_actions(uris, actions) == [
-        Path(uri).stat().st_size for uri in uris
+    assert _source_sizes(
+        uris, _table_root(table.table_uri), table._table.get_add_file_sizes()
+    ) == [Path(uri).stat().st_size for uri in uris]
+
+
+def test_delta_table_root_normalisation() -> None:
+    # file_uris() drops the file:// scheme and rewrites lakefs:// to s3://.
+    assert _table_root("file:///private/var/t") == "/private/var/t/"
+    assert _table_root("s3://bucket/t/") == "s3://bucket/t/"
+    assert _table_root("lakefs://repo/main/t") == "s3://repo/main/t/"
+
+
+def test_delta_source_sizes_lookup() -> None:
+    root = "/t/"
+    # Files in different partitions can share a name; key on the relative path.
+    sizes = {"p=0/part.parquet": 100, "p=1/part.parquet": 200}
+    paths = ["/t/p=0/part.parquet", "/t/p=1/part.parquet"]
+
+    assert _source_sizes(paths, root, sizes) == [100, 200]
+    # The result follows the scan order, not the dict order.
+    assert _source_sizes(paths[::-1], root, dict(reversed(sizes.items()))) == [200, 100]
+
+    # A nested directory that repeats the table name is a distinct key.
+    nested = {"part.parquet": 100, "t/part.parquet": 200}
+    assert _source_sizes(["/t/part.parquet", "/t/t/part.parquet"], root, nested) == [
+        100,
+        200,
     ]
 
-
-def test_delta_source_sizes_reject_a_pairing_they_cannot_confirm() -> None:
-    # Files in different partitions can share a name; match their full paths.
-    paths = ["/t/p=0/part.parquet", "/t/p=1/part.parquet"]
-    actions = pl.DataFrame(
-        {"path": ["p=0/part.parquet", "p=1/part.parquet"], "size_bytes": [100, 200]}
-    )
-
-    assert _source_sizes_from_add_actions(paths, actions) == [100, 200]
-    assert _source_sizes_from_add_actions(paths, actions.reverse()) is None
-
-    # Decode the add action's extra percent-encoding.
-    assert _source_sizes_from_add_actions(
-        ["/t/p=a%20b/part.parquet"],
-        pl.DataFrame({"path": ["p=a%2520b/part.parquet"], "size_bytes": [100]}),
-    ) == [100]
-
-    # Suffix matches can survive reordering; the inferred table roots must also match.
-    nested = ["/t/part.parquet", "/t/t/part.parquet"]
-    nested_actions = pl.DataFrame(
-        {"path": ["part.parquet", "t/part.parquet"], "size_bytes": [100, 200]}
-    )
-
-    assert _source_sizes_from_add_actions(nested, nested_actions) == [100, 200]
-    assert _source_sizes_from_add_actions(nested, nested_actions.reverse()) is None
-
-    # Missing sizes or mismatched counts disable size hints.
-    assert _source_sizes_from_add_actions(paths, actions.drop("size_bytes")) is None
-    assert _source_sizes_from_add_actions(paths, actions.head(1)) is None
+    # A path outside the root, or one with no logged size, disables sizes.
+    assert _source_sizes(["/other/part.parquet"], root, sizes) is None
+    assert _source_sizes(["/t/p=2/part.parquet"], root, sizes) is None
 
 
 @pytest.mark.write_disk
@@ -1582,5 +1587,94 @@ def test_scan_delta_resolves_heavy_footers_with_encoded_partition_values(
     capfd.readouterr()
     lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
 
+    retained = lf._ldf._retained_parquet_footers()
+    # Source 0 is retained for the partial invariant; the heavy commit has 8 groups.
+    assert len(retained) == 1
+    assert retained[0][0][1] == 1
+    assert sorted(rg for _, rg in retained[0]) == [1, 8]
+
     assert lf.collect().height == 4040
     assert "parquet resolve: pinned 1 / 1 heavy sources" in capfd.readouterr().err
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_scan_delta_resolves_heavy_footers_on_object_store(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Delta's logged sizes must pair with the object-store paths, and planning
+    # must then fetch the heavy footer and nothing else.
+    import threading
+
+    from tests.unit.io.cloud.test_metadata_prefetch import CountingS3
+
+    s3 = CountingS3()
+    threading.Thread(target=s3.server.serve_forever, daemon=True).start()
+    s3.client.create_bucket(Bucket="bucket")
+
+    try:
+        storage_options = {
+            "AWS_ACCESS_KEY_ID": s3.storage_options["aws_access_key_id"],
+            "AWS_SECRET_ACCESS_KEY": s3.storage_options["aws_secret_access_key"],
+            "AWS_REGION": s3.storage_options["aws_region"],
+            "AWS_ENDPOINT_URL": s3.endpoint,
+            "AWS_ALLOW_HTTP": "true",
+            # Delta's S3 backend refuses to commit without a locking provider.
+            "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+        }
+        properties = WriterProperties(max_row_group_size=500)
+
+        for value, n in [("a b", 20), ("100%", 4000), ("ä/ö", 20)]:
+            pl.DataFrame({"p": [value] * n, "x": range(n)}).write_delta(
+                "s3://bucket/t",
+                mode="append",
+                storage_options=storage_options,
+                delta_write_options={
+                    "partition_by": "p",
+                    "writer_properties": properties,
+                },
+            )
+
+        table = DeltaTable("s3://bucket/t", storage_options=storage_options)
+        uris = table.file_uris()
+
+        # Encoded partition values must not break the size pairing.
+        sizes = _source_sizes(
+            uris, _table_root(table.table_uri), table._table.get_add_file_sizes()
+        )
+        assert sizes is not None
+        assert len(sizes) == len(uris)
+
+        dataset = DeltaDataset(
+            table_=NoPickleOption(table),
+            table_uri_=None,
+            version=None,
+            storage_options=storage_options,  # type: ignore[arg-type]
+            credential_provider_builder=None,
+            delta_table_options=None,
+            use_pyarrow=False,
+            pyarrow_options=None,
+        )
+
+        plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+
+        lf = wrap_ldf(
+            PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4)
+        )
+
+        mark = len(s3.log)
+        retained = lf._ldf._retained_parquet_footers()
+        planning = s3.since(mark)
+
+        heavy = sizes.index(max(sizes))
+        assert retained == [[(0, 1), (heavy, 8)]]
+        assert "parquet resolve: pinned 1 / 1 heavy sources" in capfd.readouterr().err
+
+        # Only the retained sources had their footers fetched.
+        assert s3.range_get_keys(planning) == {
+            uris[i].removeprefix("s3://") for i, _ in retained[0]
+        }
+    finally:
+        s3.server.shutdown()

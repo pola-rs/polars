@@ -55,6 +55,9 @@ slotmap = { workspace = true }
 strum_macros = { workspace = true }
 tokio = { workspace = true }
 
+[dev-dependencies]
+tempfile = "3"
+
 [build-dependencies]
 hex = { workspace = true }
 sha2 = { workspace = true }

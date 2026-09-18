@@ -4870,13 +4870,18 @@ def test_resolve_metadata_sampled_heavy_files(
     glob = tmp_path / "part_*.parquet"
 
     # Default sampling does not prioritize heavy files.
-    assert resolve_traces(pl.scan_parquet(glob)) == ["read 2 / 4 footers"]
+    plain = pl.scan_parquet(glob)
+    assert resolve_traces(plain) == ["read 2 / 4 footers"]
+    assert plain._ldf._retained_parquet_footers() == [[(0, 1), (1, 1)]]
 
     # The heavy file replaces a sampled file, keeping the footer count at two.
-    assert resolve_traces(pl.scan_parquet(glob, _resolve_heavy_sources=4)) == [
+    heavy = pl.scan_parquet(glob, _resolve_heavy_sources=4)
+    assert resolve_traces(heavy) == [
         "pinned 1 / 1 heavy sources (footer budget 2)",
         "read 2 / 4 footers",
     ]
+    # Source 3 is the heavy one; the default row group size gives it one group.
+    assert heavy._ldf._retained_parquet_footers() == [[(0, 1), (3, 1)]]
 
     # No file is as large as the total size.
     assert resolve_traces(pl.scan_parquet(glob, _resolve_heavy_sources=1)) == [
@@ -4903,6 +4908,136 @@ def test_resolve_metadata_sampled_heavy_files(
     assert resolve_traces(pl.scan_parquet(paths, _resolve_heavy_sources=4)) == [
         "read 2 / 4 footers"
     ]
+
+
+def _write_heavy_table(tmp_path: Path, rows: list[int]) -> tuple[list[Path], list[int]]:
+    """Write one Parquet file per row count; return the paths and their sizes."""
+    paths = [tmp_path / f"part_{i}.parquet" for i in range(len(rows))]
+    for path, n in zip(paths, rows, strict=True):
+        pl.DataFrame({"x": range(n)}).write_parquet(path, row_group_size=500)
+    return paths, [p.stat().st_size for p in paths]
+
+
+@pytest.mark.write_disk
+def test_resolve_heavy_sources_retains_the_heavy_footer(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    paths, sizes = _write_heavy_table(tmp_path, [20, 20, 4000, 20])
+
+    # Four sources otherwise fit the default budget and resolve in full.
+    plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "2")
+
+    # With a budget of two the stratified sample alone picks sources 0 and 1,
+    # so retaining the heavy source 2 shows heavy files are prioritized.
+    with_flag = pl.scan_parquet(paths, _source_sizes=sizes, _resolve_heavy_sources=4)
+    assert with_flag._ldf._retained_parquet_footers() == [[(0, 1), (2, 8)]]
+
+    without_flag = pl.scan_parquet(paths, _source_sizes=sizes)
+    assert without_flag._ldf._retained_parquet_footers() == [[(0, 1), (1, 1)]]
+
+
+@pytest.mark.write_disk
+def test_resolve_heavy_sources_with_a_provided_schema(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    # A provided schema skips statistics resolution, but the footers of heavy
+    # sources are still needed to split them.
+    paths, sizes = _write_heavy_table(tmp_path, [20, 20, 4000, 20])
+    schema = pl.Schema({"x": pl.Int64})
+
+    plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "2")
+
+    with_flag = pl.scan_parquet(
+        paths, schema=schema, _source_sizes=sizes, _resolve_heavy_sources=4
+    )
+    assert with_flag._ldf._retained_parquet_footers() == [[(0, 1), (2, 8)]]
+    assert with_flag.collect().height == 4060
+
+    # Without the flag a provided schema reads no footers at all.
+    without_flag = pl.scan_parquet(paths, schema=schema, _source_sizes=sizes)
+    assert without_flag._ldf._retained_parquet_footers() == [[]]
+
+
+@pytest.mark.parametrize("mode", ["none", "row_counts"])
+@pytest.mark.write_disk
+def test_resolve_heavy_sources_is_disabled_by_the_resolve_mode(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    # These modes opt out of reading footers, including for splitting.
+    paths, sizes = _write_heavy_table(tmp_path, [20, 20, 4000, 20])
+
+    plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", mode)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    # The ordinary scan still needs source 0 for the schema.
+    ordinary = pl.scan_parquet(paths, _source_sizes=sizes, _resolve_heavy_sources=4)
+    assert ordinary._ldf._retained_parquet_footers() == [[(0, 1)]]
+
+    # A provided schema needs nothing at all.
+    provided = pl.scan_parquet(
+        paths,
+        schema=pl.Schema({"x": pl.Int64}),
+        _source_sizes=sizes,
+        _resolve_heavy_sources=4,
+    )
+    assert provided._ldf._retained_parquet_footers() == [[]]
+
+    assert "heavy sources" not in capfd.readouterr().err
+
+
+@pytest.mark.write_disk
+def test_resolve_heavy_sources_survives_an_unreadable_footer(tmp_path: Path) -> None:
+    # A footer that fails to read leaves its source unresolved; the error
+    # surfaces at execution, not at plan time.
+    paths, sizes = _write_heavy_table(tmp_path, [20, 4000, 20])
+    with paths[1].open("r+b") as f:
+        f.write(b"x" * sizes[1])
+
+    lf = pl.scan_parquet(
+        paths,
+        schema=pl.Schema({"x": pl.Int64}),
+        _source_sizes=sizes,
+        _resolve_heavy_sources=4,
+    )
+
+    lf.explain(optimized=True)
+    assert lf._ldf._retained_parquet_footers() == [[(0, 1)]]
+
+    with pytest.raises(pl.exceptions.ComputeError, match="parquet magic bytes"):
+        lf.collect()
+
+
+@pytest.mark.write_disk
+def test_resolve_heavy_sources_cache_key_covers_the_source_sizes(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    # Two scans over the same paths differ only in their known sizes, so the
+    # metadata cache must not serve one from the other.
+    paths, sizes = _write_heavy_table(tmp_path, [20, 20, 4000, 20])
+
+    plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "2")
+
+    combined = pl.concat(
+        [
+            pl.scan_parquet(paths, _source_sizes=sizes, _resolve_heavy_sources=4),
+            pl.scan_parquet(paths, _resolve_heavy_sources=4),
+        ],
+    )
+
+    # Sizes pin the heavy source 2; without them the sample falls back to source 1.
+    assert combined._ldf._retained_parquet_footers() == [
+        [(0, 1), (2, 8)],
+        [(0, 1), (1, 1)],
+    ]
+
+
+def test_resolve_heavy_sources_rejects_zero() -> None:
+    with pytest.raises(ValueError, match="must be at least 1"):
+        pl.scan_parquet("x.parquet", _resolve_heavy_sources=0)
 
 
 @pytest.mark.write_disk
