@@ -29,9 +29,8 @@ if TYPE_CHECKING:
 
 
 def _table_root(table_uri: str) -> str:
-    """Normalise the table URI into the prefix `file_uris()` paths carry."""
-    # file_uris() drops the file:// scheme; lakefs:// is rewritten to s3://,
-    # matching the rewrite applied to the paths.
+    """Return the table prefix used by native scan paths."""
+    # Match file_uris() for local paths and our lakefs-to-s3 rewrite.
     root = table_uri.removeprefix("file://").replace("lakefs://", "s3://", 1)
     return root if root.endswith("/") else root + "/"
 
@@ -39,10 +38,9 @@ def _table_root(table_uri: str) -> str:
 def _source_sizes(
     paths: list[str], root: str, sizes: dict[str, int]
 ) -> list[int] | None:
-    """Look up each scan path's size by its path relative to the table root.
+    """Return sizes in scan order using exact table-relative paths.
 
-    Returns None if any path is outside the root or has no logged size, so the
-    scan runs without sizes rather than with wrong ones.
+    Return None if any path is outside the root or has no logged size.
     """
     out = []
     for path in paths:
@@ -189,8 +187,7 @@ class DeltaDataset:
                 f"path expansion time: {elapsed:.3f}s"
             )
 
-        # `get_add_file_sizes()` is private API (deltalake 1.6.3 `RawDeltaTable`), but
-        # it maps relative path to size directly, without materializing add actions.
+        # Private delta-rs API: fetch sizes without materializing add-action statistics.
         source_sizes = _source_sizes(
             paths, _table_root(table.table_uri), table._table.get_add_file_sizes()
         )

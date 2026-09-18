@@ -1415,9 +1415,8 @@ impl SourcesToFileInfo {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { options } => {
                 if let Some(schema) = &options.schema {
-                    // We were passed a schema, so `parquet_file_info` is not needed
-                    // and this scan has no statistics. Footers are read only for
-                    // splitting, and only when heavy-source resolution is requested.
+                    // Skip schema and statistics inference; retain any supplied row count.
+                    // Resolve footers only for splitting, when requested.
                     let metadata_per_source = match (
                         unified_scan_args.resolve_heavy_sources,
                         bytes_per_source.as_deref(),

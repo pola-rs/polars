@@ -4880,7 +4880,7 @@ def test_resolve_metadata_sampled_heavy_files(
         "pinned 1 / 1 heavy sources (footer budget 2)",
         "read 2 / 4 footers",
     ]
-    # Source 3 is the heavy one; the default row group size gives it one group.
+    # Source 3 is heavy and has one row group.
     assert heavy._ldf._retained_parquet_footers() == [[(0, 1), (3, 1)]]
 
     # No file is as large as the total size.
@@ -4927,8 +4927,7 @@ def test_resolve_heavy_sources_retains_the_heavy_footer(
     # Four sources otherwise fit the default budget and resolve in full.
     plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "2")
 
-    # With a budget of two the stratified sample alone picks sources 0 and 1,
-    # so retaining the heavy source 2 shows heavy files are prioritized.
+    # Heavy source 2 replaces source 1 in the default sample.
     with_flag = pl.scan_parquet(paths, _source_sizes=sizes, _resolve_heavy_sources=4)
     assert with_flag._ldf._retained_parquet_footers() == [[(0, 1), (2, 8)]]
 
@@ -4940,8 +4939,7 @@ def test_resolve_heavy_sources_retains_the_heavy_footer(
 def test_resolve_heavy_sources_with_a_provided_schema(
     plmonkeypatch: PlMonkeyPatch, tmp_path: Path
 ) -> None:
-    # A provided schema skips statistics resolution, but the footers of heavy
-    # sources are still needed to split them.
+    # A supplied schema must not prevent heavy-footer resolution.
     paths, sizes = _write_heavy_table(tmp_path, [20, 20, 4000, 20])
     schema = pl.Schema({"x": pl.Int64})
 
@@ -4953,7 +4951,7 @@ def test_resolve_heavy_sources_with_a_provided_schema(
     assert with_flag._ldf._retained_parquet_footers() == [[(0, 1), (2, 8)]]
     assert with_flag.collect().height == 4060
 
-    # Without the flag a provided schema reads no footers at all.
+    # Without the flag, a provided schema needs no planning footer reads.
     without_flag = pl.scan_parquet(paths, schema=schema, _source_sizes=sizes)
     assert without_flag._ldf._retained_parquet_footers() == [[]]
 
@@ -4966,7 +4964,7 @@ def test_resolve_heavy_sources_is_disabled_by_the_resolve_mode(
     tmp_path: Path,
     mode: str,
 ) -> None:
-    # These modes opt out of reading footers, including for splitting.
+    # These modes disable splitting reads, not schema or row-count resolution.
     paths, sizes = _write_heavy_table(tmp_path, [20, 20, 4000, 20])
 
     plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", mode)
@@ -4977,7 +4975,7 @@ def test_resolve_heavy_sources_is_disabled_by_the_resolve_mode(
     ordinary = pl.scan_parquet(paths, _source_sizes=sizes, _resolve_heavy_sources=4)
     assert ordinary._ldf._retained_parquet_footers() == [[(0, 1)]]
 
-    # A provided schema needs nothing at all.
+    # A provided schema needs no planning footer reads.
     provided = pl.scan_parquet(
         paths,
         schema=pl.Schema({"x": pl.Int64}),
@@ -4991,8 +4989,7 @@ def test_resolve_heavy_sources_is_disabled_by_the_resolve_mode(
 
 @pytest.mark.write_disk
 def test_resolve_heavy_sources_survives_an_unreadable_footer(tmp_path: Path) -> None:
-    # A footer that fails to read leaves its source unresolved; the error
-    # surfaces at execution, not at plan time.
+    # Failed footer reads leave sources unresolved; execution still raises.
     paths, sizes = _write_heavy_table(tmp_path, [20, 4000, 20])
     with paths[1].open("r+b") as f:
         f.write(b"x" * sizes[1])
@@ -5015,8 +5012,7 @@ def test_resolve_heavy_sources_survives_an_unreadable_footer(tmp_path: Path) -> 
 def test_resolve_heavy_sources_cache_key_covers_the_source_sizes(
     plmonkeypatch: PlMonkeyPatch, tmp_path: Path
 ) -> None:
-    # Two scans over the same paths differ only in their known sizes, so the
-    # metadata cache must not serve one from the other.
+    # Scans with different size hints must not share cached metadata.
     paths, sizes = _write_heavy_table(tmp_path, [20, 20, 4000, 20])
 
     plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "2")

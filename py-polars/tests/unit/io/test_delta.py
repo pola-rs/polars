@@ -1486,7 +1486,7 @@ def test_scan_delta_resolves_heavy_footers(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    # Heavy-footer resolution needs the file sizes from Delta's add actions.
+    # Heavy-footer resolution needs the file sizes recorded in the Delta log.
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     properties = WriterProperties(max_row_group_size=500)
@@ -1503,7 +1503,7 @@ def test_scan_delta_resolves_heavy_footers(
     lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
 
     retained = lf._ldf._retained_parquet_footers()
-    # Source 0 is retained for the partial invariant; the heavy commit has 8 groups.
+    # Retain source 0 and the heavy file's eight row groups.
     assert len(retained) == 1
     assert retained[0][0][1] == 1
     assert sorted(rg for _, rg in retained[0]) == [1, 8]
@@ -1534,7 +1534,7 @@ def test_scan_delta_source_sizes_match_the_file_list(
 
 
 def test_delta_table_root_normalisation() -> None:
-    # file_uris() drops the file:// scheme and rewrites lakefs:// to s3://.
+    # Match local file URIs and Polars' lakefs-to-s3 rewrite.
     assert _table_root("file:///private/var/t") == "/private/var/t/"
     assert _table_root("s3://bucket/t/") == "s3://bucket/t/"
     assert _table_root("lakefs://repo/main/t") == "s3://repo/main/t/"
@@ -1557,7 +1557,7 @@ def test_delta_source_sizes_lookup() -> None:
         200,
     ]
 
-    # A path outside the root, or one with no logged size, disables sizes.
+    # Unknown paths disable size hints.
     assert _source_sizes(["/other/part.parquet"], root, sizes) is None
     assert _source_sizes(["/t/p=2/part.parquet"], root, sizes) is None
 
@@ -1588,7 +1588,7 @@ def test_scan_delta_resolves_heavy_footers_with_encoded_partition_values(
     lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
 
     retained = lf._ldf._retained_parquet_footers()
-    # Source 0 is retained for the partial invariant; the heavy commit has 8 groups.
+    # Retain source 0 and the heavy file's eight row groups.
     assert len(retained) == 1
     assert retained[0][0][1] == 1
     assert sorted(rg for _, rg in retained[0]) == [1, 8]
@@ -1603,8 +1603,7 @@ def test_scan_delta_resolves_heavy_footers_on_object_store(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    # Delta's logged sizes must pair with the object-store paths, and planning
-    # must then fetch the heavy footer and nothing else.
+    # Match encoded paths to sizes, then read source 0 and the heavy-file footer.
     import threading
 
     from tests.unit.io.cloud.test_metadata_prefetch import CountingS3
@@ -1620,7 +1619,7 @@ def test_scan_delta_resolves_heavy_footers_on_object_store(
             "AWS_REGION": s3.storage_options["aws_region"],
             "AWS_ENDPOINT_URL": s3.endpoint,
             "AWS_ALLOW_HTTP": "true",
-            # Delta's S3 backend refuses to commit without a locking provider.
+            # Allow commits to mock S3 without an external lock.
             "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
         }
         properties = WriterProperties(max_row_group_size=500)

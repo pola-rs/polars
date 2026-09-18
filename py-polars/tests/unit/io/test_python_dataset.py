@@ -364,7 +364,7 @@ def test_python_dataset_resolves_heavy_footers(
     dataset = ParquetDataset(paths)
     lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
 
-    # Source 0 is retained for the partial invariant; source 2 is the heavy file.
+    # Partial metadata requires source 0; source 2 is heavy.
     assert lf._ldf._retained_parquet_footers() == [[(0, 1), (2, 8)]]
     assert lf.collect().height == 4002
 
@@ -411,7 +411,7 @@ def test_python_dataset_heavy_footers_disabled_by_the_resolve_mode(
     plmonkeypatch: PlMonkeyPatch,
     mode: str,
 ) -> None:
-    # These modes opt out of reading footers; an expanded dataset needs none.
+    # Expanded datasets need no planning footer reads in these modes.
     plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", mode)
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -433,15 +433,14 @@ def test_python_dataset_heavy_footers_disabled_by_the_resolve_mode(
 
 
 def test_python_dataset_survives_an_unreadable_heavy_footer(tmp_path: Path) -> None:
-    # A heavy footer that fails to read leaves its source unresolved; planning
-    # still succeeds and the error surfaces at execution.
+    # Failed footer reads leave sources unresolved; execution still raises.
     paths = []
     for i, n in enumerate([20, 4000, 20]):
         path = tmp_path / f"{i}.parquet"
         pl.DataFrame({"x": range(n)}).write_parquet(path, row_group_size=500)
         paths.append(path)
 
-    # Keep the byte size, which the dataset reports, consistent with the file.
+    # Corrupt the footer without changing the reported file size.
     size = paths[1].stat().st_size
     with paths[1].open("r+b") as f:
         f.write(b"x" * size)

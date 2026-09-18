@@ -547,10 +547,8 @@ impl PyLazyFrame {
         py.enter_polars(|| self.ldf.read().describe_optimized_plan_tree())
     }
 
-    /// Retained Parquet footers per scan, for tests.
-    ///
-    /// Optimizes the plan, then returns `(source index, row group count)` for
-    /// every resolved footer, one list per Parquet scan in pre-order.
+    /// Optimize and return retained `(source index, row group count)` pairs for tests,
+    /// grouped by Parquet scan in pre-order.
     #[cfg(feature = "parquet")]
     fn _retained_parquet_footers(&self, py: Python) -> PyResult<Vec<Vec<(usize, usize)>>> {
         use polars_plan::dsl::FileScanIR;

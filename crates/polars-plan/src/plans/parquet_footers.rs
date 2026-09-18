@@ -1,24 +1,16 @@
-//! Parquet footer selection and reading, shared by the two resolve passes.
+//! Shared Parquet footer selection and reading.
 //!
-//! Both passes read footers, but for different reasons, and
-//! `POLARS_RESOLVE_METADATA_LEVEL` governs each differently.
+//! `POLARS_RESOLVE_METADATA_LEVEL` controls two uses:
 //!
-//! *Statistics resolution* runs for an ordinary schema-inferred `scan_parquet`
-//! ([`parquet_file_info`]). It reads source 0 for the schema and row count, and
-//! the mode decides what else:
-//! - `none`, `row_counts`: retain only source 0's footer.
-//! - `sampled`: read heavy sources first, then fill the remaining budget with a
-//!   stratified sample.
-//! - `full`: read every footer.
+//! - Schema/statistics inference always reads source 0. `none` stops there;
+//!   `row_counts` reads the remaining row counts without retaining their footers;
+//!   `sampled` prioritizes requested heavy sources and samples the rest;
+//!   `full` reads every footer.
+//! - Splitting resolution for schema-provided scans and expanded datasets reads
+//!   source 0 and heavy sources under `sampled` or `full`. Under `none` or
+//!   `row_counts` it reads nothing. It does not infer statistics.
 //!
-//! *Splitting resolution* ([`resolve_for_splitting`]) runs for schema-provided
-//! scans and expanded datasets, whose schema comes from elsewhere. It reads
-//! source 0 plus the heavy sources so a distributed engine can split them by
-//! row group, and only under `sampled` or `full`; under `none` and
-//! `row_counts` it retains no footers at all, since source 0 is not needed for
-//! a schema. This pass never adds statistics sampling.
-//!
-//! [`parquet_file_info`]: crate::plans::conversion::dsl_to_ir::scans::parquet_file_info
+//! Both passes respect the footer budget when sampling or selecting heavy sources.
 
 use std::io::Cursor;
 use std::num::NonZeroU32;
@@ -32,8 +24,7 @@ use polars_io::parquet::metadata::FileMetadataRef;
 use crate::dsl::MetadataPerSource;
 use crate::prelude::{ScanSourceRef, ScanSources};
 
-/// Minimum sample so a scan still extrapolates from enough files; below this,
-/// two-mode datasets can miss a mode entirely and misestimate badly.
+/// Default minimum sample size for estimating scan statistics.
 const SAMPLE_FLOOR: usize = 16;
 
 /// Maximum footers to read, including source 0.
@@ -77,10 +68,10 @@ fn heavy_source_indices(bytes: &[u64], n_parts: NonZeroU32, budget: usize) -> Ve
     indices
 }
 
-/// Footer-wave size (incl. file 0) for `ResolveMode::Sampled`: `sqrt(n)`,
-/// floored at `SAMPLE_FLOOR`, capped at `limit`, never above the file count.
+/// Start with `ceil(sqrt(n))`, apply the default floor, then cap by
+/// `limit.max(1)` and the source count.
 fn sample_size(n_sources: usize, limit: usize) -> usize {
-    // `limit` last so it stays a hard ceiling.
+    // The explicit limit can override the default floor.
     ((n_sources as f64).sqrt().ceil() as usize)
         .max(SAMPLE_FLOOR)
         .min(limit.max(1))
@@ -100,9 +91,8 @@ fn sampled_source_indices(n_sources: usize, k: usize) -> Vec<usize> {
 
 /// Footers to read besides source 0, as ascending indices in `1..n_sources`.
 ///
-/// Heavy sources come first. With `fill_sample`, the remaining budget goes to a
-/// stratified sample of the sources not already selected; without it, only the
-/// heavy sources are returned.
+/// Prioritize heavy sources. `fill_sample` fills the remaining budget with a
+/// stratified sample of unselected sources.
 pub(crate) fn select_footer_indices(
     n_sources: usize,
     bytes_per_source: Option<&[u64]>,
@@ -150,9 +140,7 @@ pub(crate) fn select_footer_indices(
     indices
 }
 
-/// Read the footers of `indices` in one concurrency wave.
-///
-/// Failed reads are dropped: the source simply stays unresolved.
+/// Read selected footers concurrently, omitting failed reads.
 pub(crate) async fn read_footers(
     sources: &ScanSources,
     indices: &[usize],
@@ -179,10 +167,7 @@ pub(crate) async fn read_footers(
     pairs
 }
 
-/// Resolve footers for distributed row-group splitting.
-///
-/// See the module docs: reads source 0 plus the heavy sources, and only under
-/// `sampled` or `full`.
+/// Read source 0 and heavy-source footers for splitting under `sampled` or `full`.
 pub(crate) async fn resolve_for_splitting(
     sources: &ScanSources,
     bytes: &[u64],
@@ -243,8 +228,7 @@ pub(crate) async fn read_parquet_metadata(
     }
 }
 
-/// Fetch one source's `num_rows` (thrift field 3 only); skips
-/// schema, row_groups, and the rest. Used in `RowCounts` resolve mode.
+/// Read `num_rows` (Thrift field 3) without decoding the rest of the footer.
 pub(crate) async fn read_parquet_num_rows(
     source: ScanSourceRef<'_>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,

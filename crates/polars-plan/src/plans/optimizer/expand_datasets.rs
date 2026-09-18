@@ -37,8 +37,7 @@ pub(super) fn expand_datasets(
     expr_arena: &mut Arena<AExpr>,
     apply_scan_predicate_to_scan_ir: ApplyScanPredicateFn,
 ) -> PolarsResult<()> {
-    // Boxed so each dataset's footer wave starts as soon as its own expansion
-    // finishes, overlapping with the datasets still expanding.
+    // Poll each expansion and its footer reads together so datasets can overlap.
     let mut expansion_tasks: FuturesUnordered<BoxFuture<'static, (Node, PolarsResult<IR>)>> =
         FuturesUnordered::new();
 
@@ -171,8 +170,7 @@ pub(super) fn expand_datasets(
                                 )
                             }));
 
-                            // Resolve before filtering so sources and footers are
-                            // filtered together.
+                            // Resolve before filtering so sources and footers stay aligned.
                             expansion_tasks.push(Box::pin(resolve_after_expansion(handle)));
                         },
 
@@ -209,8 +207,6 @@ pub(super) fn expand_datasets(
 }
 
 /// Await one dataset expansion, then read its heavy-source footers.
-///
-/// Kept out of the spawn site so the boxed future stays a small type.
 #[cfg(feature = "python")]
 async fn resolve_after_expansion(
     handle: AbortOnDropHandle<(Node, PolarsResult<IR>)>,
@@ -274,11 +270,7 @@ async fn resolve_heavy_footers(_scan_ir: &mut IR) -> PolarsResult<()> {
     Ok(())
 }
 
-/// Rebuild an outer scan IR from the dataset's expanded `DslPlan::Scan`.
-///
-/// Copies over the scan arguments the expansion owns, swaps in its sources and
-/// scan type, and recomputes hive parts. Parquet footers are left unresolved;
-/// [`resolve_heavy_footers`] reads them afterwards if asked.
+/// Rebuild the outer scan from a dataset expansion, leaving footers unresolved.
 fn rebuild_scan_from_expanded(
     scan_ir: &mut IR,
     expanded_dsl: &DslPlan,
@@ -311,8 +303,7 @@ fn rebuild_scan_from_expanded(
         unreachable!()
     };
 
-    // We only want a few configuration flags from here (e.g. column casting config).
-    // The rest we either expect to be None (e.g. projection / row_index), or ignore.
+    // Copy provider-owned options; query-specific options stay on the outer scan.
     let UnifiedScanArgs {
         schema: _,
         cloud_options,
@@ -749,7 +740,7 @@ mod tests {
         }
     }
 
-    /// The outer scan as it looks before the expansion is copied in.
+    /// Outer scan before dataset expansion.
     fn outer_scan_ir(resolve_heavy_sources: Option<NonZeroU32>) -> IR {
         let schema = Arc::new(Schema::from_iter([Field::new("x".into(), DataType::Int64)]));
 
@@ -790,14 +781,12 @@ mod tests {
             .collect()
     }
 
-    /// Enabling the flag must resolve footers even against an expansion that was
-    /// already cached without it: the production cache hit reuses `expanded_dsl`
-    /// and never re-runs the dataset provider.
+    /// Reusing a cached expansion must still honor the outer scan's resolution flag.
     #[test]
     fn cached_expansion_resolves_heavy_footers_when_the_flag_is_added() {
         let dir = tempfile::tempdir().unwrap();
         let (sources, sizes) = write_sources(dir.path());
-        // Three sources fit the default footer budget, so no configuration is needed.
+        // Three sources fit the default footer budget.
         let expanded_dsl = expanded_scan_dsl(sources, sizes);
 
         let mut without = outer_scan_ir(None);
@@ -814,7 +803,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(retained(&without), []);
-        // Source 0 is retained for the partial invariant; source 1 is the heavy file.
+        // Partial metadata requires source 0; source 1 is heavy.
         assert_eq!(retained(&with), [(0, 1), (1, 8)]);
     }
 }

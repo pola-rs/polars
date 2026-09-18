@@ -30,18 +30,16 @@ REGION = "us-east-1"
 
 
 class CountingS3:
-    """Moto S3 server logging the requests it serves.
+    """Moto S3 server with request counts and an arrival-ordered log.
 
-    `requests` counts them by method and range; `log` keeps the full
-    `(method, object key, range)` of each, in arrival order.
+    `requests` counts by method and range; `log` records (method, bucket/key, range).
     """
 
     def __init__(self) -> None:
         app = DomainDispatcherApplication(create_backend_app)
         self.requests: Counter[str] = Counter()
         self.log: list[tuple[str, str, str]] = []
-        # Called before the request is served; may return a WSGI response to
-        # answer it instead of moto.
+        # Run before moto; any non-None return value triggers an empty HTTP 500.
         self.on_request: Callable[[dict[str, Any]], Any] | None = None
         lock = threading.Lock()
 
@@ -84,11 +82,7 @@ class CountingS3:
         return sum(v for k, v in self.requests.items() if k.startswith(prefix))
 
     def range_get_keys(self, log: list[tuple[str, str, str]]) -> set[str]:
-        """Object keys that received a range GET in `log`.
-
-        A footer larger than the prefetch takes several range GETs, so only the
-        set of keys is meaningful, never the request count.
-        """
+        """Return keys fetched by range GET, counting multi-request footers once."""
         return {key for method, key, rng in log if method == "GET" and rng}
 
     def since(self, mark: int) -> list[tuple[str, str, str]]:
@@ -152,7 +146,7 @@ def test_scan_parquet_metadata_prefetch_too_small(
 
 
 def upload_rows(s3: CountingS3, key: str, n: int) -> int:
-    """Upload a one-column parquet file of `n` rows, returning its size."""
+    """Upload `n` rows as Parquet and return the file size."""
     f = io.BytesIO()
     pl.DataFrame({"x": range(n)}).write_parquet(f, row_group_size=500)
     body = f.getvalue()
@@ -161,7 +155,7 @@ def upload_rows(s3: CountingS3, key: str, n: int) -> int:
 
 
 class S3ParquetDataset:
-    """Duck-typed dataset provider expanding to a cloud Parquet scan."""
+    """Test dataset provider for Parquet files on S3."""
 
     def __init__(self, s3: CountingS3, keys: list[str], sizes: list[int]) -> None:
         self.keys = keys
@@ -209,7 +203,7 @@ def test_resolve_heavy_sources_reads_only_the_retained_footers(
     retained = lf._ldf._retained_parquet_footers()
     planning = s3.since(mark)
 
-    # Source 0 is retained for the partial invariant; source 1 is the heavy file.
+    # Partial metadata requires source 0; source 1 is heavy.
     assert retained == [[(0, 1), (1, 8)]]
     assert s3.range_get_keys(planning) == {f"bucket/{keys[i]}" for i, _ in retained[0]}
 
@@ -218,8 +212,7 @@ def test_resolve_heavy_sources_reads_only_the_retained_footers(
 def test_resolve_modes_without_footers(
     s3: CountingS3, plmonkeypatch: PlMonkeyPatch, mode: str
 ) -> None:
-    # `none` and `row_counts` opt out of reading footers for splitting; the
-    # ordinary scan still reads what it needs for its schema and row count.
+    # Disable splitting reads, but preserve schema and row-count resolution.
     keys = [f"t/{i}.parquet" for i in range(3)]
     sizes = [
         upload_rows(s3, key, n) for key, n in zip(keys, [20, 4000, 20], strict=True)
@@ -237,8 +230,7 @@ def test_resolve_modes_without_footers(
     )
     mark = len(s3.log)
     assert ordinary._ldf._retained_parquet_footers() == [[(0, 1)]]
-    # `none` extrapolates from source 0 alone; `row_counts` reads every row
-    # count but still retains only source 0's footer.
+    # Both retain only source 0's footer; `row_counts` also reads every row count.
     expected = {f"bucket/{keys[0]}"} if mode == "none" else all_keys
     assert s3.range_get_keys(s3.since(mark)) == expected
 
@@ -260,8 +252,7 @@ def test_resolve_modes_without_footers(
 
 
 def test_dataset_footer_waves_overlap(s3: CountingS3) -> None:
-    # Two datasets expanded in one pass must read their footers concurrently:
-    # a serial drain would only issue B's reads after A's have finished.
+    # The barrier requires both datasets' heavy-footer reads to overlap.
     datasets = []
     heavy_keys = set()
     for name in ["a", "b"]:
@@ -283,14 +274,14 @@ def test_dataset_footer_waves_overlap(s3: CountingS3) -> None:
         if key not in heavy_keys or not environ.get("HTTP_RANGE"):
             return None
         with lock:
-            # A footer can take several range GETs; only hold up the first.
+            # Only the first request per file participates in the barrier.
             if key in seen:
                 return None
             seen.add(key)
         try:
             barrier.wait()
         except threading.BrokenBarrierError:
-            # Fail the request so the blocked reader unwinds instead of hanging.
+            # Record the failure even if a later retry succeeds.
             broken.append(key)
             return "500"
         passed.append(key)
