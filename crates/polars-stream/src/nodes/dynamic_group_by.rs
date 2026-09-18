@@ -4,7 +4,9 @@ use polars_arrow::legacy::time_zone::Tz;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, GroupsType, Int64Chunked, IntoColumn, TimeUnit};
+use polars_core::prelude::{
+    Column, DataType, GroupsType, Int64Chunked, IntoColumn, TimeUnit, slice_groups_are_monotonic,
+};
 use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
 use polars_defs::time::duration::ensure_duration_matches_dtype;
@@ -143,7 +145,9 @@ impl DynamicGroupBy {
         include_boundaries: bool,
     ) -> PolarsResult<DataFrame> {
         let height = windows.len();
-        let groups = GroupsType::new_slice(windows, true, true).into_sliceable();
+        // Window ends are not necessarily non-decreasing (month clamping, DST).
+        let monotonic = slice_groups_are_monotonic(&windows);
+        let groups = GroupsType::new_slice(windows, true, monotonic).into_sliceable();
 
         // @NOTE:
         // Rechunk so we can use specialized rolling/dynamic kernels.
@@ -253,9 +257,10 @@ impl DynamicGroupBy {
         }
 
         // Prune the data that is not covered by the windows and update the windows accordingly.
+        // Window starts are non-decreasing, but their ends are not: a window opened later
+        // can end earlier (month clamping, DST), so take the max rather than the last.
         let offset = windows[0][0];
-        let end = windows.last().unwrap();
-        let end = end[0] + end[1];
+        let end = windows.iter().map(|[s, len]| s + len).max().unwrap();
 
         if self.slice_offset as usize > windows.len() {
             self.slice_offset -= windows.len() as IdxSize;

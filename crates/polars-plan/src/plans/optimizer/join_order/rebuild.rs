@@ -49,7 +49,7 @@ pub(super) fn rebuild(
             runtime_filters: Vec::new(),
         });
 
-        let schema = det_join_schema(&acc_schema, &leaf.schema, &options, expr_arena)?;
+        let schema = det_join_schema(&acc_schema, &leaf.schema, &options)?;
 
         acc_node = ir_arena.add(IR::Join {
             input_left: acc_node,

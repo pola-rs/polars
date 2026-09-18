@@ -279,6 +279,32 @@ impl Default for GroupsType {
     }
 }
 
+/// Returns whether `groups` is monotonic:
+/// True if for every consecutive pair of group slices both the
+/// start and the end offset are non-decreasing.
+pub fn slice_groups_are_monotonic(groups: &GroupsSlice) -> bool {
+    if groups.len() < 2 {
+        return true;
+    }
+
+    let (offset, len) = (groups[0][0], groups[0][1]);
+    let mut prev_start = offset;
+    let mut prev_end = offset + len;
+
+    for g in &groups[1..] {
+        let start = g[0];
+        let end = g[0] + g[1];
+
+        if start < prev_start || end < prev_end {
+            return false;
+        }
+
+        prev_start = start;
+        prev_end = end;
+    }
+    true
+}
+
 impl GroupsType {
     pub fn new_slice(groups: GroupsSlice, overlapping: bool, monotonic: bool) -> Self {
         #[cfg(debug_assertions)]
@@ -305,31 +331,7 @@ impl GroupsType {
             }
 
             assert!(overlapping || !groups_overlap(&groups));
-
-            fn groups_are_monotonic(groups: &GroupsSlice) -> bool {
-                if groups.len() < 2 {
-                    return true;
-                }
-
-                let (offset, len) = (groups[0][0], groups[0][1]);
-                let mut prev_start = offset;
-                let mut prev_end = offset + len;
-
-                for g in &groups[1..] {
-                    let start = g[0];
-                    let end = g[0] + g[1];
-
-                    if start < prev_start || end < prev_end {
-                        return false;
-                    }
-
-                    prev_start = start;
-                    prev_end = end;
-                }
-                true
-            }
-
-            assert!(!monotonic || groups_are_monotonic(&groups));
+            assert!(!monotonic || slice_groups_are_monotonic(&groups));
         }
 
         Self::Slice {

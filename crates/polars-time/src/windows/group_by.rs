@@ -917,6 +917,7 @@ impl RollingWindower {
 #[derive(Debug)]
 struct ActiveDynWindow {
     start: IdxSize,
+    end: Option<IdxSize>,
     lower_bound: i64,
     upper_bound: i64,
 }
@@ -950,6 +951,11 @@ pub struct GroupByDynamicWindower {
     num_seen: IdxSize,
     next_lower_bound: i64,
     active: VecDeque<ActiveDynWindow>,
+
+    /// Upper bound of the most recently opened window.
+    prev_upper_bound: Option<i64>,
+    // Kept track of because of clamping/DST
+    non_monotonic_upper_bounds: bool,
 }
 
 impl GroupByDynamicWindower {
@@ -992,6 +998,8 @@ impl GroupByDynamicWindower {
             num_seen: 0,
             next_lower_bound: 0,
             active: Default::default(),
+            prev_upper_bound: None,
+            non_monotonic_upper_bounds: false,
         }
     }
 
@@ -1154,16 +1162,43 @@ impl GroupByDynamicWindower {
         }
 
         for &t in time {
-            while let Some(w) = self.active.front()
-                && !is_below_upper_bound(t, w.upper_bound, self.closed)
-            {
-                let w = self.active.pop_front().unwrap();
-                windows.push([w.start, self.num_seen - w.start]);
-                if self.include_lower_bound {
-                    lower_bound.push(w.lower_bound);
+            // Close every window that `t` has moved past.
+            // This sets flags for monotonicity.
+            if self.non_monotonic_upper_bounds {
+                for w in self.active.iter_mut() {
+                    if w.end.is_none() && !is_below_upper_bound(t, w.upper_bound, self.closed) {
+                        w.end = Some(self.num_seen);
+                    }
                 }
-                if self.include_upper_bound {
-                    upper_bound.push(w.upper_bound);
+
+                while let Some(w) = self.active.front()
+                    && w.end.is_some()
+                {
+                    let w = self.active.pop_front().unwrap();
+                    Self::emit(
+                        &w,
+                        self.num_seen,
+                        self.include_lower_bound,
+                        self.include_upper_bound,
+                        windows,
+                        lower_bound,
+                        upper_bound,
+                    );
+                }
+            } else {
+                while let Some(w) = self.active.front()
+                    && !is_below_upper_bound(t, w.upper_bound, self.closed)
+                {
+                    let w = self.active.pop_front().unwrap();
+                    Self::emit(
+                        &w,
+                        self.num_seen,
+                        self.include_lower_bound,
+                        self.include_upper_bound,
+                        windows,
+                        lower_bound,
+                        upper_bound,
+                    );
                 }
             }
 
@@ -1172,8 +1207,12 @@ impl GroupByDynamicWindower {
                     Ok((lower_bound, upper_bound)) => {
                         self.next_lower_bound =
                             (self.add)(&self.every, lower_bound, self.tz.as_ref())?;
+                        self.non_monotonic_upper_bounds |=
+                            self.prev_upper_bound.is_some_and(|prev| upper_bound < prev);
+                        self.prev_upper_bound = Some(upper_bound);
                         self.active.push_back(ActiveDynWindow {
                             start: self.num_seen,
+                            end: None,
                             lower_bound,
                             upper_bound,
                         });
@@ -1191,6 +1230,25 @@ impl GroupByDynamicWindower {
         Ok(())
     }
 
+    fn emit(
+        w: &ActiveDynWindow,
+        num_seen: IdxSize,
+        include_lower_bound: bool,
+        include_upper_bound: bool,
+        windows: &mut Vec<[IdxSize; 2]>,
+        lower_bound: &mut Vec<i64>,
+        upper_bound: &mut Vec<i64>,
+    ) {
+        let end = w.end.unwrap_or(num_seen);
+        windows.push([w.start, end - w.start]);
+        if include_lower_bound {
+            lower_bound.push(w.lower_bound);
+        }
+        if include_upper_bound {
+            upper_bound.push(w.upper_bound);
+        }
+    }
+
     pub fn lowest_needed_index(&self) -> IdxSize {
         self.active.front().map_or(self.num_seen, |w| w.start)
     }
@@ -1201,18 +1259,25 @@ impl GroupByDynamicWindower {
         lower_bound: &mut Vec<i64>,
         upper_bound: &mut Vec<i64>,
     ) {
+        let num_seen = self.num_seen;
+        let (include_lower_bound, include_upper_bound) =
+            (self.include_lower_bound, self.include_upper_bound);
         for w in self.active.drain(..) {
-            windows.push([w.start, self.num_seen - w.start]);
-            if self.include_lower_bound {
-                lower_bound.push(w.lower_bound);
-            }
-            if self.include_upper_bound {
-                upper_bound.push(w.upper_bound);
-            }
+            Self::emit(
+                &w,
+                num_seen,
+                include_lower_bound,
+                include_upper_bound,
+                windows,
+                lower_bound,
+                upper_bound,
+            );
         }
 
         self.next_lower_bound = 0;
         self.num_seen = 0;
+        self.prev_upper_bound = None;
+        self.non_monotonic_upper_bounds = false;
     }
 
     pub fn num_seen(&self) -> IdxSize {
