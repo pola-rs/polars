@@ -32,23 +32,15 @@ if TYPE_CHECKING:
 def _source_sizes_from_add_actions(
     paths: list[str], add_actions: pl.DataFrame
 ) -> list[int] | None:
-    """Pair every path with the add action describing it and return their sizes.
+    """Return sizes if the add actions match the scan paths in order; otherwise None.
 
-    The actions enumerate the same snapshot as the paths, in the same order, which is
-    deltalake's behaviour rather than a guarantee. A size read against the wrong file
-    would send the reader to an offset holding no footer, so confirm the pairing and
-    give up on all of it otherwise.
+    Ordering is not guaranteed. Validate it before using sizes to locate footers.
     """
     if "size_bytes" not in add_actions.columns or len(add_actions) != len(paths):
         return None
 
-    # An action's path is a URI relative to the table root, and has to be decoded to
-    # name a file. The paths are absolute and already decoded, so a partition value
-    # reaches us spelled twice over: `p=a b` is `p=a%2520b` here and `p=a%20b` there.
-    #
-    # Take the root each pair implies and insist on a single table. A suffix alone is
-    # not enough to pair on: `part.parquet` and `t/part.parquet` are both legal under
-    # `/t`, and each one ends the other's path, so swapping the two would go unseen.
+    # Decode the action's relative URI once: p=a%2520b becomes p=a%20b,
+    # matching the partition directory in the absolute scan path.
     roots = set()
 
     for path, action in zip(paths, add_actions["path"], strict=True):
@@ -59,6 +51,8 @@ def _source_sizes_from_add_actions(
 
         roots.add(path[: len(path) - len(relative)])
 
+    # Require one table root: suffix checks alone can accept reordered paths
+    # such as /t/part.parquet and /t/t/part.parquet.
     if len(roots) > 1:
         return None
 

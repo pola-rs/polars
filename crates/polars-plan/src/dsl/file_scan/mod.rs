@@ -197,14 +197,14 @@ impl MetadataPerSource {
         }
     }
 
-    /// The resolved footers paired with their source index, ascending.
+    /// Resolved footers and their source indices, in source order.
     pub fn iter_resolved(&self) -> impl Iterator<Item = (usize, &FileMetadataRef)> {
         let (indices, metadata): (&[usize], &[FileMetadataRef]) = match self {
             Self::Unresolved => (&[], &[]),
             Self::Partial(p) => (&p.indices, &p.metadata),
             Self::Full(s) => (&[], s),
         };
-        // `Full` carries no index list; there a footer's position is its source index.
+        // `Full` uses each footer's position as its source index.
         metadata
             .iter()
             .enumerate()
@@ -613,8 +613,8 @@ pub struct UnifiedScanArgs {
     /// Note, intentionally store u64 instead of IdxSize to avoid erroring if it's unused.
     pub row_count: Option<(u64, u64)>,
     pub source_sizes: Option<Buffer<u64>>,
-    /// In sampled Parquet resolution, prioritize sources at least `1 / N` of the
-    /// total byte size, largest first, within the sample limit. Requires known sizes.
+    /// For `N` partitions, prioritize footers of sources containing at least `1 / N`
+    /// of the total bytes. Requires known sizes; selects largest first within the budget.
     pub resolve_heavy_sources: Option<NonZeroU32>,
 }
 

@@ -4563,10 +4563,7 @@ def test_scan_iceberg_schema_change_24498(
 def test_scan_iceberg_renamed_column_with_pruned_metadata(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
-    # Resolving the heavy sources' footers exposes them to metadata pruning, which
-    # matches column names. A column mapping resolves the scan's names to the file's by
-    # field ID, so pruning by the new name would drop the renamed column's chunk and
-    # read back nulls.
+    # Pruning must preserve renamed columns, which Iceberg maps by field ID.
     from polars._plr import PyLazyFrame
     from polars._utils.wrap import wrap_ldf
 

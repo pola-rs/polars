@@ -345,21 +345,17 @@ pub(super) async fn parquet_file_info(
     } else {
         use polars_config::ResolveMode;
 
-        // Sampled source indices. If all sources are selected, resolve an exact
-        // row count instead of estimating it.
+        // Use exact statistics when the sample covers every source.
         let partial_sample = matches!(mode, ResolveMode::Sampled)
             .then(|| {
                 // Footer budget including source 0, which is read separately.
                 let budget = footer_budget(n_sources);
 
-                // Nothing to sample when the budget covers every source; say so and
-                // let the caller's coverage check route this to a full resolve.
                 if budget >= n_sources {
                     return (1..n_sources).collect();
                 }
 
-                // Prioritize heavy sources so the distributed planner has their
-                // row-group metadata available for splitting. Returns them ascending.
+                // Prioritize heavy files for distributed row-group splitting.
                 let mut indices = resolve_heavy_sources
                     .zip(bytes_per_source)
                     .map(|(n_parts, bytes)| {
@@ -368,19 +364,17 @@ pub(super) async fn parquet_file_info(
                     })
                     .unwrap_or_default();
 
-                // Spend what is left of the budget on a stratified sample.
+                // Use the remaining budget for a stratified sample.
                 let left = budget - indices.len();
                 if indices.is_empty() {
                     return sampled_source_indices(n_sources, left);
                 }
                 if left > 1 {
-                    // Stride over the sources that are not pinned already: sampling over
-                    // all of them would re-pick pinned ones and lose the budget those
-                    // duplicates cost. `rest` stands in for `1..rest.len() + 1`, so the
-                    // stride runs over positions in it rather than over source indices.
+                    // Sample only unselected sources to avoid wasting the budget.
                     let rest: Vec<usize> = (1..n_sources)
                         .filter(|i| indices.binary_search(i).is_err())
                         .collect();
+                    // Add a dummy source 0, then map sampled positions to source indices.
                     indices.extend(
                         sampled_source_indices(rest.len() + 1, left)
                             .into_iter()
@@ -810,10 +804,10 @@ fn is_unsigned_int(primitive_type: &polars_parquet::parquet::schema::types::Prim
 #[cfg(feature = "parquet")]
 const SAMPLE_FLOOR: usize = 16;
 
-/// How many footers one resolve may read, including source 0.
+/// Maximum footers to read, including source 0.
 ///
-/// Defaults to the IO concurrency budget floored at [`SAMPLE_FLOOR`]; an explicit
-/// `POLARS_RESOLVE_SAMPLE_LIMIT` is authoritative, even below the floor.
+/// The default limit is the I/O concurrency budget, at least [`SAMPLE_FLOOR`].
+/// `POLARS_RESOLVE_SAMPLE_LIMIT` overrides it, even below the floor.
 #[cfg(feature = "parquet")]
 pub(crate) fn footer_budget(n_sources: usize) -> usize {
     let limit = polars_config::config().resolve_sample_limit().map_or_else(
@@ -823,12 +817,10 @@ pub(crate) fn footer_budget(n_sources: usize) -> usize {
     sample_size(n_sources, limit)
 }
 
-/// Sources holding at least `1 / n_parts` of the total byte size, ascending, largest
-/// first when `budget` cannot fit them all. Source 0 is left out of the result but
-/// counted in the budget: every resolve reads it separately.
+/// Select sources containing at least `1 / n_parts` of the total bytes.
 ///
-/// Such a source exceeds a fair share on its own, so whole-file assignment stalls on it
-/// and the distributed planner wants its row groups to cut it between.
+/// Keep the largest sources that fit `budget`, returning indices in source order.
+/// Source 0 is read separately: it counts toward the budget but is not returned.
 #[cfg(feature = "parquet")]
 pub(crate) fn heavy_source_indices(
     bytes: &[u64],
@@ -845,7 +837,6 @@ pub(crate) fn heavy_source_indices(
         .filter(|&i| u128::from(bytes[i]) * n_parts >= total)
         .collect();
 
-    // Keep the largest ones that fit.
     indices.sort_unstable_by_key(|&i| std::cmp::Reverse(bytes[i]));
     let heavy = indices.len();
     indices.truncate(budget.saturating_sub(1));
@@ -883,7 +874,7 @@ fn sampled_source_indices(n_sources: usize, k: usize) -> Vec<usize> {
     (0..extra).map(|j| 1 + (j * span) / extra).collect()
 }
 
-/// Fetch one source's full footer for [`parquet_file_info`].
+/// Read one source's full Parquet footer.
 #[cfg(feature = "parquet")]
 pub(crate) async fn read_parquet_metadata(
     source: ScanSourceRef<'_>,

@@ -194,8 +194,7 @@ pub(super) fn expand_datasets(
             while let Some(v) = expansion_tasks.next().await {
                 let (node, ir) = v.unwrap();
                 let mut ir = ir?;
-                // Before the predicate runs: it can drop sources, and the footers are
-                // re-indexed along with them.
+                // Resolve before filtering so sources and footers are filtered together.
                 resolve_heavy_footers(&mut ir).await?;
                 ir_arena.replace(node, ir);
                 apply_scan_predicate_to_scan_ir(node, ir_arena, expr_arena)?;
@@ -208,13 +207,10 @@ pub(super) fn expand_datasets(
     Ok(())
 }
 
-/// Read the footers of an expanded dataset's heavy sources, so the distributed planner
-/// can cut them between their row groups.
+/// Resolve heavy-source footers for distributed row-group splitting.
 ///
-/// The glob path does this in `parquet_file_info`, during DSL-to-IR conversion. That has
-/// already run by the time a dataset is expanded here, so without this those scans keep
-/// whole-file assignment however large a single file is. Only runs when the caller asked
-/// for it through [`UnifiedScanArgs::resolve_heavy_sources`].
+/// Dataset expansion runs after the usual DSL-to-IR footer resolution.
+/// Enabled by [`UnifiedScanArgs::resolve_heavy_sources`].
 #[cfg(feature = "parquet")]
 async fn resolve_heavy_footers(scan_ir: &mut IR) -> PolarsResult<()> {
     use crate::dsl::MetadataPerSource;
@@ -237,8 +233,7 @@ async fn resolve_heavy_footers(scan_ir: &mut IR) -> PolarsResult<()> {
     };
     let cloud_options = unified_scan_args.cloud_options.as_ref();
     let n_sources = sources.len();
-    // An empty table, or a predicate that eliminated every file. There is not even a
-    // source 0 to read.
+    // Empty tables and fully pruned datasets have no source 0.
     if n_sources == 0 {
         return Ok(());
     }
@@ -259,9 +254,8 @@ async fn resolve_heavy_footers(scan_ir: &mut IR) -> PolarsResult<()> {
     };
     debug_assert_eq!(bytes.len(), n_sources);
 
-    // Source 0 is read whether or not it is heavy, as on the glob path:
-    // `MetadataPerSource::Partial` has to retain it, and a single-source dataset has
-    // nothing else to weigh it against yet still wants its row groups.
+    // Partial metadata requires source 0, even if it is not heavy.
+    // This also provides row groups for single-file datasets.
     let budget = footer_budget(n_sources);
     let indices: Vec<usize> = std::iter::once(0)
         .chain(heavy_source_indices(bytes, n_parts, budget))
@@ -280,8 +274,7 @@ async fn resolve_heavy_footers(scan_ir: &mut IR) -> PolarsResult<()> {
         })
         .collect::<FuturesUnordered<_>>();
 
-    // Best effort, as on the glob path: a footer that fails to read at plan time simply
-    // goes unresolved, and its source stays whole.
+    // Failed footer reads leave sources unresolved and unsplit.
     let mut pairs = Vec::with_capacity(indices.len());
     while let Some((i, metadata)) = futures.next().await {
         if let Some(metadata) = metadata {
@@ -510,9 +503,7 @@ fn expand_python_dataset(
                 #[cfg(feature = "parquet")]
                 FileScanDsl::Parquet { options } => FileScanIR::Parquet {
                     options,
-                    // No footers: `parquet_file_info` resolves them during DSL-to-IR
-                    // conversion, which has already run by the time this pass expands
-                    // the dataset, and nothing resolves them afterwards.
+                    // Heavy-source footers are resolved after expansion, if requested.
                     metadata_per_source: Unresolved,
                     bytes_per_source: source_sizes.clone(),
                 },

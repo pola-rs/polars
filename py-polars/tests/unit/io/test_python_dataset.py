@@ -328,7 +328,7 @@ def test_dataset_provider_predicate_partial(df: pl.DataFrame) -> None:
 
 
 class ParquetDataset:
-    """Dataset provider that expands to a Parquet scan, the way Iceberg does."""
+    """Test dataset provider that expands to a Parquet scan."""
 
     def __init__(self, paths: list[Path], schema: pl.Schema | None = None) -> None:
         self.paths = paths
@@ -341,7 +341,7 @@ class ParquetDataset:
         return self.arrow_schema
 
     def to_dataset_scan(self, **_kwargs: Any) -> tuple[pl.LazyFrame, str]:
-        # The manifest knows the sizes, so the expansion does not have to list them.
+        # Provide known file sizes, as native Iceberg and Delta scans do.
         sizes = [p.stat().st_size for p in self.paths]
         lf = pl.scan_parquet(self.paths, schema=self.pl_schema, _source_sizes=sizes)
         return lf, "v1"
@@ -352,10 +352,7 @@ def test_python_dataset_resolves_heavy_footers(
     capfd: pytest.CaptureFixture[str],
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    # A dataset is expanded into a Parquet scan by the optimizer, after the point where
-    # a globbed scan would have resolved its footers. Without the resolve in
-    # `expand_datasets` the distributed planner has no row groups to cut the heavy file
-    # between, however much of the table it holds.
+    # Dataset expansion must resolve heavy-file footers after DSL-to-IR conversion.
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     paths = []
@@ -393,8 +390,7 @@ def test_python_dataset_leaves_footers_alone_without_the_flag(
 
 
 def test_python_dataset_with_no_sources_resolves_nothing() -> None:
-    # An empty table, or a predicate that eliminated every file: there is not even a
-    # source 0 whose footer could be read.
+    # Empty datasets must not attempt to read source 0.
     lf = wrap_ldf(
         PyLazyFrame.new_from_dataset_object(
             ParquetDataset([], pl.Schema({"x": pl.Int64})), resolve_heavy_sources=4

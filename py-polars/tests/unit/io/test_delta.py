@@ -41,10 +41,9 @@ def delta_table_path(io_files_path: Path) -> Path:
 
 
 def _resize_delta_add_actions(root: Path) -> None:
-    """Point the log's recorded sizes back at the files on disk.
+    """Update logged file sizes after tests rewrite Parquet data files.
 
-    Overwriting a data file in place breaks Delta's immutability assumption, and the
-    scan takes the file size from the log, so the log has to be corrected alongside.
+    Delta files are normally immutable; these fixtures must keep sizes in sync.
     """
     import json
 
@@ -1486,9 +1485,7 @@ def test_scan_delta_resolves_heavy_footers(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    # The heavy-footer resolve needs the source sizes, which Delta can only get from
-    # its add actions. Without them the distributed planner sees no row groups and
-    # leaves the big file whole, however much of the table it holds.
+    # Heavy-footer resolution needs the file sizes from Delta's add actions.
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     properties = WriterProperties(max_row_group_size=500)
@@ -1515,11 +1512,7 @@ def test_scan_delta_resolves_heavy_footers(
 def test_scan_delta_source_sizes_match_the_file_list(
     tmp_path: Path, partition_values: list[str]
 ) -> None:
-    # The sizes are taken from the add actions positionally, so they are only correct
-    # while the actions enumerate the same snapshot as `file_uris()`, in the same
-    # order. The two spell partition directories differently -- an add action carries
-    # one more layer of percent-encoding than a URI does -- so only the file names can
-    # be paired up.
+    # Match sizes against full paths, including encoded partition directories.
     for value in partition_values:
         pl.DataFrame({"p": [value] * 10, "x": range(10)}).write_delta(
             tmp_path, mode="append", delta_write_options={"partition_by": "p"}
@@ -1535,10 +1528,7 @@ def test_scan_delta_source_sizes_match_the_file_list(
 
 
 def test_delta_source_sizes_reject_a_pairing_they_cannot_confirm() -> None:
-    # Nothing in the protocol makes a file name unique. It need not carry a UUID, and
-    # need not say which partition it belongs to, so two partitions can each hold a
-    # `part.parquet`. Pairing on the name alone would hand a reordered pair of actions
-    # the other file's size, and the reader would seek past the end of the smaller one.
+    # Files in different partitions can share a name; match their full paths.
     paths = ["/t/p=0/part.parquet", "/t/p=1/part.parquet"]
     actions = pl.DataFrame(
         {"path": ["p=0/part.parquet", "p=1/part.parquet"], "size_bytes": [100, 200]}
@@ -1547,15 +1537,13 @@ def test_delta_source_sizes_reject_a_pairing_they_cannot_confirm() -> None:
     assert _source_sizes_from_add_actions(paths, actions) == [100, 200]
     assert _source_sizes_from_add_actions(paths, actions.reverse()) is None
 
-    # A partition value the log had to escape still pairs up.
+    # Decode the add action's extra percent-encoding.
     assert _source_sizes_from_add_actions(
         ["/t/p=a%20b/part.parquet"],
         pl.DataFrame({"path": ["p=a%2520b/part.parquet"], "size_bytes": [100]}),
     ) == [100]
 
-    # A file at the table root and a file one directory down can share a name, and
-    # then each one's path ends with the other's relative path. Only the root the
-    # pairing implies tells them apart.
+    # Suffix matches can survive reordering; the inferred table roots must also match.
     nested = ["/t/part.parquet", "/t/t/part.parquet"]
     nested_actions = pl.DataFrame(
         {"path": ["part.parquet", "t/part.parquet"], "size_bytes": [100, 200]}
@@ -1564,7 +1552,7 @@ def test_delta_source_sizes_reject_a_pairing_they_cannot_confirm() -> None:
     assert _source_sizes_from_add_actions(nested, nested_actions) == [100, 200]
     assert _source_sizes_from_add_actions(nested, nested_actions.reverse()) is None
 
-    # Nothing to go on: no sizes recorded, or a count that disagrees.
+    # Missing sizes or mismatched counts disable size hints.
     assert _source_sizes_from_add_actions(paths, actions.drop("size_bytes")) is None
     assert _source_sizes_from_add_actions(paths, actions.head(1)) is None
 
@@ -1575,9 +1563,7 @@ def test_scan_delta_resolves_heavy_footers_with_encoded_partition_values(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    # A partition value that has to be percent-encoded makes the add action's path and
-    # the file URI disagree textually. Pairing them by the whole path would find no
-    # match and drop the sizes for the entire table, leaving every file unsplit.
+    # Encoded partition values must not disable sizes or heavy-footer resolution.
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     properties = WriterProperties(max_row_group_size=500)

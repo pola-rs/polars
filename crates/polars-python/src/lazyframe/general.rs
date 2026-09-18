@@ -418,8 +418,7 @@ impl PyLazyFrame {
     ))]
     fn new_from_dataset_object(
         dataset_object: Py<PyAny>,
-        // Same knob as `scan_parquet(_resolve_heavy_sources=)`, for a dataset whose
-        // expansion yields a Parquet scan.
+        // Equivalent to `scan_parquet(_resolve_heavy_sources=)` for expanded datasets.
         resolve_heavy_sources: Option<u32>,
     ) -> PyResult<Self> {
         let mut dsl = DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build();

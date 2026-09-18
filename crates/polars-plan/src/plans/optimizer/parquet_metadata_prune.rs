@@ -63,10 +63,8 @@ pub(super) fn prune_parquet_metadata(
             continue;
         };
 
-        // The projection names the scan's logical columns, which a column mapping
-        // resolves to the file's physical ones by field ID. Pruning matches the two by
-        // name, so a mapped scan would drop the chunks it is supposed to keep and read
-        // back nulls.
+        // Name-based pruning can drop mapped columns whose physical names differ,
+        // incorrectly returning nulls. Keep their metadata until pruning supports mappings.
         if unified_scan_args.column_mapping.is_some() {
             continue;
         }

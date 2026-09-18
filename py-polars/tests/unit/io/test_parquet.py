@@ -4815,8 +4815,7 @@ def test_resolve_metadata_cache_distinguishes_resolution_strength(
 
     capfd.readouterr()
     pl.concat([scan(None), scan(4)]).explain(optimized=True)
-    # Picking the heavy sources is shared with the dataset path, which does not
-    # sample, so that line is logged under the plainer prefix.
+    # Heavy-source selection and sampling use separate log prefixes.
     traces = [
         ln
         for ln in capfd.readouterr().err.splitlines()
@@ -4852,8 +4851,7 @@ def test_resolve_metadata_sampled_heavy_files(
     plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "2")
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    # Picking the heavy sources is shared with the dataset path, which does not
-    # sample, so that line is logged under the plainer prefix.
+    # Heavy-source selection and sampling use separate log prefixes.
     prefixes = ("parquet resolve: ", "parquet sampled resolve: ")
 
     def resolve_traces(lf: pl.LazyFrame) -> list[str]:
@@ -4892,8 +4890,7 @@ def test_resolve_metadata_sampled_heavy_files(
         "read 2 / 4 footers",
     ]
 
-    # Reading all footers gives an exact row count. A budget that covers every source
-    # resolves them all outright, so there is nothing to prioritize and no trace.
+    # Full resolution gives an exact row count and skips sampling traces.
     plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "4")
     lf = pl.scan_parquet(glob, _resolve_heavy_sources=1000)
     assert resolve_traces(lf) == []
