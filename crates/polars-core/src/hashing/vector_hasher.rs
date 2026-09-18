@@ -484,15 +484,10 @@ impl VecHash for BooleanChunked {
             // how the chunk holds its values, and that is asked once here rather than per bit.
             match arr.null_count() {
                 0 => match arr.flat_values() {
-                    Some(values) => {
-                        values
-                            .iter()
-                            .zip(&mut hashes[offset..])
-                            .for_each(|(v, h)| {
-                                let l = if v { true_h } else { false_h };
-                                *h = _boost_hash_combine(l, *h)
-                            })
-                    },
+                    Some(values) => values.iter().zip(&mut hashes[offset..]).for_each(|(v, h)| {
+                        let l = if v { true_h } else { false_h };
+                        *h = _boost_hash_combine(l, *h)
+                    }),
                     None => {
                         let l = if arr.values().scalar_value().unwrap_or(false) {
                             true_h
