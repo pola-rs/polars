@@ -3,6 +3,8 @@ use std::cell::LazyCell;
 use std::fmt::Debug;
 use std::ops::ControlFlow;
 use std::sync::Arc;
+#[cfg(feature = "python")]
+use std::sync::Mutex;
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -238,8 +240,8 @@ fn expand_python_dataset(
         unreachable!()
     };
 
-    let cached_ir = cached_ir.clone();
-    let mut guard = cached_ir.lock().unwrap();
+    let shared_cached_ir = Arc::clone(cached_ir);
+    let mut guard = shared_cached_ir.lock().unwrap();
 
     if config::verbose() {
         eprintln!(
@@ -474,7 +476,8 @@ fn expand_python_dataset(
                 name: dataset_object.name(),
                 scan_fn: options.scan_fn.clone().unwrap(),
                 variant: options.python_source.clone(),
-            })
+            });
+            *cached_ir = Arc::new(Mutex::new((*guard).clone()));
         },
 
         dsl => {
