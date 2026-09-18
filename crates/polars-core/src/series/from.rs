@@ -1,12 +1,5 @@
 use polars_arrow::datatypes::{IntervalUnit, Metadata};
 use polars_arrow::offset::OffsetsBuffer;
-#[cfg(any(
-    feature = "dtype-date",
-    feature = "dtype-datetime",
-    feature = "dtype-time",
-    feature = "dtype-duration"
-))]
-use polars_arrow::temporal_conversions::*;
 use polars_arrow::types::months_days_ns;
 use polars_compute::cast::cast_unchecked as cast;
 #[cfg(feature = "dtype-decimal")]
