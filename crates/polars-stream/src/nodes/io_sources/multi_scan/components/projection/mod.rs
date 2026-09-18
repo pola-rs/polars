@@ -1,7 +1,7 @@
 pub mod builder;
 use std::sync::Arc;
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 use polars_core::prelude::{DataType, PlHashMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaRef};

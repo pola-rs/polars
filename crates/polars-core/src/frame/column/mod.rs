@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::trusted_len::TrustMyLength;
 use num_traits::{Num, NumCast};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_error::{PolarsContext, PolarsResult};
 use polars_utils::aliases::PlSeedableRandomStateQuality;

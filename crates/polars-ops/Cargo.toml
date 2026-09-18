@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "More operations on Polars data structures"
 
 [dependencies]
+polars-arrow = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by", "zip_with"] }
@@ -20,11 +21,9 @@ polars-utils = { workspace = true }
 
 aho-corasick = { workspace = true, optional = true }
 argminmax = { workspace = true }
-arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
-chrono-tz = { workspace = true, optional = true }
 either = { workspace = true }
 hashbrown = { workspace = true }
 hex = { workspace = true, optional = true }
@@ -78,7 +77,7 @@ dtype-map = ["polars-core/dtype-map"]
 object = ["polars-core/object"]
 propagate_nans = []
 performant = ["polars-core/performant", "fused"]
-big_idx = ["polars-core/bigidx", "dtype-i128"]
+bigidx = ["polars-core/bigidx", "dtype-i128"]
 round_series = []
 is_first_distinct = []
 is_last_distinct = []
@@ -87,12 +86,17 @@ unique_counts = []
 is_between = []
 is_close = []
 approx_unique = []
-approx_quantile = ["polars-compute/approx_quantile"]
+approx_quantile = [
+  "polars-compute/approx_quantile",
+  "polars-compute/serde",
+  "polars-utils/serde",
+  "dep:serde",
+]
 business = ["dtype-date", "chrono"]
 fused = []
 cutqcut = ["dtype-categorical", "dtype-struct", "search_sorted"]
 rle = ["dtype-struct"]
-timezones = ["chrono", "chrono-tz", "polars-core/temporal", "polars-core/timezones", "polars-core/dtype-datetime"]
+timezones = ["chrono", "polars-core/temporal", "polars-core/timezones", "polars-core/dtype-datetime"]
 random = ["rand", "rand_distr", "polars-defs/random"]
 rank = ["rand"]
 find_many = ["aho-corasick"]

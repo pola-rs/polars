@@ -1,4 +1,4 @@
-use arrow::bitmap::bitmask::BitMask;
+use polars_arrow::bitmap::bitmask::BitMask;
 
 use super::*;
 use crate::chunked_array::cast::CastOptions;

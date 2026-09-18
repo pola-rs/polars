@@ -17,7 +17,6 @@ polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "concat_
 polars-ops = { workspace = true, features = ["iejoin"] }
 polars-plan = { workspace = true, features = ["iejoin"] }
 polars-testing = { workspace = true }
-polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
 bitflags = { workspace = true }
@@ -35,6 +34,7 @@ polars-lazy = { workspace = true, features = ["streaming"] }
 [features]
 default = []
 nightly = ["polars-lazy/nightly"]
+approx_quantile = ["polars-lazy/approx_quantile"]
 binary_encoding = ["polars-lazy/binary_encoding"]
 bitwise = ["polars-lazy/bitwise"]
 csv = ["polars-lazy/csv"]

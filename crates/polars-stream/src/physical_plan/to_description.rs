@@ -880,6 +880,8 @@ pub fn phys_props(
                     predicate,
                     validate_schema,
                     is_pure,
+                    explain_name,
+                    explain_detail,
                     ..
                 },
             ..
@@ -907,6 +909,8 @@ pub fn phys_props(
                 schema_names: schema.iter_names().map(ToString::to_string).collect(),
                 is_pure: *is_pure,
                 validate_schema: *validate_schema,
+                explain_name: explain_name.as_ref().map(|s| s.to_string()),
+                explain_detail: explain_detail.as_ref().map(|s| s.to_string()),
             },
             vec![],
         ),

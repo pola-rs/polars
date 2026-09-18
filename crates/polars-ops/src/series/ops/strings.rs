@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::array::builder::StaticArrayBuilder;
-use arrow::array::{Array, Utf8ViewArrayBuilder};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::builder::StaticArrayBuilder;
+use polars_arrow::array::{Array, Utf8ViewArrayBuilder};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_core::prelude::{Column, DataType, IntoColumn, StringChunked};
 use polars_core::scalar::Scalar;
 use polars_error::{PolarsContext, PolarsResult};
@@ -36,7 +36,7 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
 
             match &mut validity {
                 v @ None => *v = Some(c_validity),
-                Some(v) => *v = arrow::bitmap::and(v, &c_validity),
+                Some(v) => *v = polars_arrow::bitmap::and(v, &c_validity),
             }
         }
 

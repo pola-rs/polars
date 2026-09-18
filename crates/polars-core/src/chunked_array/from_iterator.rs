@@ -2,7 +2,7 @@
 use std::borrow::{Borrow, Cow};
 
 #[cfg(feature = "object")]
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::BitmapBuilder;
 
 use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
 #[cfg(feature = "object")]

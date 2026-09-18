@@ -9,7 +9,6 @@ mod dictionary_to;
 mod primitive_to;
 mod utf8_to;
 
-use arrow::bitmap::MutableBitmap;
 pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
@@ -18,14 +17,15 @@ pub use binview_to::{binview_to_fixed_binary, utf8view_to_utf8};
 pub use boolean_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use decimal_to::*;
+use polars_arrow::bitmap::MutableBitmap;
 pub mod temporal;
-use arrow::array::*;
-use arrow::datatypes::*;
-use arrow::match_integer_type;
-use arrow::offset::{Offset, Offsets};
 use binview_to::{binview_to_dictionary, utf8view_to_dictionary, view_to_binary};
 pub use binview_to::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use dictionary_to::*;
+use polars_arrow::array::*;
+use polars_arrow::datatypes::*;
+use polars_arrow::match_integer_type;
+use polars_arrow::offset::{Offset, Offsets};
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
@@ -1139,7 +1139,7 @@ fn from_to_binview(
 
 #[cfg(test)]
 mod tests {
-    use arrow::offset::OffsetsBuffer;
+    use polars_arrow::offset::OffsetsBuffer;
     use polars_error::PolarsError;
 
     use super::*;

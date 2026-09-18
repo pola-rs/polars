@@ -1,4 +1,4 @@
-use arrow::temporal_conversions::MICROSECONDS_IN_DAY;
+use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use polars_core::prelude::*;
 use polars_defs::expr::ClosedInterval;
 use polars_ops::series::{new_linear_space_f32, new_linear_space_f64};

@@ -1,5 +1,5 @@
-use arrow::array::Array;
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_utils::idx_map::total_idx_map::{Entry, TotalIndexMap};
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use polars_utils::vec::PushUnchecked;

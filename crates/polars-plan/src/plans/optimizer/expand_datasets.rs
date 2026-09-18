@@ -54,7 +54,7 @@ pub(super) fn expand_datasets(
                         scan_type,
                         unified_scan_args,
 
-                        file_info: _,
+                        file_info,
                         hive_parts: _,
                         predicate,
                         predicate_file_skip_applied: _,
@@ -133,7 +133,9 @@ pub(super) fn expand_datasets(
                                 // Convert minterms independently, can allow conversion to partially succeed if there are unsupported expressions
                                 let parts: Vec<String> =
                                     MintermIter::new(predicate.node(), expr_arena)
-                                        .filter_map(|node| predicate_to_pa(node, expr_arena))
+                                        .filter_map(|node| {
+                                            predicate_to_pa(node, expr_arena, &file_info.schema)
+                                        })
                                         .collect();
                                 match parts.len() {
                                     0 => None,
@@ -443,7 +445,7 @@ fn expand_python_dataset(
             if hive_options.enabled == Some(true)
                 && let Some(paths) = sources.as_paths()
             {
-                use arrow::Either;
+                use polars_arrow::Either;
 
                 use crate::plans::hive::hive_partitions_from_paths;
 

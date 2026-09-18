@@ -93,6 +93,7 @@ nav:
         - user-guide/misc/comparison.md
         - user-guide/misc/arrow.md
         - user-guide/misc/polars_llms.md
+        - user-guide/misc/monitoring.md
       - user-guide/gpu-support.md
     - API:
       - api/reference.md

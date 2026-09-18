@@ -2,12 +2,12 @@
 use std::borrow::Cow;
 
 #[cfg(feature = "binary_encoding")]
-use arrow::array::Array;
-#[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
 #[cfg(feature = "binary_encoding")]
 use base64::engine::general_purpose;
 use memchr::memmem::find;
+#[cfg(feature = "binary_encoding")]
+use polars_arrow::array::Array;
 use polars_compute::cast::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use polars_compute::size::binary_size_bytes;
 use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};

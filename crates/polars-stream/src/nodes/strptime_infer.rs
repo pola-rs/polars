@@ -1,11 +1,11 @@
-use polars_core::prelude::*;
-use polars_plan::dsl::StrptimeOptions;
-use polars_time::chunkedarray::StringMethods;
-use polars_time::chunkedarray::string::Pattern;
-use polars_time::chunkedarray::string::infer::{
+use polars_core::chunked_array::temporal::string::StringMethods;
+use polars_core::chunked_array::temporal::string::infer::{
     DatetimeInfer, TryFromWithUnit, coerce_string_to_date, coerce_string_to_datetime,
     infer_from_values, infer_pattern_date_single, infer_pattern_datetime_single, sniff_time_fmt,
 };
+use polars_core::chunked_array::temporal::string::patterns::Pattern;
+use polars_core::prelude::*;
+use polars_plan::dsl::StrptimeOptions;
 
 use super::compute_node_prelude::*;
 

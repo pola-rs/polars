@@ -879,7 +879,7 @@ const SAMPLED_ROWS_REL_ERR: f32 = 0.1;
 /// `None` for a file written by anything else.
 #[cfg(feature = "ipc")]
 #[allow(clippy::useless_conversion)]
-fn ipc_rows_from_footer(metadata: &arrow::io::ipc::read::FileMetadata) -> Option<u64> {
+fn ipc_rows_from_footer(metadata: &polars_arrow::io::ipc::read::FileMetadata) -> Option<u64> {
     polars_io::ipc::pl_ipc_metadata::PlIpcMetadata::from_ipc_footer(metadata)?
         .num_rows()
         .map(u64::from)
@@ -888,9 +888,9 @@ fn ipc_rows_from_footer(metadata: &arrow::io::ipc::read::FileMetadata) -> Option
 #[cfg(feature = "ipc")]
 fn sum_block_rows<R: std::io::Read + std::io::Seek>(
     reader: &mut R,
-    blocks: &[arrow::io::ipc::format::ipc::Block],
+    blocks: &[polars_arrow::io::ipc::format::ipc::Block],
 ) -> Option<u64> {
-    arrow::io::ipc::read::get_row_count_from_blocks(reader, blocks)
+    polars_arrow::io::ipc::read::get_row_count_from_blocks(reader, blocks)
         .ok()
         .and_then(|rows| u64::try_from(rows).ok())
 }
@@ -899,7 +899,7 @@ fn sum_block_rows<R: std::io::Read + std::io::Seek>(
 #[cfg(feature = "ipc")]
 fn ipc_rows_from_blocks<R: std::io::Read + std::io::Seek>(
     reader: &mut R,
-    blocks: &[arrow::io::ipc::format::ipc::Block],
+    blocks: &[polars_arrow::io::ipc::format::ipc::Block],
 ) -> Card {
     if blocks.len() <= MAX_SAMPLED_BLOCKS {
         return match sum_block_rows(reader, blocks) {
@@ -931,9 +931,9 @@ fn ipc_rows_from_blocks<R: std::io::Read + std::io::Seek>(
 #[cfg(feature = "ipc")]
 fn ipc_metadata_and_rows<R: std::io::Read + std::io::Seek>(
     mut reader: R,
-) -> PolarsResult<(arrow::io::ipc::read::FileMetadata, Card)> {
+) -> PolarsResult<(polars_arrow::io::ipc::read::FileMetadata, Card)> {
     ASYNC.block_in_place(move || {
-        let metadata = arrow::io::ipc::read::read_file_metadata(&mut reader)?;
+        let metadata = polars_arrow::io::ipc::read::read_file_metadata(&mut reader)?;
         let rows = match ipc_rows_from_footer(&metadata) {
             Some(rows) => Card::Exact(rows),
             None => ipc_rows_from_blocks(&mut reader, &metadata.blocks),
@@ -949,7 +949,7 @@ pub(super) async fn ipc_file_info(
     n_sources: usize,
     row_index: Option<&RowIndex>,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
-) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
+) -> PolarsResult<(FileInfo, polars_arrow::io::ipc::read::FileMetadata)> {
     use polars_core::error::feature_gated;
 
     let (metadata, first_rows) = match first_scan_source {

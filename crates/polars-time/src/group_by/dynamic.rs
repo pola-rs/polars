@@ -1,4 +1,4 @@
-use arrow::legacy::time_zone::Tz;
+use polars_arrow::legacy::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
@@ -301,7 +301,10 @@ impl Wrap<&DataFrame> {
             });
 
             update_bounds(lower, upper);
-            PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, true))
+            // The upper bound of a window is not a monotonic function of its lower
+            // bound (month clamping, DST), so the group ends may move backwards.
+            let monotonic = slice_groups_are_monotonic(&groups);
+            PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, monotonic))
         } else {
             let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
@@ -316,7 +319,8 @@ impl Wrap<&DataFrame> {
                 options.start_by,
             )?;
             update_bounds(lower, upper);
-            PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, true))
+            let monotonic = slice_groups_are_monotonic(&groups);
+            PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, monotonic))
         }?;
         // note that if 'group_by' is none we can be sure that the index column, the lower column and the
         // upper column remain/are sorted
@@ -431,6 +435,7 @@ impl Wrap<&DataFrame> {
 #[cfg(test)]
 mod test {
     use polars_compute::rolling::QuantileMethod;
+    use polars_core::chunked_array::temporal::string::StringMethods;
     use polars_defs::time::duration::Duration;
     use polars_defs::time::group_by::RollingGroupOptions;
     use polars_ops::prelude::*;

@@ -1,16 +1,15 @@
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-date")]
 use chrono::DateTime;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::Bitmap;
+#[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-date")]
-use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
+use polars_core::utils::polars_arrow::temporal_conversions::SECONDS_IN_DAY;
 use polars_core::{binary_output_height, ternary_output_height};
 use polars_defs::expr::Roll;
 use polars_utils::binary_search::{find_first_ge_index, find_first_gt_index};
-
-#[cfg(feature = "timezones")]
-use crate::prelude::replace_time_zone;
 
 macro_rules! empty_or_all_null {
     ($c:expr) => {
