@@ -237,6 +237,11 @@ async fn resolve_heavy_footers(scan_ir: &mut IR) -> PolarsResult<()> {
     };
     let cloud_options = unified_scan_args.cloud_options.as_ref();
     let n_sources = sources.len();
+    // An empty table, or a predicate that eliminated every file. There is not even a
+    // source 0 to read.
+    if n_sources == 0 {
+        return Ok(());
+    }
 
     let FileScanIR::Parquet {
         metadata_per_source,

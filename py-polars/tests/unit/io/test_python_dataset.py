@@ -330,9 +330,12 @@ def test_dataset_provider_predicate_partial(df: pl.DataFrame) -> None:
 class ParquetDataset:
     """Dataset provider that expands to a Parquet scan, the way Iceberg does."""
 
-    def __init__(self, paths: list[Path]) -> None:
+    def __init__(self, paths: list[Path], schema: pl.Schema | None = None) -> None:
         self.paths = paths
-        self.arrow_schema = pl.scan_parquet(paths[0]).collect_schema().to_arrow()
+        self.pl_schema = (
+            schema if schema is not None else pl.scan_parquet(paths[0]).collect_schema()
+        )
+        self.arrow_schema = self.pl_schema.to_arrow()
 
     def schema(self) -> pa.Schema:
         return self.arrow_schema
@@ -340,7 +343,7 @@ class ParquetDataset:
     def to_dataset_scan(self, **_kwargs: Any) -> tuple[pl.LazyFrame, str]:
         # The manifest knows the sizes, so the expansion does not have to list them.
         sizes = [p.stat().st_size for p in self.paths]
-        lf = pl.scan_parquet(self.paths, _source_sizes=sizes)
+        lf = pl.scan_parquet(self.paths, schema=self.pl_schema, _source_sizes=sizes)
         return lf, "v1"
 
 
@@ -387,3 +390,15 @@ def test_python_dataset_leaves_footers_alone_without_the_flag(
 
     assert lf.collect().height == 4001
     assert "heavy sources" not in capfd.readouterr().err
+
+
+def test_python_dataset_with_no_sources_resolves_nothing() -> None:
+    # An empty table, or a predicate that eliminated every file: there is not even a
+    # source 0 whose footer could be read.
+    lf = wrap_ldf(
+        PyLazyFrame.new_from_dataset_object(
+            ParquetDataset([], pl.Schema({"x": pl.Int64})), resolve_heavy_sources=4
+        )
+    )
+
+    assert lf.collect().height == 0

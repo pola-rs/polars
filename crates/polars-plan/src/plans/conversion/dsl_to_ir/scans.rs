@@ -368,20 +368,26 @@ pub(super) async fn parquet_file_info(
                     })
                     .unwrap_or_default();
 
-                // Spend what is left of the budget on a stratified sample of the
-                // sources that are not pinned already: sampling over all of them would
-                // re-pick pinned ones and lose the budget those duplicates cost.
-                let rest: Vec<usize> = (1..n_sources)
-                    .filter(|i| indices.binary_search(i).is_err())
-                    .collect();
-                indices.extend(
-                    // `rest` stands in for `1..rest.len() + 1`, so the stride is over
-                    // positions in it rather than over source indices.
-                    sampled_source_indices(rest.len() + 1, budget - indices.len())
-                        .into_iter()
-                        .map(|pos| rest[pos - 1]),
-                );
-                indices.sort_unstable();
+                // Spend what is left of the budget on a stratified sample.
+                let left = budget - indices.len();
+                if indices.is_empty() {
+                    return sampled_source_indices(n_sources, left);
+                }
+                if left > 1 {
+                    // Stride over the sources that are not pinned already: sampling over
+                    // all of them would re-pick pinned ones and lose the budget those
+                    // duplicates cost. `rest` stands in for `1..rest.len() + 1`, so the
+                    // stride runs over positions in it rather than over source indices.
+                    let rest: Vec<usize> = (1..n_sources)
+                        .filter(|i| indices.binary_search(i).is_err())
+                        .collect();
+                    indices.extend(
+                        sampled_source_indices(rest.len() + 1, left)
+                            .into_iter()
+                            .map(|pos| rest[pos - 1]),
+                    );
+                    indices.sort_unstable();
+                }
                 indices
             })
             // `+ 1` for source 0, which is read separately.
