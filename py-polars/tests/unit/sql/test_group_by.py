@@ -14,6 +14,8 @@ from tests.unit.sql import assert_sql_matches
 if TYPE_CHECKING:
     from typing import Literal
 
+    from polars._typing import EngineType
+
 
 @pytest.fixture
 def foods_ipc_path() -> Path:
@@ -1095,3 +1097,204 @@ def test_approx_quantile_invalid_args(
     df = pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [0.5, 0.5, 0.5]})
     with pytest.raises(exc, match=match):
         df.sql(query)
+
+
+GROUP_BY_ENGINES: list[EngineType] = ["in-memory", "streaming"]
+
+
+def assert_group_by_matches(
+    frame: pl.DataFrame,
+    query: str,
+    expected: pl.DataFrame,
+    *,
+    compare_with_duckdb: bool = True,
+) -> None:
+    """Run `query` on both engines and require the exact `expected` frame."""
+    assert_sql_matches(
+        {"t": frame},
+        query=query,
+        compare_with=None,
+        expected=expected,
+        check_dtypes=True,
+        engines=GROUP_BY_ENGINES,
+    )
+    if compare_with_duckdb:
+        # DuckDB names and types literals differently; only the values matter
+        assert_sql_matches(
+            {"t": frame},
+            query=query,
+            compare_with="duckdb",
+            check_column_names=False,
+        )
+
+
+@pytest.fixture
+def grouped() -> pl.DataFrame:
+    return pl.DataFrame({"a": [0, 0, 1, 2, 2], "b": [1, 2, 3, 4, 5]})
+
+
+def test_group_by_unaliased_constant(grouped: pl.DataFrame) -> None:
+    # https://github.com/pola-rs/polars/issues/29346
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2 FROM t GROUP BY a",
+        pl.DataFrame({"literal": [2, 2, 2]}, schema={"literal": pl.Int32}),
+    )
+    # aliased constants keep working
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2 AS two FROM t GROUP BY a",
+        pl.DataFrame({"two": [2, 2, 2]}, schema={"two": pl.Int32}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("constant", "value", "dtype"),
+    [
+        ("2", 2, pl.Int32),
+        ("2.5", 2.5, pl.Float64),
+        ("TRUE", True, pl.Boolean),
+        ("'x'", "x", pl.String),
+        ("NULL", None, pl.Null),
+        ("1 + 2", 3, pl.Int32),
+        ("ABS(-3)", 3, pl.Int32),
+        ("COALESCE(NULL, 4)", 4, pl.Int32),
+        ("2 BETWEEN 1 AND 3", True, pl.Boolean),
+        ("2 IN (1, 2)", True, pl.Boolean),
+    ],
+)
+def test_group_by_composed_constants(
+    grouped: pl.DataFrame,
+    constant: str,
+    value: object,
+    dtype: pl.DataType,
+) -> None:
+    assert_group_by_matches(
+        grouped,
+        f"SELECT {constant} FROM t GROUP BY a",
+        pl.DataFrame({"literal": [value] * 3}, schema={"literal": dtype}),
+        compare_with_duckdb=False,
+    )
+
+
+def test_group_by_constants_with_keys_and_aggregates(grouped: pl.DataFrame) -> None:
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2, a, 'x', COUNT(*) AS n, 3 FROM t GROUP BY a ORDER BY a",
+        pl.DataFrame(
+            {
+                "literal": [2, 2, 2],
+                "a": [0, 1, 2],
+                "literal:1": ["x", "x", "x"],
+                "n": [2, 1, 2],
+                "literal:2": [3, 3, 3],
+            },
+            schema={
+                "literal": pl.Int32,
+                "a": pl.Int64,
+                "literal:1": pl.String,
+                "n": pl.Int64,
+                "literal:2": pl.Int32,
+            },
+        ),
+    )
+    # ordering by a group key that is not selected
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2, SUM(b) AS s FROM t GROUP BY a ORDER BY a DESC",
+        pl.DataFrame(
+            {"literal": [2, 2, 2], "s": [9, 3, 3]},
+            schema={"literal": pl.Int32, "s": pl.Int64},
+        ),
+    )
+    # computed key
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2, a + 1 AS a1 FROM t GROUP BY a + 1 ORDER BY a1",
+        pl.DataFrame(
+            {"literal": [2, 2, 2], "a1": [1, 2, 3]},
+            schema={"literal": pl.Int32, "a1": pl.Int64},
+        ),
+    )
+
+
+def test_group_by_constant_argument_aggregates(grouped: pl.DataFrame) -> None:
+    # aggregates over constants still run in the group context, also those
+    # that lower to plain functions rather than `Expr::Agg` (COVAR_POP)
+    assert_group_by_matches(
+        grouped,
+        "SELECT a, COVAR_POP(1, 2), AVG(1), MIN(3), 7 FROM t GROUP BY a ORDER BY a",
+        pl.DataFrame(
+            {
+                "a": [0, 1, 2],
+                "literal": [0.0, 0.0, 0.0],
+                "literal:1": [1.0, 1.0, 1.0],
+                "literal:2": [3, 3, 3],
+                "literal:3": [7, 7, 7],
+            },
+            schema={
+                "a": pl.Int64,
+                "literal": pl.Float64,
+                "literal:1": pl.Float64,
+                "literal:2": pl.Int32,
+                "literal:3": pl.Int32,
+            },
+        ),
+    )
+    plan = pl.SQLContext(t=grouped).execute(
+        "SELECT a, COVAR_POP(1, 2) FROM t GROUP BY a"
+    )
+    assert "covariance" in plan.explain(optimized=False).split("AGGREGATE")[1]
+    assert "covariance" not in plan.explain(optimized=False).split("AGGREGATE")[0]
+
+
+def test_group_by_constants_empty_and_having(grouped: pl.DataFrame) -> None:
+    empty = pl.DataFrame({"literal": []}, schema={"literal": pl.Int32})
+    assert_group_by_matches(grouped.clear(), "SELECT 2 FROM t GROUP BY a", empty)
+    assert_group_by_matches(
+        grouped, "SELECT 2 FROM t GROUP BY a HAVING COUNT(*) > 10", empty
+    )
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2 FROM t GROUP BY a HAVING COUNT(*) > 1",
+        pl.DataFrame({"literal": [2, 2]}, schema={"literal": pl.Int32}),
+    )
+
+
+def test_group_by_constant_named_like_key() -> None:
+    frame = pl.DataFrame({"literal": [0, 0, 1]})
+    assert_group_by_matches(
+        frame,
+        "SELECT 2 FROM t GROUP BY literal",
+        pl.DataFrame({"literal": [2, 2]}, schema={"literal": pl.Int32}),
+    )
+    assert_group_by_matches(
+        frame,
+        "SELECT literal, 2 FROM t GROUP BY literal ORDER BY literal",
+        pl.DataFrame(
+            {"literal": [0, 1], "literal:1": [2, 2]},
+            schema={"literal": pl.Int64, "literal:1": pl.Int32},
+        ),
+    )
+    assert_group_by_matches(
+        frame,
+        "SELECT 2, literal FROM t GROUP BY literal ORDER BY 2",
+        pl.DataFrame(
+            {"literal": [2, 2], "literal:1": [0, 1]},
+            schema={"literal": pl.Int32, "literal:1": pl.Int64},
+        ),
+        compare_with_duckdb=False,
+    )
+
+
+def test_group_by_empty_grouping_constant(grouped: pl.DataFrame) -> None:
+    one_row = pl.DataFrame({"literal": [2]}, schema={"literal": pl.Int32})
+    assert_group_by_matches(grouped, "SELECT 2 FROM t GROUP BY ()", one_row)
+    assert_group_by_matches(grouped.clear(), "SELECT 2 FROM t GROUP BY ()", one_row)
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2, COUNT(*) AS n FROM t GROUP BY ()",
+        pl.DataFrame(
+            {"literal": [2], "n": [5]}, schema={"literal": pl.Int32, "n": pl.Int64}
+        ),
+    )

@@ -5,6 +5,7 @@ import importlib
 import importlib.util
 import sys
 from dataclasses import dataclass, replace
+from functools import partial
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
@@ -22,7 +23,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import gen_uuid_v7
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
     import pyarrow as pa
     import pyiceberg.catalog
@@ -37,7 +38,10 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema
     from pyiceberg.table import Transaction
     from pyiceberg.table.metadata import TableMetadata
+    from pyiceberg.table.sorting import SortOrder
+    from pyiceberg.transforms import Transform
     from pyiceberg.typedef import Record
+    from pyiceberg.types import IcebergType
 
     import polars as pl
     from polars._plr import PyLazyFrame
@@ -55,7 +59,7 @@ def _nested_partition_source_ids(schema: Schema, spec: PartitionSpec) -> set[int
     }
 
 
-def _partition_source_expr(schema: Schema, source_id: int) -> pl.Expr:
+def _iceberg_source_expr(schema: Schema, source_id: int) -> pl.Expr:
     from pyiceberg.types import StructType
 
     import polars as pl
@@ -68,7 +72,7 @@ def _partition_source_expr(schema: Schema, source_id: int) -> pl.Expr:
         accessor = accessor.inner
         source_type = source_field.field_type
         if not isinstance(source_type, StructType):
-            msg = f"partition source field {source_id} has non-struct parent"
+            msg = f"Iceberg source field {source_id} has non-struct parent"
             raise TypeError(msg)
         source_field = source_type.fields[accessor.position]
         expr = expr.struct.field(source_field.name)
@@ -109,10 +113,30 @@ def _infer_partition_from_statistics(
     return Record(*partition_values)
 
 
+def _temporal_transform_expr(
+    expr: pl.Expr, source_type: IcebergType, transform: Transform[Any, Any]
+) -> pl.Expr:
+    from pyiceberg.transforms import DayTransform, MonthTransform, YearTransform
+
+    import polars as pl
+
+    if type(source_type).__name__ in {"TimestamptzType", "TimestamptzNanoType"}:
+        expr = expr.dt.convert_time_zone("UTC")
+
+    if isinstance(transform, YearTransform):
+        return expr.dt.year() - 1970
+    if isinstance(transform, MonthTransform):
+        return (expr.dt.year() - 1970) * 12 + expr.dt.month() - 1
+    if isinstance(transform, DayTransform):
+        return expr.cast(pl.Date).cast(pl.Int32)
+    return expr.dt.epoch("us") // 3_600_000_000
+
+
 def _data_files_from_sink_metadata(
     table_metadata: TableMetadata,
     sinked_files: list[_IcebergSinkedFile],
     nested_source_ids: set[int],
+    sort_order_id: int | None,
 ) -> Iterable[DataFile]:
     from pyiceberg.io.pyarrow import (
         MetricModeTypes,
@@ -143,6 +167,7 @@ def _data_files_from_sink_metadata(
             statistics_plan,
             parquet_column_mapping,
             nested_metrics_modes,
+            sort_order_id,
         )
         for sinked_file in sinked_files
     ]
@@ -155,6 +180,7 @@ def _data_file_from_sink_metadata(
     statistics_plan: dict[int, StatisticsCollector],
     parquet_column_mapping: dict[str, int],
     nested_metrics_modes: dict[int, MetricModeTypes],
+    sort_order_id: int | None,
 ) -> DataFile:
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -200,7 +226,7 @@ def _data_file_from_sink_metadata(
         "file_format": FileFormat.PARQUET,
         "partition": partition,
         "file_size_in_bytes": num_bytes,
-        "sort_order_id": None,
+        "sort_order_id": sort_order_id,
         "spec_id": table_metadata.default_spec_id,
         "equality_ids": None,
         "key_metadata": None,
@@ -216,6 +242,7 @@ def _add_files(
     transaction: Transaction,
     sinked_files: list[_IcebergSinkedFile],
     snapshot_properties: dict[str, str],
+    sort_order_id: int | None,
 ) -> None:
     from pyiceberg.table import TableProperties
 
@@ -237,6 +264,7 @@ def _add_files(
             table_metadata,
             sinked_files,
             nested_source_ids,
+            sort_order_id,
         ):
             append_files.append_data_file(data_file)
 
@@ -259,8 +287,6 @@ def _partition_key_exprs(
         YearTransform,
     )
     from pyiceberg.types import BinaryType, IntegerType, LongType, StringType
-
-    import polars as pl
 
     schema = table.schema()
     nested_source_ids = _nested_partition_source_ids(schema, spec)
@@ -291,27 +317,14 @@ def _partition_key_exprs(
 
         source_type = source_field.field_type
         transform = field.transform
-        expr = _partition_source_expr(schema, field.source_id)
+        expr = _iceberg_source_expr(schema, field.source_id)
 
         if isinstance(transform, IdentityTransform):
             pass
         elif isinstance(
             transform, (YearTransform, MonthTransform, DayTransform, HourTransform)
         ):
-            if type(source_type).__name__ in {
-                "TimestamptzType",
-                "TimestamptzNanoType",
-            }:
-                expr = expr.dt.convert_time_zone("UTC")
-
-            if isinstance(transform, YearTransform):
-                expr = expr.dt.year() - 1970
-            elif isinstance(transform, MonthTransform):
-                expr = (expr.dt.year() - 1970) * 12 + expr.dt.month() - 1
-            elif isinstance(transform, DayTransform):
-                expr = expr.cast(pl.Date).cast(pl.Int32)
-            else:
-                expr = expr.dt.epoch("us") // 3_600_000_000
+            expr = _temporal_transform_expr(expr, source_type, transform)
         elif isinstance(transform, TruncateTransform):
             if isinstance(source_type, (IntegerType, LongType)):
                 expr = expr - expr % transform.width
@@ -338,6 +351,119 @@ def _partition_key_exprs(
     return exprs
 
 
+def _apply_sort_transform(
+    series: pl.Series, *, transform: Callable[[pa.Array], pa.Array], dtype: pa.DataType
+) -> pl.Series:
+    import polars as pl
+
+    return pl.Series(series.name, transform(series.to_arrow().cast(dtype)))
+
+
+def _sort_key_exprs(
+    schema: Schema, sort_order: SortOrder, input_schema: pl.Schema
+) -> tuple[list[pl.Expr], list[bool], list[bool]]:
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+    from pyiceberg.table.sorting import NullOrder, SortDirection
+    from pyiceberg.transforms import (
+        BucketTransform,
+        DayTransform,
+        HourTransform,
+        IdentityTransform,
+        MonthTransform,
+        TruncateTransform,
+        VoidTransform,
+        YearTransform,
+    )
+    from pyiceberg.types import (
+        BinaryType,
+        DecimalType,
+        DoubleType,
+        FloatType,
+        IntegerType,
+        LongType,
+        StringType,
+        StructType,
+    )
+
+    import polars as pl
+
+    exprs: list[pl.Expr] = []
+    descending: list[bool] = []
+    nulls_last: list[bool] = []
+    sort_order.check_compatible(schema)
+
+    for field in sort_order.fields:
+        accessor = schema.accessor_for_field(field.source_id)
+        source_field = schema.fields[accessor.position]
+        input_type = input_schema.get(source_field.name)
+        while input_type is not None and accessor.inner is not None:
+            accessor = accessor.inner
+            source_struct = source_field.field_type
+            assert isinstance(source_struct, StructType)
+            source_field = source_struct.fields[accessor.position]
+            input_type = (
+                pl.Schema(dict(input_type)).get(source_field.name)
+                if isinstance(input_type, pl.Struct)
+                else None
+            )
+        if input_type is None or input_type == pl.Null:
+            continue
+
+        source_type = schema.find_field(field.source_id).field_type
+        transform = field.transform
+        expr = _iceberg_source_expr(schema, field.source_id)
+
+        if isinstance(transform, IdentityTransform):
+            if isinstance(source_type, (FloatType, DoubleType)):
+                value = expr.cast(pl.Float64)
+                bits = value.reinterpret(dtype=pl.Int64)
+                # Iceberg distinguishes signed zero and places negative NaNs first.
+                bits = (
+                    pl.when(value.is_nan())
+                    .then(
+                        pl.when(bits < 0).then(-(1 << 51)).otherwise(0x7FF8000000000000)
+                    )
+                    .otherwise(bits)
+                )
+                expr = bits ^ pl.when(bits < 0).then((1 << 63) - 1).otherwise(0)
+        elif isinstance(
+            transform, (YearTransform, MonthTransform, DayTransform, HourTransform)
+        ):
+            expr = _temporal_transform_expr(expr, source_type, transform)
+        elif isinstance(transform, TruncateTransform):
+            if isinstance(source_type, (IntegerType, LongType, DecimalType)):
+                # The quotient preserves ordering and ties without truncation overflow.
+                expr = expr.to_physical() // transform.width
+            elif isinstance(source_type, StringType):
+                expr = expr.str.slice(0, transform.width)
+            elif isinstance(source_type, BinaryType):
+                expr = expr.bin.slice(0, transform.width)
+            else:
+                msg = f"Iceberg sort transform '{transform}' on '{source_type}'"
+                raise NotImplementedError(msg)
+        elif isinstance(transform, BucketTransform):
+            expr = expr.map_batches(
+                partial(
+                    _apply_sort_transform,
+                    transform=transform.pyarrow_transform(source_type),
+                    dtype=schema_to_pyarrow(source_type),
+                ),
+                return_dtype=pl.Int32,
+                is_elementwise=True,
+            )
+        elif isinstance(transform, VoidTransform):
+            continue
+        else:
+            msg = f"Iceberg sort transform '{transform}'"
+            raise NotImplementedError(msg)
+
+        exprs.append(expr)
+        descending.append(field.direction is SortDirection.DESC)
+        nulls_last.append(field.null_order is NullOrder.NULLS_LAST)
+
+    return exprs, descending, nulls_last
+
+
 @dataclass(kw_only=True)
 class IcebergSinkState:
     py_catalog_class_module: str
@@ -360,6 +486,7 @@ class IcebergSinkState:
 
     table_: NoPickleOption[pyiceberg.table.Table]
     source_schema: pa.Schema | None
+    sort_order_id: int | None
     commit_result_df: NoPickleOption[pl.DataFrame]
 
     @staticmethod
@@ -423,6 +550,7 @@ class IcebergSinkState:
             sink_uuid_str=gen_uuid_v7().hex(),
             table_=NoPickleOption(target if not isinstance(target, str) else None),
             source_schema=None,
+            sort_order_id=None,
             commit_result_df=NoPickleOption(),
         )
 
@@ -470,11 +598,13 @@ class IcebergSinkState:
             with transaction.update_schema(allow_incompatible_changes=True) as update:
                 update.union_by_name(self._get_source_schema())
 
-    def _schema_for_write(self, table: pyiceberg.table.Table) -> pa.Schema:
+    def _schemas_for_write(
+        self, table: pyiceberg.table.Table
+    ) -> tuple[Schema, pa.Schema]:
         from pyiceberg.io.pyarrow import pyarrow_to_schema, schema_to_pyarrow
 
         if self.schema_mode is None:
-            return schema_to_pyarrow(table.schema())
+            return table.schema(), schema_to_pyarrow(table.schema())
 
         transaction = table.transaction()
         self._update_schema(transaction)
@@ -482,7 +612,7 @@ class IcebergSinkState:
         source_schema = pyarrow_to_schema(
             self._get_source_schema(), name_mapping=evolved_schema.name_mapping
         )
-        return schema_to_pyarrow(source_schema)
+        return evolved_schema, schema_to_pyarrow(source_schema)
 
     def _attach_resolved_sink(self, plf: PyLazyFrame) -> PyLazyFrame:
         from pyiceberg.table import TableProperties
@@ -500,8 +630,9 @@ class IcebergSinkState:
 
         partition_key_exprs = _partition_key_exprs(table, self.source_schema)
 
-        if table.sort_order().fields:
-            msg = "sink to Iceberg table with sort order"
+        sort_order = table.sort_order()
+        if sort_order.fields and self.schema_mode == "overwrite":
+            msg = "schema_mode='overwrite' is not supported for Iceberg tables with a sort order"
             raise NotImplementedError(msg)
 
         if location_provider_impl := table_properties.get(
@@ -528,7 +659,21 @@ class IcebergSinkState:
             else None
         )
 
-        arrow_schema = self._schema_for_write(table)
+        schema, arrow_schema = self._schemas_for_write(table)
+        lf = wrap_ldf(plf)
+        self.sort_order_id = None
+        if sort_order.fields:
+            exprs, descending, nulls_last = _sort_key_exprs(
+                schema, sort_order, lf.collect_schema()
+            )
+            if exprs:
+                lf = lf.sort(
+                    exprs,
+                    descending=descending,
+                    nulls_last=nulls_last,
+                    maintain_order=self.maintain_order,
+                )
+            self.sort_order_id = sort_order.order_id
 
         approximate_bytes_per_file = 2 * 1024 * 1024 * 1024
 
@@ -541,32 +686,26 @@ class IcebergSinkState:
                 estimated_compression_ratio * v, (1 << 64) - 1
             )
 
-        return (
-            wrap_ldf(plf)
-            .sink_parquet(
-                pl.PartitionBy(
-                    _normalize_windows_iceberg_file_uri(
-                        self.sink_base_path(
-                            object_storage_enabled=object_storage_enabled
-                        )
-                    ),
-                    file_path_provider=PlIcebergPathProviderConfig(
-                        object_storage_partitioned_paths=object_storage_partitioned_paths
-                    ),
-                    key=partition_key_exprs,
-                    include_key=False if partition_key_exprs is not None else None,
-                    approximate_bytes_per_file=approximate_bytes_per_file,
+        return lf.sink_parquet(
+            pl.PartitionBy(
+                _normalize_windows_iceberg_file_uri(
+                    self.sink_base_path(object_storage_enabled=object_storage_enabled)
                 ),
-                arrow_schema=arrow_schema,
-                compression=self.compression,
-                compression_level=self.compression_level,
-                row_group_size=self.row_group_size,
-                maintain_order=self.maintain_order,
-                storage_options=self._get_converted_storage_options(),
-                lazy=True,
-            )
-            ._ldf
-        )
+                file_path_provider=PlIcebergPathProviderConfig(
+                    object_storage_partitioned_paths=object_storage_partitioned_paths
+                ),
+                key=partition_key_exprs,
+                include_key=False if partition_key_exprs is not None else None,
+                approximate_bytes_per_file=approximate_bytes_per_file,
+            ),
+            arrow_schema=arrow_schema,
+            compression=self.compression,
+            compression_level=self.compression_level,
+            row_group_size=self.row_group_size,
+            maintain_order=True if sort_order.fields else self.maintain_order,
+            storage_options=self._get_converted_storage_options(),
+            lazy=True,
+        )._ldf
 
     def commit(self, sinked_files: list[_IcebergSinkedFile]) -> pl.DataFrame:
         import polars as pl
@@ -594,6 +733,12 @@ class IcebergSinkState:
             ]
 
         with table.transaction() as tx:
+            if (
+                self.sort_order_id is not None
+                and tx.table_metadata.sort_order_by_id(self.sort_order_id) is None
+            ):
+                msg = f"Iceberg sort order {self.sort_order_id} is no longer available"
+                raise ValueError(msg)
             self._update_schema(tx)
 
             if self.mode == "overwrite":
@@ -610,6 +755,7 @@ class IcebergSinkState:
                 tx,
                 sinked_files,
                 self.snapshot_properties,
+                self.sort_order_id,
             )
 
             if verbose:

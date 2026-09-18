@@ -3223,9 +3223,7 @@ impl SQLContext {
 
         for (e, group_key) in projections.iter().zip(&projection_group_key) {
             let matches_group_key = group_key.is_some();
-            // `Len` represents COUNT(*) so we treat as an aggregation here.
-            let is_non_group_key_expr =
-                !matches_group_key && requires_group_processing(e, &group_by_keys_schema);
+            let is_non_group_key_expr = !matches_group_key && splitter.requires_group_processing(e);
 
             // Note: if simple aliased expression we defer aliasing until after the group_by.
             // Use `e_inner` to track the potentially unwrapped expression for field lookup.
@@ -3393,6 +3391,9 @@ impl SQLContext {
                     } else {
                         bind_keys(projection_expr.clone())
                     }
+                } else if is_constant(projection_expr) {
+                    // Constants are not part of the aggregation; re-evaluate them.
+                    projection_expr.clone()
                 } else {
                     col(name.clone())
                 }
@@ -4177,6 +4178,28 @@ impl GroupContextSplitter<'_> {
         reduces && is_scalar_ae(ir.node(), &arena)
     }
 
+    /// Whether a SELECT projection must be processed in the group context rather
+    /// than passed through as a group key: it contains an aggregate, a window, a
+    /// function over a non-key column, or reduces to a scalar (which also covers
+    /// aggregates lowered to plain functions, such as `COVAR_POP`).
+    fn requires_group_processing(&self, expr: &Expr) -> bool {
+        has_expr(expr, |e| match e {
+            Expr::Agg(_) | Expr::Len | Expr::Over { .. } => true,
+            #[cfg(feature = "dynamic_group_by")]
+            Expr::Rolling { .. } => true,
+            Expr::AnonymousFunction { options, .. } => options.returns_scalar(),
+            Expr::Function { function: func, .. }
+                if !matches!(func, FunctionExpr::StructExpr(_)) =>
+            {
+                has_expr(
+                    e,
+                    |e| matches!(e, Expr::Column(name) if !self.keys.contains(name)),
+                )
+            },
+            _ => false,
+        }) || self.is_reduction(&strip_outer_alias(expr))
+    }
+
     /// Whether `expr` must run after aggregation: it holds a window, or combines
     /// a reduction with a grouped key.
     fn needs_post_aggregation(&self, expr: &Expr) -> bool {
@@ -4273,25 +4296,12 @@ impl GroupContextSplitter<'_> {
     }
 }
 
-/// Whether a SELECT projection must be processed in the group context rather
-/// than passed through as a group key: it contains an aggregate, a window, or a
-/// function over a non-key column. Broader than `is_reduction`, which tests
-/// for a scalar reduction boundary.
-fn requires_group_processing(expr: &Expr, group_by_keys_schema: &Schema) -> bool {
-    has_expr(expr, |e| match e {
-        Expr::Agg(_) | Expr::Len | Expr::Over { .. } => true,
-        #[cfg(feature = "dynamic_group_by")]
-        Expr::Rolling { .. } => true,
-        Expr::AnonymousFunction { options, .. } => options.returns_scalar(),
-        Expr::Function { function: func, .. } if !matches!(func, FunctionExpr::StructExpr(_)) => {
-            // A function over a non-group-key column acts as an aggregation.
-            has_expr(
-                e,
-                |e| matches!(e, Expr::Column(name) if !group_by_keys_schema.contains(name)),
-            )
-        },
-        _ => false,
-    })
+/// Whether `expr` yields one value independent of any input frame.
+fn is_constant(expr: &Expr) -> bool {
+    expr.clone()
+        .meta()
+        .is_input_independent_scalar()
+        .unwrap_or(false)
 }
 
 /// Build a unified schema from both tables; needed for multi/chained joins where suffixed

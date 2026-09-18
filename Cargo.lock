@@ -3485,6 +3485,7 @@ dependencies = [
  "polars-config",
  "polars-core",
  "polars-defs",
+ "polars-descriptions",
  "polars-expr",
  "polars-io",
  "polars-json",

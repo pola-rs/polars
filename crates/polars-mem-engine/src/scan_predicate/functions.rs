@@ -424,8 +424,13 @@ pub fn initialize_scan_predicate<'a>(
             );
         }
 
-        let stats_exclusion_bitmap =
-            skip_batch_predicate.evaluate_with_stat_df(&table_statistics.0)?;
+        let statistics = table_statistics.0.as_ref();
+        #[cfg(feature = "dtype-categorical")]
+        let statistics = super::table_statistics::normalize_enum_statistics(
+            statistics,
+            skip_batch_predicate.schema(),
+        )?;
+        let stats_exclusion_bitmap = skip_batch_predicate.evaluate_with_stat_df(&statistics)?;
 
         let stats_len = table_statistics.0.height();
         let mask_len = stats_exclusion_bitmap.len();

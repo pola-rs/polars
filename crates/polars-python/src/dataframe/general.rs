@@ -10,13 +10,13 @@ use pyo3::types::{PyList, PyType};
 
 use self::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use super::PyDataFrame;
-use crate::PyLazyFrame;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::prelude::strings_to_pl_smallstr;
 use crate::py_modules::polars;
 use crate::series::{PySeries, ToPySeries, ToSeries};
 use crate::utils::{EnterPolarsExt, to_py_err};
+use crate::{PyExpr, PyLazyFrame};
 
 #[pymethods]
 impl PyDataFrame {
@@ -474,6 +474,29 @@ impl PyDataFrame {
 
     pub fn lazy(&self) -> PyLazyFrame {
         self.df.read().clone().lazy().into()
+    }
+
+    #[pyo3(signature = (subset))]
+    pub fn n_unique(&self, py: Python<'_>, subset: Option<Vec<PyExpr>>) -> PyResult<usize> {
+        py.enter_polars(|| {
+            let df = self.df.read().clone();
+            let subset: Vec<Expr> = match subset {
+                None => vec![all().as_expr()],
+                Some(subset) => subset.into_iter().map(|e| e.inner).collect(),
+            };
+
+            // Collect first: a subset can expand to zero columns, which is invalid for pl.struct.
+            let subset = df.clone().lazy().select(subset).collect()?;
+            match subset.width() {
+                // Without any columns to compare all rows are identical.
+                0 => PolarsResult::Ok(df.height().min(1)),
+                1 => subset.columns()[0].n_unique(),
+                _ => subset
+                    .into_struct(PlSmallStr::EMPTY)
+                    .into_column()
+                    .n_unique(),
+            }
+        })
     }
 
     #[pyo3(signature = (columns, separator, drop_first, drop_nulls))]

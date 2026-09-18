@@ -67,7 +67,7 @@ from polars._utils.expired import (
     removed_parameters,
 )
 from polars._utils.getitem import get_df_item_by_key
-from polars._utils.parse import parse_into_expression
+from polars._utils.parse import parse_into_list_of_expressions_require_selectors
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
@@ -82,7 +82,7 @@ from polars._utils.various import (
     scale_bytes,
     warn_null_comparison,
 )
-from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
+from polars._utils.wrap import wrap_ldf, wrap_s
 from polars.config import Config
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
@@ -11456,14 +11456,14 @@ class DataFrame:
             ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    def n_unique(self, subset: str | Expr | Sequence[str | Expr] | None = None) -> int:
+    def n_unique(self, subset: IntoExpr | Collection[IntoExpr] | None = None) -> int:
         """
         Return the number of unique rows, or the number of unique row-subsets.
 
         Parameters
         ----------
         subset
-            One or more columns/expressions that define what to count;
+            Column name(s), selector(s), or expressions that define what to count;
             omit to return the count of unique rows.
 
         Notes
@@ -11513,29 +11513,12 @@ class DataFrame:
         ... )
         3
         """
-        if subset is None and self.width == 0:
-            # With no columns all rows are identical, so there is a single
-            # distinct row for any non-empty frame.
-            return min(self.height, 1)
-
-        if isinstance(subset, str):
-            expr = F.col(subset)
-        elif isinstance(subset, pl.Expr):
-            expr = subset
-        elif isinstance(subset, Sequence) and len(subset) == 1:
-            expr = wrap_expr(parse_into_expression(subset[0]))
-        else:
-            struct_fields = F.all() if (subset is None) else subset
-            expr = F.struct(struct_fields)
-
-        from polars.lazyframe.opt_flags import QueryOptFlags
-
-        df = (
-            self.lazy()
-            .select(expr.n_unique())
-            ._collect_eager(optimizations=QueryOptFlags._eager())
+        parsed_subset = (
+            None
+            if subset is None
+            else parse_into_list_of_expressions_require_selectors(subset)
         )
-        return 0 if df.is_empty() else df.row(0)[0]
+        return self._df.n_unique(parsed_subset)
 
     def rechunk(self) -> DataFrame:
         """
