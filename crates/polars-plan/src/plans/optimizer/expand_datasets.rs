@@ -41,7 +41,7 @@ pub(super) fn expand_datasets(
 
     #[cfg(feature = "python")]
     let py_scan_resolve_threadpool: LazyCell<Arc<PyScanResolveThreadPool>> =
-        LazyCell::new(|| Arc::new(PyScanResolveThreadPool::new()));
+        LazyCell::new(|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool()));
 
     match ir_graph_traversal(
         root,
@@ -434,6 +434,10 @@ fn expand_python_dataset(
                 FileScanDsl::Lines { name } => FileScanIR::Lines { name },
 
                 FileScanDsl::ExpandedPaths { name } => FileScanIR::ExpandedPaths { name },
+
+                FileScanDsl::ExternalReaderBuilder { external } => {
+                    FileScanIR::ExternalReaderBuilder { external }
+                },
 
                 FileScanDsl::Anonymous {
                     options,

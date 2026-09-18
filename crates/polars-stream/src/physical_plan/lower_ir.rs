@@ -14,6 +14,7 @@ use polars_defs::join::{JoinType, MaintainOrderJoin};
 use polars_error::{PolarsResult, polars_ensure};
 use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
+use polars_io::external_reader::ExternalReaderBuilder;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
@@ -26,6 +27,8 @@ use polars_utils::aliases::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "python")]
+use polars_utils::python_thread_pool::PyThreadPool;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "json"))]
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
@@ -36,6 +39,8 @@ use slotmap::SlotMap;
 
 use super::lower_expr::build_hstack_stream;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
+#[cfg(feature = "python")]
+use crate::nodes::io_sources;
 use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
@@ -667,7 +672,10 @@ pub fn lower_ir(
             };
 
             if (scan_sources.is_empty()
-                && !matches!(scan_type.as_ref(), FileScanIR::Anonymous { .. }))
+                && !matches!(
+                    scan_type.as_ref(),
+                    FileScanIR::Anonymous { .. } | FileScanIR::ExternalReaderBuilder { .. }
+                ))
                 || unified_scan_args
                     .pre_slice
                     .as_ref()
@@ -843,6 +851,24 @@ pub fn lower_ir(
                     },
 
                     FileScanIR::ExpandedPaths { name: _ } => unreachable!(),
+
+                    FileScanIR::ExternalReaderBuilder { external } => match external {
+                        #[cfg(feature = "python")]
+                        ExternalReaderBuilder::Python(builder) => {
+                            use pyo3::Python;
+                            use pyo3::types::PyDict;
+
+                            let py_multi_scan_context =
+                                Python::attach(|py| Arc::new(PyDict::new(py).unbind()));
+
+                            Arc::new(io_sources::external_python::PythonFileReaderBuilder::new(
+                                builder.clone(),
+                                Arc::new(PyThreadPool::new_unbounded()),
+                                py_multi_scan_context,
+                            )) as _
+                        },
+                        ExternalReaderBuilder::Rust(()) => unimplemented!(),
+                    },
 
                     FileScanIR::Anonymous { .. } => {
                         return lower_subtree_to_inmem_engine(

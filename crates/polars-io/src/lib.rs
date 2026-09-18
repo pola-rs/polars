@@ -15,6 +15,7 @@ pub mod catalog;
 pub mod cloud;
 #[cfg(any(feature = "csv", feature = "json"))]
 pub mod csv;
+pub mod external_reader;
 #[cfg(feature = "file_cache")]
 pub mod file_cache;
 #[cfg(any(feature = "ipc", feature = "ipc_streaming"))]

@@ -28,6 +28,7 @@ use crate::map::lazy::call_lambda_with_series;
 use crate::prelude::ObjectValue;
 use crate::py_modules::{pl_df, polars, polars_rs};
 use crate::series::PySeries;
+use crate::utils::{EnterPolarsExt, to_py_err};
 
 fn python_function_caller_series(
     s: &[Column],
@@ -299,6 +300,14 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
                 extract_py_resolved_dsl: crate::conversion::extract_py_resolved_dsl,
             }
         });
+
+        polars_stream::nodes::io_sources::external_python::PY_EXTERNAL_READER_VTABLE.get_or_init(
+            || polars_stream::nodes::io_sources::external_python::PyExternalReaderVTable {
+                extract_schema: dataset_provider_funcs::extract_schema,
+                enter_polars_send_df: |py, df, tx: &polars_stream::nodes::io_sources::external_python::ExternalPythonReaderDataFrameTx| py.enter_polars_ok(|| tx.send_df_(df)).unwrap(),
+                extract_df: |py, py_df| python_df_to_rust(py, py_df).map_err(to_py_err),
+            },
+        );
 
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
             name: dataset_provider_funcs::name,

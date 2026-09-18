@@ -107,15 +107,11 @@ async fn resolve_negative_slice(
                 .unwrap()
                 .into_owned()
                 .and_then(|source| {
-                    let mut reader = file_reader_builder.build_file_reader(
+                    file_reader_builder.build_file_reader(
                         source,
                         cloud_options.clone(),
                         scan_source_idx,
-                    );
-
-                    reader.prepare_read()?;
-
-                    Ok(reader)
+                    )
                 });
 
             AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
