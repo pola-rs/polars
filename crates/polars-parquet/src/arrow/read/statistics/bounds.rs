@@ -7,7 +7,7 @@ use polars_arrow::types::i256;
 use polars_utils::float16::pf16;
 
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::metadata::{ColumnOrder, SortOrder};
+use crate::parquet::metadata::{ColumnOrder, RawBounds, SortOrder};
 use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
 use crate::parquet::statistics::Statistics as ParquetStatistics;
 use crate::parquet::types::{self, NativeType};
@@ -242,16 +242,50 @@ impl BoundConversion {
         }))
     }
 
-    /// Decodes and converts the plain-encoded `bytes` of a bound of the leaf.
-    pub fn decode<'a>(
+    /// Decodes and converts the bounds of a chunk of the leaf. Malformed bounds
+    /// are errors whether exact or not; inexact ones then bound nothing.
+    pub fn decode_bounds<'a>(
         self,
         physical_type: PhysicalType,
-        bytes: &'a [u8],
-    ) -> ParquetResult<Option<ArrowBound<'a>>> {
-        self.convert(PhysicalBound::decode(physical_type, bytes)?)
+        raw: RawBounds<'a>,
+    ) -> ParquetResult<(Option<ArrowBound<'a>>, Option<ArrowBound<'a>>)> {
+        let decode = |bytes: Option<&'a [u8]>, is_exact: bool| -> ParquetResult<_> {
+            let bound = bytes
+                .map(|b| PhysicalBound::decode(physical_type, b))
+                .transpose()?;
+            Ok(bound.filter(|_| is_exact))
+        };
+        self.convert_bounds(
+            decode(raw.min, raw.min_is_exact)?,
+            decode(raw.max, raw.max_is_exact)?,
+        )
     }
 
-    /// Converts a bound of the leaf. `None` when the value bounds nothing: a NaN.
+    /// Converts the bounds of a chunk of the leaf. A timestamp the reader wraps
+    /// leaves the chunk's values without order, so neither bound holds then.
+    pub fn convert_bounds<'a>(
+        self,
+        min: Option<PhysicalBound<'a>>,
+        max: Option<PhysicalBound<'a>>,
+    ) -> ParquetResult<(Option<ArrowBound<'a>>, Option<ArrowBound<'a>>)> {
+        if [min, max].into_iter().flatten().any(|b| self.wraps(b)) {
+            return Ok((None, None));
+        }
+        let convert = |bound: Option<_>| bound.map(|b| self.convert(b)).transpose();
+        Ok((convert(min)?.flatten(), convert(max)?.flatten()))
+    }
+
+    fn wraps(self, bound: PhysicalBound) -> bool {
+        match (self, bound) {
+            (Self::Timestamp { factor, multiply }, PhysicalBound::Int64(v)) => {
+                multiply && v.checked_mul(factor).is_none()
+            },
+            _ => false,
+        }
+    }
+
+    /// Converts a bound of the leaf. `None` when the value bounds nothing: a NaN,
+    /// or a timestamp the reader wraps.
     pub fn convert<'a>(self, bound: PhysicalBound<'a>) -> ParquetResult<Option<ArrowBound<'a>>> {
         use ArrowBound as A;
         use PhysicalBound as P;
@@ -267,8 +301,21 @@ impl BoundConversion {
             (Self::UInt32, P::Int64(v)) => A::UInt32(v as u32),
             (Self::UInt64, P::Int64(v)) => A::UInt64(v as u64),
             (Self::DaysToMillis, P::Int32(v)) => A::Int64(i64::from(v) * 86400000),
-            (Self::Timestamp { factor, multiply }, P::Int64(v)) => {
-                A::Int64(if multiply { v * factor } else { v / factor })
+            (
+                Self::Timestamp {
+                    factor,
+                    multiply: false,
+                },
+                P::Int64(v),
+            ) => A::Int64(v / factor),
+            (
+                Self::Timestamp {
+                    factor,
+                    multiply: true,
+                },
+                P::Int64(v),
+            ) => {
+                return Ok(v.checked_mul(factor).map(A::Int64));
             },
             (Self::Float16, P::Bytes(v)) => A::Float16(pf16::from_le_bytes([v[0], v[1]])),
             // Parquet Format:
@@ -330,7 +377,14 @@ mod tests {
         primitive_type: &PrimitiveType,
         bytes: &'a [u8],
     ) -> ParquetResult<Option<ArrowBound<'a>>> {
-        conversion(dtype, primitive_type).decode(primitive_type.physical_type, bytes)
+        let raw = RawBounds {
+            min: Some(bytes),
+            min_is_exact: true,
+            ..Default::default()
+        };
+        Ok(conversion(dtype, primitive_type)
+            .decode_bounds(primitive_type.physical_type, raw)?
+            .0)
     }
 
     fn decode<'a>(
@@ -435,6 +489,75 @@ mod tests {
         assert_eq!(
             decode(D::Float64, &leaf(P::Double), &(-0.0f64).to_le_bytes()),
             Some(ArrowBound::Float64(-0.0))
+        );
+    }
+
+    #[test]
+    fn wrapped_timestamps_bound_nothing() {
+        use ArrowDataType as D;
+        let conversion = conversion(
+            D::Timestamp(TimeUnit::Nanosecond, None),
+            &timestamp_leaf(ParquetTimeUnit::Milliseconds),
+        );
+        let (min, max) = conversion
+            .convert_bounds(
+                Some(PhysicalBound::Int64(0)),
+                Some(PhysicalBound::Int64(i64::MAX / 1_000_000 + 1)),
+            )
+            .unwrap();
+        assert_eq!((min, max), (None, None));
+        let (min, max) = conversion
+            .convert_bounds(
+                Some(PhysicalBound::Int64(-1)),
+                Some(PhysicalBound::Int64(1)),
+            )
+            .unwrap();
+        assert_eq!(min, Some(ArrowBound::Int64(-1_000_000)));
+        assert_eq!(max, Some(ArrowBound::Int64(1_000_000)));
+    }
+
+    #[test]
+    fn inexact_bounds_are_validated_then_dropped() {
+        use ArrowDataType as D;
+        use PhysicalType as P;
+        let int32 = leaf(P::Int32);
+        let conversion = conversion(D::Int32, &int32);
+        let seven = 7i32.to_le_bytes();
+        let inexact = |bytes: &'static [u8]| RawBounds {
+            min: Some(bytes),
+            min_is_exact: false,
+            max: Some(&seven[..]),
+            max_is_exact: true,
+        };
+        assert!(
+            conversion
+                .decode_bounds(P::Int32, inexact(&[1, 2]))
+                .is_err()
+        );
+        assert_eq!(
+            conversion
+                .decode_bounds(P::Int32, inexact(&[1, 2, 3, 4]))
+                .unwrap(),
+            (None, Some(ArrowBound::Int32(7)))
+        );
+        // The owned statistics apply the same order.
+        use crate::parquet::statistics::ParquetStatistics as Thrift;
+        let thrift = |min: Vec<u8>| Thrift {
+            min_value: Some(min),
+            is_min_value_exact: Some(false),
+            max_value: Some(7i32.to_le_bytes().to_vec()),
+            is_max_value_exact: None,
+            min: None,
+            max: None,
+            null_count: None,
+            distinct_count: None,
+        };
+        assert!(ParquetStatistics::deserialize(&thrift(vec![1, 2]), int32.clone()).is_err());
+        let owned = ParquetStatistics::deserialize(&thrift(vec![1, 2, 3, 4]), int32).unwrap();
+        let (min, max) = owned.bounds();
+        assert_eq!(
+            conversion.convert_bounds(min, max).unwrap(),
+            (None, Some(ArrowBound::Int32(7)))
         );
     }
 

@@ -17,6 +17,7 @@ pub use self::bounds::{ArrowBound, BoundConversion, PhysicalBound};
 use super::{FileMetadata, RowGroupMetadata};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::ColumnOrder;
+pub use crate::parquet::metadata::RawBounds;
 use crate::parquet::schema::types::{PhysicalType as ParquetPhysicalType, PrimitiveType};
 use crate::parquet::statistics::Statistics as ParquetStatistics;
 use crate::read::ColumnChunkMetadata;
@@ -75,15 +76,10 @@ impl ColumnStatistics {
         let (min_value, max_value) = match conversion {
             Some(conversion) => {
                 let (min, max) = self.statistics.bounds();
-                let convert = |bound: Option<PhysicalBound>| -> ParquetResult<_> {
-                    Ok(match bound {
-                        Some(bound) => conversion
-                            .convert(bound)?
-                            .map(|bound| bound.into_array(self.field.dtype())),
-                        None => None,
-                    })
-                };
-                (convert(min)?, convert(max)?)
+                let (min, max) = conversion.convert_bounds(min, max)?;
+                let array =
+                    |bound: Option<ArrowBound>| bound.map(|b| b.into_array(self.field.dtype()));
+                (array(min), array(max))
             },
             None => (None, None),
         };
@@ -211,13 +207,9 @@ pub fn deserialize_all(
                 ($arr:expr, $variant:ident) => {{
                     let mut min_arr = $arr;
                     let mut max_arr = $arr;
-                    macro_rules! decode {
-                        ($bytes:expr) => {
-                            match $bytes
-                                .map(|bytes| conversion.decode(physical_type, bytes))
-                                .transpose()?
-                                .flatten()
-                            {
+                    macro_rules! value {
+                        ($bound:expr) => {
+                            match $bound {
                                 Some(ArrowBound::$variant(v)) => Some(v),
                                 Some(_) => unreachable!(),
                                 None => None,
@@ -226,9 +218,12 @@ pub fn deserialize_all(
                     }
                     for rg in row_groups {
                         let column = &rg.parquet_columns()[field_idx];
-                        let (min, max) = column.bound_bytes(footer_buf);
-                        min_arr.push(decode!(min));
-                        max_arr.push(decode!(max));
+                        let (min, max) = match column.raw_bounds(footer_buf) {
+                            Some(raw) => conversion.decode_bounds(physical_type, raw)?,
+                            None => (None, None),
+                        };
+                        min_arr.push(value!(min));
+                        max_arr.push(value!(max));
                         null_count.push(column.null_count().map(|v| v as IdxSize));
                         distinct_count.push(column.distinct_count().map(|v| v as IdxSize));
                     }
@@ -371,8 +366,9 @@ impl LeafBounds {
         footer_buf: &'a [u8],
     ) -> (Option<ArrowBound<'a>>, Option<ArrowBound<'a>>) {
         let column = &row_group.parquet_columns()[self.field_idx];
-        let (min, max) = column.bound_bytes(footer_buf);
-        let decode = |bytes| self.conversion.decode(self.physical_type, bytes).ok()?;
-        (min.and_then(decode), max.and_then(decode))
+        column
+            .raw_bounds(footer_buf)
+            .and_then(|raw| self.conversion.decode_bounds(self.physical_type, raw).ok())
+            .unwrap_or((None, None))
     }
 }
