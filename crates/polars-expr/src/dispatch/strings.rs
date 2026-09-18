@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use polars_core::chunked_array::temporal::string::StringMethods;
 use polars_core::prelude::*;
 use polars_core::utils::{CustomIterTools, handle_casting_failures};
 #[cfg(feature = "regex")]
@@ -10,7 +11,6 @@ use polars_ops::prelude::{BinaryNameSpaceImpl, StringNameSpaceImpl};
 use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRStringFunction;
-use polars_time::prelude::StringMethods;
 use polars_utils::broadcast::broadcast_len;
 #[cfg(feature = "regex")]
 use regex::{NoExpand, escape};

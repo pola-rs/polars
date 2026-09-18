@@ -1,9 +1,9 @@
 use std::ops::{AddAssign, Mul};
 
 use arity::unary_elementwise_values;
-use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
 use num_traits::{AsPrimitive, Bounded, One, Zero};
+use polars_arrow::array::{Array, BooleanArray};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{CustomIterTools, NoNull};

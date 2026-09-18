@@ -1,9 +1,9 @@
 use std::io::{Cursor, Read, Seek};
 
-use arrow::array::Array;
-use arrow::datatypes::{ArrowSchemaRef, Field};
-use arrow::record_batch::RecordBatchT;
 use polars::prelude::ArrowSchema;
+use polars_arrow::array::Array;
+use polars_arrow::datatypes::{ArrowSchemaRef, Field};
+use polars_arrow::record_batch::RecordBatchT;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_parquet::arrow::read::{Filter, column_iter_to_arrays};

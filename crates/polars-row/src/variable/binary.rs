@@ -12,7 +12,7 @@
 //! - otherwise the length of the block as a `u8`
 use std::mem::MaybeUninit;
 
-use arrow::array::{BinaryViewArray, MutableBinaryViewArray};
+use polars_arrow::array::{BinaryViewArray, MutableBinaryViewArray};
 use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;

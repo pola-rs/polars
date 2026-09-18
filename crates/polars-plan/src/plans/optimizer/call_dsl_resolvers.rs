@@ -58,7 +58,7 @@ pub(super) fn call_dsl_resolvers(
                 match (|| {
                     let IR::Resolver {
                         resolver,
-                        resolver_schema: _,
+                        resolver_schema,
                         projection,
                         slice,
                         filters,
@@ -132,6 +132,7 @@ pub(super) fn call_dsl_resolvers(
                         filters.clone(),
                         existing_resolved_version_key,
                         expr_arena,
+                        resolver_schema.clone(),
                         #[cfg(feature = "python")]
                         Arc::clone(&py_lazyframe_resolve_threadpool),
                     )?;

@@ -1,14 +1,14 @@
 use std::collections::VecDeque;
 
-use arrow::legacy::time_zone::Tz;
-use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
-use arrow::trusted_len::TrustedLen;
 use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as _;
 use now::DateTimeNow;
+use polars_arrow::legacy::time_zone::Tz;
+use polars_arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
+use polars_arrow::trusted_len::TrustedLen;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::_split_offsets;

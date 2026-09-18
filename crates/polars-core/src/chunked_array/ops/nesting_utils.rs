@@ -1,4 +1,4 @@
-use arrow::array::{Array, IntoBoxedArray};
+use polars_arrow::array::{Array, IntoBoxedArray};
 use polars_compute::find_validity_mismatch::find_validity_mismatch;
 use polars_utils::IdxSize;
 

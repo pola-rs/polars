@@ -1,4 +1,4 @@
-use arrow::array::{BinaryArray, BinaryViewArray, PrimitiveArray};
+use polars_arrow::array::{BinaryArray, BinaryViewArray, PrimitiveArray};
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
 use polars_utils::total_ord::TotalEq;

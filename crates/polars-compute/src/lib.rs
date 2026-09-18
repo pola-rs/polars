@@ -1,6 +1,6 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 
-use arrow::types::NativeType;
+use polars_arrow::types::NativeType;
 
 #[cfg(feature = "approx_quantile")]
 pub mod approx_quantile;

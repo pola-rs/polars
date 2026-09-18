@@ -33,7 +33,7 @@ strum_macros = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 uuid = { workspace = true }
 
-arrow = { workspace = true }
+polars-arrow = { workspace = true }
 polars-async = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
@@ -61,6 +61,7 @@ version_check = { workspace = true }
 nightly = ["polars-expr/nightly", "polars-io/nightly"]
 serde = ["dep:serde"]
 approx_unique = ["polars-plan/approx_unique", "polars-expr/approx_unique"]
+approx_quantile = ["polars-plan/approx_quantile", "polars-expr/approx_quantile"]
 cov = ["polars-plan/cov", "polars-expr/cov"]
 bigidx = ["polars-core/bigidx", "polars-plan/bigidx"]
 bitwise = ["polars-core/bitwise", "polars-plan/bitwise", "polars-expr/bitwise"]
@@ -74,7 +75,7 @@ dynamic_group_by = [
   "polars-plan/timezones",
   "polars-time/dtype-date",
   "polars-time/dtype-datetime",
-  "arrow/timezones",
+  "polars-arrow/timezones",
 ]
 strings = ["polars-expr/strings", "polars-plan/strings"]
 ipc = [

@@ -1,5 +1,5 @@
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::Bitmap;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::Bitmap;
 use polars_utils::total_ord::TotalOrd;
 
 use super::{TotalEqKernel, TotalOrdKernel};

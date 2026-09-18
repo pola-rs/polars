@@ -68,8 +68,8 @@ use std::io::Write;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 
-use arrow::array::LIST_VALUES_NAME;
-use arrow::legacy::conversion::chunk_to_struct;
+use polars_arrow::array::LIST_VALUES_NAME;
+use polars_arrow::legacy::conversion::chunk_to_struct;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
@@ -349,7 +349,7 @@ where
                     DataType::Struct(deserialize_schema).to_arrow(CompatLevel::newest());
 
                 let arrow_dtype = if let BorrowedValue::Array(_) = &json_value {
-                    ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
+                    ArrowDataType::LargeList(Box::new(polars_arrow::datatypes::Field::new(
                         LIST_VALUES_NAME,
                         arrow_dtype,
                         true,

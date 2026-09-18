@@ -1,9 +1,9 @@
 use std::hash::Hash;
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::MutableBitmap;
-use arrow::legacy::bit_util::*;
-use arrow::legacy::utils::CustomIterTools;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::legacy::bit_util::*;
+use polars_arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::with_match_physical_float_polars_type;

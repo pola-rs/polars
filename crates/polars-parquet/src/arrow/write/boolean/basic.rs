@@ -1,4 +1,4 @@
-use arrow::array::*;
+use polars_arrow::array::*;
 use polars_error::{PolarsResult, polars_bail};
 
 use super::super::{WriteOptions, utils};

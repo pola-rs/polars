@@ -1,4 +1,4 @@
-use arrow::array::PrimitiveArray;
+use polars_arrow::array::PrimitiveArray;
 use polars_core::chunked_array::ops::row_encode::{
     encode_rows_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
 };

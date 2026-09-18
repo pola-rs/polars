@@ -1,8 +1,8 @@
 use std::any::TypeId;
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::BitmapBuilder;
-use arrow::types::NativeType;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::types::NativeType;
 
 // Low-level comparison kernel.
 pub trait ArithmeticKernel: Sized + Array {
@@ -193,7 +193,7 @@ fn prim_checked_mul_scalar<I: NativeType + CheckedMul + WrappingMul>(
     let validity = validity.freeze();
     let validity = match array.validity() {
         None => validity,
-        Some(arr_validity) => arrow::bitmap::and(&validity, arr_validity),
+        Some(arr_validity) => polars_arrow::bitmap::and(&validity, arr_validity),
     };
 
     PrimitiveArray::<I>::new(I::PRIMITIVE.into(), out.into(), Some(validity))

@@ -5,11 +5,11 @@ mod utf8;
 
 use std::io::Write;
 
-use arrow::array::Array;
-use arrow::datatypes::ArrowSchema;
-use arrow::io::iterator::StreamingIterator;
-use arrow::record_batch::RecordBatchT;
 pub use fallible_streaming_iterator::*;
+use polars_arrow::array::Array;
+use polars_arrow::datatypes::ArrowSchema;
+use polars_arrow::io::iterator::StreamingIterator;
+use polars_arrow::record_batch::RecordBatchT;
 use polars_error::{PolarsError, PolarsResult};
 use serialize::serialize;
 pub use utf8::serialize_to_utf8;

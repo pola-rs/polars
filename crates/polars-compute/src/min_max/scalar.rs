@@ -1,7 +1,7 @@
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8Array, Utf8ViewArray,
 };
-use arrow::types::{NativeType, Offset};
+use polars_arrow::types::{NativeType, Offset};
 use polars_utils::min_max::MinMax;
 
 use super::MinMaxKernel;

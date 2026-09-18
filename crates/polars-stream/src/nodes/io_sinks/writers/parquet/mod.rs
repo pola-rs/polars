@@ -1,7 +1,7 @@
 use std::num::NonZeroU64;
 use std::sync::Arc;
 
-use arrow::datatypes::ArrowSchemaRef;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_async::executor::{self, TaskPriority};
 use polars_async::primitives::connector;
 use polars_buffer::Buffer;

@@ -3,7 +3,7 @@
 
 use chrono::{NaiveDate, NaiveDateTime};
 
-use crate::chunkedarray::{PolarsResult, polars_bail};
+use crate::prelude::{PolarsResult, polars_bail};
 
 polars_utils::regex_cache::cached_regex! {
     static HOUR_PATTERN = r"%[_-]?[HkIl]";

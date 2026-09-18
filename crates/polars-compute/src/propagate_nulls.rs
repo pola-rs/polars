@@ -1,7 +1,7 @@
-use arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
-use arrow::bitmap::BitmapBuilder;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::types::Offset;
+use polars_arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::types::Offset;
 
 /// Propagate nulls down to masked-out values in lower nesting levels.
 pub fn propagate_nulls(arr: &dyn Array) -> Option<Box<dyn Array>> {
@@ -269,7 +269,7 @@ pub fn propagate_nulls_struct(arr: &StructArray) -> Option<StructArray> {
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::proptest::array;
+    use polars_arrow::array::proptest::array;
     use proptest::proptest;
 
     use crate::propagate_nulls::propagate_nulls;
