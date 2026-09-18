@@ -346,6 +346,10 @@ pub struct JoinOptionsIR {
     /// Ranges of build-side keys the join publishes to scans below its probe side once
     /// the build is done. Only set together with a forced `args.build_side`.
     pub runtime_filters: Vec<RuntimeFilter>,
+    /// Build rows above which a semi join sends its left side on unfiltered. Only set
+    /// on a semi join whose output is joined on the same keys again, with a forced
+    /// right build.
+    pub pass_through_above: Option<usize>,
 }
 
 /// The range of the build-side key at `key_idx` of the join's `on`, published
@@ -416,6 +420,7 @@ impl JoinOptionsIR {
             args,
             options,
             runtime_filters,
+            pass_through_above,
         } = self;
 
         *allow_parallel == other.allow_parallel
@@ -423,6 +428,7 @@ impl JoinOptionsIR {
             && *args == other.args
             && options.shallow_eq(&other.options, expr_cmp)
             && *runtime_filters == other.runtime_filters
+            && *pass_through_above == other.pass_through_above
     }
 
     #[cfg(feature = "cse")]
@@ -437,9 +443,11 @@ impl JoinOptionsIR {
             args,
             options,
             runtime_filters,
+            pass_through_above,
         } = self;
 
         allow_parallel.hash(state);
+        pass_through_above.hash(state);
         force_parallel.hash(state);
         args.hash(state);
         options.shallow_hash(state, expr_hash);
@@ -816,6 +824,7 @@ impl From<JoinOptions> for JoinOptionsIR {
             args: opts.args,
             options: Default::default(),
             runtime_filters: Vec::new(),
+            pass_through_above: None,
         }
     }
 }

@@ -224,10 +224,13 @@ impl<'a> IRDisplay<'a> {
                 let (left_keys, right_keys) = options.options.key_vecs();
                 let left_on = self.display_expr_slice(&left_keys);
                 let right_on = self.display_expr_slice(&right_keys);
-                let build_side = match &options.args.build_side {
+                let mut build_side = match &options.args.build_side {
                     Some(side) => format!("\n{:indent$}BUILD SIDE: {side:?}", ""),
                     None => String::new(),
                 };
+                if let Some(rows) = options.pass_through_above {
+                    build_side += &format!("\n{:indent$}PASS THROUGH ABOVE: {rows} build rows", "");
+                }
 
                 // Fused cross + filter (show as nested loop join)
                 if let JoinTypeOptionsIR::CrossAndFilter { predicate } = &options.options {
