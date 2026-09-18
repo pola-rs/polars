@@ -19,7 +19,7 @@ use crate::plans::iterator::ArenaExprIter;
 use crate::plans::stats::{StatsCache, node_stats_with_cache};
 use crate::plans::{
     AExpr, ExprIR, ExprPushdownGroup, IR, JoinOptionsIR, JoinTypeOptionsIR, MintermIter,
-    aexpr_to_leaf_names_iter,
+    aexpr_to_leaf_names_iter, is_inherently_nondeterministic,
 };
 use crate::prelude::{JoinArgs, JoinType};
 
@@ -49,8 +49,8 @@ pub(super) fn restrict_grouped_join_inputs(
     }
 }
 
-/// Elementwise, fallible or not: an expression that sees the same values in fewer or
-/// more rows gives the same results and errors.
+/// Elementwise, fallible or not: an expression whose result for a row does not
+/// depend on the other rows.
 fn elementwise(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     let mut group = ExprPushdownGroup::Pushable;
     group.update_with_expr_rec(expr_arena.get(node), expr_arena, None);
@@ -239,11 +239,16 @@ fn restrict(
     let JoinTypeOptionsIR::Equi { on, .. } = &options.options else {
         return;
     };
-    // Validation must see every group, including those the semi join would drop.
+    // Validation must see every group, including those the semi join would drop,
+    // and both joins must compute the same keys.
     if !matches!(options.args.how, JoinType::Inner)
         || options.args.slice.is_some()
         || options.args.validation.needs_checks()
         || on.is_empty()
+        || on.iter().any(|(left, right)| {
+            is_inherently_nondeterministic(left.node(), expr_arena)
+                || is_inherently_nondeterministic(right.node(), expr_arena)
+        })
     {
         return;
     }

@@ -67,11 +67,23 @@ struct SemiAntiJoinParams {
     build_side: Option<JoinBuildSide>,
     random_state: PlRandomState,
     sample_limit: usize,
-    /// Build rows above which the left side is sent on unfiltered.
+    /// Build rows above which the left side is sent on unfiltered. The same limit
+    /// on probed rows starts the check on their match rate.
     pass_through_above: Option<usize>,
 }
 
+/// Share of the probed rows that must match for the join to stop filtering.
+const PASS_THROUGH_MATCH_RATE: f64 = 0.9;
+
 impl SemiAntiJoinParams {
+    /// Whether the rows probed so far mostly match, so filtering the rest is not
+    /// worth its cost.
+    fn probe_passes_through(&self, probed: usize, matched: usize) -> bool {
+        self.pass_through_above.is_some_and(|limit| {
+            probed > limit && matched as f64 >= probed as f64 * PASS_THROUGH_MATCH_RATE
+        })
+    }
+
     fn left_is_build(&self) -> bool {
         self.left_is_build.unwrap()
     }
@@ -710,10 +722,10 @@ impl ProbeState {
                         params.is_anti,
                         &mut probe_match,
                     );
-                    if let Some(limit) = params.pass_through_above {
+                    if params.pass_through_above.is_some() {
                         let total = probed.fetch_add(df.height()) + df.height();
                         let matched = matched.fetch_add(probe_match.len()) + probe_match.len();
-                        if total > limit && matched >= total / 10 * 9 {
+                        if params.probe_passes_through(total, matched) {
                             src_token.stop();
                         }
                     }
@@ -965,11 +977,7 @@ impl ComputeNode for SemiAntiJoinNode {
         if let SemiAntiJoinState::Probe(probe_state) = &mut self.state {
             let samples_consumed = probe_state.sampled_probe_morsels.is_empty();
             let (probed, matched) = (probe_state.probed.load(), probe_state.matched.load());
-            if self
-                .params
-                .pass_through_above
-                .is_some_and(|limit| probed > limit && matched >= probed / 10 * 9)
-            {
+            if self.params.probe_passes_through(probed, matched) {
                 if config::verbose() {
                     eprintln!("semi join passed through: {matched} of {probed} probe rows matched");
                 }
