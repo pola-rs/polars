@@ -3083,7 +3083,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Row group size in number of rows.
         maintain_order
             Maintain the input row order in the written files. Setting this to
-            `False` can improve throughput.
+            `False` can improve throughput. For tables with a sort order, this
+            controls the order of rows with equal sort keys; files always follow
+            the table's sort order.
         engine
             Engine used to produce rows for the local `pyiceberg` writer.
 
@@ -3103,8 +3105,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         ``mode="overwrite"`` replaces all table data; dynamic partition overwrite
         is not supported. ``schema_mode="overwrite"`` is not supported for
-        partitioned tables. Tables with sort orders or custom location providers
-        are also not supported.
+        partitioned tables or tables with a sort order. Custom location providers
+        are not supported.
+
+        The table's default sort order is applied to incoming rows and recorded on
+        each new data file. Existing files are not rewritten. Sorting materializes
+        the incoming data in memory. Bucket sort transforms require
+        ``pyiceberg-core``; their sort keys are computed in batches while Parquet
+        I/O remains native. This does not guarantee a globally sorted table scan.
         """
         from polars.io.iceberg._sink import IcebergSinkState
 
@@ -5597,12 +5605,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         other
             Lazy DataFrame to join with.
         left_on
-            Join column of the left DataFrame.
+            Ordered asof key (column name, expression, or selector) for the left
+            DataFrame.
         right_on
-            Join column of the right DataFrame.
+            Ordered asof key (column name, expression, or selector) for the right
+            DataFrame.
         on
-            Join column of both DataFrames. If set, `left_on` and `right_on` should be
-            None.
+            Ordered asof key (column name, expression, or selector) for both DataFrames.
+            If set, `left_on` and `right_on` should be None.
         by_left
             Join on these columns before doing asof join.
         by_right
@@ -5652,8 +5662,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - True: -> Always coalesce join columns.
             - False: -> Never coalesce join columns.
 
-            Note that joining on any other expressions than `col`
-            will turn off coalescing.
+            Only keys that expand to plain column references support coalescing.
         allow_exact_matches
             Whether exact matches are valid join predicates.
 
@@ -5674,6 +5683,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
+        The asof key must expand to exactly one expression per input.
+
         If 'by' is set, the implementation will compute the asof join over all of the
         groups concurrently.  This can potentially lead to high memory usage if there
         are many groups.
@@ -5986,8 +5997,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         other
             Lazy DataFrame to join with.
         on
-            Name(s) of the join columns in both DataFrames. If set, `left_on` and
-            `right_on` should be None. This should not be specified if `how='cross'`.
+            Names, expressions, or selectors used on both DataFrames. If set,
+            `left_on` and `right_on` should be None. Do not use with `how='cross'`.
         how : {'inner','left', 'right', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
@@ -6015,9 +6026,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                    table. Does not return columns from the right table.
 
         left_on
-            Join column of the left DataFrame.
+            Join columns, expressions, or selectors of the left DataFrame.
         right_on
-            Join column of the right DataFrame.
+            Join columns, expressions, or selectors of the right DataFrame.
         suffix
             Suffix to append to columns with a duplicate name.
         validate: {'m:m', 'm:1', '1:m', '1:1'}
@@ -6051,8 +6062,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - Never coalesce join columns.
 
             .. note::
-                Joining on any other expressions than `col`
-                will turn off coalescing.
+                Only keys that expand to plain column references support coalescing.
         maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
             Which DataFrame row order to preserve, if any.
             Do not rely on any observed ordering without explicitly setting this

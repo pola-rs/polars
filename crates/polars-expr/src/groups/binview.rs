@@ -1,5 +1,5 @@
-use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_buffer::Buffer;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 

@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::marker::PhantomData;
 
-use arrow::array::*;
+use polars_arrow::array::*;
 
 use crate::prelude::*;
 use crate::utils::{index_to_chunked_index, index_to_chunked_index_rev};

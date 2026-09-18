@@ -1,7 +1,7 @@
-use arrow::array::{Array, PrimitiveArray};
-use arrow::ffi;
-use arrow::ffi::{ArrowArray, ArrowArrayStream, ArrowArrayStreamReader, ArrowSchema};
 use polars::prelude::*;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::ffi;
+use polars_arrow::ffi::{ArrowArray, ArrowArrayStream, ArrowArrayStreamReader, ArrowSchema};
 use polars_ffi::version_0::SeriesExport;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -36,7 +36,7 @@ pub(crate) fn call_arrow_c_array<'py>(
 pub(crate) fn import_array_pycapsules(
     schema_capsule: &Bound<PyCapsule>,
     array_capsule: &Bound<PyCapsule>,
-) -> PyResult<(arrow::datatypes::Field, Box<dyn Array>)> {
+) -> PyResult<(polars_arrow::datatypes::Field, Box<dyn Array>)> {
     let field = import_schema_pycapsule(schema_capsule)?;
 
     // # Safety
@@ -57,7 +57,7 @@ pub(crate) fn import_array_pycapsules(
 
 pub(crate) fn import_schema_pycapsule(
     schema_capsule: &Bound<PyCapsule>,
-) -> PyResult<arrow::datatypes::Field> {
+) -> PyResult<polars_arrow::datatypes::Field> {
     // # Safety
     // schema_capsule holds a valid C ArrowSchema pointer, as defined by the Arrow PyCapsule
     // Interface

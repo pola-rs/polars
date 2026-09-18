@@ -1,13 +1,13 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::mem::MaybeUninit;
 
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray,
     PrimitiveArray, StructArray, UInt8Array, UInt16Array, UInt32Array, Utf8Array, Utf8ViewArray,
 };
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
-use arrow::types::{NativeType, Offset};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::types::{NativeType, Offset};
 use polars_dtype::categorical::CatNative;
 use polars_utils::float16::pf16;
 
@@ -1011,7 +1011,7 @@ pub fn fixed_size(
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::proptest::{
+    use polars_arrow::array::proptest::{
         ArrayArbitraryOptions, ArrowDataTypeArbitraryOptions, ArrowDataTypeArbitrarySelection,
         array_with_options,
     };

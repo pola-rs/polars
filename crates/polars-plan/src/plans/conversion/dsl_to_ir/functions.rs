@@ -1,4 +1,4 @@
-use arrow::legacy::error::PolarsResult;
+use polars_arrow::legacy::error::PolarsResult;
 use polars_core::utils::{SuperTypeFlags, try_get_supertype, try_get_supertype_with_options};
 use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;
@@ -955,7 +955,22 @@ pub(super) fn convert_functions(
                 true => error,
                 false => method.empirical_error_to_formal(error),
             };
-            I::ApproxQuantile { method, error }
+
+            let values_dtype = e[0]
+                .dtype(ctx.schema, ctx.arena)?
+                .clone()
+                .materialize_unknown(false)?;
+            let sketch = AExprBuilder::function(
+                vec![e[0].clone()],
+                I::ApproxQuantileSketch { method, error },
+                ctx.arena,
+            );
+            let estimate = AExprBuilder::function(
+                vec![sketch.expr_ir_retain_name(ctx.arena), e[1].clone()],
+                I::ApproxQuantileEstimate { values_dtype },
+                ctx.arena,
+            );
+            return Ok((estimate.node(), e[0].output_name().clone()));
         },
         F::Coalesce => I::Coalesce,
         #[cfg(feature = "diff")]

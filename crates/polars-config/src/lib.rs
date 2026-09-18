@@ -100,6 +100,10 @@ const DEFAULT_OOC_LOG_METRICS: bool = false;
 const JOIN_SAMPLE_LIMIT: &str = "POLARS_JOIN_SAMPLE_LIMIT";
 const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
 
+/// Whether hash joins publish key ranges to the parquet scans below them.
+const JOIN_RUNTIME_FILTERS: &str = "POLARS_JOIN_RUNTIME_FILTERS";
+const DEFAULT_JOIN_RUNTIME_FILTERS: bool = true;
+
 /// Allows pruning of strict hconcat inputs in projection pushdown. This can reduce data loading
 /// but may discard shape errors.
 const PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS: &str =
@@ -186,6 +190,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MAX_PARALLEL_PREFETCH_TASKS,
     OOC_LOG_METRICS,
     JOIN_SAMPLE_LIMIT,
+    JOIN_RUNTIME_FILTERS,
     PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
     DNS_LOG_THRESHOLD_MS,
     NUMA_AWARE,
@@ -226,6 +231,7 @@ pub struct Config {
     ooc_max_parallel_prefetch_tasks: AtomicU64,
     ooc_log_metrics: AtomicBool,
     join_sample_limit: AtomicU64,
+    join_runtime_filters: AtomicBool,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
     dns_log_threshold_ms: AtomicU64,
     numa_aware: AtomicBool,
@@ -282,6 +288,7 @@ impl Config {
             ),
             ooc_log_metrics: AtomicBool::new(false),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
+            join_runtime_filters: AtomicBool::new(DEFAULT_JOIN_RUNTIME_FILTERS),
             projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
                 DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
             ),
@@ -466,6 +473,11 @@ impl Config {
             JOIN_SAMPLE_LIMIT => self.join_sample_limit.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_JOIN_SAMPLE_LIMIT),
+                Ordering::Relaxed,
+            ),
+            JOIN_RUNTIME_FILTERS => self.join_runtime_filters.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_JOIN_RUNTIME_FILTERS),
                 Ordering::Relaxed,
             ),
             PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS => {
@@ -683,6 +695,11 @@ impl Config {
     #[inline(always)]
     pub fn join_sample_limit(&self) -> u64 {
         self.join_sample_limit.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn join_runtime_filters(&self) -> bool {
+        self.join_runtime_filters.load(Ordering::Relaxed)
     }
 
     #[inline(always)]

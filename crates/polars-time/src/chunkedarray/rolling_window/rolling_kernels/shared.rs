@@ -1,12 +1,12 @@
 //! This module implements logic shared between nulls and no_nulls.
 
-use arrow::array::{ArrayRef, PrimitiveArray};
-use arrow::bitmap::MutableBitmap;
-use arrow::trusted_len::TrustedLen;
-use arrow::types::NativeType;
 use bytemuck::allocation::zeroed_vec;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+use polars_arrow::array::{ArrayRef, PrimitiveArray};
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::trusted_len::TrustedLen;
+use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_core::prelude::*;

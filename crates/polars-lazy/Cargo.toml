@@ -9,9 +9,9 @@ repository = { workspace = true }
 description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
-arrow = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true, optional = true }
+polars-arrow = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }
@@ -37,6 +37,7 @@ tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 bytes = { workspace = true }
+polars-descriptions = { workspace = true }
 serde_json = { workspace = true }
 
 [build-dependencies]
@@ -234,7 +235,7 @@ bitwise = [
   "polars-ops/bitwise",
 ]
 approx_unique = ["polars-plan/approx_unique", "polars-expr/approx_unique", "polars-stream?/approx_unique"]
-approx_quantile = ["polars-plan/approx_quantile", "polars-expr/approx_quantile"]
+approx_quantile = ["polars-plan/approx_quantile", "polars-expr/approx_quantile", "polars-stream?/approx_quantile"]
 is_in = ["polars-plan/is_in", "polars-ops/is_in", "polars-expr/is_in", "polars-stream?/is_in"]
 repeat_by = ["polars-expr/repeat_by"]
 round_series = ["polars-expr/round_series", "polars-ops/round_series"]
@@ -327,7 +328,7 @@ coalesce = ["polars-plan/coalesce"]
 regex = ["polars-expr/regex"]
 serde = [
   "polars-plan/serde",
-  "arrow/serde",
+  "polars-arrow/serde",
   "polars-buffer/serde",
   "polars-core/serde-lazy",
   "polars-time?/serde",

@@ -1,10 +1,10 @@
 use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "python")]
-use arrow::array::ListArray;
-use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::array::ListArray;
+use polars_arrow::array::{Array, BooleanArray};
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
@@ -643,7 +643,7 @@ fn load_iceberg_puffin_deletes(
     {
         use std::sync::LazyLock;
 
-        use arrow::array::UInt64Array;
+        use polars_arrow::array::UInt64Array;
         use polars_error::constants::LENGTH_LIMIT_MSG;
         use polars_error::polars_ensure;
         use polars_utils::index::idxsize_try_from;

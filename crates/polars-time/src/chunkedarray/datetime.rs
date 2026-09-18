@@ -1,5 +1,5 @@
-use arrow::array::{Array, PrimitiveArray};
-use arrow::compute::temporal;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::compute::temporal;
 use polars_compute::cast::{CastOptionsImpl, cast};
 #[cfg(feature = "timezones")]
 use polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone;

@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;

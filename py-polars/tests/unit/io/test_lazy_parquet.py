@@ -6,7 +6,7 @@ import re
 import subprocess
 import sys
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from threading import Thread
 from typing import TYPE_CHECKING, Any
@@ -21,6 +21,8 @@ from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import ParallelStrategy
     from tests.conftest import PlMonkeyPatch
 
@@ -1122,7 +1124,7 @@ def test_scan_parquet_prefilter_with_cast(
         capture = capfd.readouterr().err
 
     assert (
-        "[ParquetFileReader]: Pre-filtered decode enabled (1 live, 1 non-live)"
+        "[ParquetFileReader]: Pre-filtered decode enabled (1 live [1 pass-1, 0 pass-2], 1 non-live)"
         in capture
     )
     assert (
@@ -1758,6 +1760,48 @@ def test_sink_parquet_pyarrow_filter_string_type_26435() -> None:
         pl.DataFrame(pq.read_table(f, filters=[("string", "=", "A")])),
         pl.DataFrame({"string": "A", "int": 0}),
     )
+
+
+@pytest.mark.parametrize(
+    ("arrow_type", "make"),
+    [
+        (pa.time32("ms"), lambda i: time(0, 0, i % 60, i * 1000)),
+        (pa.time64("us"), lambda i: time(0, 0, 0, i)),
+        (pa.timestamp("s"), lambda i: datetime(1969, 12, 31) + timedelta(seconds=i)),
+        (pa.duration("s"), lambda i: timedelta(seconds=i - 10)),
+        (pa.date64(), lambda i: datetime(1969, 12, 1) + timedelta(days=i)),
+        (pa.uint32(), lambda i: 2**31 + i),
+    ],
+)
+def test_statistics_of_rescaled_arrow_types(
+    tmp_path: Path,
+    arrow_type: pa.DataType,
+    make: Callable[[int], Any],
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Polars stores these types in another unit or width than the file; the
+    # bounds must follow the values.
+    values = [make(i) for i in range(20)]
+    path = tmp_path / "rescaled.parquet"
+    pq.write_table(
+        pa.table({"k": pa.array(values, type=arrow_type), "v": list(range(20))}),
+        path,
+        row_group_size=5,
+    )
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    for key in (values[0], values[12], values[19]):
+        q = pl.scan_parquet(path).filter(pl.col("k") == key)
+        capfd.readouterr()
+        out = q.collect(engine="streaming")
+        assert "reading 1 / 4 row groups" in capfd.readouterr().err
+        assert out.get_column("v").to_list() == [values.index(key)]
+        assert_frame_equal(
+            out,
+            pl.scan_parquet(path, use_statistics=False)
+            .filter(pl.col("k") == key)
+            .collect(),
+        )
 
 
 def test_scan_parquet_temporal_lit_comparison_skip_batch_24095_25731(

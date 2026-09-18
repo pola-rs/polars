@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::cell::Cell;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::compute::concatenate::concatenate_unchecked;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::compute::concatenate::concatenate_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;

@@ -1,5 +1,5 @@
-use arrow::array::Int32Array;
-use arrow::compute::arity_assign::{binary, unary};
+use polars_arrow::array::Int32Array;
+use polars_arrow::compute::arity_assign::{binary, unary};
 
 #[test]
 fn test_unary_assign() {

@@ -1,5 +1,5 @@
-use arrow::array::MutableBinaryViewArray;
-use arrow::bitmap::Bitmap;
+use polars_arrow::array::MutableBinaryViewArray;
+use polars_arrow::bitmap::Bitmap;
 
 use super::decode_plain_generic;
 use crate::parquet::error::ParquetResult;

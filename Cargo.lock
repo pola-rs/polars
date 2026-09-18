@@ -3179,7 +3179,6 @@ dependencies = [
  "bigdecimal",
  "bytemuck",
  "chrono",
- "either",
  "fast-float2",
  "half",
  "hashbrown 0.17.1",
@@ -3359,6 +3358,7 @@ dependencies = [
  "rayon",
  "recursive",
  "regex",
+ "serde",
  "version_check",
 ]
 
@@ -3461,6 +3461,7 @@ dependencies = [
  "polars-config",
  "polars-core",
  "polars-defs",
+ "polars-descriptions",
  "polars-expr",
  "polars-io",
  "polars-json",

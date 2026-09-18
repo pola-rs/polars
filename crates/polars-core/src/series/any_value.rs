@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
-use arrow::bitmap::Bitmap;
 use num_traits::AsPrimitive;
+use polars_arrow::bitmap::Bitmap;
 use polars_compute::cast::SerPrimitive;
 
 #[cfg(feature = "dtype-categorical")]

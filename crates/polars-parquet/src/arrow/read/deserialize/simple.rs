@@ -1,11 +1,13 @@
-use arrow::array::{Array, BinaryViewArray, FixedSizeBinaryArray, PrimitiveArray, StructArray};
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::{
+use ethnum::I256;
+use polars_arrow::array::{
+    Array, BinaryViewArray, FixedSizeBinaryArray, PrimitiveArray, StructArray,
+};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::{
     ArrowDataType, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
     DTYPE_ENUM_VALUES_NEW, Field, IntegerType, IntervalUnit, TimeUnit,
 };
-use arrow::types::{days_ms, i256};
-use ethnum::I256;
+use polars_arrow::types::{days_ms, i256};
 use polars_compute::cast::CastOptionsImpl;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -644,7 +646,7 @@ pub fn page_iter_to_array(
 
 /// Unify the timestamp unit from parquet TimeUnit into arrow's TimeUnit
 /// Returns (a int64 factor, is_multiplier)
-fn unify_timestamp_unit(
+pub(crate) fn unify_timestamp_unit(
     logical_type: &Option<PrimitiveLogicalType>,
     time_unit: TimeUnit,
 ) -> (i64, bool) {

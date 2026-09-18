@@ -44,7 +44,7 @@ def dim(*keys: int, key: str = "k") -> pl.LazyFrame:
     return lf
 
 
-def tiny(*keys: int, key: str = "k") -> pl.LazyFrame:
+def tiny(*keys: Any, key: str = "k") -> pl.LazyFrame:
     # Few enough rows to be forced against a filtered fact, whose estimate is lower.
     # Only a filtered side is worth publishing, hence the filter.
     lf = pl.LazyFrame({key: list(keys), "e": list(range(len(keys)))})
@@ -219,9 +219,10 @@ def test_slice_on_an_intermediate_join_is_a_barrier(
 def test_empty_build_side_reads_nothing(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
+    # An inner join with an empty build side is done; the scan is never opened.
     q = fact.join(dim(-1), on="k")
     out, groups = row_groups_read(q, plmonkeypatch, capfd)
-    assert groups == "0 / 10 row groups"
+    assert groups is None
     assert out.height == 0
     assert_matches_in_memory(q, out)
 
@@ -677,7 +678,8 @@ def test_int96_timestamps_have_no_bounds(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     # Statistics of INT96 timestamps are not ordered as polars orders datetimes;
-    # the range is published but skips nothing, except when it is empty.
+    # the range is published but skips nothing. An empty build side ends the join
+    # before the scan opens.
     import pyarrow.parquet as pq
 
     stamps = [datetime(2020, 1, 1) + timedelta(days=i) for i in range(20)]
@@ -700,7 +702,7 @@ def test_int96_timestamps_have_no_bounds(
 
     empty = build.filter(pl.col("k").is_in([datetime(1999, 1, 1)]))
     out, groups = row_groups_read(fact.join(empty, on="k"), plmonkeypatch, capfd)
-    assert groups == "0 / 4 row groups"
+    assert groups is None
     assert out.height == 0
 
 
@@ -762,16 +764,17 @@ def test_empty_preferred_build_side_reads_nothing(
     q = fact.join(unbounded_dim(-1), on="k")
     assert "BUILD SIDE: Prefer" in q.explain(engine="streaming")
     out, groups = row_groups_read(q, plmonkeypatch, capfd)
-    assert groups == "0 / 10 row groups"
+    assert groups is None
     assert out.height == 0
 
 
 @pytest.mark.parametrize(
     ("limit", "groups"),
     [
-        # The preferred side is read first; it is built from when it ends under the
-        # limit, and both sides are sampled once it reaches the limit, by which time
-        # the scan has already opened.
+        # The preferred side is sampled first. When it ends under the limit its
+        # range is published before the other side is sampled and a build side is
+        # chosen. When it reaches the limit both sides are sampled and the scan
+        # has already opened.
         ("3", "1 / 10 row groups"),
         ("2", "10 / 10 row groups"),
         ("1", "10 / 10 row groups"),
@@ -866,3 +869,329 @@ def test_range_is_judged_against_the_scan_it_prunes(
     assert groups == "1 / 10 row groups"
     assert out.get_column("k").to_list() == [540]
     assert_matches_in_memory(q, out)
+
+
+def test_published_range_holds_when_the_other_side_is_built(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The preferred side ends first and publishes its range; the scan behind the
+    # other side then reads two row groups, of which one row survives the filter,
+    # so the sample builds that side instead. The range still holds: no key of
+    # the other side outside it can match.
+    q = fact.filter(pl.col("v") % 500 == 220).join(
+        unbounded_dim(*range(200, 400, 20)), on="k"
+    )
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: Prefer" in plan
+    dim_left = "BUILD SIDE: PreferLeft" in plan
+    other = "right" if dim_left else "left"
+    lengths = "10 vs. 1" if dim_left else "1 vs. 10"
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    # The dimension's own join logs its choice too, before the publication.
+    after = err.split("publishing its ranges", 1)[1]
+    assert "Predicate pushdown: reading 2 / 10 row groups" in after
+    assert f"sample lengths are: {lengths}" in after
+    assert f"build side chosen: {other}" in after
+    assert out.get_column("k").to_list() == [220]
+    assert_matches_in_memory(q, out)
+
+
+@pytest.mark.parametrize("dim_left", [False, True])
+def test_empty_preferred_side_never_reads_the_other(
+    tmp_path: Path,
+    dim_left: bool,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Without statistics the range cannot skip anything, so the join itself must
+    # finish once the empty side is read.
+    path = tmp_path / "fact.parquet"
+    pl.DataFrame({"k": range(1000), "v": range(1000)}).write_parquet(
+        path, row_group_size=ROWS_PER_GROUP, statistics=False
+    )
+    fact = pl.scan_parquet(path)
+    dim = unbounded_dim(-1)
+    q = dim.join(fact, on="k") if dim_left else fact.join(dim, on="k")
+    assert "BUILD SIDE: Prefer" in q.explain(engine="streaming")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    assert "preferred build side done with 0 rows" in err
+    assert "[ParquetFileReader]" not in err
+    assert out.height == 0
+
+
+def test_a_key_that_may_change_gets_no_range(fact: pl.LazyFrame) -> None:
+    # The range would come from one evaluation of the key and the build from
+    # another.
+    dim = pl.LazyFrame({"ks": [[220, 720], [220, 720]], "d": [1, 2]}).filter(
+        pl.col("d") > 0
+    )
+    key = pl.col("ks").list.sample(1, seed=1).list.first()
+    q = fact.join(dim, left_on="k", right_on=key)
+    assert "dynamic_predicate" not in q.explain(engine="streaming")
+    out = q.collect(engine="streaming")
+    assert out.height == 2
+    assert set(out.get_column("k").to_list()) <= {220, 720}
+
+
+def reader_log(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> tuple[pl.DataFrame, str]:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    return out, capfd.readouterr().err
+
+
+def test_scan_without_statistics_is_not_eligible(tmp_path: Path) -> None:
+    # A range no scan can use gives the join no build side either.
+    path = tmp_path / "plain.parquet"
+    pl.DataFrame({"k": range(1000), "v": range(1000)}).write_parquet(
+        path, row_group_size=ROWS_PER_GROUP
+    )
+    q = pl.scan_parquet(path, use_statistics=False).join(dim(220, 240), on="k")
+    assert "dynamic_predicate" not in q.explain(engine="streaming")
+    assert q.collect(engine="streaming").get_column("k").sort().to_list() == [220, 240]
+
+
+def test_broad_range_reads_bounds_only(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Shuffled keys: every row group spans the range; nothing is skipped and no
+    # row is filtered.
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    keys = pl.Series("k", range(n)).shuffle(seed=1)
+    path = tmp_path / "shuffled.parquet"
+    pl.DataFrame({"k": keys, "v": range(n)}).write_parquet(
+        path, row_group_size=ROWS_PER_GROUP, statistics="full"
+    )
+    q = pl.scan_parquet(path).join(dim(220, 240), on="k")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert "reading 10 / 10 row groups" in err
+    assert "Pre-filtered decode" not in err
+    assert out.get_column("k").sort().to_list() == [220, 240]
+
+
+def test_static_predicate_on_the_key_narrows_the_candidates(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The static predicate keeps three groups; the range keeps one of them.
+    q = fact.filter(pl.col("k") < 250).join(tiny(220, 240, 260), on="k")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert "reading 1 / 10 row groups" in err
+    assert out.get_column("k").sort().to_list() == [220, 240]
+    assert_matches_in_memory(q, out)
+
+
+@pytest.mark.parametrize(
+    ("keys", "groups"),
+    [((199, 200), "2 / 10"), ((200, 299), "1 / 10"), ((299, 300), "2 / 10")],
+)
+def test_range_bounds_are_inclusive(
+    fact: pl.LazyFrame,
+    keys: tuple[int, int],
+    groups: str,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    q = fact.join(tiny(*keys), on="k")
+    out, read = row_groups_read(q, plmonkeypatch, capfd)
+    assert read == f"{groups} row groups"
+    assert out.get_column("k").sort().to_list() == list(keys)
+
+
+def test_hive_key_settles_whole_files(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    for part in (0, 5, 10):
+        (tmp_path / f"p={part}").mkdir()
+        pl.DataFrame(
+            {"k": range(part * 100, part * 100 + 100), "v": range(100)}
+        ).write_parquet(
+            tmp_path / f"p={part}" / "0.parquet", row_group_size=50, statistics="full"
+        )
+    fact = pl.scan_parquet(tmp_path, hive_partitioning=True)
+    q = fact.join(tiny(5, 7, key="p"), on="p")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert err.count("reading 0 / 2 row groups") == 2
+    assert err.count("reading 2 / 2 row groups") == 1
+    assert out.get_column("k").sort().to_list() == list(range(500, 600))
+    assert_matches_in_memory(q, out)
+
+
+def test_missing_key_column_matches_nothing(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # A file without the key column reads it as null, which no range holds.
+    pl.DataFrame({"k": range(100), "v": range(100)}).write_parquet(
+        tmp_path / "a.parquet", row_group_size=50, statistics="full"
+    )
+    pl.DataFrame({"v": range(100, 200)}).write_parquet(
+        tmp_path / "b.parquet", row_group_size=50, statistics="full"
+    )
+    fact = pl.scan_parquet(
+        [tmp_path / "a.parquet", tmp_path / "b.parquet"], missing_columns="insert"
+    )
+    q = fact.join(tiny(60, 70), on="k")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert "reading 1 / 2 row groups" in err
+    assert "reading 0 / 2 row groups" in err
+    assert out.get_column("k").sort().to_list() == [60, 70]
+
+
+def test_files_of_different_layouts(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    pl.DataFrame({"k": range(n), "v": range(n)}).write_parquet(
+        tmp_path / "sorted.parquet", row_group_size=ROWS_PER_GROUP, statistics="full"
+    )
+    pl.DataFrame(
+        {"k": pl.Series(range(n)).shuffle(seed=2), "v": range(n)}
+    ).write_parquet(
+        tmp_path / "shuffled.parquet", row_group_size=ROWS_PER_GROUP, statistics="full"
+    )
+    fact = pl.scan_parquet([tmp_path / "sorted.parquet", tmp_path / "shuffled.parquet"])
+    q = fact.join(dim(220, 240), on="k")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert "reading 1 / 10 row groups" in err
+    assert "reading 10 / 10 row groups" in err
+    assert out.get_column("k").sort().to_list() == [220, 220, 240, 240]
+
+
+def test_repeated_and_concurrent_collects(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    q = fact.join(dim(220, 240), on="k")
+    for _ in range(3):
+        out, read = row_groups_read(q, plmonkeypatch, capfd)
+        assert read == "1 / 10 row groups"
+        assert out.get_column("k").sort().to_list() == [220, 240]
+
+    with ThreadPoolExecutor(4) as pool:
+        outs = list(pool.map(lambda _: q.collect(engine="streaming"), range(8)))
+    for out in outs:
+        assert out.get_column("k").sort().to_list() == [220, 240]
+
+
+def test_saturated_preferred_side_disables_its_range(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The preferred side outgrows the sample and the other side is built; the
+    # scan is told there will be no range and keeps every group.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10")
+    q = fact.join(unbounded_dim(*range(0, 1000, 20)), on="k")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert "preferred build side reached the sample limit" in err
+    assert "reading 10 / 10 row groups" in err
+    assert_matches_in_memory(q, out)
+
+
+@pytest.mark.parametrize("unit", ["ms", "us"])
+def test_time_keys_in_file_units(
+    tmp_path: Path,
+    unit: str,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # The file stores time of day in its own unit; polars compares in nanoseconds.
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    values = [time(i // 3600, i // 60 % 60, i % 60) for i in range(n)]
+    table = pa.table(
+        {
+            "k": pa.array(
+                values, type=pa.time32(unit) if unit == "ms" else pa.time64(unit)
+            ),
+            "v": list(range(n)),
+        }
+    )
+    path = tmp_path / f"time_{unit}.parquet"
+    pq.write_table(table, path, row_group_size=ROWS_PER_GROUP)
+    q = pl.scan_parquet(path).join(tiny(values[220], values[240]), on="k")
+    assert "dynamic_predicate" in q.explain(engine="streaming")
+    out, read = row_groups_read(q, plmonkeypatch, capfd)
+    assert read == "1 / 10 row groups"
+    assert out.get_column("v").sort().to_list() == [220, 240]
+
+
+@pytest.mark.parametrize(
+    ("arrow_type", "make"),
+    [
+        ("duration[s]", lambda i: timedelta(seconds=i)),
+        ("timestamp[s]", lambda i: datetime(2020, 1, 1) + timedelta(seconds=i)),
+        ("duration[ms]", lambda i: timedelta(milliseconds=i)),
+        ("timestamp[ms]", lambda i: datetime(2020, 1, 1) + timedelta(milliseconds=i)),
+        ("timestamp[s]", lambda i: datetime(1969, 12, 31) + timedelta(seconds=i)),
+        ("duration[s]", lambda i: timedelta(seconds=i - 500)),
+        ("date64", lambda i: datetime(1969, 1, 1) + timedelta(days=i)),
+    ],
+)
+def test_second_resolution_keys(
+    tmp_path: Path,
+    arrow_type: str,
+    make: Callable[[int], Any],
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Polars reads second resolution as milliseconds; the bounds must follow.
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    if arrow_type == "date64":
+        pa_type = pa.date64()
+    else:
+        kind, unit = arrow_type[:-1].split("[")
+        pa_type = pa.duration(unit) if kind == "duration" else pa.timestamp(unit)
+    values = [make(i) for i in range(n)]
+    table = pa.table({"k": pa.array(values, type=pa_type), "v": list(range(n))})
+    path = tmp_path / "temporal.parquet"
+    pq.write_table(table, path, row_group_size=ROWS_PER_GROUP)
+    fact = pl.scan_parquet(path)
+    build = pl.LazyFrame({"k": [values[220], values[240]], "e": [0, 1]}).filter(
+        pl.col("e") >= 0
+    )
+    q = fact.join(build.cast({"k": fact.collect_schema()["k"]}), on="k")
+    assert "dynamic_predicate" in q.explain(engine="streaming")
+    out, read = row_groups_read(q, plmonkeypatch, capfd)
+    assert read == "1 / 10 row groups"
+    assert out.get_column("v").sort().to_list() == [220, 240]
+
+
+def test_decimal_and_string_keys_prune(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    path = tmp_path / "typed.parquet"
+    pl.DataFrame(
+        {
+            "d": pl.Series([D(i) / 100 for i in range(n)], dtype=pl.Decimal(10, 2)),
+            "s": [f"{i:04}" for i in range(n)],
+            "v": range(n),
+        }
+    ).write_parquet(path, row_group_size=ROWS_PER_GROUP, statistics="full")
+    fact = pl.scan_parquet(path)
+
+    build = pl.LazyFrame(
+        {"d": pl.Series([D("2.20"), D("2.40")], dtype=pl.Decimal(10, 2)), "e": [0, 1]}
+    ).filter(pl.col("e") >= 0)
+    out, read = row_groups_read(fact.join(build, on="d"), plmonkeypatch, capfd)
+    assert read == "1 / 10 row groups"
+    assert out.get_column("v").sort().to_list() == [220, 240]
+
+    build = pl.LazyFrame({"s": ["0220", "0240"], "e": [0, 1]}).filter(pl.col("e") >= 0)
+    out, read = row_groups_read(fact.join(build, on="s"), plmonkeypatch, capfd)
+    assert read == "1 / 10 row groups"
+    assert out.get_column("v").sort().to_list() == [220, 240]
