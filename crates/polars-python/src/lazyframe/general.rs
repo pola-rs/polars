@@ -548,42 +548,35 @@ impl PyLazyFrame {
     }
 
     /// Optimize and return retained `(source index, row group count)` pairs for tests,
-    /// grouped by Parquet scan in pre-order.
+    /// grouped by Parquet scan.
     #[cfg(feature = "parquet")]
     fn _retained_parquet_footers(&self, py: Python) -> PyResult<Vec<Vec<(usize, usize)>>> {
         use polars_plan::dsl::FileScanIR;
-        use polars_plan::plans::IR;
+        use polars_plan::plans::{ArenaLpIter as _, IR};
 
         py.enter_polars(|| {
             let plan = self.ldf.read().clone().to_alp_optimized()?;
 
-            let mut stack = vec![plan.lp_top];
-            let mut out = Vec::new();
-            let mut inputs = Vec::new();
-
-            while let Some(node) = stack.pop() {
-                let ir = plan.lp_arena.get(node);
-
-                inputs.clear();
-                ir.copy_inputs(&mut inputs);
-                stack.extend(inputs.iter().rev().copied());
-
-                if let IR::Scan { scan_type, .. } = ir
-                    && let FileScanIR::Parquet {
-                        metadata_per_source,
-                        ..
-                    } = scan_type.as_ref()
-                {
-                    out.push(
-                        metadata_per_source
-                            .iter_resolved()
-                            .map(|(i, md)| (i, md.row_groups.len()))
-                            .collect(),
-                    );
-                }
-            }
-
-            PolarsResult::Ok(out)
+            PolarsResult::Ok(
+                plan.lp_arena
+                    .iter(plan.lp_top)
+                    .filter_map(|(_, ir)| match ir {
+                        IR::Scan { scan_type, .. } => match scan_type.as_ref() {
+                            FileScanIR::Parquet {
+                                metadata_per_source,
+                                ..
+                            } => Some(
+                                metadata_per_source
+                                    .iter_resolved()
+                                    .map(|(i, md)| (i, md.row_groups.len()))
+                                    .collect(),
+                            ),
+                            _ => None,
+                        },
+                        _ => None,
+                    })
+                    .collect(),
+            )
         })
     }
 

@@ -5025,10 +5025,10 @@ def test_resolve_heavy_sources_cache_key_covers_the_source_sizes(
     )
 
     # Sizes pin the heavy source 2; without them the sample falls back to source 1.
-    assert combined._ldf._retained_parquet_footers() == [
-        [(0, 1), (2, 8)],
-        [(0, 1), (1, 1)],
-    ]
+    # Scans come back in traversal order, which is not the order of the concat.
+    assert sorted(combined._ldf._retained_parquet_footers()) == sorted(
+        [[(0, 1), (2, 8)], [(0, 1), (1, 1)]]
+    )
 
 
 def test_resolve_heavy_sources_rejects_zero() -> None:
