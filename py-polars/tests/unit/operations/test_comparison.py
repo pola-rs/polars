@@ -1265,7 +1265,9 @@ def test_comparison_of_a_repeated_chunk_under_a_mask() -> None:
             assert_series_equal(masked != rhs, flat != rhs)
             assert_series_equal(masked.eq_missing(rhs), flat.eq_missing(rhs))
             assert_series_equal(masked.ne_missing(rhs), flat.ne_missing(rhs))
-            assert_series_equal(masked == pl.Series([rhs] * 9, dtype=dtype), flat == rhs)
+            assert_series_equal(
+                masked == pl.Series([rhs] * 9, dtype=dtype), flat == rhs
+            )
             assert_series_equal(
                 masked.eq_missing(pl.Series([rhs] * 9, dtype=dtype)),
                 flat.eq_missing(rhs),

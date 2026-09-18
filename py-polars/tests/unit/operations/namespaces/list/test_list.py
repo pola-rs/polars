@@ -1829,9 +1829,9 @@ def test_concat_list_repeated_chunks() -> None:
             "b": pl.repeat(2, n, dtype=pl.Int64, eager=True),
         }
     )
-    assert nulls.select(pl.concat_list("a", "b")).to_series().to_list() == [
-        [None, 2]
-    ] * n
+    assert (
+        nulls.select(pl.concat_list("a", "b")).to_series().to_list() == [[None, 2]] * n
+    )
 
     lists = pl.DataFrame(
         {
@@ -1839,6 +1839,6 @@ def test_concat_list_repeated_chunks() -> None:
             "b": pl.repeat([3], n, dtype=pl.List(pl.Int64), eager=True),
         }
     )
-    assert lists.select(pl.concat_list("a", "b")).to_series().to_list() == [
-        [1, 2, 3]
-    ] * n
+    assert (
+        lists.select(pl.concat_list("a", "b")).to_series().to_list() == [[1, 2, 3]] * n
+    )

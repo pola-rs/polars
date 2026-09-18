@@ -2477,16 +2477,18 @@ def test_json_decode_repeated_chunk() -> None:
         assert s.str.json_decode().to_list() == [{"a": 1, "b": "z"}] * n
         assert s.str.json_decode(pl.Struct({"a": pl.Int64})).to_list() == [{"a": 1}] * n
 
-    assert pl.repeat(None, n, dtype=pl.String, eager=True).str.json_decode(
-        pl.Struct({"a": pl.Int64})
-    ).to_list() == [None] * n
+    assert (
+        pl.repeat(None, n, dtype=pl.String, eager=True)
+        .str.json_decode(pl.Struct({"a": pl.Int64}))
+        .to_list()
+        == [None] * n
+    )
 
     # unparsable text raises just as the written-out column does
     with pytest.raises(ComputeError, match="error deserializing JSON"):
         pl.repeat("{not json", n, dtype=pl.String, eager=True).str.json_decode(
             pl.Struct({"a": pl.Int64})
         )
-
 
 
 def test_str_split_by_column_repeated_chunks() -> None:
@@ -2502,12 +2504,16 @@ def test_str_split_by_column_repeated_chunks() -> None:
     )
     flat = pl.DataFrame({"x": ["a,b,c"] * n, "y": [","] * n})
     for df in (rep, flat):
-        assert df.select(pl.col("x").str.split(pl.col("y"))).to_series().to_list() == [
-            ["a", "b", "c"]
-        ] * n
-        assert df.select(
-            pl.col("x").str.split(pl.col("y"), inclusive=True)
-        ).to_series().to_list() == [["a,", "b,", "c"]] * n
+        assert (
+            df.select(pl.col("x").str.split(pl.col("y"))).to_series().to_list()
+            == [["a", "b", "c"]] * n
+        )
+        assert (
+            df.select(pl.col("x").str.split(pl.col("y"), inclusive=True))
+            .to_series()
+            .to_list()
+            == [["a,", "b,", "c"]] * n
+        )
 
     # an empty separator splits into characters, and a null on either side gives a
     # null row
@@ -2517,9 +2523,10 @@ def test_str_split_by_column_repeated_chunks() -> None:
             "y": pl.repeat("", n, dtype=pl.String, eager=True),
         }
     )
-    assert empty.select(pl.col("x").str.split(pl.col("y"))).to_series().to_list() == [
-        ["a", "b"]
-    ] * n
+    assert (
+        empty.select(pl.col("x").str.split(pl.col("y"))).to_series().to_list()
+        == [["a", "b"]] * n
+    )
     for null_col in ("x", "y"):
         df = pl.DataFrame(
             {
@@ -2527,6 +2534,7 @@ def test_str_split_by_column_repeated_chunks() -> None:
                 "y": pl.repeat(",", n, dtype=pl.String, eager=True),
             }
         ).with_columns(pl.repeat(None, n, dtype=pl.String, eager=True).alias(null_col))
-        assert df.select(
-            pl.col("x").str.split(pl.col("y"))
-        ).to_series().to_list() == [None] * n
+        assert (
+            df.select(pl.col("x").str.split(pl.col("y"))).to_series().to_list()
+            == [None] * n
+        )

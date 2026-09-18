@@ -65,13 +65,15 @@ def _repeat(value: object, n: int, dtype: pl.DataType) -> pl.Series:
 def test_several_repeated_chunks_read_as_one_element(
     dtype: pl.DataType, value: object, other: object
 ) -> None:
-    # A column the streaming engine hands back is one chunk per morsel, so a repeat reaches an
-    # op as several chunks that each repeat it. Every op that answers such a column off the one
-    # element has to answer the same way however many chunks it arrives in -- and has to stop
-    # where the chunks repeat *different* elements.
+    # A column the streaming engine hands back is one chunk per morsel, so a repeat
+    # reaches an op as several chunks that each repeat it. Every op that answers such a
+    # column off the one element has to answer the same way however many chunks it
+    # arrives in -- and has to stop where the chunks repeat *different* elements.
     n = 12
     half = n // 2
-    same = pl.concat([_repeat(value, half, dtype), _repeat(value, n - half, dtype)], rechunk=False)
+    same = pl.concat(
+        [_repeat(value, half, dtype), _repeat(value, n - half, dtype)], rechunk=False
+    )
     differ = pl.concat(
         [_repeat(value, half, dtype), _repeat(other, n - half, dtype)], rechunk=False
     )

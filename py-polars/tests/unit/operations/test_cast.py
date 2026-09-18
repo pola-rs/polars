@@ -1097,12 +1097,14 @@ def test_cast_categorical_repeated_chunk() -> None:
     # answers the whole column; it must agree with the written-out column, mask shape
     # for mask shape.
     for dtype in (pl.Categorical, pl.Enum(["abc", "q"])):
-        assert pl.repeat("abc", 3, dtype=pl.String, eager=True).cast(dtype).to_list() == [
-            "abc"
-        ] * 3
-        assert pl.repeat(None, 3, dtype=pl.String, eager=True).cast(dtype).to_list() == [
-            None
-        ] * 3
+        assert (
+            pl.repeat("abc", 3, dtype=pl.String, eager=True).cast(dtype).to_list()
+            == ["abc"] * 3
+        )
+        assert (
+            pl.repeat(None, 3, dtype=pl.String, eager=True).cast(dtype).to_list()
+            == [None] * 3
+        )
         # a string the Enum does not hold becomes null, as on the written-out path
         assert pl.repeat("zzz", 3, dtype=pl.String, eager=True).cast(
             dtype, strict=False
@@ -1126,10 +1128,16 @@ def test_cast_datetime_to_time_repeated_chunk() -> None:
         for unit in ("ns", "us", "ms"):
             s = pl.repeat(value, 3, dtype=pl.Datetime(unit), eager=True)  # type: ignore[arg-type]
             assert s.cast(pl.Time).to_list() == [expected] * 3
-            assert pl.Series([value] * 3, dtype=pl.Datetime(unit)).cast(  # type: ignore[arg-type]
-                pl.Time
-            ).to_list() == [expected] * 3
+            assert (
+                pl.Series([value] * 3, dtype=pl.Datetime(unit))
+                .cast(  # type: ignore[arg-type]
+                    pl.Time
+                )
+                .to_list()
+                == [expected] * 3
+            )
 
-    assert pl.repeat(None, 3, dtype=pl.Datetime("us"), eager=True).cast(
-        pl.Time
-    ).to_list() == [None] * 3
+    assert (
+        pl.repeat(None, 3, dtype=pl.Datetime("us"), eager=True).cast(pl.Time).to_list()
+        == [None] * 3
+    )

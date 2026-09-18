@@ -260,19 +260,25 @@ def test_clip_repeated_chunk_bounds() -> None:
     )
     flat = pl.DataFrame({"x": [5] * n, "lo": [2] * n, "hi": [4] * n})
     for df in (rep, flat):
-        assert df.select(
-            pl.col("x").clip(pl.col("lo"), pl.col("hi"))
-        ).to_series().to_list() == [4] * n
-        assert df.select(
-            pl.col("x").clip(lower_bound=pl.col("lo"))
-        ).to_series().to_list() == [5] * n
-        assert df.select(
-            pl.col("x").clip(upper_bound=pl.col("hi"))
-        ).to_series().to_list() == [4] * n
+        assert (
+            df.select(pl.col("x").clip(pl.col("lo"), pl.col("hi")))
+            .to_series()
+            .to_list()
+            == [4] * n
+        )
+        assert (
+            df.select(pl.col("x").clip(lower_bound=pl.col("lo"))).to_series().to_list()
+            == [5] * n
+        )
+        assert (
+            df.select(pl.col("x").clip(upper_bound=pl.col("hi"))).to_series().to_list()
+            == [4] * n
+        )
         # a scalar bound alongside a repeated one
-        assert df.select(pl.col("x").clip(9, pl.col("hi"))).to_series().to_list() == [
-            9
-        ] * n
+        assert (
+            df.select(pl.col("x").clip(9, pl.col("hi"))).to_series().to_list()
+            == [9] * n
+        )
 
     # a null bound leaves the value alone; a null value stays null
     nulls = pl.DataFrame(
@@ -281,9 +287,11 @@ def test_clip_repeated_chunk_bounds() -> None:
             "lo": pl.repeat(None, n, dtype=pl.Int64, eager=True),
         }
     )
-    assert nulls.select(
-        pl.col("x").clip(lower_bound=pl.col("lo"))
-    ).to_series().to_list() == [5] * n
-    assert pl.repeat(None, n, dtype=pl.Int64, eager=True).clip(1, 2).to_list() == [
-        None
-    ] * n
+    assert (
+        nulls.select(pl.col("x").clip(lower_bound=pl.col("lo"))).to_series().to_list()
+        == [5] * n
+    )
+    assert (
+        pl.repeat(None, n, dtype=pl.Int64, eager=True).clip(1, 2).to_list()
+        == [None] * n
+    )
