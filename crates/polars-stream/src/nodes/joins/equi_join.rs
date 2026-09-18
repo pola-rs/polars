@@ -917,14 +917,15 @@ impl BuildState {
                     let mut p_payload = DataFrameBuilder::new(payload_schema.clone());
                     p_payload.reserve(payload_rows);
 
-                    let mut p_seq_ids = Vec::new();
+                    let mut p_row_positions = Vec::new();
                     if track_unmatchable {
-                        p_seq_ids.reserve(payload_rows);
+                        p_row_positions.reserve(payload_rows);
                     }
 
                     // Linearize and build.
                     unsafe {
-                        let mut norm_seq_id = 0 as IdxSize;
+                        // Row offset of the current morsel in the full build input.
+                        let mut morsel_row_offset = 0u64;
                         while let Some(Priority(Reverse(_seq), l_idx)) = kmerge.pop() {
                             let l = local_builders.get_unchecked(l_idx);
                             let idx_in_l = *cur_idx_per_loc.get_unchecked(l_idx);
@@ -945,9 +946,11 @@ impl BuildState {
                             p_payload.gather_extend(&payload, p_morsel_idxs, ShareStrategy::Never);
 
                             if track_unmatchable {
-                                p_seq_ids.resize(p_payload.len(), norm_seq_id);
-                                norm_seq_id += 1;
+                                p_row_positions.extend(
+                                    p_morsel_idxs.iter().map(|i| morsel_row_offset + *i as u64),
+                                );
                             }
+                            morsel_row_offset += payload.height() as u64;
                         }
                     }
 
@@ -957,7 +960,7 @@ impl BuildState {
                             ProbeTable {
                                 hash_table: p_table,
                                 payload: p_payload.freeze(),
-                                seq_ids: p_seq_ids,
+                                row_positions: p_row_positions,
                             },
                         )
                         .ok()
@@ -1079,7 +1082,7 @@ impl BuildState {
                             ProbeTable {
                                 hash_table: p_table,
                                 payload: p_payload.freeze(),
-                                seq_ids: Vec::new(),
+                                row_positions: Vec::new(),
                             },
                         )
                         .ok()
@@ -1113,7 +1116,9 @@ impl BuildState {
 struct ProbeTable {
     hash_table: Box<dyn IdxTable>,
     payload: DataFrame,
-    seq_ids: Vec<IdxSize>,
+    // Position of each payload row in the full build input. Only filled for
+    // ordered joins that emit unmatched build rows.
+    row_positions: Vec<u64>,
 }
 
 struct ProbeState {
@@ -1408,48 +1413,29 @@ impl ProbeState {
         };
 
         let mut unmarked_idxs = Vec::new();
-        let mut linearized_idxs = Vec::new();
-
-        for (p_idx, p) in self.table_per_partition.iter().enumerate_idx() {
-            p.hash_table
-                .unmarked_keys(&mut unmarked_idxs, 0, IdxSize::MAX);
-            linearized_idxs.extend(
-                unmarked_idxs
-                    .iter()
-                    .map(|i| (unsafe { *p.seq_ids.get_unchecked(*i as usize) }, p_idx, *i)),
-            );
-        }
-
-        linearized_idxs.sort_by_key(|(seq_id, _, _)| *seq_id);
+        let mut row_positions = Vec::new();
 
         unsafe {
             let mut build_out = DataFrameBuilder::new(build_payload_schema.clone());
-            build_out.reserve(linearized_idxs.len());
-
-            // Group indices from the same partition.
-            let mut group_start = 0;
-            let mut gather_idxs = Vec::new();
-            while group_start < linearized_idxs.len() {
-                gather_idxs.clear();
-
-                let (_seq, p_idx, idx_in_p) = linearized_idxs[group_start];
-                gather_idxs.push(idx_in_p);
-                let mut group_end = group_start + 1;
-                while group_end < linearized_idxs.len() && linearized_idxs[group_end].1 == p_idx {
-                    gather_idxs.push(linearized_idxs[group_end].2);
-                    group_end += 1;
-                }
-
+            for p in &self.table_per_partition {
+                p.hash_table
+                    .unmarked_keys(&mut unmarked_idxs, 0, IdxSize::MAX);
+                row_positions.extend(
+                    unmarked_idxs
+                        .iter()
+                        .map(|i| *p.row_positions.get_unchecked(*i as usize)),
+                );
                 build_out.gather_extend(
-                    &self.table_per_partition[p_idx as usize].payload,
-                    &gather_idxs,
+                    &p.payload,
+                    &unmarked_idxs,
                     ShareStrategy::Never, // Don't keep entire table alive for unmatched indices.
                 );
-
-                group_start = group_end;
             }
 
-            let mut build_df = build_out.freeze();
+            let mut perm: Vec<IdxSize> = (0..row_positions.len() as IdxSize).collect();
+            perm.sort_unstable_by_key(|i| *row_positions.get_unchecked(*i as usize));
+
+            let mut build_df = build_out.freeze().take_slice_unchecked(&perm);
             let out_df = if params.left_is_build.unwrap() {
                 let probe_df =
                     DataFrame::full_null(&params.right_payload_schema, build_df.height());
