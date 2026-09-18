@@ -231,16 +231,13 @@ impl<'a> ValidityBits<'a> {
         self.len
     }
 
-    /// Whether the element `i` positions on from the front is valid.
+    /// The bits, to read one per value alongside the values themselves.
     ///
-    /// # Safety
-    /// `i` must be below [`Self::len`].
-    #[inline(always)]
-    pub(crate) unsafe fn get_unchecked(&self, i: usize) -> bool {
-        debug_assert!(i < self.len);
-        // The positions the mask covers are in bounds of the bytes backing it, which is what
-        // `ValidityIter` holds of the mask it was built from.
-        bit(self.bytes, self.offset + i)
+    /// `BitmapIter` holds eight bytes and shifts a bit off them per element, where reading each
+    /// bit by the position it lies at loads the byte holding it every time.
+    #[inline]
+    pub(crate) fn words(&self) -> BitmapIter<'a> {
+        BitmapIter::new(self.bytes, self.offset, self.len)
     }
 
     /// The bits, to walk where there are no values to read them alongside.
@@ -267,11 +264,10 @@ impl<'a> ValidityFold<'a> {
             Self::Bits(mask) => {
                 debug_assert_eq!(mask.len(), values.size_hint().0);
 
-                let mut i = 0;
+                let mut bits = mask.words();
                 values.fold(init, |acc, value| {
-                    // SAFETY: the mask has a bit for every value, and this is the `i`th of them.
-                    let is_valid = unsafe { mask.get_unchecked(i) };
-                    i += 1;
+                    // SAFETY: the mask has a bit for every value, and this is the next of them.
+                    let is_valid = unsafe { bits.next().unwrap_unchecked() };
                     f(acc, is_valid.then_some(value))
                 })
             },
@@ -294,13 +290,10 @@ impl<'a> ValidityFold<'a> {
             Self::Bits(mask) => {
                 debug_assert_eq!(mask.len(), values.size_hint().0);
 
-                // The walk starts at the bit of the element at the back, which is the last of the
-                // ones the mask covers, and steps down to the front.
-                let mut i = mask.len();
+                let mut bits = mask.words();
                 values.rfold(init, |acc, value| {
-                    i -= 1;
-                    // SAFETY: the mask has a bit for every value, and this is the `i`th of them.
-                    let is_valid = unsafe { mask.get_unchecked(i) };
+                    // SAFETY: the mask has a bit for every value, and this is the last of them.
+                    let is_valid = unsafe { bits.next_back().unwrap_unchecked() };
                     f(acc, is_valid.then_some(value))
                 })
             },
@@ -319,15 +312,16 @@ impl<'a> ValidityIter<'a> {
         match validity.flat_bitmap() {
             Some(bitmap) => {
                 // A mask whose bits are all the same says no more than the single bit they share,
-                // and saying it that way keeps the fold off the bit-reading path. The count is
-                // only read where the bitmap already caches it, so this stays `O(1)`.
-                if let Some(unset_bits) = bitmap.lazy_unset_bits() {
-                    if unset_bits == 0 {
-                        return Self::Scalar(true);
-                    }
-                    if unset_bits == bitmap.len() {
-                        return Self::Scalar(false);
-                    }
+                // and saying it that way keeps the whole walk off the bit-reading path. The count
+                // is worth a popcount where the bitmap does not already cache it: it reads 64 bits
+                // an instruction, against one bit an instruction for the walk it stands to save,
+                // and the bitmap caches it for every later reader.
+                let unset_bits = bitmap.unset_bits();
+                if unset_bits == 0 {
+                    return Self::Scalar(true);
+                }
+                if unset_bits == bitmap.len() {
+                    return Self::Scalar(false);
                 }
 
                 let (bytes, offset, length) = bitmap.as_slice();
