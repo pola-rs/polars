@@ -5,7 +5,7 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use futures::StreamExt;
-use futures::future::BoxFuture;
+use futures::future::LocalBoxFuture;
 use futures::stream::FuturesUnordered;
 use polars_core::config;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
@@ -37,8 +37,8 @@ pub(super) fn expand_datasets(
     expr_arena: &mut Arena<AExpr>,
     apply_scan_predicate_to_scan_ir: ApplyScanPredicateFn,
 ) -> PolarsResult<()> {
-    // Poll each expansion and its footer reads together so datasets can overlap.
-    let mut expansion_tasks: FuturesUnordered<BoxFuture<'static, (Node, PolarsResult<IR>)>> =
+    // Polled locally by block_in_place_on; the continuations do not need Send.
+    let mut expansion_tasks: FuturesUnordered<LocalBoxFuture<'static, (Node, PolarsResult<IR>)>> =
         FuturesUnordered::new();
 
     #[cfg(feature = "python")]
@@ -170,7 +170,7 @@ pub(super) fn expand_datasets(
                                 )
                             }));
 
-                            // Resolve before filtering so sources and footers stay aligned.
+                            // Resolve before filtering, concurrently with other datasets.
                             expansion_tasks.push(Box::pin(resolve_after_expansion(handle)));
                         },
 

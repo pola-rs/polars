@@ -1,5 +1,3 @@
-// The boxed dataset-expansion futures make the trait solver hit the default limit.
-#![recursion_limit = "256"]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "nightly", allow(clippy::needless_pass_by_ref_mut))] // remove once stable
 #![cfg_attr(feature = "nightly", allow(clippy::blocks_in_conditions))] // Remove once stable.
