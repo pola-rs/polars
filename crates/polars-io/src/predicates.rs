@@ -47,8 +47,13 @@ impl ColumnPredicateExpr {
         use SpecializedColumnPredicate as S;
         #[cfg(feature = "parquet")]
         use SpecializedParquetColumnExpr as P;
+        // A specialized predicate compares its scalars with the values as the file
+        // stores them, which polars scales for some Arrow types.
         #[cfg(feature = "parquet")]
         let specialized = specialized.and_then(|s| {
+            if DataType::arrow_value_scale(&source_arrow_dtype) != 1 {
+                return None;
+            }
             Some(match s {
                 S::Equal(s) => P::Equal(cast_to_parquet_scalar(s)?),
                 S::Between(low, high) => {
@@ -130,17 +135,9 @@ fn predicate_values_to_series(
     dtype: &DataType,
     source_arrow_dtype: &ArrowDataType,
 ) -> PolarsResult<Series> {
-    // For example, Arrow seconds will be stored as Polars milliseconds, so we can not just
-    // zero-copy construct the predicate series
-    let timestamp_units_differ = matches!(
-        (source_arrow_dtype, dtype),
-        (
-            ArrowDataType::Timestamp(source_unit, _),
-            DataType::Datetime(target_unit, _),
-        ) if source_unit != &target_unit.to_arrow()
-    );
-
-    if timestamp_units_differ {
+    // Polars stores the values of some Arrow types scaled, e.g. Arrow seconds as
+    // milliseconds, so the predicate series cannot be constructed zero-copy.
+    if DataType::arrow_value_scale(source_arrow_dtype) != 1 {
         let values = polars_compute::cast::cast(
             values,
             source_arrow_dtype,
