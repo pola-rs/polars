@@ -791,6 +791,7 @@ fn create_physical_plan_impl(
                 parallel,
                 options.args,
                 join_type_options,
+                options.pass_through_above,
             )))
         },
         Gather {

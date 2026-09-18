@@ -69,6 +69,8 @@ struct SemiAntiJoinParams {
     sample_limit: usize,
     /// See `JoinOptionsIR::estimated_rows`.
     estimated_rows: Option<[u64; 2]>,
+    /// Build rows above which the left side is sent on unfiltered.
+    pass_through_above: Option<usize>,
 }
 
 impl SemiAntiJoinParams {
@@ -124,6 +126,7 @@ impl SemiAntiJoinNode {
         estimated_rows: Option<[u64; 2]>,
         args: JoinArgs,
         return_bool: bool,
+        pass_through_above: Option<usize>,
         num_pipelines: usize,
         task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> PolarsResult<Self> {
@@ -169,6 +172,7 @@ impl SemiAntiJoinNode {
             runtime_filters,
             sample_limit,
             estimated_rows,
+            pass_through_above: pass_through_above.filter(|_| left_is_build == Some(false)),
         };
         let state = if left_is_build.is_some() {
             SemiAntiJoinState::Build(BuildState::new(
@@ -203,6 +207,8 @@ enum SemiAntiJoinState {
     Build(BuildState),
     Probe(ProbeState),
     EmitBuild(EmitBuildState),
+    /// The left side goes out unfiltered; the sampled morsels first.
+    PassThrough(BufferedStream),
     Done,
 }
 
@@ -538,6 +544,7 @@ impl SampleState {
                         BuildState::partition_and_sink(
                             recv,
                             local_builder,
+                            &build_state.rows,
                             partitioner.clone(),
                             params,
                             state,
@@ -583,6 +590,8 @@ struct LocalBuilder {
 struct BuildState {
     local_builders: Vec<LocalBuilder>,
     sampled_probe_morsels: BufferedStream,
+    /// Rows received over all pipelines.
+    rows: RelaxedCell<usize>,
 }
 
 impl BuildState {
@@ -609,12 +618,14 @@ impl BuildState {
         Self {
             local_builders,
             sampled_probe_morsels,
+            rows: RelaxedCell::from(0),
         }
     }
 
     async fn partition_and_sink(
         mut recv: PortReceiver,
         local: &mut LocalBuilder,
+        rows: &RelaxedCell<usize>,
         partitioner: HashPartitioner,
         params: &SemiAntiJoinParams,
         state: &StreamingExecutionState,
@@ -629,6 +640,11 @@ impl BuildState {
         let publishes_runtime_filters = params.publishes_runtime_filters();
         while let Ok(morsel) = recv.recv().await {
             let df = morsel.df().await;
+            let total = rows.fetch_add(df.height()) + df.height();
+            if params.pass_through_above.is_some_and(|limit| total > limit) {
+                morsel.source_token().stop();
+                continue;
+            }
             let keys = select_key_columns(&df, key_selectors, &state.in_memory_exec_state).await?;
             if publishes_runtime_filters {
                 params
@@ -849,6 +865,8 @@ impl BuildState {
             payload_per_partition: payloads.try_assume_init().ok().unwrap(),
             marks_per_pipeline,
             sampled_probe_morsels: core::mem::take(&mut self.sampled_probe_morsels),
+            probed: RelaxedCell::from(0),
+            matched: RelaxedCell::from(0),
         }
     }
 }
@@ -866,6 +884,9 @@ struct ProbeState {
     // groups a probed key was found for.
     marks_per_pipeline: Vec<Vec<MutableBitmap>>,
     sampled_probe_morsels: BufferedStream,
+    /// Probed and matched rows over all pipelines, for a join that may pass through.
+    probed: RelaxedCell<usize>,
+    matched: RelaxedCell<usize>,
 }
 
 impl ProbeState {
@@ -873,10 +894,12 @@ impl ProbeState {
         mut recv: PortReceiver,
         mut send: PortSender,
         partitions: &[Box<dyn Grouper>],
+        counts: (&RelaxedCell<usize>, &RelaxedCell<usize>),
         partitioner: HashPartitioner,
         params: &SemiAntiJoinParams,
         state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
+        let (probed, matched) = counts;
         let mut probe_match = Vec::new();
         let key_selectors = &params.left_key_selectors;
 
@@ -921,6 +944,13 @@ impl ProbeState {
                         params.is_anti,
                         &mut probe_match,
                     );
+                    if let Some(limit) = params.pass_through_above {
+                        let total = probed.fetch_add(df.height()) + df.height();
+                        let matched = matched.fetch_add(probe_match.len()) + probe_match.len();
+                        if total > limit && matched >= total / 10 * 9 {
+                            src_token.stop();
+                        }
+                    }
                     if probe_match.is_empty() {
                         continue;
                     }
@@ -1149,7 +1179,18 @@ impl ComputeNode for SemiAntiJoinNode {
         // If we are building and the build input is done, transition to probing,
         // or finish without reading the probe side when nothing can come out.
         if let SemiAntiJoinState::Build(build_state) = &mut self.state {
-            if recv[build_idx] == PortState::Done {
+            let build_rows = build_state.rows.load();
+            if self
+                .params
+                .pass_through_above
+                .is_some_and(|limit| build_rows > limit)
+            {
+                if config::verbose() {
+                    eprintln!("semi join passed through: {build_rows} build rows");
+                }
+                let sampled = core::mem::take(&mut build_state.sampled_probe_morsels);
+                self.state = SemiAntiJoinState::PassThrough(sampled);
+            } else if recv[build_idx] == PortState::Done {
                 build_state.publish_runtime_filters(&self.params);
                 if self.params.empty_build_gives_empty_output() && build_state.is_empty() {
                     self.state = SemiAntiJoinState::Done;
@@ -1178,7 +1219,18 @@ impl ComputeNode for SemiAntiJoinNode {
         // otherwise we're done.
         if let SemiAntiJoinState::Probe(probe_state) = &mut self.state {
             let samples_consumed = probe_state.sampled_probe_morsels.is_empty();
-            if samples_consumed && recv[probe_idx] == PortState::Done {
+            let (probed, matched) = (probe_state.probed.load(), probe_state.matched.load());
+            if self
+                .params
+                .pass_through_above
+                .is_some_and(|limit| probed > limit && matched >= probed / 10 * 9)
+            {
+                if config::verbose() {
+                    eprintln!("semi join passed through: {matched} of {probed} probe rows matched");
+                }
+                let sampled = core::mem::take(&mut probe_state.sampled_probe_morsels);
+                self.state = SemiAntiJoinState::PassThrough(sampled);
+            } else if samples_consumed && recv[probe_idx] == PortState::Done {
                 if self.params.left_is_build() {
                     let rows_per_partition =
                         probe_state.output_rows(self.params.emits_unmatched_build());
@@ -1192,6 +1244,12 @@ impl ComputeNode for SemiAntiJoinNode {
                 } else {
                     self.state = SemiAntiJoinState::Done;
                 }
+            }
+        }
+
+        if let SemiAntiJoinState::PassThrough(sampled) = &self.state {
+            if sampled.is_empty() && recv[probe_idx] == PortState::Done {
+                self.state = SemiAntiJoinState::Done;
             }
         }
 
@@ -1258,6 +1316,18 @@ impl ComputeNode for SemiAntiJoinNode {
                 }
                 recv[build_idx] = PortState::Done;
             },
+            SemiAntiJoinState::PassThrough(sampled) => {
+                if recv[probe_idx] != PortState::Done {
+                    core::mem::swap(&mut send[0], &mut recv[probe_idx]);
+                } else {
+                    send[0] = if sampled.is_empty() {
+                        PortState::Done
+                    } else {
+                        PortState::Ready
+                    };
+                }
+                recv[build_idx] = PortState::Done;
+            },
             SemiAntiJoinState::EmitBuild(_) => {
                 send[0] = PortState::Ready;
                 recv[build_idx] = PortState::Done;
@@ -1279,7 +1349,7 @@ impl ComputeNode for SemiAntiJoinNode {
             SemiAntiJoinState::Probe(_) | SemiAntiJoinState::EmitBuild(_) => {
                 NodeMemoryUsage::HoldingUntilDone
             },
-            SemiAntiJoinState::Done => NodeMemoryUsage::Bounded,
+            SemiAntiJoinState::PassThrough(_) | SemiAntiJoinState::Done => NodeMemoryUsage::Bounded,
         }
     }
 
@@ -1343,6 +1413,7 @@ impl ComputeNode for SemiAntiJoinNode {
                         BuildState::partition_and_sink(
                             recv,
                             local_builder,
+                            &build_state.rows,
                             partitioner.clone(),
                             &self.params,
                             state,
@@ -1388,12 +1459,35 @@ impl ComputeNode for SemiAntiJoinNode {
                                 recv,
                                 send,
                                 &probe_state.grouper_per_partition,
+                                (&probe_state.probed, &probe_state.matched),
                                 partitioner.clone(),
                                 &self.params,
                                 state,
                             ),
                         ));
                     }
+                }
+            },
+            SemiAntiJoinState::PassThrough(sampled) => {
+                assert!(recv_ports[build_idx].is_none());
+                let receivers = sampled
+                    .reinsert(
+                        state.num_pipelines,
+                        recv_ports[probe_idx].take(),
+                        scope,
+                        join_handles,
+                    )
+                    .unwrap();
+                let senders = send_ports[0].take().unwrap().parallel();
+                for (mut recv, mut send) in receivers.into_iter().zip(senders) {
+                    join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                        while let Ok(morsel) = recv.recv().await {
+                            if send.send(morsel).await.is_err() {
+                                break;
+                            }
+                        }
+                        Ok(())
+                    }));
                 }
             },
             SemiAntiJoinState::EmitBuild(emit_state) => {
