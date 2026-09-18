@@ -293,5 +293,5 @@ def test_list_broadcast_leading_scalar() -> None:
 
     # Reversed order should also work
     result_reversed = df.select(pl.list(pl.col("x"), pl.lit(1)))
-    expected_reversed = pl.DataFrame({"literal": [[10, 1], [20, 1], [30, 1]]})
+    expected_reversed = pl.DataFrame({"x": [[10, 1], [20, 1], [30, 1]]})
     assert_frame_equal(result_reversed, expected_reversed)
