@@ -48,7 +48,7 @@ pub trait IfThenElseKernel: StaticArray {
         assert_eq!(mask.len(), if_false.len(), "{LENGTH_MISMATCH}");
 
         // A mask that picks the same side at every element answers with that side itself.
-        match picks_throughout(mask) {
+        match mask.agreed_value() {
             Some(true) => return if_true.clone(),
             Some(false) => return if_false.clone(),
             None => {},
@@ -106,7 +106,7 @@ pub trait IfThenElseKernel: StaticArray {
     ) -> Self {
         assert_eq!(mask.len(), if_false.len(), "{LENGTH_MISMATCH}");
 
-        match picks_throughout(mask) {
+        match mask.agreed_value() {
             // A mask that is unset everywhere is `if_false` itself.
             Some(false) => return if_false.clone(),
             // A mask that is set everywhere picks `if_true` at every element, so the one value is
@@ -156,7 +156,7 @@ pub trait IfThenElseKernel: StaticArray {
         assert_eq!(mask.len(), if_true.len(), "{LENGTH_MISMATCH}");
 
         // As above, with the sides the other way around.
-        match picks_throughout(mask) {
+        match mask.agreed_value() {
             Some(true) => return if_true.clone(),
             // A mask that is unset everywhere picks `if_false` at every element.
             Some(false) => {
@@ -196,7 +196,7 @@ pub trait IfThenElseKernel: StaticArray {
         // Neither side is an array here, so there is no array for a repeated bit to hand back —
         // but that one bit picks the same value at every element, which is the one element the
         // kernel writes out below and the result repeats from there.
-        if let Some(bit) = picks_throughout(mask) {
+        if let Some(bit) = mask.agreed_value() {
             let single = Bitmap::new_with_value(bit, 1);
             let element = Self::if_then_else_flat_broadcast_both(&single, if_true, if_false);
             debug_assert_eq!(element.len(), 1);
@@ -208,24 +208,6 @@ pub trait IfThenElseKernel: StaticArray {
         let mask = mask.flat_bitmap().expect("a scalar mask is answered above");
 
         Self::if_then_else_flat_broadcast_both(mask, if_true, if_false)
-    }
-}
-
-/// The side a mask picks at every one of its elements, if it picks the same one throughout.
-///
-/// One repeated bit says so on its own; a bitmap of one bit per element says so when every bit
-/// agrees, which is what the count of unset bits it already carries answers. Either way the
-/// if-then-else below has nothing to pick between and hands that side back as it stands.
-fn picks_throughout(mask: PlBitmapRef<'_>) -> Option<bool> {
-    if let Some(bit) = mask.scalar_value() {
-        return Some(bit);
-    }
-
-    let mask = mask.flat_bitmap()?;
-    match mask.unset_bits() {
-        0 => Some(true),
-        unset if unset == mask.len() => Some(false),
-        _ => None,
     }
 }
 

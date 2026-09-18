@@ -10,7 +10,9 @@ use crate::utils::align_chunks_binary;
 /// The elements `mask` picks out, as a range where it says the same of every one of them.
 fn picked_out(mask: &PlBooleanArray) -> Either<Range<IdxSize>, Bitmap> {
     let picked = mask.true_and_valid();
-    match picked.scalar_value() {
+    // A mask of one bit per element still says the same of every one of them when all its bits
+    // agree -- which a constant predicate leaves behind once it has been evaluated over a column.
+    match picked.agreed_value() {
         Some(true) => Either::Left(0..mask.len() as IdxSize),
         Some(false) => Either::Left(0..0),
         None => Either::Right(picked.into_bitmap()),

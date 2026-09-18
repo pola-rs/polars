@@ -37,6 +37,27 @@ fn mask_values(mask: &PlBooleanArray) -> Bitmap {
     bool_null_to_false(mask).into_bitmap()
 }
 
+/// The bit every element of `mask` reads, a null read as unset, if they all read the same one.
+///
+/// A column of one element and a chunk that repeats a single bit say so on their own. A chunk of
+/// one bit per element says so when every one of its bits agrees — the shape a constant predicate
+/// leaves behind once it has been evaluated over a column, which no amount of repetition in the
+/// representation would have shown. Several chunks say so when each of them does and they agree.
+fn mask_reads_throughout(mask: &BooleanChunked) -> Option<bool> {
+    let mut read: Option<bool> = None;
+    for chunk in mask.downcast_iter() {
+        if chunk.is_empty() {
+            continue;
+        }
+
+        let bit = bool_null_to_false(chunk).agreed_value()?;
+        if *read.get_or_insert(bit) != bit {
+            return None;
+        }
+    }
+    read
+}
+
 /// The bits of `mask`, reading a null as unset — which is what a null means to `zip_with`.
 fn bool_null_to_false(mask: &PlBooleanArray) -> PlBitmap {
     // An element the mask says nothing about is one it does not pick, which is what an unset bit
@@ -85,16 +106,12 @@ where
         let if_true = self;
         let if_false = other;
 
-        // Broadcast mask: a mask that reads the same at every element — a column of one element,
-        // or one whose only chunk repeats a single bit — picks the same side throughout, so the
-        // sides are neither zipped nor written out. A null reads as false, as it does below.
-        if let Some(bit) = mask.scalar_value() {
-            return if_then_else_broadcast_mask(
-                bit.unwrap_or(false),
-                mask.len(),
-                if_true,
-                if_false,
-            );
+        // Broadcast mask: a mask that reads the same at every element picks the same side
+        // throughout, so the sides are neither zipped nor written out — and the side it picks is
+        // handed back in whatever representation it is in. A null reads as false, as it does
+        // below.
+        if let Some(bit) = mask_reads_throughout(mask) {
+            return if_then_else_broadcast_mask(bit, mask.len(), if_true, if_false);
         }
 
         // Broadcast both.
@@ -239,11 +256,11 @@ impl ChunkZip<StructType> for StructChunked {
         let mut if_true: Cow<ChunkedArray<StructType>> = Cow::Borrowed(self);
         let mut if_false: Cow<ChunkedArray<StructType>> = Cow::Borrowed(other);
 
-        // Special case. In this case, we know what to do.
-        // @TODO: Optimization. If all mask values are the same, select one of the two.
-        if mask.length == 1 {
-            // pl.when(None) <=> pl.when(False)
-            let is_true = mask.get(0).unwrap_or(false);
+        // A mask that reads the same at every element picks the same side throughout, and that
+        // side is handed back as it stands rather than zipped field by field. A column of one
+        // element says so on its own; so does a chunk of one repeated bit, and so does one whose
+        // bits all agree. `pl.when(None)` reads as `pl.when(False)`.
+        if let Some(is_true) = mask_reads_throughout(mask) {
             return Ok(if is_true {
                 self.broadcast_to(length)?.into_owned()
             } else {

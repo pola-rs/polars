@@ -130,6 +130,25 @@ impl<'a> PlBitmapRef<'a> {
             .then(|| unsafe { self.bitmap.get_bit_unchecked(0) })
     }
 
+    /// The bit every element carries, if they all carry the same one.
+    ///
+    /// A scalar mask says so by holding a single bit. A mask of one bit per element says so when
+    /// every one of its bits agrees, which the count of unset bits the bitmap already carries
+    /// answers without a walk -- the shape a constant predicate takes once it has been evaluated
+    /// over a column. An empty mask covers no element and so carries nothing.
+    #[inline]
+    pub fn agreed_value(&self) -> Option<bool> {
+        if self.length == 0 {
+            return None;
+        }
+
+        match self.unset_bits() {
+            0 => Some(true),
+            unset if unset == self.length => Some(false),
+            _ => None,
+        }
+    }
+
     /// Returns the bit at `i`.
     #[inline]
     pub fn get(&self, i: usize) -> bool {

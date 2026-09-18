@@ -107,7 +107,9 @@ pub fn set_with_mask<T: NativeType>(
 ) -> PlPrimitiveArray<T> {
     assert_eq!(array.len(), mask.len(), "the mask must cover every element");
 
-    match mask.scalar_value_ignore_validity() {
+    // The values of the mask say the same of every element when they repeat one bit and when
+    // every bit of a flat mask agrees alike.
+    match mask.values().agreed_value() {
         // Every element is picked out, so every one of them holds `value` and none is null.
         Some(true) => return PlPrimitiveArray::new_scalar(value, array.len()),
         // No element is picked out, so nothing changes.

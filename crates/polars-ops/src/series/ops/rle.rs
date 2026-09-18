@@ -242,6 +242,14 @@ pub fn rle_id(s: &Column) -> PolarsResult<Column> {
         return Ok(Column::new_empty(s.name().clone(), &IDX_DTYPE));
     }
 
+    // A column that repeats one element never changes value, so every element is in the first
+    // run. Several chunks that all repeat the same element are still that one run -- the shape a
+    // broadcast column reaches a groupwise op in -- and the comparison below would not see it,
+    // because slicing the column by one splits those chunks apart.
+    if s.as_scalar_column().is_some() || s.as_materialized_series().repeats_one_element() {
+        return Ok(IdxCa::full(s.name().clone(), 0, s.len()).into_column());
+    }
+
     let (s1, s2) = (s.slice(0, s.len() - 1), s.slice(1, s.len()));
     let s_neq = s1
         .as_materialized_series()

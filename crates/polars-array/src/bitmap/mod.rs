@@ -196,6 +196,12 @@ impl PlBitmap {
         self.as_ref().scalar_value()
     }
 
+    /// The bit every element carries, if they all carry the same one.
+    #[inline]
+    pub fn agreed_value(&self) -> Option<bool> {
+        self.as_ref().agreed_value()
+    }
+
     /// Returns the bit at `i`.
     #[inline]
     pub fn get(&self, i: usize) -> bool {
