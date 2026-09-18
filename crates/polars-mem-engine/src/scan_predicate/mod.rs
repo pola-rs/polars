@@ -16,8 +16,8 @@ use polars_error::PolarsResult;
 use polars_expr::prelude::{AggregationContext, PhysicalExpr, phys_expr_to_io_expr};
 use polars_expr::state::ExecutionState;
 use polars_io::predicates::{
-    ColumnPredicates, ScanIOPredicate, SkipBatchPredicate, SpecializedColumnPredicate,
-    StagedScanIOPredicate,
+    ColumnPredicates, RuntimeRangeHint, ScanIOPredicate, SkipBatchPredicate,
+    SpecializedColumnPredicate, StagedScanIOPredicate,
 };
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
@@ -71,16 +71,12 @@ pub struct ScanPredicate {
 
     pub staged: Option<StagedScanPredicate>,
 
-    /// Whether `predicate` filters rows at all. False when every part of the
-    /// predicate is only consulted to skip batches by their statistics.
+    /// Whether `predicate` filters rows at all. False when the scan only has
+    /// runtime ranges to skip batches by.
     pub filters_rows: bool,
 
     /// Column names that are used in the predicate.
     pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
-
-    /// Column names whose statistics the skip-batch predicate reads. A superset of
-    /// the live columns: a dynamic predicate may only be consulted for skipping.
-    pub skip_batch_columns: Arc<PlIndexSet<PlSmallStr>>,
 
     /// A predicate expression used to skip record batches based on its statistics.
     ///
@@ -89,6 +85,9 @@ pub struct ScanPredicate {
     /// `true` if the whole batch can for sure be skipped. This may be conservative and evaluate to
     /// `false` even when the batch could theoretically be skipped.
     pub skip_batch_predicate: Option<Arc<dyn PhysicalExpr>>,
+
+    /// Columns whose batches are skipped by a range published at run time.
+    pub runtime_ranges: Vec<RuntimeRangeHint>,
 
     /// Partial predicates for each column for filter when loading columnar formats.
     pub column_predicates: PhysicalColumnPredicates,
@@ -184,7 +183,7 @@ impl ScanPredicate {
         let constant_columns = constant_columns.into_iter();
 
         let mut live_columns = self.live_columns.as_ref().clone();
-        let mut skip_batch_columns = self.skip_batch_columns.as_ref().clone();
+        let mut runtime_ranges = self.runtime_ranges.clone();
         let mut skip_batch_predicate_constants =
             Vec::with_capacity(if self.skip_batch_predicate.is_some() {
                 1 + constant_columns.size_hint().0 * 3
@@ -194,8 +193,8 @@ impl ScanPredicate {
 
         let predicate_constants: Vec<(PlSmallStr, Scalar)> = constant_columns
             .filter_map(|(name, scalar): (PlSmallStr, Scalar)| {
-                let in_skip_batch = skip_batch_columns.swap_remove(&name);
-                if !live_columns.swap_remove(&name) && !in_skip_batch {
+                RuntimeRangeHint::set_constant(&mut runtime_ranges, &name, &scalar);
+                if !live_columns.swap_remove(&name) {
                     return None;
                 }
 
@@ -239,8 +238,8 @@ impl ScanPredicate {
             staged,
             filters_rows: self.filters_rows,
             live_columns: Arc::new(live_columns),
-            skip_batch_columns: Arc::new(skip_batch_columns),
             skip_batch_predicate,
+            runtime_ranges,
             column_predicates: self.column_predicates.clone(), // Q? Maybe this should cull
             // predicates.
             hive_predicate: None,
@@ -270,10 +269,10 @@ impl ScanPredicate {
             staged: self.staged.as_ref().map(StagedScanPredicate::to_io),
             filters_rows: self.filters_rows,
             live_columns: self.live_columns.clone(),
-            skip_batch_columns: self.skip_batch_columns.clone(),
             skip_batch_predicate: skip_batch_predicate
                 .cloned()
                 .or_else(|| self.to_dyn_skip_batch_predicate(schema)),
+            runtime_ranges: self.runtime_ranges.clone(),
             column_predicates: self.column_predicates.to_io(),
             hive_predicate: self.hive_predicate.clone().map(phys_expr_to_io_expr),
             hive_predicate_is_full_predicate: self.hive_predicate_is_full_predicate,

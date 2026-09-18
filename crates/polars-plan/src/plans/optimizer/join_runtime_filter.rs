@@ -53,6 +53,9 @@ pub(super) fn attach_join_runtime_filters(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) {
+    if !polars_config::config().join_runtime_filters() {
+        return;
+    }
     // Inputs before their join, so a join lower in a probe chain is forced before
     // an outer one tries to carry a predicate through it.
     let mut joins = Vec::new();

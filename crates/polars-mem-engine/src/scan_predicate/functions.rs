@@ -9,7 +9,7 @@ use polars_core::prelude::{
 use polars_core::schema::Schema;
 use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
-use polars_io::predicates::ScanIOPredicate;
+use polars_io::predicates::{RuntimeRangeHint, ScanIOPredicate};
 use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
@@ -39,15 +39,21 @@ pub fn create_scan_predicate(
     create_skip_batch_predicate: bool,
     create_column_predicates: bool,
 ) -> PolarsResult<ScanPredicate> {
-    // Parts a scan only consults to skip batches stay out of the row predicate.
-    let full_predicate = predicate.clone();
+    // Parts a scan only consults to skip batches become range hints and stay out
+    // of the row predicate and its statistics predicate.
     let mut predicate = predicate.clone();
     let mut filters_rows = true;
+    let mut runtime_ranges = Vec::new();
     let (batch_only, per_row): (Vec<Node>, Vec<Node>) =
         MintermIter::new(predicate.node(), expr_arena)
             .partition(|&part| is_batch_only(part, expr_arena));
     if !batch_only.is_empty() {
         filters_rows = !per_row.is_empty();
+        runtime_ranges.extend(
+            batch_only
+                .iter()
+                .filter_map(|&part| runtime_range_hint(part, expr_arena)),
+        );
         let node = per_row
             .into_iter()
             .reduce(|left, right| {
@@ -127,37 +133,36 @@ pub fn create_scan_predicate(
         }
     }
 
-    let phys_predicate = create_physical_expr(&predicate, expr_arena, schema, state)?;
+    let mut phys_predicate = create_physical_expr(&predicate, expr_arena, schema, state)?;
 
+    // The hive predicate settles whole files; nothing is left to filter rows by.
     if hive_predicate_is_full_predicate {
         hive_predicate = Some(phys_predicate.clone());
+        filters_rows = false;
+        let node = expr_arena.add(AExpr::Literal(Scalar::from(true).into()));
+        predicate = ExprIR::from_node(node, expr_arena);
+        phys_predicate = create_physical_expr(&predicate, expr_arena, schema, state)?;
     }
 
     let live_columns = Arc::new(PlIndexSet::from_iter(
         aexpr_to_leaf_names_iter(predicate.node(), expr_arena).cloned(),
     ));
-
-    let skip_batch_columns = Arc::new(PlIndexSet::from_iter(
-        aexpr_to_leaf_names_iter(full_predicate.node(), expr_arena).cloned(),
-    ));
-
     let mut skip_batch_predicate = None;
 
-    if create_skip_batch_predicate {
-        if let Some(node) = aexpr_to_skip_batch_predicate(full_predicate.node(), expr_arena, schema)
-        {
-            let expr = ExprIR::new(node, full_predicate.output_name_inner().clone());
+    if create_skip_batch_predicate && filters_rows {
+        if let Some(node) = aexpr_to_skip_batch_predicate(predicate.node(), expr_arena, schema) {
+            let expr = ExprIR::new(node, predicate.output_name_inner().clone());
 
             if std::env::var("POLARS_OUTPUT_SKIP_BATCH_PRED").as_deref() == Ok("1") {
-                eprintln!("predicate: {}", full_predicate.display(expr_arena));
+                eprintln!("predicate: {}", predicate.display(expr_arena));
                 eprintln!("skip_batch_predicate: {}", expr.display(expr_arena));
             }
 
-            let mut skip_batch_schema = Schema::with_capacity(1 + skip_batch_columns.len());
+            let mut skip_batch_schema = Schema::with_capacity(1 + live_columns.len());
 
             skip_batch_schema.insert(PlSmallStr::from_static("len"), IDX_DTYPE);
             for (col, dtype) in schema.iter() {
-                if !skip_batch_columns.contains(col) {
+                if !live_columns.contains(col) {
                     continue;
                 }
 
@@ -224,8 +229,8 @@ pub fn create_scan_predicate(
         staged,
         filters_rows,
         live_columns,
-        skip_batch_columns,
         skip_batch_predicate,
+        runtime_ranges,
         column_predicates,
         hive_predicate,
         hive_predicate_is_full_predicate,
@@ -328,6 +333,26 @@ fn split_staged_predicate(
     })
 }
 
+/// The range hint of a batch-only dynamic predicate over a scan column.
+fn runtime_range_hint(part: Node, expr_arena: &Arena<AExpr>) -> Option<RuntimeRangeHint> {
+    let AExpr::Function {
+        input,
+        function: IRFunctionExpr::DynamicPred { pred, .. },
+        ..
+    } = expr_arena.get(part)
+    else {
+        return None;
+    };
+    let AExpr::Column(column) = expr_arena.get(input[0].node()) else {
+        return None;
+    };
+    Some(RuntimeRangeHint {
+        column: column.clone(),
+        source: Arc::new(pred.clone()),
+        constant: None,
+    })
+}
+
 /// Whether the predicate part is exactly a dynamic predicate a scan may only use
 /// to skip batches. Any other shape, also one wrapping such a predicate, is
 /// evaluated per row like any predicate.
@@ -408,7 +433,8 @@ pub fn initialize_scan_predicate<'a>(
                     skip_files_mask.len(),
                 );
             }
-            return Ok((Some(skip_files_mask), None));
+            let residual = (!predicate.runtime_ranges.is_empty()).then_some(predicate);
+            return Ok((Some(skip_files_mask), residual));
         }
 
         hive_inclusion = Some(hive_inclusion_bitmap);

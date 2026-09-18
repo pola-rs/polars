@@ -679,7 +679,7 @@ impl AdaptiveRateController {
             state.set_last_max(Some(new_max.max(self.config.floor_rate)));
         }
 
-        // Evaluate and apply rate rate and regime changes.
+        // Evaluate and apply rate and regime changes.
         let verdict = {
             let rate = state.rate();
             let init_rate = self.config.init_rate;

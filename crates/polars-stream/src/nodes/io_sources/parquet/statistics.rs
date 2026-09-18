@@ -1,15 +1,19 @@
+use std::cmp::Ordering;
 use std::ops::Range;
 
 use polars_array::PlBitmap;
 use polars_arrow::array::{Array, MutablePrimitiveArray, StructArray};
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_arrow::pushable::Pushable;
 use polars_async::executor::{self, TaskPriority};
 use polars_core::prelude::*;
 use polars_io::RowIndex;
-use polars_io::predicates::ScanIOPredicate;
+use polars_io::predicates::{RuntimeRange, RuntimeRangeHint, ScanIOPredicate};
 use polars_io::prelude::FileMetadata;
 use polars_parquet::read::RowGroupMetadata;
-use polars_parquet::read::statistics::{ArrowColumnStatisticsArrays, deserialize_all};
+use polars_parquet::read::statistics::{
+    ArrowBound, ArrowColumnStatisticsArrays, BoundConversion, LeafBounds, deserialize_all,
+};
 use polars_plan::plans::predicates::null_count_dtype;
 use polars_utils::format_pl_smallstr;
 
@@ -81,9 +85,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     predicate: Option<&ScanIOPredicate>,
     metadata: &Arc<FileMetadata>,
     projected_arrow_fields: Arc<[ArrowFieldProjection]>,
-    // This is mut so that the offset is updated to the position of the first
-    // row group.
-    mut row_index: Option<RowIndex>,
+    row_index: Option<RowIndex>,
     verbose: bool,
 ) -> PolarsResult<Option<PlBitmap>> {
     if !use_statistics {
@@ -94,15 +96,58 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
         return Ok(None);
     };
 
-    let Some(sbp) = predicate.skip_batch_predicate.as_ref() else {
-        return Ok(None);
+    let static_mask = match predicate.skip_batch_predicate.as_ref() {
+        Some(sbp) => {
+            static_skip_mask(
+                row_group_slice.clone(),
+                sbp.clone(),
+                predicate.live_columns.clone(),
+                metadata,
+                projected_arrow_fields.clone(),
+                row_index,
+            )
+            .await?
+        },
+        None => None,
     };
 
-    let sbp = sbp.clone();
+    let mask = if predicate.runtime_ranges.is_empty() {
+        static_mask
+    } else {
+        let runtime_mask = runtime_range_skip_mask(
+            &predicate.runtime_ranges,
+            metadata,
+            row_group_slice.clone(),
+            &projected_arrow_fields,
+            static_mask.as_ref(),
+        );
+        match (static_mask, runtime_mask) {
+            (Some(s), Some(r)) => Some(&s | &r),
+            (s, r) => s.or(r),
+        }
+    };
+    if verbose && (mask.is_some() || !predicate.runtime_ranges.is_empty()) {
+        let num_row_groups = row_group_slice.len();
+        eprintln!(
+            "[ParquetFileReader]: Predicate pushdown: \
+            reading {} / {} row groups",
+            mask.as_ref().map_or(num_row_groups, |m| m.unset_bits()),
+            num_row_groups,
+        );
+    }
+    Ok(mask.map(PlBitmap::from_bitmap))
+}
 
+async fn static_skip_mask(
+    row_group_slice: Range<usize>,
+    sbp: Arc<dyn polars_io::predicates::SkipBatchPredicate>,
+    skip_batch_columns: Arc<PlIndexSet<PlSmallStr>>,
+    metadata: &Arc<FileMetadata>,
+    projected_arrow_fields: Arc<[ArrowFieldProjection]>,
+    mut row_index: Option<RowIndex>,
+) -> PolarsResult<Option<Bitmap>> {
     let num_row_groups = row_group_slice.len();
     let metadata = metadata.clone();
-    let skip_batch_columns = predicate.skip_batch_columns.clone();
 
     // Note: We are spawning here onto the computational async runtime because the caller is being run
     // on a tokio async thread.
@@ -159,16 +204,163 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     })
     .await?;
 
-    if verbose {
-        eprintln!(
-            "[ParquetFileReader]: Predicate pushdown: \
-            reading {} / {} row groups",
-            skip_row_group_mask.unset_bits(),
-            num_row_groups,
-        );
+    // The runtime-range mask this is combined with holds one bit per row group, and there are
+    // few enough of those that a mask repeating one bit is not worth carrying any further.
+    Ok(Some(skip_row_group_mask.as_ref().to_flat().into_owned()))
+}
+
+/// A value of a column as polars stores it: a published range bound, or a row
+/// group's bound. Integers of any width are one integer; bytes compare with
+/// bytes only.
+enum Bound<B> {
+    Int(i128),
+    Bytes(B),
+}
+
+impl<A: AsRef<[u8]>, B: AsRef<[u8]>> PartialEq<Bound<B>> for Bound<A> {
+    fn eq(&self, other: &Bound<B>) -> bool {
+        self.partial_cmp(other) == Some(Ordering::Equal)
+    }
+}
+
+impl<A: AsRef<[u8]>, B: AsRef<[u8]>> PartialOrd<Bound<B>> for Bound<A> {
+    fn partial_cmp(&self, other: &Bound<B>) -> Option<Ordering> {
+        match (self, other) {
+            (Self::Int(a), Bound::Int(b)) => Some(a.cmp(b)),
+            (Self::Bytes(a), Bound::Bytes(b)) => Some(a.as_ref().cmp(b.as_ref())),
+            _ => None,
+        }
+    }
+}
+
+impl Bound<Vec<u8>> {
+    /// A published range bound, or `None` when the published and the file's
+    /// types cannot be compared exactly: every integer type compares with every
+    /// other, any other type must match the file's.
+    fn from_scalar(scalar: &Scalar, file_dtype: &DataType) -> Option<Self> {
+        if scalar.dtype() != file_dtype && !(scalar.dtype().is_integer() && file_dtype.is_integer())
+        {
+            return None;
+        }
+        match scalar.value() {
+            AnyValue::String(v) => Some(Self::Bytes(v.as_bytes().to_vec())),
+            AnyValue::StringOwned(v) => Some(Self::Bytes(v.as_bytes().to_vec())),
+            AnyValue::Binary(v) => Some(Self::Bytes(v.to_vec())),
+            AnyValue::BinaryOwned(v) => Some(Self::Bytes(v.clone())),
+            value => value.clone().to_physical().extract::<i128>().map(Self::Int),
+        }
+    }
+}
+
+impl<'a> Bound<&'a [u8]> {
+    /// A row group's bound as polars stores the column, multiplied by `scale`
+    /// like the values are, see [`DataType::arrow_value_scale`]. `None` when
+    /// the multiplication wraps, as the values then have no order.
+    fn from_arrow(bound: ArrowBound<'a>, scale: i64) -> Option<Self> {
+        use ArrowBound as A;
+        let int = match bound {
+            A::Boolean(v) => v as i128,
+            A::Int8(v) => v as i128,
+            A::Int16(v) => v as i128,
+            A::Int32(v) => v as i128,
+            A::Int64(v) => v as i128,
+            A::UInt8(v) => v as i128,
+            A::UInt16(v) => v as i128,
+            A::UInt32(v) => v as i128,
+            A::UInt64(v) => v as i128,
+            A::Int128(v) => v,
+            A::Bytes(v) => return Some(Self::Bytes(v)),
+            A::Str(v) => return Some(Self::Bytes(v.as_bytes())),
+            A::Float16(_) | A::Float32(_) | A::Float64(_) | A::Int256(_) => return None,
+        };
+        let scaled = int * scale as i128;
+        (scale == 1 || i64::try_from(scaled).is_ok()).then_some(Self::Int(scaled))
+    }
+}
+
+/// Whether the values a leaf's bounds convert to compare exactly with a
+/// published range.
+fn compares_exactly(conversion: BoundConversion) -> bool {
+    use BoundConversion as C;
+    !matches!(
+        conversion,
+        C::Float16 | C::Float32 | C::Float64 | C::Decimal256
+    )
+}
+
+/// Which row groups the runtime ranges skip, among those `static_mask` keeps.
+/// `None` when they skip nothing. Every range is read once, before any bound is
+/// decoded, and only the kept groups' bounds are decoded.
+fn runtime_range_skip_mask(
+    hints: &[RuntimeRangeHint],
+    metadata: &FileMetadata,
+    row_group_slice: Range<usize>,
+    projected_arrow_fields: &[ArrowFieldProjection],
+    static_mask: Option<&Bitmap>,
+) -> Option<Bitmap> {
+    let row_groups = &metadata.row_groups[row_group_slice.clone()];
+    let mut mask: Option<MutableBitmap> = None;
+    let is_kept = |mask: &Option<MutableBitmap>, i: usize| {
+        !static_mask.is_some_and(|m| m.get_bit(i)) && !mask.as_ref().is_some_and(|m| m.get(i))
+    };
+
+    for hint in hints {
+        if mask.as_ref().is_some_and(|m| m.unset_bits() == 0) {
+            break;
+        }
+        let range = hint.source.runtime_range();
+        let skip_all = match (&hint.constant, &range) {
+            (Some(value), _) => RuntimeRangeHint::constant_matches(&range, value) == Some(false),
+            (None, RuntimeRange::Pending | RuntimeRange::Disabled) => false,
+            (None, RuntimeRange::Empty) => true,
+            (None, RuntimeRange::Range { lo, hi }) => {
+                let resolved = projected_arrow_fields
+                    .iter()
+                    .find(|p| p.output_name() == &hint.column)
+                    .and_then(|projection| {
+                        let arrow_field = projection.arrow_field();
+                        let idxs = row_groups
+                            .first()?
+                            .columns_idxs_under_root_iter(&arrow_field.name)?;
+                        let [idx] = idxs else { return None };
+                        let leaf = LeafBounds::new(arrow_field, metadata, *idx)
+                            .filter(|leaf| compares_exactly(leaf.conversion()))?;
+                        let scale = DataType::arrow_value_scale(arrow_field.dtype());
+                        let file_dtype = DataType::from_arrow_field(arrow_field);
+                        let lo = Bound::from_scalar(lo, &file_dtype)?;
+                        let hi = Bound::from_scalar(hi, &file_dtype)?;
+                        Some((leaf, scale, lo, hi))
+                    });
+                let Some((leaf, scale, lo, hi)) = resolved else {
+                    continue;
+                };
+                for (i, rg) in row_groups.iter().enumerate() {
+                    if !is_kept(&mask, i) {
+                        continue;
+                    }
+                    let (min, max) = leaf.bounds(rg, &metadata.footer_buf);
+                    let min = min.and_then(|min| Bound::from_arrow(min, scale));
+                    let max = max.and_then(|max| Bound::from_arrow(max, scale));
+                    // Scaling wraps unseen values unless both bounds show it does not.
+                    if scale != 1 && (min.is_none() || max.is_none()) {
+                        continue;
+                    }
+                    if max.is_some_and(|max| max < lo) || min.is_some_and(|min| min > hi) {
+                        mask.get_or_insert_with(|| {
+                            MutableBitmap::from_len_zeroed(row_groups.len())
+                        })
+                        .set(i, true);
+                    }
+                }
+                false
+            },
+        };
+        if skip_all {
+            mask = Some(MutableBitmap::from_len_set(row_groups.len()));
+        }
     }
 
-    Ok(Some(skip_row_group_mask))
+    mask.filter(|m| m.set_bits() > 0).map(MutableBitmap::freeze)
 }
 
 /// Assembled `min` / `max` / `null_count` statistics arrays for a (possibly nested) struct field.
@@ -403,5 +595,28 @@ fn build_row_index_statistics(
         min: Series::from_array(PlSmallStr::EMPTY, min_value.freeze()).into_column(),
         max: Series::from_array(PlSmallStr::EMPTY, max_value.freeze()).into_column(),
         null_count,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn group_bounds_compare_as_polars_stores_them() {
+        let int = |v: i128| Bound::<&[u8]>::Int(v);
+        assert!(Bound::from_arrow(ArrowBound::Int64(7), 1_000).unwrap() == int(7_000));
+        assert!(Bound::from_arrow(ArrowBound::Int32(-7), 1_000_000).unwrap() == int(-7_000_000));
+        assert!(
+            Bound::from_arrow(ArrowBound::UInt64(u64::MAX), 1).unwrap() > int(i64::MAX as i128)
+        );
+        // A scaled value the reader wraps, and types with no exact comparison.
+        assert!(Bound::from_arrow(ArrowBound::Int64(i64::MAX / 1_000 + 1), 1_000).is_none());
+        assert!(Bound::from_arrow(ArrowBound::Int64(i64::MIN / 1_000 - 1), 1_000).is_none());
+        assert!(Bound::from_arrow(ArrowBound::Float64(1.0), 1).is_none());
+        // Bytes and integers have no order between them.
+        let bytes = Bound::from_arrow(ArrowBound::Str("abc"), 1).unwrap();
+        assert!(bytes < Bound::Bytes(b"abz".to_vec()));
+        assert!(bytes.partial_cmp(&int(0)).is_none());
     }
 }

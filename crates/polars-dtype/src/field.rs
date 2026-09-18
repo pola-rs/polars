@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use polars_arrow::datatypes::{ArrowDataType, Field as ArrowField, IntervalUnit, Metadata};
+use polars_arrow::datatypes::{
+    ArrowDataType, Field as ArrowField, IntervalUnit, Metadata, TimeUnit as ArrowTimeUnit,
+};
 use polars_error::feature_gated;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
@@ -168,6 +170,24 @@ impl DataType {
 
     pub fn from_arrow_dtype(dt: &ArrowDataType) -> DataType {
         Self::from_arrow(dt, None)
+    }
+
+    /// The factor polars multiplies the values of an Arrow `dtype` by to store
+    /// them as [`Self::from_arrow_dtype`]: Arrow seconds become milliseconds and
+    /// every time of day nanoseconds, all other values stay as they are.
+    pub fn arrow_value_scale(dtype: &ArrowDataType) -> i64 {
+        use polars_arrow::temporal_conversions::{MILLISECONDS, NANOSECONDS};
+        match dtype {
+            ArrowDataType::Timestamp(ArrowTimeUnit::Second, _)
+            | ArrowDataType::Duration(ArrowTimeUnit::Second) => MILLISECONDS,
+            ArrowDataType::Time32(tu) | ArrowDataType::Time64(tu) => match tu {
+                ArrowTimeUnit::Second => NANOSECONDS,
+                ArrowTimeUnit::Millisecond => 1_000_000,
+                ArrowTimeUnit::Microsecond => 1_000,
+                ArrowTimeUnit::Nanosecond => 1,
+            },
+            _ => 1,
+        }
     }
 
     pub fn from_arrow(dt: &ArrowDataType, md: Option<&Metadata>) -> DataType {

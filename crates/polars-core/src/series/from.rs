@@ -1,13 +1,6 @@
 use polars_array::arrow::{export, import};
 use polars_arrow::datatypes::{IntervalUnit, Metadata};
 use polars_arrow::offset::OffsetsBuffer;
-#[cfg(any(
-    feature = "dtype-date",
-    feature = "dtype-datetime",
-    feature = "dtype-time",
-    feature = "dtype-duration"
-))]
-use polars_arrow::temporal_conversions::*;
 use polars_arrow::types::months_days_ns;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::dec128_fits;
@@ -330,12 +323,7 @@ impl Series {
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_datetime(tu.into(), tz)
                     .into_series();
-                Ok(match tu {
-                    ArrowTimeUnit::Second => &s * MILLISECONDS,
-                    ArrowTimeUnit::Millisecond => s,
-                    ArrowTimeUnit::Microsecond => s,
-                    ArrowTimeUnit::Nanosecond => s,
-                })
+                Ok(scale_arrow_values(s, dtype))
             },
             #[cfg(feature = "dtype-duration")]
             ArrowDataType::Duration(tu) => {
@@ -344,15 +332,10 @@ impl Series {
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_duration(tu.into())
                     .into_series();
-                Ok(match tu {
-                    ArrowTimeUnit::Second => &s * MILLISECONDS,
-                    ArrowTimeUnit::Millisecond => s,
-                    ArrowTimeUnit::Microsecond => s,
-                    ArrowTimeUnit::Nanosecond => s,
-                })
+                Ok(scale_arrow_values(s, dtype))
             },
             #[cfg(feature = "dtype-time")]
-            ArrowDataType::Time64(tu) | ArrowDataType::Time32(tu) => {
+            ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => {
                 let chunks = if matches!(dtype, ArrowDataType::Time32(_)) {
                     // A time of seconds or milliseconds counts them in an `i32`, which is widened
                     // once the chunk has crossed over.
@@ -370,12 +353,7 @@ impl Series {
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_time()
                     .into_series();
-                Ok(match tu {
-                    ArrowTimeUnit::Second => &s * NANOSECONDS,
-                    ArrowTimeUnit::Millisecond => &s * 1_000_000,
-                    ArrowTimeUnit::Microsecond => &s * 1_000,
-                    ArrowTimeUnit::Nanosecond => s,
-                })
+                Ok(scale_arrow_values(s, dtype))
             },
             ArrowDataType::Decimal32(precision, scale) => {
                 feature_gated!("dtype-decimal", {
@@ -715,6 +693,20 @@ impl Series {
         }
 
         Ok(out)
+    }
+}
+
+/// Brings the values of an imported temporal `s` to the unit polars stores its
+/// type in, see [`DataType::arrow_value_scale`].
+#[cfg(any(
+    feature = "dtype-datetime",
+    feature = "dtype-duration",
+    feature = "dtype-time"
+))]
+fn scale_arrow_values(s: Series, dtype: &ArrowDataType) -> Series {
+    match DataType::arrow_value_scale(dtype) {
+        1 => s,
+        factor => &s * factor,
     }
 }
 
@@ -1216,5 +1208,54 @@ unsafe impl IntoSeries for Series {
     #[inline]
     fn into_series(self) -> Series {
         self
+    }
+}
+
+#[cfg(test)]
+#[cfg(all(
+    feature = "dtype-datetime",
+    feature = "dtype-duration",
+    feature = "dtype-time"
+))]
+mod tests {
+    use polars_arrow::array::PrimitiveArray;
+
+    use super::*;
+
+    #[test]
+    fn imported_values_are_scaled_like_the_dtype_says() {
+        let import = |dtype: ArrowDataType, value: i64| {
+            let array = PrimitiveArray::from_vec(vec![value]).to(dtype.clone());
+            let s = Series::from_arrow(PlSmallStr::EMPTY, array.boxed()).unwrap();
+            let physical = s.to_physical_repr().i64().unwrap().get(0).unwrap();
+            assert_eq!(physical, value * DataType::arrow_value_scale(&dtype));
+            (s.dtype().clone(), physical)
+        };
+        let seconds = ArrowDataType::Timestamp(ArrowTimeUnit::Second, None);
+        assert_eq!(
+            import(seconds, -7),
+            (DataType::Datetime(TimeUnit::Milliseconds, None), -7_000)
+        );
+        assert_eq!(
+            import(ArrowDataType::Duration(ArrowTimeUnit::Second), 7),
+            (DataType::Duration(TimeUnit::Milliseconds), 7_000)
+        );
+        assert_eq!(
+            import(ArrowDataType::Duration(ArrowTimeUnit::Microsecond), 7),
+            (DataType::Duration(TimeUnit::Microseconds), 7)
+        );
+        assert_eq!(
+            import(ArrowDataType::Time64(ArrowTimeUnit::Microsecond), 7),
+            (DataType::Time, 7_000)
+        );
+        assert_eq!(
+            import(ArrowDataType::Date64, 86_400_000),
+            (DataType::Datetime(TimeUnit::Milliseconds, None), 86_400_000)
+        );
+        let array = PrimitiveArray::from_vec(vec![7i32])
+            .to(ArrowDataType::Time32(ArrowTimeUnit::Millisecond));
+        let s = Series::from_arrow(PlSmallStr::EMPTY, array.boxed()).unwrap();
+        assert_eq!(s.dtype(), &DataType::Time);
+        assert_eq!(s.to_physical_repr().i64().unwrap().get(0), Some(7_000_000));
     }
 }

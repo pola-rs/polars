@@ -2,8 +2,8 @@
 //! its probe side once the build is done. Scans consult it to skip batches by
 //! their statistics only.
 
-use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
+use polars_io::predicates::{RuntimeRange, cast_bound};
 use polars_plan::plans::PredicateExpr;
 
 /// Min and max of one build key column. Empty until a non-null key is seen; an
@@ -47,23 +47,13 @@ impl KeyRange {
 
 /// The bounds as length-one series of `dtype`, or `None` when a bound does not
 /// survive the cast, in which case the range says nothing.
-fn bounds_for(
-    bounds: &(Scalar, Scalar),
-    dtype: &DataType,
-) -> PolarsResult<Option<(Series, Series)>> {
-    let cast = |bound: &Scalar| {
-        bound
-            .clone()
-            .cast_with_options(dtype, CastOptions::NonStrict)
-    };
-    let (lo, hi) = (cast(&bounds.0)?, cast(&bounds.1)?);
-    if lo.is_null() || hi.is_null() {
-        return Ok(None);
-    }
-    Ok(Some((
+fn bounds_for(bounds: &(Scalar, Scalar), dtype: &DataType) -> Option<(Series, Series)> {
+    let lo = cast_bound(&bounds.0, dtype)?;
+    let hi = cast_bound(&bounds.1, dtype)?;
+    Some((
         lo.into_series(PlSmallStr::EMPTY),
         hi.into_series(PlSmallStr::EMPTY),
-    )))
+    ))
 }
 
 impl PredicateExpr for KeyRange {
@@ -82,12 +72,22 @@ impl PredicateExpr for KeyRange {
         };
         let min = min.as_materialized_series();
         let max = max.as_materialized_series();
-        let Some((lo, hi)) = bounds_for(bounds, min.dtype())? else {
+        let Some((lo, hi)) = bounds_for(bounds, min.dtype()) else {
             return Ok(None);
         };
         // A batch is skipped when it lies entirely below or above the range. An
         // unknown statistic is null and settles nothing.
         let skip = max.lt(&lo)? | min.gt(&hi)?;
         Ok(Some(skip.fill_null_with_values(false)?.into_column()))
+    }
+
+    fn runtime_range(&self) -> RuntimeRange {
+        match &self.bounds {
+            None => RuntimeRange::Empty,
+            Some((lo, hi)) => RuntimeRange::Range {
+                lo: lo.clone(),
+                hi: hi.clone(),
+            },
+        }
     }
 }
