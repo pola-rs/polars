@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import (
+        EngineType,
         ParallelStrategy,
         ParquetCompression,
         ParquetMetadata,
@@ -1145,6 +1146,24 @@ def test_parquet_statistics_uint64_16683() -> None:
     assert statistics.max == u64_max
 
 
+def test_parquet_decimal_statistics_29347() -> None:
+    # The bug needs a precision of 19 or more, so that the values are stored as a fixed
+    # length byte array rather than an INT64, a chunk spanning more than one page, and a
+    # page holding values of only one sign.
+    n = 4000
+    values = [Decimal(i) for i in range(-(n // 2), n // 2)]
+    df = pl.Series("a", values, dtype=pl.Decimal(19, 0)).to_frame()
+
+    file = io.BytesIO()
+    df.write_parquet(file, statistics=True, row_group_size=n, data_page_size=1024)
+    file.seek(0)
+    statistics = pq.read_metadata(file).row_group(0).column(0).statistics
+
+    assert statistics.min <= statistics.max
+    assert statistics.min == values[0]
+    assert statistics.max == values[-1]
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("nullable", [True, False])
 def test_read_byte_stream_split(nullable: bool) -> None:
@@ -1975,6 +1994,199 @@ def test_row_index_prefiltering(df: pl.DataFrame) -> None:
         .collect()
     )
     assert_frame_equal(result, df.with_row_index("ri", 42).filter(expr))
+
+
+@given(
+    df=dataframes(
+        min_size=0,
+        max_size=40,
+        min_cols=1,
+        max_cols=4,
+        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum],
+        include_cols=[
+            column("filter_col", pl.Int8, st.integers(0, 3), allow_null=False),
+            column("a", pl.Int32, allow_null=True),
+            column("b", pl.Int32, allow_null=True),
+        ],
+    ),
+)
+def test_staged_prefiltering(df: pl.DataFrame) -> None:
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=7)
+
+    expr = (pl.col("filter_col") == 0) & ((pl.col("a") > 3) | (pl.col("b") > 3))
+
+    f.seek(0)
+    result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+    assert_frame_equal(result, df.filter(expr))
+
+
+def _staged_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "a": [1, 5, None, 7, 2, 9, None, 3, 8, 4, 6, 0],
+            "q": [0, 1, 0, None, 0, 1, 0, 0, 1, 0, None, 0],
+            "b": [3, 3, None, 3, 3, 3, 3, None, 3, 3, 3, 3],
+            "c": [str(i) for i in range(12)],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        # Only the second pass reads `a` and `b`.
+        (pl.col("q") == 0) & (pl.col("a") < pl.col("b")),
+        # `q` is read by both passes.
+        (pl.col("q") >= 0) & (pl.col("q") < pl.col("a")),
+        # The first pass alone reads every predicate column: no staging.
+        (pl.col("a") > 0) & (pl.col("b") > 0) & (pl.col("a") > pl.col("b")),
+        # First pass keeps every row / no row.
+        (pl.col("q").is_not_null() | pl.col("q").is_null())
+        & (pl.col("a") < pl.col("b")),
+        (pl.col("q") > 100) & (pl.col("a") < pl.col("b")),
+        # Every second-pass column is already read by the first pass: no staging.
+        (pl.col("q") == 0) & (pl.col("a") > 0) & ((pl.col("q") + pl.col("a")) < 5),
+    ],
+)
+@pytest.mark.parametrize("q_dtype", [pl.Int64, pl.Float64, pl.Decimal(7, 2)])
+@pytest.mark.parametrize("projection", [None, ["a", "q", "b"], ["c", "b", "q", "a"]])
+@pytest.mark.parametrize("row_index", [False, True])
+def test_staged_prefiltering_passes(
+    expr: pl.Expr,
+    q_dtype: pl.DataType,
+    projection: list[str] | None,
+    row_index: bool,
+    tmp_path: Path,
+) -> None:
+    df = _staged_df().with_columns(pl.col("q").cast(q_dtype))
+    path = tmp_path / "staged.parquet"
+    df.write_parquet(path, row_group_size=4)
+
+    def scan(head: int | None) -> pl.LazyFrame:
+        lf = pl.scan_parquet(
+            path,
+            parallel="prefiltered",
+            row_index_name="ri" if row_index else None,
+        )
+        if projection is not None:
+            lf = lf.select((["ri"] if row_index else []) + projection)
+        if head is not None:
+            lf = lf.head(head)
+        return lf.filter(expr)
+
+    expected = df.with_row_index("ri") if row_index else df
+    if projection is not None:
+        expected = expected.select((["ri"] if row_index else []) + projection)
+
+    for engine in ("streaming", "in-memory"):
+        assert_frame_equal(scan(None).collect(engine=engine), expected.filter(expr))
+        # Row groups 0-1 are complete, row group 2 is partial.
+        assert_frame_equal(
+            scan(9).collect(engine=engine), expected.head(9).filter(expr)
+        )
+
+
+@pytest.mark.parametrize("q_dtype", [pl.Int64, pl.Float64])
+@pytest.mark.parametrize("projection", [None, ["q", "b", "s", "a"]])
+def test_staged_prefiltering_density_changes(
+    q_dtype: pl.DataType,
+    projection: list[str] | None,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Row groups of 4 rows alternate between a first pass that keeps every row and
+    # one that keeps a single row, which turns the two passes off and on again.
+    # Every row group keeps at least one row.
+    dense = [0, 0, 0, 0]
+    selective = [0, 1, 1, 1]
+    df = pl.DataFrame(
+        {
+            "a": [1, 9, 1, 9] * 8,
+            "q": (dense + selective) * 4,
+            "b": [5] * 32,
+            "s": [1, 2, 3, 4] * 8,
+            "c": [str(i) for i in range(32)],
+        }
+    ).with_columns(pl.col("q").cast(q_dtype))
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=4)
+    # `q` and `s` are read first, `a` and `b` are between them in the file.
+    expr = (pl.col("q") == 0) & (pl.col("s") > 0) & (pl.col("a") < pl.col("b"))
+
+    expected = df if projection is None else df.select(projection)
+    assert expected.filter(expr).height == 12
+
+    f.seek(0)
+    lf = pl.scan_parquet(f, parallel="prefiltered", use_statistics=False)
+    if projection is not None:
+        lf = lf.select(projection)
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        result = lf.filter(expr).collect()
+        capture = capfd.readouterr().err
+
+    non_live = 1 if projection is None else 0
+    assert (
+        f"Pre-filtered decode enabled (4 live [2 pass-1, 2 pass-2], {non_live} non-live)"
+        in capture
+    )
+    assert_frame_equal(result, expected.filter(expr))
+
+
+def test_staged_prefiltering_nested_column() -> None:
+    df = _staged_df().with_columns(s=pl.struct(pl.col("a"), pl.col("c")))
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=4)
+    expr = (pl.col("q") == 0) & (pl.col("a") < pl.col("b"))
+
+    f.seek(0)
+    result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+    assert_frame_equal(result, df.filter(expr))
+
+
+def test_staged_prefiltering_hive_and_missing_columns(tmp_path: Path) -> None:
+    df = _staged_df()
+    for part in [1, 2]:
+        d = tmp_path / f"part={part}"
+        d.mkdir()
+        cols = df.columns if part == 1 else ["a", "q", "c"]
+        df.select(cols).write_parquet(d / "0.parquet", row_group_size=4)
+
+    full = pl.concat(
+        [
+            df.with_columns(part=pl.lit(1, pl.Int64)),
+            df.with_columns(b=pl.lit(None, pl.Int64), part=pl.lit(2, pl.Int64)),
+        ]
+    )
+
+    exprs = [
+        # The hive column stays inside the second pass.
+        (pl.col("q") == 0) & ((pl.col("part") == 1) | (pl.col("a") > 5)),
+        # A missing column read by the second pass.
+        (pl.col("q") == 0) & (pl.col("a") < pl.col("b").fill_null(4)),
+        # A missing column read by the first pass.
+        pl.col("b").is_null() & (pl.col("q") < pl.col("a")),
+        # The second pass reads only constant columns in the second file.
+        (pl.col("q") == 0) & ((pl.col("part") == 2) | pl.col("b").is_null()),
+    ]
+    for expr in exprs:
+        result = (
+            pl.scan_parquet(
+                tmp_path,
+                parallel="prefiltered",
+                hive_partitioning=True,
+                missing_columns="insert",
+            )
+            .filter(expr)
+            .collect()
+        )
+        assert_frame_equal(
+            result.sort("part", "c"),
+            full.filter(expr).sort("part", "c"),
+            check_column_order=False,
+        )
 
 
 def test_empty_parquet() -> None:
@@ -4896,3 +5108,60 @@ def test_scan_parquet_enum_invalid_utf8_29235(tmp_path: Path) -> None:
 
     with pytest.raises(pl.exceptions.ComputeError, match=r"(?i)invalid utf-?8"):
         pl.read_parquet(path)
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.parametrize(
+    ("nested", "enum_statistics"), [(False, False), (True, False), (False, True)]
+)
+def test_enum_table_statistics(
+    engine: EngineType, nested: bool, enum_statistics: bool
+) -> None:
+    # String bounds [a, c] must include b, which precedes a in enum order.
+    df = pl.DataFrame(
+        {"e": ["a", "b", "c", None]}, schema={"e": pl.Enum(["b", "a", "c"])}
+    )
+    bounds = pl.col("e") if enum_statistics else pl.col("e").cast(pl.String)
+    stats = df.select(
+        pl.len(),
+        bounds.min().alias("e_min"),
+        bounds.max().alias("e_max"),
+        pl.col("e").null_count().alias("e_nc"),
+    )
+    col = pl.col("e")
+    if nested:
+        df = df.select(pl.struct("e").alias("s"))
+        stats = stats.select(
+            "len",
+            *(
+                pl.struct(pl.col(f"e_{suffix}").alias("e")).alias(f"s_{suffix}")
+                for suffix in ["min", "max", "nc"]
+            ),
+        )
+        col = pl.col("s").struct.field("e")
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    predicate = col < "a"
+    out = (
+        pl.scan_parquet(f, _table_statistics=stats)
+        .filter(predicate)
+        .collect(engine=engine)
+    )
+    assert_frame_equal(out, df.filter(predicate))
+
+
+def test_enum_table_statistics_prune() -> None:
+    dtype = pl.Enum(["b", "a", "c"])
+    stats = pl.DataFrame(
+        {"len": [1], "e_min": ["b"], "e_max": ["b"], "e_nc": [0]},
+        schema_overrides={"len": pl.get_index_type(), "e_nc": pl.get_index_type()},
+    )
+    # Pruning must avoid reading the invalid file: b < a in enum order.
+    out = (
+        pl.scan_parquet(b"unreadable", schema={"e": dtype}, _table_statistics=stats)
+        .filter(pl.col("e") > "a")
+        .collect(engine="streaming")
+    )
+    assert_frame_equal(out, pl.DataFrame(schema={"e": dtype}))

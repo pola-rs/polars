@@ -1,14 +1,14 @@
 use std::hash::Hash;
 
-use arrow::array::*;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::compute::arity::unary;
-use arrow::datatypes::{ArrowDataType, TimeUnit};
-use arrow::offset::{Offset, Offsets};
-use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 #[cfg(feature = "dtype-decimal")]
 use num_traits::{Float, ToPrimitive};
+use polars_arrow::array::*;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::compute::arity::unary;
+use polars_arrow::datatypes::{ArrowDataType, TimeUnit};
+use polars_arrow::offset::{Offset, Offsets};
+use polars_arrow::types::NativeType;
 use polars_error::PolarsResult;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -129,7 +129,7 @@ where
     let validity = validity.freeze();
     let validity = match array.validity() {
         None => validity,
-        Some(arr_validity) => arrow::bitmap::and(&validity, arr_validity),
+        Some(arr_validity) => polars_arrow::bitmap::and(&validity, arr_validity),
     };
 
     PrimitiveArray::<O>::new(dtype, out.into(), Some(validity))

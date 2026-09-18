@@ -411,6 +411,12 @@ fn try_lower_elementwise_scalar_agg_expr(
             ..
         } => Some(replace_agg_uniq!(expr)),
 
+        #[cfg(feature = "approx_quantile")]
+        AExpr::Function {
+            function: IRFunctionExpr::ApproxQuantileSketch { .. },
+            ..
+        } => Some(replace_agg_uniq!(expr)),
+
         AExpr::Function {
             function:
                 IRFunctionExpr::Boolean(

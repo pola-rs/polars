@@ -7,6 +7,7 @@ use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 
 pub use categorical::PyCategories;
 #[cfg(feature = "object")]
@@ -26,8 +27,8 @@ use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::decimal::dec128_verify_prec_scale;
 use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
-use polars_core::utils::arrow::array::Array;
 use polars_core::utils::materialize_dyn_int;
+use polars_core::utils::polars_arrow::array::Array;
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
@@ -1201,18 +1202,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ApproxQuantileMethod> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "auto" => ApproxQuantileMethod::Auto,
-            "kll" => ApproxQuantileMethod::KLL,
-            "req_lo" => ApproxQuantileMethod::ReqSketch { hra: false },
-            "req_hi" => ApproxQuantileMethod::ReqSketch { hra: true },
-            "req_both" => ApproxQuantileMethod::DoubleReqSketch,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "`method` must be one of {{'auto', 'kll', 'req_lo', 'req_hi', 'req_both'}}, got {v}",
-                )));
-            },
-        };
+        let s = ob.extract::<PyBackedStr>()?;
+        let parsed =
+            ApproxQuantileMethod::from_str(&s).map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Wrap(parsed))
     }
 }

@@ -13,5 +13,5 @@ mod utf8;
 #[allow(dead_code)]
 #[derive(PartialEq)]
 struct A {
-    array: Box<dyn arrow::scalar::Scalar>,
+    array: Box<dyn polars_arrow::scalar::Scalar>,
 }

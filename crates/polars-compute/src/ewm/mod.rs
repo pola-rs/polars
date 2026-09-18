@@ -2,10 +2,10 @@ pub mod cov;
 pub mod mean;
 pub mod options;
 pub mod sum;
-use arrow::array::Array;
 pub use cov::{EwmCovState, EwmStdState, EwmVarState, ewm_std, ewm_var};
 pub use mean::{EwmMeanState, ewm_mean};
 pub use options::EWMOptions;
+use polars_arrow::array::Array;
 pub use sum::{EwmSumState, ewm_sum};
 
 pub trait EwmStateUpdate {

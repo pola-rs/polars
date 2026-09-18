@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::array::Array;
-use arrow::datatypes::Field as ArrowField;
-use arrow::io::ipc::write2::array::{IpcBatchSerializationContext, write_array};
-use arrow::io::ipc::write2::message::{
+use polars_arrow::array::Array;
+use polars_arrow::datatypes::Field as ArrowField;
+use polars_arrow::io::ipc::write2::array::{IpcBatchSerializationContext, write_array};
+use polars_arrow::io::ipc::write2::message::{
     finish_encode_ipc_dictionary_batch, finish_encode_ipc_record_batch,
 };
 use polars_async::executor::{self, TaskPriority};
@@ -13,8 +13,8 @@ use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::prelude::CompatLevel;
 use polars_core::series::arrow_export::ToArrowConverter;
-use polars_core::utils::arrow;
-use polars_core::utils::arrow::io::ipc::write::{WriteOptions, schema};
+use polars_core::utils::polars_arrow;
+use polars_core::utils::polars_arrow::io::ipc::write::{WriteOptions, schema};
 use polars_error::PolarsResult;
 use polars_io::utils::bytes_bufferer::{BytesBufferer, BytesBuffererConfig};
 use polars_utils::IdxSize;

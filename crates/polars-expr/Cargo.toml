@@ -12,12 +12,12 @@ description = "Physical expression implementation of the Polars project."
 version_check = { workspace = true }
 
 [dependencies]
-arrow = { workspace = true }
 bitflags = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 libloading = { workspace = true, optional = true }
 num-traits = { workspace = true }
+polars-arrow = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random", "temporal"] }
@@ -33,6 +33,7 @@ rand = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 regex = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
 
 [features]
 nightly = ["polars-core/nightly", "polars-ops/nightly", "polars-plan/nightly"]
@@ -88,7 +89,11 @@ dtype-f16 = ["polars-plan/dtype-f16"]
 
 # operations
 approx_unique = ["polars-plan/approx_unique", "polars-ops/approx_unique"]
-approx_quantile = ["polars-plan/approx_quantile", "polars-ops/approx_quantile"]
+approx_quantile = [
+  "polars-plan/approx_quantile",
+  "polars-ops/approx_quantile",
+  "dep:serde",
+]
 is_in = ["polars-plan/is_in", "polars-ops/is_in"]
 is_first_distinct = ["polars-plan/is_first_distinct", "polars-ops/is_first_distinct"]
 is_last_distinct = ["polars-plan/is_last_distinct", "polars-ops/is_last_distinct"]

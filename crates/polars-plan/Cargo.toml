@@ -13,6 +13,7 @@ doctest = false
 
 [dependencies]
 libloading = { workspace = true, optional = true }
+polars-arrow = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }
@@ -26,7 +27,6 @@ polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
-arrow = { workspace = true }
 bitflags = { workspace = true }
 blake3 = { workspace = true }
 bytemuck = { workspace = true }
@@ -138,7 +138,7 @@ dsl-schema = [
   "dep:serde_json",
   "serde_json/preserve_order",
   "serde",
-  "arrow/dsl-schema",
+  "polars-arrow/dsl-schema",
   "polars-buffer/schemars",
   "polars-core/dsl-schema",
   "polars-defs/dsl-schema",

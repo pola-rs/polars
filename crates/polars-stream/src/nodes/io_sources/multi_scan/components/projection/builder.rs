@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::{IcebergSchema, IcebergSchemaRef};

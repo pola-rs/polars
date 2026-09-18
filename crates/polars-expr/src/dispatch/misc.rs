@@ -40,45 +40,30 @@ pub(super) fn approx_n_unique(s: &Column) -> PolarsResult<Column> {
         .map(|v| Column::new_scalar(s.name().clone(), Scalar::new(IDX_DTYPE, v.into()), 1))
 }
 
+/// Summarize the input into a single-row sketch column.
 #[cfg(feature = "approx_quantile")]
-pub(super) fn approx_quantile(
-    s: &[Column],
+pub(super) fn approx_quantile_sketch(
+    s: &Column,
     method: &ApproxQuantileMethod,
     error: f64,
 ) -> PolarsResult<Column> {
+    let input = s.as_materialized_series_maintain_scalar();
+    let out = polars_ops::prelude::approx_quantile_sketch(&input, error, method)?;
+    Ok(out.into_column())
+}
+
+/// Estimate quantiles from a sketch column.
+#[cfg(feature = "approx_quantile")]
+pub(super) fn approx_quantile_estimate(
+    s: &[Column],
+    values_dtype: &DataType,
+) -> PolarsResult<Column> {
     assert_eq!(s.len(), 2);
-    let input = s[0].as_materialized_series();
-    let mut quantile = s[1].as_materialized_series();
-    polars_ensure!(!quantile.is_empty(), ComputeError:
-        "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
-        got an empty input"
-    );
-    polars_ensure!(quantile.len() == 1, ComputeError:
-        "polars does not support varying approximate quantiles yet, \
-        make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
-    );
+    let quantiles = s[1].as_materialized_series();
+    let sketch = s[0].as_materialized_series();
 
-    // A list input asks for several quantiles at once, and comes back as a list.
-    let is_list = quantile.dtype().is_list();
-    let inner_s;
-    if is_list {
-        let list = quantile.list()?;
-        inner_s = list
-            .get_as_series(0)
-            .ok_or_else(|| polars_err!(ComputeError: "`quantile` should not be null"))?;
-        quantile = &inner_s;
-    }
-
-    let out = polars_ops::prelude::approx_quantile(input, quantile, error, method)?;
-    let name = input.name().clone();
-    let sc = match is_list {
-        true => Scalar::new(
-            DataType::List(Box::new(out.dtype().clone())),
-            AnyValue::List(out),
-        ),
-        false => Scalar::new(out.dtype().clone(), out.get(0)?.into_static()),
-    };
-    Ok(sc.into_column(name))
+    let out = polars_ops::prelude::approx_quantile_estimate(sketch, quantiles, values_dtype)?;
+    Ok(out.into_column())
 }
 
 #[cfg(feature = "diff")]
@@ -449,14 +434,14 @@ pub(super) fn row_hash(c: &Column, seed: u64) -> PolarsResult<Column> {
 
 #[cfg(feature = "arg_where")]
 pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Column> {
-    use polars_core::utils::arrow::bitmap::utils::SlicesIterator;
+    use polars_core::utils::polars_arrow::bitmap::utils::SlicesIterator;
 
     let predicate = s[0].bool()?;
 
     if predicate.is_empty() {
         Ok(Column::full_null(predicate.name().clone(), 0, &IDX_DTYPE))
     } else {
-        use arrow::datatypes::IdxArr;
+        use polars_arrow::datatypes::IdxArr;
         use polars_core::prelude::IdxCa;
 
         let capacity = predicate.sum().unwrap();

@@ -1,8 +1,9 @@
 use std::fmt;
 
-use arrow::array::Array;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
@@ -46,8 +47,13 @@ impl ColumnPredicateExpr {
         use SpecializedColumnPredicate as S;
         #[cfg(feature = "parquet")]
         use SpecializedParquetColumnExpr as P;
+        // A specialized predicate compares its scalars with the values as the file
+        // stores them, which polars scales for some Arrow types.
         #[cfg(feature = "parquet")]
         let specialized = specialized.and_then(|s| {
+            if DataType::arrow_value_scale(&source_arrow_dtype) != 1 {
+                return None;
+            }
             Some(match s {
                 S::Equal(s) => P::Equal(cast_to_parquet_scalar(s)?),
                 S::Between(low, high) => {
@@ -129,17 +135,9 @@ fn predicate_values_to_series(
     dtype: &DataType,
     source_arrow_dtype: &ArrowDataType,
 ) -> PolarsResult<Series> {
-    // For example, Arrow seconds will be stored as Polars milliseconds, so we can not just
-    // zero-copy construct the predicate series
-    let timestamp_units_differ = matches!(
-        (source_arrow_dtype, dtype),
-        (
-            ArrowDataType::Timestamp(source_unit, _),
-            DataType::Datetime(target_unit, _),
-        ) if source_unit != &target_unit.to_arrow()
-    );
-
-    if timestamp_units_differ {
+    // Polars stores the values of some Arrow types scaled, e.g. Arrow seconds as
+    // milliseconds, so the predicate series cannot be constructed zero-copy.
+    if DataType::arrow_value_scale(source_arrow_dtype) != 1 {
         let values = polars_compute::cast::cast(
             values,
             source_arrow_dtype,
@@ -328,25 +326,128 @@ impl PhysicalIoExpr for PhysicalExprWithConstCols<Arc<dyn PhysicalIoExpr>> {
     }
 }
 
+/// The row predicate split into two conjunctions a reader may evaluate one after the
+/// other: rows that fail `first` never need the columns only `second` reads.
+#[derive(Clone)]
+pub struct StagedScanIOPredicate {
+    pub first: Arc<dyn PhysicalIoExpr>,
+    pub first_columns: Arc<PlIndexSet<PlSmallStr>>,
+    pub second: Arc<dyn PhysicalIoExpr>,
+    /// Partial predicates for each column of `first`. Complete when they add up to
+    /// `first`, whether or not [`ScanIOPredicate::column_predicates`] is complete.
+    pub column_predicates: Arc<ColumnPredicates>,
+}
+
+impl StagedScanIOPredicate {
+    fn with_constant_columns(&self, constants: &[(PlSmallStr, Scalar)]) -> Self {
+        let mut first_columns = self.first_columns.as_ref().clone();
+        let mut column_predicates = self.column_predicates.as_ref().clone();
+        for (c, _) in constants {
+            first_columns.swap_remove(c);
+            column_predicates.predicates.remove(c);
+        }
+        Self {
+            first: Arc::new(PhysicalExprWithConstCols {
+                constants: constants.to_vec(),
+                child: self.first.clone(),
+            }),
+            first_columns: Arc::new(first_columns),
+            second: Arc::new(PhysicalExprWithConstCols {
+                constants: constants.to_vec(),
+                child: self.second.clone(),
+            }),
+            column_predicates: Arc::new(column_predicates),
+        }
+    }
+}
+
+/// What a producer has published for a column, read once per file: a reader
+/// skips the batches whose statistics fall outside the range.
+#[derive(Clone, Debug)]
+pub enum RuntimeRange {
+    /// Not published yet. Every batch is kept; a later file may see a range.
+    Pending,
+    /// Never published. Every batch is kept.
+    Disabled,
+    /// No value can match. Every batch is skipped.
+    Empty,
+    /// Only values in `lo..=hi` can match.
+    Range { lo: Scalar, hi: Scalar },
+}
+
+pub trait RuntimeRangeSource: Send + Sync {
+    fn runtime_range(&self) -> RuntimeRange;
+}
+
+/// A column whose batches a reader may skip by a [`RuntimeRange`]. It is never
+/// evaluated per row.
+#[derive(Clone)]
+pub struct RuntimeRangeHint {
+    pub column: PlSmallStr,
+    pub source: Arc<dyn RuntimeRangeSource>,
+    /// The column's value in this file when it is not stored in the file, such as
+    /// a hive column or a missing column with a default.
+    pub constant: Option<Scalar>,
+}
+
+/// A range bound as `dtype`, or `None` when it does not survive the cast, in
+/// which case it bounds nothing.
+pub fn cast_bound(bound: &Scalar, dtype: &DataType) -> Option<Scalar> {
+    bound
+        .clone()
+        .cast_with_options(dtype, CastOptions::NonStrict)
+        .ok()
+        .filter(|b| !b.is_null())
+}
+
+impl RuntimeRangeHint {
+    /// Whether a file whose column is the constant `value` can hold a match.
+    /// `None` when the range does not settle it.
+    pub fn constant_matches(range: &RuntimeRange, value: &Scalar) -> Option<bool> {
+        match range {
+            RuntimeRange::Pending | RuntimeRange::Disabled => None,
+            RuntimeRange::Empty => Some(false),
+            RuntimeRange::Range { lo, hi } => {
+                if value.is_null() {
+                    return Some(false);
+                }
+                let lo = cast_bound(lo, value.dtype())?;
+                let hi = cast_bound(hi, value.dtype())?;
+                let value = value.value();
+                Some(value >= lo.value() && value <= hi.value())
+            },
+        }
+    }
+
+    /// Bind the hints of column `name` to its constant value in a file.
+    pub fn set_constant(hints: &mut [Self], name: &str, value: &Scalar) {
+        for hint in hints.iter_mut().filter(|h| h.column == name) {
+            hint.constant = Some(value.clone());
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ScanIOPredicate {
     pub predicate: Arc<dyn PhysicalIoExpr>,
 
-    /// Whether `predicate` filters rows at all. False when the predicate only
-    /// carries parts a reader consults to skip batches by their statistics.
+    /// `predicate` as two conjunctions when `first` leaves some of the live columns unread.
+    pub staged: Option<StagedScanIOPredicate>,
+
+    /// Whether `predicate` filters rows at all. False when the scan only has
+    /// runtime ranges to skip batches by.
     pub filters_rows: bool,
 
     /// Column names that are used in the predicate.
     pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
 
-    /// Column names whose statistics the skip-batch predicate reads. A superset of
-    /// the live columns.
-    pub skip_batch_columns: Arc<PlIndexSet<PlSmallStr>>,
-
     /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
 
-    /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
+    /// Columns whose batches are skipped by a range published at run time.
+    pub runtime_ranges: Vec<RuntimeRangeHint>,
+
+    /// Partial predicates for each column of `predicate`.
     pub column_predicates: Arc<ColumnPredicates>,
 
     /// Predicate parts only referring to hive columns.
@@ -356,19 +457,25 @@ pub struct ScanIOPredicate {
 }
 
 impl ScanIOPredicate {
+    /// Whether the predicate or a range hint reads the column.
+    pub fn reads_column(&self, name: &str) -> bool {
+        self.live_columns.contains(name) || self.runtime_ranges.iter().any(|h| h.column == name)
+    }
+
     pub fn set_external_constant_columns(&mut self, constant_columns: Vec<(PlSmallStr, Scalar)>) {
         if constant_columns.is_empty() {
             return;
         }
 
         let mut live_columns = self.live_columns.as_ref().clone();
-        let mut skip_batch_columns = self.skip_batch_columns.as_ref().clone();
         for (c, _) in constant_columns.iter() {
             live_columns.swap_remove(c);
-            skip_batch_columns.swap_remove(c);
         }
         self.live_columns = Arc::new(live_columns);
-        self.skip_batch_columns = Arc::new(skip_batch_columns);
+
+        for (name, value) in constant_columns.iter() {
+            RuntimeRangeHint::set_constant(&mut self.runtime_ranges, name, value);
+        }
 
         if let Some(skip_batch_predicate) = self.skip_batch_predicate.take() {
             let mut sbp_constant_columns = Vec::with_capacity(constant_columns.len() * 3);
@@ -394,6 +501,10 @@ impl ScanIOPredicate {
             column_predicates.predicates.remove(c);
         }
         self.column_predicates = Arc::new(column_predicates);
+
+        if let Some(staged) = self.staged.as_mut() {
+            *staged = staged.with_constant_columns(&constant_columns);
+        }
 
         self.predicate = Arc::new(PhysicalExprWithConstCols {
             constants: constant_columns,

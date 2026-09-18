@@ -3,7 +3,7 @@ use std::collections::BinaryHeap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use arrow::array::builder::ShareStrategy;
+use polars_arrow::array::builder::ShareStrategy;
 use polars_async::executor;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
@@ -16,6 +16,7 @@ use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_ops::series::coalesce_columns;
+use polars_plan::plans::TrivialPredicateExpr;
 use polars_plan::plans::options::RuntimeFilter;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
@@ -191,27 +192,63 @@ struct EquiJoinParams {
     right_payload_schema: Arc<Schema>,
     args: JoinArgs,
     fused_predicate: Option<FusedPredicate>,
-    // Build-key min/max ranges to publish once the build is done.
-    // This will be used to skip row-groups at scan of the probe side.
+    // Key min/max ranges for the scans below the planned probe side, set once
+    // from a complete sample of the planned build side or from its build.
     runtime_filters: Vec<RuntimeFilter>,
     random_state: PlRandomState,
     sample_limit: usize,
 }
 
+/// The side a plan's build side names, if any.
+fn build_side_left(side: Option<&JoinBuildSide>) -> Option<bool> {
+    match side {
+        Some(JoinBuildSide::ForceLeft | JoinBuildSide::PreferLeft) => Some(true),
+        Some(JoinBuildSide::ForceRight | JoinBuildSide::PreferRight) => Some(false),
+        None => None,
+    }
+}
+
 impl EquiJoinParams {
     /// The side the plan asked to build from, if any.
     fn planned_build_left(&self) -> Option<bool> {
-        match self.args.build_side {
-            Some(JoinBuildSide::ForceLeft | JoinBuildSide::PreferLeft) => Some(true),
-            Some(JoinBuildSide::ForceRight | JoinBuildSide::PreferRight) => Some(false),
-            None => None,
+        build_side_left(self.args.build_side.as_ref())
+    }
+
+    /// Whether the build keys' ranges go to the runtime filters: the filters exist,
+    /// were not set from a sample, and describe the side being built.
+    fn publishes_runtime_filters(&self) -> bool {
+        !self.runtime_filters.is_empty()
+            && !self.runtime_filters[0].pred.is_set()
+            && self.left_is_build == self.planned_build_left()
+    }
+
+    /// Set every runtime filter to the range of its key on the given side.
+    fn publish_runtime_filters(&mut self, left: bool, ranges: Vec<KeyRange>) {
+        let key_schema = if left {
+            &self.left_key_schema
+        } else {
+            &self.right_key_schema
+        };
+        for (filter, range) in self.runtime_filters.iter().zip(ranges) {
+            if config::verbose() {
+                let name = key_schema
+                    .get_at_index(filter.key_idx)
+                    .map(|(n, _)| n.as_str());
+                eprintln!(
+                    "publishing runtime filter for key {}: {range:?}",
+                    name.unwrap_or("?")
+                );
+            }
+            filter.pred.set(Arc::new(range));
         }
     }
 
-    /// Whether the build keys' ranges go to the runtime filters: the filters exist
-    /// and describe the side being built.
-    fn publishes_runtime_filters(&self) -> bool {
-        !self.runtime_filters.is_empty() && self.left_is_build == self.planned_build_left()
+    /// Widen the range of every runtime filter with its key column.
+    fn extend_key_ranges(&self, keys: &DataFrame, ranges: &mut [KeyRange]) -> PolarsResult<()> {
+        for (filter, range) in self.runtime_filters.iter().zip(ranges) {
+            range.extend(&keys.columns()[filter.key_idx])?;
+        }
+        Ok(())
     }
 
     /// Should we emit unmatched rows from the build side?
@@ -353,17 +390,25 @@ async fn select_keys(
         .0)
 }
 
+async fn select_key_columns(
+    df: &DataFrame,
+    key_selectors: &[StreamExpr],
+    state: &ExecutionState,
+) -> PolarsResult<DataFrame> {
+    let mut key_columns = Vec::new();
+    for selector in key_selectors {
+        key_columns.push(selector.evaluate(df, state).await?.into_column());
+    }
+    unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns) }
+}
+
 async fn select_keys_with_columns(
     df: &DataFrame,
     key_selectors: &[StreamExpr],
     params: &EquiJoinParams,
     state: &ExecutionState,
 ) -> PolarsResult<(HashKeys, DataFrame)> {
-    let mut key_columns = Vec::new();
-    for selector in key_selectors {
-        key_columns.push(selector.evaluate(df, state).await?.into_column());
-    }
-    let keys = unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns)? };
+    let keys = select_key_columns(df, key_selectors, state).await?;
     let hash_keys = HashKeys::from_df(
         &keys,
         params.random_state.clone(),
@@ -450,9 +495,22 @@ struct SampleState {
     left_len: usize,
     right: Vec<Morsel>,
     right_len: usize,
+    /// The only side being read: the preferred build side of a join with runtime
+    /// filters, until it ends or reaches the sample limit. A side that ends is
+    /// complete, so its key ranges are published before the other side is read.
+    only_side: Option<bool>,
 }
 
 impl SampleState {
+    fn len(&self, left: bool) -> usize {
+        if left { self.left_len } else { self.right_len }
+    }
+
+    /// Whether a side is being read.
+    fn is_open(&self, left: bool) -> bool {
+        self.only_side.is_none_or(|only| only == left)
+    }
+
     async fn sink(
         mut recv: PortReceiver,
         morsels: &mut Vec<Morsel>,
@@ -486,6 +544,28 @@ impl SampleState {
         state: &StreamingExecutionState,
         spill_ctx: &MostRecentSpillContext,
     ) -> PolarsResult<Option<BuildState>> {
+        if let Some(left) = self.only_side {
+            let idx = if left { 0 } else { 1 };
+            let len = self.len(left);
+            if len >= params.sample_limit {
+                if config::verbose() {
+                    eprintln!("preferred build side reached the sample limit, sampling both sides");
+                }
+            } else if recv[idx] == PortState::Done {
+                if config::verbose() {
+                    eprintln!("preferred build side done with {len} rows, publishing its ranges");
+                }
+                self.publish_runtime_filters(left, params, state)?;
+                // Nothing can match an empty side; the other side is never read.
+                if len == 0 {
+                    return Ok(Some(self.start_build(left, params, state, spill_ctx)?));
+                }
+            } else {
+                return Ok(None);
+            }
+            self.only_side = None;
+        }
+
         let left_saturated = self.left_len >= params.sample_limit;
         let right_saturated = self.right_len >= params.sample_limit;
         let left_done = recv[0] == PortState::Done || left_saturated;
@@ -537,8 +617,7 @@ impl SampleState {
             (true, false) => false,
 
             (true, true) => {
-                // A preference that came with runtime filters was made on an estimate
-                // the sample has since outgrown; it is not followed blindly.
+                // A preference with runtime filters does not decide; the sample does.
                 match params.args.build_side {
                     Some(JoinBuildSide::PreferLeft) if params.runtime_filters.is_empty() => true,
                     Some(JoinBuildSide::PreferRight) if params.runtime_filters.is_empty() => false,
@@ -567,6 +646,45 @@ impl SampleState {
             state,
             spill_ctx,
         )?))
+    }
+
+    /// Hand the key ranges of a completely sampled side to the runtime filters.
+    /// The range holds whichever side is built later, as no key of the other
+    /// side outside it can match.
+    fn publish_runtime_filters(
+        &self,
+        left: bool,
+        params: &mut EquiJoinParams,
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
+        let (morsels, key_selectors) = if left {
+            (&self.left, &params.left_key_selectors)
+        } else {
+            (&self.right, &params.right_key_selectors)
+        };
+        let new_ranges = || vec![KeyRange::default(); params.runtime_filters.len()];
+        let ranges = RAYON.install(|| {
+            morsels
+                .par_iter()
+                .try_fold(new_ranges, |mut ranges, morsel| {
+                    let df = morsel.df_blocking();
+                    let keys = ASYNC.block_on(select_key_columns(
+                        &df,
+                        key_selectors,
+                        &state.in_memory_exec_state,
+                    ))?;
+                    params.extend_key_ranges(&keys, &mut ranges)?;
+                    PolarsResult::Ok(ranges)
+                })
+                .try_reduce(new_ranges, |mut a, b| {
+                    for (a, b) in a.iter_mut().zip(b) {
+                        a.merge(b);
+                    }
+                    Ok(a)
+                })
+        })?;
+        params.publish_runtime_filters(left, ranges);
+        Ok(())
     }
 
     /// Start building from `left_is_build`, feeding it the morsels sampled from
@@ -702,6 +820,7 @@ impl BuildState {
             key_selectors = &params.right_key_selectors;
         };
 
+        let publishes_runtime_filters = params.publishes_runtime_filters();
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload. We must rechunk the payload for
             // later gathers.
@@ -709,10 +828,8 @@ impl BuildState {
             let (hash_keys, keys) =
                 select_keys_with_columns(&df, key_selectors, params, &state.in_memory_exec_state)
                     .await?;
-            if params.publishes_runtime_filters() {
-                for (filter, range) in params.runtime_filters.iter().zip(&mut local.key_ranges) {
-                    range.extend(&keys.columns()[filter.key_idx])?;
-                }
+            if publishes_runtime_filters {
+                params.extend_key_ranges(&keys, &mut local.key_ranges)?;
             }
             let mut payload = select_payload(df.clone(), payload_selector);
             payload.rechunk_mut();
@@ -733,33 +850,35 @@ impl BuildState {
         Ok(())
     }
 
-    /// Hand the range of every build key with a runtime filter to the scans
-    /// below the probe side. A filter of a side that was not built stays unset,
-    /// which skips nothing.
-    fn publish_runtime_filters(&mut self, params: &EquiJoinParams) {
+    /// Whether no row was built, sampled morsels included.
+    fn is_empty(&self) -> bool {
+        self.local_builders
+            .iter()
+            .all(|b| b.morsels.iter().all(|(_, _, keys)| keys.is_empty()))
+    }
+
+    /// Hand the range of every build key to the runtime filters. Filters set
+    /// from a sample keep their range, whichever side is built; filters of a
+    /// side that was not built get a range that skips nothing.
+    fn publish_runtime_filters(&mut self, params: &mut EquiJoinParams) {
         if !params.publishes_runtime_filters() {
+            for filter in &params.runtime_filters {
+                if !filter.pred.is_set() {
+                    filter.pred.set(Arc::new(TrivialPredicateExpr));
+                }
+            }
             return;
         }
-        for (i, filter) in params.runtime_filters.iter().enumerate() {
-            let mut range = KeyRange::default();
-            for local in &mut self.local_builders {
-                range.merge(std::mem::take(&mut local.key_ranges[i]));
-            }
-            if config::verbose() {
-                let keys = if params.left_is_build.unwrap() {
-                    &params.left_key_schema
-                } else {
-                    &params.right_key_schema
-                };
-                eprintln!(
-                    "publishing runtime filter for build key {}: {range:?}",
-                    keys.get_at_index(filter.key_idx)
-                        .map(|(n, _)| n.as_str())
-                        .unwrap_or("?")
-                );
-            }
-            filter.pred.set(Arc::new(range));
-        }
+        let ranges = (0..params.runtime_filters.len())
+            .map(|i| {
+                let mut range = KeyRange::default();
+                for local in &mut self.local_builders {
+                    range.merge(std::mem::take(&mut local.key_ranges[i]));
+                }
+                range
+            })
+            .collect();
+        params.publish_runtime_filters(params.left_is_build.unwrap(), ranges);
     }
 
     fn finalize_ordered(&mut self, params: &EquiJoinParams, table: &dyn IdxTable) -> ProbeState {
@@ -804,14 +923,15 @@ impl BuildState {
                     let mut p_payload = DataFrameBuilder::new(payload_schema.clone());
                     p_payload.reserve(payload_rows);
 
-                    let mut p_seq_ids = Vec::new();
+                    let mut p_row_positions = Vec::new();
                     if track_unmatchable {
-                        p_seq_ids.reserve(payload_rows);
+                        p_row_positions.reserve(payload_rows);
                     }
 
                     // Linearize and build.
                     unsafe {
-                        let mut norm_seq_id = 0 as IdxSize;
+                        // Row offset of the current morsel in the full build input.
+                        let mut morsel_row_offset = 0u64;
                         while let Some(Priority(Reverse(_seq), l_idx)) = kmerge.pop() {
                             let l = local_builders.get_unchecked(l_idx);
                             let idx_in_l = *cur_idx_per_loc.get_unchecked(l_idx);
@@ -832,9 +952,12 @@ impl BuildState {
                             p_payload.gather_extend(&payload, p_morsel_idxs, ShareStrategy::Never);
 
                             if track_unmatchable {
-                                p_seq_ids.resize(p_payload.len(), norm_seq_id);
-                                norm_seq_id += 1;
+                                #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
+                                p_row_positions.extend(
+                                    p_morsel_idxs.iter().map(|i| morsel_row_offset + *i as u64),
+                                );
                             }
+                            morsel_row_offset += payload.height() as u64;
                         }
                     }
 
@@ -844,7 +967,7 @@ impl BuildState {
                             ProbeTable {
                                 hash_table: p_table,
                                 payload: p_payload.freeze(),
-                                seq_ids: p_seq_ids,
+                                row_positions: p_row_positions,
                             },
                         )
                         .ok()
@@ -966,7 +1089,7 @@ impl BuildState {
                             ProbeTable {
                                 hash_table: p_table,
                                 payload: p_payload.freeze(),
-                                seq_ids: Vec::new(),
+                                row_positions: Vec::new(),
                             },
                         )
                         .ok()
@@ -1000,7 +1123,9 @@ impl BuildState {
 struct ProbeTable {
     hash_table: Box<dyn IdxTable>,
     payload: DataFrame,
-    seq_ids: Vec<IdxSize>,
+    // Position of each payload row in the full build input. Only filled for
+    // ordered joins that emit unmatched build rows.
+    row_positions: Vec<u64>,
 }
 
 struct ProbeState {
@@ -1295,48 +1420,29 @@ impl ProbeState {
         };
 
         let mut unmarked_idxs = Vec::new();
-        let mut linearized_idxs = Vec::new();
-
-        for (p_idx, p) in self.table_per_partition.iter().enumerate_idx() {
-            p.hash_table
-                .unmarked_keys(&mut unmarked_idxs, 0, IdxSize::MAX);
-            linearized_idxs.extend(
-                unmarked_idxs
-                    .iter()
-                    .map(|i| (unsafe { *p.seq_ids.get_unchecked(*i as usize) }, p_idx, *i)),
-            );
-        }
-
-        linearized_idxs.sort_by_key(|(seq_id, _, _)| *seq_id);
+        let mut row_positions = Vec::new();
 
         unsafe {
             let mut build_out = DataFrameBuilder::new(build_payload_schema.clone());
-            build_out.reserve(linearized_idxs.len());
-
-            // Group indices from the same partition.
-            let mut group_start = 0;
-            let mut gather_idxs = Vec::new();
-            while group_start < linearized_idxs.len() {
-                gather_idxs.clear();
-
-                let (_seq, p_idx, idx_in_p) = linearized_idxs[group_start];
-                gather_idxs.push(idx_in_p);
-                let mut group_end = group_start + 1;
-                while group_end < linearized_idxs.len() && linearized_idxs[group_end].1 == p_idx {
-                    gather_idxs.push(linearized_idxs[group_end].2);
-                    group_end += 1;
-                }
-
+            for p in &self.table_per_partition {
+                p.hash_table
+                    .unmarked_keys(&mut unmarked_idxs, 0, IdxSize::MAX);
+                row_positions.extend(
+                    unmarked_idxs
+                        .iter()
+                        .map(|i| *p.row_positions.get_unchecked(*i as usize)),
+                );
                 build_out.gather_extend(
-                    &self.table_per_partition[p_idx as usize].payload,
-                    &gather_idxs,
+                    &p.payload,
+                    &unmarked_idxs,
                     ShareStrategy::Never, // Don't keep entire table alive for unmatched indices.
                 );
-
-                group_start = group_end;
             }
 
-            let mut build_df = build_out.freeze();
+            let mut perm: Vec<IdxSize> = (0..row_positions.len() as IdxSize).collect();
+            perm.sort_unstable_by_key(|i| *row_positions.get_unchecked(*i as usize));
+
+            let mut build_df = build_out.freeze().take_slice_unchecked(&perm);
             let out_df = if params.left_is_build.unwrap() {
                 let probe_df =
                     DataFrame::full_null(&params.right_payload_schema, build_df.height());
@@ -1440,9 +1546,6 @@ impl EmitUnmatchedState {
 }
 
 enum EquiJoinState {
-    /// Only the side the plan prefers to build is read, so the scans under the
-    /// other side see this join's runtime filters if it is built as planned.
-    SamplePreferred(SampleState),
     Sample(SampleState),
     Build(BuildState),
     Probe(ProbeState),
@@ -1530,9 +1633,7 @@ impl EquiJoinNode {
         )?;
 
         // A range is only published for the side the plan named.
-        debug_assert!(
-            runtime_filters.is_empty() || left_is_build.is_some() || args.build_side.is_some()
-        );
+        debug_assert!(runtime_filters.is_empty() || args.build_side.is_some());
 
         let state = if left_is_build.is_some() {
             EquiJoinState::Build(BuildState::new(
@@ -1541,10 +1642,17 @@ impl EquiJoinNode {
                 runtime_filters.len(),
                 BufferedStream::default(),
             ))
-        } else if !runtime_filters.is_empty() {
-            EquiJoinState::SamplePreferred(SampleState::default())
         } else {
-            EquiJoinState::Sample(SampleState::default())
+            // A forced side never samples, so this names a preferred one.
+            let only_side = if runtime_filters.is_empty() {
+                None
+            } else {
+                build_side_left(args.build_side.as_ref())
+            };
+            EquiJoinState::Sample(SampleState {
+                only_side,
+                ..Default::default()
+            })
         };
 
         let left_payload_schema = Arc::new(select_schema(&left_input_schema, &left_payload_select));
@@ -1608,34 +1716,6 @@ impl ComputeNode for EquiJoinNode {
             self.state = EquiJoinState::Done;
         }
 
-        // If we are sampling the preferred side only, build from it once it is
-        // done, or sample both sides once it has outgrown the sample.
-        if let EquiJoinState::SamplePreferred(sample_state) = &mut self.state {
-            let prefer_left = self.params.planned_build_left().unwrap();
-            let (idx, len) = if prefer_left {
-                (0, sample_state.left_len)
-            } else {
-                (1, sample_state.right_len)
-            };
-            if len >= self.params.sample_limit {
-                if config::verbose() {
-                    eprintln!("preferred build side reached the sample limit, sampling both sides");
-                }
-                self.state = EquiJoinState::Sample(core::mem::take(sample_state));
-            } else if recv[idx] == PortState::Done {
-                if config::verbose() {
-                    eprintln!("preferred build side done with {len} rows, building it");
-                }
-                let build_state = sample_state.start_build(
-                    prefer_left,
-                    &mut self.params,
-                    state,
-                    &self.spill_ctx,
-                )?;
-                self.state = EquiJoinState::Build(build_state);
-            }
-        }
-
         // If we are sampling and both sides are done/filled, transition to building.
         if let EquiJoinState::Sample(sample_state) = &mut self.state {
             if let Some(build_state) = sample_state.try_transition_to_build(
@@ -1656,15 +1736,18 @@ impl ComputeNode for EquiJoinNode {
         let probe_idx = 1 - build_idx;
 
         // If we are building and the build input is done, transition to probing.
+        // An inner join with nothing to probe against is done without reading
+        // the probe side.
         if let EquiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
-                build_state.publish_runtime_filters(&self.params);
-                let probe_state = if self.params.preserve_order_build {
-                    build_state.finalize_ordered(&self.params, &*self.table)
+                build_state.publish_runtime_filters(&mut self.params);
+                self.state = if self.params.args.how == JoinType::Inner && build_state.is_empty() {
+                    EquiJoinState::Done
+                } else if self.params.preserve_order_build {
+                    EquiJoinState::Probe(build_state.finalize_ordered(&self.params, &*self.table))
                 } else {
-                    build_state.finalize_unordered(&self.params, &*self.table)
+                    EquiJoinState::Probe(build_state.finalize_unordered(&self.params, &*self.table))
                 };
-                self.state = EquiJoinState::Probe(probe_state);
             }
         }
 
@@ -1703,35 +1786,14 @@ impl ComputeNode for EquiJoinNode {
         }
 
         match &mut self.state {
-            EquiJoinState::SamplePreferred(sample_state) => {
-                send[0] = PortState::Blocked;
-                let (idx, len) = if self.params.planned_build_left().unwrap() {
-                    (0, sample_state.left_len)
-                } else {
-                    (1, sample_state.right_len)
-                };
-                if recv[idx] != PortState::Done {
-                    recv[idx] = if len < self.params.sample_limit {
-                        PortState::Ready
-                    } else {
-                        PortState::Blocked
-                    };
-                }
-                if recv[1 - idx] != PortState::Done {
-                    recv[1 - idx] = PortState::Blocked;
-                }
-            },
             EquiJoinState::Sample(sample_state) => {
                 send[0] = PortState::Blocked;
-                if recv[0] != PortState::Done {
-                    recv[0] = if sample_state.left_len < self.params.sample_limit {
-                        PortState::Ready
-                    } else {
-                        PortState::Blocked
-                    };
-                }
-                if recv[1] != PortState::Done {
-                    recv[1] = if sample_state.right_len < self.params.sample_limit {
+                for (idx, left) in [(0, true), (1, false)] {
+                    if recv[idx] == PortState::Done {
+                        continue;
+                    }
+                    let open = sample_state.is_open(left);
+                    recv[idx] = if open && sample_state.len(left) < self.params.sample_limit {
                         PortState::Ready
                     } else {
                         PortState::Blocked
@@ -1785,9 +1847,7 @@ impl ComputeNode for EquiJoinNode {
     fn is_memory_intensive_pipeline_blocker(&self) -> bool {
         matches!(
             self.state,
-            EquiJoinState::SamplePreferred { .. }
-                | EquiJoinState::Sample { .. }
-                | EquiJoinState::Build { .. }
+            EquiJoinState::Sample { .. } | EquiJoinState::Build { .. }
         )
     }
 
@@ -1810,51 +1870,21 @@ impl ComputeNode for EquiJoinNode {
         let probe_idx = 1 - build_idx;
 
         match &mut self.state {
-            EquiJoinState::SamplePreferred(sample_state) => {
-                assert!(send_ports[0].is_none());
-                let (morsels, len, recv_port) = if self.params.planned_build_left().unwrap() {
-                    assert!(recv_ports[1].is_none());
-                    (
-                        &mut sample_state.left,
-                        &mut sample_state.left_len,
-                        recv_ports[0].take(),
-                    )
-                } else {
-                    assert!(recv_ports[0].is_none());
-                    (
-                        &mut sample_state.right,
-                        &mut sample_state.right_len,
-                        recv_ports[1].take(),
-                    )
-                };
-                if let Some(recv) = recv_port {
-                    // The other side's length is unknown, so only the sample limit stops.
-                    let unknown = || Arc::new(RelaxedCell::from(usize::MAX));
-                    join_handles.push(scope.spawn_task(
-                        TaskPriority::High,
-                        SampleState::sink(
-                            recv.serial(),
-                            morsels,
-                            len,
-                            unknown(),
-                            unknown(),
-                            self.params.sample_limit,
-                        ),
-                    ));
-                }
-            },
             EquiJoinState::Sample(sample_state) => {
                 assert!(send_ports[0].is_none());
-                let left_final_len = Arc::new(RelaxedCell::from(if recv_ports[0].is_none() {
-                    sample_state.left_len
-                } else {
-                    usize::MAX
-                }));
-                let right_final_len = Arc::new(RelaxedCell::from(if recv_ports[1].is_none() {
-                    sample_state.right_len
-                } else {
-                    usize::MAX
-                }));
+                // A side without a port is done, unless it is not being read.
+                let final_len = |left: bool| {
+                    let idx = if left { 0 } else { 1 };
+                    let known = recv_ports[idx].is_none() && sample_state.is_open(left);
+                    let len = if known {
+                        sample_state.len(left)
+                    } else {
+                        usize::MAX
+                    };
+                    Arc::new(RelaxedCell::from(len))
+                };
+                let left_final_len = final_len(true);
+                let right_final_len = final_len(false);
 
                 if let Some(left_recv) = recv_ports[0].take() {
                     join_handles.push(scope.spawn_task(
