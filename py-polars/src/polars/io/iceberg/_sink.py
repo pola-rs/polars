@@ -351,12 +351,7 @@ def _partition_key_exprs(
 
 
 class _SortTransform:
-    """Applies an Iceberg sort transform to a series.
-
-    `Transform.pyarrow_transform()` returns a `pyiceberg_core` builtin that cannot be
-    pickled, so the transform travels as the Iceberg objects it is resolved from and is
-    built on first use.
-    """
+    """Apply an Iceberg sort transform without pickling its cached callable."""
 
     def __init__(
         self, transform: Transform[Any, Any], source_type: IcebergType
