@@ -35,6 +35,25 @@ def delta_table_path(io_files_path: Path) -> Path:
     return io_files_path / "delta-table"
 
 
+def _resize_delta_add_actions(root: Path) -> None:
+    """Point the log's recorded sizes back at the files on disk.
+
+    Overwriting a data file in place breaks Delta's immutability assumption, and the
+    scan takes the file size from the log, so the log has to be corrected alongside.
+    """
+    import json
+
+    for entry in sorted((root / "_delta_log").glob("*.json")):
+        lines = []
+        for line in entry.read_text().splitlines():
+            action = json.loads(line)
+            if "add" in action:
+                action["add"]["size"] = (root / action["add"]["path"]).stat().st_size
+                line = json.dumps(action)
+            lines.append(line)
+        entry.write_text("\n".join(lines) + "\n")
+
+
 def new_pl_delta_dataset(source: str | DeltaTable) -> DeltaDataset:
     return DeltaDataset(
         table_=NoPickleOption(source if isinstance(source, DeltaTable) else None),
@@ -708,6 +727,7 @@ def test_scan_delta_nanosecond_timestamp(
     parquet_file_path = parquet_files[0]
 
     df_nano_ts.write_parquet(parquet_file_path)
+    _resize_delta_add_actions(root)
 
     # Baseline: The timestamp in the file is in nanoseconds.
     q = pl.scan_parquet(parquet_file_path)
@@ -763,6 +783,7 @@ def test_scan_delta_nanosecond_timestamp_nested(tmp_path: Path) -> None:
     parquet_file_path = parquet_files[0]
 
     df_nano_ts.write_parquet(parquet_file_path)
+    _resize_delta_add_actions(root)
 
     # Baseline: The timestamp in the file is in nanoseconds.
     q = pl.scan_parquet(parquet_file_path)
