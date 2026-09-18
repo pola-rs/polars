@@ -834,6 +834,24 @@ def test_sink_iceberg_sort_order_floats(
     ]
 
 
+def test_sink_iceberg_sort_key_exprs_are_serializable() -> None:
+    # `Transform.pyarrow_transform` hands back a `pyiceberg_core` builtin, which pickle
+    # cannot reach. Holding one in the sort key keeps the plan from serializing, so an
+    # engine that ships the plan elsewhere to run it cannot sink a bucket-sorted table.
+    from polars.io.iceberg._sink import _sort_key_exprs
+
+    exprs, _, _ = _sort_key_exprs(
+        IcebergSchema(NestedField(1, "value", LongType())),
+        SortOrder(SortField(1, BucketTransform(4))),
+        pl.Schema({"value": pl.Int64}),
+    )
+
+    lf = pl.LazyFrame({"value": [1, 2, 3]}).select(exprs)
+    roundtripped = pl.LazyFrame.deserialize(io.BytesIO(lf.serialize()))
+
+    assert_frame_equal(roundtripped.collect(), lf.collect())
+
+
 @pytest.mark.parametrize("missing", [False, True])
 @pytest.mark.write_disk
 def test_sink_iceberg_sort_order_nested_schema_merge(
