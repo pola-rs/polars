@@ -3,6 +3,7 @@ use num_traits::{Float, NumCast};
 use numpy::npyffi::flags;
 use numpy::{Element, PyArray1};
 use polars::prelude::*;
+use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -320,7 +321,10 @@ where
 {
     let mut values = Vec::with_capacity(ca.len());
     for arr in ca.downcast_iter() {
-        arr.values_iter().for_each(|value| values.push(f(value)));
+        // The chunk's iterator knows how many values it has left, so they are written straight
+        // into the buffer; `push` checks the capacity and stores the length once an element,
+        // and cannot hoist either out, because the chunk's length is not the column's.
+        values.extend_trusted_len(arr.values_iter().map(&f));
     }
     values
 }
@@ -333,7 +337,9 @@ where
 {
     let mut values = Vec::with_capacity(ca.len());
     for arr in ca.downcast_iter() {
-        arr.iter().for_each(|value| values.push(f(value)));
+        // See `collect_values`: the length the chunk reports is what writes the values in
+        // without a capacity check apiece.
+        values.extend_trusted_len(arr.iter().map(&f));
     }
     values
 }

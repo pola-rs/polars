@@ -169,38 +169,46 @@ where
 
     unsafe {
         lengths.reserve(ca.len());
+        // One run is written per element at most, and the buffer holds that many: the pointer is
+        // settled here rather than read back out of the `Vec` once an element.
+        let out = lengths.as_mut_ptr();
 
-        if ca.has_nulls() {
-            let mut prev = ca.get_unchecked(0).map(|v| v.to_total_ord());
-            let mut out_idx = 0;
-            let mut run_len = 0;
-            for arr in ca.downcast_iter() {
-                for val in arr.iter() {
-                    let val = val.map(|v| v.to_total_ord());
-                    let diff = val != prev;
-                    run_len = 1 + select_unpredictable(diff, 0, run_len);
-                    out_idx += diff as usize;
-                    lengths.as_mut_ptr().add(out_idx).write(run_len);
-                    prev = val;
-                }
-            }
-            lengths.set_len(out_idx + 1);
+        // Each element is compared against the one before it and, where the two differ, opens a
+        // run of its own. The walk is a fold so that a chunk's representation is resolved before
+        // it rather than at every element of it -- which over a column whose elements never
+        // differ, and so never stall the walk, is the whole of the work.
+        let out_idx = if ca.has_nulls() {
+            let prev = ca.get_unchecked(0).map(|v| v.to_total_ord());
+            ca.downcast_iter()
+                .fold((prev, 0usize, 0), |acc, arr| {
+                    arr.iter().fold(acc, |(prev, out_idx, run_len), val| {
+                        let val = val.map(|v| v.to_total_ord());
+                        let diff = val != prev;
+                        let run_len = 1 + select_unpredictable(diff, 0, run_len);
+                        let out_idx = out_idx + diff as usize;
+                        out.add(out_idx).write(run_len);
+                        (val, out_idx, run_len)
+                    })
+                })
+                .1
         } else {
-            let mut prev = ca.value_unchecked(0).to_total_ord();
-            let mut out_idx = 0;
-            let mut run_len = 0;
-            for arr in ca.downcast_iter() {
-                for val in arr.values_iter() {
-                    let val = val.to_total_ord();
-                    let diff = val != prev;
-                    run_len = 1 + select_unpredictable(diff, 0, run_len);
-                    out_idx += diff as usize;
-                    lengths.as_mut_ptr().add(out_idx).write(run_len);
-                    prev = val;
-                }
-            }
-            lengths.set_len(out_idx + 1);
-        }
+            let prev = ca.value_unchecked(0).to_total_ord();
+            ca.downcast_iter()
+                .fold((prev, 0usize, 0), |acc, arr| {
+                    arr.values_iter()
+                        .fold(acc, |(prev, out_idx, run_len), val| {
+                            let val = val.to_total_ord();
+                            let diff = val != prev;
+                            let run_len = 1 + select_unpredictable(diff, 0, run_len);
+                            let out_idx = out_idx + diff as usize;
+                            out.add(out_idx).write(run_len);
+                            (val, out_idx, run_len)
+                        })
+                })
+                .1
+        };
+
+        lengths.set_len(out_idx + 1);
     }
 }
 
