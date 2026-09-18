@@ -369,8 +369,7 @@ fn scan_origin(
                 let schema_left = ir_arena.get(*input_left).schema(ir_arena);
                 let schema_right = ir_arena.get(*input_right).schema(ir_arena);
                 let right_names =
-                    join_right_output_names(&schema_left, &schema_right, options, expr_arena)
-                        .ok()?;
+                    join_right_output_names(&schema_left, &schema_right, options).ok()?;
                 let from_right = right_names
                     .iter()
                     .position(|output| output.as_ref() == Some(&name));
