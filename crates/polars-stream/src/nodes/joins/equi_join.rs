@@ -946,6 +946,7 @@ impl BuildState {
                             p_payload.gather_extend(&payload, p_morsel_idxs, ShareStrategy::Never);
 
                             if track_unmatchable {
+                                #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
                                 p_row_positions.extend(
                                     p_morsel_idxs.iter().map(|i| morsel_row_offset + *i as u64),
                                 );
