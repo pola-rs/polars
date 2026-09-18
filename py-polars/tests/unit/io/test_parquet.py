@@ -4885,10 +4885,11 @@ def test_resolve_metadata_sampled_heavy_files(
         "read 2 / 4 footers",
     ]
 
-    # Reading all footers gives an exact row count.
+    # Reading all footers gives an exact row count. A budget that covers every source
+    # resolves them all outright, so there is nothing to prioritize and no trace.
     plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "4")
     lf = pl.scan_parquet(glob, _resolve_heavy_sources=1000)
-    assert resolve_traces(lf) == ["pinned 3 / 3 heavy sources (footer budget 4)"]
+    assert resolve_traces(lf) == []
     assert f"ESTIMATED ROWS: {sum(rows)}" in lf.explain(optimized=True)
     assert lf.collect().height == sum(rows)
     plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "2")
