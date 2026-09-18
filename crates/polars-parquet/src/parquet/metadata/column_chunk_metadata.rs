@@ -1,7 +1,7 @@
 use polars_parquet_format::Statistics as ParquetStatistics;
 
 use super::column_descriptor::{ColumnDescriptor, ColumnDescriptorRef};
-use super::compact::{CompactColumnChunk, CompactColumnMetaData, CompactStatistics};
+use super::compact::{ByteRange, CompactColumnChunk, CompactColumnMetaData, CompactStatistics};
 use crate::parquet::compression::Compression;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::schema::types::PhysicalType;
@@ -80,6 +80,23 @@ impl ColumnChunkMetadata {
             &parquet_stats,
             self.descriptor().descriptor.primitive_type.clone(),
         ))
+    }
+
+    /// The plain-encoded min and max of the chunk, borrowed from `footer_buf`.
+    /// Either is `None` when the chunk does not give it, or gives it inexactly.
+    pub fn bound_bytes<'a>(&self, footer_buf: &'a [u8]) -> (Option<&'a [u8]>, Option<&'a [u8]>) {
+        let Some(stats) = &self.compact_metadata().statistics else {
+            return (None, None);
+        };
+        let exact = |value: Option<ByteRange>, is_exact: Option<bool>| {
+            value
+                .filter(|_| is_exact != Some(false))
+                .map(|range| range.resolve(footer_buf))
+        };
+        (
+            exact(stats.min_value, stats.is_min_value_exact),
+            exact(stats.max_value, stats.is_max_value_exact),
+        )
     }
 
     /// Total number of values in this column chunk. Note that this is not

@@ -1133,6 +1133,9 @@ def test_time_keys_in_file_units(
         ("timestamp[s]", lambda i: datetime(2020, 1, 1) + timedelta(seconds=i)),
         ("duration[ms]", lambda i: timedelta(milliseconds=i)),
         ("timestamp[ms]", lambda i: datetime(2020, 1, 1) + timedelta(milliseconds=i)),
+        ("timestamp[s]", lambda i: datetime(1969, 12, 31) + timedelta(seconds=i)),
+        ("duration[s]", lambda i: timedelta(seconds=i - 500)),
+        ("date64", lambda i: datetime(1969, 1, 1) + timedelta(days=i)),
     ],
 )
 def test_second_resolution_keys(
@@ -1147,8 +1150,11 @@ def test_second_resolution_keys(
     import pyarrow.parquet as pq
 
     n = N_ROW_GROUPS * ROWS_PER_GROUP
-    kind, unit = arrow_type[:-1].split("[")
-    pa_type = pa.duration(unit) if kind == "duration" else pa.timestamp(unit)
+    if arrow_type == "date64":
+        pa_type = pa.date64()
+    else:
+        kind, unit = arrow_type[:-1].split("[")
+        pa_type = pa.duration(unit) if kind == "duration" else pa.timestamp(unit)
     values = [make(i) for i in range(n)]
     table = pa.table({"k": pa.array(values, type=pa_type), "v": list(range(n))})
     path = tmp_path / "temporal.parquet"

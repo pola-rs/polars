@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::ops::Range;
 
 use polars_arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray, StructArray};
@@ -10,7 +11,7 @@ use polars_io::predicates::{RuntimeRange, RuntimeRangeHint, ScanIOPredicate};
 use polars_io::prelude::FileMetadata;
 use polars_parquet::read::RowGroupMetadata;
 use polars_parquet::read::statistics::{
-    ArrowColumnStatisticsArrays, LeafBounds, StatBound, deserialize_all,
+    ArrowBound, ArrowColumnStatisticsArrays, BoundConversion, LeafBounds, deserialize_all,
 };
 use polars_plan::plans::predicates::null_count_dtype;
 use polars_utils::format_pl_smallstr;
@@ -205,16 +206,34 @@ async fn static_skip_mask(
     Ok(Some(skip_row_group_mask))
 }
 
-/// A bound of a published range in the form the file's statistics decode to.
-enum RangeBound {
+/// A value of a column as polars stores it: a published range bound, or a row
+/// group's bound. Integers of any width are one integer; bytes compare with
+/// bytes only.
+enum Bound<B> {
     Int(i128),
-    Bytes(Vec<u8>),
+    Bytes(B),
 }
 
-impl RangeBound {
-    /// The scalar as the file's column type decodes, or `None` when the two types
-    /// cannot be compared exactly. Integers of any width compare as one integer;
-    /// every other type must match the file's type.
+impl<A: AsRef<[u8]>, B: AsRef<[u8]>> PartialEq<Bound<B>> for Bound<A> {
+    fn eq(&self, other: &Bound<B>) -> bool {
+        self.partial_cmp(other) == Some(Ordering::Equal)
+    }
+}
+
+impl<A: AsRef<[u8]>, B: AsRef<[u8]>> PartialOrd<Bound<B>> for Bound<A> {
+    fn partial_cmp(&self, other: &Bound<B>) -> Option<Ordering> {
+        match (self, other) {
+            (Self::Int(a), Bound::Int(b)) => Some(a.cmp(b)),
+            (Self::Bytes(a), Bound::Bytes(b)) => Some(a.as_ref().cmp(b.as_ref())),
+            _ => None,
+        }
+    }
+}
+
+impl Bound<Vec<u8>> {
+    /// A published range bound, or `None` when the published and the file's
+    /// types cannot be compared exactly: every integer type compares with every
+    /// other, any other type must match the file's.
     fn from_scalar(scalar: &Scalar, file_dtype: &DataType) -> Option<Self> {
         if scalar.dtype() != file_dtype && !(scalar.dtype().is_integer() && file_dtype.is_integer())
         {
@@ -228,13 +247,42 @@ impl RangeBound {
             value => value.clone().to_physical().extract::<i128>().map(Self::Int),
         }
     }
+}
 
-    fn as_stat(&self) -> StatBound<'_> {
-        match self {
-            Self::Int(v) => StatBound::Int(*v),
-            Self::Bytes(v) => StatBound::Bytes(v),
-        }
+impl<'a> Bound<&'a [u8]> {
+    /// A row group's bound as polars stores the column, multiplied by `scale`
+    /// like the values are, see [`DataType::arrow_value_scale`]. `None` when
+    /// the multiplication wraps, as the values then have no order.
+    fn from_arrow(bound: ArrowBound<'a>, scale: i64) -> Option<Self> {
+        use ArrowBound as A;
+        let int = match bound {
+            A::Boolean(v) => v as i128,
+            A::Int8(v) => v as i128,
+            A::Int16(v) => v as i128,
+            A::Int32(v) => v as i128,
+            A::Int64(v) => v as i128,
+            A::UInt8(v) => v as i128,
+            A::UInt16(v) => v as i128,
+            A::UInt32(v) => v as i128,
+            A::UInt64(v) => v as i128,
+            A::Int128(v) => v,
+            A::Bytes(v) => return Some(Self::Bytes(v)),
+            A::Str(v) => return Some(Self::Bytes(v.as_bytes())),
+            A::Float16(_) | A::Float32(_) | A::Float64(_) | A::Int256(_) => return None,
+        };
+        let scaled = int * scale as i128;
+        (scale == 1 || i64::try_from(scaled).is_ok()).then_some(Self::Int(scaled))
     }
+}
+
+/// Whether the values a leaf's bounds convert to compare exactly with a
+/// published range.
+fn compares_exactly(conversion: BoundConversion) -> bool {
+    use BoundConversion as C;
+    !matches!(
+        conversion,
+        C::Float16 | C::Float32 | C::Float64 | C::Decimal256
+    )
 }
 
 /// Which row groups the runtime ranges skip, among those `static_mask` keeps.
@@ -272,13 +320,15 @@ fn runtime_range_skip_mask(
                             .first()?
                             .columns_idxs_under_root_iter(&arrow_field.name)?;
                         let [idx] = idxs else { return None };
-                        let leaf = LeafBounds::new(arrow_field, metadata, *idx)?;
+                        let leaf = LeafBounds::new(arrow_field, metadata, *idx)
+                            .filter(|leaf| compares_exactly(leaf.conversion()))?;
+                        let scale = DataType::arrow_value_scale(arrow_field.dtype());
                         let file_dtype = DataType::from_arrow_field(arrow_field);
-                        let lo = RangeBound::from_scalar(lo, &file_dtype)?;
-                        let hi = RangeBound::from_scalar(hi, &file_dtype)?;
-                        Some((leaf, lo, hi))
+                        let lo = Bound::from_scalar(lo, &file_dtype)?;
+                        let hi = Bound::from_scalar(hi, &file_dtype)?;
+                        Some((leaf, scale, lo, hi))
                     });
-                let Some((leaf, lo, hi)) = resolved else {
+                let Some((leaf, scale, lo, hi)) = resolved else {
                     continue;
                 };
                 for (i, rg) in row_groups.iter().enumerate() {
@@ -286,8 +336,13 @@ fn runtime_range_skip_mask(
                         continue;
                     }
                     let (min, max) = leaf.bounds(rg, &metadata.footer_buf);
-                    if max.is_some_and(|max| max < lo.as_stat())
-                        || min.is_some_and(|min| min > hi.as_stat())
+                    let min = min.map(|min| Bound::from_arrow(min, scale));
+                    let max = max.map(|max| Bound::from_arrow(max, scale));
+                    if matches!(min, Some(None)) || matches!(max, Some(None)) {
+                        continue;
+                    }
+                    if max.flatten().is_some_and(|max| max < lo)
+                        || min.flatten().is_some_and(|min| min > hi)
                     {
                         mask.get_or_insert_with(|| {
                             MutableBitmap::from_len_zeroed(row_groups.len())
@@ -536,5 +591,28 @@ fn build_row_index_statistics(
         min: Series::from_array(PlSmallStr::EMPTY, min_value.freeze()).into_column(),
         max: Series::from_array(PlSmallStr::EMPTY, max_value.freeze()).into_column(),
         null_count: Series::from_array(PlSmallStr::EMPTY, null_count).into_column(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn group_bounds_compare_as_polars_stores_them() {
+        let int = |v: i128| Bound::<&[u8]>::Int(v);
+        assert!(Bound::from_arrow(ArrowBound::Int64(7), 1_000).unwrap() == int(7_000));
+        assert!(Bound::from_arrow(ArrowBound::Int32(-7), 1_000_000).unwrap() == int(-7_000_000));
+        assert!(
+            Bound::from_arrow(ArrowBound::UInt64(u64::MAX), 1).unwrap() > int(i64::MAX as i128)
+        );
+        // A scaled value the reader wraps, and types with no exact comparison.
+        assert!(Bound::from_arrow(ArrowBound::Int64(i64::MAX / 1_000 + 1), 1_000).is_none());
+        assert!(Bound::from_arrow(ArrowBound::Int64(i64::MIN / 1_000 - 1), 1_000).is_none());
+        assert!(Bound::from_arrow(ArrowBound::Float64(1.0), 1).is_none());
+        // Bytes and integers have no order between them.
+        let bytes = Bound::from_arrow(ArrowBound::Str("abc"), 1).unwrap();
+        assert!(bytes < Bound::Bytes(b"abd".to_vec()));
+        assert!(bytes.partial_cmp(&int(0)).is_none());
     }
 }
