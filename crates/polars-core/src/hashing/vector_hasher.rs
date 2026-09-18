@@ -1,5 +1,7 @@
 use std::hash::BuildHasher;
 
+use polars_arrow::legacy::trusted_len::TrustedLenPush;
+use polars_arrow::types::NativeType;
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
@@ -51,15 +53,28 @@ fn insert_null_hash(
     let mut offset = 0;
     chunks.iter().for_each(|arr| {
         if arr.null_count() > 0 {
-            // The mask is walked through its iterator, which reads a mask that says the same of
-            // every element without writing one bit per element out first.
-            arr.validity()
-                .unwrap()
-                .iter()
-                .zip(&mut hashes[offset..])
-                .for_each(|(valid, h)| {
-                    *h = [null_h, *h][valid as usize];
-                })
+            let validity = arr.validity().unwrap();
+
+            match validity.flat_bitmap() {
+                // A mask that holds one bit per element is walked by the bitmap's own iterator,
+                // which shifts the bits off a word it is holding. Zipping drives it one `next`
+                // at a time, which is what the representation has to be settled ahead of the
+                // walk for: stepping the mask itself is cheap, matching how it is held is not.
+                Some(bitmap) => bitmap
+                    .iter()
+                    .zip(&mut hashes[offset..])
+                    .for_each(|(valid, h)| {
+                        *h = [null_h, *h][valid as usize];
+                    }),
+                // A mask that says the same of every element says it without a bit per element,
+                // and a chunk that has a null in it is a chunk that is null all the way through.
+                None => {
+                    debug_assert_eq!(arr.null_count(), arr.len());
+                    if !validity.scalar_value().unwrap_or(false) {
+                        hashes[offset..offset + arr.len()].fill(null_h);
+                    }
+                },
+            }
         }
         offset += arr.len();
     });
@@ -116,44 +131,76 @@ fn numeric_vec_hash_combine<T>(
 {
     let null_h = get_null_hash_value(&random_state);
 
+    // Inlined from ahash. This ensures we combine with the previous state. Be careful not to xor
+    // the hash directly with the existing hash, it would lead to 0-hashes for 2 columns
+    // containing equal values.
+    fn combine(h: &mut u64, to_hash: u64) {
+        *h = folded_multiply(to_hash ^ folded_multiply(*h, MULTIPLE), MULTIPLE);
+    }
+
     let mut offset = 0;
     ca.downcast_iter().for_each(|arr| {
-        // Combining reads one hash per element out of the buffer either way, but the value it is
-        // combined with is hashed once where the chunk repeats a single one.
-        let scalar_hash = arr
-            .scalar_value_ignore_validity()
-            .map(|value| random_state.hash_one(value.to_total_ord()));
-        let hash_of = |value: T::Native| {
-            scalar_hash.unwrap_or_else(|| random_state.hash_one(value.to_total_ord()))
-        };
+        let hashes = &mut hashes[offset..offset + arr.len()];
+        offset += arr.len();
 
+        // Combining reads one hash per element out of the buffer either way. Which hash that is
+        // depends on how the chunk holds its values and on what its mask says of them, and both
+        // are settled here rather than asked per element: a chunk that repeats a single value
+        // hashes it once, and a mask that says the same of every element says it once.
         match arr.null_count() {
-            0 => arr
-                .values_iter()
-                .zip(&mut hashes[offset..])
-                .for_each(|(v, h)| {
-                    // Inlined from ahash. This ensures we combine with the previous state.
-                    *h = folded_multiply(
-                        // Be careful not to xor the hash directly with the existing hash,
-                        // it would lead to 0-hashes for 2 columns containing equal values.
-                        hash_of(v) ^ folded_multiply(*h, MULTIPLE),
-                        MULTIPLE,
-                    );
-                }),
-            _ => {
-                arr.validity()
-                    .unwrap()
+            // No element is null, so each one combines with the hash of the value it holds.
+            0 => match arr.flat_values() {
+                Some(values) => values
+                    .as_slice()
                     .iter()
-                    .zip(&mut hashes[offset..])
-                    .zip(arr.values_iter())
-                    .for_each(|((valid, h), l)| {
-                        let to_hash = [null_h, hash_of(l)][valid as usize];
-                        *h = folded_multiply(to_hash ^ folded_multiply(*h, MULTIPLE), MULTIPLE);
-                    });
+                    .zip(hashes)
+                    .for_each(|(v, h)| combine(h, random_state.hash_one(v.to_total_ord()))),
+                None => {
+                    let hash = random_state.hash_one(scalar_value(arr).to_total_ord());
+                    hashes.iter_mut().for_each(|h| combine(h, hash));
+                },
+            },
+            _ => {
+                let validity = arr.validity().unwrap();
+
+                let Some(bitmap) = validity.flat_bitmap() else {
+                    // A mask that says the same of every element, in a chunk that has a null in
+                    // it, says every one of them is null: the values are never read.
+                    debug_assert_eq!(arr.null_count(), arr.len());
+                    hashes.iter_mut().for_each(|h| combine(h, null_h));
+                    return;
+                };
+
+                // The mask holds a bit per element and is walked by its own iterator, which
+                // shifts the bits off a word it is holding rather than loading a byte apiece.
+                match arr.flat_values() {
+                    Some(values) => bitmap
+                        .iter()
+                        .zip(values.as_slice())
+                        .zip(hashes.iter_mut())
+                        .for_each(|((valid, v), h)| {
+                            let to_hash =
+                                [null_h, random_state.hash_one(v.to_total_ord())][valid as usize];
+                            combine(h, to_hash);
+                        }),
+                    None => {
+                        let hash = random_state.hash_one(scalar_value(arr).to_total_ord());
+                        bitmap
+                            .iter()
+                            .zip(hashes.iter_mut())
+                            .for_each(|(valid, h)| combine(h, [null_h, hash][valid as usize]));
+                    },
+                }
             },
         }
-        offset += arr.len();
     });
+}
+
+/// The one value a chunk whose values are not flat repeats.
+#[inline]
+fn scalar_value<N: NativeType>(arr: &PlPrimitiveArray<N>) -> N {
+    arr.scalar_value_ignore_validity()
+        .expect("the values are not flat")
 }
 
 macro_rules! vec_hash_numeric {
@@ -392,7 +439,25 @@ impl VecHash for BooleanChunked {
         let null_h = get_null_hash_value(&random_state);
         self.downcast_iter().for_each(|arr| {
             if arr.null_count() == 0 {
-                buf.extend(arr.values_iter().map(|v| if v { true_h } else { false_h }))
+                // A chunk holding a bit per element is read by the bitmap's own iterator, which
+                // shifts the bits off a word it holds and knows how many are left: the values go
+                // straight into the buffer. Its own `values_iter()` would answer each bit from a
+                // reader it has to match the representation of once an element, and `extend`
+                // would check the capacity as often.
+                match arr.flat_values() {
+                    Some(values) => buf.extend_trusted_len(
+                        values.iter().map(|v| if v { true_h } else { false_h }),
+                    ),
+                    // Every element is the same one, so it is hashed once and that hash repeats.
+                    None => {
+                        let h = if arr.values().scalar_value().unwrap_or(false) {
+                            true_h
+                        } else {
+                            false_h
+                        };
+                        buf.extend(std::iter::repeat_n(h, arr.len()))
+                    },
+                }
             } else {
                 buf.extend(arr.into_iter().map(|opt_v| match opt_v {
                     Some(true) => true_h,
@@ -415,14 +480,30 @@ impl VecHash for BooleanChunked {
 
         let mut offset = 0;
         self.downcast_iter().for_each(|arr| {
+            // See `vec_hash`: which of the three hashes each element combines with is settled by
+            // how the chunk holds its values, and that is asked once here rather than per bit.
             match arr.null_count() {
-                0 => arr
-                    .values_iter()
-                    .zip(&mut hashes[offset..])
-                    .for_each(|(v, h)| {
-                        let l = if v { true_h } else { false_h };
-                        *h = _boost_hash_combine(l, *h)
-                    }),
+                0 => match arr.flat_values() {
+                    Some(values) => {
+                        values
+                            .iter()
+                            .zip(&mut hashes[offset..])
+                            .for_each(|(v, h)| {
+                                let l = if v { true_h } else { false_h };
+                                *h = _boost_hash_combine(l, *h)
+                            })
+                    },
+                    None => {
+                        let l = if arr.values().scalar_value().unwrap_or(false) {
+                            true_h
+                        } else {
+                            false_h
+                        };
+                        hashes[offset..offset + arr.len()]
+                            .iter_mut()
+                            .for_each(|h| *h = _boost_hash_combine(l, *h));
+                    },
+                },
                 _ => {
                     arr.validity()
                         .unwrap()
