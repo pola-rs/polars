@@ -1,15 +1,17 @@
 use std::ops::Range;
 
 use polars_arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray, StructArray};
-use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_arrow::pushable::Pushable;
 use polars_async::executor::{self, TaskPriority};
 use polars_core::prelude::*;
 use polars_io::RowIndex;
-use polars_io::predicates::ScanIOPredicate;
+use polars_io::predicates::{RuntimeRange, RuntimeRangeHint, ScanIOPredicate};
 use polars_io::prelude::FileMetadata;
 use polars_parquet::read::RowGroupMetadata;
-use polars_parquet::read::statistics::{ArrowColumnStatisticsArrays, deserialize_all};
+use polars_parquet::read::statistics::{
+    ArrowColumnStatisticsArrays, LeafBounds, StatBound, deserialize_all,
+};
 use polars_plan::plans::predicates::null_count_dtype;
 use polars_utils::format_pl_smallstr;
 
@@ -81,9 +83,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     predicate: Option<&ScanIOPredicate>,
     metadata: &Arc<FileMetadata>,
     projected_arrow_fields: Arc<[ArrowFieldProjection]>,
-    // This is mut so that the offset is updated to the position of the first
-    // row group.
-    mut row_index: Option<RowIndex>,
+    row_index: Option<RowIndex>,
     verbose: bool,
 ) -> PolarsResult<Option<Bitmap>> {
     if !use_statistics {
@@ -94,15 +94,58 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
         return Ok(None);
     };
 
-    let Some(sbp) = predicate.skip_batch_predicate.as_ref() else {
-        return Ok(None);
+    let static_mask = match predicate.skip_batch_predicate.as_ref() {
+        Some(sbp) => {
+            static_skip_mask(
+                row_group_slice.clone(),
+                sbp.clone(),
+                predicate.live_columns.clone(),
+                metadata,
+                projected_arrow_fields.clone(),
+                row_index,
+            )
+            .await?
+        },
+        None => None,
     };
 
-    let sbp = sbp.clone();
+    let mask = if predicate.runtime_ranges.is_empty() {
+        static_mask
+    } else {
+        let runtime_mask = runtime_range_skip_mask(
+            &predicate.runtime_ranges,
+            metadata,
+            row_group_slice.clone(),
+            &projected_arrow_fields,
+            static_mask.as_ref(),
+        );
+        match (static_mask, runtime_mask) {
+            (Some(s), Some(r)) => Some(&s | &r),
+            (s, r) => s.or(r),
+        }
+    };
+    if verbose && (mask.is_some() || !predicate.runtime_ranges.is_empty()) {
+        let num_row_groups = row_group_slice.len();
+        eprintln!(
+            "[ParquetFileReader]: Predicate pushdown: \
+            reading {} / {} row groups",
+            mask.as_ref().map_or(num_row_groups, |m| m.unset_bits()),
+            num_row_groups,
+        );
+    }
+    Ok(mask)
+}
 
+async fn static_skip_mask(
+    row_group_slice: Range<usize>,
+    sbp: Arc<dyn polars_io::predicates::SkipBatchPredicate>,
+    skip_batch_columns: Arc<PlIndexSet<PlSmallStr>>,
+    metadata: &Arc<FileMetadata>,
+    projected_arrow_fields: Arc<[ArrowFieldProjection]>,
+    mut row_index: Option<RowIndex>,
+) -> PolarsResult<Option<Bitmap>> {
     let num_row_groups = row_group_slice.len();
     let metadata = metadata.clone();
-    let skip_batch_columns = predicate.skip_batch_columns.clone();
 
     // Note: We are spawning here onto the computational async runtime because the caller is being run
     // on a tokio async thread.
@@ -159,16 +202,108 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     })
     .await?;
 
-    if verbose {
-        eprintln!(
-            "[ParquetFileReader]: Predicate pushdown: \
-            reading {} / {} row groups",
-            skip_row_group_mask.unset_bits(),
-            num_row_groups,
-        );
+    Ok(Some(skip_row_group_mask))
+}
+
+/// A bound of a published range in the form the file's statistics decode to.
+enum RangeBound {
+    Int(i128),
+    Bytes(Vec<u8>),
+}
+
+impl RangeBound {
+    /// The scalar as the file's column type decodes, or `None` when the two types
+    /// cannot be compared exactly. Integers of any width compare as one integer;
+    /// every other type must match the file's type.
+    fn from_scalar(scalar: &Scalar, file_dtype: &DataType) -> Option<Self> {
+        if scalar.dtype() != file_dtype && !(scalar.dtype().is_integer() && file_dtype.is_integer())
+        {
+            return None;
+        }
+        match scalar.value() {
+            AnyValue::String(v) => Some(Self::Bytes(v.as_bytes().to_vec())),
+            AnyValue::StringOwned(v) => Some(Self::Bytes(v.as_bytes().to_vec())),
+            AnyValue::Binary(v) => Some(Self::Bytes(v.to_vec())),
+            AnyValue::BinaryOwned(v) => Some(Self::Bytes(v.clone())),
+            value => value.clone().to_physical().extract::<i128>().map(Self::Int),
+        }
     }
 
-    Ok(Some(skip_row_group_mask))
+    fn as_stat(&self) -> StatBound<'_> {
+        match self {
+            Self::Int(v) => StatBound::Int(*v),
+            Self::Bytes(v) => StatBound::Bytes(v),
+        }
+    }
+}
+
+/// Which row groups the runtime ranges skip, among those `static_mask` keeps.
+/// `None` when they skip nothing. Every range is read once, before any bound is
+/// decoded, and only the kept groups' bounds are decoded.
+fn runtime_range_skip_mask(
+    hints: &[RuntimeRangeHint],
+    metadata: &FileMetadata,
+    row_group_slice: Range<usize>,
+    projected_arrow_fields: &[ArrowFieldProjection],
+    static_mask: Option<&Bitmap>,
+) -> Option<Bitmap> {
+    let row_groups = &metadata.row_groups[row_group_slice.clone()];
+    let mut mask: Option<MutableBitmap> = None;
+    let is_kept = |mask: &Option<MutableBitmap>, i: usize| {
+        !static_mask.is_some_and(|m| m.get_bit(i)) && !mask.as_ref().is_some_and(|m| m.get(i))
+    };
+
+    for hint in hints {
+        if mask.as_ref().is_some_and(|m| m.unset_bits() == 0) {
+            break;
+        }
+        let range = hint.source.runtime_range();
+        let skip_all = match (&hint.constant, &range) {
+            (Some(value), _) => RuntimeRangeHint::constant_matches(&range, value) == Some(false),
+            (None, RuntimeRange::Pending | RuntimeRange::Disabled) => false,
+            (None, RuntimeRange::Empty) => true,
+            (None, RuntimeRange::Range { lo, hi }) => {
+                let resolved = projected_arrow_fields
+                    .iter()
+                    .find(|p| p.output_name() == &hint.column)
+                    .and_then(|projection| {
+                        let arrow_field = projection.arrow_field();
+                        let idxs = row_groups
+                            .first()?
+                            .columns_idxs_under_root_iter(&arrow_field.name)?;
+                        let [idx] = idxs else { return None };
+                        let leaf = LeafBounds::new(arrow_field, metadata, *idx)?;
+                        let file_dtype = DataType::from_arrow_field(arrow_field);
+                        let lo = RangeBound::from_scalar(lo, &file_dtype)?;
+                        let hi = RangeBound::from_scalar(hi, &file_dtype)?;
+                        Some((leaf, lo, hi))
+                    });
+                let Some((leaf, lo, hi)) = resolved else {
+                    continue;
+                };
+                for (i, rg) in row_groups.iter().enumerate() {
+                    if !is_kept(&mask, i) {
+                        continue;
+                    }
+                    let (min, max) = leaf.bounds(rg, &metadata.footer_buf);
+                    if max.is_some_and(|max| max < lo.as_stat())
+                        || min.is_some_and(|min| min > hi.as_stat())
+                    {
+                        mask.get_or_insert_with(|| {
+                            MutableBitmap::from_len_zeroed(row_groups.len())
+                        })
+                        .set(i, true);
+                    }
+                }
+                false
+            },
+        };
+        if skip_all {
+            mask = Some(MutableBitmap::from_len_set(row_groups.len()));
+        }
+    }
+
+    mask.filter(|m| m.set_bits() > 0).map(MutableBitmap::freeze)
 }
 
 /// Assembled `min` / `max` / `null_count` statistics arrays for a (possibly nested) struct field.

@@ -53,6 +53,9 @@ pub(super) fn attach_join_runtime_filters(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) {
+    if !polars_config::config().join_runtime_filters() {
+        return;
+    }
     // Inputs before their join, so a join lower in a probe chain is forced before
     // an outer one tries to carry a predicate through it.
     let mut joins = Vec::new();
@@ -369,8 +372,7 @@ fn scan_origin(
                 let schema_left = ir_arena.get(*input_left).schema(ir_arena);
                 let schema_right = ir_arena.get(*input_right).schema(ir_arena);
                 let right_names =
-                    join_right_output_names(&schema_left, &schema_right, options, expr_arena)
-                        .ok()?;
+                    join_right_output_names(&schema_left, &schema_right, options).ok()?;
                 let from_right = right_names
                     .iter()
                     .position(|output| output.as_ref() == Some(&name));

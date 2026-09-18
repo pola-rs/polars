@@ -504,13 +504,8 @@ impl<'a> Collector<'a> {
 
                     // The join emits its left columns, then its right ones minus any
                     // coalesced away.
-                    let right_names = join_right_output_names(
-                        &schema_left,
-                        &schema_right,
-                        options,
-                        self.expr_arena,
-                    )
-                    .ok()?;
+                    let right_names =
+                        join_right_output_names(&schema_left, &schema_right, options).ok()?;
                     origins.extend(
                         right_origins
                             .into_iter()

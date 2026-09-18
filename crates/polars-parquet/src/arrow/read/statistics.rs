@@ -699,9 +699,250 @@ pub fn deserialize<'a>(
     }
 }
 
+fn seconds_to_millis(unit: &TimeUnit) -> i128 {
+    match unit {
+        TimeUnit::Second => 1_000,
+        _ => 1,
+    }
+}
+
+fn nanoseconds_per(unit: &TimeUnit) -> i128 {
+    match unit {
+        TimeUnit::Second => 1_000_000_000,
+        TimeUnit::Millisecond => 1_000_000,
+        TimeUnit::Microsecond => 1_000,
+        TimeUnit::Nanosecond => 1,
+    }
+}
+
+/// A bound of a leaf column decoded from its statistics: every integer-like
+/// value as one integer, in the unit polars decodes the column with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StatBound<'a> {
+    Int(i128),
+    Bytes(&'a [u8]),
+}
+
+/// Reads the min and max of one leaf column straight from the footer bytes, for
+/// a field polars decodes as `dtype`, without materialising statistics arrays.
+pub struct LeafBounds {
+    field_idx: usize,
+    dtype: ArrowDataType,
+    physical_type: ParquetPhysicalType,
+    logical_type: Option<PrimitiveLogicalType>,
+}
+
+impl LeafBounds {
+    /// `None` when the leaf's statistics cannot bound the values polars decodes
+    /// as `field`'s type, or the type has no decoding here.
+    pub fn new(field: &Field, metadata: &FileMetadata, field_idx: usize) -> Option<Self> {
+        let primitive_type = &metadata.schema_descr.columns()[field_idx]
+            .descriptor
+            .primitive_type;
+        let physical_type = primitive_type.physical_type;
+        let column_order = metadata.column_order(field_idx);
+        if !bounds_are_usable(column_order, &physical_type, field.dtype()) {
+            return None;
+        }
+        use ArrowDataType as D;
+        use ParquetPhysicalType as P;
+        let supported = matches!(
+            (field.dtype(), &physical_type),
+            (D::Boolean, P::Boolean)
+                | (
+                    D::Int8
+                        | D::Int16
+                        | D::Int32
+                        | D::Date32
+                        | D::Time32(_)
+                        | D::UInt8
+                        | D::UInt16
+                        | D::UInt32
+                        | D::Date64,
+                    P::Int32
+                )
+                | (
+                    D::Int64
+                        | D::Time64(_)
+                        | D::Duration(_)
+                        | D::Timestamp(..)
+                        | D::UInt32
+                        | D::UInt64
+                        | D::Date64,
+                    P::Int64
+                )
+                | (D::Decimal(..), P::Int32 | P::Int64)
+                | (
+                    D::Binary
+                        | D::LargeBinary
+                        | D::BinaryView
+                        | D::Utf8
+                        | D::LargeUtf8
+                        | D::Utf8View,
+                    P::ByteArray
+                )
+        ) || matches!(
+            (field.dtype(), &physical_type),
+            (D::Decimal(..), P::FixedLenByteArray(n)) if *n <= 16
+        ) || matches!(
+            (field.dtype(), &physical_type),
+            (D::FixedSizeBinary(width), P::FixedLenByteArray(len)) if width == len
+        );
+        supported.then_some(Self {
+            field_idx,
+            dtype: field.dtype().clone(),
+            physical_type,
+            logical_type: primitive_type.logical_type,
+        })
+    }
+
+    /// The min and max of the leaf in `row_group`. Either is `None` when the
+    /// chunk does not give it or does not give it exactly.
+    pub fn bounds<'a>(
+        &self,
+        row_group: &RowGroupMetadata,
+        footer_buf: &'a [u8],
+    ) -> (Option<StatBound<'a>>, Option<StatBound<'a>>) {
+        let column = &row_group.parquet_columns()[self.field_idx];
+        let Some(stats) = &column.compact_metadata().statistics else {
+            return (None, None);
+        };
+        let min = stats
+            .min_value
+            .filter(|_| !stats.is_min_value_exact.is_some_and(|exact| !exact))
+            .and_then(|range| self.decode(range.resolve(footer_buf)));
+        let max = stats
+            .max_value
+            .filter(|_| !stats.is_max_value_exact.is_some_and(|exact| !exact))
+            .and_then(|range| self.decode(range.resolve(footer_buf)));
+        (min, max)
+    }
+
+    fn decode<'a>(&self, bytes: &'a [u8]) -> Option<StatBound<'a>> {
+        use ArrowDataType as D;
+        use ParquetPhysicalType as P;
+        let int32 = || Some(i32::from_le_bytes(bytes.try_into().ok()?));
+        let int64 = || Some(i64::from_le_bytes(bytes.try_into().ok()?));
+        let value = match (&self.dtype, &self.physical_type) {
+            (D::Boolean, P::Boolean) => (bytes.len() == 1).then(|| (bytes[0] != 0) as i128)?,
+            (D::Int8, P::Int32) => int32()? as i8 as i128,
+            (D::Int16, P::Int32) => int32()? as i16 as i128,
+            (D::Int32 | D::Date32, P::Int32) => int32()? as i128,
+            // Polars keeps time of day in nanoseconds.
+            (D::Time32(unit), P::Int32) => int32()? as i128 * nanoseconds_per(unit),
+            (D::Time64(unit), P::Int64) => int64()? as i128 * nanoseconds_per(unit),
+            (D::Date64, P::Int32) => int32()? as i128 * 86400000,
+            (D::UInt8, P::Int32) => int32()? as u8 as i128,
+            (D::UInt16, P::Int32) => int32()? as u16 as i128,
+            (D::UInt32, P::Int32) => int32()? as u32 as i128,
+            (D::UInt32, P::Int64) => int64()? as u32 as i128,
+            (D::UInt64, P::Int64) => int64()? as u64 as i128,
+            (D::Int64 | D::Date64, P::Int64) => int64()? as i128,
+            // Polars has no second resolution; seconds become milliseconds.
+            (D::Duration(unit), P::Int64) => int64()? as i128 * seconds_to_millis(unit),
+            (D::Timestamp(time_unit, _), P::Int64) => {
+                timestamp(self.logical_type.as_ref(), *time_unit, int64()?) as i128
+                    * seconds_to_millis(time_unit)
+            },
+            (D::Decimal(..), P::Int32) => int32()? as i128,
+            (D::Decimal(..), P::Int64) => int64()? as i128,
+            (D::Decimal(..), P::FixedLenByteArray(n)) => {
+                (bytes.len() == *n).then(|| convert_i128(bytes, *n))?
+            },
+            (
+                D::Binary | D::LargeBinary | D::BinaryView | D::Utf8 | D::LargeUtf8 | D::Utf8View,
+                P::ByteArray,
+            ) => return Some(StatBound::Bytes(bytes)),
+            (D::FixedSizeBinary(width), P::FixedLenByteArray(_)) => {
+                return (bytes.len() == *width).then_some(StatBound::Bytes(bytes));
+            },
+            _ => return None,
+        };
+        Some(StatBound::Int(value))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn leaf_bounds_decode_as_polars_does() {
+        use ArrowDataType as D;
+        use ParquetPhysicalType as P;
+        let leaf = |dtype: D, physical_type: P, logical_type| LeafBounds {
+            field_idx: 0,
+            dtype,
+            physical_type,
+            logical_type,
+        };
+        let int = |v: i128| Some(StatBound::Int(v));
+
+        assert_eq!(
+            leaf(D::Int8, P::Int32, None).decode(&(-3i32).to_le_bytes()),
+            int(-3)
+        );
+        assert_eq!(
+            leaf(D::UInt8, P::Int32, None).decode(&255i32.to_le_bytes()),
+            int(255)
+        );
+        assert_eq!(
+            leaf(D::UInt32, P::Int64, None).decode(&(u32::MAX as i64).to_le_bytes()),
+            int(u32::MAX as i128)
+        );
+        assert_eq!(
+            leaf(D::UInt64, P::Int64, None).decode(&(-1i64).to_le_bytes()),
+            int(u64::MAX as i128)
+        );
+        assert_eq!(leaf(D::Boolean, P::Boolean, None).decode(&[1]), int(1));
+        assert_eq!(
+            leaf(D::Time32(TimeUnit::Millisecond), P::Int32, None).decode(&7i32.to_le_bytes()),
+            int(7_000_000)
+        );
+        assert_eq!(
+            leaf(D::Duration(TimeUnit::Second), P::Int64, None).decode(&7i64.to_le_bytes()),
+            int(7_000)
+        );
+        assert_eq!(
+            leaf(D::Timestamp(TimeUnit::Second, None), P::Int64, None).decode(&7i64.to_le_bytes()),
+            int(7_000)
+        );
+        assert_eq!(
+            leaf(D::Time64(TimeUnit::Microsecond), P::Int64, None).decode(&7i64.to_le_bytes()),
+            int(7_000)
+        );
+        assert_eq!(
+            leaf(D::Date64, P::Int32, None).decode(&2i32.to_le_bytes()),
+            int(2 * 86400000)
+        );
+        let micros = Some(PrimitiveLogicalType::Timestamp {
+            unit: ParquetTimeUnit::Microseconds,
+            is_adjusted_to_utc: false,
+        });
+        assert_eq!(
+            leaf(D::Timestamp(TimeUnit::Millisecond, None), P::Int64, micros)
+                .decode(&5_000i64.to_le_bytes()),
+            int(5)
+        );
+        assert_eq!(
+            leaf(D::Decimal(10, 2), P::FixedLenByteArray(2), None).decode(&[0xff, 0xfe]),
+            int(-2)
+        );
+        assert_eq!(
+            leaf(D::Utf8View, P::ByteArray, None).decode(b"abc"),
+            Some(StatBound::Bytes(b"abc"))
+        );
+        // Malformed lengths give no bound.
+        assert_eq!(leaf(D::Int32, P::Int32, None).decode(&[1, 2]), None);
+        assert_eq!(
+            leaf(D::FixedSizeBinary(4), P::FixedLenByteArray(4), None).decode(&[1, 2]),
+            None
+        );
+        assert_eq!(
+            leaf(D::Decimal(10, 2), P::FixedLenByteArray(2), None).decode(&[1]),
+            None
+        );
+    }
 
     #[test]
     fn bounds_need_the_order_polars_compares_with() {
