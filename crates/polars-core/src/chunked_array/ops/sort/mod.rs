@@ -210,6 +210,42 @@ fn create_validity(len: usize, null_count: usize, nulls_last: bool) -> Bitmap {
     validity.freeze()
 }
 
+/// The sort of a column whose values are one element repeated under a mask: every valid element
+/// is the same one, so they already stand in every order at once and it is the nulls alone that
+/// move -- to whichever end the options ask for them.
+///
+/// [`ChunkedArray::repeats_one_element`] answers for the mask as well, and says no here: what a
+/// `when`/`then` over a literal builds is one value under a bit per element, and writing it out to
+/// sort it lays down a slot per element for values that are all the same one.
+pub(crate) fn sort_repeated_values<T: PolarsDataType>(
+    ca: &ChunkedArray<T>,
+    options: SortOptions,
+) -> Option<ChunkedArray<T>> {
+    let [_] = ca.chunks().as_slice() else {
+        return None;
+    };
+    let chunk = ca.downcast_get(0)?;
+    let values = chunk.clone().with_validity_typed(None);
+    if !PlArray::is_scalar(&values) {
+        return None;
+    }
+
+    // The all-valid and all-null columns are answered before this is reached, so the mask below
+    // holds both kinds of bit and the values are read at the elements that are not null.
+    let sorted = values
+        .new_from_index_typed(0, ca.len())
+        .with_validity_typed(Some(PlBitmap::from_bitmap(create_validity(
+            ca.len(),
+            ca.null_count(),
+            options.nulls_last,
+        ))));
+
+    Some(sorted_flag_of(
+        &ChunkedArray::from_chunk_iter_like(ca, [sorted]),
+        options,
+    ))
+}
+
 macro_rules! sort_with_fast_path {
     ($ca:ident, $options:expr) => {{
         if $ca.is_empty() {
@@ -221,6 +257,11 @@ macro_rules! sort_with_fast_path {
         // whichever end the options ask for them at.
         if $ca.null_count() == $ca.len() {
             return sorted_flag_of($ca, $options);
+        }
+
+        // Values that are one element repeated are sorted wherever the nulls among them are put.
+        if $ca.null_count() > 0 && let Some(sorted) = sort_repeated_values($ca, $options) {
+            return sorted;
         }
 
         // we can clone if we sort in same order

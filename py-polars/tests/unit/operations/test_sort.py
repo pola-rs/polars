@@ -1560,3 +1560,42 @@ def test_sort_nested_column_of_one_element_is_not_taken_as_repeated(
     assert_series_equal(
         two.sort(nulls_last=False), pl.Series("a", [None, value], dtype=dtype)
     )
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        (5, pl.Int64),
+        (2.5, pl.Float64),
+        (float("nan"), pl.Float64),
+        (True, pl.Boolean),
+        ("abcdef", pl.String),
+        (b"abcdef", pl.Binary),
+    ],
+)
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_sort_values_that_repeat_under_a_mask(
+    value: Any, dtype: PolarsDataType, descending: bool, nulls_last: bool
+) -> None:
+    # Values that are one element repeated tie with each other wherever the mask says
+    # they are there, so they stand in every order at once and it is the nulls alone
+    # that move. Asking whether the chunk repeats an *element* answers for the mask too,
+    # and this shape -- a `when`/`then` over a literal -- would be written out to sort.
+    n = 1000
+    masked = pl.select(
+        pl.when(pl.int_range(0, n) % 3 != 0)
+        .then(pl.repeat(pl.lit(value, dtype=dtype), n))
+        .alias("a")
+    ).to_series()
+    written = pl.Series("a", masked.to_list(), dtype=dtype)
+
+    kwargs = {"descending": descending, "nulls_last": nulls_last}
+    assert_series_equal(masked.sort(**kwargs), written.sort(**kwargs))
+    assert_frame_equal(
+        pl.DataFrame({"a": masked}).sort("a", **kwargs, maintain_order=True),
+        pl.DataFrame({"a": written}).sort("a", **kwargs, maintain_order=True),
+    )
+
+    # The values are still held once: what the sort lays down is the mask.
+    assert masked.sort(**kwargs).estimated_size() < written.estimated_size()
