@@ -222,6 +222,37 @@ def test_fallible_join_key_is_left_alone(tmp_path: Path) -> None:
     assert query.collect(optimizations=ON).height == 12
 
 
+def test_random_join_key_is_left_alone(tmp_path: Path) -> None:
+    rows = scanned(
+        tmp_path,
+        "rows",
+        pl.DataFrame(
+            {
+                "k": [i // 100 + 1 for i in range(100_000)],
+                "k2": [i % 100 for i in range(100_000)],
+                "v": 1,
+            }
+        ),
+    )
+    dim = scanned(
+        tmp_path,
+        "dim",
+        pl.DataFrame(
+            {"d": [10 * i + 1 for i in range(100)], "w": [list(range(100))] * 100}
+        ),
+    )
+    grouped = rows.group_by("k", "k2").agg(pl.col("v").sum())
+    # Every key the dimension can draw has a group, so every row matches once.
+    query = dim.join(
+        grouped,
+        left_on=["d", pl.col("w").list.eval(pl.element().shuffle()).list.first()],
+        right_on=["k", "k2"],
+    )
+    assert not restricted(query.explain(optimizations=ON))
+    for engine in ("in-memory", "streaming"):
+        assert query.collect(engine=engine, optimizations=ON).height == 100
+
+
 def test_validated_join_is_left_alone(tmp_path: Path) -> None:
     rows, dim = frames(tmp_path)
     rows = rows.with_columns(
