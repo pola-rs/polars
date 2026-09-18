@@ -134,9 +134,13 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
     list.lst_shift(periods).map(|ok| ok.into_column())
 }
 
-/// The one element `c` argues with, where it argues with the same one for every list.
+/// The one element `c` argues with, where it argues with the same non-null one for every list.
+///
+/// A repeated null is left alone: the length-1 arms below read their argument as a value, and a
+/// null offset or length is an instruction to skip the row, not a value.
 fn settled_arg(c: &Column, len: usize) -> Option<Column> {
-    (c.len() == len && c.as_materialized_series().repeats_one_element()).then(|| c.head(Some(1)))
+    (c.len() == len && c.null_count() == 0 && c.as_materialized_series().repeats_one_element())
+        .then(|| c.head(Some(1)))
 }
 
 pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {

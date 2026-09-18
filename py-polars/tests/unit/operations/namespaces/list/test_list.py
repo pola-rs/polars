@@ -1807,3 +1807,24 @@ def test_concat_list_repeated_chunks() -> None:
     assert (
         lists.select(pl.concat_list("a", "b")).to_series().to_list() == [[1, 2, 3]] * n
     )
+
+
+@pytest.mark.parametrize("null_arg", ["offset", "length"])
+def test_list_slice_over_one_repeated_list_with_a_null_argument(
+    null_arg: str,
+) -> None:
+    n = 4
+    lists = _repeats_one_list([1, 2, 3], pl.List(pl.Int64), n)
+    repeated_null = pl.select(pl.repeat(None, n, dtype=pl.Int64).alias("x")).to_series()
+    flat_null = pl.Series("x", [None] * n, dtype=pl.Int64)
+    other = pl.Series("y", [0, 1, 0, 1], dtype=pl.Int64)
+
+    def answer(nulls: pl.Series) -> list[list[int] | None]:
+        args = (nulls, other) if null_arg == "offset" else (other, nulls)
+        df = pl.DataFrame([lists.rename("a"), args[0].rename("x"), args[1].rename("y")])
+        out = df.select(pl.col("a").list.slice(pl.col("x"), pl.col("y")))
+        return out.to_series().to_list()
+
+    # A repeated null is still a null: neither argument may be read as a value.
+    assert answer(repeated_null) == [None] * n
+    assert answer(repeated_null) == answer(flat_null)
