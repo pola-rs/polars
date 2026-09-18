@@ -4611,3 +4611,45 @@ def test_scan_iceberg_schema_change_24498(
         table,
         snapshot_id=table.snapshots()[2].snapshot_id,
     ).collect_schema() == {"a": pl.Int64, "b": pl.Int64}
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renamed_column_with_pruned_metadata(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Pruning must preserve renamed columns, which Iceberg maps by field ID.
+    from polars._plr import PyLazyFrame
+    from polars._utils.wrap import wrap_ldf
+
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("namespace")
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "old", IntegerType()),
+            NestedField(2, "other", IntegerType()),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+    pl.DataFrame(
+        {"old": [1, 2, 3], "other": [4, 5, 6]},
+        schema={"old": pl.Int32, "other": pl.Int32},
+    ).write_iceberg(tbl, mode="append")
+
+    with tbl.update_schema() as sch:
+        sch.rename_column("old", "new")
+
+    plmonkeypatch.setenv("POLARS_PRUNE_PARQUET_METADATA", "1")
+
+    lf = wrap_ldf(
+        PyLazyFrame.new_from_dataset_object(
+            new_iceberg_scan_resolver(tbl), resolve_heavy_sources=4
+        )
+    )
+
+    assert lf.select("new").collect().to_series().to_list() == [1, 2, 3]

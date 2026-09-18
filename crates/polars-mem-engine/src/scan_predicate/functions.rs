@@ -651,6 +651,7 @@ where
         table_statistics,
         row_count,
         source_sizes: _,
+        resolve_heavy_sources: _,
     } = unified_scan_args.as_mut();
 
     // Ensure these are None.

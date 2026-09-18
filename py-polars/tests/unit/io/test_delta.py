@@ -11,17 +11,23 @@ from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import pytest
-from deltalake import DeltaTable, write_deltalake
+from deltalake import DeltaTable, WriterProperties, write_deltalake
 from deltalake.exceptions import DeltaError, TableNotFoundError
 from deltalake.table import TableMerger
 
 import polars as pl
+from polars._plr import PyLazyFrame
+from polars._utils.wrap import wrap_ldf
 from polars.exceptions import ArgumentRemovedError
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
-from polars.io.delta._dataset import DeltaDataset
+from polars.io.delta._dataset import (
+    DeltaDataset,
+    _source_sizes,
+    _table_root,
+)
 from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_frame_not_equal
@@ -33,6 +39,24 @@ if TYPE_CHECKING:
 @pytest.fixture
 def delta_table_path(io_files_path: Path) -> Path:
     return io_files_path / "delta-table"
+
+
+def _resize_delta_add_actions(root: Path) -> None:
+    """Update logged file sizes after tests rewrite Parquet data files.
+
+    Delta files are normally immutable; these fixtures must keep sizes in sync.
+    """
+    import json
+
+    for entry in sorted((root / "_delta_log").glob("*.json")):
+        lines = []
+        for line in entry.read_text().splitlines():
+            action = json.loads(line)
+            if "add" in action:
+                action["add"]["size"] = (root / action["add"]["path"]).stat().st_size
+                line = json.dumps(action)
+            lines.append(line)
+        entry.write_text("\n".join(lines) + "\n")
 
 
 def new_pl_delta_dataset(source: str | DeltaTable) -> DeltaDataset:
@@ -708,6 +732,7 @@ def test_scan_delta_nanosecond_timestamp(
     parquet_file_path = parquet_files[0]
 
     df_nano_ts.write_parquet(parquet_file_path)
+    _resize_delta_add_actions(root)
 
     # Baseline: The timestamp in the file is in nanoseconds.
     q = pl.scan_parquet(parquet_file_path)
@@ -763,6 +788,7 @@ def test_scan_delta_nanosecond_timestamp_nested(tmp_path: Path) -> None:
     parquet_file_path = parquet_files[0]
 
     df_nano_ts.write_parquet(parquet_file_path)
+    _resize_delta_add_actions(root)
 
     # Baseline: The timestamp in the file is in nanoseconds.
     q = pl.scan_parquet(parquet_file_path)
@@ -1452,3 +1478,202 @@ def test_scan_delta_predicate_pushdown_struct_is_not_null(
     # must not be pruned.
     assert_frame_equal(out, df, check_row_order=False)
     assert "skipping 1 / 2 files" not in err
+
+
+@pytest.mark.write_disk
+def test_scan_delta_resolves_heavy_footers(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Heavy-footer resolution needs the file sizes recorded in the Delta log.
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    properties = WriterProperties(max_row_group_size=500)
+
+    for n in [20, 4000, 20]:
+        pl.DataFrame({"x": range(n)}).write_delta(
+            tmp_path,
+            mode="append",
+            delta_write_options={"writer_properties": properties},
+        )
+
+    dataset = new_pl_delta_dataset(DeltaTable(tmp_path))
+    capfd.readouterr()
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
+
+    retained = lf._ldf._retained_parquet_footers()
+    # Retain source 0 and the heavy file's eight row groups.
+    assert len(retained) == 1
+    assert retained[0][0][1] == 1
+    assert sorted(rg for _, rg in retained[0]) == [1, 8]
+
+    assert lf.collect().height == 4040
+    assert "parquet resolve: pinned 1 / 1 heavy sources" in capfd.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "partition_values", [["0", "1"], ["a b", "100%"], ["\u00e4/\u00f6", "z"]]
+)
+@pytest.mark.write_disk
+def test_scan_delta_source_sizes_match_the_file_list(
+    tmp_path: Path, partition_values: list[str]
+) -> None:
+    # Match sizes against full paths, including encoded partition directories.
+    for value in partition_values:
+        pl.DataFrame({"p": [value] * 10, "x": range(10)}).write_delta(
+            tmp_path, mode="append", delta_write_options={"partition_by": "p"}
+        )
+
+    table = DeltaTable(tmp_path)
+    uris = table.file_uris()
+
+    assert _source_sizes(
+        uris, _table_root(table.table_uri), table._table.get_add_file_sizes()
+    ) == [Path(uri).stat().st_size for uri in uris]
+
+
+def test_delta_table_root_normalisation() -> None:
+    # Match local file URIs and Polars' lakefs-to-s3 rewrite.
+    assert _table_root("file:///private/var/t") == "/private/var/t/"
+    assert _table_root("s3://bucket/t/") == "s3://bucket/t/"
+    assert _table_root("lakefs://repo/main/t") == "s3://repo/main/t/"
+
+
+def test_delta_source_sizes_lookup() -> None:
+    root = "/t/"
+    # Files in different partitions can share a name; key on the relative path.
+    sizes = {"p=0/part.parquet": 100, "p=1/part.parquet": 200}
+    paths = ["/t/p=0/part.parquet", "/t/p=1/part.parquet"]
+
+    assert _source_sizes(paths, root, sizes) == [100, 200]
+    # The result follows the scan order, not the dict order.
+    assert _source_sizes(paths[::-1], root, dict(reversed(sizes.items()))) == [200, 100]
+
+    # A nested directory that repeats the table name is a distinct key.
+    nested = {"part.parquet": 100, "t/part.parquet": 200}
+    assert _source_sizes(["/t/part.parquet", "/t/t/part.parquet"], root, nested) == [
+        100,
+        200,
+    ]
+
+    # Unknown paths disable size hints.
+    assert _source_sizes(["/other/part.parquet"], root, sizes) is None
+    assert _source_sizes(["/t/p=2/part.parquet"], root, sizes) is None
+
+
+@pytest.mark.write_disk
+def test_scan_delta_resolves_heavy_footers_with_encoded_partition_values(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Encoded partition values must not disable sizes or heavy-footer resolution.
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    properties = WriterProperties(max_row_group_size=500)
+
+    for value, n in [("a b", 20), ("100%", 4000), ("\u00e4/\u00f6", 20)]:
+        pl.DataFrame({"p": [value] * n, "x": range(n)}).write_delta(
+            tmp_path,
+            mode="append",
+            delta_write_options={
+                "partition_by": "p",
+                "writer_properties": properties,
+            },
+        )
+
+    dataset = new_pl_delta_dataset(DeltaTable(tmp_path))
+    capfd.readouterr()
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
+
+    retained = lf._ldf._retained_parquet_footers()
+    # Retain source 0 and the heavy file's eight row groups.
+    assert len(retained) == 1
+    assert retained[0][0][1] == 1
+    assert sorted(rg for _, rg in retained[0]) == [1, 8]
+
+    assert lf.collect().height == 4040
+    assert "parquet resolve: pinned 1 / 1 heavy sources" in capfd.readouterr().err
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_scan_delta_resolves_heavy_footers_on_object_store(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Match encoded paths to sizes, then read source 0 and the heavy-file footer.
+    import threading
+
+    from tests.unit.io.cloud.test_metadata_prefetch import CountingS3
+
+    s3 = CountingS3()
+    threading.Thread(target=s3.server.serve_forever, daemon=True).start()
+    s3.client.create_bucket(Bucket="bucket")
+
+    try:
+        storage_options = {
+            "AWS_ACCESS_KEY_ID": s3.storage_options["aws_access_key_id"],
+            "AWS_SECRET_ACCESS_KEY": s3.storage_options["aws_secret_access_key"],
+            "AWS_REGION": s3.storage_options["aws_region"],
+            "AWS_ENDPOINT_URL": s3.endpoint,
+            "AWS_ALLOW_HTTP": "true",
+            # Allow commits to mock S3 without an external lock.
+            "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+        }
+        properties = WriterProperties(max_row_group_size=500)
+
+        for value, n in [("a b", 20), ("100%", 4000), ("ä/ö", 20)]:
+            pl.DataFrame({"p": [value] * n, "x": range(n)}).write_delta(
+                "s3://bucket/t",
+                mode="append",
+                storage_options=storage_options,
+                delta_write_options={
+                    "partition_by": "p",
+                    "writer_properties": properties,
+                },
+            )
+
+        table = DeltaTable("s3://bucket/t", storage_options=storage_options)
+        uris = table.file_uris()
+
+        # Encoded partition values must not break the size pairing.
+        sizes = _source_sizes(
+            uris, _table_root(table.table_uri), table._table.get_add_file_sizes()
+        )
+        assert sizes is not None
+        assert len(sizes) == len(uris)
+
+        dataset = DeltaDataset(
+            table_=NoPickleOption(table),
+            table_uri_=None,
+            version=None,
+            storage_options=storage_options,  # type: ignore[arg-type]
+            credential_provider_builder=None,
+            delta_table_options=None,
+            use_pyarrow=False,
+            pyarrow_options=None,
+        )
+
+        plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+
+        lf = wrap_ldf(
+            PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4)
+        )
+
+        mark = len(s3.log)
+        retained = lf._ldf._retained_parquet_footers()
+        planning = s3.since(mark)
+
+        heavy = sizes.index(max(sizes))
+        assert retained == [[(0, 1), (heavy, 8)]]
+        assert "parquet resolve: pinned 1 / 1 heavy sources" in capfd.readouterr().err
+
+        # Only the retained sources had their footers fetched.
+        assert s3.range_get_keys(planning) == {
+            uris[i].removeprefix("s3://") for i, _ in retained[0]
+        }
+    finally:
+        s3.server.shutdown()

@@ -530,6 +530,7 @@ def scan_parquet(
     _table_statistics: DataFrame | None = None,
     _row_count: tuple[int, int] | None = None,
     _source_sizes: Sequence[int] | None = None,
+    _resolve_heavy_sources: int | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a local or cloud-hosted parquet file (or files).
@@ -734,6 +735,7 @@ def scan_parquet(
             table_statistics=_table_statistics,
             row_count=_row_count,
             source_sizes=_source_sizes,
+            resolve_heavy_sources=_resolve_heavy_sources,
         ),
     )
 

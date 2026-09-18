@@ -1,4 +1,5 @@
 use std::hash::Hash;
+use std::num::NonZeroU32;
 use std::sync::Mutex;
 
 use deletion::DeletionFilesList;
@@ -194,6 +195,20 @@ impl MetadataPerSource {
             Self::Partial(p) => &p.metadata,
             Self::Full(s) => s,
         }
+    }
+
+    /// Resolved footers and their source indices, in source order.
+    pub fn iter_resolved(&self) -> impl Iterator<Item = (usize, &FileMetadataRef)> {
+        let (indices, metadata): (&[usize], &[FileMetadataRef]) = match self {
+            Self::Unresolved => (&[], &[]),
+            Self::Partial(p) => (&p.indices, &p.metadata),
+            Self::Full(s) => (&[], s),
+        };
+        // `Full` uses each footer's position as its source index.
+        metadata
+            .iter()
+            .enumerate()
+            .map(move |(j, md)| (indices.get(j).copied().unwrap_or(j), md))
     }
 
     /// Re-index to the sources surviving a filter.
@@ -602,6 +617,9 @@ pub struct UnifiedScanArgs {
     /// Note, intentionally store u64 instead of IdxSize to avoid erroring if it's unused.
     pub row_count: Option<(u64, u64)>,
     pub source_sizes: Option<Buffer<u64>>,
+    /// For `N` partitions, prioritize footers of sources containing at least `1 / N`
+    /// of the total bytes. Requires known sizes; selects largest first within the budget.
+    pub resolve_heavy_sources: Option<NonZeroU32>,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -645,6 +663,7 @@ impl Default for UnifiedScanArgs {
             table_statistics: None,
             row_count: None,
             source_sizes: None,
+            resolve_heavy_sources: None,
         }
     }
 }
