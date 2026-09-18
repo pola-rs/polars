@@ -36,11 +36,11 @@ use crate::sql_expr::{
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
-    collect_grouping_calls, expr_contains_subquery, expr_has_window_functions,
-    expr_references_any_column, expr_refers_to_table, sql_expr_cols_all_in_schema,
-    statement_registers_table,
+    collect_grouping_calls, expr_contains_scalar_subquery, expr_contains_subquery,
+    expr_has_window_functions, expr_references_any_column, expr_refers_to_table,
+    sql_expr_cols_all_in_schema, statement_registers_table,
 };
-use crate::subquery::{LowerScope, SubqueryBindings, desugar_quantified_subqueries};
+use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
 
@@ -1671,9 +1671,34 @@ impl SQLContext {
         // Shared by every pass over this frame: WHERE, the projection list and HAVING.
         let mut bindings = SubqueryBindings::new();
 
+        // A correlated scalar subquery is lowered against the frame as it stands, so
+        // the conjuncts that don't need it are applied first: the lowering can then
+        // restrict its aggregate to the rows that survive them.
+        let where_expr: Option<Cow<'_, SQLExpr>> = match where_expr {
+            Some(where_expr) if expr_contains_scalar_subquery(where_expr) => {
+                let n_grouping_calls = self.group_scope.grouping_calls.len();
+                let residual;
+                (lf, residual) = self.rewrite_subquery_conjuncts(
+                    lf,
+                    where_expr,
+                    FilterMode::KeepTrue,
+                    &schema,
+                    RewriteStage::BeforeScalarLowering,
+                )?;
+                self.reject_grouping_in_where(n_grouping_calls)?;
+                schema = self.get_frame_schema(&mut lf)?;
+                combine_conditions(
+                    residual.into_iter().cloned().collect(),
+                    SQLBinaryOperator::And,
+                )
+                .map(Cow::Owned)
+            },
+            other => other.map(Cow::Borrowed),
+        };
+
         // Lower correlated scalar subqueries in the WHERE clause before the filter is
         // parsed, leaving `[NOT] EXISTS` to `process_where`.
-        let effective_where = match where_expr {
+        let effective_where = match where_expr.as_deref() {
             Some(where_expr) => {
                 let lowered;
                 (lf, lowered) = self.lower_correlated_subqueries(
@@ -2261,18 +2286,11 @@ impl SQLContext {
             };
             // Parsing registers any `GROUPING()` call; subqueries keep their own registry.
             let n_grouping_calls = self.group_scope.grouping_calls.len();
-            let reject_grouping = |ctx: &Self| {
-                polars_ensure!(
-                    ctx.group_scope.grouping_calls.len() == n_grouping_calls,
-                    SQLSyntax: "GROUPING() is not allowed in the WHERE clause"
-                );
-                Ok(())
-            };
 
             // A condition that reads no input (eg: "WHERE 1 = 1") is accepted as any type
             // that casts to boolean; the planner folds it.
             if let Some(predicate) = self.input_independent_predicate(expr)? {
-                reject_grouping(self)?;
+                self.reject_grouping_in_where(n_grouping_calls)?;
                 let predicate = predicate.cast(DataType::Boolean);
                 return Ok(match filter_mode {
                     FilterMode::KeepTrue => lf.filter(predicate),
@@ -2284,8 +2302,13 @@ impl SQLContext {
             // to semi / anti joins; whatever remains goes through the ordinary
             // filter path below.
             let residual_exprs: Vec<&SQLExpr>;
-            (lf, residual_exprs) =
-                self.rewrite_subquery_conjuncts(lf, expr, filter_mode, &schema)?;
+            (lf, residual_exprs) = self.rewrite_subquery_conjuncts(
+                lf,
+                expr,
+                filter_mode,
+                &schema,
+                RewriteStage::AfterScalarLowering,
+            )?;
 
             // Decorrelate any `[NOT] EXISTS` left in a residual conjunct to a boolean
             // flag column, rewriting the conjunct to reference it.
@@ -2332,7 +2355,7 @@ impl SQLContext {
                 return Ok(lf);
             };
             let mut filter_expression = parsed_residual?;
-            reject_grouping(self)?;
+            self.reject_grouping_in_where(n_grouping_calls)?;
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
@@ -2350,6 +2373,15 @@ impl SQLContext {
             lf = drop_subquery_placeholders(lf, placeholders);
         }
         Ok(lf)
+    }
+
+    /// Fail if parsing since `n_grouping_calls` were registered added a `GROUPING()` call.
+    fn reject_grouping_in_where(&self, n_grouping_calls: usize) -> PolarsResult<()> {
+        polars_ensure!(
+            self.group_scope.grouping_calls.len() == n_grouping_calls,
+            SQLSyntax: "GROUPING() is not allowed in the WHERE clause"
+        );
+        Ok(())
     }
 
     /// Parse a condition that yields one value independent of any input frame (a literal or
