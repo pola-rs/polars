@@ -280,3 +280,18 @@ def test_list_function_w_scalars() -> None:
         result.collect(), pl.DataFrame(expected, schema={"literals": pl.List(pl.Int32)})
     )
     assert result.collect().schema == result.collect_schema()
+
+
+def test_list_broadcast_leading_scalar() -> None:
+    """Test that pl.list broadcasts leading scalar input against column (issue #29265)."""
+    df = pl.DataFrame({"x": [10, 20, 30]})
+
+    # Leading scalar should broadcast to match column length
+    result = df.select(pl.list(pl.lit(1), pl.col("x")))
+    expected = pl.DataFrame({"": [[1, 10], [1, 20], [1, 30]]})
+    assert_frame_equal(result, expected)
+
+    # Reversed order should also work
+    result_reversed = df.select(pl.list(pl.col("x"), pl.lit(1)))
+    expected_reversed = pl.DataFrame({"": [[10, 1], [20, 1], [30, 1]]})
+    assert_frame_equal(result_reversed, expected_reversed)
