@@ -47,8 +47,8 @@ pub trait IfThenElseKernel: StaticArray {
         assert_eq!(mask.len(), if_true.len(), "{LENGTH_MISMATCH}");
         assert_eq!(mask.len(), if_false.len(), "{LENGTH_MISMATCH}");
 
-        // One bit picks the same side at every element, which is therefore that side itself.
-        match mask.scalar_value() {
+        // A mask that picks the same side at every element answers with that side itself.
+        match picks_throughout(mask) {
             Some(true) => return if_true.clone(),
             Some(false) => return if_false.clone(),
             None => {},
@@ -106,24 +106,24 @@ pub trait IfThenElseKernel: StaticArray {
     ) -> Self {
         assert_eq!(mask.len(), if_false.len(), "{LENGTH_MISMATCH}");
 
-        // A mask that is unset everywhere is `if_false` itself.
-        if mask.scalar_value() == Some(false) {
-            return if_false.clone();
-        }
+        match picks_throughout(mask) {
+            // A mask that is unset everywhere is `if_false` itself.
+            Some(false) => return if_false.clone(),
+            // A mask that is set everywhere picks `if_true` at every element, so the one value is
+            // written out once and the result repeats it rather than holding a slot per element.
+            // No element of `if_false` is picked, so none of its nulls reaches the answer either.
+            Some(true) => {
+                let single = Bitmap::new_with_value(true, 1);
+                // `if_false` is never read through a set bit; it is here because the kernel takes
+                // an array, and one element of it is as good as any other.
+                let unpicked = if_false.new_from_index_typed(0, 1);
+                let element =
+                    Self::if_then_else_flat_broadcast_true(&single, if_true, &unpicked.to_flat());
+                debug_assert_eq!(element.len(), 1);
 
-        // A mask that is set everywhere picks `if_true` at every element, so the one value is
-        // written out once and the result repeats it rather than holding a slot per element. No
-        // element of `if_false` is picked, so none of its nulls reaches the answer either.
-        if mask.scalar_value() == Some(true) {
-            let single = Bitmap::new_with_value(true, 1);
-            // `if_false` is never read through a set bit; it is here because the kernel takes an
-            // array, and one element of it is as good as any other.
-            let unpicked = if_false.new_from_index_typed(0, 1);
-            let element =
-                Self::if_then_else_flat_broadcast_true(&single, if_true, &unpicked.to_flat());
-            debug_assert_eq!(element.len(), 1);
-
-            return element.new_from_index_typed(0, mask.len());
+                return element.new_from_index_typed(0, mask.len());
+            },
+            None => {},
         }
 
         // `if_true` is a value of its own and never null, so the answer is null only where
@@ -156,19 +156,19 @@ pub trait IfThenElseKernel: StaticArray {
         assert_eq!(mask.len(), if_true.len(), "{LENGTH_MISMATCH}");
 
         // As above, with the sides the other way around.
-        if mask.scalar_value() == Some(true) {
-            return if_true.clone();
-        }
+        match picks_throughout(mask) {
+            Some(true) => return if_true.clone(),
+            // A mask that is unset everywhere picks `if_false` at every element.
+            Some(false) => {
+                let single = Bitmap::new_with_value(false, 1);
+                let unpicked = if_true.new_from_index_typed(0, 1);
+                let element =
+                    Self::if_then_else_flat_broadcast_false(&single, &unpicked.to_flat(), if_false);
+                debug_assert_eq!(element.len(), 1);
 
-        // A mask that is unset everywhere picks `if_false` at every element.
-        if mask.scalar_value() == Some(false) {
-            let single = Bitmap::new_with_value(false, 1);
-            let unpicked = if_true.new_from_index_typed(0, 1);
-            let element =
-                Self::if_then_else_flat_broadcast_false(&single, &unpicked.to_flat(), if_false);
-            debug_assert_eq!(element.len(), 1);
-
-            return element.new_from_index_typed(0, mask.len());
+                return element.new_from_index_typed(0, mask.len());
+            },
+            None => {},
         }
 
         // As above, with the sides the other way around.
@@ -196,7 +196,7 @@ pub trait IfThenElseKernel: StaticArray {
         // Neither side is an array here, so there is no array for a repeated bit to hand back —
         // but that one bit picks the same value at every element, which is the one element the
         // kernel writes out below and the result repeats from there.
-        if let Some(bit) = mask.scalar_value() {
+        if let Some(bit) = picks_throughout(mask) {
             let single = Bitmap::new_with_value(bit, 1);
             let element = Self::if_then_else_flat_broadcast_both(&single, if_true, if_false);
             debug_assert_eq!(element.len(), 1);
@@ -208,6 +208,24 @@ pub trait IfThenElseKernel: StaticArray {
         let mask = mask.flat_bitmap().expect("a scalar mask is answered above");
 
         Self::if_then_else_flat_broadcast_both(mask, if_true, if_false)
+    }
+}
+
+/// The side a mask picks at every one of its elements, if it picks the same one throughout.
+///
+/// One repeated bit says so on its own; a bitmap of one bit per element says so when every bit
+/// agrees, which is what the count of unset bits it already carries answers. Either way the
+/// if-then-else below has nothing to pick between and hands that side back as it stands.
+fn picks_throughout(mask: PlBitmapRef<'_>) -> Option<bool> {
+    if let Some(bit) = mask.scalar_value() {
+        return Some(bit);
+    }
+
+    let mask = mask.flat_bitmap()?;
+    match mask.unset_bits() {
+        0 => Some(true),
+        unset if unset == mask.len() => Some(false),
+        _ => None,
     }
 }
 

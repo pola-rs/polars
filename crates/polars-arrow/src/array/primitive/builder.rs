@@ -70,6 +70,40 @@ impl<T: NativeType> StaticArrayBuilder for PrimitiveArrayBuilder<T> {
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
+    fn subslice_extend_repeated(
+        &mut self,
+        other: &PrimitiveArray<T>,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        let total = length * repeats;
+        self.values.reserve(total);
+
+        if total > 0 {
+            // One copy of the values, then doubled until it covers the whole repetition: copying
+            // the subslice once per repeat costs a call per repeat, where this costs one per
+            // doubling and each of them is a longer run than the last.
+            let base = self.values.len();
+            self.values
+                .extend_from_slice(&other.values()[start..start + length]);
+            let mut written = length;
+            while written < total {
+                let take = (total - written).min(written);
+                self.values.extend_from_within(base..base + take);
+                written += take;
+            }
+        }
+
+        self.validity.subslice_extend_repeated_from_opt_validity(
+            other.validity(),
+            start,
+            length,
+            repeats,
+        );
+    }
+
     fn subslice_extend_each_repeated(
         &mut self,
         other: &PrimitiveArray<T>,

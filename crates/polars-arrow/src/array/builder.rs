@@ -63,6 +63,14 @@ pub trait StaticArrayBuilder: Send {
         repeats: usize,
         share: ShareStrategy,
     ) {
+        // Repeating a subslice of one element is repeating that element, which the builders that
+        // hold their elements apart from their values fill in bulk rather than one copy of the
+        // subslice at a time -- a list builder's per-copy path costs a call into the values
+        // builder per repeat.
+        if length == 1 {
+            return self.subslice_extend_each_repeated(other, start, 1, repeats, share);
+        }
+
         self.reserve(length * repeats);
         for _ in 0..repeats {
             self.subslice_extend(other, start, length, share)

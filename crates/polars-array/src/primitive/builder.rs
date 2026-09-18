@@ -11,7 +11,8 @@ use super::bytes::{self, Bytes};
 use crate::bitmap::PlBitmap;
 use crate::builder::{
     ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
-    opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
+    opt_gather_extend_validity, subslice_extend_each_repeated_validity,
+    subslice_extend_repeated_validity, subslice_extend_validity,
 };
 use crate::static_array::StaticArray;
 
@@ -263,6 +264,33 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
 
         self.extend_values(other, start, length);
         subslice_extend_validity(&mut self.validity, other.validity(), start, length);
+    }
+
+    fn subslice_extend_repeated(
+        &mut self,
+        other: &PlPrimitiveArray<T>,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        assert_subslice(other.len(), start, length);
+
+        bytes::extend_subslice_run_repeated(
+            &mut self.values,
+            other.values_bytes(),
+            start,
+            length,
+            repeats,
+        );
+
+        subslice_extend_repeated_validity(
+            &mut self.validity,
+            other.validity(),
+            start,
+            length,
+            repeats,
+        );
     }
 
     fn subslice_extend_each_repeated(

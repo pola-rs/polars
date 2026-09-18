@@ -101,9 +101,12 @@ impl<O: Offset, B: ArrayBuilder> StaticArrayBuilder for ListArrayBuilder<O, B> {
         for offset_idx in start..start + length {
             let sublist_start = other_offsets[offset_idx].to_usize();
             let sublist_stop = other_offsets[offset_idx + 1].to_usize();
-            for _ in 0..repeats {
-                self.offsets.try_push(sublist_stop - sublist_start).unwrap();
-            }
+            // Every copy of the element is the same number of values long, so the offsets they
+            // add are one run of a known length -- a push at a time costs a bounds check and an
+            // overflow check per copy where the whole run needs one of each.
+            self.offsets
+                .try_extend_from_lengths(std::iter::repeat_n(sublist_stop - sublist_start, repeats))
+                .unwrap();
             self.inner_builder.subslice_extend_repeated(
                 other_values,
                 sublist_start,

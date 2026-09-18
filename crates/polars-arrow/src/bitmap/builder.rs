@@ -598,6 +598,26 @@ impl OptBitmapBuilder {
         }
     }
 
+    /// Appends the `length` bits starting at `start` `repeats` times over.
+    pub fn subslice_extend_repeated_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        start: usize,
+        length: usize,
+        repeats: usize,
+    ) {
+        match bitmap {
+            Some(bm) => {
+                let builder = self.get_builder();
+                for _ in 0..repeats {
+                    builder.subslice_extend_from_bitmap(bm, start, length);
+                }
+            },
+            // Nothing the bits say differs between the copies, so there is one run of them.
+            None => self.extend_constant(length * repeats, true),
+        }
+    }
+
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_extend_from_opt_validity(

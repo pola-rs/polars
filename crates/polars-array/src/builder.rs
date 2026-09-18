@@ -80,6 +80,13 @@ pub trait StaticArrayBuilder: Send {
         repeats: usize,
         share: ShareStrategy,
     ) {
+        // Repeating a subslice of one element is repeating that element, which the builders that
+        // hold their elements apart from their values fill in bulk rather than one copy of the
+        // subslice at a time.
+        if length == 1 {
+            return self.subslice_extend_each_repeated(other, start, 1, repeats, share);
+        }
+
         self.reserve(length * repeats);
         for _ in 0..repeats {
             self.subslice_extend(other, start, length, share);
@@ -617,6 +624,34 @@ pub fn subslice_extend_validity(
 
 /// Appends each of the `length` bits of `validity` starting at `start` `repeats` times over.
 #[inline(never)]
+/// Appends the `length` bits of `validity` starting at `start`, `repeats` times over.
+pub fn subslice_extend_repeated_validity(
+    dst: &mut OptBitmapBuilder,
+    validity: Option<PlBitmapRef<'_>>,
+    start: usize,
+    length: usize,
+    repeats: usize,
+) {
+    if length == 0 || repeats == 0 {
+        return;
+    }
+
+    match validity {
+        None => dst.extend_constant(length * repeats, true),
+        Some(validity) => match validity.scalar_value() {
+            // One bit says the same of every element, and so of every copy of them.
+            Some(bit) => dst.extend_constant(length * repeats, bit),
+            // The mask is not scalar, so it holds one bit per element.
+            None => dst.subslice_extend_repeated_from_opt_validity(
+                validity.flat_bitmap(),
+                start,
+                length,
+                repeats,
+            ),
+        },
+    }
+}
+
 pub fn subslice_extend_each_repeated_validity(
     dst: &mut OptBitmapBuilder,
     validity: Option<PlBitmapRef<'_>>,
