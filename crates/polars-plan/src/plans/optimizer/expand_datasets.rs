@@ -3,8 +3,11 @@ use std::cell::LazyCell;
 use std::fmt::Debug;
 use std::ops::ControlFlow;
 use std::sync::Arc;
+#[cfg(feature = "python")]
+use std::sync::Mutex;
 
 use futures::StreamExt;
+use futures::future::LocalBoxFuture;
 use futures::stream::FuturesUnordered;
 use polars_core::config;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
@@ -36,7 +39,8 @@ pub(super) fn expand_datasets(
     expr_arena: &mut Arena<AExpr>,
     apply_scan_predicate_to_scan_ir: ApplyScanPredicateFn,
 ) -> PolarsResult<()> {
-    let mut expansion_tasks: FuturesUnordered<AbortOnDropHandle<(Node, PolarsResult<IR>)>> =
+    // Polled locally by block_in_place_on; the continuations do not need Send.
+    let mut expansion_tasks: FuturesUnordered<LocalBoxFuture<'static, (Node, PolarsResult<IR>)>> =
         FuturesUnordered::new();
 
     #[cfg(feature = "python")]
@@ -168,7 +172,8 @@ pub(super) fn expand_datasets(
                                 )
                             }));
 
-                            expansion_tasks.push(handle);
+                            // Resolve before filtering, concurrently with other datasets.
+                            expansion_tasks.push(Box::pin(resolve_after_expansion(handle)));
                         },
 
                         _ => apply_scan_predicate_to_scan_ir(key, storage, expr_arena)?,
@@ -191,10 +196,8 @@ pub(super) fn expand_datasets(
 
     if !expansion_tasks.is_empty() {
         ASYNC.block_in_place_on(async {
-            while let Some(v) = expansion_tasks.next().await {
-                let (node, ir) = v.unwrap();
-                let ir = ir?;
-                ir_arena.replace(node, ir);
+            while let Some((node, ir)) = expansion_tasks.next().await {
+                ir_arena.replace(node, ir?);
                 apply_scan_predicate_to_scan_ir(node, ir_arena, expr_arena)?;
             }
 
@@ -202,6 +205,258 @@ pub(super) fn expand_datasets(
         })?;
     }
 
+    Ok(())
+}
+
+/// Await one dataset expansion, then read its heavy-source footers.
+#[cfg(feature = "python")]
+async fn resolve_after_expansion(
+    handle: AbortOnDropHandle<(Node, PolarsResult<IR>)>,
+) -> (Node, PolarsResult<IR>) {
+    let (key, ir) = handle.await.unwrap();
+    let ir = async {
+        let mut ir = ir?;
+        resolve_heavy_footers(&mut ir).await?;
+        PolarsResult::Ok(ir)
+    }
+    .await;
+    (key, ir)
+}
+
+/// Resolve heavy-source footers for distributed row-group splitting.
+///
+/// Dataset expansion runs after the usual DSL-to-IR footer resolution.
+/// Enabled by [`UnifiedScanArgs::resolve_heavy_sources`].
+#[cfg(feature = "parquet")]
+async fn resolve_heavy_footers(scan_ir: &mut IR) -> PolarsResult<()> {
+    use crate::dsl::MetadataPerSource;
+    use crate::plans::parquet_footers::resolve_for_splitting;
+
+    let IR::Scan {
+        sources,
+        scan_type,
+        unified_scan_args,
+        ..
+    } = scan_ir
+    else {
+        return Ok(());
+    };
+
+    let Some(n_parts) = unified_scan_args.resolve_heavy_sources else {
+        return Ok(());
+    };
+    let cloud_options = unified_scan_args.cloud_options.as_ref();
+
+    let FileScanIR::Parquet {
+        metadata_per_source,
+        bytes_per_source,
+        ..
+    } = scan_type.as_mut()
+    else {
+        return Ok(());
+    };
+    if !matches!(metadata_per_source, MetadataPerSource::Unresolved) {
+        return Ok(());
+    }
+    let Some(bytes) = bytes_per_source.as_deref() else {
+        return Ok(());
+    };
+
+    *metadata_per_source = resolve_for_splitting(sources, bytes, n_parts, cloud_options).await;
+
+    Ok(())
+}
+
+#[cfg(not(feature = "parquet"))]
+async fn resolve_heavy_footers(_scan_ir: &mut IR) -> PolarsResult<()> {
+    Ok(())
+}
+
+/// Rebuild the outer scan from a dataset expansion, leaving footers unresolved.
+fn rebuild_scan_from_expanded(
+    scan_ir: &mut IR,
+    expanded_dsl: &DslPlan,
+    row_index_in_live_filter: bool,
+) -> PolarsResult<()> {
+    use crate::dsl::FileScanDsl;
+
+    let IR::Scan {
+        sources,
+        scan_type,
+        unified_scan_args,
+
+        file_info,
+        hive_parts,
+        predicate: _,
+        predicate_file_skip_applied: _,
+        output_schema: _,
+    } = scan_ir
+    else {
+        unreachable!()
+    };
+
+    let DslPlan::Scan {
+        sources: resolved_sources,
+        unified_scan_args: resolved_unified_scan_args,
+        scan_type: resolved_scan_type,
+        cached_ir: _,
+    } = expanded_dsl
+    else {
+        unreachable!()
+    };
+
+    // Copy provider-owned options; query-specific options stay on the outer scan.
+    let UnifiedScanArgs {
+        schema: _,
+        cloud_options,
+        hive_options,
+        rechunk,
+        cache,
+        glob: _,
+        expand_paths: _,
+        hidden_file_prefix: _hidden_file_prefix @ None,
+        projection: _projection @ None,
+        column_mapping,
+        default_values,
+        row_index: _row_index @ None,
+        pre_slice: _pre_slice @ None,
+        cast_columns_policy,
+        missing_columns_policy,
+        extra_columns_policy,
+        include_file_paths: _include_file_paths @ None,
+        deletion_files,
+        table_statistics,
+        row_count,
+        source_sizes,
+        resolve_heavy_sources: _,
+    } = resolved_unified_scan_args.as_ref()
+    else {
+        panic!(
+            "invalid scan args from python dataset resolve: {:?}",
+            resolved_unified_scan_args
+        )
+    };
+
+    unified_scan_args.cloud_options = cloud_options.clone();
+    unified_scan_args.rechunk = *rechunk;
+    unified_scan_args.cache = *cache;
+    unified_scan_args.cast_columns_policy = cast_columns_policy.clone();
+    unified_scan_args.missing_columns_policy = *missing_columns_policy;
+    unified_scan_args.extra_columns_policy = *extra_columns_policy;
+    unified_scan_args.column_mapping = column_mapping.clone();
+    unified_scan_args.default_values = default_values.clone();
+    unified_scan_args.deletion_files = deletion_files.clone();
+    unified_scan_args.table_statistics = table_statistics.clone();
+    unified_scan_args.row_count = *row_count;
+
+    if row_index_in_live_filter {
+        use polars_core::prelude::{Column, DataType, IdxCa, IntoColumn};
+        use polars_core::series::IntoSeries;
+
+        let row_index_name = &unified_scan_args.row_index.as_ref().unwrap().name;
+        let table_statistics = unified_scan_args.table_statistics.as_mut().unwrap();
+
+        let statistics_df = Arc::make_mut(&mut table_statistics.0);
+        assert!(
+            !statistics_df
+                .schema()
+                .contains(&format_pl_smallstr!("{}_nc", row_index_name))
+        );
+
+        unsafe { statistics_df.columns_mut() }.extend([
+            IdxCa::from_vec(format_pl_smallstr!("{}_nc", row_index_name), vec![0])
+                .into_series()
+                .into_column()
+                .new_from_index(0, sources.len()),
+            Column::full_null(
+                format_pl_smallstr!("{}_min", row_index_name),
+                sources.len(),
+                &DataType::IDX_DTYPE,
+            ),
+            Column::full_null(
+                format_pl_smallstr!("{}_max", row_index_name),
+                sources.len(),
+                &DataType::IDX_DTYPE,
+            ),
+        ]);
+    }
+
+    if let Some(source_sizes) = source_sizes {
+        polars_ensure!(
+            source_sizes.len() == resolved_sources.len(),
+            ShapeMismatch:
+            "number of source sizes ({}) does not match number of scan sources ({})",
+            source_sizes.len(),
+            resolved_sources.len(),
+        );
+    }
+
+    *sources = resolved_sources.clone();
+
+    **scan_type = match *resolved_scan_type.clone() {
+        #[cfg(feature = "csv")]
+        FileScanDsl::Csv { options } => FileScanIR::Csv { options },
+
+        #[cfg(feature = "ipc")]
+        FileScanDsl::Ipc { options } => FileScanIR::Ipc {
+            options,
+            metadata: None,
+        },
+
+        #[cfg(feature = "parquet")]
+        FileScanDsl::Parquet { options } => FileScanIR::Parquet {
+            options,
+            // Heavy-source footers are resolved after expansion, if requested.
+            metadata_per_source: Unresolved,
+            bytes_per_source: source_sizes.clone(),
+        },
+
+        #[cfg(feature = "json")]
+        FileScanDsl::NDJson { options } => FileScanIR::NDJson { options },
+
+        #[cfg(feature = "python")]
+        FileScanDsl::PythonDataset { dataset_object } => FileScanIR::PythonDataset {
+            dataset_object,
+            cached_ir: Default::default(),
+        },
+
+        #[cfg(feature = "scan_lines")]
+        FileScanDsl::Lines { name } => FileScanIR::Lines { name },
+
+        FileScanDsl::ExpandedPaths { name } => FileScanIR::ExpandedPaths { name },
+
+        FileScanDsl::Anonymous {
+            options,
+            function,
+            file_info: _,
+        } => FileScanIR::Anonymous { options, function },
+    };
+
+    if hive_options.enabled == Some(true)
+        && let Some(paths) = sources.as_paths()
+    {
+        use polars_arrow::Either;
+
+        use crate::plans::hive::hive_partitions_from_paths;
+
+        let owned;
+
+        *hive_parts = hive_partitions_from_paths(
+            paths,
+            hive_options.hive_start_idx,
+            hive_options.schema.clone(),
+            match file_info.reader_schema.as_ref().unwrap() {
+                Either::Left(v) => {
+                    use polars_core::schema::{Schema, SchemaExt as _};
+
+                    owned = Some(Schema::from_arrow_schema(v.as_ref()));
+                    owned.as_ref().unwrap()
+                },
+                Either::Right(v) => v.as_ref(),
+            },
+            hive_options.try_parse_dates,
+        )?;
+    }
     Ok(())
 }
 
@@ -215,18 +470,7 @@ fn expand_python_dataset(
     pyarrow_predicate: Option<String>,
     py_scan_resolve_threadpool: &PyScanResolveThreadPool,
 ) -> PolarsResult<IR> {
-    let IR::Scan {
-        sources,
-        scan_type,
-        unified_scan_args,
-
-        file_info,
-        hive_parts,
-        predicate: _,
-        predicate_file_skip_applied: _,
-        output_schema: _,
-    } = &mut scan_ir
-    else {
+    let IR::Scan { scan_type, .. } = &mut scan_ir else {
         unreachable!()
     };
 
@@ -238,8 +482,8 @@ fn expand_python_dataset(
         unreachable!()
     };
 
-    let cached_ir = cached_ir.clone();
-    let mut guard = cached_ir.lock().unwrap();
+    let shared_cached_ir = Arc::clone(cached_ir);
+    let mut guard = shared_cached_ir.lock().unwrap();
 
     if config::verbose() {
         eprintln!(
@@ -296,6 +540,9 @@ fn expand_python_dataset(
         })
     }
 
+    // The `dataset_object` borrow of `scan_ir` must end before the rebuild below.
+    let dataset_name = dataset_object.name();
+
     let ExpandedDataset {
         version: _,
         limit: _,
@@ -307,174 +554,17 @@ fn expand_python_dataset(
     } = guard.as_mut().unwrap();
 
     match expanded_dsl {
-        DslPlan::Scan {
-            sources: resolved_sources,
-            unified_scan_args: resolved_unified_scan_args,
-            scan_type: resolved_scan_type,
-            cached_ir: _,
-        } => {
-            use crate::dsl::FileScanDsl;
-
-            // We only want a few configuration flags from here (e.g. column casting config).
-            // The rest we either expect to be None (e.g. projection / row_index), or ignore.
-            let UnifiedScanArgs {
-                schema: _,
-                cloud_options,
-                hive_options,
-                rechunk,
-                cache,
-                glob: _,
-                expand_paths: _,
-                hidden_file_prefix: _hidden_file_prefix @ None,
-                projection: _projection @ None,
-                column_mapping,
-                default_values,
-                row_index: _row_index @ None,
-                pre_slice: _pre_slice @ None,
-                cast_columns_policy,
-                missing_columns_policy,
-                extra_columns_policy,
-                include_file_paths: _include_file_paths @ None,
-                deletion_files,
-                table_statistics,
-                row_count,
-                source_sizes,
-            } = resolved_unified_scan_args.as_ref()
-            else {
-                panic!(
-                    "invalid scan args from python dataset resolve: {:?}",
-                    resolved_unified_scan_args
-                )
-            };
-
-            unified_scan_args.cloud_options = cloud_options.clone();
-            unified_scan_args.rechunk = *rechunk;
-            unified_scan_args.cache = *cache;
-            unified_scan_args.cast_columns_policy = cast_columns_policy.clone();
-            unified_scan_args.missing_columns_policy = *missing_columns_policy;
-            unified_scan_args.extra_columns_policy = *extra_columns_policy;
-            unified_scan_args.column_mapping = column_mapping.clone();
-            unified_scan_args.default_values = default_values.clone();
-            unified_scan_args.deletion_files = deletion_files.clone();
-            unified_scan_args.table_statistics = table_statistics.clone();
-            unified_scan_args.row_count = *row_count;
-
-            if row_index_in_live_filter {
-                use polars_core::prelude::{Column, DataType, IdxCa, IntoColumn};
-                use polars_core::series::IntoSeries;
-
-                let row_index_name = &unified_scan_args.row_index.as_ref().unwrap().name;
-                let table_statistics = unified_scan_args.table_statistics.as_mut().unwrap();
-
-                let statistics_df = Arc::make_mut(&mut table_statistics.0);
-                assert!(
-                    !statistics_df
-                        .schema()
-                        .contains(&format_pl_smallstr!("{}_nc", row_index_name))
-                );
-
-                unsafe { statistics_df.columns_mut() }.extend([
-                    IdxCa::from_vec(format_pl_smallstr!("{}_nc", row_index_name), vec![0])
-                        .into_series()
-                        .into_column()
-                        .new_from_index(0, sources.len()),
-                    Column::full_null(
-                        format_pl_smallstr!("{}_min", row_index_name),
-                        sources.len(),
-                        &DataType::IDX_DTYPE,
-                    ),
-                    Column::full_null(
-                        format_pl_smallstr!("{}_max", row_index_name),
-                        sources.len(),
-                        &DataType::IDX_DTYPE,
-                    ),
-                ]);
-            }
-
-            if let Some(source_sizes) = source_sizes {
-                polars_ensure!(
-                    source_sizes.len() == resolved_sources.len(),
-                    ShapeMismatch:
-                    "number of source sizes ({}) does not match number of scan sources ({})",
-                    source_sizes.len(),
-                    resolved_sources.len(),
-                );
-            }
-
-            *sources = resolved_sources.clone();
-
-            **scan_type = match *resolved_scan_type.clone() {
-                #[cfg(feature = "csv")]
-                FileScanDsl::Csv { options } => FileScanIR::Csv { options },
-
-                #[cfg(feature = "ipc")]
-                FileScanDsl::Ipc { options } => FileScanIR::Ipc {
-                    options,
-                    metadata: None,
-                },
-
-                #[cfg(feature = "parquet")]
-                FileScanDsl::Parquet { options } => FileScanIR::Parquet {
-                    options,
-                    // Metadata is resolved later in `parquet_file_info`.
-                    metadata_per_source: Unresolved,
-                    bytes_per_source: source_sizes.clone(),
-                },
-
-                #[cfg(feature = "json")]
-                FileScanDsl::NDJson { options } => FileScanIR::NDJson { options },
-
-                #[cfg(feature = "python")]
-                FileScanDsl::PythonDataset { dataset_object } => FileScanIR::PythonDataset {
-                    dataset_object,
-                    cached_ir: Default::default(),
-                },
-
-                #[cfg(feature = "scan_lines")]
-                FileScanDsl::Lines { name } => FileScanIR::Lines { name },
-
-                FileScanDsl::ExpandedPaths { name } => FileScanIR::ExpandedPaths { name },
-
-                FileScanDsl::Anonymous {
-                    options,
-                    function,
-                    file_info: _,
-                } => FileScanIR::Anonymous { options, function },
-            };
-
-            if hive_options.enabled == Some(true)
-                && let Some(paths) = sources.as_paths()
-            {
-                use polars_arrow::Either;
-
-                use crate::plans::hive::hive_partitions_from_paths;
-
-                let owned;
-
-                *hive_parts = hive_partitions_from_paths(
-                    paths,
-                    hive_options.hive_start_idx,
-                    hive_options.schema.clone(),
-                    match file_info.reader_schema.as_ref().unwrap() {
-                        Either::Left(v) => {
-                            use polars_core::schema::{Schema, SchemaExt as _};
-
-                            owned = Some(Schema::from_arrow_schema(v.as_ref()));
-                            owned.as_ref().unwrap()
-                        },
-                        Either::Right(v) => v.as_ref(),
-                    },
-                    hive_options.try_parse_dates,
-                )?;
-            }
+        DslPlan::Scan { .. } => {
+            rebuild_scan_from_expanded(&mut scan_ir, expanded_dsl, row_index_in_live_filter)?
         },
 
         DslPlan::PythonScan { options } => {
             *python_scan = Some(ExpandedPythonScan {
-                name: dataset_object.name(),
+                name: dataset_name,
                 scan_fn: options.scan_fn.clone().unwrap(),
                 variant: options.python_source.clone(),
-            })
+            });
+            *cached_ir = Arc::new(Mutex::new((*guard).clone()));
         },
 
         dsl => {
@@ -484,6 +574,15 @@ fn expand_python_dataset(
                 dsl.display()?
             )
         },
+    };
+
+    let IR::Scan {
+        unified_scan_args,
+        file_info,
+        ..
+    } = &mut scan_ir
+    else {
+        unreachable!()
     };
 
     if let Some((physical, deleted)) = unified_scan_args.row_count {
@@ -587,5 +686,127 @@ impl Debug for ExpandedDataset {
                 pub python_scan: Option<PlSmallStr>,
             }
         }
+    }
+}
+
+#[cfg(all(test, feature = "parquet"))]
+mod tests {
+    use std::num::NonZeroU32;
+    use std::sync::Mutex;
+
+    use polars_buffer::Buffer;
+    use polars_core::prelude::*;
+    use polars_io::prelude::ParquetOptions;
+    use polars_utils::pl_path::PlRefPath;
+
+    use super::*;
+    use crate::dsl::{FileScanDsl, FileScanIR, MetadataPerSource, ScanSources, UnifiedScanArgs};
+    use crate::plans::{FileInfo, ScanStats};
+
+    /// Three files whose middle one holds nearly all the bytes.
+    fn write_sources(dir: &std::path::Path) -> (ScanSources, Buffer<u64>) {
+        use polars_io::prelude::ParquetWriter;
+
+        let mut paths = Vec::new();
+        let mut sizes = Vec::new();
+
+        for (i, n) in [20i64, 4000, 20].into_iter().enumerate() {
+            let path = dir.join(format!("{i}.parquet"));
+            let mut df = df!("x" => (0..n).collect::<Vec<_>>()).unwrap();
+            let file = std::fs::File::create(&path).unwrap();
+            ParquetWriter::new(file)
+                .with_row_group_size(Some(500))
+                .finish(&mut df)
+                .unwrap();
+            sizes.push(std::fs::metadata(&path).unwrap().len());
+            paths.push(PlRefPath::try_from_pathbuf(path).unwrap());
+        }
+
+        (
+            ScanSources::Paths(Buffer::from_owner(paths)),
+            Buffer::from_owner(sizes),
+        )
+    }
+
+    fn expanded_scan_dsl(sources: ScanSources, sizes: Buffer<u64>) -> DslPlan {
+        let mut args = UnifiedScanArgs::default();
+        args.hive_options.enabled = Some(false);
+        args.source_sizes = Some(sizes);
+
+        DslPlan::Scan {
+            sources,
+            unified_scan_args: Box::new(args),
+            scan_type: Box::new(FileScanDsl::Parquet {
+                options: ParquetOptions::default(),
+            }),
+            cached_ir: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Outer scan before dataset expansion.
+    fn outer_scan_ir(resolve_heavy_sources: Option<NonZeroU32>) -> IR {
+        let schema = Arc::new(Schema::from_iter([Field::new("x".into(), DataType::Int64)]));
+
+        let mut args = UnifiedScanArgs::default();
+        args.hive_options.enabled = Some(false);
+        args.resolve_heavy_sources = resolve_heavy_sources;
+
+        IR::Scan {
+            sources: ScanSources::default(),
+            file_info: FileInfo::new(schema.clone(), None, ScanStats::unknown()),
+            hive_parts: None,
+            predicate: None,
+            predicate_file_skip_applied: None,
+            output_schema: None,
+            scan_type: Box::new(FileScanIR::Parquet {
+                options: ParquetOptions::default(),
+                metadata_per_source: MetadataPerSource::Unresolved,
+                bytes_per_source: None,
+            }),
+            unified_scan_args: Box::new(args),
+        }
+    }
+
+    fn retained(scan_ir: &IR) -> Vec<(usize, usize)> {
+        let IR::Scan { scan_type, .. } = scan_ir else {
+            unreachable!()
+        };
+        let FileScanIR::Parquet {
+            metadata_per_source,
+            ..
+        } = scan_type.as_ref()
+        else {
+            unreachable!()
+        };
+        metadata_per_source
+            .iter_resolved()
+            .map(|(i, md)| (i, md.row_groups.len()))
+            .collect()
+    }
+
+    /// Reusing a cached expansion must still honor the outer scan's resolution flag.
+    #[test]
+    fn cached_expansion_resolves_heavy_footers_when_the_flag_is_added() {
+        let dir = tempfile::tempdir().unwrap();
+        let (sources, sizes) = write_sources(dir.path());
+        // Three sources fit the default footer budget.
+        let expanded_dsl = expanded_scan_dsl(sources, sizes);
+
+        let mut without = outer_scan_ir(None);
+        let mut with = outer_scan_ir(NonZeroU32::new(4));
+
+        ASYNC
+            .block_on(async {
+                for ir in [&mut without, &mut with] {
+                    rebuild_scan_from_expanded(ir, &expanded_dsl, false)?;
+                    resolve_heavy_footers(ir).await?;
+                }
+                PolarsResult::Ok(())
+            })
+            .unwrap();
+
+        assert_eq!(retained(&without), []);
+        // Partial metadata requires source 0; source 1 is heavy.
+        assert_eq!(retained(&with), [(0, 1), (1, 8)]);
     }
 }

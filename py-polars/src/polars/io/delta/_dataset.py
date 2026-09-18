@@ -28,6 +28,31 @@ if TYPE_CHECKING:
     from polars.lazyframe.frame import LazyFrame
 
 
+def _table_root(table_uri: str) -> str:
+    """Return the table prefix used by native scan paths."""
+    # Match file_uris() for local paths and our lakefs-to-s3 rewrite.
+    root = table_uri.removeprefix("file://").replace("lakefs://", "s3://", 1)
+    return root if root.endswith("/") else root + "/"
+
+
+def _source_sizes(
+    paths: list[str], root: str, sizes: dict[str, int]
+) -> list[int] | None:
+    """Return sizes in scan order using exact table-relative paths.
+
+    Return None if any path is outside the root or has no logged size.
+    """
+    out = []
+    for path in paths:
+        if not path.startswith(root):
+            return None
+        size = sizes.get(path[len(root) :])
+        if size is None:
+            return None
+        out.append(size)
+    return out
+
+
 @dataclass(kw_only=True)
 class DeltaDataset:
     """Dataset interface for Delta."""
@@ -162,6 +187,17 @@ class DeltaDataset:
                 f"path expansion time: {elapsed:.3f}s"
             )
 
+        # Private delta-rs API: fetch sizes without materializing add-action statistics.
+        source_sizes = _source_sizes(
+            paths, _table_root(table.table_uri), table._table.get_add_file_sizes()
+        )
+
+        if source_sizes is None and verbose:
+            eprint(
+                "DeltaDataset: to_dataset_scan(): "
+                "cannot pair add file sizes with file_uris(), skipping sizes"
+            )
+
         table_statistics = (
             _extract_table_statistics_from_delta_add_actions(
                 pl.DataFrame(table.get_add_actions()),
@@ -223,6 +259,7 @@ class DeltaDataset:
             credential_provider=self.credential_provider_builder,  # type: ignore[arg-type]
             _table_statistics=table_statistics,
             _deletion_files=deletion_files,
+            _source_sizes=source_sizes,
         ), version_key
 
     #

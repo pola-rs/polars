@@ -101,6 +101,12 @@ class FilterExpr:
 
     @property
     def pyarrow_expr(self) -> pyarrow.compute.Expression | None:
+        """
+        The filter expression converted to a pyarrow expression.
+
+        Returns `None` if the expression could not be converted. Raises if the
+        conversion failed with an error.
+        """
         if isinstance(exc := self._pyarrow_expr, Exception):
             raise exc
 

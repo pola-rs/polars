@@ -88,6 +88,7 @@ from tests.unit.io.test_scan_row_deletion import write_position_deletes  # noqa:
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
     from tests.unit.io.test_scan_row_deletion import (
         WritePositionDeletes,
@@ -4542,6 +4543,43 @@ def test_scan_iceberg_self_join_28465(tmp_path: Path) -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"x": 1}))
 
 
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.parametrize("query_kind", ["projection", "predicate"])
+def test_scan_iceberg_branch_caches_29345(
+    tmp_path: Path, engine: EngineType, query_kind: str
+) -> None:
+    table, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(2, "http_method", StringType()),
+            NestedField(3, "endpoint", StringType()),
+        ),
+    )
+    pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "http_method": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+            "endpoint": ["/a", None, "/c", None, "/e"],
+        }
+    ).write_iceberg(table, mode="append")
+
+    lf = pl.scan_iceberg(table, reader_override="pyiceberg")
+    if query_kind == "projection":
+        left = lf.filter(pl.col("id") > 0)
+        right = lf.filter(pl.col("endpoint").is_not_null()).select("id").limit(2)
+        q = left.join(right, on="id", how="semi").select("id", "http_method")
+        expected = pl.DataFrame({"id": [1, 3], "http_method": ["GET", "PUT"]})
+    else:
+        low = lf.filter(pl.col("id") <= 2).select("id")
+        high = lf.filter(pl.col("id") >= 4).select("id")
+        q = pl.concat([low, high])
+        expected = pl.DataFrame({"id": [1, 2, 4, 5]})
+
+    for _ in range(2):
+        assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+
 def test_scan_iceberg_schema_change_24498(
     tmp_path: Path,
 ) -> None:
@@ -4573,3 +4611,45 @@ def test_scan_iceberg_schema_change_24498(
         table,
         snapshot_id=table.snapshots()[2].snapshot_id,
     ).collect_schema() == {"a": pl.Int64, "b": pl.Int64}
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renamed_column_with_pruned_metadata(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Pruning must preserve renamed columns, which Iceberg maps by field ID.
+    from polars._plr import PyLazyFrame
+    from polars._utils.wrap import wrap_ldf
+
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("namespace")
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "old", IntegerType()),
+            NestedField(2, "other", IntegerType()),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+    pl.DataFrame(
+        {"old": [1, 2, 3], "other": [4, 5, 6]},
+        schema={"old": pl.Int32, "other": pl.Int32},
+    ).write_iceberg(tbl, mode="append")
+
+    with tbl.update_schema() as sch:
+        sch.rename_column("old", "new")
+
+    plmonkeypatch.setenv("POLARS_PRUNE_PARQUET_METADATA", "1")
+
+    lf = wrap_ldf(
+        PyLazyFrame.new_from_dataset_object(
+            new_iceberg_scan_resolver(tbl), resolve_heavy_sources=4
+        )
+    )
+
+    assert lf.select("new").collect().to_series().to_list() == [1, 2, 3]
