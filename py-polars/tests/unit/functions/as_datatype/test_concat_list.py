@@ -283,7 +283,7 @@ def test_list_function_w_scalars() -> None:
 
 
 def test_list_broadcast_leading_scalar() -> None:
-    """Test that pl.list broadcasts leading scalar input against column (issue #29265)."""
+    """Test that pl.list broadcasts leading scalar input (issue #29265)."""
     df = pl.DataFrame({"x": [10, 20, 30]})
 
     # Leading scalar should broadcast to match column length
