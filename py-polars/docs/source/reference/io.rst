@@ -132,6 +132,25 @@ Parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
 
+External
+~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   scan_external_reader
+
+.. currentmodule:: polars.io.external_reader
+
+.. autosummary::
+   :toctree: api/
+
+   FileReader
+   FileReaderBuilder
+   FilterExpr
+   ReaderCapabilities
+
+.. currentmodule:: polars
+
 Arrow Datasets
 ~~~~~~~~~~~~~~~~
 Connect to pyarrow datasets.

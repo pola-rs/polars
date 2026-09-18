@@ -7,7 +7,7 @@ static SHOULD_LOG_CONCURRENCY: LazyLock<bool> =
     LazyLock::new(|| std::env::var("POLARS_LOG_CONCURRENCY").is_ok());
 
 #[derive(Clone, Debug)]
-pub(crate) struct PipelineBudget {
+pub struct PipelineBudget {
     count: Arc<Semaphore>,
     kbytes: Arc<Semaphore>,
     count_limit: usize,
@@ -17,7 +17,7 @@ pub(crate) struct PipelineBudget {
 }
 
 impl PipelineBudget {
-    pub(crate) fn new(count_limit: usize, kbytes_limit: usize) -> Self {
+    pub fn new(count_limit: usize, kbytes_limit: usize) -> Self {
         Self {
             count: Arc::new(Semaphore::new(count_limit)),
             kbytes: Arc::new(Semaphore::new(kbytes_limit)),

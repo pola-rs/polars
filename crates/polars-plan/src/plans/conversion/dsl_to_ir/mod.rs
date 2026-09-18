@@ -119,7 +119,7 @@ async fn fetch_metadata(
     use futures::stream::StreamExt;
     #[cfg(feature = "python")]
     let py_scan_resolve_threadpool = Arc::new(LazyLock::new(
-        (|| Arc::new(PyScanResolveThreadPool::new())) as fn() -> _,
+        (|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool())) as fn() -> _,
     ));
 
     let mut futures = lp

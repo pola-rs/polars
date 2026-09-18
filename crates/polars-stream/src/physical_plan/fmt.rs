@@ -551,8 +551,27 @@ fn visualize_plan_rec(
             file_schema: _,
             disable_morsel_split: _,
         } => {
-            let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
+            let reader_name = match file_reader_builder.reader_name() {
+                Ok(x) => x.to_string(),
+                Err(e) => format!("(error fetching reader name: {e:?})"),
+            };
+            let mut out = format!("multi-scan[{reader_name}]");
             let mut f = EscapeLabel(&mut out);
+
+            #[cfg(feature = "python")]
+            if let Some(builder) = file_reader_builder.downcast_as_external_python_reader() {
+                let props = match builder.explain_properties() {
+                    Ok(x) => x,
+                    Err(e) => polars_utils::aliases::PlIndexMap::from_iter([(
+                        "Error:".into(),
+                        format!("failed explain_properties(): {e:?}"),
+                    )]),
+                };
+
+                for (k, v) in props {
+                    write!(f, "\n{k}: {v}").unwrap();
+                }
+            }
 
             write!(f, "\n{} source", scan_sources.len()).unwrap();
 
