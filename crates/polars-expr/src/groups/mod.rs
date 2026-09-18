@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::{BitmapBuilder, MutableBitmap};
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::with_match_categorical_physical_type;
@@ -65,6 +65,19 @@ pub trait Grouper: Any + Send + Sync {
         partitioner: &HashPartitioner,
         invert: bool,
         contains_key: &mut BitmapBuilder,
+    );
+
+    /// Marks the group of each key found in the groupers, in the marks of
+    /// that group's partition.
+    /// # Safety
+    /// All groupers must have the same schema, and marks[p] must have a bit
+    /// for every group of groupers[p].
+    unsafe fn mark_groups_partitioned_groupers(
+        &self,
+        groupers: &[Box<dyn Grouper>],
+        keys: &HashKeys,
+        partitioner: &HashPartitioner,
+        marks: &mut [MutableBitmap],
     );
 
     fn as_any(&self) -> &dyn Any;
