@@ -363,19 +363,21 @@ fn rebuild_scan_from_expanded(
                 .contains(&format_pl_smallstr!("{}_nc", row_index_name))
         );
 
+        let height = statistics_df.height();
+
         unsafe { statistics_df.columns_mut() }.extend([
             IdxCa::from_vec(format_pl_smallstr!("{}_nc", row_index_name), vec![0])
                 .into_series()
                 .into_column()
-                .new_from_index(0, sources.len()),
+                .new_from_index(0, height),
             Column::full_null(
                 format_pl_smallstr!("{}_min", row_index_name),
-                sources.len(),
+                height,
                 &DataType::IDX_DTYPE,
             ),
             Column::full_null(
                 format_pl_smallstr!("{}_max", row_index_name),
-                sources.len(),
+                height,
                 &DataType::IDX_DTYPE,
             ),
         ]);
