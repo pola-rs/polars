@@ -104,6 +104,36 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         }
     }
 
+    use RankMethod::*;
+
+    // The same holds of the values alone: where they are one element repeated, every element the
+    // mask says is there ties with every other, so the tie group is the valid elements of the
+    // column and the answer is one rank under the mask the column already carries.
+    if null_count > 0 && s.repeats_one_value() && matches!(method, Average | Min | Dense | Max) {
+        let name = s.name().clone();
+        let valid = (len - null_count) as IdxSize;
+        let chunks = s.chunks().iter().map(|chunk| &**chunk).collect::<Vec<_>>();
+        let validity = concatenate_validities(&chunks);
+        return match method {
+            Average => Float64Chunked::with_chunk(
+                name,
+                PlPrimitiveArray::new_scalar((1.0 + valid as f64) / 2.0, len)
+                    .with_validity(validity),
+            )
+            .into_series(),
+            Min | Dense => IdxCa::with_chunk(
+                name,
+                PlPrimitiveArray::new_scalar(1 as IdxSize, len).with_validity(validity),
+            )
+            .into_series(),
+            _ => IdxCa::with_chunk(
+                name,
+                PlPrimitiveArray::new_scalar(valid, len).with_validity(validity),
+            )
+            .into_series(),
+        };
+    }
+
     let sort_idx_ca = s
         .arg_sort(SortOptions {
             descending,
@@ -115,7 +145,6 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
     let chunks = s.chunks().iter().map(|chunk| &**chunk).collect::<Vec<_>>();
     let validity = concatenate_validities(&chunks);
 
-    use RankMethod::*;
     if let Ordinal = method {
         let mut out = vec![0 as IdxSize; s.len()];
         let mut rank = 0;

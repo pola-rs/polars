@@ -116,3 +116,42 @@ def test_rank_series() -> None:
 
     assert s.rank(method="average").dtype == pl.Float64
     assert s.rank(method="max").dtype == pl.get_index_type()
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        (5, pl.Int64),
+        (2.5, pl.Float64),
+        (True, pl.Boolean),
+        ("abcdef", pl.String),
+    ],
+)
+@pytest.mark.parametrize(
+    "method", ["average", "min", "max", "dense", "ordinal", "random"]
+)
+@pytest.mark.parametrize("descending", [False, True])
+def test_rank_values_that_repeat_under_a_mask(
+    value: object, dtype: pl.DataType, method: str, descending: bool
+) -> None:
+    # Every element the mask says is there holds the same value, so they are one tie
+    # group and the answer is one rank under the column's own mask. The column does not
+    # repeat one *element* -- the mask makes some of them null -- so the scalar answer
+    # has to be read off the values axis alone.
+    n = 999
+    masked = pl.select(
+        pl.when(pl.int_range(0, n) % 3 != 0)
+        .then(pl.repeat(pl.lit(value, dtype=dtype), n))
+        .alias("a")
+    ).to_series()
+    written = pl.Series("a", masked.to_list(), dtype=dtype)
+
+    ranked = masked.rank(method, descending=descending, seed=1)  # type: ignore[arg-type]
+    assert_series_equal(
+        ranked,
+        written.rank(method, descending=descending, seed=1),  # type: ignore[arg-type]
+    )
+
+    # A rank of one repeated value is one rank: it is held once, not once per element.
+    if method in ("average", "min", "max", "dense"):
+        assert ranked.estimated_size() < written.estimated_size()

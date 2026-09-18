@@ -286,6 +286,27 @@ impl Series {
         })
     }
 
+    /// Whether the *values* of this column are one element repeated, whatever its mask says of
+    /// them.
+    ///
+    /// The values axis on its own: every element the mask says is there holds the same value, so
+    /// an op that reads the values and leaves the mask where it is answers off that one value.
+    /// [`Self::repeats_one_element`] asks the mask to repeat as well, and says no to what a
+    /// `when`/`then` over a literal builds -- one value under a bit per element.
+    ///
+    /// Only a column of a single chunk answers: two chunks whose values repeat need their values
+    /// compared, and a mask covering neither of them is not a column anyone can read that off.
+    pub fn repeats_one_value(&self) -> bool {
+        if self.len() <= 1 {
+            return false;
+        }
+
+        let [chunk] = self.chunks().as_slice() else {
+            return false;
+        };
+        chunk.without_validity().is_scalar()
+    }
+
     pub fn is_sorted_flag(&self) -> IsSorted {
         if self.len() <= 1 {
             return IsSorted::Ascending;
