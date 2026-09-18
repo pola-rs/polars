@@ -28,6 +28,10 @@ if TYPE_CHECKING:
     from polars.lazyframe.frame import LazyFrame
 
 
+def _file_name(path: str) -> str:
+    return path.replace("\\", "/").rpartition("/")[2]
+
+
 @dataclass(kw_only=True)
 class DeltaDataset:
     """Dataset interface for Delta."""
@@ -162,9 +166,36 @@ class DeltaDataset:
                 f"path expansion time: {elapsed:.3f}s"
             )
 
+        add_actions = pl.DataFrame(table.get_add_actions())
+
+        # The add actions enumerate the same snapshot as `file_uris()`, in the same
+        # order, so their sizes line up positionally. That is deltalake's behaviour
+        # rather than a guarantee, and the scan seeks to the footer relative to the
+        # size it is given, so check the pairing instead of trusting it. Compare file
+        # names only: the two spell partition directories with a different number of
+        # percent-encoding layers, but a file name holds no partition value.
+        paired = (
+            "size_bytes" in add_actions.columns
+            and len(add_actions) == len(paths)
+            and all(
+                _file_name(uri) == _file_name(path)
+                for uri, path in zip(paths, add_actions["path"], strict=True)
+            )
+        )
+
+        source_sizes: list[int] | None = None
+
+        if paired:
+            source_sizes = add_actions["size_bytes"].to_list()
+        elif verbose:
+            eprint(
+                "DeltaDataset: to_dataset_scan(): "
+                "cannot pair add actions with file_uris(), skipping sizes"
+            )
+
         table_statistics = (
             _extract_table_statistics_from_delta_add_actions(
-                pl.DataFrame(table.get_add_actions()),
+                add_actions,
                 filter_columns=filter_columns,
                 schema=schema,
                 verbose=verbose,
@@ -223,6 +254,7 @@ class DeltaDataset:
             credential_provider=self.credential_provider_builder,  # type: ignore[arg-type]
             _table_statistics=table_statistics,
             _deletion_files=deletion_files,
+            _source_sizes=source_sizes,
         ), version_key
 
     #

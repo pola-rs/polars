@@ -11,17 +11,19 @@ from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import pytest
-from deltalake import DeltaTable, write_deltalake
+from deltalake import DeltaTable, WriterProperties, write_deltalake
 from deltalake.exceptions import DeltaError, TableNotFoundError
 from deltalake.table import TableMerger
 
 import polars as pl
+from polars._plr import PyLazyFrame
+from polars._utils.wrap import wrap_ldf
 from polars.exceptions import ArgumentRemovedError
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
-from polars.io.delta._dataset import DeltaDataset
+from polars.io.delta._dataset import DeltaDataset, _file_name
 from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_frame_not_equal
@@ -1473,3 +1475,91 @@ def test_scan_delta_predicate_pushdown_struct_is_not_null(
     # must not be pruned.
     assert_frame_equal(out, df, check_row_order=False)
     assert "skipping 1 / 2 files" not in err
+
+
+@pytest.mark.write_disk
+def test_scan_delta_resolves_heavy_footers(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # The heavy-footer resolve needs the source sizes, which Delta can only get from
+    # its add actions. Without them the distributed planner sees no row groups and
+    # leaves the big file whole, however much of the table it holds.
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    properties = WriterProperties(max_row_group_size=500)
+
+    for n in [20, 4000, 20]:
+        pl.DataFrame({"x": range(n)}).write_delta(
+            tmp_path,
+            mode="append",
+            delta_write_options={"writer_properties": properties},
+        )
+
+    dataset = new_pl_delta_dataset(DeltaTable(tmp_path))
+    capfd.readouterr()
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
+
+    assert lf.collect().height == 4040
+    assert "parquet resolve: pinned 1 / 1 heavy sources" in capfd.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "partition_values", [["0", "1"], ["a b", "100%"], ["\u00e4/\u00f6", "z"]]
+)
+@pytest.mark.write_disk
+def test_scan_delta_source_sizes_match_the_file_list(
+    tmp_path: Path, partition_values: list[str]
+) -> None:
+    # The sizes are taken from the add actions positionally, so they are only correct
+    # while the actions enumerate the same snapshot as `file_uris()`, in the same
+    # order. The two spell partition directories differently -- an add action carries
+    # one more layer of percent-encoding than a URI does -- so only the file names can
+    # be paired up.
+    for value in partition_values:
+        pl.DataFrame({"p": [value] * 10, "x": range(10)}).write_delta(
+            tmp_path, mode="append", delta_write_options={"partition_by": "p"}
+        )
+
+    table = DeltaTable(tmp_path)
+    uris = table.file_uris()
+    actions = pl.DataFrame(table.get_add_actions())
+
+    assert len(uris) == len(actions)
+    assert all(
+        _file_name(uri) == _file_name(path)
+        for uri, path in zip(uris, actions["path"], strict=True)
+    )
+    assert actions["size_bytes"].to_list() == [Path(uri).stat().st_size for uri in uris]
+
+
+@pytest.mark.write_disk
+def test_scan_delta_resolves_heavy_footers_with_encoded_partition_values(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # A partition value that has to be percent-encoded makes the add action's path and
+    # the file URI disagree textually. Pairing them by the whole path would find no
+    # match and drop the sizes for the entire table, leaving every file unsplit.
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    properties = WriterProperties(max_row_group_size=500)
+
+    for value, n in [("a b", 20), ("100%", 4000), ("\u00e4/\u00f6", 20)]:
+        pl.DataFrame({"p": [value] * n, "x": range(n)}).write_delta(
+            tmp_path,
+            mode="append",
+            delta_write_options={
+                "partition_by": "p",
+                "writer_properties": properties,
+            },
+        )
+
+    dataset = new_pl_delta_dataset(DeltaTable(tmp_path))
+    capfd.readouterr()
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
+
+    assert lf.collect().height == 4040
+    assert "parquet resolve: pinned 1 / 1 heavy sources" in capfd.readouterr().err
