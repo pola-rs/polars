@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
-use arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use num_traits::{AsPrimitive, Zero};
+use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
@@ -52,10 +52,10 @@ fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_prec, scale) => {
-            let inv_scale_factor = 1.0 / 10u128.pow(*scale as u32) as f64;
+            let scale_factor = 10u128.pow(*scale as u32) as f64;
             let ca: Float64Chunked = values
                 .into_iter()
-                .map(|(s, c)| (c != 0).then(|| s / c as f64 * inv_scale_factor))
+                .map(|(s, c)| (c != 0).then(|| s / c as f64 / scale_factor))
                 .collect_ca(PlSmallStr::EMPTY);
             ca.into_series()
         },
@@ -64,7 +64,7 @@ fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
             const US_IN_DAY: f64 = MICROSECONDS_IN_DAY as f64;
             let ca: Int64Chunked = values
                 .into_iter()
-                .map(|(s, c)| (c != 0).then(|| (s * US_IN_DAY / c as f64) as i64))
+                .map(|(s, c)| (c != 0).then(|| (s / c as f64 * US_IN_DAY) as i64))
                 .collect_ca(PlSmallStr::EMPTY);
             ca.into_datetime(TimeUnit::Microseconds, None).into_series()
         },

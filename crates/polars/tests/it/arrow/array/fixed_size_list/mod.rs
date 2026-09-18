@@ -1,8 +1,8 @@
 mod mutable;
 
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::{ArrowDataType, Field};
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::{ArrowDataType, Field};
 
 fn data() -> FixedSizeListArray {
     let values = Int32Array::from_slice([10, 20, 0, 0]);

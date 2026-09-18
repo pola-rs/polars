@@ -1,7 +1,7 @@
-use arrow::array::View;
 use hashbrown::hash_table::{
     Entry as TEntry, HashTable, OccupiedEntry as TOccupiedEntry, VacantEntry as TVacantEntry,
 };
+use polars_arrow::array::View;
 use polars_utils::IdxSize;
 
 const BASE_KEY_BUFFER_CAPACITY: usize = 1024;

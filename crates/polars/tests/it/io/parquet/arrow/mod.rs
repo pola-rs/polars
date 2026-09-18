@@ -4,13 +4,13 @@ mod write;
 use std::io::{Cursor, Read, Seek};
 use std::sync::Arc;
 
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::*;
-use arrow::record_batch::RecordBatchT;
-use arrow::types::{NativeType, i256};
 use ethnum::AsI256;
 use polars::prelude::{PlSmallStr, get_encodings};
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::*;
+use polars_arrow::record_batch::RecordBatchT;
+use polars_arrow::types::{NativeType, i256};
 use polars_error::PolarsResult;
 use polars_parquet::read::{self as p_read};
 use polars_parquet::write::*;

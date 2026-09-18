@@ -1,6 +1,6 @@
-use arrow::array::{Array, BooleanArray, Splitable};
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{Array, BooleanArray, Splitable};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 mod mutable;

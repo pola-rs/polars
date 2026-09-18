@@ -1,4 +1,4 @@
-use arrow::record_batch::RecordBatch;
+use polars_arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 
 use crate::prelude::*;

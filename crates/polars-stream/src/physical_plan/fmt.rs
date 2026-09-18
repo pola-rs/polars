@@ -531,6 +531,7 @@ fn visualize_plan_rec(
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
         PhysNodeKind::MultiScan {
             scan_sources,
+            bytes_per_source: _,
             file_reader_builder,
             cloud_options: _,
             file_projection_builder,

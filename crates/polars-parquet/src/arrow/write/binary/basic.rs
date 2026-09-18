@@ -1,6 +1,6 @@
-use arrow::array::{Array, BinaryArray, ValueSize};
-use arrow::bitmap::Bitmap;
-use arrow::offset::Offset;
+use polars_arrow::array::{Array, BinaryArray, ValueSize};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::offset::Offset;
 use polars_error::PolarsResult;
 
 use super::super::{WriteOptions, utils};

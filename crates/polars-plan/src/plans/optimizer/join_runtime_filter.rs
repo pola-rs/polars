@@ -9,10 +9,12 @@
 //!
 //! A forced join blocks its probe input until the build is done, so its range is
 //! always published before the scan opens. A preferred join with a filter reads its
-//! preferred side first and builds from it if it stays under the sample limit;
-//! otherwise it samples both sides, may build the other one, and its filter stays
-//! unset. Either way the result is exact, only the pruning is lost. A predicate is
-//! only carried across joins that read their sides in this order.
+//! preferred side first; when that side ends under the sample limit its range is
+//! published before the other side is read, and the sample then decides which side
+//! to build. When it reaches the limit both sides are sampled and the filter is
+//! only set if the preferred side is built. Either way the result is exact, only
+//! the pruning is lost. A predicate is only carried across joins that read their
+//! sides in this order.
 //!
 //! Only a scan that skips batches by their statistics can use the range, so a plan
 //! without one is left alone, and a join is only given a build side once a key
@@ -38,6 +40,7 @@ use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::StatsCache;
 use crate::plans::{
     AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator, into_column,
+    is_inherently_nondeterministic,
 };
 use crate::prelude::{JoinType, MaintainOrderJoin};
 use crate::utils::has_aexpr;
@@ -50,6 +53,9 @@ pub(super) fn attach_join_runtime_filters(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) {
+    if !polars_config::config().join_runtime_filters() {
+        return;
+    }
     // Inputs before their join, so a join lower in a probe chain is forced before
     // an outer one tries to carry a predicate through it.
     let mut joins = Vec::new();
@@ -91,7 +97,7 @@ fn process_join(
         return;
     };
     let (input_left, input_right) = (*input_left, *input_right);
-    if !is_eligible_join(options)
+    if !is_eligible_join(options, expr_arena)
         || matches!(
             options.args.build_side,
             Some(JoinBuildSide::ForceLeft | JoinBuildSide::ForceRight)
@@ -111,49 +117,39 @@ fn process_join(
         return;
     };
 
-    // What each side would build as, and what its range would prune.
-    let mut candidates = Vec::new();
-    for build_left in [true, false] {
-        let (build, width) = if build_left {
-            (&left_stats, left_width)
-        } else {
-            (&right_stats, right_width)
-        };
-        let Some((rows, forced)) = build_rows(build, width) else {
-            continue;
-        };
-        let probe_input = if build_left { input_right } else { input_left };
-        let probe_keys: Vec<Option<PlSmallStr>> = on
-            .iter()
-            .map(|(left_key, right_key)| {
-                let key = if build_left { right_key } else { left_key };
-                into_column(key.node(), expr_arena).cloned()
-            })
-            .collect();
-        let filters = trace_probe_keys(probe_input, probe_keys, ir_arena, expr_arena, scratch);
-        if filters.is_empty() {
-            continue;
-        }
-        let other = if build_left {
-            &right_stats
-        } else {
-            &left_stats
-        };
-        let pruned = filters
-            .iter()
-            .filter_map(|f| side_stats(f.scan, ir_arena, expr_arena, stats))
-            .fold(other.filtered, |acc, (scan, _)| acc.max(scan.filtered));
-        if pruned >= LOPSIDED_FACTOR * rows {
-            candidates.push((build_left, rows, forced, filters));
-        }
-    }
-    // A bounded side before an estimated one, the smaller of two alike.
-    let Some((build_left, _, forced, filters)) = candidates
-        .into_iter()
-        .max_by(|a, b| a.2.cmp(&b.2).then(b.1.total_cmp(&a.1)))
-    else {
+    // A bounded side before an estimated one, the smaller of two alike; the first
+    // whose range prunes a scan much larger than itself is taken.
+    // Try the right side first when candidates rank equally.
+    let mut sides = build_candidates(false, &right_stats, right_width);
+    sides.extend(build_candidates(true, &left_stats, left_width));
+    sides.sort_by(|a, b| b.forced.cmp(&a.forced).then(a.rows.total_cmp(&b.rows)));
+
+    // A side is traced once, as a forced and a preferred candidate share the trace.
+    let mut traced: [Option<(Vec<TracedKey>, f64)>; 2] = [None, None];
+    let chosen = sides.into_iter().find_map(|side| {
+        let (filters, probe_rows) = traced[side.left as usize].get_or_insert_with(|| {
+            let probe_input = if side.left { input_right } else { input_left };
+            let probe_keys: Vec<Option<PlSmallStr>> = on
+                .iter()
+                .map(|(left_key, right_key)| {
+                    let key = if side.left { right_key } else { left_key };
+                    into_column(key.node(), expr_arena).cloned()
+                })
+                .collect();
+            let filters = trace_probe_keys(probe_input, probe_keys, ir_arena, expr_arena, scratch);
+            let other = if side.left { &right_stats } else { &left_stats };
+            let probe_rows = filters
+                .iter()
+                .filter_map(|f| side_stats(f.scan, ir_arena, expr_arena, stats))
+                .fold(other.filtered, |acc, (scan, _)| acc.max(scan.filtered));
+            (filters, probe_rows)
+        });
+        (!filters.is_empty() && *probe_rows >= LOPSIDED_FACTOR * side.rows).then_some(side)
+    });
+    let Some(BuildCandidate { left, forced, .. }) = chosen else {
         return;
     };
+    let (filters, _) = traced[left as usize].take().unwrap();
 
     let mut runtime_filters = Vec::with_capacity(filters.len());
     for filter in filters {
@@ -167,7 +163,7 @@ fn process_join(
         unreachable!()
     };
     let options = Arc::make_mut(options);
-    options.args.build_side = Some(match (build_left, forced) {
+    options.args.build_side = Some(match (left, forced) {
         (true, true) => JoinBuildSide::ForceLeft,
         (false, true) => JoinBuildSide::ForceRight,
         (true, false) => JoinBuildSide::PreferLeft,
@@ -176,19 +172,37 @@ fn process_join(
     options.runtime_filters = runtime_filters;
 }
 
-/// The rows a side is built from when it is filtered and fits the byte budget:
-/// its bound, which makes it a forced build side, else its estimate, which makes it
-/// a preferred one.
-fn build_rows(stats: &NodeStats, width: f64) -> Option<(f64, bool)> {
+/// A side of the join that could be built from.
+struct BuildCandidate {
+    left: bool,
+    /// Its bound when forced, else its estimate.
+    rows: f64,
+    forced: bool,
+}
+
+/// The ways a filtered side may be built from: forced when its bound fits the
+/// byte budget, preferred when its estimate fits.
+fn build_candidates(left: bool, stats: &NodeStats, width: f64) -> Vec<BuildCandidate> {
+    let mut candidates = Vec::new();
     if stats.filtered >= stats.unfiltered {
-        return None;
+        return candidates;
     }
     let fits = |rows: f64| rows * width <= BUILD_BYTES;
-    match stats.max_rows() {
-        Some(bound) if fits(bound) => Some((bound, true)),
-        _ if fits(stats.filtered) => Some((stats.filtered, false)),
-        _ => None,
+    if let Some(rows) = stats.max_rows().filter(|b| fits(*b)) {
+        candidates.push(BuildCandidate {
+            left,
+            rows,
+            forced: true,
+        });
     }
+    if fits(stats.filtered) {
+        candidates.push(BuildCandidate {
+            left,
+            rows: stats.filtered,
+            forced: false,
+        });
+    }
+    candidates
 }
 
 /// A probe key that reached a scan.
@@ -234,10 +248,18 @@ fn trace_probe_keys(
 /// Whether the join may publish a range or be crossed by one: an inner equi join
 /// the streaming engine can run as a hash join that blocks its probe side until
 /// the build is done. Sorted inputs may still make it a merge join, which drops
-/// the range.
-fn is_eligible_join(options: &JoinOptionsIR) -> bool {
+/// the range. A key that may evaluate differently each time gives no range, as
+/// the join evaluates it again when it builds.
+fn is_eligible_join(options: &JoinOptionsIR, expr_arena: &Arena<AExpr>) -> bool {
     let args = &options.args;
-    matches!(&options.options, JoinTypeOptionsIR::Equi { on, .. } if !on.is_empty())
+    let JoinTypeOptionsIR::Equi { on, .. } = &options.options else {
+        return false;
+    };
+    !on.is_empty()
+        && on.iter().all(|(left, right)| {
+            !is_inherently_nondeterministic(left.node(), expr_arena)
+                && !is_inherently_nondeterministic(right.node(), expr_arena)
+        })
         && args.how == JoinType::Inner
         && args.maintain_order == MaintainOrderJoin::None
         && !args.nulls_equal
@@ -343,15 +365,14 @@ fn scan_origin(
                     Some(JoinBuildSide::PreferLeft) if sequential => false,
                     _ => return None,
                 };
-                if !is_eligible_join(options) {
+                if !is_eligible_join(options, expr_arena) {
                     return None;
                 }
                 let name = column_name(predicate, expr_arena).clone();
                 let schema_left = ir_arena.get(*input_left).schema(ir_arena);
                 let schema_right = ir_arena.get(*input_right).schema(ir_arena);
                 let right_names =
-                    join_right_output_names(&schema_left, &schema_right, options, expr_arena)
-                        .ok()?;
+                    join_right_output_names(&schema_left, &schema_right, options).ok()?;
                 let from_right = right_names
                     .iter()
                     .position(|output| output.as_ref() == Some(&name));

@@ -164,7 +164,7 @@ impl ToArrowConverter {
         Ok(match (polars_dtype, arrow_field.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(struct_fields), ArrowDataType::Struct(arrow_struct_fields)) => {
-                use arrow::array::StructArray;
+                use polars_arrow::array::StructArray;
                 let arr: &StructArray = array.as_any().downcast_ref().unwrap();
 
                 polars_ensure!(
@@ -254,7 +254,7 @@ impl ToArrowConverter {
             },
             #[cfg(feature = "dtype-array")]
             (DataType::Array(item_dtype, width), ArrowDataType::FixedSizeList(_, arrow_width)) => {
-                use arrow::array::FixedSizeListArray;
+                use polars_arrow::array::FixedSizeListArray;
                 let arr: &FixedSizeListArray = array.as_any().downcast_ref().unwrap();
 
                 polars_ensure!(
@@ -403,7 +403,7 @@ impl ToArrowConverter {
                 DataType::Extension(pl_ext_type, storage_dtype),
                 ArrowDataType::Extension(arrow_ext_type),
             ) => {
-                use arrow::datatypes::ExtensionType;
+                use polars_arrow::datatypes::ExtensionType;
 
                 let ExtensionType {
                     name,
@@ -467,8 +467,8 @@ impl ToArrowConverter {
         entries_dtype: &DataType,
         arrow_field: Cow<'_, ArrowField>,
     ) -> PolarsResult<Box<dyn Array>> {
-        use arrow::array::MapArray;
-        use arrow::offset::OffsetsBuffer;
+        use polars_arrow::array::MapArray;
+        use polars_arrow::offset::OffsetsBuffer;
 
         let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
         // Arrow's MAP entries and keys are non-nullable, and entries that no live row owns

@@ -1,6 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::BooleanArray;
-use arrow::compute::concatenate::concatenate_validities;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::compute::concatenate::concatenate_validities;
 use polars_core::prelude::*;
 use polars_defs::expr::{RankMethod, RankOptions};
 use rand::prelude::*;

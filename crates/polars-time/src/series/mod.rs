@@ -1,6 +1,8 @@
 use std::ops::Div;
 
-use arrow::temporal_conversions::{MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY, NANOSECONDS_IN_DAY};
+use polars_arrow::temporal_conversions::{
+    MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY, NANOSECONDS_IN_DAY,
+};
 use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 

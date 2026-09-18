@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use arrow::datatypes::{
+use polars_arrow::datatypes::{
     DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, MAINTAIN_PL_TYPE,
     Metadata, PL_KEY,
 };
@@ -1360,7 +1360,7 @@ impl DataType {
             },
             #[cfg(feature = "dtype-extension")]
             Extension(typ, inner) => Ok(ArrowDataType::Extension(Box::new(
-                arrow::datatypes::ExtensionType {
+                polars_arrow::datatypes::ExtensionType {
                     name: typ.name().into(),
                     inner: inner.try_to_arrow(compat_level)?,
                     metadata: typ.serialize_metadata().map(|m| m.into()),

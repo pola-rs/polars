@@ -1,12 +1,12 @@
 use std::sync::{Arc, LazyLock};
 
-use arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
-use arrow::datatypes::{
-    ArrowDataType, ArrowSchema, ExtensionType, Field, PARQUET_EMPTY_STRUCT, TimeUnit,
-};
-use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use base64::Engine as _;
 use base64::engine::general_purpose;
+use polars_arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
+use polars_arrow::datatypes::{
+    ArrowDataType, ArrowSchema, ExtensionType, Field, PARQUET_EMPTY_STRUCT, TimeUnit,
+};
+use polars_arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 

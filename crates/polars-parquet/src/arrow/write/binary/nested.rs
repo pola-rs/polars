@@ -1,5 +1,5 @@
-use arrow::array::{Array, BinaryArray};
-use arrow::offset::Offset;
+use polars_arrow::array::{Array, BinaryArray};
+use polars_arrow::offset::Offset;
 use polars_error::PolarsResult;
 
 use super::super::{WriteOptions, nested, utils};
