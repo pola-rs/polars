@@ -16,6 +16,7 @@ use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_ops::series::coalesce_columns;
+use polars_plan::plans::TrivialPredicateExpr;
 use polars_plan::plans::options::RuntimeFilter;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
@@ -858,9 +859,14 @@ impl BuildState {
 
     /// Hand the range of every build key to the runtime filters. Filters set
     /// from a sample keep their range, whichever side is built; filters of a
-    /// side that was not built stay unset, which skips nothing.
+    /// side that was not built get a range that skips nothing.
     fn publish_runtime_filters(&mut self, params: &mut EquiJoinParams) {
         if !params.publishes_runtime_filters() {
+            for filter in &params.runtime_filters {
+                if !filter.pred.is_set() {
+                    filter.pred.set(Arc::new(TrivialPredicateExpr));
+                }
+            }
             return;
         }
         let ranges = (0..params.runtime_filters.len())

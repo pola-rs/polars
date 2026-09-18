@@ -366,8 +366,12 @@ impl FileScanIR {
             #[cfg(feature = "ipc")]
             Self::Ipc { .. } => ScanFlags::empty(),
             #[cfg(feature = "parquet")]
-            Self::Parquet { .. } => {
-                ScanFlags::SPECIALIZED_PREDICATE_FILTER | ScanFlags::SKIPS_BATCHES_BY_STATISTICS
+            Self::Parquet { options, .. } => {
+                let mut flags = ScanFlags::SPECIALIZED_PREDICATE_FILTER;
+                if options.use_statistics {
+                    flags |= ScanFlags::SKIPS_BATCHES_BY_STATISTICS;
+                }
+                flags
             },
             #[cfg(feature = "json")]
             Self::NDJson { .. } => ScanFlags::empty(),
