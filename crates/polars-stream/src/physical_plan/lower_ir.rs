@@ -914,8 +914,17 @@ pub fn lower_ir(
                         .deletion_files
                         .and_then(|files| DeletionFilesList::filter_empty(Some(files)));
 
+                    let bytes_per_source = match &*scan_type {
+                        #[cfg(feature = "parquet")]
+                        FileScanIR::Parquet {
+                            bytes_per_source, ..
+                        } => bytes_per_source.clone(),
+                        _ => None,
+                    };
+
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
                         scan_sources,
+                        bytes_per_source,
                         file_reader_builder,
                         cloud_options,
                         file_projection_builder,
