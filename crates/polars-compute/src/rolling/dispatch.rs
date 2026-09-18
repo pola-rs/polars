@@ -19,6 +19,12 @@ use super::{RollingFnParams, RollingRankMethod, no_nulls, nulls, quantile_filter
 /// `window_size` elements: what it answers at the last of them is what it answers from there to
 /// the end, and what it answers before then is the partial windows' answers, which that same
 /// short run has already computed.
+///
+/// Kept out of line: it is a whole second kernel run, reached once per chunk and never at all
+/// where the elements differ, and inlining it into the entry point grows that function enough to
+/// change what the optimizer does with the walk beside it -- which cost `rolling_sum` over floats
+/// 2.5x on the flat path this is not even reached from.
+#[inline(never)]
 fn repeated_chunk_answer<T, F>(
     arr: &PlPrimitiveArray<T>,
     window_size: usize,
@@ -35,7 +41,7 @@ where
         return None;
     }
     // The short run would be the whole chunk; there is nothing left over for its answer to stand
-    // for. This is also what ends the recursion below.
+    // for.
     let len = arr.len();
     if len <= window_size {
         return None;
@@ -113,31 +119,47 @@ macro_rules! rolling_dispatch {
         {
             if $steady {
                 let repeated = repeated_chunk_answer(arr, window_size, center, |head| {
-                    $name(head, window_size, min_periods, center, $($arg,)*)
+                    walk(head, window_size, min_periods, center, $($arg,)*)
                 });
                 if let Some(answer) = repeated {
                     return answer;
                 }
             }
 
-            // Nothing is laid out here: whether any element is null is a count, and each of the
-            // two implementations resolves the representation itself, writing out only what its
-            // own reader cannot take as it stands.
-            match arr.as_no_nulls() {
-                Some(no_nulls) => no_nulls::$name(
-                    no_nulls,
-                    window_size,
-                    min_periods,
-                    center,
-                    $($arg,)*
-                ),
-                None => Ok(nulls::$name(
-                    arr,
-                    window_size,
-                    min_periods,
-                    center,
-                    $($arg,)*
-                )),
+            return walk(arr, window_size, min_periods, center, $($arg,)*);
+
+            // The run over every window of the chunk, which the short run over a repeating one
+            // reaches as well. It is a function of its own rather than a call back into the entry
+            // point above, which would make that entry point recursive for no reason.
+            fn walk<T>(
+                arr: &PlPrimitiveArray<T>,
+                window_size: usize,
+                min_periods: usize,
+                center: bool,
+                $($arg: $ty,)*
+            ) -> PolarsResult<Box<dyn PlArray>>
+            where
+                T: $($bound)*,
+            {
+                // Nothing is laid out here: whether any element is null is a count, and each of
+                // the two implementations resolves the representation itself, writing out only
+                // what its own reader cannot take as it stands.
+                match arr.as_no_nulls() {
+                    Some(no_nulls) => no_nulls::$name(
+                        no_nulls,
+                        window_size,
+                        min_periods,
+                        center,
+                        $($arg,)*
+                    ),
+                    None => Ok(nulls::$name(
+                        arr,
+                        window_size,
+                        min_periods,
+                        center,
+                        $($arg,)*
+                    )),
+                }
             }
         }
     };
@@ -146,10 +168,11 @@ macro_rules! rolling_dispatch {
 rolling_dispatch!(
     /// The sum of each window of `arr`.
     rolling_sum(weights: Option<&[f64]>, params: Option<RollingFnParams>)
-    // A running sum takes the element leaving each window back out of it, so what it answers
-    // over a chunk that repeats one value drifts from window to window and no one of them
-    // stands for the rest.
-    steady_when: false,
+    // A running sum takes the element leaving each window back out of it. Over floats that
+    // drifts from window to window, so no one window's answer stands for the rest and the run
+    // has to be walked; over integers adding and subtracting the one value the chunk repeats
+    // lands back on the same sum every time, which is what makes the answer steady there.
+    steady_when: !T::is_float(),
     where T: NativeType
         + std::iter::Sum
         + NumCast
