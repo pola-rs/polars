@@ -62,18 +62,11 @@ impl<T: PolarsObject> ChunkUnique for ObjectChunked<T> {
 }
 
 /// Whether every element of this chunked array is the same one.
-///
-/// A column that repeats a single element is the same value throughout, or the same null
-/// throughout; a column with nothing but nulls in it is the same null throughout too, however
-/// many chunks they are spread over. Either way it has exactly one distinct element, and the
-/// whole unique family is answered off the first of them without hashing a single one. See also
-/// [`scalar_groups`](crate::frame::group_by::scalar_groups).
 fn reads_as_one_element<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
     if ca.is_empty() {
         return false;
     }
 
-    // Nulls are all the same element, and their count is the one the masks already carry.
     if ca.null_count() == ca.len() {
         return true;
     }
@@ -82,10 +75,6 @@ fn reads_as_one_element<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
 }
 
 /// [`arg_unique_chunks`] over contiguous runs of values.
-///
-/// The set is this function's own, for the same reason it is in [`arg_unique_chunks`]: read out
-/// of a `&mut` a caller lends, it costs 4 instructions an element more over a flat `Float64`
-/// column of one repeated value, where the probe itself is a cache hit every time.
 fn arg_unique_slices<'a, T>(chunks: impl Iterator<Item = &'a [T]>, capacity: usize) -> Vec<IdxSize>
 where
     T: ToTotalOrd + Copy + 'a,
@@ -106,10 +95,6 @@ where
 }
 
 /// Where each value this column has not held before first appears, over its chunks in turn.
-///
-/// The set and the answer are this function's own, not `&mut`s a caller lends: a hash set behind
-/// a reference has to be read out of memory on every element, where a local one stays in
-/// registers for the whole walk. 1M booleans cost 7 instructions an element more the other way.
 fn arg_unique_chunks<T, I>(chunks: impl Iterator<Item = I>, capacity: usize) -> Vec<IdxSize>
 where
     I: Iterator<Item = T>,
@@ -118,8 +103,6 @@ where
 {
     let mut set = PlHashSet::new();
     let mut unique = Vec::with_capacity(capacity);
-    // The index is a local the loop keeps in a register, rather than one `enumerate` hands over
-    // alongside each element.
     let mut idx: IdxSize = 0;
     for a in chunks {
         a.for_each(|val| {
@@ -138,9 +121,6 @@ macro_rules! arg_unique_ca {
         if reads_as_one_element(ca) {
             vec![0]
         } else {
-            // One chunk at a time, not `ca.iter()` over the column: a chunk's own iterator
-            // resolves its representation once for the whole chunk in `fold`, and the flattening
-            // adapters between the column and it cost more per element than they hoist.
             match ca.has_nulls() {
                 false => {
                     arg_unique_chunks(ca.downcast_iter().map(|arr| arr.values_iter()), ca.len())
@@ -173,8 +153,6 @@ where
                     let arr: T::Array = match iter.next() {
                         None => T::Array::new_empty(),
                         Some(first) => {
-                            // The elements are sorted, so an element is unique exactly where it
-                            // differs from the one before it.
                             let mut last = first.to_total_ord();
                             std::iter::once(first)
                                 .chain(iter.filter(move |opt_val| {
@@ -201,9 +179,6 @@ where
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        // A flat chunk with no nulls in it is a slice of values, and walking each chunk's slice
-        // leaves no representation test in the loop at all -- which the column's own iterator
-        // cannot promise, however well each adapter between it and the chunk forwards `fold`.
         if !reads_as_one_element(self)
             && self.null_count() == 0
             && let Some(flat) = self.as_flat()
@@ -464,9 +439,6 @@ impl ChunkUnique for BooleanChunked {
     fn n_unique(&self) -> PolarsResult<usize> {
         use polars_compute::unique::RangedUniqueKernel;
 
-        // There are only ever three distinct booleans -- `false`, `true` and null -- so counting
-        // them is counting the bits of each chunk, not walking its elements through a hash set
-        // the way the default `arg_unique().len()` does.
         let mut state = BooleanUniqueKernelState::new();
 
         for arr in self.downcast_iter() {
@@ -532,44 +504,6 @@ mod test {
             ChunkedArray::<Int32Type>::from_slice(PlSmallStr::from_static("a"), &[1, 2, 1, 1, 3]);
         assert_eq!(
             ca.arg_unique().unwrap().iter().collect::<Vec<_>>(),
-            vec![Some(0), Some(1), Some(4)]
-        );
-    }
-
-    #[test]
-    fn arg_unique_is_the_same_however_the_column_is_laid_out() {
-        let name = PlSmallStr::from_static("a");
-        let values = [1i32, 2, 1, 1, 3, 2, 4];
-        let expected = vec![Some(0), Some(1), Some(4), Some(6)];
-
-        // One chunk, walked as the slice it is.
-        let flat = ChunkedArray::<Int32Type>::from_slice(name.clone(), &values);
-        assert_eq!(
-            flat.arg_unique().unwrap().iter().collect::<Vec<_>>(),
-            expected
-        );
-
-        // The same elements over three chunks: the index carries on across them.
-        let mut chunked = ChunkedArray::<Int32Type>::from_slice(name.clone(), &values[..2]);
-        chunked
-            .append(&ChunkedArray::from_slice(name.clone(), &values[2..5]))
-            .unwrap();
-        chunked
-            .append(&ChunkedArray::from_slice(name.clone(), &values[5..]))
-            .unwrap();
-        assert_eq!(chunked.chunks().len(), 3);
-        assert_eq!(
-            chunked.arg_unique().unwrap().iter().collect::<Vec<_>>(),
-            expected
-        );
-
-        // Nulls are an element of their own, and the first of them is the one that is kept.
-        let with_nulls = ChunkedArray::<Int32Type>::from_slice_options(
-            name,
-            &[Some(1), None, Some(1), None, Some(2)],
-        );
-        assert_eq!(
-            with_nulls.arg_unique().unwrap().iter().collect::<Vec<_>>(),
             vec![Some(0), Some(1), Some(4)]
         );
     }

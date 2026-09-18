@@ -11,8 +11,6 @@ pub struct RowEncodedHashHotGrouper {
     table: FixedIndexTable<(u64, Vec<u8>)>,
     evicted_key_hashes: Vec<u64>,
     evicted_key_data: Vec<u8>,
-    // The end of each evicted key in `evicted_key_data`, preceded by a leading zero —
-    // the offsets a `PlBinaryArray` is built from.
     evicted_key_offsets: Vec<u64>,
 }
 
@@ -104,7 +102,6 @@ impl HotGrouper for RowEncodedHashHotGrouper {
     fn take_evicted_keys(&mut self) -> HashKeys {
         let hashes = PlPrimitiveArray::from_vec(core::mem::take(&mut self.evicted_key_hashes));
         let values = Buffer::from(core::mem::take(&mut self.evicted_key_data));
-        // The offsets are drained too, so what is left behind is the empty run they started as.
         let offsets = Buffer::from(core::mem::replace(&mut self.evicted_key_offsets, vec![0]));
         let keys = PlBinaryArray::from_offsets(values, offsets);
         HashKeys::RowEncoded(RowEncodedKeys { hashes, keys })

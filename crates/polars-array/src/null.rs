@@ -51,8 +51,6 @@ impl PlNullArray {
     /// The validity mask, which masks out every element.
     #[inline]
     pub fn validity(&self) -> PlBitmapRef<'static> {
-        // An empty array has no element to share the bit, so its mask is empty as well: that is
-        // the mask a scalar mask of no bits holds. See [`crate::broadcast`].
         let bitmap = if self.length == 0 {
             empty_bitmap()
         } else {
@@ -122,7 +120,6 @@ impl PlNullArray {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        // There is nothing to slice: every element is null, so only the length changes.
         self.length = length;
     }
 
@@ -208,8 +205,6 @@ impl Eq for PlNullArray {}
 
 impl std::fmt::Debug for PlNullArray {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Never materialize the elements: the length is unbounded by the memory use. The forms
-        // match those of the other arrays, which list a single element and abbreviate more.
         match self.length {
             0 => f.write_str("PlNullArray[]"),
             1 => f.write_str("PlNullArray[null]"),

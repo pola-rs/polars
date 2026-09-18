@@ -112,7 +112,6 @@ pub fn rolling_rank<T>(
 where
     T: NativeType + num_traits::Num,
 {
-    // The chunk becomes a slice here, once, out of the window loop; see the module docs.
     let values = values.to_flat_values();
     let values = values.as_slice();
 

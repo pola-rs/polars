@@ -95,8 +95,6 @@ where
     let max_idx = num_bins - 1;
 
     for chunk in ca.downcast_iter() {
-        // `for_each` folds, where a `for` loop over `.flatten()` drives the chunk's iterator one
-        // `next` at a time and so asks how the chunk is laid out per element rather than once.
         chunk.iter().for_each(|item| {
             let Some(item) = item else { return };
             let item = item.to_f64().unwrap();

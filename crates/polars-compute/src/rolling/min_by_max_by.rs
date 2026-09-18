@@ -30,10 +30,6 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
     let first_start = starts[0] as usize;
     let first_end = ends[0] as usize;
 
-    // The deque walks the `by` values as a slice, and reads the mask bit by bit only where there is
-    // a null to skip. With nothing null there is no mask to read at all, whatever representation it
-    // is in, so only a values buffer that repeats one value is written out; with something null the
-    // two are laid out together.
     let values;
     let flat;
     let validity = match by.as_no_nulls() {

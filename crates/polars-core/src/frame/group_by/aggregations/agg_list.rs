@@ -207,8 +207,6 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         let mut length_so_far = 0u64;
         offsets.push(length_so_far);
 
-        // The values of a list of objects are the object array itself, which holds the values and
-        // drops them with it — there is no packing into bytes for an in-memory column.
         let mut values = ObjectArrayBuilder::<T>::with_capacity(self.len());
         for indicator in groups.iter() {
             let (group_vals, len) = match indicator {

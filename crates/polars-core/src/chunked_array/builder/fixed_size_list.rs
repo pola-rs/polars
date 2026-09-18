@@ -58,8 +58,6 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
             .unwrap_unchecked();
         let inner = self.inner.as_mut().unwrap_unchecked();
 
-        // The element is appended as a subslice rather than a value at a time, which leaves the
-        // chunk it is read out of in whatever representation it is in.
         inner
             .values_mut()
             .subslice_extend(arr, offset * width, width, ShareStrategy::Always);
@@ -99,8 +97,6 @@ impl AnonymousOwnedFixedSizeListBuilder {
         capacity: usize,
         inner_dtype: DataType,
     ) -> Self {
-        // A builder is shaped like the array it builds, and the shape of the values is what the
-        // physical inner type says — which is why an empty chunk of it is enough to ask for one.
         let values = builder_like(&*new_empty_chunk(&inner_dtype));
         let inner = PlFixedSizeListArrayBuilder::with_capacity(values, width, capacity);
         Self {
@@ -131,9 +127,6 @@ impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
 
     fn finish(&mut self) -> ArrayChunked {
         let arr = self.inner.freeze_reset();
-        // The dtype is the logical one this was asked for. It used to be read back off the Arrow
-        // dtype the builder had been handed, which is the same thing for every type that survives
-        // the round trip and less than the truth for the ones that do not.
         unsafe {
             ChunkedArray::from_chunks_and_dtype_unchecked(
                 self.name.clone(),

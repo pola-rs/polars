@@ -10,9 +10,6 @@ use super::*;
 
 trait PolarsIso {
     /// The ISO week number, 1 through 53.
-    ///
-    /// Named apart from `week` because `NaiveDate` has an inherent `week(Weekday)` of its own that
-    /// would shadow it.
     fn iso_week_number(&self) -> i8;
     fn iso_year(&self) -> i32;
     /// The day of the week as Monday = 1 through Sunday = 7.
@@ -43,11 +40,7 @@ impl PolarsIso for NaiveDate {
     }
 }
 
-/// Each of these carries the timestamp conversion as well as the field, and is called once per
-/// element by the elementwise applies below. `#[inline]` is what lets the conversion and the
-/// chrono arithmetic behind it fold into the caller's loop, as they did when these were kernels
-/// over a whole chunk: without it `date.year` over a million dates costs some 15% more
-/// instructions.
+/// Each of these carries the timestamp conversion as well as the field.
 macro_rules! to_temporal_unit {
     ($name: ident, $chrono_method: ident, $to_datetime_fn: expr,
     $primitive_in: ty,
@@ -79,9 +72,6 @@ macro_rules! to_calendar_value {
     };
 }
 
-// Dates. Every one of these reads a field of the day itself, so the day is all that is worked
-// out: `date32_to_date_opt` is one day-count conversion where `date32_to_datetime_opt` goes on to
-// build the midnight time of day that none of them looks at.
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
     date_to_iso_week,
@@ -135,9 +125,6 @@ to_temporal_unit!(
 );
 
 /// Defines the extraction of one field of the wall time an instant stands for.
-///
-/// The instant is read once, by whichever conversion the column's timestamp unit asks for, and
-/// every field is taken off it — so a field costs one function per field, not one per unit.
 macro_rules! datetime_field {
     ($($name:ident, $dt:ident, $expr:expr, $out:ty;)*) => {
         $(

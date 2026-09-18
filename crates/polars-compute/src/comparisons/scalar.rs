@@ -6,10 +6,6 @@ use polars_utils::total_ord::TotalOrd;
 use super::{TotalEqKernel, TotalOrdKernel};
 use crate::NotSimdPrimitive;
 
-// The element-at-a-time kernels, for the types the SIMD ones do not cover. `$A` is the array they
-// read the values of, in either the Arrow layout or the flat one of `polars-array`. Only the
-// equality half is implemented for both: the ordering kernels are reached through the flat layout
-// alone — see the invocations below.
 macro_rules! impl_scalar_total_eq_kernel {
     ($A: ty) => {
         impl<T: NotSimdPrimitive + TotalOrd> TotalEqKernel for $A {

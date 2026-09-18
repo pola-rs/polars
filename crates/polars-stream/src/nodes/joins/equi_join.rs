@@ -131,8 +131,6 @@ impl FusedPredicate {
             let mask = mask.as_materialized_series().bool()?.rechunk();
             let mask = mask.downcast_as_array();
 
-            // A null is not a match. Both masks are read one bit per row below, so one that
-            // repeats a single bit is written out here — once, rather than at every row.
             let keep = match mask.validity() {
                 Some(validity) => &*mask.values().to_flat() & &*validity.to_flat(),
                 None => mask.values().to_flat().into_owned(),

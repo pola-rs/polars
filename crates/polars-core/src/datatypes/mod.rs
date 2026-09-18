@@ -43,9 +43,6 @@ pub use polars_dtype::categorical::{
     CatNative, CatSize, CategoricalMapping, CategoricalPhysical, Categories, FrozenCategories,
     ensure_same_categories, ensure_same_frozen_categories,
 };
-// The data type itself lives in `polars-dtype`, below `polars-compute`, so a kernel can be
-// dispatched on it. It is re-exported here because this is where the rest of the crate — and
-// everything downstream of it — has always reached for it.
 pub use polars_dtype::dtype::*;
 #[cfg(feature = "dtype-map")]
 pub use polars_dtype::ensure_map_entries_dtype;

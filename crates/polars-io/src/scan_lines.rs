@@ -42,9 +42,6 @@ fn split_lines_to_rows_impl(bytes: Buffer<u8>, max_row_size: usize) -> PolarsRes
         .len()
         .div_ceil(first_line_len.min(last_line_len).max(1));
 
-    // A line is a view into the bytes it was read from, so nothing is copied: the buffers below
-    // are slices of `bytes` itself, and the whole of it was checked as UTF-8 above, which every
-    // line is a slice of at a line terminator and so is UTF-8 in turn.
     let mut views: Vec<View> = Vec::with_capacity(n_lines_estimate);
     let mut data_buffers: Vec<Buffer<u8>> = Vec::new();
     let mut active_buffer: Option<(usize, usize)> = None;

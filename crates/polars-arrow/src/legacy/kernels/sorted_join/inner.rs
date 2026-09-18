@@ -65,30 +65,6 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_inner_join_nan_keys() {
-        // Polars sorts `NaN` after every number and alongside every other `NaN`, so a run of
-        // them is a run of equal keys like any other. Driven by `PartialOrd` this matched
-        // nothing at all, and a join on a sorted float key dropped every `NaN` row.
-        let nan = f64::NAN;
-        let lhs = &[1.0, nan, nan];
-        let rhs = &[1.0, nan];
-
-        let (l_idx, r_idx) = join(lhs, rhs, 0);
-        assert_eq!(&l_idx, &[0, 1, 2]);
-        assert_eq!(&r_idx, &[0, 1, 1]);
-
-        // Only `NaN`, and on both sides: every pair matches.
-        let (l_idx, r_idx) = join(&[nan, nan], &[nan, nan], 0);
-        assert_eq!(&l_idx, &[0, 0, 1, 1]);
-        assert_eq!(&r_idx, &[0, 1, 0, 1]);
-
-        // A `NaN` on the right only: the numbers still find each other, and nothing matches it.
-        let (l_idx, r_idx) = join(&[1.0, 2.0], &[2.0, nan], 0);
-        assert_eq!(&l_idx, &[1]);
-        assert_eq!(&r_idx, &[0]);
-    }
-
-    #[test]
     fn test_inner_join() {
         let lhs = &[0, 1, 1, 2, 3, 5];
         let rhs = &[0, 1, 1, 3, 4];

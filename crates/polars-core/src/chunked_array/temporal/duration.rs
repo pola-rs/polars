@@ -65,9 +65,6 @@ impl DurationChunked {
     /// Convert from [`Duration`] to String; note that `strftime` format
     /// strings are not supported, only the specifiers 'iso' and 'polars'.
     pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
-        // The duration string functions below write into the buffer they are handed, which is the
-        // one buffer reused across elements — and a chunk that reads one element throughout is
-        // formatted once, the answer standing for the whole chunk.
         let time_unit = self.time_unit();
         match format {
             "iso" | "iso:strict" => {

@@ -101,8 +101,6 @@ pub unsafe fn decode_variable_no_order(
             validity.reserve(num_rows);
             validity.extend_constant(array.len(), true);
             validity.push(false);
-            // A value is pushed for the null so that the views line up with the mask that
-            // replaces the builder's own below.
             array.push_value(b"");
             break;
         }

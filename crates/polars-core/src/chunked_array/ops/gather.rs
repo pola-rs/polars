@@ -40,8 +40,6 @@ pub fn check_bounds_nulls(idx: &Flat<PlPrimitiveArray<IdxSize>>, len: IdxSize) -
 
 pub fn check_bounds_ca(indices: &IdxCa, len: IdxSize) -> PolarsResult<()> {
     let all_valid = indices.downcast_iter().all(|a| {
-        // A chunk that repeats one index is checked once, however many elements read it — and a
-        // null index is not checked at all, so a wholly null chunk is in bounds by itself.
         if let Some(index) = a.scalar_value_ignore_validity() {
             return a.null_count() == a.len() || check_bounds(&[index], len).is_ok();
         }
@@ -127,10 +125,6 @@ unsafe fn target_get_unchecked<'a, A: StaticArray>(
 }
 
 /// The chunk's values on their own, if they are one slot every element of it reads.
-///
-/// [`PlArray::is_scalar`] answers for the mask as well, so a chunk that repeats a value under a
-/// bit per element -- what a `when`/`then` over a literal builds -- does not read as scalar by it
-/// although its values do stand for every element.
 fn values_repeated<A: StaticArray>(target: &A) -> Option<A> {
     let values = target.clone().with_validity_typed(None);
     PlArray::is_scalar(&values).then_some(values)
@@ -149,9 +143,6 @@ where
             && !target.is_empty()
             && let Some(repeated) = values_repeated(*target)
         {
-            // Every element of the chunk reads the same value, so whichever elements the indices
-            // pick, the answer is that value again: the values are handed over as they are and it
-            // is the mask alone that is gathered.
             let validity = unsafe { gather_validity_slice(target.validity(), indices) };
             return repeated
                 .new_from_index_typed(0, indices.len())
@@ -159,9 +150,6 @@ where
         }
 
         if has_nulls {
-            // Both axes of the chunk are resolved once, ahead of the walk: the values as the
-            // slice they are laid out in and the mask as the one bit per element it holds.
-            // `get_unchecked` resolves each of them again for every index read instead.
             if let (Some(values), Some(validity)) = (
                 target.as_slice(),
                 target
@@ -181,8 +169,6 @@ where
             it.map(|i| target.get_unchecked(i as usize))
                 .collect_arr_trusted()
         } else if let Some(values) = target.as_slice() {
-            // Read the values straight out of the slice: `value_unchecked` would go through the
-            // buffer, and resolve the values representation, once per index.
             it.map(|i| values.get_unchecked(i as usize).clone())
                 .collect_arr_trusted()
         } else {
@@ -248,9 +234,6 @@ where
         };
 
         let mut out = if let Some((target, values)) = repeated {
-            // The values are one slot every element of the chunk reads, so they stand for the
-            // gathered elements as they are; what is gathered is the mask, which a null index
-            // adds to.
             ChunkedArray::from_chunk_iter_like(
                 ca,
                 indices.downcast_iter().map(|idx_arr| {
@@ -274,8 +257,6 @@ where
                     }
 
                     if idx_arr.null_count() == 0 {
-                        // The kernel reads the indices as a slice, so a chunk that repeats one index is
-                        // written out here; every other arm reads them through the iterator instead.
                         let idx_arr = idx_arr.to_flat();
                         gather_idx_array_unchecked(&targets, targets_have_nulls, idx_arr.as_slice())
                     } else if targets.len() == 1 {
@@ -465,8 +446,6 @@ impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
                     return take_chunk_unchecked(target, idx_arr);
                 }
 
-                // The chunks carry no inner type to build a nested chunk out of, but the target
-                // does: the elements are appended into a builder shaped like it, one at a time.
                 let mut builder = builder_like(targets[0]);
                 builder.reserve(idx_arr.len());
                 for idx in idx_arr.iter() {
@@ -526,8 +505,6 @@ impl ChunkTakeUnchecked<IdxCa> for ListChunked {
                     return take_chunk_unchecked(target, idx_arr);
                 }
 
-                // The chunks carry no inner type to build a nested chunk out of, but the target
-                // does: the elements are appended into a builder shaped like it, one at a time.
                 let mut builder = builder_like(targets[0]);
                 builder.reserve(idx_arr.len());
                 for idx in idx_arr.iter() {

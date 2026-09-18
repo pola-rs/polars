@@ -123,12 +123,6 @@ pub trait PrimitiveArithmeticKernelImpl: NativeType {
     fn prim_true_div_scalar(lhs: PArr<Self>, rhs: Self) -> POut<Self::TrueDivT>;
     fn prim_true_div_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> POut<Self::TrueDivT>;
 
-    // The divisions again, by the one value a *repeated right operand* stands for.
-    //
-    // A kernel that divides by a literal is free to trade exactness for speed — the float ones
-    // multiply by the reciprocal — but a column that repeats a value has to answer what the same
-    // values laid out flat answer, element for element, so a type whose `_scalar` division is
-    // approximate divides here instead. The default is for the types whose already is exact.
     fn prim_wrapping_floor_div_repeated(lhs: PArr<Self>, rhs: Self) -> POut<Self> {
         Self::prim_wrapping_floor_div_scalar(lhs, rhs)
     }
@@ -152,8 +146,6 @@ impl<T: HasPrimitiveArithmeticKernel> ArithmeticKernel for PlPrimitiveArray<T> {
     fn wrapping_abs(self) -> POut<T> { unary(self, T::prim_wrapping_abs) }
     fn wrapping_neg(self) -> POut<T> { unary(self, T::prim_wrapping_neg) }
 
-    // Addition and multiplication are the two that commute, so a repeated left operand reaches
-    // the same kernel a repeated right one does, with the sides swapped.
     fn wrapping_add(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_add, |l, r| T::prim_wrapping_add_scalar(r, l), T::prim_wrapping_add_scalar) }
     fn wrapping_sub(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_sub, T::prim_wrapping_sub_scalar_lhs, T::prim_wrapping_sub_scalar) }
     fn wrapping_mul(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_mul, |l, r| T::prim_wrapping_mul_scalar(r, l), T::prim_wrapping_mul_scalar) }

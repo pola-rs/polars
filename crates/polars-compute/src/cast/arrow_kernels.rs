@@ -11,9 +11,6 @@ use polars_error::{PolarsResult, polars_bail};
 use super::CastOptionsImpl;
 
 /// Casts an Arrow array to `to_type`, over the arrays of `polars-array` that hold its values.
-///
-/// # Panics
-/// A dictionary, a map or a union *nested inside* `array` panics in the crossing over.
 pub fn cast_arrow(
     array: &dyn Array,
     to_type: &ArrowDataType,
@@ -21,8 +18,6 @@ pub fn cast_arrow(
 ) -> PolarsResult<Box<dyn PlArray>> {
     let from_type = array.dtype();
 
-    // A dictionary is the one Arrow array whose elements no array of `polars-array` holds, which
-    // is what the crossing over would panic on — see `polars_compute::cast::cast_to_dictionary`.
     if matches!(from_type, ArrowDataType::Dictionary(..)) {
         return unsupported(from_type, to_type);
     }
@@ -39,8 +34,6 @@ fn cast_crossed_over(
 ) -> PolarsResult<Box<dyn PlArray>> {
     use ArrowDataType as A;
 
-    // The values of both sides are laid out the same way and read the same way, which leaves the
-    // array itself as the answer — including for a nested type, whose children are not walked.
     if from_type == to_type {
         return Ok(array.to_boxed());
     }
@@ -96,8 +89,6 @@ fn cast_crossed_over(
             Ok(Box::new(out))
         },
 
-        // The bytes of an element are held one per value, which is what makes the two readable as
-        // one another.
         (A::List(field) | A::LargeList(field), A::BinaryView) if field.dtype() == &A::UInt8 => Ok(
             Box::new(super::list_uint8_to_binview(super::downcast(array))?),
         ),
@@ -106,9 +97,6 @@ fn cast_crossed_over(
             Ok(Box::new(super::binary_to_list(&bytes)))
         },
 
-        // An Arrow UTF-8 array's bytes are valid UTF-8 by construction, which is what crossing
-        // over as a `BinaryOffset` gives up: the views its bytes are laid out in are taken as the
-        // strings they already are, rather than walked a second time to say so.
         (A::Utf8 | A::LargeUtf8, A::Utf8View) => {
             let view = super::binary_to_binview(super::downcast(array));
 
@@ -119,8 +107,6 @@ fn cast_crossed_over(
             }))
         },
 
-        // A fixed size binary array crossed over as the one array no Polars type names, and the
-        // bytes it holds are read as a binary's.
         (A::FixedSizeBinary(_), _) => {
             let view = super::fixed_size_binary_to_binview(super::downcast(array));
             let Some(to) = datatype_of(to_type) else {
@@ -134,8 +120,6 @@ fn cast_crossed_over(
                 return unsupported(from_type, to_type);
             };
 
-            // A nested type names the values of its children rather than any of its own, so a
-            // pair of them is answered by the arms above.
             if from.is_nested() || to.is_nested() {
                 return unsupported(from_type, to_type);
             }
@@ -150,21 +134,13 @@ fn datatype_of(dtype: &ArrowDataType) -> Option<DataType> {
     use ArrowDataType as A;
 
     Some(match dtype {
-        // These crossed over as the bytes they hold, with their offsets widened.
         A::Utf8 | A::LargeUtf8 | A::Binary | A::LargeBinary => DataType::BinaryOffset,
-        // A time of Polars counts nanoseconds, so a count of anything else is the count it is.
         A::Time32(_) => DataType::Int32,
         A::Time64(unit) if !matches!(unit, TimeUnit::Nanosecond) => DataType::Int64,
-        // A time zone names no value of a timestamp, so which one it is stays the caller's to read
-        // off the type it asked for — and rejecting one it does not know is not a cast's to do.
         A::Timestamp(unit, _) => DataType::Datetime(unit.into(), None),
 
-        // A decimal of another width crossed over as the integer holding it, an interval as its
-        // own element type, and a fixed size binary as the bytes it holds, never as a target.
         A::Decimal32(..) | A::Decimal64(..) | A::Decimal256(..) => return None,
         A::Interval(_) | A::FixedSizeBinary(_) => return None,
-        // A dictionary is read as the type of its values, which is no answer for a cast *to* one:
-        // packing the values is `cast_to_dictionary`'s to do, and nothing here holds a dictionary.
         A::Dictionary(..) => return None,
 
         dtype => DataType::from_arrow_dtype(dtype),

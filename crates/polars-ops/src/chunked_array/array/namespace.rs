@@ -16,8 +16,6 @@ use crate::series::ArgAgg;
 
 pub fn has_inner_nulls(ca: &ArrayChunked) -> bool {
     for arr in ca.downcast_iter() {
-        // The values are what the elements read in either representation, so a null among them is
-        // a null inside an element.
         if arr.values().null_count() > 0 {
             return true;
         }
@@ -177,8 +175,6 @@ pub trait ArrayNameSpace: AsArray {
             .map(|arr| {
                 let values = arr.values();
 
-                // Values holding a single list are the list every element reads, so every row is
-                // sliced out of that one list rather than it being written out per element first.
                 let values_shared = arr.values_are_scalar();
 
                 let mut builder = builder_like(values);
@@ -188,7 +184,6 @@ pub trait ArrayNameSpace: AsArray {
                 for row in 0..arr.len() {
                     validity.push(arr.is_valid(row));
                     if !arr.is_valid(row) {
-                        // A null row still holds a slot per value, undetermined though they are.
                         builder.extend_nulls(slice_len);
                         continue;
                     }
@@ -206,7 +201,6 @@ pub trait ArrayNameSpace: AsArray {
             })
             .collect::<Vec<_>>();
 
-        // The chunks carry no logical type, so the width the slice left is named here.
         let dtype = DataType::Array(Box::new(ca.inner_dtype().clone()), slice_len);
         let slice_arr =
             unsafe { ArrayChunked::from_chunks_and_dtype(ca.name().clone(), chunks, dtype) };

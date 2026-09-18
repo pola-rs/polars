@@ -73,8 +73,6 @@ pub fn approx_quantile_sketch(
                 let ca: &ChunkedArray<$T> = physical.as_ref().as_ref();
                 let ca = ca.drop_nulls();
                 let ca = ca.rechunk();
-                // A chunk that repeats one value holds it once, which is not the run of values
-                // the sketch reads; only such a chunk is written out here.
                 let values = ca.to_cont_slice()?;
                 let sketch = build_sketch(values.as_slice(), error, method);
                 sketches_to_series(&[sketch])
@@ -133,9 +131,6 @@ pub fn approx_quantile_estimate(
             .to_unit_list()
             .into_series()
     };
-    // The estimates are written one per row, and they are read out of the values the rows window
-    // -- which a chunk whose rows all read the one range they hold holds once, and `get_inner`
-    // hands over as it finds them. Laying the rows out here lines the two up again.
     let quantiles = quantiles
         .broadcast_to(sketch.len())?
         .list()?
@@ -203,8 +198,6 @@ fn approx_quantile_estimate_inner<
 ) -> PolarsResult<Vec<Option<T>>> {
     let mut out = Vec::with_capacity(values.len());
     let mut values = values.no_null_iter();
-    // The rows are read by the windows they cover, which a chunk whose rows all read the one
-    // range they hold answers as well as a flat one does: nothing is written out for it.
     let lengths = quantiles.downcast_iter().flat_map(|arr| {
         // SAFETY: the row is in bounds of the chunk its length is read from.
         (0..arr.len()).map(|row| unsafe { arr.value_range_unchecked(row) }.len())

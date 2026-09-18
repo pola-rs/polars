@@ -125,8 +125,6 @@ impl PhysicalExpr for FilterExpr {
         let predicate = predicate.bool()?;
         let predicate = predicate.rechunk();
         let predicate = predicate.downcast_as_array();
-        // Nulls count as false. The mask keeps whichever representation it came out in, so a
-        // predicate that is true or false throughout stays the single bit `drop_items` reads.
         let predicate = if let Some(validity) = predicate.validity()
             && validity.unset_bits() > 0
         {

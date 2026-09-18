@@ -144,8 +144,6 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     }
 
     /// The single string this column reads throughout, if it reads one.
-    ///
-    /// The mapping is shared by every element, so a repeated physical chunk is a repeated string.
     pub fn scalar_str(&self) -> Option<Option<&str>> {
         let mapping = self.get_mapping();
         self.phys
@@ -155,9 +153,6 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     }
 
     /// [`Self::from_str_iter`] for a source that reads one string throughout.
-    ///
-    /// One string is one category, so a single lookup answers the whole column: the physical
-    /// chunk is built one element long and repeated over `length`.
     pub fn from_repeated_str(
         name: PlSmallStr,
         dtype: DataType,
@@ -184,15 +179,9 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         let mut cat_ids = Vec::with_capacity(hint);
         let mut validity = BitmapBuilder::with_capacity(hint);
 
-        // Both arms drive the iterator with `fold` rather than a `for` loop: `fold` is where an
-        // iterator over a chunk resolves flat-vs-scalar once for the whole chunk, while `next` —
-        // which is what a `for` loop calls — resolves it per element.
         match &dtype {
             DataType::Categorical(cats, mapping) => {
                 assert!(cats.physical() == T::physical());
-                // `insert_cat` can fail. Returning from inside the fold would mean `try_fold`,
-                // whose default drives by `next` again, so the first error rides out in the
-                // accumulator and the remaining elements take the null slot.
                 let mut failed: Option<PolarsError> = None;
                 strings.fold(&mut failed, |failed, opt_s| {
                     cat_ids.push(match opt_s {
@@ -245,7 +234,6 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             values_dtype,
             self.is_enum(),
         );
-        // The dictionary is an Arrow array, which the keys cross into — see `polars_array::arrow::bridge`.
         let keys = polars_array::arrow::bridge::chunk_to_arrow(keys);
         unsafe { DictionaryArray::try_new_unchecked(dtype, keys, values).unwrap() }
     }
@@ -285,8 +273,6 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
 
                 let to_str = |cat_id: CatSize| unsafe { mapping.cat_to_str_unchecked(cat_id) };
 
-                // Every element of a chunk that repeats one is that one, so a single lookup in
-                // the mapping answers the whole column, which then repeats that one string.
                 if let [chunk] = self.phys.chunks().as_slice()
                     && self.len() > 1
                     && chunk.is_scalar()

@@ -58,18 +58,12 @@ impl NumericFixedSizeListOp {
     #[cfg_attr(not(feature = "array_arithmetic"), allow(unused))]
     pub fn execute(&self, lhs: &Series, rhs: &Series) -> PolarsResult<Series> {
         feature_gated!("array_arithmetic", {
-            // Every element of both sides reads the same pair, so the answer of that one pair is
-            // the answer of every element: it is worked out over a row of each side and repeated,
-            // rather than the arrays being walked — and written out — one element at a time.
             if let Some(out) =
                 super::list_utils::repeat_one_answer(lhs, rhs, |lhs, rhs| self.execute(lhs, rhs))
             {
                 return out;
             }
 
-            // One side repeats a single element, which every element of the other reads: it is
-            // read as the one element it is rather than written out once per element of the other
-            // to be read out of again.
             if let Some((lhs, rhs)) =
                 super::list_utils::read_repeated_side_as_one_element(&self.0, lhs, rhs)
             {
@@ -91,9 +85,6 @@ mod inner {
     use list_utils::with_match_pl_num_arith;
     use num_traits::Zero;
     use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
-    // The level validities below this leaf are plain bitmaps, one bit per element throughout, so
-    // combining them is the Arrow one; the *leaf* mask carries its own representation and is
-    // combined with `polars_array`'s.
     use polars_arrow::compute::utils::combine_validities_and;
     use polars_compute::arithmetic::pl_num::PlNumArithmetic;
     use polars_utils::float::IsFloat;
@@ -491,12 +482,6 @@ mod inner {
 
             match (&self.op_apply_type, &self.broadcast) {
                 (BinaryOpApplyType::ListToList, Broadcast::Right) => {
-                    // The right side is the one row every row of the left reads against, and the
-                    // leaf kernels answer two runs of values rather than a row at a time: the one
-                    // row is laid out over the left's length so that the whole column is answered
-                    // by one call. A walk of a row at a time asks for one answer before it starts
-                    // the next, which leaves the divider of a division idle between them — a
-                    // copy of the right side is cheaper than that wait.
                     let values =
                         repeat_values(arr_rhs.to_flat_values().as_slice(), self.output_len);
                     let validity = arr_rhs.validity().map(|x| repeat_mask(x, self.output_len));
@@ -504,8 +489,6 @@ mod inner {
                         PlPrimitiveArray::<T::Native>::from_vec(values).with_validity(validity);
                     debug_assert_eq!(arr_lhs.len(), arr_rhs.len());
 
-                    // The sides are swapped where it is the left one that broadcasts, and the
-                    // kernel reads them in the order the query has them.
                     let arr = if self.swapped {
                         self.op.0.apply_arithmetic_kernel::<T>(arr_rhs, arr_lhs)
                     } else {
@@ -537,7 +520,6 @@ mod inner {
                     let out_ptr: *mut T::Native = out_vec.as_mut_ptr();
                     let stride = self.stride;
 
-                    // Resolved once, rather than once per value read below.
                     let values_lhs = arr_lhs.to_flat_values();
                     let values_rhs = arr_rhs.to_flat_values();
                     let (values_lhs, values_rhs) = (values_lhs.as_slice(), values_rhs.as_slice());
@@ -591,7 +573,6 @@ mod inner {
                     let out_ptr: *mut T::Native = out_vec.as_mut_ptr();
                     let stride = self.stride;
 
-                    // Resolved once, rather than once per value read below.
                     let values_lhs = arr_lhs.to_flat_values();
                     let values_rhs = arr_rhs.to_flat_values();
                     let (values_lhs, values_rhs) = (values_lhs.as_slice(), values_rhs.as_slice());
@@ -721,8 +702,6 @@ mod inner {
             out = builder.build_level(*width, opt_validity, out.into_boxed())
         }
 
-        // The chunk carries no data type of its own — the output dtype is what the
-        // `ChunkedArray` gets.
         unsafe {
             ArrayChunked::from_chunks_and_dtype_unchecked(
                 output_name,
@@ -760,8 +739,6 @@ mod inner {
             out = builder.build_level(*width, opt_validity, out.into_boxed())
         }
 
-        // The chunk carries no data type of its own — the output dtype is what the
-        // `ChunkedArray` gets.
         unsafe {
             ArrayChunked::from_chunks_and_dtype_unchecked(
                 output_name,
@@ -784,8 +761,6 @@ mod inner {
         stride: usize,
     ) -> Option<Bitmap> {
         match (array_leaf_validity, primitive_validity) {
-            // A mask that repeats one bit is written out here: the bits are set one at a
-            // time below, which needs one per element.
             (Some(l), Some(r)) => Some((l.to_flat().into_owned().make_mut(), r)),
             (Some(v), None) => return Some(v.to_flat().into_owned()),
             // Materialize a full-true validity to re-use the codepath, as we still
@@ -821,8 +796,6 @@ mod inner {
             return out;
         }
 
-        // Each copy is taken from the ones already written, so the run written at a time grows
-        // with the run behind it rather than staying the width of one row.
         out.extend_from_slice(values);
         while out.len() < total {
             let take = (total - out.len()).min(out.len());
@@ -837,8 +810,6 @@ mod inner {
         let mut out = BitmapBuilder::with_capacity(bitmap.len() * n_repeats);
 
         for _ in 0..n_repeats {
-            // A bitmap is extended by a run of words rather than a bit at a time, which is what
-            // pushing each of its bits in turn would be.
             out.extend_from_bitmap(bitmap);
         }
 
@@ -849,9 +820,6 @@ mod inner {
     fn repeat_mask(mask: PlBitmapRef<'_>, n_repeats: usize) -> PlBitmap {
         match mask.flat_bitmap() {
             Some(bitmap) => PlBitmap::from_bitmap(repeat_bitmap(bitmap, n_repeats)),
-            // The one bit stands for every element in turn, so it stands for `n_repeats` times as
-            // many of them without being written out. `PlBitmapRef::broadcast` is no use here: it
-            // widens a mask over *one* element to cover many, not one over `mask.len()` of them.
             None => PlBitmap::new_scalar(
                 mask.scalar_value()
                     .expect("a mask that is not laid out one bit per element repeats one bit"),

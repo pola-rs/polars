@@ -613,7 +613,6 @@ impl OptBitmapBuilder {
                     builder.subslice_extend_from_bitmap(bm, start, length);
                 }
             },
-            // Nothing the bits say differs between the copies, so there is one run of them.
             None => self.extend_constant(length * repeats, true),
         }
     }

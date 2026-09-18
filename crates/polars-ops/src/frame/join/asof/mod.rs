@@ -15,10 +15,6 @@ use crate::frame::IntoDf;
 use crate::series::SeriesMethods;
 
 /// The elements of a chunk an asof join reads at indices it picks, not one after another.
-///
-/// The chunk's representation is resolved once, when this is built, rather than at every read:
-/// a join asks for an element per group step and another per row it matches, so a test per read
-/// is a test per element several times over.
 pub(super) enum Elements<'a, T: PolarsDataType> {
     /// One slot per element and nothing null, so an index into the values is the element.
     Flat(&'a [T::Physical<'a>]),

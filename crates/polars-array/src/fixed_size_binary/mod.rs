@@ -203,8 +203,6 @@ impl PlFixedSizeBinaryArray {
     pub fn new_scalar(value: &[u8], length: usize) -> Self {
         let width = value.len();
 
-        // There is no element for the values to be shared by when there are no elements at all,
-        // which is why an empty array is the one that keeps nothing of the value it repeats.
         let values = if length == 0 {
             Buffer::new()
         } else {
@@ -276,8 +274,6 @@ impl PlFixedSizeBinaryArray {
     /// Whether the values hold the bytes of every element, laid end to end.
     #[inline]
     pub fn values_are_flat(&self) -> bool {
-        // A length times a width that overflows a `usize` is longer than any buffer can be, so
-        // such an array is never flat.
         self.length.checked_mul(self.width) == Some(self.values.len())
     }
 
@@ -327,8 +323,6 @@ impl PlFixedSizeBinaryArray {
     pub unsafe fn value_range_unchecked(&self, i: usize) -> Range<usize> {
         debug_assert!(i < self.length);
 
-        // Scalar values hold the one element every element covers, so they are read from the
-        // start; flat ones lay the elements end to end, one width apart.
         let start = if self.values_are_scalar() {
             0
         } else {
@@ -388,8 +382,6 @@ impl PlFixedSizeBinaryArray {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        // There are no offsets to leave the bytes outside the slice behind, so they are sliced
-        // along with it; see `slice_fixed_size_buffer`.
         unsafe {
             slice_fixed_size_buffer(&mut self.values, self.width, self.length, offset, length);
             slice_validity(&mut self.validity, self.length, offset, length);
@@ -405,14 +397,10 @@ impl PlFixedSizeBinaryArray {
     pub unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
         debug_assert!(index < self.length);
 
-        // The bytes of a null element are undetermined, so they are not carried over: it is the
-        // mask that makes every element of the result null, over a zeroed element of the width.
         if unsafe { self.is_null_unchecked(index) } {
             return Self::new_full_null(self.width, length);
         }
 
-        // The element is sliced out of the values it is already in, which every element of the
-        // result covers: nothing is copied.
         let range = unsafe { self.value_range_unchecked(index) };
         let values = if length == 0 {
             Buffer::new()
@@ -441,11 +429,8 @@ impl PlFixedSizeBinaryArray {
         let values = if self.values_are_flat() {
             self.values.clone()
         } else if self.null_count() == self.length {
-            // Every element is null, so every value is undetermined: a zeroed buffer of the right
-            // length stands in for them, which is not written out one element at a time.
             Buffer::zeroed(self.flat_values_len())
         } else {
-            // The one element every element covers, written out once per element.
             let flat_len = self.flat_values_len();
             let element = self.values.as_slice();
 
@@ -456,8 +441,8 @@ impl PlFixedSizeBinaryArray {
             Buffer::from(values)
         };
 
-        // SAFETY: the values are the element every element covers, repeated once per element, and
-        // the mask is the flat counterpart of one valid for this array's length, which leaves every
+        // SAFETY: the values hold one element each, and the mask is the flat counterpart of this
+        // array's own.
         Cow::Owned(unsafe {
             Flat::new(Self::new_unchecked(
                 values,
@@ -497,8 +482,6 @@ crate::impl_array_eq!(
 
 impl std::fmt::Debug for PlFixedSizeBinaryArray {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // The buffers are listed as they are backed, which is one element's worth for a scalar
-        // array: this never materializes a length that is unbounded by the memory use.
         let mut s = f.debug_struct("PlFixedSizeBinaryArray");
         s.field("length", &self.length);
         s.field("width", &self.width);

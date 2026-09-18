@@ -151,11 +151,6 @@ impl Series {
 }
 
 /// The value every non-null element of `ca` holds, if they all hold the same one.
-///
-/// Asked of the *values* axis on its own, so a chunk that repeats one value under a per-element
-/// mask answers too: the mask only says which elements are null, and every element that is not
-/// is that one value. A forward or backward fill over such a column writes nothing but that
-/// value, so the whole scan collapses to a run of it behind a two-run mask.
 fn the_one_value_filled_in<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Option<T::Native> {
     let [chunk] = ca.chunks().as_slice() else {
         return None;
@@ -165,10 +160,6 @@ fn the_one_value_filled_in<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Option
 }
 
 /// One value repeated for the whole length, behind a mask that is only true over `valid`.
-///
-/// The value costs one slot however long the column is, and the mask is three runs of constant
-/// bits, so neither axis is written out per element. A forward fill leaves its nulls at the
-/// start and a backward fill at the end, which is the range each of them passes.
 fn one_value_behind_a_two_run_mask<T: PolarsNumericType>(
     ca: &ChunkedArray<T>,
     value: T::Native,
@@ -190,9 +181,6 @@ where
     T::Array: ZeroableArrayFromIter,
     T::ZeroablePhysical<'a>: Copy,
 {
-    // Compute values, one chunk at a time: a chunk's own iterator settles how its elements are
-    // laid out once, for all of them, where the column's iterator asks that per element. The
-    // carried `last` crosses the chunk boundary, so the scan is still one pass over the column.
     let mut last = T::ZeroablePhysical::zeroed();
     let mut values: Vec<T::ZeroablePhysical<'a>> = Vec::with_capacity(ca.len());
     for arr in ca.downcast_iter() {

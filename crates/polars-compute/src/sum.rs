@@ -47,7 +47,6 @@ wrapping_impl!(WrappingAdd, wrapping_add, i64);
 wrapping_impl!(WrappingAdd, wrapping_add, isize);
 wrapping_impl!(WrappingAdd, wrapping_add, i128);
 
-// `pf16` has no algebraic addition of its own; it is summed through the `f32` kernel anyway.
 wrapping_impl!(WrappingAdd, add, pf16);
 wrapping_impl!(WrappingAdd, algebraic_add, f32);
 wrapping_impl!(WrappingAdd, algebraic_add, f64);
@@ -199,9 +198,6 @@ where
         return T::zero();
     }
 
-    // A chunk that repeats one value adds that value up once per non-null element, which for an
-    // integer is a single multiplication rather than a pass over the chunk. A float still pays a
-    // pass, but a float chunk is summed by [`crate::float_sum`] instead.
     if let Some(value) = arr.scalar_value_ignore_validity() {
         return repeat_wrapping_add(value, count);
     }

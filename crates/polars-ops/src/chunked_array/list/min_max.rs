@@ -78,13 +78,10 @@ where
         .downcast_ref::<PlPrimitiveArray<T>>()
         .unwrap();
 
-    // Every element covers the one range, so they all reduce to the same element: the range is
-    // reduced once and repeated rather than the lists being laid end to end first.
     if let Some(range) = arr.scalar_offsets() {
         return match row_of(values, range).and_then(|row| row.min_ignore_nan_kernel()) {
             Some(value) => PlPrimitiveArray::new_scalar(value, length)
                 .with_validity(validity.map(PlBitmap::from)),
-            // The one range every element covers is empty, so every element reduces to nothing.
             None => PlPrimitiveArray::new_full_null(length),
         };
     }
@@ -93,7 +90,6 @@ where
         .flat_offsets()
         .expect("the elements cover ranges of their own");
     let out = min_between_offsets(values, offsets);
-    // Collecting leaves `out` flat, so its mask holds one bit per element like the other one.
     let new_validity = combine_validities_and(out.validity(), validity);
     out.with_validity(new_validity)
 }
@@ -202,13 +198,10 @@ where
         .downcast_ref::<PlPrimitiveArray<T>>()
         .unwrap();
 
-    // Every element covers the one range, so they all reduce to the same element: the range is
-    // reduced once and repeated rather than the lists being laid end to end first.
     if let Some(range) = arr.scalar_offsets() {
         return match row_of(values, range).and_then(|row| row.max_ignore_nan_kernel()) {
             Some(value) => PlPrimitiveArray::new_scalar(value, length)
                 .with_validity(validity.map(PlBitmap::from)),
-            // The one range every element covers is empty, so every element reduces to nothing.
             None => PlPrimitiveArray::new_full_null(length),
         };
     }
@@ -217,7 +210,6 @@ where
         .flat_offsets()
         .expect("the elements cover ranges of their own");
     let out = max_between_offsets(values, offsets);
-    // Collecting leaves `out` flat, so its mask holds one bit per element like the other one.
     let new_validity = combine_validities_and(out.validity(), validity);
     out.with_validity(new_validity)
 }

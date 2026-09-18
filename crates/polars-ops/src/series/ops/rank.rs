@@ -6,8 +6,7 @@ use rand::prelude::*;
 
 use crate::prelude::SeriesSealed;
 
-/// Walks the sorted indices, closing a tie group wherever `opens_group` says the element differs
-/// from the one before it.
+/// Walks the sorted indices, closing a tie group wherever `opens_group` says one opens.
 unsafe fn rank_walk<G, F>(idxs: &IdxCa, opens_group: G, mut flush_ties: F)
 where
     G: Fn(usize) -> bool,
@@ -32,14 +31,9 @@ where
 }
 
 unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &PlBooleanArray, flush_ties: F) {
-    // Settle how `neq` holds its bits once, for the whole walk. Reading one out by index has to
-    // find out each time whether the array carries a bit per element or a single bit standing for
-    // all of them, and that question is the same for every element of the walk.
     let neq = neq.values();
     match neq.flat_bitmap() {
         Some(bits) => rank_walk(idxs, |i| bits.get_bit_unchecked(i), flush_ties),
-        // One bit for the whole array: either every element differs from the one before it, so
-        // each is its own tie group, or none of them does and the column is a single group.
         None => {
             let bit = neq.scalar_value().expect("a bitmap is flat or scalar");
             rank_walk(idxs, |_| bit, flush_ties)
@@ -82,9 +76,6 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         };
     }
 
-    // Every element of a scalar column ties with every other, which is one tie group covering the
-    // column and therefore one rank repeated — the sort below would only rediscover that. The
-    // methods that rank within a tie group by position are the two that read the sort order.
     if s.repeats_one_element() && null_count == 0 {
         use RankMethod::*;
         let name = s.name().clone();
@@ -106,9 +97,6 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
 
     use RankMethod::*;
 
-    // The same holds of the values alone: where they are one element repeated, every element the
-    // mask says is there ties with every other, so the tie group is the valid elements of the
-    // column and the answer is one rank under the mask the column already carries.
     if null_count > 0 && s.repeats_one_value() && matches!(method, Average | Min | Dense | Max) {
         let name = s.name().clone();
         let valid = (len - null_count) as IdxSize;

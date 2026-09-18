@@ -21,10 +21,6 @@ impl<'a> PlFixedSizeBinaryValuesIter<'a> {
     /// `values` must be flat or scalar for `length`, per [`crate::broadcast`].
     #[inline]
     pub(super) fn new(values: &'a [u8], width: usize, length: usize) -> Self {
-        // Values as long as one element hold the one every position reads; values the caller
-        // promises are valid hold one element each when they are not. The two coincide for a
-        // single element, and for elements no bytes wide — which the walk steps nowhere for
-        // either way — so the scalar stride stands for both.
         let scalar = values.len() == width;
 
         debug_assert!(
@@ -166,7 +162,6 @@ impl DoubleEndedIterator for PlFixedSizeBinaryValuesIter<'_> {
             return None;
         }
 
-        // `n` is below the number of elements left, so the position before it does not wrap.
         self.remaining -= n;
         self.next_back()
     }
@@ -183,7 +178,6 @@ impl DoubleEndedIterator for PlFixedSizeBinaryValuesIter<'_> {
             stride,
             remaining,
         } = self;
-        // One element past the back, which the first step of the walk comes back down from.
         let mut start = remaining.wrapping_mul(stride);
         let mut acc = init;
 

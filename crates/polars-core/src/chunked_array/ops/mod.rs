@@ -581,7 +581,6 @@ impl ChunkExpandAtIndex<StructType> for StructChunked {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let chunk = self.downcast_chunks().get(chunk_idx).unwrap();
         let chunk = if chunk.is_null(idx) {
-            // Every element of the result is null, so the fields are nulls of the new length.
             new_full_null_like(chunk, length)
         } else {
             let values = chunk

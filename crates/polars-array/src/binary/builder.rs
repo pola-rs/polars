@@ -24,7 +24,6 @@ impl PlBinaryArrayBuilder {
     pub fn new() -> Self {
         Self {
             values: Vec::new(),
-            // The end of the last element of an empty array, which is where the first one starts.
             offsets: vec![0],
             validity: OptBitmapBuilder::default(),
         }
@@ -40,7 +39,6 @@ impl PlBinaryArrayBuilder {
     /// The end of the last element appended, which is where the next one starts.
     #[inline]
     fn last_offset(&self) -> u64 {
-        // The offsets are never empty: they start out holding the end of no element at all.
         self.offsets[self.offsets.len() - 1]
     }
 
@@ -61,8 +59,6 @@ impl PlBinaryArrayBuilder {
     /// Appends a null.
     #[inline]
     pub fn push_null(&mut self) {
-        // The value of a null element is undetermined, so the empty byte string it covers reaches
-        // no bytes to append: it starts and ends where the last element ended.
         self.push_offset(0);
         self.validity.extend_constant(1, false);
     }
@@ -92,9 +88,6 @@ impl PlBinaryArrayBuilder {
     /// Appends the `length` elements of `other` starting at `start`, ignoring its validity mask.
     fn extend_values(&mut self, other: &PlBinaryArray, start: usize, length: usize) {
         let Some(offsets) = other.flat_offsets() else {
-            // The offsets are not flat, so every element covers the same bytes — which are appended
-            // once per element. An empty array holds no range for the subslice to cover, but the
-            // subslice it admits covers no element either.
             if let Some(element) = other.scalar_value_ignore_validity() {
                 self.extend_repeated(element, length);
             }
@@ -107,12 +100,11 @@ impl PlBinaryArrayBuilder {
         self.values.extend_from_slice(bytes);
 
         let base = self.last_offset();
-        self.offsets
-            .extend(offsets[start + 1..=start + length].iter().map(|offset| {
-                // The offsets of `other` start at `first`, and the ones here at the end of the last
-                // element appended.
-                base + (offset - first)
-            }));
+        self.offsets.extend(
+            offsets[start + 1..=start + length]
+                .iter()
+                .map(|offset| base + (offset - first)),
+        );
     }
 }
 
@@ -129,8 +121,6 @@ impl StaticArrayBuilder for PlBinaryArrayBuilder {
     fn reserve(&mut self, additional: usize) {
         self.offsets.reserve(additional);
         self.validity.reserve(additional);
-        // The bytes are not reserved for: how many of them the elements reach is not implied by how
-        // many elements there are.
     }
 
     #[inline]
@@ -170,8 +160,6 @@ impl StaticArrayBuilder for PlBinaryArrayBuilder {
     }
 
     fn extend_nulls(&mut self, length: usize) {
-        // The value of a null element is undetermined, so the empty byte string every one of them
-        // covers reaches no bytes to append.
         let offset = self.last_offset();
         self.offsets.extend(std::iter::repeat_n(offset, length));
         self.validity.extend_constant(length, false);
@@ -209,7 +197,6 @@ impl StaticArrayBuilder for PlBinaryArrayBuilder {
                 self.extend_repeated(element, repeats);
             }
         } else {
-            // Every element covers the same bytes, so which of them is repeated is immaterial.
             self.extend_values(other, start, length * repeats);
         }
 
@@ -231,12 +218,10 @@ impl StaticArrayBuilder for PlBinaryArrayBuilder {
         self.offsets.reserve(idxs.len());
 
         if other.offsets_are_flat() {
-            // A run of consecutive indices is a subslice, whose bytes are appended in one go.
             for_each_run(idxs, |first, run_length| {
                 self.extend_values(other, first, run_length);
             });
         } else {
-            // Every index reads the one range the array holds.
             self.extend_values(other, 0, idxs.len());
         }
 
@@ -260,7 +245,6 @@ impl StaticArrayBuilder for PlBinaryArrayBuilder {
                 self.values.extend_from_slice(element);
                 self.push_offset(element.len());
             } else {
-                // An out-of-bounds index stands for a null, which covers the empty byte string.
                 self.push_offset(0);
             }
         }

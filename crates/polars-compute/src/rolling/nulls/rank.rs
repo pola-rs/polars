@@ -119,8 +119,6 @@ pub fn rolling_rank<T>(
 where
     T: NativeType,
 {
-    // The window machines walk the values as a slice and read the mask bit by bit, so the chunk
-    // is laid out here, once at the top, and only a buffer that repeats is written out.
     let arr = arr.to_flat();
 
     assert!(weights.is_none(), "weights are not supported for rank");

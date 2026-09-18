@@ -26,7 +26,6 @@ pub fn propagate_nulls(array: &dyn PlArray) -> Option<Box<dyn PlArray>> {
         PlArrayType::Struct => {
             propagate_nulls_struct(downcast(array)).map(|array| Box::new(array) as _)
         },
-        // A leaf has no values under its elements for a null to reach.
         _ => None,
     }
 }
@@ -40,7 +39,6 @@ fn propagate_nulls_list_impl(array: &PlListArray) -> Option<PlListArray> {
     let values = array.values();
 
     let Some(validity) = nulls(array.validity()) else {
-        // No element is null, so nothing is pushed down here; only a deeper level can still change.
         let values = propagate_nulls(values)?;
 
         // SAFETY: pushing nulls down leaves the values as many as they were.
@@ -48,12 +46,8 @@ fn propagate_nulls_list_impl(array: &PlListArray) -> Option<PlListArray> {
     };
 
     let child = if validity.unset_bits() == array.len() {
-        // Every element is null, so every value they cover sits under a null. The elements tile the
-        // range they cover between them, whatever representation the offsets are in, so that one
-        // range is every value the nulls reach.
         unset_ranges(values, || std::iter::once(covered_range(array)))
     } else if array.offsets_are_flat() {
-        // A mask with some but not every bit unset holds one bit per element.
         let nulls = !validity
             .flat_bitmap()
             .expect("a mask with some but not every bit unset is flat");
@@ -65,13 +59,8 @@ fn propagate_nulls_list_impl(array: &PlListArray) -> Option<PlListArray> {
                 .map(|i| unsafe { array.value_range_unchecked(i) })
         })
     } else if set_bits_in(values.validity(), covered_range(array)) == 0 {
-        // The elements share one range, and no value in it is valid: every value under a null
-        // element is already null, so the shared range never has to be written out.
         None
     } else {
-        // The elements share one range holding a value the nulls have to reach, and the values
-        // under the null elements are the very values under the valid ones. Only writing the array
-        // out one range per element separates them.
         let flat = array.to_flat();
         let flat = flat.as_array();
 
@@ -80,7 +69,6 @@ fn propagate_nulls_list_impl(array: &PlListArray) -> Option<PlListArray> {
 
     let values = match child {
         Some(child) => descend(with_pl_validity(values, child)),
-        // Every value under a null element is already null; only a deeper level can still change.
         None => propagate_nulls(values)?,
     };
 
@@ -105,8 +93,6 @@ fn propagate_nulls_fsl_impl(array: &PlFixedSizeListArray) -> Option<PlFixedSizeL
 
     let width = array.width();
     let child = if validity.unset_bits() == array.len() {
-        // Every element is null, so every value sits under a null — whether the values hold the one
-        // list every element reads or one list per element, they are all of them covered.
         unset_ranges(values, || std::iter::once(0..values.len()))
     } else if array.values_are_flat() {
         let nulls = !validity
@@ -117,12 +103,8 @@ fn propagate_nulls_fsl_impl(array: &PlFixedSizeListArray) -> Option<PlFixedSizeL
             nulls.true_idx_iter().map(|i| i * width..(i + 1) * width)
         })
     } else if set_bits_in(values.validity(), 0..values.len()) == 0 {
-        // The elements read one list, and no value of it is valid: every value under a null element
-        // is already null, so the list never has to be written out.
         None
     } else {
-        // The elements read one list holding a value the nulls have to reach, which is the very
-        // list the valid elements read. Only writing it out once per element separates them.
         let flat = array.to_flat();
         let flat = flat.as_array();
 
@@ -177,13 +159,9 @@ fn propagate_into_field(
         return propagate_nulls(field);
     };
 
-    // A field takes the nulls of the struct on top of its own. Combining the two masks keeps the
-    // representation they answer in: a struct whose every element is null hands its one unset bit
-    // to every field, in `O(1)`.
     let combined = combine_validities_and(field.validity(), Some(validity))
         .expect("two masks always combine into one");
 
-    // The field is already null wherever the struct is, so the mask it holds is the combined one.
     if field.validity().is_some_and(|old| combined == old) {
         return propagate_nulls(field);
     }
@@ -210,16 +188,10 @@ where
     let length = values.len();
     let validity = values.validity();
 
-    // A value that is already null is one the nulls above it have already reached, so it is the
-    // values that are still valid that are left to unset: a run of ranges without one is nothing to
-    // write at all.
     if !ranges().any(|range| set_bits_in(validity, range) > 0) {
         return None;
     }
 
-    // Every value is covered, so the whole mask comes down to the single unset bit they share.
-    // Ordered ranges that do not overlap cover every value exactly when their lengths add up to
-    // however many there are.
     if ranges().map(|range| range.len()).sum::<usize>() == length {
         return Some(PlBitmap::new_scalar(false, length));
     }
@@ -241,8 +213,6 @@ fn extend_from_validity(mask: &mut BitmapBuilder, validity: Option<PlBitmapRef<'
         .checked_sub(offset)
         .expect("the ranges a null is pushed down onto are ordered and do not overlap");
 
-    // Nothing to read: an absent mask says every value is valid, and a single bit says the same of
-    // every value in turn.
     let Some(validity) = validity else {
         return mask.extend_constant(length, true);
     };
@@ -260,7 +230,6 @@ fn set_bits_in(validity: Option<PlBitmapRef<'_>>, range: Range<usize>) -> usize 
     };
 
     match validity.scalar_value() {
-        // A single bit says the same of every value, so there is nothing to count.
         Some(value) => range.len() * usize::from(value),
         None => BitMask::from_bitmap(validity.flat_bitmap().unwrap())
             .sliced(range.start, range.len())

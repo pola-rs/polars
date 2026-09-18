@@ -97,7 +97,6 @@ impl<T: PolarsNumericType> Reducer for NumUnorderedImplodeReducer<T> {
             builder.finish_row();
         }
 
-        // The chunk carries no inner type, so the list is built with its logical type directly.
         let list_dtype = DataType::List(Box::new(dtype.clone()));
         let ca = unsafe {
             ListChunked::from_chunks_and_dtype(
@@ -168,8 +167,6 @@ impl Reducer for BinaryUnorderedImplodeReducer {
             builder.finish_row();
         }
 
-        // The chunk carries no inner type, so the list is built as the binary list it is and
-        // cast to the requested type from there.
         let ca = unsafe {
             ListChunked::from_chunks_and_dtype(
                 PlSmallStr::EMPTY,
@@ -238,8 +235,6 @@ impl Reducer for BoolUnorderedImplodeReducer {
         );
         for list in v.into_iter() {
             let values = builder.values_mut();
-            // A run of one value is appended as the one value standing for its whole length,
-            // rather than a bit at a time.
             values.extend(
                 &PlBooleanArray::new_scalar(true, list.true_count),
                 ShareStrategy::Always,
@@ -252,7 +247,6 @@ impl Reducer for BoolUnorderedImplodeReducer {
             builder.finish_row();
         }
 
-        // The chunk carries no inner type, so the list is built with its type directly.
         let list_dtype = DataType::List(Box::new(dtype.clone()));
         let ca = unsafe {
             ListChunked::from_chunks_and_dtype(

@@ -21,9 +21,6 @@ pub trait PolarsRound {
 
 impl PolarsRound for DatetimeChunked {
     fn round(&self, every: &StringChunked, tz: Option<&Tz>) -> PolarsResult<Self> {
-        // A literal `every` reaches this kernel already broadcast over the column, so the fast
-        // paths below — which ask for a length of one — would never see it. Narrow it back to
-        // the one element it repeats first; the output's length is this column's either way.
         let settled = (every.len() == self.len())
             .then(|| every.settled_to_one_element())
             .flatten();
@@ -113,7 +110,6 @@ impl PolarsRound for DatetimeChunked {
 
 impl PolarsRound for DateChunked {
     fn round(&self, every: &StringChunked, _tz: Option<&Tz>) -> PolarsResult<Self> {
-        // See the `DatetimeChunked` impl: a literal `every` arrives broadcast over the column.
         let settled = (every.len() == self.len())
             .then(|| every.settled_to_one_element())
             .flatten();
@@ -149,7 +145,6 @@ impl PolarsRound for DateChunked {
                     self.physical(),
                     every,
                     |opt_t, opt_every| {
-                        // A sqrt(n) cache is not too small, not too large.
                         let mut duration_cache =
                             LruCache::with_capacity((every.len() as f64).sqrt() as usize);
                         match (opt_t, opt_every) {

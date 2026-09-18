@@ -99,9 +99,6 @@ pub trait Utf8JsonPathImpl: AsString {
     ) -> PolarsResult<Series> {
         let ca = self.as_string();
 
-        // A chunk that reads one string throughout decodes to one value, and that value stands
-        // for every element: decode the single string and repeat the row it makes. The inferred
-        // schema is the same either way, since every row is the same text.
         if let Some(value) = (ca.len() > 1).then(|| ca.scalar_value()).flatten() {
             let one = StringChunked::from_iter_options(ca.name().clone(), std::iter::once(value));
             return Ok(one

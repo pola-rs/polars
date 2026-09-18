@@ -25,14 +25,11 @@ where
 
 /// One chunk of the result: element `i` of `arr` repeated `by[i]` times, as one list.
 fn repeat_chunk(arr: &dyn PlArray, by: &PlPrimitiveArray<IdxSize>) -> PlListArray {
-    // Every element repeating the one element it holds, the same number of times, makes every list
-    // the same list: it is built once and shared, rather than written out per element.
     if PlArray::is_scalar(arr) {
         match by.scalar_value() {
             Some(Some(repeats)) => {
                 return PlListArray::new_scalar(arr.new_from_index(0, repeats as usize), by.len());
             },
-            // A null repeat count makes the whole list null, so every one of them is.
             Some(None) => return PlListArray::new_full_null(arr.sliced(0, 0), by.len()),
             None => {},
         }
@@ -43,12 +40,6 @@ fn repeat_chunk(arr: &dyn PlArray, by: &PlPrimitiveArray<IdxSize>) -> PlListArra
     offsets.push(0);
     let mut validity = BitmapBuilder::with_capacity(by.len());
 
-    // The values are appended by the index that picks them, in blocks, rather than one call per
-    // element: `subslice_extend_repeated` resolves the builder's array type and downcasts `arr` to
-    // it once per repeat of every element, which is all a single-element subslice costs. The
-    // indices are gathered into a block first and handed over together, so the walk pays that once
-    // per block instead; the block is flushed by length, so an element repeated a great many times
-    // does not hold all of its indices at once.
     const BLOCK: usize = 8192;
     let mut idxs: Vec<IdxSize> = Vec::with_capacity(BLOCK);
     let mut length = 0u64;
@@ -95,7 +86,6 @@ where
         .map(|(arr, by)| repeat_chunk(arr, by).into_boxed())
         .collect();
 
-    // The chunks carry no logical type of their own, so the inner one is named here.
     let dtype = DataType::List(Box::new(ca.dtype().clone()));
     Ok(unsafe { ListChunked::from_chunks_and_dtype(ca.name().clone(), chunks, dtype) })
 }
@@ -116,8 +106,6 @@ fn repeat_by_null(ca: &NullChunked, by: &IdxCa) -> PolarsResult<ListChunked> {
         offsets.push(offset);
     }
 
-    // A null array is its length and nothing else, so the values cost `O(1)` however many nulls
-    // the lists reach.
     let array = PlListArray::new(
         PlNullArray::new(offset as usize).into_boxed(),
         Buffer::from(offsets),

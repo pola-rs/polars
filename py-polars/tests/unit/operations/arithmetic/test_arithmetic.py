@@ -1143,10 +1143,6 @@ def test_truediv_decimal_schema_28372() -> None:
 def test_arithmetic_against_a_column_that_repeats_one_value(
     op: Callable[[Any, Any], Any], dtype: pl.DataType
 ) -> None:
-    # A column held as one value repeated is the same column as those values written
-    # out one per row, so it has to answer the same. The kernels that divide by a single
-    # value multiply by its reciprocal instead, which answers a whole step out for the
-    # dividends that are exact multiples of it — a column is not read through them.
     divisor = 49
     a = pl.Series("a", [divisor * k for k in range(1, 6)], dtype=dtype)
     repeated = pl.select(
@@ -1169,9 +1165,6 @@ def test_arithmetic_against_a_column_that_repeats_one_value(
 def test_adding_and_subtracting_a_zero_keeps_the_sign_of_a_zero(
     dtype: pl.DataType,
 ) -> None:
-    # `-0.0` is the zero an addition leaves every element alone for, and `0.0` the one
-    # a subtraction does: the other way around, each has a `-0.0` element to answer
-    # `0.0` for.
     zeros = [-0.0, 0.0]
     s = pl.Series("a", zeros, dtype=dtype)
 

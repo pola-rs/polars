@@ -26,12 +26,9 @@ pub use iterator::{PlBinaryViewIter, PlBinaryViewValuesIter};
 /// An immutable, cheaply cloneable sequence of `length` optional byte slices.
 #[derive(Clone)]
 pub struct PlBinaryViewArray {
-    /// Scalar: views.len() == 1
     views: Buffer<View>,
-    /// A side table indexed by the views, so neither flat nor scalar for `length`.
     buffers: Buffer<Buffer<u8>>,
     length: usize,
-    /// Scalar: validity.len() == 1
     validity: Option<Bitmap>,
 }
 
@@ -190,28 +187,21 @@ impl PlBinaryViewArray {
 
         let mut views = Vec::with_capacity(lower);
         let mut buffers = Vec::new();
-        // Driven by `for_each`, so that an iterator over a chunk that reads one value throughout
-        // resolves that once and folds the slice underneath rather than per element.
         values.for_each(|value| {
             views.push(copy_value(&mut buffers, 0, value.as_ref()));
         });
 
         let length = views.len();
-        // SAFETY: there is one view per element, and every one of them was just written over the
-        // buffers it reads.
+        // SAFETY: there is one view per element, each written over the buffers it reads.
         unsafe { Self::new_unchecked(Buffer::from(views), collect_buffers(buffers), length, None) }
     }
 
     /// Creates a [`PlBinaryViewArray`] of `length` copies of `value`, in `O(value.len())` memory.
     pub fn new_scalar(value: &[u8], length: usize) -> Self {
-        // There is no element for the value to be shared by when there are no elements at all,
-        // which is why an empty array is the one that keeps nothing of the value it repeats.
         if length == 0 {
             return Self::new_empty();
         }
 
-        // The one value is all the array ever holds, so its bytes are copied into a buffer that
-        // fits them exactly: a scalar array costs what the value costs, and no block more.
         let (view, buffers) = copy_only_value(value);
 
         Self {
@@ -223,12 +213,7 @@ impl PlBinaryViewArray {
     }
 
     /// [`Self::new_scalar`], taking over the allocation `value` already holds its bytes in.
-    ///
-    /// A caller that built the value into a buffer of its own — a join that formatted a whole
-    /// column into one string, say — hands that buffer over rather than have it copied again.
     pub fn new_scalar_owned(value: Vec<u8>, length: usize) -> Self {
-        // There is no element for the value to be shared by when there are no elements at all,
-        // which is why an empty array is the one that keeps nothing of the value it repeats.
         if length == 0 {
             return Self::new_empty();
         }
@@ -247,8 +232,6 @@ impl PlBinaryViewArray {
     #[inline]
     pub fn new_full_null(length: usize) -> Self {
         Self {
-            // A zeroed view holds no bytes at all, which is a view like any other: the value of a
-            // null element is undetermined, so it need not be written out.
             views: Buffer::zeroed(scalar_buffer_len(length)),
             buffers: Buffer::new(),
             length,
@@ -269,8 +252,6 @@ impl PlBinaryViewArray {
     #[inline]
     pub unsafe fn flat_views_mut(&mut self) -> Option<&mut Buffer<View>> {
         if self.views_are_scalar() {
-            // A single view stands for every element; there is nothing laid out per element to
-            // write into.
             None
         } else {
             Some(&mut self.views)
@@ -286,8 +267,7 @@ impl PlBinaryViewArray {
     /// The bytes every element of this array reads, if the views buffer holds a single slot.
     #[inline]
     pub fn scalar_value_ignore_validity(&self) -> Option<&[u8]> {
-        // SAFETY: a scalar views buffer holds the one view element 0 reads, and it is in bounds
-        // of an array that is not empty — which `views_are_scalar` is only true of.
+        // SAFETY: a scalar views buffer holds the one view element 0 reads, which is in bounds.
         self.views_are_scalar()
             .then(|| unsafe { self.value_unchecked(0) })
     }
@@ -484,8 +464,6 @@ impl PlBinaryViewArray {
 
         let view = unsafe { self.view_unchecked(index) };
 
-        // The one buffer the view reads is all the result needs, which is what it is rebased onto;
-        // a view that inlines its bytes needs no buffer at all.
         let (view, buffers) = if view.is_inline() {
             (view, Buffer::new())
         } else {
@@ -508,7 +486,6 @@ impl PlBinaryViewArray {
     /// Returns this array with its elements in the opposite order, keeping the representation.
     #[must_use]
     pub fn reversed(&self) -> Self {
-        // A chunk that repeats one element reads the same either way round.
         if self.is_scalar() {
             return self.clone();
         }
@@ -518,10 +495,7 @@ impl PlBinaryViewArray {
             .as_ref()
             .map(|validity| PlBitmap::new_broadcast(validity.clone(), self.length).reversed());
 
-        // Only the views are reordered: they index a side table that the order of the elements
-        // says nothing about, so the buffers holding the bytes are carried over untouched.
         if self.views_are_scalar() {
-            // One view stands for every element whichever way they are read.
             // SAFETY: the views buffer is the one slot it already was, over the same buffers.
             unsafe {
                 Self::new_broadcast_unchecked(
@@ -535,8 +509,7 @@ impl PlBinaryViewArray {
             let mut views = Vec::with_capacity(self.length);
             views.extend(self.views.as_slice().iter().rev().copied());
 
-            // SAFETY: one view was written per element, each one already validated against these
-            // buffers, and the mask is this array's own reversed.
+            // SAFETY: one view per element, each already validated against these buffers.
             unsafe {
                 Self::new_unchecked(views.into(), self.buffers.clone(), self.length, validity)
             }
@@ -554,9 +527,6 @@ impl PlBinaryViewArray {
         } else if self.length == 0 {
             Buffer::new()
         } else if self.scalar_value() == Some(None) {
-            // Every element is null, and the value of a null element is undetermined, so the
-            // repeated view need not be written out: a zeroed one, which holds no bytes at all,
-            // stands in for it.
             Buffer::zeroed(self.length)
         } else {
             Buffer::from(vec![self.views[0]; self.length])
@@ -566,8 +536,7 @@ impl PlBinaryViewArray {
             .validity()
             .map(|validity| validity.to_flat().into_owned());
 
-        // SAFETY: the views hold one slot per element, written out above, and the mask is the
-        // flat counterpart of this array's own.
+        // SAFETY: the views hold one slot per element, and the mask is the flat counterpart.
         Cow::Owned(unsafe {
             Flat::new(Self {
                 views,
@@ -592,8 +561,6 @@ crate::impl_array_methods!(PlBinaryViewArray, &[u8]);
 fn validate_views(views: &[View], buffers: &[Buffer<u8>]) -> PolarsResult<()> {
     for view in views {
         if let Some(inlined) = view.get_inlined_slice() {
-            // The bytes past the inlined ones are padding rather than value, so they have to be
-            // zeroed for two views over the same bytes to be the same 16 bytes.
             if view.length < View::MAX_INLINE_SIZE && view.as_u128() >> (32 + view.length * 8) != 0
             {
                 polars_bail!(
@@ -651,14 +618,11 @@ impl<V: AsRef<[u8]>> FromIterator<Option<V>> for PlBinaryViewArray {
         let mut buffers = Vec::new();
         let mut validity = BitmapBuilder::with_capacity(lower);
 
-        // As in `from_values_iter`: `for_each` is what lets the iterator underneath resolve its
-        // representation once and fold the slice it holds.
         iter.for_each(|value| match value {
             Some(value) => {
                 views.push(copy_value(&mut buffers, 0, value.as_ref()));
                 validity.push(true);
             },
-            // The value of a null element is undetermined, so nothing is written out for it.
             None => {
                 views.push(View::default());
                 validity.push(false);
@@ -666,8 +630,7 @@ impl<V: AsRef<[u8]>> FromIterator<Option<V>> for PlBinaryViewArray {
         });
 
         let length = views.len();
-        // SAFETY: there is one view per element and one bit per element, and every view was just
-        // written over the buffers it reads.
+        // SAFETY: one view and one bit per element, each view over the buffers it reads.
         unsafe {
             Self::new_unchecked(
                 Buffer::from(views),
@@ -688,8 +651,6 @@ impl PartialEq for PlBinaryViewArray {
             return false;
         }
 
-        // Never walk two scalar arrays element by element: their length is unbounded by their
-        // memory use.
         if let (Some(lhs), Some(rhs)) = (self.scalar_value(), other.scalar_value()) {
             return lhs == rhs;
         }

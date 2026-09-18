@@ -80,10 +80,6 @@ where
             *v += ChunkAgg::sum(ca).map(Into::into).unwrap_or(Zero::zero());
         } else {
             for arr in ca.downcast_iter() {
-                // A chunk that repeats one value adds that value up once per non-null element,
-                // which is `O(log n)` doublings rather than a pass over the chunk. `Reducer` has
-                // no `Mul` bound on its value, and none is needed: doubling reaches the same
-                // total, and every addend along the way is smaller than it.
                 if let Some(value) = arr.scalar_value_ignore_validity() {
                     add_repeated(v, value.into(), arr.len() - arr.null_count());
                 } else if arr.has_nulls() {

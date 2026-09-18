@@ -1644,9 +1644,6 @@ def test_offset_by_boundary_value_succeeds_series_29017() -> None:
 def test_dt_extraction_in_time_zone(
     attribute: str, time_zone: str, time_unit: TimeUnit
 ) -> None:
-    # A field of a zoned column is read off the instant with the zone's offset applied,
-    # rather than off a column of local wall times written out first: the two have to
-    # answer alike, across the DST boundaries where the offset moves.
     naive = pl.datetime_range(
         datetime(2024, 3, 9),
         datetime(2024, 11, 4),
@@ -1683,9 +1680,6 @@ DATE_FIELDS: list[tuple[str, Callable[[date], object]]] = [
 def test_date_extraction_matches_the_calendar(
     field: str, expected: Callable[[date], object]
 ) -> None:
-    # The day the count names is worked out without building a time of day for
-    # it, so the fields are checked against the calendar itself over the whole
-    # range `date` can hold, its ends included.
     epoch = date(1970, 1, 1)
     low = (date(1, 1, 1) - epoch).days
     high = (date(9999, 12, 31) - epoch).days
@@ -1706,12 +1700,8 @@ def test_date_extraction_matches_the_calendar(
 def test_datetime_date_fields_match_the_calendar(
     field: str, expected: Callable[[date], object], time_unit: TimeUnit
 ) -> None:
-    # As above, for the date half of an instant: the day and the time of day are
-    # worked out separately, so the day has to come out right either side of the
-    # epoch.
     per_second = {"ms": 10**3, "us": 10**6, "ns": 10**9}[time_unit]
     rng = random.Random(1)
-    # `i64` nanoseconds only reach 1677..2262; the others outrun `datetime`.
     span = 9 * 10**18 // per_second
     low = max(
         -span, int((datetime(1, 1, 1) - datetime(1970, 1, 1)).total_seconds()) + 1
@@ -1735,8 +1725,6 @@ def test_datetime_date_fields_match_the_calendar(
 def test_datetime_time_fields_match_the_clock(time_unit: TimeUnit) -> None:
     per_second = {"ms": 10**3, "us": 10**6, "ns": 10**9}[time_unit]
     rng = random.Random(2)
-    # Either side of the epoch, so the split into a day and a time of day has to
-    # floor rather than truncate for the time to stay in 00:00:00..23:59:59.
     seconds = sorted(
         {-86_401, -86_400, -86_399, -1, 0, 1, 86_399, 86_400}
         | {rng.randint(-(10**8), 10**8) for _ in range(300)}
@@ -1752,7 +1740,6 @@ def test_datetime_time_fields_match_the_clock(time_unit: TimeUnit) -> None:
 
 
 def test_date_extraction_out_of_range_is_null() -> None:
-    # A day count the calendar cannot hold answers null rather than wrapping.
     s = pl.Series("a", [-(2**31), -(2**30), 0, 2**30, 2**31 - 1], dtype=pl.Int32).cast(
         pl.Date
     )

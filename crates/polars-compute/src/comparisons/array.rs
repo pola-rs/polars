@@ -68,7 +68,6 @@ fn fsl_compare_values(
     if width != rhs.width() || lhs.values().array_type() != rhs.values().array_type() {
         return repeated(mismatch, length);
     }
-    // A list of no values is the same list on both sides, whatever is under it.
     if width == 0 {
         return repeated(!mismatch, length);
     }
@@ -77,10 +76,7 @@ fn fsl_compare_values(
         lhs.scalar_value_ignore_validity(),
         rhs.scalar_value_ignore_validity(),
     ) {
-        // Each side repeats one list, so comparing those two lists once — `width` values, not
-        // `length * width` of them — answers for every element.
         (Some(lhs), Some(rhs)) => repeated(condense_one(&inner(lhs, rhs), how), length),
-        // At least one side holds every element's values, so both are read that way.
         _ => {
             let (lhs, rhs) = (lhs.to_flat(), rhs.to_flat());
             let values = inner(lhs.as_array().values(), rhs.as_array().values());
@@ -106,14 +102,10 @@ fn fsl_compare_scalar(
         return repeated(!mismatch, length);
     }
 
-    // The scalar is one list, so a side that repeats one list too is a single comparison.
     if let Some(lhs) = lhs.scalar_value_ignore_validity() {
         return repeated(condense_one(&inner(lhs, rhs), how), length);
     }
 
-    // A chunk that repeats the scalar's list holds it once and reads it for every element, which
-    // is what makes the comparison against it the one over a pair of chunks: a single kernel call
-    // over `length * width` values, rather than one call — and a bitmap of its own — per element.
     let rhs = PlFixedSizeListArray::new_broadcast(rhs.to_boxed(), width, length, None);
     fsl_compare_values(lhs, &rhs, how, inner, mismatch)
 }

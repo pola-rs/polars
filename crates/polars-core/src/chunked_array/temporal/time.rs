@@ -27,9 +27,6 @@ impl TimeChunked {
             format
         };
 
-        // One buffer is formatted into and appended per element, rather than one `String` being
-        // allocated per element and thrown away — and a chunk that reads one element throughout
-        // is formatted once, the answer standing for the whole chunk.
         let mut ca = self.physical().apply_into_string_amortized(|v, buf| {
             let timefmt = time64ns_to_time(v).format(format);
             write!(buf, "{timefmt}").unwrap();

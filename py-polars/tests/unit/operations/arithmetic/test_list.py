@@ -1119,9 +1119,6 @@ def test_list_boolean_arithmetic_23146() -> None:
 def test_arithmetic_over_a_masked_chunk_that_repeats_one_element(
     dtype: PolarsDataType, op: Callable[[Any, Any], Any]
 ) -> None:
-    # A mask over a chunk that repeats one element says which elements are there at all,
-    # not which element each of them is: the ones that are there all read the same one
-    # still, so the answer is that one element's, under the same mask.
     element = [3, 0, -5] if dtype.inner == pl.Int64 else [1.5, 0.0, -2.5]  # type: ignore[union-attr]
     mask = [True, False, True, True]
 
@@ -1133,8 +1130,6 @@ def test_arithmetic_over_a_masked_chunk_that_repeats_one_element(
     flat = pl.Series("a", [element if m else None for m in mask], dtype=dtype)
     assert repeated.to_list() == flat.to_list()
 
-    # `0` is the operand the answer of the one pair is itself null for, which no mask
-    # puts an element back into.
     for other in (pl.lit(2), pl.lit(0), pl.col("a")):
         assert_series_equal(
             repeated.to_frame().select(op(pl.col("a"), other)).to_series(),
@@ -1145,8 +1140,6 @@ def test_arithmetic_over_a_masked_chunk_that_repeats_one_element(
             flat.to_frame().select(op(other, pl.col("a"))).to_series(),
         )
 
-    # The mask of one side against a column that does not repeat, and against the other
-    # side's mask.
     varying = pl.Series("b", [element] * len(mask), dtype=dtype)
     other_mask = pl.Series("b", [element, element, None, element], dtype=dtype)
     for b in (varying, other_mask):
@@ -1168,10 +1161,6 @@ def test_arithmetic_over_a_masked_chunk_that_repeats_one_element(
 def test_dividing_a_nested_column_by_one_that_repeats_a_value(
     dtype: PolarsDataType, op: Callable[[Any, Any], Any]
 ) -> None:
-    # Dividing by the single value a column repeats goes through the kernels that
-    # multiply by its reciprocal, which answers a whole step out for the leaves that are
-    # exact multiples of it. A column that repeats a value is divided by as the column
-    # it is.
     divisor = 49
     element = [divisor, divisor * 2, divisor * 3]
     a = pl.Series("a", [element] * 4, dtype=dtype)
@@ -1204,10 +1193,6 @@ def test_dividing_a_nested_column_by_one_that_repeats_a_value(
 def test_arithmetic_over_a_chunk_that_repeats_one_element(
     dtype: PolarsDataType, op: Callable[[Any, Any], Any]
 ) -> None:
-    # A chunk that repeats a single element hands every element the same one, so the
-    # answer of that one element is the answer of all of them — which has to be the
-    # answer the same elements written out one per row give, down to the last bit of a
-    # float.
     element = [3, 0, -5] if dtype.inner == pl.Int64 else [1.5, 0.0, -2.5]  # type: ignore[union-attr]
     height = 4
 
@@ -1227,8 +1212,6 @@ def test_arithmetic_over_a_chunk_that_repeats_one_element(
             flat.to_frame().select(op(other, pl.col("a"))).to_series(),
         )
 
-    # One side repeats and the other does not, which is the answer written out per
-    # element.
     varying = pl.Series("b", [element] * height, dtype=dtype)
     assert_series_equal(
         pl.DataFrame({"a": repeated, "b": varying})
@@ -1256,10 +1239,6 @@ def test_arithmetic_over_a_chunk_that_repeats_one_element(
 def test_arithmetic_where_one_side_repeats_and_the_other_varies(
     dtype: PolarsDataType, op: Callable[[Any, Any], Any]
 ) -> None:
-    # A side that repeats one element is read as the one element it is, which the other
-    # side's every element reads against — and that has to be the answer the same
-    # elements written out one per row give, whichever side repeats and wherever the
-    # nulls of the other side are.
     if dtype.inner == pl.Int64:  # type: ignore[union-attr]
         element: Any = [3, 0, -5]
         rows: list[Any] = [[1, 2, 3], None, [0, 0, 0], [None, 5, 6]]
@@ -1287,8 +1266,6 @@ def test_arithmetic_where_one_side_repeats_and_the_other_varies(
 
 
 def test_arithmetic_between_a_repeated_and_a_varying_side_checks_widths() -> None:
-    # Reading a repeated side as the one element it is must not turn a width the other
-    # side does not line up with into a broadcast of it.
     repeated = pl.select(
         pl.repeat(pl.lit([3], dtype=pl.List(pl.Int64)), 4).alias("a")
     ).to_series()
@@ -1308,8 +1285,6 @@ def test_arithmetic_between_a_repeated_and_a_varying_side_checks_widths() -> Non
 def test_arithmetic_between_empty_lists_and_a_primitive_column(
     op: Callable[[Any, Any], Any],
 ) -> None:
-    # Lists that are all empty hold no values at all, and there is no writing the answer
-    # back over a values buffer that has no slots — nor anything to write into it.
     height = 4
     repeated = pl.select(
         pl.repeat(pl.lit([], dtype=pl.List(pl.Int64)), height).alias("a")
@@ -1329,8 +1304,6 @@ def test_arithmetic_between_empty_lists_and_a_primitive_column(
 
 
 def test_arithmetic_width_mismatch_names_the_operands_in_query_order() -> None:
-    # The sides are swapped internally where it is the left one that broadcasts, and the
-    # lengths the message names are the query's either way.
     one = pl.Series("a", [[1, 2]], dtype=pl.List(pl.Int64))
     varying = pl.Series("b", [[1, 2, 3]] * 4, dtype=pl.List(pl.Int64))
     frame = pl.DataFrame({"b": varying})

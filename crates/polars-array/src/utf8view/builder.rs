@@ -40,9 +40,6 @@ impl PlUtf8ViewArrayBuilder {
     }
 
     /// Appends `value` as an element of its own, `repeats` times over.
-    ///
-    /// The bytes are copied in once and every element is a view over that one copy, where
-    /// [`push_value`](Self::push_value) in a loop copies them once per element.
     #[inline]
     pub fn extend_repeated(&mut self, value: &str, repeats: usize) {
         self.0.extend_repeated(value.as_bytes(), repeats);
@@ -99,8 +96,6 @@ impl StaticArrayBuilder for PlUtf8ViewArrayBuilder {
 
     #[inline]
     unsafe fn extend_one(&mut self, other: &PlUtf8ViewArray, index: usize, share: ShareStrategy) {
-        // Forwarded explicitly: the default would go back through `subslice_extend`, which is
-        // what the override on the inner builder exists to skip.
         unsafe { self.0.extend_one(other.as_binview(), index, share) };
     }
 
@@ -110,8 +105,6 @@ impl StaticArrayBuilder for PlUtf8ViewArrayBuilder {
         ids: &[ChunkId<B>],
         share: ShareStrategy,
     ) {
-        // Forwarded explicitly, as `extend_one` is: the default would not reach the inner
-        // builder's override, which is where the buffer bookkeeping is hoisted out of the loop.
         let chunks: Vec<&PlBinaryViewArray> = chunks.iter().map(|c| c.as_binview()).collect();
         // SAFETY: forwarded with the caller's guarantee that every id names an element.
         unsafe { self.0.chunked_gather_extend(&chunks, ids, share) };
@@ -123,7 +116,6 @@ impl StaticArrayBuilder for PlUtf8ViewArrayBuilder {
         ids: &[ChunkId<B>],
         share: ShareStrategy,
     ) {
-        // As above.
         let chunks: Vec<&PlBinaryViewArray> = chunks.iter().map(|c| c.as_binview()).collect();
         // SAFETY: as above; a null id is answered with a null rather than read.
         unsafe { self.0.opt_chunked_gather_extend(&chunks, ids, share) };

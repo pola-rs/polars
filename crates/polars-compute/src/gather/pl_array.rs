@@ -21,28 +21,16 @@ pub unsafe fn take_unchecked(
         return values.sliced(0, 0);
     }
 
-    // An index that is null picks no element at all, so a run of them picks nothing anywhere —
-    // which leaves `values` unread, and is the one case in which it may hold no element to read.
     if indices.null_count() == indices.len() {
         return new_full_null_like(values, indices.len());
     }
 
-    // From here on at least one index is in bounds, so `values` holds at least one element.
-
-    // Indices stored in the scalar representation are one index repeated, and the one element it
-    // picks is the answer at every position in turn.
     if let Some(index) = indices.scalar_value_ignore_validity() {
         // SAFETY: the index is one of the caller's, and is therefore in bounds.
         let gathered = unsafe { values.new_from_index_unchecked(index as usize, indices.len()) };
         return and_validity(gathered, indices.validity());
     }
 
-    // Values stored in the scalar representation are one value repeated, so whichever elements are
-    // picked out of them are that value again: the values stay in `O(1)` memory, and it is the
-    // validity mask alone that is gathered.
-    //
-    // Dropping the validity mask is what leaves the values on their own, and it is `O(1)`: the
-    // buffers are handed over as they are.
     let unmasked = values.without_validity();
     if unmasked.is_scalar() {
         // SAFETY: `values` holds at least one element, and the value under a null one is a value
@@ -58,15 +46,13 @@ pub unsafe fn take_unchecked(
         };
     }
 
-    // Otherwise the chunk holds one slot per element, which is the layout the Arrow kernel reads.
     let indices = chunk_to_arrow(indices);
     with_arrow_chunk(values, |values| unsafe {
         take_arrow_unchecked(values, &indices)
     })
 }
 
-/// The validity of a gather from a chunk whose values are stored in the scalar representation:
-/// the mask alone is gathered, since every element picked reads the same value.
+/// The validity of a gather from a chunk whose values are scalar: the mask alone is gathered.
 ///
 /// # Safety
 /// Every non-null index must be in bounds of `validity`.
@@ -75,9 +61,7 @@ pub unsafe fn gather_validity(
     indices: &PlPrimitiveArray<IdxSize>,
 ) -> Option<PlBitmap> {
     let gathered = validity.map(|validity| match validity.scalar_value() {
-        // One bit says the same of every element, and therefore of every element gathered.
         Some(bit) => PlBitmap::new_scalar(bit, indices.len()),
-        // A null index reads the mask at zero, which the index's own validity masks out below.
         None => PlBitmap::from_bitmap(unsafe {
             take_bitmap_nulls_unchecked(validity.flat_bitmap().unwrap(), &chunk_to_arrow(indices))
         }),
@@ -95,7 +79,6 @@ pub unsafe fn gather_validity_slice(
     indices: &[IdxSize],
 ) -> Option<PlBitmap> {
     validity.map(|validity| match validity.scalar_value() {
-        // One bit says the same of every element, and therefore of every element gathered.
         Some(bit) => PlBitmap::new_scalar(bit, indices.len()),
         None => PlBitmap::from_bitmap(unsafe {
             take_bitmap_unchecked(validity.flat_bitmap().unwrap(), indices)

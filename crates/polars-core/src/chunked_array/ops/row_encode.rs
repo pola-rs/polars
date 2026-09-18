@@ -54,7 +54,6 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
                     .chunks()
                     .to_vec()
                     .into_iter()
-                    // The mask carries over as it is: a scalar one stays the single bit it is.
                     .map(|arr| arr.validity().map(PlBitmap::from))
             })
             .collect::<Vec<_>>();

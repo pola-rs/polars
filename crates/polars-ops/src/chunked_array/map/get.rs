@@ -84,8 +84,6 @@ fn map_key_index(ca: &MapChunked, key: &Series) -> PolarsResult<IdxCa> {
         mask.validity().is_none_or(|v| v.unset_bits() == 0),
         "`equal_missing` cannot yield nulls"
     );
-    // The windows below are read off the bits by position, which a mask that repeats one bit
-    // does not lay out; only such a mask is written out here.
     let mask: Bitmap = mask.values().to_flat().into_owned();
 
     let mut start = 0;

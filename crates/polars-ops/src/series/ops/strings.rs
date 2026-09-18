@@ -34,8 +34,6 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
                 ));
             }
 
-            // A mask that repeats a single bit combines as that one bit; neither side is
-            // written out to `and` them.
             validity = polars_array::bitmap::combine_validities_and(
                 validity.as_ref().map(PlBitmap::as_ref),
                 Some(c_validity.as_ref()),
@@ -101,9 +99,6 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
         })
         .collect::<Vec<_>>();
 
-    // Every input holding one chunk that repeats a single element makes every row the same string:
-    // it is formatted once and repeated, rather than being written out per row. A mask rules that
-    // out, since it says something different about at least one row.
     if validity.is_none()
         && !arrays.is_empty()
         && arrays
@@ -134,7 +129,6 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
             .as_ref()
             .is_some_and(|v| !unsafe { v.get_unchecked(i) })
         {
-            // The value of a null element is undetermined, so anything at all does.
             builder.push_value("");
 
             for (iter, arr, elem_idx) in arrays.iter_mut() {

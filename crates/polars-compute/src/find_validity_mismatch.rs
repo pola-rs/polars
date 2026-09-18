@@ -55,15 +55,11 @@ pub fn find_validity_mismatch(left: &dyn PlArray, right: &dyn PlArray, idxs: &mu
 }
 
 /// Appends the indices at which two validity masks over `length` elements disagree.
-///
-/// Only the masks handed in are read: nothing below them is descended into.
 pub fn find_validity_mismatch_shallow(
     left: Option<&PlBitmap>,
     right: Option<&PlBitmap>,
     idxs: &mut Vec<IdxSize>,
 ) {
-    // Two masks that are not there agree about every element, and where only one is there it is
-    // the one that says how many elements there are to disagree about.
     let Some(length) = left.or(right).map(PlBitmap::len) else {
         return;
     };
@@ -85,14 +81,10 @@ fn extend_mismatches(
 ) {
     match (left, right) {
         (None, None) => return,
-        // One side says every element is valid, and the other holds a mask that says so too.
         (Some(mask), None) | (None, Some(mask)) if mask.unset_bits() == 0 => return,
         _ => {},
     }
 
-    // A mask that says the same of every element — or that is not there at all — is a single bit
-    // against the other's. Two of them either agree about every element or disagree about every
-    // one, and neither is ever read.
     let scalar =
         |mask: Option<PlBitmapRef<'_>>| mask.map_or(Some(true), |mask| mask.scalar_value());
     if let (Some(left), Some(right)) = (scalar(left), scalar(right)) {
@@ -102,11 +94,6 @@ fn extend_mismatches(
         return;
     }
 
-    // At least one of the two holds one bit per element, which is the side the answer is read off.
-    // An absent mask is the one that says every element is valid, as is a scalar mask of a set
-    // bit: either way the other side says the same thing of every element, so the elements the two
-    // disagree about are the ones the flat mask says the opposite of — which is that mask itself,
-    // or its inverse, and never a mask written out from a single bit.
     let mismatches = match (left, right) {
         (Some(left), Some(right)) => match (left.flat_bitmap(), right.flat_bitmap()) {
             (Some(left), Some(right)) => polars_arrow::bitmap::xor(left, right),
@@ -136,10 +123,6 @@ fn find_validity_mismatch_list_list(
     right: &PlListArray,
     idxs: &mut Vec<IdxSize>,
 ) {
-    // Both sides repeat the one range every element of them reads, so the two lists are read
-    // against each other once: either they agree about every value, and no element is reported, or
-    // they disagree somewhere every element reads, and all of them are — neither side is written
-    // out one list per element to say so.
     if let (Some(l), Some(r)) = (left.scalar_offsets(), right.scalar_offsets())
         && l.len() == r.len()
     {
@@ -156,8 +139,6 @@ fn find_validity_mismatch_list_list(
         return;
     }
 
-    // The values are read against each other one slot per value, and the range every element covers
-    // is read off `left`; an array whose elements share one range holds neither.
     let left = left.to_flat();
     let left = left.as_array();
     let right = right.to_flat();
@@ -202,10 +183,6 @@ fn find_validity_mismatch_fsl_fsl(
     assert_eq!(left.width(), right.width());
     let width = left.width();
 
-    // Both sides hold the one list every element of them reads, so the two lists are read against
-    // each other once: either they agree about every value, and no element is reported, or they
-    // disagree somewhere every element reads, and all of them are — neither side is written out
-    // one list per element to say so.
     if left.values_are_scalar() && right.values_are_scalar() {
         let mut nested_idxs = Vec::new();
         find_validity_mismatch(left.values(), right.values(), &mut nested_idxs);
@@ -216,8 +193,6 @@ fn find_validity_mismatch_fsl_fsl(
         return;
     }
 
-    // A value is mapped back onto the element above it by its position, which needs the values of
-    // both sides laid out one list per element.
     let left = left.to_flat();
     let right = right.to_flat();
 
@@ -259,10 +234,6 @@ fn find_validity_mismatch_list_fsl(
     right: &PlFixedSizeListArray,
     idxs: &mut Vec<IdxSize>,
 ) {
-    // As in the two same-shape pairs above: both sides hold the one list every element of them
-    // reads, so the two lists are read against each other once. Either they agree about every
-    // value, and no element is reported, or they disagree somewhere every element reads, and all
-    // of them are — neither side is written out one list per element to say so.
     if let Some(range) = left.scalar_offsets()
         && right.values_are_scalar()
         && range.len() == right.width()
@@ -295,15 +266,9 @@ fn find_validity_mismatch_list_fsl(
         return;
     }
 
-    // The lists of a null element hold no values of their own, so lining the two sides up value for
-    // value means filling those in — which is what the cast to a fixed width does. This only runs
-    // once a cast has already failed.
     let left =
         crate::cast::list_to_fixed_size_list(left, right.width(), |values| Ok(values.to_boxed()))
             .unwrap();
-    // The cast hands back the elements in whatever representation it reads them out in, and a
-    // chunk that repeats a single list comes back repeating one list's values: they are written
-    // out for the two sides to line up value for value, as the right side already was.
     let left = left.to_flat();
 
     find_validity_mismatch_nested(

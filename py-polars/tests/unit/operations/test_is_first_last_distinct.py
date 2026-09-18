@@ -173,9 +173,6 @@ def test_is_first_last_distinct_all_null(dtypes: PolarsDataType) -> None:
     ],
 )
 def test_distinct_of_a_repeated_element(value: Any, dtype: PolarsDataType) -> None:
-    # A chunk that repeats a single element answers the whole `distinct` family without
-    # one element being hashed, so the answers must match the ones read off a chunk that
-    # holds every element in a slot of its own.
     for length in (1, 2, 5):
         flat = pl.Series("a", [value] * length, dtype=dtype).to_frame()
         repeated = (
@@ -213,10 +210,6 @@ def test_distinct_of_a_repeated_element(value: Any, dtype: PolarsDataType) -> No
 def test_distinct_of_a_repeated_nested_element(
     value: Any, dtype: PolarsDataType
 ) -> None:
-    # The nested arms of the `distinct` family group on the rows to find their answer,
-    # which for a nested type row-encodes the whole column first. A chunk that repeats a
-    # single element is answered off the representation instead, and has to answer the
-    # same thing as a chunk holding every element in a slot of its own.
     for length in (1, 2, 5):
         flat = pl.Series("a", [value] * length, dtype=dtype).to_frame()
         one = pl.Series("a", [value], dtype=dtype)

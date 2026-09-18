@@ -420,8 +420,6 @@ pub fn initialize_scan_predicate<'a>(
             return Ok((None, Some(predicate)));
         }
 
-        // A hive predicate that holds throughout leaves the mask as a single bit, which stands for
-        // every file without being written out one bit each.
         let hive_inclusion_bitmap = PlBitmap::from(hive_inclusion_array.values());
 
         if predicate.hive_predicate_is_full_predicate {

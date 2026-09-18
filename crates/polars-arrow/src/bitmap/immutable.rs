@@ -98,7 +98,6 @@ impl Bitmap {
             storage: SharedStorage::empty(),
             offset: 0,
             length: 0,
-            // An empty bitmap has an exactly known count of zero unset bits.
             unset_bit_count_cache: RelaxedCell::new_u64(0),
         }
     }

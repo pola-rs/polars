@@ -70,7 +70,6 @@ where
     let idx_arr = PlPrimitiveArray::from_vec(out);
     let in_bounds_valid = in_bounds.into_opt_validity().map(PlBitmap::from_bitmap);
     let ca_valid = ca.rechunk_validity();
-    // The bounds check wrote out one bit per element; the mask of `ca` carries over as it is.
     let valid = combine_validities_and(
         in_bounds_valid.as_ref().map(PlBitmap::as_ref),
         ca_valid.as_ref().map(PlBitmap::as_ref),

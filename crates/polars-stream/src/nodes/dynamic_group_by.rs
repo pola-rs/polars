@@ -232,8 +232,6 @@ impl DynamicGroupBy {
                     continue;
                 }
 
-                // The windower reads the timestamps and nothing else, so only a values buffer
-                // that repeats one timestamp is written out; the mask is left as it is.
                 let values = arr.to_flat_values();
                 self.windower.insert(
                     &values.as_slice()[offset as usize..],

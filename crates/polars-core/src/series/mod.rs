@@ -252,18 +252,6 @@ impl Series {
     }
 
     /// Whether every element of this column reads one and the same element.
-    ///
-    /// An op that answers such a column element by element answers it the same way every time, so
-    /// it may read that one element instead and repeat what it makes of it — see
-    /// [`new_from_index`](SeriesTrait::new_from_index), which repeats an answer in `O(1)` memory.
-    ///
-    /// Both the values and the mask have to repeat for this to hold: a column of one value behind
-    /// a mask that says some elements are there and some are not reads differently row by row.
-    ///
-    /// More than one chunk still answers, as long as each of them repeats and they all repeat the
-    /// same element. That is the shape a column takes when the streaming engine hands a whole
-    /// column to an op that cannot be split: each morsel contributes its own chunk, and a repeat
-    /// sliced into morsels is a repeat in every one of them.
     pub fn repeats_one_element(&self) -> bool {
         if self.len() <= 1 {
             return false;
@@ -278,24 +266,13 @@ impl Series {
             return false;
         };
 
-        // Each further chunk has to repeat, and to repeat what the first one does. Comparing one
-        // element per chunk costs nothing beside the walk this answer stands in for.
         let first = self.select_chunk(first).slice(0, 1);
         chunks.all(|(i, chunk)| {
             chunk.is_scalar() && first.equals_missing(&self.select_chunk(i).slice(0, 1))
         })
     }
 
-    /// Whether the *values* of this column are one element repeated, whatever its mask says of
-    /// them.
-    ///
-    /// The values axis on its own: every element the mask says is there holds the same value, so
-    /// an op that reads the values and leaves the mask where it is answers off that one value.
-    /// [`Self::repeats_one_element`] asks the mask to repeat as well, and says no to what a
-    /// `when`/`then` over a literal builds -- one value under a bit per element.
-    ///
-    /// Only a column of a single chunk answers: two chunks whose values repeat need their values
-    /// compared, and a mask covering neither of them is not a column anyone can read that off.
+    /// Whether the *values* of this column are one element repeated, whatever its mask says.
     pub fn repeats_one_value(&self) -> bool {
         if self.len() <= 1 {
             return false;
@@ -763,7 +740,6 @@ impl Series {
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
             dt if dt.is_primitive_numeric() => {
-                // A chunk of one value repeated is scalar, so this is `O(1)` in memory.
                 let arr = PlBooleanArray::new_scalar(false, self.len())
                     .with_validity(self.rechunk_validity());
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
@@ -781,7 +757,6 @@ impl Series {
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
             dt if dt.is_primitive_numeric() => {
-                // A chunk of one value repeated is scalar, so this is `O(1)` in memory.
                 let arr = PlBooleanArray::new_scalar(true, self.len())
                     .with_validity(self.rechunk_validity());
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
@@ -799,7 +774,6 @@ impl Series {
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
             dt if dt.is_primitive_numeric() => {
-                // A chunk of one value repeated is scalar, so this is `O(1)` in memory.
                 let arr = PlBooleanArray::new_scalar(true, self.len())
                     .with_validity(self.rechunk_validity());
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
@@ -817,7 +791,6 @@ impl Series {
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
             dt if dt.is_primitive_numeric() => {
-                // A chunk of one value repeated is scalar, so this is `O(1)` in memory.
                 let arr = PlBooleanArray::new_scalar(false, self.len())
                     .with_validity(self.rechunk_validity());
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))

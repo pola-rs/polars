@@ -194,7 +194,6 @@ where
         .as_materialized_series()
         .unpack()
         .unwrap();
-    // Flat, since that is what `check_df_columns_contiguous_and_flat` let this path be taken for.
     let first_slice = ca.as_flat().unwrap().chunks_flat_values().next().unwrap();
 
     let start_ptr = first_slice.as_ptr();
@@ -217,7 +216,6 @@ fn temporal_df_to_numpy_view(py: Python<'_>, df: &DataFrame, owner: Py<PyAny>) -
     let s = df.columns().first().unwrap();
     let phys = s.to_physical_repr();
     let ca = phys.i64().unwrap();
-    // Flat, since that is what `check_df_columns_contiguous_and_flat` let this path be taken for.
     let first_slice = ca.as_flat().unwrap().chunks_flat_values().next().unwrap();
 
     let start_ptr = first_slice.as_ptr();

@@ -23,18 +23,12 @@ fn clamp_max<T: PartialOrd>(input: T, max: T) -> T {
     if input > max { max } else { input }
 }
 
-/// Do `op` over a single row and repeat its answer, when every operand reads one element
-/// throughout.
-///
-/// Clamping is elementwise, so operands that repeat clamp to one value and that value stands for
-/// every row. Without this the ternary kernel walks all `n` rows to write the same number each
-/// time.
+/// Do `op` over a single row and repeat its answer, when every operand repeats one element.
 fn repeated_operands<F>(operands: &[&Series], op: F) -> PolarsResult<Option<Series>>
 where
     F: FnOnce(&[Series]) -> PolarsResult<Series>,
 {
     let length = operands[0].len();
-    // A length-1 operand is already the one row; it is the longer ones that have to repeat.
     let repeats = |s: &Series| s.len() == 1 || s.repeats_one_element();
     if !operands[0].repeats_one_element() || !operands[1..].iter().copied().all(repeats) {
         return Ok(None);
@@ -184,11 +178,6 @@ where
     T: PolarsNumericType,
     T::Native: PartialOrd,
 {
-    // A bound reaches this kernel already broadcast to the column's length, so a literal bound is
-    // a chunk that repeats one value rather than a column of one element. Ask what each bound
-    // repeats: one bound settles the clamp for every row and leaves a unary walk. Only a bound
-    // standing for one row or for as many rows as the column has may settle it, since a longer
-    // bound beside a one-element column is what the output's length comes from.
     let repeated = |b: &ChunkedArray<T>| {
         (b.len() == 1 || b.len() == ca.len())
             .then(|| b.scalar_value())
@@ -239,7 +228,6 @@ where
     T::Native: PartialOrd,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
-    // See `clip_helper_both_bounds`: the bound may repeat one value over the whole column.
     let repeated = (bound.len() == 1 || bound.len() == ca.len())
         .then(|| bound.scalar_value())
         .flatten();

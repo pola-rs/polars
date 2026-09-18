@@ -17,9 +17,6 @@ fn first_true_idx_impl(ca: &BooleanChunked, invert: bool) -> Option<usize> {
     let invert_mask = if invert { u64::MAX } else { 0 };
     let mut offset = 0;
     for arr in ca.downcast_iter() {
-        // A chunk that says the same of every element answers for itself: either it holds the bit
-        // being looked for under a non-null element, which is the first such element, or it holds
-        // none and the search moves on to the next chunk.
         if let Some(value) = arr.scalar_value_ignore_validity() {
             if value != invert {
                 if let Some(i) = first_valid(arr) {
@@ -30,7 +27,6 @@ fn first_true_idx_impl(ca: &BooleanChunked, invert: bool) -> Option<usize> {
             continue;
         }
 
-        // The bits are walked as one run, so this reads the values a chunk lays out per element.
         let values = arr.flat_values().unwrap();
         if let Some(validity) = arr.validity().and_then(|v| v.flat_bitmap()) {
             let mut x_it = values.fast_iter_u56();
@@ -54,7 +50,6 @@ fn first_true_idx_impl(ca: &BooleanChunked, invert: bool) -> Option<usize> {
             .validity()
             .is_none_or(|v| v.scalar_value() == Some(true))
         {
-            // No mask, or one that marks every element valid: the run of values is the answer.
             let n = if invert {
                 values.leading_ones()
             } else {
@@ -65,7 +60,6 @@ fn first_true_idx_impl(ca: &BooleanChunked, invert: bool) -> Option<usize> {
             }
             offset += values.len();
         } else {
-            // A mask that marks every element null leaves nothing for this chunk to answer with.
             offset += arr.len();
         }
     }
@@ -90,8 +84,6 @@ pub(crate) fn true_count(arr: &PlBooleanArray) -> usize {
     match arr.validity() {
         None => values.set_bits(),
         Some(validity) => match (values.scalar_value(), validity.scalar_value()) {
-            // A scalar side shares one bit with every element, which settles the `and` on its own
-            // wherever that bit is unset. Only two flat masks are walked.
             (Some(false), _) | (_, Some(false)) => 0,
             (Some(true), Some(true)) => arr.len(),
             (Some(true), None) => validity.set_bits(),

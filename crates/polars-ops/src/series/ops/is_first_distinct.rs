@@ -15,7 +15,6 @@ where
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
-    // The first element of a chunk that repeats a single one is the only one distinct in it.
     if let Some(length) = repeated_element_len(ca) {
         return only(ca.name().clone(), length, 0);
     }
@@ -31,7 +30,6 @@ where
 }
 
 fn is_first_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
-    // The first element of a chunk that repeats a single one is the only one distinct in it.
     if let Some(length) = repeated_element_len(ca) {
         return only(ca.name().clone(), length, 0);
     }
@@ -56,9 +54,6 @@ pub(super) fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
         let ca = ca.rechunk();
         let arr = ca.downcast_as_array();
 
-        // A mask that leaves some but not every element null holds one bit per element: the case
-        // where it leaves every one of them null is settled above, and where it leaves none the
-        // mask says nothing the search has to read.
         let validity = (arr.null_count() > 0).then(|| {
             arr.validity()
                 .expect("a null element carries a mask")
@@ -67,7 +62,6 @@ pub(super) fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
         });
 
         let firsts = match (arr.flat_values(), validity) {
-            // The values hold one bit per element, so the search reads them as words.
             (Some(values), None) => {
                 let (t, f) = find_first_true_false_no_null(values.chunks::<u64>());
                 [t, f, None]
@@ -77,15 +71,10 @@ pub(super) fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
                     find_first_true_false_null(values.chunks::<u64>(), validity.chunks::<u64>());
                 [t, f, n]
             },
-            // The values repeat one bit, so every element carries that one value where it is
-            // valid: the first valid element is the only one that is distinct in it, and the
-            // first null the only one that is distinct as a null. The buffer is never written out.
             (None, validity) => {
                 let value = arr
                     .scalar_value_ignore_validity()
                     .expect("the values are not flat");
-                // `null_count` is neither zero nor `len` here, so both are in bounds when there
-                // is a mask at all.
                 let first_valid = validity.map_or(0, |validity| validity.leading_zeros());
                 let carrier = Some(first_valid);
 
@@ -105,9 +94,6 @@ pub(super) fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
 }
 
 fn is_first_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
-    // The first element of a chunk that repeats a single one is the only one distinct in it, and
-    // the representation says so: grouping the rows to find that out reads — and hashes — every
-    // one of them, which for a nested type is a row encoding of the whole column first.
     if let Some(length) = repeated_element_len_series(s) {
         return Ok(only(s.name().clone(), length, 0));
     }

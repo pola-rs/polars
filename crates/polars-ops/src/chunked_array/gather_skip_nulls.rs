@@ -28,9 +28,6 @@ unsafe fn gather_skip_nulls_idx_pairs_unchecked<'a, T: PolarsDataType>(
         let arr_nonnull_len = arr.len() - arr.null_count();
         let mut arr_scan_offset = 0;
         let mut nonnull_before_offset = 0;
-        // The scan only reads the mask where there is something non-null to find under it, so a
-        // mask that repeats a bit is never written out: a repeated unset bit leaves nothing
-        // non-null to look for, and a repeated set one leaves nothing null to skip.
         let validity = arr
             .validity()
             .filter(|_| arr.null_count() > 0 && arr.null_count() < arr.len())

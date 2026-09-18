@@ -105,9 +105,6 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
                 })
             }
         } else if let Some(groups) = scalar_groups(&self.0) {
-            // One element repeated is one group, whatever the length — and the row encoding
-            // below, which writes a row per element before a single one is hashed, is never
-            // reached. See `scalar_groups`.
             Ok(groups)
         } else {
             let ca = self.0.get_row_encoded(Default::default())?;
@@ -293,8 +290,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     fn is_null(&self) -> BooleanChunked {
         let iter = self.downcast_iter().map(|arr| {
-            // The mask is inverted in whatever representation it is in — a scalar one is a
-            // single bit — so this is `O(1)` for a chunk that is fully null or fully valid.
             let mask = match arr.validity() {
                 Some(valid) => polars_array::bitmap::invert(valid),
                 None => PlBitmap::new_scalar(false, arr.len()),
@@ -316,8 +311,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn reverse(&self) -> Series {
-        // The mask is reversed in whatever representation it is in: one that repeats a single
-        // bit says the same of every element whichever way they are read.
         let validity = self.rechunk_validity().map(|x| x.reversed());
         self.0
             ._apply_fields(|s| s.reverse())

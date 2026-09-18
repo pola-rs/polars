@@ -7,10 +7,8 @@ use row_encode::encode_rows_unordered;
 /// The number of set bits at the start of `mask`.
 fn leading_ones(mask: PlBitmapRef<'_>) -> usize {
     match mask.scalar_value() {
-        // Every element shares the single bit, so the run is either the whole mask or nothing.
         Some(true) => mask.len(),
         Some(false) => 0,
-        // A flat mask hands its bits out as they are; an empty one has none to count.
         None => mask.flat_bitmap().map_or(0, Bitmap::leading_ones),
     }
 }

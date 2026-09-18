@@ -77,8 +77,6 @@ impl LogicalType for DecimalChunked {
             dt if dt.is_primitive_numeric()
                 | matches!(dt, DataType::String | DataType::Boolean) =>
             {
-                // The chunks hold `i128`s and nothing that says what they are worth, so the
-                // precision and scale are what the cast is told to read them as.
                 let chunks =
                     cast_chunks_from(&self.physical().chunks, self.dtype(), dtype, cast_options)?;
                 // SAFETY: the chunks were just cast to `dtype`, which the arm above restricts to

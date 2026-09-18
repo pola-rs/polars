@@ -378,9 +378,6 @@ def test_strptime_strict_reports_original_column_name(
 
 
 def test_to_date_inferred_format_repeated_chunk() -> None:
-    # A chunk that reads one string throughout is parsed by a single call; it must
-    # answer exactly what the written-out column answers, over each shape the validity
-    # mask takes.
     for text, expected in [
         ("2021-03-04", date(2021, 3, 4)),
         ("04/03/2021", date(2021, 3, 4)),
@@ -393,7 +390,6 @@ def test_to_date_inferred_format_repeated_chunk() -> None:
             pl.repeat(text, 3, dtype=pl.String, eager=True).str.to_datetime().to_list()
             == [datetime(expected.year, expected.month, expected.day)] * 3
         )
-        # the written-out column answers the same
         assert (
             pl.Series([text] * 3, dtype=pl.String).str.to_date().to_list()
             == [expected] * 3
@@ -406,6 +402,5 @@ def test_to_date_inferred_format_repeated_chunk() -> None:
         == [None] * 3
     )
 
-    # A repeated chunk of unparsable text raises just as the written-out column does.
     with pytest.raises(ComputeError, match="could not find an appropriate format"):
         pl.repeat("nope", 3, dtype=pl.String, eager=True).str.to_date()

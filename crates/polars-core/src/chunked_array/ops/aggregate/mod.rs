@@ -127,9 +127,6 @@ where
 {
     fn sum(&self) -> Option<T::Native> {
         Some(
-            // An integer chunk that repeats one value adds that value up in a single
-            // multiplication; floats still sum pairwise, since no closed form reproduces that — see
-            // `polars_compute::float_sum::sum_arr_as_f32`.
             self.downcast_iter()
                 .map(sum)
                 .fold(T::Native::zero(), |acc, v| acc + v),
@@ -258,9 +255,6 @@ impl BooleanChunked {
         } else {
             self.downcast_iter()
                 .map(|arr| {
-                    // The elements that count are the ones that are both valid and set, which is
-                    // the `and` of the two masks. A scalar mask among them is combined as the one
-                    // bit it stands for, so a scalar chunk is counted in `O(1)`.
                     combine_validities_and(Some(arr.values()), arr.validity())
                         .expect("the values mask is always there")
                         .set_bits() as IdxSize
@@ -518,8 +512,6 @@ impl StringChunked {
                     unsafe { self.get_unchecked(idx) }
                 })
             },
-            // The kernel reads a chunk that repeats one element, and one with nothing but
-            // nulls in it, without walking a single element of either.
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(MinMaxKernel::max_ignore_nan_kernel)
@@ -543,8 +535,6 @@ impl StringChunked {
                     unsafe { self.get_unchecked(idx) }
                 })
             },
-            // The kernel reads a chunk that repeats one element, and one with nothing but
-            // nulls in it, without walking a single element of either.
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(MinMaxKernel::min_ignore_nan_kernel)
@@ -656,8 +646,6 @@ impl BinaryChunked {
                     unsafe { self.get_unchecked(idx) }
                 })
             },
-            // The kernel reads a chunk that repeats one element, and one with nothing but
-            // nulls in it, without walking a single element of either.
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(MinMaxKernel::max_ignore_nan_kernel)
@@ -682,8 +670,6 @@ impl BinaryChunked {
                     unsafe { self.get_unchecked(idx) }
                 })
             },
-            // The kernel reads a chunk that repeats one element, and one with nothing but
-            // nulls in it, without walking a single element of either.
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(MinMaxKernel::min_ignore_nan_kernel)

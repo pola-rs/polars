@@ -216,7 +216,6 @@ fn ewm_by_finish<T>(
 where
     T: PolarsFloatType,
 {
-    // A float is its own zeroable value, so the vector is the values of the array as they are.
     let mut arr = PlPrimitiveArray::from_vec(out);
     if (times.null_count() > 0) || (values.null_count() > 0) {
         let validity = binary_concatenate_validities(times, values);

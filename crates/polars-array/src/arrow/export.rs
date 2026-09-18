@@ -22,8 +22,6 @@ pub fn to_arrow(array: &dyn PlArray) -> Box<dyn Array> {
         PlArrayType::Null => Box::new(null_to_arrow_null(downcast(array))),
         PlArrayType::Boolean => Box::new(boolean_to_arrow_boolean(downcast(array))),
 
-        // The element type is taken from the array rather than from the `PrimitiveType`, which
-        // does not pin it down: a `View` and a `u128` are both `PrimitiveType::UInt128`.
         PlArrayType::Primitive(_) => with_match_pl_primitive_array_type!(array, |$T| {
             Box::new(primitive_to_arrow_primitive(
                 downcast::<PlPrimitiveArray<$T>>(array),

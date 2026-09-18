@@ -1505,10 +1505,6 @@ def test_sort_nested_column_that_repeats_one_element(
     descending: bool,
     nulls_last: bool,
 ) -> None:
-    # A nested sort is a row encoding of the whole column that is then sorted, and the
-    # encoding writes one row per element however the column holds them. Elements that
-    # are all the same one are in order already, so the chunk is its own answer: 285 ms
-    # over 2M repeated structs, and 618 ms over 2M repeated lists, went to nothing.
     n = 200_000
     repeated = pl.select(
         pl.repeat(pl.lit(value, dtype=dtype), n).alias("a")
@@ -1523,14 +1519,11 @@ def test_sort_nested_column_that_repeats_one_element(
         repeated.arg_sort(**kwargs),
         pl.Series("a", range(n), dtype=pl.get_index_type()),
     )
-    # The frame-level sort takes the same path.
     assert_frame_equal(
         pl.DataFrame({"a": repeated}).sort("a", **kwargs, maintain_order=True),
         pl.DataFrame({"a": flat}).sort("a", **kwargs, maintain_order=True),
     )
 
-    # The one element is still held once, rather than one slot per element: the
-    # sort answers with the chunk it was given.
     assert sorted_repeated.estimated_size() == repeated.estimated_size()
     assert repeated.estimated_size() <= flat.estimated_size()
 
@@ -1546,13 +1539,10 @@ def test_sort_nested_column_that_repeats_one_element(
 def test_sort_nested_column_of_one_element_is_not_taken_as_repeated(
     value: Any, dtype: PolarsDataType
 ) -> None:
-    # A single element is trivially in order, but says nothing about a second one,
-    # so the repeated-element answer must not be read off a column holding one.
     one = pl.Series("a", [value], dtype=dtype)
     assert_series_equal(one.sort(), one)
     assert_series_equal(one.arg_sort(), pl.Series("a", [0], dtype=pl.get_index_type()))
 
-    # A column whose elements differ still sorts by comparing them.
     two = pl.Series("a", [value, None], dtype=dtype)
     assert_series_equal(
         two.sort(nulls_last=True), pl.Series("a", [value, None], dtype=dtype)
@@ -1578,10 +1568,6 @@ def test_sort_nested_column_of_one_element_is_not_taken_as_repeated(
 def test_sort_values_that_repeat_under_a_mask(
     value: Any, dtype: PolarsDataType, descending: bool, nulls_last: bool
 ) -> None:
-    # Values that are one element repeated tie with each other wherever the mask says
-    # they are there, so they stand in every order at once and it is the nulls alone
-    # that move. Asking whether the chunk repeats an *element* answers for the mask too,
-    # and this shape -- a `when`/`then` over a literal -- would be written out to sort.
     n = 1000
     masked = pl.select(
         pl.when(pl.int_range(0, n) % 3 != 0)
@@ -1597,5 +1583,4 @@ def test_sort_values_that_repeat_under_a_mask(
         pl.DataFrame({"a": written}).sort("a", **kwargs, maintain_order=True),
     )
 
-    # The values are still held once: what the sort lays down is the mask.
     assert masked.sort(**kwargs).estimated_size() < written.estimated_size()

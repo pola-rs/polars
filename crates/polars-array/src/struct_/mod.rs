@@ -143,7 +143,6 @@ impl PlStructArray {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        // Each field slices itself, keeping whichever representation it is in.
         for field in self.fields.iter_mut() {
             unsafe { field.slice_unchecked(offset, length) };
         }
@@ -162,16 +161,11 @@ impl PlStructArray {
 
         let is_null = unsafe { self.is_null_unchecked(index) };
 
-        // The field values of a null row are undetermined, so they are repeated as they are found:
-        // it is the mask that makes every row of the result null.
         let fields = self
             .fields
             .iter()
             .map(|field| unsafe {
                 if is_null {
-                    // The row is masked off in the field it is repeated out of, which holds this
-                    // array's elements rather than the result's — and there is at least one of
-                    // them, since `index` is in bounds — so the mask is a single bit either way.
                     field
                         .with_validity(Some(PlBitmap::new_scalar(false, field.len())))
                         .new_from_index_unchecked(index, length)
@@ -232,8 +226,6 @@ crate::impl_array_methods!(PlStructArray);
 
 /// Returns `field` with `mask` merged into its validity, so that masked-out rows are ignored.
 fn masked(field: &dyn PlArray, mask: PlBitmapRef<'_>) -> Box<dyn PlArray> {
-    // Both masks come in whichever representation they are in, and `and`ing them keeps a repeated
-    // bit repeated: a field that is null throughout, or valid throughout, is masked in `O(1)`.
     let validity = combine_validities_and(field.validity(), Some(mask))
         .expect("a mask was handed in, so the combination is one too");
     field.with_validity(Some(validity))
@@ -257,15 +249,10 @@ impl PartialEq for PlStructArray {
             return false;
         }
 
-        // Every row is null on both sides, so every field value is undetermined and there is
-        // nothing left to compare. This is also what keeps comparing two fully null scalar arrays
-        // `O(1)`.
         if self.length > 0 && self.null_count() == self.length {
             return true;
         }
 
-        // Comparing the fields is `O(1)` for scalar fields, so a scalar array is never walked row
-        // by row.
         let mask = self.has_nulls().then(|| self.validity().unwrap());
         std::iter::zip(&self.fields, &other.fields).all(|(lhs, rhs)| match mask {
             Some(mask) => masked(&**lhs, mask) == masked(&**rhs, mask),
@@ -278,7 +265,6 @@ impl Eq for PlStructArray {}
 
 impl std::fmt::Debug for PlStructArray {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // The fields format their own scalar representation, so this never materializes one.
         let mut s = f.debug_struct("PlStructArray");
         s.field("length", &self.length);
         if let Some(validity) = self.validity() {

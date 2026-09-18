@@ -139,10 +139,8 @@ where
         chunks: Vec<PlArrayRef>,
         dtype: DataType,
     ) -> Self {
-        // Assertions in debug mode that check the chunks are laid out the way the dtype says.
         #[cfg(debug_assertions)]
         {
-            // An object array has no Arrow counterpart to take the shape from.
             if !dtype.is_object()
                 && let Some(chunk) = chunks.first().filter(|chunk| !chunk.is_empty())
             {

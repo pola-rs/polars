@@ -84,8 +84,6 @@ impl PlTotalEqKernel for PlFixedSizeBinaryArray {
     fn tot_eq_kernel(&self, other: &Self) -> PlBitmap {
         assert_eq!(self.len(), other.len());
 
-        // Byte strings of different widths are never equal, and ones of no bytes always are:
-        // either way the widths settle it for every element without a byte being read.
         if self.width() != other.width() {
             return repeated(false, self.len());
         }
@@ -97,7 +95,6 @@ impl PlTotalEqKernel for PlFixedSizeBinaryArray {
             self.scalar_value_ignore_validity(),
             other.scalar_value_ignore_validity(),
         ) {
-            // Each side repeats one byte string, so the one comparison answers for all of them.
             (Some(l), Some(r)) => repeated(l == r, self.len()),
             _ => PlBitmap::from_iter((0..self.len()).map(|i| self.value(i) == other.value(i))),
         }

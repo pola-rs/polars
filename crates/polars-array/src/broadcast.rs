@@ -99,7 +99,6 @@ pub const fn is_valid_offsets_len(offsets_len: usize, length: usize) -> bool {
 pub const fn is_flat_fixed_size_values_len(values_len: usize, width: usize, length: usize) -> bool {
     match length.checked_mul(width) {
         Some(flat_len) => values_len == flat_len,
-        // A flat values array that overflows a `usize` is longer than any buffer can be.
         None => false,
     }
 }
@@ -111,8 +110,6 @@ pub const fn is_scalar_fixed_size_values_len(
     width: usize,
     length: usize,
 ) -> bool {
-    // One element is scalar for any length, and no element at all is scalar for an array of no
-    // elements, which is what such an array stores: see the module docs.
     values_len == width || (length == 0 && values_len == 0)
 }
 
@@ -289,11 +286,6 @@ pub(crate) unsafe fn slice_validity(
 
     unsafe { slice_bitmap(mask, array_len, offset, length) };
 
-    // A mask with no unset bit left in it marks nothing, and the kernels read the values on
-    // their own — without zipping a bit per element — exactly when there is no mask to read.
-    // Dropping it here is what keeps a slice of a column that never had a null as fast as the
-    // column it was cut from; the count is the one the bitmap already carries whenever slicing
-    // could keep it.
     if mask.unset_bits() == 0 {
         *validity = None;
     }

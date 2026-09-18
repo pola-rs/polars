@@ -47,8 +47,6 @@ macro_rules! primitive_to_boxed_with_logical {
 fn normalize_map_entries(arr: &ListArray<i64>) -> Option<ListArray<i64>> {
     #[cfg(feature = "dtype-map")]
     {
-        // The compaction is expressed over the representation the column is held in, which the
-        // export has already left, so the chunk goes back through the bridge to be read by it.
         let chunk = polars_array::arrow::import::list_from_arrow(arr);
         if let Some(compacted) = crate::chunked_array::logical::compact_null_rows_chunk(&chunk) {
             return Some(polars_array::arrow::export::list_to_arrow_large_list(
@@ -148,8 +146,6 @@ impl ToArrowConverter {
         dtype: &DataType,
         arrow_field: Cow<'a, ArrowField>,
     ) -> PolarsResult<Box<dyn Array>> {
-        // An object chunk has no Arrow counterpart: it is exported as the fixed size binary array
-        // of its pointers directly.
         #[cfg(feature = "object")]
         if let DataType::Object(_) = dtype {
             use crate::chunked_array::object::builder::object_series_to_arrow_array;
@@ -207,8 +203,6 @@ impl ToArrowConverter {
                 use polars_arrow::array::StructArray;
                 let arr: &StructArray = array.as_any().downcast_ref().unwrap();
 
-                // An exported chunk names its fields after their index, so the names the output
-                // field asks for are checked against the Polars dtype, which is what carries them.
                 polars_ensure!(
                     arrow_struct_fields.len() == struct_fields.len()
                     && arrow_struct_fields

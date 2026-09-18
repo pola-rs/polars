@@ -37,10 +37,6 @@ def test_cast_list_array() -> None:
 
 
 def test_cast_list_array_over_a_chunk_that_holds_only_nulls() -> None:
-    # A chunk that repeats a single range of values covers it for every element, however
-    # wide it is — but a null element holds no values of its own, so a chunk whose
-    # elements are all null has nothing that is the wrong width and reads as nulls of
-    # the width asked for.
     width_3 = pl.Series("a", [[1, 2, 3], [4, 5, 6]], dtype=pl.List(pl.Int64))
     dtype = pl.Array(pl.Int64, 3)
 
@@ -56,7 +52,6 @@ def test_cast_list_array_over_a_chunk_that_holds_only_nulls() -> None:
                 pl.Series("a", chunked.to_list(), dtype=pl.List(pl.Int64)).cast(dtype),
             )
 
-    # An element that is there and is the wrong width is still the wrong width.
     for wrong in (
         pl.Series("a", [[1, 2]], dtype=pl.List(pl.Int64)),
         pl.Series("a", [[]], dtype=pl.List(pl.Int64)),

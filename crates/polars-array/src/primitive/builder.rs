@@ -64,7 +64,6 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
     /// Appends a null.
     #[inline]
     pub fn push_null(&mut self) {
-        // The value of a null element is undetermined, so anything at all does.
         self.values.push(Bytes::<T>::zeros());
         self.validity.extend_constant(1, false);
     }
@@ -87,10 +86,6 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
         chunks: &[&PlPrimitiveArray<T>],
         ids: &[ChunkId<B>],
     ) {
-        // Reading the values out of slices avoids the buffer indirection — and, for chunks that
-        // may be scalar, the per-element `broadcast_index` — that `value_unchecked` pays. A chunk
-        // that holds one slot per element has a slice; one that repeats a single value does not,
-        // and then every chunk is read through the array instead.
         let Some(slices) = chunks
             .iter()
             .map(|chunk| chunk.as_slice())
@@ -173,7 +168,6 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
     }
 
     fn extend_nulls(&mut self, length: usize) {
-        // The value of a null element is undetermined, so anything at all does.
         bytes::extend_undetermined(&mut self.values, length);
         self.validity.extend_constant(length, false);
     }
@@ -185,8 +179,6 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
         index: usize,
         _share: ShareStrategy,
     ) {
-        // A single value is pushed straight onto the buffers: going through `subslice_extend`
-        // would cost a call into the out-of-line byte-class core per element.
         debug_assert!(index < other.len());
         self.push(unsafe { other.get_unchecked(index) });
     }
@@ -199,9 +191,6 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
     ) {
         self.reserve(ids.len());
 
-        // A chunk with no mask at all has no null element, so a gather out of chunks like that
-        // answers every element valid — one extension of the mask rather than one per element,
-        // and the mask is never read while the values are gathered.
         if chunks.iter().any(|chunk| chunk.validity().is_some()) {
             for id in ids {
                 let (chunk_idx, array_idx) = id.extract();
@@ -242,8 +231,6 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
                 let chunk = chunks.get_unchecked(chunk_idx as usize);
                 let index = array_idx as usize;
 
-                // An unmasked chunk answers every element of its own valid, which leaves the id
-                // as the only thing that can make one null.
                 if masked {
                     self.push(chunk.get_unchecked(index));
                 } else {

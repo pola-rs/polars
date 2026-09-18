@@ -13,8 +13,6 @@ use super::{
 /// The values of a chunk as a flat array of their own, which is what the [`Flat`] kernels take.
 #[inline]
 fn flat_values<T: NativeType>(values: &Buffer<T>) -> Flat<PlPrimitiveArray<T>> {
-    // An array built from a values buffer alone has one slot per element and no mask, so it is
-    // already flat and `to_flat` hands the borrow straight back.
     PlPrimitiveArray::from_values(values.clone())
         .to_flat()
         .into_owned()
@@ -42,8 +40,6 @@ macro_rules! binary_kernel {
             lhs.scalar_value_ignore_validity(),
             rhs.scalar_value_ignore_validity(),
         ) {
-            // Every element of both sides holds the one value its own side repeats, so the one
-            // comparison of those two values is the answer for all of them.
             (Some(l), Some(r)) => repeated($scalar(&l, &r), lhs.len()),
             (Some(l), None) => written_out($flat_rhs(&flat_values(rhs.flat_values().unwrap()), &l)),
             (None, Some(r)) => written_out($flat_lhs(&flat_values(lhs.flat_values().unwrap()), &r)),
@@ -97,11 +93,9 @@ where
     type Scalar = T;
 
     fn validity_mask(&self) -> Option<PlBitmapRef<'_>> {
-        // Whatever representation the mask is in: the missing-aware kernels resolve it themselves.
         self.validity()
     }
 
-    // Equality is symmetric, so which side repeats its value makes no difference.
     binary_kernels! {
         tot_eq_kernel: TotalEq::tot_eq, TotalEqKernel::tot_eq_kernel,
             TotalEqKernel::tot_eq_kernel_broadcast, TotalEqKernel::tot_eq_kernel_broadcast;
@@ -118,8 +112,6 @@ where
     fn tot_eq_missing_all(&self, other: &Self) -> bool {
         assert_eq!(self.len(), other.len());
 
-        // Past this many values the written-out comparison earns its allocation back, and it is
-        // the vectorised kernel that reads them.
         if self.len() > IN_PLACE_COMPARISON_LIMIT {
             return self.tot_eq_missing_kernel(other).unset_bits() == 0;
         }
@@ -137,7 +129,6 @@ where
 {
     type Scalar = T;
 
-    // A repeated left operand turns the comparison around: `l < r[i]` is `r[i] > l`.
     binary_kernels! {
         tot_lt_kernel: TotalOrd::tot_lt, TotalOrdKernel::tot_lt_kernel,
             TotalOrdKernel::tot_lt_kernel_broadcast, TotalOrdKernel::tot_gt_kernel_broadcast;

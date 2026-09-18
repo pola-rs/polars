@@ -501,10 +501,6 @@ def test_series_gather_null_on_oob() -> None:
 def test_gather_values_that_repeat_under_a_mask(
     value: object, dtype: pl.DataType
 ) -> None:
-    # A chunk whose values are one slot every element reads answers a gather off that
-    # slot, whichever elements are picked: only the mask is gathered. Asking whether the
-    # chunk is scalar answers for the mask as well, and a value repeated under a bit per
-    # element -- what a `when`/`then` over a literal builds -- would be written out.
     n = 1000
     masked = pl.select(
         pl.when(pl.int_range(0, n) % 3 != 0)
@@ -522,9 +518,6 @@ def test_gather_values_that_repeat_under_a_mask(
     ):
         assert_series_equal(masked.gather(idx), written.gather(idx))
 
-    # The values are still held once rather than one slot per gathered element. A
-    # nested value is not: the mask a `when`/`then` lays over it writes its children out
-    # before the gather sees them, so its values do not read as one slot either.
     if not dtype.is_nested():
         idx = pl.Series(range(0, n, 7), dtype=pl.get_index_type())
         assert (

@@ -630,10 +630,6 @@ impl RowGroupDecoder {
 
             (filtered, mask)
         };
-        // The prefilter hands the mask to the parquet decoders as `read::Filter::Mask`, which is
-        // an `polars_arrow::Bitmap` read a word at a time by each of them -- the reader's Arrow boundary,
-        // as `polars_compute`'s module doc puts it. So a mask that repeats one bit is written out
-        // here, at one bit per row against a whole row group's decode.
         mask.rechunk_mut();
         let mut mask_bitmap = mask.downcast_as_array().true_and_valid().into_bitmap();
         assert_eq!(mask_bitmap.len(), projection_height);
@@ -774,8 +770,6 @@ impl RowGroupDecoder {
 fn evaluate_mask(predicate: &dyn PhysicalIoExpr, df: &DataFrame) -> PolarsResult<Bitmap> {
     let mut mask = predicate.evaluate_io(df)?.bool().unwrap().clone();
     mask.rechunk_mut();
-    // The mask is read a word at a time from here on -- by the decoders, and by the row
-    // arithmetic below -- so a chunk that repeats one bit is written out at one bit per row.
     Ok(mask.downcast_as_array().true_and_valid().into_bitmap())
 }
 

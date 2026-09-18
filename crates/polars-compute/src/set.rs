@@ -14,7 +14,6 @@ use polars_utils::IdxSize;
 fn runs(mask: &Bitmap) -> impl Iterator<Item = (usize, usize, bool)> + '_ {
     let length = mask.len();
     let mut set_runs = SlicesIterator::new(mask);
-    // A set run held back while the gap before it is yielded first.
     let mut held: Option<(usize, usize)> = None;
     let mut next = 0;
 
@@ -37,7 +36,6 @@ fn runs(mask: &Bitmap) -> impl Iterator<Item = (usize, usize, bool)> + '_ {
                     Some((start, end, true))
                 }
             },
-            // Everything after the last set run is unset.
             None => (next < length).then(|| {
                 let run = (next, length, false);
                 next = length;
@@ -61,9 +59,6 @@ pub fn set_at_nulls<T: NativeType>(array: &PlPrimitiveArray<T>, value: T) -> PlP
         return array.clone();
     }
 
-    // Every element is null, so every one of them is overwritten and the answer is `value`
-    // throughout -- the one value a scalar chunk stands for, written once whatever the mask it
-    // came under looks like.
     if array.null_count() == array.len() {
         return PlPrimitiveArray::new_scalar(value, array.len());
     }
@@ -72,13 +67,8 @@ pub fn set_at_nulls<T: NativeType>(array: &PlPrimitiveArray<T>, value: T) -> PlP
         .validity()
         .expect("a chunk with nulls in it holds a validity mask")
         .flat_bitmap()
-        // A mask of a single bit either leaves no null at all or leaves every element null, and
-        // the two counts above have answered for both.
         .expect("a mask that repeats one bit says the same of every element");
 
-    // A values buffer of a single slot still has to be written out, because the result holds
-    // `value` wherever the mask is unset and that one value everywhere else. Which buffer the
-    // runs are read out of is settled once, ahead of the loop over them.
     let mut av = Vec::with_capacity(array.len());
     if let Some(repeated) = array.scalar_value_ignore_validity() {
         for (lower, upper, truthy) in runs(validity) {
@@ -107,12 +97,8 @@ pub fn set_with_mask<T: NativeType>(
 ) -> PlPrimitiveArray<T> {
     assert_eq!(array.len(), mask.len(), "the mask must cover every element");
 
-    // The values of the mask say the same of every element when they repeat one bit and when
-    // every bit of a flat mask agrees alike.
     match mask.values().agreed_value() {
-        // Every element is picked out, so every one of them holds `value` and none is null.
         Some(true) => return PlPrimitiveArray::new_scalar(value, array.len()),
-        // No element is picked out, so nothing changes.
         Some(false) => return array.clone(),
         None => {},
     }
@@ -135,7 +121,6 @@ pub fn set_with_mask<T: NativeType>(
         }
     }
 
-    // Wherever the mask is set the element now holds `value`, so it is no longer null.
     let validity = array
         .validity()
         .map(|validity| validity.to_flat().bitor(mask_values));
@@ -156,8 +141,6 @@ where
     T: NativeType,
     I: IntoIterator<Item = IdxSize>,
 {
-    // Distinct indices hold distinct values after the scatter, so the values are written out even
-    // where they were a single slot standing for all of them.
     let mut buf = values_written_out(array);
     let mut_slice = buf.as_mut_slice();
 

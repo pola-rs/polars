@@ -18,7 +18,6 @@ use polars_array::{
 };
 use polars_arrow::with_match_primitive_type;
 use polars_dtype::{DataType, with_match_physical_numeric_type};
-// Only the decimal casts dispatch on just the integer or just the float types.
 #[cfg(feature = "dtype-decimal")]
 use polars_dtype::{with_match_physical_float_type, with_match_physical_integer_type};
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
@@ -69,7 +68,6 @@ pub fn physical_dtype(array: &dyn PlArray) -> DataType {
 
     let array_type = array.array_type();
 
-    // Every array type but a nested one pins a Polars type down on its own.
     if let Some(dtype) = DataType::from_pl_array_type(array_type) {
         return dtype;
     }
@@ -110,21 +108,15 @@ pub fn cast(
     to: &DataType,
     options: CastOptionsImpl,
 ) -> PolarsResult<Box<dyn PlArray>> {
-    // A cast that changes nothing but the name over the values reads the same values, and an array
-    // holds no name to change: the array *is* the answer.
     if from == to || is_retag(from, to) {
         return Ok(array.to_boxed());
     }
 
-    // Every element of a scalar chunk is the same one, so what a cast answers for one of them is
-    // what it answers for all of them — a cast reads one element at a time.
     if array.is_scalar() && array.len() > 1 {
         let element = cast(&*array.sliced(0, 1), from, to, options)?;
         return Ok(element.new_from_index(0, array.len()));
     }
 
-    // A type that is nothing but a name over its physical type holds the values of that type, so a
-    // cast off it reads them — unless the target is such a name too.
     if wraps_its_physical_type(from) && !wraps_its_physical_type(to) {
         return cast(array, &from.to_physical(), to, options);
     }
@@ -140,7 +132,6 @@ fn cast_dispatch(
 ) -> PolarsResult<Box<dyn PlArray>> {
     use DataType as D;
 
-    // Null on either side reads as null everywhere, which needs no slot per element.
     if matches!(from, D::Null) {
         return full_null(to, array.len());
     }
@@ -243,7 +234,6 @@ fn cast_dispatch(
         };
     }
 
-    // What is left is a pair of names over the same physical type, which the values are read for.
     cast_temporal(array, from, to)
 }
 
@@ -256,8 +246,6 @@ fn cast_temporal(
     use DataType as D;
 
     match (from, to) {
-        // Not a conversion but a range check: a time holds a day's worth of nanoseconds, so an
-        // `i64` outside that range names no time and reads as null.
         (D::Int64, D::Time) => Ok(Box::new(primitive_to::int64_to_time(downcast(array)))),
 
         (D::Datetime(from_unit, _), D::Datetime(to_unit, _))
@@ -336,8 +324,6 @@ fn cast_bytes(
     use DataType as D;
 
     if is_plain_numeric(to) {
-        // The bytes of an offset-backed binary are read as the text of a number; those of a
-        // `Binary` are not, which the Arrow kernels this replaced settled the same way.
         polars_ensure!(
             matches!(from, D::BinaryOffset),
             InvalidOperation: "casting from {from:?} to {to:?} not supported"
@@ -347,7 +333,6 @@ fn cast_bytes(
         }));
     }
 
-    // The bytes of both are read the same way, so the views are what every cast left reads.
     let converted;
     let view: &PlBinaryViewArray = match from {
         D::Binary => downcast(array),
@@ -358,8 +343,6 @@ fn cast_bytes(
     };
 
     match to {
-        // Bytes are only a string once they are known to be UTF-8: the cast reads them as such
-        // and errors if they are not, rather than handing back a string array that is not one.
         D::String => Ok(Box::new(PlUtf8ViewArray::from_binview(view.clone())?)),
         D::Binary => Ok(Box::new(view.clone())),
         D::BinaryOffset => Ok(Box::new(binview_to::view_to_binary(view))),
@@ -448,8 +431,6 @@ fn cast_nested(
             |values| cast(values, from_inner, to_inner, options),
         )?),
 
-        // The bytes of an element are held one per value, which is what makes the two readable as
-        // one another.
         (D::List(inner), D::Binary) if matches!(**inner, D::UInt8) => {
             Box::new(nested::list_uint8_to_binview(downcast(array))?)
         },
@@ -459,7 +440,6 @@ fn cast_nested(
             )))
         },
 
-        // The bytes of a binary are read as its own elements, so its cast answers for the pair.
         (D::Binary | D::BinaryOffset, D::List(_)) => return Ok(None),
         (_, D::List(_)) => polars_bail!(
             InvalidOperation:
@@ -517,8 +497,6 @@ fn empty(dtype: &DataType) -> PolarsResult<Box<dyn PlArray>> {
 /// Whether `dtype` is a number laid out as the number it is.
 fn is_plain_numeric(dtype: &DataType) -> bool {
     use DataType as D;
-    // The widest integers and the half-precision float are read as the numbers they are only
-    // where they are compiled in at all.
     match dtype {
         D::UInt128 => cfg!(feature = "dtype-u128"),
         D::Int128 => cfg!(feature = "dtype-i128"),
@@ -550,8 +528,6 @@ fn wraps_its_physical_type(dtype: &DataType) -> bool {
 
 /// Whether a cast is nothing but a change of the name over the same values.
 fn is_retag(from: &DataType, to: &DataType) -> bool {
-    // An `i64` holds more than a day's worth of nanoseconds, and the ones that fall outside a day
-    // name no time: reading them as one is a range check rather than a re-tag.
     if matches!(to, DataType::Time) {
         return false;
     }
@@ -622,7 +598,6 @@ where
     match from.scalar_value_ignore_validity() {
         Some(value) => PlPrimitiveArray::new_scalar(op(value), from.len())
             .with_validity(from.validity().map(PlBitmap::from)),
-        // The values hold a slot per element, so this is the one place the cast writes one too.
         None => crate::arity::prim_unary_values(from.to_flat().into_owned(), op),
     }
 }
@@ -634,8 +609,6 @@ where
     O: polars_arrow::types::NativeType,
     F: Fn(I) -> Option<O>,
 {
-    // The one value every element of a scalar chunk reads is cast once, and the answer repeats it
-    // in turn.
     if let Some(value) = from.scalar_value_ignore_validity() {
         return match op(value) {
             Some(cast) => PlPrimitiveArray::new_scalar(cast, from.len())
@@ -654,7 +627,6 @@ where
     }
     let out = PlPrimitiveArray::from_vec(out);
     match fits.finish() {
-        // Every value fit, so the mask the array came with is the whole answer.
         None => out.with_validity(from.validity().map(PlBitmap::from)),
         Some(fits) => out.with_validity(Some(and_validity(from.validity(), fits))),
     }
@@ -672,8 +644,6 @@ where
     O: polars_arrow::types::NativeType,
     F: Fn(&[u8]) -> Option<O>,
 {
-    // The one value every element of a scalar chunk reads is cast once, and the answer repeats it
-    // in turn.
     if let Some(value) = scalar_value {
         return match op(value) {
             Some(cast) => PlPrimitiveArray::new_scalar(cast, length)
@@ -691,7 +661,6 @@ where
     }
     let out = PlPrimitiveArray::from_vec(out);
     match fits.finish() {
-        // Every value was read, so the mask the array came with is the whole answer.
         None => out.with_validity(validity.map(PlBitmap::from)),
         Some(fits) => out.with_validity(Some(and_validity(validity, fits))),
     }
@@ -726,8 +695,6 @@ where
 
 /// And `mask` into `validity`, which is how a cast reports the values it dropped.
 fn and_validity(validity: Option<PlBitmapRef<'_>>, mask: polars_arrow::bitmap::Bitmap) -> PlBitmap {
-    // The cast's own mask holds one bit per element, but the array's comes in whichever
-    // representation it is in, which can settle the `and` on a single bit.
     let length = mask.len();
     let mask = PlBitmapRef::new(&mask, length);
 

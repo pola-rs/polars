@@ -374,8 +374,6 @@ where
         let mut builder = gather_builder(self, by.len());
         let chunks: Vec<&T::Array> = self.downcast_iter().collect();
 
-        // The whole gather is handed over at once, so a builder that carries per-array
-        // bookkeeping — adopting the buffers a view points into — does it once per chunk.
         builder.chunked_gather_extend(&chunks, by, share_strategy(avoid_sharing));
 
         // SAFETY: the builder was shaped like the chunks of this array, so what it froze is of
@@ -395,7 +393,6 @@ where
         let mut builder = gather_builder(self, by.len());
         let chunks: Vec<&T::Array> = self.downcast_iter().collect();
 
-        // As above, with a null id standing for a null element.
         builder.opt_chunked_gather_extend(&chunks, by, share_strategy(avoid_sharing));
 
         // SAFETY: as in `take_chunked_unchecked`.

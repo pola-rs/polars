@@ -204,8 +204,6 @@ async fn static_skip_mask(
     })
     .await?;
 
-    // The runtime-range mask this is combined with holds one bit per row group, and there are
-    // few enough of those that a mask repeating one bit is not worth carrying any further.
     Ok(Some(skip_row_group_mask.as_ref().to_flat().into_owned()))
 }
 
@@ -564,8 +562,6 @@ fn build_row_index_statistics(
 ) -> StatisticsColumns {
     let mut offset = row_index.offset;
 
-    // A row index has no nulls, so its null count is one repeated zero: `IdxCa::full` keeps that
-    // in the scalar representation rather than writing a slot per row group.
     let null_count = IdxCa::full(PlSmallStr::EMPTY, 0, row_groups.len()).into_column();
 
     let mut min_value = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());

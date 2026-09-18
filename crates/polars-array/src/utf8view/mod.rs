@@ -258,16 +258,9 @@ impl PlUtf8ViewArray {
     /// # Safety
     /// Every view handed back must read bytes this array's data buffers hold, valid as UTF-8.
     pub unsafe fn apply_views<F: FnMut(View, &str) -> View>(&self, mut update_view: F) -> Self {
-        // A scalar views buffer holds the one view every element reads, so the closure maps that
-        // view alone and what it hands back stands for every element in turn. The mask is put
-        // back as it was, which is what keeps a null element null.
         let length = self.0.len();
         if self.0.views_are_scalar() && length > 1 {
             let validity = self.0.validity().map(PlBitmap::from);
-            // The mask is dropped first so that the one element is read as a value whatever the
-            // mask says of it, which is what the written-out path does as well.
-            // SAFETY: the elements were valid UTF-8, and dropping the mask and slicing leaves
-            // every one of them as it was; the caller's contract carries over to the closure.
             let single = unsafe {
                 Self::from_binview_unchecked(self.0.clone().without_validity()).sliced(0, 1)
             };
@@ -317,14 +310,10 @@ fn validate_utf8(array: &PlBinaryViewArray) -> PolarsResult<()> {
             .map_err(|e| polars_err!(ComputeError: "invalid utf8: {}", e))
     }
 
-    // A views buffer of a single view holds the one value every element reads: checking it once
-    // checks the whole array, and the views are never written out one per element.
     if let Some(value) = array.scalar_value_ignore_validity() {
         return check(value);
     }
 
-    // The validity mask is not honoured: a null element still holds bytes, and replacing the mask
-    // must not be able to expose bytes that were never checked. `values_iter` reads past it.
     for value in array.values_iter() {
         check(value)?;
     }
@@ -437,8 +426,6 @@ impl PlArray for PlUtf8ViewArray {
 
     #[inline]
     fn eq_dyn(&self, other: &dyn PlArray) -> bool {
-        // A string array equals another string array with the same elements; a byte array of the
-        // same bytes is a different array type, which `PlBinaryViewArray::eq_dyn` also rejects.
         other
             .as_any()
             .downcast_ref::<Self>()

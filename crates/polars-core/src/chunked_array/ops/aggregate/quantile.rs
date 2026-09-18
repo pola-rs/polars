@@ -199,10 +199,6 @@ where
         return Ok(vec![None; quantiles.len()]);
     }
 
-    // Every value is the same one, so it stands at every position of the sorted values, and every
-    // quantile picks it — the methods that interpolate do so between two copies of it. The mask is
-    // disregarded: the elements left after the null ones are dropped are that value again, and the
-    // branch above has already answered where none of them is.
     if let Some(value) = ca.scalar_value_ignore_validity() {
         let value = value.to_f64().expect("a numeric value converts to `f64`");
         return Ok(vec![Some(value); quantiles.len()]);
@@ -295,8 +291,6 @@ where
         // in case of sorted data, the sort is free, so don't take quickselect route
         let is_sorted = self.is_sorted_ascending_flag();
         if !is_sorted && self.chunks().len() == 1 && self.null_count() == 0 {
-            // The values are quickselected in place, so the chunk has to be flat *here* rather
-            // than in the copy `to_flat` would hand back.
             self.flatten_mut();
             // SAFETY: just written out flat, and reordering values leaves a chunk flat.
             if let Some(slice) = unsafe { Flat::new_mut(&mut self) }.cont_slice_mut() {
@@ -374,7 +368,6 @@ macro_rules! impl_float_chunked {
                 // in case of sorted data, the sort is free, so don't take quickselect route
                 let is_sorted = self.is_sorted_ascending_flag();
                 if !is_sorted && self.chunks().len() == 1 && self.null_count() == 0 {
-                    // As above: the quickselect reorders the values of the chunk itself.
                     self.flatten_mut();
                     // SAFETY: just written out flat, and reordering values leaves it flat.
                     if let Some(slice) = unsafe { Flat::new_mut(&mut self) }.cont_slice_mut() {

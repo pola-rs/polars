@@ -9,8 +9,6 @@ fn is_negative_zero<T>(v: T) -> bool
 where
     T: Zero + One + PartialOrd + std::ops::Div<Output = T> + Copy,
 {
-    // A division tells the two zeros apart without a `f32`/`f64`/`pf16` method the three of them
-    // would each have to spell: one over `-0.0` is negative infinity.
     v == T::zero() && T::one() / v < T::zero()
 }
 
@@ -52,8 +50,6 @@ macro_rules! impl_float_arith_kernel {
             }
 
             fn prim_wrapping_add_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
-                // `-0.0` is the zero addition leaves every element as it is; adding `0.0` turns
-                // a `-0.0` element into `+0.0`, so that one is added element by element.
                 if is_negative_zero(rhs) {
                     return lhs.into_array();
                 }
@@ -61,8 +57,6 @@ macro_rules! impl_float_arith_kernel {
             }
 
             fn prim_wrapping_sub_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
-                // The zeros the other way around: subtracting `0.0` leaves every element as it
-                // is, where subtracting `-0.0` is the addition of `0.0` above.
                 if rhs == <$T>::zero() && !is_negative_zero(rhs) {
                     return lhs.into_array();
                 }
@@ -70,8 +64,6 @@ macro_rules! impl_float_arith_kernel {
             }
 
             fn prim_wrapping_sub_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> POut<$T> {
-                // `-0.0 - x` is `-x` for every `x`; `0.0 - x` answers `+0.0` for `x == 0.0`,
-                // which negation would sign the other way.
                 if is_negative_zero(lhs) {
                     Self::prim_wrapping_neg(rhs)
                 } else {
@@ -133,9 +125,6 @@ macro_rules! impl_float_arith_kernel {
                 prim_unary_values(rhs, |x| lhs / x)
             }
 
-            // The four divisions by the one value a repeated operand stands for. Each divides
-            // where its `_scalar` twin multiplies by the reciprocal, which is a rounding apart
-            // for half the dividends and a whole step apart for the exact multiples of `rhs`.
             fn prim_wrapping_floor_div_repeated(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
                 prim_unary_values(lhs, |x| (x / rhs).floor())
             }

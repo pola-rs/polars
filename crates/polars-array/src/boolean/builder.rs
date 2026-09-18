@@ -43,7 +43,6 @@ impl PlBooleanArrayBuilder {
     /// Appends a null.
     #[inline]
     pub fn push_null(&mut self) {
-        // The value of a null element is undetermined, so anything at all does.
         self.values.push(false);
         self.validity.extend_constant(1, false);
     }
@@ -65,7 +64,6 @@ impl PlBooleanArrayBuilder {
         } else if let Some(value) = other.scalar_value_ignore_validity() {
             self.values.extend_constant(length, value);
         }
-        // An empty array is neither, and the subslice it admits covers no element to append.
     }
 }
 
@@ -112,14 +110,12 @@ impl StaticArrayBuilder for PlBooleanArrayBuilder {
     }
 
     fn extend_nulls(&mut self, length: usize) {
-        // The value of a null element is undetermined, so anything at all does.
         self.values.extend_constant(length, false);
         self.validity.extend_constant(length, false);
     }
 
     #[inline]
     unsafe fn extend_one(&mut self, other: &PlBooleanArray, index: usize, _share: ShareStrategy) {
-        // As in `PlPrimitiveArrayBuilder`: one bit is pushed rather than taken as a subslice.
         debug_assert!(index < other.len());
         self.push(unsafe { other.get_unchecked(index) });
     }
@@ -152,10 +148,8 @@ impl StaticArrayBuilder for PlBooleanArrayBuilder {
             self.values
                 .subslice_extend_each_repeated_from_bitmap(values, start, length, repeats);
         } else if let Some(value) = other.scalar_value_ignore_validity() {
-            // Every element repeats the same value, so which of them is repeated is immaterial.
             self.values.extend_constant(length * repeats, value);
         }
-        // An empty array is neither, and the subslice it admits covers no element to append.
 
         subslice_extend_each_repeated_validity(
             &mut self.validity,
@@ -175,7 +169,6 @@ impl StaticArrayBuilder for PlBooleanArrayBuilder {
         self.values.reserve(idxs.len());
 
         match other.values().scalar_value() {
-            // Every index reads the one bit the array holds.
             Some(value) => self.values.extend_constant(idxs.len(), value),
             None => {
                 for idx in idxs {
@@ -203,8 +196,6 @@ impl StaticArrayBuilder for PlBooleanArrayBuilder {
 
         for idx in idxs {
             let idx = *idx as usize;
-            // The value of a null element is undetermined, so an out-of-bounds index writes
-            // anything at all.
             let value = idx < other.len() && unsafe { other.value_unchecked(idx) };
             // SAFETY: room for one bit per index was just reserved.
             unsafe { self.values.push_unchecked(value) };

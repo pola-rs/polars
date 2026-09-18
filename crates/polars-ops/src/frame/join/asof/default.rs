@@ -63,7 +63,6 @@ where
         }
     }
 
-    // One bit was written per element, so the mask holds one bit per element.
     let bitmap = PlBitmap::from_bitmap(Bitmap::try_new(mask, out.len()).unwrap());
     IdxCa::from_vec_validity(PlSmallStr::EMPTY, out, Some(bitmap))
 }

@@ -32,7 +32,6 @@ pub unsafe fn take_agg_bin_iter_unchecked<
         .validity()
         .expect("a chunk with nulls in it holds a validity mask");
 
-    // Every element is null, so every one of the `len` indices gathered one.
     if validity.scalar_value() == Some(false) {
         return None;
     }
@@ -86,7 +85,6 @@ pub unsafe fn take_agg_bin_iter_unchecked_arg<
         .validity()
         .expect("a chunk with nulls in it holds a validity mask");
 
-    // Every element is null, so no index gathers anything.
     if validity.scalar_value() == Some(false) {
         return None;
     }
@@ -125,8 +123,6 @@ pub unsafe fn take_agg_bin_iter_unchecked_no_null<
     indices: I,
     f: F,
 ) -> Option<&'a [u8]> {
-    // Every index gathers the same bytes, which are read once here: the fold runs over them
-    // without the buffer being touched again.
     if let Some(bytes) = repeated_value(arr) {
         return indices.into_iter().map(|_| bytes).reduce(&f);
     }

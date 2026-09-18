@@ -23,8 +23,6 @@ impl Series {
 
     #[doc(hidden)]
     pub unsafe fn agg_valid_count(&self, groups: &GroupsType) -> Series {
-        // Prevent a rechunk for every individual group. The groups are read one bit at a time,
-        // so the mask is written out once here rather than per group.
         let valid = self.rechunk_validity();
         let valid = valid.as_ref().map(|v| v.as_ref().to_flat());
 
@@ -105,7 +103,6 @@ impl Series {
             self.clone()
         };
 
-        // The groups are read one bit at a time, so the mask is written out once here.
         let validity = s.rechunk_validity().unwrap();
         let validity = validity.as_ref().to_flat();
         let indices = match groups {
@@ -179,7 +176,6 @@ impl Series {
             return self.agg_arg_first(groups);
         }
 
-        // The groups are read one bit at a time, so the mask is written out once here.
         let validity = self.rechunk_validity().unwrap();
         let validity = validity.as_ref().to_flat();
 
@@ -253,7 +249,6 @@ impl Series {
             return self.agg_arg_last(groups);
         }
 
-        // The groups are read one bit at a time, so the mask is written out once here.
         let validity = self.rechunk_validity().unwrap();
         let validity = validity.as_ref().to_flat();
 
@@ -308,9 +303,6 @@ impl Series {
         // Keep the Column for the sort-fallback path. Big groups go through
         // `Series::n_unique`, bypassing the amortized hashset.
         let col = values.clone();
-        // The state is picked from the chunk it then walks, so the representation of that chunk
-        // is resolved once here rather than once per group — and a chunk that repeats one value
-        // is not written out to be walked at all.
         let values = values.as_materialized_series().rechunk();
         let values = &*values.chunks()[0];
         let state = amortized_unique_like(values);
@@ -591,7 +583,6 @@ impl Series {
             self.clone()
         };
 
-        // The groups are read one bit at a time, so the mask is written out once here.
         let validity = s.rechunk_validity().unwrap();
         let validity = validity.as_ref().to_flat();
         let indices = match groups {

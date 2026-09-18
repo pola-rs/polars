@@ -36,8 +36,6 @@ where
 {
     fn explode_by_offsets(&self, offsets: &[i64], options: ExplodeOptions) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);
-        // The values are read as one run, so a chunk that is not laid out flat is written out
-        // first — see `StaticArray::to_flat`.
         let arr = self.downcast_iter().next().unwrap().to_flat();
 
         // make sure that we don't look beyond the sliced array

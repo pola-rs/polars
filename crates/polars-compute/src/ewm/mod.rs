@@ -25,7 +25,6 @@ fn chunk_of<T: NativeType>(values: &dyn PlArray) -> &PlPrimitiveArray<T> {
 #[cfg(test)]
 macro_rules! assert_allclose {
     ($xs:expr, $ys:expr, $tol:expr) => {{
-        // Bound once: the operands are call expressions that consume what they are given.
         let (xs, ys) = (&$xs, &$ys);
         assert_eq!(xs.len(), ys.len(), "compared chunks of different lengths");
         assert!(xs.iter().zip(ys.iter()).all(|(x, z)| {

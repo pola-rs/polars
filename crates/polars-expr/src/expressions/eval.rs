@@ -77,11 +77,6 @@ impl EvalExpr {
             return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
         }
 
-        // Fast path: every element reads the one list the chunk holds, so the evaluation only has
-        // to see that list. It is run over a single element and every element gets that one
-        // answer. Otherwise the values are written out one list per element for the groups to be
-        // cut out of: 4M rows repeating one list of three paid 576 ms for
-        // `list.eval(element().sort())`.
         if self.evaluation_is_deterministic
             && let Some(length) = ca.repeats_one_list()
         {
@@ -169,10 +164,6 @@ impl EvalExpr {
             return Ok(column);
         }
 
-        // The groups below are cut out of the flattened values by one offset per element, but a
-        // chunk that repeats a single list holds that one list's values and not a copy of them per
-        // element: it is written out here so the two line up. The elementwise path above needs no
-        // such thing — it reads the values on their own and puts them back the way they came.
         let flat;
         let (ca, flattened, flattened_len) = if ca.is_flat() {
             (&*ca, flattened, flattened_len)
@@ -289,8 +280,6 @@ impl EvalExpr {
             return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
         }
 
-        // As in `evaluate_on_list_chunked`: one list read once, its answer shared by every
-        // element that reads it.
         if self.evaluation_is_deterministic
             && let Some(length) = ca.repeats_one_list()
         {
@@ -495,8 +484,6 @@ impl EvalExpr {
         let groups = if min_samples == 0 {
             (1..input.len() as IdxSize).map(|i| [0, i]).collect()
         } else {
-            // No mask at all means every element is valid, which is the single bit it takes to
-            // say so rather than one written out per element.
             let validity =
                 (validity.clone()).unwrap_or_else(|| PlBitmap::new_scalar(true, input.len()));
             let mut count = 0;
@@ -587,12 +574,6 @@ impl PhysicalExpr for EvalExpr {
         let mut input = self.input.evaluate_on_groups(df, groups, state)?;
         input.groups();
 
-        // Every variant below the cumulative one answers one element per element of the column it
-        // is given, so a literal stays a literal: `F(lit) = lit`. Without that, a literal list
-        // under a group-by becomes a one-element non-aggregated column that the groups then
-        // index as if it held one element each — `agg(lit([1, 2]).list.eval(element()))` came
-        // back as `[[1, 2], [1, 2]]` for a group of two, against the `List(Int64)` the same
-        // query's schema and the streaming engine both say.
         let preserve_literal = true;
         let returns_scalar = input.agg_state().is_scalar();
 

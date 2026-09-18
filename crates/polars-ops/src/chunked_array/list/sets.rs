@@ -302,7 +302,6 @@ fn binary(
     let length = offsets.len() - 1;
     let values = values_out.freeze();
 
-    // The values are read out of two arrays of the same type, so what went in is what comes back.
     let values: Box<dyn PlArray> = if as_utf8 {
         Box::new(unsafe { PlUtf8ViewArray::from_binview_unchecked(values) })
     } else {
@@ -323,10 +322,6 @@ fn array_set_operation(
     set_op: SetOperation,
     inner_dtype: &DataType,
 ) -> PolarsResult<PlListArray> {
-    // Both sides holding the one range every element covers means every element is the same set
-    // operation over the same pair of lists: it is worked out once over a single element and
-    // repeated. The masks are left out of that and combined over the whole length after, since
-    // they are the one thing that still says something different about each element.
     if a.offsets_are_scalar() && b.offsets_are_scalar() && a.len() > 1 {
         let one = array_set_operation(
             &a.sliced(0, 1).without_validity(),
@@ -342,14 +337,9 @@ fn array_set_operation(
         return Ok(one.new_from_index(0, a.len()).with_validity(validity));
     }
 
-    // The kernels below read the offsets as a slice and walk the values one element at a time, so
-    // a chunk whose offsets repeat is written out first.
     let a = a.to_flat();
     let b = b.to_flat();
 
-    // `Flat` is what says these hold one range per element: the array's own `flat_offsets` asks a
-    // predicate that a list of a *single* element answers `Scalar` to, its two offsets being both
-    // one range and the range of its one element.
     let offsets_a = a.offsets().as_slice();
     let offsets_b = b.offsets().as_slice();
 
@@ -357,8 +347,6 @@ fn array_set_operation(
     let values_b = b.values();
     assert_eq!(values_a.array_type(), values_b.array_type());
 
-    // A side of a single element is broadcast over the other, and so is its mask: combining the
-    // two as they come would be combining masks of different lengths.
     let length = a.len().max(b.len());
     let validity = combine_validities_and(
         broadcast_validity(a.as_array().validity(), length),
@@ -366,8 +354,6 @@ fn array_set_operation(
     );
 
     match inner_dtype {
-        // The set is taken over the bytes either way; what comes back out is the strings they
-        // were, which is what `as_utf8` says.
         DataType::String => binary(
             downcast::<PlUtf8ViewArray>(values_a).as_binview(),
             downcast::<PlUtf8ViewArray>(values_b).as_binview(),
@@ -439,8 +425,6 @@ pub fn list_set_operation(
     a.prune_empty_chunks();
     b.prune_empty_chunks();
 
-    // A chunk carries no data type of its own, so which kernel the values want is asked of the
-    // column rather than read off the array.
     let inner_dtype = a.inner_dtype().to_physical();
 
     // we use the unsafe variant because we want to keep the nested logical types type.

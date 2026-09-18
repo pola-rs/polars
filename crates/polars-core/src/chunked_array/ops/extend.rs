@@ -63,21 +63,16 @@ where
             return Ok(());
         }
 
-        // Take the chunk out of `self` before reaching for a builder: whether the values
-        // allocation can be reused rather than copied turns on this being the only reference
-        // left to it, so the array cannot stay reachable through `self.chunks`.
         let arr = take_chunk::<PlPrimitiveArray<T::Native>>(&mut self.chunks);
 
         match arr.into_builder() {
             Either::Right(mut builder) => {
-                // One growth for everything appended, rather than one per chunk of `other`.
                 builder.reserve(other.len());
                 for arr in other.downcast_iter() {
                     builder.subslice_extend(arr, 0, arr.len(), ShareStrategy::Never);
                 }
                 self.chunks.push(builder.freeze().into_boxed());
             },
-            // The values are shared, sliced or scalar, so there is nothing to append into.
             Either::Left(immutable) => {
                 extend_immutable(&immutable, &mut self.chunks, &other.chunks)
             },
@@ -122,10 +117,6 @@ impl BooleanChunked {
             return Ok(());
         }
 
-        // A boolean array holds one *bit* per element, so its values are copied into the builder
-        // rather than reclaimed the way `PlPrimitiveArray::into_builder` reclaims a values buffer:
-        // the copy is an eighth of a byte per element, and appending in bulk below more than pays
-        // for it.
         let arr = take_chunk::<PlBooleanArray>(&mut self.chunks);
 
         let mut builder = PlBooleanArrayBuilder::with_capacity(arr.len() + other.len());

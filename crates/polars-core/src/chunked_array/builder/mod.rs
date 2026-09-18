@@ -139,8 +139,6 @@ where
     }
 
     fn from_iter_options(name: PlSmallStr, it: impl Iterator<Item = Option<S>>) -> Self {
-        // The values are owned, so each is appended while it is still alive rather than collected
-        // as a borrow of it.
         let mut builder = PlUtf8ViewArrayBuilder::with_capacity(get_iter_capacity(&it));
         it.for_each(|v| builder.push(v.as_ref().map(S::as_ref)));
         ChunkedArray::with_chunk(name, builder.freeze())
@@ -171,8 +169,6 @@ where
     }
 
     fn from_iter_options(name: PlSmallStr, it: impl Iterator<Item = Option<B>>) -> Self {
-        // The values are owned, so each is appended while it is still alive rather than collected
-        // as a borrow of it.
         let mut builder = PlBinaryViewArrayBuilder::with_capacity(get_iter_capacity(&it));
         it.for_each(|v| builder.push(v.as_ref().map(B::as_ref)));
         ChunkedArray::with_chunk(name, builder.freeze())

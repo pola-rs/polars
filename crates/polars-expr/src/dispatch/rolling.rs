@@ -176,8 +176,6 @@ pub(super) fn rolling_corr_cov(
         let valids_bitmap = valids_arr.values();
 
         unsafe {
-            // The mask keeps whichever representation it came out in, so a run of nulls that is
-            // a single shared bit stays one.
             let valids_bitmap = valids_bitmap.to_flat_or_scalar();
             let xarr = &mut x.chunks_mut()[0];
             *xarr = xarr.with_validity(Some(PlBitmap::from_bitmap(valids_bitmap.clone())));

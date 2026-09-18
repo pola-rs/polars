@@ -261,8 +261,6 @@ fn reinterpret_elementwise(
 ) -> PolarsResult<PlArrayRef> {
     let length = chunk.len();
 
-    // Sliced down to the one element the chunk repeats, which leaves every buffer holding the
-    // single slot it already held, and is therefore `O(1)`.
     let repeated = PlArray::is_scalar(chunk) && length > 1;
     let sliced;
     let operand = if repeated {

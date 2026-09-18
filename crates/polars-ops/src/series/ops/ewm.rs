@@ -13,10 +13,7 @@ fn check_alpha(alpha: f64) -> PolarsResult<()> {
 
 /// What the scalar fast paths below ask of a float native.
 trait EwmFloat: Copy {
-    /// Whether this value is neither infinite nor `NaN`. A run of one *finite* value is a run the
-    /// kernels answer exactly — with a mean of that value and no dispersion at all — which is what
-    /// lets the answer be written down rather than folded element by element. Neither holds of an
-    /// infinity, whose weighted sums reach `inf - inf`.
+    /// Whether this value is neither infinite nor `NaN`.
     fn is_finite(self) -> bool;
 }
 
@@ -42,22 +39,18 @@ impl EwmFloat for polars_utils::float16::pf16 {
     }
 }
 
-/// The finite value every element of `ca` is, if it holds them as a run of that one value with no
-/// null among them.
+/// The finite value every element of `ca` is, if it repeats that one value with no null among them.
 fn one_finite_value<T>(ca: &ChunkedArray<T>) -> Option<T::Native>
 where
     T: PolarsNumericType,
     T::Native: EwmFloat,
 {
-    // A column of one element is answered by the kernel as cheaply as here.
     if ca.len() <= 1 {
         return None;
     }
 
     let value = match ca.chunks().as_slice() {
         [_] => ca.scalar_value()?,
-        // Several chunks that all repeat the same element are that one value throughout as well,
-        // which is the shape the streaming engine hands this op.
         _ => ca
             .repeats_one_element()
             // SAFETY: the column was just seen to hold more than one element.
@@ -68,9 +61,6 @@ where
 }
 
 /// `length` elements of `value`, the first `nulls` of them null instead.
-///
-/// The values are the one `value`, held once however many elements read it. Only the mask is
-/// written out, and only when there is a null for it to carry.
 fn repeat_from<T: PolarsNumericType>(
     name: PlSmallStr,
     value: T::Native,
@@ -94,9 +84,7 @@ fn repeat_from<T: PolarsNumericType>(
     ChunkedArray::with_chunk(name, arr)
 }
 
-/// The `ewm_mean` of a chunk that repeats one finite value: a weighted mean of that one value,
-/// however it is weighted, is the value itself. `min_periods` decides how many elements go by
-/// before there is a mean to read at all.
+/// The `ewm_mean` of a chunk that repeats one finite value, which is that value itself.
 fn ewm_mean_scalar<T>(ca: &ChunkedArray<T>, options: &EWMOptions) -> Option<ChunkedArray<T>>
 where
     T: PolarsNumericType,
@@ -107,11 +95,7 @@ where
     Some(repeat_from(ca.name().clone(), value, nulls, ca.len()))
 }
 
-/// The `ewm_std`/`ewm_var` of a chunk that repeats one finite value: every element equals the
-/// mean, so there is no dispersion to report and the answer is zero throughout.
-///
-/// The unbiased estimators divide by a factor that is zero for a single sample, so unless `bias`
-/// says otherwise the first element has no answer — on top of the ones `min_periods` withholds.
+/// The `ewm_std`/`ewm_var` of a chunk that repeats one finite value, which is zero throughout.
 fn ewm_dispersion_scalar<T>(ca: &ChunkedArray<T>, options: &EWMOptions) -> Option<ChunkedArray<T>>
 where
     T: PolarsNumericType,
@@ -120,9 +104,6 @@ where
     one_finite_value(ca)?;
 
     let nulls = if !options.bias && options.alpha == 1.0 {
-        // At `alpha == 1` the newest element carries all the weight and the ones before it none,
-        // so no element ever has a second sample behind it — and the factor the unbiased
-        // estimators divide by is zero the whole way down, not just at the first element.
         ca.len()
     } else {
         options
@@ -138,8 +119,7 @@ where
     ))
 }
 
-/// The answer `$answer` has for a chunk that repeats one element, if `$s` is a float chunk that
-/// does — `None` sends the caller to the kernel.
+/// The answer `$answer` has for a chunk that repeats one element, if `$s` is such a float chunk.
 macro_rules! ewm_scalar_answer {
     ($s:expr, $options:expr, $answer:ident) => {{
         match $s.dtype() {

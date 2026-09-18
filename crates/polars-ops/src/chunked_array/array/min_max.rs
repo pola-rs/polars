@@ -20,35 +20,24 @@ where
 {
     let (width, length) = (arr.width(), arr.len());
 
-    // A row of no values holds nothing to reduce, so every element reduces to nothing.
     if width == 0 {
         return PlPrimitiveArray::new_full_null(length);
     }
 
-    // The values hold the one list every element reads, so they all reduce to the same element:
-    // that list is reduced once and the answer repeats it, rather than the list being read —
-    // and reduced — once per element.
     if arr.values_are_scalar() {
         return match arr_agg(values) {
             Some(value) => PlPrimitiveArray::new_scalar(value, length),
-            // The one list every element reads reduces to nothing, and so does every element.
             None => PlPrimitiveArray::new_full_null(length),
         };
     }
 
-    // Without a null anywhere the rows are read straight out of the values buffer, in whichever
-    // representation it is in.
     if !values.has_nulls() {
         return match values.scalar_value_ignore_validity() {
-            // Every row is the same `width` copies of the one value, and so reduces to it — as
-            // does the answer, which repeats a single value in turn.
             Some(value) => {
                 let reduced =
                     slice_agg(&[value]).expect("a row of one value reduces to that value");
                 PlPrimitiveArray::new_scalar(reduced, length)
             },
-            // The rows are runs of the values buffer, which the kernel that reads a slice reduces
-            // without a validity mask to consult.
             None => values
                 .flat_values()
                 .unwrap()
@@ -59,20 +48,13 @@ where
         };
     }
 
-    // A value under the rows is null, so the mask has to be consulted. It — and the values — are
-    // read once here, leaving each row a slice of a buffer and a run of bits to reduce, rather
-    // than an array to build, walk and drop per row.
     let validity = values
         .validity()
         .expect("a null value is one the mask marks as not being there");
     let Some(validity) = validity.flat_bitmap() else {
-        // One bit stands for every value, and it says none of them is there, so no row holds a
-        // value to reduce and every element reduces to nothing.
         return PlPrimitiveArray::new_full_null(length);
     };
 
-    // Every row is `width` copies of the one value the buffer holds, so it reduces to that value
-    // wherever the mask leaves it an element at all, and to nothing where it leaves none.
     if let Some(value) = values.scalar_value_ignore_validity() {
         let reduced = slice_agg(&[value]).expect("a row of one value reduces to that value");
         return (0..length)
@@ -83,9 +65,6 @@ where
             .collect_arr_trusted();
     }
 
-    // One row per element and one slot per value: a row is the run of the values buffer it
-    // already is, and the values of it that are there are read out into `row` to be reduced as a
-    // slice of their own — which is what keeps the kernel off a mask it would walk a bit at a time.
     let mask = BitMask::from_bitmap(validity);
     let mut row = Vec::with_capacity(width);
     values
@@ -96,12 +75,7 @@ where
         .enumerate()
         .map(|(index, row_values)| {
             let start = index * width;
-            // A row up to 32 wide is one load of the mask, which says how many of its values are
-            // there and which ones in the same word; a wider one is counted a word at a time and
-            // read a bit at a time.
             let Some(mut bits) = (width <= 32).then(|| {
-                // The load reads as many bits as the mask has left, of which this row's are the
-                // first `width`.
                 let word = mask.get_u32(start);
                 if width == 32 {
                     word
@@ -125,12 +99,8 @@ where
             };
 
             match bits.count_ones() as usize {
-                // Nothing under this row is there at all, so it reduces to nothing.
                 0 => None,
-                // Nothing under it is null, so it reduces as the slice it is.
                 present if present == width => slice_agg(row_values),
-                // Some values are there and some are not: the ones that are are the bits the
-                // word sets, and they are taken aside into a row of their own.
                 _ => {
                     row.clear();
                     while bits != 0 {
@@ -188,9 +158,6 @@ pub(super) fn array_dispatch(ca: &ArrayChunked, agg_type: AggType) -> Series {
         type N = <$T as PolarsNumericType>::Native;
 
         let chunks = ca.downcast_iter().map(|arr| {
-            // The values a chunk holds, in the representation it holds them in: reading them off
-            // the chunk rather than off a flattened copy of it is what leaves a chunk that
-            // repeats a single list holding that list once.
             let values = arr
                 .values()
                 .as_any()
@@ -202,8 +169,6 @@ pub(super) fn array_dispatch(ca: &ArrayChunked, agg_type: AggType) -> Series {
                 AggType::Max => agg_max(arr, values),
             };
 
-            // An element that is null holds no values to reduce, whatever the values under it
-            // read as, so it reduces to nothing in turn.
             let validity = combine_validities_and(out.validity(), arr.validity());
             out.with_validity(validity)
         });

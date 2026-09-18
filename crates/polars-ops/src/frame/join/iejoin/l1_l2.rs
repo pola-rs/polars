@@ -22,8 +22,6 @@ where
     assert_eq!(order.null_count(), 0);
     assert_eq!(ca.chunks().len(), 1);
     let arr = ca.downcast_get(0).unwrap();
-    // Only a values buffer that repeats one value is written out: the mask is not read here, since
-    // even if there are nulls, they will not be selected by order.
     let flat = arr.to_flat_values();
     let values = flat.as_slice();
 
@@ -68,7 +66,6 @@ where
     let mut prev_value = T::Native::default();
 
     let arr = ca.downcast_get(0).unwrap();
-    // As above: the mask is not read, so only a repeated values buffer is written out.
     let flat = arr.to_flat_values();
     let values = flat.as_slice();
 

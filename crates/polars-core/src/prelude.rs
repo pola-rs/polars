@@ -1,8 +1,6 @@
 //! Everything you need to get started with Polars.
 pub use std::sync::Arc;
 
-// The explicit imports of the array crate shadow the glob above: a `ChunkedArray` is backed by the
-// arrays of `polars-array`, and `polars_arrow::array` is only what it is imported from and exported to.
 pub use polars_array::arrow::bridge::ToArrow;
 pub use polars_array::{
     Flat, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef,

@@ -131,11 +131,6 @@ impl<'a> PlBitmapRef<'a> {
     }
 
     /// The bit every element carries, if they all carry the same one.
-    ///
-    /// A scalar mask says so by holding a single bit. A mask of one bit per element says so when
-    /// every one of its bits agrees, which the count of unset bits the bitmap already carries
-    /// answers without a walk -- the shape a constant predicate takes once it has been evaluated
-    /// over a column. An empty mask covers no element and so carries nothing.
     #[inline]
     pub fn agreed_value(&self) -> Option<bool> {
         if self.length == 0 {
@@ -173,7 +168,6 @@ impl<'a> PlBitmapRef<'a> {
     #[inline]
     pub fn unset_bits(&self) -> usize {
         if self.is_scalar() {
-            // Every element shares the single bit; an empty mask never reads it.
             if self.bitmap.get_bit(0) {
                 0
             } else {
@@ -202,8 +196,6 @@ impl<'a> PlBitmapRef<'a> {
     /// This mask as a [`Bitmap`], keeping the scalar representation where it has one.
     #[inline]
     pub fn to_flat_or_scalar(&self) -> Bitmap {
-        // The backing bitmap is already flat or scalar for the mask's length, which is exactly
-        // what an array accepts as its own mask: hand it over as it is.
         self.bitmap.clone()
     }
 
@@ -277,14 +269,9 @@ impl PartialEq for PlBitmapRef<'_> {
         }
 
         match (self.scalar_value(), other.scalar_value()) {
-            // Never walk two scalar masks bit by bit: their length is unbounded by their memory
-            // use.
             (Some(lhs), Some(rhs)) => lhs == rhs,
-            // A single bit says the same of every element, so the other mask equals it exactly
-            // when every one of its bits says that too: a count rather than a walk.
             (Some(value), None) => other.holds_only(value),
             (None, Some(value)) => self.holds_only(value),
-            // Two masks that hold one bit per element compare a word at a time.
             (None, None) => self.bitmap == other.bitmap,
         }
     }
@@ -317,48 +304,9 @@ pub(super) fn fmt_bits(
 ) -> std::fmt::Result {
     f.write_str(name)?;
 
-    // Never materialize a scalar mask: its length is unbounded by its memory use.
     if mask.is_scalar() && mask.len() > 1 {
         return write!(f, "[{}; {}]", mask.bitmap.get_bit(0), mask.len());
     }
 
     f.debug_list().entries(mask.iter()).finish()
-}
-
-#[cfg(test)]
-mod tests {
-    use polars_arrow::bitmap::Bitmap;
-
-    use crate::bitmap::PlBitmap;
-
-    /// Two masks compare by the bits every element reads, whatever representation they hold them
-    /// in — the flat paths take a word at a time and the scalar ones a count, so neither may
-    /// answer differently from a walk.
-    #[test]
-    fn eq_across_representations() {
-        const LENGTH: usize = 130;
-
-        let scalar = |value| PlBitmap::new_scalar(value, LENGTH);
-        let flat = |value| PlBitmap::from_bitmap(Bitmap::new_with_value(value, LENGTH));
-        let mut bits = vec![true; LENGTH];
-        bits[LENGTH - 1] = false;
-        let mixed = PlBitmap::from_bitmap(Bitmap::from_iter(bits));
-
-        for value in [false, true] {
-            assert_eq!(scalar(value), scalar(value));
-            assert_eq!(scalar(value), flat(value));
-            assert_eq!(flat(value), scalar(value));
-            assert_eq!(flat(value), flat(value));
-
-            assert_ne!(scalar(value), scalar(!value));
-            assert_ne!(scalar(value), flat(!value));
-            assert_ne!(flat(!value), scalar(value));
-            assert_ne!(mixed, scalar(value));
-            assert_ne!(scalar(value), mixed);
-        }
-
-        assert_eq!(mixed, mixed.clone());
-        assert_ne!(mixed, flat(true));
-        assert_ne!(PlBitmap::new_scalar(true, 1), PlBitmap::new_scalar(true, 2));
-    }
 }

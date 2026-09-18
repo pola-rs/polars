@@ -114,17 +114,12 @@ pub(super) fn to_json(col: &Column) -> PolarsResult<Column> {
     use polars_core::prelude::CompatLevel;
 
     let s = col.as_materialized_series();
-    // The JSON writer is an Arrow one, so what it hands back crosses the bridge into a chunk.
     let mut offset = 0;
     let iter = (0..s.n_chunks()).map(|i| {
         let length = s.chunks()[i].len();
         let chunk_offset = offset;
         offset += length;
 
-        // A chunk that reads one element throughout serializes that element once, and the text
-        // that comes back stands for the whole chunk. The Arrow export below writes a repeated
-        // chunk out, so the one-element slice is what keeps that element from being written out
-        // `length` times over.
         if length > 1 && s.chunks()[i].is_scalar() {
             let one = s.slice(chunk_offset as i64, 1);
             let arr = polars_json::json::write::serialize_to_utf8(

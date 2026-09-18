@@ -146,10 +146,6 @@ impl<T: PolarsNumericType> FlatNumericChunkedArray<T> for Flat<ChunkedArray<T>> 
         // SAFETY: the values are only written over, so the length, the null count and the flags
         // this array carries all stay correct.
         let arr = unsafe { ca.downcast_iter_mut().next().unwrap() };
-        // `flat_values_mut` is no use here: an array of a *single* element reads as scalar
-        // whichever way it was built, since its values hold one slot either way, and it answers
-        // `None` for one. The slots are the same in both representations, and this array is flat,
-        // so there is one per element whichever one it reads as.
         arr.flat_or_scalar_values_mut()
     }
 

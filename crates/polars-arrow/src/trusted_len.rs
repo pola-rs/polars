@@ -115,10 +115,6 @@ where
     }
 
     /// Hands the fold to the iterator underneath instead of driving it by `next`.
-    ///
-    /// This wrapper sits on the outside of `ChunkedArray::iter()`, so without this the
-    /// default `next`-driven fold is what every caller gets — and the array iterators
-    /// resolve flat-vs-scalar once per chunk only in their own `fold`.
     #[inline]
     fn fold<B, F>(self, init: B, f: F) -> B
     where

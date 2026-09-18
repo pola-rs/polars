@@ -16,8 +16,6 @@ pub fn rolling_var<T>(
 where
     T: NativeType + ToPrimitive + FromPrimitive + IsFloat + Float,
 {
-    // The window machines walk the values as a slice and read the mask bit by bit, so the chunk
-    // is laid out here, once at the top, and only a buffer that repeats is written out.
     let arr = arr.to_flat();
 
     if weights.is_some() {
@@ -48,8 +46,6 @@ pub fn rolling_skew<T>(
 where
     T: NativeType + ToPrimitive + FromPrimitive + IsFloat + Float,
 {
-    // The window machines walk the values as a slice and read the mask bit by bit, so the chunk
-    // is laid out here, once at the top, and only a buffer that repeats is written out.
     let arr = arr.to_flat();
 
     let offsets_fn = if center {
@@ -77,8 +73,6 @@ pub fn rolling_kurtosis<T>(
 where
     T: NativeType + ToPrimitive + FromPrimitive + IsFloat + Float,
 {
-    // The window machines walk the values as a slice and read the mask bit by bit, so the chunk
-    // is laid out here, once at the top, and only a buffer that repeats is written out.
     let arr = arr.to_flat();
 
     let offsets_fn = if center {

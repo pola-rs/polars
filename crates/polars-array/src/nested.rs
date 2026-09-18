@@ -44,15 +44,12 @@ pub trait Shape: Clone {
 /// The offsets at which the elements left to yield start, one slot each and one after the last.
 #[derive(Clone)]
 pub struct Offsets<'a> {
-    /// The offsets of the elements left to yield.
     offsets: NonNull<u64>,
-    /// Folds a position onto slot 0 when the offsets are scalar: [`usize::MAX`] flat, `0` scalar.
     index_mask: usize,
     _lifetime: PhantomData<&'a [u64]>,
 }
 
-// SAFETY: the walk holds nothing but the shared borrow of the offsets it was built from, which is
-// `Send` and `Sync` itself; the raw pointer only drops the length.
+// SAFETY: the walk holds nothing but a shared borrow of the offsets, which is `Send` and `Sync`.
 unsafe impl Send for Offsets<'_> {}
 unsafe impl Sync for Offsets<'_> {}
 
@@ -61,9 +58,6 @@ impl<'a> Offsets<'a> {
     /// `offsets` must be flat or scalar for `length`, per [`crate::broadcast`], and be ordered.
     #[inline]
     pub(crate) fn new(offsets: &'a [u64], length: usize) -> Self {
-        // Offsets that hold one start per element are flat, and offsets the caller promises are
-        // valid are scalar when they are not. The two coincide for a single element, which either
-        // reading cuts the same range out for.
         let scalar = !is_flat_offsets_len(offsets.len(), length);
 
         debug_assert!(
@@ -74,8 +68,6 @@ impl<'a> Offsets<'a> {
 
         Self {
             offsets: NonNull::from(offsets).cast(),
-            // All ones for flat offsets, which leaves every position as it is, and none for scalar
-            // ones, which folds every position onto the single range they hold.
             index_mask: (scalar as usize).wrapping_sub(1),
             _lifetime: PhantomData,
         }
@@ -98,8 +90,6 @@ impl Shape for Offsets<'_> {
     #[inline(always)]
     unsafe fn at(&self, n: usize) -> Range<usize> {
         unsafe {
-            // Scalar offsets fold every position onto the one range they hold; flat ones hold the
-            // start of the element and the end that follows it.
             let offsets = self.offsets.as_ptr().byte_add(n.wrapping_mul(self.step()));
             let start = offsets.read() as usize;
             let end = offsets.add(1).read() as usize;
@@ -115,8 +105,7 @@ impl Shape for Offsets<'_> {
         self.offsets = unsafe { self.offsets.byte_add(n.wrapping_mul(self.step())) };
     }
 
-    /// Walks the offsets as the buffer they are, reading the end of one element as the start of
-    /// the next rather than reading every slot twice.
+    /// Walks the offsets as the buffer they are, reading each slot once.
     #[inline]
     unsafe fn fold<B, F>(self, n: usize, init: B, mut f: F) -> B
     where
@@ -132,7 +121,6 @@ impl Shape for Offsets<'_> {
         let front = unsafe { self.at(0) };
 
         if self.is_scalar() {
-            // Scalar offsets hold the one range every element covers, read here and never again.
             for _ in 0..n {
                 acc = f(acc, front.clone());
             }
@@ -170,8 +158,6 @@ impl Shape for Offsets<'_> {
         let front = unsafe { self.at(0) };
 
         if self.is_scalar() {
-            // Scalar offsets hold the one range every element covers, whichever end it is read
-            // from.
             for _ in 0..n {
                 acc = f(acc, front.clone());
             }
@@ -199,12 +185,8 @@ impl Shape for Offsets<'_> {
 /// The width every element covers, from a front that walks one of them per element dropped.
 #[derive(Clone)]
 pub struct Stride {
-    /// Where the element at the front starts.
     front: usize,
-    /// How many values every element covers.
     width: usize,
-    /// How far the front walks per element dropped: one width for flat values, nowhere for scalar
-    /// ones.
     stride: usize,
 }
 
@@ -213,10 +195,6 @@ impl Stride {
     /// The values must be flat or scalar for `length` and `width`, per [`crate::broadcast`].
     #[inline]
     pub(crate) fn new(values_len: usize, width: usize, length: usize) -> Self {
-        // Values as long as one element hold the one every position reads; values the caller
-        // promises are valid hold one element each when they are not. The two coincide for a
-        // single element, and for elements no values wide, either of which the same range is cut
-        // out for.
         let scalar = values_len == width;
 
         debug_assert!(
@@ -227,8 +205,6 @@ impl Stride {
         Self {
             front: 0,
             width,
-            // Flat values lay the elements end to end, one width apart; scalar ones hold the one
-            // range every element reads, which the walk never steps off.
             stride: if scalar { 0 } else { width },
         }
     }
@@ -236,8 +212,6 @@ impl Stride {
     /// Where the element `n` positions on from the front starts.
     #[inline(always)]
     fn start(&self, n: usize) -> usize {
-        // Flat values reach `remaining * width` on from the front, so neither the product nor the
-        // sum wraps; scalar ones are walked nowhere, whatever `n` is.
         self.front.wrapping_add(n.wrapping_mul(self.stride))
     }
 }
@@ -280,7 +254,6 @@ impl Shape for Stride {
     where
         F: FnMut(B, Range<usize>) -> B,
     {
-        // One element past the back, which the first step of the walk comes back down from.
         let mut back = self.start(n);
         let Self { width, stride, .. } = self;
         let mut acc = init;
@@ -297,9 +270,7 @@ impl Shape for Stride {
 /// The ranges of the values the elements left to yield cover, walked from either end.
 #[derive(Clone)]
 pub struct Ranges<S> {
-    /// How the values are cut into elements, and where the front of the walk is.
     shape: S,
-    /// The number of elements left to yield: a scalar array is as long as it says it is.
     remaining: usize,
 }
 
@@ -332,7 +303,6 @@ impl<S: Shape> Iterator for Ranges<S> {
 
         // SAFETY: there is an element left, so the front is the start of one.
         let range = unsafe { self.shape.at(0) };
-        // SAFETY: as above.
         unsafe { self.shape.advance(1) };
         self.remaining -= 1;
 
@@ -392,7 +362,6 @@ impl<S: Shape> DoubleEndedIterator for Ranges<S> {
             return None;
         }
 
-        // `n` is below the number of elements left, so the position before it does not wrap.
         self.remaining -= n;
         self.next_back()
     }
@@ -418,7 +387,7 @@ impl<S: Shape> ExactSizeIterator for Ranges<S> {
 // SAFETY: the walk yields one range per element left, which is what it says it has.
 unsafe impl<S: Shape> TrustedLen for Ranges<S> {}
 
-/// The element the values hold over `range`, which is a fresh box over the same buffers.
+/// The element the values hold over `range`.
 ///
 /// # Safety
 /// `range` must be ordered and in bounds of the values, as every range [`Ranges`] yields is.
@@ -433,9 +402,7 @@ unsafe fn element(values: &dyn PlArray, range: Range<usize>) -> Box<dyn PlArray>
 /// Iterator over the elements of a nested array, ignoring validity.
 #[derive(Clone)]
 pub struct NestedValuesIter<'a, S> {
-    /// The values array the elements are cut out of.
     values: &'a dyn PlArray,
-    /// The ranges of the elements left to yield.
     ranges: Ranges<S>,
 }
 
@@ -504,10 +471,7 @@ impl<'a, S: Shape> NestedIter<'a, S> {
     }
 }
 
-/// The iterator traits are written out rather than taken from `impl_optional_iter`, which reads
-/// the mask only where the values yielded an element: an element here is an array of its own, so
-/// the mask is read first and the walk over the ranges yields nothing but a shape, which leaves a
-/// null position paying for no array at all.
+/// Written out rather than taken from `impl_optional_iter`, so the mask is read before the range.
 impl<S: Shape> Iterator for NestedIter<'_, S> {
     type Item = Option<Box<dyn PlArray>>;
 
@@ -521,7 +485,6 @@ impl<S: Shape> Iterator for NestedIter<'_, S> {
 
     #[inline]
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        // The mask is advanced alongside the ranges, whether or not there is an element left.
         let is_valid = self.validity.nth(n);
         let range = self.ranges.nth(n)?;
         // SAFETY: the range is one of this iterator's elements.
@@ -551,15 +514,12 @@ impl<S: Shape> Iterator for NestedIter<'_, S> {
         F: FnMut(B, Self::Item) -> B,
     {
         let (values, ranges, mask) = self.split();
-        // The element is built only where the mask says there is one, so a null position pays for
-        // no box at all.
         let element = |range: Option<Range<usize>>| {
             // SAFETY: the range is one of this iterator's elements.
             range.map(|range| unsafe { element(values, range) })
         };
 
-        // SAFETY: the mask has one bit per element, and the ranges and the mask are walked in
-        // lockstep, so it has a bit for every range left to yield.
+        // SAFETY: the mask is walked in lockstep with the ranges, so it has a bit for each of them.
         unsafe { mask.fold_values(ranges, init, |acc, range| f(acc, element(range))) }
     }
 }
@@ -575,7 +535,6 @@ impl<S: Shape> DoubleEndedIterator for NestedIter<'_, S> {
 
     #[inline]
     fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        // The mask is advanced alongside the ranges, whether or not there is an element left.
         let is_valid = self.validity.nth_back(n);
         let range = self.ranges.nth_back(n)?;
         // SAFETY: the range is one of this iterator's elements.
@@ -589,7 +548,6 @@ impl<S: Shape> DoubleEndedIterator for NestedIter<'_, S> {
         F: FnMut(B, Self::Item) -> B,
     {
         let (values, ranges, mask) = self.split();
-        // The element is built only where the mask says there is one, per [`Iterator::fold`].
         let element = |range: Option<Range<usize>>| {
             // SAFETY: the range is one of this iterator's elements.
             range.map(|range| unsafe { element(values, range) })
@@ -607,6 +565,5 @@ impl<S: Shape> ExactSizeIterator for NestedIter<'_, S> {
     }
 }
 
-// SAFETY: the ranges are trusted to yield as many elements as they say they will, and the mask is
-// walked alongside them.
+// SAFETY: the ranges yield as many elements as they say, and the mask is walked alongside them.
 unsafe impl<S: Shape> TrustedLen for NestedIter<'_, S> {}

@@ -39,8 +39,6 @@ where
         .downcast_ref::<PlPrimitiveArray<T>>()
         .unwrap();
 
-    // Every element covers the one range, so they all sum to the same total: it is worked out once
-    // over that range rather than the lists being laid end to end first.
     if let Some(range) = arr.scalar_offsets() {
         return PlPrimitiveArray::new_scalar(sum_over::<T, S>(values, range), length)
             .with_validity(validity)
@@ -51,8 +49,6 @@ where
         .flat_offsets()
         .expect("the elements cover ranges of their own");
     let summed = match values.scalar_value_ignore_validity() {
-        // The values repeat one value, so a list adds up to that value taken as many times as the
-        // list is long — again without the buffer being written out.
         Some(value) => offsets
             .windows(2)
             .map(|window| sum_repeated::<T, S>(value, (window[1] - window[0]) as usize))
@@ -63,7 +59,6 @@ where
         ),
     };
 
-    // One sum per element, and `validity` holds one bit per element as well.
     PlPrimitiveArray::from_vec(summed)
         .with_validity(validity)
         .into_boxed()
@@ -234,13 +229,10 @@ where
         .downcast_ref::<PlPrimitiveArray<T>>()
         .unwrap();
 
-    // Every element covers the one range, so they all average to the same thing: it is worked out
-    // once over that range rather than the lists being laid end to end first.
     if let Some(range) = arr.scalar_offsets() {
         return match mean_over::<T, S>(values, range) {
             Some(mean) => PlPrimitiveArray::new_scalar(mean, length)
                 .with_validity(validity.map(PlBitmap::from)),
-            // The one range every element covers is empty, so every one of them is null.
             None => PlPrimitiveArray::new_full_null(length),
         }
         .into_boxed();
@@ -250,8 +242,6 @@ where
         .flat_offsets()
         .expect("the elements cover ranges of their own");
     let out: PlPrimitiveArray<S> = match values.scalar_value_ignore_validity() {
-        // The values repeat one value, so a list averages to it — worked out through the sum the
-        // flat path takes, so the two agree to the last bit.
         Some(value) => offsets
             .windows(2)
             .map(|window| {
@@ -265,7 +255,6 @@ where
         ),
     };
 
-    // Collecting leaves `out` flat, so its mask holds one bit per element like the other one.
     let new_validity = combine_validities_and(out.validity(), validity);
     out.with_validity(new_validity).into_boxed()
 }

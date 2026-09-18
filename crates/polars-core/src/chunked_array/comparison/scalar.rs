@@ -50,10 +50,6 @@ fn bitonic_mask<T: PolarsNumericType>(
     let chunks = ca.downcast_iter().map(|arr| {
         let length = arr.len();
 
-        // Where the run of elements the two functions both hold at starts and ends. Every element
-        // of a chunk whose values are stored in the scalar representation is the one value it
-        // repeats — `full` builds exactly such a chunk and flags it sorted — so the two bounds
-        // are read off that one value rather than searched for over values written out first.
         let (true_range_start, true_range_end) = match arr.scalar_value_ignore_validity() {
             Some(value) => {
                 let holds = f_a.is_none_or(|f_a| apply::<T>(f_a, value, rhs))
@@ -82,9 +78,6 @@ fn bitonic_mask<T: PolarsNumericType>(
         logical_extend(true_range_end - true_range_start, !invert);
         logical_extend(length - true_range_end, invert);
 
-        // The mask is three runs at most, so a chunk that falls entirely inside or entirely
-        // outside the range says the same of every element: that is the single bit it repeats,
-        // and it is not written out one bit per element.
         if true_range_start == 0 && true_range_end == length {
             return PlBooleanArray::new_scalar(!invert, length);
         }
@@ -131,9 +124,6 @@ where
             self.equal(rhs)
         } else {
             let rhs: T::Native = NumCast::from(rhs).unwrap();
-            // The chunk goes to the kernel in the representation it is in: a chunk that repeats
-            // one value answers off that value and the mask alone, where writing the values out
-            // first would compare the same value a million times over.
             arity::unary_mut_with_options(self, |arr| {
                 PlBooleanArray::from_pl_bitmap(PlTotalEqKernel::tot_eq_missing_kernel_broadcast(
                     arr, &rhs,
@@ -241,8 +231,6 @@ macro_rules! binary_eq_ineq_impl {
             }
 
             fn equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
-                // The chunk goes to the kernel in the representation it is in, as in the
-                // numeric impl above: a chunk that repeats one value is compared once.
                 arity::unary_mut_with_options(self, |arr| {
                     PlBooleanArray::from_pl_bitmap(
                         PlTotalEqKernel::tot_eq_missing_kernel_broadcast(arr, rhs),
@@ -298,7 +286,6 @@ impl ChunkCompareEq<&str> for StringChunked {
     }
 
     fn equal_missing(&self, rhs: &str) -> BooleanChunked {
-        // As above: the chunk reaches the kernel in the representation it is in.
         arity::unary_mut_with_options(self, |arr| {
             PlBooleanArray::from_pl_bitmap(PlTotalEqKernel::tot_eq_missing_kernel_broadcast(
                 arr, rhs,

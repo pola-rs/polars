@@ -321,8 +321,6 @@ pub trait SeriesTrait:
 
     /// Returns the validity of this series as a single bitmap.
     fn rechunk_validity(&self) -> Option<PlBitmap> {
-        // A single chunk already holds the one mask this asks for, in whatever representation it
-        // is in: a scalar one is handed over as the single bit it is.
         if self.chunks().len() == 1 {
             return self.chunks()[0].validity().map(PlBitmap::from);
         }
@@ -334,8 +332,6 @@ pub trait SeriesTrait:
         let mut bm = BitmapBuilder::with_capacity(self.len());
         for arr in self.chunks() {
             match arr.validity() {
-                // A scalar mask is one bit for every element, which is extended as the run it
-                // stands for rather than written out first.
                 Some(v) => match v.scalar_value() {
                     Some(value) => bm.extend_constant(v.len(), value),
                     None => bm.extend_from_bitmap(v.flat_bitmap().unwrap()),
@@ -353,8 +349,6 @@ pub trait SeriesTrait:
     /// validity bit is true nothing changes, if it is false the corresponding
     /// element becomes null.
     fn mask(&self, validity: &PlBitmap) -> Series {
-        // A mask that repeats a single bit says the same of every element: it either leaves the
-        // series alone or nulls all of it out, with no bits read one at a time.
         if let Some(bit) = validity.scalar_value() {
             return if bit {
                 Series(self.clone_inner())

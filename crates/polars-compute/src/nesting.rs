@@ -15,7 +15,6 @@ pub(crate) fn downcast<A: PlArray>(array: &dyn PlArray) -> &A {
 /// The range of `array.values()` the elements of `array` cover, taken together.
 pub(crate) fn covered_range(array: &PlListArray) -> Range<usize> {
     let Some(last) = array.len().checked_sub(1) else {
-        // An array of no elements covers nothing, and holds the one offset it starts at.
         let start = array
             .flat_offsets()
             .expect("the offsets of an empty array are flat")[0] as usize;
@@ -33,14 +32,10 @@ pub(crate) unsafe fn list_with_values(
     array: &PlListArray,
     values: Box<dyn PlArray>,
 ) -> PlListArray {
-    // The offsets and the mask are the ones `array` is backed by, in the representation each of
-    // them is in; cloning them out of a clone of it copies nothing.
     let offsets_are_flat = array.offsets_are_flat();
     let validity = array.validity().map(PlBitmap::from);
     let (_, offsets, length, _) = array.clone().into_inner();
 
-    // The constructor is picked on the offsets, which is now the only axis it decides: a mask
-    // carries its own representation, so it goes back on afterwards whichever one it is in.
     let out = unsafe {
         if offsets_are_flat {
             PlListArray::new_unchecked(values, offsets, length, None)
@@ -64,7 +59,6 @@ pub(crate) unsafe fn fsl_with_values(
     let validity = array.validity().map(PlBitmap::from);
     let (_, width, length, _) = array.clone().into_inner();
 
-    // As in `list_with_values`: the constructor decides the values, the mask decides itself.
     let out = unsafe {
         if values_are_flat {
             PlFixedSizeListArray::new_unchecked(values, width, length, None)

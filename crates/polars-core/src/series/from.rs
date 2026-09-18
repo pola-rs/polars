@@ -162,8 +162,6 @@ impl Series {
             },
             #[cfg(feature = "object")]
             Object(_) => {
-                // An object column that came in over IPC arrives as the fixed size binary the
-                // pointers to its values are packed into, which is exported back to Arrow.
                 if let Some(arr) = chunks[0].as_any().downcast_ref::<PlFixedSizeBinaryArray>() {
                     assert_eq!(chunks.len(), 1);
                     // SAFETY:
@@ -337,8 +335,6 @@ impl Series {
             #[cfg(feature = "dtype-time")]
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => {
                 let chunks = if matches!(dtype, ArrowDataType::Time32(_)) {
-                    // A time of seconds or milliseconds counts them in an `i32`, which is widened
-                    // once the chunk has crossed over.
                     let chunks =
                         cast_chunks(&chunks, &DataType::Int32, CastOptions::NonStrict).unwrap();
                     crate::chunked_array::cast::cast_chunks(
@@ -445,8 +441,6 @@ impl Series {
                                 .downcast_mut::<PrimitiveArray<i256>>()
                                 .unwrap(),
                         );
-                        // The Arrow arrays' own collect, the trait of `polars-array` being the
-                        // one that is in scope.
                         let arr_128: PrimitiveArray<i128> =
                             polars_arrow::array::ArrayCollectIterExt::try_collect_arr_trusted(
                                 arr.iter().map(|opt_v| {
@@ -728,8 +722,7 @@ fn rename_map_entries(entries: &mut ArrayRef) {
     value.name = MAP_VALUE_NAME;
 }
 
-/// [`cast_arrow_chunks`] for [`to_physical_and_dtype`], which walks the Arrow arrays it is handed
-/// and hands Arrow arrays back.
+/// [`cast_arrow_chunks`] for [`to_physical_and_dtype`], taking and handing back Arrow arrays.
 fn cast_chunks_to_arrow(arrays: &[ArrayRef], dtype: &DataType) -> Vec<ArrayRef> {
     cast_chunks(arrays, dtype, CastOptions::NonStrict)
         .unwrap()
@@ -762,8 +755,6 @@ unsafe fn to_physical_and_dtype(
                     let dt = dt.clone();
                     Series::_try_from_arrow_unchecked_with_md(PlSmallStr::EMPTY, arrays, &dt, md)
                 }?;
-                // The chunks cross back into the Arrow arrays this function works with — see
-                // `polars_array::arrow::bridge`.
                 let chunks = s
                     .chunks()
                     .iter()
@@ -778,8 +769,6 @@ unsafe fn to_physical_and_dtype(
                     let dt = dt.clone();
                     Series::_try_from_arrow_unchecked_with_md(PlSmallStr::EMPTY, arrays, &dt, md)
                 }?;
-                // The chunks cross back into the Arrow arrays this function works with — see
-                // `polars_array::arrow::bridge`.
                 let chunks = s
                     .chunks()
                     .iter()

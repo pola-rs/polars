@@ -20,8 +20,6 @@ use polars_array::{
     PlUtf8ViewArrayBuilder,
 };
 use polars_arrow::bitmap::Bitmap;
-// A marker trait, not an array: it is what keeps the `Ptr` impls below from overlapping the
-// `Option<Ptr>` ones, which the compiler cannot rule out on its own.
 use polars_arrow::pushable::NoOption;
 use rayon::prelude::*;
 
@@ -406,7 +404,6 @@ where
         .unzip_into_vecs(&mut values, &mut validity);
 
     let values = Bitmap::from_u8_vec(values, len);
-    // One bit was written per element, so the mask holds one bit per element.
     let validity = PlBitmap::from_bitmap(Bitmap::from_u8_vec(validity, len));
     let validity = (validity.unset_bits() > 0).then_some(validity);
     BooleanChunked::with_chunk(
@@ -454,7 +451,6 @@ where
         })
         .collect_into_vec(&mut validity);
 
-    // One bit was written per element, so the mask holds one bit per element.
     let validity = PlBitmap::from_bitmap(Bitmap::from_u8_vec(validity, len));
     let validity = (validity.unset_bits() > 0).then_some(validity);
     ChunkedArray::from_vec_validity(PlSmallStr::EMPTY, values, validity)

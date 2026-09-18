@@ -22,12 +22,8 @@ pub(super) fn count_boolean_bits(ca: &ArrayChunked) -> IdxCa {
             .downcast_ref::<PlBooleanArray>()
             .unwrap();
         assert_eq!(mask.null_count(), 0);
-        // One count per element, and the mask of the array holds one bit per element as well.
         let validity = arr.validity().map(PlBitmap::from);
 
-        // Every element reads the values of the one element the chunk repeats, so they all
-        // count the same: it is counted once, over that element's width, rather than the
-        // elements being laid end to end first.
         if arr.values_are_scalar() {
             let [count] = count_bits_set(mask.values(), 1, arr.width())[..] else {
                 unreachable!("one element was counted over")
@@ -42,16 +38,12 @@ pub(super) fn count_boolean_bits(ca: &ArrayChunked) -> IdxCa {
 }
 
 fn count_bits_set(values: PlBitmapRef<'_>, len: usize, width: usize) -> Vec<IdxSize> {
-    // Fast path where all bits are either set or unset, which is every scalar values buffer: the
-    // one bit it holds stands for every value, and settles every count without being written out.
     if values.unset_bits() == values.len() {
         return vec![0 as IdxSize; len];
     } else if values.unset_bits() == 0 {
         return vec![width as IdxSize; len];
     }
 
-    // A scalar mask is all set or all unset, so what is left here already holds one bit per
-    // value: this borrows it rather than writing anything out.
     let values = values.to_flat();
     let (bits, bitmap_offset, _) = values.as_slice();
 

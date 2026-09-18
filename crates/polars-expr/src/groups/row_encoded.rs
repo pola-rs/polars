@@ -51,8 +51,6 @@ impl RowEncodedHashGrouper {
             .iter()
             .zip(key_columns)
             .map(|((name, dt), col)| {
-                // The decoded chunk carries no dtype of its own, so it is read back as the
-                // physical type the decode was asked for.
                 let s = unsafe {
                     Series::from_chunks_and_dtype_unchecked(
                         name.clone(),

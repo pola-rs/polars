@@ -148,8 +148,7 @@ where
     Some(state)
 }
 
-/// Defines kernels that fold the values of a flat chunk with `$op` from `$identity`, reading a
-/// scalar chunk's one value as its own extremum.
+/// Defines kernels that fold the values of a flat chunk with `$op` from `$identity`.
 macro_rules! simd_reduce_kernels {
     ($T:ty, $N:literal; $($name:ident: $identity:expr, $op:expr, $reduce:expr;)*) => {
         $(
@@ -240,11 +239,7 @@ macro_rules! impl_min_max_kernel_int {
 
         impl_arrow_min_max_kernel!($T);
 
-        /// A nested column reduces a row at a time, handing each row's values over as a slice,
-        /// so these are called once per row of it — and they are marked to be inlined into that
-        /// walk, which they are not otherwise: this is a crate of its own, so a caller sees no
-        /// more of them than their signature, leaving both the call and the `memcpy` the
-        /// remainder of the fold ends in per row.
+        /// A nested column reduces a row at a time, handing each row's values over as a slice.
         impl MinMaxKernel for [$T] {
             type Scalar<'a> = $T;
 
@@ -333,11 +328,7 @@ macro_rules! impl_min_max_kernel_float {
 
         impl_arrow_min_max_kernel!($T);
 
-        /// A nested column reduces a row at a time, handing each row's values over as a slice,
-        /// so these are called once per row of it — and they are marked to be inlined into that
-        /// walk, which they are not otherwise: this is a crate of its own, so a caller sees no
-        /// more of them than their signature, leaving both the call and the `memcpy` the
-        /// remainder of the fold ends in per row.
+        /// A nested column reduces a row at a time, handing each row's values over as a slice.
         impl MinMaxKernel for [$T] {
             type Scalar<'a> = $T;
 

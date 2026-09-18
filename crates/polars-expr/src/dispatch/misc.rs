@@ -448,7 +448,6 @@ pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Column> {
         let mut total_offset = 0;
 
         predicate.downcast_iter().for_each(|arr| {
-            // `SlicesIterator` below indexes the mask flatly, so a scalar one is written out.
             let values = arr.true_and_valid().into_bitmap();
 
             for (offset, len) in SlicesIterator::new(&values) {

@@ -21,17 +21,12 @@ pub fn horizontal_flatten(
         "every array contributes a width to the output row",
     );
 
-    // Whether each array stands for one row repeated over the output, rather than holding a row of
-    // its own per output row. The two coincide for an `output_height` of one, where either
-    // reading is the same one.
     let repeats: Vec<bool> = arrays
         .iter()
         .zip(widths)
         .map(|(array, &width)| is_broadcast(&**array, width, output_height))
         .collect();
 
-    // One array is the output, save for how many times its row is repeated: there is no second
-    // array to interleave it with, so nothing has to be copied out of it a row at a time.
     if let ([array], [width], [repeats]) = (arrays, widths, repeats.as_slice()) {
         if !repeats {
             return array.to_boxed();
@@ -45,8 +40,6 @@ pub fn horizontal_flatten(
     let row_width: usize = widths.iter().sum();
     let out_len = row_width.saturating_mul(output_height);
 
-    // A struct array is laid out one field at a time, which is what its every field being the
-    // same layout of the arrays' matching fields means.
     if arrays[0].array_type() == PlArrayType::Struct {
         return Box::new(struct_::flatten_structs(
             arrays,
@@ -73,8 +66,6 @@ pub fn horizontal_flatten(
 fn is_broadcast(array: &dyn PlArray, width: usize, output_height: usize) -> bool {
     let flat = width.checked_mul(output_height);
     if flat == Some(array.len()) {
-        // A single output row is the same array either way; reading it as the flat one saves the
-        // repetition below.
         return false;
     }
 

@@ -45,9 +45,6 @@ def test_empty_rle_21787() -> None:
 
 
 def test_rle_over_a_column_of_several_chunks() -> None:
-    # A morsel of the streaming engine is a slice of the frame it comes from, which
-    # may cross a chunk boundary of it: the values the runs are gathered from are
-    # read off a single chunk.
     values = [i % 3 for i in range(33)]
     s = pl.Series("a", values)
     chunked = pl.concat([s.slice(0, 1), s.slice(1, 32)], rechunk=False)
@@ -63,8 +60,6 @@ def test_rle_over_a_column_of_several_chunks() -> None:
 
 
 def test_rle_over_a_chunk_that_repeats_one_element() -> None:
-    # The answer comes off the one element the chunk repeats, rather than off a
-    # walk of every element of it: one run, as long as the column.
     cases: list[tuple[PolarsDataType, Any]] = [
         (pl.Int64, 5),
         (pl.String, "ab"),
@@ -86,9 +81,6 @@ def test_rle_over_a_chunk_that_repeats_one_element() -> None:
 
 
 def test_rle_over_a_repeated_chunk_under_a_mask() -> None:
-    # The values still repeat one value, so two elements differ only where the mask
-    # does: the runs come off the mask, and answer what the same values laid out flat
-    # do.
     mask = pl.Series("m", [True, True, False, False, False, True, False, True])
     cases: list[tuple[PolarsDataType, Any]] = [
         (pl.Int64, 5),
@@ -107,8 +99,6 @@ def test_rle_over_a_repeated_chunk_under_a_mask() -> None:
         assert_series_equal(masked.rle_id(), flat.rle_id())
         assert masked.rle_id().to_list() == [0, 0, 1, 1, 1, 2, 3, 4]
 
-    # A million rows of one value under a mask are the mask's own runs, which is not a
-    # walk of a million elements: the answer is four runs.
     wide = pl.select(
         pl.when(pl.Series("m", [i % 500_000 != 0 for i in range(1_000_000)]))
         .then(pl.repeat(7, 1_000_000, dtype=pl.Int64))

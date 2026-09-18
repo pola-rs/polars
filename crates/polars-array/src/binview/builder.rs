@@ -59,16 +59,6 @@ impl PlBinaryViewArrayBuilder {
     }
 
     /// Appends `value` as an element of its own, leaving the validity mask untouched.
-    ///
-    /// The mask a caller of this builds itself — `with_validity` on the frozen array, say, out of
-    /// the mask of the input it read the values off. It stays out of the loop that way: a builder
-    /// this is pushed onto keeps no mask at all, where `push_value` sets a bit per element for a
-    /// mask the caller then throws away.
-    ///
-    /// A builder must not see both this and a call that does maintain the mask
-    /// ([`push_value`](Self::push_value), [`push_null`](Self::push_null), the
-    /// [`StaticArrayBuilder`] methods): the bits would then stand for some of the elements and not
-    /// others.
     #[inline]
     pub fn push_value_ignore_validity(&mut self, value: &[u8]) {
         let view = self.copy_value(value);
@@ -76,9 +66,6 @@ impl PlBinaryViewArrayBuilder {
     }
 
     /// Appends `value` as an element of its own, `repeats` times over.
-    ///
-    /// The bytes are copied in once and every element is a view over that one copy, where
-    /// [`push_value`](Self::push_value) in a loop copies them once per element.
     pub fn extend_repeated(&mut self, value: &[u8], repeats: usize) {
         if repeats == 0 {
             return;
@@ -118,15 +105,8 @@ impl PlBinaryViewArrayBuilder {
 
     /// The index in `self.buffers` of `buffer`, adopting it if it is not held yet.
     fn adopt(&mut self, buffer: &Buffer<u8>) -> u32 {
-        // Two views over one allocation reach it through buffers that start at the same address
-        // but need not end at the same one, so what is held is the whole allocation. Expanding a
-        // buffer towards the end leaves both the offsets of the views into it and the address it
-        // starts at untouched, so the address keys the buffer before it is expanded — and a
-        // buffer already held is answered without the refcount bump a clone would cost.
         let key = buffer.as_slice().as_ptr().addr();
 
-        // The one buffer a run of views shares is answered out of a compare, rather than out of a
-        // hash and a lookup.
         if let Some((last_key, idx)) = self.last_adopted {
             if last_key == key {
                 return idx;
@@ -138,7 +118,6 @@ impl PlBinaryViewArrayBuilder {
             return idx;
         }
 
-        // The buffers being written into come before this one, so they take their index first.
         self.flush_active();
         let idx = self.buffer_idx_offset();
         self.buffers.push(buffer.clone().expand_end_to_storage());
@@ -189,14 +168,8 @@ impl PlBinaryViewArrayBuilder {
         share: ShareStrategy,
         opt: bool,
     ) {
-        // Adopting every chunk's buffers up front costs one entry per buffer whether or not any id
-        // reaches it, and leaves the result holding buffers nothing in it reads. That pays only
-        // when there are elements enough to amortize it: a gather of fewer elements than there are
-        // chunks adopts lazily instead, one buffer per view that actually points into it.
         let hoisting_pays = ids.len() >= chunks.len();
 
-        // Copying the bytes out of the source leaves no buffers to adopt, so there is nothing to
-        // hoist and the elementwise path stands.
         if matches!(share, ShareStrategy::Never) || !hoisting_pays {
             // SAFETY: the caller's guarantee is the one these ask for.
             return unsafe {
@@ -208,7 +181,6 @@ impl PlBinaryViewArrayBuilder {
             };
         }
 
-        // The buffers of every chunk, adopted once, as the indices its views are rewritten onto.
         let remaps: Vec<Vec<u32>> = chunks
             .iter()
             .map(|chunk| self.adopt_all(chunk.data_buffers()))
@@ -217,9 +189,6 @@ impl PlBinaryViewArrayBuilder {
         self.views.reserve(ids.len());
         self.validity.reserve(ids.len());
 
-        // A chunk with no mask at all has no null element, so a gather out of chunks like that
-        // answers every element valid unless its own id is null — and the runs between the null
-        // ids then reach the mask in one extension rather than one per element.
         let masked = chunks.iter().any(|chunk| chunk.validity().is_some());
         let mut valid_run = 0;
 
@@ -241,7 +210,6 @@ impl PlBinaryViewArrayBuilder {
                 let chunk = chunks.get_unchecked(chunk_idx as usize);
                 let mut view = chunk.view_unchecked(array_idx as usize);
 
-                // An inline view holds its bytes itself, so no buffer stands behind it.
                 if !view.is_inline() {
                     view.buffer_idx = *remaps
                         .get_unchecked(chunk_idx as usize)
@@ -337,7 +305,6 @@ impl PlBinaryViewArrayBuilder {
         let view = unsafe { other.view_unchecked(i) };
         let is_null = unsafe { other.is_null_unchecked(i) };
 
-        // The bytes of a null element are undetermined, so they are never copied out of it.
         let view = if is_null && matches!(share, ShareStrategy::Never) {
             View::default()
         } else {
@@ -361,10 +328,6 @@ impl PlBinaryViewArrayBuilder {
         let count = indices.len() * repeats;
         self.views.reserve(count);
 
-        // Every element of an array whose views are scalar stands for the same value, so its bytes
-        // are reached — and at most copied — once, however many elements are appended. Which of
-        // them are null does not come into it: the value of a null element is undetermined, so
-        // writing the shared one out for it is as good as anything else.
         if let Some(view) = other.scalar_views() {
             if count > 0 {
                 let view = self.take_view(view, other.data_buffers(), share);
@@ -436,8 +399,6 @@ impl StaticArrayBuilder for PlBinaryViewArrayBuilder {
     }
 
     fn extend_nulls(&mut self, length: usize) {
-        // A zeroed view holds no bytes at all, which the undetermined value of a null element may
-        // as well be.
         self.views
             .extend(std::iter::repeat_n(View::default(), length));
         self.validity.extend_constant(length, false);
@@ -465,9 +426,6 @@ impl StaticArrayBuilder for PlBinaryViewArrayBuilder {
 
     #[inline]
     unsafe fn extend_one(&mut self, other: &PlBinaryViewArray, index: usize, share: ShareStrategy) {
-        // One element is taken straight over: `subslice_extend` of a single element would check
-        // the subslice, resolve the values representation and go through the mask machinery per
-        // element, which a gather that reads one element at a time pays for every row.
         debug_assert!(index < other.len());
         unsafe {
             self.extend_element(other, index, 1, share);

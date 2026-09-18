@@ -17,8 +17,6 @@ where
     {
         // SAFETY: iter is TrustedLen.
         let iter = iter.into_iter();
-        // The Arrow builders are what the trusted-length collect is written against; importing
-        // the array it built hands the buffers over, which is `O(1)`.
         let arr = unsafe { PrimitiveArray::from_trusted_len_iter_unchecked(iter) };
         ChunkedArray::with_chunk(PlSmallStr::EMPTY, primitive_from_arrow(&arr))
     }

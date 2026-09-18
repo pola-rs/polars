@@ -212,8 +212,6 @@ impl IdxTable for BinviewKeyIdxTable {
 
         unsafe {
             let buffers = hash_keys.keys.data_buffers();
-            // The getter resolves the index against the buffer, so a scalar chunk hands back the
-            // one view every element reads rather than being indexed past its single slot.
             let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             if let Some(validity) = hash_keys.keys.validity() {
                 for (i, subset_idx) in subset.iter().enumerate_idx() {
@@ -282,8 +280,6 @@ impl IdxTable for BinviewKeyIdxTable {
 
         unsafe {
             let buffers = hash_keys.keys.data_buffers();
-            // The getter resolves the index against the buffer, so a scalar chunk hands back the
-            // one view every element reads rather than being indexed past its single slot.
             let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             if let Some(validity) = hash_keys.keys.validity() {
                 let iter = subset.iter().map(|i| {

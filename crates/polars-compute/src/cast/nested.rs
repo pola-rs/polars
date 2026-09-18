@@ -60,8 +60,6 @@ pub fn fixed_size_list_to_list(
     let width = from.width() as u64;
     let validity = from.validity().map(PlBitmap::from);
 
-    // The one list every element of a scalar chunk reads lies in one range, which the offsets of
-    // the lists repeat rather than write out.
     if from.scalar_value_ignore_validity().is_some() {
         // SAFETY: the values are the one list every element reads, cast one for one, so the two
         // offsets are the range it covers — which is scalar for however many elements read it.
@@ -79,9 +77,8 @@ pub fn fixed_size_list_to_list(
         .map(|element| element * width)
         .collect::<Vec<_>>();
 
-    // SAFETY: the values hold the width of every element laid end to end, cast one for one, and
-    // the offsets count up by that width: one per element plus the end of the last, ascending,
-    // ending exactly where the values do. Checking that back is a pass over them for nothing.
+    // SAFETY: the values hold the width of every element laid end to end, and the offsets count
+    // up by that width: one per element plus the end of the last, ascending, within the values.
     Ok(unsafe { PlListArray::new_unchecked(values, Buffer::from(offsets), from.len(), validity) })
 }
 
@@ -93,13 +90,9 @@ pub fn list_to_fixed_size_list(
 ) -> PolarsResult<PlFixedSizeListArray> {
     let validity = from.validity().map(PlBitmap::from);
 
-    // The one list every element of a scalar chunk reads is as wide as every element then is.
     if let Some(range) = from.scalar_offsets() {
         let values = cast_values(&*from.values().sliced(range.start, range.len()))?;
 
-        // A null element holds no values of its own, however wide the range the offsets repeat:
-        // where no element is there, there is none to be the wrong width, and the values the
-        // result reads are the `width` of nothing every element then holds.
         let values = if range.len() == width {
             values
         } else {
@@ -120,8 +113,6 @@ pub fn list_to_fixed_size_list(
 
     let offsets = from.flat_offsets().unwrap();
 
-    // Without a null element the values already lie `width` to an element, so the cast reads the
-    // range they lie in as they are.
     if from.null_count() == 0 {
         let start_offset = offsets[0] as usize;
         let mut is_valid = true;
@@ -140,8 +131,6 @@ pub fn list_to_fixed_size_list(
         ));
     }
 
-    // A null element holds no values of its own, so lining every element up `width` values to one
-    // means picking out the values of the ones that do and a null for the rest.
     let mut expected_offset = offsets[0] + width as u64;
     for i in 1..=from.len() {
         let current_offset = offsets[i];
@@ -193,7 +182,6 @@ pub fn list_to_fixed_size_list(
 pub fn list_uint8_to_binview(from: &PlListArray) -> PolarsResult<PlBinaryViewArray> {
     let values: &PlPrimitiveArray<u8> = downcast(from.values());
 
-    // An element that holds a null byte holds no bytes at all, and reads as null in turn.
     let mut holds_bytes = MaskBuilder::with_capacity(from.len());
     for i in 0..from.len() {
         let range = from.value_range(i);
@@ -214,8 +202,6 @@ pub fn list_uint8_to_binview(from: &PlListArray) -> PolarsResult<PlBinaryViewArr
         Some(holds_bytes) => Some(super::and_validity(from.validity(), holds_bytes)),
     };
 
-    // The bytes of the elements laid end to end with the range each of them lies in is what an
-    // offset-backed binary array is, so the views are read off it.
     let binary = match from.scalar_offsets() {
         Some(range) => PlBinaryArray::new_broadcast(
             values.to_flat_values().into_owned(),

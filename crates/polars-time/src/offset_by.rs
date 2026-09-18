@@ -9,9 +9,6 @@ fn apply_offsets_to_datetime(
     offsets: &StringChunked,
     time_zone: Option<&Tz>,
 ) -> PolarsResult<Int64Chunked> {
-    // A literal offset reaches this kernel already broadcast over the timestamps, so the arm
-    // below that parses one duration for the whole column would never see it. Narrow it back to
-    // the one element it repeats; the output takes the timestamps' length either way.
     let settled = (offsets.len() == datetime.len())
         .then(|| offsets.settled_to_one_element())
         .flatten();
@@ -85,8 +82,6 @@ pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
         DataType::Datetime(_, tz) => tz.clone(),
         _ => polars_bail!(InvalidOperation: "expected Date or Datetime, got {dtype}"),
     };
-    // One offset the whole column over keeps a constant duration constant, however that one
-    // offset is laid out — see `apply_offsets_to_datetime`.
     let settled = (offsets.len() == ts.len())
         .then(|| offsets.settled_to_one_element())
         .flatten();

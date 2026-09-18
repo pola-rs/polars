@@ -462,9 +462,6 @@ impl StructChunked {
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{name}"))
     }
     /// Replaces the outer validity mask, which may repeat a single bit.
-    ///
-    /// The mask holds one bit per row of the column, which is a whole chunk's worth only where
-    /// there is a single chunk: each of several takes the slice of it that its own rows are.
     pub(crate) fn set_outer_validity(&mut self, validity: Option<PlBitmap>) {
         debug_assert!(validity.as_ref().is_none_or(|v| v.len() == self.len()));
 
@@ -472,8 +469,6 @@ impl StructChunked {
             let mut offset = 0;
             for arr in self.chunks_mut().iter_mut() {
                 let length = arr.len();
-                // Slicing is `O(1)` and keeps the representation, so a mask repeating one bit
-                // stays the single bit it is rather than being written out per chunk.
                 let chunk_validity = validity
                     .as_ref()
                     .map(|validity| validity.sliced(offset, length));

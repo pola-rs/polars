@@ -15,10 +15,6 @@ pub struct PlBitmapIter<'a> {
 #[derive(Clone)]
 enum BitsRepr<'a> {
     /// One bit per element, walked a word at a time.
-    ///
-    /// `BitmapIter` loads eight bytes and shifts a bit off them per element, where reading each
-    /// bit by the position it lies at loads the byte holding it every time. Over 1M booleans
-    /// that is 0.56 ms against 0.78 in `is_unique`, which walks the elements and hashes them.
     Flat(BitmapIter<'a>),
     /// The single bit every element shares, and how many are left to yield.
     Scalar { bit: bool, remaining: usize },
@@ -32,8 +28,6 @@ impl<'a> PlBitmapIter<'a> {
                 let (bytes, offset, length) = bitmap.as_slice();
                 Self::flat(bytes, offset..offset + length)
             },
-            // A mask that is not flat is scalar: every element reads the one bit it is backed by,
-            // which an empty mask has no position left to read.
             None => Self {
                 repr: BitsRepr::Scalar {
                     bit: mask.scalar_value().unwrap_or(false),
@@ -104,7 +98,6 @@ impl Iterator for PlBitmapIter<'_> {
 
     #[inline]
     fn last(mut self) -> Option<bool> {
-        // Walking to the last bit is what the default would do; the mask is double ended.
         self.next_back()
     }
 
@@ -144,15 +137,10 @@ impl DoubleEndedIterator for PlBitmapIter<'_> {
 
     #[inline]
     fn nth_back(&mut self, n: usize) -> Option<bool> {
-        // A flat mask walks back a bit at a time, the way `BitmapIter` does and the way the
-        // arrow iterator this column used to be read with did; only the scalar arm below skips.
         if let BitsRepr::Flat(bits) = &mut self.repr {
             return bits.nth_back(n);
         }
 
-        // Every position of a scalar mask yields the one bit it is backed by, so walking in from
-        // either end drops the same number of them and reads the same bit; the default would walk
-        // there one position at a time, which a mask of a billion bits does not come back from.
         self.nth(n)
     }
 
@@ -232,9 +220,6 @@ impl<'a> ValidityBits<'a> {
     }
 
     /// The bits, to read one per value alongside the values themselves.
-    ///
-    /// `BitmapIter` holds eight bytes and shifts a bit off them per element, where reading each
-    /// bit by the position it lies at loads the byte holding it every time.
     #[inline]
     pub(crate) fn words(&self) -> BitmapIter<'a> {
         BitmapIter::new(self.bytes, self.offset, self.len)
@@ -304,18 +289,12 @@ impl<'a> ValidityFold<'a> {
 impl<'a> ValidityIter<'a> {
     #[inline]
     pub(crate) fn new(validity: Option<PlBitmapRef<'a>>) -> Self {
-        // An array without a mask has no null elements, which is the set bit they all share.
         let Some(validity) = validity else {
             return Self::Scalar(true);
         };
 
         match validity.flat_bitmap() {
             Some(bitmap) => {
-                // A mask whose bits are all the same says no more than the single bit they share,
-                // and saying it that way keeps the whole walk off the bit-reading path. The count
-                // is worth a popcount where the bitmap does not already cache it: it reads 64 bits
-                // an instruction, against one bit an instruction for the walk it stands to save,
-                // and the bitmap caches it for every later reader.
                 let unset_bits = bitmap.unset_bits();
                 if unset_bits == 0 {
                     return Self::Scalar(true);
@@ -331,8 +310,6 @@ impl<'a> ValidityIter<'a> {
                     back: offset + length,
                 }
             },
-            // A mask that is not flat is scalar: every element reads the one bit it is backed by,
-            // which an empty mask has no element left to read.
             None => Self::Scalar(validity.scalar_value().unwrap_or(true)),
         }
     }
@@ -382,8 +359,6 @@ impl<'a> ValidityIter<'a> {
     #[inline(always)]
     pub(crate) fn nth_back(&mut self, n: usize) -> bool {
         if let Self::Flat { back, .. } = self {
-            // Dropping more positions than the mask has left leaves the back at or before the
-            // front, which is the mask covering nothing — the same as walking it to its end.
             *back = back.saturating_sub(n);
         }
 
@@ -430,7 +405,6 @@ impl<'a> ValidityIter<'a> {
     #[inline(always)]
     pub(crate) unsafe fn nth_unchecked(&mut self, n: usize) -> bool {
         if let Self::Flat { front, .. } = self {
-            // The element `n` positions on is one the mask covers, so its bit is below the back.
             *front += n;
         }
 
@@ -445,8 +419,6 @@ impl<'a> ValidityIter<'a> {
     #[inline(always)]
     pub(crate) unsafe fn nth_back_unchecked(&mut self, n: usize) -> bool {
         if let Self::Flat { back, .. } = self {
-            // The element `n` positions in is one the mask covers, so its bit is at or above the
-            // front.
             *back -= n;
         }
 
@@ -471,8 +443,6 @@ impl<'a> ValidityIter<'a> {
             Self::Flat { bytes, front, back } => ValidityFold::Bits(ValidityBits {
                 bytes,
                 offset: front,
-                // Walking past the end leaves the front at or beyond the back, which `nth` and
-                // `nth_back` reach in one step; either way no bit is left.
                 len: back.saturating_sub(front),
             }),
         }

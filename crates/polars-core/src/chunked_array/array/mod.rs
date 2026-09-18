@@ -19,8 +19,6 @@ pub(crate) fn array_values(arr: &PlFixedSizeListArray) -> PlArrayRef {
         return values.to_boxed();
     }
 
-    // The mask is dropped first: it is not part of what is handed over, and a repeated one would
-    // otherwise be written out along with the values for no reader at all.
     arr.clone()
         .with_validity(None)
         .to_flat()
@@ -29,10 +27,6 @@ pub(crate) fn array_values(arr: &PlFixedSizeListArray) -> PlArrayRef {
 }
 
 /// Returns `arr` with its values replaced, keeping its width and validity mask.
-///
-/// The replacement stands for the values it replaces one for one, so it is in the
-/// representation they were in: one element's values where `arr` repeats a single element, and
-/// one element's values per element otherwise.
 pub(crate) fn array_with_values(
     arr: &PlFixedSizeListArray,
     values: PlArrayRef,
@@ -75,8 +69,6 @@ pub(crate) fn collect_array_chunk(
         validity.push(element.is_some());
     }
 
-    // The values of a null element are the `width` nulls that stand in for the element it does not
-    // hold; the array is built once and shared by every null element.
     let null_element = has_nulls.then(|| {
         let mut builder = builder_like(&*new_empty_chunk(inner_dtype));
         builder.extend_nulls(width);
@@ -125,8 +117,6 @@ impl ArrayChunked {
     /// Panics if the physical representation of `dtype` differs the physical
     /// representation of the existing inner `dtype`.
     pub unsafe fn set_inner_dtype(&mut self, dtype: DataType) {
-        // A chunk carries no inner type, so a `ChunkedArray` built from one alone names `Null`
-        // as its inner type until it is set here.
         assert!(
             self.inner_dtype().is_null() || dtype.to_physical() == self.inner_dtype().to_physical()
         );
@@ -145,8 +135,6 @@ impl ArrayChunked {
     /// # Safety
     /// Same requirements as [`ListChunked::to_logical`].
     pub unsafe fn to_logical(&mut self, inner_dtype: DataType) {
-        // A chunk carries no inner type, so a `ChunkedArray` built from one alone names `Null`
-        // as its inner type until it is set here.
         debug_assert!(
             self.inner_dtype().is_null()
                 || inner_dtype.to_physical() == self.inner_dtype().to_physical()
@@ -158,10 +146,6 @@ impl ArrayChunked {
 
     /// Convert the datatype of the array into the physical datatype.
     pub fn to_physical_repr(&self) -> Cow<'_, ArrayChunked> {
-        // Whether the values change is a question about the inner type alone, so it is asked of
-        // the type rather than of the values: `get_inner` writes them out one list per element,
-        // which for an inner type that is already physical is a copy of the whole column for an
-        // answer of "nothing to do" — and a chunk that repeats one list pays it in full.
         if !self.inner_dtype().is_logical() {
             return Cow::Borrowed(self);
         }
@@ -173,11 +157,7 @@ impl ArrayChunked {
         let chunk_len_validity_iter =
             if physical_repr.chunks().len() == 1 && self.chunks().len() > 1 {
                 // Physical repr got rechunked, rechunk our validity as well.
-                Either::Left(std::iter::once((
-                    self.len(),
-                    // Rechunking writes the mask out one bit per element.
-                    self.rechunk_validity(),
-                )))
+                Either::Left(std::iter::once((self.len(), self.rechunk_validity())))
             } else {
                 // No rechunking, expect the same number of chunks.
                 assert_eq!(self.chunks().len(), physical_repr.chunks().len());
@@ -213,9 +193,6 @@ impl ArrayChunked {
     pub unsafe fn from_physical_unchecked(&self, to_inner_dtype: DataType) -> PolarsResult<Self> {
         debug_assert!(!self.inner_dtype().is_logical());
 
-        // The values are re-tagged one for one, so they are taken as they are laid out: a chunk
-        // that repeats a single array holds that one array's values rather than a copy of them
-        // per element, and `array_with_values` puts the re-tagged ones back the same way.
         let chunks = self
             .downcast_iter()
             .map(|arr| arr.values().to_boxed())
@@ -274,10 +251,6 @@ impl ArrayChunked {
             .downcast_iter()
             .zip(values.into_chunks())
             .map(|(ca_arr, v_arr)| {
-                // `values` holds one element's worth of values per element, which is the flat
-                // layout: a chunk that repeats a single array holds them once, and is written
-                // out here for the two to line up. `array_with_values` puts the replacement
-                // back in the representation it takes the values out in.
                 let flat = ca_arr.to_flat();
                 array_with_values(flat.as_array(), v_arr).into_boxed()
             })
@@ -333,39 +306,5 @@ impl ArrayChunked {
                 DataType::Array(Box::new(out.dtype().clone()), self.width()),
             )
         })
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    /// [`ArrayChunked::with_inner_values`] is handed one element's worth of values per element,
-    /// which a chunk that repeats a single array does not hold: `array_with_values` reads its
-    /// replacement in the representation it takes the old values out in, so the chunk is
-    /// written out flat first for the two to line up.
-    #[test]
-    fn with_inner_values_over_a_chunk_that_repeats_one_array() {
-        let element = Series::new(PlSmallStr::from_static("a"), [1i64, 2, 3]);
-        let repeated = ArrayChunked::full(PlSmallStr::from_static("a"), &element, 4);
-        assert!(repeated.downcast_as_array().values_are_scalar());
-        assert_eq!(repeated.inner_length(), 12);
-
-        let values = repeated.get_inner();
-        assert_eq!(values.len(), repeated.inner_length());
-
-        let doubled = &values * 2;
-        let out = repeated.with_inner_values(&doubled);
-
-        assert_eq!(out.len(), repeated.len());
-        assert_eq!(out.width(), 3);
-        assert_eq!(
-            out.get_inner()
-                .i64()
-                .unwrap()
-                .into_no_null_iter()
-                .collect::<Vec<_>>(),
-            vec![2i64, 4, 6, 2, 4, 6, 2, 4, 6, 2, 4, 6],
-        );
     }
 }

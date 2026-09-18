@@ -87,8 +87,6 @@ pub(super) fn series_is_flat(s: &Series) -> bool {
             s.to_physical_repr().i64().unwrap().is_flat()
         },
         DataType::Array(_, _) => {
-            // `get_inner` writes out the values of a scalar array; those values carry their own
-            // representation, which the recursion is for.
             let ca = s.array().unwrap();
             ca.is_flat() && series_is_flat(&ca.get_inner())
         },

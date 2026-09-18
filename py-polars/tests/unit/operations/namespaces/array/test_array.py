@@ -27,9 +27,6 @@ def test_arr_min_max() -> None:
 
 
 def test_arr_reduce_null_element_with_values() -> None:
-    # An element can be null while the values under it are not, which is what a gather
-    # with a null index and a broadcast masked by `when` both leave behind: a null
-    # element holds no values to read, whatever the values under it say.
     gathered = pl.Series(
         "a", [[1, 2], [3, 4], [5, 6]], dtype=pl.Array(pl.Int64, 2)
     ).gather([0, None, 2])  # type: ignore[list-item]
@@ -54,8 +51,6 @@ def test_arr_reduce_null_element_with_values() -> None:
 
 
 def test_arr_reduce_repeated_element() -> None:
-    # A chunk that repeats a single list holds it once: reducing it must still answer
-    # for every element, and must not read the values of one that is null.
     repeated = pl.select(
         pl.repeat([3, 1, 2], 4, dtype=pl.Array(pl.Int64, 3)).alias("a")
     ).to_series()
@@ -88,22 +83,16 @@ def test_arr_reduce_repeated_element() -> None:
 
 
 def test_arr_reduce_repeated_values_under_a_flat_mask() -> None:
-    # The values under the rows can repeat a single slot while the mask over them holds
-    # one bit each, which is what a `when` over a repeated column leaves: a row reduces
-    # to the one value wherever the mask leaves it a value at all, and to nothing where
-    # it leaves none.
     flags = [True, True, True, False, False, False, True, False, True]
     inner = pl.select(
         pl.when(pl.Series(flags)).then(pl.repeat(7, 9)).alias("a")
     ).to_series()
-    # The values are still the one slot they repeat.
     assert inner.estimated_size() < 9 * 8
 
     s = inner.reshape((3, 3))
     assert s.arr.min().to_list() == [7, None, 7]
     assert s.arr.max().to_list() == [7, None, 7]
 
-    # A mask that marks every value as null leaves no row anything to reduce.
     none = pl.select(
         pl.when(pl.Series([False] * 9)).then(pl.repeat(7, 9)).alias("a")
     ).to_series()
@@ -111,12 +100,8 @@ def test_arr_reduce_repeated_values_under_a_flat_mask() -> None:
     assert none.reshape((3, 3)).arr.max().to_list() == [None] * 3
 
 
-# A row up to 32 values wide has its mask read in a single word, and a wider one a bit
-# at a time, so the widths either side of that are covered.
 @pytest.mark.parametrize("width", [1, 3, 8, 17, 31, 32, 33, 40])
 def test_arr_reduce_nulls_among_the_values(width: int) -> None:
-    # A row whose values are partly null reduces over the ones that are there, whichever
-    # representation the chunk it is read out of is in.
     rows = [
         [
             None if (i * width + j) % 3 == 0 else (i * width + j) % 11
@@ -141,7 +126,6 @@ def test_arr_reduce_nulls_among_the_values(width: int) -> None:
 
 
 def test_arr_reduce_zero_width() -> None:
-    # An element of no values at all reduces to nothing.
     s = pl.Series("a", [[], []], dtype=pl.Array(pl.Int64, 0))
     assert s.arr.min().to_list() == [None, None]
     assert s.arr.max().to_list() == [None, None]
@@ -532,11 +516,6 @@ def test_arr_dot_wide(
     abs_tol: float,
     with_inner_nulls: bool,
 ) -> None:
-    # The two sides add the same products up in different orders, so the tolerance
-    # has to cover the summation order rather than a single rounding: the terms
-    # alternate in sign and are each ~100x the sum they cancel down to, which lifts
-    # every term's rounding by that factor in the answer. On `Float32` that is a few
-    # parts in 1e5, so the relative tolerance is 1e-3 rather than 1e-5.
     width = 768
     lhs_values = [
         None
@@ -1307,8 +1286,6 @@ def test_array_idx_size_limit_eval(capfd: Any, plmonkeypatch: PlMonkeyPatch) -> 
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     plmonkeypatch.setenv("POLARS_ARRAY_EVAL_IDX_SIZE_LIMIT", "20")
     width = 19
-    # The rows have to differ: a chunk whose rows all read the one list is evaluated
-    # over a single row, which never reaches the batching this covers.
     rows = [[i] * width for i in range(4)]
     assert (
         pl.Series("a", rows, dtype=pl.Array(pl.Int64, width))
@@ -1335,9 +1312,6 @@ def test_array_idx_size_limit_eval(capfd: Any, plmonkeypatch: PlMonkeyPatch) -> 
     ],
 )
 def test_array_reverse_non_numeric_inner(dtype: pl.DataType) -> None:
-    # The column is reversed by reading its elements out by index; it used to
-    # be pushed into a builder that only exists for a numeric inner type, and
-    # panicked for every other one.
     s = pl.Series("a", [None, None, None], dtype=pl.Array(dtype, 2))
     out = s.reverse()
 
@@ -1364,10 +1338,6 @@ def test_array_reverse_non_numeric_inner_values() -> None:
 def test_array_count_matches_over_a_chunk_that_repeats_one_array(
     value: list[Any], match: Any, expected: int
 ) -> None:
-    # `apply_to_inner` hands its closure the values of a single element for such a
-    # chunk, since every element reads the same ones — it wrote the one array out per
-    # element instead, which cost 8.4 ms per million three-element arrays where the
-    # flat column cost 1.7 ms. Same as the `List` twin.
     n = 200_000
     dtype = pl.Array(pl.Int64, 3)
     repeated = pl.select(
@@ -1382,14 +1352,10 @@ def test_array_count_matches_over_a_chunk_that_repeats_one_array(
     )
     assert_series_equal(counts, flat.arr.count_matches(match))
 
-    # The counts are the one count repeated, rather than one slot per element.
     assert counts.estimated_size() < flat.arr.count_matches(match).estimated_size()
 
 
 def test_array_cast_keeps_a_repeated_array_repeated() -> None:
-    # The values go through `apply_to_inner`, which hands its closure the values of a
-    # single element for such a chunk: every element reads the same ones, so they are
-    # re-tagged once and the answer stands for every element.
     n = 200_000
     dtype = pl.Array(pl.Int64, 2)
     repeated = pl.select(
@@ -1413,10 +1379,6 @@ def test_array_cast_keeps_a_repeated_array_repeated() -> None:
 def test_array_contains_over_a_chunk_that_repeats_one_array(
     value: list[Any], needle: Any, expected: bool
 ) -> None:
-    # `is_in` read the container through `get_inner`, which writes the one array such a
-    # chunk repeats out once per element -- more work over strictly less data. Over a
-    # million repeated three-element arrays it cost 9.2 ms where the flat column cost
-    # 2.3 ms.
     n = 200_000
     dtype = pl.Array(pl.Int64, 3)
     repeated = pl.select(
@@ -1428,15 +1390,10 @@ def test_array_contains_over_a_chunk_that_repeats_one_array(
     assert_series_equal(answer, pl.Series("a", [expected] * n))
     assert_series_equal(answer, flat.arr.contains(needle))
 
-    # The answer is the one bit repeated, rather than one slot per element.
     assert answer.estimated_size() < flat.arr.contains(needle).estimated_size()
 
 
 def test_strict_cast_from_array_to_list_over_a_repeated_element() -> None:
-    # A strict cast checks its answer against its input with `find_validity_mismatch`,
-    # whose list-against-array arm wrote both sides out flat where the two same-shape
-    # arms read the one element such a chunk repeats. It cost 14 ms per million
-    # three-element arrays, against 0.3 ms for the flat column it holds less than.
     n = 200_000
     dtype = pl.Array(pl.Int64, 3)
     repeated = pl.select(
@@ -1450,7 +1407,6 @@ def test_strict_cast_from_array_to_list_over_a_repeated_element() -> None:
             repeated.cast(target).estimated_size() < flat.cast(target).estimated_size()
         )
 
-    # A strict cast that cannot hold its values still reports the failure.
     strings = pl.select(
         pl.repeat(pl.lit(["a", "b"], dtype=pl.Array(pl.String, 2)), n).alias("a")
     ).to_series()

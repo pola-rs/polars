@@ -270,10 +270,6 @@ where
     fn sum_repeated(value: Self, count: usize) -> F {
         let total =
             value.as_() * F::from(count).expect("a length is representable in the accumulator");
-        // Adding into a zero is what the loops above do with the first element they read, and it
-        // is the one thing the product does not answer alike: `-0.0` added to `+0.0` is `+0.0`,
-        // where multiplying it by a count leaves the sign of the zero on. Every other total is
-        // itself again.
         F::zero() + total
     }
 
@@ -313,17 +309,12 @@ where
         return F::zero();
     }
 
-    // The non-null elements of a chunk with a repeated values buffer are all that one value, so
-    // their total is it added up `count` times whatever the mask looks like.
     if let Some(value) = arr.scalar_value_ignore_validity() {
         return FloatSum::sum_repeated(value, count);
     }
 
     let values = arr.flat_values().expect("the values are not repeated");
 
-    // A mask that repeats a single bit cannot reach here: it would have to be a set one, since an
-    // unset one leaves no element non-null and `count` is not zero, and a set one leaves nothing
-    // for the sum to skip.
     match (count < arr.len()).then(|| arr.validity().expect("a null element has a mask").to_flat())
     {
         Some(validity) => FloatSum::sum_with_validity(values, &validity),

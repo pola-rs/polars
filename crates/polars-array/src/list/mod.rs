@@ -192,8 +192,6 @@ impl PlListArray {
     /// Creates a [`PlListArray`] of `length` copies of `element`, in its own memory.
     #[inline]
     pub fn new_scalar(element: Box<dyn PlArray>, length: usize) -> Self {
-        // There is no element for the list to be shared by when there are no elements at all,
-        // which is why an empty array is the one that covers no range of the values it repeats.
         if length == 0 {
             return Self::new_empty(element);
         }
@@ -234,7 +232,6 @@ impl PlListArray {
     pub fn scalar_offsets(&self) -> Option<Range<usize>> {
         // SAFETY: a scalar offsets buffer holds two slots, so both are in bounds.
         self.offsets_are_scalar().then(|| unsafe {
-            // Every offset of an array that upholds its invariants fits in a `usize`.
             *self.offsets.get_unchecked(0) as usize..*self.offsets.get_unchecked(1) as usize
         })
     }
@@ -257,21 +254,12 @@ impl PlListArray {
     /// Whether the offsets hold one range that every element of this array shares.
     #[inline]
     pub fn offsets_are_scalar(&self) -> bool {
-        // The offsets hold one slot more than the starts that are flat or scalar for this array's
-        // length, so the two of a scalar array are a single start and the end of it. An array of
-        // no elements holds the one offset it starts at and no range at all, and is flat.
         self.offsets.len() == 2 && self.length > 0
     }
 
     /// Whether the offsets hold the range of every element, laid end to end.
     #[inline]
     pub fn offsets_are_flat(&self) -> bool {
-        // The offsets are never empty, and hold the start of every element plus the end of the
-        // last. This is spelled as the predicate the iterators resolve their own representation
-        // with, rather than as the subtraction it comes down to for an array that upholds its
-        // invariants: a caller that asserts this ahead of a walk is then asserting the very
-        // condition the walk branches on, which folds the branch — and the tag it reads, and the
-        // step it computes — out of the loop.
         is_flat_offsets_len(self.offsets.len(), self.length)
     }
 
@@ -321,7 +309,6 @@ impl PlListArray {
     pub unsafe fn value_range_unchecked(&self, i: usize) -> Range<usize> {
         debug_assert!(i < self.length);
 
-        // Scalar offsets hold the one range every element covers, so they are read at slot zero.
         let i = broadcast_index(i, self.offsets.len() - 1);
 
         // SAFETY: the offsets hold one slot more than the starts `broadcast_index` maps onto, so
@@ -407,7 +394,6 @@ impl PlListArray {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        // The values array the offsets point into is left as it is; see `slice_offsets`.
         unsafe {
             slice_offsets(&mut self.offsets, self.length, offset, length);
             slice_validity(&mut self.validity, self.length, offset, length);
@@ -431,8 +417,6 @@ impl PlListArray {
             return Self::new_empty(self.values.clone());
         }
 
-        // Nothing is repeated: the values array is cloned as it is, and the two offsets every
-        // element of the result shares are the ones of the element being repeated.
         let range = unsafe { self.value_range_unchecked(index) };
 
         Self {
@@ -459,15 +443,8 @@ impl PlListArray {
             || self.offsets[0] == self.offsets[1]
             || self.null_count() == self.length
         {
-            // Every element is the empty list, or is null and therefore holds an undetermined one:
-            // no value is written out, and the offsets all point at the same place. That place is
-            // the start of the values array rather than the range every element covered, which is
-            // the same empty list and is a buffer that need not be written out either.
             (self.values.clone(), Buffer::zeroed(self.length + 1))
         } else {
-            // The one list every element covers, written out once per element. Concatenating it
-            // with copies of itself is what repeats it, and that keeps the values of the result
-            // scalar when the list is itself a single repeated value.
             let range = unsafe { self.value_range_unchecked(0) };
             let element = self.values.sliced(range.start, range.len());
             let values = concatenate_repeated(&*element, self.length)
@@ -480,8 +457,8 @@ impl PlListArray {
             (values, Buffer::from(offsets))
         };
 
-        // SAFETY: the offsets are ordered, one per element plus the end of the last, and within the
-        // values; the mask is the flat counterpart of one valid for this array's length. That
+        // SAFETY: the offsets are ordered, one per element plus the end of the last, within the
+        // values; the mask is the flat counterpart of this array's own.
         Cow::Owned(unsafe {
             Flat::new(Self::new_unchecked(values, offsets, self.length, validity))
         })
@@ -507,9 +484,6 @@ crate::impl_array_eq!(PlListArray, |lhs, rhs| {
 
 impl std::fmt::Debug for PlListArray {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // The values array formats its own scalar representation, so this never materializes one,
-        // and neither are the offsets: they are listed as they are backed, which is two of them
-        // for a scalar array.
         let mut s = f.debug_struct("PlListArray");
         s.field("length", &self.length);
         if let Some(validity) = self.validity() {
@@ -524,15 +498,12 @@ crate::impl_pl_array! {
     PlListArray,
     PlArrayType::List,
     fn new_full_null_like_self(&self, length: usize) -> Box<dyn PlArray> {
-        // Every element is an empty list, so the values are only there to carry their shape.
         Box::new(Self::new_full_null(self.values.sliced(0, 0), length))
     }
 }
 
 /// Checks that `offsets` are monotonically non-decreasing and stay within `values`.
 fn validate_offsets(values: &dyn PlArray, offsets: &Buffer<u64>) -> PolarsResult<()> {
-    // The offsets are ordered, so checking the last one against the values array covers them all —
-    // including that every one of them fits in a `usize`.
     for (i, window) in offsets.windows(2).enumerate() {
         polars_ensure!(
             window[0] <= window[1],

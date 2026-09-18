@@ -129,8 +129,6 @@ impl HotGrouper for BinviewHashHotGrouper {
         };
 
         unsafe {
-            // The getter resolves the index against the buffer, so a scalar chunk hands back the
-            // one view every element reads rather than being indexed past its single slot.
             let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             let buffers = hash_keys.keys.data_buffers();
             if hash_keys.null_is_valid {

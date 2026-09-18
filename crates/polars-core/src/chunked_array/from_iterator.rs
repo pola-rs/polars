@@ -69,8 +69,6 @@ where
 {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        // The values are owned, so each is appended while it is still alive rather than
-        // collected as a borrow of it.
         let mut builder = PlUtf8ViewArrayBuilder::new();
         for v in iter {
             builder.push(v.as_ref().map(Ptr::as_ref));
@@ -100,8 +98,6 @@ where
 {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        // The values are owned, so each is appended while it is still alive rather than
-        // collected as a borrow of it.
         let mut builder = PlUtf8ViewArrayBuilder::new();
         for v in iter {
             builder.push_value(v.as_ref());
@@ -117,8 +113,6 @@ where
 {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        // The values are owned, so each is appended while it is still alive rather than
-        // collected as a borrow of it.
         let mut builder = PlBinaryViewArrayBuilder::new();
         for v in iter {
             builder.push(v.as_ref().map(Ptr::as_ref));
@@ -133,8 +127,6 @@ where
 {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        // The values are owned, so each is appended while it is still alive rather than
-        // collected as a borrow of it.
         let mut builder = PlBinaryViewArrayBuilder::new();
         for v in iter {
             builder.push_value(v.as_ref());

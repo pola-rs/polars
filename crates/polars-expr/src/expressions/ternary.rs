@@ -123,8 +123,6 @@ impl PhysicalExpr for TernaryExpr {
         .then(|| {
             mask.rechunk_mut();
             let arr = mask.downcast_as_array();
-            // The mask keeps whichever representation it came out in, so a mask that is true or
-            // false throughout stays the single bit `Column::mask` reads as its shortcut.
             match arr.validity() {
                 Some(validity) => combine_validities_and(Some(arr.values()), Some(validity))
                     .expect("the values mask is always there"),
@@ -150,8 +148,6 @@ impl PhysicalExpr for TernaryExpr {
             if self.falsy_mask_columns.is_empty() || true_count == 0 {
                 return self.falsy.evaluate(df, &state);
             }
-            // Inverting keeps the representation, so a mask that is true or false throughout
-            // stays the single bit `Column::mask` reads as its shortcut.
             let inverted = mask_bitmap.as_ref().unwrap().not();
             let mask_df = masked_df(&self.falsy_mask_columns, &inverted)?;
             self.falsy.evaluate(&mask_df, &state)
@@ -380,8 +376,6 @@ impl PhysicalExpr for TernaryExpr {
                 // @partition-opt
                 let values = out.as_materialized_series().array_ref(0);
                 let target = ac_target.get_values().list().unwrap().rechunk();
-                // The offsets go on the result as they are, so a chunk that is not laid out flat
-                // is written out first.
                 let offsets = target.downcast_as_array().to_flat().offsets().clone();
                 let inner_type = out.dtype();
 

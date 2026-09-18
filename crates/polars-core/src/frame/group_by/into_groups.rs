@@ -23,18 +23,11 @@ pub trait IntoGroupsType {
 }
 
 /// The groups of a chunked array whose one chunk repeats a single element: they are one group.
-///
-/// Every element of such a chunk is the same one — the same value throughout, or a null
-/// throughout — so they all fall in the group the first of them opens, without one of them being
-/// hashed. For a nested type that is worth the most: its groups are otherwise read off a row
-/// encoding of the whole column, written out before a single row is hashed.
 pub(crate) fn scalar_groups<T: PolarsDataType>(ca: &ChunkedArray<T>) -> Option<GroupsType> {
     if ca.is_empty() {
         return None;
     }
 
-    // Nulls all fall into one group, so a column of nothing else is one group whatever its
-    // chunks look like; otherwise it takes a column repeating one element to say as much.
     let one_element = ca.null_count() == ca.len() || ca.repeats_one_element();
     if !one_element {
         return None;
@@ -63,8 +56,6 @@ where
 
         // use the arrays as iterators
         if ca.null_count() == 0 {
-            // The values are read as slices, and nothing is null for the mask to mark, so only a
-            // chunk whose values repeat one value is written out.
             let views = ca.to_flat_values_chunks();
             let keys = views.iter().map(|values| values.as_slice()).collect();
             group_by_threaded_slice(keys, n_partitions, sorted)
@@ -92,8 +83,6 @@ where
         if arr.is_empty() {
             return GroupsSlice::default();
         }
-        // One value repeated is one group; `to_flat` below would write out one slot per element
-        // first, which is the whole array this representation exists not to hold.
         if arr.is_scalar() {
             return vec![[0, arr.len() as IdxSize]];
         }
@@ -174,7 +163,6 @@ where
     <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash,
 {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
-        // One value repeated is one group, whatever the length.
         if let Some(groups) = scalar_groups(self) {
             return Ok(groups);
         }
@@ -259,7 +247,6 @@ impl IntoGroupsType for BinaryChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
-        // One value repeated is one group, whatever the length.
         if let Some(groups) = scalar_groups(self) {
             return Ok(groups);
         }
@@ -363,8 +350,6 @@ impl IntoGroupsType for ListChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
-        // One element repeated is one group, whatever the length — and the row encoding below,
-        // which writes a row per element before a single one is hashed, is never reached.
         if let Some(groups) = scalar_groups(self) {
             return Ok(groups);
         }
@@ -390,7 +375,6 @@ impl IntoGroupsType for ArrayChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
-        // As in `ListChunked::group_tuples`: one repeated element is one group.
         if let Some(groups) = scalar_groups(self) {
             return Ok(groups);
         }

@@ -37,14 +37,8 @@ impl PolarsOpsNumericType for Float64Type {}
 unsafe fn with_values_mut<T: NativeType, F: FnOnce(&mut [T])>(arr: &mut PlPrimitiveArray<T>, f: F) {
     let length = arr.len();
     let Some(values) = arr.flat_values_mut() else {
-        // A scalar chunk holds one slot standing for every element, so it is written out before
-        // anything can be written into it — as a buffer of its own, since the array still holds
-        // the one slot it was written out of. `to_flat` is no help here: an array of a *single*
-        // element reads as scalar however it was built, so writing it out leaves it reading that
-        // way too.
         let mut owned = match arr.scalar_value_ignore_validity() {
             Some(value) => vec![value; length],
-            // Values that are neither flat nor scalar are no values at all.
             None => Vec::new(),
         };
         f(&mut owned);
@@ -58,7 +52,6 @@ unsafe fn with_values_mut<T: NativeType, F: FnOnce(&mut [T])>(arr: &mut PlPrimit
     match values.get_mut_slice() {
         Some(slice) => f(slice),
         None => {
-            // Something else reads these values, so they are copied before being written.
             let mut owned = values.as_slice().to_vec();
             f(&mut owned);
             *values = Buffer::from(owned);
@@ -77,7 +70,6 @@ unsafe fn scatter_primitive_impl<V, T: NativeType>(
     let length = arr.len();
 
     if let Some(validity) = arr.validity() {
-        // A scalar mask stands for one bit per element, which `to_flat` resolves.
         let mut mut_validity = validity.to_flat().into_owned().make_mut();
         with_values_mut(arr, |cur_values| {
             for (idx, val) in idx.iter().zip(&mut values_iter) {
@@ -123,9 +115,6 @@ fn with_bool_values_mut<F: FnOnce(&mut MutableBitmap)>(arr: &mut PlBooleanArray,
     let values = match arr.flat_values_mut() {
         Some(values) => std::mem::take(values),
         None => {
-            // A scalar chunk holds one bit standing for every element, so it is written out before
-            // anything can be written into it — as a bitmap of its own, for the reason given in
-            // `with_values_mut`.
             let mut values = MutableBitmap::new();
             if let Some(value) = arr.scalar_value_ignore_validity() {
                 values.extend_constant(length, value);
@@ -146,8 +135,6 @@ fn with_bool_values_mut<F: FnOnce(&mut MutableBitmap)>(arr: &mut PlBooleanArray,
         length,
         "writing into the values of an array cannot change how many elements it has",
     );
-    // The slot the values were taken out of is the one they go back into: nothing between the two
-    // reads the array.
     *arr.flat_values_mut().unwrap() = values.into();
 }
 
@@ -159,7 +146,6 @@ where
     let length = arr.len();
 
     if let Some(validity) = arr.validity() {
-        // A scalar mask stands for one bit per element, which `to_flat` resolves.
         let mut mut_validity = validity.to_flat().into_owned().make_mut();
         with_bool_values_mut(arr, |cur_values| {
             for (idx, val) in idx.iter().zip(&mut values_iter) {
@@ -211,12 +197,8 @@ where
     let mut new_buffers: Vec<Vec<u8>> = Vec::new();
 
     if arr.views_are_scalar() {
-        // A scalar chunk holds one view standing for every element, so it is written out before
-        // anything can be written into it. Written out as a buffer of its own, for the reason
-        // given in `with_values_mut`.
         let mut owned = match arr.scalar_views() {
             Some(view) => vec![view; length],
-            // Views that are neither flat nor scalar are no views at all.
             None => Vec::new(),
         };
         let validity = arr.validity().map(PlBitmap::from);
@@ -245,7 +227,6 @@ where
         match views.get_mut_slice() {
             Some(slice) => f(slice, buffer_offset, &mut new_buffers),
             None => {
-                // Something else reads these views, so they are copied before being written.
                 let mut owned = views.as_slice().to_vec();
                 f(&mut owned, buffer_offset, &mut new_buffers);
                 *views = Buffer::from(owned);
@@ -253,9 +234,6 @@ where
         }
     }
 
-    // The views written above index the buffers past the ones the array already held, which is
-    // what `buffer_offset` counted; appending them leaves every view that was already there
-    // reading what it read.
     let mut buffers = Buffer::to_vec(core::mem::take(unsafe { arr.data_buffers_mut() }));
     buffers.extend(new_buffers.into_iter().map(Buffer::from));
     *unsafe { arr.data_buffers_mut() } = Buffer::from(buffers);
@@ -273,7 +251,6 @@ unsafe fn scatter_binview_impl<'a, V, T>(
     let length = arr.len();
 
     if let Some(validity) = arr.validity() {
-        // A scalar mask stands for one bit per element, which `to_flat` resolves.
         let mut mut_validity = validity.to_flat().into_owned().make_mut();
         with_views_mut(arr, |views, buffer_offset, new_buffers| {
             for (idx, val) in idx.iter().zip(&mut values_iter) {
@@ -322,8 +299,6 @@ impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T> {
         ca.rechunk_mut();
         let name = ca.name().clone();
 
-        // Scattering writes a different value at each index it names, so a chunk that repeats a
-        // single value cannot stay repeated: `with_values_mut` writes it out, once, on the way in.
         let mut arr = ca.downcast_into_iter().next().unwrap();
 
         unsafe { scatter_primitive_impl(values, &mut arr, idx) };
@@ -343,8 +318,6 @@ impl<'a> ChunkedSet<&'a [u8]> for &mut BinaryChunked {
         ca.rechunk_mut();
         let name = ca.name().clone();
 
-        // As above: a scatter writes a different view at each index it names, so a chunk that
-        // repeats a single view is written out on the way in.
         let mut arr = ca.downcast_into_iter().next().unwrap();
 
         unsafe { scatter_binview_impl(values, &mut arr, idx) };
@@ -364,10 +337,6 @@ impl<'a> ChunkedSet<&'a str> for &mut StringChunked {
         ca.rechunk_mut();
         let name = ca.name().clone();
 
-        // As above, a chunk that repeats a single view is written out on the way in.
-        //
-        // The strings are scattered into the array as the bytes they are, which is why it is the
-        // binary view underneath that the kernel writes into.
         let mut arr = ca.downcast_into_iter().next().unwrap().into_binview();
 
         unsafe { scatter_binview_impl(values, &mut arr, idx) };
@@ -389,7 +358,6 @@ impl ChunkedSet<bool> for &mut BooleanChunked {
         ca.rechunk_mut();
         let name = ca.name().clone();
 
-        // As above, a chunk that repeats a single bit is written out on the way in.
         let mut arr = ca.downcast_into_iter().next().unwrap();
 
         unsafe { scatter_bool_impl(values, &mut arr, idx) };

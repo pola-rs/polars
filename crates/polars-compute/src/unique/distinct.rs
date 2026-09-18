@@ -95,11 +95,6 @@ pub trait AmortizedUnique: Send + Sync + 'static {
 
 /// The state that answers the unique kernels over `values`, and over any chunk like it.
 pub fn amortized_unique_like(values: &dyn PlArray) -> Box<dyn AmortizedUnique> {
-    // A chunk that holds one value over and over has that value and a null in it and nothing
-    // else, whichever value it is: which of the two an element is is all its validity mask says,
-    // and neither a hashset nor the values buffer has anything to add. A chunk of nothing but
-    // nulls — an empty one included — is one of these in its own right, the one element it holds
-    // being the null.
     if repeats_one_value(values) || values.null_count() == values.len() {
         return Box::new(RepeatedUnique);
     }
@@ -128,7 +123,6 @@ pub fn amortized_unique_like(values: &dyn PlArray) -> Box<dyn AmortizedUnique> {
         PlArrayType::BinaryView => Box::new(BinaryViewUnique::default()) as _,
         PlArrayType::Binary => Box::new(BinaryUnique::default()) as _,
 
-        // A null chunk holds nothing but nulls, and was answered above.
         PlArrayType::Null => unreachable!(),
 
         PlArrayType::FixedSizeBinary => unreachable!(),
@@ -154,7 +148,6 @@ fn repeats_one_value(values: &dyn PlArray) -> bool {
         })
         .expect("a primitive array has a primitive element type"),
         PlArrayType::BinaryView => downcast::<PlBinaryViewArray>(values).views_are_scalar(),
-        // Offsets that repeat cut the same bytes out of the values buffer for every element.
         PlArrayType::Binary => downcast::<PlBinaryArray>(values).offsets_are_scalar(),
         _ => false,
     }
@@ -171,9 +164,7 @@ impl RepeatedUnique {
 
     /// The first of the `length` elements from `start` that is not of the kind of the one there.
     fn first_differing(values: &dyn PlArray, start: IdxSize, length: IdxSize) -> Option<IdxSize> {
-        // A chunk with no mask over it is the repeated value throughout.
         let validity = values.validity()?;
-        // And a mask that repeats one bit says the same of every element it covers.
         let mask = validity.flat_bitmap()?;
 
         let mask = BitMask::from_bitmap(mask).sliced(start as usize, length as usize);

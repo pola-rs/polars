@@ -293,10 +293,6 @@ impl<T: PolarsNumericType> DatetimeInfer<T> {
 
 impl<T: PolarsNumericType> DatetimeInfer<T> {
     pub fn coerce_string(&mut self, ca: &StringChunked) -> Series {
-        // The only state `parse` carries across elements is `latest_fmt`, the pattern it last
-        // succeeded with — a cache that makes the same answer cheaper to reach, never a different
-        // one. That is the contract of `unary_elementwise_amortized`, which answers a chunk that
-        // reads one string throughout with a single call instead of parsing it a row at a time.
         let parsed: ChunkedArray<T> =
             unary_elementwise_amortized(ca, |opt_val| opt_val.and_then(|val| self.parse(val)));
         parsed

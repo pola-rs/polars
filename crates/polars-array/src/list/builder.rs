@@ -24,7 +24,6 @@ impl<B: PlArrayBuilder> PlListArrayBuilder<B> {
     /// Creates an empty builder over the builder of the values the lists are taken over.
     pub fn new(values: B) -> Self {
         Self {
-            // The end of the last element of an empty array, which is where the first one starts.
             offsets: vec![0],
             values,
             validity: OptBitmapBuilder::default(),
@@ -53,8 +52,6 @@ impl<B: PlArrayBuilder> PlListArrayBuilder<B> {
     /// Closes one element, covering every value appended to the child since the last element was.
     #[inline]
     pub fn finish_row(&mut self) {
-        // Every element ends where the child ended when it was closed, so the values appended
-        // since then are exactly the ones past the end of the last element.
         let end = self.values.len() as u64;
         debug_assert!(end >= self.last_offset(), "the child builder cannot shrink");
         self.offsets.push(end);
@@ -64,7 +61,6 @@ impl<B: PlArrayBuilder> PlListArrayBuilder<B> {
     /// The end of the last element appended, which is where the next one starts.
     #[inline]
     fn last_offset(&self) -> u64 {
-        // The offsets are never empty: they start out holding the end of no element at all.
         self.offsets[self.offsets.len() - 1]
     }
 
@@ -82,8 +78,6 @@ impl<B: PlArrayBuilder> PlListArrayBuilder<B> {
         length: usize,
         share: ShareStrategy,
     ) {
-        // Every element of a scalar array covers the same range, which is appended once per
-        // element.
         if let Some(range) = other.scalar_offsets() {
             let width = range.end - range.start;
             self.values
@@ -109,12 +103,11 @@ impl<B: PlArrayBuilder> PlListArrayBuilder<B> {
         );
 
         let base = self.last_offset();
-        self.offsets
-            .extend(offsets[start + 1..=start + length].iter().map(|offset| {
-                // The offsets of `other` start at `first`, and the ones here at the end of the
-                // last element appended.
-                base + (offset - first)
-            }));
+        self.offsets.extend(
+            offsets[start + 1..=start + length]
+                .iter()
+                .map(|offset| base + (offset - first)),
+        );
     }
 }
 
@@ -124,8 +117,6 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlListArrayBuilder<B> {
     fn reserve(&mut self, additional: usize) {
         self.offsets.reserve(additional);
         self.validity.reserve(additional);
-        // The child is not reserved for: how many values the elements reach is not implied by how
-        // many elements there are.
     }
 
     #[inline]
@@ -164,8 +155,6 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlListArrayBuilder<B> {
     }
 
     fn extend_nulls(&mut self, length: usize) {
-        // The value of a null element is undetermined, so the empty list every one of them covers
-        // reaches no values to append to the child.
         let offset = self.last_offset();
         self.offsets.extend(std::iter::repeat_n(offset, length));
         self.validity.extend_constant(length, false);
@@ -212,7 +201,6 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlListArrayBuilder<B> {
                 }
             }
         } else {
-            // Every element covers the same range, so which of them is repeated is immaterial.
             self.extend_values(other, start, length * repeats, share);
         }
 
@@ -234,12 +222,10 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlListArrayBuilder<B> {
         self.offsets.reserve(idxs.len());
 
         if other.offsets_are_flat() {
-            // A run of consecutive indices is a subslice, which the child appends in one go.
             for_each_run(idxs, |first, run_length| {
                 self.extend_values(other, first, run_length, share);
             });
         } else {
-            // Every index reads the one range the array holds.
             self.extend_values(other, 0, idxs.len(), share);
         }
 
@@ -259,7 +245,6 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlListArrayBuilder<B> {
                     .subslice_extend(other.values(), range.start, range.len(), share);
                 self.push_offset(range.len());
             } else {
-                // An out-of-bounds index stands for a null, which covers the empty list.
                 self.push_offset(0);
             }
         }

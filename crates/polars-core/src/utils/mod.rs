@@ -177,7 +177,6 @@ impl<T: PolarsDataType> Container for ChunkedArray<T> {
     }
 
     fn iter_chunks(&self) -> impl Iterator<Item = Self> {
-        // The chunks carry no logical type, so it is taken from this array.
         self.downcast_iter()
             .map(|arr| Self::from_chunk_iter_like(self, [arr.clone()]))
     }
@@ -1250,7 +1249,6 @@ fn leading_ones(mask: &PlBitmapRef<'_>) -> usize {
     match mask.scalar_value() {
         Some(true) => mask.len(),
         Some(false) => 0,
-        // A mask over no elements has nothing to count, whatever its backing bitmap holds.
         None => mask.flat_bitmap().map_or(0, Bitmap::leading_ones),
     }
 }

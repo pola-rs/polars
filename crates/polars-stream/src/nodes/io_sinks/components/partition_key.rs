@@ -57,8 +57,6 @@ impl PreComputedKeys {
                     let arr: &PlPrimitiveArray<$T> = arr.as_any().downcast_ref().unwrap();
                     let width = std::mem::size_of::<$T>();
 
-                    // A scalar chunk holds the one value every element covers, so the keys are
-                    // scalar too: the bytes are laid out once rather than once per row.
                     match arr.scalar_value() {
                         Some(value) => {
                             let bytes = Buffer::from(vec![value.unwrap_or_default()]);
@@ -66,8 +64,6 @@ impl PreComputedKeys {
                                 bytes.try_transmute().unwrap(),
                                 width,
                                 length,
-                                // The mask covers every element, so it is built for `length`
-                                // rather than for the single bit that backs it.
                                 value.is_none().then(|| PlBitmap::new_scalar(false, length)),
                             )
                         },

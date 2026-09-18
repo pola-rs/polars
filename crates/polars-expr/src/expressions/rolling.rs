@@ -113,8 +113,6 @@ impl PhysicalExpr for RollingExpr {
             ComputeError: "null values in `rolling` not supported, fill nulls."
         );
         let index_column_data = index_column_data.to_physical_repr().rechunk();
-        // The windower reads the timestamps and nothing else, so only a values buffer that repeats
-        // one timestamp is written out; the mask is left in whatever representation it is in.
         let timestamps = index_column_data
             .i64()
             .expect("a datetime reads as its i64 timestamps")

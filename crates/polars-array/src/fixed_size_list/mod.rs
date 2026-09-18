@@ -199,8 +199,6 @@ impl PlFixedSizeListArray {
     pub fn new_scalar(element: Box<dyn PlArray>, length: usize) -> Self {
         let width = element.len();
 
-        // There is no element for the values to be shared by when there are no elements at all,
-        // which is why an empty array is the one that keeps nothing of the list it repeats.
         let values = if length == 0 {
             element.sliced(0, 0)
         } else {
@@ -272,8 +270,6 @@ impl PlFixedSizeListArray {
     /// Whether the values hold the values of every element, laid end to end.
     #[inline]
     pub fn values_are_flat(&self) -> bool {
-        // A length times a width that overflows a `usize` is longer than any values array can be,
-        // so such an array is never flat.
         self.length.checked_mul(self.width) == Some(self.values.len())
     }
 
@@ -323,8 +319,6 @@ impl PlFixedSizeListArray {
     pub unsafe fn value_range_unchecked(&self, i: usize) -> Range<usize> {
         debug_assert!(i < self.length);
 
-        // Scalar values hold the one element every element covers, so they are read from the
-        // start; flat ones lay the elements end to end, one width apart.
         let start = if self.values_are_scalar() {
             0
         } else {
@@ -396,8 +390,6 @@ impl PlFixedSizeListArray {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        // There are no offsets to leave the values outside the slice behind, so they are sliced
-        // along with it; see `slice_fixed_size_values`.
         unsafe {
             slice_fixed_size_values(&mut self.values, self.width, self.length, offset, length);
             slice_validity(&mut self.validity, self.length, offset, length);
@@ -413,8 +405,6 @@ impl PlFixedSizeListArray {
     pub unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
         debug_assert!(index < self.length);
 
-        // The values of a null element are undetermined, so they are repeated as they are found:
-        // it is the mask that makes every element of the result null.
         let element = unsafe { self.value_unchecked(index) };
 
         if unsafe { self.is_null_unchecked(index) } {
@@ -437,21 +427,15 @@ impl PlFixedSizeListArray {
         let values = if self.values_are_flat() {
             self.values.clone()
         } else if self.length > 0 && self.null_count() == self.length {
-            // Every element is null, so every list is undetermined: repeating one value of the
-            // element they share is a values array of the right length like any other, and it is
-            // `O(1)` for every values array but a struct one.
             let flat_len = self.flat_values_len();
             self.values.new_from_index(0, flat_len)
         } else {
-            // The one list every element covers, written out once per element. Concatenating it
-            // with copies of itself is what repeats it, and that keeps the values of the result
-            // scalar when the list is itself a single repeated value.
             concatenate_repeated(&*self.values, self.length)
                 .expect("copies of one array always concatenate")
         };
 
-        // SAFETY: the values are the element every element covers, repeated once per element, and
-        // the mask is the flat counterpart of one valid for this array's length, which leaves every
+        // SAFETY: the values hold one element each, and the mask is the flat counterpart of this
+        // array's own.
         Cow::Owned(unsafe {
             Flat::new(Self::new_unchecked(
                 values,
@@ -495,8 +479,6 @@ crate::impl_array_eq!(
 
 impl std::fmt::Debug for PlFixedSizeListArray {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // The values array formats its own scalar representation, so this never materializes one:
-        // it is listed as it is backed, which is one element's worth for a scalar array.
         let mut s = f.debug_struct("PlFixedSizeListArray");
         s.field("length", &self.length);
         s.field("width", &self.width);
@@ -511,8 +493,6 @@ crate::impl_pl_array! {
     PlFixedSizeListArray,
     PlArrayType::FixedSizeList,
     fn new_full_null_like_self(&self, length: usize) -> Box<dyn PlArray> {
-        // An element of a null list is as wide as any other, so the one element the values stand
-        // for is as many nulls as this array is wide.
         Box::new(Self::new_full_null(
             new_full_null_like(&*self.values, self.width),
             length,

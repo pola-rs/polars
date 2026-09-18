@@ -4,9 +4,6 @@ use crate::chunked_array::new_full_null_chunk;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
-// A `ChunkedArray` of one value repeated is the scalar representation of `polars-array`: every
-// `full` here is `O(1)` in both time and memory, however long the result is.
-
 impl<T> ChunkFull<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -86,9 +83,6 @@ impl ChunkFullNull for BinaryOffsetChunked {
 
 impl ChunkFull<&Series> for ListChunked {
     fn full(name: PlSmallStr, value: &Series, length: usize) -> ListChunked {
-        // The one list every element reads lies in a single range of the values, which the
-        // offsets of the lists repeat rather than write out: the values are that list, however
-        // wide it is and whatever is under it.
         let dtype = value.dtype();
         let values = value.rechunk().chunks()[0].clone();
         let width = values.len();
@@ -103,8 +97,6 @@ impl ChunkFull<&Series> for ListChunked {
             )
         };
 
-        // Every element is that one list, none of them null and none of them empty unless the
-        // list itself is: the offsets run end to end, which is what a fast explode reads.
         if width > 0 {
             out.set_fast_explode();
         }
@@ -127,8 +119,6 @@ impl ArrayChunked {
         inner_dtype: &DataType,
         width: usize,
     ) -> ArrayChunked {
-        // An element of a null list is as wide as any other, so the one row the values stand for
-        // is `width` nulls of the inner type.
         let values = new_full_null_chunk(inner_dtype, width);
         let arr = PlFixedSizeListArray::new_full_null(values, length);
 
@@ -175,7 +165,6 @@ impl ListChunked {
         length: usize,
         inner_dtype: &DataType,
     ) -> ListChunked {
-        // Every element is an empty list, so the values are only there to carry the inner shape.
         let arr = PlListArray::new_full_null(new_empty_chunk(inner_dtype), length);
 
         // SAFETY: physical type matches the logical.
@@ -194,7 +183,6 @@ impl ChunkFullNull for StructChunked {
     fn full_null(name: PlSmallStr, length: usize) -> StructChunked {
         StructChunked::from_series(name, length, [].iter())
             .unwrap()
-            // Every element is null, which one repeated unset bit says without a bit each.
             .with_outer_validity(Some(PlBitmap::new_scalar(false, length)))
     }
 }

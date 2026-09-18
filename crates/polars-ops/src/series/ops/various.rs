@@ -61,9 +61,6 @@ pub trait SeriesMethods: SeriesSealed {
         let s = self.as_series();
         let mut h = vec![];
 
-        // Every element of a column that repeats one element hashes to the hash of the one value
-        // it holds, which the slice below asks for on its own and the result repeats in `O(1)`
-        // memory.
         if s.repeats_one_element() {
             let single = s.slice(0, 1);
             single.0.vec_hash(build_hasher, &mut h).unwrap();
@@ -109,13 +106,6 @@ pub trait SeriesMethods: SeriesSealed {
 }
 
 fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
-    // A chunk that repeats one element is answered for by any two of its elements: they are all
-    // the same one, so every adjacent pair sits the same way round, and its nulls — all of them
-    // or none — are already where either `nulls_last` wants them. Two is what the rest of this
-    // function is handed, which turns its work from `O(n)` into `O(1)` without changing what
-    // that work is: a `Struct` row-encodes two rows instead of the column, the pairwise
-    // fallback compares one pair instead of `n - 1`, and a dtype with no ordering of its own
-    // still reaches the comparison that rejects it.
     let scalar_pair = match s.chunks().as_slice() {
         [chunk] if chunk.is_scalar() && s.len() > 2 => Some(s.slice(0, 2)),
         _ => None,
@@ -439,9 +429,6 @@ fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(
 }
 
 fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOptions) -> bool {
-    // A column whose only chunk repeats a single value is sorted whichever way it is read: every
-    // element compares equal to the one before it. Nulls are left to the tail of this function,
-    // which slices them off and comes back here.
     if ca.null_count() == 0 && ca.scalar_value().is_some() {
         return true;
     }

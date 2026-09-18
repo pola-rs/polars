@@ -31,8 +31,6 @@ pub(crate) fn collect_list_chunk(
 
     let present = elements.iter().flatten().map(|v| &**v).collect::<Vec<_>>();
     let values = if present.is_empty() {
-        // There is nothing to take the values from: every element is null, so the values are the
-        // empty array the inner dtype describes.
         new_empty_chunk(inner_dtype)
     } else {
         concatenate(&present).expect("the elements of a list are all of the same type")
@@ -57,7 +55,7 @@ pub(crate) fn list_with_values(arr: &PlListArray, values: PlArrayRef) -> PlListA
     let (_, offsets, length, _) = arr.clone().into_inner();
 
     // SAFETY: only the values are replaced, by an array of the same length, so the offsets still
-    // cover them and are in the representation they were taken out in. The constructor decides the
+    // cover them and are in the representation they were taken out in.
     let out = unsafe {
         if offsets_are_flat {
             PlListArray::new_unchecked(values, offsets, length, None)
@@ -86,8 +84,6 @@ impl ListChunked {
     /// Panics if the physical representation of `dtype` differs the physical
     /// representation of the existing inner `dtype`.
     pub unsafe fn set_inner_dtype(&mut self, dtype: DataType) {
-        // A chunk carries no inner type, so a `ChunkedArray` built from one alone names `Null`
-        // as its inner type until it is set here.
         assert!(
             self.inner_dtype().is_null() || dtype.to_physical() == self.inner_dtype().to_physical()
         );
@@ -109,8 +105,6 @@ impl ListChunked {
     /// `inner_dtype`: categorical codes in range for every non-null slot, and nested Maps
     /// satisfying the `MapChunked` storage safety contract.
     pub unsafe fn to_logical(&mut self, inner_dtype: DataType) {
-        // A chunk carries no inner type, so a `ChunkedArray` built from one alone names `Null`
-        // as its inner type until it is set here.
         debug_assert!(
             self.inner_dtype().is_null()
                 || inner_dtype.to_physical() == self.inner_dtype().to_physical()
@@ -121,8 +115,6 @@ impl ListChunked {
 
     /// Convert the datatype of the list into the physical datatype.
     pub fn to_physical_repr(&self) -> Cow<'_, ListChunked> {
-        // As in `ArrayChunked::to_physical_repr`: the inner type alone says whether the values
-        // change, and asking it costs nothing.
         if !self.inner_dtype().is_logical() {
             return Cow::Borrowed(self);
         }
@@ -132,9 +124,6 @@ impl ListChunked {
         };
 
         let (ca, physical_repr) = if physical_repr.chunks().len() == 1 && self.chunks().len() > 1 {
-            // Physical repr got rechunked, rechunk self as well. Rechunking a list array keeps
-            // only the values its offsets reach, so the values are converted again out of the
-            // rechunked array rather than reused: the two have to agree on how many there are.
             let ca = self.rechunk();
             let physical_repr = ca.get_inner().to_physical_repr().into_owned();
             (ca, physical_repr)
@@ -208,13 +197,7 @@ impl ListChunked {
         self.downcast_iter().map(|c| c.values().len()).sum()
     }
 
-    /// This chunked array with the one range a scalar chunk repeats written out, a range per
-    /// element.
-    ///
-    /// [`ListChunked::apply_to_inner`] hands its closure the values of a *single* element for such
-    /// a chunk, since every element reads the same ones. A closure that ignores what it is handed
-    /// and computes over the whole column instead returns one value per element of the flat
-    /// layout, so it has to be given that layout to line up against.
+    /// This chunked array with the one range a scalar chunk repeats written out per element.
     pub fn to_flat_layout(&self) -> ListChunked {
         let ca = self.rechunk();
         let arr = ca.downcast_as_array().to_flat().into_owned().into_array();

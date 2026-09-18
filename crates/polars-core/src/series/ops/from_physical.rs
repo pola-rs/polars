@@ -171,7 +171,6 @@ mod test {
 
         let dtype = DataType::from_frozen_categories(FrozenCategories::new(["a", "b"]).unwrap());
         let physical = dtype.to_physical();
-        // `from_chunk_and_dtype` imports an Arrow chunk, so the physical codes cross back out.
         let codes = |codes: &[u32]| {
             let s = Series::new(PlSmallStr::from_static("e"), codes)
                 .cast(&physical)

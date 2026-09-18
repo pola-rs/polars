@@ -70,9 +70,6 @@ where
 {
     use polars_utils::format_pl_smallstr;
 
-    // A chunk that reads one element throughout splits into one set of fields, and those fields
-    // stand for every element in turn: the split is done over a single element and the fields go
-    // to the constructor one element long, which repeats them over the column's length.
     let repeated = by.len() == 1 && ca.len() > 1 && ca.scalar_value().is_some();
     let builder_len = if repeated { 1 } else { ca.len() };
 
@@ -83,7 +80,6 @@ where
     if by.len() == 1 {
         if let Some(by) = by.get(0) {
             if repeated {
-                // `repeated` is exactly `scalar_value()` having answered.
                 match ca.scalar_value().unwrap() {
                     Some(s) => {
                         let mut arr_iter = arrs.iter_mut();
@@ -96,7 +92,6 @@ where
                                 .zip(&mut arr_iter)
                                 .for_each(|(splitted, arr)| arr.push_value(splitted));
                         }
-                        // fill the remaining with null
                         for arr in arr_iter {
                             arr.push_null()
                         }
@@ -197,8 +192,6 @@ where
 {
     Ok(match (ca.len(), by.len()) {
         (a, b) if a == b => {
-            // Both sides reading one element throughout split one way, and the list that comes
-            // back stands for every element in turn — as in the `(_, 1)` arm below.
             if a > 1
                 && let Some(scalar) = ca.scalar_value()
                 && let Some(scalar_by) = by.scalar_value()
@@ -247,8 +240,6 @@ where
         },
         (_, 1) => {
             if let Some(by) = by.get(0) {
-                // A chunk that reads one element throughout is split once, and the list that
-                // comes back stands for every element in turn.
                 if ca.len() > 1
                     && let Some(scalar) = ca.scalar_value()
                 {

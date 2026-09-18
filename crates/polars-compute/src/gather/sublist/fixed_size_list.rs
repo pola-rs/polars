@@ -16,9 +16,6 @@ fn position_in(index: i64, width: usize) -> Option<usize> {
 }
 
 /// `out` masked off wherever `mask` leaves an element null, on top of the mask it carries itself.
-///
-/// An element that is null holds no values, whatever the values under it read as, so it holds no
-/// value at any index either.
 fn masked_off(out: Box<dyn PlArray>, mask: Option<PlBitmapRef<'_>>) -> Box<dyn PlArray> {
     if mask.is_none() {
         return out;
@@ -38,8 +35,6 @@ pub fn sub_fixed_size_list_get_literal(
         return Ok(arr.values().sliced(0, 0));
     }
 
-    // Every element is `width` values wide, so the index falls either within all of them or within
-    // none: it is resolved once, and an out of bounds one is answered without a value being read.
     let Some(offset) = position_in(index, arr.width()) else {
         if !null_on_oob {
             polars_bail!(ComputeError: "get index is out of bounds");
@@ -47,8 +42,6 @@ pub fn sub_fixed_size_list_get_literal(
         return Ok(new_full_null_like(arr.values(), arr.len()));
     };
 
-    // Values that hold the single element every element of `arr` repeats are indexed in place: the
-    // value at `offset` within that one element is the answer at every element in turn, in `O(1)`.
     if let Some(values) = arr.scalar_value_ignore_validity() {
         // SAFETY: `offset` is within the width, which is how many values the one element holds.
         let out = unsafe { values.new_from_index_unchecked(offset, arr.len()) };
@@ -81,13 +74,9 @@ pub fn sub_fixed_size_list_get(
         return Ok(arr.values().sliced(0, 0));
     }
 
-    // Indices stored in the scalar representation are one index shared by every element, which
-    // lands at the same position within all of them: it is resolved once, like a literal one.
     if let Some(value) = index.scalar_value_ignore_validity() {
         let out = sub_fixed_size_list_get_literal(arr, value, null_on_oob)?;
 
-        // An index that is null picks out no value at all, which is the null an out of bounds one
-        // reads as in turn.
         let Some(validity) = index.validity() else {
             return Ok(out);
         };

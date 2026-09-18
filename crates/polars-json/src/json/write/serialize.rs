@@ -183,8 +183,6 @@ fn dictionary_utf8view_serializer<'a, K: DictionaryKey>(
     offset: usize,
     take: usize,
 ) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
-    // `materialize_serializer` applies `offset` itself, as it does for every other array:
-    // skipping here as well would read the values of a nested dictionary twice past its start.
     let iter = array.iter_typed::<Utf8ViewArray>().unwrap();
     let f = |x: Option<&str>, buf: &mut Vec<u8>| {
         if let Some(x) = x {

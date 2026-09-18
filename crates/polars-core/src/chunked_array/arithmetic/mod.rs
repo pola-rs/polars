@@ -51,8 +51,6 @@ fn concat_binview(a: &PlBinaryViewArray, b: &PlBinaryViewArray) -> PlBinaryViewA
     let mut scratch = vec![];
     for (a, b) in a.values_iter().zip(b.values_iter()) {
         concat_binary_arrs(a, b, &mut scratch);
-        // The mask both sides combine into is applied to the views below, so the loop keeps
-        // none of its own — see `PlBinaryViewArrayBuilder::push_value_ignore_validity`.
         mutable.push_value_ignore_validity(&scratch)
     }
 
@@ -63,8 +61,6 @@ impl Add for &BinaryChunked {
     type Output = BinaryChunked;
 
     fn add(self, rhs: Self) -> Self::Output {
-        // Two sides that each read one value throughout concatenate that pair once, and the
-        // answer is that one value repeated.
         if let Some(length) = arity::broadcast_height(self.len(), rhs.len()) {
             if length > 1 {
                 if let (Some(lhs), Some(rhs)) = (self.scalar_value(), rhs.scalar_value()) {
@@ -113,8 +109,6 @@ impl Add for &BinaryChunked {
             };
         }
 
-        // `concat_binview` reads both sides through their broadcasting iterators, so neither is
-        // written out; two chunks that each repeat one value are concatenated once.
         arity::binary_elementwise_kernel(self, rhs, concat_binview, self.name().clone())
     }
 }

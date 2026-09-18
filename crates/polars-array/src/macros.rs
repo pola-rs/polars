@@ -332,16 +332,10 @@ macro_rules! impl_array_eq {
                     return false;
                 }
 
-                // Every element is null on both sides, so every value is undetermined and there
-                // is nothing left to compare. This is also what keeps comparing two fully null
-                // scalar arrays `O(1)`.
                 if self.len() > 0 && self.null_count() == self.len() {
                     return true;
                 }
 
-                // Never walk two scalar arrays element by element: their length is unbounded by
-                // their memory use. Comparing the one element they each stand for costs that
-                // element.
                 if let (Some(lhs), Some(rhs)) = (self.scalar_value(), other.scalar_value()) {
                     return lhs == rhs;
                 }
@@ -383,7 +377,6 @@ macro_rules! impl_element_debug {
 
                 f.write_str($name)?;
 
-                // Never materialize a scalar array: its length is unbounded by its memory use.
                 if self.len() > 1 {
                     if let Some(element) = self.scalar_value() {
                         return write!(f, "[{:?}; {}]", Element(element), self.len());
@@ -435,9 +428,6 @@ macro_rules! impl_optional_iter {
 
             #[inline]
             fn nth(&mut self, n: usize) -> Option<Self::Item> {
-                // The values are asked first, so that the mask is only read where one of them was
-                // there to read it for; walking past the end leaves the mask covering nothing, the
-                // way walking it to its end would.
                 let Some(value) = self.values.nth(n) else {
                     self.validity.exhaust();
                     return None;
@@ -463,8 +453,7 @@ macro_rules! impl_optional_iter {
                 self.next_back()
             }
 
-            /// Hoists the validity mask out of the loop, and the representation of the values
-            /// with it.
+            /// Hoists the validity mask and the values' representation out of the loop.
             #[inline]
             fn fold<B, F>(self, init: B, f: F) -> B
             where
@@ -487,7 +476,6 @@ macro_rules! impl_optional_iter {
 
             #[inline]
             fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-                // The values are asked first, the way [`Iterator::nth`] does.
                 let Some(value) = self.values.nth_back(n) else {
                     self.validity.exhaust();
                     return None;
@@ -610,7 +598,6 @@ macro_rules! impl_mapped_iter {
         // many there are.
         unsafe impl<'a, $($generics)*> ::polars_arrow::trusted_len::TrustedLen for $iter {}
     };
-    // A newtype walks the one field it has, and reads nothing else.
     (
         $(#[$meta:meta])* [$($generics:tt)*] $iter:ty, $item:ty, |$value:ident| $map:expr $(,)?
     ) => {
@@ -625,8 +612,6 @@ macro_rules! impl_mapped_iter {
 pub(crate) use impl_mapped_iter;
 
 /// Runs a body with `$T` bound to the element type of a [`crate::PlPrimitiveArray`].
-///
-/// Answers `None` when `$array` is not a [`crate::PlPrimitiveArray`], and `Some(body)` otherwise.
 #[macro_export]
 macro_rules! with_match_pl_primitive_array_type {(
     $array:expr, | $_:tt $T:ident | $($body:tt)*
@@ -636,7 +621,6 @@ macro_rules! with_match_pl_primitive_array_type {(
     use ::polars_arrow::types::{days_ms, i256, months_days_ns};
     use ::polars_utils::float16::pf16;
 
-    // `NativeType` is a sealed trait, so this list of element types is exhaustive.
     $crate::__with_match_pl_primitive_array_type__! {
         $array,
         [
@@ -650,9 +634,6 @@ macro_rules! with_match_pl_primitive_array_type {(
 })}
 
 /// The body of [`with_match_pl_primitive_array_type`], run for the element type `$array` holds.
-///
-/// `$with_ty` is passed in rather than named here so that it resolves to the one the caller's
-/// expansion defined, which is where the body lives.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __with_match_pl_primitive_array_type__ {(
@@ -701,8 +682,7 @@ macro_rules! impl_flat_methods {
     };
     ([$($generics:tt)*] $array:ty $(,)?) => {
         impl<$($generics)*> $crate::flat::Flat<$array> {
-            /// The validity mask, if any element may be null, as a [`Bitmap`](::polars_arrow::bitmap::Bitmap)
-            /// of one bit per element.
+            /// The validity mask, if any element may be null, as one bit per element.
             #[inline]
             pub fn validity(&self) -> Option<&::polars_arrow::bitmap::Bitmap> {
                 self.as_array().validity.as_ref()

@@ -84,9 +84,6 @@ where
     Bitmap::from_u8_vec(v, n)
 }
 
-// The vectorized comparison kernels. `$A` is the array whose values they read, in either the
-// Arrow layout or the flat one of `polars-array`. Only the equality half is implemented for both:
-// the ordering kernels are reached through the flat layout alone — see the invocations below.
 macro_rules! impl_int_total_eq_kernel {
     ($A: ty, $T: ty, $width: literal, $mask: ty) => {
         impl TotalEqKernel for $A {

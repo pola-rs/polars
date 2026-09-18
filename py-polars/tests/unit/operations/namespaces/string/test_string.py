@@ -2466,9 +2466,6 @@ def test_str_concat_removed() -> None:
 
 
 def test_json_decode_repeated_chunk() -> None:
-    # A chunk that reads one string throughout decodes to one value, and that value
-    # stands for
-    # every row — with the schema inferred or given, and with a repeated null.
     n = 4
     for s in (
         pl.repeat('{"a":1,"b":"z"}', n, dtype=pl.String, eager=True),
@@ -2484,7 +2481,6 @@ def test_json_decode_repeated_chunk() -> None:
         == [None] * n
     )
 
-    # unparsable text raises just as the written-out column does
     with pytest.raises(ComputeError, match="error deserializing JSON"):
         pl.repeat("{not json", n, dtype=pl.String, eager=True).str.json_decode(
             pl.Struct({"a": pl.Int64})
@@ -2492,9 +2488,6 @@ def test_json_decode_repeated_chunk() -> None:
 
 
 def test_str_split_by_column_repeated_chunks() -> None:
-    # The equal-length arm of `split_helper`: both sides reading one element throughout
-    # split one
-    # way, and that list stands for every row.
     n = 4
     rep = pl.DataFrame(
         {
@@ -2515,8 +2508,6 @@ def test_str_split_by_column_repeated_chunks() -> None:
             == [["a,", "b,", "c"]] * n
         )
 
-    # an empty separator splits into characters, and a null on either side gives a
-    # null row
     empty = pl.DataFrame(
         {
             "x": pl.repeat("ab", n, dtype=pl.String, eager=True),

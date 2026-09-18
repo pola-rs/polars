@@ -38,9 +38,6 @@ fn extract_groups_array(
         .into_iter()
         .map(|builder| builder.freeze().into_boxed())
         .collect();
-    // The input's mask carries over in whatever representation it is in, so it goes on through
-    // the broadcast setter rather than a constructor that takes only one of the two; the field
-    // names live in the `DataType` of the `Series` this becomes a chunk of.
     let validity = arr.validity().map(PlBitmap::from);
     Ok(PlStructArray::new(values, arr.len(), None)
         .with_validity(validity)
@@ -68,9 +65,6 @@ pub(super) fn extract_groups(
         .map(|fld| fld.name.as_str())
         .collect::<Vec<_>>();
 
-    // A column that reads one element throughout matches the pattern the one way, so the groups
-    // that come out of it stand for every element in turn: the regex is run over a single element
-    // and the struct it makes is repeated, rather than matched against `len` copies of one string.
     if ca.len() > 1 && ca.scalar_value().is_some() {
         let one = extract_groups(&ca.slice(0, 1), pat, dtype)?;
         return Ok(one.new_from_index(0, ca.len()));

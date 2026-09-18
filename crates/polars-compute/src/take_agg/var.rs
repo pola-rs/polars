@@ -8,11 +8,7 @@ use polars_arrow::types::NativeType;
 use super::primitive::flat_validity;
 
 /// Numerical stable online variance aggregation.
-pub fn online_variance<I>(
-    // iterator producing values
-    iter: I,
-    ddof: u8,
-) -> Option<f64>
+pub fn online_variance<I>(iter: I, ddof: u8) -> Option<f64>
 where
     I: IntoIterator<Item = f64>,
 {
@@ -54,9 +50,6 @@ where
 {
     debug_assert!(arr.null_count() == 0);
 
-    // Every index gathers the same value where the buffer holds a single slot, so the variance is
-    // over that one value repeated — which is what a flat chunk of it would give as well. It is
-    // not `0.0` in general: `ddof` still decides whether there are enough values at all.
     if let Some(value) = arr.scalar_value_ignore_validity() {
         let value = unsafe { value.to_f64().unwrap_unchecked() };
         return online_variance(indices.into_iter().map(|_| value), ddof);
@@ -85,7 +78,6 @@ where
 {
     debug_assert!(arr.null_count() > 0);
 
-    // Every element is null, so no index gathers a value and there is no variance.
     let validity = flat_validity(arr)?;
 
     if let Some(value) = arr.scalar_value_ignore_validity() {

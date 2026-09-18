@@ -162,9 +162,6 @@ where
         by_physical = Cow::Owned(unsafe { by_physical.take_unchecked(sorting_indices) });
     }
 
-    // `by` and the sorting indices are read for their values alone — `by` has had its nulls taken
-    // out above, and the indices are an `arg_sort` — so only a values buffer that repeats one
-    // value is written out for them; their masks are left as they are.
     let by_values = by_physical.downcast_as_array().to_flat_values();
     let by_values = by_values.as_slice();
     let sorting_indices_flat = sorting_indices_opt

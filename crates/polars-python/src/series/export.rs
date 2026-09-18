@@ -10,16 +10,6 @@ use crate::interop::arrow::to_py::series_to_stream;
 use crate::prelude::*;
 
 /// The elements of a Series as a Python list.
-///
-/// The one chunk of a Series that has one is walked as itself; a Series of several is collected
-/// first, because one iterator across the chunks resolves the representation of the chunk it is
-/// in per element.
-///
-/// Chaining the chunks' own iterators instead, behind an adapter that answers the length
-/// `PyList::new` wants, was tried and is worse both ways: it cost the single-chunk walk its
-/// `TrustedLen` iterator (1.01x -> 1.34x) and did not pay for the collect on the chunked one
-/// (1.26x -> 1.32x). What the list costs is one Python object per element, and an adapter whose
-/// `next` tests which chunk it is in adds to that rather than to the copy it saves.
 fn elements_to_pylist<'py, T>(py: Python<'py>, ca: &ChunkedArray<T>) -> PyResult<Bound<'py, PyList>>
 where
     T: PolarsDataType,
@@ -32,10 +22,6 @@ where
 }
 
 /// The elements of a Series, collected a chunk at a time.
-///
-/// A chunk walked on its own has its representation resolved once, where one iterator over the
-/// chunks of the whole column resolves it per element — `next` stays out of line across the crate
-/// boundary, so nothing hoists it back out.
 fn collect_elements<T>(ca: &ChunkedArray<T>) -> Vec<Option<T::Physical<'_>>>
 where
     T: PolarsDataType,

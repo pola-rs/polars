@@ -96,13 +96,9 @@ macro_rules! pl_eq_kernel_body {
             lhs.scalar_value_ignore_validity(),
             rhs.scalar_value_ignore_validity(),
         ) {
-            // Neither side is written out: the one comparison answers for every element.
             (Some(lhs), Some(rhs)) => PlBitmap::new_scalar($scalar(&lhs, &rhs), length),
-            // One side holds the value the other is compared against element by element, which is
-            // exactly what the broadcast kernel takes.
             (Some(value), None) => PlBitmap::new($broadcast(&*rhs.to_flat(), value), length),
             (None, Some(value)) => PlBitmap::new($broadcast(&*lhs.to_flat(), value), length),
-            // Both sides hold one value per element, which is the layout the kernel reads.
             (None, None) => PlBitmap::new($flat(&*lhs.to_flat(), &*rhs.to_flat()), length),
         }
     }};
@@ -140,8 +136,6 @@ macro_rules! impl_pl_total_eq_kernel {
                 }
 
                 fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
-                    // A values buffer of one value is compared against the scalar once, and its
-                    // answer is the bit every element of this array shares.
                     match self.scalar_value_ignore_validity() {
                         Some(values) => {
                             PlBitmap::new_scalar(values.tot_eq(&other), self.len())
@@ -153,7 +147,6 @@ macro_rules! impl_pl_total_eq_kernel {
                 }
 
                 fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
-                    // As above, with the answer the other way around.
                     match self.scalar_value_ignore_validity() {
                         Some(values) => {
                             PlBitmap::new_scalar(values.tot_ne(&other), self.len())
@@ -167,8 +160,6 @@ macro_rules! impl_pl_total_eq_kernel {
                 fn tot_eq_missing_all(&self, other: &Self) -> bool {
                     assert_eq!(self.len(), other.len());
 
-                    // Past this many values the written-out comparison earns its allocation back,
-                    // and it is the vectorised kernel that reads them.
                     if self.len() > IN_PLACE_COMPARISON_LIMIT {
                         return self.tot_eq_missing_kernel(other).unset_bits() == 0;
                     }

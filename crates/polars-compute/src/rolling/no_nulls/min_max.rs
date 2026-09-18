@@ -32,7 +32,6 @@ macro_rules! rolling_minmax_func {
         where
             T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T> + Num,
         {
-            // The chunk becomes a slice here, once, out of the window loop; see the module docs.
             let values = values.to_flat_values();
             let values = values.as_slice();
 

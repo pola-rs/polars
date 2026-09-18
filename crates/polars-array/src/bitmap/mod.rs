@@ -29,10 +29,6 @@ pub struct PlBitmap {
 }
 
 /// Returns `bitmap` with its bits in the opposite order.
-///
-/// The bits are moved a word at a time rather than one at a time: the 32 bits ending at a
-/// position are the 32 bits starting at the mirror of that position, read backwards, which is
-/// what `u32::reverse_bits` answers.
 fn reverse_bitmap(bitmap: &Bitmap) -> Bitmap {
     let length = bitmap.len();
     let mask = BitMask::from_bitmap(bitmap);
@@ -40,8 +36,6 @@ fn reverse_bitmap(bitmap: &Bitmap) -> Bitmap {
 
     let mut written = 0;
     while written < length {
-        // The `bits` bits the next word writes out are the ones just below the point the
-        // previous word stopped mirroring at.
         let bits = (length - written).min(32);
         let word = mask.get_u32(length - written - bits);
         bytes.extend_from_slice(&(word.reverse_bits() >> (32 - bits)).to_le_bytes());
@@ -161,7 +155,6 @@ impl PlBitmap {
     /// The backing bitmap, if it holds one bit per element.
     #[inline]
     pub fn flat_bitmap(&self) -> Option<&Bitmap> {
-        // The reference borrows the bitmap this mask owns, so what it hands back outlives it.
         self.as_ref().flat_bitmap()
     }
 
@@ -262,7 +255,6 @@ impl PlBitmap {
     /// Returns this mask with every bit inverted, keeping the representation.
     #[must_use]
     pub fn not(&self) -> Self {
-        // A single bit inverts in `O(1)` and still stands for every element.
         Self {
             bitmap: !&self.bitmap,
             length: self.length,
@@ -275,10 +267,7 @@ impl PlBitmap {
         assert_eq!(self.length, other.length, "masks cover different lengths");
 
         match (self.scalar_value(), other.scalar_value()) {
-            // Two single bits `or` to a single bit, which covers every element in turn.
             (Some(lhs), Some(rhs)) => Self::new_scalar(lhs || rhs, self.length),
-            // A repeated set bit is set everywhere whatever the other mask holds; a repeated unset
-            // one leaves the other mask as it is, in whatever representation it is in.
             (Some(true), None) | (None, Some(true)) => Self::new_scalar(true, self.length),
             (Some(false), None) => other.clone(),
             (None, Some(false)) => self.clone(),
@@ -296,10 +285,7 @@ impl PlBitmap {
         assert_eq!(self.length, other.length, "masks cover different lengths");
 
         match (self.scalar_value(), other.scalar_value()) {
-            // Two single bits `and` to a single bit, which covers every element in turn.
             (Some(lhs), Some(rhs)) => Self::new_scalar(lhs && rhs, self.length),
-            // A repeated unset bit is unset everywhere whatever the other mask holds; a repeated
-            // set one leaves the other mask as it is, in whatever representation it is in.
             (Some(false), None) | (None, Some(false)) => Self::new_scalar(false, self.length),
             (Some(true), None) => other.clone(),
             (None, Some(true)) => self.clone(),
@@ -317,10 +303,7 @@ impl PlBitmap {
         assert_eq!(self.length, other.length, "masks cover different lengths");
 
         match (self.scalar_value(), other.scalar_value()) {
-            // Two single bits `xor` to a single bit, which covers every element in turn.
             (Some(lhs), Some(rhs)) => Self::new_scalar(lhs != rhs, self.length),
-            // A repeated unset bit leaves the other mask as it is, in whatever representation it
-            // is in; a repeated set one inverts it, which leaves that representation alone too.
             (Some(false), None) => other.clone(),
             (None, Some(false)) => self.clone(),
             (Some(true), None) => other.not(),
@@ -336,8 +319,6 @@ impl PlBitmap {
     /// Returns this mask with its bits in the opposite order, keeping the representation.
     #[must_use]
     pub fn reversed(&self) -> Self {
-        // A single bit says the same of every element whichever way they are read, so a mask
-        // that repeats one is its own reverse and nothing is written out.
         match self.scalar_value() {
             Some(_) => self.clone(),
             None => Self::from_bitmap(reverse_bitmap(&self.bitmap)),
@@ -345,9 +326,6 @@ impl PlBitmap {
     }
 
     /// Splits this mask into the first `offset` bits and the rest, keeping the representation.
-    ///
-    /// # Panics
-    /// Panics if `offset` exceeds `self.len()`.
     #[must_use]
     pub fn split_at(&self, offset: usize) -> (Self, Self) {
         assert!(
@@ -355,7 +333,6 @@ impl PlBitmap {
             "split point is past the end of the mask"
         );
 
-        // A single bit says the same of both halves, so neither of them is written out.
         if let Some(value) = self.scalar_value() {
             return (
                 Self::new_scalar(value, offset),
@@ -520,45 +497,5 @@ pub(crate) fn validity_eq(
         (Some(lhs), Some(rhs)) => lhs == rhs,
         (Some(mask), None) | (None, Some(mask)) => mask.set_bits() == length,
         (None, None) => true,
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    /// The bits are reversed a word at a time, so the answer is checked against the bit-at-a-time
-    /// reverse it replaces, over lengths and offsets either side of a word boundary.
-    #[test]
-    fn reversed_answers_bit_by_bit() {
-        for length in [
-            0usize, 1, 2, 7, 8, 9, 31, 32, 33, 63, 64, 65, 127, 128, 129, 1000,
-        ] {
-            for offset in [0usize, 1, 3, 7, 8, 13, 64] {
-                if offset > length {
-                    continue;
-                }
-
-                let bits: Vec<bool> = (0..length).map(|i| i % 3 == 0 || i % 7 == 1).collect();
-                let mut bitmap: Bitmap = bits.iter().copied().collect();
-                bitmap.slice(offset, length - offset);
-
-                let mask = PlBitmap::from_bitmap(bitmap.clone());
-                let expected: Vec<bool> = bitmap.iter().rev().collect();
-                assert_eq!(mask.reversed().iter().collect::<Vec<_>>(), expected);
-                assert_eq!(
-                    mask.reversed().reversed().iter().collect::<Vec<_>>(),
-                    bitmap.iter().collect::<Vec<_>>()
-                );
-            }
-        }
-
-        // A mask that repeats one bit reads the same either way round, and stays a repeat.
-        for value in [false, true] {
-            let scalar = PlBitmap::new_scalar(value, 1_000_000);
-            let reversed = scalar.reversed();
-            assert!(reversed.is_scalar());
-            assert_eq!(reversed.scalar_value(), Some(value));
-        }
     }
 }

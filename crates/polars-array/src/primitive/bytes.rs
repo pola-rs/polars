@@ -64,8 +64,6 @@ pub(crate) fn byte_vec_from_buffer<T: NativeType>(
     values: Buffer<T>,
 ) -> Either<Buffer<T>, Vec<Bytes<T>>> {
     const { assert_same_layout::<T>() };
-    // Reinterpreting first means the `Vec` that comes back is already the builder's element type,
-    // so no `Vec` is ever transmuted.
     match values.try_transmute::<Bytes<T>>() {
         Ok(bytes) => match bytes.into_mut() {
             Either::Right(values) => Either::Right(values),
@@ -74,9 +72,6 @@ pub(crate) fn byte_vec_from_buffer<T: NativeType>(
         Err(values) => Either::Left(values),
     }
 }
-
-// Everything below is what this module exists for: one copy per byte class rather than one per
-// element type. Leave them out of line — see the module docs.
 
 /// A buffer of `length` copies of `value`.
 #[inline(never)]
@@ -106,17 +101,11 @@ pub(crate) fn extend_subslice<B: AlignedBytes>(
 ) {
     match other {
         ValuesBytes::Flat(slice) => values.extend_from_slice(&slice[start..start + length]),
-        // Every element of the array reads the same value, so which of them the subslice covers
-        // makes no difference to what is appended.
         ValuesBytes::Scalar(value) => values.resize(values.len() + length, value),
     }
 }
 
 /// Appends the run of `length` values of `other` starting at `start`, `repeats` times over.
-///
-/// The run is read out of `other` once; every copy after that is taken from the ones already
-/// written, doubling the run each time, so `repeats` copies of a short run cost a handful of long
-/// copies rather than one short copy each.
 #[inline(never)]
 pub(crate) fn extend_subslice_run_repeated<B: AlignedBytes>(
     values: &mut Vec<B>,
@@ -130,7 +119,6 @@ pub(crate) fn extend_subslice_run_repeated<B: AlignedBytes>(
         .expect("the values to append overflow a `usize`");
     values.reserve(total);
 
-    // Every element of the array reads the same value, so the whole run is that one value.
     if let ValuesBytes::Scalar(value) = other {
         values.resize(values.len() + total, value);
         return;
@@ -170,7 +158,6 @@ pub(crate) fn extend_subslice_each_repeated<B: AlignedBytes>(
                 }
             }
         },
-        // Every element repeats the same value, so which of them is repeated is immaterial.
         ValuesBytes::Scalar(value) => values.resize(values.len() + length * repeats, value),
     }
 }
@@ -191,7 +178,6 @@ pub(crate) unsafe fn extend_gathered<B: AlignedBytes>(
             idxs.iter()
                 .map(|idx| unsafe { *slice.get_unchecked(*idx as usize) }),
         ),
-        // Every index reads the one value the array holds.
         ValuesBytes::Scalar(value) => values.resize(values.len() + idxs.len(), value),
     }
 }
@@ -215,7 +201,6 @@ pub(crate) fn extend_opt_gathered<B: AlignedBytes>(
                 ValuesBytes::Scalar(value) => value,
             }
         } else {
-            // The value of a null element is undetermined, so anything at all does.
             B::zeros()
         };
         // SAFETY: room for one value per index was just reserved.

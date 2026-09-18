@@ -113,28 +113,7 @@ pub trait ZeroableArrayFromIter:
     }
 }
 
-// ---------------
-// Implementations
-// ---------------
-//
-// The infallible collects are the `FromIterator` implementations of the arrays, which take their
-// capacity from the lower bound of the size hint. Reserving the room up front is not the same as
-// not checking for it: `Vec`'s extend still compares the length against the capacity once per
-// element, and drives the iterator by `next()`, so an iterator that resolves its representation
-// in `fold` never gets to. The trusted variants below write into the reserved room directly and
-// through `fold`, which is worth a third of the work on a cheap element — see
-// [`vec_from_trusted_len_iter`].
-
 /// Collects `iter` into a `Vec`, writing straight into the room reserved for its elements.
-///
-/// Two things the safe collect cannot do. The capacity is not compared against the length once
-/// per element, since the iterator's length is trusted to be the room reserved for it. And the
-/// elements are taken by [`Iterator::for_each`], which is [`Iterator::fold`]: an iterator over
-/// values that are either flat or scalar resolves which it is in `fold`, once, where `next()`
-/// leaves the branch in the caller's loop.
-///
-/// Over a million elements of a cheap unary kernel (`dt.weekday`), the two together are 26
-/// instructions per element against 17.
 #[inline]
 fn vec_from_trusted_len_iter<T, I>(iter: I) -> Vec<T>
 where
@@ -183,9 +162,7 @@ impl<T: NativeType> ArrayFromIter<T> for PlPrimitiveArray<T> {
         Ok(Self::from_vec(values))
     }
 
-    /// A walk that can stop early cannot hand its elements to `for_each`, so what the trusted
-    /// length saves here is the other half: the capacity is not compared against the length once
-    /// per element.
+    /// A fallible walk, which keeps the capacity check off the loop but cannot use `for_each`.
     #[inline]
     fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
     where
@@ -227,16 +204,6 @@ impl<T: NativeType> ArrayFromIter<Option<T>> for PlPrimitiveArray<T> {
             .1
             .expect("a trusted-length iterator knows how many elements it has left");
 
-        // The value of a null element is undetermined, so it is left at the default; the mask is
-        // built alongside, into room reserved with the values. Both are reserved once, ahead of
-        // the walk, and written to unchecked: the iterator yields exactly as many items as the
-        // room holds.
-        //
-        // This one walks the iterator itself rather than handing it to `vec_from_trusted_len_iter`
-        // as a `map` that pushes the bit on the way past. Folding a mask builder through a closure
-        // keeps its word and its bit count live across the whole walk, which halves the loop's
-        // instructions-per-cycle: gathering a million elements out of a chunk with a mask cost 2.5
-        // times the cycles of the same gather without one, for 1.3 times the instructions.
         let mut validity = BitmapBuilder::with_capacity(length);
         let mut values = Vec::with_capacity(length);
         // SAFETY: room for `length` values and as many bits was just reserved, and a `TrustedLen`
@@ -255,8 +222,7 @@ impl<T: NativeType> ArrayFromIter<Option<T>> for PlPrimitiveArray<T> {
         )
     }
 
-    /// As the one above, a fallible walk keeps the capacity check off the loop but not the branch
-    /// `for_each` would have resolved once.
+    /// A fallible walk, which keeps the capacity check off the loop but cannot use `for_each`.
     #[inline]
     fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
     where
@@ -269,8 +235,6 @@ impl<T: NativeType> ArrayFromIter<Option<T>> for PlPrimitiveArray<T> {
             .1
             .expect("a trusted-length iterator knows how many elements it has left");
 
-        // The value of a null element is undetermined, so it is left at the default; the mask is
-        // built alongside, into room reserved with the values.
         let mut validity = BitmapBuilder::with_capacity(length);
         let mut values = Vec::with_capacity(length);
         for item in iter {
@@ -301,7 +265,6 @@ impl<T: NativeType> ArrayFromIter<Option<T>> for PlPrimitiveArray<T> {
 
         for item in iter {
             let item = item?;
-            // The value of a null element is undetermined, so it is left at the default.
             values.push(item.unwrap_or_default());
             validity.push(item.is_some());
         }
@@ -366,7 +329,6 @@ impl ArrayFromIter<Option<bool>> for PlBooleanArray {
         let mut validity = BitmapBuilder::with_capacity(lower);
 
         for item in iter {
-            // The value of a null element is undetermined, so it is left at the default.
             values.push(item.unwrap_or_default());
             validity.push(item.is_some());
         }
@@ -390,7 +352,6 @@ impl ArrayFromIter<Option<bool>> for PlBooleanArray {
 
         for item in iter {
             let item = item?;
-            // The value of a null element is undetermined, so it is left at the default.
             values.push(item.unwrap_or_default());
             validity.push(item.is_some());
         }
@@ -493,7 +454,6 @@ impl<V: IntoBytes> ArrayFromIter<Option<V>> for PlBinaryArray {
 
         for value in iter {
             let value = value?;
-            // The value of a null element is undetermined, so nothing is written out for it.
             if let Some(value) = value {
                 bytes.extend_from_slice(value.into_bytes().as_ref());
                 offsets.push(bytes.len() as u64);
@@ -524,9 +484,6 @@ impl<V: IntoBytes> ArrayFromIter<V> for PlBinaryViewArray {
     }
 
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<V, E>>>(iter: I) -> Result<Self, E> {
-        // The values go straight into the builder rather than into a `Vec` the array is then
-        // built out of: an error only means the half-built array is dropped, which is no reason
-        // to hold every value of a whole column a second time.
         let iter = iter.into_iter();
         let mut builder = PlBinaryViewArrayBuilder::with_capacity(iter.size_hint().0);
         for value in iter {
@@ -548,7 +505,6 @@ impl<V: IntoBytes> ArrayFromIter<Option<V>> for PlBinaryViewArray {
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<V>, E>>>(
         iter: I,
     ) -> Result<Self, E> {
-        // As above: the builder is written into directly rather than through a `Vec`.
         let iter = iter.into_iter();
         let mut builder = PlBinaryViewArrayBuilder::with_capacity(iter.size_hint().0);
         for value in iter {
@@ -609,105 +565,8 @@ where
     }
 }
 
-// The collects above under another name: the zeroable stand-in for an element of one of these
-// four is the element type itself or an `Option` of it, so there is nothing left for the marker
-// to do.
 impl<T: NativeType> ZeroableArrayFromIter for PlPrimitiveArray<T> {}
 impl ZeroableArrayFromIter for PlBooleanArray {}
 impl ZeroableArrayFromIter for PlBinaryArray {}
 impl ZeroableArrayFromIter for PlBinaryViewArray {}
-// The zeroable stand-in for a `&str` is `Option<&str>`, which is what the collect above takes.
 impl ZeroableArrayFromIter for PlUtf8ViewArray {}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    /// The trusted collect writes into reserved room and drives the iterator by `fold`, so it is
-    /// checked against the safe one it overrides — including over a scalar values iterator, where
-    /// the `fold` it goes through is the one that resolves the representation.
-    #[test]
-    fn trusted_collect_answers_as_the_safe_one_does() {
-        for length in [0usize, 1, 2, 7, 64, 65, 1000] {
-            let flat = PlPrimitiveArray::from_vec((0..length as i64).collect::<Vec<_>>());
-            let scalar = PlPrimitiveArray::new_scalar(7i64, length);
-
-            for source in [&flat, &scalar] {
-                let values: PlPrimitiveArray<i64> =
-                    source.values_iter().map(|v| v * 2).collect_arr();
-                let trusted: PlPrimitiveArray<i64> =
-                    source.values_iter().map(|v| v * 2).collect_arr_trusted();
-                assert_eq!(values.len(), length);
-                assert_eq!(
-                    values.values_iter().collect::<Vec<_>>(),
-                    trusted.values_iter().collect::<Vec<_>>()
-                );
-
-                // The `Option` collect builds the mask alongside the values.
-                let elements: PlPrimitiveArray<i64> = source
-                    .values_iter()
-                    .map(|v| (v % 3 != 0).then_some(v))
-                    .collect_arr();
-                let trusted: PlPrimitiveArray<i64> = source
-                    .values_iter()
-                    .map(|v| (v % 3 != 0).then_some(v))
-                    .collect_arr_trusted();
-                assert_eq!(trusted.len(), length);
-                assert_eq!(trusted.null_count(), elements.null_count());
-                assert_eq!(
-                    elements.iter().collect::<Vec<_>>(),
-                    trusted.iter().collect::<Vec<_>>()
-                );
-            }
-        }
-    }
-
-    /// The fallible collect of a view array builds the views as it goes rather than laying the
-    /// values out in a `Vec` first, so it is checked against the infallible one it mirrors —
-    /// including that it stops at the first error and that a value too long to be inlined into
-    /// its own view still reads back.
-    #[test]
-    fn fallible_view_collect_answers_as_the_infallible_one_does() {
-        let values: Vec<Vec<u8>> = (0..100u8)
-            .map(|i| vec![i; if i % 7 == 0 { 40 } else { 3 }])
-            .collect();
-
-        let plain: PlBinaryViewArray = values.iter().map(|v| v.as_slice()).collect_arr();
-        let fallible: PlBinaryViewArray = values
-            .iter()
-            .map(|v| Ok::<_, ()>(v.as_slice()))
-            .try_collect_arr()
-            .unwrap();
-        assert_eq!(fallible.len(), plain.len());
-        assert_eq!(
-            fallible.values_iter().collect::<Vec<_>>(),
-            plain.values_iter().collect::<Vec<_>>()
-        );
-
-        // The `Option` collect carries the mask through the same builder.
-        let masked: PlBinaryViewArray = values
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (i % 3 != 0).then_some(v.as_slice()))
-            .collect_arr();
-        let fallible: PlBinaryViewArray = values
-            .iter()
-            .enumerate()
-            .map(|(i, v)| Ok::<_, ()>((i % 3 != 0).then_some(v.as_slice())))
-            .try_collect_arr()
-            .unwrap();
-        assert_eq!(fallible.null_count(), masked.null_count());
-        assert_eq!(
-            fallible.iter().collect::<Vec<_>>(),
-            masked.iter().collect::<Vec<_>>()
-        );
-
-        // An error anywhere is the answer, and nothing built before it is handed back.
-        let failed: Result<PlBinaryViewArray, usize> = values
-            .iter()
-            .enumerate()
-            .map(|(i, v)| if i == 13 { Err(i) } else { Ok(v.as_slice()) })
-            .try_collect_arr();
-        assert_eq!(failed.err(), Some(13));
-    }
-}

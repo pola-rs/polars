@@ -157,7 +157,6 @@ where
     pub fn new_full_null(length: usize) -> Self {
         Self {
             values: vec![T::default(); length].into(),
-            // Every element is null, which is the one bit a scalar mask holds.
             validity: Some(PlBitmap::new_scalar(false, length)),
         }
     }
@@ -593,5 +592,4 @@ impl<'a, T: PolarsObject> ArrayFromIter<Option<&'a T>> for ObjectArray<T> {
     }
 }
 
-// The zeroable stand-in for a `&T` is `Option<&T>`, which is what the collect above takes.
 impl<T: PolarsObject> ZeroableArrayFromIter for ObjectArray<T> {}

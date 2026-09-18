@@ -60,7 +60,6 @@ fn top_k_bool_impl(
     }
 
     let values = bm.freeze();
-    // One bit was pushed per element, and `first_n_valid_mask` holds one per element as well.
     let length = values.len();
     let arr = PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
     ChunkedArray::with_chunk_like(ca, arr)
@@ -79,22 +78,16 @@ where
     nnca.rechunk_mut();
     let chunk = nnca.downcast_into_iter().next().unwrap();
 
-    // Reconstruct output (with nulls at the end).
     let out_len = k.min(ca.len());
     let non_null_count = ca.len() - ca.null_count();
     let validity = first_n_valid_mask(non_null_count, out_len);
 
-    // Every element of a chunk whose values repeat one value is that value, so the largest `k` of
-    // them are it as well: the answer repeats it too, rather than the buffer being written out
-    // and partitioned to find what it already holds.
     if let Some(value) = chunk.scalar_value_ignore_validity() {
         let arr = PlPrimitiveArray::new_scalar(value, out_len)
             .with_validity(validity.map(PlBitmap::from_bitmap));
         return ChunkedArray::with_chunk_like(ca, arr);
     }
 
-    // Nothing is null here — `nnca` dropped them — so the mask is not read at all, whatever
-    // representation it is in.
     let mut vec = chunk
         .flat_values()
         .expect("the values are not repeated")
@@ -130,13 +123,10 @@ fn top_k_binary_impl(
     nnca.rechunk_mut();
     let chunk = nnca.downcast_into_iter().next().unwrap();
 
-    // Reconstruct output (with nulls at the end).
     let out_len = k.min(ca.len());
     let non_null_count = ca.len() - ca.null_count();
     let validity = first_n_valid_mask(non_null_count, out_len);
 
-    // As in `top_k_num_impl`: views that repeat one view are every element's, so the largest `k`
-    // of them are that view as well.
     if chunk.views_are_scalar() {
         let arr = chunk
             .new_from_index(0, out_len)
@@ -144,7 +134,6 @@ fn top_k_binary_impl(
         return ChunkedArray::with_chunk_like(ca, arr);
     }
 
-    // Nothing is null here, so the mask is not read at all whatever representation it is in.
     let buffers = chunk.data_buffers().clone();
     let mut views = chunk
         .flat_views()

@@ -245,8 +245,6 @@ pub(crate) unsafe fn decode_binview(
         if descending {
             scratch.iter_mut().for_each(|o| *o = !*o)
         }
-        // The validity is decoded in one pass of its own above, so every value is pushed as a
-        // valid one and the mask replaced wholesale below.
         mutable.push_value(&scratch);
     }
 

@@ -36,8 +36,6 @@ impl ListBooleanChunkedBuilder {
         if ca.is_empty() {
             self.fast_explode = false;
         }
-        // The chunks are appended whole, which leaves each of them in whatever representation it
-        // is in rather than reading it an element at a time.
         let values = self.builder.values_mut();
         ca.downcast_iter()
             .for_each(|arr| values.extend(arr, ShareStrategy::Always));

@@ -9,8 +9,6 @@ use polars_arrow::with_match_primitive_type;
 
 /// The length in bytes of every element, read off the views.
 pub fn binary_size_bytes(array: &PlBinaryViewArray) -> PlPrimitiveArray<u32> {
-    // A scalar views buffer holds the one view every element reads: its length is measured once
-    // and repeated in turn, in `O(1)` memory.
     let lengths = match array.scalar_views() {
         Some(view) => PlPrimitiveArray::new_scalar(view.length, array.len()),
         None => PlPrimitiveArray::from_vec(
@@ -62,8 +60,6 @@ fn viewed_bytes(array: &PlBinaryViewArray) -> usize {
 
 /// The bytes the offsets of `array` cover, and the number of offsets it holds.
 fn offset_bytes(array: &PlBinaryArray) -> (usize, usize) {
-    // A scalar offsets buffer holds the one range every element covers, so it cuts those bytes
-    // out of the values once; a flat one holds the end of every element plus a leading zero.
     let slots = if array.offsets_are_scalar() {
         2
     } else {
@@ -73,7 +69,6 @@ fn offset_bytes(array: &PlBinaryArray) -> (usize, usize) {
     let covered = if array.is_empty() {
         0
     } else {
-        // The offsets are what is sliced, not the values, so only the range they cover is held.
         array.value_range(array.len() - 1).end - array.value_range(0).start
     };
 
@@ -85,7 +80,6 @@ pub fn estimated_bytes_size(array: &dyn PlArray) -> usize {
     use PlArrayType as A;
 
     match array.array_type() {
-        // Nulls are stored as nothing but a length.
         A::Null => 0,
         A::Boolean => {
             let array = downcast::<PlBooleanArray>(array);
@@ -105,8 +99,6 @@ pub fn estimated_bytes_size(array: &dyn PlArray) -> usize {
         A::Utf8View => viewed_bytes(downcast::<PlUtf8ViewArray>(array).as_binview()),
         A::FixedSizeBinary => {
             let array = downcast::<PlFixedSizeBinaryArray>(array);
-            // The bytes of the one element every element reads, or of every element laid end
-            // to end.
             let bytes = match array.scalar_value_ignore_validity() {
                 Some(value) => value.len(),
                 None => array.flat_values().unwrap().len(),
@@ -124,15 +116,12 @@ pub fn estimated_bytes_size(array: &dyn PlArray) -> usize {
         },
         A::List => {
             let array = downcast::<PlListArray>(array);
-            // The offsets are what is sliced, so only the values they cover are held.
             let range = if array.is_empty() {
                 0..0
             } else {
                 let start = array.value_range(0).start;
                 start..array.value_range(array.len() - 1).end
             };
-            // The offsets are counted one per element rather than one per slot, so that slicing an
-            // array in half halves what this returns — the leading offset would tip it over.
             let slots = buffer_slots(array.offsets_are_scalar(), array.len());
 
             estimated_bytes_size(&*array.values().sliced(range.start, range.len()))
@@ -143,7 +132,6 @@ pub fn estimated_bytes_size(array: &dyn PlArray) -> usize {
             let array = downcast::<PlFixedSizeListArray>(array);
             estimated_bytes_size(array.values()) + validity_size(array.validity())
         },
-        // An object array holds its elements behind a trait object, whose size is its own business.
         A::Object { .. } => 0,
     }
 }

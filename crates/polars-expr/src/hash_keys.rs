@@ -421,7 +421,6 @@ impl RowEncodedKeys {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
-        // A gather picks the elements out again, so the values are compacted rather than shared.
         let mut hashes = PlPrimitiveArrayBuilder::<u64>::with_capacity(idxs.len());
         let mut keys = PlBinaryArrayBuilder::with_capacity(idxs.len());
         unsafe {
@@ -499,7 +498,6 @@ impl BinviewKeys {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
-        // A gather picks the elements out again, so the views are compacted rather than shared.
         let mut hashes = PlPrimitiveArrayBuilder::<u64>::with_capacity(idxs.len());
         let mut keys = PlBinaryViewArrayBuilder::with_capacity(idxs.len());
         unsafe {
@@ -527,8 +525,6 @@ fn for_each_hash_prehashed<F: FnMut(IdxSize, Option<u64>)>(
     opt_v: Option<PlBitmapRef<'_>>,
     mut f: F,
 ) {
-    // The hashes are read through the array, so a chunk that repeats one hash hands it back once
-    // per key rather than being written out to one slot per key first.
     match each_key_is_valid(opt_v) {
         Some(true) => {
             for (idx, h) in hashes.values_iter().enumerate_idx() {

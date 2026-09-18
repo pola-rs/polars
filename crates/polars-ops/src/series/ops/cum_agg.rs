@@ -53,10 +53,6 @@ where
 }
 
 /// Runs `scan` over every value of `arr` in turn, appending what it answers to `out`.
-///
-/// Which way the chunk holds its values is settled here, once, outside the loop: a chunk that
-/// repeats one value hands the scan that value as many times as the chunk is long, and a flat one
-/// hands over its slice.
 fn scan_chunk<N, F>(arr: &PlPrimitiveArray<N>, scan: &mut F, out: &mut Vec<N>)
 where
     N: NativeType,
@@ -86,18 +82,9 @@ where
 {
     let mut state = init;
 
-    // Nothing missing means the scan answers a value for every element, so it can be fed one
-    // chunk at a time: a chunk settles how it is laid out once, for all of its elements, where
-    // the column's own iterator asks that per element -- and a scan that carries state between
-    // elements gives the loop no way to hoist the question itself.
     if !ca.has_nulls() {
-        // `update` answers `Some` for every element it is handed, and every element of a column
-        // with no nulls is there.
         let mut scan = |v: T::Native| update(&mut state, Some(v)).unwrap();
 
-        // A forward scan writes its answers in the order it makes them, so it can take the chunks
-        // as they come. This used to reach only a column of one chunk, which left every chunked
-        // one on the per-element test: 0.45 ms over three chunks of 200k `Float64` against 0.11.
         if !reverse {
             let mut values: Vec<T::Native> = Vec::with_capacity(ca.len());
             for arr in ca.downcast_iter() {
@@ -106,10 +93,6 @@ where
             return ChunkedArray::from_vec(ca.name().clone(), values);
         }
 
-        // A reverse scan makes its answers back to front, and `collect_reversed` writes them out
-        // that way in the one pass. Walking the chunks and turning the vector round afterwards
-        // measured 1.22x that, so the reverse scan keeps to a single chunk, where its whole walk
-        // is one `rev()` over one run of values anyway.
         if let [chunk] = ca.chunks().as_slice() {
             let arr: &PlPrimitiveArray<T::Native> = chunk.as_any().downcast_ref().unwrap();
             let out: NoNull<ChunkedArray<T>> = match arr.flat_values() {
@@ -120,10 +103,6 @@ where
                     .map(&mut scan)
                     .collect_reversed(),
                 None => {
-                    // Every element of a chunk that repeats one is that one, whichever end the
-                    // scan starts from; only the order its answers are written back in differs.
-                    // The scan itself still runs per element, since what it carries between them
-                    // does not repeat -- `cum_sum` of a repeated element counts up.
                     let value = arr
                         .scalar_value_ignore_validity()
                         .expect("a chunk is flat or scalar");
@@ -147,10 +126,7 @@ where
     out.with_name(ca.name().clone())
 }
 
-/// The running max or min of a chunk that repeats one element is that element again: `Some(v)`
-/// where the element is there and `None` where the mask says it is not, which is the chunk
-/// itself. Answering it off the repeat keeps the repeat, where the scan below would read the
-/// one element out once per element to write the same column back.
+/// The running max or min of a chunk that repeats one element is that chunk again.
 fn cum_extremum_of_repeated_element<T>(
     ca: &ChunkedArray<T>,
     init: Option<T::Native>,
@@ -158,7 +134,6 @@ fn cum_extremum_of_repeated_element<T>(
 where
     T: PolarsNumericType,
 {
-    // An `init` of its own can beat the element the chunk repeats, which is a different answer.
     if init.is_some() {
         return None;
     }
@@ -166,8 +141,6 @@ where
         return None;
     };
     let arr: &PlPrimitiveArray<T::Native> = chunk.as_any().downcast_ref().unwrap();
-    // The values axis alone answers this: a mask over it only turns elements into the nulls
-    // the scan would write there anyway.
     arr.scalar_value_ignore_validity()?;
     Some(ca.clone())
 }
@@ -216,16 +189,12 @@ where
     cum_scan_numeric(ca, reverse, init, det_min)
 }
 
-/// A chunk that repeats one bit runs its max or min over that bit alone, which is the chunk
-/// again: `init` is the only thing that can beat it, and both callers answer the `init` that
-/// does ahead of this.
+/// A chunk that repeats one bit runs its max or min over that bit alone.
 fn cum_extremum_of_repeated_bit(ca: &BooleanChunked) -> Option<BooleanChunked> {
     let [chunk] = ca.chunks().as_slice() else {
         return None;
     };
     let arr: &PlBooleanArray = chunk.as_any().downcast_ref().unwrap();
-    // The values axis alone answers this: a mask over it only turns elements into the nulls
-    // the scans below would write there anyway.
     arr.scalar_value_ignore_validity()?;
     Some(ca.clone())
 }
@@ -241,8 +210,6 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
                 ca.name().clone(),
                 ca.downcast_iter()
                     .map(|arr| {
-                        // Every element is true, which one shared bit stands for; the mask is
-                        // the one the chunk already carried.
                         PlBooleanArray::new_scalar(true, arr.len())
                             .with_validity(arr.validity().map(PlBitmap::from))
                             .into_boxed()
@@ -252,7 +219,6 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
         };
     }
 
-    // `init` is `None` or `Some(false)` here, and neither beats the bit the chunk repeats.
     if let Some(out) = cum_extremum_of_repeated_bit(ca) {
         return out;
     }
@@ -276,7 +242,6 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
         out.extend_constant(ca.len() - 1 - last_true_idx, false);
     }
 
-    // One bit was pushed per element, and `rechunk_validity` hands back one bit per element too.
     let values = out.freeze();
     let length = values.len();
     let arr = PlBooleanArray::new(values, length, ca.rechunk_validity());
@@ -294,8 +259,6 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
                 ca.name().clone(),
                 ca.downcast_iter()
                     .map(|arr| {
-                        // Every element is false, which one shared bit stands for; the mask is
-                        // the one the chunk already carried.
                         PlBooleanArray::new_scalar(false, arr.len())
                             .with_validity(arr.validity().map(PlBitmap::from))
                             .into_boxed()
@@ -305,7 +268,6 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
         };
     }
 
-    // `init` is `None` or `Some(true)` here, and neither beats the bit the chunk repeats.
     if let Some(out) = cum_extremum_of_repeated_bit(ca) {
         return out;
     }
@@ -329,7 +291,6 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
         out.extend_constant(ca.len() - 1 - last_false_idx, true);
     }
 
-    // One bit was pushed per element, and `rechunk_validity` hands back one bit per element too.
     let values = out.freeze();
     let length = values.len();
     let arr = PlBooleanArray::new(values, length, ca.rechunk_validity());

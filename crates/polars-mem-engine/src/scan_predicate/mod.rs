@@ -295,7 +295,6 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
         let array = array.bool()?.rechunk();
         let array = array.downcast_as_array();
 
-        // Nulls count as false.
         let mask = array.true_and_valid();
 
         // @NOTE: Certain predicates like `1 == 1` will only output 1 value. We need to broadcast

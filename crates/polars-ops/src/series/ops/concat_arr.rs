@@ -53,9 +53,6 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
                         validities.push(v)
                     }
 
-                    // A chunk that repeats one element holds the values of that one row, which is
-                    // what the flatten kernel broadcasts over the output: the row is not written
-                    // out once per row of the column to reach it.
                     let chunk = arr.downcast_as_array();
 
                     (chunk.values().to_boxed(), *width, rows)
@@ -102,7 +99,6 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
 
         let arr = PlFixedSizeListArray::new(inner_arr, width, 1, outer_validity);
 
-        // The chunk carries no inner type, so the array is built with its dtype directly.
         let out = unsafe {
             ArrayChunked::from_chunks_and_dtype(
                 args[0].name().clone(),
@@ -123,7 +119,6 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
 
         let arr = PlFixedSizeListArray::new(inner_arr, width, output_height, outer_validity);
 
-        // The chunk carries no inner type, so the array is built with its dtype directly.
         let out = unsafe {
             ArrayChunked::from_chunks_and_dtype(
                 args[0].name().clone(),

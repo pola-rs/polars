@@ -597,8 +597,6 @@ where
     /// The single element this column repeats, if it stands for one.
     #[inline]
     pub fn scalar_value(&self) -> Option<Option<T::Physical<'_>>> {
-        // A column of one element repeats that element by definition, however its chunks are laid
-        // out — an empty chunk on either side of the one that holds it changes nothing.
         if self.len() == 1 {
             // SAFETY: the column has an element 0.
             return Some(unsafe { self.get_unchecked(0) });
@@ -612,15 +610,6 @@ where
     }
 
     /// Whether every element of this column reads one and the same element.
-    ///
-    /// The array twin of [`Series::repeats_one_element`], and the same answer: an op that reads
-    /// such a column element by element reads the same element every time, so it may read that
-    /// one and repeat what it makes of it.
-    ///
-    /// More than one chunk still answers, as long as each of them repeats and they all repeat the
-    /// same element. That is the shape a column takes when the streaming engine hands a whole
-    /// column to an op that cannot be split — one chunk per morsel, each of them a repeat.
-    /// Comparing the chunks costs one element per chunk, against the walk it stands in for.
     pub fn repeats_one_element(&self) -> bool {
         if self.len() <= 1 {
             return false;
@@ -628,9 +617,6 @@ where
 
         match self.chunks.as_slice() {
             [chunk] => chunk.is_scalar(),
-            // Comparing the chunks against each other goes through a series, which two dtypes
-            // cannot be read back as: an object column carries pointers only one chunk of it may
-            // hold, and an unknown one has no reading at all. Neither of them answers here.
             chunks
                 if !matches!(self.dtype(), DataType::Unknown(_))
                     && !self.dtype().is_object()
@@ -638,8 +624,6 @@ where
                         .iter()
                         .all(|chunk| chunk.is_empty() || chunk.is_scalar()) =>
             {
-                // Only worth asking whether the chunks repeat the *same* element once every one
-                // of them is known to repeat at all.
                 unsafe {
                     // SAFETY: the chunks and the dtype are this column's own.
                     Series::from_chunks_and_dtype_unchecked(
@@ -655,20 +639,11 @@ where
     }
 
     /// This column narrowed to the single element it repeats, where it stands for one.
-    ///
-    /// An argument written as a literal reaches a kernel already broadcast to the length of the
-    /// column it argues over, so the fast paths that ask for a length of one never see it.
-    /// Narrowing it back to that one element lets them: what the kernel makes of one element it
-    /// would make of every one of them. Only the caller knows whether its own length is the one
-    /// the output takes, so it is the caller that decides when to ask.
     pub fn settled_to_one_element(&self) -> Option<Self> {
         (self.len() > 1 && self.scalar_value().is_some()).then(|| self.slice(0, 1))
     }
 
     /// The single value every element of this column holds, disregarding which of them are null.
-    ///
-    /// Unlike [`scalar_value`](Self::scalar_value) this asks the values alone, so a column whose
-    /// values repeat under a mask of one bit per element answers with that value.
     #[inline]
     pub fn scalar_value_ignore_validity(&self) -> Option<T::Physical<'_>>
     where
@@ -710,8 +685,6 @@ where
         }
         let mut i = 0;
         for chunk in unsafe { self.chunks_mut() } {
-            // Slicing a mask keeps its representation, so the part a chunk covers of one that
-            // repeats a single bit is that same bit rather than a run written out for it.
             *chunk = chunk.with_validity(validity.as_ref().map(|v| v.sliced(i, chunk.len())));
             i += chunk.len();
         }
@@ -782,8 +755,6 @@ where
                 .with_name(self.name().clone());
         }
 
-        // A mask that repeats a single bit is set everywhere or unset everywhere, and both of
-        // those are answered above; what is left holds one bit per element.
         let flat = validity.flat_bitmap().expect("the bits are not repeated");
         let mut null_mask = flat.clone();
 
@@ -844,7 +815,6 @@ impl ListChunked {
                 continue;
             }
 
-            // The values a list array is taken over are masked out where no element covers them.
             let covered = arr.value_range(0).start..arr.value_range(arr.len() - 1).end;
             if covered.start != 0 || covered.end != arr.values().len() {
                 return true;
@@ -857,8 +827,6 @@ impl ListChunked {
                 continue;
             }
 
-            // A scalar mask stands for the same bit at every element, and the one that is unset
-            // everywhere returned above: there is no element left for it to mask out.
             let Some(validity) = validity.flat_bitmap() else {
                 continue;
             };
@@ -898,7 +866,6 @@ impl ArrayChunked {
         let dtype = DataType::Array(Box::new(inner_dtype.clone()), width);
         let field = Arc::new(Field::new(name, dtype));
         if width == 0 {
-            // No values to cut into elements: every element is the empty list, `length` times.
             let values = new_empty_chunk(inner_dtype);
             let arr = PlFixedSizeListArray::new(values, width, length, None);
             return ArrayChunked::new_with_compute_len(field, vec![Box::new(arr)]);
@@ -932,8 +899,6 @@ impl ArrayChunked {
         let chunks = self
             .downcast_iter()
             .map(|chunk| {
-                // A fixed size list is a list whose elements are all `width` values long, so the
-                // offsets are the multiples of the width.
                 let offsets = (0..=chunk.len())
                     .map(|i| (i * width) as u64)
                     .collect::<Vec<u64>>();
@@ -943,8 +908,6 @@ impl ArrayChunked {
                     values,
                     offsets.into(),
                     chunk.len(),
-                    // The elements map one to one, so the mask carries over as it is — a
-                    // scalar one stays the single bit it is.
                     chunk.validity().map(PlBitmap::from),
                 )) as PlArrayRef
             })
@@ -1029,8 +992,6 @@ where
     T: PolarsNumericType,
 {
     fn as_single_ptr(&mut self) -> PolarsResult<usize> {
-        // The pointer has to be into this array itself, so the chunk is written out in place
-        // rather than into the copy `to_flat` would hand back.
         self.rechunk_mut();
         self.flatten_mut();
         let a = self.as_flat().unwrap().chunks_flat_values().next().unwrap();
@@ -1081,9 +1042,6 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    // The accessors that hand out a slice of the values live on `Flat<ChunkedArray<T>>` — see
-    // [`crate::chunked_array::flat`]: a scalar chunk has no slice in it to borrow.
-
     #[allow(clippy::wrong_self_convention)]
     pub fn into_no_null_iter(
         &self,
@@ -1128,8 +1086,6 @@ impl ValueSize for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl ValueSize for ArrayChunked {
     fn get_values_size(&self) -> usize {
-        // Every element covers the same number of values, so this is the height times the width
-        // — there is no values array to write out to count it, scalar or otherwise.
         self.downcast_iter()
             .fold(0usize, |acc, arr| acc + arr.len() * arr.width())
     }
@@ -1157,14 +1113,11 @@ pub fn new_empty_chunk(dtype: &DataType) -> PlArrayRef {
 /// A chunk of `length` nulls, laid out the way `dtype` describes.
 pub fn new_full_null_chunk(dtype: &DataType, length: usize) -> PlArrayRef {
     match dtype {
-        // Every element is an empty list, so the values are only there to carry the inner shape.
         DataType::List(inner) => {
             Box::new(PlListArray::new_full_null(new_empty_chunk(inner), length))
         },
         #[cfg(feature = "dtype-array")]
         DataType::Array(inner, width) => {
-            // An element of a null list is as wide as any other, so the one element the values
-            // stand for is `width` nulls of the inner type.
             let values = new_full_null_chunk(inner, *width);
             Box::new(PlFixedSizeListArray::new_full_null(values, length))
         },
@@ -1176,13 +1129,10 @@ pub fn new_full_null_chunk(dtype: &DataType, length: usize) -> PlArrayRef {
                 .collect();
             Box::new(PlStructArray::new_full_null(fields, length))
         },
-        // A map is stored as a list of its entries, which is the shape the nulls are built in.
         #[cfg(feature = "dtype-map")]
         DataType::Map(_, _) => new_full_null_chunk(&dtype.map_storage_dtype().unwrap(), length),
         #[cfg(feature = "dtype-extension")]
         DataType::Extension(_, storage) => new_full_null_chunk(storage, length),
-        // An object array is over a rust type that only the object registry knows, so its own
-        // builder is what builds one.
         #[cfg(feature = "object")]
         DataType::Object(_) => {
             let mut builder =

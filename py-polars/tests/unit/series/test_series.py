@@ -72,9 +72,6 @@ def test_cum_agg_with_infs() -> None:
 
 
 def test_cum_agg_over_every_chunk_shape() -> None:
-    # A flat chunk with nothing missing is scanned over its values slice rather than
-    # through the generic iterator; every other shape still goes the general way, and
-    # all of them answer alike.
     values = [3.0, -1.0, 4.0, -1.0, 5.0, -9.0, 2.0]
     flat = pl.Series("a", values)
     sliced = pl.Series("a", [0.0, *values, 0.0])[1:-1]
@@ -102,9 +99,6 @@ def test_cum_agg_over_every_chunk_shape() -> None:
 
 
 def test_cum_min_max_over_a_chunk_that_repeats_one_element() -> None:
-    # The running max or min of a chunk that repeats one element is that element
-    # again, so the answer comes off the repeat and stays a repeat rather than
-    # being written out one element at a time.
     cases: list[tuple[PolarsDataType, Any]] = [
         (pl.Int64, 5),
         (pl.Int32, -1),
@@ -132,17 +126,12 @@ def test_cum_min_max_over_a_chunk_that_repeats_one_element() -> None:
                     shaped.cum_min(reverse=reverse), flat.cum_min(reverse=reverse)
                 )
 
-    # A million rows repeating one element answer off that element rather than off a
-    # column of a million copies of it.
     wide = pl.select(pl.repeat(7, 1_000_000, dtype=pl.Int64).alias("a"))
     assert wide.select(pl.col("a").cum_max().alias("o")).estimated_size() < 1024
     assert wide.select(pl.col("a").cum_min().alias("o")).estimated_size() < 1024
 
 
 def test_cum_sum_and_prod_over_a_chunk_that_repeats_one_element() -> None:
-    # `cum_sum` and `cum_prod` of a repeated element count up rather than repeating, so
-    # they are written out — but off the one element the chunk holds, not through the
-    # generic iterator, and they answer what the same values laid out flat do.
     cases: list[tuple[PolarsDataType, Any]] = [
         (pl.Int64, 5),
         (pl.Int32, -1),
@@ -173,8 +162,6 @@ def test_cum_sum_and_prod_over_a_chunk_that_repeats_one_element() -> None:
 
 
 def test_reverse_over_every_boolean_chunk_shape() -> None:
-    # A boolean column reverses through its bitmaps rather than one element at a time,
-    # and every shape a chunk comes in has to answer the same way.
     values = [True, False, None, True, True, False, None, False, True]
     flat = pl.Series("a", values, dtype=pl.Boolean)
     sliced = pl.Series("a", [False, *values, False], dtype=pl.Boolean)[1:-1]
@@ -189,17 +176,14 @@ def test_reverse_over_every_boolean_chunk_shape() -> None:
         assert_series_equal(shaped.reverse(), expected)
         assert_series_equal(shaped.reverse().reverse(), flat)
 
-    # No-null and all-null columns keep their mask through the reverse.
     no_nulls = pl.Series("a", [True, False, False, True, True], dtype=pl.Boolean)
     assert no_nulls.reverse().to_list() == [True, True, False, False, True]
     all_null = pl.Series("a", [None] * 5, dtype=pl.Boolean)
     assert all_null.reverse().to_list() == [None] * 5
 
-    # A chunk that repeats one element is its own reverse and stays a repeat.
     wide = pl.select(pl.repeat(True, 1_000_000, dtype=pl.Boolean).alias("a"))
     assert wide.select(pl.col("a").reverse().alias("o")).estimated_size() < 1024
 
-    # Lengths either side of a word boundary, where the bits are moved a word at a time.
     for length in [0, 1, 7, 8, 9, 31, 32, 33, 63, 64, 65, 127, 128, 129]:
         bits = [i % 3 == 0 for i in range(length)]
         assert pl.Series("a", bits, dtype=pl.Boolean).reverse().to_list() == bits[::-1]

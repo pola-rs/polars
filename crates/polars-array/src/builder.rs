@@ -80,9 +80,6 @@ pub trait StaticArrayBuilder: Send {
         repeats: usize,
         share: ShareStrategy,
     ) {
-        // Repeating a subslice of one element is repeating that element, which the builders that
-        // hold their elements apart from their values fill in bulk rather than one copy of the
-        // subslice at a time.
         if length == 1 {
             return self.subslice_extend_each_repeated(other, start, 1, repeats, share);
         }
@@ -115,7 +112,6 @@ pub trait StaticArrayBuilder: Send {
     ) {
         self.reserve(ids.len());
 
-        // One chunk is the common case, and it lets the chunk lookup leave the loop.
         if let [chunk] = chunks {
             for id in ids {
                 let (_, array_idx) = id.extract();
@@ -452,8 +448,7 @@ impl PlArrayBuilder for Box<dyn PlArrayBuilder> {
     }
 }
 
-/// Calls `extend` once per maximal run of consecutive indices in `idxs`, with the index the run
-/// starts at and how many indices it covers.
+/// Calls `extend` once per maximal run of consecutive indices in `idxs`, with start and length.
 pub(crate) fn for_each_run(idxs: &[IdxSize], mut extend: impl FnMut(usize, usize)) {
     let mut run_start = 0;
 
@@ -500,8 +495,6 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
                 .as_any()
                 .downcast_ref::<PlFixedSizeListArray>()
                 .unwrap();
-            // The values hold the values the elements are made of in either representation,
-            // which is all a builder for them is taken from.
             Box::new(PlFixedSizeListArrayBuilder::new(
                 builder_like(array.values()),
                 array.width(),
@@ -528,9 +521,6 @@ pub fn new_full_null_like(arr: &dyn PlArray, length: usize) -> Box<dyn PlArray> 
 }
 
 /// An array of `length` nulls of the array type `array_type` names, in `O(1)` memory.
-///
-/// # Panics
-/// For [`PlArrayType::Object`], whose rust type an array type does not name.
 pub fn new_full_null(array_type: PlArrayType, length: usize) -> Box<dyn PlArray> {
     macro_rules! new_full_null {
         ($A:ty) => {
@@ -574,8 +564,6 @@ fn primitive_new_full_null(primitive: PrimitiveType, length: usize) -> Box<dyn P
         PrimitiveType::UInt16 => new_full_null!(u16),
         PrimitiveType::UInt32 => new_full_null!(u32),
         PrimitiveType::UInt64 => new_full_null!(u64),
-        // A `View` and a `u128` are both `PrimitiveType::UInt128`, which therefore does not pin
-        // the element type down: an array of views is asked for by the array that holds one.
         PrimitiveType::UInt128 => new_full_null!(u128),
         PrimitiveType::Float16 => new_full_null!(pf16),
         PrimitiveType::Float32 => new_full_null!(f32),
@@ -616,7 +604,6 @@ pub fn subslice_extend_validity(
         None => dst.extend_constant(length, true),
         Some(validity) => match validity.scalar_value() {
             Some(bit) => dst.extend_constant(length, bit),
-            // The mask is not scalar, so it holds one bit per element.
             None => dst.subslice_extend_from_opt_validity(validity.flat_bitmap(), start, length),
         },
     }
@@ -639,9 +626,7 @@ pub fn subslice_extend_repeated_validity(
     match validity {
         None => dst.extend_constant(length * repeats, true),
         Some(validity) => match validity.scalar_value() {
-            // One bit says the same of every element, and so of every copy of them.
             Some(bit) => dst.extend_constant(length * repeats, bit),
-            // The mask is not scalar, so it holds one bit per element.
             None => dst.subslice_extend_repeated_from_opt_validity(
                 validity.flat_bitmap(),
                 start,
@@ -667,7 +652,6 @@ pub fn subslice_extend_each_repeated_validity(
         None => dst.extend_constant(length * repeats, true),
         Some(validity) => match validity.scalar_value() {
             Some(bit) => dst.extend_constant(length * repeats, bit),
-            // The mask is not scalar, so it holds one bit per element.
             None => dst.subslice_extend_each_repeated_from_opt_validity(
                 validity.flat_bitmap(),
                 start,
@@ -711,13 +695,11 @@ pub fn opt_gather_extend_validity(
     match validity {
         None => dst.opt_gather_extend_from_opt_validity(None, idxs, length),
         Some(validity) => match validity.scalar_value() {
-            // Every in-bounds index reads the one bit, and every other one is null.
             Some(bit) => {
                 for idx in idxs {
                     dst.extend_constant(1, bit && (*idx as usize) < length);
                 }
             },
-            // The mask is not scalar, so it holds one bit per element.
             None => dst.opt_gather_extend_from_opt_validity(validity.flat_bitmap(), idxs, length),
         },
     }

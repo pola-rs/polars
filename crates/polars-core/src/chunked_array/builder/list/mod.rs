@@ -121,8 +121,6 @@ pub fn get_list_builder(
             list_capacity,
             Some(inner_type_logical.clone()),
         )),
-        // A decimal is its physical `i128`s plus a precision and a scale, which the logical type
-        // in the field carries; the values themselves are what any `i128` builder builds.
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => Box::new(ListPrimitiveChunkedBuilder::<Int128Type>::new(
             name,

@@ -82,7 +82,6 @@ impl BinviewHashGrouper {
                 length,
                 validity.map(PlBitmap::from_bitmap),
             );
-            // A `String` chunk is the same views and buffers, read as text.
             let keys: PlArrayRef = match dtype {
                 DataType::String => Box::new(PlUtf8ViewArray::from_binview_unchecked(keys)),
                 _ => Box::new(keys),
@@ -117,8 +116,6 @@ impl Grouper for BinviewHashGrouper {
         };
 
         unsafe {
-            // The getter resolves the index against the buffer, so a scalar chunk hands back the
-            // one view every element reads rather than being indexed past its single slot.
             let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             let buffers = hash_keys.keys.data_buffers();
             if let Some(validity) = hash_keys.keys.validity() {
@@ -214,8 +211,6 @@ impl Grouper for BinviewHashGrouper {
         unsafe {
             let null_p = partitioner.null_partition();
             let buffers = hash_keys.keys.data_buffers();
-            // The getter resolves the index against the buffer, so a scalar chunk hands back the
-            // one view every element reads rather than being indexed past its single slot.
             let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             hash_keys.for_each_hash(|idx, opt_h| {
                 let has_group = if let Some(h) = opt_h {
@@ -256,8 +251,6 @@ impl Grouper for BinviewHashGrouper {
         unsafe {
             let null_p = partitioner.null_partition();
             let buffers = hash_keys.keys.data_buffers();
-            // The getter resolves the index against the buffer, so a scalar chunk hands back the
-            // one view every element reads rather than being indexed past its single slot.
             let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             hash_keys.for_each_hash(|idx, opt_h| {
                 let has_group = if let Some(h) = opt_h {

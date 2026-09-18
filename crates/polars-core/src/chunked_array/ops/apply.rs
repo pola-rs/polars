@@ -10,13 +10,6 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 
 /// The answer of `op` over a chunk whose values repeat one value under a mask that does not.
-///
-/// `op` runs on the non-null elements only, and every one of them holds the value the chunk
-/// repeats: one call answers them all, and the mask the chunk already carries leaves the rest
-/// null. The chunk has to hold an element that is not null for that value to be one `op` is
-/// given at all.
-// Out of line on purpose, as in `arity::scalar_values_under_mask`: it runs at most once per
-// chunk, and the walks that call it are inlined into their callers.
 #[inline(never)]
 fn scalar_values_under_mask<'a, A, Arr, K, F>(arr: &'a A, op: &mut F) -> Option<Arr>
 where
@@ -124,8 +117,6 @@ where
     /// Applies a function only to the non-null elements, propagating nulls.
     pub fn apply_nonnull_values_generic<'a, U, K, F>(
         &'a self,
-        // The chunks carry no logical type — the arrays of `polars-array` are physical storage
-        // only — so the collect below builds them without one.
         _dtype: DataType,
         op: F,
     ) -> ChunkedArray<U>
@@ -142,10 +133,6 @@ where
                     return single.new_from_index_typed(0, length);
                 }
 
-                // The values read one value throughout under a mask that does not, which `op` —
-                // which runs on the non-null elements only — answers out of that one value. A
-                // chunk that holds one slot per element repeats nothing, which is the cheapest
-                // thing to ask and what almost every chunk answers.
                 if !arr.is_flat()
                     && let Some(single) = scalar_values_under_mask(arr, &mut &op)
                 {
@@ -203,13 +190,10 @@ where
             let length = arr.len();
             if length > 1 {
                 if let Some(Some(value)) = arr.scalar_value() {
-                    // The chunk reads the same value throughout, so one call answers it and the
-                    // result repeats that single element.
                     let single: U::Array = std::iter::once(op(value)?).collect_arr();
                     return Ok(single.new_from_index_typed(0, length));
                 }
 
-                // As above, for values that repeat under a mask that does not.
                 if !arr.is_flat()
                     && let Some(single) = try_scalar_values_under_mask(arr, &mut &op)?
                 {
@@ -244,8 +228,6 @@ where
                 let length = arr.len();
                 if length > 1 {
                     if let Some(element) = arr.scalar_value() {
-                        // `f` writes the answer for one element into the buffer it is handed, so
-                        // the chunk that reads one element throughout is one call and a repeat.
                         return match element {
                             None => PlUtf8ViewArray::new_full_null(length),
                             Some(v) => {
@@ -256,9 +238,6 @@ where
                         };
                     }
 
-                    // The values read one value throughout under a mask that does not: `f` is
-                    // called on that value once, and the chunk's own mask leaves the elements it
-                    // calls null null.
                     if !arr.is_flat()
                         && let Some(single) = scalar_string_under_mask(arr, &mut buf, &mut f)
                     {
@@ -292,8 +271,6 @@ where
                 let length = arr.len();
                 if length > 1 {
                     if let Some(element) = arr.scalar_value() {
-                        // As in `apply_into_string_amortized`: one element read throughout is one
-                        // call, and the answer stands for the chunk.
                         return match element {
                             None => Ok(PlUtf8ViewArray::new_full_null(length)),
                             Some(v) => {
@@ -304,7 +281,6 @@ where
                         };
                     }
 
-                    // As above, for values that repeat under a mask that does not.
                     if !arr.is_flat()
                         && let Some(single) = try_scalar_string_under_mask(arr, &mut buf, &mut f)?
                     {
@@ -341,16 +317,11 @@ where
             .downcast_ref::<PlPrimitiveArray<S::Native>>()
             .unwrap();
 
-        // A scalar chunk reads one value at every element, so `f` is applied to that value alone
-        // and what comes back stands for every element in turn.
         if let Some(value) = typed.scalar_value_ignore_validity() {
             let validity = typed.validity().map(PlBitmap::from);
             return PlPrimitiveArray::new_scalar(f(value), typed.len()).with_validity(validity);
         }
 
-        // Cloning an array bumps the reference count of its buffers rather than copying them, so
-        // dropping the chunk straight after leaves this the only handle on the values — which is
-        // what lets them be mapped where they lie. That is the whole point of this function.
         let mut owned = typed.clone();
         drop(arr);
 
@@ -364,9 +335,6 @@ where
                 }
             },
             None => {
-                // Something else still reads these values, so the mapped ones go into a buffer of
-                // their own. A sliced buffer is not this case: what is handed back above covers
-                // the elements of the array and no more.
                 let mapped: Vec<_> = values.as_slice().iter().map(|value| f(*value)).collect();
                 *values = Buffer::from(mapped);
             },
@@ -417,16 +385,11 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
         // SAFETY, we do no t change the lengths
         unsafe {
             self.downcast_iter_mut().for_each(|arr| {
-                // Each chunk is mapped in whatever representation it is in: mapping the slots the
-                // values hold leaves them in that representation, so a scalar chunk has its one
-                // value mapped once and it still stands for every element.
                 if let Some(slots) = arr.flat_or_scalar_values_mut() {
                     slots.iter_mut().for_each(|v| *v = f(*v));
                     return;
                 }
 
-                // The values are shared with another array, so they cannot be written over: the
-                // chunk is built anew, in the representation it is already in.
                 let length = arr.len();
                 let validity = arr.validity().map(PlBitmap::from);
                 let mapped = match arr.scalar_value_ignore_validity() {
@@ -470,9 +433,6 @@ where
     where
         F: Fn(Option<T::Native>) -> Option<T::Native> + Copy,
     {
-        // As in the `Boolean` and `String` impls of this same method: `unary_elementwise` is
-        // where a chunk that reads one element throughout is answered by a single call, and
-        // where a chunk with no nulls walks its values rather than its `Option`s.
         unary_elementwise(self, f)
     }
 
@@ -502,8 +462,6 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
     where
         F: Fn(bool) -> bool + Copy,
     {
-        // Can just fully deduce behavior from two invocations. A chunk of one value repeated is
-        // scalar, so the two constant branches are `O(1)` in memory.
         let constant = |value: bool| {
             let chunks = self
                 .downcast_iter()
@@ -556,8 +514,6 @@ impl StringChunked {
         let chunks = self.downcast_iter().map(|arr| {
             let length = arr.len();
             if length > 1 {
-                // The value `f` answers is read before the next call, which is what a scalar
-                // chunk needs: one call, and the answer copied into the one slot it stands in.
                 if let Some(value) = arr.scalar_value_ignore_validity() {
                     return PlUtf8ViewArray::new_scalar(f(value), length)
                         .with_validity(arr.validity().map(PlBitmap::from));
@@ -580,8 +536,6 @@ impl BinaryChunked {
         let chunks = self.downcast_iter().map(|arr| {
             let length = arr.len();
             if length > 1 {
-                // The value `f` answers is read before the next call, which is what a scalar
-                // chunk needs: one call, and the answer copied into the one slot it stands in.
                 if let Some(value) = arr.scalar_value_ignore_validity() {
                     return PlBinaryViewArray::new_scalar(f(value), length)
                         .with_validity(arr.validity().map(PlBitmap::from));
@@ -714,7 +668,6 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
     {
         assert!(slice.len() >= self.len());
 
-        // The chunks carry no logical type, so the inner dtype is taken from this array.
         let inner_dtype = self.inner_dtype().to_physical();
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {

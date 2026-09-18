@@ -88,10 +88,7 @@ pub fn binary_to_parsed<T: NativeType + Parse>(
     )
 }
 
-// A buffer of an Arrow view array is addressed with a `u32`, and is limited to an `i32` so that
-// the consumers that read the offset as a signed integer can read it too.
 const ARROW_MAX_OFFSET: usize = if cfg!(test) {
-    // Used to test buffer splitting.
     i8::MAX as usize
 } else {
     i32::MAX as usize
@@ -99,7 +96,6 @@ const ARROW_MAX_OFFSET: usize = if cfg!(test) {
 
 /// Reads the bytes of every element through a view of them, which is what a binary view array is.
 pub fn binary_to_binview(from: &PlBinaryArray) -> PlBinaryViewArray {
-    // The one value every element of a scalar chunk reads is viewed once, and the view repeats it.
     if let Some(value) = from.scalar_value_ignore_validity() {
         return PlBinaryViewArray::new_scalar(value, from.len())
             .with_validity(from.validity().map(PlBitmap::from));
@@ -176,7 +172,6 @@ pub fn binary_to_binview(from: &PlBinaryArray) -> PlBinaryViewArray {
 
 /// Reads the bytes of every element through a view of them, one view per element.
 pub fn fixed_size_binary_to_binview(from: &PlFixedSizeBinaryArray) -> PlBinaryViewArray {
-    // The one value every element of a scalar chunk reads is viewed once, and the view repeats it.
     if let Some(value) = from.scalar_value_ignore_validity() {
         return PlBinaryViewArray::new_scalar(value, from.len())
             .with_validity(from.validity().map(PlBitmap::from));
@@ -185,7 +180,6 @@ pub fn fixed_size_binary_to_binview(from: &PlFixedSizeBinaryArray) -> PlBinaryVi
     let width = from.width();
     let values = from.flat_values().unwrap();
 
-    // Fast path: every element fits a view of its own, so no buffer is read at all.
     if width <= View::MAX_INLINE_SIZE as usize {
         let mut views = Vec::new();
         // SAFETY: the width was just checked to fit a view.
@@ -194,8 +188,6 @@ pub fn fixed_size_binary_to_binview(from: &PlFixedSizeBinaryArray) -> PlBinaryVi
             .with_validity(from.validity().map(PlBitmap::from));
     }
 
-    // The values already lie end to end, which is the layout of a view array's buffer, so the
-    // cast reads them out of the buffer they are in.
     let max_bytes_per_buffer = if width <= ARROW_MAX_OFFSET {
         ARROW_MAX_OFFSET
     } else {

@@ -10,11 +10,6 @@ use polars_core::with_match_physical_float_polars_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 /// Counts how often each distinct element appears, walking one chunk at a time.
-///
-/// The caller hands over the chunks rather than one iterator over the whole column: a chunk's own
-/// iterator settles how its elements are laid out once, for all of them, where a column-level
-/// iterator is a `next` call this crate cannot see into and so asks that question per element.
-/// Walking the chunks instead took a 200k-element string column from 9.5 ms to 4.4.
 fn unique_counts_helper<C, I, J>(chunks: C) -> IdxCa
 where
     C: Iterator<Item = I>,
@@ -45,9 +40,6 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
         return Ok(IdxCa::new(s.name().clone(), [s.len() as IdxSize]).into_series());
     }
 
-    // Every element of a chunk that repeats one element is that element, so the column holds a
-    // single unique value and it appears as many times as the column is long: the count is read
-    // off the length rather than every element being hashed to find it.
     if s.repeats_one_element() {
         return Ok(IdxCa::new(s.name().clone(), [s.len() as IdxSize]).into_series());
     }

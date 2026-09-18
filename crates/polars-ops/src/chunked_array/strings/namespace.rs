@@ -277,11 +277,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Get the length of the string values as number of bytes.
     fn str_len_bytes(&self) -> UInt32Chunked {
         let ca = self.as_string();
-        // The length of a value is held in its view, so the lengths come straight off the views
-        // buffer: resolving each view to the string it stands for would read bytes this never
-        // touches, and would chase a view that does not hold its own into a data buffer.
         unary_mut_values(ca, |arr| match arr.scalar_views() {
-            // Every element reads the one view, so they are all the length it holds.
             Some(view) => PlPrimitiveArray::new_scalar(view.length, arr.len()),
             None => {
                 let views = arr.flat_views().expect("views are flat or scalar");
@@ -482,9 +478,6 @@ pub trait StringNameSpaceImpl: AsString {
     fn extract_all(&self, pat: &str) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
 
-        // Every element of a chunk that repeats one is that one, so the matches of the single
-        // element it repeats are the matches of every element: one pass over one string answers
-        // the column, whose every row is then that same list.
         if let [chunk] = ca.chunks().as_slice()
             && ca.len() > 1
             && chunk.is_scalar()

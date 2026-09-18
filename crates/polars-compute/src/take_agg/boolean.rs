@@ -17,14 +17,10 @@ unsafe fn take_arg_bool_nulls<I: IntoIterator<Item = usize>>(
         .validity()
         .expect("a chunk with nulls in it holds a validity mask");
 
-    // Every element is null, so no index gathers anything.
     if validity.scalar_value() == Some(false) {
         return None;
     }
 
-    // Every index gathers the same value where the values are scalar, so no index is more extreme
-    // than the first one that gathers anything: whether that value is the extreme one or only
-    // stands in for it, the answer is the same position.
     let Some(values) = arr.flat_values() else {
         return indices
             .into_iter()
@@ -57,8 +53,6 @@ unsafe fn take_arg_bool_no_nulls<I: IntoIterator<Item = usize>>(
         return None;
     }
 
-    // Every index gathers the same value, so position zero is both the first index that gathers
-    // the extremum and the fallback for when none does.
     let Some(values) = arr.flat_values() else {
         return Some(0);
     };

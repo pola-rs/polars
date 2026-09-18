@@ -322,9 +322,6 @@ def test_ndjson_sliced_list_serialization() -> None:
 
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
 def test_json_sliced_nested_categorical_serialization(dtype: pl.DataType) -> None:
-    # The serializer of a nested column offsets its values itself, so a categorical one
-    # must not offset them a second time: it used to write out the categories of the
-    # wrong rows, silently, for any sliced `List(Categorical)`.
     values = [["a", "b"], ["c"], [], ["a"], ["b", "c"]]
     full = pl.Series("x", [["a", "b"], ["a", "b"], *values], dtype=pl.List(dtype))
     sliced = full.slice(2, len(values))
@@ -338,7 +335,6 @@ def test_json_sliced_nested_categorical_serialization(dtype: pl.DataType) -> Non
             == '{"x":["a","b"]}\n{"x":["c"]}\n{"x":[]}\n{"x":["a"]}\n{"x":["b","c"]}\n'
         )
 
-    # The same column under a struct, and read back.
     nested = pl.DataFrame({"x": pl.struct(inner=sliced, eager=True)})
     f = io.BytesIO()
     nested.write_ndjson(f)

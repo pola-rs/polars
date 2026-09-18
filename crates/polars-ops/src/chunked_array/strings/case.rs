@@ -39,10 +39,6 @@ fn convert_while_ascii(b: &[u8], convert: fn(&u8) -> u8, out: &mut Vec<u8>) {
             i += N;
         }
 
-        // The bytes past the last whole block, one at a time. A string of ASCII is converted
-        // here end to end rather than have its last few bytes go through `chars()`, where every
-        // character costs a call into `Extend<ToUppercase> for String` — which is 68% of what
-        // uppercasing a column of 25-byte ASCII strings spent before this loop was here.
         while i < b.len() {
             // SAFETY: `i` is in bounds of `b`, as just checked.
             let byte = *b.get_unchecked(i);
@@ -87,7 +83,6 @@ fn to_lowercase_helper(source: &str, buf: &mut Vec<u8>) {
             // gives ς.
             map_uppercase_sigma(source, converted + i, &mut s)
         } else {
-            // As in `to_uppercase`: pushed rather than extended from the iterator.
             for lower in c.to_lowercase() {
                 s.push(lower);
             }
@@ -143,9 +138,6 @@ pub(super) fn to_uppercase<'a>(ca: &'a StringChunked) -> StringChunked {
         let mut s = unsafe { String::from_utf8_unchecked(std::mem::take(&mut buf)) };
 
         for c in rest.chars() {
-            // Pushed one character at a time rather than extended from the iterator: the bytes
-            // of a character map to at most three, and `Extend<ToUppercase> for String` is a
-            // call per character wherever it does not inline into this loop.
             for upper in c.to_uppercase() {
                 s.push(upper);
             }

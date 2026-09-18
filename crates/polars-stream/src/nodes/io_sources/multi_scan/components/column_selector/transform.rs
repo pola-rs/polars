@@ -130,9 +130,6 @@ impl ColumnTransform {
                         .pop()
                         .unwrap();
 
-                    // The offsets and the mask are handed over in whatever representation each is
-                    // in: only the values were mapped, and that leaves their number untouched, so
-                    // offsets holding the one range every element covers still hold it.
                     let validity = list_arr.validity().map(PlBitmap::from);
                     let offsets_are_scalar = list_arr.offsets_are_scalar();
                     let (_, offsets, length, _) = list_arr.clone().into_inner();
@@ -200,9 +197,6 @@ impl ColumnTransform {
                         .pop()
                         .unwrap();
 
-                    // The width and the mask are handed over in whatever representation each is
-                    // in: only the values were mapped, and that leaves their number untouched, so
-                    // values holding the one list every element reads still hold it.
                     let validity = fixed_size_list_arr.validity().map(PlBitmap::from);
                     let values_are_scalar = fixed_size_list_arr.values_are_scalar();
                     let (_, width, length, _) = fixed_size_list_arr.clone().into_inner();
@@ -217,8 +211,6 @@ impl ColumnTransform {
                     out_chunks.push(Box::new(fixed_size_list_arr))
                 }
 
-                // The chunks carry no inner type, so the array is built with its dtype directly,
-                // which restores the logical type of the values as well.
                 let out = unsafe {
                     ArrayChunked::from_chunks_and_dtype(
                         input_array_ca.name().clone(),

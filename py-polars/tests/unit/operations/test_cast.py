@@ -1079,8 +1079,6 @@ def test_strict_struct_cast_field_name_mismatch() -> None:
 
 
 def test_cast_binary_to_string_rejects_invalid_utf8() -> None:
-    # A cast to String must not hand back a String series holding bytes that are not
-    # valid UTF-8.
     s = pl.Series("x", [b"ok", b"\xff\xfe", None], dtype=pl.Binary)
     for strict in (True, False):
         with pytest.raises(ComputeError, match="invalid utf8"):
@@ -1093,9 +1091,6 @@ def test_cast_binary_to_string_rejects_invalid_utf8() -> None:
 
 
 def test_cast_categorical_repeated_chunk() -> None:
-    # A chunk that reads one string throughout is one category, so a single lookup
-    # answers the whole column; it must agree with the written-out column, mask shape
-    # for mask shape.
     for dtype in (pl.Categorical, pl.Enum(["abc", "q"])):
         assert (
             pl.repeat("abc", 3, dtype=pl.String, eager=True).cast(dtype).to_list()
@@ -1105,12 +1100,10 @@ def test_cast_categorical_repeated_chunk() -> None:
             pl.repeat(None, 3, dtype=pl.String, eager=True).cast(dtype).to_list()
             == [None] * 3
         )
-        # a string the Enum does not hold becomes null, as on the written-out path
         assert pl.repeat("zzz", 3, dtype=pl.String, eager=True).cast(
             dtype, strict=False
         ).to_list() == (["zzz"] * 3 if dtype == pl.Categorical else [None] * 3)
 
-    # and between the two categorical dtypes
     cat = pl.repeat("abc", 3, dtype=pl.String, eager=True).cast(pl.Categorical)
     assert cat.cast(pl.Enum(["abc", "q"])).to_list() == ["abc"] * 3
     enum = pl.repeat("q", 3, dtype=pl.String, eager=True).cast(pl.Enum(["abc", "q"]))
@@ -1118,9 +1111,6 @@ def test_cast_categorical_repeated_chunk() -> None:
 
 
 def test_cast_datetime_to_time_repeated_chunk() -> None:
-    # `Datetime -> Time` goes through the numeric `apply`, which answers a repeated
-    # chunk with a
-    # single call. Negative timestamps take the branch that adds a day back on.
     for value, expected in [
         (datetime(2021, 3, 4, 5, 6, 7), time(5, 6, 7)),
         (datetime(1960, 5, 6, 7, 8, 9), time(7, 8, 9)),

@@ -135,9 +135,6 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
 }
 
 /// The one element `c` argues with, where it argues with the same one for every list.
-///
-/// `len` is the length the answer takes, so a shorter argument than that is already the one
-/// element and a longer one is what the answer's length would have come from.
 fn settled_arg(c: &Column, len: usize) -> Option<Column> {
     (c.len() == len && c.as_materialized_series().repeats_one_element()).then(|| c.head(Some(1)))
 }
@@ -166,11 +163,6 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
         return Ok(out.into_column());
     }
 
-    // The offset and the length reach here already broadcast over the lists, so a literal
-    // argument is a column that repeats one value rather than a column of one element. Where the
-    // lists repeat too, one slice of one list is the whole answer, and the arm below takes it in
-    // `O(1)`. It is only worth asking there: `lst_slice` collects an array per element, which is
-    // dearer than the walks below for lists that differ from each other.
     let repeated_lists = s.as_materialized_series().repeats_one_element();
     let settled_offset = repeated_lists
         .then(|| settled_arg(offset_s, list_ca.len()))

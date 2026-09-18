@@ -7,9 +7,6 @@ use super::ListNameSpaceImpl;
 use crate::series::convert_and_bound_idx_ca;
 
 pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> PolarsResult<Column> {
-    // A literal index reaches this kernel already broadcast over the lists, so ask what the index
-    // column repeats rather than how long it is: one index reads the same slot out of every list,
-    // which the arm below answers without building an index per row.
     let settled = (index.len() == ca.len())
         .then(|| index.settled_to_one_element())
         .flatten();
@@ -32,9 +29,6 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
             let tmp = ca.rechunk();
             let arr = tmp.downcast_as_array();
 
-            // The range an element covers is resolved out of the offsets in whatever
-            // representation they are in, so offsets that hold the one range every element shares
-            // are read as that range rather than being written out one per element.
             let range_of = |i: usize| {
                 // SAFETY: `i` indexes the elements of `arr`, which `index` is as long as.
                 let range = unsafe { arr.value_range_unchecked(i) };
@@ -84,8 +78,6 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
                     })
                     .collect::<Result<IdxCa, _>>()?
             };
-            // The values of a list array carry no logical type; the physical inner one is what
-            // `from_physical_unchecked` below turns back into the logical one.
             let s = unsafe {
                 Series::from_chunks_and_dtype_unchecked(
                     ca.name().clone(),
@@ -102,7 +94,6 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
         _ if ca.len() == 1 => {
             if let Some(list) = ca.get(0) {
                 let idx = convert_and_bound_idx_ca(index, list.len(), null_on_oob)?;
-                // As above: the element carries no logical type of its own.
                 let s = unsafe {
                     Series::from_chunks_and_dtype_unchecked(
                         ca.name().clone(),

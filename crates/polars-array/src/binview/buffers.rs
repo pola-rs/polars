@@ -7,8 +7,6 @@ const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
 /// The largest capacity the doubling of the data buffers reaches, which bounds over-allocation.
 const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
 
-// Growing a buffer never carries it past the limit by itself: only a single value longer than the
-// limit does, and that value is all the buffer holding it ever holds.
 const _: () = assert!(MAX_EXP_BLOCK_SIZE < BINVIEW_ARROW_BUFFER_LEN_LIMIT);
 
 /// Copies `bytes` into `buffers`, and returns the [`View`] holding them.
@@ -33,7 +31,6 @@ pub(super) fn own_only_value(bytes: Vec<u8>) -> (View, Vec<Vec<u8>>) {
 
 /// [`own_only_value`], against a limit the tests lower.
 fn own_only_value_limited<const MAX_ROW_BYTE_LEN: usize>(bytes: Vec<u8>) -> (View, Vec<Vec<u8>>) {
-    // A view that inlines its bytes reads no buffer at all, so the allocation is of no use to it.
     if bytes.len() <= View::MAX_INLINE_SIZE as usize {
         return (View::new_inline(&bytes), Vec::new());
     }
@@ -76,7 +73,6 @@ fn copy_value_limited<const BUFFER_LEN_LIMIT: usize, const MAX_ROW_BYTE_LEN: usi
         .expect("the built array holds more data buffers than a view can index");
 
     let buffer = buffers.last_mut().unwrap();
-    // The reservation left the buffer short enough for the bytes to be reached by a view.
     let offset = buffer.len() as u32;
     buffer.extend_from_slice(bytes);
 
@@ -95,9 +91,6 @@ fn reserve<const BUFFER_LEN_LIMIT: usize, const MAX_ROW_BYTE_LEN: usize>(
         .last()
         .map_or((0, 0), |buffer| (buffer.len(), buffer.capacity()));
 
-    // A buffer is never grown once it is written into, so that the bytes already in it are never
-    // copied again: what does not fit in the capacity it was allocated with starts a new buffer,
-    // as does what would carry it past the limit.
     if len.saturating_add(additional) > usize::min(BUFFER_LEN_LIMIT, capacity) {
         push_buffer::<MAX_ROW_BYTE_LEN>(buffers, additional);
     }
@@ -108,10 +101,6 @@ fn reserve<const BUFFER_LEN_LIMIT: usize, const MAX_ROW_BYTE_LEN: usize>(
 fn push_buffer<const MAX_ROW_BYTE_LEN: usize>(buffers: &mut Vec<Vec<u8>>, additional: usize) {
     assert_row_fits::<MAX_ROW_BYTE_LEN>(additional);
 
-    // The buffers double in size to amortize the cost of filling them, up to a block size that
-    // bounds what the last of them over-allocates. A value longer than a whole block is the one
-    // thing a buffer is allowed to be larger than that for: the single view over it reads the
-    // value out of one buffer, so the buffer has to hold all of it.
     let previous_capacity = buffers.last().map_or(0, Vec::capacity);
     let capacity = usize::max(
         additional,

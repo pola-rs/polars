@@ -39,8 +39,6 @@ pub fn str_join(ca: &StringChunked, delimiter: &str, ignore_nulls: bool) -> Stri
     });
 
     assert!(capacity >= buf.len());
-    // The one element of the result is the whole buffer, which is what a scalar array of length
-    // one holds — over the very buffer it was joined into, rather than a copy of it.
     let arr = PlUtf8ViewArray::new_scalar_owned(buf, 1);
     StringChunked::with_chunk(ca.name().clone(), arr)
 }
@@ -73,17 +71,12 @@ pub fn hor_str_concat(
     // Calculate the post-broadcast length and ensure everything is consistent.
     let len = broadcast_len(cas.iter()).context("hor_str_concat")?;
 
-    // Columns that each read one element throughout make one row between them, and that row
-    // stands for every row in turn — the answer repeats it rather than writing `len` copies of
-    // it out. A column of one element is one of these, which is what makes `a + b` over two
-    // repeated columns `O(1)`.
     if len > 1
         && let Some(values) = cas
             .iter()
             .map(|ca| ca.scalar_value())
             .collect::<Option<Vec<_>>>()
     {
-        // The rules below are the ones the walk at the end of this function applies to a row.
         let mut buf = String::new();
         let mut has_null = false;
         let mut found_not_null_value = false;
@@ -122,12 +115,6 @@ pub fn hor_str_concat(
         })
         .collect();
 
-    // Without a null anywhere every row concatenates one value per column, so the values are
-    // read without a mask consulted per element — and the answer carries no mask either, rather
-    // than one bit set per row for a result that has no null in it.
-    // A column of no elements is one the broadcast reads nothing out of, and it is the one shape
-    // this leaves to the walk below — where `ignore_nulls` decides what a row with nothing in it
-    // gets. Without a null there is nothing for it to decide.
     if cas.iter().all(|ca| ca.null_count() == 0 && !ca.is_empty()) {
         let mut values: Vec<_> = cas
             .iter()

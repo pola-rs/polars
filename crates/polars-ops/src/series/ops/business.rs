@@ -63,11 +63,7 @@ pub fn business_day_count(
     let start_dates = start_dates.downcast_as_array();
     let end_dates = end_dates.downcast_as_array();
     let holidays = holidays.rechunk();
-    // The holidays of one row are read as a slice, so the offsets and the values behind them are
-    // written out where they do not already hold one slot per element.
     let holidays_list = holidays.list()?.downcast_as_array();
-    // A scalar array repeats one row, and only that row is ever read, so it is sliced out first
-    // to keep the write-out below from repeating it once per element.
     let holidays_list = if holidays_list.is_scalar() {
         Cow::Owned(holidays_list.sliced(0, 1))
     } else {
@@ -237,10 +233,7 @@ pub fn add_business_days(
     }
 
     let holidays = holidays.rechunk();
-    // As above: the holidays of one row are read as a slice.
     let holidays_list = holidays.list()?.downcast_as_array();
-    // A scalar array repeats one row, and only that row is ever read, so it is sliced out first
-    // to keep the write-out below from repeating it once per element.
     let holidays_list = if holidays_list.is_scalar() {
         Cow::Owned(holidays_list.sliced(0, 1))
     } else {
@@ -412,10 +405,7 @@ pub fn is_business_day(
     }
 
     let holidays = holidays.rechunk();
-    // As above: the holidays of one row are read as a slice.
     let holidays_list = holidays.list()?.downcast_as_array();
-    // A scalar array repeats one row, and only that row is ever read, so it is sliced out first
-    // to keep the write-out below from repeating it once per element.
     let holidays_list = if holidays_list.is_scalar() {
         Cow::Owned(holidays_list.sliced(0, 1))
     } else {
@@ -558,8 +548,6 @@ impl<'a> HolidayListsGetter<'a> {
             .as_any()
             .downcast_ref::<PlPrimitiveArray<i32>>()
             .unwrap()
-            // A row is read as a slice, so values that repeat one date are written out. The rows
-            // themselves need no writing out: `Flat` is what says the offsets hold one per row.
             .to_flat();
 
         Self {

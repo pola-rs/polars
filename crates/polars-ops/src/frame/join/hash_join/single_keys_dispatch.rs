@@ -506,7 +506,6 @@ where
 
     match (left.null_count(), right.null_count()) {
         (0, 0) => {
-            // Neither side has a null, so the keys are the values themselves.
             let splitted_a = split_flat(a, n_threads);
             let splitted_b = split_flat(b, n_threads);
             Ok((
@@ -733,8 +732,6 @@ where
         left.chunks().len(),
         right.chunks().len(),
     ) {
-        // The keys are handed over as slices, which a chunk that repeats a single key has no
-        // run of: `split_flat` writes those out first, as the other dispatchers do.
         (0, 0, _, _) => {
             let splitted_a = split_flat(left, n_threads);
             let splitted_b = split_flat(right, n_threads);

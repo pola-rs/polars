@@ -282,10 +282,6 @@ fn striter_num_column_bytes(
 }
 
 /// The array written out, if it holds one child that every one of its elements shares.
-// Reading a shared child in place would mean the *child's* encoder writing one row per element of
-// the parent rather than per element of its own: `encode_array` is handed one offset per child
-// slot, and there are `len` times as many of those as the shared child holds. This is what the
-// Arrow export used to do for every array, not just these.
 fn write_out_shared_child(array: &dyn PlArray) -> Option<Box<dyn PlArray>> {
     match array.array_type() {
         PlArrayType::List => {
@@ -298,8 +294,6 @@ fn write_out_shared_child(array: &dyn PlArray) -> Option<Box<dyn PlArray>> {
             (!array.values_are_flat())
                 .then(|| Box::new(array.to_flat().into_owned().into_array()) as Box<dyn PlArray>)
         },
-        // Every field of a struct array holds one element per row whatever its mask looks like, and
-        // the remaining array types have no child.
         _ => None,
     }
 }
@@ -684,7 +678,6 @@ unsafe fn encode_flat_array(
         A::FixedSizeBinary => todo!(),
         A::Object { .. } => todo!(),
 
-        // Handled by the encoder's state, which holds the nested encoders.
         A::Struct | A::List | A::FixedSizeList => unreachable!(),
     }
 }

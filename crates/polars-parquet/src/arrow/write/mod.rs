@@ -484,7 +484,6 @@ pub fn array_to_page_simple(
             type_,
         ),
         ArrowDataType::LargeUtf8 => {
-            // The page holds the bytes of the strings, which is what the binary array of them is.
             let array = polars_compute::cast::utf8_to_binary::<i64>(
                 array.as_any().downcast_ref().unwrap(),
                 ArrowDataType::LargeBinary,
@@ -513,7 +512,6 @@ pub fn array_to_page_simple(
             );
         },
         ArrowDataType::Utf8View => {
-            // The page holds the bytes of the strings, which is what the binary views of them read.
             let array = array
                 .as_any()
                 .downcast_ref::<Utf8ViewArray>()

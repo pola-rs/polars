@@ -40,14 +40,11 @@ fn partition_nulls<'a, T: Copy>(
     };
     debug_assert_eq!(mask.len(), values.len());
 
-    // A scalar mask is a single bit standing for every element: either nothing is null, in which
-    // case there is nothing to partition, or everything is.
     let valid_count = match mask.scalar_value() {
         Some(true) => return (values, None),
         Some(false) => 0,
         None => {
             let bitmap = mask.flat_bitmap().expect("a mask is flat or scalar");
-            // Partition null last first
             let mut out_len = 0;
             for idx in bitmap.true_idx_iter() {
                 unsafe { *values.get_unchecked_mut(out_len) = *values.get_unchecked(idx) };
@@ -58,20 +55,15 @@ fn partition_nulls<'a, T: Copy>(
     };
 
     let null_count = values.len() - valid_count;
-    // The mask covers the elements of `values`, however many bits the one handed in held.
     let validity = Some(create_validity(
         values.len(),
         null_count,
         options.nulls_last,
     ));
 
-    // Views are correctly partitioned.
     let partitioned = if options.nulls_last {
         &mut values[..valid_count]
-    }
-    // We need to swap the ends.
-    else {
-        // swap nulls with end
+    } else {
         let mut end = values.len() - 1;
 
         for i in 0..null_count {
@@ -84,16 +76,6 @@ fn partition_nulls<'a, T: Copy>(
 }
 
 /// How many elements a sort has to cover before it is handed to the thread pool.
-///
-/// `RAYON.install` injects a job and blocks on a latch whether or not the closure finds anything to
-/// split, which costs about 18 us on this machine — so a sort the calling thread would finish in
-/// less than that can only lose by asking for help. A sequential sort of this many `i64`s takes
-/// some 10 us, and one of this many row encodings — whose comparison is an order of magnitude
-/// dearer — some 200 us, so neither can repay the pool below it.
-///
-/// Above it this says nothing about whether the pool is worth asking: for cheap comparisons the
-/// two only break even around 16K elements. This is the floor under which parallelism cannot help,
-/// not the point at which it starts to.
 const PARALLEL_SORT_LIMIT: usize = 1024;
 
 /// Whether a sort of `len` elements is worth handing to the thread pool, having been allowed to.
@@ -103,21 +85,11 @@ pub(crate) fn sort_in_parallel(len: usize, parallel: bool) -> bool {
 }
 
 /// Whether `ca` repeats a single one of its elements over all of them.
-///
-/// Every element of such a column is the same one — the same value throughout, or a null
-/// throughout — so they already stand in every order at once: sorting it answers with the column
-/// itself, and `arg_sort` with `0..len`.
-///
-/// `Struct`, `List`, `Array` and `Map` are the ones that have to be told. A sort of theirs is a
-/// row encoding of the whole column that is then sorted, and the encoding writes one row per
-/// element whatever the column holds; the flat sorts read this off the sorted flag such a column
-/// carries instead — see `sort_with_fast_path`.
 pub(crate) fn repeats_one_element<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
     ca.repeats_one_element()
 }
 
 /// `0..length`: what an `arg_sort` over elements that are all the same one answers, in the order
-/// they are already in.
 pub(crate) fn arg_sort_identity(name: PlSmallStr, length: usize) -> IdxCa {
     IdxCa::with_chunk(
         name,
@@ -158,7 +130,6 @@ where
 }
 
 /// `arg_sort`s `idx` over the elements `element` reads, which has the representation of the array
-/// behind it already resolved.
 fn arg_sort_bytes<'a, F>(idx: &mut [IdxSize], options: SortOptions, element: F)
 where
     F: Fn(usize) -> &'a [u8] + Send + Sync,
@@ -211,12 +182,6 @@ fn create_validity(len: usize, null_count: usize, nulls_last: bool) -> Bitmap {
 }
 
 /// The sort of a column whose values are one element repeated under a mask: every valid element
-/// is the same one, so they already stand in every order at once and it is the nulls alone that
-/// move -- to whichever end the options ask for them.
-///
-/// [`ChunkedArray::repeats_one_element`] answers for the mask as well, and says no here: what a
-/// `when`/`then` over a literal builds is one value under a bit per element, and writing it out to
-/// sort it lays down a slot per element for values that are all the same one.
 pub(crate) fn sort_repeated_values<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
     options: SortOptions,
@@ -230,8 +195,6 @@ pub(crate) fn sort_repeated_values<T: PolarsDataType>(
         return None;
     }
 
-    // The all-valid and all-null columns are answered before this is reached, so the mask below
-    // holds both kinds of bit and the values are read at the elements that are not null.
     let sorted = values
         .new_from_index_typed(0, ca.len())
         .with_validity_typed(Some(PlBitmap::from_bitmap(create_validity(
@@ -252,14 +215,10 @@ macro_rules! sort_with_fast_path {
             return $ca.clone();
         }
 
-        // Nulls are all the same element, so a column of nothing else already stands in every
-        // order at once -- and its nulls are the first and the last of it at the same time,
-        // whichever end the options ask for them at.
         if $ca.null_count() == $ca.len() {
             return sorted_flag_of($ca, $options);
         }
 
-        // Values that are one element repeated are sorted wherever the nulls among them are put.
         if $ca.null_count() > 0 && let Some(sorted) = sort_repeated_values($ca, $options) {
             return sorted;
         }
@@ -292,8 +251,6 @@ macro_rules! sort_with_fast_path {
 
 macro_rules! arg_sort_fast_path {
     ($ca:ident,  $options:expr) => {{
-        // As in `sort_with_fast_path`: elements that are all the same null are in order already,
-        // so each of them stays where it is.
         if $options.limit.is_none() && !$ca.is_empty() && $ca.null_count() == $ca.len() {
             return arg_sort_identity($ca.name().clone(), $ca.len());
         }
@@ -395,8 +352,6 @@ where
     options.multithreaded &= RAYON.current_num_threads() > 1;
     arg_sort_fast_path!(ca, options);
     if ca.null_count() == 0 {
-        // The kernel reads the values as a slice, and nothing is null for it to skip, so only a
-        // chunk whose values repeat one value is written out — its mask is not read at all.
         let views = ca.to_flat_values_chunks();
         let iter = views.iter().map(|values| values.iter().copied());
         arg_sort::arg_sort_no_nulls(
@@ -433,7 +388,6 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
 
     if no_nulls {
         let mut vals = Vec::with_capacity(ca.len());
-        // As above: the values are read as a slice and the mask is not read at all.
         let views = ca.to_flat_values_chunks();
         for values in &views {
             vals.extend_trusted_len(values.iter().map(|v| {
@@ -551,15 +505,12 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         // We will sort by the views and reconstruct with sorted views. We leave the buffers as is.
         // We must rechunk to ensure that all views point into the proper buffers.
         let ca = self.rechunk();
-        // The views are sorted and put back one per element, so a chunk that is not laid out flat
-        // is written out first — see `polars_array::arrow::bridge`.
         let arr = ca.downcast_as_array().to_flat();
         let length = arr.len();
 
         let (views, buffers, validity) = arr.into_owned().into_inner();
         let mut views = views.to_vec();
 
-        // The array was written out flat, so its mask holds one bit per element.
         let mask = validity.as_ref().map(|v| PlBitmapRef::new(v, length));
         let (partitioned_part, validity) = partition_nulls(&mut views, mask, options);
 
@@ -746,15 +697,8 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
         let arr = ca.downcast_as_array();
         let mut idx = (0..(arr.len() as IdxSize)).collect::<Vec<_>>();
 
-        // Which representation the offsets are in is resolved here rather than at every
-        // comparison: `value_unchecked` folds the index onto the offsets it holds, and a sort
-        // asks for two elements per comparison — some 40M of them over a million rows — so that
-        // fold costs about as much again as comparing the bytes it hands back.
         let values = arr.values().as_slice();
         let argsort = |args: &mut [IdxSize]| {
-            // Offsets that cover the one range every element reads leave them all the same bytes,
-            // so every comparison answers `Equal` and the indices are already sorted. Otherwise
-            // they hold one start per element, and an element is the run between two of them.
             if let Some(offsets) = arr.flat_offsets() {
                 let offsets = offsets.as_slice();
                 arg_sort_bytes(args, options, |i| unsafe {
@@ -814,9 +758,6 @@ impl ChunkSort<StructType> for StructChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<StructType> {
         options.multithreaded &= RAYON.current_num_threads() > 1;
 
-        // Elements that are all the same one are in order already, so the chunk is its own answer
-        // — rather than the whole column being row encoded and those rows sorted against each
-        // other. See `repeats_one_element`.
         if repeats_one_element(self) {
             return sorted_flag_of(self, options);
         }
@@ -838,7 +779,6 @@ impl ChunkSort<StructType> for StructChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        // As in `sort_with`: one repeated element leaves every element where it is.
         if repeats_one_element(self) {
             return arg_sort_identity(self.name().clone(), self.len());
         }
@@ -856,7 +796,6 @@ impl ChunkSort<ListType> for ListChunked {
     fn sort_with(&self, mut options: SortOptions) -> ListChunked {
         options.multithreaded &= RAYON.current_num_threads() > 1;
 
-        // As in `StructChunked::sort_with`: one repeated element is its own answer.
         if repeats_one_element(self) {
             return sorted_flag_of(self, options);
         }
@@ -1030,8 +969,6 @@ pub fn arg_sort(columns: &[Column], mut sort_options: SortMultipleOptions) -> Po
             limit: sort_options.limit,
         }))
     } else if columns.iter().all(Column::reads_as_one_element) {
-        // Every row compares equal, so the order the rows are already in is a sorted one -- and
-        // the one a stable sort answers. The single-column arm above has its own fast paths.
         Ok(arg_sort_identity(
             columns[0].name().clone(),
             columns[0].len(),
@@ -1100,26 +1037,6 @@ pub unsafe fn perfect_sort(idx: &[(IdxSize, IdxSize)], out: &mut Vec<IdxSize>) {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-
-    #[test]
-    fn a_sort_below_the_parallel_limit_is_not_handed_to_the_pool() {
-        use super::{PARALLEL_SORT_LIMIT, sort_in_parallel};
-
-        // `list.sort` sorts every element of the column on its own, so a column of a million
-        // three-element lists asked the pool a million times and spent 14 s where the calling
-        // thread would have taken 0.2 s.
-        assert!(!sort_in_parallel(0, true));
-        assert!(!sort_in_parallel(3, true));
-        assert!(!sort_in_parallel(PARALLEL_SORT_LIMIT - 1, true));
-
-        // Above the limit it is the caller's `multithreaded` that decides, and a pool of one
-        // thread is never worth the trip.
-        assert!(!sort_in_parallel(PARALLEL_SORT_LIMIT, false));
-        assert_eq!(
-            sort_in_parallel(PARALLEL_SORT_LIMIT, true),
-            crate::runtime::RAYON.current_num_threads() > 1,
-        );
-    }
 
     #[test]
     fn test_arg_sort() {

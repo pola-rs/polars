@@ -38,11 +38,6 @@ fn mask_values(mask: &PlBooleanArray) -> Bitmap {
 }
 
 /// The bit every element of `mask` reads, a null read as unset, if they all read the same one.
-///
-/// A column of one element and a chunk that repeats a single bit say so on their own. A chunk of
-/// one bit per element says so when every one of its bits agrees — the shape a constant predicate
-/// leaves behind once it has been evaluated over a column, which no amount of repetition in the
-/// representation would have shown. Several chunks say so when each of them does and they agree.
 fn mask_reads_throughout(mask: &BooleanChunked) -> Option<bool> {
     let mut read: Option<bool> = None;
     for chunk in mask.downcast_iter() {
@@ -60,9 +55,6 @@ fn mask_reads_throughout(mask: &BooleanChunked) -> Option<bool> {
 
 /// The bits of `mask`, reading a null as unset — which is what a null means to `zip_with`.
 fn bool_null_to_false(mask: &PlBooleanArray) -> PlBitmap {
-    // An element the mask says nothing about is one it does not pick, which is what an unset bit
-    // says in turn: the two fold together into the one mask the kernels read. A mask that repeats
-    // a single bit stays a single bit.
     combine_validities_and(Some(mask.values()), mask.validity())
         .expect("the values of a mask are a mask of their own")
 }
@@ -82,8 +74,6 @@ fn combine_validities_chunked<T: PolarsDataType>(
         .map(|(a, m)| {
             let mut bm = bool_null_to_false(m);
             if not_mask {
-                // Inverting leaves the mask in the representation it is in: a single bit stays a
-                // single bit, which keeps a fully null or fully valid result in `O(1)` memory.
                 bm = invert(bm.as_ref());
             }
             let validity = combine_validities_and(a.validity(), Some(bm.as_ref()));
@@ -106,10 +96,6 @@ where
         let if_true = self;
         let if_false = other;
 
-        // Broadcast mask: a mask that reads the same at every element picks the same side
-        // throughout, so the sides are neither zipped nor written out — and the side it picks is
-        // handed back in whatever representation it is in. A null reads as false, as it does
-        // below.
         if let Some(bit) = mask_reads_throughout(mask) {
             return if_then_else_broadcast_mask(bit, mask.len(), if_true, if_false);
         }
@@ -256,10 +242,6 @@ impl ChunkZip<StructType> for StructChunked {
         let mut if_true: Cow<ChunkedArray<StructType>> = Cow::Borrowed(self);
         let mut if_false: Cow<ChunkedArray<StructType>> = Cow::Borrowed(other);
 
-        // A mask that reads the same at every element picks the same side throughout, and that
-        // side is handed back as it stands rather than zipped field by field. A column of one
-        // element says so on its own; so does a chunk of one repeated bit, and so does one whose
-        // bits all agree. `pl.when(None)` reads as `pl.when(False)`.
         if let Some(is_true) = mask_reads_throughout(mask) {
             return Ok(if is_true {
                 self.broadcast_to(length)?.into_owned()
@@ -296,8 +278,6 @@ impl ChunkZip<StructType> for StructChunked {
         unsafe {
             for arr in mask.downcast_iter_mut() {
                 let length = arr.len();
-                // A mask that repeats a single bit says the same of every element and stays that
-                // one bit; anything else holds one bit per element, as it did before.
                 let bm = bool_null_to_false(arr);
                 *arr = match bm.scalar_value() {
                     Some(bit) => PlBooleanArray::new_scalar(bit, length),
@@ -357,9 +337,6 @@ impl ChunkZip<StructType> for StructChunked {
                 (1, 1) if length != 1 => {
                     match (if_true.null_count() == 0, if_false.null_count() == 0) {
                         (true, true) => None,
-                        // `if_true` is the null side, so the result is null exactly where the
-                        // mask picks it: the validity is the mask inverted, however many chunks
-                        // it is spread over.
                         (false, true) => {
                             if mask.chunks().len() == 1 {
                                 Some(!&mask_values(mask.downcast_get(0).unwrap()))
@@ -371,8 +348,6 @@ impl ChunkZip<StructType> for StructChunked {
                                 )
                             }
                         },
-                        // `if_false` is the null side, so the result is null where the mask does
-                        // not pick `if_true`: the validity is the mask itself.
                         (true, false) => {
                             if mask.chunks().len() == 1 {
                                 Some(mask_values(mask.downcast_get(0).unwrap()))

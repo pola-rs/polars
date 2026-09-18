@@ -78,7 +78,6 @@ fn is_close_kernel<T>(
 where
     T: PolarsNumericType,
 {
-    // Both arrays are flat, so both masks hold one bit per element, as does the result.
     let validity = combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
     let element_iter = lhs_arr
         .values_iter()

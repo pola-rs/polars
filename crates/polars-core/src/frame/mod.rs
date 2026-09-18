@@ -2690,8 +2690,6 @@ impl Iterator for PhysRecordBatchIter<'_> {
         let arrs = self
             .arr_iters
             .iter_mut()
-            // A record batch is made of Arrow arrays, which the chunks cross into — see
-            // `polars_array::arrow::bridge`.
             .map(|phys_iter| {
                 phys_iter
                     .next()

@@ -16,18 +16,12 @@ use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
 use crate::series::{ArgAgg, convert_and_bound_index};
 
 /// The elements of one list `s` written into `buf` one after another, `separator` between them.
-///
-/// `None` where the list has a null element to write and `ignore_nulls` says not to skip it — the
-/// row that list belongs to is null then. `buf` is the caller's, reused from row to row.
-///
-/// A fixed-size list joins the same way, which is why `array::join` reads this too.
 pub(crate) fn join_one_list<'a>(
     s: &Series,
     separator: &str,
     ignore_nulls: bool,
     buf: &'a mut String,
 ) -> Option<&'a str> {
-    // make sure that we don't write values of previous iteration
     buf.clear();
     let ca = s.str().unwrap();
 
@@ -42,8 +36,6 @@ pub(crate) fn join_one_list<'a>(
         }
     }
 
-    // last value should not have a separator, so slice that off
-    // saturating sub because there might have been nothing written.
     Some(&buf[..buf.len().saturating_sub(separator.len())])
 }
 
@@ -124,9 +116,6 @@ pub trait ListNameSpaceImpl: AsList {
     fn join_literal(&self, separator: &str, ignore_nulls: bool) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
 
-        // Every element reading the one list joins it to the one string, and that string stands
-        // for every element in turn: it is written once and repeated rather than written out
-        // `len` times.
         if let Some(length) = ca.repeats_one_list() {
             let mut buf = String::with_capacity(128);
             let one = ca.amortized_iter().next().flatten();
@@ -159,14 +148,11 @@ pub trait ListNameSpaceImpl: AsList {
     ) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
 
-        // One list against one separator makes one string, whatever the length the two of them
-        // are read over — see `join_literal`, which this defers to for the answer itself.
         if ca.repeats_one_list() == Some(separator.len())
             && let Some(separator) = separator.scalar_value()
         {
             return match separator {
                 Some(separator) => self.join_literal(separator, ignore_nulls),
-                // A null separator writes a null row, and it is the separator for every row here.
                 None => Ok(StringChunked::full_null(ca.name().clone(), ca.len())),
             };
         }
@@ -336,9 +322,6 @@ pub trait ListNameSpaceImpl: AsList {
             return IdxCa::full_null(ca.name().clone(), ca.len());
         }
 
-        // Every element of the one chunk covers the one range, so they are all that range's
-        // length: the answer is the single slot that says so, and neither the offsets nor the
-        // lengths are ever written out one per element.
         if ca.chunks().len() == 1
             && let Some(range) = ca.downcast_get(0).unwrap().scalar_offsets()
         {
@@ -350,8 +333,6 @@ pub trait ListNameSpaceImpl: AsList {
         let mut lengths = Vec::with_capacity(ca.len());
         ca.downcast_iter()
             .for_each(|arr| match arr.scalar_offsets() {
-                // As above, for one of several chunks: the lengths of the other chunks are written
-                // out, so this one's are too.
                 Some(range) => lengths.resize(lengths.len() + arr.len(), range.len() as IdxSize),
                 None => {
                     let offsets = arr
@@ -365,8 +346,6 @@ pub trait ListNameSpaceImpl: AsList {
                 },
             });
 
-        // The lengths are written out one per element, but the mask carries over as it is: one
-        // that repeats a single bit stays that single bit.
         let arr = PlPrimitiveArray::from_vec(lengths).with_validity(ca_validity);
         IdxCa::with_chunk(ca.name().clone(), arr)
     }
@@ -474,8 +453,6 @@ pub trait ListNameSpaceImpl: AsList {
         let index_typed_index = |idx: &Series| {
             let idx = idx.cast(&IDX_DTYPE).unwrap();
             {
-                // Gathering out of the one list every element reads is one gather, which
-                // `try_apply_amortized` runs once and hands to every element in turn.
                 list_ca
                     .try_apply_amortized(|s| take_series(s.as_ref(), idx.clone(), null_on_oob))
                     .map(|mut ca| {
@@ -524,7 +501,6 @@ pub trait ListNameSpaceImpl: AsList {
                             if min >= 0 {
                                 index_typed_index(&idx_ca)
                             } else {
-                                // As above: one list read throughout is one gather.
                                 let mut out = list_ca.try_apply_amortized(|s| {
                                     take_series(s.as_ref(), idx_ca.clone(), null_on_oob)
                                 })?;
@@ -612,9 +588,6 @@ pub trait ListNameSpaceImpl: AsList {
                 if let Some(n) = n.get(0) {
                     unsafe {
                         // SAFETY: `sample_n` doesn't change the dtype.
-                        //
-                        // Every element is sampled on its own even where they all read the one
-                        // list: an unseeded sample answers differently every time it is asked.
                         ca.try_apply_amortized_same_type_per_element(|s| {
                             s.as_ref()
                                 .sample_n(n as usize, with_replacement, shuffle, seed)
@@ -689,8 +662,6 @@ pub trait ListNameSpaceImpl: AsList {
                 if let Some(fraction) = fraction.get(0) {
                     unsafe {
                         // SAFETY: `sample_n` doesn't change the dtype.
-                        //
-                        // As in `lst_sample_n`: a sample is taken per element, not once.
                         ca.try_apply_amortized_same_type_per_element(|s| {
                             let n = (s.as_ref().len() as f64 * fraction) as usize;
                             s.as_ref().sample_n(n, with_replacement, shuffle, seed)
@@ -722,9 +693,6 @@ pub trait ListNameSpaceImpl: AsList {
         let other_len = other.len();
         let length = ca.len();
 
-        // Every operand reading one element throughout makes one concatenation, and that list
-        // stands for every row: do it over a single row and repeat the answer. Without this the
-        // builder below walks all `length` rows to write the same list each time.
         if ca.clone().into_series().repeats_one_element()
             && other
                 .iter()

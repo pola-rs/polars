@@ -58,10 +58,6 @@ where
     for<'b> T::Physical<'b>: TotalHash + TotalEq + ToTotalOrd + Copy,
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
-    // `get_inner` hands over the values as they are, and a chunk that repeats a single list holds
-    // that one list rather than a copy of it per element. The offsets are read the same way: the
-    // one range every element of such a chunk covers is repeated rather than written out, which
-    // is what `element_range` answers.
     let rechunked = other.rechunk();
     let other = &rechunked;
     let chunk = other.downcast_as_array();
@@ -89,11 +85,6 @@ where
 
     let inner = other.get_inner();
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();
-    // The values are read one element of the haystack after another, and `ChunkedArray::get`
-    // resolves the chunk every one of them sits in and downcasts it again — which is most of
-    // what reading one costs. The array is the single chunk of the flat one above, so it is
-    // resolved once here instead. Every `start + i` the loops below read is in bounds of it,
-    // since the offsets index its values.
     let inner = inner.downcast_as_array();
     let validity = other.rechunk_validity();
 
@@ -103,9 +94,6 @@ where
         match value {
             None if !nulls_equal => BooleanChunked::full_null(PlSmallStr::EMPTY, other.len()),
             value => {
-                // Every element of a chunk that repeats a single list reads the same values, so
-                // the one needle is looked for in them once and the bit it answers stands for
-                // every element.
                 if let Some(range) = scalar_range.clone() {
                     let mut is_in = false;
                     for i in range {
@@ -135,7 +123,6 @@ where
 
                 let values = builder.freeze();
 
-                // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
                 let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
@@ -159,7 +146,6 @@ where
 
                 let values = builder.freeze();
 
-                // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
                 let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
@@ -180,15 +166,12 @@ where
 
                 let values = builder.freeze();
 
-                // A mask that repeats a single bit combines as that one bit, without either
-                // side being written out first.
                 let ca_validity = ca_in.rechunk_validity();
                 let validity = combine_validities_and(
                     validity.as_ref().map(PlBitmap::as_ref),
                     ca_validity.as_ref().map(PlBitmap::as_ref),
                 );
 
-                // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
                 let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
@@ -213,10 +196,6 @@ where
     let width = other.width();
     let rechunked = other.rechunk();
     let chunk = rechunked.downcast_as_array();
-    // The values are taken as they are laid out: a chunk that repeats a single array holds that
-    // one array's values rather than a copy of them per element, which `get_inner` would write
-    // out — more work over strictly less data. Every element then reads the same width of
-    // values, which is what `start` answers.
     let values_are_scalar = chunk.values_are_scalar();
     let start = |element: usize| {
         if values_are_scalar {
@@ -235,10 +214,6 @@ where
         )
     };
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();
-    // As in `is_in_helper_list_ca`: the chunk a value sits in and its array type are resolved
-    // once here rather than by `ChunkedArray::get` for every value read. Every
-    // `start(i) + j` the loops below read is in bounds of it, since the values hold the width of
-    // every element the chunk reads.
     let inner = inner.downcast_as_array();
     let validity = other.rechunk_validity();
 
@@ -248,9 +223,6 @@ where
         match value {
             None if !nulls_equal => BooleanChunked::full_null(PlSmallStr::EMPTY, other.len()),
             value => {
-                // Every element of a chunk that repeats a single array reads the same values, so
-                // the one needle is looked for in them once and the bit it answers stands for
-                // every element.
                 if values_are_scalar {
                     let mut is_in = false;
                     for j in 0..width {
@@ -279,7 +251,6 @@ where
 
                 let values = builder.freeze();
 
-                // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
                 let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
@@ -303,7 +274,6 @@ where
 
                 let values = builder.freeze();
 
-                // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
                 let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
@@ -324,15 +294,12 @@ where
 
                 let values = builder.freeze();
 
-                // A mask that repeats a single bit combines as that one bit, without either
-                // side being written out first.
                 let ca_validity = ca_in.rechunk_validity();
                 let validity = combine_validities_and(
                     validity.as_ref().map(PlBitmap::as_ref),
                     ca_validity.as_ref().map(PlBitmap::as_ref),
                 );
 
-                // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
                 let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
@@ -767,18 +734,12 @@ fn is_in_row_encoded(
 }
 
 /// The answer of the one pair of elements both sides read, repeated over the whole column.
-///
-/// Both sides have to hand every element the same one, either because the side repeats it or
-/// because the side is the single element the other reads against all of its own. The lengths
-/// they line up at have already been checked by the caller, so the one element of each answers
-/// for every element of the column the caller is owed.
 fn repeat_one_answer(
     needle: &Series,
     haystack: &Series,
     nulls_equal: bool,
 ) -> Option<PolarsResult<BooleanChunked>> {
     let length = usize::max(needle.len(), haystack.len());
-    // Nothing is saved by answering a column of one element, which is what is worked out here.
     if length < 2 {
         return None;
     }
@@ -823,12 +784,6 @@ pub fn is_in(
         haystack.dtype()
     );
 
-    // Every element of each side reads the same one — because the side repeats it, or because
-    // the side is the single element the other reads against every one of its own — so the
-    // answer of that one pair is the answer of every element. It is worked out over a single
-    // element of each and repeated, rather than both sides being read out in full: a needle of
-    // a nested type is row-encoded to be looked up, and a chunk that repeats one element would
-    // be encoded once per element to say what one encoding says.
     if let Some(out) = repeat_one_answer(needle, haystack, nulls_equal) {
         return out;
     }

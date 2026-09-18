@@ -12,8 +12,6 @@ pub struct NullChunkedBuilder {
 
 impl NullChunkedBuilder {
     pub fn new(name: PlSmallStr, len: usize) -> Self {
-        // `len` is how many nulls the builder starts out holding, not room for that many: a null
-        // array is nothing but its length, so there is no allocation to reserve.
         let mut array_builder = PlNullArrayBuilder::new();
         array_builder.extend_nulls(len);
 
@@ -30,7 +28,6 @@ impl NullChunkedBuilder {
     }
 
     pub fn finish(self) -> NullChunked {
-        // A null array holds no values, so the length the builder counted is the whole of it.
         NullChunked::new(self.field.name().clone(), self.array_builder.len())
     }
 

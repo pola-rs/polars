@@ -25,8 +25,6 @@ impl PlTotalEqKernel for PlBooleanArray {
 
     fn tot_eq_kernel(&self, other: &Self) -> PlBitmap {
         assert_eq!(self.len(), other.len());
-        // Two bits are equal when they do not differ, which `xor` answers in whichever
-        // representation the two sides are in.
         values(self).xor(&values(other)).not()
     }
 
@@ -36,8 +34,6 @@ impl PlTotalEqKernel for PlBooleanArray {
     }
 
     fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
-        // Every element equals `true` exactly where its own bit is set, and `false` where it is
-        // not: the answer is the values themselves, inverted or not.
         let values = values(self);
         if *other { values } else { values.not() }
     }
@@ -52,8 +48,6 @@ impl PlTotalOrdKernel for PlBooleanArray {
 
     fn tot_lt_kernel(&self, other: &Self) -> PlBitmap {
         assert_eq!(self.len(), other.len());
-        // `false < true` and nothing else, so this is where the right side is set and the left is
-        // not.
         values(self).not().and(&values(other))
     }
 
@@ -64,17 +58,14 @@ impl PlTotalOrdKernel for PlBooleanArray {
 
     fn tot_lt_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
         if *other {
-            // Only `false` is below `true`.
             values(self).not()
         } else {
-            // Nothing is below `false`, which holds of every element at once.
             repeated(false, self.len())
         }
     }
 
     fn tot_le_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
         if *other {
-            // Every boolean is at or below `true`, which holds of every element at once.
             repeated(true, self.len())
         } else {
             values(self).not()

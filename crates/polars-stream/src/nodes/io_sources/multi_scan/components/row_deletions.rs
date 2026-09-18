@@ -636,8 +636,6 @@ fn nth_set_bit_extend(mask: &PlBitmap, n: usize) -> usize {
 
     match mask.flat_bitmap() {
         Some(bitmap) => BitMask::from_bitmap(bitmap).nth_set_bit_idx(n, 0).unwrap(),
-        // Every bit of a repeated mask is set here — an unset one leaves no set bit for `n` to
-        // count to, which the subtraction above already answered — so the `n`th of them is at `n`.
         None => n,
     }
 }

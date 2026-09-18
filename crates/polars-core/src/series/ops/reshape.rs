@@ -28,8 +28,6 @@ impl Series {
             },
             DataType::List(dtype) => {
                 let ca = s.list().unwrap();
-                // The callers pair the leaf values with offsets that are one range per element,
-                // so a scalar chunk is written out to hand over the values those ranges reach.
                 let chunks = ca
                     .downcast_iter()
                     .map(|arr| arr.to_flat().values().to_boxed())
@@ -53,8 +51,6 @@ impl Series {
 
         while let DataType::List(inner_dtype) = s.dtype() {
             let ca = s.list().unwrap();
-            // The offsets are handed out one range per element, so a chunk that is not laid out
-            // flat is written out, and the next level is taken from the values it was written to.
             let arr = ca.downcast_as_array().to_flat();
             offsets.push(export::offsets_to_arrow(arr.offsets().clone()));
             validities.push(arr.validity().cloned());
@@ -74,7 +70,6 @@ impl Series {
     /// Wrap each element of this Series in a single-element list.
     /// A Series `[1, 2, 3]` becomes `[[1], [2], [3]]`.
     pub fn to_unit_list(&self) -> ListChunked {
-        // The chunks carry no logical type, so the inner dtype is this series'.
         let chunks = self
             .chunks()
             .iter()
@@ -104,7 +99,6 @@ impl Series {
         // SAFETY: offsets are correct.
         let arr = unsafe { PlListArray::new_unchecked(values.clone(), offsets.into(), 1, None) };
 
-        // The chunk carries no logical type, so the inner dtype is this series'.
         let mut ca = unsafe {
             ListChunked::from_chunks_and_dtype_unchecked(
                 s.name().clone(),

@@ -67,9 +67,6 @@ fn array_get_impl(
     index: &Int64Chunked,
     null_on_oob: bool,
 ) -> PolarsResult<Series> {
-    // A literal index reaches this kernel already broadcast over the arrays, so ask what the
-    // index column repeats rather than how long it is: one index reads the same slot out of
-    // every array, which is a gather with one offset instead of one per row.
     let settled = (index.len() == ca.len())
         .then(|| index.settled_to_one_element())
         .flatten();

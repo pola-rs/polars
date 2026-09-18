@@ -21,13 +21,6 @@ where
         .downcast_ref::<PlPrimitiveArray<T>>()
         .unwrap();
 
-    // Three ways for every element to sum to the same total: a list of no values at all adds up
-    // to nothing, the values repeat one value, so any `width` of them add up alike, or the
-    // elements all read the one list. Either way the total is worked out once over a single width
-    // and repeated, rather than the values being written out one list per element first.
-    //
-    // A width of zero is settled here rather than below, where the step over the lists would be
-    // no step at all.
     let repeated = if width == 0 {
         Some(sum_slice::<T, S>(&[]))
     } else if let Some(value) = values.scalar_value_ignore_validity() {
@@ -46,7 +39,6 @@ where
             .into_boxed();
     }
 
-    // One list per element and one slot per value: the lists are the slices they already are.
     let values = values.flat_values().expect("the values are not repeated");
     debug_assert_eq!(values.len(), length * width);
 
@@ -60,7 +52,6 @@ where
         })
         .collect_trusted();
 
-    // One sum per element, and `validity` holds one bit per element as well.
     PlPrimitiveArray::from_vec(summed)
         .with_validity(validity)
         .into_boxed()

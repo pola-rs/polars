@@ -24,11 +24,8 @@ fn validity(array: &Flat<PlBooleanArray>) -> Option<&Bitmap> {
 #[inline]
 fn pick(mask: PlBitmap, if_true: bool, if_false: bool) -> PlBitmap {
     match (if_true, if_false) {
-        // The two sides agree, so every element takes the one value they agree on and the mask
-        // says nothing: this is the same bit for every element.
         (false, false) => PlBitmap::new_scalar(false, mask.len()),
         (true, true) => PlBitmap::new_scalar(true, mask.len()),
-        // They differ, so an element takes `true` exactly where the mask picks the true side.
         (true, false) => mask,
         (false, true) => mask.not(),
     }
@@ -74,15 +71,11 @@ impl IfThenElseKernel for PlBooleanArray {
     }
 
     fn if_then_else_flat_broadcast_both(mask: &Bitmap, if_true: bool, if_false: bool) -> Self {
-        // The mask is flat, but the answer need not be: two sides that agree leave one value for
-        // every element, which a scalar chunk holds in a single bit.
         let length = mask.len();
         PlBooleanArray::from_pl_bitmap(pick(PlBitmap::new(mask.clone(), length), if_true, if_false))
     }
 
     fn if_then_else_broadcast_both(mask: PlBitmapRef<'_>, if_true: bool, if_false: bool) -> Self {
-        // Overridden because the mask is the answer here, so a mask that repeats a single bit is
-        // handed back as the single bit it is rather than written out.
         PlBooleanArray::from_pl_bitmap(pick(PlBitmap::from(mask), if_true, if_false))
     }
 }

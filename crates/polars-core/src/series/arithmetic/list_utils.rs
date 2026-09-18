@@ -74,12 +74,7 @@ impl NumericOp {
             match self {
                 Self::Div | Self::Rem | Self::FloorDiv => {
                     let target = if swapped { lhs } else { rhs };
-                    // A chunk that repeats one value answers this in `O(1)`, and the mask that
-                    // comes back repeats one bit in turn.
                     let ne_0 = target.tot_ne_kernel_broadcast(&T::Native::zero());
-                    // A mask that leaves every element where it is is the mask the side already
-                    // carries: there is no zero to null out, and handing one over would leave a
-                    // side that had no mask at all carrying a bit per element for nothing.
                     if ne_0.as_ref().unset_bits() > 0 {
                         let validity =
                             combine_validities_and(target.validity(), Some(ne_0.as_ref()));
@@ -106,9 +101,6 @@ impl NumericOp {
             let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
             let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
 
-            // The kernels read the chunks in whatever representation they are in, so a chunk
-            // that repeats a single value is operated on once rather than written out; the
-            // clones are a refcount bump per backing buffer.
             let lhs = lhs.downcast_get(0).unwrap().clone();
             let rhs = rhs.downcast_get(0).unwrap().clone();
 
@@ -232,11 +224,6 @@ pub(super) enum Broadcast {
 }
 
 /// The mask of `s` where every one of its elements reads the same one value, `None` where they
-/// do not.
-///
-/// A chunk whose values repeat is a chunk of one element wherever its mask says an element is
-/// there at all, so the mask is what is left of it to answer with. `Some(None)` is a side that
-/// repeats one element and has no mask; the outer `None` is a side that repeats nothing.
 fn repeated_element_mask(s: &Series) -> Option<Option<PlBitmap>> {
     let [chunk] = s.chunks().as_slice() else {
         return None;
@@ -245,26 +232,18 @@ fn repeated_element_mask(s: &Series) -> Option<Option<PlBitmap>> {
         return None;
     }
 
-    // The values are asked about apart from the mask: a mask of one bit per element is a shape
-    // the answer keeps, where the values behind it are the one value every element reads.
     if !chunk.without_validity().is_scalar() {
         return None;
     }
 
     match chunk.validity() {
         None => Some(None),
-        // Nothing is left to read where no element is there to read it: the answer is a column of
-        // nulls, which the walk below writes without a pair of elements to work out first.
         Some(validity) if validity.unset_bits() == s.len() => None,
         Some(validity) => Some(Some(PlBitmap::from(validity))),
     }
 }
 
 /// `s` with every chunk of its lists laid out one range of values per element.
-///
-/// The machinery below reads a side's offsets and its leaf values apart from one another, and
-/// each read writes out a chunk that repeats a single list to get at what it is after. Writing it
-/// out here leaves both reads borrowing it, which is one copy of the values rather than two.
 pub(super) fn flatten_list_chunks(s: Series) -> Series {
     let Ok(ca) = s.list() else {
         return s;
@@ -279,21 +258,11 @@ pub(super) fn flatten_list_chunks(s: Series) -> Series {
 }
 
 /// A side that repeats one element, read as the one element it is.
-///
-/// The operation is elementwise, so a side whose every element is the same one hands the other
-/// side that element for each of its own — which is what a side of a single element already means
-/// to the machinery below, and a single element is read where a repeated one is written out per
-/// element of the other side to be read. Only the side that does not repeat carries a length, and
-/// it is the length of the answer either way.
-///
-/// `None` where neither side repeats, or where both do — the pair they share is the whole answer
-/// then, which [`repeat_one_answer`] works out ahead of this.
 pub(super) fn read_repeated_side_as_one_element(
     op: &NumericOp,
     lhs: &Series,
     rhs: &Series,
 ) -> Option<(Series, Series)> {
-    // A side that is already a single element broadcasts over the other as it is.
     if lhs.len() != rhs.len() {
         return None;
     }
@@ -301,10 +270,6 @@ pub(super) fn read_repeated_side_as_one_element(
     let one = |s: &Series| s.slice(0, 1);
     match (lhs.repeats_one_element(), rhs.repeats_one_element()) {
         (true, false) => Some((one(lhs), rhs.clone())),
-        // A single primitive divisor is divided by through the kernels that multiply by its
-        // reciprocal, where the leaves of a column divide by the value of each element. The two
-        // round the last bit of a float apart — a whole step apart, for the leaves that are
-        // multiples of the divisor — so a repeated divisor is left the column it is.
         (false, true) if op.divides() && !rhs.dtype().is_nested() => None,
         (false, true) => Some((lhs.clone(), one(rhs))),
         _ => None,
@@ -312,29 +277,11 @@ pub(super) fn read_repeated_side_as_one_element(
 }
 
 /// The answer of the one pair of elements both sides repeat, repeated in turn.
-///
-/// The operation is elementwise, so where each side hands every element the same one — a chunk
-/// that repeats a single element, or a single element broadcast over the other side — every
-/// element of the answer is the answer of that one pair. It is worked out once, over a couple of
-/// rows of each side, and the answer stands for the whole column rather than being written out
-/// per element: `op` is the arithmetic the caller would otherwise run over both sides in full.
-///
-/// Each side keeps two rows rather than one where it has them: which side broadcasts over which
-/// is read off their lengths, and a pair of single rows would read as neither side broadcasting
-/// — a different reading of the same two elements, which divides by a leaf value rather than by
-/// the one scalar behind it and so rounds the last bit of a float differently.
-///
-/// A mask over the elements of a side does not stop any of this: the elements that are not null
-/// all read the same one element still, and the ones that are read nothing at all. The pair is
-/// answered with both masks off and the answer carries them combined, which is the answer every
-/// element of a flat column would be given one at a time.
 pub(super) fn repeat_one_answer(
     lhs: &Series,
     rhs: &Series,
     op: impl FnOnce(&Series, &Series) -> PolarsResult<Series>,
 ) -> Option<PolarsResult<Series>> {
-    // The two sides line up element for element, or one of them is the single element the other
-    // reads against every one of its own. Anything else is a length the caller has to reject.
     let length = match (lhs.len(), rhs.len()) {
         (left, right) if left == right => left,
         (1, right) => right,
@@ -342,14 +289,10 @@ pub(super) fn repeat_one_answer(
         _ => return None,
     };
 
-    // Nothing is saved by working out the answer of as many rows as there are.
     if length < 3 {
         return None;
     }
 
-    // Every element of each side has to read the same one, either because the side repeats it or
-    // because the side is it. A side that repeats one element under a mask hands its mask over,
-    // to go back around the answer once the pair behind it is worked out.
     let reads_one = |s: &Series| {
         if s.len() == 1 {
             return Some(None);
@@ -358,8 +301,6 @@ pub(super) fn repeat_one_answer(
     };
     let (lhs_mask, rhs_mask) = (reads_one(lhs)?, reads_one(rhs)?);
 
-    // The pair is read out from under the masks: a null element of a side stands for the one
-    // element the side repeats like every other, and it is the mask that makes it null again.
     let unmasked = |s: &Series, mask: &Option<PlBitmap>| match mask {
         None => s.clone(),
         Some(_) => s.with_validity(None),
@@ -367,8 +308,6 @@ pub(super) fn repeat_one_answer(
     let lhs = unmasked(lhs, &lhs_mask);
     let rhs = unmasked(rhs, &rhs_mask);
 
-    // Two rows of a side that has them, one of a side that is one: the same reading of which side
-    // broadcasts as the full lengths give, over a pair of elements rather than all of them.
     let rows = |s: &Series| s.slice(0, s.len().min(2));
     let out = op(&rows(&lhs), &rows(&rhs));
     let mask = combine_validities_and(
@@ -381,8 +320,6 @@ pub(super) fn repeat_one_answer(
         let out = one.broadcast_owned_to(length)?;
         Ok(match mask {
             None => out,
-            // An answer that is null for the one pair is null for every element of the answer,
-            // whatever the masks say: there is nothing for them to leave behind.
             Some(_) if answered_null => out,
             Some(mask) => out.with_validity(Some(mask)),
         })

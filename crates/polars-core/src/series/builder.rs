@@ -22,8 +22,6 @@ impl SeriesBuilder {
             return Self { dtype, builder };
         }
 
-        // The arrays of `polars-array` carry no logical type, so what stands in for one is an
-        // empty array of the shape the dtype describes — see `builder_like`.
         let builder = builder_like(&*new_empty_chunk(&dtype));
         Self { dtype, builder }
     }

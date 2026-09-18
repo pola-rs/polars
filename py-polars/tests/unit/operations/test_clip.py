@@ -247,9 +247,6 @@ def test_clip_bound_nan() -> None:
 
 
 def test_clip_repeated_chunk_bounds() -> None:
-    # Every operand reading one element throughout clamps to one value, and that value
-    # stands for
-    # every row; it must agree with the written-out columns.
     n = 4
     rep = pl.DataFrame(
         {
@@ -274,13 +271,11 @@ def test_clip_repeated_chunk_bounds() -> None:
             df.select(pl.col("x").clip(upper_bound=pl.col("hi"))).to_series().to_list()
             == [4] * n
         )
-        # a scalar bound alongside a repeated one
         assert (
             df.select(pl.col("x").clip(9, pl.col("hi"))).to_series().to_list()
             == [9] * n
         )
 
-    # a null bound leaves the value alone; a null value stays null
     nulls = pl.DataFrame(
         {
             "x": pl.repeat(5, n, dtype=pl.Int64, eager=True),

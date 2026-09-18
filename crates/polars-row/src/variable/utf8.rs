@@ -95,8 +95,6 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> PlUtf8V
         }
 
         *row = row.get_unchecked(1 + scratch.len()..);
-        // Every value is pushed as a valid one: the rows before the first null are all valid, and
-        // the mask built below replaces the builder's own wholesale.
         array.push_value(unsafe { std::str::from_utf8_unchecked(&scratch) });
     }
 

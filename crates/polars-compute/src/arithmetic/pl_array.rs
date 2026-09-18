@@ -18,8 +18,6 @@ enum Split<T: NativeType> {
 
 impl<T: NativeType> Split<T> {
     fn of(mut arr: PlPrimitiveArray<T>) -> Self {
-        // A mask of a single bit says the same thing about every element, so it is read here
-        // instead of reaching a kernel as one bit per element.
         if let Some(bit) = arr.validity().and_then(|validity| validity.scalar_value()) {
             if !bit {
                 return Self::AllNull;
@@ -28,11 +26,7 @@ impl<T: NativeType> Split<T> {
         }
 
         match arr.scalar_value_ignore_validity() {
-            // The kernel is elementwise, so the one value the elements share is operated on once.
-            // The mask, which is flat if it is still here, comes along to mask the answer again.
             Some(value) => Self::Repeated(value, arr.validity().map(PlBitmap::from)),
-            // Both buffers hold one slot per element, so the array is flat and `to_flat` borrows
-            // it; the clone that `into_owned` makes is a refcount bump per buffer.
             None => Self::Flat(arr.to_flat().into_owned()),
         }
     }
@@ -40,8 +34,6 @@ impl<T: NativeType> Split<T> {
 
 /// The one element `value` stands for, as a flat array a kernel can read.
 fn single<T: NativeType>(value: T) -> PArr<T> {
-    // The array this borrows from is a temporary that is dropped before the caller sees the
-    // clone, which leaves the one slot the clone holds to the caller alone.
     PlPrimitiveArray::new_scalar(value, 1)
         .to_flat()
         .into_owned()
@@ -111,11 +103,8 @@ where
     );
 
     match (Split::of(lhs), Split::of(rhs)) {
-        // An operand that is null answers with a null, whatever the other one holds.
         (Split::AllNull, _) | (_, Split::AllNull) => POut::new_full_null(length),
 
-        // Both sides repeat a value, so the kernel runs once over one element each and its answer
-        // covers every element. The two masks are combined for it to sit under.
         (Split::Repeated(l, lv), Split::Repeated(r, rv)) => {
             let validity = combine_validities_and(
                 lv.as_ref().map(PlBitmap::as_ref),
@@ -124,8 +113,6 @@ where
             repeat(flat(single(l), single(r)), length, validity)
         },
 
-        // One side repeats a value and reaches the kernel as that value; the mask over the
-        // elements that read it goes back around the answer afterwards.
         (Split::Repeated(l, lv), Split::Flat(rhs)) => fold_in(scalar_lhs(l, rhs), lv),
         (Split::Flat(lhs), Split::Repeated(r, rv)) => fold_in(scalar_rhs(lhs, r), rv),
 

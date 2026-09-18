@@ -60,8 +60,6 @@ pub(super) fn count_boolean_bits(ca: &ListChunked) -> IdxCa {
         assert_eq!(mask.null_count(), 0);
         let validity = arr.validity().map(PlBitmap::from);
 
-        // Every element covers the one range, so they all count the same: it is counted once over
-        // that range rather than the lists being laid end to end first.
         if let Some(range) = arr.scalar_offsets() {
             return PlPrimitiveArray::new_scalar(count_set_over(mask, range), arr.len())
                 .with_validity(validity);
@@ -71,7 +69,6 @@ pub(super) fn count_boolean_bits(ca: &ListChunked) -> IdxCa {
             .flat_offsets()
             .expect("the elements cover ranges of their own");
         let out = match mask.scalar_value_ignore_validity() {
-            // The bits repeat a single bit, so a list counts either its whole length or nothing.
             Some(bit) => offsets
                 .windows(2)
                 .map(|window| match bit {
@@ -85,7 +82,6 @@ pub(super) fn count_boolean_bits(ca: &ListChunked) -> IdxCa {
             ),
         };
 
-        // One count per element, and the mask of the array holds one bit per element as well.
         PlPrimitiveArray::from_vec(out).with_validity(validity)
     });
     IdxCa::from_chunk_iter(ca.name().clone(), chunks)

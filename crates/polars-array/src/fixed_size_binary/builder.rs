@@ -62,8 +62,6 @@ impl PlFixedSizeBinaryArrayBuilder {
     /// Appends a null.
     #[inline]
     pub fn push_null(&mut self) {
-        // The bytes of a null element are undetermined, but there are as many of them as there are
-        // of any other element: the width is what every element covers.
         self.values.resize(self.values.len() + self.width, 0);
         self.length += 1;
         self.validity.extend_constant(1, false);
@@ -97,7 +95,6 @@ impl PlFixedSizeBinaryArrayBuilder {
         } else if let Some(element) = other.scalar_value_ignore_validity() {
             self.extend_repeated(element, length);
         }
-        // An empty array is neither, and the subslice it admits covers no element to append.
     }
 
     /// Appends `element` `repeats` times over.
@@ -155,8 +152,6 @@ impl StaticArrayBuilder for PlFixedSizeBinaryArrayBuilder {
     }
 
     fn extend_nulls(&mut self, length: usize) {
-        // The bytes of a null element are undetermined, but there are as many of them as there are
-        // of any other element: the width is what every element covers.
         self.values
             .resize(self.values.len() + length * self.width, 0);
         self.validity.extend_constant(length, false);
@@ -197,7 +192,6 @@ impl StaticArrayBuilder for PlFixedSizeBinaryArrayBuilder {
                 self.extend_repeated(&values[range], repeats);
             }
         } else {
-            // Every element covers the same bytes, so which of them is repeated is immaterial.
             self.extend_values(other, start, length * repeats);
         }
 
@@ -227,7 +221,6 @@ impl StaticArrayBuilder for PlFixedSizeBinaryArrayBuilder {
                 self.values.extend_from_slice(&values[range]);
             }
         } else {
-            // Every index reads the one element the values hold.
             self.extend_values(other, 0, idxs.len());
         }
 
@@ -252,7 +245,6 @@ impl StaticArrayBuilder for PlFixedSizeBinaryArrayBuilder {
                 self.values
                     .extend_from_slice(unsafe { other.value_unchecked(idx) });
             } else {
-                // An out-of-bounds index stands for a null, which covers a width of zeros.
                 self.values.resize(self.values.len() + self.width, 0);
             }
         }

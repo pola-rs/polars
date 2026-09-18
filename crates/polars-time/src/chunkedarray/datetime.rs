@@ -11,11 +11,6 @@ use polars_core::prelude::*;
 use super::*;
 
 /// Extracts one field of the local wall time of every element, reading the instants with
-/// `$to_datetime` — the conversion the column's timestamp unit asks for.
-///
-/// A column that names a time zone has that zone's offset applied as each instant is read, in the
-/// same pass the field is taken in — rather than the wall times being written out as a column of
-/// their own first and then read back.
 macro_rules! extract_with {
     ($ca:expr, $field:expr, $to_datetime:path) => {{
         let ca = $ca;
@@ -39,10 +34,6 @@ macro_rules! extract_with {
 }
 
 /// [`extract_with`], over whichever conversion the column's timestamp unit asks for.
-///
-/// The unit is dispatched on here, once per column, rather than its conversion being picked as a
-/// `fn` pointer that the loop then calls indirectly once per element: the conversion is cheap
-/// enough that a call it cannot inline costs about a third as much again as the work it does.
 macro_rules! extract {
     ($ca:expr, $field:expr) => {{
         let ca = $ca;

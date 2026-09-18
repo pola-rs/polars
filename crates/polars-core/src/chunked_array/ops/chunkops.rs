@@ -207,8 +207,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     pub fn rechunk_validity(&self) -> Option<PlBitmap> {
-        // A single chunk already holds the one mask this asks for, in whatever representation it
-        // is in: a scalar one is handed over as the single bit it is.
         if self.chunks.len() == 1 {
             return self.chunks[0].validity().map(PlBitmap::from);
         }
@@ -220,8 +218,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         let mut bm = BitmapBuilder::with_capacity(self.len());
         for arr in self.chunks() {
             match arr.validity() {
-                // A scalar mask is one bit for every element, which is extended as the run it
-                // stands for rather than written out first.
                 Some(v) => match v.scalar_value() {
                     Some(value) => bm.extend_constant(v.len(), value),
                     None => bm.extend_from_bitmap(v.flat_bitmap().unwrap()),

@@ -257,9 +257,6 @@ impl Wrap<&DataFrame> {
         };
 
         let groups = if let Some(groups) = group_by.as_ref() {
-            // The windowers read the timestamps and nothing else, so the mask is left in whatever
-            // representation it is in; only a values buffer that repeats one timestamp is written
-            // out. A `to_flat()` here would write the mask out along with it.
             let vals = dt.physical().downcast_as_array().to_flat_values();
             let ts = vals.as_slice();
 
@@ -309,9 +306,6 @@ impl Wrap<&DataFrame> {
             let monotonic = slice_groups_are_monotonic(&groups);
             PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, monotonic))
         } else {
-            // The windowers read the timestamps and nothing else, so the mask is left in whatever
-            // representation it is in; only a values buffer that repeats one timestamp is written
-            // out. A `to_flat()` here would write the mask out along with it.
             let vals = dt.physical().downcast_as_array().to_flat_values();
             let ts = vals.as_slice();
             let (groups, lower, upper) = group_by_windows(
@@ -384,9 +378,6 @@ impl Wrap<&DataFrame> {
 
         let groups = if let Some(groups) = group_by {
             let dt = dt.datetime().unwrap();
-            // The windowers read the timestamps and nothing else, so the mask is left in whatever
-            // representation it is in; only a values buffer that repeats one timestamp is written
-            // out. A `to_flat()` here would write the mask out along with it.
             let vals = dt.physical().downcast_as_array().to_flat_values();
             let ts = vals.as_slice();
 
@@ -422,9 +413,6 @@ impl Wrap<&DataFrame> {
             // so we can set this such that downstream code has this info
             dt.set_sorted_flag(IsSorted::Ascending);
             let dt = dt.datetime().unwrap();
-            // The windowers read the timestamps and nothing else, so the mask is left in whatever
-            // representation it is in; only a values buffer that repeats one timestamp is written
-            // out. A `to_flat()` here would write the mask out along with it.
             let vals = dt.physical().downcast_as_array().to_flat_values();
             let ts = vals.as_slice();
             let groups = group_by_values(

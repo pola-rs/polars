@@ -95,12 +95,9 @@ impl<B: PlArrayBuilder> PlFixedSizeListArrayBuilder<B> {
             self.values
                 .subslice_extend(values, start * self.width, length * self.width, share);
         } else if let Some(element) = other.scalar_value_ignore_validity() {
-            // Every element covers the one list the values hold, which is appended once per
-            // element.
             self.values
                 .subslice_extend_repeated(element, 0, self.width, length, share);
         }
-        // An empty array is neither, and the subslice it admits covers no element to append.
     }
 }
 
@@ -108,8 +105,6 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlFixedSizeListArrayBuilder<B> {
     type Array = PlFixedSizeListArray;
 
     fn reserve(&mut self, additional: usize) {
-        // Unlike a list array, the values an element covers are as many as the width, which is
-        // what the child can be reserved for.
         self.values.reserve(additional * self.width);
         self.validity.reserve(additional);
     }
@@ -144,8 +139,6 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlFixedSizeListArrayBuilder<B> {
     }
 
     fn extend_nulls(&mut self, length: usize) {
-        // The values of a null element are undetermined, but there are as many of them as there
-        // are of any other element: the width is what the elements are read a slot at a time.
         self.values.extend_nulls(length * self.width);
         self.validity.extend_constant(length, false);
         self.length += length;
@@ -189,7 +182,6 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlFixedSizeListArrayBuilder<B> {
                 );
             }
         } else {
-            // Every element covers the same list, so which of them is repeated is immaterial.
             self.extend_values(other, start, length * repeats, share);
         }
 
@@ -213,12 +205,10 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlFixedSizeListArrayBuilder<B> {
         self.values.reserve(idxs.len() * self.width);
 
         if other.values_are_flat() {
-            // A run of consecutive indices is a subslice, which the child appends in one go.
             for_each_run(idxs, |first, run_length| {
                 self.extend_values(other, first, run_length, share);
             });
         } else {
-            // Every index reads the one list the values hold.
             self.extend_values(other, 0, idxs.len(), share);
         }
 
@@ -236,7 +226,6 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlFixedSizeListArrayBuilder<B> {
         self.assert_width(other);
         self.values.reserve(idxs.len() * self.width);
 
-        // The ranges below index the values in either representation.
         let values = other.values();
 
         for idx in idxs {
@@ -247,7 +236,6 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlFixedSizeListArrayBuilder<B> {
                 self.values
                     .subslice_extend(values, range.start, self.width, share);
             } else {
-                // An out-of-bounds index stands for a null, which covers a width of nulls.
                 self.values.extend_nulls(self.width);
             }
         }

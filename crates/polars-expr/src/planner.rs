@@ -466,9 +466,6 @@ fn create_physical_expr_inner(
                 && !matches!(expr_arena.get(truthy), AExpr::Column(_) | AExpr::Literal(_));
             let mask_falsy = is_elementwise_rec(falsy, expr_arena)
                 && !matches!(expr_arena.get(falsy), AExpr::Column(_) | AExpr::Literal(_));
-            // `aexpr_to_leaf_names` names each leaf once, which is what an arm evaluated
-            // against a frame of its masked columns needs: a leaf read twice would otherwise ask
-            // for a frame holding that column twice.
             let truthy_mask_columns = if mask_truthy {
                 aexpr_to_leaf_names(truthy, expr_arena)
             } else {

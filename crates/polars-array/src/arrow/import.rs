@@ -207,8 +207,6 @@ pub fn struct_from_arrow(array: &StructArray) -> PlStructArray {
 
 /// Imports Arrow offsets as the 64-bit offsets a [`PlBinaryArray`] and a [`PlListArray`] hold.
 pub fn offsets_from_arrow<O: Offset>(offsets: &OffsetsBuffer<O>) -> Buffer<u64> {
-    // The dispatch is on the concrete type rather than on `O::IS_LARGE` so that a buffer of
-    // another width is never reinterpreted: only an `i64` buffer is handed to `try_transmute`.
     if let Some(offsets) = (offsets.buffer() as &dyn Any).downcast_ref::<Buffer<i64>>() {
         return offsets
             .clone()
@@ -254,8 +252,6 @@ fn primitive_from_arrow_dyn(array: &dyn Array, primitive: PrimitiveType) -> Box<
         PrimitiveType::UInt16 => import!(u16),
         PrimitiveType::UInt32 => import!(u32),
         PrimitiveType::UInt64 => import!(u64),
-        // A `View` and a `u128` are both `PrimitiveType::UInt128`, so the data type does not pin
-        // the element type down and the array itself has to say which of the two it is over.
         PrimitiveType::UInt128 => match array.as_any().downcast_ref::<PrimitiveArray<View>>() {
             Some(array) => Box::new(primitive_from_arrow(array)),
             None => import!(u128),

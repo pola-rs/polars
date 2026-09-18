@@ -15,8 +15,6 @@ pub fn any(arr: &PlBooleanArray) -> Option<bool> {
         return None;
     }
 
-    // Every element reads the one bit a scalar values buffer holds, and at least one of them is
-    // non-null: that bit is the answer, and no buffer is walked at all.
     if let Some(value) = arr.scalar_value_ignore_validity() {
         return Some(value);
     }
@@ -25,8 +23,6 @@ pub fn any(arr: &PlBooleanArray) -> Option<bool> {
 
     match flat_validity(arr) {
         Some(validity) => Some(values.intersects_with(validity)),
-        // Either there is no mask, or it marks every element valid: the check above has caught
-        // the only other thing a scalar mask can say.
         None => Some(values.set_bits() > 0),
     }
 }
@@ -39,7 +35,6 @@ pub fn all(arr: &PlBooleanArray) -> Option<bool> {
         return None;
     }
 
-    // As in `any`: the one bit every element shares is the answer.
     if let Some(value) = arr.scalar_value_ignore_validity() {
         return Some(value);
     }
@@ -63,8 +58,6 @@ pub fn all(arr: &PlBooleanArray) -> Option<bool> {
 
 /// Inverts false to true and vice versa. Nulls remain null.
 pub fn not(arr: &PlBooleanArray) -> PlBooleanArray {
-    // Inverting the backing bitmap keeps the representation: the single bit a scalar values
-    // buffer holds inverts in `O(1)` and still stands for every element.
     let inverted = match arr.scalar_value_ignore_validity() {
         Some(value) => PlBooleanArray::new_scalar(!value, arr.len()),
         None => PlBooleanArray::from_values(!arr.flat_values().unwrap()),
@@ -88,10 +81,6 @@ pub fn or(lhs: &PlBooleanArray, rhs: &PlBooleanArray) -> PlBooleanArray {
         "lhs and rhs must have the same length"
     );
 
-    // A side that is `true` throughout makes the answer `true` throughout, whatever the other
-    // side holds — a null included, which `true` absorbs under Kleene logic — and that answer is
-    // the single bit it repeats. A side that is `false` throughout leaves the other one as it is,
-    // in whatever representation it is in; neither side is written out.
     match (known_value(lhs), known_value(rhs)) {
         (Some(true), _) | (_, Some(true)) => return PlBooleanArray::new_scalar(true, lhs.len()),
         (Some(false), _) => return rhs.clone(),
@@ -110,8 +99,6 @@ pub fn and(lhs: &PlBooleanArray, rhs: &PlBooleanArray) -> PlBooleanArray {
         "lhs and rhs must have the same length"
     );
 
-    // The mirror of `or`: `false` is what absorbs a null here, and `true` is what leaves the
-    // other side alone.
     match (known_value(lhs), known_value(rhs)) {
         (Some(false), _) | (_, Some(false)) => return PlBooleanArray::new_scalar(false, lhs.len()),
         (Some(true), _) => return rhs.clone(),
@@ -130,9 +117,6 @@ pub fn xor(lhs: &PlBooleanArray, rhs: &PlBooleanArray) -> PlBooleanArray {
         "lhs and rhs must have the same length"
     );
 
-    // A side that is `false` throughout leaves the other one as it is, and one that is `true`
-    // throughout inverts it — which `not` does without writing a scalar values buffer out. Unlike
-    // `and` and `or`, neither value absorbs a null: the nulls of the other side carry over.
     match (known_value(lhs), known_value(rhs)) {
         (Some(l), Some(r)) => return PlBooleanArray::new_scalar(l != r, lhs.len()),
         (Some(false), None) => return rhs.clone(),
@@ -142,9 +126,6 @@ pub fn xor(lhs: &PlBooleanArray, rhs: &PlBooleanArray) -> PlBooleanArray {
         (None, None) => {},
     }
 
-    // A values buffer of one bit either flips the other side's or leaves it alone, and neither
-    // side is written out to say so. What `xor` has left to do here is carry the nulls of both
-    // sides over, which combine in whatever representation they came in.
     let length = lhs.len();
     let values = match (
         lhs.scalar_value_ignore_validity(),

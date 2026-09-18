@@ -10,8 +10,6 @@ use crate::utils::align_chunks_binary;
 /// The elements `mask` picks out, as a range where it says the same of every one of them.
 fn picked_out(mask: &PlBooleanArray) -> Either<Range<IdxSize>, Bitmap> {
     let picked = mask.true_and_valid();
-    // A mask of one bit per element still says the same of every one of them when all its bits
-    // agree -- which a constant predicate leaves behind once it has been evaluated over a column.
     match picked.agreed_value() {
         Some(true) => Either::Left(0..mask.len() as IdxSize),
         Some(false) => Either::Left(0..0),
@@ -74,8 +72,6 @@ where
                 else {
                     let mut av = Vec::with_capacity(self.len());
                     for chunk in self.downcast_iter() {
-                        // A chunk that repeats one value is filled in as that many copies of it,
-                        // rather than written out to a buffer that is then copied.
                         match chunk.scalar_value_ignore_validity() {
                             Some(value) => av.resize(av.len() + chunk.len(), value),
                             None => av.extend_from_slice(chunk.flat_values().unwrap().as_slice()),
@@ -112,7 +108,6 @@ where
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> PolarsResult<Self> {
         check_bounds!(self, mask);
 
-        // Fast path uses the kernel in polars-compute.
         if let (Some(value), false) = (value, mask.has_nulls()) {
             let (left, mask) = align_chunks_binary(self, mask);
 
@@ -125,10 +120,6 @@ where
         } else {
             let mask = mask.rechunk();
             match picked_out(mask.downcast_as_array()) {
-                // A mask that says the same of every element picks out all of them or none of
-                // them, and either way the answer is known without a single element being read:
-                // nothing replaced leaves the column as it is, and everything replaced leaves a
-                // column of the one value -- which `full` and `full_null` build in `O(1)` memory.
                 Either::Left(range) if range.is_empty() && self.chunks().len() == 1 => {
                     Ok(self.clone())
                 },
@@ -166,8 +157,6 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         let mut validity = MutableBitmap::with_capacity(self.len());
 
         for a in self.downcast_iter() {
-            // A bitmap that holds one bit standing for every element is extended as that many
-            // copies of the bit, rather than being written out to one bit per element first.
             match a.scalar_value_ignore_validity() {
                 Some(value) => values.extend_constant(a.len(), value),
                 None => values.extend_from_bitmap(a.flat_values().unwrap()),

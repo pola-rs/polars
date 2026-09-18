@@ -248,7 +248,6 @@ fn substring_settled_args(
             update_view(view, start, end, val)
         })
     };
-    // the array only remains sorted if we take a prefix
     if offset != 0 {
         out.set_sorted_flag(IsSorted::Not);
     }
@@ -260,9 +259,6 @@ pub(super) fn substring(
     offset: &Int64Chunked,
     length: &UInt64Chunked,
 ) -> StringChunked {
-    // A literal offset or length reaches this kernel already broadcast to the column's length, so
-    // it arrives as a chunk that repeats one value rather than as a column of one element. Ask
-    // what the argument repeats: one offset and one length settle the same walk either way.
     let repeats_over_ca = |arg_len: usize| arg_len == 1 || arg_len == ca.len();
     if ca.len() != 1
         && repeats_over_ca(offset.len())
@@ -335,7 +331,6 @@ fn head_settled_n(ca: &StringChunked, n: Option<i64>) -> StringChunked {
 }
 
 pub(super) fn head(ca: &StringChunked, n: &Int64Chunked) -> PolarsResult<StringChunked> {
-    // See `substring`: a literal `n` arrives repeated over the column, not as one element.
     if ca.len() != 1
         && (n.len() == 1 || n.len() == ca.len())
         && let Some(n) = n.scalar_value()
@@ -373,7 +368,6 @@ fn tail_settled_n(ca: &StringChunked, n: Option<i64>) -> StringChunked {
 }
 
 pub(super) fn tail(ca: &StringChunked, n: &Int64Chunked) -> PolarsResult<StringChunked> {
-    // See `substring`: a literal `n` arrives repeated over the column, not as one element.
     if ca.len() != 1
         && (n.len() == 1 || n.len() == ca.len())
         && let Some(n) = n.scalar_value()

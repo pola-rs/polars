@@ -14,9 +14,6 @@ impl Int64Chunked {
         let chunks = std::mem::take(&mut self.chunks)
             .into_iter()
             .map(|chunk| {
-                // A time holds a day's worth of nanoseconds, and an `i64` outside that range names
-                // none: the cast is that range check, and the chunk it answers is the chunk itself
-                // when every value fell inside it.
                 let casted = polars_compute::cast::cast(
                     &*chunk,
                     &DataType::Int64,

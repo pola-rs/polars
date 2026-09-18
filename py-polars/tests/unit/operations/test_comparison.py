@@ -1176,8 +1176,6 @@ def test_is_between_rejects_datetime_string_28253(dtype: pl.DataType) -> None:
 
 
 def test_list_comparison_over_representations() -> None:
-    # The values of both sides are downcast once, ahead of the walk over the elements,
-    # so the walk has to answer alike whichever representation each side is stored in.
     values = [[1, 2], None, [], [1], [None, 2], [3, 3]]
     other = [[1, 2], [1, 2], [], [2], [None, 2], [3]]
 
@@ -1209,7 +1207,6 @@ def test_list_comparison_over_representations() -> None:
             df.select(pl.col("a").eq_missing(pl.col("b")))["a"].to_list()
             == expected_eq_missing
         ), name
-        # Against a single list, which is the broadcast kernel.
         assert df.select(pl.col("a") == pl.col("b").first())["a"].to_list() == [
             True,
             None,
@@ -1221,7 +1218,6 @@ def test_list_comparison_over_representations() -> None:
 
 
 def test_list_comparison_repeated_element() -> None:
-    # Both sides repeat one list, which is compared once and answers for every element.
     repeated = pl.select(
         pl.repeat([1, 2], 3, dtype=pl.List(pl.Int64)).alias("a")
     ).to_series()
@@ -1243,10 +1239,6 @@ def test_list_comparison_repeated_element() -> None:
 
 
 def test_comparison_of_a_repeated_chunk_under_a_mask() -> None:
-    # A chunk that repeats one value under a mask of one bit per element is not scalar
-    # throughout — the mask says something different of each — but its values still
-    # are, and a comparison reads only those. The answers match the same values laid
-    # out flat, and the comparison itself is one bit.
     mask = pl.Series("m", [i % 3 != 0 for i in range(9)])
     cases: list[tuple[PolarsDataType, Any, Any]] = [
         (pl.Int64, 5, 4),
@@ -1278,21 +1270,16 @@ def test_comparison_of_a_repeated_chunk_under_a_mask() -> None:
                 assert_series_equal(masked <= rhs, flat <= rhs)
         assert_series_equal(masked.eq_missing(masked), flat.eq_missing(flat))
 
-    # A million rows of one value compare to one bit, not to a million of them.
     wide = pl.select(
         pl.when(pl.Series("m", [i % 3 != 0 for i in range(1_000_000)]))
         .then(pl.repeat(7, 1_000_000, dtype=pl.Int64))
         .alias("a")
     ).to_series()
-    # The mask is a bit per element and stays that size; the comparison itself does not.
     assert (wide > 3).estimated_size() < wide.len() // 8 + 1024
     assert (wide == 3).estimated_size() < wide.len() // 8 + 1024
 
 
 def test_if_then_else_over_a_repeated_chunk_under_a_mask() -> None:
-    # The same shape through `zip_with` and `when/then/otherwise`: the side whose values
-    # repeat is read off that one value, and the mask the answer carries is settled from
-    # the two sides' own masks.
     mask = pl.Series("m", [i % 2 == 0 for i in range(9)])
     valid = pl.Series("v", [i % 3 != 0 for i in range(9)])
     for dtype, value in ((pl.Int64, 5), (pl.String, "ab"), (pl.Boolean, True)):
@@ -1313,7 +1300,6 @@ def test_if_then_else_over_a_repeated_chunk_under_a_mask() -> None:
                 pl.when(mask).then(pl.lit(flat)).otherwise(pl.lit(other))
             ).to_series(),
         )
-        # One side a single value, which is the broadcast kernel.
         assert_series_equal(
             masked.zip_with(mask, pl.Series("b", [value], dtype=dtype)),
             flat.zip_with(mask, pl.Series("b", [value], dtype=dtype)),

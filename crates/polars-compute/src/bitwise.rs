@@ -73,11 +73,7 @@ macro_rules! count_bits {
         let validity = arr.validity().map(PlBitmap::from);
 
         match arr.scalar_value_ignore_validity() {
-            // One value stands for every element, so its bits are counted once.
             Some(value) => PlPrimitiveArray::new_scalar(op(value), arr.len()),
-            // A slot per element, and the loop is handed them as the slice they are rather than an
-            // iterator that asks how they are stored once per element -- which is what lets the
-            // count vectorise over the buffer the way it does for a plain one.
             None => PlPrimitiveArray::from_vec(
                 arr.flat_values()
                     .expect("the values are not repeated")
@@ -144,8 +140,6 @@ macro_rules! impl_bitwise_kernel {
                 count_bits!(self, trailing_zeros, $to_bits, $T)
             }
 
-            // `and` and `or` are idempotent, so an array that repeats one value reduces to that
-            // value without a single element being walked.
             #[inline(never)]
             fn reduce_and(&self) -> Option<Self::Scalar> {
                 match repeated_value(self) {
@@ -162,8 +156,6 @@ macro_rules! impl_bitwise_kernel {
                 }
             }
 
-            // `xor` cancels in pairs, so an even number of copies of one value leaves nothing of
-            // it and an odd number leaves a single copy.
             #[inline(never)]
             fn reduce_xor(&self) -> Option<Self::Scalar> {
                 match repeated_value(self) {
@@ -267,8 +259,6 @@ impl BitwiseKernel for PlBooleanArray {
     }
 
     fn reduce_xor(&self) -> Option<Self::Scalar> {
-        // As for the primitive arrays: an even number of copies of one bit cancels to `false`,
-        // and an odd number leaves that bit.
         if let Some((value, count)) = repeated_bit(self) {
             return Some(value && count % 2 == 1);
         }
@@ -276,8 +266,6 @@ impl BitwiseKernel for PlBooleanArray {
             return None;
         }
 
-        // A scalar bitmap is what the two checks above have already answered for: either it
-        // cancels to a parity, or every element under it is null.
         let values = self.flat_values()?;
 
         match flat_validity(self) {
@@ -286,8 +274,6 @@ impl BitwiseKernel for PlBooleanArray {
                     binary_fold(values, validity, |lhs, rhs| lhs & rhs, 0, |a, b| a ^ b);
                 Some(nonnull_parity.count_ones() % 2 == 1)
             },
-            // Either there is no mask, or it marks every element valid: a scalar mask that marks
-            // them all null is what the check above has caught.
             None => Some(values.set_bits() % 2 == 1),
         }
     }

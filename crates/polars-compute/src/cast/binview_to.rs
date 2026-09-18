@@ -71,15 +71,11 @@ where
 
 /// Writes the bytes every element's view reads out end to end, into an offset-backed binary.
 pub fn view_to_binary(from: &PlBinaryViewArray) -> PlBinaryArray {
-    // The one value every element of a scalar chunk reads is written once, and the offsets repeat
-    // the range it lies in.
     if let Some(value) = from.scalar_value_ignore_validity() {
         return PlBinaryArray::new_scalar(value, from.len())
             .with_validity(from.validity().map(PlBitmap::from));
     }
 
-    // Every view holds the length of what it reads, so what the values come to is known before
-    // the first of them is written: the buffer is allocated for all of them at once.
     PlBinaryArray::from_values_iter_with_bytes_capacity(from.values_iter(), from.total_bytes_len())
         .with_validity(from.validity().map(PlBitmap::from))
 }
@@ -138,7 +134,6 @@ where
     for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
 {
     let element_size = size_of::<T>();
-    // The maximum number of primitives in the result:
     let primitive_length = from.len().checked_mul(array_width).ok_or_else(|| {
         polars_err!(
             InvalidOperation:
@@ -147,7 +142,6 @@ where
             array_width
         )
     })?;
-    // The size of each array, in bytes:
     let row_size_bytes = element_size.checked_mul(array_width).ok_or_else(|| {
         polars_err!(
             InvalidOperation:
@@ -169,7 +163,6 @@ where
 
         let out = &mut out[index * array_width..(index + 1) * array_width];
         if cfg!(target_endian = "little") && IS_LITTLE_ENDIAN {
-            // Fast path: the memory of the numbers is the memory the element holds.
             let out = bytemuck::cast_slice_mut::<T, u8>(out);
             out.copy_from_slice(value);
             continue;

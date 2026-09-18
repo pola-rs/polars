@@ -150,7 +150,6 @@ where
             out.push(Zero::zero());
         }
 
-        // One value was pushed per element, and the mask holds one bit per element as well.
         let length = out.len();
         let array = PlPrimitiveArray::new(out.into(), length, Some(validity.into()));
         Ok(ChunkedArray::with_chunk(chunked_arr.name().clone(), array))
@@ -252,7 +251,6 @@ where
             }
         }
 
-        // One value was pushed per element, and the mask holds one bit per element as well.
         let length = out.len();
         let array = PlPrimitiveArray::new(out.into(), length, Some(validity.into()));
         Ok(ChunkedArray::with_chunk(ca_sorted.name().clone(), array))

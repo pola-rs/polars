@@ -21,8 +21,6 @@ where
         + SubAssign
         + Div<Output = T>,
 {
-    // The window machines walk the values as a slice and read the mask bit by bit, so the chunk
-    // is laid out here, once at the top, and only a buffer that repeats is written out.
     let arr = arr.to_flat();
 
     if weights.is_some() {

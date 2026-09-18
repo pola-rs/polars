@@ -482,7 +482,6 @@ fn any_values_to_binary_offset(
             AnyValue::BinaryOwned(s) => Ok(Some(&**s)),
             AnyValue::Null => Ok(None),
             av if strict => Err(invalid_value_error(&DataType::Binary, av)),
-            // A value of another type is not binary, so it reads as a missing one.
             _ => Ok(None),
         })
         .try_collect_arr()?;
@@ -823,8 +822,6 @@ fn any_values_to_array(
             .collect::<Vec<_>>()
     };
 
-    // The width is not read off the elements: it belongs to the dtype, which is the only thing
-    // that has it when every element is null — see `chunked_array::array`.
     let chunk = collect_array_chunk(elements, width, inner_type);
     #[allow(unused_mut)]
     let mut out: ArrayChunked = ChunkedArray::from_chunk_iter_and_field(

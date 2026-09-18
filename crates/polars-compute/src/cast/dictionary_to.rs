@@ -18,8 +18,6 @@ pub fn cast_to_dictionary(
         polars_bail!(InvalidOperation: "casting to {to_type:?} is not a dictionary");
     };
 
-    // An array that is a dictionary already is packed: what a cast off one changes is the width of
-    // its keys, which is what a consumer that reads them as a signed integer needs.
     if let ArrowDataType::Dictionary(from_index_type, _, _) = array.dtype() {
         return match_integer_type!(from_index_type, |$F| {
             recast_dictionary::<$F>(downcast(array), index_type, value_type, to_type)
@@ -45,7 +43,6 @@ fn recast_dictionary<F: DictionaryKey + num_traits::NumCast>(
     match_integer_type!(to_index_type, |$T| {
         let cast_keys = super::numeric_to_numeric_checked::<F, $T>(&keys);
 
-        // A key that does not fit the target width reads as null, which names no value at all.
         polars_ensure!(
             cast_keys.null_count() == array.keys().null_count(),
             ComputeError: "overflow"

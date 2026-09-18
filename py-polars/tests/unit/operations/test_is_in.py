@@ -809,9 +809,6 @@ def test_is_in_non_nested_container() -> None:
     "dtype", [pl.List(pl.Int64), pl.Array(pl.Int64, 2), pl.List(pl.String)]
 )
 def test_is_in_container_chunks(dtype: pl.DataType, nulls_equal: bool) -> None:
-    # The chunk a value of the container sits in is resolved once per container, not
-    # once per value read, so a container of several chunks or a sliced one has to
-    # answer the way the single flat chunk of the same elements does.
     rows: list[list[Any] | None]
     needles: list[Any]
     if dtype == pl.List(pl.String):
@@ -856,9 +853,6 @@ def test_is_in_container_chunks(dtype: pl.DataType, nulls_equal: bool) -> None:
 def test_is_in_repeated_needle_and_container(
     dtype: pl.DataType, value: Any, other: Any, nulls_equal: bool
 ) -> None:
-    # Every element of a chunk that repeats one element reads the same one, so the
-    # answer of that one element stands for the whole column — whichever side repeats,
-    # and whichever way round the two sides broadcast.
     length = 5
     repeated = pl.select(pl.repeat(pl.lit(value, dtype=dtype), length)).to_series()
     flat = pl.Series("a", [value] * length, dtype=dtype)
@@ -877,7 +871,6 @@ def test_is_in_repeated_needle_and_container(
             expected,
         )
 
-    # A single needle against a container every element of which is the same one.
     containers = pl.select(
         pl.repeat(pl.lit([value], dtype=pl.List(dtype)), length)
     ).to_series()

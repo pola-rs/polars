@@ -591,8 +591,6 @@ fn iejoin_tuples(
         y_ordered_by_x.len() - y_ordered_by_x.null_count(),
     );
     let l2_order = l2_order.rechunk();
-    // The order is read for its indices alone, so only a values buffer that repeats one index is
-    // written out; an `arg_sort` leaves none of them null for the mask to say anything about.
     let l2_order_flat = l2_order.downcast_as_array().to_flat_values();
     let l2_order = l2_order_flat.as_slice();
 

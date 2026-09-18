@@ -109,11 +109,7 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        // Elements that are all the same one are in order already, so every one of them stays
-        // where it is — rather than the whole column being row encoded and those rows sorted
-        // against each other. See `repeats_one_element`.
         if repeats_one_element(&self.0) {
-            // `arg_sort_row_fmt` collects its indices without a name; keep that.
             return arg_sort_identity(PlSmallStr::EMPTY, self.0.len());
         }
 
@@ -129,7 +125,6 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
-        // As in `arg_sort`: one repeated element is its own answer.
         if repeats_one_element(&self.0) {
             return Ok(sorted_flag_of(&self.0, options).into_series());
         }

@@ -52,9 +52,6 @@ impl ArrayChunked {
         // we create the series container from the inner array
         // so that the container has the proper dtype.
         let arr = self.downcast_iter().next().unwrap();
-        // Only the type of the values matters here: the container is a placeholder whose array is
-        // swapped out on every step, so the values are handed over in whatever representation they
-        // are in rather than being written out one list per element to seed it.
         let inner_values = arr.values().to_boxed();
 
         let inner_dtype = self.inner_dtype();
@@ -84,15 +81,7 @@ impl ArrayChunked {
         }
     }
 
-    /// The number of elements every one of which reads the one list this array holds, if that is
-    /// how it holds them: a single chunk whose values are that one list, with no null element to
-    /// read anything else for.
-    ///
-    /// A closure applied element by element then only has to see that one list — see
-    /// [`apply_amortized_same_type`](Self::apply_amortized_same_type).
-    ///
-    /// Only work that answers the same way twice may be shared like this: an unseeded sample has
-    /// to be taken per element even here.
+    /// The number of elements, if this array holds one list that every one of them reads.
     pub fn repeats_one_list(&self) -> Option<usize> {
         let [chunk] = self.chunks().as_slice() else {
             return None;
@@ -102,8 +91,7 @@ impl ArrayChunked {
         (arr.len() > 1 && arr.null_count() == 0 && arr.values_are_scalar()).then_some(arr.len())
     }
 
-    /// The one list every element reads, for [`repeats_one_list`](Self::repeats_one_list) to have
-    /// answered `Some`.
+    /// The one list every element reads, which [`repeats_one_list`](Self::repeats_one_list) saw.
     fn one_list(&self) -> AmortSeries {
         self.amortized_iter()
             .next()
@@ -168,8 +156,6 @@ impl ArrayChunked {
             return self.clone();
         }
 
-        // The one list every element reads is mapped once, and the answer is that one list
-        // repeated: `f` runs once rather than once per element, and the elements share it.
         if let Some(length) = self.repeats_one_list() {
             let out = f(self.one_list());
             return self.repeat_one_answer(&out, length);
@@ -200,7 +186,6 @@ impl ArrayChunked {
             return Ok(self.clone());
         }
 
-        // As in `apply_amortized_same_type`: one list mapped once, the answer shared.
         if let Some(length) = self.repeats_one_list() {
             let out = f(self.one_list())?;
             return Ok(self.repeat_one_answer(&out, length));
@@ -264,8 +249,6 @@ impl ArrayChunked {
         F: FnMut(Option<AmortSeries>) -> Option<K> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
-        // The one list every element reads is mapped once and the answer repeated, rather than
-        // that same list being read — and reduced — once per element. See `repeats_one_list`.
         if let Some(length) = self.repeats_one_list() {
             return repeat_one_answer(self.name().clone(), f(Some(self.one_list())), length);
         }
@@ -280,7 +263,6 @@ impl ArrayChunked {
         F: FnMut(Option<AmortSeries>) -> PolarsResult<Option<K>> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
-        // As in `apply_amortized_generic`: the one list is mapped once and the answer repeated.
         if let Some(length) = self.repeats_one_list() {
             return Ok(repeat_one_answer(
                 self.name().clone(),

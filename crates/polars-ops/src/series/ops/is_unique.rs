@@ -15,8 +15,6 @@ where
     T::Physical<'a>: TotalHash + TotalEq + Copy + ToTotalOrd,
     <Option<T::Physical<'a>> as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
-    // Every element of a chunk that repeats a single one occurs as often as the chunk is long, so
-    // none of them occurs just once.
     if let Some(length) = repeated_element_len(ca) {
         return BooleanChunked::full(ca.name().clone(), invert, length);
     }
@@ -24,11 +22,6 @@ where
     let len = ca.len();
     let mut idx_key = PlHashMap::new();
 
-    // One chunk at a time, not `ca.iter()` over the column: a chunk's own iterator resolves its
-    // representation once for the whole chunk in `fold`, and the flattening adapters between the
-    // column and it cost more per element than they hoist -- 1M booleans read 19 instructions an
-    // element more that way. The element index is a local the loop keeps in a register rather
-    // than one `enumerate` hands over alongside each element.
     let mut offset: IdxSize = 0;
     for arr in ca.downcast_iter() {
         offset = is_unique_chunk(arr.iter(), offset, &mut idx_key);
@@ -48,10 +41,6 @@ where
 }
 
 /// Walks one chunk, recording where each value first appears and whether it appears just once.
-///
-/// Instead of `group_tuples`, which allocates a full `Vec` per group, a boolean is toggled to
-/// false as soon as a group has a second entry. `offset` is how many elements the chunks already
-/// walked hold, and carries on into the next.
 fn is_unique_chunk<V, I>(
     values: I,
     offset: IdxSize,
@@ -74,9 +63,6 @@ where
 }
 
 fn is_unique_nested(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
-    // Every element of a chunk that repeats a single one occurs as often as the chunk is long, so
-    // none of them occurs just once — and the encoding below, which writes out a row per element
-    // before a single one is hashed, is never reached.
     if let Some(length) = repeated_element_len_series(s) {
         return Ok(BooleanChunked::full(s.name().clone(), invert, length));
     }
@@ -123,8 +109,6 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
         Struct(_) => {
             let ca = s.struct_().unwrap().clone();
 
-            // As in `is_unique_nested`: every row of a chunk that repeats a single one occurs as
-            // often as the chunk is long, so the pass over the unnested frame is never made.
             if let Some(length) = repeated_element_len(&ca) {
                 return Ok(BooleanChunked::full(s.name().clone(), invert, length));
             }

@@ -137,8 +137,6 @@ impl StaticArrayBuilder for PlStructArrayBuilder {
     }
 
     fn extend_nulls(&mut self, length: usize) {
-        // The value of a null element is undetermined, but its fields hold one like any other
-        // element's: the fields of a struct array hold one element per element of the array.
         for field in &mut self.fields {
             field.extend_nulls(length);
         }

@@ -17,14 +17,10 @@ where
     A: StaticArray,
     F: Fn(A::ValueT<'a>, A::ValueT<'a>) -> A::ValueT<'a>,
 {
-    // Every element of a scalar chunk is the one element it repeats, which is therefore its own
-    // extremum; a chunk that repeats a null has no extremum at all.
     if let Some(value) = arr.scalar_value() {
         return value;
     }
 
-    // A chunk with nothing but nulls in it has no extremum either, and walking its elements
-    // would only confirm that one null at a time.
     let null_count = arr.null_count();
     if null_count == arr.len() {
         return None;
@@ -50,7 +46,6 @@ where
         return value.map(|value| (value.clone(), value));
     }
 
-    // As in `reduce_values`: nothing but nulls leaves no extremum to fold.
     let null_count = arr.null_count();
     if null_count == arr.len() {
         return None;
@@ -74,23 +69,15 @@ enum Values<'a, T> {
 
 /// What `arr` leaves for a kernel to reduce, or `None` where it leaves nothing.
 fn values_of<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<Values<'_, T>> {
-    // A chunk with nothing but nulls in it, an empty one included, has no extremum.
     if arr.null_count() == arr.len() {
         return None;
     }
 
-    // Every element is the one value the buffer holds, and at least one element is not null, so
-    // that value is both the minimum and the maximum — read here in `O(1)`.
     if let Some(value) = arr.scalar_value_ignore_validity() {
         return Some(Values::Repeated(value));
     }
     let values = arr.flat_values().unwrap();
 
-    // A mask that is set everywhere marks nothing, and one that is unset everywhere left no
-    // element to reduce, which the null count has already answered — so a scalar mask says
-    // nothing either way, and an absent one says nothing at all. A flat mask with no unset bit
-    // in it marks nothing either, and handing it over would cost a bit read per element for an
-    // answer it never changes.
     let validity = (arr.null_count() > 0)
         .then(|| arr.validity().and_then(|validity| validity.flat_bitmap()))
         .flatten();

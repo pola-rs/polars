@@ -10,8 +10,6 @@ fn join_literal(
         unreachable!()
     };
 
-    // Every element reading the one list joins it to the one string, and that string stands for
-    // every element in turn: it is written once and repeated rather than written out `len` times.
     if let Some(length) = ca.repeats_one_list() {
         let mut buf = String::with_capacity(128);
         let one = ca.amortized_iter().next().flatten();
@@ -47,14 +45,11 @@ fn join_many(
         separator.len()
     );
 
-    // One list against one separator makes one string, however many elements read the two of
-    // them — see `join_literal`, which this defers to for the answer itself.
     if ca.repeats_one_list().is_some()
         && let Some(separator) = separator.scalar_value()
     {
         return match separator {
             Some(separator) => join_literal(ca, separator, ignore_nulls),
-            // A null separator writes a null row, and it is the separator for every row here.
             None => Ok(StringChunked::full_null(ca.name().clone(), ca.len())),
         };
     }

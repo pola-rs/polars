@@ -82,9 +82,6 @@ impl<T: NativeType> StaticArrayBuilder for PrimitiveArrayBuilder<T> {
         self.values.reserve(total);
 
         if total > 0 {
-            // One copy of the values, then doubled until it covers the whole repetition: copying
-            // the subslice once per repeat costs a call per repeat, where this costs one per
-            // doubling and each of them is a longer run than the last.
             let base = self.values.len();
             self.values
                 .extend_from_slice(&other.values()[start..start + length]);

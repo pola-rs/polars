@@ -39,9 +39,6 @@ pub fn _merge_sorted_dfs(
         .iter()
         .zip(right.columns())
         .map(|(lhs, rhs)| {
-            // Both sides repeating the same one element makes every row the merge lays down that
-            // element, whichever side it is taken from: the column repeats it rather than being
-            // written out a row at a time.
             if let Some(out) = merged_repeated_element(lhs, rhs, height) {
                 return Ok(out);
             }
@@ -67,25 +64,18 @@ pub fn _merge_sorted_dfs(
 /// Whether `column` stands for one element repeated over all of its rows.
 fn repeats_one_element(column: &Column) -> bool {
     match column {
-        // A scalar column is one value and a length, so asking its chunks would be what
-        // materializes it.
         Column::Scalar(_) => true,
-        // A column of one element repeats that element, however its chunk holds it.
         _ if column.len() <= 1 => true,
-        // Several chunks answer too, as long as they all repeat the same element.
         _ => column.as_materialized_series().repeats_one_element(),
     }
 }
 
-/// The merged column of two that both repeat the same one element, or `None` where either side
-/// holds more than that one.
+/// The merged column of two that both repeat the same one element, else `None`.
 fn merged_repeated_element(lhs: &Column, rhs: &Column, height: usize) -> Option<Column> {
     if !repeats_one_element(lhs) || !repeats_one_element(rhs) {
         return None;
     }
 
-    // The two elements are compared as the one-row columns they stand for, which reads a null on
-    // both sides as the same element rather than as two unequal ones.
     let first = lhs.slice(0, 1);
     if !first.equals_missing(&rhs.slice(0, 1)) {
         return None;
@@ -132,8 +122,6 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
 
             let mut validity = None;
             if lhs.has_nulls() || rhs.has_nulls() {
-                // A side with no mask is valid throughout, which is the single bit it takes to
-                // say so rather than one written out per element.
                 let lhs_validity = (lhs.rechunk_validity())
                     .unwrap_or_else(|| PlBitmap::new_scalar(true, lhs.len()));
                 let rhs_validity = (rhs.rechunk_validity())
@@ -151,8 +139,6 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
                 let mut merged_validity = merge_ca(&lhs_validity, &rhs_validity, merge_indicator);
                 merged_validity.rechunk_mut();
 
-                // The merged mask is handed over in whatever representation it is in: one that
-                // repeats a single bit says the same of every element without being written out.
                 validity = Some(PlBitmap::from(merged_validity.downcast_as_array().values()));
             }
 

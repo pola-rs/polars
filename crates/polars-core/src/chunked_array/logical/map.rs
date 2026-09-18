@@ -241,9 +241,6 @@ impl MapChunked {
             .downcast_iter()
             .map(|arr| {
                 let values = live_entry_field_chunk(arr, i);
-                // Where no row is null the entries are the ones the rows already window, so the
-                // offsets they are windowed by carry over -- a chunk whose rows all read the one
-                // range they hold keeps reading it.
                 if arr
                     .validity()
                     .is_none_or(|validity| validity.unset_bits() == 0)
@@ -493,9 +490,6 @@ pub(crate) fn pack_map_entries(keys: &Series, values: &Series) -> Series {
 }
 
 /// The range of the entries child the rows of `arr` cover between them.
-///
-/// The offsets hold the start of the first row and the end of the last whichever representation
-/// they are in, so the range is read off them without either being resolved.
 fn covered_entries(arr: &PlListArray) -> std::ops::Range<usize> {
     match arr.scalar_offsets() {
         Some(range) => range,
@@ -524,8 +518,6 @@ fn live_entry_mask(arr: &Flat<PlListArray>) -> Option<Bitmap> {
     let arr = arr.as_array();
     let validity = arr.validity().filter(|v| v.unset_bits() > 0)?;
 
-    // A mask with some bit unset over more than one element holds one bit per element; one over a
-    // single element reads as scalar, and is written out to be read alongside the offsets.
     let validity = validity.to_flat();
     let null_rows = !&*validity;
     // SAFETY: the mask holds one bit per row, so every index it names is in bounds.
@@ -536,7 +528,6 @@ fn live_entry_mask(arr: &Flat<PlListArray>) -> Option<Bitmap> {
         return None;
     }
 
-    // Fill live runs between null-row windows in bulk.
     let covered = covered_entries(arr);
     let (first, n_entries) = (covered.start, covered.len());
     let mut mask = BitmapBuilder::with_capacity(n_entries);
@@ -552,8 +543,6 @@ fn live_entry_mask(arr: &Flat<PlListArray>) -> Option<Bitmap> {
 }
 
 /// Rebuilds `arr` around `values`, the entries its rows cover, rebased onto them.
-///
-/// Only the outer row is rebuilt: entries nested inside `values` keep their own offsets.
 fn rebuild_entries(arr: &PlListArray, values: PlArrayRef) -> PlListArray {
     let covered = covered_entries(arr);
     assert_eq!(
@@ -566,9 +555,6 @@ fn rebuild_entries(arr: &PlListArray, values: PlArrayRef) -> PlListArray {
     let offsets_are_flat = arr.offsets_are_flat();
     let (_, offsets, length, _) = arr.clone().into_inner();
 
-    // Every offset moves back by the one start they all sit past, which leaves the buffer exactly
-    // as long as it was: a chunk whose rows read one range keeps its two offsets, and stays that
-    // way.
     let start = covered.start as u64;
     let offsets = Buffer::from(
         offsets
@@ -577,9 +563,8 @@ fn rebuild_entries(arr: &PlListArray, values: PlArrayRef) -> PlListArray {
             .collect::<Vec<_>>(),
     );
 
-    // SAFETY: the offsets are as many as they were, and so still flat or scalar for `length` as
-    // they were; shifting them all by the same start leaves them non-decreasing, and the last of
-    // them at however many entries there are.
+    // SAFETY: the offsets are as many as they were, so still flat or scalar for `length`, and
+    // shifting them all by the same start leaves them non-decreasing within the entries.
     unsafe {
         if offsets_are_flat {
             PlListArray::new_unchecked(values, offsets, length, validity)
@@ -593,8 +578,6 @@ fn rebuild_entries(arr: &PlListArray, values: PlArrayRef) -> PlListArray {
 ///
 /// Leaves the other field alone, so flattening keys never materializes values.
 fn live_entry_field_chunk(arr: &PlListArray, i: usize) -> PlArrayRef {
-    // The rows are read as the windows they tile the entries with, which a chunk whose rows all
-    // read the one range they hold does not lay out.
     let flat = arr.to_flat();
     let arr = flat.as_array();
 
@@ -636,9 +619,6 @@ fn live_lengths(arr: &PlListArray) -> impl Iterator<Item = usize> + '_ {
 
 /// Filter out entries under null rows and rebuild offsets; `None` if unchanged.
 pub(crate) fn compact_null_rows_chunk(arr: &PlListArray) -> Option<PlListArray> {
-    // A row is mapped onto the window of entries it covers, one each, which a chunk whose rows all
-    // read the one range they hold does not lay out: it is written out first. Already-flat offsets
-    // are handed over as they are.
     let flat = arr.to_flat();
     let arr = &*flat;
 
@@ -777,9 +757,6 @@ pub(crate) fn ensure_live_entries_non_null(storage: &ListChunked) -> PolarsResul
             unreachable!("map entries must have two arrays")
         };
 
-        // Nothing can be null anywhere, so the windows need not be walked at all. Both masks are
-        // read over ranges of entries below, so one that repeats a single bit is written out here
-        // — once, rather than at every window.
         let entry_nulls = entries
             .validity()
             .filter(|v| v.unset_bits() > 0)
@@ -793,8 +770,6 @@ pub(crate) fn ensure_live_entries_non_null(storage: &ListChunked) -> PolarsResul
         }
         let (entry_nulls, key_nulls) = (entry_nulls.as_ref(), key_nulls.as_ref());
 
-        // The rows are read as the windows they tile the entries with, which a chunk whose rows
-        // all read the one range they hold does not lay out.
         let flat = arr.to_flat();
         let arr = flat.as_array();
 
@@ -804,7 +779,6 @@ pub(crate) fn ensure_live_entries_non_null(storage: &ListChunked) -> PolarsResul
             continue;
         };
 
-        // Only a live row can be looked into, so the entries of the null ones are never read.
         let validity = validity.to_flat();
         for row in validity.true_idx_iter() {
             // SAFETY: the mask holds one bit per row, so every index it names is in bounds.
@@ -892,8 +866,6 @@ fn canonical_map_indices(
 ) -> Option<CanonicalMapIndices> {
     let arr = arr.as_array();
     let row_validity = arr.validity().filter(|v| v.unset_bits() > 0);
-    // A row that is null owns nothing, and every index below is read against the window the row
-    // covers, which flat offsets hold one of per row.
     let window = |row: usize| unsafe { arr.value_range_unchecked(row) };
 
     let mut seen = PlHashSet::new();
@@ -966,7 +938,6 @@ fn gather_entries(
                 take_unchecked(&**value_arr, &last_values),
             ],
             length,
-            // Only valid entries are gathered.
             None,
         )
     };
@@ -983,8 +954,6 @@ fn canonicalize_list_chunk(
     arr: &PlListArray,
     key_dtype: &DataType,
 ) -> PolarsResult<Option<PlArrayRef>> {
-    // The entries are read one per index below, which a chunk whose rows all read the one range
-    // they hold does not lay out, and neither does a scalar entry child.
     let flat = arr.to_flat();
     let arr = flat.as_array();
 
@@ -1058,8 +1027,6 @@ mod test {
     fn list_offsets(storage: &Series) -> Vec<i64> {
         let ca = storage.list().unwrap();
         assert_eq!(ca.chunks().len(), 1);
-        // The offsets are read as the buffer they are: the two of a single row read as scalar,
-        // whichever representation they were written in.
         let arr = ca.downcast_iter().next().unwrap().clone();
         let (_, offsets, _, _) = arr.into_inner();
         offsets.iter().map(|offset| *offset as i64).collect()

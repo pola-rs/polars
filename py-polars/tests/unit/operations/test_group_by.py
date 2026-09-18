@@ -3347,12 +3347,6 @@ def test_group_by_agg_primitive_opt_single_chunk_28684() -> None:
 def test_group_by_nested_column_that_repeats_one_element(
     value: Any, dtype: PolarsDataType
 ) -> None:
-    # The groups of a nested column are read off a row encoding of the whole column,
-    # written out before a single row is hashed. Elements that are all the same one
-    # fall in one group, which the representation says without hashing any of them.
-    # Over 1M repeated elements: `value_counts` 35.5 ms -> 0.01 and `mode` 24.6 -> 0.01
-    # over lists, 24.7 -> 0.01 and 20.1 -> 0.01 over arrays, 13.1 -> 0.02 and
-    # 15.1 -> 0.01 over structs.
     n = 1_000
     repeated = pl.select(
         pl.repeat(pl.lit(value, dtype=dtype), n).alias("a")

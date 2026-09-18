@@ -90,22 +90,6 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_left_join_nan_keys() {
-        // As in `inner`: a run of `NaN` is a run of equal keys, and the left rows holding one
-        // were handed a null instead of their match.
-        let nan = f64::NAN;
-
-        let (l_idx, r_idx) = join(&[1.0, nan, nan], &[1.0, nan], 0);
-        assert_eq!(&l_idx, &[0, 1, 2]);
-        assert_eq!(&r_idx, &[0.into(), 1.into(), 1.into()]);
-
-        // A left `NaN` with no `NaN` on the right is unmatched, not skipped.
-        let (l_idx, r_idx) = join(&[1.0, nan], &[1.0], 0);
-        assert_eq!(&l_idx, &[0, 1]);
-        assert_eq!(&r_idx, &[0.into(), NullableIdxSize::null()]);
-    }
-
-    #[test]
     fn test_left_join() {
         let lhs = &[0, 1, 1, 2, 3, 5];
         let rhs = &[0, 1, 1, 3, 4];

@@ -51,8 +51,6 @@ pub unsafe fn encode(
         return unsafe { encode_iter(buffer, input.iter(), opt, offsets, precision) };
     }
 
-    // Every row of a scalar chunk holds the same value, so it is encoded once and copied into
-    // each of them.
     match input.scalar_value_ignore_validity() {
         Some(value) => unsafe {
             encode_iter(

@@ -55,8 +55,6 @@ impl ListChunked {
 impl ChunkExplode for ListChunked {
     fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>> {
         let ca = self.rechunk();
-        // The offsets are handed out one per element, so a chunk that is not laid out flat is
-        // written out first.
         let listarr = ca.downcast_iter().next().unwrap().to_flat();
         Ok(export::offsets_to_arrow(listarr.offsets().clone()))
     }
@@ -70,7 +68,6 @@ impl ChunkExplode for ListChunked {
         // used to find the old list layout or indexes to expand a DataFrame in the same manner as
         // the `explode` operation.
         let ca = self.rechunk();
-        // The offsets are read as one run, so a chunk that is not laid out flat is written out.
         let listarr = ca.downcast_iter().next().unwrap().to_flat();
         let offsets_buf = export::offsets_to_arrow(listarr.offsets().clone());
         let offsets = offsets_buf.as_slice();

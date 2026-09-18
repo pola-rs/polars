@@ -26,8 +26,6 @@ pub fn search_sorted(
         );
     }
 
-    // Every element of a column that repeats one value searches to the same index, so search
-    // once and let that answer stand for the whole column instead of binary searching per row.
     if search_values.repeats_one_element() {
         let one = search_sorted(s, &search_values.head(Some(1)), side, descending)?;
         return Ok(one.new_from_index(0, search_values.len()));

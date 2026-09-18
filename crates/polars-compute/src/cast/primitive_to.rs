@@ -90,7 +90,6 @@ where
     I: NativeType + num_traits::NumCast + num_traits::AsPrimitive<O>,
     O: NativeType + num_traits::NumCast,
 {
-    // A wrapping cast answers for every value, so the mask is the one the array came with.
     if wrapped {
         return map_values(from, num_traits::AsPrimitive::<O>::as_);
     }
@@ -129,8 +128,6 @@ where
     T: NativeType,
     PlPrimitiveArray<T>: PlTotalEqKernel<Scalar = T>,
 {
-    // The comparison kernel answers over the representation the values are in, so a chunk that
-    // repeats one value is compared once and the answer repeats in turn.
     let values = from.tot_ne_kernel_broadcast(&T::default());
     PlBooleanArray::from_pl_bitmap(values).with_validity(from.validity().map(PlBitmap::from))
 }
@@ -145,16 +142,12 @@ pub fn primitive_to_binview<T: NativeType + SerPrimitive>(
         T::write(scratch, value);
     };
 
-    // The one value every element of a scalar chunk reads is written once, and the views repeat it.
     if let Some(value) = from.scalar_value_ignore_validity() {
         write(value, &mut scratch);
         return PlBinaryViewArray::new_scalar(&scratch, from.len())
             .with_validity(from.validity().map(PlBitmap::from));
     }
 
-    // Every value is written, whether or not it is an element: the mask of the input says which
-    // of them are, and it is applied to the views once rather than set a bit at a time inside the
-    // loop — which is what `push_value` would do, for a mask this then replaces.
     let values = from.flat_values().unwrap();
     let mut builder = PlBinaryViewArrayBuilder::with_capacity(values.len());
     for &value in values.iter() {
@@ -265,7 +258,6 @@ pub fn decimal_to_decimal(
     to_scale: usize,
 ) -> PlPrimitiveArray<i128> {
     if from_scale == to_scale {
-        // Widening the precision keeps every value, so the array itself is the answer.
         if to_precision >= from_precision {
             return from.clone();
         }
@@ -284,7 +276,6 @@ pub fn decimal_to_utf8view(from: &PlPrimitiveArray<i128>, from_scale: usize) -> 
 
     let mut fmt_buf = DecimalFmtBuffer::new();
 
-    // The one value every element of a scalar chunk reads is written once, and the views repeat it.
     let binview = if let Some(value) = from.scalar_value_ignore_validity() {
         PlBinaryViewArray::new_scalar(
             fmt_buf
@@ -296,8 +287,6 @@ pub fn decimal_to_utf8view(from: &PlPrimitiveArray<i128>, from_scale: usize) -> 
         let values = from.flat_values().unwrap();
         let mut builder = PlBinaryViewArrayBuilder::with_capacity(values.len());
         for &value in values.iter() {
-            // As in `primitive_to_binview`: the mask of the input is applied to the views below,
-            // so the loop keeps none of its own.
             builder.push_value_ignore_validity(
                 fmt_buf
                     .format_dec128(value, from_scale, false, false)

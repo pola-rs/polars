@@ -23,7 +23,6 @@ where
         &self.field
     }
     pub fn new(name: PlSmallStr, capacity: usize) -> Self {
-        // The mask builder holds off allocating until the first null is appended.
         let mut bitmask_builder = OptBitmapBuilder::default();
         bitmask_builder.reserve(capacity);
 
@@ -163,8 +162,6 @@ where
 
 /// Convert a Series of dtype object to an Arrow Array of FixedSizeBinary
 pub(crate) fn object_series_to_arrow_array(s: &Series) -> ArrayRef {
-    // The object column knows the type of its values, which is what packing them into bytes
-    // needs; this dispatches to it.
     s.object_values_to_arrow()
 }
 

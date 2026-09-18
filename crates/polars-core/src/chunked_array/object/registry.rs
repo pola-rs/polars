@@ -128,8 +128,6 @@ pub fn register_object_builder(
     array_getter: ObjectArrayGetter,
     with_gil: WithGIL,
 ) {
-    // The type an object's values are laid out as is also needed in `polars-dtype`, which holds
-    // `DataType` but has no business knowing about builders or converters.
     polars_dtype::object::set_object_physical_type(physical_dtype.clone());
 
     let reg = GLOBAL_OBJECT_REGISTRY.deref();

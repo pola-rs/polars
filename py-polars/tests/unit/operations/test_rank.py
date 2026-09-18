@@ -134,10 +134,6 @@ def test_rank_series() -> None:
 def test_rank_values_that_repeat_under_a_mask(
     value: object, dtype: pl.DataType, method: str, descending: bool
 ) -> None:
-    # Every element the mask says is there holds the same value, so they are one tie
-    # group and the answer is one rank under the column's own mask. The column does not
-    # repeat one *element* -- the mask makes some of them null -- so the scalar answer
-    # has to be read off the values axis alone.
     n = 999
     masked = pl.select(
         pl.when(pl.int_range(0, n) % 3 != 0)
@@ -152,6 +148,5 @@ def test_rank_values_that_repeat_under_a_mask(
         written.rank(method, descending=descending, seed=1),  # type: ignore[arg-type]
     )
 
-    # A rank of one repeated value is one rank: it is held once, not once per element.
     if method in ("average", "min", "max", "dense"):
         assert ranked.estimated_size() < written.estimated_size()

@@ -96,7 +96,6 @@ impl VarState {
             mean,
             dp: deviation * deviation * weight,
         };
-        // A chunk whose every element is null weighs nothing and has no mean at all.
         state.clear_zero_weight_nan();
         state
     }
@@ -408,12 +407,8 @@ impl SkewState {
 
     /// The state of the `length` elements of `arr` starting at `start`, folded in one pass.
     pub fn from_array(arr: &PlPrimitiveArray<f64>, start: usize, length: usize) -> Self {
-        // Slicing preserves the representation, so a range of a chunk that repeats one value
-        // repeats it too and is read in `O(1)` below.
         let arr = arr.clone().sliced(start, length);
 
-        // Every element of a chunk that repeats one value is that value, whatever the range's
-        // length, so the whole range weighs in at once.
         if let Some(value) = arr.scalar_value_ignore_validity() {
             return Self::repeated(value, weight_of(&arr));
         }
@@ -693,9 +688,6 @@ where
 }
 
 /// Folds the non-null values of `arr` into `f`, `CHUNK_SIZE` of them at a time.
-///
-/// A flat chunk is walked as the values slice it is: driving the generic iterator instead costs
-/// one test of the representation per element, which the chunk-filling loop cannot hoist.
 fn chunk_values_as_float<T, F>(arr: &PlPrimitiveArray<T>, f: F)
 where
     T: NativeType + AsPrimitive<f64>,
@@ -735,8 +727,6 @@ where
 }
 
 /// Folds the pairs of `x` and `y` that are null in neither into `f`, `CHUNK_SIZE` at a time.
-///
-/// Two flat chunks are walked as the values slices they are; see [`chunk_values_as_float`].
 fn chunk_value_pairs_as_float<T, U, F>(x: &PlPrimitiveArray<T>, y: &PlPrimitiveArray<U>, f: F)
 where
     T: NativeType + AsPrimitive<f64>,
@@ -756,8 +746,6 @@ pub fn var<T>(arr: &PlPrimitiveArray<T>) -> VarState
 where
     T: NativeType + AsPrimitive<f64>,
 {
-    // Every element of a chunk that repeats one value is that value, which is therefore the
-    // chunk's mean: the whole chunk weighs in at once, without an element of it being walked.
     if let Some(value) = arr.scalar_value_ignore_validity() {
         return VarState::repeated(value.as_(), weight_of(arr));
     }
@@ -774,8 +762,6 @@ where
 {
     assert!(x.len() == y.len());
 
-    // Two chunks that each repeat one value are each their own mean, and the pair weighs in at
-    // the elements where both of them are non-null.
     if let (Some(x_value), Some(y_value)) = (
         x.scalar_value_ignore_validity(),
         y.scalar_value_ignore_validity(),

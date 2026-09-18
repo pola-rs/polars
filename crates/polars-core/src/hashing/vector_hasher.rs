@@ -56,18 +56,12 @@ fn insert_null_hash(
             let validity = arr.validity().unwrap();
 
             match validity.flat_bitmap() {
-                // A mask that holds one bit per element is walked by the bitmap's own iterator,
-                // which shifts the bits off a word it is holding. Zipping drives it one `next`
-                // at a time, which is what the representation has to be settled ahead of the
-                // walk for: stepping the mask itself is cheap, matching how it is held is not.
                 Some(bitmap) => bitmap
                     .iter()
                     .zip(&mut hashes[offset..])
                     .for_each(|(valid, h)| {
                         *h = [null_h, *h][valid as usize];
                     }),
-                // A mask that says the same of every element says it without a bit per element,
-                // and a chunk that has a null in it is a chunk that is null all the way through.
                 None => {
                     debug_assert_eq!(arr.null_count(), arr.len());
                     if !validity.scalar_value().unwrap_or(false) {
@@ -101,7 +95,6 @@ fn numeric_vec_hash<T>(
     #[allow(unused_unsafe)]
     #[allow(clippy::useless_transmute)]
     ca.downcast_iter().for_each(|arr| {
-        // A chunk that repeats one value hashes it once, and that hash repeats in turn.
         if let Some(value) = arr.scalar_value_ignore_validity() {
             let hash = random_state.hash_one(value.to_total_ord());
             buf.extend(std::iter::repeat_n(hash, arr.len()));
@@ -131,9 +124,6 @@ fn numeric_vec_hash_combine<T>(
 {
     let null_h = get_null_hash_value(&random_state);
 
-    // Inlined from ahash. This ensures we combine with the previous state. Be careful not to xor
-    // the hash directly with the existing hash, it would lead to 0-hashes for 2 columns
-    // containing equal values.
     fn combine(h: &mut u64, to_hash: u64) {
         *h = folded_multiply(to_hash ^ folded_multiply(*h, MULTIPLE), MULTIPLE);
     }
@@ -143,12 +133,7 @@ fn numeric_vec_hash_combine<T>(
         let hashes = &mut hashes[offset..offset + arr.len()];
         offset += arr.len();
 
-        // Combining reads one hash per element out of the buffer either way. Which hash that is
-        // depends on how the chunk holds its values and on what its mask says of them, and both
-        // are settled here rather than asked per element: a chunk that repeats a single value
-        // hashes it once, and a mask that says the same of every element says it once.
         match arr.null_count() {
-            // No element is null, so each one combines with the hash of the value it holds.
             0 => match arr.flat_values() {
                 Some(values) => values
                     .as_slice()
@@ -164,15 +149,11 @@ fn numeric_vec_hash_combine<T>(
                 let validity = arr.validity().unwrap();
 
                 let Some(bitmap) = validity.flat_bitmap() else {
-                    // A mask that says the same of every element, in a chunk that has a null in
-                    // it, says every one of them is null: the values are never read.
                     debug_assert_eq!(arr.null_count(), arr.len());
                     hashes.iter_mut().for_each(|h| combine(h, null_h));
                     return;
                 };
 
-                // The mask holds a bit per element and is walked by its own iterator, which
-                // shifts the bits off a word it is holding rather than loading a byte apiece.
                 match arr.flat_values() {
                     Some(values) => bitmap
                         .iter()
@@ -439,16 +420,10 @@ impl VecHash for BooleanChunked {
         let null_h = get_null_hash_value(&random_state);
         self.downcast_iter().for_each(|arr| {
             if arr.null_count() == 0 {
-                // A chunk holding a bit per element is read by the bitmap's own iterator, which
-                // shifts the bits off a word it holds and knows how many are left: the values go
-                // straight into the buffer. Its own `values_iter()` would answer each bit from a
-                // reader it has to match the representation of once an element, and `extend`
-                // would check the capacity as often.
                 match arr.flat_values() {
                     Some(values) => buf.extend_trusted_len(
                         values.iter().map(|v| if v { true_h } else { false_h }),
                     ),
-                    // Every element is the same one, so it is hashed once and that hash repeats.
                     None => {
                         let h = if arr.values().scalar_value().unwrap_or(false) {
                             true_h
@@ -480,8 +455,6 @@ impl VecHash for BooleanChunked {
 
         let mut offset = 0;
         self.downcast_iter().for_each(|arr| {
-            // See `vec_hash`: which of the three hashes each element combines with is settled by
-            // how the chunk holds its values, and that is asked once here rather than per bit.
             match arr.null_count() {
                 0 => match arr.flat_values() {
                     Some(values) => values.iter().zip(&mut hashes[offset..]).for_each(|(v, h)| {

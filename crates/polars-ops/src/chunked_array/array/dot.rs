@@ -112,8 +112,6 @@ fn dot_primitive<T>(
 where
     T: NativeType + PlNumArithmetic + SumCast,
     T::Sum: WrappingAdd,
-    // Every `SumCast` impl sums into a type that stands for itself; saying so lets the chunk of
-    // sums be read as a `ChunkedArray` of that type.
     <T::Sum as NumericNative>::PolarsType: PolarsNumericType<Native = T::Sum>,
 {
     let lhs = lhs.rechunk();
@@ -121,9 +119,6 @@ where
     let lhs_array = lhs.downcast_as_array();
     let rhs_array = rhs.downcast_as_array();
 
-    // Values holding a single list are the list every element reads, so a side stored that way is
-    // read at row 0 throughout rather than being written out one list per element. Only the values
-    // are pinned: the outer mask still says something different about each element.
     let lhs_values_shared = lhs_array.values_are_scalar();
     let rhs_values_shared = rhs_array.values_are_scalar();
 
@@ -145,8 +140,6 @@ where
     let lhs_inner_validity = lhs_values.validity();
     let rhs_inner_validity = rhs_values.validity();
     let width = lhs.width();
-    // A side whose values hold the one list every element reads carries a single width of them;
-    // otherwise it carries one width per element.
     debug_assert!(if lhs_values_shared {
         lhs_slice.len() >= width
     } else {
@@ -180,7 +173,6 @@ where
     if lhs_array.validity().is_none() && rhs_array.validity().is_none() {
         let output = dot_outer_all_valid(&row_reducer, lhs_row_pinned, rhs_row_pinned, output_len);
         let output = PlPrimitiveArray::from_vec(output);
-        // The sum of a `T` is a `T::Sum`, and that is the type of the chunk just built.
         return Ok(
             ChunkedArray::<<T::Sum as NumericNative>::PolarsType>::with_chunk(
                 lhs.name().clone(),
@@ -220,7 +212,6 @@ where
             .into_opt_validity()
             .map(PlBitmap::from_bitmap),
     );
-    // The sum of a `T` is a `T::Sum`, and that is the type of the chunk just built.
     Ok(
         ChunkedArray::<<T::Sum as NumericNative>::PolarsType>::with_chunk(
             lhs.name().clone(),

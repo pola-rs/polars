@@ -16,7 +16,6 @@ pub fn rolling_var<T>(
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
-    // The chunk becomes a slice here, once, out of the window loop; see the module docs.
     let values = values.to_flat_values();
     let values = values.as_slice();
 
@@ -65,7 +64,6 @@ pub fn rolling_skew<T>(
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
-    // The chunk becomes a slice here, once, out of the window loop; see the module docs.
     let values = values.to_flat_values();
     let values = values.as_slice();
 
@@ -92,7 +90,6 @@ pub fn rolling_kurtosis<T>(
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
-    // The chunk becomes a slice here, once, out of the window loop; see the module docs.
     let values = values.to_flat_values();
     let values = values.as_slice();
 

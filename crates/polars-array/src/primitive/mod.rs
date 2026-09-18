@@ -177,8 +177,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Creates a [`PlPrimitiveArray`] of `length` copies of `value`, in `O(1)` memory.
     #[inline]
     pub fn new_scalar(value: T, length: usize) -> Self {
-        // There is no element for the value to be shared by when there are no elements at all,
-        // which is why an empty array is the one that keeps nothing of the value it repeats.
         let values = if length == 0 {
             Buffer::new()
         } else {
@@ -196,8 +194,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     #[inline]
     pub fn new_full_null(length: usize) -> Self {
         Self {
-            // The value of a null element is undetermined, so the one slot every element shares
-            // is never read and need not be written.
             values: bytes::buffer_from_bytes::<T>(bytes::undetermined(scalar_buffer_len(length))),
             length,
             validity: Some(Bitmap::new_zeroed(scalar_buffer_len(length))),
@@ -214,9 +210,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// The values slots this array holds, if no other array shares them.
-    ///
-    /// One slot per element if the values are flat, and the single slot every element reads if
-    /// they are scalar: writing over them leaves the array in the representation it is in.
     #[inline]
     pub fn flat_or_scalar_values_mut(&mut self) -> Option<&mut [T]> {
         self.values.get_mut_slice()
@@ -243,13 +236,9 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// A builder that continues this array, reusing its values allocation rather than copying it.
     pub fn into_builder(self) -> Either<Self, PlPrimitiveArrayBuilder<T>> {
         if self.flat_values().is_none() {
-            // Scalar values are a single slot standing for `length` elements; there is no
-            // allocation of the right size to reclaim.
             return Either::Left(self);
         }
 
-        // The mask is read off the array before it is taken apart, which is also what resolves a
-        // scalar one into the flat bits a builder appends to.
         let mut builder_validity = OptBitmapBuilder::default();
         subslice_extend_validity(&mut builder_validity, self.validity(), 0, self.length);
 
@@ -264,7 +253,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
                 values,
                 builder_validity,
             )),
-            // The buffer came back untouched, so the array it came from is rebuilt as it was.
             Either::Left(values) => Either::Left(Self {
                 values,
                 length,
@@ -394,8 +382,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
             return Self::new_full_null(length);
         }
 
-        // The value of a null element is undetermined, so it is repeated as it is found: it is the
-        // mask that makes every element of the result null.
         let value = unsafe { self.value_unchecked(index) };
 
         Self::new_scalar(value, length)
@@ -404,7 +390,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Returns this array with its elements in the opposite order, keeping the representation.
     #[must_use]
     pub fn reversed(&self) -> Self {
-        // A chunk that repeats one element reads the same either way round.
         if self.is_scalar() {
             return self.clone();
         }
@@ -414,12 +399,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
             .as_ref()
             .map(|validity| PlBitmap::new_broadcast(validity.clone(), self.length).reversed());
 
-        // The values axis keeps whichever representation it is in, so the constructor that takes
-        // it has to be the one for that representation.
         if self.values_are_scalar() {
-            // One value stands for every element whichever way they are read, so only the mask
-            // above was written out.
-            // SAFETY: the values buffer is the one slot it already was.
             unsafe { Self::new_broadcast_unchecked(self.values.clone(), self.length, validity) }
         } else {
             let mut values = Vec::with_capacity(self.length);
@@ -463,11 +443,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
             return Cow::Owned(Buffer::new());
         }
 
-        // Writing the repeated value out is the one costly step here, and it reads nothing of the
-        // value but its bytes, so it is taken over the byte class of `T` rather than over `T`.
         Cow::Owned(if self.scalar_value() == Some(None) {
-            // Every element is null, and the value of a null element is undetermined, so the
-            // repeated value need not be written out: a zeroed buffer stands in for it.
             bytes::buffer_from_bytes::<T>(bytes::undetermined(self.length))
         } else {
             let value = bytes::to_bytes(self.values[0]);
@@ -512,12 +488,8 @@ impl<T: NativeType> FromIterator<Option<T>> for PlPrimitiveArray<T> {
         let (lower, _) = iter.size_hint();
 
         let mut values = Vec::with_capacity(lower);
-        // `BitmapBuilder`, not `MutableBitmap`: it counts its set bits as it goes, so asking
-        // whether any element is null afterwards is `O(1)` rather than a scan of the whole mask.
         let mut validity = BitmapBuilder::with_capacity(lower);
 
-        // One capacity check covers both buffers, which is what keeps an element append down to
-        // the two stores it is.
         for item in iter {
             if values.len() == values.capacity() {
                 values.reserve(1);
@@ -557,8 +529,6 @@ impl<T: NativeType> PartialEq for PlPrimitiveArray<T> {
             return false;
         }
 
-        // Never walk two scalar arrays element by element: their length is unbounded by their
-        // memory use.
         if let (Some(lhs), Some(rhs)) = (self.scalar_value(), other.scalar_value()) {
             return lhs == rhs;
         }

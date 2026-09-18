@@ -113,8 +113,6 @@ where
     T: IsFloat + NativeType,
     Out: NativeType,
 {
-    // Nothing is laid out here: whether any element is null is a count, and each of the two
-    // implementations resolves the representation itself.
     match arr.as_no_nulls() {
         Some(no_nulls) => {
             _rolling_apply_agg_window_no_nulls::<NoNullsAgg, _, _, _>(no_nulls, offsets, params)
@@ -135,8 +133,6 @@ where
     T: IsFloat + NativeType,
     Out: NativeType,
 {
-    // The window machine walks its values as a slice and reads the mask bit by bit, so the chunk
-    // is laid out here, once, and only what repeats is written out.
     let arr = arr.to_flat();
     let values = arr.as_slice();
     let mask = arr
@@ -187,9 +183,6 @@ where
     T: IsFloat + NativeType,
     Out: NativeType,
 {
-    // The window machine walks its values as a slice: the representation is resolved here, once,
-    // and a buffer that already holds one slot per element is handed over as it stands. No element
-    // is null, so the mask is not read at all.
     let values = arr.to_flat_values();
     let values = values.as_slice();
 

@@ -17,8 +17,7 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::series::implementations::null::NullChunked;
 
-/// The body of a comparison between two chunked arrays, taking the shortcut a side that repeats a
-/// single value allows.
+/// The body of a comparison between two chunked arrays, with the repeated-side shortcut.
 macro_rules! broadcast_cmp {
     (@null full_null, $ca:ident) => {
         BooleanChunked::full_null(PlSmallStr::EMPTY, $ca.len())
@@ -77,9 +76,6 @@ where
             self, rhs,
             broadcast: |value| [self.equal_missing(value), rhs.equal_missing(value)],
             null: is_null,
-            // The chunks go to the kernel in the representation they are in: a side whose
-            // values repeat one value is compared once, where writing them out first would
-            // compare the same value against the same value a million times over.
             flat: arity::binary_elementwise_kernel(
                 self,
                 rhs,
@@ -315,8 +311,6 @@ impl ChunkCompareIneq<&BooleanChunked> for BooleanChunked {
     fn lt(&self, rhs: &BooleanChunked) -> BooleanChunked {
         broadcast_cmp!(
             self, rhs,
-            // No boolean is smaller than `false`, and none is greater than `true`: the value
-            // alone settles the comparison, and the answer is the one bit that says so.
             bounded: [
                 Some(false) => repeated_answer(self, false),
                 Some(true) => repeated_answer(rhs, false),
@@ -338,8 +332,6 @@ impl ChunkCompareIneq<&BooleanChunked> for BooleanChunked {
     fn lt_eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
         broadcast_cmp!(
             self, rhs,
-            // Every boolean is at most `true` and at least `false`: the value alone settles the
-            // comparison, and the answer is the one bit that says so.
             bounded: [
                 Some(true) => repeated_answer(self, true),
                 Some(false) => repeated_answer(rhs, true),
@@ -534,7 +526,6 @@ where
     F: Fn(&PlListArray, &PlListArray) -> PlBitmap,
     B: Fn(&PlListArray, &Box<dyn PlArray>) -> PlBitmap,
 {
-    // Broadcast: a side that repeats a single list is compared against that list, not written out.
     let length = arity::broadcast_height(lhs.len(), rhs.len())
         .expect("cannot compare arrays of different lengths");
     match (lhs.scalar_value(), rhs.scalar_value()) {
@@ -693,8 +684,6 @@ where
     if !is_missing && (a.has_nulls() || b.has_nulls()) {
         use polars_array::bitmap::combine_validities_and;
 
-        // A side of a single element stands for every element of the output, and so does the one
-        // bit its mask holds: the two masks are put over the output before they are combined.
         let length = out.len();
         let over_output = |validity: Option<PlBitmap>| match validity {
             Some(v) if v.len() == 1 && length != 1 => Some(PlBitmap::new_scalar(v.get(0), length)),
@@ -773,7 +762,6 @@ where
     F: Fn(&PlFixedSizeListArray, &PlFixedSizeListArray) -> PlBitmap,
     B: Fn(&PlFixedSizeListArray, &Box<dyn PlArray>) -> PlBitmap,
 {
-    // Broadcast: see [`_list_comparison_helper`], which dispatches the same way.
     let length = arity::broadcast_height(lhs.len(), rhs.len())
         .expect("cannot compare arrays of different lengths");
     match (lhs.scalar_value(), rhs.scalar_value()) {
@@ -887,8 +875,6 @@ impl Not for &BooleanChunked {
     type Output = BooleanChunked;
 
     fn not(self) -> Self::Output {
-        // Inverting a scalar values buffer is inverting the one bit it holds, so a chunk that
-        // repeats a value stays `O(1)`.
         let chunks = self.downcast_iter().map(|arr| {
             PlBooleanArray::from_pl_bitmap(invert(arr.values()))
                 .with_validity(arr.validity().map(PlBitmap::from))

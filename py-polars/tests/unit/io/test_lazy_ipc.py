@@ -653,10 +653,6 @@ import polars as pl
 (_, n_chunks) = sys.argv
 
 
-# The chunks are clones of one series, so they share its values however many of
-# them there are: what grows with `n_chunks` is what the sink holds, which is what
-# this measures. A column that repeats a single element holds it once but is written
-# out per chunk, and would measure the writing rather than the holding.
 s = pl.Series(range(1_000_000), dtype=pl.UInt32)
 df = pl.concat(s for _ in range(int(n_chunks))).to_frame()
 

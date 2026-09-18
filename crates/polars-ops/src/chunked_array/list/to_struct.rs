@@ -38,8 +38,6 @@ pub trait ToStruct: AsList {
                             .collect(),
                     ),
                 )),
-                // `rechunk_validity` hands back a flat mask, one bit per element, which is what
-                // a struct array takes; its field names live in the `DataType` above.
                 vec![Box::new(PlStructArray::new(
                     field_arrays,
                     ca.len(),

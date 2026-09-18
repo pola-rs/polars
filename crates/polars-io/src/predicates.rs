@@ -108,15 +108,11 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
 
         bm.reserve(true_mask.len());
         for chunk in true_mask.downcast_iter() {
-            // What is appended is the values `and` the mask, which are combined as the single bit
-            // they stand for where either is scalar.
             let bits = combine_validities_and(Some(chunk.values()), chunk.validity())
                 .expect("the values mask is always there");
 
             match bits.scalar_value() {
-                // One bit standing for the whole chunk is extended over it, not written out.
                 Some(bit) => bm.extend_constant(bits.len(), bit),
-                // What is left holds one bit per element already, so this borrows it as it is.
                 None => bm.extend_from_bitmap(&bits.as_ref().to_flat()),
             }
         }
@@ -147,9 +143,6 @@ fn predicate_values_to_series(
     // Polars stores the values of some Arrow types scaled, e.g. Arrow seconds as
     // milliseconds, so the predicate series cannot be constructed zero-copy.
     if DataType::arrow_value_scale(source_arrow_dtype) != 1 {
-        // The values are the counts the source unit holds, which is what stamping the source type
-        // onto them says: the import is what then reads them in the target unit. The statistics
-        // were decoded off a column of that very type, so they are already the right width for it.
         let mut values = values.to_boxed();
         assert_eq!(
             values.dtype().to_physical_type(),

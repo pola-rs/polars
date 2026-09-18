@@ -229,8 +229,6 @@ impl PlBooleanArray {
     #[inline]
     pub fn flat_values_mut(&mut self) -> Option<&mut Bitmap> {
         if self.values_are_scalar() {
-            // A single bit stands for every element; there is nothing laid out per element to
-            // write into.
             None
         } else {
             Some(&mut self.values)
@@ -313,11 +311,8 @@ impl PlBooleanArray {
     }
 
     /// Returns this array with its elements in the opposite order, keeping the representation.
-    ///
-    /// Both axes are bitmaps, which reverse a word at a time, so no element is read out.
     #[must_use]
     pub fn reversed(&self) -> Self {
-        // A chunk that repeats one element reads the same either way round.
         if self.is_scalar() {
             return self.clone();
         }
@@ -327,11 +322,7 @@ impl PlBooleanArray {
             .as_ref()
             .map(|validity| PlBitmap::new_broadcast(validity.clone(), self.length).reversed());
 
-        // The values axis keeps whichever representation it is in, so the constructor that
-        // takes it has to be the one for that representation.
         if self.values_are_scalar() {
-            // A single bit says the same of every element whichever way they are read.
-            // SAFETY: the values bitmap is the one bit it already was.
             unsafe { Self::new_broadcast_unchecked(self.values.clone(), self.length, validity) }
         } else {
             let values = PlBitmap::new(self.values.clone(), self.length)
@@ -388,8 +379,6 @@ impl PlBooleanArray {
             return Self::new_full_null(length);
         }
 
-        // The value of a null element is undetermined, so it is repeated as it is found: it is the
-        // mask that makes every element of the result null.
         let value = unsafe { self.value_unchecked(index) };
 
         Self::new_scalar(value, length)
@@ -402,8 +391,6 @@ impl PlBooleanArray {
         }
 
         let values = if self.values_are_scalar() && self.scalar_value() == Some(None) {
-            // Every element is null, and the value of a null element is undetermined, so the
-            // repeated bit need not be written out: a zeroed bitmap stands in for it.
             Bitmap::new_zeroed(self.length)
         } else {
             self.values().to_flat().into_owned()
@@ -458,9 +445,6 @@ impl FromIterator<Option<bool>> for PlBooleanArray {
         let iter = iter.into_iter();
         let (lower, _) = iter.size_hint();
 
-        // `BitmapBuilder`, not `MutableBitmap`: it accumulates a word at a time and counts its
-        // set bits as it goes, where `MutableBitmap::push` checks its capacity per bit and
-        // leaves the count to a scan of the whole mask afterwards.
         let mut values = BitmapBuilder::with_capacity(lower);
         let mut validity = BitmapBuilder::with_capacity(lower);
 
@@ -482,8 +466,6 @@ impl FromIterator<Option<bool>> for PlBooleanArray {
 impl FromIterator<bool> for PlBooleanArray {
     #[inline]
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
-        // Not `Bitmap::from_iter`, which goes through `MutableBitmap` and packs a byte at a time
-        // behind a capacity check and an exhausted flag.
         <Self as crate::collect::ArrayFromIter<bool>>::arr_from_iter(iter)
     }
 }
@@ -497,8 +479,6 @@ impl PartialEq for PlBooleanArray {
             return false;
         }
 
-        // Never walk two scalar arrays element by element: their length is unbounded by their
-        // memory use.
         if let (Some(lhs), Some(rhs)) = (self.scalar_value(), other.scalar_value()) {
             return lhs == rhs;
         }

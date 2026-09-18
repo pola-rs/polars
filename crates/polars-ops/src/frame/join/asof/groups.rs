@@ -117,8 +117,6 @@ where
         let offset = offsets[part_idx];
         let mut results = Vec::with_capacity(by_left.len());
         let mut group_states: PlHashMap<IdxSize, A> = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
-        // Both chunks are read at indices this partition picks out, so what representation they
-        // are in is resolved here, once, rather than at every one of those reads.
         let left_val_arr = Elements::<T>::of(left_val_arr);
         let right_val_arr = Elements::<T>::of(right_val_arr);
 
@@ -189,8 +187,6 @@ where
         let offset = offsets[part_idx];
         let mut results = Vec::with_capacity(by_left.len());
         let mut group_states: PlHashMap<_, A> = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
-        // Both chunks are read at indices this partition picks out, so what representation they
-        // are in is resolved here, once, rather than at every one of those reads.
         let left_val_arr = Elements::<T>::of(left_val_arr);
         let right_val_arr = Elements::<T>::of(right_val_arr);
 

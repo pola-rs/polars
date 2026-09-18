@@ -133,14 +133,8 @@ pub trait StaticArray: PlArray + Clone {
     }
 
     /// The value every element of this array reads, whether or not the mask calls it null.
-    ///
-    /// [`Self::scalar_value`] answers for both axes at once, so a chunk that repeats one value
-    /// under a mask of one bit per element is not scalar by it. This asks the values axis alone,
-    /// which is the axis a kernel that reads the values reads; the caller puts the mask back on
-    /// the result.
     #[inline]
     fn scalar_value_ignore_validity(&self) -> Option<Self::ValueT<'_>> {
-        // Dropping the mask is `O(1)`: the buffers are handed over as they are.
         let values = self.clone().with_validity_typed(None);
         let values_are_scalar = PlArray::is_scalar(&values);
 
@@ -192,7 +186,6 @@ crate::impl_static_array! {
 
     #[inline(always)]
     fn as_slice(&self) -> Option<&[T]> {
-        // `None` for a scalar chunk, whose one slot is not one slot per element.
         self.flat_values().map(|values| values.as_slice())
     }
 }
@@ -491,7 +484,6 @@ impl Iterator for PlUnitIter<'_> {
 
     #[inline]
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        // The mask is advanced alongside the elements, whether or not there is one left.
         let is_valid = self.validity.nth(n);
         let Some(remaining) = self.remaining.checked_sub(n + 1) else {
             self.remaining = 0;
@@ -544,7 +536,6 @@ impl DoubleEndedIterator for PlUnitIter<'_> {
 
     #[inline]
     fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        // The mask is advanced alongside the elements, whether or not there is one left.
         let is_valid = self.validity.nth_back(n);
         let Some(remaining) = self.remaining.checked_sub(n + 1) else {
             self.remaining = 0;

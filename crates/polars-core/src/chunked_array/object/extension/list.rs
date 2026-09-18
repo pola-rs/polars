@@ -61,8 +61,6 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
         let offsets = std::mem::take(&mut self.offsets);
         let name = values_builder.field().name().clone();
 
-        // The values of a list of objects are the object array itself, which holds the values and
-        // drops them with it — there is no packing into bytes for an in-memory column.
         let length = offsets.len() - 1;
         let values = values_builder.freeze_reset();
         // SAFETY: the offsets were built by appending the length of every element.

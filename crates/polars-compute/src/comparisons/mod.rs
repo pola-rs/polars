@@ -6,10 +6,6 @@ use polars_arrow::bitmap::{self, Bitmap};
 pub trait TotalEqKernel: Sized {
     type Scalar: ?Sized;
 
-    // The validity mask, with one bit per element. This is what `Array::validity` hands out for
-    // an Arrow array; the arrays of `polars-array` implement these kernels in their flat
-    // representation, whose mask is flat in turn. An array whose mask may repeat a single bit
-    // implements `PlTotalEqKernel` instead.
     fn validity_mask(&self) -> Option<&Bitmap>;
 
     // These kernels ignore validity entirely (results for nulls are unspecified
@@ -123,12 +119,7 @@ fn or_not_mask(q: PlBitmap, mask: &Bitmap) -> PlBitmap {
     }
 }
 
-/// How many values [`PlTotalEqKernel::tot_eq_missing_all`] compares where they lie before it is
-/// worth writing the comparison out instead.
-///
-/// The written-out path allocates a mask and counts its bits for an answer that is one bool; the
-/// vectorised kernel behind it only earns that back over enough values, and the elements of a
-/// nested array are usually a handful.
+/// How many values `tot_eq_missing_all` compares in place before writing the comparison out.
 pub(crate) const IN_PLACE_COMPARISON_LIMIT: usize = 64;
 
 /// The answer for every element at once, held in the single bit that says it.
@@ -160,9 +151,6 @@ impl Condense {
 }
 
 /// The bit `values` — the bits of the values of a single element — condenses to.
-///
-/// The answer is read off the bits rather than written back out, which is what [`condense`] would
-/// do for the one element: a caller that condenses element by element allocates nothing per one.
 #[cfg(feature = "dtype-array")]
 #[inline]
 fn condense_one(values: &PlBitmap, how: Condense) -> bool {
@@ -170,10 +158,6 @@ fn condense_one(values: &PlBitmap, how: Condense) -> bool {
 }
 
 /// Condenses `values`, holding `width` bits per element, into one bit per element.
-///
-/// The two ways of condensing are dispatched between here rather than inside the loop below: the
-/// element's bit is read off a zero count with a couple of instructions, and a branch on `how` at
-/// every one of them costs about as much again.
 #[cfg(feature = "dtype-array")]
 fn condense(values: PlBitmap, length: usize, width: usize, how: Condense) -> PlBitmap {
     match how {
@@ -182,8 +166,7 @@ fn condense(values: PlBitmap, length: usize, width: usize, how: Condense) -> PlB
     }
 }
 
-/// [`condense`], with the bit an element's zero count condenses to given as a closure that the one
-/// loop below inlines.
+/// [`condense`], with the bit an element's zero count condenses to given as a closure.
 #[cfg(feature = "dtype-array")]
 #[inline]
 fn condense_by(
@@ -194,8 +177,6 @@ fn condense_by(
 ) -> PlBitmap {
     debug_assert!(width > 0);
 
-    // One bit says the same of every value under every element, so it says the same of every
-    // element in turn — however many values each of them covers.
     if let Some(set) = values.scalar_value() {
         return repeated(bit(if set { 0 } else { width }, width), length);
     }
@@ -218,15 +199,11 @@ pub trait PlTotalEqKernel: Sized {
     /// The validity mask, in whichever representation it is in.
     fn validity_mask(&self) -> Option<PlBitmapRef<'_>>;
 
-    // These kernels ignore validity entirely (results for nulls are unspecified
-    // but initialized).
     fn tot_eq_kernel(&self, other: &Self) -> PlBitmap;
     fn tot_ne_kernel(&self, other: &Self) -> PlBitmap;
     fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap;
     fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap;
 
-    // These kernels treat null as any other value equal to itself but unequal
-    // to anything else.
     fn tot_eq_missing_kernel(&self, other: &Self) -> PlBitmap {
         use Validity::*;
 
@@ -238,11 +215,8 @@ pub trait PlTotalEqKernel: Sized {
             validity_of(other.validity_mask()),
         ) {
             (AllValid, AllValid) => q,
-            // A null is equal to a null and to nothing else, so a side that is null throughout
-            // answers for every element at once, with no value read on either side.
             (AllNull, AllNull) => PlBitmap::new_scalar(true, length),
             (AllValid, AllNull) | (AllNull, AllValid) => PlBitmap::new_scalar(false, length),
-            // One side is null throughout, so the answer is where the other side is null too.
             (AllNull, Flat(r)) => PlBitmap::from_bitmap(!r),
             (Flat(l), AllNull) => PlBitmap::from_bitmap(!l),
             (AllValid, Flat(r)) => and_mask(q, r),
@@ -261,7 +235,6 @@ pub trait PlTotalEqKernel: Sized {
         let q = self.tot_ne_kernel(other);
         let length = q.len();
 
-        // The complement of `tot_eq_missing_kernel`, arm for arm.
         match (
             validity_of(self.validity_mask()),
             validity_of(other.validity_mask()),
@@ -281,14 +254,7 @@ pub trait PlTotalEqKernel: Sized {
         }
     }
 
-    /// Whether every element of `self` equals the one at its index in `other`, a null equalling a
-    /// null and nothing else.
-    ///
-    /// This is what a caller that wants the single bit asks for, rather than the mask: one element
-    /// of a nested array against its counterpart, say, which is a handful of values at a time and
-    /// once per element of the array above. The default writes the comparison out and counts the
-    /// bits of it; an array whose values can be compared where they lie overrides it, since the
-    /// allocation is the whole cost at that size.
+    /// Whether every element of `self` equals the one at its index in `other`, null to null.
     fn tot_eq_missing_all(&self, other: &Self) -> bool {
         self.tot_eq_missing_kernel(other).unset_bits() == 0
     }
@@ -299,7 +265,6 @@ pub trait PlTotalEqKernel: Sized {
 
         match validity_of(self.validity_mask()) {
             Validity::AllValid => q,
-            // The scalar is a value and every element is null, so none of them is equal to it.
             Validity::AllNull => PlBitmap::new_scalar(false, length),
             Validity::Flat(valid) => and_mask(q, valid),
         }
@@ -321,8 +286,6 @@ pub trait PlTotalEqKernel: Sized {
 pub trait PlTotalOrdKernel: Sized {
     type Scalar: ?Sized;
 
-    // These kernels ignore validity entirely (results for nulls are unspecified
-    // but initialized).
     fn tot_lt_kernel(&self, other: &Self) -> PlBitmap;
     fn tot_le_kernel(&self, other: &Self) -> PlBitmap;
     fn tot_gt_kernel(&self, other: &Self) -> PlBitmap {

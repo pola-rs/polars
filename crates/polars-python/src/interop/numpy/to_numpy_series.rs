@@ -120,7 +120,6 @@ fn series_to_numpy_view_recursive(py: Python<'_>, s: Series, writable: bool) -> 
 /// Create a NumPy view of a numeric Series.
 fn numeric_series_to_numpy_view(py: Python<'_>, mut s: Series, writable: bool) -> Py<PyAny> {
     let dims = [s.len()].into_dimension();
-    // Cloned so that the Series can be left flat below, which borrows it mutably.
     let dtype = s.dtype().clone();
     with_match_physical_numpy_polars_type!(&dtype, |$T| {
         let np_dtype = <$T as PolarsNumericType>::Native::get_dtype(py);
@@ -130,8 +129,6 @@ fn numeric_series_to_numpy_view(py: Python<'_>, mut s: Series, writable: bool) -
             flags::NPY_ARRAY_FARRAY_RO
         };
 
-        // The view points into the values, so it is the Series kept alive behind it that is left
-        // flat; `handle_chunks` is what decided that writing a scalar chunk out here is allowed.
         let ca: &mut ChunkedArray<$T> = s._get_inner_mut().as_mut();
         ca.flatten_mut();
         let slice = ca.as_flat().unwrap().chunks_flat_values().next().unwrap();
@@ -159,8 +156,6 @@ fn temporal_series_to_numpy_view(py: Python<'_>, s: Series, writable: bool) -> P
         flags::NPY_ARRAY_FARRAY_RO
     };
 
-    // The view points into the values of the physical Series, which is the one left flat and kept
-    // alive behind it; `handle_chunks` decided that writing a scalar chunk out here is allowed.
     let mut phys = s.to_physical_repr().into_owned();
     let ca: &mut Int64Chunked = phys._get_inner_mut().as_mut();
     ca.flatten_mut();
@@ -311,9 +306,6 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> PyRe
 }
 
 /// Collects `f` over the values of a Series with no nulls, one chunk at a time.
-///
-/// A chunk walked on its own has its representation resolved once, where one iterator across the
-/// chunks of the whole column resolves it per element.
 fn collect_values<T, U, F>(ca: &ChunkedArray<T>, f: F) -> Vec<U>
 where
     T: PolarsDataType,
@@ -321,9 +313,6 @@ where
 {
     let mut values = Vec::with_capacity(ca.len());
     for arr in ca.downcast_iter() {
-        // The chunk's iterator knows how many values it has left, so they are written straight
-        // into the buffer; `push` checks the capacity and stores the length once an element,
-        // and cannot hoist either out, because the chunk's length is not the column's.
         values.extend_trusted_len(arr.values_iter().map(&f));
     }
     values
@@ -337,8 +326,6 @@ where
 {
     let mut values = Vec::with_capacity(ca.len());
     for arr in ca.downcast_iter() {
-        // See `collect_values`: the length the chunk reports is what writes the values in
-        // without a capacity check apiece.
         values.extend_trusted_len(arr.iter().map(&f));
     }
     values

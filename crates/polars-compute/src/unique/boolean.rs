@@ -55,12 +55,9 @@ impl BooleanUniqueKernelState {
 /// The number of elements at which both `values` and `validity` are set.
 fn num_valid_trues(values: PlBitmapRef<'_>, validity: Option<PlBitmapRef<'_>>) -> usize {
     let Some(validity) = validity else {
-        // A mask that repeats one bit counts its elements without reading them one at a time.
         return values.set_bits();
     };
 
-    // One bit on either side says the same of every element, so the count is all of them or none
-    // — and where only one side repeats a set bit, the other side's count is the answer.
     match (values.scalar_value(), validity.scalar_value()) {
         (Some(value), Some(valid)) => return usize::from(value && valid) * values.len(),
         (Some(false), None) | (None, Some(false)) => return 0,
@@ -85,7 +82,6 @@ impl RangedUniqueKernel for BooleanUniqueKernelState {
 
     fn append(&mut self, array: &Self::Array) {
         let null_count = array.null_count();
-        // A mask with nothing unset says nothing the values do not already say.
         let validity = array.validity().filter(|_| null_count > 0);
         self.see(
             array.len(),

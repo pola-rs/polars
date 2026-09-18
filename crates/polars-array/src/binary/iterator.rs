@@ -22,9 +22,7 @@ pub struct PlBinaryValuesIter<'a> {
 }
 
 const _: () = {
-    // Four words, down from the six two slices and a range take.
     assert!(size_of::<PlBinaryValuesIter<'static>>() == 4 * size_of::<usize>());
-    // The niche of the pointers keeps `Option` free.
     assert!(size_of::<Option<PlBinaryValuesIter<'static>>>() == 4 * size_of::<usize>());
 };
 
@@ -49,9 +47,6 @@ impl<'a> PlBinaryValuesIter<'a> {
     /// `offsets` must be flat or scalar for `length`, ordered and within the length of `values`.
     #[inline]
     pub(super) fn new(values: &'a [u8], offsets: &'a [u64], length: usize) -> Self {
-        // Offsets that hold one start per element are flat, and offsets the caller promises are
-        // valid are scalar when they are not. The two coincide for a single element, which either
-        // reading yields the same bytes for.
         let scalar = !is_flat_offsets_len(offsets.len(), length);
 
         debug_assert!(!scalar || offsets.len() == 2, "neither flat nor scalar");
@@ -66,8 +61,6 @@ impl<'a> PlBinaryValuesIter<'a> {
         Self {
             values: NonNull::from(values).cast(),
             offsets: NonNull::from(offsets).cast(),
-            // All ones for flat offsets, which leaves every position as it is, and none for scalar
-            // ones, which folds every position onto the single range they hold.
             index_mask: (scalar as usize).wrapping_sub(1),
             remaining: length,
             _lifetime: PhantomData,
@@ -95,8 +88,6 @@ impl<'a> PlBinaryValuesIter<'a> {
         debug_assert!(i < self.remaining || self.is_scalar());
 
         unsafe {
-            // Scalar offsets fold every position onto the one range they hold; flat ones hold the
-            // start of the element and the end that follows it.
             let offsets = self.offsets.as_ptr().add(i & self.index_mask);
             let start = offsets.read() as usize;
             let end = offsets.add(1).read() as usize;
@@ -115,8 +106,6 @@ impl<'a> PlBinaryValuesIter<'a> {
     unsafe fn advance(&mut self, n: usize) {
         debug_assert!(n <= self.remaining);
 
-        // Flat offsets are walked `n` slots on, which stays within the buffer holding them, and
-        // scalar ones are walked nowhere.
         let step = n.wrapping_mul(self.step());
 
         // SAFETY: flat offsets hold one slot more than the elements left, so `n` of them is at
@@ -143,10 +132,6 @@ impl<'a> PlBinaryValuesIter<'a> {
             };
         }
 
-        // Flat offsets hold one start per element left to yield plus the end of the last, so
-        // there are `remaining + 1` of them — which does not wrap, since a buffer that long does
-        // not fit in memory — and the last of them is read here rather than indexed for, which
-        // would leave the loop walking them behind a bounds check it can never fail.
         let offsets_ptr = self.offsets.as_ptr();
         // SAFETY: the last of the offsets is the end of the last element left to yield.
         let end = unsafe { offsets_ptr.add(self.remaining).read() } as usize;
@@ -301,7 +286,6 @@ impl DoubleEndedIterator for PlBinaryValuesIter<'_> {
             return None;
         }
 
-        // `n` is below the number of elements left, so the position before it does not wrap.
         let last = self.remaining - (n + 1);
         // SAFETY: `last` is the position of an element that is still left.
         let value = unsafe { self.get_unchecked(last) };

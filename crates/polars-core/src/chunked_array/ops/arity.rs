@@ -18,8 +18,6 @@ fn mask_with_inputs<A: StaticArray>(
     lhs: Option<PlBitmapRef<'_>>,
     rhs: Option<PlBitmapRef<'_>>,
 ) -> A {
-    // The combined mask covers the inputs' elements, which is what `ret` holds too: a kernel that
-    // handed back a result of a different height than its inputs panics here.
     let inputs = combine_validities_and(lhs, rhs);
     let validity = combine_validities_and(inputs.as_ref().map(PlBitmap::as_ref), ret.validity());
     ret.with_validity_typed(validity)
@@ -146,13 +144,9 @@ where
 
     let length = arr.len();
     if !PlArray::is_scalar(arr) || length < 2 {
-        // Only some of the buffers hold a single slot, so there is no one element standing for
-        // the rest; a chunk of a single element has nothing to save either.
         return op(&arr.to_flat());
     }
 
-    // Sliced down to the one element the chunk repeats, which leaves every buffer holding the
-    // single slot it already held, and is therefore flat as well as `O(1)`.
     let mut single = arr.clone();
     single.slice(0, 1);
 
@@ -167,12 +161,6 @@ where
 }
 
 /// `arr` with the mask over its values dropped, in `O(1)`.
-///
-/// [`PlArray::is_scalar`] answers for both axes at once, so a chunk that repeats a single value
-/// under a mask of one bit per element is not scalar by it -- and a kernel that reads only the
-/// values would have them written out one per element before it ever saw them. Dropping the mask
-/// leaves the values axis alone to answer, which is the axis such a kernel reads; the caller puts
-/// the original mask back on the result.
 #[inline]
 fn values_only<A: StaticArray>(arr: &A) -> A {
     arr.clone().with_validity_typed(None)
@@ -213,14 +201,11 @@ where
     Arr: StaticArray,
     F: FnMut(&A, &B) -> Arr,
 {
-    // The chunks are aligned, so the two lengths are the same one.
     let length = lhs.len();
     if length < 2 || !PlArray::is_scalar(lhs) || !PlArray::is_scalar(rhs) {
         return op(lhs, rhs);
     }
 
-    // Sliced down to the one element the chunks repeat, which leaves every buffer holding the
-    // single slot it already held, and is therefore `O(1)`.
     let (mut lhs, mut rhs) = (lhs.clone(), rhs.clone());
     lhs.slice(0, 1);
     rhs.slice(0, 1);
@@ -248,7 +233,6 @@ where
         return op(lhs, rhs);
     }
 
-    // The chunks are aligned, so the two lengths are the same one.
     let length = lhs.len();
     if length < 2 || !PlArray::is_scalar(lhs) || !PlArray::is_scalar(rhs) {
         return op(&lhs.to_flat(), &rhs.to_flat());
@@ -310,16 +294,10 @@ where
         let length = arr.len();
         if length > 1 {
             if let Some(element) = arr.scalar_value() {
-                // The chunk reads the same element throughout, null or not, so one call answers
-                // it and the result repeats that single element — its own mask included.
                 let single: V::Array = std::iter::once(op(element)).collect_arr();
                 return single.new_from_index_typed(0, length);
             }
 
-            // The values read one value throughout under a mask that does not, so there are two
-            // answers between them: the one `op` gives that value, and the one it gives a null.
-            // A chunk that holds one slot per element repeats nothing, which is the cheapest
-            // thing to ask and what almost every chunk answers.
             if !arr.is_flat()
                 && let Some(single) = scalar_under_mask(arr, &mut &op)
             {
@@ -327,9 +305,6 @@ where
             }
         }
 
-        // The element iterators are `TrustedLen`, so the collect writes straight into the room
-        // it reserves and drives them by `fold` — which is where one that walks either flat or
-        // scalar values resolves which it is. See `vec_from_trusted_len_iter`.
         if arr.null_count() == 0 {
             arr.values_iter().map(|x| op(Some(x))).collect_arr_trusted()
         } else {
@@ -340,14 +315,6 @@ where
 }
 
 /// The answer of `op` over a chunk whose values repeat one value under a mask that does not.
-///
-/// Such a chunk holds two answers at most: the one `op` gives the value it repeats, and the one
-/// it gives a null. Where the second of them is a null — which is what an elementwise op answers
-/// a null with — the chunk's own mask is what tells the two apart, so the first answer alone,
-/// repeated under that mask, is the whole result. Where it is not, there is no repeated answer to
-/// give and this hands the chunk back to the walk.
-// Out of line on purpose: it runs at most once per chunk, and the walks that call it are
-// inlined into their callers, where every line of this one would be in the way.
 #[inline(never)]
 fn scalar_under_mask<'a, A, Arr, F>(arr: &'a A, op: &mut F) -> Option<Arr>
 where
@@ -357,8 +324,6 @@ where
 {
     let value = arr.scalar_value_ignore_validity()?;
 
-    // A null element keeps its own answer, so the mask only stands in for it if that answer is
-    // the null the mask already makes.
     let null: Arr = std::iter::once(op(None)).collect_arr();
     if null.null_count() != 1 {
         return None;
@@ -367,8 +332,6 @@ where
     let single: Arr = std::iter::once(op(Some(value))).collect_arr();
     let repeated = single.new_from_index_typed(0, arr.len());
 
-    // The one answer is itself null, so every element of the result is null whatever the mask
-    // says; `new_from_index_typed` already made it so.
     Some(if single.null_count() == 1 {
         repeated
     } else {
@@ -377,13 +340,6 @@ where
 }
 
 /// The answer of `op` — a kernel over the values alone — over a chunk whose values repeat one
-/// value, whatever its mask says about which elements are null.
-///
-/// One call answers every element, and the mask the chunk already carries goes back on the
-/// result: a null element keeps the value it held, and the mask is what makes it null.
-// Out of line on purpose: it runs at most once per chunk, and the walk that calls it is inlined
-// into its caller, where these lines would push it past what the caller inlines — `str.encode`
-// over a flat column read 1.33x for them when they were in the body.
 #[inline(never)]
 fn scalar_values_under_mask<'a, A, Arr, F>(arr: &'a A, op: &mut F) -> Option<Arr>
 where
@@ -402,12 +358,6 @@ where
 }
 
 /// [`unary_elementwise`] for an `op` that borrows a scratch buffer or a cache across elements.
-///
-/// The state `op` carries may only make the same answer cheaper to reach — a buffer it formats
-/// into, a cache of compiled patterns. It must not depend on *which* elements came before, since
-/// a chunk that reads one element throughout is answered by a single call, exactly as in
-/// [`unary_elementwise`]. An `op` whose answer does depend on the elements before it wants
-/// [`unary_elementwise_mut`].
 #[inline]
 pub fn unary_elementwise_amortized<'a, T, V, F>(
     ca: &'a ChunkedArray<T>,
@@ -423,14 +373,10 @@ where
         let length = arr.len();
         if length > 1 {
             if let Some(element) = arr.scalar_value() {
-                // The chunk reads the same element throughout, null or not, so one call answers
-                // it and the result repeats that single element — its own mask included.
                 let single: V::Array = std::iter::once(op(element)).collect_arr();
                 return single.new_from_index_typed(0, length);
             }
 
-            // As in `unary_elementwise`: values that repeat under a mask that does not hold two
-            // answers between them, and the mask is what tells them apart.
             if !arr.is_flat()
                 && let Some(single) = scalar_under_mask(arr, &mut op)
             {
@@ -470,7 +416,6 @@ where
 }
 
 /// [`try_unary_elementwise`] for an `op` whose state is under the contract of
-/// [`unary_elementwise_amortized`].
 #[inline]
 pub fn try_unary_elementwise_amortized<'a, T, V, F, K, E>(
     ca: &'a ChunkedArray<T>,
@@ -486,17 +431,11 @@ where
         let length = arr.len();
         if length > 1 {
             if let Some(element) = arr.scalar_value() {
-                // The chunk reads the same element throughout, null or not, so one call answers
-                // it and the result repeats that single element — its own mask included.
                 let single: V::Array = std::iter::once(op(element)).try_collect_arr()?;
                 return Ok(single.new_from_index_typed(0, length));
             }
         }
 
-        // Splitting the walk below into a values-only twin, as [`unary_elementwise`] does, costs
-        // more than it saves: it grows this function past what the caller inlines, and the
-        // `(flat, flat)` arm of `broadcast_try_binary_elementwise_amortized` — which never
-        // reaches here — read 1.4x on decimal arithmetic for it.
         arr.iter().map(&mut op).try_collect_arr()
     });
     ChunkedArray::try_from_chunk_iter(ca.name().clone(), iter)
@@ -539,9 +478,6 @@ where
                 return single.new_from_index_typed(0, length);
             }
 
-            // The values read one value throughout under a mask that does not, which `op` — a
-            // kernel over the values alone — answers out of that one value. A chunk that holds
-            // one slot per element repeats nothing, which is the cheapest thing to ask.
             if !arr.is_flat()
                 && let Some(single) = scalar_values_under_mask(arr, &mut &op)
             {
@@ -604,8 +540,6 @@ where
             && !arr.is_flat()
             && let Some(value) = arr.scalar_value_ignore_validity()
         {
-            // As in `unary_elementwise_values`: one value read throughout, mask or no mask, is
-            // one call to `op`, and the chunk's own mask is what the result keeps.
             let single: V::Array = std::iter::once(op(value)).try_collect_arr()?;
             return Ok(single
                 .new_from_index_typed(0, length)
@@ -848,9 +782,6 @@ where
         .map(|(lhs_arr, rhs_arr)| {
             let validity = combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
 
-            // Resolving the representation once for both sides matters here: a `zip` drives
-            // both iterators by `next`, so the hoisting `fold` either one has on its own never
-            // runs and every element pays for a branch the flat pair does not need.
             let array: V::Array = match (lhs_arr.as_slice(), rhs_arr.as_slice()) {
                 (Some(lhs_values), Some(rhs_values)) => lhs_values
                     .iter()
@@ -1275,8 +1206,6 @@ where
     let length = broadcast_height(lhs.len(), rhs.len())
         .expect("cannot apply operation on arrays of different lengths");
 
-    // A side that repeats one element is read once and handed to the unary walk over the other.
-    // A column of one element repeats it by definition, so this subsumes the length-one case.
     match (lhs.scalar_value(), rhs.scalar_value()) {
         (Some(a), _) if rhs.len() == length => {
             unary_elementwise(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
@@ -1314,7 +1243,6 @@ where
 }
 
 /// [`broadcast_binary_elementwise`] for an `op` that borrows a scratch buffer or a cache across
-/// elements; the state it carries is under the contract of [`unary_elementwise_amortized`].
 pub fn broadcast_binary_elementwise_amortized<T, U, V, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
@@ -1332,7 +1260,6 @@ where
     let length = broadcast_height(lhs.len(), rhs.len())
         .expect("cannot apply operation on arrays of different lengths");
 
-    // See [`broadcast_binary_elementwise`] for what the two scalar arms are.
     match (lhs.scalar_value(), rhs.scalar_value()) {
         (Some(a), _) if rhs.len() == length => {
             unary_elementwise_amortized(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
@@ -1357,7 +1284,6 @@ where
     let length = broadcast_height(lhs.len(), rhs.len())
         .expect("cannot apply operation on arrays of different lengths");
 
-    // See [`broadcast_binary_elementwise`] for what the two scalar arms are.
     match (lhs.scalar_value(), rhs.scalar_value()) {
         (Some(a), _) if rhs.len() == length => {
             Ok(try_unary_elementwise(rhs, |b| op(a.clone(), b))?.with_name(lhs.name().clone()))
@@ -1368,7 +1294,6 @@ where
 }
 
 /// [`broadcast_try_binary_elementwise`] for an `op` whose state is under the contract of
-/// [`unary_elementwise_amortized`].
 pub fn broadcast_try_binary_elementwise_amortized<T, U, V, F, K, E>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
@@ -1384,7 +1309,6 @@ where
     let length = broadcast_height(lhs.len(), rhs.len())
         .expect("cannot apply operation on arrays of different lengths");
 
-    // See [`broadcast_binary_elementwise`] for what the two scalar arms are.
     match (lhs.scalar_value(), rhs.scalar_value()) {
         (Some(a), _) if rhs.len() == length => {
             Ok(try_unary_elementwise_amortized(rhs, |b| op(a.clone(), b))?
@@ -1414,8 +1338,6 @@ where
         return ChunkedArray::with_chunk(lhs.name().clone(), V::full_null_array(length));
     }
 
-    // See [`broadcast_binary_elementwise`] for what the two scalar arms are. Neither side is
-    // fully null here, so a side that repeats one element repeats a value rather than a null.
     match (lhs.scalar_value(), rhs.scalar_value()) {
         (Some(Some(a)), _) if rhs.len() == length => {
             unary_elementwise_values(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
@@ -1445,8 +1367,6 @@ where
     let length = broadcast_height(lhs.len(), rhs.len())
         .expect("cannot apply operation on arrays of different lengths");
 
-    // The broadcast paths come first, so that a side that is one value repeated reaches the
-    // kernel as that value. What is left is the path over two chunks of the same length.
     let out = match (lhs.scalar_value(), rhs.scalar_value()) {
         // broadcast right path
         (_, Some(rhs)) if lhs.len() == length => match rhs {
@@ -1463,8 +1383,6 @@ where
 }
 
 /// [`apply_binary_kernel_broadcast`] for a kernel whose scalar form answers differently from its
-/// flat one. See [`apply_binary_kernel_broadcast_single_owned`], which this is the borrowing
-/// twin of.
 pub fn apply_binary_kernel_broadcast_single<'l, 'r, L, R, O, K, LK, RK>(
     lhs: &'l ChunkedArray<L>,
     rhs: &'r ChunkedArray<R>,
@@ -1518,12 +1436,9 @@ where
     let length = broadcast_height(lhs.len(), rhs.len())
         .expect("cannot apply operation on arrays of different lengths");
 
-    // See [`apply_binary_kernel_broadcast`] for what the two broadcast paths are. The scalar
-    // check is a borrow, so it is taken before either side is moved into a kernel.
     let lhs_repeats = lhs.scalar_value().is_some();
     let rhs_repeats = rhs.scalar_value().is_some();
 
-    // broadcast right path
     let out = if rhs_repeats && lhs.len() == length {
         match rhs.scalar_value().unwrap() {
             None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
@@ -1541,13 +1456,6 @@ where
 }
 
 /// [`apply_binary_kernel_broadcast_owned`] for a kernel whose scalar form answers differently
-/// from its flat one.
-///
-/// The division kernels multiply by the reciprocal of the value they are handed, where the same
-/// division element by element divides — two different answers over the same values. Only a side
-/// that *is* one element reaches them here, which is the literal a column is divided by; a side
-/// that repeats one element stays the column it is, and the kernel behind `kernel` reads it as
-/// the one element it holds without rounding the answer any differently.
 pub fn apply_binary_kernel_broadcast_single_owned<L, R, O, K, LK, RK>(
     lhs: ChunkedArray<L>,
     rhs: ChunkedArray<R>,
@@ -1601,10 +1509,7 @@ where
     let length = broadcast_height(lhs.len(), rhs.len())
         .expect("cannot apply operation on arrays of different lengths");
 
-    // The broadcast paths come first, so that a side repeating a single value reaches the kernel
-    // as that value rather than being written out. What is left is the `(flat, flat)` path.
     let out = match (lhs.scalar_value(), rhs.scalar_value()) {
-        // broadcast right path
         (_, Some(rhs)) if lhs.len() == length => match rhs {
             None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
             Some(rhs) => {

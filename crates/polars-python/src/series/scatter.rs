@@ -76,7 +76,6 @@ fn scatter(s: Series, idx: &Series, values: &Series) -> Result<Series, (Series, 
             PolarsError::ComputeError("index values should not be null".into()),
         ));
     }
-    // The indices carry no null, so only a values buffer that repeats one index is written out.
     let idx = idx.downcast_as_array().to_flat_values();
     let idx = idx.as_slice();
 

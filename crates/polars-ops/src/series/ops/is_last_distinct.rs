@@ -73,23 +73,16 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
 }
 
 fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
-    // The last element of a chunk that repeats a single one is the only one distinct in it.
     if let Some(length) = repeated_element_len(ca) {
         return only(ca.name().clone(), length, length - 1);
     }
 
-    // The last of each distinct element is the first of it read backwards, and a boolean column
-    // reverses a word at a time, values and mask alike. `is_first_distinct_boolean` then finds
-    // all three of `true`, `false` and null by scanning the words rather than reading a million
-    // elements out one at a time, which is what the reverse walk this replaces did -- it never
-    // stopped early either, because the flag it checked was `&=` against a `false` it started at.
     super::is_first_distinct::is_first_distinct_boolean(&ca.reverse())
         .reverse()
         .with_name(ca.name().clone())
 }
 
 fn is_last_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
-    // The last element of a chunk that repeats a single one is the only one distinct in it.
     if let Some(length) = repeated_element_len(ca) {
         return only(ca.name().clone(), length, length - 1);
     }
@@ -111,7 +104,6 @@ where
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
-    // The last element of a chunk that repeats a single one is the only one distinct in it.
     if let Some(length) = repeated_element_len(ca) {
         return only(ca.name().clone(), length, length - 1);
     }
@@ -128,8 +120,6 @@ where
 }
 
 fn is_last_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
-    // As in `is_first_distinct_by_groups`: the last element of a chunk that repeats a single one
-    // is the only one distinct in it, without a row of it being encoded or hashed.
     if let Some(length) = repeated_element_len_series(s) {
         return Ok(only(s.name().clone(), length, length - 1));
     }

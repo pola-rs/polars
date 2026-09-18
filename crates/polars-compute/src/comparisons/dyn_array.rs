@@ -12,10 +12,6 @@ pub(super) fn downcast<A: PlArray + 'static>(array: &dyn PlArray) -> &A {
 }
 
 /// Resolves the array type both sides share, once, and runs `$body` over them downcast to it.
-///
-/// The dispatch is what a `&dyn PlArray` costs, so a caller that reads many elements out of one
-/// pair of arrays runs its whole walk inside the body rather than coming back through here for
-/// every element.
 macro_rules! with_array_pair {
     ($lhs_array:expr, $rhs_array:expr, |$lhs:ident, $rhs:ident| $body:expr $(,)?) => {{
         let (lhs, rhs) = ($lhs_array, $rhs_array);
@@ -37,8 +33,6 @@ macro_rules! with_array_pair {
         match lhs.array_type() {
             A::Null => call_binary!(::polars_array::PlNullArray),
             A::Boolean => call_binary!(::polars_array::PlBooleanArray),
-            // Dispatched on the element type the array type names, not on the concrete array,
-            // so that the arms are exactly the primitives a `PlArrayType::Primitive` can hold.
             A::Primitive(primitive) => {
                 ::polars_arrow::with_match_primitive_type!(primitive, |$T| {
                     let $lhs = $crate::comparisons::dyn_array::downcast::<

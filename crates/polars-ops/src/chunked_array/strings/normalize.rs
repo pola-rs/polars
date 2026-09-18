@@ -6,11 +6,8 @@ pub fn normalize_with<'a, F: Fn(&str, &mut String)>(
     ca: &'a StringChunked,
     normalizer: F,
 ) -> StringChunked {
-    // Amortize allocation.
     let mut buffer = String::new();
 
-    // `apply_mut` asks how each chunk stores its values once per chunk rather than once per
-    // element, and answers a chunk that repeats one element by normalizing that one element.
     let f = |s: &'a str| -> &'a str {
         buffer.clear();
         normalizer(s, &mut buffer);
