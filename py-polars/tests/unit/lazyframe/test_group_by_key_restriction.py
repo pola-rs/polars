@@ -198,6 +198,43 @@ def test_computed_grouping_key_is_left_alone(tmp_path: Path) -> None:
     assert_not_restricted(dim.join(grouped, left_on="d", right_on="k"))
 
 
+def test_grouping_key_over_the_rows_is_left_alone(tmp_path: Path) -> None:
+    rows, dim = frames(tmp_path)
+    grouped = rows.group_by("k", pl.len().alias("n")).agg(pl.col("v").sum())
+    query = dim.join(grouped, left_on="d", right_on="k")
+    assert_not_restricted(query)
+    assert query.collect(optimizations=ON)["n"].unique().to_list() == [100_000]
+
+
+def test_fallible_join_key_is_left_alone(tmp_path: Path) -> None:
+    rows, dim = frames(tmp_path)
+    grouped = (
+        rows.group_by("k")
+        .agg(pl.col("v").sum(), (pl.col("k") < 100).all().alias("keep"))
+        .filter("keep")
+    )
+    query = dim.filter(pl.col("d") < 100).join(
+        grouped,
+        left_on=pl.col("d").cast(pl.Int8),
+        right_on=pl.col("k").cast(pl.Int8),
+    )
+    assert_not_restricted(query)
+    assert query.collect(optimizations=ON).height == 12
+
+
+def test_validated_join_is_left_alone(tmp_path: Path) -> None:
+    rows, dim = frames(tmp_path)
+    rows = rows.with_columns(
+        k2=pl.when(pl.col("k") < 1000).then(pl.lit(0)).otherwise(pl.col("k2"))
+    )
+    grouped = rows.group_by("k", "k2").agg(pl.col("v").sum())
+    query = dim.join(grouped, left_on="d", right_on="k", validate="m:1")
+    assert not restricted(query.explain(optimizations=ON))
+    for engine in ("in-memory", "streaming"):
+        with pytest.raises(pl.exceptions.ComputeError, match="m:1 validation"):
+            query.collect(engine=engine, optimizations=ON)
+
+
 @pytest.mark.parametrize(
     "grouped",
     [
