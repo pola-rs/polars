@@ -2576,3 +2576,33 @@ def test_min_periods_removed() -> None:
 
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         pl.rolling_corr("a", "b", window_size=2, min_periods=1)  # type: ignore[call-arg]
+
+
+def test_rolling_group_by_interleaved_keys_28597() -> None:
+    # Interleaved keys force the grouped reorder, which gathers row-parallel when
+    # the thread pool is larger than the frame width and leaves the frame chunked.
+    n = 4096
+    period = 64
+    df = pl.DataFrame(
+        {"k": [i % 2 for i in range(n)], "idx": [i // 2 for i in range(n)]},
+        schema={"k": pl.Int64, "idx": pl.Int64},
+    )
+
+    out = (
+        df.lazy()
+        .rolling(index_column="idx", period=f"{period}i", group_by="k", closed="right")
+        .agg(pl.col("idx").sum().alias("s"))
+        .collect()
+        .sort("k", "idx")
+    )
+
+    sums = [sum(range(max(0, i - period + 1), i + 1)) for i in range(n // 2)]
+    expected = pl.DataFrame(
+        {
+            "k": [0] * (n // 2) + [1] * (n // 2),
+            "idx": list(range(n // 2)) * 2,
+            "s": sums * 2,
+        },
+        schema={"k": pl.Int64, "idx": pl.Int64, "s": pl.Int64},
+    )
+    assert_frame_equal(out, expected)
