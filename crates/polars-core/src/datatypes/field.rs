@@ -1,4 +1,4 @@
-use arrow::datatypes::{IntervalUnit, Metadata};
+use polars_arrow::datatypes::{IntervalUnit, Metadata};
 use polars_dtype::categorical::CategoricalPhysical;
 use polars_error::feature_gated;
 use polars_utils::pl_str::PlSmallStr;
@@ -116,14 +116,14 @@ impl Field {
         self
     }
 
-    /// Converts the `Field` to an `arrow::datatypes::Field`.
+    /// Converts the `Field` to an `polars_arrow::datatypes::Field`.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let f = Field::new("Value".into(), DataType::Int64);
-    /// let af = arrow::datatypes::Field::new("Value".into(), arrow::datatypes::ArrowDataType::Int64, true);
+    /// let af = polars_arrow::datatypes::Field::new("Value".into(), polars_arrow::datatypes::ArrowDataType::Int64, true);
     ///
     /// assert_eq!(f.to_arrow(CompatLevel::newest()), af);
     /// ```

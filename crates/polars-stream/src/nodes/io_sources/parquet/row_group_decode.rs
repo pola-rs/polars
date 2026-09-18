@@ -6,7 +6,7 @@ use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IntoColumn};
 use polars_core::series::Series;
-use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_core::utils::polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::{

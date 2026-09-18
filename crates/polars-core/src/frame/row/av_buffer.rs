@@ -2,7 +2,7 @@
 
 use std::hint::unreachable_unchecked;
 
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::BitmapBuilder;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DecimalFmtBuffer;
 #[cfg(feature = "dtype-struct")]

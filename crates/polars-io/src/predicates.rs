@@ -1,8 +1,8 @@
 use std::fmt;
 
-use arrow::array::Array;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};

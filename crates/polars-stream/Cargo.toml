@@ -33,7 +33,7 @@ strum_macros = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 uuid = { workspace = true }
 
-arrow = { workspace = true }
+polars-arrow = { workspace = true }
 polars-async = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
@@ -75,7 +75,7 @@ dynamic_group_by = [
   "polars-plan/timezones",
   "polars-time/dtype-date",
   "polars-time/dtype-datetime",
-  "arrow/timezones",
+  "polars-arrow/timezones",
 ]
 strings = ["polars-expr/strings", "polars-plan/strings"]
 ipc = [

@@ -1,5 +1,5 @@
 #![allow(clippy::ptr_arg)] // false positive in clippy, see https://github.com/rust-lang/rust-clippy/issues/8463
-use arrow_format::ipc;
+use polars_arrow_format::ipc;
 
 use super::super::compression;
 use super::super::endianness::is_native_little_endian;

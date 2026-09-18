@@ -434,14 +434,14 @@ pub(super) fn row_hash(c: &Column, seed: u64) -> PolarsResult<Column> {
 
 #[cfg(feature = "arg_where")]
 pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Column> {
-    use polars_core::utils::arrow::bitmap::utils::SlicesIterator;
+    use polars_core::utils::polars_arrow::bitmap::utils::SlicesIterator;
 
     let predicate = s[0].bool()?;
 
     if predicate.is_empty() {
         Ok(Column::full_null(predicate.name().clone(), 0, &IDX_DTYPE))
     } else {
-        use arrow::datatypes::IdxArr;
+        use polars_arrow::datatypes::IdxArr;
         use polars_core::prelude::IdxCa;
 
         let capacity = predicate.sum().unwrap();

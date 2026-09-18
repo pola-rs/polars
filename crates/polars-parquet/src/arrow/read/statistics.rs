@@ -1,14 +1,14 @@
 //! APIs exposing `crate::parquet`'s statistics as arrow's statistics.
 
-use arrow::array::{
+use ethnum::I256;
+use num_traits::{AsPrimitive, FromBytes};
+use polars_arrow::array::{
     Array, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, MutableBinaryViewArray,
     MutableBooleanArray, MutableFixedSizeBinaryArray, MutablePrimitiveArray, NullArray,
     PrimitiveArray, Utf8ViewArray, new_null_array,
 };
-use arrow::datatypes::{ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit};
-use arrow::types::{days_ms, i256};
-use ethnum::I256;
-use num_traits::{AsPrimitive, FromBytes};
+use polars_arrow::datatypes::{ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit};
+use polars_arrow::types::{days_ms, i256};
 use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -110,7 +110,7 @@ pub struct ArrowColumnStatistics {
     pub distinct_count: Option<u64>,
 
     // While these two are Box<dyn Array>, they will only ever contain one valid value. This might
-    // seems dumb, and don't get me wrong it is, but arrow::Scalar is basically useless.
+    // seems dumb, and don't get me wrong it is, but polars_arrow::Scalar is basically useless.
     pub min_value: Option<Box<dyn Array>>,
     pub max_value: Option<Box<dyn Array>>,
 }

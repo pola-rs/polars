@@ -7,8 +7,8 @@ use std::fmt::Debug;
 #[cfg(feature = "object")]
 use std::hash::{Hash, Hasher};
 
-use arrow::bitmap::Bitmap;
 pub use av_buffer::*;
+use polars_arrow::bitmap::Bitmap;
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "object")]
 use polars_utils::total_ord::TotalHash;

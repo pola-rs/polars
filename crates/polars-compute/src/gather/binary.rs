@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use arrow::array::{Array, BinaryArray, PrimitiveArray};
-use arrow::offset::Offset;
+use polars_arrow::array::{Array, BinaryArray, PrimitiveArray};
+use polars_arrow::offset::Offset;
 
 use super::Index;
 use super::generic_binary::*;

@@ -1,5 +1,5 @@
-use arrow::array::{Array, DictionaryArray};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{Array, DictionaryArray};
+use polars_arrow::datatypes::ArrowDataType;
 
 use super::{PrimitiveRangedUniqueState, RangedUniqueKernel};
 
@@ -43,7 +43,7 @@ impl RangedUniqueKernel for DictionaryRangedUniqueState {
         let keys = self.key_state.finalize_unique();
         DictionaryArray::<u32>::try_new(
             ArrowDataType::Dictionary(
-                arrow::datatypes::IntegerType::UInt32,
+                polars_arrow::datatypes::IntegerType::UInt32,
                 Box::new(self.values.dtype().clone()),
                 false,
             ),

@@ -2,9 +2,9 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::Bitmap;
 use num_traits::Bounded;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::Bitmap;
 use polars_core::with_match_physical_integer_polars_type;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate::ca_nan_agg;

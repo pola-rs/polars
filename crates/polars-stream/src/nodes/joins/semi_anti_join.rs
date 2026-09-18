@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_async::executor;
 use polars_core::prelude::*;
 use polars_core::runtime::ASYNC;

@@ -1,7 +1,7 @@
 use std::mem;
 use std::ops::BitAnd;
 
-use arrow::array::builder::ShareStrategy;
+use polars_arrow::array::builder::ShareStrategy;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::frame::builder::DataFrameBuilder;

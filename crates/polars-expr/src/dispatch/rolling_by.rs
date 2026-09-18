@@ -1,4 +1,4 @@
-use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
+use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{Column, DataType, IntoColumn, TimeUnit};
 use polars_core::series::Series;

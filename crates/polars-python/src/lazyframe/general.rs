@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
-use arrow::ffi::export_iterator;
 use either::Either;
 use parking_lot::Mutex;
 #[cfg(feature = "pivot")]
 use polars::frame::PivotColumnNaming;
 use polars::io::RowIndex;
 use polars::prelude::iceberg_sink_state::IcebergSinkState;
+use polars_arrow::ffi::export_iterator;
 #[cfg(feature = "csv")]
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
@@ -1704,7 +1704,7 @@ impl Iterator for ArrowStreamIterator {
             Some(Ok(df)) => {
                 let height = df.height();
                 let arrays = df.rechunk_into_arrow(CompatLevel::newest());
-                Some(Ok(Box::new(arrow::array::StructArray::new(
+                Some(Ok(Box::new(polars_arrow::array::StructArray::new(
                     self.dtype.clone(),
                     height,
                     arrays,

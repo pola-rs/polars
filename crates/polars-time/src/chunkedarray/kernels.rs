@@ -1,13 +1,13 @@
 //! macros that define kernels for extracting
 //! `week`, `weekday`, `year`, `hour` etc. from primitive arrays.
-use arrow::array::{BooleanArray, PrimitiveArray};
+use chrono::{Datelike, Timelike};
+use polars_arrow::array::{BooleanArray, PrimitiveArray};
 #[cfg(feature = "dtype-time")]
-use arrow::temporal_conversions::time64ns_to_time_opt;
-use arrow::temporal_conversions::{
+use polars_arrow::temporal_conversions::time64ns_to_time_opt;
+use polars_arrow::temporal_conversions::{
     date32_to_datetime_opt, timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt,
     timestamp_us_to_datetime_opt,
 };
-use chrono::{Datelike, Timelike};
 use polars_utils::time::{days_in_month, is_leap_year};
 
 use super::*;

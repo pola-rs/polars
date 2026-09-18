@@ -1,8 +1,8 @@
 //! APIs to serialize and write to [NDJSON](http://ndjson.org/).
 use std::io::Write;
 
-use arrow::array::Array;
 pub use fallible_streaming_iterator::FallibleStreamingIterator;
+use polars_arrow::array::Array;
 use polars_error::{PolarsError, PolarsResult};
 
 use super::super::json::write::new_serializer;

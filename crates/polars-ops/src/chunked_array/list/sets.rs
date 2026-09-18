@@ -1,13 +1,13 @@
 use std::hash::Hash;
 
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryViewArray, ListArray, MutableArray, MutablePlBinary, MutablePrimitiveArray,
     PrimitiveArray, Utf8ViewArray,
 };
-use arrow::bitmap::Bitmap;
-use arrow::compute::utils::combine_validities_and;
-use arrow::offset::OffsetsBuffer;
-use arrow::types::NativeType;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::compute::utils::combine_validities_and;
+use polars_arrow::offset::OffsetsBuffer;
+use polars_arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_type;
 use polars_defs::expr::SetOperation;

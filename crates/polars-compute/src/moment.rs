@@ -29,9 +29,9 @@
 
 #![allow(clippy::collapsible_else_if)]
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::types::NativeType;
 use num_traits::AsPrimitive;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::types::NativeType;
 use polars_utils::algebraic_ops::*;
 
 const CHUNK_SIZE: usize = 128;

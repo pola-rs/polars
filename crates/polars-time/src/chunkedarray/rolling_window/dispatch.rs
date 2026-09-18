@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::types::NativeType;
 #[cfg(feature = "dtype-f16")]
 use num_traits::real::Real;
+use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls};

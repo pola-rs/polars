@@ -1,8 +1,8 @@
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::{ArrowDataType, Field, IntegerType, UnionMode, UnionType};
-use arrow::ffi;
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::{ArrowDataType, Field, IntegerType, UnionMode, UnionType};
+use polars_arrow::ffi;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 

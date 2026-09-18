@@ -1,8 +1,8 @@
 use std::ops::Range;
 
-use arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray, StructArray};
-use arrow::bitmap::Bitmap;
-use arrow::pushable::Pushable;
+use polars_arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray, StructArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::pushable::Pushable;
 use polars_async::executor::{self, TaskPriority};
 use polars_core::prelude::*;
 use polars_io::RowIndex;

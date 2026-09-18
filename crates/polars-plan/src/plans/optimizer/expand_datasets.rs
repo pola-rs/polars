@@ -541,7 +541,7 @@ fn expand_python_dataset(
             if hive_options.enabled == Some(true)
                 && let Some(paths) = sources.as_paths()
             {
-                use arrow::Either;
+                use polars_arrow::Either;
 
                 use crate::plans::hive::hive_partitions_from_paths;
 
