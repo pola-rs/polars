@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from functools import partial
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote
 
 import polars as pl
 from polars._utils.logging import eprint
@@ -28,8 +29,40 @@ if TYPE_CHECKING:
     from polars.lazyframe.frame import LazyFrame
 
 
-def _file_name(path: str) -> str:
-    return path.replace("\\", "/").rpartition("/")[2]
+def _source_sizes_from_add_actions(
+    paths: list[str], add_actions: pl.DataFrame
+) -> list[int] | None:
+    """Pair every path with the add action describing it and return their sizes.
+
+    The actions enumerate the same snapshot as the paths, in the same order, which is
+    deltalake's behaviour rather than a guarantee. A size read against the wrong file
+    would send the reader to an offset holding no footer, so confirm the pairing and
+    give up on all of it otherwise.
+    """
+    if "size_bytes" not in add_actions.columns or len(add_actions) != len(paths):
+        return None
+
+    # An action's path is a URI relative to the table root, and has to be decoded to
+    # name a file. The paths are absolute and already decoded, so a partition value
+    # reaches us spelled twice over: `p=a b` is `p=a%2520b` here and `p=a%20b` there.
+    #
+    # Take the root each pair implies and insist on a single table. A suffix alone is
+    # not enough to pair on: `part.parquet` and `t/part.parquet` are both legal under
+    # `/t`, and each one ends the other's path, so swapping the two would go unseen.
+    roots = set()
+
+    for path, action in zip(paths, add_actions["path"], strict=True):
+        relative = unquote(action)
+
+        if not path.endswith(relative):
+            return None
+
+        roots.add(path[: len(path) - len(relative)])
+
+    if len(roots) > 1:
+        return None
+
+    return add_actions["size_bytes"].to_list()
 
 
 @dataclass(kw_only=True)
@@ -168,26 +201,9 @@ class DeltaDataset:
 
         add_actions = pl.DataFrame(table.get_add_actions())
 
-        # The add actions enumerate the same snapshot as `file_uris()`, in the same
-        # order, so their sizes line up positionally. That is deltalake's behaviour
-        # rather than a guarantee, and the scan seeks to the footer relative to the
-        # size it is given, so check the pairing instead of trusting it. Compare file
-        # names only: the two spell partition directories with a different number of
-        # percent-encoding layers, but a file name holds no partition value.
-        paired = (
-            "size_bytes" in add_actions.columns
-            and len(add_actions) == len(paths)
-            and all(
-                _file_name(uri) == _file_name(path)
-                for uri, path in zip(paths, add_actions["path"], strict=True)
-            )
-        )
+        source_sizes = _source_sizes_from_add_actions(paths, add_actions)
 
-        source_sizes: list[int] | None = None
-
-        if paired:
-            source_sizes = add_actions["size_bytes"].to_list()
-        elif verbose:
+        if source_sizes is None and verbose:
             eprint(
                 "DeltaDataset: to_dataset_scan(): "
                 "cannot pair add actions with file_uris(), skipping sizes"

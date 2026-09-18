@@ -23,7 +23,10 @@ from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
-from polars.io.delta._dataset import DeltaDataset, _file_name
+from polars.io.delta._dataset import (
+    DeltaDataset,
+    _source_sizes_from_add_actions,
+)
 from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_frame_not_equal
@@ -1526,12 +1529,44 @@ def test_scan_delta_source_sizes_match_the_file_list(
     uris = table.file_uris()
     actions = pl.DataFrame(table.get_add_actions())
 
-    assert len(uris) == len(actions)
-    assert all(
-        _file_name(uri) == _file_name(path)
-        for uri, path in zip(uris, actions["path"], strict=True)
+    assert _source_sizes_from_add_actions(uris, actions) == [
+        Path(uri).stat().st_size for uri in uris
+    ]
+
+
+def test_delta_source_sizes_reject_a_pairing_they_cannot_confirm() -> None:
+    # Nothing in the protocol makes a file name unique. It need not carry a UUID, and
+    # need not say which partition it belongs to, so two partitions can each hold a
+    # `part.parquet`. Pairing on the name alone would hand a reordered pair of actions
+    # the other file's size, and the reader would seek past the end of the smaller one.
+    paths = ["/t/p=0/part.parquet", "/t/p=1/part.parquet"]
+    actions = pl.DataFrame(
+        {"path": ["p=0/part.parquet", "p=1/part.parquet"], "size_bytes": [100, 200]}
     )
-    assert actions["size_bytes"].to_list() == [Path(uri).stat().st_size for uri in uris]
+
+    assert _source_sizes_from_add_actions(paths, actions) == [100, 200]
+    assert _source_sizes_from_add_actions(paths, actions.reverse()) is None
+
+    # A partition value the log had to escape still pairs up.
+    assert _source_sizes_from_add_actions(
+        ["/t/p=a%20b/part.parquet"],
+        pl.DataFrame({"path": ["p=a%2520b/part.parquet"], "size_bytes": [100]}),
+    ) == [100]
+
+    # A file at the table root and a file one directory down can share a name, and
+    # then each one's path ends with the other's relative path. Only the root the
+    # pairing implies tells them apart.
+    nested = ["/t/part.parquet", "/t/t/part.parquet"]
+    nested_actions = pl.DataFrame(
+        {"path": ["part.parquet", "t/part.parquet"], "size_bytes": [100, 200]}
+    )
+
+    assert _source_sizes_from_add_actions(nested, nested_actions) == [100, 200]
+    assert _source_sizes_from_add_actions(nested, nested_actions.reverse()) is None
+
+    # Nothing to go on: no sizes recorded, or a count that disagrees.
+    assert _source_sizes_from_add_actions(paths, actions.drop("size_bytes")) is None
+    assert _source_sizes_from_add_actions(paths, actions.head(1)) is None
 
 
 @pytest.mark.write_disk
