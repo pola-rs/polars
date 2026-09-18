@@ -147,10 +147,9 @@ fn grouped_side(
     ir_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<Grouped> {
-    if !join_keys
-        .iter()
-        .all(|key| elementwise(key.node(), expr_arena))
-    {
+    // The keys move below the filters in `T`, so they must not raise on the rows
+    // those filters drop.
+    if !join_keys.iter().all(|key| pushable(key.node(), expr_arena)) {
         return None;
     }
     let mut keys = join_keys.to_vec();
@@ -192,14 +191,18 @@ fn grouped_side(
     else {
         unreachable!()
     };
-    // The same cases predicate pushdown leaves alone, and an order of groups that a
-    // semi join below would not keep.
+    // The same cases predicate pushdown leaves alone, an order of groups that a
+    // semi join below would not keep, and grouping keys that change with the rows
+    // it drops.
     if apply.is_some()
         || options.is_rolling()
         || options.is_dynamic()
         || options.slice.is_some()
         || *maintain_order
         || group_keys.is_empty()
+        || !group_keys
+            .iter()
+            .all(|key| elementwise(key.node(), expr_arena))
     {
         return None;
     }
@@ -236,7 +239,11 @@ fn restrict(
     let JoinTypeOptionsIR::Equi { on, .. } = &options.options else {
         return;
     };
-    if !matches!(options.args.how, JoinType::Inner) || options.args.slice.is_some() || on.is_empty()
+    // Validation must see every group, including those the semi join would drop.
+    if !matches!(options.args.how, JoinType::Inner)
+        || options.args.slice.is_some()
+        || options.args.validation.needs_checks()
+        || on.is_empty()
     {
         return;
     }
