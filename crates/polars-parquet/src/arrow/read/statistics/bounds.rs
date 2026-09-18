@@ -261,27 +261,24 @@ impl BoundConversion {
         )
     }
 
-    /// Converts the bounds of a chunk of the leaf. A timestamp the reader wraps
-    /// leaves the chunk's values without order, so neither bound holds then.
+    /// Converts the bounds of a chunk of the leaf. A timestamp the reader
+    /// multiplies past `i64` wraps, leaving the chunk's values without order:
+    /// such a conversion needs both bounds, and both within range, to hold.
     pub fn convert_bounds<'a>(
         self,
         min: Option<PhysicalBound<'a>>,
         max: Option<PhysicalBound<'a>>,
     ) -> ParquetResult<(Option<ArrowBound<'a>>, Option<ArrowBound<'a>>)> {
-        if [min, max].into_iter().flatten().any(|b| self.wraps(b)) {
+        let convert = |bound: Option<_>| bound.map(|b| self.convert(b)).transpose();
+        let (min, max) = (convert(min)?.flatten(), convert(max)?.flatten());
+        if self.can_wrap() && (min.is_none() || max.is_none()) {
             return Ok((None, None));
         }
-        let convert = |bound: Option<_>| bound.map(|b| self.convert(b)).transpose();
-        Ok((convert(min)?.flatten(), convert(max)?.flatten()))
+        Ok((min, max))
     }
 
-    fn wraps(self, bound: PhysicalBound) -> bool {
-        match (self, bound) {
-            (Self::Timestamp { factor, multiply }, PhysicalBound::Int64(v)) => {
-                multiply && v.checked_mul(factor).is_none()
-            },
-            _ => false,
-        }
+    fn can_wrap(self) -> bool {
+        matches!(self, Self::Timestamp { factor, multiply: true } if factor != 1)
     }
 
     /// Converts a bound of the leaf. `None` when the value bounds nothing: a NaN,
@@ -379,8 +376,9 @@ mod tests {
     ) -> ParquetResult<Option<ArrowBound<'a>>> {
         let raw = RawBounds {
             min: Some(bytes),
+            max: Some(bytes),
             min_is_exact: true,
-            ..Default::default()
+            max_is_exact: true,
         };
         Ok(conversion(dtype, primitive_type)
             .decode_bounds(primitive_type.physical_type, raw)?
@@ -495,18 +493,18 @@ mod tests {
     #[test]
     fn wrapped_timestamps_bound_nothing() {
         use ArrowDataType as D;
-        let conversion = conversion(
+        let multiplying = conversion(
             D::Timestamp(TimeUnit::Nanosecond, None),
             &timestamp_leaf(ParquetTimeUnit::Milliseconds),
         );
-        let (min, max) = conversion
+        let (min, max) = multiplying
             .convert_bounds(
                 Some(PhysicalBound::Int64(0)),
                 Some(PhysicalBound::Int64(i64::MAX / 1_000_000 + 1)),
             )
             .unwrap();
         assert_eq!((min, max), (None, None));
-        let (min, max) = conversion
+        let (min, max) = multiplying
             .convert_bounds(
                 Some(PhysicalBound::Int64(-1)),
                 Some(PhysicalBound::Int64(1)),
@@ -514,6 +512,24 @@ mod tests {
             .unwrap();
         assert_eq!(min, Some(ArrowBound::Int64(-1_000_000)));
         assert_eq!(max, Some(ArrowBound::Int64(1_000_000)));
+        // Without one bound, an unseen value may wrap past the other.
+        for (min, max) in [(None, Some(0)), (Some(0), None)] {
+            let bounds = multiplying
+                .convert_bounds(min.map(PhysicalBound::Int64), max.map(PhysicalBound::Int64))
+                .unwrap();
+            assert_eq!(bounds, (None, None));
+        }
+        // A conversion that cannot wrap keeps a lone bound.
+        let dividing = conversion(
+            D::Timestamp(TimeUnit::Millisecond, None),
+            &timestamp_leaf(ParquetTimeUnit::Microseconds),
+        );
+        assert_eq!(
+            dividing
+                .convert_bounds(None, Some(PhysicalBound::Int64(5_000)))
+                .unwrap(),
+            (None, Some(ArrowBound::Int64(5)))
+        );
     }
 
     #[test]

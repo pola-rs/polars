@@ -336,14 +336,13 @@ fn runtime_range_skip_mask(
                         continue;
                     }
                     let (min, max) = leaf.bounds(rg, &metadata.footer_buf);
-                    let min = min.map(|min| Bound::from_arrow(min, scale));
-                    let max = max.map(|max| Bound::from_arrow(max, scale));
-                    if matches!(min, Some(None)) || matches!(max, Some(None)) {
+                    let min = min.and_then(|min| Bound::from_arrow(min, scale));
+                    let max = max.and_then(|max| Bound::from_arrow(max, scale));
+                    // Scaling wraps unseen values unless both bounds show it does not.
+                    if scale != 1 && (min.is_none() || max.is_none()) {
                         continue;
                     }
-                    if max.flatten().is_some_and(|max| max < lo)
-                        || min.flatten().is_some_and(|min| min > hi)
-                    {
+                    if max.is_some_and(|max| max < lo) || min.is_some_and(|min| min > hi) {
                         mask.get_or_insert_with(|| {
                             MutableBitmap::from_len_zeroed(row_groups.len())
                         })
