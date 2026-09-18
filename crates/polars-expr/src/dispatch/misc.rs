@@ -716,15 +716,15 @@ pub fn as_list(s: &mut [Column]) -> PolarsResult<Column> {
 
     let broadcast_len = broadcast_len(s.iter()).context("list as_list")?;
     let first = s[0].to_unit_list();
-    let first_ca = first
-        .list()?
-        .clone()
-        .broadcast_owned_to(broadcast_len)?;
+    let first_ca = first.list()?.clone().broadcast_owned_to(broadcast_len)?;
     let other: Vec<Column> = s[1..]
         .iter()
         .map(|col| {
             let unit_list = col.to_unit_list();
-            let ca = unit_list.list()?.clone().broadcast_owned_to(broadcast_len)?;
+            let ca = unit_list
+                .list()?
+                .clone()
+                .broadcast_owned_to(broadcast_len)?;
             Ok(ca.into_column())
         })
         .collect::<PolarsResult<Vec<_>>>()?;
