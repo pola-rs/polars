@@ -1,13 +1,91 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use polars_async::executor::TaskMetrics;
+pub use polars_descriptions::MetricKind;
 pub use polars_io::metrics::{IOMetrics, OptIOMetrics};
+use polars_utils::pl_str::PlSmallStr;
+use polars_utils::relaxed_cell::RelaxedCell;
 use slotmap::{SecondaryMap, SlotMap};
 
 use crate::LogicalPipe;
 use crate::graph::{GraphNodeKey, LogicalPipeKey};
 use crate::pipe::PipeMetrics;
+
+#[derive(Debug, Default)]
+pub struct CustomMetric {
+    pub kind: MetricKind,
+    value: RelaxedCell<u64>,
+}
+
+impl CustomMetric {
+    pub fn set(&self, value: u64) {
+        self.value.store(value);
+    }
+
+    pub fn add(&self, delta: u64) {
+        self.value.fetch_add(delta);
+    }
+
+    pub fn load(&self) -> u64 {
+        self.value.load()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CustomMetricValue {
+    pub kind: MetricKind,
+    pub value: u64,
+}
+
+#[derive(Default)]
+pub struct CustomMetrics {
+    values: parking_lot::Mutex<BTreeMap<PlSmallStr, Arc<CustomMetric>>>,
+}
+
+impl CustomMetrics {
+    pub fn slot(&self, key: PlSmallStr, kind: MetricKind) -> Arc<CustomMetric> {
+        let slot = self
+            .values
+            .lock()
+            .entry(key)
+            .or_insert_with(|| {
+                Arc::new(CustomMetric {
+                    kind,
+                    value: RelaxedCell::default(),
+                })
+            })
+            .clone();
+        debug_assert_eq!(slot.kind, kind);
+        slot
+    }
+
+    pub fn snapshot(&self) -> Vec<(PlSmallStr, CustomMetricValue)> {
+        self.values
+            .lock()
+            .iter()
+            .map(|(key, metric)| {
+                (
+                    key.clone(),
+                    CustomMetricValue {
+                        kind: metric.kind,
+                        value: metric.load(),
+                    },
+                )
+            })
+            .collect()
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct OptCustomMetrics(pub Option<Arc<CustomMetrics>>);
+
+impl OptCustomMetrics {
+    pub fn slot(&self, key: PlSmallStr, kind: MetricKind) -> Option<Arc<CustomMetric>> {
+        self.0.as_ref().map(|metrics| metrics.slot(key, kind))
+    }
+}
 
 #[derive(Default, Clone)]
 pub struct NodeMetrics {
@@ -35,6 +113,8 @@ pub struct NodeMetrics {
     pub state_update_in_progress: bool,
     pub num_running_tasks: u32,
     pub done: bool,
+
+    pub custom: Vec<(PlSmallStr, CustomMetricValue)>,
 }
 
 impl NodeMetrics {
@@ -96,6 +176,7 @@ impl NodeMetrics {
 pub struct GraphMetrics {
     node_metrics: SecondaryMap<GraphNodeKey, NodeMetrics>,
     in_progress_io_metrics: SecondaryMap<GraphNodeKey, Arc<IOMetrics>>,
+    in_progress_custom_metrics: SecondaryMap<GraphNodeKey, Arc<CustomMetrics>>,
     in_progress_task_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<TaskMetrics>>>,
     in_progress_pipe_metrics: SecondaryMap<LogicalPipeKey, Vec<Arc<PipeMetrics>>>,
 }
@@ -142,6 +223,11 @@ impl GraphMetrics {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
             this_node_metrics.reset_io_metrics();
             this_node_metrics.add_io(io_metrics);
+        }
+
+        for (key, custom_metrics) in self.in_progress_custom_metrics.iter() {
+            let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
+            this_node_metrics.custom = custom_metrics.snapshot();
         }
 
         for (key, in_progress_pipe_metrics) in self.in_progress_pipe_metrics.iter_mut() {
@@ -192,6 +278,30 @@ impl NodeMetricsRegistrator {
             },
             Entry::Vacant(e) => {
                 e.insert(io_metrics);
+            },
+        };
+    }
+
+    /// # Panics
+    /// When debug_assertions enabled, panics if called more than once for a node within a single
+    /// phase.
+    pub fn register_custom_metrics(&self, custom_metrics: Arc<CustomMetrics>) {
+        let mut guard = self.graph_metrics.lock();
+
+        use slotmap::secondary::Entry;
+
+        match guard
+            .in_progress_custom_metrics
+            .entry(self.graph_key)
+            .unwrap()
+        {
+            Entry::Occupied(e) => {
+                // Each node should only have 1 set of metrics, identified by the Arc address.
+                // But the registration can be called multiple times (per phase).
+                assert!(Arc::ptr_eq(&custom_metrics, e.get()));
+            },
+            Entry::Vacant(e) => {
+                e.insert(custom_metrics);
             },
         };
     }
