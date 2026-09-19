@@ -1536,6 +1536,7 @@ def test_scan_delta_source_sizes_match_the_file_list(
 def test_delta_table_root_normalisation() -> None:
     # Match local file URIs and Polars' lakefs-to-s3 rewrite.
     assert _table_root("file:///private/var/t") == "/private/var/t/"
+    assert _table_root("file:///C:/Users/t") == "C:/Users/t/"
     assert _table_root("s3://bucket/t/") == "s3://bucket/t/"
     assert _table_root("lakefs://repo/main/t") == "s3://repo/main/t/"
 
