@@ -1,7 +1,9 @@
 use std::cmp;
 use std::fmt::Write;
+use std::ops::ControlFlow;
 
 use num_traits::ToPrimitive;
+use polars_arrow::bitmap::iterator::TrueIdxIter;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -80,6 +82,43 @@ where
     Ok((bins, uniform))
 }
 
+/// Calls `count` with every value of `ca` its mask does not call null, and stops where it says to.
+///
+/// A histogram reads the values it counts and nothing else, so where the column is laid out flat
+/// the mask names which of them to read: building an `Option` for every element instead costs
+/// about half the walk again on a column that carries one.
+fn count_values<T, F>(ca: &ChunkedArray<T>, mut count: F)
+where
+    T: PolarsNumericType,
+    F: FnMut(T::Native) -> ControlFlow<()>,
+{
+    for chunk in ca.downcast_iter() {
+        let flow = match (chunk.as_slice(), chunk.validity()) {
+            (Some(values), None) => values.iter().copied().try_for_each(&mut count),
+            (Some(values), Some(validity)) => match validity.flat_bitmap() {
+                // SAFETY: the mask covers the values, so every index it names is one of them.
+                Some(validity) => TrueIdxIter::new(values.len(), Some(validity))
+                    .try_for_each(|i| count(unsafe { *values.get_unchecked(i) })),
+                // A mask of one slot calls every element null or none of them.
+                None if validity.scalar_value() == Some(true) => {
+                    values.iter().copied().try_for_each(&mut count)
+                },
+                None => ControlFlow::Continue(()),
+            },
+            // A chunk that is not laid out flat reads an element at a time, but through the
+            // fold its walk forwards rather than the `next` a `flatten` would drive.
+            _ => chunk.iter().try_for_each(|item| match item {
+                Some(item) => count(item),
+                None => ControlFlow::Continue(()),
+            }),
+        };
+
+        if flow.is_break() {
+            return;
+        }
+    }
+}
+
 // O(n) implementation when buckets are fixed-size.
 // We deposit items directly into their buckets.
 fn uniform_hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>) -> Vec<IdxSize>
@@ -94,27 +133,25 @@ where
     let scale = num_bins as f64 / (max_break - min_break);
     let max_idx = num_bins - 1;
 
-    for chunk in ca.downcast_iter() {
-        chunk.iter().for_each(|item| {
-            let Some(item) = item else { return };
-            let item = item.to_f64().unwrap();
-            if item > min_break && item <= max_break {
-                // idx > (num_bins - 1) may happen due to floating point representation imprecision
-                let mut idx = cmp::min((scale * (item - min_break)) as usize, max_idx);
+    count_values(ca, |item| {
+        let item = item.to_f64().unwrap();
+        if item > min_break && item <= max_break {
+            // idx > (num_bins - 1) may happen due to floating point representation imprecision
+            let mut idx = cmp::min((scale * (item - min_break)) as usize, max_idx);
 
-                // Adjust for float imprecision providing idx > 1 ULP of the breaks
-                if item <= breaks[idx] {
-                    idx -= 1;
-                } else if item > breaks[idx + 1] {
-                    idx += 1;
-                }
-
-                count[idx] += 1;
-            } else if item == min_break {
-                count[0] += 1;
+            // Adjust for float imprecision providing idx > 1 ULP of the breaks
+            if item <= breaks[idx] {
+                idx -= 1;
+            } else if item > breaks[idx + 1] {
+                idx += 1;
             }
-        });
-    }
+
+            count[idx] += 1;
+        } else if item == min_break {
+            count[0] += 1;
+        }
+        ControlFlow::Continue(())
+    });
     count
 }
 
@@ -131,21 +168,20 @@ where
     let mut sorted = ca.sort(false);
     sorted.rechunk_mut();
     let mut current_count: IdxSize = 0;
-    let chunk = sorted.downcast_as_array();
     let mut count: Vec<IdxSize> = Vec::with_capacity(num_bins);
 
-    'item: for item in chunk.iter().flatten() {
+    count_values(&sorted, |item| {
         let item = item.to_f64().unwrap();
 
         // Cycle through items until we hit the first bucket.
         if item.is_nan() || item < min_break {
-            continue;
+            return ControlFlow::Continue(());
         }
 
         while item > upper_bound {
             if item > max_break {
                 // No more items will fit in any buckets
-                break 'item;
+                return ControlFlow::Break(());
             }
 
             // Finished with prior bucket; push, reset, and move to next.
@@ -156,7 +192,8 @@ where
 
         // Item is in bound.
         current_count += 1;
-    }
+        ControlFlow::Continue(())
+    });
     count.push(current_count);
     count.resize(num_bins, 0); // If we left early, fill remainder with 0.
     count
