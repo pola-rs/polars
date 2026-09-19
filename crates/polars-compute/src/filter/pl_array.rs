@@ -39,7 +39,10 @@ pub fn filter_with_bitmap(array: &dyn PlArray, mask: PlBitmapRef<'_>) -> Box<dyn
         return array.to_boxed();
     }
 
-    let values = array.without_validity();
+    // Dropping the mask to ask whether the values all read one slot is a clone of the chunk's
+    // buffers; a chunk with no mask is its own values, so it answers the question in place.
+    let unmasked = array.validity().is_some().then(|| array.without_validity());
+    let values = unmasked.as_deref().unwrap_or(array);
     if values.is_scalar() {
         // SAFETY: the mask keeps at least one element, so the array holds at least one.
         let filtered = unsafe { values.new_from_index_unchecked(0, kept) };

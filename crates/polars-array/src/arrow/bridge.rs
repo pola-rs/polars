@@ -6,10 +6,12 @@ use polars_arrow::array::{
 };
 use polars_arrow::types::NativeType;
 
+use crate::arrow::export::downcast;
 use crate::arrow::{export, import};
 use crate::{
-    Flat, PlArray, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeListArray,
-    PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray, PlUtf8ViewArray, StaticArray,
+    Flat, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBooleanArray,
+    PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray,
+    PlUtf8ViewArray, StaticArray,
 };
 
 /// The Arrow array that holds the same elements as an array of this crate.
@@ -173,6 +175,33 @@ pub fn with_arrow_chunk<F>(chunk: &dyn PlArray, kernel: F) -> Box<dyn PlArray>
 where
     F: FnOnce(&dyn Array) -> Box<dyn Array>,
 {
+    // The array types a kernel is hot on export onto the stack: `export::to_arrow` boxes what it
+    // hands back, which is an allocation per chunk on top of the one the kernel's answer costs.
+    match chunk.array_type() {
+        PlArrayType::Boolean => {
+            let arrow = export::boolean_to_arrow_boolean(downcast(chunk));
+            return import::from_arrow(&*kernel(&arrow));
+        },
+        PlArrayType::Primitive(_) => {
+            return crate::with_match_pl_primitive_array_type!(chunk, |$T| {
+                let arrow = export::primitive_to_arrow_primitive(
+                    downcast::<PlPrimitiveArray<$T>>(chunk),
+                );
+                import::from_arrow(&*kernel(&arrow))
+            })
+            .expect("a primitive array is taken over one of the element types dispatched on");
+        },
+        PlArrayType::Utf8View => {
+            let arrow = export::utf8view_to_arrow_utf8view(downcast(chunk));
+            return import::from_arrow(&*kernel(&arrow));
+        },
+        PlArrayType::BinaryView => {
+            let arrow = export::binview_to_arrow_binview(downcast(chunk));
+            return import::from_arrow(&*kernel(&arrow));
+        },
+        _ => {},
+    }
+
     let arrow = export::to_arrow(chunk);
     import::from_arrow(&*kernel(&*arrow))
 }

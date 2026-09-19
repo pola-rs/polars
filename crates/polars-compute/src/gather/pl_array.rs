@@ -31,7 +31,13 @@ pub unsafe fn take_unchecked(
         return and_validity(gathered, indices.validity());
     }
 
-    let unmasked = values.without_validity();
+    // Dropping the mask to ask whether the values all read one slot is a clone of the chunk's
+    // buffers; a chunk with no mask is its own values, so it answers the question in place.
+    let dropped = values
+        .validity()
+        .is_some()
+        .then(|| values.without_validity());
+    let unmasked = dropped.as_deref().unwrap_or(values);
     if unmasked.is_scalar() {
         // SAFETY: `values` holds at least one element, and the value under a null one is a value
         // like any other here — the mask below is what makes the result null.

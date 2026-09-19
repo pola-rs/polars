@@ -188,7 +188,7 @@ pub fn offsets_to_arrow(offsets: Buffer<u64>) -> OffsetsBuffer<i64> {
 
 /// Downcasts an array of this crate whose array type has already been matched on.
 #[inline]
-fn downcast<A: PlArray>(array: &dyn PlArray) -> &A {
+pub(crate) fn downcast<A: PlArray>(array: &dyn PlArray) -> &A {
     array
         .as_any()
         .downcast_ref()

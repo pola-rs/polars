@@ -135,8 +135,12 @@ pub trait StaticArray: PlArray + Clone {
     /// The value every element of this array reads, whether or not the mask calls it null.
     #[inline]
     fn scalar_value_ignore_validity(&self) -> Option<Self::ValueT<'_>> {
-        let values = self.clone().with_validity_typed(None);
-        let values_are_scalar = PlArray::is_scalar(&values);
+        // Dropping the mask to ask about the values alone is a clone of the array's buffers; an
+        // array with no mask is its own values, so it answers the question in place.
+        let values_are_scalar = match self.validity() {
+            None => PlArray::is_scalar(self),
+            Some(_) => PlArray::is_scalar(&self.clone().with_validity_typed(None)),
+        };
 
         // SAFETY: the array is not empty, so element 0 is in bounds.
         (values_are_scalar && !self.is_empty()).then(|| unsafe { self.value_unchecked(0) })

@@ -232,7 +232,13 @@ fn repeated_element_mask(s: &Series) -> Option<Option<PlBitmap>> {
         return None;
     }
 
-    if !chunk.without_validity().is_scalar() {
+    // Dropping the mask to ask about the values alone is a clone of the chunk's buffers; a chunk
+    // with no mask is its own values, so it answers the question in place.
+    let values_repeat = match chunk.validity() {
+        None => chunk.is_scalar(),
+        Some(_) => chunk.without_validity().is_scalar(),
+    };
+    if !values_repeat {
         return None;
     }
 
