@@ -87,34 +87,47 @@ where
 /// A histogram reads the values it counts and nothing else, so where the column is laid out flat
 /// the mask names which of them to read: building an `Option` for every element instead costs
 /// about half the walk again on a column that carries one.
+#[inline]
 fn count_values<T, F>(ca: &ChunkedArray<T>, mut count: F)
 where
     T: PolarsNumericType,
     F: FnMut(T::Native) -> ControlFlow<()>,
 {
+    macro_rules! count_all {
+        ($values:expr) => {
+            for value in $values {
+                if count(value).is_break() {
+                    return;
+                }
+            }
+        };
+    }
+
     for chunk in ca.downcast_iter() {
-        let flow = match (chunk.as_slice(), chunk.validity()) {
-            (Some(values), None) => values.iter().copied().try_for_each(&mut count),
+        match (chunk.as_slice(), chunk.validity()) {
+            (Some(values), None) => count_all!(values.iter().copied()),
             (Some(values), Some(validity)) => match validity.flat_bitmap() {
-                // SAFETY: the mask covers the values, so every index it names is one of them.
-                Some(validity) => TrueIdxIter::new(values.len(), Some(validity))
-                    .try_for_each(|i| count(unsafe { *values.get_unchecked(i) })),
+                Some(validity) => {
+                    for i in TrueIdxIter::new(values.len(), Some(validity)) {
+                        // SAFETY: the mask covers the values, so every index it names is one.
+                        if count(unsafe { *values.get_unchecked(i) }).is_break() {
+                            return;
+                        }
+                    }
+                },
                 // A mask of one slot calls every element null or none of them.
                 None if validity.scalar_value() == Some(true) => {
-                    values.iter().copied().try_for_each(&mut count)
+                    count_all!(values.iter().copied())
                 },
-                None => ControlFlow::Continue(()),
+                None => (),
             },
-            // A chunk that is not laid out flat reads an element at a time, but through the
-            // fold its walk forwards rather than the `next` a `flatten` would drive.
-            _ => chunk.iter().try_for_each(|item| match item {
-                Some(item) => count(item),
-                None => ControlFlow::Continue(()),
-            }),
-        };
-
-        if flow.is_break() {
-            return;
+            // A chunk that repeats one value holds that value as many times as it is long, so
+            // read it once and count it that many times rather than resolve it per element.
+            _ => match chunk.scalar_value() {
+                Some(Some(value)) => count_all!(std::iter::repeat_n(value, chunk.len())),
+                Some(None) => (),
+                None => count_all!(chunk.iter().flatten()),
+            },
         }
     }
 }
