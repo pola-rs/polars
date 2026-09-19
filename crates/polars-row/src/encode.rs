@@ -1202,6 +1202,35 @@ mod tests {
         }
     }
 
+    /// The decoded strings cross the size limit of one data buffer. Slow without
+    /// optimizations, so run with `cargo test --release -- --ignored`.
+    #[test]
+    #[ignore]
+    fn test_string_buffer_rollover() {
+        let value = "x".repeat(1 << 20);
+        let values: Vec<Option<&str>> = (0..2048).map(|_| Some(value.as_str())).collect();
+        let strs = Utf8ViewArray::from_slice(values).to_boxed();
+        for opt in [
+            RowEncodingOptions::new_sorted(false, false),
+            RowEncodingOptions::new_unsorted(),
+        ] {
+            let dicts = [None];
+            let rows = convert_columns(strs.len(), std::slice::from_ref(&strs), &[opt], &dicts);
+            let encoded = rows.into_array();
+            let mut scratch = Vec::new();
+            let decoded = unsafe {
+                decode_rows_from_binary(
+                    &encoded,
+                    &[opt],
+                    &dicts,
+                    &[strs.dtype().clone()],
+                    &mut scratch,
+                )
+            };
+            assert_eq!(&strs, &decoded[0]);
+        }
+    }
+
     proptest::prop_compose! {
         fn arrays
             ()

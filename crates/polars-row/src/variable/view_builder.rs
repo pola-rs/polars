@@ -10,7 +10,7 @@ use polars_buffer::Buffer;
 
 use crate::utils::BLOCK;
 
-/// Maximum length of one data buffer. Values are limited to `u32::MAX` bytes.
+/// A data buffer is not grown past this length, except for a single value that is larger.
 const MAX_BUFFER_LEN: usize = i32::MAX as usize;
 
 pub(crate) struct ViewBuilder {
@@ -68,22 +68,42 @@ impl ViewBuilder {
     /// [`Self::finish_value`] once all bytes are written.
     #[inline(always)]
     pub unsafe fn start_value(&mut self, len: usize) -> *mut u8 {
-        if self.buffer.len() > MAX_BUFFER_LEN - len.max(BLOCK) {
-            let buffer = std::mem::take(&mut self.buffer);
-            self.total_buffer_len += buffer.len();
-            self.completed_buffers.push(Buffer::from(buffer));
+        if self.buffer.len() + len.max(BLOCK) > MAX_BUFFER_LEN && !self.buffer.is_empty() {
+            self.flush_buffer();
         }
         self.buffer.reserve(len + BLOCK);
         self.buffer.as_mut_ptr().add(self.buffer.len())
     }
 
-    /// Make room for `additional` more bytes in the value being written. Returns the new
-    /// location of the start of the value.
+    /// Make room for `additional` more bytes in the value being written, of which `written`
+    /// bytes are done. Returns the new location of the start of the value.
     #[inline(always)]
     pub unsafe fn grow_value(&mut self, written: usize, additional: usize) -> *mut u8 {
-        assert!(self.buffer.len() + written + additional <= MAX_BUFFER_LEN);
-        self.buffer.reserve(written + additional);
+        if self.buffer.len() + written + additional > MAX_BUFFER_LEN && !self.buffer.is_empty() {
+            self.move_value_to_new_buffer(written, additional);
+        } else {
+            self.buffer.reserve(written + additional);
+        }
         self.buffer.as_mut_ptr().add(self.buffer.len())
+    }
+
+    #[cold]
+    unsafe fn move_value_to_new_buffer(&mut self, written: usize, additional: usize) {
+        let mut buffer = Vec::with_capacity(written + additional + BLOCK);
+        std::ptr::copy_nonoverlapping(
+            self.buffer.as_ptr().add(self.buffer.len()),
+            buffer.as_mut_ptr(),
+            written,
+        );
+        std::mem::swap(&mut self.buffer, &mut buffer);
+        self.total_buffer_len += buffer.len();
+        self.completed_buffers.push(Buffer::from(buffer));
+    }
+
+    fn flush_buffer(&mut self) {
+        let buffer = std::mem::take(&mut self.buffer);
+        self.total_buffer_len += buffer.len();
+        self.completed_buffers.push(Buffer::from(buffer));
     }
 
     /// Finish the value started with [`Self::start_value`]. `prefix` holds the first 4 bytes
@@ -124,8 +144,7 @@ impl ViewBuilder {
 
     pub fn freeze(mut self, dtype: ArrowDataType, validity: Option<Bitmap>) -> BinaryViewArray {
         if !self.buffer.is_empty() {
-            self.total_buffer_len += self.buffer.len();
-            self.completed_buffers.push(Buffer::from(self.buffer));
+            self.flush_buffer();
         }
         unsafe {
             BinaryViewArray::new_unchecked(

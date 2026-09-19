@@ -142,11 +142,15 @@ unsafe fn decode_fixed_rows(
                 .collect(),
         );
     };
+    // All reads go through the first slice, so it must cover every row.
     let base = first.as_ptr();
+    if first.len() < num_rows * stride {
+        return None;
+    }
     let is_contiguous = rows
         .iter()
         .enumerate()
-        .all(|(i, row)| row.as_ptr() == base.add(i * stride) && row.len() >= stride);
+        .all(|(i, row)| row.as_ptr() == base.add(i * stride));
     if !is_contiguous {
         return None;
     }
