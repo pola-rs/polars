@@ -114,10 +114,11 @@ impl ViewBuilder {
     #[inline(always)]
     pub unsafe fn finish_value(&mut self, len: usize, prefix: u32) {
         debug_assert!(len > View::MAX_INLINE_SIZE as usize);
+        let length = u32::try_from(len).expect("value longer than u32::MAX bytes");
         let offset = self.buffer.len();
         self.buffer.set_len(offset + len);
         let view = View {
-            length: len as u32,
+            length,
             prefix,
             buffer_idx: self.completed_buffers.len() as u32,
             offset: offset as u32,
