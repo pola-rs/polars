@@ -1,6 +1,17 @@
 use super::*;
 use crate::plans::aexpr::{ExprPushdownGroup, is_inherently_nondeterministic};
 
+fn commutes_with_filter(predicate: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
+    matches!(
+        ExprPushdownGroup::Pushable.update_with_expr_rec(
+            expr_arena.get(predicate.node()),
+            expr_arena,
+            None,
+        ),
+        ExprPushdownGroup::Pushable
+    ) && !is_inherently_nondeterministic(predicate.node(), expr_arena)
+}
+
 /// ON conditions may filter the non-preserved input of an outer join. The entire
 /// condition must commute with filtering, including the expressions used as keys.
 #[allow(clippy::too_many_arguments)]
@@ -17,15 +28,7 @@ pub(super) fn push_down_join_condition(
         return Ok(());
     };
     if !matches!(options.args.how, JoinType::Left | JoinType::Right)
-        || !matches!(
-            ExprPushdownGroup::Pushable.update_with_expr_rec(
-                expr_arena.get(predicate.node()),
-                expr_arena,
-                None,
-            ),
-            ExprPushdownGroup::Pushable
-        )
-        || is_inherently_nondeterministic(predicate.node(), expr_arena)
+        || !commutes_with_filter(predicate, expr_arena)
     {
         return Ok(());
     }
@@ -467,22 +470,19 @@ pub fn try_rewrite_join_type(
             &suffix,
         )?;
 
-        for EquiJoinKeys {
-            input_lhs,
-            input_rhs,
-        } in equality_conditions
-        {
+        let equality_conditions: Vec<_> = equality_conditions.collect();
+        if !equality_conditions.is_empty() {
             let join_options = Arc::make_mut(options);
             join_options.args.how = JoinType::Inner;
             join_options.args.coalesce = JoinCoalesce::KeepColumns;
-
-            left_on.push(ExprIR::from_node(input_lhs, expr_arena));
-            let mut rexpr = ExprIR::from_node(input_rhs, expr_arena);
-            remove_suffix(&mut rexpr, expr_arena, schema_right, &suffix);
-            right_on.push(rexpr);
-        }
-
-        if options.args.how == JoinType::Inner {
+            push_equi_join_keys(
+                equality_conditions,
+                expr_arena,
+                schema_right,
+                &suffix,
+                left_on,
+                right_on,
+            );
             return Ok(());
         }
 
@@ -1087,15 +1087,7 @@ fn try_rewrite_outer_equi_join(
     let JoinTypeOptionsIR::CrossAndFilter { predicate } = &options.options else {
         return Ok(false);
     };
-    if !matches!(
-        ExprPushdownGroup::Pushable.update_with_expr_rec(
-            expr_arena.get(predicate.node()),
-            expr_arena,
-            None,
-        ),
-        ExprPushdownGroup::Pushable
-    ) || is_inherently_nondeterministic(predicate.node(), expr_arena)
-    {
+    if !commutes_with_filter(predicate, expr_arena) {
         return Ok(false);
     }
     let suffix = options.args.suffix().clone();
@@ -1113,19 +1105,7 @@ fn try_rewrite_outer_equi_join(
     if !remaining.is_empty() || keys.is_empty() {
         return Ok(false);
     }
-    let mut on = Vec::with_capacity(keys.len());
-    for EquiJoinKeys {
-        input_lhs,
-        input_rhs,
-    } in keys
-    {
-        let left = ExprIR::from_node(input_lhs, expr_arena);
-        let mut right = ExprIR::from_node(input_rhs, expr_arena);
-        remove_suffix(&mut right, expr_arena, schema_right, &suffix);
-        left_on.push(left.clone());
-        right_on.push(right.clone());
-        on.push((left, right));
-    }
+    let on = push_equi_join_keys(keys, expr_arena, schema_right, &suffix, left_on, right_on);
     Arc::make_mut(options).options = JoinTypeOptionsIR::Equi {
         on,
         fused_predicate: None,
@@ -1210,6 +1190,32 @@ fn try_rewrite_outer_iejoin(
 struct EquiJoinKeys {
     input_lhs: Node,
     input_rhs: Node,
+}
+
+/// Append `keys` to `left_on`/`right_on` and return them as pairs.
+fn push_equi_join_keys(
+    keys: impl IntoIterator<Item = EquiJoinKeys>,
+    expr_arena: &mut Arena<AExpr>,
+    schema_right: &Schema,
+    suffix: &str,
+    left_on: &mut Vec<ExprIR>,
+    right_on: &mut Vec<ExprIR>,
+) -> Vec<(ExprIR, ExprIR)> {
+    keys.into_iter()
+        .map(
+            |EquiJoinKeys {
+                 input_lhs,
+                 input_rhs,
+             }| {
+                let left = ExprIR::from_node(input_lhs, expr_arena);
+                let mut right = ExprIR::from_node(input_rhs, expr_arena);
+                remove_suffix(&mut right, expr_arena, schema_right, suffix);
+                left_on.push(left.clone());
+                right_on.push(right.clone());
+                (left, right)
+            },
+        )
+        .collect()
 }
 
 fn take_equi_join_keys(

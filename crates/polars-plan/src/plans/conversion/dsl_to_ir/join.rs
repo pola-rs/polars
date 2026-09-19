@@ -201,8 +201,7 @@ pub fn resolve_join(
 
     // # Resolve scalars
     //
-    // Materialize scalar keys here so schema resolution and coalescing see named columns.
-    // Optimizer rewrites can introduce scalar keys later; execution also broadcasts them.
+    // Materialize scalar keys so schema resolution and coalescing see named columns.
 
     let has_scalars = left_on
         .iter()
@@ -582,7 +581,6 @@ fn resolve_join_where(
             })
         })
         .expect("'join_where' requires at least one predicate");
-    let predicate = ExprIR::from_node(node, ctxt.expr_arena);
 
     if how.is_inner() {
         // Use the filter splitter so aggregates see the full join input,
@@ -604,6 +602,7 @@ fn resolve_join_where(
         }
     } else {
         // Outer ON conditions must retain unmatched rows.
+        let predicate = ExprIR::from_node(node, ctxt.expr_arena);
         let IR::Join { options, .. } = ctxt.lp_arena.get(join_node) else {
             unreachable!()
         };

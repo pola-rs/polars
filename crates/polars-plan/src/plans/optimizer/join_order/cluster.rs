@@ -59,7 +59,6 @@ pub(super) struct Edge {
 pub(super) struct ColumnKey {
     pub(super) leaf: usize,
     pub(super) key: ExprIR,
-    pub(super) name: PlSmallStr,
 }
 
 /// An edge oriented against the leaves joined so far.
@@ -123,8 +122,8 @@ impl Cluster {
                                 placed_leaf: placed.leaf,
                                 placed_key: &placed.key,
                                 candidate_key: &candidate_key.key,
-                                placed_name: Some(&placed.name),
-                                candidate_name: Some(&candidate_key.name),
+                                placed_name: Some(placed.key.output_name()),
+                                candidate_name: Some(candidate_key.key.output_name()),
                             })
                     })
             });
@@ -920,8 +919,7 @@ fn key_equivalence_classes(
             .or_default()
             .push(ColumnKey {
                 leaf,
-                key: ExprIR::from_column_name(name.clone(), expr_arena),
-                name,
+                key: ExprIR::from_column_name(name, expr_arena),
             });
     }
     groups.into_values().collect()

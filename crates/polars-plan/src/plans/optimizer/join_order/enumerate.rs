@@ -187,7 +187,6 @@ mod tests {
                 .map(|leaf| ColumnKey {
                     leaf,
                     key: key.clone(),
-                    name: "k".into(),
                 })
                 .collect(),
         ];
