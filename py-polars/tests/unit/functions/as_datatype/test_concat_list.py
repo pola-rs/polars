@@ -280,3 +280,34 @@ def test_list_function_w_scalars() -> None:
         result.collect(), pl.DataFrame(expected, schema={"literals": pl.List(pl.Int32)})
     )
     assert result.collect().schema == result.collect_schema()
+
+
+def test_list_broadcast_leading_scalar() -> None:
+    """Test that pl.list broadcasts leading scalar input (issue #29265)."""
+    df = pl.DataFrame({"x": [10, 20, 30]})
+
+    # Leading scalar should broadcast to match column length
+    result = df.select(pl.list(pl.lit(1), pl.col("x")))
+    expected = pl.DataFrame({"literal": [[1, 10], [1, 20], [1, 30]]})
+    assert_frame_equal(result, expected)
+
+    # Reversed order should also work
+    result_reversed = df.select(pl.list(pl.col("x"), pl.lit(1)))
+    expected_reversed = pl.DataFrame({"x": [[10, 1], [20, 1], [30, 1]]})
+    assert_frame_equal(result_reversed, expected_reversed)
+
+    # Multiple scalars with column
+    result_multi = df.select(pl.list(pl.lit(1), pl.lit(2), pl.col("x")))
+    expected_multi = pl.DataFrame({"literal": [[1, 2, 10], [1, 2, 20], [1, 2, 30]]})
+    assert_frame_equal(result_multi, expected_multi)
+
+    # Scalar in the middle
+    result_middle = df.select(pl.list(pl.col("x"), pl.lit(99), pl.lit(100)))
+    expected_middle = pl.DataFrame({"x": [[10, 99, 100], [20, 99, 100], [30, 99, 100]]})
+    assert_frame_equal(result_middle, expected_middle)
+
+    # Two columns with scalar
+    df2 = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result_two_cols = df2.select(pl.list(pl.col("a"), pl.lit(0), pl.col("b")))
+    expected_two_cols = pl.DataFrame({"a": [[1, 0, 4], [2, 0, 5], [3, 0, 6]]})
+    assert_frame_equal(result_two_cols, expected_two_cols)
