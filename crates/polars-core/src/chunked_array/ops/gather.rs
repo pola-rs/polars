@@ -460,6 +460,7 @@ impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
         let ca = self;
         let targets: Vec<_> = ca.downcast_iter().collect();
         let cumlens = cumulative_lengths(&targets);
+        let targets_have_nulls = ca.null_count() > 0;
 
         let chunks = indices
             .downcast_iter()
@@ -476,12 +477,17 @@ impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
                         continue;
                     };
                     let (chunk_idx, arr_idx) = resolve_chunked_idx(idx, &cumlens);
-                    builder.subslice_extend(
-                        *targets.get_unchecked(chunk_idx),
-                        arr_idx,
-                        1,
-                        ShareStrategy::Always,
-                    );
+                    let target = *targets.get_unchecked(chunk_idx);
+
+                    // A null element stands for no values, so extend the mask on its own: reading
+                    // the values under it costs the same as reading an element that has any, and
+                    // a null index a line above is already answered this way.
+                    if targets_have_nulls && target.is_null_unchecked(arr_idx) {
+                        builder.extend_nulls(1);
+                        continue;
+                    }
+
+                    builder.subslice_extend(target, arr_idx, 1, ShareStrategy::Always);
                 }
                 builder.freeze_reset()
             })
@@ -525,6 +531,7 @@ impl ChunkTakeUnchecked<IdxCa> for ListChunked {
         let ca = self;
         let targets: Vec<_> = ca.downcast_iter().collect();
         let cumlens = cumulative_lengths(&targets);
+        let targets_have_nulls = ca.null_count() > 0;
 
         let chunks = indices
             .downcast_iter()
@@ -541,12 +548,17 @@ impl ChunkTakeUnchecked<IdxCa> for ListChunked {
                         continue;
                     };
                     let (chunk_idx, arr_idx) = resolve_chunked_idx(idx, &cumlens);
-                    builder.subslice_extend(
-                        *targets.get_unchecked(chunk_idx),
-                        arr_idx,
-                        1,
-                        ShareStrategy::Always,
-                    );
+                    let target = *targets.get_unchecked(chunk_idx);
+
+                    // A null element stands for no values, so extend the mask on its own: reading
+                    // the values under it costs the same as reading an element that has any, and
+                    // a null index a line above is already answered this way.
+                    if targets_have_nulls && target.is_null_unchecked(arr_idx) {
+                        builder.extend_nulls(1);
+                        continue;
+                    }
+
+                    builder.subslice_extend(target, arr_idx, 1, ShareStrategy::Always);
                 }
                 builder.freeze_reset()
             })
