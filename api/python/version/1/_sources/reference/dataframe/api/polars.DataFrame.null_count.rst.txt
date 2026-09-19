@@ -1,0 +1,6 @@
+﻿polars.DataFrame.null\_count
+============================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.null_count

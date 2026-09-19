@@ -1,0 +1,6 @@
+﻿polars.testing.parametric.load\_profile
+=======================================
+
+.. currentmodule:: polars.testing.parametric
+
+.. autofunction:: load_profile

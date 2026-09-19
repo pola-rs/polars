@@ -1,0 +1,6 @@
+﻿polars.Series.list.to_map
+=========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.list.to_map

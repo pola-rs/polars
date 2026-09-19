@@ -1,0 +1,6 @@
+﻿polars.Expr.str.to_date
+=======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.str.to_date

@@ -1,0 +1,6 @@
+﻿polars.Series.str.find
+======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.str.find

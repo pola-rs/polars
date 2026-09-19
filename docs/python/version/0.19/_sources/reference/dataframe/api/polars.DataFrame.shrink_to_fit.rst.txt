@@ -1,0 +1,6 @@
+﻿polars.DataFrame.shrink\_to\_fit
+================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.shrink_to_fit

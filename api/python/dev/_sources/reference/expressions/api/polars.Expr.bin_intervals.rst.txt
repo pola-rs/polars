@@ -1,0 +1,6 @@
+﻿polars.Expr.bin\_intervals
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.bin_intervals

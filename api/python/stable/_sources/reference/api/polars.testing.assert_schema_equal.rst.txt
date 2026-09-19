@@ -1,0 +1,6 @@
+﻿polars.testing.assert\_schema\_equal
+====================================
+
+.. currentmodule:: polars.testing
+
+.. autofunction:: assert_schema_equal

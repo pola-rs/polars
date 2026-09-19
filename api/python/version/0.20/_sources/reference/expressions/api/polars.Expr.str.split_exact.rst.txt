@@ -1,0 +1,6 @@
+﻿polars.Expr.str.split_exact
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.str.split_exact

@@ -1,0 +1,6 @@
+﻿polars.Expr.str.join
+====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.str.join

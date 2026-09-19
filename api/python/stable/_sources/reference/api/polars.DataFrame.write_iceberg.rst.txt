@@ -1,0 +1,6 @@
+﻿polars.DataFrame.write\_iceberg
+===============================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.write_iceberg

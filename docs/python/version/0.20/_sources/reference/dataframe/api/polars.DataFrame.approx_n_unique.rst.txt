@@ -1,0 +1,6 @@
+﻿polars.DataFrame.approx\_n\_unique
+==================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.approx_n_unique

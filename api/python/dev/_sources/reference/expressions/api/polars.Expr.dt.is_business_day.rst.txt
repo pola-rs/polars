@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.is_business_day
+==============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.is_business_day

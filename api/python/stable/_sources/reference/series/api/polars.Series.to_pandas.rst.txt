@@ -1,0 +1,6 @@
+﻿polars.Series.to\_pandas
+========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.to_pandas

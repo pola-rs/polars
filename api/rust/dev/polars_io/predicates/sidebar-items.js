@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["RuntimeRange","SpecializedColumnPredicate"],"fn":["apply_predicate","cast_bound"],"struct":["ColumnPredicateExpr","ColumnPredicates","ColumnStatistics","PhysicalExprWithConstCols","RuntimeRangeHint","ScanIOPredicate","StagedScanIOPredicate"],"trait":["PhysicalIoExpr","RuntimeRangeSource","SkipBatchPredicate"]};

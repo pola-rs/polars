@@ -1,0 +1,6 @@
+﻿polars.lazyframe.resolver.FilterExpr.pyarrow\_expr
+==================================================
+
+.. currentmodule:: polars.lazyframe.resolver
+
+.. autoproperty:: FilterExpr.pyarrow_expr

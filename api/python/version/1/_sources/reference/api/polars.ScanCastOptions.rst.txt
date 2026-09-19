@@ -1,0 +1,33 @@
+﻿polars.ScanCastOptions
+======================
+
+.. currentmodule:: polars
+
+.. autoclass:: ScanCastOptions
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~ScanCastOptions.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~ScanCastOptions.integer_cast
+      ~ScanCastOptions.float_cast
+      ~ScanCastOptions.datetime_cast
+      ~ScanCastOptions.missing_struct_fields
+      ~ScanCastOptions.extra_struct_fields
+      ~ScanCastOptions.categorical_to_string
+   
+   

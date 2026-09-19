@@ -1,0 +1,6 @@
+﻿polars.Expr.degrees
+===================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.degrees

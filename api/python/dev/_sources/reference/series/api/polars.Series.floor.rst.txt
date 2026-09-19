@@ -1,0 +1,6 @@
+﻿polars.Series.floor
+===================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.floor

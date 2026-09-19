@@ -1,0 +1,6 @@
+﻿polars.DataTypeExpr.struct.field_names
+======================================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: DataTypeExpr.struct.field_names

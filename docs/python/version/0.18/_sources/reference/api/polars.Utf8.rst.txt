@@ -1,0 +1,31 @@
+﻿polars.Utf8
+===========
+
+.. currentmodule:: polars
+
+.. autoclass:: Utf8
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Utf8.__init__
+      ~Utf8.base_type
+      ~Utf8.is_
+      ~Utf8.is_not
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Utf8.is_nested
+   
+   

@@ -1,0 +1,6 @@
+﻿polars.Series.to\_dummies
+=========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.to_dummies

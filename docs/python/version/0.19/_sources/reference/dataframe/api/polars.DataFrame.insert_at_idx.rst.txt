@@ -1,0 +1,6 @@
+﻿polars.DataFrame.insert\_at\_idx
+================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.insert_at_idx

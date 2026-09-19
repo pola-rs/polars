@@ -1,0 +1,6 @@
+﻿polars.Config.set\_tbl\_hide\_column\_data\_types
+=================================================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.set_tbl_hide_column_data_types

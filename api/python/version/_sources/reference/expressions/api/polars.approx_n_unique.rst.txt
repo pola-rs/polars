@@ -1,0 +1,6 @@
+﻿polars.approx\_n\_unique
+========================
+
+.. currentmodule:: polars
+
+.. autofunction:: approx_n_unique
