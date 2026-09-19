@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
+from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 @pytest.fixture
@@ -70,6 +77,30 @@ def test_string_agg_no_group_by(df_test: pl.LazyFrame) -> None:
         compare_with="duckdb",
         expected={"v": ["x1,y1,x2,y2,x3,y3"]},
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("rows", [0, 3])
+def test_string_agg_scalar_order_by(rows: int, engine: EngineType) -> None:
+    df = pl.LazyFrame({"x": range(rows)})
+    result = df.sql(
+        "SELECT STRING_AGG('a', ',' ORDER BY 1) AS values FROM self"
+    ).collect(engine=engine)
+    expected = df.sql("SELECT STRING_AGG('a', ',') AS values FROM self").collect(
+        engine=engine
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_string_agg_scalar_order_by_error(engine: EngineType) -> None:
+    df = pl.LazyFrame({"x": ["b", "a"]})
+    with pytest.raises(
+        InvalidOperationError, match="conversion from `str` to `i32` failed"
+    ):
+        df.sql(
+            "SELECT STRING_AGG(x, ',' ORDER BY CAST('bad' AS INTEGER), x) FROM self"
+        ).collect(engine=engine)
 
 
 def test_string_agg_limit(df_test: pl.LazyFrame) -> None:
