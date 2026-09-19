@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! Builds a [`BinaryViewArray`] from decoded values.
 //!
 //! Unlike [`MutableBinaryViewArray`](polars_arrow::array::MutableBinaryViewArray) this lets

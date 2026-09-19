@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 /// Row encoding for variable width elements without maintaining order.
 ///
 /// Each element is prepended by a sentinel value.

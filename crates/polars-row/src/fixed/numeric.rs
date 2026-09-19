@@ -3,25 +3,13 @@ use std::fmt::Debug;
 use std::mem::MaybeUninit;
 
 use polars_arrow::array::{Array, PrimitiveArray};
-use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
-use polars_utils::slice::*;
 use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};
 
 use crate::row::RowEncodingOptions;
-pub(crate) trait FromSlice {
-    fn from_slice(slice: &[u8]) -> Self;
-}
-
-impl<const N: usize> FromSlice for [u8; N] {
-    #[inline]
-    fn from_slice(slice: &[u8]) -> Self {
-        slice.try_into().unwrap()
-    }
-}
-
 /// Encodes a value of a particular fixed width type into bytes
 pub trait FixedLengthEncoding: Copy + Debug {
     // 1 is validity 0 or 1
@@ -34,11 +22,14 @@ pub trait FixedLengthEncoding: Copy + Debug {
 
     fn decode(encoded: Self::Encoded) -> Self;
 
-    fn decode_reverse(mut encoded: Self::Encoded) -> Self {
-        for v in encoded.as_mut() {
-            *v = !*v
-        }
-        Self::decode(encoded)
+    /// Invert all bits of an encoded value. Used for descending order.
+    fn invert(encoded: Self::Encoded) -> Self::Encoded;
+
+    /// Keep the encoded value if `keep`, otherwise all zeros. This is free of branches.
+    fn keep_or_zero(encoded: Self::Encoded, keep: bool) -> Self::Encoded;
+
+    fn decode_reverse(encoded: Self::Encoded) -> Self {
+        Self::decode(Self::invert(encoded))
     }
 }
 
@@ -56,6 +47,17 @@ macro_rules! encode_unsigned {
             #[inline(always)]
             fn decode(encoded: Self::Encoded) -> Self {
                 Self::from_be_bytes(encoded)
+            }
+
+            #[inline(always)]
+            fn invert(encoded: Self::Encoded) -> Self::Encoded {
+                (!Self::from_ne_bytes(encoded)).to_ne_bytes()
+            }
+
+            #[inline(always)]
+            fn keep_or_zero(encoded: Self::Encoded, keep: bool) -> Self::Encoded {
+                let mask = (0 as $t).wrapping_sub(keep as $t);
+                (Self::from_ne_bytes(encoded) & mask).to_ne_bytes()
             }
         }
     };
@@ -92,6 +94,17 @@ macro_rules! encode_signed {
                 encoded[0] ^= 0x80;
                 Self::from_be_bytes(encoded)
             }
+
+            #[inline(always)]
+            fn invert(encoded: Self::Encoded) -> Self::Encoded {
+                (!Self::from_ne_bytes(encoded)).to_ne_bytes()
+            }
+
+            #[inline(always)]
+            fn keep_or_zero(encoded: Self::Encoded, keep: bool) -> Self::Encoded {
+                let mask = (0 as $t).wrapping_sub(keep as $t);
+                (Self::from_ne_bytes(encoded) & mask).to_ne_bytes()
+            }
         }
     };
 }
@@ -116,6 +129,16 @@ impl FixedLengthEncoding for pf16 {
         let val = bits ^ (((bits >> 15) as u16) >> 1) as i16;
         Self::from_bits(val as u16)
     }
+
+    #[inline(always)]
+    fn invert(encoded: Self::Encoded) -> Self::Encoded {
+        i16::invert(encoded)
+    }
+
+    #[inline(always)]
+    fn keep_or_zero(encoded: Self::Encoded, keep: bool) -> Self::Encoded {
+        i16::keep_or_zero(encoded, keep)
+    }
 }
 
 impl FixedLengthEncoding for f32 {
@@ -134,6 +157,16 @@ impl FixedLengthEncoding for f32 {
         let bits = i32::decode(encoded);
         let val = bits ^ (((bits >> 31) as u32) >> 1) as i32;
         Self::from_bits(val as u32)
+    }
+
+    #[inline(always)]
+    fn invert(encoded: Self::Encoded) -> Self::Encoded {
+        i32::invert(encoded)
+    }
+
+    #[inline(always)]
+    fn keep_or_zero(encoded: Self::Encoded, keep: bool) -> Self::Encoded {
+        i32::keep_or_zero(encoded, keep)
     }
 }
 
@@ -154,6 +187,16 @@ impl FixedLengthEncoding for f64 {
         let val = bits ^ (((bits >> 63) as u64) >> 1) as i64;
         Self::from_bits(val as u64)
     }
+
+    #[inline(always)]
+    fn invert(encoded: Self::Encoded) -> Self::Encoded {
+        i64::invert(encoded)
+    }
+
+    #[inline(always)]
+    fn keep_or_zero(encoded: Self::Encoded, keep: bool) -> Self::Encoded {
+        i64::keep_or_zero(encoded, keep)
+    }
 }
 
 pub unsafe fn encode<T: NativeType + FixedLengthEncoding>(
@@ -163,59 +206,43 @@ pub unsafe fn encode<T: NativeType + FixedLengthEncoding>(
     offsets: &mut [usize],
 ) {
     if arr.null_count() == 0 {
-        crate::fixed::numeric::encode_slice(buffer, arr.values().as_slice(), opt, offsets)
+        encode_slice(buffer, arr.values().as_slice(), opt, offsets)
     } else {
-        crate::fixed::numeric::encode_iter(
+        encode_slice_with_validity(
             buffer,
-            arr.into_iter().map(|v| v.copied()),
+            arr.values().as_slice(),
+            arr.validity().unwrap(),
             opt,
             offsets,
         )
     }
 }
 
-#[inline]
-unsafe fn encode_value<T: FixedLengthEncoding>(
-    value: &T,
-    offset: &mut usize,
-    descending: bool,
-    buf: &mut [MaybeUninit<u8>],
+/// Write the sentinel byte and the encoded value.
+#[inline(always)]
+unsafe fn write_value<T: FixedLengthEncoding>(
+    dst: *mut MaybeUninit<u8>,
+    sentinel: u8,
+    encoded: T::Encoded,
 ) {
-    let end_offset = *offset + T::ENCODED_LEN;
-    let dst = unsafe { buf.get_unchecked_mut(*offset..end_offset) };
-    // set valid
-    dst[0] = MaybeUninit::new(1);
-    let mut encoded = value.encode();
-
-    // invert bits to reverse order
-    if descending {
-        for v in encoded.as_mut() {
-            *v = !*v
-        }
-    }
-
-    dst[1..].copy_from_slice(encoded.as_ref().as_uninit());
-    *offset = end_offset;
+    *dst = MaybeUninit::new(sentinel);
+    std::ptr::write_unaligned(dst.add(1) as *mut T::Encoded, encoded);
 }
 
-unsafe fn encode_opt_value<T: FixedLengthEncoding>(
-    opt_value: Option<T>,
-    offset: &mut usize,
-    opt: RowEncodingOptions,
-    buffer: &mut [MaybeUninit<u8>],
-) {
-    let descending = opt.contains(RowEncodingOptions::DESCENDING);
-    if let Some(value) = opt_value {
-        encode_value(&value, offset, descending, buffer);
+/// Write the null sentinel followed by zeros.
+#[inline(always)]
+unsafe fn write_null<T: FixedLengthEncoding>(dst: *mut MaybeUninit<u8>, null_sentinel: u8) {
+    *dst = MaybeUninit::new(null_sentinel);
+    std::ptr::write_bytes(dst.add(1), 0, T::ENCODED_LEN - 1);
+}
+
+#[inline(always)]
+fn encode_value<T: FixedLengthEncoding>(value: T, descending: bool) -> T::Encoded {
+    let encoded = value.encode();
+    if descending {
+        T::invert(encoded)
     } else {
-        unsafe { *buffer.get_unchecked_mut(*offset) = MaybeUninit::new(opt.null_sentinel()) };
-        let end_offset = *offset + T::ENCODED_LEN;
-
-        // initialize remaining bytes
-        let remainder = unsafe { buffer.get_unchecked_mut(*offset + 1..end_offset) };
-        remainder.fill(MaybeUninit::new(0));
-
-        *offset = end_offset;
+        encoded
     }
 }
 
@@ -226,8 +253,91 @@ pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
     row_starts: &mut [usize],
 ) {
     let descending = opt.contains(RowEncodingOptions::DESCENDING);
+    let out = buffer.as_mut_ptr();
     for (offset, value) in row_starts.iter_mut().zip(input) {
-        encode_value(value, offset, descending, buffer);
+        write_value::<T>(out.add(*offset), 1, encode_value(*value, descending));
+        *offset += T::ENCODED_LEN;
+    }
+}
+
+unsafe fn encode_slice_with_validity<T: FixedLengthEncoding>(
+    buffer: &mut [MaybeUninit<u8>],
+    input: &[T],
+    validity: &Bitmap,
+    opt: RowEncodingOptions,
+    row_starts: &mut [usize],
+) {
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
+    let null_sentinel = opt.null_sentinel();
+    let out = buffer.as_mut_ptr();
+
+    // Nulls are the sentinel followed by zeros.
+    let encode_chunk = |mask: u64, offsets: &mut [usize], values: &[T]| {
+        for (i, (offset, value)) in offsets.iter_mut().zip(values).enumerate() {
+            let is_valid = (mask >> i) & 1 != 0;
+            let sentinel = if is_valid { 1 } else { null_sentinel };
+            let encoded = T::keep_or_zero(encode_value(*value, descending), is_valid);
+            write_value::<T>(out.add(*offset), sentinel, encoded);
+            *offset += T::ENCODED_LEN;
+        }
+    };
+
+    let mut masks = validity.fast_iter_u64();
+    let mut start = 0;
+    for mask in &mut masks {
+        encode_chunk(
+            mask,
+            &mut row_starts[start..start + 64],
+            &input[start..start + 64],
+        );
+        start += 64;
+    }
+    // The remainder holds fewer than 128 bits: `lo` has up to 64 and `hi` the rest.
+    let ([lo, hi], _) = masks.remainder();
+    let mid = start + (input.len() - start).min(64);
+    encode_chunk(lo, &mut row_starts[start..mid], &input[start..mid]);
+    encode_chunk(hi, &mut row_starts[mid..], &input[mid..]);
+}
+
+/// Encode values `stride` bytes apart starting at `out`.
+pub(crate) unsafe fn encode_strided<T: NativeType + FixedLengthEncoding>(
+    out: *mut MaybeUninit<u8>,
+    stride: usize,
+    arr: &PrimitiveArray<T>,
+    opt: RowEncodingOptions,
+) {
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
+    let null_sentinel = opt.null_sentinel();
+    let values = arr.values().as_slice();
+
+    match arr.validity().filter(|_| arr.null_count() > 0) {
+        None => {
+            for (i, value) in values.iter().enumerate() {
+                write_value::<T>(out.add(i * stride), 1, encode_value(*value, descending));
+            }
+        },
+        Some(validity) => {
+            let encode_chunk = |mask: u64, start: usize, values: &[T]| {
+                for (i, value) in values.iter().enumerate() {
+                    let is_valid = (mask >> i) & 1 != 0;
+                    let sentinel = if is_valid { 1 } else { null_sentinel };
+                    let encoded = T::keep_or_zero(encode_value(*value, descending), is_valid);
+                    write_value::<T>(out.add((start + i) * stride), sentinel, encoded);
+                }
+            };
+
+            let mut masks = validity.fast_iter_u64();
+            let mut start = 0;
+            for mask in &mut masks {
+                encode_chunk(mask, start, &values[start..start + 64]);
+                start += 64;
+            }
+            // The remainder holds fewer than 128 bits: `lo` has up to 64 and `hi` the rest.
+            let ([lo, hi], _) = masks.remainder();
+            let mid = start + (values.len() - start).min(64);
+            encode_chunk(lo, start, &values[start..mid]);
+            encode_chunk(hi, mid, &values[mid..]);
+        },
     }
 }
 
@@ -237,63 +347,122 @@ pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEn
     opt: RowEncodingOptions,
     row_starts: &mut [usize],
 ) {
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
+    let null_sentinel = opt.null_sentinel();
+    let out = buffer.as_mut_ptr();
     for (offset, opt_value) in row_starts.iter_mut().zip(input) {
-        encode_opt_value(opt_value, offset, opt, buffer);
+        match opt_value {
+            Some(value) => write_value::<T>(out.add(*offset), 1, encode_value(value, descending)),
+            None => write_null::<T>(out.add(*offset), null_sentinel),
+        }
+        *offset += T::ENCODED_LEN;
+    }
+}
+
+/// Decode one value and return whether it is valid.
+#[inline(always)]
+unsafe fn decode_value<T: FixedLengthEncoding>(
+    ptr: *const u8,
+    descending: bool,
+    null_sentinel: u8,
+) -> (T, bool) {
+    let is_valid = *ptr != null_sentinel;
+    let bytes = std::ptr::read_unaligned(ptr.add(1) as *const T::Encoded);
+    let value = if descending {
+        T::decode_reverse(bytes)
+    } else {
+        T::decode(bytes)
+    };
+    (value, is_valid)
+}
+
+/// Collects decoded values and their validity. Validity is pushed 64 rows at a time as one
+/// word.
+pub(crate) struct PrimitiveCollector<T> {
+    values: Vec<T>,
+    validity: BitmapBuilder,
+    has_nulls: bool,
+}
+
+impl<T: NativeType> PrimitiveCollector<T> {
+    pub fn with_capacity(num_rows: usize) -> Self {
+        Self {
+            values: Vec::with_capacity(num_rows),
+            validity: BitmapBuilder::with_capacity(num_rows),
+            has_nulls: false,
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn push_chunk(&mut self, word: u64, len: usize) {
+        self.has_nulls |= word != (u64::MAX >> (64 - len));
+        self.validity.push_word_with_len_unchecked(word, len);
+    }
+
+    pub fn finish(self, dtype: ArrowDataType) -> PrimitiveArray<T> {
+        let validity = if self.has_nulls {
+            self.validity.into_opt_validity()
+        } else {
+            None
+        };
+        PrimitiveArray::new(dtype, self.values.into(), validity)
+    }
+}
+
+impl<T: NativeType + FixedLengthEncoding> PrimitiveCollector<T> {
+    /// Decode `num_rows` values that are `stride` bytes apart starting at `ptr`.
+    pub unsafe fn decode_strided(
+        &mut self,
+        ptr: *const u8,
+        stride: usize,
+        num_rows: usize,
+        opt: RowEncodingOptions,
+    ) {
+        let descending = opt.contains(RowEncodingOptions::DESCENDING);
+        let null_sentinel = opt.null_sentinel();
+        self.values.reserve(num_rows);
+        self.validity.reserve(num_rows);
+
+        let out = self.values.as_mut_ptr().add(self.values.len());
+        let mut row = 0;
+        while row < num_rows {
+            let len = (num_rows - row).min(64);
+            let mut word = 0u64;
+            for i in 0..len {
+                let ptr = ptr.add((row + i) * stride);
+                let (value, is_valid) = decode_value::<T>(ptr, descending, null_sentinel);
+                word |= (is_valid as u64) << i;
+                out.add(row + i).write(value);
+            }
+            self.push_chunk(word, len);
+            row += len;
+        }
+        self.values.set_len(self.values.len() + num_rows);
     }
 }
 
 pub(crate) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
-) -> PrimitiveArray<T>
-where
-    T::Encoded: FromSlice,
-{
-    let dtype: ArrowDataType = T::PRIMITIVE.into();
-    let mut has_nulls = false;
+) -> PrimitiveArray<T> {
     let descending = opt.contains(RowEncodingOptions::DESCENDING);
     let null_sentinel = opt.null_sentinel();
+    let mut out = PrimitiveCollector::<T>::with_capacity(rows.len());
 
-    let values = rows
-        .iter()
-        .map(|row| {
-            has_nulls |= *row.get_unchecked(0) == null_sentinel;
-            // skip null sentinel
-            let start = 1;
-            let end = start + T::ENCODED_LEN - 1;
-            let slice = row.get_unchecked(start..end);
-            let bytes = T::Encoded::from_slice(slice);
-
-            if descending {
-                T::decode_reverse(bytes)
-            } else {
-                T::decode(bytes)
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let validity = if has_nulls {
-        let null_sentinel = opt.null_sentinel();
-        Some(decode_nulls(rows, null_sentinel))
-    } else {
-        None
-    };
-
-    // validity byte and data length
-    let increment_len = T::ENCODED_LEN;
-
-    increment_row_counter(rows, increment_len);
-    PrimitiveArray::new(dtype, values.into(), validity)
-}
-
-unsafe fn increment_row_counter(rows: &mut [&[u8]], fixed_size: usize) {
-    for row in rows {
-        *row = row.get_unchecked(fixed_size..);
+    let values = out.values.as_mut_ptr();
+    let mut n = 0;
+    for chunk in rows.chunks_mut(64) {
+        let mut word = 0u64;
+        for (i, row) in chunk.iter_mut().enumerate() {
+            let (value, is_valid) = decode_value::<T>(row.as_ptr(), descending, null_sentinel);
+            word |= (is_valid as u64) << i;
+            values.add(n + i).write(value);
+            *row = row.get_unchecked(T::ENCODED_LEN..);
+        }
+        out.push_chunk(word, chunk.len());
+        n += chunk.len();
     }
-}
+    out.values.set_len(n);
 
-pub(super) unsafe fn decode_nulls(rows: &[&[u8]], null_sentinel: u8) -> Bitmap {
-    rows.iter()
-        .map(|row| *row.get_unchecked(0) != null_sentinel)
-        .collect()
+    out.finish(T::PRIMITIVE.into())
 }
