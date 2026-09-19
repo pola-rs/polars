@@ -104,7 +104,7 @@ impl<T: NativeType + FixedLengthEncoding> FixedPrimitiveCollector
     }
 
     fn finish(self: Box<Self>) -> ArrayRef {
-        numeric::PrimitiveCollector::finish(*self, T::PRIMITIVE.into()).to_boxed()
+        numeric::PrimitiveCollector::finish(*self).to_boxed()
     }
 }
 

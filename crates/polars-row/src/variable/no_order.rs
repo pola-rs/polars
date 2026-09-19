@@ -11,7 +11,7 @@
 /// After the sentinel value (and possible length), the data is then given.
 use std::mem::MaybeUninit;
 
-use polars_arrow::array::{Array, BinaryViewArray, View};
+use polars_arrow::array::{Array, BinaryViewArray, BinaryViewArrayGeneric, View, ViewType};
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_buffer::Buffer;
@@ -116,14 +116,14 @@ unsafe fn encode_view(dst: *mut u8, view: &View, buffers: &[Buffer<u8>]) -> usiz
         }
         n
     } else {
-        let buffer = buffers.get_unchecked(view.buffer_idx as usize);
-        encode_bytes(dst, buffer.as_ptr().add(view.offset as usize), len)
+        let src = view.get_external_slice_unchecked(buffers).as_ptr();
+        encode_bytes(dst, src, len)
     }
 }
 
-pub unsafe fn encode_view_no_order(
+pub unsafe fn encode_view_no_order<T: ViewType + ?Sized>(
     buffer: &mut [MaybeUninit<u8>],
-    array: &BinaryViewArray,
+    array: &BinaryViewArrayGeneric<T>,
     opt: RowEncodingOptions,
     offsets: &mut [usize],
 ) {

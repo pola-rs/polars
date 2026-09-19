@@ -4,7 +4,6 @@ use std::mem::MaybeUninit;
 
 use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
-use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};
@@ -25,7 +24,7 @@ pub trait FixedLengthEncoding: Copy + Debug {
     /// Invert all bits of an encoded value. Used for descending order.
     fn invert(encoded: Self::Encoded) -> Self::Encoded;
 
-    /// Keep the encoded value if `keep`, otherwise all zeros. This is free of branches.
+    /// Keep the encoded value if `keep`, otherwise all zeros.
     fn keep_or_zero(encoded: Self::Encoded, keep: bool) -> Self::Encoded;
 
     fn decode_reverse(encoded: Self::Encoded) -> Self {
@@ -260,6 +259,40 @@ pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
     }
 }
 
+/// Encode `values` with nulls as the sentinel followed by zeros. `dst` gives the location of
+/// each row.
+#[inline(always)]
+unsafe fn encode_values_with_validity<T: FixedLengthEncoding>(
+    values: &[T],
+    validity: &Bitmap,
+    opt: RowEncodingOptions,
+    mut dst: impl FnMut(usize) -> *mut MaybeUninit<u8>,
+) {
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
+    let null_sentinel = opt.null_sentinel();
+
+    let mut encode_chunk = |mask: u64, start: usize, end: usize| {
+        for (i, value) in values[start..end].iter().enumerate() {
+            let is_valid = (mask >> i) & 1 != 0;
+            let sentinel = if is_valid { 1 } else { null_sentinel };
+            let encoded = T::keep_or_zero(encode_value(*value, descending), is_valid);
+            write_value::<T>(dst(start + i), sentinel, encoded);
+        }
+    };
+
+    let mut masks = validity.fast_iter_u64();
+    let mut start = 0;
+    for mask in &mut masks {
+        encode_chunk(mask, start, start + 64);
+        start += 64;
+    }
+    // The remainder holds fewer than 128 bits: `lo` has up to 64 and `hi` the rest.
+    let ([lo, hi], _) = masks.remainder();
+    let mid = start + (values.len() - start).min(64);
+    encode_chunk(lo, start, mid);
+    encode_chunk(hi, mid, values.len());
+}
+
 unsafe fn encode_slice_with_validity<T: FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
     input: &[T],
@@ -267,36 +300,13 @@ unsafe fn encode_slice_with_validity<T: FixedLengthEncoding>(
     opt: RowEncodingOptions,
     row_starts: &mut [usize],
 ) {
-    let descending = opt.contains(RowEncodingOptions::DESCENDING);
-    let null_sentinel = opt.null_sentinel();
     let out = buffer.as_mut_ptr();
-
-    // Nulls are the sentinel followed by zeros.
-    let encode_chunk = |mask: u64, offsets: &mut [usize], values: &[T]| {
-        for (i, (offset, value)) in offsets.iter_mut().zip(values).enumerate() {
-            let is_valid = (mask >> i) & 1 != 0;
-            let sentinel = if is_valid { 1 } else { null_sentinel };
-            let encoded = T::keep_or_zero(encode_value(*value, descending), is_valid);
-            write_value::<T>(out.add(*offset), sentinel, encoded);
-            *offset += T::ENCODED_LEN;
-        }
-    };
-
-    let mut masks = validity.fast_iter_u64();
-    let mut start = 0;
-    for mask in &mut masks {
-        encode_chunk(
-            mask,
-            &mut row_starts[start..start + 64],
-            &input[start..start + 64],
-        );
-        start += 64;
-    }
-    // The remainder holds fewer than 128 bits: `lo` has up to 64 and `hi` the rest.
-    let ([lo, hi], _) = masks.remainder();
-    let mid = start + (input.len() - start).min(64);
-    encode_chunk(lo, &mut row_starts[start..mid], &input[start..mid]);
-    encode_chunk(hi, &mut row_starts[mid..], &input[mid..]);
+    encode_values_with_validity(input, validity, opt, |i| {
+        let offset = row_starts.get_unchecked_mut(i);
+        let dst = out.add(*offset);
+        *offset += T::ENCODED_LEN;
+        dst
+    });
 }
 
 /// Encode values `stride` bytes apart starting at `out`.
@@ -306,37 +316,16 @@ pub(crate) unsafe fn encode_strided<T: NativeType + FixedLengthEncoding>(
     arr: &PrimitiveArray<T>,
     opt: RowEncodingOptions,
 ) {
-    let descending = opt.contains(RowEncodingOptions::DESCENDING);
-    let null_sentinel = opt.null_sentinel();
     let values = arr.values().as_slice();
-
     match arr.validity().filter(|_| arr.null_count() > 0) {
         None => {
+            let descending = opt.contains(RowEncodingOptions::DESCENDING);
             for (i, value) in values.iter().enumerate() {
                 write_value::<T>(out.add(i * stride), 1, encode_value(*value, descending));
             }
         },
         Some(validity) => {
-            let encode_chunk = |mask: u64, start: usize, values: &[T]| {
-                for (i, value) in values.iter().enumerate() {
-                    let is_valid = (mask >> i) & 1 != 0;
-                    let sentinel = if is_valid { 1 } else { null_sentinel };
-                    let encoded = T::keep_or_zero(encode_value(*value, descending), is_valid);
-                    write_value::<T>(out.add((start + i) * stride), sentinel, encoded);
-                }
-            };
-
-            let mut masks = validity.fast_iter_u64();
-            let mut start = 0;
-            for mask in &mut masks {
-                encode_chunk(mask, start, &values[start..start + 64]);
-                start += 64;
-            }
-            // The remainder holds fewer than 128 bits: `lo` has up to 64 and `hi` the rest.
-            let ([lo, hi], _) = masks.remainder();
-            let mid = start + (values.len() - start).min(64);
-            encode_chunk(lo, start, &values[start..mid]);
-            encode_chunk(hi, mid, &values[mid..]);
+            encode_values_with_validity(values, validity, opt, |i| out.add(i * stride));
         },
     }
 }
@@ -399,24 +388,24 @@ impl<T: NativeType> PrimitiveCollector<T> {
         self.validity.push_word_with_len_unchecked(word, len);
     }
 
-    pub fn finish(self, dtype: ArrowDataType) -> PrimitiveArray<T> {
+    pub fn finish(self) -> PrimitiveArray<T> {
         let validity = if self.has_nulls {
             self.validity.into_opt_validity()
         } else {
             None
         };
-        PrimitiveArray::new(dtype, self.values.into(), validity)
+        PrimitiveArray::new(T::PRIMITIVE.into(), self.values.into(), validity)
     }
 }
 
 impl<T: NativeType + FixedLengthEncoding> PrimitiveCollector<T> {
-    /// Decode `num_rows` values that are `stride` bytes apart starting at `ptr`.
-    pub unsafe fn decode_strided(
+    /// Decode `num_rows` values. `src` gives the location of each row.
+    #[inline(always)]
+    unsafe fn decode(
         &mut self,
-        ptr: *const u8,
-        stride: usize,
         num_rows: usize,
         opt: RowEncodingOptions,
+        mut src: impl FnMut(usize) -> *const u8,
     ) {
         let descending = opt.contains(RowEncodingOptions::DESCENDING);
         let null_sentinel = opt.null_sentinel();
@@ -429,8 +418,7 @@ impl<T: NativeType + FixedLengthEncoding> PrimitiveCollector<T> {
             let len = (num_rows - row).min(64);
             let mut word = 0u64;
             for i in 0..len {
-                let ptr = ptr.add((row + i) * stride);
-                let (value, is_valid) = decode_value::<T>(ptr, descending, null_sentinel);
+                let (value, is_valid) = decode_value::<T>(src(row + i), descending, null_sentinel);
                 word |= (is_valid as u64) << i;
                 out.add(row + i).write(value);
             }
@@ -439,30 +427,29 @@ impl<T: NativeType + FixedLengthEncoding> PrimitiveCollector<T> {
         }
         self.values.set_len(self.values.len() + num_rows);
     }
+
+    /// Decode `num_rows` values that are `stride` bytes apart starting at `ptr`.
+    pub unsafe fn decode_strided(
+        &mut self,
+        ptr: *const u8,
+        stride: usize,
+        num_rows: usize,
+        opt: RowEncodingOptions,
+    ) {
+        self.decode(num_rows, opt, |i| ptr.add(i * stride));
+    }
 }
 
 pub(crate) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
 ) -> PrimitiveArray<T> {
-    let descending = opt.contains(RowEncodingOptions::DESCENDING);
-    let null_sentinel = opt.null_sentinel();
     let mut out = PrimitiveCollector::<T>::with_capacity(rows.len());
-
-    let values = out.values.as_mut_ptr();
-    let mut n = 0;
-    for chunk in rows.chunks_mut(64) {
-        let mut word = 0u64;
-        for (i, row) in chunk.iter_mut().enumerate() {
-            let (value, is_valid) = decode_value::<T>(row.as_ptr(), descending, null_sentinel);
-            word |= (is_valid as u64) << i;
-            values.add(n + i).write(value);
-            *row = row.get_unchecked(T::ENCODED_LEN..);
-        }
-        out.push_chunk(word, chunk.len());
-        n += chunk.len();
-    }
-    out.values.set_len(n);
-
-    out.finish(T::PRIMITIVE.into())
+    out.decode(rows.len(), opt, |i| {
+        let row = rows.get_unchecked_mut(i);
+        let ptr = row.as_ptr();
+        *row = row.get_unchecked(T::ENCODED_LEN..);
+        ptr
+    });
+    out.finish()
 }
