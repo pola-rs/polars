@@ -207,8 +207,6 @@ pub struct BoundsIter<'a> {
     boundary: Bounds,
     // boundary per window iterator
     bi: Bounds,
-    first: bool,
-    finished: bool,
     tu: TimeUnit,
     tz: Option<&'a Tz>,
 }
@@ -312,9 +310,10 @@ impl<'a> BoundsIter<'a> {
                                 &Duration::parse(&format!("{}d", start_by.weekday().unwrap())),
                                 start,
                                 None,
-                            )?;
+                            )
+                            .unwrap();
                             // apply the 'offset'
-                            let start = offset_fn(&window.offset, start, None)?;
+                            let start = offset_fn(&window.offset, start, None).unwrap();
                             // make sure the first datapoint has a chance to be included
                             // and compute the end of the window defined by the 'period'
                             ensure_t_in_or_in_front_of_window(
@@ -336,8 +335,6 @@ impl<'a> BoundsIter<'a> {
             window,
             boundary,
             bi,
-            first: true,
-            finished: false,
             tu,
             tz,
         })
@@ -345,58 +342,60 @@ impl<'a> BoundsIter<'a> {
 }
 
 impl Iterator for BoundsIter<'_> {
-    type Item = PolarsResult<Bounds>;
+    type Item = Bounds;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.nth(0)
+        if self.bi.start < self.boundary.stop {
+            let out = self.bi;
+            match self.tu {
+                // TODO: find some way to propagate error instead of unwrapping?
+                // Issue is that `next` needs to return `Option`.
+                TimeUnit::Nanoseconds => {
+                    self.bi.start = self.window.every.add_ns(self.bi.start, self.tz).unwrap();
+                    self.bi.stop = self.window.period.add_ns(self.bi.start, self.tz).unwrap();
+                },
+                TimeUnit::Microseconds => {
+                    self.bi.start = self.window.every.add_us(self.bi.start, self.tz).unwrap();
+                    self.bi.stop = self.window.period.add_us(self.bi.start, self.tz).unwrap();
+                },
+                TimeUnit::Milliseconds => {
+                    self.bi.start = self.window.every.add_ms(self.bi.start, self.tz).unwrap();
+                    self.bi.stop = self.window.period.add_ms(self.bi.start, self.tz).unwrap();
+                },
+            }
+            Some(out)
+        } else {
+            None
+        }
     }
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        if self.finished {
-            return None;
-        }
-        match self.advance(n) {
-            Ok(Some(bounds)) => Some(Ok(bounds)),
-            Ok(None) => {
-                self.finished = true;
-                None
-            },
-            Err(error) => {
-                self.finished = true;
-                Some(Err(error))
-            },
-        }
-    }
-}
-
-impl BoundsIter<'_> {
-    fn advance(&mut self, n: usize) -> PolarsResult<Option<Bounds>> {
-        let n = i64::try_from(n)
-            .map_err(|_| polars_err!(ComputeError: "datetime offset is out of range"))?;
-        let add = match self.tu {
-            TimeUnit::Nanoseconds => Duration::add_ns,
-            TimeUnit::Microseconds => Duration::add_us,
-            TimeUnit::Milliseconds => Duration::add_ms,
-        };
-        let mut start = self.bi.start;
-        // Keep the normal step separate from skipping: calendar offsets are not associative.
-        if !self.first {
-            start = add(&self.window.every, start, self.tz)?;
-            if start >= self.boundary.stop {
-                return Ok(None);
+        let n: i64 = n.try_into().unwrap();
+        if self.bi.start < self.boundary.stop {
+            match self.tu {
+                TimeUnit::Nanoseconds => {
+                    self.bi.start = (self.window.every * n)
+                        .add_ns(self.bi.start, self.tz)
+                        .unwrap();
+                    self.bi.stop = (self.window.period).add_ns(self.bi.start, self.tz).unwrap();
+                },
+                TimeUnit::Microseconds => {
+                    self.bi.start = (self.window.every * n)
+                        .add_us(self.bi.start, self.tz)
+                        .unwrap();
+                    self.bi.stop = (self.window.period).add_us(self.bi.start, self.tz).unwrap();
+                },
+                TimeUnit::Milliseconds => {
+                    self.bi.start = (self.window.every * n)
+                        .add_ms(self.bi.start, self.tz)
+                        .unwrap();
+                    self.bi.stop = (self.window.period).add_ms(self.bi.start, self.tz).unwrap();
+                },
             }
+            self.next()
+        } else {
+            None
         }
-        if n > 0 {
-            start = add(&(self.window.every * n), start, self.tz)?;
-        }
-        if start >= self.boundary.stop {
-            return Ok(None);
-        }
-        if !self.first || n > 0 {
-            self.bi = Bounds::new_checked(start, add(&self.window.period, start, self.tz)?);
-        }
-        self.first = false;
-        Ok(Some(self.bi))
     }
 }
 
@@ -436,6 +435,6 @@ impl<'a> BoundsIter<'a> {
                 },
             }
         }
-        stride.saturating_sub(usize::from(!self.first))
+        stride
     }
 }

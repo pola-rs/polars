@@ -1,12 +1,12 @@
 use std::str::FromStr;
 
 #[cfg(feature = "timezones")]
-use chrono::{LocalResult, NaiveDateTime, Offset, TimeZone};
+use chrono::{LocalResult, NaiveDateTime, TimeZone};
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
-use polars_error::{PolarsError, polars_bail};
 #[cfg(feature = "timezones")]
-use polars_error::{PolarsResult, polars_err};
+use polars_error::PolarsResult;
+use polars_error::{PolarsError, polars_bail};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -50,11 +50,7 @@ pub fn convert_to_naive_local(
     ambiguous: Ambiguous,
     non_existent: NonExistent,
 ) -> PolarsResult<Option<NaiveDateTime>> {
-    let ndt = ndt
-        .checked_add_offset(from_tz.offset_from_utc_datetime(&ndt).fix())
-        .ok_or_else(
-            || polars_err!(ComputeError: "datetime is out of range for time zone conversion"),
-        )?;
+    let ndt = from_tz.from_utc_datetime(&ndt).naive_local();
     match to_tz.from_local_datetime(&ndt) {
         LocalResult::Single(dt) => Ok(Some(dt.naive_utc())),
         LocalResult::Ambiguous(dt_earliest, dt_latest) => match ambiguous {
