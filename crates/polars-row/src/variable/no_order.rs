@@ -81,15 +81,7 @@ unsafe fn encode_bytes(dst: *mut u8, src: *const u8, len: usize) -> usize {
     let dst = dst.add(header);
 
     if len >= BLOCK {
-        let mut i = 0;
-        while i + BLOCK <= len {
-            let block = std::ptr::read_unaligned(src.add(i) as *const [u8; BLOCK]);
-            std::ptr::write_unaligned(dst.add(i) as *mut [u8; BLOCK], block);
-            i += BLOCK;
-        }
-        // The last block overlaps with the previous one and writes the same bytes there.
-        let block = std::ptr::read_unaligned(src.add(len - BLOCK) as *const [u8; BLOCK]);
-        std::ptr::write_unaligned(dst.add(len - BLOCK) as *mut [u8; BLOCK], block);
+        std::ptr::copy_nonoverlapping(src, dst, len);
     } else {
         write_short(dst, src, len);
     }
@@ -212,22 +204,7 @@ unsafe fn decode_one(row: &mut &[u8], builder: &mut ViewBuilder) -> bool {
         (5, length as usize)
     };
     let end = header + length;
-
-    if length > View::MAX_INLINE_SIZE as usize && end.next_multiple_of(BLOCK) <= row.len() {
-        // Copy whole blocks. The builder has room for the overshoot.
-        let src = row.as_ptr().add(header);
-        let dst = builder.start_value(length);
-        let mut i = 0;
-        while i < length {
-            let block = std::ptr::read_unaligned(src.add(i) as *const [u8; BLOCK]);
-            std::ptr::write_unaligned(dst.add(i) as *mut [u8; BLOCK], block);
-            i += BLOCK;
-        }
-        let prefix = u32::from_le_bytes(row.get_unchecked(header..header + 4).try_into().unwrap());
-        builder.finish_value(length, prefix);
-    } else {
-        builder.push_bytes(row.get_unchecked(header..end));
-    }
+    builder.push_bytes(row.get_unchecked(header..end));
     *row = row.get_unchecked(end..);
     true
 }
