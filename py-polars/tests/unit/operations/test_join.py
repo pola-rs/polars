@@ -24,7 +24,12 @@ from tests.unit.conftest import time_func
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import JoinStrategy, MaintainOrderJoin, PolarsDataType
+    from polars._typing import (
+        EngineType,
+        JoinStrategy,
+        MaintainOrderJoin,
+        PolarsDataType,
+    )
 
 
 def test_semi_anti_join() -> None:
@@ -4825,3 +4830,25 @@ def test_merge_join_coalesce_right_payload_name_collision(
         q.collect(engine="in-memory"),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64])
+def test_computed_join_key_uses_own_input_schema(
+    engine: EngineType, dtype: PolarsDataType
+) -> None:
+    left = pl.LazyFrame({"a": [3, 12, 57], "k": ["left"] * 3, "j": ["x"] * 3})
+    right = pl.LazyFrame({"k": [1, 5], "j": [2, 7]}, schema={"k": dtype, "j": dtype})
+    query = left.join(
+        right, left_on="a", right_on=pl.col("k") + pl.col("j"), coalesce=False
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [3, 12],
+            "k": ["left", "left"],
+            "j": ["x", "x"],
+            "k_right": pl.Series([1, 5], dtype=dtype),
+            "j_right": pl.Series([2, 7], dtype=dtype),
+        }
+    )
+    assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)

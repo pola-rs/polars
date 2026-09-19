@@ -1198,3 +1198,84 @@ def test_join_key_renamed_from_a_suffixed_column() -> None:
     assert expected.height == 1
     for flags in (ON, ON_NO_PPD):
         assert_frame_equal(lf.collect(optimizations=flags), expected)
+
+
+def test_transitive_keys_join_filtered_input_first(tmp_path: Path) -> None:
+    scans = write_scans(
+        tmp_path,
+        part=pl.DataFrame({"p_key": range(100), "p_name": ["green"] + ["red"] * 99}),
+        partsupp=pl.DataFrame(
+            {
+                "ps_key": [i // 4 for i in range(400)],
+                "ps_supp": [i % 4 for i in range(400)],
+            }
+        ),
+        lineitem=pl.DataFrame(
+            {
+                "l_key": [i % 100 for i in range(10000)],
+                "l_supp": [i % 4 for i in range(10000)],
+            }
+        ),
+    )
+    query = pl.SQLContext(scans).execute("""
+        SELECT p_key, ps_key, ps_supp, l_key, l_supp
+        FROM part, lineitem, partsupp
+        WHERE p_key = l_key AND ps_key = l_key AND ps_supp = l_supp
+          AND p_name LIKE '%green%'
+    """)
+    assert set(scan_order(query.explain(optimizations=ON))[:2]) == {"part", "partsupp"}
+    assert_frame_equal(
+        query.collect(optimizations=ON),
+        query.collect(optimizations=OFF),
+        check_row_order=False,
+    )
+
+
+def test_transitive_keys_do_not_cross_lossy_casts() -> None:
+    frames = {
+        "a": pl.DataFrame({"ak": [2**53, 2**53 + 1]}),
+        "b": pl.DataFrame({"bk": [float(2**53)]}),
+        "c": pl.DataFrame({"ck": [2**53, 2**53 + 1]}),
+    }
+    query = pl.SQLContext(frames).execute(
+        "SELECT * FROM a, b, c WHERE CAST(ak AS DOUBLE) = bk AND bk = CAST(ck AS DOUBLE)"
+    )
+    expected = query.collect(optimizations=OFF)
+    assert expected.height == 4
+    assert_frame_equal(query.collect(optimizations=ON), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("large", ["a", "b", "c"])
+def test_transitive_keys_with_multiple_columns_per_leaf(
+    nulls_equal: bool, large: str
+) -> None:
+    frames = {
+        "a": pl.DataFrame({"a1": [1, 1, 2, None, None], "a2": [1, 2, 2, 1, None]}),
+        "b": pl.DataFrame({"b": [1, 2, None]}),
+        "c": pl.DataFrame({"c": [1, 2, None]}),
+    }
+    frames[large] = pl.concat([frames[large]] * 10)
+    query = (
+        frames["a"]
+        .lazy()
+        .join(
+            frames["b"].lazy(),
+            left_on="a1",
+            right_on="b",
+            coalesce=False,
+            nulls_equal=nulls_equal,
+        )
+        .join(
+            frames["c"].lazy(),
+            left_on=["a2", "b"],
+            right_on=["c", "c"],
+            coalesce=False,
+            nulls_equal=nulls_equal,
+        )
+    )
+    assert_frame_equal(
+        query.collect(optimizations=ON),
+        query.collect(optimizations=OFF),
+        check_row_order=False,
+    )
