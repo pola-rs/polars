@@ -607,11 +607,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyDataType {
                     DataType::UInt8 => CategoricalPhysical::U8,
                     DataType::UInt16 => CategoricalPhysical::U16,
                     DataType::UInt32 => CategoricalPhysical::U32,
-                    _ => {
-                        return Err(PyTypeError::new_err(
-                            "Categorical physical must be UInt8, UInt16, or UInt32",
-                        ))
-                    },
+                    _ => unreachable!(),
                 };
                 DataType::from_categories(Categories::new(name.into(), namespace.into(), physical))
             },
