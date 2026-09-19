@@ -335,9 +335,6 @@ class TestIcebergScanIO:
         plmonkeypatch: PlMonkeyPatch,
         capfd: pytest.CaptureFixture[str],
     ) -> None:
-        # Row-count-correctness alone doesn't catch this bug (polars
-        # re-filters after scanning regardless of pushdown) - only file
-        # pruning does.
         tbl, _ = new_iceberg_table(
             tmp_path,
             schema=IcebergSchema(NestedField(1, "id", LongType())),
@@ -421,15 +418,11 @@ class TestIcebergExpressions:
         expr = _to_ast("(pa.compute.field('ts') != '2023-08-08')")
         assert _convert_predicate(expr) == NotEqualTo("ts", "2023-08-08")
 
-        # A bare `!=` predicate must still push down, not silently vanish.
         assert try_convert_pyarrow_predicate(
             "(pa.compute.field('ts') != '2023-08-08')"
         ) == NotEqualTo("ts", "2023-08-08")
 
     def test_parse_ne_missing(self) -> None:
-        # `.ne_missing()` lowers to `(({col} != {lit}) | ({col}).is_null())`
-        # (see `validity_comparison_to_pa` in pyarrow.rs); the `!=` half hits
-        # the same conversion gap as a bare `!=`.
         expr = try_convert_pyarrow_predicate(
             "((pa.compute.field('ts') != '2023-08-08') | (pa.compute.field('ts')).is_null())"
         )
