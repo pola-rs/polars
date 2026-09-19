@@ -703,7 +703,11 @@ unsafe fn encode_flat_array(
         },
         D::BinaryView => {
             let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-            encode_bins(buffer, array.iter(), opt, offsets);
+            if opt.contains(RowEncodingOptions::NO_ORDER) {
+                no_order::encode_view_no_order(buffer, array, opt, offsets);
+            } else {
+                binary::encode_iter(buffer, array.iter(), opt, offsets);
+            }
         },
         D::Utf8 => {
             let array = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
@@ -715,7 +719,11 @@ unsafe fn encode_flat_array(
         },
         D::Utf8View => {
             let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-            encode_strs(buffer, array.iter(), opt, offsets);
+            if opt.contains(RowEncodingOptions::NO_ORDER) {
+                no_order::encode_view_no_order(buffer, &array.to_binview(), opt, offsets);
+            } else {
+                utf8::encode_str_view(buffer, array, opt, offsets);
+            }
         },
 
         // Lexical ordered Categorical are cast to PrimitiveArray above.

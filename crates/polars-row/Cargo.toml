@@ -24,3 +24,7 @@ proptest = { workspace = true }
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "row_encode"
+harness = false
