@@ -140,6 +140,7 @@ pub(crate) fn set_cache_states(
     pushdown_maintain_errors: bool,
     streaming: bool,
     partition_hive: bool,
+    simplify_expr: bool,
     row_estimate: bool,
     hooks: ExecutionHooks,
 ) -> PolarsResult<()> {
@@ -310,8 +311,13 @@ pub(crate) fn set_cache_states(
     // and finally remove that last projection and stitch the subplan
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
-        let mut pred_pd =
-            PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive, hooks);
+        let mut pred_pd = PredicatePushDown::new(
+            pushdown_maintain_errors,
+            streaming,
+            partition_hive,
+            simplify_expr,
+            hooks,
+        );
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for (cache_id, v) in cache_schema_and_children.into_iter().rev() {
@@ -451,6 +457,7 @@ pub(crate) fn set_cache_states(
                     pushdown_maintain_errors,
                     v.streaming,
                     partition_hive,
+                    simplify_expr,
                     hooks,
                 )
                 .block_at_cache(1);

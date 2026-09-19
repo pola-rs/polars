@@ -159,7 +159,6 @@ pub fn optimize(
             ir_arena,
             root,
         )?;
-        simplify_expr::narrow_date_filters(root, ir_arena, expr_arena);
     }
 
     // Run before slice pushdown
@@ -210,6 +209,7 @@ pub fn optimize(
             pushdown_maintain_errors,
             opt_flags.streaming(),
             opt_flags.partition_hive(),
+            opt_flags.simplify_expr(),
             hooks,
         );
         let ir = ir_arena.take(root);
@@ -228,6 +228,7 @@ pub fn optimize(
             pushdown_maintain_errors,
             opt_flags.streaming(),
             opt_flags.partition_hive(),
+            opt_flags.simplify_expr(),
             opt_flags.row_estimate(),
             hooks,
         )?;

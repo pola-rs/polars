@@ -1,7 +1,7 @@
 #[cfg(feature = "temporal")]
 mod temporal;
 #[cfg(feature = "temporal")]
-pub(super) use temporal::{FoldTemporalConstants, narrow_date_filters};
+pub(super) use temporal::FoldTemporalConstants;
 
 mod simplify_functions;
 

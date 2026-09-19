@@ -2073,3 +2073,89 @@ def test_date_timestamp_bounds_shared_input(engine: EngineType) -> None:
             optimizations=pl.QueryOptFlags(simplify_expression=False),
         ),
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("top_k", [False, True])
+def test_date_timestamp_bounds_through_rename(
+    tmp_path: Path, engine: EngineType, top_k: bool
+) -> None:
+    frame = pl.DataFrame(
+        {"d": pl.Series([200000, 0, 1, 2, -200000, None], dtype=pl.Int32).cast(pl.Date)}
+    )
+    path = tmp_path / "dates.parquet"
+    frame.write_parquet(path)
+    low = pl.lit(datetime(1970, 1, 1), dtype=pl.Datetime("ns"))
+    high = pl.lit(datetime(1970, 1, 3), dtype=pl.Datetime("ns"))
+    query = (
+        pl.scan_parquet(path)
+        .filter(pl.col("d") >= low)
+        .rename({"d": "renamed"})
+        .filter(pl.col("renamed") < high)
+    )
+    expected = frame.slice(1, 2).rename({"d": "renamed"})
+    if top_k:
+        query = query.sort("renamed").head(1)
+        expected = expected.head(1)
+    assert_frame_equal(query.collect(engine=engine), expected)
+    plan = query.explain()
+    assert "cast(Datetime" not in plan
+    assert "SELECTION:" in plan
+    assert "FILTER" not in plan
+    for flags in [
+        pl.QueryOptFlags(simplify_expression=False),
+        pl.QueryOptFlags(predicate_pushdown=False),
+    ]:
+        assert_frame_equal(query.collect(engine=engine, optimizations=flags), expected)
+        assert "cast(Datetime" in query.explain(optimizations=flags)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("split", [False, True])
+def test_date_timestamp_bounds_slice_barrier(engine: EngineType, split: bool) -> None:
+    frame = pl.DataFrame(
+        {"d": pl.Series([200000, 0, 1, 2, -200000, None], dtype=pl.Int32).cast(pl.Date)}
+    )
+    low = pl.lit(datetime(1970, 1, 1), dtype=pl.Datetime("ns"))
+    high = pl.lit(datetime(1970, 1, 3), dtype=pl.Datetime("ns"))
+    lower, upper = pl.col("d") >= low, pl.col("d") < high
+    query = (
+        frame.lazy().filter(lower).head(1).filter(upper)
+        if split
+        else frame.lazy().head(2).filter(lower, upper)
+    )
+    assert_frame_equal(query.collect(engine=engine), frame.slice(1, 1))
+    assert_frame_equal(
+        query.collect(engine=engine),
+        query.collect(
+            engine=engine, optimizations=pl.QueryOptFlags(simplify_expression=False)
+        ),
+    )
+    assert ("cast(Datetime" in query.explain()) == split
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_date_timestamp_bounds_io_plugin(engine: EngineType) -> None:
+    frame = pl.DataFrame(
+        {"d": pl.Series([200000, 0, 1, 2, -200000, None], dtype=pl.Int32).cast(pl.Date)}
+    )
+    received = []
+
+    def source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        assert predicate is not None
+        received.append(predicate)
+        yield frame.filter(predicate)
+
+    low = pl.lit(datetime(1970, 1, 1), dtype=pl.Datetime("ns"))
+    high = pl.lit(datetime(1970, 1, 3), dtype=pl.Datetime("ns"))
+    query = register_io_source(source, schema=frame.schema).filter(
+        pl.col("d") >= low, pl.col("d") < high
+    )
+    assert_frame_equal(query.collect(engine=engine), frame.slice(1, 2))
+    assert received
+    assert all("Datetime" not in str(predicate) for predicate in received)

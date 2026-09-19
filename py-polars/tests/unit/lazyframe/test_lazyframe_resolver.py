@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pickle
+from datetime import datetime
 from functools import reduce
 from itertools import chain, cycle
 from typing import TYPE_CHECKING, Any
@@ -533,3 +534,24 @@ def test_lazyframe_versioned_resolver_incorrect_returns() -> None:
     )
 
     assert q.collect().shape == (1, 0)
+
+
+@pytest.mark.parametrize("simplify_expression", [False, True])
+def test_lazyframe_resolver_date_timestamp_bounds(simplify_expression: bool) -> None:
+    frame = pl.DataFrame(
+        {"d": pl.Series([200000, 0, 1, 2, -200000, None], dtype=pl.Int32).cast(pl.Date)}
+    )
+    resolver = InMemoryLazyFrameResolver(frame.lazy(), use_filter_drop_columns_idx=True)
+    resolver.resolve_lazyframe = Mock(wraps=resolver.resolve_lazyframe)  # type: ignore[method-assign]
+    low = pl.lit(datetime(1970, 1, 1), dtype=pl.Datetime("ns"))
+    high = pl.lit(datetime(1970, 1, 3), dtype=pl.Datetime("ns"))
+    query = resolver.lazy().filter(pl.col("d") >= low, pl.col("d") < high)
+    assert_frame_equal(
+        query.collect(
+            optimizations=pl.QueryOptFlags(simplify_expression=simplify_expression)
+        ),
+        frame.slice(1, 2),
+    )
+    filters = resolver.resolve_lazyframe.call_args.kwargs["filters"]
+    assert len(filters) == 2
+    assert all(("Datetime" not in str(f.expr)) == simplify_expression for f in filters)

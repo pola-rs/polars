@@ -3,6 +3,8 @@ mod group_by;
 mod hive;
 mod join;
 mod keys;
+#[cfg(feature = "temporal")]
+mod temporal;
 pub(super) mod utils;
 
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
@@ -29,6 +31,7 @@ pub struct PredicatePushDown {
     pub(crate) streaming: bool,
     // Controls pushing filters past fallible projections
     maintain_errors: bool,
+    simplify_expr: bool,
     // Set while re-processing the branches `join::hive::rewrite_hive` so we don't re-enter
     // the hive rewriting part
     pub(super) hive_rewrite_active: bool,
@@ -43,6 +46,7 @@ impl PredicatePushDown {
         maintain_errors: bool,
         streaming: bool,
         partition_hive: bool,
+        simplify_expr: bool,
         hooks: ExecutionHooks,
     ) -> Self {
         Self {
@@ -51,6 +55,7 @@ impl PredicatePushDown {
             dedup_state: PredicateDedupState::default(),
             streaming,
             maintain_errors,
+            simplify_expr,
             hive_rewrite_active: false,
             partition_hive,
             hooks,
@@ -64,6 +69,23 @@ impl PredicatePushDown {
         self
     }
 
+    fn combine_filter_predicates<I>(
+        &self,
+        predicates: I,
+        _schema: &Schema,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> Option<ExprIR>
+    where
+        I: IntoIterator<Item = ExprIR>,
+    {
+        let predicate = combine_predicates(predicates, expr_arena)?;
+        if self.simplify_expr {
+            #[cfg(feature = "temporal")]
+            return Some(temporal::narrow_date_filter(predicate, _schema, expr_arena));
+        }
+        Some(predicate)
+    }
+
     fn optional_apply_predicate(
         &mut self,
         lp: IR,
@@ -71,7 +93,12 @@ impl PredicatePushDown {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> IR {
-        if let Some(predicate) = combine_predicates(local_predicates, expr_arena) {
+        if local_predicates.is_empty() {
+            return lp;
+        }
+        if let Some(predicate) =
+            self.combine_filter_predicates(local_predicates, &lp.schema(lp_arena), expr_arena)
+        {
             let input = lp_arena.add(lp);
 
             IR::Filter { input, predicate }
@@ -331,27 +358,7 @@ impl PredicatePushDown {
                     ),
                 )
             },
-            DataFrameScan {
-                df,
-                schema,
-                output_schema,
-            } => {
-                let mut lp = DataFrameScan {
-                    df,
-                    schema,
-                    output_schema,
-                };
-
-                if let Some(predicate) =
-                    combine_predicates(acc_predicates.into_values(), expr_arena)
-                {
-                    let input = lp_arena.add(lp);
-
-                    lp = IR::Filter { input, predicate }
-                }
-
-                Ok(lp)
-            },
+            lp @ DataFrameScan { .. } => self.no_pushdown(lp, acc_predicates, lp_arena, expr_arena),
             Scan {
                 sources,
                 file_info,
@@ -376,8 +383,9 @@ impl PredicatePushDown {
                         blocked_names.contains(&name.as_ref())
                     })
                 };
-                let predicate = combine_predicates(
+                let predicate = self.combine_filter_predicates(
                     Option::into_iter(predicate.clone()).chain(acc_predicates.into_values()),
+                    &file_info.schema,
                     expr_arena,
                 );
 
@@ -679,9 +687,11 @@ impl PredicatePushDown {
                 // predicates have no DSL representation.
                 remove_dynamic_pred_minterms(&mut acc_predicates, expr_arena);
 
-                if let Some(predicate) =
-                    combine_predicates(acc_predicates.into_values(), expr_arena)
-                {
+                if let Some(predicate) = self.combine_filter_predicates(
+                    acc_predicates.into_values(),
+                    &options.schema,
+                    expr_arena,
+                ) {
                     match ExprPushdownGroup::Pushable.update_with_expr_rec(
                         expr_arena.get(predicate.node()),
                         expr_arena,
@@ -748,15 +758,20 @@ impl PredicatePushDown {
                     );
                 }
 
-                filters = Buffer::from_iter(
-                    acc_predicates
-                        .iter()
-                        .flat_map(|(_, eir)| {
-                            MintermIter::new(eir.node(), expr_arena)
-                                .filter(|&node| !contains_dynamic_pred(node, expr_arena))
-                        })
-                        .map(|node| ExprIR::from_node(node, expr_arena)),
-                );
+                let predicates = acc_predicates
+                    .values()
+                    .flat_map(|eir| {
+                        MintermIter::new(eir.node(), expr_arena)
+                            .filter(|&node| !contains_dynamic_pred(node, expr_arena))
+                    })
+                    .map(|node| ExprIR::from_node(node, expr_arena))
+                    .collect::<Vec<_>>();
+                let predicate =
+                    self.combine_filter_predicates(predicates, &resolver_schema, expr_arena);
+                filters = Buffer::from_iter(predicate.into_iter().flat_map(|eir| {
+                    MintermIter::new(eir.node(), expr_arena)
+                        .map(|node| ExprIR::from_node(node, expr_arena))
+                }));
 
                 Ok(Resolver {
                     resolver,
