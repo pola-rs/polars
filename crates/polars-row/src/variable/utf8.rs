@@ -34,13 +34,20 @@ pub unsafe fn len_from_buffer(row: &[u8], opt: RowEncodingOptions) -> usize {
         return 1;
     }
 
-    let end = if opt.contains(RowEncodingOptions::DESCENDING) {
-        unsafe { row.iter().position(|&b| b == 0xFE).unwrap_unchecked() }
-    } else {
-        unsafe { row.iter().position(|&b| b == 0x01).unwrap_unchecked() }
-    };
-
-    end + 1
+    let term = descending_mask(opt) ^ 0x01;
+    let mut i = 0;
+    while i + BLOCK <= row.len() {
+        let block = std::ptr::read_unaligned(row.as_ptr().add(i) as *const [u8; BLOCK]);
+        let end = find_byte(block, term);
+        if end < BLOCK {
+            return i + end + 1;
+        }
+        i += BLOCK;
+    }
+    while *row.get_unchecked(i) != term {
+        i += 1;
+    }
+    i + 1
 }
 
 #[inline(always)]
