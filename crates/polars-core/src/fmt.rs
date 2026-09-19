@@ -6,12 +6,6 @@ use std::num::IntErrorKind;
 use std::sync::RwLock;
 use std::{fmt, str};
 
-#[cfg(any(
-    feature = "dtype-date",
-    feature = "dtype-datetime",
-    feature = "dtype-time"
-))]
-use polars_arrow::temporal_conversions::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::modifiers::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -21,6 +15,12 @@ use comfy_table::*;
 #[cfg(feature = "dtype-datetime")]
 use jiff::civil::DateTime as NaiveDateTime;
 use num_traits::{Num, NumCast};
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_arrow::temporal_conversions::*;
 use polars_error::feature_gated;
 use polars_utils::relaxed_cell::RelaxedCell;
 

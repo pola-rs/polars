@@ -47,7 +47,8 @@ pub fn timestamp_to_naive_datetime(since_epoch: i64, time_unit: TimeUnit) -> Nai
         TimeUnit::Microseconds => i128::from(since_epoch) * 1_000,
         TimeUnit::Milliseconds => i128::from(since_epoch) * 1_000_000,
     };
-    arrow::temporal_conversions::epoch_nanos_to_datetime_opt(nanos).expect("datetime out-of-range")
+    polars_arrow::temporal_conversions::epoch_nanos_to_datetime_opt(nanos)
+        .expect("datetime out-of-range")
 }
 
 /// Convert nanoseconds-since-midnight to a more structured object.
@@ -124,10 +125,10 @@ pub fn datetime_to_py_object<'py>(
                 .map(|dt| dt.into_any())
             },
             Err(_) => {
-                let parsed_tz = arrow::temporal_conversions::parse_offset(time_zone.as_str())
-                    .map_err(|_| {
-                        PyPolarsErr::Other(format!("Could not parse timezone: {time_zone}"))
-                    })?;
+                let parsed_tz =
+                    polars_arrow::temporal_conversions::parse_offset(time_zone.as_str()).map_err(
+                        |_| PyPolarsErr::Other(format!("Could not parse timezone: {time_zone}")),
+                    )?;
                 let ts = timestamp_to_timestamp(v, tu);
                 ts.to_zoned(parsed_tz).into_bound_py_any(py)
             },

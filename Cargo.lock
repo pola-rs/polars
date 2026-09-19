@@ -3310,8 +3310,7 @@ dependencies = [
 name = "polars-defs"
 version = "0.55.1"
 dependencies = [
- "chrono",
- "chrono-tz",
+ "jiff",
  "polars-arrow",
  "polars-compute",
  "polars-core",
@@ -3948,6 +3947,7 @@ dependencies = [
  "half",
  "hashbrown 0.17.1",
  "indexmap",
+ "jiff",
  "libc",
  "memmap2",
  "num-derive",

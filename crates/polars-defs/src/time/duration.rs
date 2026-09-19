@@ -10,12 +10,12 @@ use polars_arrow::temporal_conversions::{
     MICROSECONDS, MILLISECONDS, NANOSECONDS, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
     timestamp_us_to_datetime,
 };
+#[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::unlocalize_datetime;
 #[cfg(feature = "temporal")]
 use polars_core::chunked_array::temporal::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us,
 };
-#[cfg(feature = "timezones")]
-use polars_core::chunked_array::temporal::unlocalize_datetime;
 use polars_core::datatypes::{DataType, TimeZone};
 #[cfg(feature = "timezones")]
 use polars_error::PolarsError;
@@ -26,7 +26,6 @@ use polars_utils::time::{
 };
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

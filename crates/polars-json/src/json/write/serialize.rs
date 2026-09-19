@@ -1,5 +1,8 @@
 use std::io::Write;
 
+use jiff::SignedDuration as Duration;
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
+use num_traits::{Float, ToPrimitive};
 use polars_arrow::array::*;
 use polars_arrow::bitmap::utils::ZipValidity;
 #[cfg(feature = "dtype-decimal")]
@@ -14,9 +17,6 @@ use polars_arrow::temporal_conversions::{
     parse_offset, time64ns_to_time, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
     timestamp_to_datetime, timestamp_us_to_datetime,
 };
-use jiff::SignedDuration as Duration;
-use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
-use num_traits::{Float, ToPrimitive};
 use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 use streaming_iterator::StreamingIterator;
