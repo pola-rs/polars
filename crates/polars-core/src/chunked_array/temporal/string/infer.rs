@@ -140,15 +140,15 @@ pub trait StrpTimeParser<T> {
 #[cfg(feature = "dtype-datetime")]
 impl StrpTimeParser<i64> for DatetimeInfer<Int64Type> {
     fn parse_bytes(&mut self, val: &[u8], time_unit: Option<TimeUnit>) -> Option<i64> {
-        let transform = match time_unit {
-            Some(TimeUnit::Nanoseconds) => datetime_to_timestamp_ns,
-            Some(TimeUnit::Microseconds) => datetime_to_timestamp_us,
-            Some(TimeUnit::Milliseconds) => datetime_to_timestamp_ms,
+        let transform: fn(NaiveDateTime) -> Option<i64> = match time_unit {
+            Some(TimeUnit::Nanoseconds) => |dt| dt.and_utc().timestamp_nanos_opt(),
+            Some(TimeUnit::Microseconds) => |dt| Some(datetime_to_timestamp_us(dt)),
+            Some(TimeUnit::Milliseconds) => |dt| Some(datetime_to_timestamp_ms(dt)),
             _ => unreachable!(), // time_unit has to be provided for datetime
         };
         self.transform_bytes
             .parse(val, self.latest_fmt.as_bytes())
-            .map(transform)
+            .and_then(transform)
             .or_else(|| {
                 // TODO! this will try all patterns.
                 // Somehow we must early escape if value is invalid.
@@ -156,7 +156,7 @@ impl StrpTimeParser<i64> for DatetimeInfer<Int64Type> {
                     if let Some(parsed) = self
                         .transform_bytes
                         .parse(val, fmt.as_bytes())
-                        .map(transform)
+                        .and_then(transform)
                     {
                         self.latest_fmt = fmt;
                         return Some(parsed);
@@ -270,6 +270,25 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int32Type> {
     }
 }
 
+#[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+impl DatetimeInfer<Int64Type> {
+    fn parse_naive(&mut self, val: &str) -> Option<NaiveDateTime> {
+        if let Some(dt) = parse_datetime(val, self.latest_fmt) {
+            return Some(dt);
+        }
+        if !self.pattern.is_inferable(val) {
+            return None;
+        }
+        for fmt in self.patterns {
+            if let Some(dt) = parse_datetime(val, fmt) {
+                self.latest_fmt = fmt;
+                return Some(dt);
+            }
+        }
+        None
+    }
+}
+
 impl<T: PolarsNumericType> DatetimeInfer<T> {
     pub fn parse(&mut self, val: &str) -> Option<T::Native> {
         match (self.transform)(val, self.latest_fmt) {
@@ -340,7 +359,7 @@ pub(crate) fn parse_datetime_and_remainder<'a>(
 
 #[cfg(feature = "dtype-datetime")]
 pub(crate) fn transform_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
-    parse_datetime(val, fmt).map(datetime_to_timestamp_ns)
+    parse_datetime(val, fmt).and_then(|dt| dt.and_utc().timestamp_nanos_opt())
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -355,7 +374,7 @@ pub(crate) fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
 
 fn transform_tzaware_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
     let dt = DateTime::parse_from_str(val, fmt);
-    dt.ok().map(|dt| datetime_to_timestamp_ns(dt.naive_utc()))
+    dt.ok().and_then(|dt| dt.timestamp_nanos_opt())
 }
 
 fn transform_tzaware_datetime_us(val: &str, fmt: &str) -> Option<i64> {
@@ -504,6 +523,13 @@ pub fn coerce_string_to_datetime(
         unreachable!()
     };
     let tu = *tu;
+    #[cfg(feature = "timezones")]
+    if !matches!(infer.pattern, Pattern::DatetimeYMDZ)
+        && let Some(tz) = tz
+        && tz != &TimeZone::UTC
+    {
+        return super::parse_local_datetime(ca, tu, tz, ambiguous, |s| infer.parse_naive(s));
+    }
     match infer.pattern {
         #[cfg(feature = "timezones")]
         Pattern::DatetimeYMDZ => infer.coerce_string(ca).datetime().map(|ca| {

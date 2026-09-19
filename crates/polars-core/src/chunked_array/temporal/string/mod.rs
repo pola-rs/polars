@@ -50,6 +50,72 @@ where
         .copied()
 }
 
+/// Localize before converting to the target unit: local wall time may lie outside
+/// the physical timestamp range even when the corresponding UTC instant fits.
+#[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+fn parse_local_datetime<'a>(
+    ca: &'a StringChunked,
+    tu: TimeUnit,
+    tz: &TimeZone,
+    ambiguous: &'a StringChunked,
+    mut parse: impl FnMut(&'a str) -> Option<NaiveDateTime>,
+) -> PolarsResult<DatetimeChunked> {
+    use either::Either;
+    use polars_arrow::legacy::kernels::convert_to_naive_local;
+
+    let time_zone = tz.to_chrono()?;
+    polars_ensure!(
+        ca.len() == ambiguous.len() || ca.len() == 1 || ambiguous.len() == 1,
+        length_mismatch = "strptime",
+        ca.len(),
+        ambiguous.len()
+    );
+    let len = if ca.len() == 1 {
+        ambiguous.len()
+    } else {
+        ca.len()
+    };
+    let values = if ca.len() == 1 {
+        Either::Left(std::iter::repeat_n(ca.get(0), len))
+    } else {
+        Either::Right(ca.iter())
+    };
+    let ambiguities = if ambiguous.len() == 1 {
+        Either::Left(std::iter::repeat_n(ambiguous.get(0), len))
+    } else {
+        Either::Right(ambiguous.iter())
+    };
+    let out: Int64Chunked = values
+        .zip(ambiguities)
+        .map(|(value, ambiguous)| {
+            let (Some(value), Some(ambiguous)) = (value, ambiguous) else {
+                return Ok::<_, PolarsError>(None);
+            };
+            let Some(dt) = parse(value) else {
+                return Ok(None);
+            };
+            let Some(dt) = convert_to_naive_local(
+                &chrono_tz::UTC,
+                &time_zone,
+                dt,
+                ambiguous.parse()?,
+                NonExistent::Raise,
+            )?
+            else {
+                return Ok(None);
+            };
+            Ok(match tu {
+                TimeUnit::Nanoseconds => dt.and_utc().timestamp_nanos_opt(),
+                TimeUnit::Microseconds => Some(datetime_to_timestamp_us(dt)),
+                TimeUnit::Milliseconds => Some(datetime_to_timestamp_ms(dt)),
+            })
+        })
+        .collect::<PolarsResult<_>>()?;
+    Ok(out
+        .with_name(ca.name().clone())
+        .into_datetime(tu, Some(tz.clone())))
+}
+
 pub trait StringMethods: AsString {
     #[cfg(feature = "dtype-time")]
     /// Parsing string values and return a [`TimeChunked`]
@@ -155,24 +221,42 @@ pub trait StringMethods: AsString {
             },
         };
 
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+        #[cfg(feature = "timezones")]
+        if !tz_aware
+            && let Some(tz) = tz
+            && tz != &TimeZone::UTC
+        {
+            return parse_local_datetime(string_ca, tu, tz, _ambiguous, |mut s| {
+                while !s.is_empty() {
+                    if let Some((dt, _)) = infer::parse_datetime_and_remainder(s, fmt) {
+                        return Some(dt);
+                    }
+                    let mut chars = s.chars();
+                    chars.next();
+                    s = chars.as_str();
+                }
+                None
+            });
+        }
+
+        let func: fn(NaiveDateTime) -> Option<i64> = match tu {
+            TimeUnit::Nanoseconds => |dt| dt.and_utc().timestamp_nanos_opt(),
+            TimeUnit::Microseconds => |dt| Some(datetime_to_timestamp_us(dt)),
+            TimeUnit::Milliseconds => |dt| Some(datetime_to_timestamp_ms(dt)),
         };
 
         let ca = unary_elementwise(string_ca, |opt_s| {
             let mut s = opt_s?;
             while !s.is_empty() {
-                let timestamp = if tz_aware {
+                let datetime = if tz_aware {
                     DateTime::parse_and_remainder(s, fmt)
                         .ok()
-                        .map(|(dt, _r)| func(dt.naive_utc()))
+                        .map(|(dt, _r)| dt.naive_utc())
                 } else {
-                    infer::parse_datetime_and_remainder(s, fmt).map(|(nd, _r)| func(nd))
+                    infer::parse_datetime_and_remainder(s, fmt).map(|(nd, _r)| nd)
                 };
-                match timestamp {
-                    Some(ts) => return Some(ts),
+                match datetime {
+                    Some(dt) => return func(dt),
                     None => {
                         let mut it = s.chars();
                         it.next();
@@ -264,10 +348,29 @@ pub trait StringMethods: AsString {
         let fmt = strptime::compile_fmt(fmt)?;
         let use_cache = use_cache && string_ca.len() > 50;
 
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+        #[cfg(feature = "timezones")]
+        if !tz_aware
+            && let Some(tz) = tz
+            && tz != &TimeZone::UTC
+        {
+            let mut strptime_cache = StrpTimeState::default();
+            let mut convert = LruCachedFunc::new(
+                |s: &str| {
+                    strptime_cache
+                        .parse(s.as_bytes(), fmt.as_bytes())
+                        .or_else(|| infer::parse_datetime(s, &fmt))
+                },
+                (string_ca.len() as f64).sqrt() as usize,
+            );
+            return parse_local_datetime(string_ca, tu, tz, ambiguous, |s| {
+                convert.eval(s, use_cache)
+            });
+        }
+
+        let func: fn(NaiveDateTime) -> Option<i64> = match tu {
+            TimeUnit::Nanoseconds => |dt| dt.and_utc().timestamp_nanos_opt(),
+            TimeUnit::Microseconds => |dt| Some(datetime_to_timestamp_us(dt)),
+            TimeUnit::Milliseconds => |dt| Some(datetime_to_timestamp_ms(dt)),
         };
 
         if tz_aware {
@@ -276,7 +379,7 @@ pub trait StringMethods: AsString {
                 let mut convert = LruCachedFunc::new(
                     |s: &str| {
                         let dt = DateTime::parse_from_str(s, &fmt).ok()?;
-                        Some(func(dt.naive_utc()))
+                        func(dt.naive_utc())
                     },
                     (string_ca.len() as f64).sqrt() as usize,
                 );
@@ -301,7 +404,7 @@ pub trait StringMethods: AsString {
                 let mut convert = LruCachedFunc::new(
                     |s: &str| match strptime_cache.parse(s.as_bytes(), fmt.as_bytes()) {
                         None => transform(s, &fmt),
-                        Some(ndt) => Some(func(ndt)),
+                        Some(ndt) => func(ndt),
                     },
                     (string_ca.len() as f64).sqrt() as usize,
                 );

@@ -568,6 +568,9 @@ impl LazyFrame {
             ExecutionHooks {
                 apply_scan_predicate_to_scan_ir,
                 hive_join,
+                evaluate_function: |function, columns| {
+                    polars_expr::dispatch::function_expr_to_udf(function).call_udf(columns)
+                },
             },
         )?;
 

@@ -4,7 +4,7 @@ use chrono::NaiveDateTime;
 use chrono_tz::UTC;
 use polars_arrow::legacy::kernels::convert_to_naive_local;
 use polars_arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+    timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt, timestamp_us_to_datetime_opt,
 };
 
 use crate::chunked_array::ops::arity::try_binary_elementwise;
@@ -37,15 +37,15 @@ pub fn replace_time_zone(
             .set_sorted_flag(datetime.physical().is_sorted_flag());
         return Ok(out);
     }
-    let timestamp_to_datetime: fn(i64) -> NaiveDateTime = match datetime.time_unit() {
-        TimeUnit::Milliseconds => timestamp_ms_to_datetime,
-        TimeUnit::Microseconds => timestamp_us_to_datetime,
-        TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
+    let timestamp_to_datetime: fn(i64) -> Option<NaiveDateTime> = match datetime.time_unit() {
+        TimeUnit::Milliseconds => timestamp_ms_to_datetime_opt,
+        TimeUnit::Microseconds => timestamp_us_to_datetime_opt,
+        TimeUnit::Nanoseconds => timestamp_ns_to_datetime_opt,
     };
-    let datetime_to_timestamp: fn(NaiveDateTime) -> i64 = match datetime.time_unit() {
-        TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        TimeUnit::Microseconds => datetime_to_timestamp_us,
-        TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+    let datetime_to_timestamp: fn(NaiveDateTime) -> Option<i64> = match datetime.time_unit() {
+        TimeUnit::Milliseconds => |dt| Some(datetime_to_timestamp_ms(dt)),
+        TimeUnit::Microseconds => |dt| Some(datetime_to_timestamp_us(dt)),
+        TimeUnit::Nanoseconds => |dt| dt.and_utc().timestamp_nanos_opt(),
     };
 
     let out = if ambiguous.len() == 1
@@ -90,15 +90,15 @@ pub fn replace_time_zone(
 pub fn impl_replace_time_zone_fast(
     datetime: &Logical<DatetimeType, Int64Type>,
     ambiguous: Option<&str>,
-    timestamp_to_datetime: fn(i64) -> NaiveDateTime,
-    datetime_to_timestamp: fn(NaiveDateTime) -> i64,
+    timestamp_to_datetime: fn(i64) -> Option<NaiveDateTime>,
+    datetime_to_timestamp: fn(NaiveDateTime) -> Option<i64>,
     from_tz: &chrono_tz::Tz,
     to_tz: &chrono_tz::Tz,
 ) -> PolarsResult<Int64Chunked> {
     match ambiguous {
         Some(ambiguous) => datetime.phys.try_apply_nonnull_values_generic(|timestamp| {
-            let ndt = timestamp_to_datetime(timestamp);
-            Ok(datetime_to_timestamp(
+            let ndt = timestamp_to_datetime(timestamp).ok_or_else(out_of_range)?;
+            datetime_to_timestamp(
                 convert_to_naive_local(
                     from_tz,
                     to_tz,
@@ -107,7 +107,8 @@ pub fn impl_replace_time_zone_fast(
                     NonExistent::Raise,
                 )?
                 .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
-            ))
+            )
+            .ok_or_else(out_of_range)
         }),
         _ => Ok(datetime.phys.apply(|_| None)),
     }
@@ -117,25 +118,29 @@ pub fn impl_replace_time_zone(
     datetime: &Logical<DatetimeType, Int64Type>,
     ambiguous: &StringChunked,
     non_existent: NonExistent,
-    timestamp_to_datetime: fn(i64) -> NaiveDateTime,
-    datetime_to_timestamp: fn(NaiveDateTime) -> i64,
+    timestamp_to_datetime: fn(i64) -> Option<NaiveDateTime>,
+    datetime_to_timestamp: fn(NaiveDateTime) -> Option<i64>,
     from_tz: &chrono_tz::Tz,
     to_tz: &chrono_tz::Tz,
 ) -> PolarsResult<Int64Chunked> {
     match ambiguous.len() {
         1 => {
+            let Some(ambiguous) = ambiguous.get(0) else {
+                return Ok(datetime.phys.apply(|_| None));
+            };
             let iter = datetime.phys.downcast_iter().map(|arr| {
                 let element_iter = arr.iter().map(|timestamp_opt| match timestamp_opt {
                     Some(timestamp) => {
-                        let ndt = timestamp_to_datetime(*timestamp);
+                        let ndt = timestamp_to_datetime(*timestamp).ok_or_else(out_of_range)?;
                         let res = convert_to_naive_local(
                             from_tz,
                             to_tz,
                             ndt,
-                            Ambiguous::from_str(ambiguous.get(0).unwrap())?,
+                            Ambiguous::from_str(ambiguous)?,
                             non_existent,
                         )?;
-                        Ok::<_, PolarsError>(res.map(datetime_to_timestamp))
+                        res.map(|dt| datetime_to_timestamp(dt).ok_or_else(out_of_range))
+                            .transpose()
                     },
                     None => Ok(None),
                 });
@@ -148,18 +153,23 @@ pub fn impl_replace_time_zone(
             ambiguous,
             |timestamp_opt, ambiguous_opt| match (timestamp_opt, ambiguous_opt) {
                 (Some(timestamp), Some(ambiguous)) => {
-                    let ndt = timestamp_to_datetime(timestamp);
-                    Ok(convert_to_naive_local(
+                    let ndt = timestamp_to_datetime(timestamp).ok_or_else(out_of_range)?;
+                    convert_to_naive_local(
                         from_tz,
                         to_tz,
                         ndt,
                         Ambiguous::from_str(ambiguous)?,
                         non_existent,
                     )?
-                    .map(datetime_to_timestamp))
+                    .map(|dt| datetime_to_timestamp(dt).ok_or_else(out_of_range))
+                    .transpose()
                 },
                 _ => Ok(None),
             },
         ),
     }
+}
+
+fn out_of_range() -> PolarsError {
+    polars_err!(ComputeError: "datetime is out of range for time zone conversion")
 }

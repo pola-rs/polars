@@ -45,6 +45,16 @@ pub(super) fn process_join(
     let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
     let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 
+    push_down_join_condition(
+        &mut input_left,
+        &mut input_right,
+        &schema_left,
+        &schema_right,
+        &mut options,
+        lp_arena,
+        expr_arena,
+    )?;
+
     let mut opt_join_key_reduction_select = try_reduce_redundant_join_keys(
         opt,
         lp_arena,

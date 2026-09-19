@@ -996,9 +996,12 @@ fn fmt_datetime(
     tz: Option<&self::datatypes::TimeZone>,
 ) -> fmt::Result {
     let ndt = match tu {
-        TimeUnit::Nanoseconds => timestamp_ns_to_datetime(v),
-        TimeUnit::Microseconds => timestamp_us_to_datetime(v),
-        TimeUnit::Milliseconds => timestamp_ms_to_datetime(v),
+        TimeUnit::Nanoseconds => timestamp_ns_to_datetime_opt(v),
+        TimeUnit::Microseconds => timestamp_us_to_datetime_opt(v),
+        TimeUnit::Milliseconds => timestamp_ms_to_datetime_opt(v),
+    };
+    let Some(ndt) = ndt else {
+        return write!(f, "{v} {tu} (out of range)");
     };
     match tz {
         None => std::fmt::Display::fmt(&ndt, f),

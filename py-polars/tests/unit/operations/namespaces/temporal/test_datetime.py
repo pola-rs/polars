@@ -1608,3 +1608,81 @@ def test_offset_by_boundary_value_succeeds_series_29017() -> None:
     assert result.dt.year().item() == 262142
     assert result.dt.month().item() == 1
     assert result.dt.day().item() == 1
+
+
+@pytest.mark.parametrize("ambiguous", [pl.lit("raise"), pl.lit("null"), pl.col("amb")])
+@pytest.mark.parametrize(
+    ("value", "from_tz", "to_tz"),
+    [
+        (-(2**63), None, "Europe/Amsterdam"),
+        (2**63 - 1, None, "America/New_York"),
+        (-(2**63), "America/New_York", None),
+        (2**63 - 1, "Europe/Amsterdam", None),
+    ],
+)
+def test_replace_time_zone_nanosecond_overflow(
+    ambiguous: pl.Expr, value: int, from_tz: str | None, to_tz: str | None
+) -> None:
+    frame = pl.DataFrame(
+        {
+            "ts": pl.Series([value, None], dtype=pl.Datetime("ns", from_tz)),
+            "amb": ["raise"] * 2,
+        }
+    )
+    with pytest.raises(ComputeError, match="out of range for time zone conversion"):
+        frame.select(pl.col("ts").dt.replace_time_zone(to_tz, ambiguous=ambiguous))
+
+
+@pytest.mark.parametrize("ambiguous", [pl.lit("raise"), pl.lit("null"), pl.col("amb")])
+@pytest.mark.parametrize(
+    ("value", "to_tz", "offset"),
+    [
+        (-(2**63), "Etc/GMT+1", 3_600_000_000_000),
+        (2**63 - 1, "Etc/GMT-1", -3_600_000_000_000),
+    ],
+)
+def test_replace_time_zone_nanosecond_limits(
+    ambiguous: pl.Expr, value: int, to_tz: str, offset: int
+) -> None:
+    frame = pl.DataFrame(
+        {"ts": pl.Series([value, None], dtype=pl.Datetime("ns")), "amb": ["raise"] * 2}
+    )
+    result = frame.select(pl.col("ts").dt.replace_time_zone(to_tz, ambiguous=ambiguous))
+    expected = pl.DataFrame(
+        {"ts": pl.Series([value + offset, None], dtype=pl.Datetime("ns", to_tz))}
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("ambiguous", [pl.lit("raise"), pl.lit("null"), pl.col("amb")])
+@pytest.mark.parametrize("unit", ["ms", "us"])
+@pytest.mark.parametrize("value", [-(2**63), 2**63 - 1])
+def test_replace_time_zone_out_of_range_input(
+    ambiguous: pl.Expr, unit: TimeUnit, value: int
+) -> None:
+    frame = pl.DataFrame(
+        {"ts": pl.Series([value, None], dtype=pl.Datetime(unit)), "amb": ["raise"] * 2}
+    )
+    with pytest.raises(ComputeError, match="out of range for time zone conversion"):
+        frame.select(
+            pl.col("ts").dt.replace_time_zone("Europe/Amsterdam", ambiguous=ambiguous)
+        )
+
+
+def test_replace_time_zone_null_ambiguous_non_existent() -> None:
+    result = pl.Series([datetime(2020, 1, 1)]).dt.replace_time_zone(
+        "Europe/Amsterdam", ambiguous=pl.lit(None, dtype=pl.String), non_existent="null"
+    )
+    expected = pl.Series([None], dtype=pl.Datetime("us", "Europe/Amsterdam"))
+    assert_series_equal(result, expected)
+
+
+def test_replace_time_zone_local_datetime_overflow() -> None:
+    series = (
+        pl.Series(["+262142-12-31 23:00:00"])
+        .str.to_datetime("%Y-%m-%d %H:%M:%S", time_unit="us")
+        .cast(pl.Int64)
+        .cast(pl.Datetime("us", "Etc/GMT-2"))
+    )
+    with pytest.raises(ComputeError, match="out of range for time zone conversion"):
+        series.dt.replace_time_zone(None)

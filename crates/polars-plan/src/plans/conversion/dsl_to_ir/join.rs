@@ -201,9 +201,8 @@ pub fn resolve_join(
 
     // # Resolve scalars
     //
-    // Scalars need to be expanded. We translate them to temporary columns added with
-    // `with_columns` and remove them later with `project`
-    // This way the backends don't have to expand the literals in the join implementation
+    // Materialize scalar keys here so schema resolution and coalescing see named columns.
+    // Optimizer rewrites can introduce scalar keys later; execution also broadcasts them.
 
     let has_scalars = left_on
         .iter()
@@ -572,34 +571,39 @@ fn resolve_join_where(
         resolved.push(predicate);
     }
 
-    if how.is_inner() {
-        // Inner join_where is lowered as cross + filters
-        for predicate in resolved {
-            let ir = IR::Filter {
-                input: last_node,
-                predicate,
-            };
+    let node = resolved
+        .iter()
+        .map(|e| e.node())
+        .reduce(|left, right| {
+            ctxt.expr_arena.add(AExpr::BinaryExpr {
+                left,
+                op: Operator::And,
+                right,
+            })
+        })
+        .expect("'join_where' requires at least one predicate");
+    let predicate = ExprIR::from_node(node, ctxt.expr_arena);
 
-            last_node = ctxt.lp_arena.add(ir);
+    if how.is_inner() {
+        // Use the filter splitter so aggregates see the full join input,
+        // regardless of the predicate order.
+        let predicates = if ctxt.opt_flags.predicate_pushdown() {
+            SplitPredicates::new(node, ctxt.expr_arena, None, ctxt.pushdown_maintain_errors).map(
+                |SplitPredicates { pushable, fallible }| {
+                    pushable.into_iter().chain(fallible).collect::<Vec<_>>()
+                },
+            )
+        } else {
+            None
+        };
+        for node in predicates.unwrap_or_else(|| vec![node]) {
+            last_node = ctxt.lp_arena.add(IR::Filter {
+                input: last_node,
+                predicate: ExprIR::from_node(node, ctxt.expr_arena),
+            });
         }
     } else {
-        // For left and right joins, we cannot lower to cross + filters
-        // as null outputs for missing rows would not be preserved.
-        // We attach the join predicates/conditions to the joins itself
-        // and restore the original `how` join type.
-        let node = resolved
-            .iter()
-            .map(|e| e.node())
-            .reduce(|left, right| {
-                ctxt.expr_arena.add(AExpr::BinaryExpr {
-                    left,
-                    op: Operator::And,
-                    right,
-                })
-            })
-            .expect("'join_where' requires at least one predicate");
-        let predicate = ExprIR::from_node(node, ctxt.expr_arena);
-
+        // Outer ON conditions must retain unmatched rows.
         let IR::Join { options, .. } = ctxt.lp_arena.get(join_node) else {
             unreachable!()
         };

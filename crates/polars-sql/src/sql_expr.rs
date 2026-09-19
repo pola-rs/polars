@@ -679,19 +679,14 @@ impl SQLExprVisitor<'_> {
         }
         // need special handling for interval offsets and comparisons
         let (mut lhs, mut rhs) = match (left, op, right) {
-            (_, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) => {
-                let duration = interval_to_duration(v, false)?;
-                return Ok(self
-                    .visit_expr(left)?
-                    .dt()
-                    .offset_by(lit(format!("-{duration}"))));
-            },
-            (_, SQLBinaryOperator::Plus, SQLExpr::Interval(v)) => {
-                let duration = interval_to_duration(v, false)?;
-                return Ok(self
-                    .visit_expr(left)?
-                    .dt()
-                    .offset_by(lit(format!("{duration}"))));
+            (_, SQLBinaryOperator::Minus | SQLBinaryOperator::Plus, SQLExpr::Interval(v)) => {
+                let mut duration = interval_to_duration(v, false)?;
+                if matches!(op, SQLBinaryOperator::Minus) {
+                    duration = -duration;
+                }
+                let expr = self.visit_expr(left)?;
+                let offset = duration.to_string();
+                return Ok(expr.dt().offset_by(lit(offset)));
             },
             (SQLExpr::Interval(v1), _, SQLExpr::Interval(v2)) => {
                 // shortcut interval comparison evaluation (-> bool)
@@ -1120,14 +1115,10 @@ impl SQLExprVisitor<'_> {
                     .map_err(|_| polars_err!(SQLSyntax: "invalid hex string literal: '{}'", x))?)
             },
             SQLValue::Null => Expr::Literal(LiteralValue::untyped_null()),
-            SQLValue::Number(s, _) => {
-                // Check for existence of decimal separator dot
-                if s.contains('.') {
-                    s.parse::<f64>().map(lit).map_err(|_| ())
-                } else {
-                    s.parse::<i64>().map(lit).map_err(|_| ())
-                }
-                .map_err(|_| polars_err!(SQLInterface: "cannot parse literal: {:?}", s))?
+            SQLValue::Number(s, _) => match parse_numeric_literal(s, false)? {
+                AnyValue::Int64(value) => lit(value),
+                AnyValue::Float64(value) => lit(value),
+                _ => unreachable!(),
             },
             SQLValue::SingleQuotedByteStringLiteral(b) => {
                 // note: for PostgreSQL this represents a BIT string literal (eg: b'10101') not a BYTE string
@@ -1172,17 +1163,7 @@ impl SQLExprVisitor<'_> {
                         polars_bail!(SQLInterface: "unary op {:?} not supported for numeric SQL value", op)
                     },
                 };
-                // Check for existence of decimal separator dot
-                if s.contains('.') {
-                    s.parse::<f64>()
-                        .map(|n: f64| AnyValue::Float64(if negate { -n } else { n }))
-                        .map_err(|_| ())
-                } else {
-                    s.parse::<i64>()
-                        .map(|n: i64| AnyValue::Int64(if negate { -n } else { n }))
-                        .map_err(|_| ())
-                }
-                .map_err(|_| polars_err!(SQLInterface: "cannot parse literal: {:?}", s))?
+                parse_numeric_literal(s, negate)?
             },
             SQLValue::SingleQuotedByteStringLiteral(b) => {
                 // note: for PostgreSQL this represents a BIT literal (eg: b'10101') not BYTE
@@ -1860,4 +1841,19 @@ pub(crate) fn resolve_compound_identifier(
         column = column.struct_().field_by_name(name);
     }
     Ok(vec![column])
+}
+
+fn parse_numeric_literal(s: &str, negate: bool) -> PolarsResult<AnyValue<'static>> {
+    let value = if s.contains(['.', 'e', 'E']) {
+        s.parse::<f64>()
+            .map(|n| AnyValue::Float64(if negate { -n } else { n }))
+            .map_err(|_| ())
+    } else {
+        s.parse::<i64>()
+            .ok()
+            .and_then(|n| if negate { n.checked_neg() } else { Some(n) })
+            .map(AnyValue::Int64)
+            .ok_or(())
+    };
+    value.map_err(|_| polars_err!(SQLInterface: "cannot parse literal: {:?}", s))
 }

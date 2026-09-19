@@ -1,3 +1,8 @@
+#[cfg(feature = "temporal")]
+mod temporal;
+#[cfg(feature = "temporal")]
+pub(super) use temporal::{FoldTemporalConstants, narrow_date_filters};
+
 mod simplify_functions;
 
 use num_traits::Zero;

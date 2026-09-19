@@ -15,7 +15,9 @@ from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1970,3 +1972,104 @@ def test_predicate_pushdown_fallible_inside_list_eval() -> None:
     assert plan.index("list.eval") < plan.index('FILTER col("k")')
 
     assert_frame_equal(q.collect(), pl.DataFrame({"k": [1], "a": [["1"]]}))
+
+
+@pytest.mark.parametrize("unit", ["ms", "us", "ns"])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("split", [False, True])
+def test_date_timestamp_bounds(unit: str, reverse: bool, split: bool) -> None:
+    frame = pl.LazyFrame(
+        {
+            "d": pl.Series(
+                [-(2**31), -200000, -1, 0, 1, 2, 200000, 2**31 - 1, None],
+                dtype=pl.Int32,
+            ).cast(pl.Date)
+        }
+    )
+    low = pl.lit(datetime(1970, 1, 1)).cast(pl.Datetime(unit))
+    high = low.dt.offset_by("2d")
+    lower = low <= pl.col("d") if reverse else pl.col("d") >= low
+    upper = high > pl.col("d") if reverse else pl.col("d") < high
+    query = frame.filter(lower).filter(upper) if split else frame.filter(lower & upper)
+    disabled = pl.QueryOptFlags(simplify_expression=False)
+    assert_frame_equal(query.collect(), query.collect(optimizations=disabled))
+    assert query.collect().get_column("d").cast(pl.Int32).to_list() == [0, 1]
+    assert "cast(Datetime" not in query.explain()
+    assert "offset_by" not in query.explain()
+    assert "cast(Datetime" in query.explain(optimizations=disabled)
+    assert "offset_by" in query.explain(optimizations=disabled)
+
+
+def test_date_timestamp_bounds_preserve_strict_cast_error() -> None:
+    frame = pl.LazyFrame({"d": [date(2500, 1, 1), date(1970, 1, 1)]})
+    query = frame.filter(
+        pl.col("d")
+        .cast(pl.Datetime("ns"))
+        .is_between(datetime(1970, 1, 1), datetime(1970, 1, 3))
+    )
+    with pytest.raises(InvalidOperationError, match="conversion"):
+        query.collect()
+
+
+def test_date_timestamp_predicate_null_semantics() -> None:
+    frame = pl.LazyFrame(
+        {"d": [date(2500, 1, 1), date(1969, 12, 31), date(1970, 1, 1), None]}
+    )
+    low = pl.lit(datetime(1970, 1, 1), dtype=pl.Datetime("ns"))
+    high = pl.lit(datetime(1970, 1, 3), dtype=pl.Datetime("ns"))
+    condition = (pl.col("d") >= low) & (pl.col("d") < high)
+    disabled = pl.QueryOptFlags(simplify_expression=False)
+    for query in [
+        frame.select(condition),
+        frame.filter(~condition),
+        frame.filter(condition | pl.col("d").is_null()),
+    ]:
+        assert_frame_equal(query.collect(), query.collect(optimizations=disabled))
+
+
+@pytest.mark.parametrize("join_where", [False, True])
+def test_date_timestamp_bounds_push_to_join_inputs(
+    tmp_path: Path, join_where: bool
+) -> None:
+    left_path = tmp_path / "left.parquet"
+    right_path = tmp_path / "right.parquet"
+    pl.DataFrame(
+        {"k": [1, 2, 3], "d": [date(2000, 1, 1), date(2001, 1, 1), date(2002, 1, 1)]}
+    ).write_parquet(left_path)
+    pl.DataFrame({"rk": [1, 2, 3], "name": ["keep", "discard", "keep"]}).write_parquet(
+        right_path
+    )
+    left, right = pl.scan_parquet(left_path), pl.scan_parquet(right_path)
+    conditions = [
+        pl.col("d") >= datetime(2000, 1, 1),
+        pl.col("d") < datetime(2002, 1, 1),
+        pl.col("name") == "keep",
+    ]
+    query = (
+        left.join_where(right, pl.col("k") == pl.col("rk"), *conditions)
+        if join_where
+        else left.join(right, left_on="k", right_on="rk").filter(*conditions)
+    )
+    assert_frame_equal(
+        query.collect(),
+        query.collect(optimizations=pl.QueryOptFlags(simplify_expression=False)),
+    )
+    plan = query.explain()
+    assert plan.count("SELECTION:") == 2
+    assert "cast(Datetime" not in plan
+    assert "FILTER" not in plan
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_date_timestamp_bounds_shared_input(engine: EngineType) -> None:
+    frame = pl.LazyFrame({"d": [date(1800, 1, 1), date(2000, 1, 1), date(2200, 1, 1)]})
+    lower = frame.filter(pl.col("d") >= datetime(1900, 1, 1))
+    bounded = lower.filter(pl.col("d") < datetime(2100, 1, 1))
+    query = pl.concat([bounded, lower])
+    assert_frame_equal(
+        query.collect(engine=engine),
+        query.collect(
+            engine=engine,
+            optimizations=pl.QueryOptFlags(simplify_expression=False),
+        ),
+    )

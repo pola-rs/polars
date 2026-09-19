@@ -1,16 +1,14 @@
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
-#[cfg(feature = "timezones")]
-use std::ops::Add;
 use std::ops::{Mul, Neg};
 
-#[cfg(feature = "timezones")]
-use chrono::TimeDelta;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as ChronoTimeZone;
 #[cfg(feature = "timezones")]
 use chrono::offset::LocalResult;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+#[cfg(feature = "timezones")]
+use chrono::{Days, Offset, TimeDelta};
 #[cfg(feature = "timezones")]
 use chrono_tz::OffsetComponents;
 #[cfg(feature = "timezones")]
@@ -19,6 +17,10 @@ use polars_arrow::legacy::time_zone::Tz;
 use polars_arrow::temporal_conversions::{
     MICROSECONDS, MILLISECONDS, NANOSECONDS, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
     timestamp_us_to_datetime,
+};
+#[cfg(feature = "temporal")]
+use polars_arrow::temporal_conversions::{
+    timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt, timestamp_us_to_datetime_opt,
 };
 #[cfg(feature = "temporal")]
 use polars_core::chunked_array::temporal::{
@@ -187,6 +189,7 @@ impl Duration {
 
         // can work on raw bytes (much faster), as valid interval/duration strings are all ASCII
         let original_string = s;
+        let out_of_range = || polars_err!(InvalidOperation: "{} is out of range: '{}'", parse_type, original_string);
         let s = s.as_bytes();
         let mut pos = 0;
 
@@ -247,7 +250,10 @@ impl Duration {
             // get integer value from the raw bytes
             let mut n = 0i64;
             while pos < s.len() && s[pos].is_ascii_digit() {
-                n = n * 10 + (s[pos] - b'0') as i64;
+                n = n
+                    .checked_mul(10)
+                    .and_then(|n| n.checked_add((s[pos] - b'0') as i64))
+                    .ok_or_else(out_of_range)?;
                 pos += 1;
             }
             if pos >= s.len() {
@@ -289,37 +295,45 @@ impl Duration {
                 }
             }
 
+            macro_rules! add_unit {
+                ($field:ident, $scale:expr) => {
+                    $field = n
+                        .checked_mul($scale)
+                        .and_then(|n| n.checked_add($field))
+                        .ok_or_else(out_of_range)?
+                };
+            }
             let unit = &s[unit_start..unit_end];
             match unit {
                 // matches that are allowed for both duration and interval
-                b"ns" => nsecs += n,
-                b"us" => nsecs += n * NS_MICROSECOND,
-                b"ms" => nsecs += n * NS_MILLISECOND,
-                b"s" => nsecs += n * NS_SECOND,
-                b"m" => nsecs += n * NS_MINUTE,
-                b"h" => nsecs += n * NS_HOUR,
-                b"d" => days += n,
-                b"w" => weeks += n,
-                b"mo" => months += n,
-                b"q" => months += n * 3,
-                b"y" => months += n * 12,
+                b"ns" => add_unit!(nsecs, 1),
+                b"us" => add_unit!(nsecs, NS_MICROSECOND),
+                b"ms" => add_unit!(nsecs, NS_MILLISECOND),
+                b"s" => add_unit!(nsecs, NS_SECOND),
+                b"m" => add_unit!(nsecs, NS_MINUTE),
+                b"h" => add_unit!(nsecs, NS_HOUR),
+                b"d" => add_unit!(days, 1),
+                b"w" => add_unit!(weeks, 1),
+                b"mo" => add_unit!(months, 1),
+                b"q" => add_unit!(months, 3),
+                b"y" => add_unit!(months, 12),
                 b"i" => {
-                    nsecs += n;
+                    add_unit!(nsecs, 1);
                     parsed_int = true;
                 },
                 // interval-only (verbose/sql) matches
                 _ if as_interval => match unit {
-                    b"nanosecond" | b"nanoseconds" => nsecs += n,
-                    b"microsecond" | b"microseconds" => nsecs += n * NS_MICROSECOND,
-                    b"millisecond" | b"milliseconds" => nsecs += n * NS_MILLISECOND,
-                    b"sec" | b"secs" | b"second" | b"seconds" => nsecs += n * NS_SECOND,
-                    b"min" | b"mins" | b"minute" | b"minutes" => nsecs += n * NS_MINUTE,
-                    b"hour" | b"hours" => nsecs += n * NS_HOUR,
-                    b"day" | b"days" => days += n,
-                    b"week" | b"weeks" => weeks += n,
-                    b"mon" | b"mons" | b"month" | b"months" => months += n,
-                    b"quarter" | b"quarters" => months += n * 3,
-                    b"year" | b"years" => months += n * 12,
+                    b"nanosecond" | b"nanoseconds" => add_unit!(nsecs, 1),
+                    b"microsecond" | b"microseconds" => add_unit!(nsecs, NS_MICROSECOND),
+                    b"millisecond" | b"milliseconds" => add_unit!(nsecs, NS_MILLISECOND),
+                    b"sec" | b"secs" | b"second" | b"seconds" => add_unit!(nsecs, NS_SECOND),
+                    b"min" | b"mins" | b"minute" | b"minutes" => add_unit!(nsecs, NS_MINUTE),
+                    b"hour" | b"hours" => add_unit!(nsecs, NS_HOUR),
+                    b"day" | b"days" => add_unit!(days, 1),
+                    b"week" | b"weeks" => add_unit!(weeks, 1),
+                    b"mon" | b"mons" | b"month" | b"months" => add_unit!(months, 1),
+                    b"quarter" | b"quarters" => add_unit!(months, 3),
+                    b"year" | b"years" => add_unit!(months, 12),
                     _ => {
                         let unit_str = std::str::from_utf8(unit).unwrap_or("<invalid>");
                         let valid_units = "'year', 'month', 'quarter', 'week', 'day', 'hour', 'minute', 'second', 'millisecond', 'microsecond', 'nanosecond'";
@@ -477,8 +491,7 @@ impl Duration {
         // based on the number of months
         let mut month = ts.month() as i32;
         let mut day = ts.day();
-        let year_i64 = ts.year() as i64 + (months / 12);
-        let mut year = i32::try_from(year_i64).map_err(|_| polars_err!(ComputeError: "cannot advance '{}' by {} months: target year {} is out of the supported range", ts, months, year_i64))?;
+        let mut year = ts.year() as i64 + (months / 12);
         month += (months % 12) as i32;
 
         // if the month overflowed or underflowed, adjust the year
@@ -491,6 +504,8 @@ impl Duration {
             year -= 1;
             month += 12;
         }
+
+        let year = i32::try_from(year).map_err(|_| polars_err!(ComputeError: "cannot advance '{}' by {} months: target year {} is out of the supported range", ts, months, year))?;
 
         // Normalize the day if we are past the end of the month.
         let last_day_of_month =
@@ -545,16 +560,21 @@ impl Duration {
             LocalResult::None => {
                 let original_localized = tz.from_utc_datetime(&original_dt_utc);
                 let original_dst_offset = original_localized.offset().dst_offset();
+                let shift = |offset| {
+                    result_dt_local
+                        .checked_add_signed(offset)
+                        .ok_or_else(|| polars_err!(ComputeError: "datetime offset is out of range"))
+                };
                 let shifted: NaiveDateTime;
                 if original_dst_offset.num_minutes() != 0 {
-                    shifted = result_dt_local.add(original_dst_offset);
+                    shifted = shift(original_dst_offset)?;
                 } else if let Some(next_hour) = tz
-                    .from_local_datetime(&result_dt_local.add(TimeDelta::hours(1)))
+                    .from_local_datetime(&shift(TimeDelta::hours(1))?)
                     .earliest()
                 {
                     // Try shifting forwards to get the DST offset of the would-be-result.
                     let result_dst_offset = next_hour.offset().dst_offset();
-                    shifted = result_dt_local.add(-result_dst_offset);
+                    shifted = shift(-result_dst_offset)?;
                 } else {
                     polars_bail!(ComputeError: "Could not localize datetime '{}' to time zone '{}'", result_dt_local, tz);
                 }
@@ -847,6 +867,7 @@ impl Duration {
         )
     }
 
+    // All offset paths use checked timestamp arithmetic, including constant durations.
     fn add_impl_month_week_or_day<F, G, J>(
         &self,
         mut t: i64,
@@ -857,128 +878,105 @@ impl Duration {
     ) -> PolarsResult<i64>
     where
         F: Fn(i64) -> i64,
-        G: Fn(i64) -> NaiveDateTime,
-        J: Fn(NaiveDateTime) -> i64,
+        G: Fn(i64) -> Option<NaiveDateTime>,
+        J: Fn(NaiveDateTime) -> Option<i64>,
     {
+        let out_of_range = || polars_err!(ComputeError: "datetime offset is out of range");
+        let timestamp_to_datetime = |t| timestamp_to_datetime(t).ok_or_else(out_of_range);
+        let datetime_to_timestamp = |t| datetime_to_timestamp(t).ok_or_else(out_of_range);
+        #[cfg(feature = "timezones")]
+        let to_local = |dt: NaiveDateTime, tz: &Tz| {
+            dt.checked_add_offset(tz.offset_from_utc_datetime(&dt).fix())
+                .ok_or_else(out_of_range)
+        };
         let d = self;
 
         if d.months > 0 {
             t = match tz {
                 #[cfg(feature = "timezones")]
-                // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    let original_dt_utc = timestamp_to_datetime(t);
-                    let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
-                    let result_dt_local = Self::add_month(original_dt_local, d.months, d.negative);
-                    datetime_to_timestamp(self.localize_result_rfc_5545(
-                        original_dt_utc,
-                        result_dt_local?,
-                        tz,
-                    )?)
-                },
-                _ => datetime_to_timestamp(Self::add_month(
-                    timestamp_to_datetime(t),
-                    d.months,
-                    d.negative,
-                )?),
-            };
-        }
-
-        if d.weeks > 0 {
-            let t_weeks = nsecs_to_unit(NS_WEEK) * self.weeks;
-            t = match tz {
-                #[cfg(feature = "timezones")]
-                // for UTC, use fastpath below (same as naive)
-                Some(tz) if tz != &chrono_tz::UTC => {
-                    let original_dt_utc = timestamp_to_datetime(t);
-                    let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
-                    let mut result_timestamp_local = datetime_to_timestamp(original_dt_local);
-                    result_timestamp_local += if d.negative { -t_weeks } else { t_weeks };
-                    let result_dt_local = timestamp_to_datetime(result_timestamp_local);
+                    let original_dt_utc = timestamp_to_datetime(t)?;
+                    let original_dt_local = to_local(original_dt_utc, tz)?;
+                    let result_dt_local = Self::add_month(original_dt_local, d.months, d.negative)?;
                     datetime_to_timestamp(self.localize_result_rfc_5545(
                         original_dt_utc,
                         result_dt_local,
                         tz,
-                    )?)
+                    )?)?
                 },
-                _ => {
-                    if d.negative {
-                        t - t_weeks
-                    } else {
-                        t + t_weeks
-                    }
-                },
+                _ => datetime_to_timestamp(Self::add_month(
+                    timestamp_to_datetime(t)?,
+                    d.months,
+                    d.negative,
+                )?)?,
             };
         }
 
-        if d.days > 0 {
-            let t_days = nsecs_to_unit(NS_DAY) * self.days;
+        for (count, unit) in [(d.weeks, NS_WEEK), (d.days, NS_DAY)] {
+            if count == 0 {
+                continue;
+            }
             t = match tz {
                 #[cfg(feature = "timezones")]
-                // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    let original_dt_utc = timestamp_to_datetime(t);
-                    let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
-                    t = datetime_to_timestamp(original_dt_local);
-                    t += if d.negative { -t_days } else { t_days };
-                    let result_dt_local = timestamp_to_datetime(t);
+                    let original_dt_utc = timestamp_to_datetime(t)?;
+                    let original_dt_local = to_local(original_dt_utc, tz)?;
+                    let days = count.checked_mul(unit / NS_DAY).ok_or_else(out_of_range)?;
+                    let days = Days::new(days as u64);
+                    let result_dt_local = if d.negative {
+                        original_dt_local.checked_sub_days(days)
+                    } else {
+                        original_dt_local.checked_add_days(days)
+                    }
+                    .ok_or_else(out_of_range)?;
                     let result_dt_utc =
                         self.localize_result_rfc_5545(original_dt_utc, result_dt_local, tz)?;
-                    datetime_to_timestamp(result_dt_utc)
+                    datetime_to_timestamp(result_dt_utc)?
                 },
                 _ => {
-                    if d.negative {
-                        t - t_days
-                    } else {
-                        t + t_days
-                    }
+                    let offset = nsecs_to_unit(unit) as i128 * count as i128;
+                    let offset = if d.negative { -offset } else { offset };
+                    i64::try_from(t as i128 + offset).map_err(|_| out_of_range())?
                 },
             };
         }
 
-        Ok(t)
+        let nsecs = nsecs_to_unit(d.nsecs);
+        let nsecs = if d.negative { -nsecs } else { nsecs };
+        t.checked_add(nsecs).ok_or_else(out_of_range)
     }
 
     #[cfg(feature = "temporal")]
     pub fn add_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        let d = self;
-        let new_t = self.add_impl_month_week_or_day(
+        self.add_impl_month_week_or_day(
             t,
             tz,
             |nsecs| nsecs,
-            timestamp_ns_to_datetime,
-            datetime_to_timestamp_ns,
-        );
-        let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
-        Ok(new_t? + nsecs)
+            timestamp_ns_to_datetime_opt,
+            |dt| dt.and_utc().timestamp_nanos_opt(),
+        )
     }
 
     #[cfg(feature = "temporal")]
     pub fn add_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        let d = self;
-        let new_t = self.add_impl_month_week_or_day(
+        self.add_impl_month_week_or_day(
             t,
             tz,
             |nsecs| nsecs / 1000,
-            timestamp_us_to_datetime,
-            datetime_to_timestamp_us,
-        );
-        let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
-        Ok(new_t? + nsecs / 1_000)
+            timestamp_us_to_datetime_opt,
+            |dt| Some(dt.and_utc().timestamp_micros()),
+        )
     }
 
     #[cfg(feature = "temporal")]
     pub fn add_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        let d = self;
-        let new_t = self.add_impl_month_week_or_day(
+        self.add_impl_month_week_or_day(
             t,
             tz,
             |nsecs| nsecs / 1_000_000,
-            timestamp_ms_to_datetime,
-            datetime_to_timestamp_ms,
-        );
-        let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
-        Ok(new_t? + nsecs / 1_000_000)
+            timestamp_ms_to_datetime_opt,
+            |dt| Some(dt.and_utc().timestamp_millis()),
+        )
     }
 }
 

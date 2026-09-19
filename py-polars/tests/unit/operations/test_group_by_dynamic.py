@@ -1512,3 +1512,44 @@ def test_group_by_dynamic_dst_non_monotonic_upper_bound_29190(
     ).alias("t")
 
     _assert_rows_within_own_window(ts, "30m", "1d", engine)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("value", "every", "label"),
+    [
+        (datetime(2262, 4, 10, 12), "1d", datetime(2262, 4, 10)),
+        (datetime(2262, 4, 11, 22, 30), "1h", datetime(2262, 4, 11, 22)),
+        (datetime(2262, 3, 10, 12), "1mo", datetime(2262, 3, 1)),
+    ],
+)
+def test_group_by_dynamic_final_window_near_ns_limit(
+    engine: EngineType,
+    value: datetime,
+    every: str,
+    label: datetime,
+) -> None:
+    frame = pl.LazyFrame({"t": pl.Series([value], dtype=pl.Datetime("ns")), "v": [1]})
+    result = (
+        frame.group_by_dynamic("t", every=every)
+        .agg(pl.col("v").sum())
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {"t": pl.Series([label], dtype=pl.Datetime("ns")), "v": [1]}
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_group_by_dynamic_required_window_overflow() -> None:
+    frame = pl.DataFrame(
+        {
+            "t": pl.Series(
+                [datetime(2262, 4, 10, 12), datetime(2262, 4, 11, 12)],
+                dtype=pl.Datetime("ns"),
+            ),
+            "v": [1, 2],
+        }
+    )
+    with pytest.raises(pl.exceptions.ComputeError, match="out of range"):
+        frame.group_by_dynamic("t", every="1d").agg(pl.col("v").sum())

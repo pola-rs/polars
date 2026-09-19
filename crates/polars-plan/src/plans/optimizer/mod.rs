@@ -92,12 +92,16 @@ pub type HiveJoinFn = fn(&DataFrame, &DataFrame, &str, &str, JoinArgs) -> Polars
 /// Applies the scan predicate of a scan IR node to that node.
 pub type ApplyScanPredicateFn = fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>;
 
+pub type EvaluateFunctionFn = fn(IRFunctionExpr, &mut [Column]) -> PolarsResult<Column>;
+
 /// Functions the optimizer needs from the execution layer, injected by the caller so that
 /// polars-plan does not depend on the crates implementing them.
 #[derive(Clone, Copy)]
 pub struct ExecutionHooks {
     pub apply_scan_predicate_to_scan_ir: ApplyScanPredicateFn,
     pub hive_join: HiveJoinFn,
+    /// Evaluates a built-in function on literal arguments for constant folding.
+    pub evaluate_function: EvaluateFunctionFn,
 }
 
 #[recursive::recursive]
@@ -143,6 +147,19 @@ pub fn optimize(
         () => {
             _get_or_init_members(_opt_members, root, ir_arena, expr_arena)
         };
+    }
+
+    #[cfg(feature = "temporal")]
+    if opt_flags.simplify_expr() {
+        root = opt.optimize_loop(
+            &mut [Box::new(simplify_expr::FoldTemporalConstants {
+                evaluate_function: hooks.evaluate_function,
+            })],
+            expr_arena,
+            ir_arena,
+            root,
+        )?;
+        simplify_expr::narrow_date_filters(root, ir_arena, expr_arena);
     }
 
     // Run before slice pushdown

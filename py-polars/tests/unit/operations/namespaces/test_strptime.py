@@ -20,7 +20,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
 
-    from polars._typing import PolarsTemporalType, TimeUnit
+    from polars._typing import EngineType, PolarsTemporalType, TimeUnit
 
 
 def test_str_strptime() -> None:
@@ -997,3 +997,173 @@ def test_strptime_inexact_datetime_date_only_26713() -> None:
         pl.col("date_str").str.strptime(pl.Datetime(time_unit="ns"), "%Y-%m-%d")
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("value", ["1500-01-01", "2500-01-01"])
+@pytest.mark.parametrize("format", [None, "%Y-%m-%d"])
+def test_strptime_out_of_range_unused_expression(
+    engine: EngineType, value: str, format: str | None
+) -> None:
+    frame = pl.LazyFrame({"x": [1, 2]})
+    expr = pl.lit(value).str.to_datetime(format, time_unit="ns")
+    result = frame.with_columns(expr.alias("unused")).select("x").collect(engine=engine)
+    assert_frame_equal(result, frame.collect())
+    with pytest.raises(InvalidOperationError, match=r"conversion .* failed"):
+        frame.select(expr).collect(engine=engine)
+
+
+@pytest.mark.parametrize("exact", [False, True])
+@pytest.mark.parametrize(
+    ("values", "format", "time_zone"),
+    [
+        (["1500-01-01", "2000-01-01", "2500-01-01"], "%Y-%m-%d", None),
+        (["1500-Jan-01", "2000-Jan-01", "2500-Jan-01"], "%Y-%b-%d", None),
+        (["1500-01-01", "2000-01-01", "2500-01-01"], None, None),
+        (
+            [f"{year}-01-01T00:00:00+00:00" for year in (1500, 2000, 2500)],
+            "%Y-%m-%dT%H:%M:%S%:z",
+            "UTC",
+        ),
+        (
+            [f"{year}-01-01T00:00:00+00:00" for year in (1500, 2000, 2500)],
+            None,
+            "UTC",
+        ),
+    ],
+)
+def test_strptime_nanosecond_overflow(
+    values: list[str], format: str | None, time_zone: str | None, exact: bool
+) -> None:
+    if format is None and time_zone is not None and not exact:
+        pytest.skip("Inexact format inference does not support time zones")
+    expr = pl.col("s").str.to_datetime(
+        format, time_unit="ns", time_zone=time_zone, exact=exact, strict=False
+    )
+    result = pl.DataFrame({"s": values}).select(expr)
+    expected = pl.DataFrame(
+        {"s": [None, 946684800000000000, None]},
+        schema={"s": pl.Datetime("ns", time_zone)},
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("format", [None, "%Y-%m-%d %H:%M:%S%.f"])
+@pytest.mark.parametrize("exact", [False, True])
+def test_strptime_nanosecond_limits(format: str | None, exact: bool) -> None:
+    values = pl.Series(
+        [
+            "1677-09-21 00:12:43.145224191",
+            "1677-09-21 00:12:43.145224192",
+            "2262-04-11 23:47:16.854775807",
+            "2262-04-11 23:47:16.854775808",
+        ]
+    )
+    result = values.str.to_datetime(
+        format, time_unit="ns", exact=exact, strict=False
+    ).cast(pl.Int64)
+    expected = pl.Series([None, -(2**63), 2**63 - 1, None])
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("exact", [False, True])
+@pytest.mark.parametrize(
+    ("value", "time_zone"),
+    [
+        ("1677-09-21 00:12:43.145224192", "Europe/Amsterdam"),
+        ("2262-04-11 23:47:16.854775807", "America/New_York"),
+    ],
+)
+def test_strptime_timezone_overflow_unused_expression(
+    engine: EngineType, exact: bool, value: str, time_zone: str
+) -> None:
+    frame = pl.LazyFrame({"x": [1, 2]})
+    expr = pl.lit(value).str.to_datetime(
+        "%Y-%m-%d %H:%M:%S%.f", time_unit="ns", time_zone=time_zone, exact=exact
+    )
+    result = frame.with_columns(expr.alias("unused")).select("x").collect(engine=engine)
+    assert_frame_equal(result, frame.collect())
+    with pytest.raises(InvalidOperationError, match="conversion"):
+        frame.select(expr).collect(engine=engine)
+
+
+@pytest.mark.parametrize(
+    ("value", "time_zone", "expected"),
+    [
+        ("1677-09-20 23:12:43.145224192", "Etc/GMT+1", -(2**63)),
+        ("2262-04-12 00:47:16.854775807", "Etc/GMT-1", 2**63 - 1),
+    ],
+)
+@pytest.mark.parametrize(
+    ("format", "exact"),
+    [(None, True), ("%Y-%m-%d %H:%M:%S%.f", True), ("%Y-%m-%d %H:%M:%S%.f", False)],
+)
+@pytest.mark.parametrize("strict", [False, True])
+@pytest.mark.parametrize("size", [1, 64])
+def test_strptime_local_time_outside_ns_range(
+    value: str,
+    time_zone: str,
+    expected: int,
+    format: str | None,
+    exact: bool,
+    strict: bool,
+    size: int,
+) -> None:
+    result = (
+        pl.Series([value] * size)
+        .str.to_datetime(
+            format,
+            time_unit="ns",
+            time_zone=time_zone,
+            exact=exact,
+            strict=strict,
+        )
+        .cast(pl.Int64)
+    )
+    assert_series_equal(result, pl.Series([expected] * size))
+
+
+@pytest.mark.parametrize("format", [None, "%Y-%m-%d %H:%M:%S"])
+def test_strptime_cached_local_time_with_varying_ambiguity(format: str | None) -> None:
+    frame = pl.DataFrame(
+        {
+            "value": ["2025-10-26 02:30:00"] * 64,
+            "ambiguous": ["earliest", "latest", "null", None] * 16,
+        }
+    )
+    result = (
+        frame.select(
+            pl.col("value").str.to_datetime(
+                format,
+                time_unit="ns",
+                time_zone="Europe/Amsterdam",
+                ambiguous=pl.col("ambiguous"),
+                strict=False,
+            )
+        )
+        .to_series()
+        .cast(pl.Int64)
+    )
+    expected = pl.Series(
+        "value", [1761438600000000000, 1761442200000000000, None, None] * 16
+    )
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("format", [None, "%Y-%m-%d %H:%M:%S%.f"])
+@pytest.mark.parametrize("strict", [False, True])
+def test_strptime_localized_timestamp_overflow(
+    format: str | None, strict: bool
+) -> None:
+    values = pl.Series(["2262-04-11 23:47:16.854775807"])
+    if strict:
+        with pytest.raises(InvalidOperationError, match="conversion"):
+            values.str.to_datetime(format, time_unit="ns", time_zone="Etc/GMT+1")
+    else:
+        result = values.str.to_datetime(
+            format, time_unit="ns", time_zone="Etc/GMT+1", strict=False
+        )
+        assert_series_equal(
+            result, pl.Series([None], dtype=pl.Datetime("ns", "Etc/GMT+1"))
+        )

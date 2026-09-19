@@ -671,3 +671,100 @@ def test_date_part_functions() -> None:
         },
         compare_with="duckdb",
     )
+
+
+@pytest.mark.parametrize(
+    "literal_type", ["DATE", "TIMESTAMP", "TIMESTAMP(3)", "TIMESTAMP(9)"]
+)
+@pytest.mark.parametrize(("operator", "interval"), [("+", "1 year"), ("-", "1 month")])
+def test_temporal_literal_interval_folding(
+    literal_type: str, operator: str, interval: str
+) -> None:
+    frame = pl.DataFrame(
+        {"d": [date(2020, 1, 28), date(2020, 2, 29), date(2021, 2, 28), None]}
+    )
+    bound = f"{literal_type} '2020-02-29' {operator} INTERVAL '{interval}'"
+    query = f"SELECT d FROM self WHERE d <= {bound} ORDER BY d"
+    assert_sql_matches(frame, query=query, compare_with="duckdb")
+    plan = frame.lazy().sql(query).explain()
+    assert "strptime" not in plan
+    assert "offset_by" not in plan
+    if literal_type == "DATE":
+        assert "cast(Datetime" not in plan
+
+
+@pytest.mark.parametrize("op", ["=", "!=", ">", ">=", "<", "<="])
+@pytest.mark.parametrize(
+    "timestamp",
+    ["1969-12-31 12:00:00", "1970-01-01 00:00:00", "1970-01-01 00:00:00.000001"],
+)
+def test_date_timestamp_literal_comparison(op: str, timestamp: str) -> None:
+    frame = pl.DataFrame(
+        {"d": [date(1969, 12, 31), date(1970, 1, 1), date(1970, 1, 2), None]}
+    )
+    assert_sql_matches(
+        frame,
+        query=f"SELECT d, d {op} TIMESTAMP '{timestamp}' AS matches FROM self ORDER BY d",
+        compare_with="duckdb",
+    )
+
+
+@pytest.mark.parametrize(("precision", "unit"), [(3, "ms"), (6, "us"), (9, "ns")])
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "d >= {low} AND d < {high}",
+        "d BETWEEN {low} AND {high}",
+        "NOT (d >= {low} AND d < {high})",
+        "d < {low} OR d >= {high}",
+    ],
+)
+@pytest.mark.parametrize("with_subquery", [False, True])
+def test_date_timestamp_range_filter(
+    precision: int, unit: str, predicate: str, with_subquery: bool
+) -> None:
+    frame = pl.DataFrame(
+        {
+            "d": pl.Series(
+                [-(2**31), -200000, -1, 0, 1, 2, 200000, 2**31 - 1, None],
+                dtype=pl.Int32,
+            ).cast(pl.Date)
+        }
+    )
+    if predicate.startswith("NOT") or "OR" in predicate:
+        frame = frame.filter(
+            pl.col("d").cast(pl.Int32).is_between(-1, 2) | pl.col("d").is_null()
+        )
+    low = f"TIMESTAMP({precision}) '1970-01-01'"
+    high = f"TIMESTAMP({precision}) '1970-01-03'"
+    condition = predicate.format(low=low, high=high)
+    suffix = (
+        " AND EXISTS (SELECT 1 FROM self AS inner_frame WHERE inner_frame.d = self.d)"
+        if with_subquery
+        else ""
+    )
+    result = frame.lazy().sql(f"SELECT * FROM self WHERE ({condition}){suffix}")
+    expected = frame.with_columns(
+        pl.col("d").cast(pl.Datetime(unit), strict=False).alias("ts")
+    ).sql(  # type: ignore[arg-type]
+        f"SELECT d FROM self WHERE {condition.replace('d ', 'ts ')}"
+    )
+    assert_frame_equal(result.collect(), expected)
+    if not predicate.startswith("NOT") and "OR" not in predicate:
+        assert "cast(Datetime" not in result.explain()
+
+
+def test_date_timestamp_range_preserves_subday_bounds() -> None:
+    frame = pl.DataFrame(
+        {"d": [date(1969, 12, 31), date(1970, 1, 1), date(1970, 1, 2), None]}
+    )
+    assert_sql_matches(
+        frame,
+        query="""
+            SELECT d FROM self
+            WHERE d >= TIMESTAMP '1969-12-31 12:00:00'
+              AND d < TIMESTAMP '1970-01-02 12:00:00'
+            ORDER BY d
+        """,
+        compare_with="duckdb",
+    )

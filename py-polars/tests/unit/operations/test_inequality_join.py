@@ -18,6 +18,7 @@ from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -995,3 +996,117 @@ def test_join_where_decimal_vs_float() -> None:
         "k_right": [1, 2],
         "limit": [3.0, 10.0],
     }
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("with_key", [False, True])
+@pytest.mark.parametrize("empty_left", [False, True])
+@pytest.mark.parametrize("empty_right", [False, True])
+def test_outer_join_where_pushes_non_preserved_input_filter(
+    engine: EngineType, with_key: bool, empty_left: bool, empty_right: bool
+) -> None:
+    left = pl.LazyFrame({"k": [1, 2, 3, None], "v": [0, 1, 2, 3]})
+    right = pl.LazyFrame({"k": [1, 1, 2, None], "v": [-1, 1, -1, 1]})
+    if empty_left:
+        left = left.clear()
+    if empty_right:
+        right = right.filter(pl.col("v") > 1)
+    predicates = [pl.col("v_right") > 0]
+    if with_key:
+        predicates.append(pl.col("k") == pl.col("k_right"))
+    query = left.join_where(right, *predicates, how="left")
+    disabled = pl.QueryOptFlags(predicate_pushdown=False)
+    assert_frame_equal(
+        query.collect(engine=engine),
+        query.collect(engine=engine, optimizations=disabled),
+        check_row_order=False,
+    )
+    assert "NESTED LOOP JOIN" not in query.explain()
+    assert "NESTED LOOP JOIN" in query.explain(optimizations=disabled)
+
+
+@pytest.mark.parametrize("key_first", [False, True])
+def test_join_where_aggregate_condition_order(key_first: bool) -> None:
+    left = pl.LazyFrame({"k": [3]})
+    right = pl.LazyFrame({"v": [1, 2]})
+    predicates = [pl.col("k") == pl.col("v").sum(), pl.col("v") < 2]
+    if not key_first:
+        predicates.reverse()
+    query = left.join_where(right, *predicates)
+    assert_frame_equal(query.collect(), pl.DataFrame({"k": [3], "v": [1]}))
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("maintain_errors", [False, True])
+def test_outer_join_where_fallible_key_with_empty_input(
+    engine: EngineType,
+    maintain_errors: bool,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv(
+        "POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1" if maintain_errors else "0"
+    )
+    left = pl.LazyFrame({"a": ["bad"]})
+    right = pl.LazyFrame(schema={"b": pl.Int64})
+    expected = pl.DataFrame({"a": ["bad"], "b": pl.Series([None], dtype=pl.Int64)})
+    query = left.join_where(
+        right, pl.col("a").cast(pl.Int64) == pl.col("b"), how="left"
+    )
+    assert_frame_equal(query.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_outer_join_where_null_extended_scalar_sortedness(
+    engine: EngineType, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "2")
+    left = pl.LazyFrame({"k": list(range(5)), "v": [0] * 5})
+    right = pl.LazyFrame({"k": [1, 99], "v": [None, 1]})
+    query = left.join_where(
+        right,
+        (pl.col("k") == pl.col("k_right")) | (pl.col("v") == pl.col("v_right")),
+        pl.col("v_right").is_null(),
+        how="left",
+    )
+    expected = pl.DataFrame(
+        {
+            "k": list(range(5)),
+            "v": [0] * 5,
+            "k_right": [None, 1, None, None, None],
+            "v_right": pl.Series([None] * 5, dtype=pl.Int64),
+        }
+    )
+    result = query.collect(engine=engine)
+    assert_frame_equal(result, expected, check_row_order=False)
+    assert_frame_equal(result.sort("k_right", "k"), expected.sort("k_right", "k"))
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("value", [True, False, None])
+@pytest.mark.parametrize("empty_left", [False, True])
+@pytest.mark.parametrize("empty_right", [False, True])
+@pytest.mark.parametrize("with_filter", [False, True])
+def test_outer_join_where_scalar_condition(
+    engine: EngineType,
+    value: bool | None,
+    empty_left: bool,
+    empty_right: bool,
+    with_filter: bool,
+) -> None:
+    left = pl.DataFrame({"a": range(6)})
+    right = pl.DataFrame({"b": [None, 1, 1]})
+    if empty_left:
+        left = left.clear()
+    if empty_right:
+        right = right.clear()
+    predicates = [pl.lit(value, dtype=pl.Boolean)]
+    if with_filter:
+        predicates.append(pl.col("b") > 0)
+    query = left.lazy().join_where(right.lazy(), *predicates, how="left")
+    matches = right.filter(pl.col("b") > 0) if with_filter else right
+    expected = (
+        left.join(matches, how="cross")
+        if value and matches.height
+        else left.with_columns(pl.lit(None, dtype=pl.Int64).alias("b"))
+    )
+    assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)

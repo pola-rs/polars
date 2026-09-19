@@ -30,11 +30,12 @@ fn update_groups_and_bounds(
     lower_bound: &mut Vec<i64>,
     upper_bound: &mut Vec<i64>,
     groups: &mut Vec<[IdxSize; 2]>,
-) {
+) -> PolarsResult<()> {
     let mut iter = bounds_iter.into_iter();
     let mut stride = 0;
 
     'bounds: while let Some(bi) = iter.nth(stride) {
+        let bi = bi?;
         let mut has_member = false;
         // find starting point of window
         for &t in &time[start..time.len().saturating_sub(1)] {
@@ -92,6 +93,7 @@ fn update_groups_and_bounds(
         }
         groups.push([start as IdxSize, len as IdxSize])
     }
+    Ok(())
 }
 
 /// Window boundaries are created based on the given `Window`, which is defined by:
@@ -163,7 +165,7 @@ pub fn group_by_windows(
                 &mut lower_bound,
                 &mut upper_bound,
                 &mut groups,
-            );
+            )?;
         },
         _ => {
             update_groups_and_bounds(
@@ -176,7 +178,7 @@ pub fn group_by_windows(
                 &mut lower_bound,
                 &mut upper_bound,
                 &mut groups,
-            );
+            )?;
         },
     };
 
