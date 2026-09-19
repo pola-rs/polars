@@ -42,7 +42,8 @@ pub unsafe fn decode_rows_from_binary<'a>(
 /// Decode `rows` into a arrow format
 ///
 /// A row slice may extend past the end of that row. Decoding is faster when it does, since
-/// decoders can then read whole blocks at the start of a value.
+/// decoders can then read whole blocks at the start of a value. The contents of `rows` after
+/// decoding are unspecified.
 ///
 /// # Safety
 /// This will not do any bound checks. Caller must ensure the `rows` are valid
