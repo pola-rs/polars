@@ -1,6 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::sync::OnceLock;
 
+use polars_array::bitmap::combine_validities_and;
 use polars_array::builder::{ShareStrategy, builder_like};
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::bitmap::bitmask::BitMask;
@@ -438,6 +439,12 @@ impl IdxCa {
 #[cfg(feature = "dtype-array")]
 impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
+        if self.n_chunks() > 1
+            && let Some(out) = gather_repeated_element(self, indices)
+        {
+            return out;
+        }
+
         // Taking nested types by value is expensive, so at a certain len[n] ratio
         // we rechunk first, so that we can memcopy internally
         if self.n_chunks() > 1 && should_rechunk(self.len(), indices.len()) {
@@ -497,6 +504,12 @@ impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for ArrayChunked {
 
 impl ChunkTakeUnchecked<IdxCa> for ListChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
+        if self.n_chunks() > 1
+            && let Some(out) = gather_repeated_element(self, indices)
+        {
+            return out;
+        }
+
         // Taking nested types by value is expensive, so at a certain len[n] ratio
         // we rechunk first, so that we can memcopy internally
         if self.n_chunks() > 1 && should_rechunk(self.len(), indices.len()) {
@@ -551,6 +564,44 @@ impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for ListChunked {
         let idx = IdxCa::mmap_slice(PlSmallStr::EMPTY, indices.as_ref());
         self.take_unchecked(&idx)
     }
+}
+
+/// A gather off a column whose elements all read one and the same element of it: every element the
+/// gather answers is that one, so it is repeated, and only the indices' own nulls say which of the
+/// answers are null.
+///
+/// Answers `None` where the column does not stand for one element, and for a nested column that is
+/// cheaper than reading it a copy at a time -- the copies a nested gather makes go through a boxed
+/// builder, which is several calls an element.
+unsafe fn gather_repeated_element<T>(
+    ca: &ChunkedArray<T>,
+    indices: &IdxCa,
+) -> Option<ChunkedArray<T>>
+where
+    T: PolarsDataType,
+{
+    if !ca.repeats_one_element() {
+        return None;
+    }
+
+    // SAFETY: a column that repeats one element holds one, so a chunk of it is not empty.
+    let one = ca.downcast_iter().find(|chunk| !chunk.is_empty())?;
+
+    let chunks = indices
+        .downcast_iter()
+        .map(|idx_arr| {
+            let repeated = one.new_from_index_typed(0, idx_arr.len());
+            let validity = combine_validities_and(repeated.validity(), idx_arr.validity());
+            repeated.with_validity_typed(validity).into_boxed()
+        })
+        .collect();
+
+    let mut out = ca.with_chunks(chunks);
+    out.set_sorted_flag(_update_gather_sorted_flag(
+        ca.is_sorted_flag(),
+        indices.is_sorted_flag(),
+    ));
+    Some(out)
 }
 
 fn should_rechunk(n_values: usize, n_indices: usize) -> bool {
