@@ -32,6 +32,9 @@ def _table_root(table_uri: str) -> str:
     """Return the table prefix used by native scan paths."""
     # Match file_uris() for local paths and our lakefs-to-s3 rewrite.
     root = table_uri.removeprefix("file://").replace("lakefs://", "s3://", 1)
+    # Windows: "file:///C:/t" -> "/C:/t", but file_uris() gives "C:/t".
+    if len(root) > 2 and root[0] == "/" and root[2] == ":" and root[1].isalpha():
+        root = root[1:]
     return root if root.endswith("/") else root + "/"
 
 
