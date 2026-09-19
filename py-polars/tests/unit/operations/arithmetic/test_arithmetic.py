@@ -1126,3 +1126,78 @@ def test_truediv_decimal_schema_28372() -> None:
     )
     assert_schema_equal(lf.collect_schema(), expected.collect_schema())
     assert_frame_equal(lf, expected)
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        operator.add,
+        operator.sub,
+        operator.mul,
+        operator.truediv,
+        operator.floordiv,
+        operator.mod,
+    ],
+)
+@pytest.mark.parametrize("dtype", [pl.Float64, pl.Float32, pl.Int64])
+def test_arithmetic_against_a_column_that_repeats_one_value(
+    op: Callable[[Any, Any], Any], dtype: pl.DataType
+) -> None:
+    divisor = 49
+    a = pl.Series("a", [divisor * k for k in range(1, 6)], dtype=dtype)
+    repeated = pl.select(
+        pl.repeat(pl.lit(divisor, dtype=dtype), a.len()).alias("b")
+    ).to_series()
+    flat = pl.Series("b", [divisor] * a.len(), dtype=dtype)
+    assert repeated.to_list() == flat.to_list()
+
+    assert_series_equal(
+        pl.DataFrame([a, repeated]).select(op(pl.col("a"), pl.col("b"))).to_series(),
+        pl.DataFrame([a, flat]).select(op(pl.col("a"), pl.col("b"))).to_series(),
+    )
+    assert_series_equal(
+        pl.DataFrame([a, repeated]).select(op(pl.col("b"), pl.col("a"))).to_series(),
+        pl.DataFrame([a, flat]).select(op(pl.col("b"), pl.col("a"))).to_series(),
+    )
+
+
+@pytest.mark.parametrize("dtype", [pl.Float64, pl.Float32])
+def test_adding_and_subtracting_a_zero_keeps_the_sign_of_a_zero(
+    dtype: pl.DataType,
+) -> None:
+    zeros = [-0.0, 0.0]
+    s = pl.Series("a", zeros, dtype=dtype)
+
+    for zero in zeros:
+        assert_series_equal(
+            s + zero, pl.Series("a", [v + zero for v in zeros], dtype=dtype)
+        )
+        assert_series_equal(
+            s - zero, pl.Series("a", [v - zero for v in zeros], dtype=dtype)
+        )
+        assert_series_equal(
+            zero - s, pl.Series("a", [zero - v for v in zeros], dtype=dtype)
+        )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [
+        (pl.Float64, 5e-324),
+        (pl.Float64, 1.7976931348623157e308),
+        (pl.Float32, 3.4028234663852886e38),
+    ],
+)
+@pytest.mark.parametrize("op", [operator.truediv, operator.floordiv, operator.mod])
+def test_dividing_two_one_row_columns_is_exact(
+    dtype: pl.DataType, value: float, op: Any
+) -> None:
+    # The `*_scalar` division kernels multiply by `1 / rhs`, which is not what
+    # `lhs / rhs` answers at the extremes. Only a side broadcast against a *longer*
+    # one may reach them, so two columns of one length -- even one row -- stay exact.
+    one = pl.DataFrame({"a": pl.Series([value], dtype=dtype)})
+    many = pl.DataFrame({"a": pl.Series([value] * 4, dtype=dtype)})
+
+    got = one.select(op(pl.col("a"), pl.col("a"))).item()
+    assert got == many.select(op(pl.col("a"), pl.col("a"))).to_series().to_list()[0]
+    assert got == op(value, value)

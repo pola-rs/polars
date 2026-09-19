@@ -517,6 +517,7 @@ impl BitmapBuilder {
 /// A wrapper for BitmapBuilder that does not allocate until the first false is
 /// pushed. Less efficient if you know there are false values because it must
 /// check if it has allocated for each push.
+#[derive(Clone)]
 pub enum OptBitmapBuilder {
     AllTrue { bit_len: usize, bit_cap: usize },
     MayHaveFalse(BitmapBuilder),
@@ -594,6 +595,25 @@ impl OptBitmapBuilder {
             None => {
                 self.extend_constant(length * repeats, true);
             },
+        }
+    }
+
+    /// Appends the `length` bits starting at `start` `repeats` times over.
+    pub fn subslice_extend_repeated_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        start: usize,
+        length: usize,
+        repeats: usize,
+    ) {
+        match bitmap {
+            Some(bm) => {
+                let builder = self.get_builder();
+                for _ in 0..repeats {
+                    builder.subslice_extend_from_bitmap(bm, start, length);
+                }
+            },
+            None => self.extend_constant(length * repeats, true),
         }
     }
 

@@ -131,10 +131,9 @@ impl FusedPredicate {
             let mask = mask.as_materialized_series().bool()?.rechunk();
             let mask = mask.downcast_as_array();
 
-            // A null is not a match.
             let keep = match mask.validity() {
-                Some(validity) => mask.values() & validity,
-                None => mask.values().clone(),
+                Some(validity) => &*mask.values().to_flat() & &*validity.to_flat(),
+                None => mask.values().to_flat().into_owned(),
             };
 
             match keep.set_bits() {

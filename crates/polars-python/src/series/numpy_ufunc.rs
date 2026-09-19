@@ -41,7 +41,10 @@ macro_rules! impl_ufuncs {
                         Ok(_) => {
                             let (name, validity) = {
                                 let s = self.series.read();
-                                (s.name().clone(), s.chunks()[0].validity().cloned())
+                                (
+                                    s.name().clone(),
+                                    s.rechunk_validity().map(PlBitmap::into_bitmap),
+                                )
                             };
 
                             // Create a Series backed by the numpy array's buffer.

@@ -1,6 +1,8 @@
 import numpy as np
+import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_chunks_align_16830() -> None:
@@ -42,3 +44,57 @@ def test_first_last_non_null_empty_leading_chunk_28495() -> None:
     assert nulls_last.arg_max() == 0
     assert nulls_last.min() == 1
     assert nulls_last.max() == 3
+
+
+def _repeat(value: object, n: int, dtype: pl.DataType) -> pl.Series:
+    """A single chunk that repeats `value` n times."""
+    return pl.select(pl.repeat(value, n, dtype=dtype).alias("a")).to_series()
+
+
+@pytest.mark.parametrize(
+    ("dtype", "value", "other"),
+    [
+        (pl.Int64, 3, 5),
+        (pl.Float64, 1.5, 2.5),
+        (pl.Boolean, True, False),
+        (pl.String, "abc", "ab"),
+        (pl.List(pl.Int64), [1, 2], [3]),
+        (pl.Struct({"x": pl.Int64}), {"x": 1}, {"x": 2}),
+    ],
+)
+def test_several_repeated_chunks_read_as_one_element(
+    dtype: pl.DataType, value: object, other: object
+) -> None:
+    n = 12
+    half = n // 2
+    same = pl.concat(
+        [_repeat(value, half, dtype), _repeat(value, n - half, dtype)], rechunk=False
+    )
+    differ = pl.concat(
+        [_repeat(value, half, dtype), _repeat(other, n - half, dtype)], rechunk=False
+    )
+    assert same.n_chunks() == 2
+    assert differ.n_chunks() == 2
+
+    for s in (same, differ):
+        flat = pl.Series("a", s.to_list(), dtype=dtype)
+        df, flat_df = pl.DataFrame({"a": s}), pl.DataFrame({"a": flat})
+        for expr in (
+            pl.col("a").sort(),
+            pl.col("a").arg_sort(),
+            pl.col("a").reverse(),
+            pl.col("a").unique(maintain_order=True),
+            pl.col("a").n_unique(),
+            pl.col("a").unique_counts(),
+            pl.col("a").value_counts(sort=True),
+            pl.col("a").is_unique(),
+            pl.col("a").is_duplicated(),
+            pl.col("a").is_first_distinct(),
+            pl.col("a").is_last_distinct(),
+            pl.col("a").arg_unique(),
+            pl.col("a").rle(),
+            pl.col("a").rle_id(),
+            pl.col("a").hash(seed=7),
+            pl.col("a").is_in(pl.Series("x", [value], dtype=dtype)),
+        ):
+            assert_frame_equal(df.select(expr), flat_df.select(expr))

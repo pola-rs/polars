@@ -42,7 +42,6 @@ pub(crate) use filter::*;
 pub(crate) use gather::*;
 pub(crate) use len::*;
 pub(crate) use literal::*;
-use polars_arrow::array::ArrayRef;
 use polars_arrow::bitmap::MutableBitmap;
 use polars_arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
@@ -299,18 +298,11 @@ impl<'a> AggregationContext<'a> {
         match list.chunks().len() {
             1 => {
                 let arr = list.downcast_iter().next().unwrap();
-                let offsets = arr.offsets().as_slice();
-
-                let mut previous = 0i64;
-                let groups = offsets[1..]
-                    .iter()
-                    .map(|&o| {
-                        let len = (o - previous) as IdxSize;
-                        let new_offset = offset + len;
-
-                        previous = o;
+                let groups = (0..arr.len())
+                    .map(|i| {
+                        let len = arr.value_length(i) as IdxSize;
                         let out = [offset, len];
-                        offset = new_offset;
+                        offset += len;
                         out
                     })
                     .collect_trusted();
@@ -591,10 +583,19 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
+    /// The number of values [`flat_naive`](Self::flat_naive) hands out.
     fn flat_naive_length(&self) -> usize {
         match &self.state {
             AggState::NotAggregated(c) => c.len(),
-            AggState::AggregatedList(c) => c.list().unwrap().inner_length(),
+            AggState::AggregatedList(c) => {
+                let list = c
+                    .list()
+                    .expect("impl error, should be a list at this point");
+
+                list.downcast_iter()
+                    .flat_map(|arr| (0..arr.len()).map(|i| arr.value_length(i)))
+                    .sum()
+            },
             AggState::AggregatedScalar(c) => c.len(),
             AggState::LiteralScalar(_) => 1,
         }

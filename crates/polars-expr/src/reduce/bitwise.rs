@@ -1,7 +1,6 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 use num_traits::Zero;
-use polars_arrow::array::BooleanArray;
 use polars_arrow::types::NativeType;
 use polars_compute::bitwise::BitwiseKernel;
 use polars_core::with_match_physical_integer_polars_type;
@@ -60,7 +59,7 @@ where
     T: PolarsNumericType,
     T::Native: BitAnd<Output = T::Native> + Not<Output = T::Native> + Zero,
     T::Native: NativeType,
-    PrimitiveArray<T::Native>: BitwiseKernel<Scalar = T::Native>,
+    PlPrimitiveArray<T::Native>: BitwiseKernel<Scalar = T::Native>,
 {
     type Dtype = T;
 
@@ -85,7 +84,7 @@ where
     T: PolarsNumericType,
     T::Native: BitOr<Output = T::Native> + Zero,
     T::Native: NativeType,
-    PrimitiveArray<T::Native>: BitwiseKernel<Scalar = T::Native>,
+    PlPrimitiveArray<T::Native>: BitwiseKernel<Scalar = T::Native>,
 {
     type Dtype = T;
 
@@ -110,7 +109,7 @@ where
     T: PolarsNumericType,
     T::Native: BitXor<Output = T::Native> + Zero,
     T::Native: NativeType,
-    PrimitiveArray<T::Native>: BitwiseKernel<Scalar = T::Native>,
+    PlPrimitiveArray<T::Native>: BitwiseKernel<Scalar = T::Native>,
 {
     type Dtype = T;
 
@@ -238,8 +237,8 @@ impl GroupedReduction for BoolXorGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
-        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
+        let arr = pl_boolean(v.freeze(), Some(m.freeze()));
+        Ok(BooleanChunked::with_chunk(PlSmallStr::EMPTY, arr).into_series())
     }
 
     fn as_any(&self) -> &dyn Any {

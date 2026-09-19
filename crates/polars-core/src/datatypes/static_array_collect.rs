@@ -1,3 +1,4 @@
+use polars_array::PlBitmap;
 use polars_arrow::array::ArrayFromIter;
 use polars_arrow::bitmap::BitmapBuilder;
 
@@ -30,7 +31,8 @@ impl<'a, T: PolarsObject> ArrayFromIter<Option<&'a T>> for ObjectArray<T> {
             values.push(val.cloned().unwrap_or_default());
         }
 
-        ObjectArray::from(values).with_validity(null_mask_builder.into_opt_validity())
+        ObjectArray::from(values)
+            .with_validity(null_mask_builder.into_opt_validity().map(PlBitmap::from))
     }
 
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<&'a T>, E>>>(
@@ -48,6 +50,7 @@ impl<'a, T: PolarsObject> ArrayFromIter<Option<&'a T>> for ObjectArray<T> {
             values.push(val.cloned().unwrap_or_default());
         }
 
-        Ok(ObjectArray::from(values).with_validity(null_mask_builder.into_opt_validity()))
+        Ok(ObjectArray::from(values)
+            .with_validity(null_mask_builder.into_opt_validity().map(PlBitmap::from)))
     }
 }

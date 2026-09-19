@@ -14,6 +14,47 @@ use super::{_finish_join, build_tables, build_tables_from_arrays, par_map_collec
 use crate::frame::IntoDf;
 use crate::series::SeriesMethods;
 
+/// The elements of a chunk an asof join reads at indices it picks, not one after another.
+pub(super) enum Elements<'a, T: PolarsDataType> {
+    /// One slot per element and nothing null, so an index into the values is the element.
+    Flat(&'a [T::Physical<'a>]),
+    /// A chunk that may repeat a value or leave an element null, read element by element.
+    Chunk(&'a T::Array),
+}
+
+impl<'a, T: PolarsDataType> Elements<'a, T> {
+    pub(super) fn of(array: &'a T::Array) -> Self {
+        match array.as_no_nulls().and_then(|array| array.as_slice()) {
+            Some(values) => Self::Flat(values),
+            None => Self::Chunk(array),
+        }
+    }
+
+    /// The element at `i`, or `None` if it is null.
+    ///
+    /// # Safety
+    /// `i` must be smaller than the length of the chunk this reads.
+    #[inline(always)]
+    pub(super) unsafe fn get(&self, i: usize) -> Option<T::Physical<'a>> {
+        match self {
+            Self::Flat(values) => Some(unsafe { values.get_unchecked(i) }.clone()),
+            Self::Chunk(array) => unsafe { array.get_unchecked(i) },
+        }
+    }
+
+    /// The element at `i`, which is not null.
+    ///
+    /// # Safety
+    /// `i` must be smaller than the length of the chunk this reads, and name a valid element.
+    #[inline(always)]
+    pub(super) unsafe fn value(&self, i: usize) -> T::Physical<'a> {
+        match self {
+            Self::Flat(values) => unsafe { values.get_unchecked(i) }.clone(),
+            Self::Chunk(array) => unsafe { array.value_unchecked(i) },
+        }
+    }
+}
+
 #[inline]
 fn ge_allow_eq<T: TotalOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
     match l.tot_cmp(r) {

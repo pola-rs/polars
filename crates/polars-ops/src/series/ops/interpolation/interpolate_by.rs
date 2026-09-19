@@ -2,7 +2,6 @@ use std::ops::{Add, Div, Mul, Sub};
 
 use bytemuck::allocation::zeroed_vec;
 use num_traits::{NumCast, Zero};
-use polars_arrow::array::PrimitiveArray;
 use polars_arrow::bitmap::MutableBitmap;
 use polars_core::prelude::*;
 use polars_utils::slice::SliceAble;
@@ -98,7 +97,8 @@ where
 
     polars_ensure!(by.null_count() == 0, InvalidOperation: "null values in `by` column are not yet supported in 'interpolate_by' expression");
     let by = by.rechunk();
-    let by_values = by.cont_slice().unwrap();
+    let by_values = by.to_cont_slice().unwrap();
+    let by_values = by_values.as_slice();
 
     // We first find the first and last so that we can set the null buffer.
     let first = chunked_arr.first_non_null().unwrap();
@@ -150,11 +150,8 @@ where
             out.push(Zero::zero());
         }
 
-        let array = PrimitiveArray::new(
-            T::get_static_dtype().to_arrow(CompatLevel::newest()),
-            out.into(),
-            Some(validity.into()),
-        );
+        let length = out.len();
+        let array = PlPrimitiveArray::new(out.into(), length, Some(validity.into()));
         Ok(ChunkedArray::with_chunk(chunked_arr.name().clone(), array))
     } else {
         Ok(ChunkedArray::from_vec(chunked_arr.name().clone(), out))
@@ -181,13 +178,15 @@ where
     polars_ensure!(by.null_count() == 0, InvalidOperation: "null values in `by` column are not yet supported in 'interpolate_by' expression");
     let sorting_indices = by.arg_sort(Default::default());
     let sorting_indices = sorting_indices
-        .cont_slice()
+        .to_cont_slice()
         .expect("arg sort produces single chunk");
+    let sorting_indices = sorting_indices.as_slice();
     let by_sorted = unsafe { by.take_unchecked(sorting_indices) };
     let ca_sorted = unsafe { ca.take_unchecked(sorting_indices) };
     let by_sorted_values = by_sorted
-        .cont_slice()
+        .to_cont_slice()
         .expect("We already checked for nulls, and `take_unchecked` produces single chunk");
+    let by_sorted_values = by_sorted_values.as_slice();
 
     // We first find the first and last so that we can set the null buffer.
     let first = ca_sorted.first_non_null().unwrap();
@@ -252,11 +251,8 @@ where
             }
         }
 
-        let array = PrimitiveArray::new(
-            T::get_static_dtype().to_arrow(CompatLevel::newest()),
-            out.into(),
-            Some(validity.into()),
-        );
+        let length = out.len();
+        let array = PlPrimitiveArray::new(out.into(), length, Some(validity.into()));
         Ok(ChunkedArray::with_chunk(ca_sorted.name().clone(), array))
     } else {
         Ok(ChunkedArray::from_vec(ca_sorted.name().clone(), out))

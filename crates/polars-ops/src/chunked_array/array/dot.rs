@@ -1,5 +1,6 @@
 use num_traits::Zero;
-use polars_arrow::array::{Array, PrimitiveArray};
+use polars_array::PlPrimitiveArray;
+use polars_array::bitmap::PlBitmap;
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::types::NativeType;
 use polars_compute::arithmetic::pl_num::PlNumArithmetic;
@@ -111,37 +112,48 @@ fn dot_primitive<T>(
 where
     T: NativeType + PlNumArithmetic + SumCast,
     T::Sum: WrappingAdd,
+    <T::Sum as NumericNative>::PolarsType: PolarsNumericType<Native = T::Sum>,
 {
     let lhs = lhs.rechunk();
     let rhs = rhs.rechunk();
-    let lhs_array = lhs.downcast_get(0).unwrap();
-    let rhs_array = rhs.downcast_get(0).unwrap();
+    let lhs_array = lhs.downcast_as_array();
+    let rhs_array = rhs.downcast_as_array();
+
+    let lhs_values_shared = lhs_array.values_are_scalar();
+    let rhs_values_shared = rhs_array.values_are_scalar();
+
     let lhs_values = lhs_array
         .values()
         .as_any()
-        .downcast_ref::<PrimitiveArray<T>>()
-        .unwrap();
+        .downcast_ref::<PlPrimitiveArray<T>>()
+        .unwrap()
+        .to_flat();
     let rhs_values = rhs_array
         .values()
         .as_any()
-        .downcast_ref::<PrimitiveArray<T>>()
-        .unwrap();
+        .downcast_ref::<PlPrimitiveArray<T>>()
+        .unwrap()
+        .to_flat();
 
-    let lhs_slice = lhs_values.values().as_slice();
-    let rhs_slice = rhs_values.values().as_slice();
+    let lhs_slice = lhs_values.as_slice();
+    let rhs_slice = rhs_values.as_slice();
     let lhs_inner_validity = lhs_values.validity();
     let rhs_inner_validity = rhs_values.validity();
     let width = lhs.width();
-    debug_assert!(
+    debug_assert!(if lhs_values_shared {
+        lhs_slice.len() >= width
+    } else {
         lhs.len()
             .checked_mul(width)
             .is_some_and(|len| lhs_slice.len() >= len)
-    );
-    debug_assert!(
+    });
+    debug_assert!(if rhs_values_shared {
+        rhs_slice.len() >= width
+    } else {
         rhs.len()
             .checked_mul(width)
             .is_some_and(|len| rhs_slice.len() >= len)
-    );
+    });
     debug_assert!(lhs_inner_validity.is_none_or(|validity| validity.len() >= lhs_slice.len()));
     debug_assert!(rhs_inner_validity.is_none_or(|validity| validity.len() >= rhs_slice.len()));
     let row_reducer = DotRowReducer {
@@ -153,13 +165,21 @@ where
     };
     let lhs_broadcast = lhs.len() == 1 && output_len != 1;
     let rhs_broadcast = rhs.len() == 1 && output_len != 1;
+    let lhs_row_pinned = lhs_broadcast || lhs_values_shared;
+    let rhs_row_pinned = rhs_broadcast || rhs_values_shared;
 
     // An absent outer bitmap guarantees valid output rows without scanning.
     // Child validity only filters coordinate pairs inside `DotRowReducer`.
     if lhs_array.validity().is_none() && rhs_array.validity().is_none() {
-        let output = dot_outer_all_valid(&row_reducer, lhs_broadcast, rhs_broadcast, output_len);
-        let output = PrimitiveArray::from_data_default(output.into(), None);
-        return Series::try_from((lhs.name().clone(), vec![Box::new(output) as ArrayRef]));
+        let output = dot_outer_all_valid(&row_reducer, lhs_row_pinned, rhs_row_pinned, output_len);
+        let output = PlPrimitiveArray::from_vec(output);
+        return Ok(
+            ChunkedArray::<<T::Sum as NumericNative>::PolarsType>::with_chunk(
+                lhs.name().clone(),
+                output,
+            )
+            .into_series(),
+        );
     }
 
     let mut output = Vec::with_capacity(output_len);
@@ -173,6 +193,8 @@ where
         let outer_valid = unsafe {
             !lhs_array.is_null_unchecked(lhs_idx) && !rhs_array.is_null_unchecked(rhs_idx)
         };
+        let lhs_idx = if lhs_values_shared { 0 } else { lhs_idx };
+        let rhs_idx = if rhs_values_shared { 0 } else { rhs_idx };
         output_validity.push(outer_valid);
 
         if !outer_valid {
@@ -185,9 +207,18 @@ where
         output.push(unsafe { row_reducer.dot_row(lhs_idx, rhs_idx) });
     }
 
-    let output =
-        PrimitiveArray::from_data_default(output.into(), output_validity.into_opt_validity());
-    Series::try_from((lhs.name().clone(), vec![Box::new(output) as ArrayRef]))
+    let output = PlPrimitiveArray::from_vec(output).with_validity(
+        output_validity
+            .into_opt_validity()
+            .map(PlBitmap::from_bitmap),
+    );
+    Ok(
+        ChunkedArray::<<T::Sum as NumericNative>::PolarsType>::with_chunk(
+            lhs.name().clone(),
+            output,
+        )
+        .into_series(),
+    )
 }
 
 fn array_dot_kernel(dtype: &DataType) -> Option<ArrayDotKernel> {

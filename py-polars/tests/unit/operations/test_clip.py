@@ -244,3 +244,49 @@ def test_clip_bound_nan() -> None:
         pl.Series([1.0, 2.0]).clip(None, float("nan")),
         pl.Series([1.0, 2.0]),
     )
+
+
+def test_clip_repeated_chunk_bounds() -> None:
+    n = 4
+    rep = pl.DataFrame(
+        {
+            "x": pl.repeat(5, n, dtype=pl.Int64, eager=True),
+            "lo": pl.repeat(2, n, dtype=pl.Int64, eager=True),
+            "hi": pl.repeat(4, n, dtype=pl.Int64, eager=True),
+        }
+    )
+    flat = pl.DataFrame({"x": [5] * n, "lo": [2] * n, "hi": [4] * n})
+    for df in (rep, flat):
+        assert (
+            df.select(pl.col("x").clip(pl.col("lo"), pl.col("hi")))
+            .to_series()
+            .to_list()
+            == [4] * n
+        )
+        assert (
+            df.select(pl.col("x").clip(lower_bound=pl.col("lo"))).to_series().to_list()
+            == [5] * n
+        )
+        assert (
+            df.select(pl.col("x").clip(upper_bound=pl.col("hi"))).to_series().to_list()
+            == [4] * n
+        )
+        assert (
+            df.select(pl.col("x").clip(9, pl.col("hi"))).to_series().to_list()
+            == [9] * n
+        )
+
+    nulls = pl.DataFrame(
+        {
+            "x": pl.repeat(5, n, dtype=pl.Int64, eager=True),
+            "lo": pl.repeat(None, n, dtype=pl.Int64, eager=True),
+        }
+    )
+    assert (
+        nulls.select(pl.col("x").clip(lower_bound=pl.col("lo"))).to_series().to_list()
+        == [5] * n
+    )
+    assert (
+        pl.repeat(None, n, dtype=pl.Int64, eager=True).clip(1, 2).to_list()
+        == [None] * n
+    )

@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use jsonpath_lib::PathCompiled;
 use polars_arrow::array::ValueSize;
-use polars_core::prelude::arity::{broadcast_try_binary_elementwise, unary_elementwise};
+use polars_core::prelude::arity::{broadcast_try_binary_elementwise_amortized, unary_elementwise};
 use serde_json::Value;
 
 use super::*;
@@ -59,7 +59,7 @@ pub trait Utf8JsonPathImpl: AsString {
                 Ok(out)
             },
             (len_ca, len_path) if len_ca == 1 || len_ca == len_path => {
-                broadcast_try_binary_elementwise(ca, json_path, |opt_str, opt_path| {
+                broadcast_try_binary_elementwise_amortized(ca, json_path, |opt_str, opt_path| {
                     match (opt_str, opt_path) {
                     (Some(str_val), Some(path)) => {
                         PathCompiled::compile(path)
@@ -98,6 +98,14 @@ pub trait Utf8JsonPathImpl: AsString {
         infer_schema_len: Option<usize>,
     ) -> PolarsResult<Series> {
         let ca = self.as_string();
+
+        if let Some(value) = (ca.len() > 1).then(|| ca.scalar_value()).flatten() {
+            let one = StringChunked::from_iter_options(ca.name().clone(), std::iter::once(value));
+            return Ok(one
+                .json_decode(dtype, infer_schema_len)?
+                .new_from_index(0, ca.len()));
+        }
+
         // Ignore extra fields instead of erroring if the dtype was explicitly given.
         let allow_extra_fields_in_struct = dtype.is_some();
         let mut needs_cast = false;
@@ -233,7 +241,9 @@ mod tests {
             .iter(),
         )
         .unwrap()
-        .with_outer_validity(Some(Bitmap::from_iter([false, true, true, false])))
+        .with_outer_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+            false, true, true, false,
+        ]))))
         .into_series();
         let expected_dtype = expected_series.dtype().clone();
 

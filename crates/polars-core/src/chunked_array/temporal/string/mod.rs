@@ -6,7 +6,7 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 use polars_utils::cache::LruCachedFunc;
 
 use self::strptime::StrpTimeState;
-use crate::chunked_array::ops::arity::unary_elementwise;
+use crate::chunked_array::ops::arity::{unary_elementwise, unary_elementwise_amortized};
 #[cfg(feature = "dtype-date")]
 use crate::chunked_array::temporal::date::naive_date_to_date;
 #[cfg(feature = "dtype-time")]
@@ -79,7 +79,7 @@ pub trait StringMethods: AsString {
             },
             (string_ca.len() as f64).sqrt() as usize,
         );
-        let ca = unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache));
+        let ca = unary_elementwise_amortized(string_ca, |opt_s| convert.eval(opt_s?, use_cache));
         Ok(ca.with_name(string_ca.name().clone()).into_time())
     }
 
@@ -230,7 +230,7 @@ pub trait StringMethods: AsString {
                 },
                 (string_ca.len() as f64).sqrt() as usize,
             );
-            unary_elementwise(string_ca, |val| convert.eval(val?, use_cache))
+            unary_elementwise_amortized(string_ca, |val| convert.eval(val?, use_cache))
         } else {
             let mut convert = LruCachedFunc::new(
                 |s| {
@@ -239,7 +239,7 @@ pub trait StringMethods: AsString {
                 },
                 (string_ca.len() as f64).sqrt() as usize,
             );
-            unary_elementwise(string_ca, |val| convert.eval(val?, use_cache))
+            unary_elementwise_amortized(string_ca, |val| convert.eval(val?, use_cache))
         };
 
         Ok(ca.with_name(string_ca.name().clone()).into_date())
@@ -281,7 +281,7 @@ pub trait StringMethods: AsString {
                     (string_ca.len() as f64).sqrt() as usize,
                 );
                 Ok(
-                    unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache))
+                    unary_elementwise_amortized(string_ca, |opt_s| convert.eval(opt_s?, use_cache))
                         .with_name(string_ca.name().clone())
                         .into_datetime(tu, Some(tz.cloned().unwrap_or(TimeZone::UTC))),
                 )
@@ -305,13 +305,13 @@ pub trait StringMethods: AsString {
                     },
                     (string_ca.len() as f64).sqrt() as usize,
                 );
-                unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache))
+                unary_elementwise_amortized(string_ca, |opt_s| convert.eval(opt_s?, use_cache))
             } else {
                 let mut convert = LruCachedFunc::new(
                     |s| transform(s, &fmt),
                     (string_ca.len() as f64).sqrt() as usize,
                 );
-                unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache))
+                unary_elementwise_amortized(string_ca, |opt_s| convert.eval(opt_s?, use_cache))
             };
             let dt = ca
                 .with_name(string_ca.name().clone())

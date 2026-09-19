@@ -1,7 +1,6 @@
 use std::ops::{Add, Div, Mul, Sub};
 
 use num_traits::{NumCast, Zero};
-use polars_arrow::array::PrimitiveArray;
 use polars_arrow::bitmap::MutableBitmap;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
@@ -94,11 +93,8 @@ where
             out.push(Zero::zero())
         }
 
-        let array = PrimitiveArray::new(
-            T::get_static_dtype().to_arrow(CompatLevel::newest()),
-            out.into(),
-            Some(validity.into()),
-        );
+        let length = out.len();
+        let array = PlPrimitiveArray::new(out.into(), length, Some(validity.into()));
         ChunkedArray::with_chunk(chunked_arr.name().clone(), array)
     } else {
         ChunkedArray::from_vec(chunked_arr.name().clone(), out)

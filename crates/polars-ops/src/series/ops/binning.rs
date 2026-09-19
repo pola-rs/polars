@@ -1,4 +1,3 @@
-use polars_arrow::compute::concatenate::concatenate_validities;
 use polars_core::chunked_array::ops::binning::{FractionSpec, IntervalSpec};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
@@ -26,7 +25,7 @@ fn bins_from_breaks(s: &Series, breaks: &Series, right_closed: bool) -> PolarsRe
     // than a null, so the input validity is reattached here.
     Ok(search_sorted(breaks, s, side, false)?
         .with_name(s.name().clone())
-        .with_validity(concatenate_validities(s.chunks())))
+        .with_validity(s.rechunk_validity()))
 }
 
 /// Assign every element the bin its rank falls in -- its 0-based position within the
@@ -42,11 +41,11 @@ fn bins_from_rank_cuts(s: &Series, sort_idx: &IdxCa, cum_bin_sizes: &[IdxSize]) 
             while bin < cum_bin_sizes.len() && cum_bin_sizes[bin] <= rank {
                 bin += 1;
             }
-            out[*i as usize] = bin as IdxSize;
+            out[i as usize] = bin as IdxSize;
             rank += 1;
         }
     }
-    IdxCa::from_vec_validity(s.name().clone(), out, concatenate_validities(s.chunks()))
+    IdxCa::from_vec_validity(s.name().clone(), out, s.rechunk_validity())
 }
 
 /// Gather the value at each given position within the non-null values in sorted order.

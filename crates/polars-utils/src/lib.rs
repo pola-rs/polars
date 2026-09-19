@@ -63,6 +63,7 @@ pub mod row_counter;
 pub mod scratch_vec;
 pub mod select;
 pub mod slice;
+pub mod slice_broadcast_iter;
 pub mod slice_enum;
 pub mod small_bytes;
 pub mod sort;

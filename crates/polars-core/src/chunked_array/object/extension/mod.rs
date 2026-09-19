@@ -1,4 +1,3 @@
-pub(crate) mod drop;
 pub(super) mod list;
 pub(crate) mod polars_extension;
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from datetime import date, datetime, timedelta
 from decimal import Decimal as D
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -802,6 +802,88 @@ def test_is_in_non_nested_container() -> None:
         match=r"(?s)cannot check for List\(Int64\) values in Int64 data.*container dtype \(Int64\) must be nested",
     ):
         df.select(pl.col("a").is_in(pl.col("b")))
+
+
+@pytest.mark.parametrize("nulls_equal", [True, False])
+@pytest.mark.parametrize(
+    "dtype", [pl.List(pl.Int64), pl.Array(pl.Int64, 2), pl.List(pl.String)]
+)
+def test_is_in_container_chunks(dtype: pl.DataType, nulls_equal: bool) -> None:
+    rows: list[list[Any] | None]
+    needles: list[Any]
+    if dtype == pl.List(pl.String):
+        rows = [["a", "b"], ["c", "d"], [None, "e"], None, ["f", "f"]]
+        needles = ["a", "d", "e", "a", "g"]
+    else:
+        rows = [[1, 2], [3, 4], [None, 5], None, [6, 6]]
+        needles = [1, 4, 5, 1, 7]
+
+    flat = pl.Series("h", rows, dtype=dtype)
+    chunked = pl.concat(
+        [pl.Series("h", [row], dtype=dtype) for row in rows], rechunk=False
+    )
+    assert chunked.n_chunks() == len(rows)
+
+    needle = pl.Series("n", needles)
+    expected = pl.DataFrame({"h": flat, "n": needle}).select(
+        pl.col("n").is_in(pl.col("h"), nulls_equal=nulls_equal)
+    )
+    pad = pl.Series("h", rows[:1], dtype=dtype)
+    sliced = pl.concat([pad, flat, pad]).slice(1, len(rows))
+    for container in (chunked, sliced):
+        assert_frame_equal(
+            pl.DataFrame({"h": container, "n": needle}).select(
+                pl.col("n").is_in(pl.col("h"), nulls_equal=nulls_equal)
+            ),
+            expected,
+        )
+
+
+@pytest.mark.parametrize("nulls_equal", [True, False])
+@pytest.mark.parametrize(
+    ("dtype", "value", "other"),
+    [
+        (pl.Int64, 1, 2),
+        (pl.String, "a", "b"),
+        (pl.List(pl.Int64), [1, 2], [3]),
+        (pl.Array(pl.Int64, 2), [1, 2], [3, 4]),
+        (pl.Struct({"x": pl.Int64}), {"x": 1}, {"x": 2}),
+    ],
+)
+def test_is_in_repeated_needle_and_container(
+    dtype: pl.DataType, value: Any, other: Any, nulls_equal: bool
+) -> None:
+    length = 5
+    repeated = pl.select(pl.repeat(pl.lit(value, dtype=dtype), length)).to_series()
+    flat = pl.Series("a", [value] * length, dtype=dtype)
+
+    for container in ([value], [other], [value, None], [None], []):
+        needle = pl.Series("n", container, dtype=dtype).implode()
+        expected = (
+            pl.DataFrame({"a": flat})
+            .select(pl.col("a").is_in(needle, nulls_equal=nulls_equal))
+            .to_series()
+        )
+        assert_series_equal(
+            pl.DataFrame({"a": repeated})
+            .select(pl.col("a").is_in(needle, nulls_equal=nulls_equal))
+            .to_series(),
+            expected,
+        )
+
+    containers = pl.select(
+        pl.repeat(pl.lit([value], dtype=pl.List(dtype)), length)
+    ).to_series()
+    flat_containers = pl.Series("h", [[value]] * length, dtype=pl.List(dtype))
+    one = pl.lit(value, dtype=dtype)
+    assert_series_equal(
+        pl.DataFrame({"h": containers})
+        .select(one.is_in(pl.col("h"), nulls_equal=nulls_equal).alias("n"))
+        .to_series(),
+        pl.DataFrame({"h": flat_containers})
+        .select(one.is_in(pl.col("h"), nulls_equal=nulls_equal).alias("n"))
+        .to_series(),
+    )
 
 
 @pytest.mark.parametrize(

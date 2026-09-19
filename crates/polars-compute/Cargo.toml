@@ -9,16 +9,19 @@ repository = { workspace = true }
 description = "Private compute kernels for the Polars DataFrame library"
 
 [dependencies]
+polars-arrow = { workspace = true }
 atoi_simd = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
+either = { workspace = true }
 fast-float2 = { workspace = true, optional = true }
 half = { workspace = true, optional = true, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }
 itoa = { workspace = true, optional = true }
 num-traits = { workspace = true }
-polars-arrow = { workspace = true }
+polars-array = { workspace = true }
 polars-buffer = { workspace = true }
+polars-dtype = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 rand = { workspace = true }
@@ -54,11 +57,16 @@ nightly = []
 simd = ["polars-arrow/simd"]
 approx_unique = []
 approx_quantile = []
-dtype-array = []
-dtype-decimal = ["polars-arrow/dtype-decimal", "dtype-i128"]
-dtype-i128 = []
-dtype-u128 = []
-dtype-f16 = ["dep:half"]
+dtype-array = ["polars-arrow/dtype-array", "polars-dtype/dtype-array"]
+dtype-decimal = ["polars-arrow/dtype-decimal", "dtype-i128", "polars-dtype/dtype-decimal"]
+dtype-struct = ["polars-dtype/dtype-struct"]
+dtype-i8 = ["polars-dtype/dtype-i8"]
+dtype-i16 = ["polars-dtype/dtype-i16"]
+dtype-i128 = ["polars-dtype/dtype-i128"]
+dtype-u8 = ["polars-dtype/dtype-u8"]
+dtype-u16 = ["polars-dtype/dtype-u16"]
+dtype-u128 = ["polars-dtype/dtype-u128"]
+dtype-f16 = ["dep:half", "polars-dtype/dtype-f16"]
 dsl-schema = ["dep:schemars"]
 
 [lints]

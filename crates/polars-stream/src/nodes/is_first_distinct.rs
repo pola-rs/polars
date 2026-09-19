@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use polars_arrow::array::BooleanArray;
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::*;
 use polars_expr::groups::{Grouper, new_hash_grouper};
@@ -88,7 +87,7 @@ impl ComputeNode for IsFirstDistinctNode {
                             }
                         }
 
-                        let arr = BooleanArray::from(distinct.freeze());
+                        let arr = PlBooleanArray::from(distinct.freeze());
                         let col =
                             BooleanChunked::with_chunk(slf.out_name.clone(), arr).into_column();
                         df.with_column(col).unwrap();

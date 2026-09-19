@@ -183,7 +183,7 @@ fn dictionary_utf8view_serializer<'a, K: DictionaryKey>(
     offset: usize,
     take: usize,
 ) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
-    let iter = array.iter_typed::<Utf8ViewArray>().unwrap().skip(offset);
+    let iter = array.iter_typed::<Utf8ViewArray>().unwrap();
     let f = |x: Option<&str>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
             utf8::write_str(buf, x).unwrap();

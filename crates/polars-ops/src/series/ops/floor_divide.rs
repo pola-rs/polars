@@ -1,5 +1,5 @@
 use polars_compute::arithmetic::ArithmeticKernel;
-use polars_core::chunked_array::ops::arity::apply_binary_kernel_broadcast;
+use polars_core::chunked_array::ops::arity::apply_binary_kernel_broadcast_single;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-struct")]
 use polars_core::series::arithmetic::_struct_arithmetic;
@@ -10,7 +10,7 @@ fn floor_div_ca<T: PolarsNumericType>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<T>,
 ) -> ChunkedArray<T> {
-    apply_binary_kernel_broadcast(
+    apply_binary_kernel_broadcast_single(
         lhs,
         rhs,
         |l, r| ArithmeticKernel::wrapping_floor_div(l.clone(), r.clone()),

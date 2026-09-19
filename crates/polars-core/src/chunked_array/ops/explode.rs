@@ -1,8 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use polars_arrow::array::*;
+use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
 use polars_arrow::bitmap::utils::set_bit_unchecked;
 use polars_arrow::bitmap::{Bitmap, MutableBitmap};
-use polars_arrow::legacy::array::SlicedArray;
+use polars_buffer::Buffer;
 
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
@@ -36,7 +36,7 @@ where
 {
     fn explode_by_offsets(&self, offsets: &[i64], options: ExplodeOptions) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);
-        let arr = self.downcast_iter().next().unwrap();
+        let arr = self.downcast_iter().next().unwrap().to_flat();
 
         // make sure that we don't look beyond the sliced array
         let values = &arr.values().as_slice()[..offsets[offsets.len() - 1] as usize];
@@ -140,12 +140,12 @@ where
         for i in nulls {
             unsafe { set_bit_unchecked(validity_slice, i, false) }
         }
-        let arr = PrimitiveArray::new(
-            T::get_static_dtype().to_arrow(CompatLevel::newest()),
-            new_values.into(),
-            Some(validity.into()),
+        let arr = PlPrimitiveArray::new(
+            Buffer::from(new_values),
+            validity.len(),
+            Some(PlBitmap::from_bitmap(validity.into())),
         );
-        Series::try_from((self.name().clone(), Box::new(arr) as ArrayRef)).unwrap()
+        ChunkedArray::<T>::with_chunk(self.name().clone(), arr).into_series()
     }
 }
 
@@ -205,29 +205,21 @@ impl ExplodeByOffsets for BooleanChunked {
             let o = o as usize;
             if options.empty_as_null && o == last {
                 if start != last {
-                    let vals = arr.slice_typed(start, last - start);
-
-                    if vals.null_count() == 0 {
-                        builder
-                            .array_builder
-                            .extend_trusted_len_values(vals.values_iter())
-                    } else {
-                        builder.array_builder.extend_trusted_len(vals.into_iter());
-                    }
+                    builder.array_builder.subslice_extend(
+                        arr,
+                        start,
+                        last - start,
+                        ShareStrategy::Never,
+                    );
                 }
                 builder.append_null();
                 start = o;
             }
             last = o;
         }
-        let vals = arr.slice_typed(start, last - start);
-        if vals.null_count() == 0 {
-            builder
-                .array_builder
-                .extend_trusted_len_values(vals.values_iter())
-        } else {
-            builder.array_builder.extend_trusted_len(vals.into_iter());
-        }
+        builder
+            .array_builder
+            .subslice_extend(arr, start, last - start, ShareStrategy::Never);
         builder.finish().into()
     }
 }
@@ -237,7 +229,7 @@ pub(crate) fn offsets_to_indexes(
     offsets: &[i64],
     capacity: usize,
     options: ExplodeOptions,
-    validity: Option<&Bitmap>,
+    validity: Option<&PlBitmap>,
 ) -> Vec<IdxSize> {
     if offsets.is_empty() {
         return vec![];

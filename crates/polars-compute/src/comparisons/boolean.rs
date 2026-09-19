@@ -1,72 +1,90 @@
-use polars_arrow::array::BooleanArray;
-use polars_arrow::bitmap::{self, Bitmap};
+//! The comparison kernels over a [`PlBooleanArray`], whose values are a mask of their own.
 
-use super::{TotalEqKernel, TotalOrdKernel};
+use polars_array::{PlBitmap, PlBitmapRef, PlBooleanArray};
 
-impl TotalEqKernel for BooleanArray {
+use super::{PlTotalEqKernel, PlTotalOrdKernel};
+
+/// The answer for every element at once, held in the single bit that says it.
+#[inline]
+fn repeated(value: bool, length: usize) -> PlBitmap {
+    PlBitmap::new_scalar(value, length)
+}
+
+/// The values of `array` as a mask of their own, in whichever representation they are in.
+#[inline]
+fn values(array: &PlBooleanArray) -> PlBitmap {
+    PlBitmap::from(array.values())
+}
+
+impl PlTotalEqKernel for PlBooleanArray {
     type Scalar = bool;
 
-    fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
-        bitmap::binary(self.values(), other.values(), |l, r| !(l ^ r))
+    fn validity_mask(&self) -> Option<PlBitmapRef<'_>> {
+        self.validity()
     }
 
-    fn tot_ne_kernel(&self, other: &Self) -> Bitmap {
-        self.values() ^ other.values()
+    fn tot_eq_kernel(&self, other: &Self) -> PlBitmap {
+        assert_eq!(self.len(), other.len());
+        values(self).xor(&values(other)).not()
     }
 
-    fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        if *other {
-            self.values().clone()
-        } else {
-            !self.values()
-        }
+    fn tot_ne_kernel(&self, other: &Self) -> PlBitmap {
+        assert_eq!(self.len(), other.len());
+        values(self).xor(&values(other))
     }
 
-    fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
+    fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
+        let values = values(self);
+        if *other { values } else { values.not() }
+    }
+
+    fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
         self.tot_eq_kernel_broadcast(&!*other)
     }
 }
 
-impl TotalOrdKernel for BooleanArray {
+impl PlTotalOrdKernel for PlBooleanArray {
     type Scalar = bool;
 
-    fn tot_lt_kernel(&self, other: &Self) -> Bitmap {
-        bitmap::binary(self.values(), other.values(), |l, r| !l & r)
+    fn tot_lt_kernel(&self, other: &Self) -> PlBitmap {
+        assert_eq!(self.len(), other.len());
+        values(self).not().and(&values(other))
     }
 
-    fn tot_le_kernel(&self, other: &Self) -> Bitmap {
-        bitmap::binary(self.values(), other.values(), |l, r| !l | r)
+    fn tot_le_kernel(&self, other: &Self) -> PlBitmap {
+        assert_eq!(self.len(), other.len());
+        values(self).not().or(&values(other))
     }
 
-    fn tot_lt_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
+    fn tot_lt_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
         if *other {
-            !self.values()
+            values(self).not()
         } else {
-            Bitmap::new_zeroed(self.len())
+            repeated(false, self.len())
         }
     }
 
-    fn tot_le_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
+    fn tot_le_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
         if *other {
-            Bitmap::new_with_value(true, self.len())
+            repeated(true, self.len())
         } else {
-            !self.values()
+            values(self).not()
         }
     }
 
-    fn tot_gt_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
+    fn tot_gt_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
         if *other {
-            Bitmap::new_zeroed(self.len())
+            repeated(false, self.len())
         } else {
-            self.values().clone()
+            values(self)
         }
     }
 
-    fn tot_ge_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
+    fn tot_ge_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
         if *other {
-            self.values().clone()
+            values(self)
         } else {
-            Bitmap::new_with_value(true, self.len())
+            repeated(true, self.len())
         }
     }
 }

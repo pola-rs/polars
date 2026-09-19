@@ -10,7 +10,8 @@
 //! This allows the string row encoding to have a constant 1 byte overhead.
 use std::mem::MaybeUninit;
 
-use polars_arrow::array::{MutableBinaryViewArray, PrimitiveArray, Utf8ViewArray};
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{PlBitmap, PlPrimitiveArray, PlUtf8ViewArray, PlUtf8ViewArrayBuilder};
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_arrow::types::NativeType;
 use polars_dtype::categorical::{CatNative, CategoricalMapping};
@@ -71,12 +72,12 @@ pub unsafe fn encode_str<'a, I: Iterator<Item = Option<&'a str>>>(
     }
 }
 
-pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8ViewArray {
+pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> PlUtf8ViewArray {
     let null_sentinel = opt.null_sentinel();
     let descending = opt.contains(RowEncodingOptions::DESCENDING);
 
     let num_rows = rows.len();
-    let mut array = MutableBinaryViewArray::<str>::with_capacity(rows.len());
+    let mut array = PlUtf8ViewArrayBuilder::with_capacity(rows.len());
 
     let mut scratch = Vec::new();
     for row in rows.iter_mut() {
@@ -94,24 +95,24 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8Vie
         }
 
         *row = row.get_unchecked(1 + scratch.len()..);
-        array.push_value_ignore_validity(unsafe { std::str::from_utf8_unchecked(&scratch) });
+        array.push_value(unsafe { std::str::from_utf8_unchecked(&scratch) });
     }
 
     if array.len() == num_rows {
-        return array.into();
+        return array.freeze();
     }
 
     let mut validity = BitmapBuilder::with_capacity(num_rows);
     validity.extend_constant(array.len(), true);
     validity.push(false);
-    array.push_value_ignore_validity("");
+    array.push_value("");
 
     for row in rows[array.len()..].iter_mut() {
         let sentinel = *unsafe { row.get_unchecked(0) };
         validity.push(sentinel != null_sentinel);
         if sentinel == null_sentinel {
             *row = unsafe { row.get_unchecked(1..) };
-            array.push_value_ignore_validity("");
+            array.push_value("");
             continue;
         }
 
@@ -123,11 +124,12 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8Vie
         }
 
         *row = row.get_unchecked(1 + scratch.len()..);
-        array.push_value_ignore_validity(unsafe { std::str::from_utf8_unchecked(&scratch) });
+        array.push_value(unsafe { std::str::from_utf8_unchecked(&scratch) });
     }
 
-    let out: Utf8ViewArray = array.into();
-    out.with_validity(validity.into_opt_validity())
+    array
+        .freeze()
+        .with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap))
 }
 
 /// The same as decode_str but inserts it into the given mapping, translating
@@ -136,7 +138,7 @@ pub unsafe fn decode_str_as_cat<T: NativeType + CatNative>(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
     mapping: &CategoricalMapping,
-) -> PrimitiveArray<T> {
+) -> PlPrimitiveArray<T> {
     let null_sentinel = opt.null_sentinel();
     let descending = opt.contains(RowEncodingOptions::DESCENDING);
 
@@ -164,7 +166,7 @@ pub unsafe fn decode_str_as_cat<T: NativeType + CatNative>(
     }
 
     if out.len() == num_rows {
-        return PrimitiveArray::from_vec(out);
+        return PlPrimitiveArray::from_vec(out);
     }
 
     let mut validity = BitmapBuilder::with_capacity(num_rows);
@@ -193,5 +195,6 @@ pub unsafe fn decode_str_as_cat<T: NativeType + CatNative>(
         out.push(T::from_cat(mapping.insert_cat(s).unwrap()));
     }
 
-    PrimitiveArray::from_vec(out).with_validity(validity.into_opt_validity())
+    PlPrimitiveArray::from_vec(out)
+        .with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap))
 }

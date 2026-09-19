@@ -653,10 +653,7 @@ import polars as pl
 (_, n_chunks) = sys.argv
 
 
-s = pl.Series([0], dtype=pl.UInt32).new_from_index(
-    0,
-    1_000_000,
-)
+s = pl.Series(range(1_000_000), dtype=pl.UInt32)
 df = pl.concat(s for _ in range(int(n_chunks))).to_frame()
 
 with tempfile.NamedTemporaryFile() as f:

@@ -3088,6 +3088,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-array"
+version = "0.55.1"
+dependencies = [
+ "bytemuck",
+ "polars-arrow",
+ "polars-buffer",
+ "polars-error",
+ "polars-utils",
+]
+
+[[package]]
 name = "polars-arrow"
 version = "0.55.1"
 dependencies = [
@@ -3179,14 +3190,17 @@ dependencies = [
  "bigdecimal",
  "bytemuck",
  "chrono",
+ "either",
  "fast-float2",
  "half",
  "hashbrown 0.17.1",
  "itoa",
  "num-bigint",
  "num-traits",
+ "polars-array",
  "polars-arrow",
  "polars-buffer",
+ "polars-dtype",
  "polars-error",
  "polars-utils",
  "proptest",
@@ -3227,6 +3241,7 @@ dependencies = [
  "itoa",
  "ndarray",
  "num-traits",
+ "polars-array",
  "polars-arrow",
  "polars-async",
  "polars-buffer",
@@ -3296,12 +3311,19 @@ name = "polars-dtype"
 version = "0.55.1"
 dependencies = [
  "boxcar",
+ "chrono-tz",
  "hashbrown 0.17.1",
+ "itoa",
+ "num-traits",
+ "polars-array",
  "polars-arrow",
+ "polars-config",
  "polars-error",
  "polars-utils",
+ "regex",
  "schemars",
  "serde",
+ "strum_macros 0.28.0",
  "uuid",
 ]
 
@@ -3342,6 +3364,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "libloading",
  "num-traits",
+ "polars-array",
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
@@ -3397,6 +3420,7 @@ dependencies = [
  "object_store",
  "parking_lot",
  "percent-encoding",
+ "polars-array",
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
@@ -3551,6 +3575,7 @@ dependencies = [
  "libm",
  "memchr",
  "num-traits",
+ "polars-array",
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
@@ -3731,9 +3756,9 @@ version = "0.55.1"
 dependencies = [
  "bitflags",
  "bytemuck",
+ "polars-array",
  "polars-arrow",
  "polars-buffer",
- "polars-compute",
  "polars-dtype",
  "polars-error",
  "polars-utils",
@@ -3822,6 +3847,7 @@ dependencies = [
  "num-traits",
  "parking_lot",
  "percent-encoding",
+ "polars-array",
  "polars-arrow",
  "polars-async",
  "polars-buffer",
@@ -3872,6 +3898,7 @@ dependencies = [
  "chrono-tz",
  "now",
  "num-traits",
+ "polars-array",
  "polars-arrow",
  "polars-compute",
  "polars-core",

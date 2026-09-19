@@ -1,7 +1,8 @@
+use polars_array::PlArray;
 use polars_compute::gather::sublist::fixed_size_list::{
     sub_fixed_size_list_get, sub_fixed_size_list_get_literal,
 };
-use polars_core::prelude::arity::{try_binary_to_series, try_unary_to_series};
+use polars_core::utils::align_chunks_binary;
 
 use super::*;
 use crate::series::convert_and_bound_idx_ca;
@@ -66,12 +67,19 @@ fn array_get_impl(
     index: &Int64Chunked,
     null_on_oob: bool,
 ) -> PolarsResult<Series> {
+    let settled = (index.len() == ca.len())
+        .then(|| index.settled_to_one_element())
+        .flatten();
+    let index = settled.as_ref().unwrap_or(index);
+
     match index.len() {
         1 => {
             if let Some(index) = index.get(0) {
-                let out = try_unary_to_series(ca, |arr| {
-                    sub_fixed_size_list_get_literal(arr, index, null_on_oob)
-                })?;
+                let chunks = ca
+                    .downcast_iter()
+                    .map(|arr| sub_fixed_size_list_get_literal(arr, index, null_on_oob))
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                let out = values_series(ca, chunks);
                 unsafe { out.from_physical_unchecked(ca.inner_dtype()) }
             } else {
                 Ok(Series::full_null(
@@ -83,16 +91,20 @@ fn array_get_impl(
         },
 
         len if len == ca.len() => {
-            let out = try_binary_to_series(ca, index, |arr, idx_arr| {
-                sub_fixed_size_list_get(arr, idx_arr, null_on_oob)
-            })?;
+            let (aligned, index) = align_chunks_binary(ca, index);
+            let chunks = aligned
+                .downcast_iter()
+                .zip(index.downcast_iter())
+                .map(|(arr, idx_arr)| sub_fixed_size_list_get(arr, idx_arr, null_on_oob))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            let out = values_series(ca, chunks);
             unsafe { out.from_physical_unchecked(ca.inner_dtype()) }
         },
 
         _len if ca.len() == 1 => {
             if let Some(arr) = ca.get(0) {
                 let idx = convert_and_bound_idx_ca(index, arr.len(), null_on_oob)?;
-                let s = Series::try_from((ca.name().clone(), vec![arr])).unwrap();
+                let s = values_series(ca, vec![arr]);
                 unsafe {
                     s.take_unchecked(&idx)
                         .from_physical_unchecked(ca.inner_dtype())
@@ -111,5 +123,16 @@ fn array_get_impl(
             "`arr.get` expression got an index array of length {} while the array has {} elements",
             len, ca.len()
         ),
+    }
+}
+
+/// The values `chunks` hold, as a series of the physical inner type of `ca`.
+fn values_series(ca: &ArrayChunked, chunks: Vec<Box<dyn PlArray>>) -> Series {
+    unsafe {
+        Series::from_chunks_and_dtype_unchecked(
+            ca.name().clone(),
+            chunks,
+            &ca.inner_dtype().to_physical(),
+        )
     }
 }

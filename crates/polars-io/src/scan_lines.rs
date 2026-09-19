@@ -1,10 +1,8 @@
-use polars_arrow::array::{
-    BINVIEW_ARROW_BUFFER_LEN_LIMIT, BINVIEW_MAX_ROW_BYTE_LEN, Utf8ViewArray, View,
-};
-use polars_arrow::datatypes::ArrowDataType;
+use polars_array::{PlBinaryViewArray, PlUtf8ViewArray};
+use polars_arrow::array::{BINVIEW_ARROW_BUFFER_LEN_LIMIT, BINVIEW_MAX_ROW_BYTE_LEN, View};
 use polars_buffer::Buffer;
-use polars_core::prelude::DataType;
-use polars_core::series::Series;
+use polars_core::prelude::{DataType, StringChunked};
+use polars_core::series::{IntoSeries, Series};
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -46,8 +44,6 @@ fn split_lines_to_rows_impl(bytes: Buffer<u8>, max_row_size: usize) -> PolarsRes
 
     let mut views: Vec<View> = Vec::with_capacity(n_lines_estimate);
     let mut data_buffers: Vec<Buffer<u8>> = Vec::new();
-    let mut total_bytes_len: usize = 0;
-    let mut total_buffer_len: usize = 0;
     let mut active_buffer: Option<(usize, usize)> = None;
 
     let bytes = if bytes.last() == Some(&LF) {
@@ -81,8 +77,6 @@ fn split_lines_to_rows_impl(bytes: Buffer<u8>, max_row_size: usize) -> PolarsRes
             len, max_row_size,
         );
 
-        total_bytes_len += len;
-
         let line_bytes = unsafe { slice.get_unchecked(start..end) };
 
         let view = if len <= View::MAX_INLINE_SIZE as usize {
@@ -93,7 +87,6 @@ fn split_lines_to_rows_impl(bytes: Buffer<u8>, max_row_size: usize) -> PolarsRes
                 && (end - buffer_start > BINVIEW_ARROW_BUFFER_LEN_LIMIT
                     || start - buffer_end > BUFFER_SPLIT_THRESHOLD)
             {
-                total_buffer_len += buffer_end - buffer_start;
                 data_buffers.push(bytes.clone().sliced(buffer_start..buffer_end));
                 active_buffer = None;
             }
@@ -114,28 +107,22 @@ fn split_lines_to_rows_impl(bytes: Buffer<u8>, max_row_size: usize) -> PolarsRes
     }
 
     if let Some((buffer_start, buffer_end)) = active_buffer {
-        total_buffer_len += buffer_end - buffer_start;
         data_buffers.push(bytes.sliced(buffer_start..buffer_end));
     }
 
+    let length = views.len();
+    // SAFETY: every view was built from a slice of `bytes` at the offset it is recorded at, and
+    // `bytes` is valid UTF-8, so each of them reads a string.
     let arr = unsafe {
-        Utf8ViewArray::new_unchecked(
-            ArrowDataType::Utf8View,
+        PlUtf8ViewArray::from_binview_unchecked(PlBinaryViewArray::new_unchecked(
             views.into(),
             data_buffers.into(),
+            length,
             None,
-            Some(total_bytes_len),
-            total_buffer_len,
-        )
+        ))
     };
 
-    Ok(unsafe {
-        Series::_try_from_arrow_unchecked(
-            PlSmallStr::EMPTY,
-            vec![arr.boxed()],
-            &ArrowDataType::Utf8View,
-        )?
-    })
+    Ok(StringChunked::with_chunk(PlSmallStr::EMPTY, arr).into_series())
 }
 
 #[cfg(test)]

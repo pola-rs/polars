@@ -48,9 +48,9 @@ where
             let step_scalar = step.get(0);
             match (start_scalar, step_scalar) {
                 (Some(start), Some(step)) => build_numeric_ranges::<_, _, _, T, U, F>(
-                    std::iter::repeat(Some(&start)),
+                    std::iter::repeat(Some(start)),
                     end.downcast_iter().flatten(),
-                    std::iter::repeat(Some(&step)),
+                    std::iter::repeat(Some(step)),
                     range_impl,
                     builder,
                 )?,
@@ -63,8 +63,8 @@ where
             match (end_scalar, step_scalar) {
                 (Some(end), Some(step)) => build_numeric_ranges::<_, _, _, T, U, F>(
                     start.downcast_iter().flatten(),
-                    std::iter::repeat(Some(&end)),
-                    std::iter::repeat(Some(&step)),
+                    std::iter::repeat(Some(end)),
+                    std::iter::repeat(Some(step)),
                     range_impl,
                     builder,
                 )?,
@@ -76,8 +76,8 @@ where
             let end_scalar = end.get(0);
             match (start_scalar, end_scalar) {
                 (Some(start), Some(end)) => build_numeric_ranges::<_, _, _, T, U, F>(
-                    std::iter::repeat(Some(&start)),
-                    std::iter::repeat(Some(&end)),
+                    std::iter::repeat(Some(start)),
+                    std::iter::repeat(Some(end)),
                     step.downcast_iter().flatten(),
                     range_impl,
                     builder,
@@ -91,7 +91,7 @@ where
                 Some(step) => build_numeric_ranges::<_, _, _, T, U, F>(
                     start.downcast_iter().flatten(),
                     end.downcast_iter().flatten(),
-                    std::iter::repeat(Some(&step)),
+                    std::iter::repeat(Some(step)),
                     range_impl,
                     builder,
                 )?,
@@ -103,7 +103,7 @@ where
             match end_scalar {
                 Some(end) => build_numeric_ranges::<_, _, _, T, U, F>(
                     start.downcast_iter().flatten(),
-                    std::iter::repeat(Some(&end)),
+                    std::iter::repeat(Some(end)),
                     step.downcast_iter().flatten(),
                     range_impl,
                     builder,
@@ -115,7 +115,7 @@ where
             let start_scalar = start.get(0);
             match start_scalar {
                 Some(start) => build_numeric_ranges::<_, _, _, T, U, F>(
-                    std::iter::repeat(Some(&start)),
+                    std::iter::repeat(Some(start)),
                     end.downcast_iter().flatten(),
                     step.downcast_iter().flatten(),
                     range_impl,
@@ -162,7 +162,7 @@ where
             let start_scalar = start.get(0);
             match start_scalar {
                 Some(start) => build_temporal_ranges::<_, _, T, U, F>(
-                    std::iter::repeat(Some(&start)),
+                    std::iter::repeat(Some(start)),
                     end.downcast_iter().flatten(),
                     range_impl,
                     builder,
@@ -175,7 +175,7 @@ where
             match end_scalar {
                 Some(end) => build_temporal_ranges::<_, _, T, U, F>(
                     start.downcast_iter().flatten(),
-                    std::iter::repeat(Some(&end)),
+                    std::iter::repeat(Some(end)),
                     range_impl,
                     builder,
                 )?,
@@ -195,7 +195,7 @@ where
 }
 
 /// Iterate over a start and end column and create a range with the step for each entry.
-fn build_numeric_ranges<'a, I, J, K, T, U, F>(
+fn build_numeric_ranges<I, J, K, T, U, F>(
     start: I,
     end: J,
     step: K,
@@ -203,9 +203,9 @@ fn build_numeric_ranges<'a, I, J, K, T, U, F>(
     builder: &mut ListPrimitiveChunkedBuilder<U>,
 ) -> PolarsResult<()>
 where
-    I: Iterator<Item = Option<&'a T::Native>>,
-    J: Iterator<Item = Option<&'a T::Native>>,
-    K: Iterator<Item = Option<&'a i64>>,
+    I: Iterator<Item = Option<T::Native>>,
+    J: Iterator<Item = Option<T::Native>>,
+    K: Iterator<Item = Option<i64>>,
     T: PolarsIntegerType,
     U: PolarsIntegerType,
     F: Fn(T::Native, T::Native, i64, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
@@ -213,7 +213,7 @@ where
 {
     for ((start, end), step) in start.zip(end).zip(step) {
         match (start, end, step) {
-            (Some(start), Some(end), Some(step)) => range_impl(*start, *end, *step, builder)?,
+            (Some(start), Some(end), Some(step)) => range_impl(start, end, step, builder)?,
             _ => builder.append_null(),
         }
     }
@@ -221,15 +221,15 @@ where
 }
 
 /// Iterate over a start and end column and create a range for each entry.
-fn build_temporal_ranges<'a, I, J, T, U, F>(
+fn build_temporal_ranges<I, J, T, U, F>(
     start: I,
     end: J,
     range_impl: F,
     builder: &mut ListPrimitiveChunkedBuilder<U>,
 ) -> PolarsResult<()>
 where
-    I: Iterator<Item = Option<&'a T::Native>>,
-    J: Iterator<Item = Option<&'a T::Native>>,
+    I: Iterator<Item = Option<T::Native>>,
+    J: Iterator<Item = Option<T::Native>>,
     T: PolarsIntegerType,
     U: PolarsIntegerType,
     F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
@@ -237,7 +237,7 @@ where
 {
     for (start, end) in start.zip(end) {
         match (start, end) {
-            (Some(start), Some(end)) => range_impl(*start, *end, builder)?,
+            (Some(start), Some(end)) => range_impl(start, end, builder)?,
             _ => builder.append_null(),
         }
     }

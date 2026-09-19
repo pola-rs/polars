@@ -60,6 +60,13 @@ pub trait SeriesMethods: SeriesSealed {
     fn hash(&self, build_hasher: PlSeedableRandomStateQuality) -> UInt64Chunked {
         let s = self.as_series();
         let mut h = vec![];
+
+        if s.repeats_one_element() {
+            let single = s.slice(0, 1);
+            single.0.vec_hash(build_hasher, &mut h).unwrap();
+            return UInt64Chunked::full(s.name().clone(), h[0], s.len());
+        }
+
         s.0.vec_hash(build_hasher, &mut h).unwrap();
         UInt64Chunked::from_vec(s.name().clone(), h)
     }
@@ -99,6 +106,12 @@ pub trait SeriesMethods: SeriesSealed {
 }
 
 fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
+    let scalar_pair = match s.chunks().as_slice() {
+        [chunk] if chunk.is_scalar() && s.len() > 2 => Some(s.slice(0, 2)),
+        _ => None,
+    };
+    let s = scalar_pair.as_ref().unwrap_or(s);
+
     let null_count = s.null_count();
 
     if (options.descending
@@ -416,7 +429,12 @@ fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(
 }
 
 fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOptions) -> bool {
-    if let Ok(vals) = ca.cont_slice() {
+    if ca.null_count() == 0 && ca.scalar_value().is_some() {
+        return true;
+    }
+
+    let flat = ca.to_flat();
+    if let Ok(vals) = flat.cont_slice() {
         let Some(mut previous) = vals.first().copied() else {
             return true;
         };
@@ -428,13 +446,13 @@ fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOpt
     };
 
     if ca.null_count() == 0 {
-        let Some(mut previous) = ca
-            .downcast_iter()
+        let Some(mut previous) = flat
+            .flat_chunks()
             .find_map(|arr| arr.values().first().copied())
         else {
             return true;
         };
-        for arr in ca.downcast_iter() {
+        for arr in flat.flat_chunks() {
             let vals = arr.values();
             let sorted = if options.descending {
                 check_cmp(vals, |prev, c| prev.tot_ge(c), &mut previous)

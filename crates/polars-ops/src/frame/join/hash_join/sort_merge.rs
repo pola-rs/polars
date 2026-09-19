@@ -19,10 +19,10 @@ where
     let offsets = _split_offsets(s_left.len(), RAYON.current_num_threads());
     let s_left = s_left.rechunk();
     let s_right = s_right.rechunk();
-
     // we can unwrap because we should not have nulls
-    let slice_left = s_left.cont_slice().unwrap();
-    let slice_right = s_right.cont_slice().unwrap();
+    let left = s_left.to_cont_slice().unwrap();
+    let right = s_right.to_cont_slice().unwrap();
+    let (slice_left, slice_right) = (left.as_slice(), right.as_slice());
 
     let indexes = par_map_collect(offsets.len(), &|i| {
         let (offset, len) = offsets[i];
@@ -103,10 +103,10 @@ where
     let offsets = _split_offsets(s_left.len(), RAYON.current_num_threads());
     let s_left = s_left.rechunk();
     let s_right = s_right.rechunk();
-
     // we can unwrap because we should not have nulls
-    let slice_left = s_left.cont_slice().unwrap();
-    let slice_right = s_right.cont_slice().unwrap();
+    let left = s_left.to_cont_slice().unwrap();
+    let right = s_right.to_cont_slice().unwrap();
+    let (slice_left, slice_right) = (left.as_slice(), right.as_slice());
 
     let indexes = par_map_collect(offsets.len(), &|i| {
         let (offset, len) = offsets[i];
@@ -194,8 +194,15 @@ pub(crate) fn to_left_join_ids(
 
 #[cfg(feature = "performant")]
 fn create_reverse_map_from_arg_sort(mut arg_sort: IdxCa) -> Vec<IdxSize> {
-    let arr = unsafe { arg_sort.chunks_mut() }.pop().unwrap();
-    primitive_to_vec::<IdxSize>(arr).unwrap()
+    let chunk = unsafe { arg_sort.chunks_mut() }.pop().unwrap();
+    let values = chunk
+        .as_any()
+        .downcast_ref::<PlPrimitiveArray<IdxSize>>()
+        .expect("`arg_sort` answers in indices")
+        .to_flat_values()
+        .into_owned();
+    drop(chunk);
+    values.to_vec()
 }
 
 #[cfg(not(feature = "performant"))]

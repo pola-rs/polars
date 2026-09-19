@@ -1,6 +1,7 @@
 use polars_arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::datatypes::CategoricalPhysical;
+use polars_core::frame::column::ScalarColumn;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::with_match_categorical_physical_type;
@@ -32,11 +33,16 @@ pub fn _merge_sorted_dfs(
     }
 
     let merge_indicator = series_to_merge_indicator(left_s, right_s)?;
+    let height = left.height() + right.height();
     let new_columns = left
         .columns()
         .iter()
         .zip(right.columns())
         .map(|(lhs, rhs)| {
+            if let Some(out) = merged_repeated_element(lhs, rhs, height) {
+                return Ok(out);
+            }
+
             let lhs_phys = lhs.to_physical_repr();
             let rhs_phys = rhs.to_physical_repr();
 
@@ -53,6 +59,32 @@ pub fn _merge_sorted_dfs(
         .collect::<PolarsResult<_>>()?;
 
     Ok(unsafe { DataFrame::new_unchecked(left.height() + right.height(), new_columns) })
+}
+
+/// Whether `column` stands for one element repeated over all of its rows.
+fn repeats_one_element(column: &Column) -> bool {
+    match column {
+        Column::Scalar(_) => true,
+        _ if column.len() <= 1 => true,
+        _ => column.as_materialized_series().repeats_one_element(),
+    }
+}
+
+/// The merged column of two that both repeat the same one element, else `None`.
+fn merged_repeated_element(lhs: &Column, rhs: &Column, height: usize) -> Option<Column> {
+    if !repeats_one_element(lhs) || !repeats_one_element(rhs) {
+        return None;
+    }
+
+    let first = lhs.slice(0, 1);
+    if !first.equals_missing(&rhs.slice(0, 1)) {
+        return None;
+    }
+
+    Some(
+        ScalarColumn::from_single_value_series(first.take_materialized_series(), height)
+            .into_column(),
+    )
 }
 
 fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsResult<Series> {
@@ -90,22 +122,24 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
 
             let mut validity = None;
             if lhs.has_nulls() || rhs.has_nulls() {
-                use polars_arrow::bitmap::Bitmap;
+                let lhs_validity = (lhs.rechunk_validity())
+                    .unwrap_or_else(|| PlBitmap::new_scalar(true, lhs.len()));
+                let rhs_validity = (rhs.rechunk_validity())
+                    .unwrap_or_else(|| PlBitmap::new_scalar(true, rhs.len()));
 
-                let lhs_validity = lhs
-                    .rechunk_validity()
-                    .unwrap_or(Bitmap::new_with_value(true, lhs.len()));
-                let rhs_validity = rhs
-                    .rechunk_validity()
-                    .unwrap_or(Bitmap::new_with_value(true, rhs.len()));
-
-                let lhs_validity = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, lhs_validity);
-                let rhs_validity = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, rhs_validity);
+                let lhs_validity = BooleanChunked::with_chunk(
+                    PlSmallStr::EMPTY,
+                    PlBooleanArray::from_pl_bitmap(lhs_validity),
+                );
+                let rhs_validity = BooleanChunked::with_chunk(
+                    PlSmallStr::EMPTY,
+                    PlBooleanArray::from_pl_bitmap(rhs_validity),
+                );
 
                 let mut merged_validity = merge_ca(&lhs_validity, &rhs_validity, merge_indicator);
                 merged_validity.rechunk_mut();
 
-                validity = Some(merged_validity.downcast_as_array().values().clone());
+                validity = Some(PlBitmap::from(merged_validity.downcast_as_array().values()));
             }
 
             let new_fields = lhs
@@ -164,6 +198,7 @@ fn merge_ca<'a, T>(
 ) -> ChunkedArray<T>
 where
     T: PolarsDataType + 'static,
+    T::Array: ArrayFromIter<Option<T::Physical<'a>>>,
 {
     let dtype = a.dtype().clone();
 

@@ -6,16 +6,18 @@ pub use super::super::moment::*;
 use super::*;
 
 pub fn rolling_var<T>(
-    arr: &PrimitiveArray<T>,
+    arr: &PlPrimitiveArray<T>,
     window_size: usize,
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
-) -> ArrayRef
+) -> Box<dyn PlArray>
 where
     T: NativeType + ToPrimitive + FromPrimitive + IsFloat + Float,
 {
+    let arr = arr.to_flat();
+
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
     }
@@ -25,8 +27,8 @@ where
         det_offsets
     };
     rolling_apply_agg_window::<MomentWindow<_, VarianceMoment>, _, _, _>(
-        arr.values().as_slice(),
-        arr.validity().as_ref().unwrap(),
+        arr.as_slice(),
+        arr.validity().unwrap(),
         window_size,
         min_periods,
         offsets_fn,
@@ -35,23 +37,25 @@ where
 }
 
 pub fn rolling_skew<T>(
-    arr: &PrimitiveArray<T>,
+    arr: &PlPrimitiveArray<T>,
     window_size: usize,
     min_periods: usize,
     center: bool,
     params: Option<RollingFnParams>,
-) -> ArrayRef
+) -> Box<dyn PlArray>
 where
     T: NativeType + ToPrimitive + FromPrimitive + IsFloat + Float,
 {
+    let arr = arr.to_flat();
+
     let offsets_fn = if center {
         det_offsets_center
     } else {
         det_offsets
     };
     rolling_apply_agg_window::<MomentWindow<_, SkewMoment>, _, _, _>(
-        arr.values().as_slice(),
-        arr.validity().as_ref().unwrap(),
+        arr.as_slice(),
+        arr.validity().unwrap(),
         window_size,
         min_periods,
         offsets_fn,
@@ -60,23 +64,25 @@ where
 }
 
 pub fn rolling_kurtosis<T>(
-    arr: &PrimitiveArray<T>,
+    arr: &PlPrimitiveArray<T>,
     window_size: usize,
     min_periods: usize,
     center: bool,
     params: Option<RollingFnParams>,
-) -> ArrayRef
+) -> Box<dyn PlArray>
 where
     T: NativeType + ToPrimitive + FromPrimitive + IsFloat + Float,
 {
+    let arr = arr.to_flat();
+
     let offsets_fn = if center {
         det_offsets_center
     } else {
         det_offsets
     };
     rolling_apply_agg_window::<MomentWindow<_, KurtosisMoment>, _, _, _>(
-        arr.values().as_slice(),
-        arr.validity().as_ref().unwrap(),
+        arr.as_slice(),
+        arr.validity().unwrap(),
         window_size,
         min_periods,
         offsets_fn,

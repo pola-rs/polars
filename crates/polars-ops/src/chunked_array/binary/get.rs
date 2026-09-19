@@ -1,4 +1,4 @@
-use polars_core::prelude::arity::broadcast_try_binary_elementwise;
+use polars_core::prelude::arity::broadcast_try_binary_elementwise_amortized;
 use polars_core::prelude::*;
 use polars_error::{PolarsResult, polars_bail};
 
@@ -25,7 +25,8 @@ pub fn bin_get(
     index: &Int64Chunked,
     null_on_oob: bool,
 ) -> PolarsResult<Column> {
-    let out: UInt8Chunked =
-        broadcast_try_binary_elementwise(ca, index, |b, idx| get_byte(b, idx, null_on_oob))?;
+    let out: UInt8Chunked = broadcast_try_binary_elementwise_amortized(ca, index, |b, idx| {
+        get_byte(b, idx, null_on_oob)
+    })?;
     Ok(out.into_column())
 }

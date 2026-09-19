@@ -1,6 +1,7 @@
 use std::hash::BuildHasher;
 
-use polars_arrow::array::{MutablePrimitiveArray, PrimitiveArray};
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{PlPrimitiveArray, PlPrimitiveArrayBuilder};
 use polars_arrow::legacy::utils::CustomIterTools;
 use polars_defs::join::JoinValidation;
 use polars_utils::hashing::hash_to_partition;
@@ -99,8 +100,8 @@ fn probe_outer<T, F, G, H>(
     probe_hashes: &[Vec<(u64, T)>],
     hash_tbls: &mut [PlHashMap<<T as ToTotalOrd>::TotalOrdItem, (bool, IdxVec)>],
     results: &mut (
-        MutablePrimitiveArray<IdxSize>,
-        MutablePrimitiveArray<IdxSize>,
+        PlPrimitiveArrayBuilder<IdxSize>,
+        PlPrimitiveArrayBuilder<IdxSize>,
     ),
     n_tables: usize,
     // Function that get index_a, index_b when there is a match and pushes to result
@@ -181,7 +182,7 @@ pub(super) fn hash_join_tuples_outer<T, I, J>(
     swapped: bool,
     validate: JoinValidation,
     nulls_equal: bool,
-) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)>
+) -> PolarsResult<(PlPrimitiveArray<IdxSize>, PlPrimitiveArray<IdxSize>)>
 where
     I: IntoIterator<Item = T>,
     J: IntoIterator<Item = T>,
@@ -209,8 +210,8 @@ where
             .map(|b| b.size_hint().1.unwrap())
             .sum::<usize>();
     let mut results = (
-        MutablePrimitiveArray::with_capacity(size),
-        MutablePrimitiveArray::with_capacity(size),
+        PlPrimitiveArrayBuilder::with_capacity(size),
+        PlPrimitiveArrayBuilder::with_capacity(size),
     );
 
     // prepare hash table
@@ -260,5 +261,5 @@ where
             nulls_equal,
         )
     }
-    Ok((results.0.into(), results.1.into()))
+    Ok((results.0.freeze(), results.1.freeze()))
 }

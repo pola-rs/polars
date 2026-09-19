@@ -19,20 +19,6 @@ pub type Categorical8Chunked = CategoricalChunked<Categorical8Type>;
 pub type Categorical16Chunked = CategoricalChunked<Categorical16Type>;
 pub type Categorical32Chunked = CategoricalChunked<Categorical32Type>;
 
-pub trait CategoricalPhysicalDtypeExt {
-    fn dtype(&self) -> DataType;
-}
-
-impl CategoricalPhysicalDtypeExt for CategoricalPhysical {
-    fn dtype(&self) -> DataType {
-        match self {
-            Self::U8 => DataType::UInt8,
-            Self::U16 => DataType::UInt16,
-            Self::U32 => DataType::UInt32,
-        }
-    }
-}
-
 impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     pub fn is_enum(&self) -> bool {
         matches!(self.dtype(), DataType::Enum(_, _))
@@ -102,7 +88,10 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
 
                 if arr.null_count() != validity.unset_bits() {
                     invariants_violated = true;
-                    arr.set_validity(core::mem::take(&mut validity).into_opt_validity());
+                    arr.set_validity(
+                        (core::mem::take(&mut validity).into_opt_validity())
+                            .map(PlBitmap::from_bitmap),
+                    );
                 } else {
                     validity.clear();
                 }
@@ -154,6 +143,28 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             .map(|cat| unsafe { Some(mapping.cat_to_str_unchecked(cat?.as_cat())) })
     }
 
+    /// The single string this column reads throughout, if it reads one.
+    pub fn scalar_str(&self) -> Option<Option<&str>> {
+        let mapping = self.get_mapping();
+        self.phys
+            .scalar_value()
+            // SAFETY: a cat id in the physical column indexes this column's own mapping.
+            .map(|opt_cat| opt_cat.map(|c| unsafe { mapping.cat_to_str_unchecked(c.as_cat()) }))
+    }
+
+    /// [`Self::from_str_iter`] for a source that reads one string throughout.
+    pub fn from_repeated_str(
+        name: PlSmallStr,
+        dtype: DataType,
+        value: Option<&str>,
+        length: usize,
+    ) -> PolarsResult<Self> {
+        let one = Self::from_str_iter(name, dtype, std::iter::once(value))?;
+        let phys = one.phys.new_from_index(0, length);
+        // SAFETY: the cat id repeated here is the one `from_str_iter` made under this dtype.
+        Ok(unsafe { Self::from_cats_and_dtype_unchecked(phys, one.dtype) })
+    }
+
     /// Converts from strings to this CategoricalChunked.
     ///
     /// If this dtype is an Enum any non-existing strings get mapped to null.
@@ -171,18 +182,28 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         match &dtype {
             DataType::Categorical(cats, mapping) => {
                 assert!(cats.physical() == T::physical());
-                for opt_s in strings {
-                    cat_ids.push(if let Some(s) = opt_s {
-                        T::Native::from_cat(mapping.insert_cat(s)?)
-                    } else {
-                        T::Native::zero()
+                let mut failed: Option<PolarsError> = None;
+                strings.fold(&mut failed, |failed, opt_s| {
+                    cat_ids.push(match opt_s {
+                        Some(s) if failed.is_none() => match mapping.insert_cat(s) {
+                            Ok(cat) => T::Native::from_cat(cat),
+                            Err(e) => {
+                                *failed = Some(e);
+                                T::Native::zero()
+                            },
+                        },
+                        _ => T::Native::zero(),
                     });
                     validity.push(opt_s.is_some());
+                    failed
+                });
+                if let Some(e) = failed {
+                    return Err(e);
                 }
             },
             DataType::Enum(fcats, mapping) => {
                 assert!(fcats.physical() == T::physical());
-                for opt_s in strings {
+                strings.fold((), |(), opt_s| {
                     cat_ids.push(if let Some(cat) = opt_s.and_then(|s| mapping.get_cat(s)) {
                         validity.push(true);
                         T::Native::from_cat(cat)
@@ -190,13 +211,13 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
                         validity.push(false);
                         T::Native::zero()
                     });
-                }
+                });
             },
             _ => panic!("from_strings_and_dtype_strict called on non-categorical type"),
         }
 
         let arr = <T::PolarsPhysical as PolarsDataType>::Array::from_vec(cat_ids)
-            .with_validity(validity.into_opt_validity());
+            .with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap));
         let phys = ChunkedArray::<T::PolarsPhysical>::with_chunk(name, arr);
         Ok(unsafe { Self::from_cats_and_dtype_unchecked(phys, dtype) })
     }
@@ -213,7 +234,8 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             values_dtype,
             self.is_enum(),
         );
-        unsafe { DictionaryArray::try_new_unchecked(dtype, keys.clone(), values).unwrap() }
+        let keys = polars_array::arrow::bridge::chunk_to_arrow(keys);
+        unsafe { DictionaryArray::try_new_unchecked(dtype, keys, values).unwrap() }
     }
 }
 
@@ -249,8 +271,23 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
 
                 // TODO @ cat-rework:, if len >= mapping.upper_bound(), cast categories to ViewArray, then construct array of Views.
 
-                let mut builder = StringChunkedBuilder::new(self.phys.name().clone(), self.len());
                 let to_str = |cat_id: CatSize| unsafe { mapping.cat_to_str_unchecked(cat_id) };
+
+                if let [chunk] = self.phys.chunks().as_slice()
+                    && self.len() > 1
+                    && chunk.is_scalar()
+                {
+                    let name = self.phys.name().clone();
+                    let ca = match self.phys.get(0) {
+                        Some(cat_id) => {
+                            StringChunked::full(name, to_str(cat_id.as_cat()), self.len())
+                        },
+                        None => StringChunked::full_null(name, self.len()),
+                    };
+                    return Ok(ca.into_series());
+                }
+
+                let mut builder = StringChunkedBuilder::new(self.phys.name().clone(), self.len());
                 if !self.phys.has_nulls() {
                     for cat_id in self.phys.into_no_null_iter() {
                         builder.append_value(to_str(cat_id.as_cat()));
@@ -268,12 +305,21 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
 
             DataType::Enum(fcats, _mapping) => {
                 // TODO @ cat-rework: if len >= self.mapping().upper_bound(), remap categories then index into array.
+                let repeated = (self.len() > 1).then(|| self.scalar_str()).flatten();
                 let ret = with_match_categorical_physical_type!(fcats.physical(), |$C| {
-                    CategoricalChunked::<$C>::from_str_iter(
-                        self.name().clone(),
-                        dtype.clone(),
-                        self.iter_str()
-                    )?.into_series()
+                    match repeated {
+                        Some(value) => CategoricalChunked::<$C>::from_repeated_str(
+                            self.name().clone(),
+                            dtype.clone(),
+                            value,
+                            self.len(),
+                        )?,
+                        None => CategoricalChunked::<$C>::from_str_iter(
+                            self.name().clone(),
+                            dtype.clone(),
+                            self.iter_str()
+                        )?,
+                    }.into_series()
                 });
 
                 if options.is_strict() && self.null_count() != ret.null_count() {
@@ -285,13 +331,22 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
 
             DataType::Categorical(cats, _mapping) => {
                 // TODO @ cat-rework: if len >= self.mapping().upper_bound(), remap categories then index into array.
+                let repeated = (self.len() > 1).then(|| self.scalar_str()).flatten();
                 Ok(
                     with_match_categorical_physical_type!(cats.physical(), |$C| {
-                        CategoricalChunked::<$C>::from_str_iter(
-                            self.name().clone(),
-                            dtype.clone(),
-                            self.iter_str()
-                        )?.into_series()
+                        match repeated {
+                            Some(value) => CategoricalChunked::<$C>::from_repeated_str(
+                                self.name().clone(),
+                                dtype.clone(),
+                                value,
+                                self.len(),
+                            )?,
+                            None => CategoricalChunked::<$C>::from_str_iter(
+                                self.name().clone(),
+                                dtype.clone(),
+                                self.iter_str()
+                            )?,
+                        }.into_series()
                     }),
                 )
             },

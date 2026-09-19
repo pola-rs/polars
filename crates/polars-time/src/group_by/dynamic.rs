@@ -257,8 +257,8 @@ impl Wrap<&DataFrame> {
         };
 
         let groups = if let Some(groups) = group_by.as_ref() {
-            let vals = dt.physical().downcast_iter().next().unwrap();
-            let ts = vals.values().as_slice();
+            let vals = dt.physical().downcast_as_array().to_flat_values();
+            let ts = vals.as_slice();
 
             let iter = groups.par_iter().map(|[start, len]| {
                 let group_offset = *start;
@@ -306,8 +306,8 @@ impl Wrap<&DataFrame> {
             let monotonic = slice_groups_are_monotonic(&groups);
             PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, monotonic))
         } else {
-            let vals = dt.physical().downcast_iter().next().unwrap();
-            let ts = vals.values().as_slice();
+            let vals = dt.physical().downcast_as_array().to_flat_values();
+            let ts = vals.as_slice();
             let (groups, lower, upper) = group_by_windows(
                 w,
                 ts,
@@ -378,8 +378,8 @@ impl Wrap<&DataFrame> {
 
         let groups = if let Some(groups) = group_by {
             let dt = dt.datetime().unwrap();
-            let vals = dt.physical().downcast_iter().next().unwrap();
-            let ts = vals.values().as_slice();
+            let vals = dt.physical().downcast_as_array().to_flat_values();
+            let ts = vals.as_slice();
 
             let iter = groups.into_par_iter().map(|[start, len]| {
                 let group_offset = start;
@@ -413,8 +413,8 @@ impl Wrap<&DataFrame> {
             // so we can set this such that downstream code has this info
             dt.set_sorted_flag(IsSorted::Ascending);
             let dt = dt.datetime().unwrap();
-            let vals = dt.physical().downcast_iter().next().unwrap();
-            let ts = vals.values().as_slice();
+            let vals = dt.physical().downcast_as_array().to_flat_values();
+            let ts = vals.as_slice();
             let groups = group_by_values(
                 options.period,
                 options.offset,

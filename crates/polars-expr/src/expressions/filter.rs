@@ -1,3 +1,4 @@
+use polars_array::bitmap::combine_validities_and;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_utils::UnitVec;
@@ -127,9 +128,10 @@ impl PhysicalExpr for FilterExpr {
         let predicate = if let Some(validity) = predicate.validity()
             && validity.unset_bits() > 0
         {
-            predicate.values() & validity
+            combine_validities_and(Some(predicate.values()), Some(validity))
+                .expect("the values mask is always there")
         } else {
-            predicate.values().clone()
+            PlBitmap::from(predicate.values())
         };
 
         crate::dispatch::drop_items(ac_s, &predicate)

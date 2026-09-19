@@ -1,5 +1,6 @@
 use std::ops::BitAnd;
 
+use polars_array::PlBitmap;
 use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_core::error::PolarsResult;
 #[cfg(feature = "cov")]
@@ -172,13 +173,15 @@ pub(super) fn rolling_corr_cov(
 
         let valids = x.is_not_null().bitand(y.is_not_null());
         let valids_arr = valids.downcast_as_array();
-        let valids_bitmap = valids_arr.values();
+        let (bitmap, length) = valids_arr.values().into_inner();
+        // Keep the length the mask is for: a scalar mask carries one bit for every element.
+        let valids_bitmap = PlBitmap::new_broadcast(bitmap.clone(), length);
 
         unsafe {
             let xarr = &mut x.chunks_mut()[0];
             *xarr = xarr.with_validity(Some(valids_bitmap.clone()));
             let yarr = &mut y.chunks_mut()[0];
-            *yarr = yarr.with_validity(Some(valids_bitmap.clone()));
+            *yarr = yarr.with_validity(Some(valids_bitmap));
             x.compute_len();
             y.compute_len();
         }

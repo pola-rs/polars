@@ -7,7 +7,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     pub fn to_vec(&self) -> Vec<Option<T::Native>> {
         let mut buf = Vec::with_capacity(self.len());
         for arr in self.downcast_iter() {
-            buf.extend(arr.into_iter().map(|v| v.copied()))
+            buf.extend(arr.iter())
         }
         buf
     }
@@ -18,7 +18,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
             let mut buf = Vec::with_capacity(self.len());
 
             for arr in self.downcast_iter() {
-                buf.extend_from_slice(arr.values())
+                buf.extend_from_slice(arr.to_flat().as_slice())
             }
             Either::Left(buf)
         } else {

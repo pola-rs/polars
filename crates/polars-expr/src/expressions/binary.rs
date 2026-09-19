@@ -205,7 +205,7 @@ impl BinaryExpr {
 
         match (ac_l.agg_state(), ac_r.agg_state()) {
             (AggState::AggregatedList(s), _) | (_, AggState::AggregatedList(s)) => {
-                let ca = s.list().unwrap();
+                let ca = s.list().unwrap().to_flat_layout();
                 let [col_l, col_r] = [&ac_l, &ac_r].map(|ac| ac.flat_naive().into_owned());
 
                 let out = ca.apply_to_inner(&|_| {

@@ -1,8 +1,18 @@
 //! Everything you need to get started with Polars.
 pub use std::sync::Arc;
 
+pub use polars_array::arrow::bridge::ToArrow;
+pub use polars_array::{
+    Flat, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef,
+    PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlNullArray,
+    PlPrimitiveArray, PlStructArray, PlUtf8ViewArray, PlUtf8ViewArrayBuilder, StaticArrayBuilder,
+    ZeroableArrayFromIter,
+};
 pub use polars_arrow::array::ArrayRef;
 pub(crate) use polars_arrow::array::*;
+
+/// An owned, cheaply cloneable chunk of a [`ChunkedArray`], carrying no logical type of its own.
+pub type PlArrayRef = Box<dyn PlArray>;
 pub use polars_arrow::datatypes::{ArrowSchema, Field as ArrowField};
 pub use polars_arrow::legacy::prelude::*;
 pub(crate) use polars_arrow::trusted_len::TrustedLen;
@@ -26,6 +36,7 @@ pub use crate::chunked_array::builder::{
     ListStringChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder, StringChunkedBuilder,
 };
 pub use crate::chunked_array::collect::{ChunkedCollectInferIterExt, ChunkedCollectIterExt};
+pub use crate::chunked_array::flat::{FlatChunkedArray, FlatNumericChunkedArray};
 #[cfg(feature = "dtype-categorical")]
 #[allow(unused)] // See rust-lang/rust/issues/160691.
 pub use crate::chunked_array::logical::categorical::*;
@@ -39,7 +50,7 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptionsFixedWindow;
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
-pub use crate::datatypes::{ArrayCollectIterExt, *};
+pub use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter, StaticArray, *};
 pub use crate::error::abort::try_raise_polars_abort;
 pub use crate::error::{
     PolarsContext, PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err, polars_warn,

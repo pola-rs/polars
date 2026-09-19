@@ -232,8 +232,9 @@ impl DynamicGroupBy {
                     continue;
                 }
 
+                let values = arr.to_flat_values();
                 self.windower.insert(
-                    &arr.values().as_slice()[offset as usize..],
+                    &values.as_slice()[offset as usize..],
                     &mut windows,
                     &mut lower_bound,
                     &mut upper_bound,

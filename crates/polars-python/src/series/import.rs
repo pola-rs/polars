@@ -1,5 +1,5 @@
 use polars::prelude::*;
-use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::array::Array;
 use polars_arrow::ffi;
 use polars_arrow::ffi::{ArrowArray, ArrowArrayStream, ArrowArrayStreamReader, ArrowSchema};
 use polars_ffi::version_0::SeriesExport;
@@ -203,7 +203,7 @@ impl PySeries {
         Ok(PySeries::from(unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::EMPTY,
-                vec![PrimitiveArray::<i128>::from_vec(out).boxed()],
+                vec![PlPrimitiveArray::<i128>::from_vec(out).into_boxed()],
                 &DataType::Decimal(precision, scale),
             )
         }))

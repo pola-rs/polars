@@ -258,10 +258,9 @@ pub(crate) fn encode_as_dictionary_optional(
     }
 
     // This does the group by.
-    let array = polars_compute::cast::cast(
+    let array = polars_compute::cast::cast_to_dictionary(
         array,
         &ArrowDataType::Dictionary(IntegerType::UInt32, dtype, false),
-        Default::default(),
     )
     .ok()?;
 
@@ -490,13 +489,11 @@ pub fn array_to_pages<K: DictionaryKey>(
                 ArrowDataType::Float32 => dyn_prim!(f32, f32, array, options, type_),
                 ArrowDataType::Float64 => dyn_prim!(f64, f64, array, options, type_),
                 ArrowDataType::LargeUtf8 => {
-                    let array = polars_compute::cast::cast(
-                        array.values().as_ref(),
-                        &ArrowDataType::LargeBinary,
-                        Default::default(),
-                    )
-                    .unwrap();
-                    let array = array.as_any().downcast_ref().unwrap();
+                    let array = polars_compute::cast::utf8_to_binary::<i64>(
+                        array.values().as_any().downcast_ref().unwrap(),
+                        ArrowDataType::LargeBinary,
+                    );
+                    let array = &array;
 
                     let mut buffer = vec![];
                     binary_encode_plain::<i64>(array, EncodeNullability::Required, &mut buffer);

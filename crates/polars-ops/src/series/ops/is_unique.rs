@@ -1,11 +1,12 @@
 use std::hash::Hash;
 
-use polars_arrow::array::BooleanArray;
 use polars_arrow::bitmap::MutableBitmap;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
+
+use super::distinct::{repeated_element_len, repeated_element_len_series};
 
 // If invert is true then this is an `is_duplicated`.
 fn is_unique_ca<'a, T>(ca: &'a ChunkedArray<T>, invert: bool) -> BooleanChunked
@@ -14,17 +15,17 @@ where
     T::Physical<'a>: TotalHash + TotalEq + Copy + ToTotalOrd,
     <Option<T::Physical<'a>> as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
+    if let Some(length) = repeated_element_len(ca) {
+        return BooleanChunked::full(ca.name().clone(), invert, length);
+    }
+
     let len = ca.len();
     let mut idx_key = PlHashMap::new();
 
-    // Instead of group_tuples, which allocates a full Vec per group, we now
-    // just toggle a boolean that's false if a group has multiple entries.
-    ca.iter().enumerate().for_each(|(idx, key)| {
-        idx_key
-            .entry(key.to_total_ord())
-            .and_modify(|v: &mut (IdxSize, bool)| v.1 = false)
-            .or_insert((idx as IdxSize, true));
-    });
+    let mut offset: IdxSize = 0;
+    for arr in ca.downcast_iter() {
+        offset = is_unique_chunk(arr.iter(), offset, &mut idx_key);
+    }
 
     let unique_idx = idx_key
         .into_iter()
@@ -36,11 +37,36 @@ where
     for idx in unique_idx {
         unsafe { values.set_unchecked(idx as usize, setter) }
     }
-    let arr = BooleanArray::from_data_default(values.into(), None);
-    BooleanChunked::with_chunk(ca.name().clone(), arr)
+    BooleanChunked::from_bitmap(ca.name().clone(), values.into())
+}
+
+/// Walks one chunk, recording where each value first appears and whether it appears just once.
+fn is_unique_chunk<V, I>(
+    values: I,
+    offset: IdxSize,
+    idx_key: &mut PlHashMap<<Option<V> as ToTotalOrd>::TotalOrdItem, (IdxSize, bool)>,
+) -> IdxSize
+where
+    I: Iterator<Item = Option<V>>,
+    Option<V>: ToTotalOrd,
+    <Option<V> as ToTotalOrd>::TotalOrdItem: Hash + Eq,
+{
+    let mut idx = offset;
+    values.for_each(|key| {
+        idx_key
+            .entry(key.to_total_ord())
+            .and_modify(|v: &mut (IdxSize, bool)| v.1 = false)
+            .or_insert((idx, true));
+        idx += 1;
+    });
+    idx
 }
 
 fn is_unique_nested(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
+    if let Some(length) = repeated_element_len_series(s) {
+        return Ok(BooleanChunked::full(s.name().clone(), invert, length));
+    }
+
     let encoded = encode_rows_unordered(&[s.clone().into_column()])?.into_series();
     let ca = encoded.binary_offset().unwrap();
     Ok(is_unique_ca(ca, invert).with_name(s.name().clone()))
@@ -82,6 +108,11 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let ca = s.struct_().unwrap().clone();
+
+            if let Some(length) = repeated_element_len(&ca) {
+                return Ok(BooleanChunked::full(s.name().clone(), invert, length));
+            }
+
             let df = ca.unnest();
             return if invert {
                 df.is_duplicated()

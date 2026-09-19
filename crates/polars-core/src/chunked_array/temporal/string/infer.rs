@@ -1,9 +1,9 @@
 use chrono::format::ParseErrorKind;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
-use polars_arrow::array::PrimitiveArray;
 
 use super::patterns::{self, Pattern};
 use super::strptime::StrpTimeState;
+use crate::chunked_array::ops::arity::unary_elementwise_amortized;
 #[cfg(feature = "dtype-date")]
 use crate::chunked_array::temporal::date::naive_date_to_date;
 use crate::prelude::*;
@@ -293,13 +293,9 @@ impl<T: PolarsNumericType> DatetimeInfer<T> {
 
 impl<T: PolarsNumericType> DatetimeInfer<T> {
     pub fn coerce_string(&mut self, ca: &StringChunked) -> Series {
-        let chunks = ca.downcast_iter().map(|array| {
-            let iter = array
-                .into_iter()
-                .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
-            PrimitiveArray::from_trusted_len_iter(iter)
-        });
-        ChunkedArray::<T>::from_chunk_iter(ca.name().clone(), chunks)
+        let parsed: ChunkedArray<T> =
+            unary_elementwise_amortized(ca, |opt_val| opt_val.and_then(|val| self.parse(val)));
+        parsed
             .into_series()
             .cast(&self.logical_type)
             .unwrap()

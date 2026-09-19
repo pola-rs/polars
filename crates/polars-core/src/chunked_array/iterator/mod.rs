@@ -1,5 +1,3 @@
-use polars_arrow::array::*;
-
 use crate::prelude::*;
 
 pub mod par;

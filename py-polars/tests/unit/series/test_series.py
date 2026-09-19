@@ -71,6 +71,126 @@ def test_cum_agg_with_infs() -> None:
     assert_series_equal(s.cum_max(), pl.Series([float("-inf"), 0.0, 1.0]))
 
 
+def test_cum_agg_over_every_chunk_shape() -> None:
+    values = [3.0, -1.0, 4.0, -1.0, 5.0, -9.0, 2.0]
+    flat = pl.Series("a", values)
+    sliced = pl.Series("a", [0.0, *values, 0.0])[1:-1]
+    chunked = pl.Series("a", values[:3])
+    chunked.append(pl.Series("a", values[3:]))
+    with_nulls = pl.Series(
+        "a", [None if i % 3 == 0 else v for i, v in enumerate(values)]
+    )
+
+    for shaped in (sliced, chunked):
+        for reverse in (False, True):
+            assert_series_equal(
+                shaped.cum_sum(reverse=reverse), flat.cum_sum(reverse=reverse)
+            )
+            assert_series_equal(
+                shaped.cum_prod(reverse=reverse), flat.cum_prod(reverse=reverse)
+            )
+            assert_series_equal(
+                shaped.cum_max(reverse=reverse), flat.cum_max(reverse=reverse)
+            )
+
+    assert with_nulls.cum_sum().to_list() == [None, -1.0, 3.0, None, 8.0, -1.0, None]
+    reversed_sum = with_nulls.cum_sum(reverse=True).to_list()
+    assert reversed_sum == [None, -1.0, 0.0, None, -4.0, -9.0, None]
+
+
+def test_cum_min_max_over_a_chunk_that_repeats_one_element() -> None:
+    cases: list[tuple[PolarsDataType, Any]] = [
+        (pl.Int64, 5),
+        (pl.Int32, -1),
+        (pl.UInt8, 200),
+        (pl.Float64, 1.5),
+        (pl.Float64, float("nan")),
+        (pl.Boolean, True),
+        (pl.Boolean, False),
+        (pl.Datetime("us"), datetime(2020, 1, 2, 3, 4, 5)),
+    ]
+    mask = pl.Series([True, False, True, True, False, True, True, True])
+    for dtype, value in cases:
+        repeated = pl.select(pl.repeat(value, 8, dtype=dtype).alias("a")).to_series()
+        masked = pl.select(
+            pl.when(mask).then(pl.repeat(value, 8, dtype=dtype)).alias("a")
+        ).to_series()
+
+        for shaped in (repeated, masked):
+            flat = pl.Series("a", shaped.to_list(), dtype=dtype)
+            for reverse in (False, True):
+                assert_series_equal(
+                    shaped.cum_max(reverse=reverse), flat.cum_max(reverse=reverse)
+                )
+                assert_series_equal(
+                    shaped.cum_min(reverse=reverse), flat.cum_min(reverse=reverse)
+                )
+
+    wide = pl.select(pl.repeat(7, 1_000_000, dtype=pl.Int64).alias("a"))
+    assert wide.select(pl.col("a").cum_max().alias("o")).estimated_size() < 1024
+    assert wide.select(pl.col("a").cum_min().alias("o")).estimated_size() < 1024
+
+
+def test_cum_sum_and_prod_over_a_chunk_that_repeats_one_element() -> None:
+    cases: list[tuple[PolarsDataType, Any]] = [
+        (pl.Int64, 5),
+        (pl.Int32, -1),
+        (pl.UInt8, 3),
+        (pl.Float64, 1.5),
+        (pl.Float64, -0.0),
+        (pl.Float64, float("nan")),
+    ]
+    mask = pl.Series([True, False, True, True, False, True, True, True])
+    for dtype, value in cases:
+        repeated = pl.select(pl.repeat(value, 8, dtype=dtype).alias("a")).to_series()
+        masked = pl.select(
+            pl.when(mask).then(pl.repeat(value, 8, dtype=dtype)).alias("a")
+        ).to_series()
+        sliced = pl.select(pl.repeat(value, 12, dtype=dtype).alias("a")).to_series()[
+            2:10
+        ]
+
+        for shaped in (repeated, masked, sliced):
+            flat = pl.Series("a", shaped.to_list(), dtype=dtype)
+            for reverse in (False, True):
+                assert_series_equal(
+                    shaped.cum_sum(reverse=reverse), flat.cum_sum(reverse=reverse)
+                )
+                assert_series_equal(
+                    shaped.cum_prod(reverse=reverse), flat.cum_prod(reverse=reverse)
+                )
+
+
+def test_reverse_over_every_boolean_chunk_shape() -> None:
+    values = [True, False, None, True, True, False, None, False, True]
+    flat = pl.Series("a", values, dtype=pl.Boolean)
+    sliced = pl.Series("a", [False, *values, False], dtype=pl.Boolean)[1:-1]
+    chunked = pl.Series("a", values[:4], dtype=pl.Boolean)
+    chunked.append(pl.Series("a", values[4:], dtype=pl.Boolean))
+    singletons = pl.Series("a", [values[0]], dtype=pl.Boolean)
+    for value in values[1:]:
+        singletons.append(pl.Series("a", [value], dtype=pl.Boolean))
+
+    expected = pl.Series("a", values[::-1], dtype=pl.Boolean)
+    for shaped in (flat, sliced, chunked, singletons):
+        assert_series_equal(shaped.reverse(), expected)
+        assert_series_equal(shaped.reverse().reverse(), flat)
+
+    no_nulls = pl.Series("a", [True, False, False, True, True], dtype=pl.Boolean)
+    assert no_nulls.reverse().to_list() == [True, True, False, False, True]
+    all_null = pl.Series("a", [None] * 5, dtype=pl.Boolean)
+    assert all_null.reverse().to_list() == [None] * 5
+
+    wide = pl.select(pl.repeat(True, 1_000_000, dtype=pl.Boolean).alias("a"))
+    assert wide.select(pl.col("a").reverse().alias("o")).estimated_size() < 1024
+
+    for length in [0, 1, 7, 8, 9, 31, 32, 33, 63, 64, 65, 127, 128, 129]:
+        bits = [i % 3 == 0 for i in range(length)]
+        assert pl.Series("a", bits, dtype=pl.Boolean).reverse().to_list() == bits[::-1]
+        offset = pl.Series("a", [False, False, *bits], dtype=pl.Boolean)[2:]
+        assert offset.reverse().to_list() == bits[::-1]
+
+
 def test_cum_min_max_bool() -> None:
     s = pl.Series("a", [None, True, True, None, False, None, True, False, False, None])
     assert_series_equal(s.cum_min().cast(pl.Int32), s.cast(pl.Int32).cum_min())

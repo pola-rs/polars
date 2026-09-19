@@ -3,7 +3,8 @@ use std::cell::LazyCell;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_array::PlBitmap;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
 use polars_core::error::{PolarsResult, feature_gated, polars_ensure};
 use polars_core::frame::DataFrame;
@@ -33,6 +34,7 @@ pub struct EvalExpr {
     evaluation_is_scalar: bool,
     evaluation_is_elementwise: bool,
     evaluation_is_fallible: bool,
+    evaluation_is_deterministic: bool,
 }
 
 impl EvalExpr {
@@ -47,6 +49,7 @@ impl EvalExpr {
         evaluation_is_scalar: bool,
         evaluation_is_elementwise: bool,
         evaluation_is_fallible: bool,
+        evaluation_is_deterministic: bool,
     ) -> Self {
         Self {
             input,
@@ -58,6 +61,7 @@ impl EvalExpr {
             evaluation_is_scalar,
             evaluation_is_elementwise,
             evaluation_is_fallible,
+            evaluation_is_deterministic,
         }
     }
 
@@ -72,6 +76,15 @@ impl EvalExpr {
             let name = self.output_field.name.clone();
             return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
         }
+
+        if self.evaluation_is_deterministic
+            && let Some(length) = ca.repeats_one_list()
+        {
+            let one = ca.slice(0, 1);
+            let out = self.evaluate_on_list_chunked(&one, state, is_agg)?;
+            return out.broadcast_owned_to(length);
+        }
+
         let ca = ca
             .trim_lists_to_normalized_offsets()
             .map_or(Cow::Borrowed(ca), Cow::Owned);
@@ -151,6 +164,16 @@ impl EvalExpr {
             return Ok(column);
         }
 
+        let flat;
+        let (ca, flattened, flattened_len) = if ca.is_flat() {
+            (&*ca, flattened, flattened_len)
+        } else {
+            flat = ca.to_flat().into_owned().into_array();
+            let flattened = flat.get_inner().into_column();
+            let flattened_len = flattened.len();
+            (&flat, flattened, flattened_len)
+        };
+
         let offsets = ca.offsets()?;
         // Detect accidental inclusion of sliced-out elements from chunks after the 1st (if present).
         assert_eq!(i64::try_from(flattened_len).unwrap(), *offsets.last());
@@ -196,6 +219,8 @@ impl EvalExpr {
             let groups_are_unchanged = if let Some(validity) = &validity {
                 assert_eq!(validity.set_bits(), output_groups.len());
                 validity
+                    .as_ref()
+                    .to_flat()
                     .true_idx_iter()
                     .zip(output_groups)
                     .all(|(j, [start, len])| {
@@ -253,6 +278,14 @@ impl EvalExpr {
         if ca.null_count() == ca.len() {
             let name = self.output_field.name.clone();
             return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
+        }
+
+        if self.evaluation_is_deterministic
+            && let Some(length) = ca.repeats_one_list()
+        {
+            let one = ca.slice(0, 1);
+            let out = self.evaluate_on_array_chunked(&one, state, as_list, is_agg)?;
+            return out.broadcast_owned_to(length);
         }
 
         let df = DataFrame::empty_with_height(ca.len());
@@ -339,7 +372,7 @@ impl EvalExpr {
         let groups = if ca.has_nulls() {
             let validity = validity.as_ref().unwrap();
             (0..ca.len())
-                .filter(|i| unsafe { validity.get_bit_unchecked(*i) })
+                .filter(|i| unsafe { validity.get_unchecked(*i) })
                 .map(|i| [(i * ca.width()) as IdxSize, ca.width() as IdxSize])
                 .collect()
         } else {
@@ -368,6 +401,8 @@ impl EvalExpr {
             let groups_are_unchanged = if let Some(validity) = &validity {
                 assert_eq!(validity.set_bits(), output_groups.len());
                 validity
+                    .as_ref()
+                    .to_flat()
                     .true_idx_iter()
                     .zip(output_groups)
                     .all(|(j, [start, len])| {
@@ -444,26 +479,25 @@ impl EvalExpr {
         let flattened = input.clone().into_column();
         let validity = input.rechunk_validity();
 
-        let mut deposit: Option<Bitmap> = None;
+        let mut deposit: Option<PlBitmap> = None;
 
         let groups = if min_samples == 0 {
             (1..input.len() as IdxSize).map(|i| [0, i]).collect()
         } else {
-            let validity = validity
-                .clone()
-                .unwrap_or_else(|| Bitmap::new_with_value(true, input.len()));
+            let validity =
+                (validity.clone()).unwrap_or_else(|| PlBitmap::new_scalar(true, input.len()));
             let mut count = 0;
             let mut deposit_builder = BitmapBuilder::with_capacity(input.len());
             let out = (0..input.len() as IdxSize)
                 .filter(|i| {
-                    count += usize::from(unsafe { validity.get_bit_unchecked(*i as usize) });
+                    count += usize::from(unsafe { validity.get_unchecked(*i as usize) });
                     let is_selected = count >= min_samples;
                     unsafe { deposit_builder.push_unchecked(is_selected) };
                     is_selected
                 })
                 .map(|i| [0, i + 1])
                 .collect();
-            deposit = Some(deposit_builder.freeze());
+            deposit = Some(PlBitmap::from_bitmap(deposit_builder.freeze()));
             out
         };
 
@@ -540,27 +574,54 @@ impl PhysicalExpr for EvalExpr {
         let mut input = self.input.evaluate_on_groups(df, groups, state)?;
         input.groups();
 
+        let preserve_literal = true;
+        let returns_scalar = input.agg_state().is_scalar();
+
         match self.variant {
             EvalVariant::List => {
                 let input_col = input.flat_naive();
                 let out = self.evaluate_on_list_chunked(input_col.list()?, state, false)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(
+                    out,
+                    false,
+                    Some(&self.expr),
+                    preserve_literal,
+                    returns_scalar,
+                )?;
             },
             EvalVariant::ListAgg => {
                 let input_col = input.flat_naive();
                 let out = self.evaluate_on_list_chunked(input_col.list()?, state, true)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(
+                    out,
+                    false,
+                    Some(&self.expr),
+                    preserve_literal,
+                    returns_scalar,
+                )?;
             },
             EvalVariant::Array { as_list } => feature_gated!("dtype-array", {
                 let arr_col = input.flat_naive();
                 let out =
                     self.evaluate_on_array_chunked(arr_col.array()?, state, as_list, false)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(
+                    out,
+                    false,
+                    Some(&self.expr),
+                    preserve_literal,
+                    returns_scalar,
+                )?;
             }),
             EvalVariant::ArrayAgg => feature_gated!("dtype-array", {
                 let arr_col = input.flat_naive();
                 let out = self.evaluate_on_array_chunked(arr_col.array()?, state, true, true)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(
+                    out,
+                    false,
+                    Some(&self.expr),
+                    preserve_literal,
+                    returns_scalar,
+                )?;
             }),
             EvalVariant::Cumulative { min_samples } => {
                 let mut builder = AnonymousOwnedListBuilder::new(

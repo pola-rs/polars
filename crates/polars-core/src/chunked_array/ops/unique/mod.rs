@@ -21,7 +21,7 @@ fn finish_is_unique_helper(
     for idx in unique_idx {
         unsafe { values.set_unchecked(idx as usize, setter) }
     }
-    let arr = BooleanArray::from_data_default(values.into(), None);
+    let arr = PlBooleanArray::new(values.into(), len as usize, None);
     arr.into()
 }
 
@@ -61,26 +61,72 @@ impl<T: PolarsObject> ChunkUnique for ObjectChunked<T> {
     }
 }
 
-fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
+/// Whether every element of this chunked array is the same one.
+fn reads_as_one_element<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
+    if ca.is_empty() {
+        return false;
+    }
+
+    if ca.null_count() == ca.len() {
+        return true;
+    }
+
+    ca.repeats_one_element()
+}
+
+/// [`arg_unique_chunks`] over contiguous runs of values.
+fn arg_unique_slices<'a, T>(chunks: impl Iterator<Item = &'a [T]>, capacity: usize) -> Vec<IdxSize>
 where
+    T: ToTotalOrd + Copy + 'a,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
+{
+    let mut set = PlHashSet::new();
+    let mut unique = Vec::with_capacity(capacity);
+    let mut offset: IdxSize = 0;
+    for vals in chunks {
+        for (idx, val) in vals.iter().enumerate() {
+            if set.insert(val.to_total_ord()) {
+                unique.push(offset + idx as IdxSize)
+            }
+        }
+        offset += vals.len() as IdxSize;
+    }
+    unique
+}
+
+/// Where each value this column has not held before first appears, over its chunks in turn.
+fn arg_unique_chunks<T, I>(chunks: impl Iterator<Item = I>, capacity: usize) -> Vec<IdxSize>
+where
+    I: Iterator<Item = T>,
     T: ToTotalOrd,
     <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let mut set = PlHashSet::new();
     let mut unique = Vec::with_capacity(capacity);
-    a.enumerate().for_each(|(idx, val)| {
-        if set.insert(val.to_total_ord()) {
-            unique.push(idx as IdxSize)
-        }
-    });
+    let mut idx: IdxSize = 0;
+    for a in chunks {
+        a.for_each(|val| {
+            if set.insert(val.to_total_ord()) {
+                unique.push(idx)
+            }
+            idx += 1;
+        });
+    }
     unique
 }
 
 macro_rules! arg_unique_ca {
     ($ca:expr) => {{
-        match $ca.has_nulls() {
-            false => arg_unique($ca.no_null_iter(), $ca.len()),
-            _ => arg_unique($ca.iter(), $ca.len()),
+        let ca = $ca;
+        if reads_as_one_element(ca) {
+            vec![0]
+        } else {
+            match ca.has_nulls() {
+                false => {
+                    arg_unique_chunks(ca.downcast_iter().map(|arr| arr.values_iter()), ca.len())
+                },
+                _ => arg_unique_chunks(ca.downcast_iter().map(|arr| arr.iter()), ca.len()),
+            }
         }
     }};
 }
@@ -97,28 +143,28 @@ where
         if self.is_empty() {
             return Ok(self.clone());
         }
+        if reads_as_one_element(self) {
+            return Ok(self.slice(0, 1));
+        }
         match self.is_sorted_flag() {
             IsSorted::Ascending | IsSorted::Descending => {
                 if self.null_count() > 0 {
-                    let mut arr = MutablePrimitiveArray::with_capacity(self.len());
+                    let mut iter = self.iter();
+                    let arr: T::Array = match iter.next() {
+                        None => T::Array::new_empty(),
+                        Some(first) => {
+                            let mut last = first.to_total_ord();
+                            std::iter::once(first)
+                                .chain(iter.filter(move |opt_val| {
+                                    let opt_val_tot_ord = opt_val.to_total_ord();
+                                    let out = opt_val_tot_ord != last;
+                                    last = opt_val_tot_ord;
+                                    out
+                                }))
+                                .collect_arr()
+                        },
+                    };
 
-                    if !self.is_empty() {
-                        let mut iter = self.iter();
-                        let last = iter.next().unwrap();
-                        arr.push(last);
-                        let mut last = last.to_total_ord();
-
-                        let to_extend = iter.filter(|opt_val| {
-                            let opt_val_tot_ord = opt_val.to_total_ord();
-                            let out = opt_val_tot_ord != last;
-                            last = opt_val_tot_ord;
-                            out
-                        });
-
-                        arr.extend(to_extend);
-                    }
-
-                    let arr: PrimitiveArray<T::Native> = arr.into();
                     Ok(ChunkedArray::with_chunk(self.name().clone(), arr))
                 } else {
                     let mask = self.not_equal_missing(&self.shift(1));
@@ -133,6 +179,16 @@ where
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        if !reads_as_one_element(self)
+            && self.null_count() == 0
+            && let Some(flat) = self.as_flat()
+        {
+            return Ok(IdxCa::from_vec(
+                self.name().clone(),
+                arg_unique_slices(flat.chunks_flat_values(), self.len()),
+            ));
+        }
+
         Ok(IdxCa::from_vec(self.name().clone(), arg_unique_ca!(self)))
     }
 
@@ -140,6 +196,9 @@ where
         // prevent stackoverflow repeated sorted.unique call
         if self.is_empty() {
             return Ok(0);
+        }
+        if reads_as_one_element(self) {
+            return Ok(1);
         }
         match self.is_sorted_flag() {
             IsSorted::Ascending | IsSorted::Descending => {
@@ -215,6 +274,9 @@ impl ChunkUnique for StringChunked {
 
 impl ChunkUnique for BinaryChunked {
     fn unique(&self) -> PolarsResult<Self> {
+        if reads_as_one_element(self) {
+            return Ok(self.slice(0, 1));
+        }
         match self.null_count() {
             0 => {
                 let mut set =
@@ -246,6 +308,9 @@ impl ChunkUnique for BinaryChunked {
     }
 
     fn n_unique(&self) -> PolarsResult<usize> {
+        if reads_as_one_element(self) {
+            return Ok(1);
+        }
         let mut set: PlHashSet<&[u8]> = PlHashSet::new();
         if self.null_count() > 0 {
             for arr in self.downcast_iter() {
@@ -280,6 +345,9 @@ impl ChunkUnique for BinaryChunked {
 
 impl ChunkUnique for BinaryOffsetChunked {
     fn unique(&self) -> PolarsResult<Self> {
+        if reads_as_one_element(self) {
+            return Ok(self.slice(0, 1));
+        }
         match self.null_count() {
             0 => {
                 let mut set =
@@ -305,6 +373,9 @@ impl ChunkUnique for BinaryOffsetChunked {
     }
 
     fn n_unique(&self) -> PolarsResult<usize> {
+        if reads_as_one_element(self) {
+            return Ok(1);
+        }
         let mut set: PlHashSet<&[u8]> = PlHashSet::new();
         if self.null_count() > 0 {
             for arr in self.downcast_iter() {
@@ -341,6 +412,10 @@ impl ChunkUnique for BooleanChunked {
     fn unique(&self) -> PolarsResult<Self> {
         use polars_compute::unique::RangedUniqueKernel;
 
+        if reads_as_one_element(self) {
+            return Ok(self.slice(0, 1));
+        }
+
         let mut state = BooleanUniqueKernelState::new();
 
         for arr in self.downcast_iter() {
@@ -351,13 +426,30 @@ impl ChunkUnique for BooleanChunked {
             }
         }
 
-        let unique = state.finalize_unique();
-
-        Ok(Self::with_chunk(self.name().clone(), unique))
+        Ok(Self::with_chunk(
+            self.name().clone(),
+            state.finalize_unique(),
+        ))
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         Ok(IdxCa::from_vec(self.name().clone(), arg_unique_ca!(self)))
+    }
+
+    fn n_unique(&self) -> PolarsResult<usize> {
+        use polars_compute::unique::RangedUniqueKernel;
+
+        let mut state = BooleanUniqueKernelState::new();
+
+        for arr in self.downcast_iter() {
+            state.append(arr);
+
+            if state.has_seen_all() {
+                break;
+            }
+        }
+
+        Ok(state.finalize_n_unique())
     }
 
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {

@@ -26,6 +26,7 @@ impl SortExpr {
 /// Map arg_sort result back to the indices on the `GroupIdx`
 pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &IdxCa, idx: &[IdxSize]) -> IdxVec {
     sorted_idx
+        .to_flat()
         .cont_slice()
         .unwrap()
         .iter()
@@ -35,6 +36,7 @@ pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &IdxCa, idx: &[IdxSize
 
 pub(crate) fn map_sorted_indices_to_group_slice(sorted_idx: &IdxCa, first: IdxSize) -> IdxVec {
     sorted_idx
+        .to_flat()
         .cont_slice()
         .unwrap()
         .iter()

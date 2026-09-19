@@ -1,4 +1,4 @@
-use polars_arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
+use polars_arrow::array::View;
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
 use polars_core::downcast_as_macro_arg_physical;
@@ -59,7 +59,9 @@ fn top_k_bool_impl(
         out_len -= extra;
     }
 
-    let arr = BooleanArray::from_data_default(bm.freeze(), validity);
+    let values = bm.freeze();
+    let length = values.len();
+    let arr = PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
     ChunkedArray::with_chunk_like(ca, arr)
 }
 
@@ -75,8 +77,22 @@ where
     let mut nnca = ca.drop_nulls();
     nnca.rechunk_mut();
     let chunk = nnca.downcast_into_iter().next().unwrap();
-    let (_, buffer, _) = chunk.into_inner();
-    let mut vec = buffer.to_vec();
+
+    let out_len = k.min(ca.len());
+    let non_null_count = ca.len() - ca.null_count();
+    let validity = first_n_valid_mask(non_null_count, out_len);
+
+    if let Some(value) = chunk.scalar_value_ignore_validity() {
+        let arr = PlPrimitiveArray::new_scalar(value, out_len)
+            .with_validity(validity.map(PlBitmap::from_bitmap));
+        return ChunkedArray::with_chunk_like(ca, arr);
+    }
+
+    let mut vec = chunk
+        .flat_values()
+        .expect("the values are not repeated")
+        .clone()
+        .to_vec();
 
     // Partition.
     if k < vec.len() {
@@ -87,13 +103,9 @@ where
         }
     }
 
-    // Reconstruct output (with nulls at the end).
-    let out_len = k.min(ca.len());
-    let non_null_count = ca.len() - ca.null_count();
     vec.resize(out_len, T::Native::default());
-    let validity = first_n_valid_mask(non_null_count, out_len);
 
-    let arr = PrimitiveArray::from_vec(vec).with_validity_typed(validity);
+    let arr = PlPrimitiveArray::from_vec(vec).with_validity(validity.map(PlBitmap::from_bitmap));
     ChunkedArray::with_chunk_like(ca, arr)
 }
 
@@ -110,8 +122,24 @@ fn top_k_binary_impl(
     let mut nnca = ca.drop_nulls();
     nnca.rechunk_mut();
     let chunk = nnca.downcast_into_iter().next().unwrap();
+
+    let out_len = k.min(ca.len());
+    let non_null_count = ca.len() - ca.null_count();
+    let validity = first_n_valid_mask(non_null_count, out_len);
+
+    if chunk.views_are_scalar() {
+        let arr = chunk
+            .new_from_index(0, out_len)
+            .with_validity(validity.map(PlBitmap::from_bitmap));
+        return ChunkedArray::with_chunk_like(ca, arr);
+    }
+
     let buffers = chunk.data_buffers().clone();
-    let mut views = chunk.into_views();
+    let mut views = chunk
+        .flat_views()
+        .expect("the views are not repeated")
+        .clone()
+        .to_vec();
 
     // Partition.
     if k < views.len() {
@@ -130,19 +158,16 @@ fn top_k_binary_impl(
         }
     }
 
-    // Reconstruct output (with nulls at the end).
-    let out_len = k.min(ca.len());
-    let non_null_count = ca.len() - ca.null_count();
     views.resize(out_len, View::default());
-    let validity = first_n_valid_mask(non_null_count, out_len);
 
+    // SAFETY: the views were taken from `buffers` and only reordered, and there is one per
+    // element, as there is one validity bit per element.
     let arr = unsafe {
-        BinaryViewArray::new_unchecked_unknown_md(
-            ArrowDataType::BinaryView,
+        PlBinaryViewArray::new_unchecked(
             views.into(),
             buffers,
-            validity,
-            None,
+            out_len,
+            validity.map(PlBitmap::from_bitmap),
         )
     };
     ChunkedArray::with_chunk_like(ca, arr)

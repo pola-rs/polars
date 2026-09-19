@@ -1,8 +1,8 @@
-use polars_arrow::array::Array;
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMaxPolicy};
 
 use crate::chunked_array::ChunkedArray;
+use crate::chunked_array::flat::FlatNumericChunkedArray;
 use crate::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
@@ -45,7 +45,7 @@ where
 {
     if ca.null_count() == ca.len() {
         None
-    } else if let Ok(vals) = ca.cont_slice() {
+    } else if let Some(vals) = ca.as_flat().and_then(|ca| ca.cont_slice().ok()) {
         arg_min_numeric_slice(vals, ca.is_sorted_flag())
     } else {
         arg_min_numeric_chunked(ca)
@@ -61,7 +61,7 @@ where
         None
     } else if T::get_static_dtype().is_float() && !matches!(ca.is_sorted_flag(), IsSorted::Not) {
         arg_max_float_sorted(ca)
-    } else if let Ok(vals) = ca.cont_slice() {
+    } else if let Some(vals) = ca.as_flat().and_then(|ca| ca.cont_slice().ok()) {
         arg_max_numeric_slice(vals, ca.is_sorted_flag())
     } else {
         arg_max_numeric_chunked(ca)
@@ -87,6 +87,9 @@ pub fn arg_min_cat<T: PolarsCategoricalType>(ca: &CategoricalChunked<T>) -> Opti
     if ca.null_count() == ca.len() {
         return None;
     }
+    if ca.physical().scalar_value_ignore_validity().is_some() {
+        return ca.physical().first_non_null();
+    }
     arg_min_opt_iter(ca.iter_str())
 }
 
@@ -94,6 +97,9 @@ pub fn arg_min_cat<T: PolarsCategoricalType>(ca: &CategoricalChunked<T>) -> Opti
 pub fn arg_max_cat<T: PolarsCategoricalType>(ca: &CategoricalChunked<T>) -> Option<usize> {
     if ca.null_count() == ca.len() {
         return None;
+    }
+    if ca.physical().scalar_value_ignore_validity().is_some() {
+        return ca.physical().last_non_null();
     }
     arg_max_opt_iter(ca.iter_str())
 }
@@ -169,6 +175,10 @@ where
         IsSorted::Ascending => ca.first_non_null(),
         IsSorted::Descending => ca.last_non_null(),
         IsSorted::Not => {
+            if ca.scalar_value_ignore_validity().is_some() {
+                return ca.first_non_null();
+            }
+
             let mut chunk_start_offset = 0;
             let mut min_idx: Option<usize> = None;
             let mut min_val: Option<T::Native> = None;
@@ -181,7 +191,7 @@ where
                 let chunk_min: Option<(usize, T::Native)> = if arr.null_count() > 0 {
                     arr.into_iter()
                         .enumerate()
-                        .flat_map(|(idx, val)| Some((idx, *(val?))))
+                        .flat_map(|(idx, val)| Some((idx, val?)))
                         .reduce(|acc, (idx, val)| {
                             if MinIgnoreNan::is_better(&val, &acc.1) {
                                 (idx, val)
@@ -191,8 +201,9 @@ where
                         })
                 } else {
                     // When no nulls & array not empty => we can use fast argmin.
-                    let min_idx: usize = arr.values().as_slice().argmin();
-                    Some((min_idx, arr.value(min_idx)))
+                    let values = arr.to_flat_values();
+                    let min_idx: usize = values.as_slice().argmin();
+                    Some((min_idx, values[min_idx]))
                 };
 
                 if let Some((chunk_min_idx, chunk_min_val)) = chunk_min {
@@ -219,6 +230,10 @@ where
         IsSorted::Ascending => ca.last_non_null(),
         IsSorted::Descending => ca.first_non_null(),
         IsSorted::Not => {
+            if ca.scalar_value_ignore_validity().is_some() {
+                return ca.first_non_null();
+            }
+
             let mut chunk_start_offset = 0;
             let mut max_idx: Option<usize> = None;
             let mut max_val: Option<T::Native> = None;
@@ -231,7 +246,7 @@ where
                 let chunk_max: Option<(usize, T::Native)> = if arr.null_count() > 0 {
                     arr.into_iter()
                         .enumerate()
-                        .flat_map(|(idx, val)| Some((idx, *(val?))))
+                        .flat_map(|(idx, val)| Some((idx, val?)))
                         .reduce(|acc, (idx, val)| {
                             if MaxIgnoreNan::is_better(&val, &acc.1) {
                                 (idx, val)
@@ -241,8 +256,9 @@ where
                         })
                 } else {
                     // When no nulls & array not empty => we can use fast argmax.
-                    let max_idx: usize = arr.values().as_slice().argmax();
-                    Some((max_idx, arr.value(max_idx)))
+                    let values = arr.to_flat_values();
+                    let max_idx: usize = values.as_slice().argmax();
+                    Some((max_idx, values[max_idx]))
                 };
 
                 if let Some((chunk_max_idx, chunk_max_val)) = chunk_max {

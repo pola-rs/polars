@@ -248,10 +248,11 @@ pub(super) fn numeric_transpose<T: PolarsNumericType>(
                 None
             };
 
-            let arr = PrimitiveArray::<T::Native>::new(
-                T::get_static_dtype().to_arrow(CompatLevel::newest()),
+            let length = values.len();
+            let arr = PlPrimitiveArray::<T::Native>::new(
                 values.into(),
-                validity,
+                length,
+                validity.map(PlBitmap::from_bitmap),
             );
             ChunkedArray::<T>::with_chunk(name.clone(), arr).into_column()
         });

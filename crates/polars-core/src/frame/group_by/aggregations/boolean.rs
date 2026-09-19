@@ -302,6 +302,7 @@ impl BooleanChunked {
         let groups_len = groups.len();
 
         let ca = RAYON.install(|| {
+            let values = values.to_flat();
             let validity = values
                 .validity()
                 .filter(|v| v.unset_bits() > 0)

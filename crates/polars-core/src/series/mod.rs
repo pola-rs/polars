@@ -37,7 +37,7 @@ use std::ops::Deref;
 pub use from::*;
 pub use iterator::SeriesIter;
 use num_traits::NumCast;
-use polars_arrow::compute::aggregate::estimated_bytes_size;
+use polars_compute::size::estimated_bytes_size;
 use polars_error::feature_gated;
 use polars_utils::broadcast::BroadcastLength;
 use polars_utils::float::IsFloat;
@@ -210,22 +210,22 @@ impl Series {
         }
     }
 
-    /// Returns a reference to the Arrow ArrayRef
+    /// Returns a reference to the chunk at `chunk_idx`.
     #[inline]
-    pub fn array_ref(&self, chunk_idx: usize) -> &ArrayRef {
-        &self.chunks()[chunk_idx] as &ArrayRef
+    pub fn array_ref(&self, chunk_idx: usize) -> &PlArrayRef {
+        &self.chunks()[chunk_idx] as &PlArrayRef
     }
 
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
     /// And that the null_count is updated (e.g. with a `compute_len()`)
-    pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    pub unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
         #[allow(unused_mut)]
         let mut ca = self._get_inner_mut();
         ca.chunks_mut()
     }
 
-    pub fn into_chunks(mut self) -> Vec<ArrayRef> {
+    pub fn into_chunks(mut self) -> Vec<PlArrayRef> {
         let ca = self._get_inner_mut();
         let chunks = std::mem::take(unsafe { ca.chunks_mut() });
         ca.compute_len();
@@ -249,6 +249,44 @@ impl Series {
         mut_new.compute_len();
         mut_new._set_flags(flags);
         new
+    }
+
+    /// Whether every element of this column reads one and the same element.
+    pub fn repeats_one_element(&self) -> bool {
+        if self.len() <= 1 {
+            return false;
+        }
+
+        let mut chunks = self
+            .chunks()
+            .iter()
+            .enumerate()
+            .filter(|(_, chunk)| !chunk.is_empty());
+        let Some((first, _)) = chunks.next().filter(|(_, chunk)| chunk.is_scalar()) else {
+            return false;
+        };
+
+        let first = self.select_chunk(first).slice(0, 1);
+        chunks.all(|(i, chunk)| {
+            chunk.is_scalar() && first.equals_missing(&self.select_chunk(i).slice(0, 1))
+        })
+    }
+
+    /// Whether the *values* of this column are one element repeated, whatever its mask says.
+    pub fn repeats_one_value(&self) -> bool {
+        if self.len() <= 1 {
+            return false;
+        }
+
+        let [chunk] = self.chunks().as_slice() else {
+            return false;
+        };
+        // Dropping the mask to ask about the values alone is a clone of the chunk's buffers; a
+        // chunk with no mask is its own values, so it answers the question in place.
+        match chunk.validity() {
+            None => chunk.is_scalar(),
+            Some(_) => chunk.without_validity().is_scalar(),
+        }
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
@@ -707,7 +745,7 @@ impl Series {
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
             dt if dt.is_primitive_numeric() => {
-                let arr = BooleanArray::full(self.len(), false, ArrowDataType::Boolean)
+                let arr = PlBooleanArray::new_scalar(false, self.len())
                     .with_validity(self.rechunk_validity());
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
@@ -724,7 +762,7 @@ impl Series {
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
             dt if dt.is_primitive_numeric() => {
-                let arr = BooleanArray::full(self.len(), true, ArrowDataType::Boolean)
+                let arr = PlBooleanArray::new_scalar(true, self.len())
                     .with_validity(self.rechunk_validity());
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
@@ -741,7 +779,7 @@ impl Series {
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
             dt if dt.is_primitive_numeric() => {
-                let arr = BooleanArray::full(self.len(), true, ArrowDataType::Boolean)
+                let arr = PlBooleanArray::new_scalar(true, self.len())
                     .with_validity(self.rechunk_validity());
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
@@ -758,7 +796,7 @@ impl Series {
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
             dt if dt.is_primitive_numeric() => {
-                let arr = BooleanArray::full(self.len(), false, ArrowDataType::Boolean)
+                let arr = PlBooleanArray::new_scalar(false, self.len())
                     .with_validity(self.rechunk_validity());
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
@@ -1088,11 +1126,8 @@ impl Series {
             // TODO @ cat-rework: include mapping size here?
             #[cfg(feature = "object")]
             DataType::Object(_) => {
-                let ArrowDataType::FixedSizeBinary(size) = self.chunks()[0].dtype() else {
-                    unreachable!()
-                };
                 // This is only the pointer size in python. So will be a huge underestimation.
-                return self.len() * *size;
+                return self.len() * size_of::<usize>();
             },
             _ => {},
         }
@@ -1217,19 +1252,21 @@ mod test {
     #[test]
     #[cfg(feature = "dtype-date")]
     fn roundtrip_list_logical_20311() {
-        let list = ListChunked::from_chunk_iter(
-            PlSmallStr::from_static("a"),
-            [ListArray::new(
-                ArrowDataType::LargeList(Box::new(ArrowField::new(
-                    LIST_VALUES_NAME,
-                    ArrowDataType::Int32,
-                    true,
-                ))),
-                unsafe { polars_arrow::offset::Offsets::new_unchecked(vec![0, 1]) }.into(),
-                PrimitiveArray::new(ArrowDataType::Int32, vec![1i32].into(), None).to_boxed(),
-                None,
-            )],
-        );
+        let list = unsafe {
+            ListChunked::from_chunks_and_dtype_unchecked(
+                PlSmallStr::from_static("a"),
+                vec![
+                    PlListArray::new(
+                        Box::new(PlPrimitiveArray::from_vec(vec![1i32])),
+                        vec![0u64, 1].into(),
+                        1,
+                        None,
+                    )
+                    .into_boxed(),
+                ],
+                DataType::List(Box::new(DataType::Int32)),
+            )
+        };
         let list = unsafe { list.from_physical_unchecked(DataType::Date) }.unwrap();
         assert_eq!(list.dtype(), &DataType::List(Box::new(DataType::Date)));
     }

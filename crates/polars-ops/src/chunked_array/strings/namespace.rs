@@ -5,7 +5,6 @@ use base64::engine::general_purpose;
 #[cfg(feature = "string_to_integer")]
 use num_traits::Num;
 use polars_arrow::array::ValueSize;
-use polars_arrow::legacy::kernels::string::*;
 use polars_core::prelude::arity::*;
 #[cfg(feature = "string_normalize")]
 use polars_defs::expr::UnicodeForm;
@@ -49,7 +48,7 @@ where
 
         Ok(T::Native::from_str_radix(s, base).ok())
     };
-    let out: ChunkedArray<T> = broadcast_try_binary_elementwise(ca, base, f)?;
+    let out: ChunkedArray<T> = broadcast_try_binary_elementwise_amortized(ca, base, f)?;
     if strict && ca.null_count() != out.null_count() {
         let failure_mask = ca.is_not_null() & out.is_null() & base.is_not_null();
         let n_failures = failure_mask.num_trues();
@@ -200,7 +199,7 @@ pub trait StringNameSpaceImpl: AsString {
                     }))
                 } else if strict {
                     with_regex_cache(|reg_cache| {
-                        broadcast_try_binary_elementwise(ca, pat, |opt_src, opt_pat| {
+                        broadcast_try_binary_elementwise_amortized(ca, pat, |opt_src, opt_pat| {
                             match (opt_src, opt_pat) {
                                 (Some(src), Some(pat)) => {
                                     let reg = reg_cache.compile(pat)?;
@@ -212,7 +211,7 @@ pub trait StringNameSpaceImpl: AsString {
                     })
                 } else {
                     with_regex_cache(|reg_cache| {
-                        Ok(broadcast_binary_elementwise(
+                        Ok(broadcast_binary_elementwise_amortized(
                             ca,
                             pat,
                             infer_re_match(|src, pat| {
@@ -264,7 +263,7 @@ pub trait StringNameSpaceImpl: AsString {
                     }
                     Ok(None)
                 };
-                broadcast_try_binary_elementwise(ca, pat, matcher)
+                broadcast_try_binary_elementwise_amortized(ca, pat, matcher)
             })
         }
     }
@@ -272,13 +271,19 @@ pub trait StringNameSpaceImpl: AsString {
     /// Get the length of the string values as number of chars.
     fn str_len_chars(&self) -> UInt32Chunked {
         let ca = self.as_string();
-        ca.apply_kernel_cast(&string_len_chars)
+        unary_elementwise_values(ca, |s| s.chars().count() as u32)
     }
 
     /// Get the length of the string values as number of bytes.
     fn str_len_bytes(&self) -> UInt32Chunked {
         let ca = self.as_string();
-        ca.apply_kernel_cast(&utf8view_len_bytes)
+        unary_mut_values(ca, |arr| match arr.scalar_views() {
+            Some(view) => PlPrimitiveArray::new_scalar(view.length, arr.len()),
+            None => {
+                let views = arr.flat_views().expect("views are flat or scalar");
+                PlPrimitiveArray::from_vec(views.iter().map(|view| view.length).collect())
+            },
+        })
     }
 
     /// Pad the start of the string until it reaches the given length.
@@ -472,6 +477,15 @@ pub trait StringNameSpaceImpl: AsString {
     /// Extract each successive non-overlapping regex match in an individual string as an array.
     fn extract_all(&self, pat: &str) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
+
+        if let [chunk] = ca.chunks().as_slice()
+            && ca.len() > 1
+            && chunk.is_scalar()
+        {
+            let single = ca.slice(0, 1).extract_all(pat)?;
+            return Ok(single.new_from_index(0, ca.len()));
+        }
+
         let reg = polars_utils::regex_cache::compile_regex(pat)?;
 
         let mut builder =
@@ -630,7 +644,7 @@ pub trait StringNameSpaceImpl: AsString {
                         _ => Ok(None),
                     }
                 };
-                broadcast_try_binary_elementwise(ca, pat, op)
+                broadcast_try_binary_elementwise_amortized(ca, pat, op)
             })?
         };
 

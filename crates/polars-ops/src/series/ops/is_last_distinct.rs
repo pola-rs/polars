@@ -1,6 +1,5 @@
 use std::hash::Hash;
 
-use polars_arrow::array::BooleanArray;
 use polars_arrow::bitmap::MutableBitmap;
 use polars_arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
@@ -8,6 +7,8 @@ use polars_core::series::BitRepr;
 use polars_core::utils::NoNull;
 use polars_core::with_match_physical_float_polars_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
+
+use super::distinct::{only, repeated_element_len, repeated_element_len_series};
 
 pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
@@ -72,51 +73,20 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
 }
 
 fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
-    let mut out = MutableBitmap::with_capacity(ca.len());
-    out.extend_constant(ca.len(), false);
-
-    if ca.null_count() == ca.len() {
-        out.set(ca.len() - 1, true);
-    }
-    // TODO supports fast path.
-    else {
-        let mut first_true_found = false;
-        let mut first_false_found = false;
-        let mut first_null_found = false;
-        let mut all_found = false;
-        let ca = ca.rechunk();
-        ca.downcast_as_array()
-            .iter()
-            .enumerate()
-            .rev()
-            .find_map(|(idx, val)| match val {
-                Some(true) if !first_true_found => {
-                    first_true_found = true;
-                    all_found &= first_true_found;
-                    out.set(idx, true);
-                    if all_found { Some(()) } else { None }
-                },
-                Some(false) if !first_false_found => {
-                    first_false_found = true;
-                    all_found &= first_false_found;
-                    out.set(idx, true);
-                    if all_found { Some(()) } else { None }
-                },
-                None if !first_null_found => {
-                    first_null_found = true;
-                    all_found &= first_null_found;
-                    out.set(idx, true);
-                    if all_found { Some(()) } else { None }
-                },
-                _ => None,
-            });
+    if let Some(length) = repeated_element_len(ca) {
+        return only(ca.name().clone(), length, length - 1);
     }
 
-    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    BooleanChunked::with_chunk(ca.name().clone(), arr)
+    super::is_first_distinct::is_first_distinct_boolean(&ca.reverse())
+        .reverse()
+        .with_name(ca.name().clone())
 }
 
 fn is_last_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
+    if let Some(length) = repeated_element_len(ca) {
+        return only(ca.name().clone(), length, length - 1);
+    }
+
     let tmp = ca.rechunk();
     let arr = tmp.downcast_as_array();
     let mut unique = PlHashSet::new();
@@ -134,6 +104,10 @@ where
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
+    if let Some(length) = repeated_element_len(ca) {
+        return only(ca.name().clone(), length, length - 1);
+    }
+
     let tmp = ca.rechunk();
     let arr = tmp.downcast_as_array();
     let mut unique = PlHashSet::new();
@@ -146,6 +120,10 @@ where
 }
 
 fn is_last_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
+    if let Some(length) = repeated_element_len_series(s) {
+        return Ok(only(s.name().clone(), length, length - 1));
+    }
+
     let groups = s.group_tuples(true, false)?;
     // SAFETY: all groups have at least a single member
     let last = unsafe { groups.take_group_lasts() };
@@ -157,6 +135,5 @@ fn is_last_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
         unsafe { out.set_unchecked(idx as usize, true) }
     }
 
-    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(s.name().clone(), arr))
+    Ok(BooleanChunked::from_bitmap(s.name().clone(), out.into()))
 }

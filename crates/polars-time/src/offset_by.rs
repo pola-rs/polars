@@ -1,5 +1,5 @@
 use polars_arrow::legacy::time_zone::Tz;
-use polars_core::prelude::arity::broadcast_try_binary_elementwise;
+use polars_core::prelude::arity::broadcast_try_binary_elementwise_amortized;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_defs::time::duration::Duration;
@@ -9,6 +9,11 @@ fn apply_offsets_to_datetime(
     offsets: &StringChunked,
     time_zone: Option<&Tz>,
 ) -> PolarsResult<Int64Chunked> {
+    let settled = (offsets.len() == datetime.len())
+        .then(|| offsets.settled_to_one_element())
+        .flatten();
+    let offsets = settled.as_ref().unwrap_or(offsets);
+
     match offsets.len() {
         1 => match offsets.get(0) {
             Some(offset) => {
@@ -43,7 +48,7 @@ fn apply_offsets_to_datetime(
                 TimeUnit::Microseconds => Duration::add_us,
                 TimeUnit::Nanoseconds => Duration::add_ns,
             };
-            broadcast_try_binary_elementwise(
+            broadcast_try_binary_elementwise_amortized(
                 datetime.physical(),
                 offsets,
                 |timestamp_opt, offset_opt| match (timestamp_opt, offset_opt) {
@@ -77,6 +82,11 @@ pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
         DataType::Datetime(_, tz) => tz.clone(),
         _ => polars_bail!(InvalidOperation: "expected Date or Datetime, got {dtype}"),
     };
+    let settled = (offsets.len() == ts.len())
+        .then(|| offsets.settled_to_one_element())
+        .flatten();
+    let offsets = settled.as_ref().unwrap_or(offsets);
+
     let preserve_sortedness = match offsets.len() {
         1 => match offsets.get(0) {
             Some(offset) => {

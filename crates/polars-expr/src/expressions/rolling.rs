@@ -1,4 +1,3 @@
-use polars_arrow::array::PrimitiveArray;
 use polars_defs::time::duration::Duration;
 use polars_defs::time::group_by::{ClosedWindow, RollingGroupOptions};
 use polars_time::PolarsTemporalGroupby;
@@ -113,12 +112,13 @@ impl PhysicalExpr for RollingExpr {
             index_column_data.null_count() == 0,
             ComputeError: "null values in `rolling` not supported, fill nulls."
         );
-        let index_column_data = index_column_data.rechunk_to_arrow(CompatLevel::newest());
-        let index_column_data = index_column_data
-            .as_any()
-            .downcast_ref::<PrimitiveArray<i64>>()
-            .unwrap();
-        let mut index_column_data = Cow::Borrowed(index_column_data.values().as_slice());
+        let index_column_data = index_column_data.to_physical_repr().rechunk();
+        let timestamps = index_column_data
+            .i64()
+            .expect("a datetime reads as its i64 timestamps")
+            .downcast_as_array()
+            .to_flat_values();
+        let mut index_column_data = Cow::Borrowed(timestamps.as_slice());
         let mut rolling =
             RollingWindower::new(self.period, self.offset, self.closed_window, time_unit, tz);
 

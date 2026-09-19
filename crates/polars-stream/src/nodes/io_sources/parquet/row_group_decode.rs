@@ -630,7 +630,8 @@ impl RowGroupDecoder {
 
             (filtered, mask)
         };
-        let mut mask_bitmap = mask.downcast_as_array().values().clone();
+        mask.rechunk_mut();
+        let mut mask_bitmap = mask.downcast_as_array().true_and_valid().into_bitmap();
         assert_eq!(mask_bitmap.len(), projection_height);
         let mut expected_num_rows = mask_bitmap.set_bits();
         if second_pending.is_some() && keeps_most_rows(expected_num_rows, projection_height) {
@@ -769,11 +770,7 @@ impl RowGroupDecoder {
 fn evaluate_mask(predicate: &dyn PhysicalIoExpr, df: &DataFrame) -> PolarsResult<Bitmap> {
     let mut mask = predicate.evaluate_io(df)?.bool().unwrap().clone();
     mask.rechunk_mut();
-    let arr = mask.downcast_as_array();
-    Ok(match arr.validity() {
-        None => arr.values().clone(),
-        Some(validity) => arr.values() & validity,
-    })
+    Ok(mask.downcast_as_array().true_and_valid().into_bitmap())
 }
 
 /// Narrows `outer` by `inner`, which holds one bit per set bit of `outer`.

@@ -105,7 +105,7 @@ pub(super) fn linear_spaces(
                  builder: &mut ListPrimitiveChunkedBuilder<Float32Type>| {
                     let ls =
                         new_linear_space_f32(start, end, num_samples, closed, PlSmallStr::EMPTY)?;
-                    builder.append_slice(ls.cont_slice().unwrap());
+                    builder.append_slice(ls.to_cont_slice().unwrap().as_slice());
                     Ok(())
                 };
 
@@ -150,7 +150,7 @@ pub(super) fn linear_spaces(
                  builder: &mut ListPrimitiveChunkedBuilder<Float64Type>| {
                     let ls =
                         new_linear_space_f64(start, end, num_samples, closed, PlSmallStr::EMPTY)?;
-                    builder.append_slice(ls.cont_slice().unwrap());
+                    builder.append_slice(ls.to_cont_slice().unwrap().as_slice());
                     Ok(())
                 };
             let out =
@@ -188,7 +188,7 @@ pub(super) fn linear_spaces(
                  builder: &mut ListPrimitiveChunkedBuilder<Float64Type>| {
                     let ls =
                         new_linear_space_f64(start, end, num_samples, closed, PlSmallStr::EMPTY)?;
-                    builder.append_slice(ls.cont_slice().unwrap());
+                    builder.append_slice(ls.to_cont_slice().unwrap().as_slice());
                     Ok(())
                 };
             let out =

@@ -136,13 +136,12 @@ impl RollingGroupBy {
     /// Progress the state and get the next available evaluation windows, data and key.
     fn next_windows(&mut self, finalize: bool) -> PolarsResult<Option<NextWindows>> {
         let buf_index_col_dt = self.buf_index_column.datetime()?;
-        let mut time = Vec::new();
-        time.extend(
-            buf_index_col_dt
-                .physical()
-                .downcast_iter()
-                .map(|arr| arr.values().as_slice()),
-        );
+        let values = buf_index_col_dt
+            .physical()
+            .downcast_iter()
+            .map(|arr| arr.to_flat_values())
+            .collect::<Vec<_>>();
+        let time = values.iter().map(|arr| arr.as_slice()).collect::<Vec<_>>();
 
         let mut windows = Vec::new();
         let num_retired = if finalize {

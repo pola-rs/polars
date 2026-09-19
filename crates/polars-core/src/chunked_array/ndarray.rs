@@ -22,8 +22,10 @@ where
     /// If data is aligned in a single chunk and has no Null values a zero copy view is returned
     /// as an [ndarray]
     pub fn to_ndarray(&self) -> PolarsResult<ArrayView1<'_, T::Native>> {
-        let slice = self.cont_slice()?;
-        Ok(aview1(slice))
+        let ca = self
+            .as_flat()
+            .ok_or_else(|| polars_err!(ComputeError: "chunked array is not contiguous"))?;
+        Ok(aview1(ca.cont_slice()?))
     }
 }
 
@@ -139,6 +141,7 @@ impl DataFrame {
 
                             let mut chunk_offset = 0;
                             for arr in ca.downcast_iter() {
+                                let arr = arr.to_flat();
                                 let vals = arr.values();
 
                                 // SAFETY:
@@ -196,15 +199,13 @@ impl DataFrame {
                 let row_block = (TARGET_BLOCK_CELLS / num_cols.max(1)).max(MIN_ROW_BLOCK);
                 let num_blocks = height.div_ceil(row_block);
 
-                let column_chunks: Vec<Vec<&[N::Native]>> = cast_columns
+                let flat_columns = cast_columns
                     .iter()
-                    .map(|s| {
-                        s.unpack::<N>()
-                            .unwrap()
-                            .downcast_iter()
-                            .map(|arr| arr.values().as_slice())
-                            .collect()
-                    })
+                    .map(|s| s.unpack::<N>().unwrap().to_flat())
+                    .collect::<Vec<_>>();
+                let column_chunks: Vec<Vec<&[N::Native]>> = flat_columns
+                    .iter()
+                    .map(|flat| flat.chunks_flat_values().collect())
                     .collect();
 
                 // Cursor into one column's chunk list. Advanced only at chunk boundaries.

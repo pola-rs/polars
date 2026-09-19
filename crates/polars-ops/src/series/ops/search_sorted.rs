@@ -26,6 +26,11 @@ pub fn search_sorted(
         );
     }
 
+    if search_values.repeats_one_element() {
+        let one = search_sorted(s, &search_values.head(Some(1)), side, descending)?;
+        return Ok(one.new_from_index(0, search_values.len()));
+    }
+
     let s = s.to_physical_repr();
     let phys_dtype = s.dtype();
 

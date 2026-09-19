@@ -9,7 +9,7 @@ repository = { workspace = true }
 description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { workspace = true }
+polars-array = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }
@@ -20,6 +20,7 @@ polars-parquet = { workspace = true, optional = true }
 polars-schema = { workspace = true }
 polars-utils = { workspace = true, features = ['mmap', 'sysinfo'] }
 
+polars-arrow = { workspace = true }
 async-trait = { workspace = true, optional = true }
 atoi_simd = { workspace = true, optional = true }
 blake3 = { workspace = true, optional = true }

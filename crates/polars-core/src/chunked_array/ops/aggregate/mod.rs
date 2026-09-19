@@ -3,6 +3,7 @@ mod quantile;
 mod var;
 
 use num_traits::{AsPrimitive, Float, One, ToPrimitive, Zero};
+use polars_array::bitmap::combine_validities_and;
 use polars_arrow::types::NativeType;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
@@ -83,7 +84,7 @@ pub trait ChunkAggSeries {
     }
 }
 
-fn sum<T>(array: &PrimitiveArray<T>) -> T
+fn sum<T>(array: &PlPrimitiveArray<T>) -> T
 where
     T: NumericNative + NativeType + WrappingSum,
 {
@@ -95,18 +96,18 @@ where
         unsafe {
             if T::is_f16() {
                 let f16_arr =
-                    std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<pf16>>(array);
+                    std::mem::transmute::<&PlPrimitiveArray<T>, &PlPrimitiveArray<pf16>>(array);
                 // We do not trust the numerical accuracy of f16 summation
                 let sum: pf16 = float_sum::sum_arr_as_f32(f16_arr).as_();
                 std::mem::transmute_copy::<pf16, T>(&sum)
             } else if T::is_f32() {
                 let f32_arr =
-                    std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<f32>>(array);
+                    std::mem::transmute::<&PlPrimitiveArray<T>, &PlPrimitiveArray<f32>>(array);
                 let sum = float_sum::sum_arr_as_f32(f32_arr);
                 std::mem::transmute_copy::<f32, T>(&sum)
             } else if T::is_f64() {
                 let f64_arr =
-                    std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<f64>>(array);
+                    std::mem::transmute::<&PlPrimitiveArray<T>, &PlPrimitiveArray<f64>>(array);
                 let sum = float_sum::sum_arr_as_f64(f64_arr);
                 std::mem::transmute_copy::<f64, T>(&sum)
             } else {
@@ -122,7 +123,7 @@ impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: WrappingSum,
-    PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
+    PlPrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
 {
     fn sum(&self) -> Option<T::Native> {
         Some(
@@ -253,11 +254,10 @@ impl BooleanChunked {
             0
         } else {
             self.downcast_iter()
-                .map(|arr| match arr.validity() {
-                    Some(validity) => {
-                        (arr.len() - (validity & arr.values()).unset_bits()) as IdxSize
-                    },
-                    None => (arr.len() - arr.values().unset_bits()) as IdxSize,
+                .map(|arr| {
+                    combine_validities_and(Some(arr.values()), arr.validity())
+                        .expect("the values mask is always there")
+                        .set_bits() as IdxSize
                 })
                 .sum()
         })
@@ -302,7 +302,7 @@ where
     T: PolarsNumericType,
     T::Native: WrappingSum + SumCast,
     <T::Native as SumCast>::Sum: WrappingAdd,
-    PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
+    PlPrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
 {
     fn sum_reduce(&self) -> Scalar {
         let v: <T::Native as SumCast>::Sum = if T::Native::is_float() {
@@ -329,8 +329,8 @@ where
         let mut prod = T::Native::one();
 
         for arr in self.downcast_iter() {
-            for v in arr.into_iter().flatten() {
-                prod = prod * *v
+            for v in arr.iter().flatten() {
+                prod = prod * v
             }
         }
         Scalar::new(T::get_static_dtype(), prod.into())

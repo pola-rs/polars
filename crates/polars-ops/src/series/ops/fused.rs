@@ -1,31 +1,102 @@
-use polars_arrow::array::PrimitiveArray;
-use polars_arrow::compute::utils::combine_validities_and3;
+use polars_array::bitmap::combine_validities_and3;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_ternary;
 use polars_core::with_match_physical_numeric_polars_type;
 
-// (a * b) + c
-fn fma_arr<T: NumericNative>(
-    a: &PrimitiveArray<T>,
-    b: &PrimitiveArray<T>,
-    c: &PrimitiveArray<T>,
-) -> PrimitiveArray<T> {
-    assert_eq!(a.len(), b.len());
-    let validity = combine_validities_and3(a.validity(), b.validity(), c.validity());
-    let a = a.values().as_slice();
-    let b = b.values().as_slice();
-    let c = c.values().as_slice();
+/// Defines a fused elementwise kernel over three chunks, in whatever representation each is in.
+macro_rules! fused_kernel {
+    ($(#[$meta:meta])* $name:ident, |$a:ident, $b:ident, $c:ident| $fuse:expr) => {
+        $(#[$meta])*
+        fn $name<T: NumericNative>(
+            a: &PlPrimitiveArray<T>,
+            b: &PlPrimitiveArray<T>,
+            c: &PlPrimitiveArray<T>,
+        ) -> PlPrimitiveArray<T> {
+            assert_eq!(a.len(), b.len());
+            assert_eq!(b.len(), c.len());
+            let length = a.len();
+            let validity = combine_validities_and3(a.validity(), b.validity(), c.validity());
 
-    assert_eq!(a.len(), b.len());
-    assert_eq!(b.len(), c.len());
-    let out = a
-        .iter()
-        .zip(b.iter())
-        .zip(c.iter())
-        .map(|((a, b), c)| *a * *b + *c)
-        .collect::<Vec<_>>();
-    PrimitiveArray::from_data_default(out.into(), validity)
+            let scalars = (
+                a.scalar_value_ignore_validity(),
+                b.scalar_value_ignore_validity(),
+                c.scalar_value_ignore_validity(),
+            );
+
+            if let (Some($a), Some($b), Some($c)) = scalars {
+                return PlPrimitiveArray::new_scalar($fuse, length).with_validity(validity);
+            }
+
+            let fuse = |$a: T, $b: T, $c: T| $fuse;
+
+            // Read each operand's representation once.  Zipping three representation-aware
+            // iterators reads it again per element, which also stops the loop vectorising, so
+            // every operand that repeats one value is folded into the closure instead.
+            let out: Vec<T> = match (
+                (a.flat_values(), scalars.0),
+                (b.flat_values(), scalars.1),
+                (c.flat_values(), scalars.2),
+            ) {
+                ((Some(a), _), (Some(b), _), (Some(c), _)) => a
+                    .iter()
+                    .zip(b.iter())
+                    .zip(c.iter())
+                    .map(|((&a, &b), &c)| fuse(a, b, c))
+                    .collect(),
+                ((_, Some(a)), (Some(b), _), (Some(c), _)) => b
+                    .iter()
+                    .zip(c.iter())
+                    .map(|(&b, &c)| fuse(a, b, c))
+                    .collect(),
+                ((Some(a), _), (_, Some(b)), (Some(c), _)) => a
+                    .iter()
+                    .zip(c.iter())
+                    .map(|(&a, &c)| fuse(a, b, c))
+                    .collect(),
+                ((Some(a), _), (Some(b), _), (_, Some(c))) => a
+                    .iter()
+                    .zip(b.iter())
+                    .map(|(&a, &b)| fuse(a, b, c))
+                    .collect(),
+                ((Some(a), _), (_, Some(b)), (_, Some(c))) => {
+                    a.iter().map(|&a| fuse(a, b, c)).collect()
+                },
+                ((_, Some(a)), (Some(b), _), (_, Some(c))) => {
+                    b.iter().map(|&b| fuse(a, b, c)).collect()
+                },
+                ((_, Some(a)), (_, Some(b)), (Some(c), _)) => {
+                    c.iter().map(|&c| fuse(a, b, c)).collect()
+                },
+                _ => a
+                    .broadcast_values_iter(length)
+                    .zip(b.broadcast_values_iter(length))
+                    .zip(c.broadcast_values_iter(length))
+                    .map(|((a, b), c)| fuse(a, b, c))
+                    .collect(),
+            };
+
+            PlPrimitiveArray::from_vec(out).with_validity(validity)
+        }
+    };
 }
+
+fused_kernel!(
+    /// `(a * b) + c`, element for element.
+    fma_arr,
+    |a, b, c| a * b + c
+);
+
+fused_kernel!(
+    /// `a - (b * c)`, element for element.
+    fsm_arr,
+    |a, b, c| a - (b * c)
+);
+
+fused_kernel!(
+    /// `(a * b) - c`, element for element.
+    fms_arr,
+    |a, b, c| (a * b) - c
+);
 
 fn fma_ca<T: PolarsNumericType>(
     a: &ChunkedArray<T>,
@@ -55,29 +126,6 @@ pub fn fma_columns(a: &Column, b: &Column, c: &Column) -> Column {
     }
 }
 
-// a - (b * c)
-fn fsm_arr<T: NumericNative>(
-    a: &PrimitiveArray<T>,
-    b: &PrimitiveArray<T>,
-    c: &PrimitiveArray<T>,
-) -> PrimitiveArray<T> {
-    assert_eq!(a.len(), b.len());
-    let validity = combine_validities_and3(a.validity(), b.validity(), c.validity());
-    let a = a.values().as_slice();
-    let b = b.values().as_slice();
-    let c = c.values().as_slice();
-
-    assert_eq!(a.len(), b.len());
-    assert_eq!(b.len(), c.len());
-    let out = a
-        .iter()
-        .zip(b.iter())
-        .zip(c.iter())
-        .map(|((a, b), c)| *a - (*b * *c))
-        .collect::<Vec<_>>();
-    PrimitiveArray::from_data_default(out.into(), validity)
-}
-
 fn fsm_ca<T: PolarsNumericType>(
     a: &ChunkedArray<T>,
     b: &ChunkedArray<T>,
@@ -104,28 +152,6 @@ pub fn fsm_columns(a: &Column, b: &Column, c: &Column) -> Column {
     } else {
         (a - &(b * c).unwrap()).unwrap()
     }
-}
-
-fn fms_arr<T: NumericNative>(
-    a: &PrimitiveArray<T>,
-    b: &PrimitiveArray<T>,
-    c: &PrimitiveArray<T>,
-) -> PrimitiveArray<T> {
-    assert_eq!(a.len(), b.len());
-    let validity = combine_validities_and3(a.validity(), b.validity(), c.validity());
-    let a = a.values().as_slice();
-    let b = b.values().as_slice();
-    let c = c.values().as_slice();
-
-    assert_eq!(a.len(), b.len());
-    assert_eq!(b.len(), c.len());
-    let out = a
-        .iter()
-        .zip(b.iter())
-        .zip(c.iter())
-        .map(|((a, b), c)| (*a * *b) - *c)
-        .collect::<Vec<_>>();
-    PrimitiveArray::from_data_default(out.into(), validity)
 }
 
 fn fms_ca<T: PolarsNumericType>(

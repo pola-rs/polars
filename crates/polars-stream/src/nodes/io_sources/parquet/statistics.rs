@@ -1,7 +1,8 @@
 use std::cmp::Ordering;
 use std::ops::Range;
 
-use polars_arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray, StructArray};
+use polars_array::PlBitmap;
+use polars_arrow::array::{Array, MutablePrimitiveArray, StructArray};
 use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_arrow::pushable::Pushable;
 use polars_async::executor::{self, TaskPriority};
@@ -86,7 +87,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     projected_arrow_fields: Arc<[ArrowFieldProjection]>,
     row_index: Option<RowIndex>,
     verbose: bool,
-) -> PolarsResult<Option<Bitmap>> {
+) -> PolarsResult<Option<PlBitmap>> {
     if !use_statistics {
         return Ok(None);
     }
@@ -134,7 +135,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
             num_row_groups,
         );
     }
-    Ok(mask)
+    Ok(mask.map(PlBitmap::from_bitmap))
 }
 
 async fn static_skip_mask(
@@ -203,7 +204,7 @@ async fn static_skip_mask(
     })
     .await?;
 
-    Ok(Some(skip_row_group_mask))
+    Ok(Some(skip_row_group_mask.as_ref().to_flat().into_owned()))
 }
 
 /// A value of a column as polars stores it: a published range bound, or a row
@@ -561,7 +562,7 @@ fn build_row_index_statistics(
 ) -> StatisticsColumns {
     let mut offset = row_index.offset;
 
-    let null_count = PrimitiveArray::<IdxSize>::full(row_groups.len(), 0, ArrowDataType::IDX_DTYPE);
+    let null_count = IdxCa::full(PlSmallStr::EMPTY, 0, row_groups.len()).into_column();
 
     let mut min_value = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
     let mut max_value = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
@@ -589,7 +590,7 @@ fn build_row_index_statistics(
     StatisticsColumns {
         min: Series::from_array(PlSmallStr::EMPTY, min_value.freeze()).into_column(),
         max: Series::from_array(PlSmallStr::EMPTY, max_value.freeze()).into_column(),
-        null_count: Series::from_array(PlSmallStr::EMPTY, null_count).into_column(),
+        null_count,
     }
 }
 

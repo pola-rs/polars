@@ -134,6 +134,15 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
     list.lst_shift(periods).map(|ok| ok.into_column())
 }
 
+/// The one element `c` argues with, where it argues with the same non-null one for every list.
+///
+/// A repeated null is left alone: the length-1 arms below read their argument as a value, and a
+/// null offset or length is an instruction to skip the row, not a value.
+fn settled_arg(c: &Column, len: usize) -> Option<Column> {
+    (c.len() == len && c.null_count() == 0 && c.as_materialized_series().repeats_one_element())
+        .then(|| c.head(Some(1)))
+}
+
 pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
     let s = &args[0];
     let list_ca = s.list()?;
@@ -157,6 +166,16 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
         );
         return Ok(out.into_column());
     }
+
+    let repeated_lists = s.as_materialized_series().repeats_one_element();
+    let settled_offset = repeated_lists
+        .then(|| settled_arg(offset_s, list_ca.len()))
+        .flatten();
+    let settled_length = repeated_lists
+        .then(|| settled_arg(length_s, list_ca.len()))
+        .flatten();
+    let offset_s = settled_offset.as_ref().unwrap_or(offset_s);
+    let length_s = settled_length.as_ref().unwrap_or(length_s);
 
     let mut out: ListChunked = match (offset_s.len(), length_s.len()) {
         (1, 1) => {

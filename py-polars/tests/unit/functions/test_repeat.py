@@ -460,3 +460,22 @@ def test_repeat_by_null() -> None:
 def test_repeat_by_length_limit_raises_24330() -> None:
     with pytest.raises(ComputeError):
         pl.select(pl.lit(None).repeat_by(2147483648 - pl.Series([0, 0])))
+
+
+@pytest.mark.parametrize("repeats", [8191, 8192, 8193, 16384, 16385])
+def test_repeat_by_block_boundary(repeats: int) -> None:
+    s = pl.Series("a", [1, 2, None], dtype=pl.Int64).repeat_by(
+        pl.Series([repeats, 1, repeats], dtype=pl.UInt32)
+    )
+    assert s.dtype == pl.List(pl.Int64)
+    assert s.list.len().to_list() == [repeats, 1, repeats]
+    assert s[0].to_list() == [1] * repeats
+    assert s[1].to_list() == [2]
+    assert s[2].to_list() == [None] * repeats
+
+
+def test_repeat_by_block_boundary_across_elements() -> None:
+    n, repeats = 5000, 3
+    s = pl.Series("a", range(n), dtype=pl.Int64).repeat_by(repeats)
+    assert s.list.len().to_list() == [repeats] * n
+    assert s.explode().to_list() == [v for v in range(n) for _ in range(repeats)]

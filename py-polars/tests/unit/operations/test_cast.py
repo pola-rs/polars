@@ -1076,3 +1076,58 @@ def test_strict_struct_cast_field_name_mismatch() -> None:
     s = pl.Series("x", [{"a": 1}])
     with pytest.raises(InvalidOperationError, match="field name mismatch"):
         s.cast(pl.Struct({"b": pl.Int64}), strict=True)
+
+
+def test_cast_binary_to_string_rejects_invalid_utf8() -> None:
+    s = pl.Series("x", [b"ok", b"\xff\xfe", None], dtype=pl.Binary)
+    for strict in (True, False):
+        with pytest.raises(ComputeError, match="invalid utf8"):
+            s.cast(pl.String, strict=strict)
+
+    assert_series_equal(
+        pl.Series("x", [b"ok", None], dtype=pl.Binary).cast(pl.String),
+        pl.Series("x", ["ok", None], dtype=pl.String),
+    )
+
+
+def test_cast_categorical_repeated_chunk() -> None:
+    for dtype in (pl.Categorical, pl.Enum(["abc", "q"])):
+        assert (
+            pl.repeat("abc", 3, dtype=pl.String, eager=True).cast(dtype).to_list()
+            == ["abc"] * 3
+        )
+        assert (
+            pl.repeat(None, 3, dtype=pl.String, eager=True).cast(dtype).to_list()
+            == [None] * 3
+        )
+        assert pl.repeat("zzz", 3, dtype=pl.String, eager=True).cast(
+            dtype, strict=False
+        ).to_list() == (["zzz"] * 3 if dtype == pl.Categorical else [None] * 3)
+
+    cat = pl.repeat("abc", 3, dtype=pl.String, eager=True).cast(pl.Categorical)
+    assert cat.cast(pl.Enum(["abc", "q"])).to_list() == ["abc"] * 3
+    enum = pl.repeat("q", 3, dtype=pl.String, eager=True).cast(pl.Enum(["abc", "q"]))
+    assert enum.cast(pl.Categorical).to_list() == ["q"] * 3
+
+
+def test_cast_datetime_to_time_repeated_chunk() -> None:
+    for value, expected in [
+        (datetime(2021, 3, 4, 5, 6, 7), time(5, 6, 7)),
+        (datetime(1960, 5, 6, 7, 8, 9), time(7, 8, 9)),
+    ]:
+        for unit in ("ns", "us", "ms"):
+            s = pl.repeat(value, 3, dtype=pl.Datetime(unit), eager=True)  # type: ignore[arg-type]
+            assert s.cast(pl.Time).to_list() == [expected] * 3
+            assert (
+                pl.Series([value] * 3, dtype=pl.Datetime(unit))
+                .cast(  # type: ignore[arg-type]
+                    pl.Time
+                )
+                .to_list()
+                == [expected] * 3
+            )
+
+    assert (
+        pl.repeat(None, 3, dtype=pl.Datetime("us"), eager=True).cast(pl.Time).to_list()
+        == [None] * 3
+    )

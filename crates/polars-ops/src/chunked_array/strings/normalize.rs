@@ -1,23 +1,23 @@
-use polars_core::prelude::{StringChunked, StringChunkedBuilder};
+use polars_core::prelude::StringChunked;
 use polars_defs::expr::UnicodeForm;
 use unicode_normalization::UnicodeNormalization;
 
-pub fn normalize_with<F: Fn(&str, &mut String)>(
-    ca: &StringChunked,
+pub fn normalize_with<'a, F: Fn(&str, &mut String)>(
+    ca: &'a StringChunked,
     normalizer: F,
 ) -> StringChunked {
     let mut buffer = String::new();
-    let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
-    for opt_s in ca.iter() {
-        if let Some(s) = opt_s {
-            buffer.clear();
-            normalizer(s, &mut buffer);
-            builder.append_value(&buffer);
-        } else {
-            builder.append_null();
-        }
-    }
-    builder.finish()
+
+    let f = |s: &'a str| -> &'a str {
+        buffer.clear();
+        normalizer(s, &mut buffer);
+
+        // SAFETY: `apply_mut` copies the value out before it calls back, so the buffer is free to
+        // be written over for the next element.
+        unsafe { std::mem::transmute::<&str, &'a str>(buffer.as_str()) }
+    };
+
+    ca.apply_mut(f)
 }
 
 pub fn normalize(ca: &StringChunked, form: UnicodeForm) -> StringChunked {

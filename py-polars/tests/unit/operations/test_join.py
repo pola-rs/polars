@@ -4825,3 +4825,55 @@ def test_merge_join_coalesce_right_payload_name_collision(
         q.collect(engine="in-memory"),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "semi"])
+def test_join_sorted_float_key_with_nan(how: JoinStrategy) -> None:
+    nan = float("nan")
+    rows = {"a": [1.0, 2.0, nan, nan], "x": [1, 2, 3, 4]}
+    right = pl.DataFrame({"a": [1.0, nan, nan], "y": [10, 20, 30]})
+
+    sorted_key = pl.DataFrame(rows).sort("a")
+    assert sorted_key["a"].flags["SORTED_ASC"]
+    unflagged = pl.DataFrame(rows)
+    assert not unflagged["a"].flags["SORTED_ASC"]
+
+    assert_frame_equal(
+        sorted_key.join(right, on="a", how=how, maintain_order="left_right"),
+        unflagged.join(right, on="a", how=how, maintain_order="left_right"),
+    )
+
+
+def test_join_repeated_nan_key() -> None:
+    nan = float("nan")
+    left = pl.select(a=pl.repeat(nan, 4), x=pl.int_range(4))
+    right = pl.DataFrame({"a": [nan, nan], "y": [10, 20]})
+    assert left.join(right, on="a", how="inner").height == 8
+
+
+@pytest.mark.parametrize("how", ["semi", "anti"])
+@pytest.mark.parametrize(
+    ("dtype", "key"),
+    [
+        (pl.Int64, 7),
+        (pl.Float64, 7.5),
+        (pl.UInt32, 7),
+        (pl.Boolean, True),
+    ],
+)
+def test_semi_anti_join_repeated_key(how: Any, dtype: pl.DataType, key: Any) -> None:
+    n = 500
+    repeated = pl.select(a=pl.repeat(pl.lit(key, dtype=dtype), n), i=pl.int_range(n))
+    flat = pl.DataFrame({"a": pl.Series([key] * n, dtype=dtype), "i": range(n)})
+    right = pl.DataFrame({"a": pl.Series([key], dtype=dtype)})
+
+    assert_frame_equal(
+        repeated.join(right, on="a", how=how),
+        flat.join(right, on="a", how=how),
+    )
+    assert_frame_equal(
+        flat.join(pl.select(a=pl.repeat(pl.lit(key, dtype=dtype), 3)), on="a", how=how),
+        flat.join(
+            pl.DataFrame({"a": pl.Series([key] * 3, dtype=dtype)}), on="a", how=how
+        ),
+    )

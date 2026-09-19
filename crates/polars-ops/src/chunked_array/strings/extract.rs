@@ -1,22 +1,21 @@
 use std::iter::zip;
 
-#[cfg(feature = "extract_groups")]
-use polars_arrow::array::{Array, StructArray};
-use polars_arrow::array::{MutablePlString, Utf8ViewArray};
-use polars_core::prelude::arity::{try_binary_mut_with_options, try_unary_mut_with_options};
+use polars_array::builder::StaticArrayBuilder as _;
+use polars_core::prelude::arity::{
+    try_binary_mut_with_options, try_unary_elementwise_mut_with_options,
+};
 use regex::Regex;
 
 use super::*;
 
 #[cfg(feature = "extract_groups")]
 fn extract_groups_array(
-    arr: &Utf8ViewArray,
+    arr: &PlUtf8ViewArray,
     reg: &Regex,
     names: &[&str],
-    dtype: ArrowDataType,
-) -> PolarsResult<ArrayRef> {
+) -> PolarsResult<PlArrayRef> {
     let mut builders = (0..names.len())
-        .map(|_| MutablePlString::with_capacity(arr.len()))
+        .map(|_| PlUtf8ViewArrayBuilder::with_capacity(arr.len()))
         .collect::<Vec<_>>();
 
     let mut locs = reg.capture_locations();
@@ -35,8 +34,14 @@ fn extract_groups_array(
         builders.iter_mut().for_each(|arr| arr.push_null());
     }
 
-    let values = builders.into_iter().map(|a| a.freeze().boxed()).collect();
-    Ok(StructArray::new(dtype, arr.len(), values, arr.validity().cloned()).boxed())
+    let values = builders
+        .into_iter()
+        .map(|builder| builder.freeze().into_boxed())
+        .collect();
+    let validity = arr.validity().map(PlBitmap::from);
+    Ok(PlStructArray::new(values, arr.len(), None)
+        .with_validity(validity)
+        .into_boxed())
 }
 
 #[cfg(feature = "extract_groups")]
@@ -52,7 +57,6 @@ pub(super) fn extract_groups(
             .map(|ca| ca.into_series());
     }
 
-    let arrow_dtype = dtype.try_to_arrow(CompatLevel::newest())?;
     let DataType::Struct(fields) = dtype else {
         unreachable!() // Implementation error if it isn't a struct.
     };
@@ -61,20 +65,26 @@ pub(super) fn extract_groups(
         .map(|fld| fld.name.as_str())
         .collect::<Vec<_>>();
 
+    if ca.len() > 1 && ca.scalar_value().is_some() {
+        let one = extract_groups(&ca.slice(0, 1), pat, dtype)?;
+        return Ok(one.new_from_index(0, ca.len()));
+    }
+
     let chunks = ca
         .downcast_iter()
-        .map(|array| extract_groups_array(array, &reg, &names, arrow_dtype.clone()))
+        .map(|array| extract_groups_array(array, &reg, &names))
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    Series::try_from((ca.name().clone(), chunks))
+    // SAFETY: one field of strings per capture group, which is what `dtype` names.
+    Ok(unsafe { Series::from_chunks_and_dtype_unchecked(ca.name().clone(), chunks, dtype) })
 }
 
 fn extract_group_reg_lit(
-    arr: &Utf8ViewArray,
+    arr: &PlUtf8ViewArray,
     reg: &Regex,
     group_index: usize,
-) -> PolarsResult<Utf8ViewArray> {
-    let mut builder = MutablePlString::with_capacity(arr.len());
+) -> PolarsResult<PlUtf8ViewArray> {
+    let mut builder = PlUtf8ViewArrayBuilder::with_capacity(arr.len());
 
     let mut locs = reg.capture_locations();
     for opt_v in arr {
@@ -89,15 +99,15 @@ fn extract_group_reg_lit(
         builder.push_null();
     }
 
-    Ok(builder.into())
+    Ok(builder.freeze())
 }
 
 fn extract_group_array_lit(
     s: &str,
-    pat: &Utf8ViewArray,
+    pat: &PlUtf8ViewArray,
     group_index: usize,
-) -> PolarsResult<Utf8ViewArray> {
-    let mut builder = MutablePlString::with_capacity(pat.len());
+) -> PolarsResult<PlUtf8ViewArray> {
+    let mut builder = PlUtf8ViewArrayBuilder::with_capacity(pat.len());
 
     for opt_pat in pat {
         if let Some(pat) = opt_pat {
@@ -113,15 +123,15 @@ fn extract_group_array_lit(
         builder.push_null();
     }
 
-    Ok(builder.into())
+    Ok(builder.freeze())
 }
 
 fn extract_group_binary(
-    arr: &Utf8ViewArray,
-    pat: &Utf8ViewArray,
+    arr: &PlUtf8ViewArray,
+    pat: &PlUtf8ViewArray,
     group_index: usize,
-) -> PolarsResult<Utf8ViewArray> {
-    let mut builder = MutablePlString::with_capacity(arr.len());
+) -> PolarsResult<PlUtf8ViewArray> {
+    let mut builder = PlUtf8ViewArrayBuilder::with_capacity(arr.len());
 
     for (opt_s, opt_pat) in zip(arr, pat) {
         match (opt_s, opt_pat) {
@@ -139,7 +149,7 @@ fn extract_group_binary(
         }
     }
 
-    Ok(builder.into())
+    Ok(builder.freeze())
 }
 
 pub(super) fn extract_group(
@@ -151,14 +161,18 @@ pub(super) fn extract_group(
         (_, 1) => {
             if let Some(pat) = pat.get(0) {
                 let reg = polars_utils::regex_cache::compile_regex(pat)?;
-                try_unary_mut_with_options(ca, |arr| extract_group_reg_lit(arr, &reg, group_index))
+                try_unary_elementwise_mut_with_options(ca, |arr| {
+                    extract_group_reg_lit(arr, &reg, group_index)
+                })
             } else {
                 Ok(StringChunked::full_null(ca.name().clone(), ca.len()))
             }
         },
         (1, _) => {
             if let Some(s) = ca.get(0) {
-                try_unary_mut_with_options(pat, |pat| extract_group_array_lit(s, pat, group_index))
+                try_unary_elementwise_mut_with_options(pat, |pat| {
+                    extract_group_array_lit(s, pat, group_index)
+                })
             } else {
                 Ok(StringChunked::full_null(ca.name().clone(), pat.len()))
             }

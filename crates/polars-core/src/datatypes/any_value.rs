@@ -107,7 +107,7 @@ pub enum AnyValue<'a> {
     // - The array itself
     // - The fields
     #[cfg(feature = "dtype-struct")]
-    Struct(usize, &'a StructArray, &'a [Field]),
+    Struct(usize, &'a PlStructArray, &'a [Field]),
     #[cfg(feature = "dtype-struct")]
     StructOwned(Box<(Vec<AnyValue<'static>>, Vec<Field>)>),
     /// An UTF8 encoded string type.
@@ -1177,6 +1177,7 @@ impl<'a> From<AnyValue<'a>> for Option<i64> {
 impl AnyValue<'_> {
     #[inline]
     pub fn eq_missing(&self, other: &Self, null_equal: bool) -> bool {
+        #[cfg(feature = "dtype-struct")]
         fn struct_owned_value_iter<'a>(
             v: &'a (Vec<AnyValue<'_>>, Vec<Field>),
         ) -> impl ExactSizeIterator<Item = AnyValue<'a>> {
@@ -1185,20 +1186,20 @@ impl AnyValue<'_> {
         #[cfg(feature = "dtype-struct")]
         fn struct_value_iter<'a>(
             idx: usize,
-            arr: &'a StructArray,
+            arr: &'a PlStructArray,
             fields: &'a [Field],
         ) -> impl ExactSizeIterator<Item = AnyValue<'a>> {
             assert!(idx < arr.len());
-            assert_eq!(arr.values().len(), fields.len());
+            assert_eq!(arr.fields().len(), fields.len());
 
-            arr.values()
+            arr.fields()
                 .iter()
                 .zip(fields)
                 .map(move |(field_arr, field)| unsafe {
                     // SAFETY: We asserted before that idx is smaller than the array length. Since
-                    // it is an invariant of StructArray that all fields have the same length this
-                    // is fine to do.
-                    arr_to_any_value(field_arr.as_ref(), idx, &field.dtype)
+                    // it is an invariant of a struct array that all fields have the same length
+                    // this is fine to do.
+                    arr_to_any_value(&**field_arr, idx, field.dtype())
                 })
         }
 
@@ -1496,10 +1497,14 @@ impl TotalEq for AnyValue<'_> {
 }
 
 #[cfg(feature = "dtype-struct")]
-fn struct_to_avs_static(idx: usize, arr: &StructArray, fields: &[Field]) -> Vec<AnyValue<'static>> {
+fn struct_to_avs_static(
+    idx: usize,
+    arr: &PlStructArray,
+    fields: &[Field],
+) -> Vec<AnyValue<'static>> {
     assert!(idx < arr.len());
 
-    let arrs = arr.values();
+    let arrs = arr.fields();
 
     debug_assert_eq!(arrs.len(), fields.len());
 

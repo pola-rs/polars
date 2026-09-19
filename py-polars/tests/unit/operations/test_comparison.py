@@ -1173,3 +1173,138 @@ def test_is_between_rejects_datetime_string_28253(dtype: pl.DataType) -> None:
         match="cannot compare 'date/datetime/time' to a string value",
     ):
         q.explain()
+
+
+def test_list_comparison_over_representations() -> None:
+    values = [[1, 2], None, [], [1], [None, 2], [3, 3]]
+    other = [[1, 2], [1, 2], [], [2], [None, 2], [3]]
+
+    flat = pl.Series("a", values, dtype=pl.List(pl.Int64))
+    pad = pl.Series("a", [values[0]] * 2, dtype=pl.List(pl.Int64))
+    shapes = {
+        "flat": flat,
+        "sliced": pl.concat([pad, flat, pad]).slice(2, len(values)),
+        "chunked": pl.concat(
+            [
+                pl.Series("a", values[:2], dtype=pl.List(pl.Int64)),
+                pl.Series("a", values[2:], dtype=pl.List(pl.Int64)),
+            ],
+            rechunk=False,
+        ),
+    }
+    rhs = pl.Series("b", other, dtype=pl.List(pl.Int64))
+
+    expected_eq = [True, None, True, False, True, False]
+    expected_eq_missing = [True, False, True, False, True, False]
+
+    for name, lhs in shapes.items():
+        df = pl.DataFrame({"a": lhs, "b": rhs})
+        assert df.select(pl.col("a") == pl.col("b"))["a"].to_list() == expected_eq, name
+        assert df.select(pl.col("a") != pl.col("b"))["a"].to_list() == [
+            None if e is None else not e for e in expected_eq
+        ], name
+        assert (
+            df.select(pl.col("a").eq_missing(pl.col("b")))["a"].to_list()
+            == expected_eq_missing
+        ), name
+        assert df.select(pl.col("a") == pl.col("b").first())["a"].to_list() == [
+            True,
+            None,
+            False,
+            False,
+            False,
+            False,
+        ], name
+
+
+def test_list_comparison_repeated_element() -> None:
+    repeated = pl.select(
+        pl.repeat([1, 2], 3, dtype=pl.List(pl.Int64)).alias("a")
+    ).to_series()
+    other = pl.select(
+        pl.repeat([1, 3], 3, dtype=pl.List(pl.Int64)).alias("b")
+    ).to_series()
+
+    assert (repeated == repeated).to_list() == [True] * 3
+    assert (repeated == other).to_list() == [False] * 3
+    assert (repeated != other).to_list() == [True] * 3
+
+    masked = pl.select(
+        pl.when(pl.Series("m", [True, False, True])).then(
+            pl.repeat([1, 2], 3, dtype=pl.List(pl.Int64))
+        )
+    ).to_series()
+    assert (masked == repeated).to_list() == [True, None, True]
+    assert masked.eq_missing(repeated).to_list() == [True, False, True]
+
+
+def test_comparison_of_a_repeated_chunk_under_a_mask() -> None:
+    mask = pl.Series("m", [i % 3 != 0 for i in range(9)])
+    cases: list[tuple[PolarsDataType, Any, Any]] = [
+        (pl.Int64, 5, 4),
+        (pl.Float64, 1.5, 2.5),
+        (pl.String, "ab", "ac"),
+        (pl.Boolean, True, False),
+    ]
+    for dtype, value, other in cases:
+        masked = pl.select(
+            pl.when(mask).then(pl.repeat(pl.lit(value, dtype=dtype), 9)).alias("a")
+        ).to_series()
+        flat = pl.Series("a", masked.to_list(), dtype=dtype)
+
+        for rhs in (value, other):
+            assert_series_equal(masked == rhs, flat == rhs)
+            assert_series_equal(masked != rhs, flat != rhs)
+            assert_series_equal(masked.eq_missing(rhs), flat.eq_missing(rhs))
+            assert_series_equal(masked.ne_missing(rhs), flat.ne_missing(rhs))
+            assert_series_equal(
+                masked == pl.Series([rhs] * 9, dtype=dtype), flat == rhs
+            )
+            assert_series_equal(
+                masked.eq_missing(pl.Series([rhs] * 9, dtype=dtype)),
+                flat.eq_missing(rhs),
+            )
+        if dtype != pl.Boolean:
+            for rhs in (value, other):
+                assert_series_equal(masked > rhs, flat > rhs)
+                assert_series_equal(masked <= rhs, flat <= rhs)
+        assert_series_equal(masked.eq_missing(masked), flat.eq_missing(flat))
+
+    wide = pl.select(
+        pl.when(pl.Series("m", [i % 3 != 0 for i in range(1_000_000)]))
+        .then(pl.repeat(7, 1_000_000, dtype=pl.Int64))
+        .alias("a")
+    ).to_series()
+    assert (wide > 3).estimated_size() < wide.len() // 8 + 1024
+    assert (wide == 3).estimated_size() < wide.len() // 8 + 1024
+
+
+def test_if_then_else_over_a_repeated_chunk_under_a_mask() -> None:
+    mask = pl.Series("m", [i % 2 == 0 for i in range(9)])
+    valid = pl.Series("v", [i % 3 != 0 for i in range(9)])
+    for dtype, value in ((pl.Int64, 5), (pl.String, "ab"), (pl.Boolean, True)):
+        masked = pl.select(
+            pl.when(valid).then(pl.repeat(pl.lit(value, dtype=dtype), 9)).alias("a")
+        ).to_series()
+        flat = pl.Series("a", masked.to_list(), dtype=dtype)
+        other = pl.Series("b", [value] * 4 + [None] + [value] * 4, dtype=dtype)
+
+        assert_series_equal(masked.zip_with(mask, other), flat.zip_with(mask, other))
+        assert_series_equal(other.zip_with(mask, masked), other.zip_with(mask, flat))
+        assert_series_equal(masked.zip_with(mask, masked), flat.zip_with(mask, flat))
+        assert_series_equal(
+            pl.select(
+                pl.when(mask).then(pl.lit(masked)).otherwise(pl.lit(other))
+            ).to_series(),
+            pl.select(
+                pl.when(mask).then(pl.lit(flat)).otherwise(pl.lit(other))
+            ).to_series(),
+        )
+        assert_series_equal(
+            masked.zip_with(mask, pl.Series("b", [value], dtype=dtype)),
+            flat.zip_with(mask, pl.Series("b", [value], dtype=dtype)),
+        )
+        assert_series_equal(
+            pl.Series("b", [value], dtype=dtype).zip_with(mask, masked),
+            pl.Series("b", [value], dtype=dtype).zip_with(mask, flat),
+        )
