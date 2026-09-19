@@ -1,7 +1,7 @@
 use std::hint::black_box;
 use std::time::Instant;
 
-use polars_arrow::array::{Array, BinaryArray, PrimitiveArray, Utf8ViewArray};
+use polars_arrow::array::{BinaryArray, PrimitiveArray, Utf8ViewArray};
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_row::decode::decode_rows_from_binary;
@@ -30,7 +30,7 @@ fn f64_col(seed: &mut u64) -> ArrayRef {
 }
 fn u64_null_col(seed: &mut u64) -> ArrayRef {
     let v = PrimitiveArray::<u64>::from_vec((0..N).map(|_| rng(seed)).collect());
-    let validity: Bitmap = (0..N).map(|_| rng(seed) % 10 != 0).collect();
+    let validity: Bitmap = (0..N).map(|_| !rng(seed).is_multiple_of(10)).collect();
     v.with_validity(Some(validity)).boxed()
 }
 fn str_col(seed: &mut u64, min: usize, max: usize) -> ArrayRef {
