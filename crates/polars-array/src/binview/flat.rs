@@ -56,6 +56,7 @@ impl Flat<PlBinaryViewArray> {
             buffers,
             length: _,
             validity,
+            total_bytes_len: _,
         } = self.into_array();
 
         (views, buffers, validity)

@@ -5,6 +5,7 @@ use polars_arrow::array::View;
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapRef};
@@ -23,6 +24,9 @@ mod iterator;
 pub use builder::PlBinaryViewArrayBuilder;
 pub use iterator::{PlBinaryViewIter, PlBinaryViewValuesIter};
 
+/// The sentinel [`PlBinaryViewArray::total_bytes_len`] holds until someone asks for it.
+const UNKNOWN_BYTES_LEN: u64 = u64::MAX;
+
 /// An immutable, cheaply cloneable sequence of `length` optional byte slices.
 #[derive(Clone)]
 pub struct PlBinaryViewArray {
@@ -30,6 +34,9 @@ pub struct PlBinaryViewArray {
     buffers: Buffer<Buffer<u8>>,
     length: usize,
     validity: Option<Bitmap>,
+    /// What [`Self::total_bytes_len`] last answered, or [`UNKNOWN_BYTES_LEN`] before it is asked
+    /// and whenever the views or the mask move underneath it.
+    total_bytes_len: RelaxedCell<u64>,
 }
 
 impl PlBinaryViewArray {
@@ -58,6 +65,7 @@ impl PlBinaryViewArray {
             buffers,
             length,
             validity,
+            total_bytes_len: RelaxedCell::from(UNKNOWN_BYTES_LEN),
         })
     }
 
@@ -94,6 +102,7 @@ impl PlBinaryViewArray {
             buffers,
             length,
             validity,
+            total_bytes_len: RelaxedCell::from(UNKNOWN_BYTES_LEN),
         }
     }
 
@@ -123,6 +132,7 @@ impl PlBinaryViewArray {
             buffers,
             length,
             validity,
+            total_bytes_len: RelaxedCell::from(UNKNOWN_BYTES_LEN),
         })
     }
 
@@ -159,6 +169,7 @@ impl PlBinaryViewArray {
             buffers,
             length,
             validity,
+            total_bytes_len: RelaxedCell::from(UNKNOWN_BYTES_LEN),
         }
     }
 
@@ -170,6 +181,7 @@ impl PlBinaryViewArray {
             buffers: Buffer::new(),
             length: 0,
             validity: None,
+            total_bytes_len: RelaxedCell::from(0),
         }
     }
 
@@ -209,6 +221,7 @@ impl PlBinaryViewArray {
             buffers: collect_buffers(buffers),
             length,
             validity: None,
+            total_bytes_len: RelaxedCell::from(scalar_bytes_len(view, length)),
         }
     }
 
@@ -225,6 +238,7 @@ impl PlBinaryViewArray {
             buffers: collect_buffers(buffers),
             length,
             validity: None,
+            total_bytes_len: RelaxedCell::from(scalar_bytes_len(view, length)),
         }
     }
 
@@ -236,6 +250,7 @@ impl PlBinaryViewArray {
             buffers: Buffer::new(),
             length,
             validity: Some(Bitmap::new_zeroed(scalar_buffer_len(length))),
+            total_bytes_len: RelaxedCell::from(0),
         }
     }
 
@@ -254,6 +269,7 @@ impl PlBinaryViewArray {
         if self.views_are_scalar() {
             None
         } else {
+            self.total_bytes_len.store(UNKNOWN_BYTES_LEN);
             Some(&mut self.views)
         }
     }
@@ -284,6 +300,7 @@ impl PlBinaryViewArray {
     /// Every view of this array must still read bytes the buffers hold once they are written.
     #[inline]
     pub unsafe fn data_buffers_mut(&mut self) -> &mut Buffer<Buffer<u8>> {
+        self.total_bytes_len.store(UNKNOWN_BYTES_LEN);
         &mut self.buffers
     }
 
@@ -383,7 +400,22 @@ impl PlBinaryViewArray {
     }
 
     /// The number of bytes it would take to lay the values of the valid elements end to end.
+    ///
+    /// Walking the views to answer this is `O(len)`, so the answer is kept until the views or the
+    /// mask move underneath it.
     pub fn total_bytes_len(&self) -> usize {
+        let cached = self.total_bytes_len.load();
+        if cached != UNKNOWN_BYTES_LEN {
+            return cached as usize;
+        }
+
+        let total = self.compute_total_bytes_len();
+        self.total_bytes_len.store(total as u64);
+        total
+    }
+
+    /// Walks the views to count the bytes the valid elements hold.
+    fn compute_total_bytes_len(&self) -> usize {
         if self.views_are_scalar() {
             let valid = self
                 .validity()
@@ -445,6 +477,7 @@ impl PlBinaryViewArray {
         }
 
         self.length = length;
+        self.total_bytes_len.store(UNKNOWN_BYTES_LEN);
     }
 
     /// Creates a [`PlBinaryViewArray`] of `length` copies of the element at `index`.
@@ -480,6 +513,7 @@ impl PlBinaryViewArray {
             buffers,
             length,
             validity: None,
+            total_bytes_len: RelaxedCell::from(scalar_bytes_len(view, length)),
         }
     }
 
@@ -543,6 +577,8 @@ impl PlBinaryViewArray {
                 buffers: self.buffers.clone(),
                 length: self.length,
                 validity,
+                // Flattening repeats the elements it already held, in order.
+                total_bytes_len: self.total_bytes_len.clone(),
             })
         })
     }
@@ -556,6 +592,14 @@ impl PlBinaryViewArray {
 }
 
 crate::impl_array_methods!(PlBinaryViewArray, &[u8]);
+
+/// The bytes `length` copies of the element `view` reads lay end to end.
+fn scalar_bytes_len(view: View, length: usize) -> u64 {
+    u64::from(view.length)
+        .checked_mul(length as u64)
+        .filter(|total| *total != UNKNOWN_BYTES_LEN)
+        .expect("the total length of the values overflows a `u64`")
+}
 
 /// Validates that every view of `views` reads bytes that `buffers` holds.
 fn validate_views(views: &[View], buffers: &[Buffer<u8>]) -> PolarsResult<()> {

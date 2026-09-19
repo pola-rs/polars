@@ -46,15 +46,15 @@ fn downcast<A: PlArray>(array: &dyn PlArray) -> &A {
 }
 
 /// The bytes the views of a view array cover, which is what such an array is measured by.
+///
+/// The data buffers are shared, so an array is measured by what its views read rather than by what
+/// the buffers hold: summing the buffers overestimates and spills to disk when there is no need to.
 fn viewed_bytes(array: &PlBinaryViewArray) -> usize {
     match array.scalar_views() {
+        // One view is all a scalar array holds, however many elements read it.
         Some(view) => view.length as usize,
-        None => array
-            .flat_views()
-            .unwrap()
-            .iter()
-            .map(|view| view.length as usize)
-            .sum(),
+        // The array keeps this, so a column measured more than once walks its views only once.
+        None => array.total_bytes_len(),
     }
 }
 
