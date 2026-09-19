@@ -329,6 +329,31 @@ class TestIcebergScanIO:
             (3, "3", datetime(2023, 3, 2, 22, 0)),
         ]
 
+    def test_scan_iceberg_noteq_prunes_files(
+        self,
+        tmp_path: Path,
+        plmonkeypatch: PlMonkeyPatch,
+        capfd: pytest.CaptureFixture[str],
+    ) -> None:
+        # Row-count-correctness alone doesn't catch this bug (polars
+        # re-filters after scanning regardless of pushdown) - only file
+        # pruning does.
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(NestedField(1, "id", LongType())),
+            partition_spec=PartitionSpec(
+                PartitionField(1, 1000, IdentityTransform(), "id")
+            ),
+        )
+        pl.DataFrame({"id": [1, 2]}, schema={"id": pl.Int64}).write_iceberg(
+            tbl, mode="append"
+        )
+
+        plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        pl.scan_iceberg(tbl.metadata_location).filter(pl.col("id") != 1).collect()
+        assert "num_sources: 1" in capfd.readouterr().err
+
     def test_scan_iceberg_filter_is_in_empty(self, tmp_path: Path) -> None:
         tbl, _ = new_iceberg_table(
             tmp_path,
