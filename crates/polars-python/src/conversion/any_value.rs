@@ -17,8 +17,8 @@ use polars_core::prelude::try_unpack_map_entries;
 use polars_core::scalar::Scalar;
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 #[cfg(feature = "dtype-map")]
-use polars_core::utils::arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
-use polars_core::utils::arrow::temporal_conversions::{
+use polars_core::utils::polars_arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
+use polars_core::utils::polars_arrow::temporal_conversions::{
     date_to_date32_opt, date32_to_date_opt, datetime_to_epoch_nanos_opt,
 };
 use polars_utils::aliases::PlFixedStateQuality;

@@ -7,6 +7,7 @@
 //!  1. `statx(STATX_DIOALIGN)` (Linux 6.1+) - authoritative, per-file, and
 //!     distinguishes memory alignment from offset/length alignment. It can
 //!     also say *definitively* that a file does not support direct I/O.
+//!     Only available on glibc: `libc` does not expose `statx` on musl.
 //!  2. `/sys/dev/block/<major>:<minor>/queue/logical_block_size` - the device
 //!     sector size. Right for most filesystems, but misses cases where the
 //!     filesystem imposes something stricter.
@@ -14,7 +15,7 @@
 //! When neither can answer, the alignment stays unknown and the caller reads
 //! through the page cache.
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 use std::os::fd::AsRawFd;
 
 /// Substituted for a reported value that cannot be an alignment.
@@ -38,7 +39,7 @@ pub struct DioAlign {
 }
 
 /// What `statx` was able to tell us.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 #[derive(Debug, Clone)]
 enum StatxAlign {
     /// The kernel reported concrete alignments.
@@ -72,13 +73,14 @@ impl DioAlign {
     /// buffered reads.
     #[cfg(target_os = "linux")]
     pub fn probe(file: &std::fs::File) -> Option<Self> {
+        #[cfg(target_env = "gnu")]
         match statx_dioalign(file) {
-            StatxAlign::Unsupported => None,
-            StatxAlign::Known(a) => Some(Self::new(a.offset, a.memory)),
-            StatxAlign::Unknown => {
-                sysfs_logical_block_size(file).map(|a| Self::new(a.offset, a.memory))
-            },
+            StatxAlign::Unsupported => return None,
+            StatxAlign::Known(a) => return Some(Self::new(a.offset, a.memory)),
+            StatxAlign::Unknown => {},
         }
+
+        sysfs_logical_block_size(file).map(|a| Self::new(a.offset, a.memory))
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -105,7 +107,7 @@ fn normalize(v: usize) -> usize {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 fn statx_dioalign(file: &std::fs::File) -> StatxAlign {
     let mut stx: libc::statx = unsafe { std::mem::zeroed() };
     let rc = unsafe {
@@ -134,7 +136,8 @@ fn statx_dioalign(file: &std::fs::File) -> StatxAlign {
 /// `/sys/dev/block/<major>:<minor>/queue/logical_block_size`.
 ///
 /// Keyed by device number, so this needs no device-name lookup. Used when the
-/// kernel predates `STATX_DIOALIGN`.
+/// kernel predates `STATX_DIOALIGN`, or when `statx` is unavailable at all
+/// (musl).
 #[cfg(target_os = "linux")]
 fn sysfs_logical_block_size(file: &std::fs::File) -> Option<DioAlign> {
     use std::os::unix::fs::MetadataExt;

@@ -1,13 +1,12 @@
-use arrow::legacy::time_zone::Tz;
 use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
+use polars_arrow::legacy::time_zone::Tz;
+#[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::{try_localize_datetime, unlocalize_datetime};
 use polars_core::prelude::*;
-use polars_core::utils::arrow::temporal_conversions::{
+use polars_core::utils::polars_arrow::temporal_conversions::{
     MILLISECONDS, SECONDS_IN_DAY, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
     timestamp_us_to_datetime,
 };
-
-#[cfg(feature = "timezones")]
-use crate::utils::{try_localize_datetime, unlocalize_datetime};
 
 // roll backward to the first day of the month
 pub(crate) fn roll_backward(

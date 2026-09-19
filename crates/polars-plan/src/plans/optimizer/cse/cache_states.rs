@@ -13,9 +13,9 @@ use crate::plans::aexpr::filter_constraint::widen_over_predicates;
 use crate::plans::deep_copy::deep_copy_ir_delete_cache_id;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::visitor::AexprNode;
-use crate::plans::{AExpr, ExprIR, IR, PredicatePushDown, subplan_cost};
+use crate::plans::{AExpr, ExecutionHooks, ExprIR, IR, PredicatePushDown, subplan_cost};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
-use crate::utils::aexpr_to_leaf_names;
+use crate::utils::aexpr_to_leaf_names_iter;
 
 fn get_upper_projections(
     parent: Node,
@@ -36,7 +36,7 @@ fn get_upper_projections(
         },
         IR::Filter { predicate, .. } => {
             // Also add predicate, as the projection is above the filter node.
-            names_scratch.extend(aexpr_to_leaf_names(predicate.node(), expr_arena));
+            names_scratch.extend(aexpr_to_leaf_names_iter(predicate.node(), expr_arena).cloned());
 
             true
         },
@@ -141,6 +141,7 @@ pub(crate) fn set_cache_states(
     streaming: bool,
     partition_hive: bool,
     row_estimate: bool,
+    hooks: ExecutionHooks,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
     let mut names_scratch = vec![];
@@ -310,7 +311,7 @@ pub(crate) fn set_cache_states(
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
         let mut pred_pd =
-            PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive);
+            PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive, hooks);
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for (cache_id, v) in cache_schema_and_children.into_iter().rev() {
@@ -446,9 +447,13 @@ pub(crate) fn set_cache_states(
                     .expect("expected filter; this is an optimizer bug");
                 let start_lp = lp_arena.take(node);
 
-                let mut pred_pd =
-                    PredicatePushDown::new(pushdown_maintain_errors, v.streaming, partition_hive)
-                        .block_at_cache(1);
+                let mut pred_pd = PredicatePushDown::new(
+                    pushdown_maintain_errors,
+                    v.streaming,
+                    partition_hive,
+                    hooks,
+                )
+                .block_at_cache(1);
                 let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
                 lp_arena.replace(node, lp.clone());
 

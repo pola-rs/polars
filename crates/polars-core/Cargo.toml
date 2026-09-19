@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "Core of the Polars DataFrame library"
 
 [dependencies]
+polars-arrow = { workspace = true, features = ["compute_aggregate", "compute_bitwise"] }
 polars-async = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true, features = ["gather"] }
@@ -19,7 +20,7 @@ polars-row = { workspace = true }
 polars-schema = { workspace = true }
 polars-utils = { workspace = true }
 
-arrow = { workspace = true }
+atoi_simd = { workspace = true, optional = true }
 bitflags = { workspace = true }
 boxcar = { workspace = true }
 bytemuck = { workspace = true }
@@ -61,11 +62,11 @@ serde_json = { workspace = true }
 version_check = { workspace = true }
 
 [features]
-simd = ["arrow/simd", "polars-compute/simd"]
-nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "arrow/nightly"]
+simd = ["polars-arrow/simd", "polars-compute/simd"]
+nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "polars-arrow/nightly"]
 avx512 = []
 docs = []
-temporal = ["regex", "dep:jiff", "polars-error/regex"]
+temporal = ["regex", "dep:jiff", "atoi_simd", "polars-error/regex"]
 proptest = ["dep:proptest", "dtype-u8", "dtype-u16", "dtype-i8", "dtype-i16", "dtype-u128", "dtype-i128"]
 random = ["rand", "rand_distr"]
 algorithm_group_by = []
@@ -75,10 +76,10 @@ lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
 # more fast paths, slower compilation
-performant = ["arrow/performant", "reinterpret"]
+performant = ["polars-arrow/performant", "reinterpret"]
 
 # extra utilities for StringChunked
-strings = ["regex", "arrow/strings", "polars-error/regex"]
+strings = ["regex", "polars-arrow/strings", "polars-error/regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json", "algorithm_group_by"]
 
@@ -113,7 +114,7 @@ product = []
 unique_counts = []
 partition_by = ["algorithm_group_by"]
 describe = []
-timezones = ["temporal", "arrow/timezones"]
+timezones = ["temporal", "polars-arrow/timezones", "dtype-datetime"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
 list_arithmetic = []
 array_arithmetic = ["dtype-array"]
@@ -123,11 +124,11 @@ dtype-date = ["temporal"]
 dtype-datetime = ["temporal"]
 dtype-duration = ["temporal"]
 dtype-time = ["temporal"]
-dtype-array = ["arrow/dtype-array", "polars-compute/dtype-array"]
+dtype-array = ["polars-arrow/dtype-array", "polars-compute/dtype-array"]
 dtype-i8 = []
 dtype-i16 = []
 dtype-i128 = ["polars-compute/dtype-i128"]
-dtype-decimal = ["arrow/dtype-decimal", "polars-compute/cast", "polars-compute/dtype-decimal", "dtype-i128"]
+dtype-decimal = ["polars-arrow/dtype-decimal", "polars-compute/cast", "polars-compute/dtype-decimal", "dtype-i128"]
 dtype-extension = ["polars-dtype/dtype-extension"]
 dtype-map = ["dtype-struct"]
 dtype-u8 = []
@@ -138,7 +139,7 @@ dtype-categorical = ["polars-dtype/dtype-categorical"]
 dtype-struct = []
 
 # scale to terabytes?
-bigidx = ["arrow/bigidx", "polars-utils/bigidx", "dtype-i128"]
+bigidx = ["polars-arrow/bigidx", "polars-utils/bigidx", "dtype-i128"]
 python = ["polars-error/python"]
 
 serde = [
@@ -150,11 +151,11 @@ serde = [
   "polars-utils/serde",
   "polars-compute/serde",
   "polars-dtype/serde",
-  "arrow/io_ipc",
-  "arrow/io_ipc_compression",
+  "polars-arrow/io_ipc",
+  "polars-arrow/io_ipc_compression",
   "serde_json",
 ]
-serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "jiff/serde"]
+serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde", "jiff/serde"]
 dsl-schema = [
   "serde",
   "dep:schemars",

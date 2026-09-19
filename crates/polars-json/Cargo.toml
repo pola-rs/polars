@@ -9,11 +9,11 @@ repository = { workspace = true }
 description = "JSON related logic for the Polars DataFrame library"
 
 [dependencies]
+polars-arrow = { workspace = true }
 polars-compute = { workspace = true, features = ["cast"] }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 
-arrow = { workspace = true }
 fallible-streaming-iterator = { version = "0.1" }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
@@ -25,8 +25,8 @@ streaming-iterator = { workspace = true }
 zmij = { workspace = true }
 
 [features]
-dtype-decimal = ["arrow/dtype-decimal", "polars-compute/dtype-decimal"]
-timezones = ["arrow/timezones"]
+dtype-decimal = ["polars-arrow/dtype-decimal", "polars-compute/dtype-decimal"]
+timezones = ["polars-arrow/timezones"]
 
 [lints]
 workspace = true

@@ -1,13 +1,14 @@
 use std::str::FromStr;
 
-use arrow::legacy::kernels::convert_to_naive_local;
-use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
 use jiff::civil::DateTime as NaiveDateTime;
 use jiff::tz::TimeZone as Tz;
-use polars_core::chunked_array::ops::arity::try_binary_elementwise;
-use polars_core::prelude::*;
+use polars_arrow::legacy::kernels::convert_to_naive_local;
+use polars_arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
+
+use crate::chunked_array::ops::arity::try_binary_elementwise;
+use crate::prelude::*;
 
 pub fn replace_time_zone(
     datetime: &Logical<DatetimeType, Int64Type>,

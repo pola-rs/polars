@@ -95,10 +95,21 @@ from polars.datatypes import (
 from polars.datatypes.classes import Struct
 from polars.datatypes.group import DataTypeGroup
 from polars.exceptions import InvalidOperationError, PerformanceWarning
-from polars.lazyframe.engine_config import _eager_engine, _select_engine
+from polars.lazyframe.engine_config import (
+    _eager_engine,
+    _select_engine,
+    _validate_engine,
+)
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, REMOVED_OLD_OPT_FLAGS
 from polars.lazyframe.resolver._resolver import LazyFrameResolver
+from polars.lazyframe.sink_plan import (
+    _sink_batches_plan,
+    _sink_csv_plan,
+    _sink_ipc_plan,
+    _sink_ndjson_plan,
+    _sink_parquet_plan,
+)
 from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
@@ -1079,8 +1090,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
           statistics that we deem informative, and may be updated in the future.
           Using `describe` programmatically (versus interactive exploration) is
           not recommended for this reason.
-        * The statistics query honors the configured engine affinity. Once computed,
-          the statistics are collected locally to reshape the result.
+        * The statistics query honors the configured engine affinity.
 
         Examples
         --------
@@ -1220,8 +1230,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 ]
             )
 
-        # We want to compute the metrics using the selected engine, and once they have
-        # been computed, we collect them eagerly for local consumption
         df_metrics = (
             (
                 # if more than one quantile, sort the relevant columns to make them O(1)
@@ -1231,9 +1239,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 else self
             )
             .select(*metric_exprs)
-            .execute()
-            .lazy()
-            ._collect_eager()
+            .collect()
         )
 
         # reshape wide result
@@ -2587,6 +2593,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 point without it being considered a breaking change.
         engine
             Select the engine used to process the query (default ``"auto"``).
+            Ignored when `lazy=True`: building the returned plan does not
+            involve an engine; one is only chosen when the plan is collected.
             A :class:`~.Engine` instance may also be passed. Supported engine
             names are:
 
@@ -2649,7 +2657,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = "the `sinked_paths_callback` parameter of `sink_parquet` is considered unstable"
             issue_unstable_warning(msg)
 
-        return _select_engine(engine).sink_parquet(
+        if lazy:
+            # A lazy sink only attaches a sink node to the plan; an engine is
+            # only chosen when the returned plan is collected.
+            _validate_engine(engine)
+            return _sink_parquet_plan(
+                self,
+                path,
+                compression=compression,
+                compression_level=compression_level,
+                statistics=statistics,
+                row_group_size=row_group_size,
+                data_page_size=data_page_size,
+                maintain_order=maintain_order,
+                storage_options=storage_options,
+                credential_provider=credential_provider,
+                sync_on_close=sync_on_close,
+                metadata=metadata,
+                arrow_schema=arrow_schema,
+                mkdir=mkdir,
+                sinked_paths_callback=sinked_paths_callback,
+            )
+
+        _select_engine(engine).sink_parquet(
             self,
             path,
             compression=compression,
@@ -2664,10 +2694,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             metadata=metadata,
             arrow_schema=arrow_schema,
             mkdir=mkdir,
-            lazy=lazy,
             optimizations=optimizations,
             sinked_paths_callback=sinked_paths_callback,
         )
+        return None
 
     @overload
     def sink_delta(
@@ -3053,7 +3083,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Row group size in number of rows.
         maintain_order
             Maintain the input row order in the written files. Setting this to
-            `False` can improve throughput.
+            `False` can improve throughput. For tables with a sort order, this
+            controls the order of rows with equal sort keys; files always follow
+            the table's sort order.
         engine
             Engine used to produce rows for the local `pyiceberg` writer.
 
@@ -3073,8 +3105,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         ``mode="overwrite"`` replaces all table data; dynamic partition overwrite
         is not supported. ``schema_mode="overwrite"`` is not supported for
-        partitioned tables. Tables with sort orders or custom location providers
-        are also not supported.
+        partitioned tables or tables with a sort order. Custom location providers
+        are not supported.
+
+        The table's default sort order is applied to incoming rows and recorded on
+        each new data file. Existing files are not rewritten. Sorting materializes
+        the incoming data in memory. Bucket sort transforms require
+        ``pyiceberg-core``; their sort keys are computed in batches while Parquet
+        I/O remains native. This does not guarantee a globally sorted table scan.
         """
         from polars.io.iceberg._sink import IcebergSinkState
 
@@ -3247,6 +3285,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 point without it being considered a breaking change.
         engine
             Select the engine used to process the query (default ``"auto"``).
+            Ignored when `lazy=True`: building the returned plan does not
+            involve an engine; one is only chosen when the plan is collected.
             A :class:`~.Engine` instance may also be passed. Supported engine
             names are:
 
@@ -3310,7 +3350,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = "the `sinked_paths_callback` parameter of `sink_ipc` is considered unstable"
             issue_unstable_warning(msg)
 
-        return _select_engine(engine).sink_ipc(
+        if lazy:
+            # A lazy sink only attaches a sink node to the plan; an engine is
+            # only chosen when the returned plan is collected.
+            _validate_engine(engine)
+            return _sink_ipc_plan(
+                self,
+                path,
+                compression=compression,
+                compat_level=compat_level,
+                record_batch_size=record_batch_size,
+                maintain_order=maintain_order,
+                storage_options=storage_options,
+                credential_provider=credential_provider,
+                sync_on_close=sync_on_close,
+                mkdir=mkdir,
+                _record_batch_statistics=_record_batch_statistics,
+                sinked_paths_callback=sinked_paths_callback,
+            )
+
+        _select_engine(engine).sink_ipc(
             self,
             path,
             compression=compression,
@@ -3321,11 +3380,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider,
             sync_on_close=sync_on_close,
             mkdir=mkdir,
-            lazy=lazy,
             optimizations=optimizations,
             _record_batch_statistics=_record_batch_statistics,
             sinked_paths_callback=sinked_paths_callback,
         )
+        return None
 
     @overload
     def sink_csv(
@@ -3576,6 +3635,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 point without it being considered a breaking change.
         engine
             Select the engine used to process the query (default ``"auto"``).
+            Ignored when `lazy=True`: building the returned plan does not
+            involve an engine; one is only chosen when the plan is collected.
             A :class:`~.Engine` instance may also be passed. Supported engine
             names are:
 
@@ -3628,7 +3689,38 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         PartitionBy
         """
-        return _select_engine(engine).sink_csv(
+        if lazy:
+            # A lazy sink only attaches a sink node to the plan; an engine is
+            # only chosen when the returned plan is collected.
+            _validate_engine(engine)
+            return _sink_csv_plan(
+                self,
+                path,
+                include_bom=include_bom,
+                compression=compression,
+                compression_level=compression_level,
+                check_extension=check_extension,
+                include_header=include_header,
+                separator=separator,
+                line_terminator=line_terminator,
+                quote_char=quote_char,
+                batch_size=batch_size,
+                datetime_format=datetime_format,
+                date_format=date_format,
+                time_format=time_format,
+                float_scientific=float_scientific,
+                float_precision=float_precision,
+                decimal_comma=decimal_comma,
+                null_value=null_value,
+                quote_style=quote_style,
+                maintain_order=maintain_order,
+                storage_options=storage_options,
+                credential_provider=credential_provider,
+                sync_on_close=sync_on_close,
+                mkdir=mkdir,
+            )
+
+        _select_engine(engine).sink_csv(
             self,
             path,
             include_bom=include_bom,
@@ -3653,9 +3745,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider,
             sync_on_close=sync_on_close,
             mkdir=mkdir,
-            lazy=lazy,
             optimizations=optimizations,
         )
+        return None
 
     @overload
     def sink_ndjson(
@@ -3810,6 +3902,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         engine
             Select the engine used to process the query (default ``"auto"``).
+            Ignored when `lazy=True`: building the returned plan does not
+            involve an engine; one is only chosen when the plan is collected.
             A :class:`~.Engine` instance may also be passed. Supported engine
             names are:
 
@@ -3862,7 +3956,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         PartitionBy
         """
-        return _select_engine(engine).sink_ndjson(
+        if lazy:
+            # A lazy sink only attaches a sink node to the plan; an engine is
+            # only chosen when the returned plan is collected.
+            _validate_engine(engine)
+            return _sink_ndjson_plan(
+                self,
+                path,
+                compression=compression,
+                compression_level=compression_level,
+                check_extension=check_extension,
+                maintain_order=maintain_order,
+                storage_options=storage_options,
+                credential_provider=credential_provider,
+                sync_on_close=sync_on_close,
+                mkdir=mkdir,
+            )
+
+        _select_engine(engine).sink_ndjson(
             self,
             path,
             compression=compression,
@@ -3873,9 +3984,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider,
             sync_on_close=sync_on_close,
             mkdir=mkdir,
-            lazy=lazy,
             optimizations=optimizations,
         )
+        return None
 
     @overload
     def sink_batches(
@@ -3942,6 +4053,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Wait to start execution until `collect` is called.
         engine
             Select the engine used to process the query (default ``"auto"``).
+            Ignored when `lazy=True`: building the returned plan does not
+            involve an engine; one is only chosen when the plan is collected.
             A :class:`~.Engine` instance may also be passed. Supported engine
             names are:
 
@@ -3969,14 +4082,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_batches(lambda df: print(df))  # doctest: +SKIP
         """
-        return _select_engine(engine).sink_batches(
+        if lazy:
+            # A lazy sink only attaches a sink node to the plan; an engine is
+            # only chosen when the returned plan is collected.
+            _validate_engine(engine)
+            return _sink_batches_plan(
+                self,
+                function,
+                chunk_size=chunk_size,
+                maintain_order=maintain_order,
+            )
+
+        _select_engine(engine).sink_batches(
             self,
             function,
             chunk_size=chunk_size,
             maintain_order=maintain_order,
-            lazy=lazy,
             optimizations=optimizations,
         )
+        return None
 
     @unstable()
     def collect_batches(
@@ -5481,12 +5605,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         other
             Lazy DataFrame to join with.
         left_on
-            Join column of the left DataFrame.
+            Ordered asof key (column name, expression, or selector) for the left
+            DataFrame.
         right_on
-            Join column of the right DataFrame.
+            Ordered asof key (column name, expression, or selector) for the right
+            DataFrame.
         on
-            Join column of both DataFrames. If set, `left_on` and `right_on` should be
-            None.
+            Ordered asof key (column name, expression, or selector) for both DataFrames.
+            If set, `left_on` and `right_on` should be None.
         by_left
             Join on these columns before doing asof join.
         by_right
@@ -5536,8 +5662,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - True: -> Always coalesce join columns.
             - False: -> Never coalesce join columns.
 
-            Note that joining on any other expressions than `col`
-            will turn off coalescing.
+            Only keys that expand to plain column references support coalescing.
         allow_exact_matches
             Whether exact matches are valid join predicates.
 
@@ -5558,6 +5683,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
+        The asof key must expand to exactly one expression per input.
+
         If 'by' is set, the implementation will compute the asof join over all of the
         groups concurrently.  This can potentially lead to high memory usage if there
         are many groups.
@@ -5870,8 +5997,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         other
             Lazy DataFrame to join with.
         on
-            Name(s) of the join columns in both DataFrames. If set, `left_on` and
-            `right_on` should be None. This should not be specified if `how='cross'`.
+            Names, expressions, or selectors used on both DataFrames. If set,
+            `left_on` and `right_on` should be None. Do not use with `how='cross'`.
         how : {'inner','left', 'right', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
@@ -5899,9 +6026,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                    table. Does not return columns from the right table.
 
         left_on
-            Join column of the left DataFrame.
+            Join columns, expressions, or selectors of the left DataFrame.
         right_on
-            Join column of the right DataFrame.
+            Join columns, expressions, or selectors of the right DataFrame.
         suffix
             Suffix to append to columns with a duplicate name.
         validate: {'m:m', 'm:1', '1:m', '1:1'}
@@ -5935,8 +6062,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - Never coalesce join columns.
 
             .. note::
-                Joining on any other expressions than `col`
-                will turn off coalescing.
+                Only keys that expand to plain column references support coalescing.
         maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
             Which DataFrame row order to preserve, if any.
             Do not rely on any observed ordering without explicitly setting this

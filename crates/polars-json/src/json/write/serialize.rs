@@ -1,23 +1,23 @@
 use std::io::Write;
 
-use arrow::array::*;
-use arrow::bitmap::utils::ZipValidity;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::utils::ZipValidity;
 #[cfg(feature = "dtype-decimal")]
-use arrow::compute::decimal::get_trim_decimal_zeros;
-use arrow::datatypes::{ArrowDataType, IntegerType, TimeUnit};
-use arrow::io::iterator::BufStreamingIterator;
-use arrow::offset::Offset;
+use polars_arrow::compute::decimal::get_trim_decimal_zeros;
+use polars_arrow::datatypes::{ArrowDataType, IntegerType, TimeUnit};
+use polars_arrow::io::iterator::BufStreamingIterator;
+use polars_arrow::offset::Offset;
 #[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset_tz;
-use arrow::temporal_conversions::{
+use polars_arrow::temporal_conversions::parse_offset_tz;
+use polars_arrow::temporal_conversions::{
     date32_to_date, duration_ms_to_duration, duration_ns_to_duration, duration_us_to_duration,
     parse_offset, time64ns_to_time, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
     timestamp_to_datetime, timestamp_us_to_datetime,
 };
-use arrow::types::NativeType;
 use jiff::SignedDuration as Duration;
 use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
 use num_traits::{Float, ToPrimitive};
+use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 use streaming_iterator::StreamingIterator;
 

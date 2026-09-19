@@ -1,5 +1,5 @@
-use polars_core::prelude::*;
-use polars_core::series::IsSorted;
+use crate::prelude::*;
+use crate::series::IsSorted;
 
 pub fn new_int_range<T>(
     start: T::Native,

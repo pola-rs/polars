@@ -3,8 +3,8 @@ use std::ffi::CStr;
 use std::path::PathBuf;
 use std::sync::{LazyLock, RwLock};
 
-use arrow::ffi::{ArrowSchema, import_field_from_c};
 use libloading::Library;
+use polars_arrow::ffi::{ArrowSchema, import_field_from_c};
 use polars_utils::io::PathIoError;
 #[cfg(feature = "python")]
 use pyo3::{Python, types::PyAnyMethods};
@@ -158,7 +158,7 @@ pub(super) unsafe fn plugin_field(
     // we deallocate the fields buffer
     let ffi_fields = fields
         .iter()
-        .map(|field| arrow::ffi::export_field_to_c(&field.to_arrow(CompatLevel::newest())))
+        .map(|field| polars_arrow::ffi::export_field_to_c(&field.to_arrow(CompatLevel::newest())))
         .collect::<Vec<_>>()
         .into_boxed_slice();
     let n_args = ffi_fields.len();

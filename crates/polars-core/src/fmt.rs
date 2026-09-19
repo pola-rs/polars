@@ -11,7 +11,7 @@ use std::{fmt, str};
     feature = "dtype-datetime",
     feature = "dtype-time"
 ))]
-use arrow::temporal_conversions::*;
+use polars_arrow::temporal_conversions::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::modifiers::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -71,7 +71,7 @@ pub fn get_thousands_separator() -> String {
 }
 #[cfg(feature = "dtype-decimal")]
 pub fn get_trim_decimal_zeros() -> bool {
-    arrow::compute::decimal::get_trim_decimal_zeros()
+    polars_arrow::compute::decimal::get_trim_decimal_zeros()
 }
 
 // Numeric formatting setters
@@ -89,7 +89,7 @@ pub fn set_thousands_separator(sep: Option<char>) {
 }
 #[cfg(feature = "dtype-decimal")]
 pub fn set_trim_decimal_zeros(trim: Option<bool>) {
-    arrow::compute::decimal::set_trim_decimal_zeros(trim)
+    polars_arrow::compute::decimal::set_trim_decimal_zeros(trim)
 }
 
 /// Parses an environment variable value as a limit or set a default.

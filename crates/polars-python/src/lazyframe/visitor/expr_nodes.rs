@@ -1,16 +1,15 @@
 #[cfg(feature = "iejoin")]
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
-#[cfg(feature = "approx_quantile")]
-use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::rolling::{QuantileMethod, RollingFnParams};
 use polars_core::chunked_array::ops::FillNullStrategy;
 #[cfg(feature = "string_normalize")]
-use polars_ops::chunked_array::UnicodeForm;
-use polars_ops::prelude::RankMethod;
+use polars_defs::expr::UnicodeForm;
+use polars_defs::expr::{ClosedInterval, InterpolationMethod, RankMethod};
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
-use polars_ops::series::{ClosedInterval, InterpolationMethod};
 use polars_plan::dsl::DateRangeArgs;
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
@@ -18,11 +17,11 @@ use polars_plan::plans::{
     IRRandomMethod, IRRangeFunction, IRRollingFunction, IRRollingFunctionBy, IRStringFunction,
     IRStructFunction, IRTemporalFunction,
 };
+#[cfg(feature = "cutqcut")]
+use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
 use polars_plan::prelude::{
     AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
 };
-use polars_time::prelude::RollingGroupOptions;
-use polars_time::{ClosedWindow, Duration, DynamicGroupOptions};
 use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyNotImplementedError;
@@ -1897,17 +1896,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 } => ("value_counts", sort, parallel, name.as_str(), normalize).into_py_any(py),
                 IRFunctionExpr::UniqueCounts => ("unique_counts",).into_py_any(py),
                 IRFunctionExpr::ApproxNUnique => ("approx_n_unique",).into_py_any(py),
-                #[cfg(feature = "approx_quantile")]
-                IRFunctionExpr::ApproxQuantile { method, error } => {
-                    let method = match method {
-                        ApproxQuantileMethod::Auto => "auto",
-                        ApproxQuantileMethod::KLL => "kll",
-                        ApproxQuantileMethod::ReqSketch { hra: false } => "req_lo",
-                        ApproxQuantileMethod::ReqSketch { hra: true } => "req_hi",
-                        ApproxQuantileMethod::DoubleReqSketch => "req_both",
-                    };
-                    ("approx_quantile", method, error).into_py_any(py)
-                },
                 IRFunctionExpr::Coalesce => ("coalesce",).into_py_any(py),
                 IRFunctionExpr::Diff(null_behaviour) => (
                     "diff",
@@ -2000,6 +1988,62 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     include_breaks,
                 )
                     .into_py_any(py),
+                #[cfg(feature = "cutqcut")]
+                IRFunctionExpr::Bin(options) => {
+                    let labels = options
+                        .labels
+                        .as_ref()
+                        .map(|l| l.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+                    let include_intervals = options.include_intervals;
+                    match &options.method {
+                        IRBinMethod::Intervals { spec, right_closed } => match spec {
+                            IntervalSpec::Breaks(breaks) => (
+                                "bin_intervals",
+                                PySeries::new((**breaks).clone()),
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                            IntervalSpec::Count(n_bins) => (
+                                "bin_intervals_uniform",
+                                n_bins.get(),
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                        },
+                        IRBinMethod::Quantiles { spec, right_closed } => match spec {
+                            FractionSpec::Explicit(probs) => (
+                                "bin_quantiles",
+                                probs.to_vec(),
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                            FractionSpec::Count(n_bins) => (
+                                "bin_quantiles_uniform",
+                                n_bins.get(),
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                        },
+                        IRBinMethod::Ranks { spec } => match spec {
+                            FractionSpec::Explicit(fractions) => {
+                                ("bin_ranks", fractions.to_vec(), labels, include_intervals)
+                                    .into_py_any(py)
+                            },
+                            FractionSpec::Count(n_bins) => {
+                                ("bin_ranks_uniform", n_bins.get(), labels, include_intervals)
+                                    .into_py_any(py)
+                            },
+                        },
+                    }
+                },
                 #[cfg(feature = "rle")]
                 IRFunctionExpr::RLE => ("rle",).into_py_any(py),
                 #[cfg(feature = "rle")]
@@ -2140,8 +2184,19 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::RowDecode(..) => {
                     return Err(PyNotImplementedError::new_err("row_decode"));
                 },
-                IRFunctionExpr::DynamicPred { pred } => {
+                #[cfg(feature = "approx_quantile")]
+                IRFunctionExpr::ApproxQuantileSketch { .. } => {
+                    return Err(PyNotImplementedError::new_err("approx_quantile_sketch"));
+                },
+                #[cfg(feature = "approx_quantile")]
+                IRFunctionExpr::ApproxQuantileEstimate { .. } => {
+                    return Err(PyNotImplementedError::new_err("approx_quantile_estimate"));
+                },
+                IRFunctionExpr::DynamicPred { pred, .. } => {
                     ("dynamic_pred", pred.id().map(|u| u.as_u128())).into_py_any(py)
+                },
+                IRFunctionExpr::DynamicSkipBatch { pred } => {
+                    ("dynamic_skip_batch", pred.id().map(|u| u.as_u128())).into_py_any(py)
                 },
             }?,
             options: py.None(),

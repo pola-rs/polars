@@ -312,6 +312,7 @@ def test_fused_forced_build_side(engine: EngineType, build_side: str) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
+@pytest.mark.slow
 def test_fused_many_morsels_and_skew(engine: EngineType) -> None:
     """More rows than one morsel, plus a key whose duplicate list exceeds the limit."""
     n = 60_000
@@ -322,13 +323,14 @@ def test_fused_many_morsels_and_skew(engine: EngineType) -> None:
 
     assert_fused(q)
     assert_frame_equal(
-        q.collect(engine=engine),
-        reference(left, right, predicate, on="k"),
+        q.collect(engine=engine).rechunk(),
+        reference(left, right, predicate, on="k").rechunk(),
         check_row_order=False,
     )
 
 
 @pytest.mark.parametrize("engine", ENGINES)
+@pytest.mark.slow
 def test_fused_rejected_batch_followed_by_accepted(engine: EngineType) -> None:
     """Leading candidates are all rejected; later survivors must still be emitted."""
     n = 20_000

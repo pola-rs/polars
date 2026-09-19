@@ -1,4 +1,4 @@
-"""Inner joins moving below a left/semi/anti join, and `LEFT JOIN … IS NULL` -> anti."""
+"""Inner joins and left/semi/anti joins reordered, `LEFT JOIN … IS NULL` -> anti."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars._typing import JoinStrategy, JoinValidation
     from tests.conftest import PlMonkeyPatch
 
@@ -238,6 +240,7 @@ def test_name_collision_with_the_null_extended_side_is_left_alone() -> None:
     )
 
 
+@pytest.mark.slow
 def test_expanding_inner_join_is_left_alone() -> None:
     fact, returns, _ = frames()
     wide = pl.LazyFrame({"w_key": [i % 50 for i in range(5000)], "w_v": range(5000)})
@@ -416,3 +419,87 @@ def test_first_push_keeps_the_filter_fused() -> None:
     graph = lf.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert "fused predicate" in graph
     not_rewritten(lf)
+
+
+def scanned_frames(tmp_path: Path) -> tuple[pl.LazyFrame, pl.LazyFrame]:
+    """Parquet scans, so the estimator knows the key ranges."""
+    fact, _, dim = frames()
+    paths = {"fact": fact, "dim": dim}
+    for name, lf in paths.items():
+        lf.collect().write_parquet(tmp_path / f"{name}.parquet")
+    return (
+        pl.scan_parquet(tmp_path / "fact.parquet"),
+        pl.scan_parquet(tmp_path / "dim.parquet"),
+    )
+
+
+@pytest.mark.parametrize("how", ["semi", "anti"])
+def test_selective_semi_anti_join_moves_below_inner_join(
+    tmp_path: Path, how: JoinStrategy
+) -> None:
+    fact, dim = scanned_frames(tmp_path)
+    wanted = pl.LazyFrame({"w": [3, 7]})
+    # The inner join keeps every fact row; the semi join keeps two of them.
+    lf = fact.join(dim, left_on="f_dim", right_on="d_key").join(
+        wanted, left_on="f_id", right_on="w", how=how
+    )
+    assert all_joins(lf.explain(optimizations=OFF)) == [
+        f"{how.upper()} JOIN:",
+        "INNER JOIN:",
+    ]
+    assert all_joins(lf.explain(optimizations=ON)) == [
+        "INNER JOIN:",
+        f"{how.upper()} JOIN:",
+    ]
+    assert_same_result(lf)
+
+
+def test_semi_join_moves_into_the_right_side_and_through_a_filter(
+    tmp_path: Path,
+) -> None:
+    fact, dim = scanned_frames(tmp_path)
+    wanted = pl.LazyFrame({"w": [10]})
+    # A filter reading both sides stays between the joins.
+    lf = (
+        fact.join(dim, left_on="f_dim", right_on="d_key", coalesce=False)
+        .filter(pl.col("f_val") > pl.col("d_flag").cast(pl.Float64) * 100)
+        .join(wanted, left_on="d_key", right_on="w", how="semi")
+    )
+    plan = lf.explain(optimizations=ON)
+    assert all_joins(plan) == ["INNER JOIN:", "SEMI JOIN:"]
+    # The semi join sits on the dimension, the filter stays on the inner join.
+    assert plan.index("SEMI JOIN:") > plan.index("FILTER")
+    assert_same_result(lf)
+
+
+def test_semi_join_that_keeps_more_than_the_inner_join_stays(
+    tmp_path: Path,
+) -> None:
+    fact, dim = scanned_frames(tmp_path)
+    # Half the fact keys, against an inner join that keeps a fifth of the rows.
+    wanted = pl.LazyFrame({"w": list(range(0, 1000, 2))})
+    lf = fact.join(
+        dim.filter(pl.col("d_flag")), left_on="f_dim", right_on="d_key"
+    ).join(wanted, left_on="f_id", right_on="w", how="semi")
+    assert all_joins(lf.explain(optimizations=ON)) == ["SEMI JOIN:", "INNER JOIN:"]
+    assert_same_result(lf)
+
+
+@pytest.mark.parametrize("how", ["semi", "anti"])
+def test_pushed_down_join_keys_a_suffixed_column_by_its_own_name(
+    how: JoinStrategy,
+) -> None:
+    a = pl.LazyFrame({"k": [0, 1, 0, 1], "x": [10, 11, 12, 13]})
+    # `x_right` is coalesced away, and `x` comes out as `x_right`.
+    b = pl.LazyFrame({"x_right": [0, 1], "x": [100, 101]})
+    wanted = pl.LazyFrame({"w": [101]})
+    lf = a.join(b, left_on="k", right_on="x_right").join(
+        wanted, left_on="x_right", right_on="w", how=how
+    )
+    # Projection pushdown cannot resolve `x_right` in this shape on its own.
+    on = pl.QueryOptFlags(join_order=True, projection_pushdown=False)
+    off = pl.QueryOptFlags(join_order=False, projection_pushdown=False)
+    plan = lf.explain(optimizations=on)
+    assert all_joins(plan) == ["INNER JOIN:", f"{how.upper()} JOIN:"]
+    assert 'LEFT PLAN ON: [col("x")]' in plan
+    assert_same_result(lf, on, off)

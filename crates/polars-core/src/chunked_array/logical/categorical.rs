@@ -1,8 +1,8 @@
 use std::hash::BuildHasher;
 use std::marker::PhantomData;
 
-use arrow::bitmap::BitmapBuilder;
 use num_traits::Zero;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 
 use crate::chunked_array::cast::CastOptions;

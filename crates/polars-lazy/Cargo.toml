@@ -9,13 +9,14 @@ repository = { workspace = true }
 description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
-arrow = { workspace = true }
 futures = { workspace = true, optional = true }
 jiff = { workspace = true }
+polars-arrow = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
+polars-defs = { workspace = true }
 polars-expr = { workspace = true }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
@@ -36,6 +37,7 @@ tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 bytes = { workspace = true }
+polars-descriptions = { workspace = true }
 serde_json = { workspace = true }
 
 [build-dependencies]
@@ -208,7 +210,7 @@ dtype-f16 = [
   "polars-stream?/dtype-f16",
 ]
 
-object = ["polars-plan/object", "polars-mem-engine/object", "polars-stream?/object"]
+object = ["polars-plan/object", "polars-ops/object", "polars-mem-engine/object", "polars-stream?/object"]
 ffi_plugin = ["polars-expr/ffi_plugin"]
 find_many = ["polars-expr/find_many"]
 month_start = ["polars-expr/month_start"]
@@ -233,7 +235,7 @@ bitwise = [
   "polars-ops/bitwise",
 ]
 approx_unique = ["polars-plan/approx_unique", "polars-expr/approx_unique", "polars-stream?/approx_unique"]
-approx_quantile = ["polars-plan/approx_quantile", "polars-expr/approx_quantile"]
+approx_quantile = ["polars-plan/approx_quantile", "polars-expr/approx_quantile", "polars-stream?/approx_quantile"]
 is_in = ["polars-plan/is_in", "polars-ops/is_in", "polars-expr/is_in", "polars-stream?/is_in"]
 repeat_by = ["polars-expr/repeat_by"]
 round_series = ["polars-expr/round_series", "polars-ops/round_series"]
@@ -250,7 +252,7 @@ asof_join = [
   "polars-ops/asof_join",
   "polars-mem-engine/asof_join",
 ]
-iejoin = ["polars-plan/iejoin", "polars-stream/iejoin"]
+iejoin = ["polars-plan/iejoin", "polars-ops/iejoin", "polars-stream/iejoin"]
 business = ["polars-expr/business"]
 concat_str = ["polars-expr/concat_str"]
 range = [
@@ -311,16 +313,22 @@ index_of = ["polars-stream?/index_of", "polars-expr/index_of"]
 search_sorted = ["polars-expr/search_sorted"]
 merge_sorted = ["polars-plan/merge_sorted", "polars-stream?/merge_sorted", "polars-mem-engine/merge_sorted"]
 meta = ["polars-plan/meta"]
-pivot = ["polars-core/rows", "polars-ops/pivot", "polars-plan/pivot"]
+pivot = [
+  "polars-core/rows",
+  "polars-ops/pivot",
+  "polars-plan/pivot",
+  "polars-mem-engine/pivot",
+  "polars-stream?/pivot",
+]
 top_k = ["polars-expr/top_k", "polars-stream?/top_k"]
-semi_anti_join = ["polars-plan/semi_anti_join", "polars-stream?/semi_anti_join"]
+semi_anti_join = ["polars-plan/semi_anti_join", "polars-ops/semi_anti_join", "polars-stream?/semi_anti_join"]
 cse = ["polars-plan/cse"]
 propagate_nans = ["polars-plan/propagate_nans", "polars-expr/propagate_nans"]
 coalesce = ["polars-plan/coalesce"]
 regex = ["polars-expr/regex"]
 serde = [
   "polars-plan/serde",
-  "arrow/serde",
+  "polars-arrow/serde",
   "polars-buffer/serde",
   "polars-core/serde-lazy",
   "polars-time?/serde",
@@ -357,6 +365,7 @@ allow_unused = [
 
 test = [
   "polars-plan/debugging",
+  "approx_quantile",
   "rolling_window",
   "rank",
   "round_series",

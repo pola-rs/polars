@@ -1,9 +1,11 @@
-use arrow::legacy::time_zone::Tz;
-use arrow::temporal_conversions::*;
 use jiff::civil::DateTime as NaiveDateTime;
+use polars_arrow::legacy::time_zone::Tz;
+use polars_arrow::temporal_conversions::*;
 use polars_core::prelude::*;
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::{ClosedWindow, StartBy};
+use polars_utils::time::beginning_of_week;
 
-use super::calendar::beginning_of_week;
 use crate::prelude::*;
 
 /// Ensure that earliest datapoint (`t`) is in, or in front of, first window.
@@ -273,7 +275,7 @@ impl<'a> BoundsIter<'a> {
                             let ts = Tz::UTC.to_timestamp(dt).expect("datetime out-of-range");
                             let local_dt = tz.to_datetime(ts);
                             let week_start_local = beginning_of_week(local_dt);
-                            let dt = crate::utils::try_localize_datetime(
+                            let dt = polars_core::chunked_array::temporal::try_localize_datetime(
                                 week_start_local,
                                 tz,
                                 Ambiguous::Raise,

@@ -1,4 +1,5 @@
 use polars_core::utils::flatten;
+use polars_defs::join::JoinValidation;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::itertools::Itertools;
@@ -7,6 +8,7 @@ use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 use super::*;
+use crate::frame::join::validation::validate_build;
 
 pub(super) fn probe_inner<T, F, I>(
     probe: I,
@@ -64,7 +66,7 @@ where
         }
         let hash_tbls = build_tables(build, nulls_equal);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
-        validate.validate_build(build_size, expected_size, swapped)?;
+        validate_build(validate, build_size, expected_size, swapped)?;
         hash_tbls
     } else {
         build_tables(build, nulls_equal)

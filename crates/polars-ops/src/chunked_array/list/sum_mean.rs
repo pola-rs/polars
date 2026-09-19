@@ -1,11 +1,11 @@
 use std::ops::Div;
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::Bitmap;
-use arrow::compute::utils::combine_validities_and;
-use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
-use arrow::types::NativeType;
 use num_traits::{NumCast, ToPrimitive};
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::compute::utils::combine_validities_and;
+use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
+use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 
 use super::*;

@@ -2,8 +2,8 @@ use std::io::Cursor;
 use std::ops::Range;
 use std::sync::Arc;
 
-use arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
 use async_trait::async_trait;
+use polars_arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
 use polars_async::executor::{self, JoinHandle, TaskPriority};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_buffer::Buffer;
@@ -11,7 +11,7 @@ use polars_config::config;
 use polars_core::prelude::DataType;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt};
-use polars_core::utils::arrow::io::ipc::read::{
+use polars_core::utils::polars_arrow::io::ipc::read::{
     BlockReader, FileMetadata, ProjectionInfo, prepare_projection, read_file_metadata,
 };
 use polars_error::constants::LENGTH_LIMIT_MSG;

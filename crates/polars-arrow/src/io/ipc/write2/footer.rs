@@ -1,4 +1,4 @@
-use arrow_format::ipc::KeyValue;
+use polars_arrow_format::ipc::KeyValue;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 
@@ -10,9 +10,9 @@ use crate::io::write_owned::WriteBytesOwned;
 /// end of the IPC file.
 pub fn serialize_ipc_footer_and_magic_bytes(
     writer: &mut dyn WriteBytesOwned,
-    serialized_ipc_schema: Box<arrow_format::ipc::Schema>,
-    dictionary_blocks: Vec<arrow_format::ipc::Block>,
-    record_blocks: Vec<arrow_format::ipc::Block>,
+    serialized_ipc_schema: Box<polars_arrow_format::ipc::Schema>,
+    dictionary_blocks: Vec<polars_arrow_format::ipc::Block>,
+    record_blocks: Vec<polars_arrow_format::ipc::Block>,
     custom_metadata: Option<Vec<(String, String)>>,
 ) -> PolarsResult<()> {
     // Note: Length at 4..8 is 0.
@@ -21,8 +21,8 @@ pub fn serialize_ipc_footer_and_magic_bytes(
 
     writer.write_all_owned(&Buffer::from_vec(prefix))?;
 
-    let footer = arrow_format::ipc::Footer {
-        version: arrow_format::ipc::MetadataVersion::V5,
+    let footer = polars_arrow_format::ipc::Footer {
+        version: polars_arrow_format::ipc::MetadataVersion::V5,
         schema: Some(serialized_ipc_schema),
         dictionaries: Some(dictionary_blocks),
         record_batches: Some(record_blocks),

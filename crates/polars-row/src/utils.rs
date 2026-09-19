@@ -1,12 +1,13 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::array::View;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 
 #[macro_export]
 macro_rules! with_match_arrow_primitive_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use arrow::datatypes::ArrowDataType::*;
+    use polars_arrow::datatypes::ArrowDataType::*;
     use polars_utils::float16::pf16;
     match $key_type {
         Int8 => __with_ty__! { i8 },
@@ -42,4 +43,70 @@ pub(crate) unsafe fn decode_opt_nulls(rows: &[&[u8]], null_sentinel: u8) -> Opti
     );
 
     bm.into_opt_validity()
+}
+
+/// Bytes handled at a time by the variable width encoders and decoders.
+pub(crate) const BLOCK: usize = 16;
+
+/// Masks that keep the first `len` inline bytes of a view and zero the rest.
+const INLINE_MASKS: [[u8; BLOCK]; View::MAX_INLINE_SIZE as usize + 1] = {
+    let mut masks = [[0u8; BLOCK]; View::MAX_INLINE_SIZE as usize + 1];
+    let mut len = 0;
+    while len <= View::MAX_INLINE_SIZE as usize {
+        let mut i = 0;
+        while i < len {
+            masks[len][4 + i] = 0xFF;
+            i += 1;
+        }
+        len += 1;
+    }
+    masks
+};
+
+/// Build an inline view from the first `len` bytes of `block`.
+#[inline(always)]
+pub(crate) fn inline_view(block: [u8; BLOCK], len: usize) -> View {
+    debug_assert!(len <= View::MAX_INLINE_SIZE as usize);
+    let mut raw = [0u8; BLOCK];
+    raw[4..].copy_from_slice(&block[..12]);
+    let mask = INLINE_MASKS[len];
+    for i in 0..BLOCK {
+        raw[i] &= mask[i];
+    }
+    raw[..4].copy_from_slice(&(len as u32).to_le_bytes());
+    // SAFETY: `View` is `repr(C)` with the length first, then 12 inline bytes.
+    unsafe { std::mem::transmute::<[u8; BLOCK], View>(raw) }
+}
+
+/// Position of the first `needle` byte in `block`, or [`BLOCK`] if there is none.
+#[inline(always)]
+pub(crate) fn find_byte(block: [u8; BLOCK], needle: u8) -> usize {
+    #[cfg(target_arch = "x86_64")]
+    {
+        use std::arch::x86_64::*;
+        // SAFETY: SSE2 is always available on x86_64.
+        unsafe {
+            let v = _mm_loadu_si128(block.as_ptr() as *const __m128i);
+            let eq = _mm_cmpeq_epi8(v, _mm_set1_epi8(needle as i8));
+            let mask = _mm_movemask_epi8(eq) as u32;
+            (mask | (1 << BLOCK)).trailing_zeros() as usize
+        }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        const LO: u64 = 0x0101_0101_0101_0101;
+        const HI: u64 = 0x8080_8080_8080_8080;
+        let pattern = LO * needle as u64;
+        let lo = u64::from_le_bytes(block[..8].try_into().unwrap()) ^ pattern;
+        let hi = u64::from_le_bytes(block[8..].try_into().unwrap()) ^ pattern;
+        let lo = lo.wrapping_sub(LO) & !lo & HI;
+        let hi = hi.wrapping_sub(LO) & !hi & HI;
+        if lo != 0 {
+            lo.trailing_zeros() as usize / 8
+        } else if hi != 0 {
+            8 + hi.trailing_zeros() as usize / 8
+        } else {
+            BLOCK
+        }
+    }
 }

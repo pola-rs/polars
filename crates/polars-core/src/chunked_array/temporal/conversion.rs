@@ -1,5 +1,5 @@
-use arrow::temporal_conversions::*;
 use jiff::civil::{DateTime, Time};
+use polars_arrow::temporal_conversions::*;
 
 use crate::prelude::*;
 

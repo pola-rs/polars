@@ -10,12 +10,16 @@
 //! This allows the string row encoding to have a constant 1 byte overhead.
 use std::mem::MaybeUninit;
 
-use arrow::array::{MutableBinaryViewArray, PrimitiveArray, Utf8ViewArray};
-use arrow::bitmap::BitmapBuilder;
-use arrow::types::NativeType;
+use polars_arrow::array::{Array, PrimitiveArray, Utf8ViewArray, View};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::types::NativeType;
+use polars_buffer::Buffer;
 use polars_dtype::categorical::{CatNative, CategoricalMapping};
 
+use super::view_builder::ViewBuilder;
 use crate::row::RowEncodingOptions;
+use crate::utils::{BLOCK, find_byte, inline_view};
 
 #[inline]
 pub fn len_from_item(a: Option<usize>, _opt: RowEncodingOptions) -> usize {
@@ -30,13 +34,152 @@ pub unsafe fn len_from_buffer(row: &[u8], opt: RowEncodingOptions) -> usize {
         return 1;
     }
 
-    let end = if opt.contains(RowEncodingOptions::DESCENDING) {
-        unsafe { row.iter().position(|&b| b == 0xFE).unwrap_unchecked() }
-    } else {
-        unsafe { row.iter().position(|&b| b == 0x01).unwrap_unchecked() }
-    };
+    let term = descending_mask(opt) ^ 0x01;
+    let mut i = 0;
+    while i + BLOCK <= row.len() {
+        let block = std::ptr::read_unaligned(row.as_ptr().add(i) as *const [u8; BLOCK]);
+        let end = find_byte(block, term);
+        if end < BLOCK {
+            return i + end + 1;
+        }
+        i += BLOCK;
+    }
+    while *row.get_unchecked(i) != term {
+        i += 1;
+    }
+    i + 1
+}
 
-    end + 1
+#[inline(always)]
+fn transform_block(mut block: [u8; BLOCK], t: u8) -> [u8; BLOCK] {
+    for b in &mut block {
+        *b = t ^ b.wrapping_add(2);
+    }
+    block
+}
+
+/// Encode `len` bytes of `block` followed by the terminator. Nothing after the terminator is
+/// written.
+#[inline(always)]
+unsafe fn encode_short(dst: *mut MaybeUninit<u8>, block: [u8; BLOCK], len: usize, t: u8) {
+    debug_assert!(len < BLOCK);
+    let block = transform_block(block, t);
+    let term = t ^ 0x01;
+    let n = len + 1;
+    let dst = dst as *mut u8;
+    let src = block.as_ptr();
+
+    // Two overlapping stores cover the whole value. The terminator is the last byte of the
+    // second store.
+    if n >= 8 {
+        let lo = std::ptr::read_unaligned(src as *const u64);
+        let hi = std::ptr::read_unaligned(src.add(n - 8) as *const u64);
+        let hi = (hi & 0x00FF_FFFF_FFFF_FFFF) | ((term as u64) << 56);
+        std::ptr::write_unaligned(dst as *mut u64, lo);
+        std::ptr::write_unaligned(dst.add(n - 8) as *mut u64, hi);
+    } else if n >= 4 {
+        let lo = std::ptr::read_unaligned(src as *const u32);
+        let hi = std::ptr::read_unaligned(src.add(n - 4) as *const u32);
+        let hi = (hi & 0x00FF_FFFF) | ((term as u32) << 24);
+        std::ptr::write_unaligned(dst as *mut u32, lo);
+        std::ptr::write_unaligned(dst.add(n - 4) as *mut u32, hi);
+    } else {
+        for i in 0..len {
+            *dst.add(i) = *src.add(i);
+        }
+        *dst.add(len) = term;
+    }
+}
+
+/// Encode a string of at least [`BLOCK`] bytes followed by the terminator.
+#[inline(always)]
+unsafe fn encode_long(dst: *mut MaybeUninit<u8>, src: *const u8, len: usize, t: u8) {
+    debug_assert!(len >= BLOCK);
+    let mut i = 0;
+    while i + BLOCK <= len {
+        let block = std::ptr::read_unaligned(src.add(i) as *const [u8; BLOCK]);
+        std::ptr::write_unaligned(dst.add(i) as *mut [u8; BLOCK], transform_block(block, t));
+        i += BLOCK;
+    }
+    // The last block overlaps with the previous one and writes the same bytes there.
+    let block = std::ptr::read_unaligned(src.add(len - BLOCK) as *const [u8; BLOCK]);
+    std::ptr::write_unaligned(
+        dst.add(len - BLOCK) as *mut [u8; BLOCK],
+        transform_block(block, t),
+    );
+    *dst.add(len) = MaybeUninit::new(t ^ 0x01);
+}
+
+#[inline(always)]
+unsafe fn encode_bytes(dst: *mut MaybeUninit<u8>, s: &[u8], t: u8) {
+    if s.len() >= BLOCK {
+        encode_long(dst, s.as_ptr(), s.len(), t);
+    } else {
+        let mut block = [0u8; BLOCK];
+        std::ptr::copy_nonoverlapping(s.as_ptr(), block.as_mut_ptr(), s.len());
+        encode_short(dst, block, s.len(), t);
+    }
+}
+
+#[inline(always)]
+unsafe fn encode_view(dst: *mut MaybeUninit<u8>, view: &View, buffers: &[Buffer<u8>], t: u8) {
+    let len = view.length as usize;
+    if len <= View::MAX_INLINE_SIZE as usize {
+        let raw = std::ptr::read(view as *const View as *const [u8; BLOCK]);
+        let mut block = [0u8; BLOCK];
+        block[..12].copy_from_slice(&raw[4..]);
+        encode_short(dst, block, len, t);
+    } else {
+        let src = view.get_external_slice_unchecked(buffers).as_ptr();
+        if len >= BLOCK {
+            encode_long(dst, src, len, t);
+        } else {
+            let mut block = [0u8; BLOCK];
+            std::ptr::copy_nonoverlapping(src, block.as_mut_ptr(), len);
+            encode_short(dst, block, len, t);
+        }
+    }
+}
+
+fn descending_mask(opt: RowEncodingOptions) -> u8 {
+    if opt.contains(RowEncodingOptions::DESCENDING) {
+        0xFF
+    } else {
+        0x00
+    }
+}
+
+pub unsafe fn encode_str_view(
+    buffer: &mut [MaybeUninit<u8>],
+    array: &Utf8ViewArray,
+    opt: RowEncodingOptions,
+    offsets: &mut [usize],
+) {
+    let null_sentinel = opt.null_sentinel();
+    let t = descending_mask(opt);
+    let views = array.views().as_slice();
+    let buffers = array.data_buffers().as_slice();
+    let out = buffer.as_mut_ptr();
+
+    match array.validity() {
+        None => {
+            for (offset, view) in offsets.iter_mut().zip(views) {
+                encode_view(out.add(*offset), view, buffers, t);
+                *offset += 1 + view.length as usize;
+            }
+        },
+        Some(validity) => {
+            for ((offset, view), is_valid) in offsets.iter_mut().zip(views).zip(validity.iter()) {
+                if is_valid {
+                    encode_view(out.add(*offset), view, buffers, t);
+                    *offset += 1 + view.length as usize;
+                } else {
+                    *out.add(*offset) = MaybeUninit::new(null_sentinel);
+                    *offset += 1;
+                }
+            }
+        },
+    }
 }
 
 pub unsafe fn encode_str<'a, I: Iterator<Item = Option<&'a str>>>(
@@ -46,88 +189,152 @@ pub unsafe fn encode_str<'a, I: Iterator<Item = Option<&'a str>>>(
     offsets: &mut [usize],
 ) {
     let null_sentinel = opt.null_sentinel();
-    let t = if opt.contains(RowEncodingOptions::DESCENDING) {
-        0xFF
-    } else {
-        0x00
-    };
+    let t = descending_mask(opt);
+    let out = buffer.as_mut_ptr();
 
     for (offset, opt_value) in offsets.iter_mut().zip(input) {
-        let dst = buffer.get_unchecked_mut(*offset..);
-
         match opt_value {
             None => {
-                *unsafe { dst.get_unchecked_mut(0) } = MaybeUninit::new(null_sentinel);
+                *out.add(*offset) = MaybeUninit::new(null_sentinel);
                 *offset += 1;
             },
             Some(s) => {
-                for (i, &b) in s.as_bytes().iter().enumerate() {
-                    *unsafe { dst.get_unchecked_mut(i) } = MaybeUninit::new(t ^ (b + 2));
-                }
-                *unsafe { dst.get_unchecked_mut(s.len()) } = MaybeUninit::new(t ^ 0x01);
+                encode_bytes(out.add(*offset), s.as_bytes(), t);
                 *offset += 1 + s.len();
             },
         }
     }
 }
 
-pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8ViewArray {
-    let null_sentinel = opt.null_sentinel();
-    let descending = opt.contains(RowEncodingOptions::DESCENDING);
+/// Decode the value at the start of `row` into `scratch` and return its length. Nulls are not
+/// handled here.
+#[inline(always)]
+unsafe fn decode_into_scratch(row: &[u8], t: u8, scratch: &mut Vec<u8>) -> usize {
+    let term = t ^ 0x01;
+    scratch.clear();
 
-    let num_rows = rows.len();
-    let mut array = MutableBinaryViewArray::<str>::with_capacity(rows.len());
+    let mut i = 0;
+    while i + BLOCK <= row.len() {
+        let block = std::ptr::read_unaligned(row.as_ptr().add(i) as *const [u8; BLOCK]);
+        let end = find_byte(block, term);
+        scratch.extend_from_slice(&decode_block(block, t)[..end]);
+        if end < BLOCK {
+            return i + end;
+        }
+        i += BLOCK;
+    }
+    while *row.get_unchecked(i) != term {
+        scratch.push((*row.get_unchecked(i) ^ t).wrapping_sub(2));
+        i += 1;
+    }
+    i
+}
 
-    let mut scratch = Vec::new();
-    for row in rows.iter_mut() {
-        let sentinel = *unsafe { row.get_unchecked(0) };
-        if sentinel == null_sentinel {
-            *row = unsafe { row.get_unchecked(1..) };
+#[inline(always)]
+fn decode_block(mut block: [u8; BLOCK], t: u8) -> [u8; BLOCK] {
+    for b in &mut block {
+        *b = (*b ^ t).wrapping_sub(2);
+    }
+    block
+}
+
+/// Decode the value at the start of `row` into `builder` and return its length. Nulls are not
+/// handled here.
+#[inline(always)]
+unsafe fn decode_long(row: &[u8], t: u8, builder: &mut ViewBuilder) -> (usize, u32) {
+    let term = t ^ 0x01;
+    let mut dst = builder.start_value(BLOCK);
+    let mut prefix = [0u8; 4];
+    let mut i = 0;
+    loop {
+        if i + BLOCK <= row.len() {
+            let block = std::ptr::read_unaligned(row.as_ptr().add(i) as *const [u8; BLOCK]);
+            let end = find_byte(block, term);
+            let decoded = decode_block(block, t);
+            std::ptr::write_unaligned(dst.add(i) as *mut [u8; BLOCK], decoded);
+            if i == 0 {
+                prefix.copy_from_slice(&decoded[..4]);
+            }
+            i += end;
+            if end < BLOCK {
+                break;
+            }
+            dst = builder.grow_value(i, BLOCK);
+        } else {
+            dst = builder.grow_value(i, row.len() - i);
+            while *row.get_unchecked(i) != term {
+                let b = (*row.get_unchecked(i) ^ t).wrapping_sub(2);
+                *dst.add(i) = b;
+                if i < 4 {
+                    prefix[i] = b;
+                }
+                i += 1;
+            }
             break;
         }
+    }
+    (i, u32::from_le_bytes(prefix))
+}
 
-        scratch.clear();
-        if descending {
-            scratch.extend(row.iter().take_while(|&b| *b != 0xFE).map(|&v| !v - 2));
-        } else {
-            scratch.extend(row.iter().take_while(|&b| *b != 0x01).map(|&v| v - 2));
-        }
-
-        *row = row.get_unchecked(1 + scratch.len()..);
-        array.push_value_ignore_validity(unsafe { std::str::from_utf8_unchecked(&scratch) });
+/// Decode one value and push it to `builder`. Returns `false` for null.
+#[inline(always)]
+unsafe fn decode_one(row: &mut &[u8], null_sentinel: u8, t: u8, builder: &mut ViewBuilder) -> bool {
+    if *row.get_unchecked(0) == null_sentinel {
+        *row = row.get_unchecked(1..);
+        return false;
     }
 
-    if array.len() == num_rows {
-        return array.into();
+    // Short values become inline views straight from a block load.
+    if row.len() >= BLOCK {
+        let block = std::ptr::read_unaligned(row.as_ptr() as *const [u8; BLOCK]);
+        let len = find_byte(block, t ^ 0x01);
+        if len <= View::MAX_INLINE_SIZE as usize {
+            builder.push_inline(inline_view(decode_block(block, t), len));
+            *row = row.get_unchecked(1 + len..);
+            return true;
+        }
     }
 
-    let mut validity = BitmapBuilder::with_capacity(num_rows);
-    validity.extend_constant(array.len(), true);
-    validity.push(false);
-    array.push_value_ignore_validity("");
+    let (len, prefix) = decode_long(row, t, builder);
+    if len <= View::MAX_INLINE_SIZE as usize {
+        // Only happens close to the end of the buffer.
+        builder.finish_short_value(len);
+    } else {
+        builder.finish_value(len, prefix);
+    }
+    *row = row.get_unchecked(1 + len..);
+    true
+}
 
-    for row in rows[array.len()..].iter_mut() {
-        let sentinel = *unsafe { row.get_unchecked(0) };
-        validity.push(sentinel != null_sentinel);
-        if sentinel == null_sentinel {
-            *row = unsafe { row.get_unchecked(1..) };
-            array.push_value_ignore_validity("");
-            continue;
+pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8ViewArray {
+    let null_sentinel = opt.null_sentinel();
+    let t = descending_mask(opt);
+    let num_rows = rows.len();
+    let mut builder = ViewBuilder::with_capacity(num_rows);
+    let mut validity = BitmapBuilder::new();
+
+    for row in rows.iter_mut() {
+        if !decode_one(row, null_sentinel, t, &mut builder) {
+            validity.reserve(num_rows);
+            validity.extend_constant(builder.len(), true);
+            validity.push(false);
+            builder.push_null();
+            break;
         }
-
-        scratch.clear();
-        if descending {
-            scratch.extend(row.iter().take_while(|&b| *b != 0xFE).map(|&v| !v - 2));
-        } else {
-            scratch.extend(row.iter().take_while(|&b| *b != 0x01).map(|&v| v - 2));
-        }
-
-        *row = row.get_unchecked(1 + scratch.len()..);
-        array.push_value_ignore_validity(unsafe { std::str::from_utf8_unchecked(&scratch) });
     }
 
-    let out: Utf8ViewArray = array.into();
-    out.with_validity(validity.into_opt_validity())
+    if !validity.is_empty() {
+        for row in rows[builder.len()..].iter_mut() {
+            let is_valid = decode_one(row, null_sentinel, t, &mut builder);
+            validity.push(is_valid);
+            if !is_valid {
+                builder.push_null();
+            }
+        }
+    }
+
+    let out = builder.freeze(ArrowDataType::Utf8View, validity.into_opt_validity());
+    out.to_utf8view_unchecked()
 }
 
 /// The same as decode_str but inserts it into the given mapping, translating
@@ -138,7 +345,7 @@ pub unsafe fn decode_str_as_cat<T: NativeType + CatNative>(
     mapping: &CategoricalMapping,
 ) -> PrimitiveArray<T> {
     let null_sentinel = opt.null_sentinel();
-    let descending = opt.contains(RowEncodingOptions::DESCENDING);
+    let t = descending_mask(opt);
 
     let num_rows = rows.len();
     let mut out = Vec::<T>::with_capacity(rows.len());
@@ -151,14 +358,8 @@ pub unsafe fn decode_str_as_cat<T: NativeType + CatNative>(
             break;
         }
 
-        scratch.clear();
-        if descending {
-            scratch.extend(row.iter().take_while(|&b| *b != 0xFE).map(|&v| !v - 2));
-        } else {
-            scratch.extend(row.iter().take_while(|&b| *b != 0x01).map(|&v| v - 2));
-        }
-
-        *row = row.get_unchecked(1 + scratch.len()..);
+        let len = decode_into_scratch(row, t, &mut scratch);
+        *row = row.get_unchecked(1 + len..);
         let s = unsafe { std::str::from_utf8_unchecked(&scratch) };
         out.push(T::from_cat(mapping.insert_cat(s).unwrap()));
     }
@@ -181,14 +382,8 @@ pub unsafe fn decode_str_as_cat<T: NativeType + CatNative>(
             continue;
         }
 
-        scratch.clear();
-        if descending {
-            scratch.extend(row.iter().take_while(|&b| *b != 0xFE).map(|&v| !v - 2));
-        } else {
-            scratch.extend(row.iter().take_while(|&b| *b != 0x01).map(|&v| v - 2));
-        }
-
-        *row = row.get_unchecked(1 + scratch.len()..);
+        let len = decode_into_scratch(row, t, &mut scratch);
+        *row = row.get_unchecked(1 + len..);
         let s = unsafe { std::str::from_utf8_unchecked(&scratch) };
         out.push(T::from_cat(mapping.insert_cat(s).unwrap()));
     }

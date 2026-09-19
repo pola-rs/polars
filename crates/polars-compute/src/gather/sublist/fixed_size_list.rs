@@ -1,7 +1,7 @@
-use arrow::array::{ArrayRef, FixedSizeListArray, PrimitiveArray};
-use arrow::datatypes::IdxArr;
-use arrow::legacy::index::IndexToUsize;
-use arrow::legacy::utils::CustomIterTools;
+use polars_arrow::array::{ArrayRef, FixedSizeListArray, PrimitiveArray};
+use polars_arrow::datatypes::IdxArr;
+use polars_arrow::legacy::index::IndexToUsize;
+use polars_arrow::legacy::utils::CustomIterTools;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::IdxSize;
 use polars_utils::index::NullCount;

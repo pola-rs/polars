@@ -1,5 +1,5 @@
-use arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 use jiff::tz::TimeZone;
+use polars_arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 
 use super::*;
 

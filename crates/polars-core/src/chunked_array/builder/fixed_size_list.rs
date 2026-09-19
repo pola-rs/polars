@@ -1,4 +1,4 @@
-use arrow::types::NativeType;
+use polars_arrow::types::NativeType;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::prelude::*;

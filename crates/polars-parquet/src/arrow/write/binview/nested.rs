@@ -1,4 +1,4 @@
-use arrow::array::{Array, BinaryViewArray};
+use polars_arrow::array::{Array, BinaryViewArray};
 use polars_error::PolarsResult;
 
 use super::super::{WriteOptions, nested, utils};

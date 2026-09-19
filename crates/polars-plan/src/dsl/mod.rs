@@ -73,7 +73,7 @@ pub use name::*;
 pub use options::*;
 pub use plan::*;
 #[cfg(feature = "approx_quantile")]
-use polars_compute::approx_quantile::ApproxQuantileMethod;
+pub use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
@@ -1438,6 +1438,12 @@ impl Expr {
             allow_duplicates,
             include_breaks,
         })
+    }
+
+    #[cfg(feature = "cutqcut")]
+    /// Assign each value to a bin.
+    pub fn bin(self, options: BinOptions) -> Expr {
+        self.map_unary(FunctionExpr::Bin(options))
     }
 
     #[cfg(feature = "rle")]

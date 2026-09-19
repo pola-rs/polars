@@ -1,11 +1,11 @@
-use arrow::datatypes::TimeUnit;
-use arrow::temporal_conversions::date_to_date32_opt;
-pub use arrow::temporal_conversions::{
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
+use jiff::tz::TimeZone;
+use polars_arrow::datatypes::TimeUnit;
+use polars_arrow::temporal_conversions::date_to_date32_opt;
+pub use polars_arrow::temporal_conversions::{
     EPOCH_DAYS_FROM_CE, MICROSECONDS, MICROSECONDS_IN_DAY, MILLISECONDS, MILLISECONDS_IN_DAY,
     NANOSECONDS, NANOSECONDS_IN_DAY, SECONDS_IN_DAY,
 };
-use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
-use jiff::tz::TimeZone;
 
 /// Get the time unit as a multiple of a second
 pub const fn time_unit_multiple(unit: TimeUnit) -> i64 {

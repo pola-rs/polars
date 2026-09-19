@@ -2,32 +2,31 @@ use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::ops::{Mul, Neg};
 
-use arrow::legacy::time_zone::Tz;
-use arrow::temporal_conversions::{
-    MICROSECONDS, MILLISECONDS, NANOSECONDS, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
-    timestamp_us_to_datetime,
-};
 use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
 #[cfg(feature = "timezones")]
 use jiff::tz::{AmbiguousOffset, Dst};
-use polars_core::datatypes::DataType;
-use polars_core::prelude::{
-    PolarsResult, TimeZone, datetime_to_timestamp_ms, datetime_to_timestamp_ns,
-    datetime_to_timestamp_us, polars_bail,
+use polars_arrow::legacy::time_zone::Tz;
+use polars_arrow::temporal_conversions::{
+    MICROSECONDS, MILLISECONDS, NANOSECONDS, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
+    timestamp_us_to_datetime,
+};
+#[cfg(feature = "temporal")]
+use polars_core::chunked_array::temporal::{
+    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us,
 };
 #[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::unlocalize_datetime;
+use polars_core::datatypes::{DataType, TimeZone};
+#[cfg(feature = "timezones")]
 use polars_error::PolarsError;
-use polars_error::{polars_ensure, polars_err};
+use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_utils::time::{
+    DAYS_PER_MONTH, NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK,
+    NTE_NS_DAY, NTE_NS_WEEK, is_leap_year,
+};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::calendar::{
-    NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK, NTE_NS_DAY,
-    NTE_NS_WEEK,
-};
-#[cfg(feature = "timezones")]
-use crate::utils::unlocalize_datetime;
-use crate::windows::calendar::{DAYS_PER_MONTH, is_leap_year};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -42,7 +41,7 @@ pub struct Duration {
     // the number of nanoseconds for the duration
     nsecs: i64,
     // indicates if the duration is negative
-    pub(crate) negative: bool,
+    pub negative: bool,
     // indicates if an integer string was passed. e.g. "2i"
     pub parsed_int: bool,
 }
@@ -341,98 +340,14 @@ impl Duration {
         if v < 0 { (true, -v) } else { (false, v) }
     }
 
-    /// Normalize the duration within the interval.
-    /// It will ensure that the output duration is the smallest positive
-    /// duration that is the equivalent of the current duration.
-    #[allow(dead_code)]
-    pub(crate) fn normalize(&self, interval: &Duration) -> Self {
-        if self.months_only() && interval.months_only() {
-            let mut months = self.months() % interval.months();
-
-            match (self.negative, interval.negative) {
-                (true, true) | (true, false) => months = -months + interval.months(),
-                _ => {},
-            }
-            Duration::from_months(months)
-        } else if self.weeks_only() && interval.weeks_only() {
-            let mut weeks = self.weeks() % interval.weeks();
-
-            match (self.negative, interval.negative) {
-                (true, true) | (true, false) => weeks = -weeks + interval.weeks(),
-                _ => {},
-            }
-            Duration::from_weeks(weeks)
-        } else if self.days_only() && interval.days_only() {
-            let mut days = self.days() % interval.days();
-
-            match (self.negative, interval.negative) {
-                (true, true) | (true, false) => days = -days + interval.days(),
-                _ => {},
-            }
-            Duration::from_days(days)
-        } else {
-            let mut offset = self.duration_ns();
-            if offset == 0 {
-                return *self;
-            }
-            let every = interval.duration_ns();
-
-            if offset < 0 {
-                offset += every * ((offset / -every) + 1)
-            } else {
-                offset -= every * (offset / every)
-            }
-            Duration::from_nsecs(offset)
-        }
-    }
-
     /// Creates a [`Duration`] that represents a fixed number of nanoseconds.
-    pub(crate) fn from_nsecs(v: i64) -> Self {
+    pub fn from_nsecs(v: i64) -> Self {
         let (negative, nsecs) = Self::to_positive(v);
         Self {
             months: 0,
             weeks: 0,
             days: 0,
             nsecs,
-            negative,
-            parsed_int: false,
-        }
-    }
-
-    /// Creates a [`Duration`] that represents a fixed number of months.
-    pub(crate) fn from_months(v: i64) -> Self {
-        let (negative, months) = Self::to_positive(v);
-        Self {
-            months,
-            weeks: 0,
-            days: 0,
-            nsecs: 0,
-            negative,
-            parsed_int: false,
-        }
-    }
-
-    /// Creates a [`Duration`] that represents a fixed number of weeks.
-    pub(crate) fn from_weeks(v: i64) -> Self {
-        let (negative, weeks) = Self::to_positive(v);
-        Self {
-            months: 0,
-            weeks,
-            days: 0,
-            nsecs: 0,
-            negative,
-            parsed_int: false,
-        }
-    }
-
-    /// Creates a [`Duration`] that represents a fixed number of days.
-    pub(crate) fn from_days(v: i64) -> Self {
-        let (negative, days) = Self::to_positive(v);
-        Self {
-            months: 0,
-            weeks: 0,
-            days,
-            nsecs: 0,
             negative,
             parsed_int: false,
         }
@@ -927,6 +842,7 @@ impl Duration {
     }
 
     // Truncate the given ns timestamp by the window boundary.
+    #[cfg(feature = "temporal")]
     #[inline]
     pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
@@ -939,6 +855,7 @@ impl Duration {
     }
 
     // Truncate the given ns timestamp by the window boundary.
+    #[cfg(feature = "temporal")]
     #[inline]
     pub fn truncate_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
@@ -951,6 +868,7 @@ impl Duration {
     }
 
     // Truncate the given ms timestamp by the window boundary.
+    #[cfg(feature = "temporal")]
     #[inline]
     pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
@@ -1054,6 +972,7 @@ impl Duration {
         Ok(t)
     }
 
+    #[cfg(feature = "temporal")]
     pub fn add_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
@@ -1067,6 +986,7 @@ impl Duration {
         Ok(new_t? + nsecs)
     }
 
+    #[cfg(feature = "temporal")]
     pub fn add_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
@@ -1080,6 +1000,7 @@ impl Duration {
         Ok(new_t? + nsecs / 1_000)
     }
 
+    #[cfg(feature = "temporal")]
     pub fn add_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(

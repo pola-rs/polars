@@ -846,6 +846,7 @@ fn to_graph_rec<'a>(
 
         MultiScan {
             scan_sources,
+            bytes_per_source: _,
             file_reader_builder,
             cloud_options,
             file_projection_builder,
@@ -1180,6 +1181,7 @@ fn to_graph_rec<'a>(
                     force_parallel: false,
                     args: args.clone(),
                     options: options.clone(),
+                    runtime_filters: Vec::new(),
                 }),
             });
 
@@ -1215,6 +1217,7 @@ fn to_graph_rec<'a>(
             right_on,
             args,
             fused_predicate: _,
+            runtime_filters: _,
         }
         | SemiAntiJoin {
             input_left,
@@ -1292,6 +1295,7 @@ fn to_graph_rec<'a>(
                 ),
                 EquiJoin {
                     ref fused_predicate,
+                    ref runtime_filters,
                     ..
                 } => {
                     // Compiled against a narrow frame of exactly the columns it reads, in
@@ -1326,6 +1330,7 @@ fn to_graph_rec<'a>(
                             left_key_selectors,
                             right_key_selectors,
                             fused_predicate,
+                            runtime_filters.clone(),
                             args,
                             ctx.num_pipelines,
                         )?,

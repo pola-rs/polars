@@ -5,7 +5,7 @@ use polars_buffer::Buffer;
 use polars_core::prelude::PlHashMap;
 use polars_core::runtime::ASYNC;
 use polars_core::series::IsSorted;
-use polars_core::utils::arrow::bitmap::Bitmap;
+use polars_core::utils::polars_arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, create_sorting_map};

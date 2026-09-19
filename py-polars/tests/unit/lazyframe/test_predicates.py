@@ -510,6 +510,56 @@ def test_or_factoring_hoists_shared_conjunct() -> None:
     assert_frame_equal(query.collect(), expected)
 
 
+def test_or_implied_predicates_pushed_past_join() -> None:
+    # `(s == x AND p < 20) OR (s == y AND p > 50)` cannot cross the join, but it
+    # implies `s == x OR s == y` on one side and `p < 20 OR p > 50` on the other.
+    # Those go into the scans; the disjunction itself is still applied at the join.
+    fact = pl.LazyFrame({"k": [1, 1, 2, 2, 3, 3], "p": [10, 60, 10, 60, 10, 60]})
+    dim = pl.LazyFrame({"k": [1, 2, 3], "s": ["x", "y", "z"]})
+    query = fact.join(dim, on="k").filter(
+        ((pl.col("s") == "x") & (pl.col("p") < 20))
+        | ((pl.col("s") == "y") & (pl.col("p") > 50))
+    )
+    plan = query.explain()
+    join_at = plan.index("JOIN")
+    assert plan.index('(col("p") < 20) | (col("p") > 50)') > join_at, plan
+    assert plan.index('(col("s") == "x") | (col("s") == "y")') > join_at, plan
+    assert plan.count('(col("s") == "x") & (col("p") < 20)') == 1, plan
+
+    expected = pl.DataFrame({"k": [1, 2], "p": [10, 60], "s": ["x", "y"]})
+    assert_frame_equal(query.collect().sort("k"), expected)
+    assert_frame_equal(
+        query.collect().sort("k"),
+        query.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort(
+            "k"
+        ),
+    )
+
+
+def test_or_implied_predicates_not_derived_without_a_join() -> None:
+    # On a single relation the implied predicate would only repeat work.
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [1, 1, 2, 2]})
+    query = lf.filter(((pl.col("a") > 1) & (pl.col("b") == 1)) | (pl.col("a") == 4))
+    plan = query.explain()
+    assert plan.count('col("a") == 4') == 1, plan
+    assert_frame_equal(query.collect(), pl.DataFrame({"a": [2, 4], "b": [1, 2]}))
+
+
+def test_or_implied_predicates_skip_nondeterministic() -> None:
+    # Pushing an implied predicate evaluates its terms a second time, which is
+    # unsound when they could disagree with the evaluation at the join.
+    fact = pl.LazyFrame({"k": [1, 2, 3], "a": [1, 2, 3]})
+    dim = pl.LazyFrame({"k": [1, 2, 3], "s": ["x", "y", "z"]})
+    udf = pl.col("a").map_elements(lambda x: bool(hash(x) % 2), return_dtype=pl.Boolean)
+    query = fact.join(dim, on="k").filter(
+        (udf & (pl.col("s") == "x")) | (udf.not_() & (pl.col("s") == "y"))
+    )
+    plan = query.explain()
+    assert plan.count("python_udf") == 2, plan
+    # The deterministic side is still derived.
+    assert plan.index('(col("s") == "x") | (col("s") == "y")') > plan.index("JOIN")
+
+
 def test_cse_skips_inherently_nondeterministic_subexpressions() -> None:
     # Two `list.sample` calls are independent random draws and must not be
     # folded by CSE into a single shared alias.
@@ -1867,7 +1917,7 @@ def test_predicate_simplification_stable_28267() -> None:
 
     plan = q.explain()
 
-    assert plan.find("is_between") > plan.find("&")
+    assert plan.find("is_between") < plan.find("&")
 
 
 def test_or_factoring_skips_udf_conjunct() -> None:

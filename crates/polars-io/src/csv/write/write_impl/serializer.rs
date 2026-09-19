@@ -33,11 +33,13 @@
 use std::fmt::LowerExp;
 use std::io::Write;
 
-use arrow::array::{Array, BooleanArray, Float16Array, NullArray, PrimitiveArray, Utf8ViewArray};
-use arrow::legacy::time_zone::Tz;
-use arrow::types::NativeType;
 use memchr::{memchr_iter, memchr3};
 use num_traits::NumCast;
+use polars_arrow::array::{
+    Array, BooleanArray, Float16Array, NullArray, PrimitiveArray, Utf8ViewArray,
+};
+use polars_arrow::legacy::time_zone::Tz;
+use polars_arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_utils::float16::pf16;
 
@@ -328,7 +330,7 @@ fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Ser
 
 #[cfg(feature = "dtype-decimal")]
 fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serializer<'_> {
-    let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
+    let trim_zeros = polars_arrow::compute::decimal::get_trim_decimal_zeros();
 
     let mut fmt_buf = polars_compute::decimal::DecimalFmtBuffer::new();
     let f = move |&item, buf: &mut Vec<u8>, options: &SerializeOptions| {
@@ -778,7 +780,7 @@ pub(super) fn serializer_for<'a>(
             "NaiveDate",
             array,
             jiff::civil::Date::MAX,
-            arrow::temporal_conversions::date32_to_date,
+            polars_arrow::temporal_conversions::date32_to_date,
             |date, fmt| date.strftime(fmt),
             options,
         )?,
@@ -788,7 +790,7 @@ pub(super) fn serializer_for<'a>(
             "NaiveTime",
             array,
             jiff::civil::Time::MIN,
-            arrow::temporal_conversions::time64ns_to_time,
+            polars_arrow::temporal_conversions::time64ns_to_time,
             |time, fmt| time.strftime(fmt),
             options,
         )?,
@@ -832,7 +834,7 @@ pub(super) fn serializer_for<'a>(
                         #[cfg(feature = "timezones")]
                         Some(time_zone) => {
                             let callback = move |item, buf: &mut Vec<u8>| {
-                                let item = arrow::temporal_conversions::$convert(item);
+                                let item = polars_arrow::temporal_conversions::$convert(item);
                                 let ts = jiff::tz::TimeZone::UTC
                                     .to_timestamp(item)
                                     .expect("datetime out-of-range");
@@ -846,7 +848,7 @@ pub(super) fn serializer_for<'a>(
                         Some(_) => panic!("activate 'timezones' feature"),
                         None => {
                             let callback = move |item, buf: &mut Vec<u8>| {
-                                let item = arrow::temporal_conversions::$convert(item);
+                                let item = polars_arrow::temporal_conversions::$convert(item);
                                 // We checked the format is valid above.
                                 let _ = write!(buf, "{}", item.strftime(_datetime_format));
                             };
@@ -905,7 +907,7 @@ pub(super) fn serializer_for<'a>(
 
 #[cfg(test)]
 mod test {
-    use arrow::array::NullArray;
+    use polars_arrow::array::NullArray;
     use polars_core::prelude::ArrowDataType;
 
     use super::string_serializer;

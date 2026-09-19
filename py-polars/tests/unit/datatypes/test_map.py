@@ -5,6 +5,7 @@ import math
 from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from itertools import accumulate
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -12,14 +13,20 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
     from typing import IO
 
+    from polars._typing import PolarsDataType
+
 MAP = pl.Map(pl.String, pl.Int64)
+FLOAT_MAP = pl.Map(pl.String, pl.Float64)
 ENTRIES = pl.List(pl.Struct({"key": pl.String, "value": pl.Int64}))
+
+MAP_EXTENSION_NAME = "testing.map_container"
+pl.register_extension_type(MAP_EXTENSION_NAME, pl.Extension)
 
 
 class _CustomMapping(Mapping[str, Any]):
@@ -155,6 +162,25 @@ def test_map_strict_cast_failure_reports_value_column() -> None:
     s = pl.Series("m", [{"a": "nope"}], dtype=pl.Map(pl.String, pl.String))
     with pytest.raises(InvalidOperationError, match="conversion from `str` to `i64`"):
         s.cast(pl.Map(pl.String, pl.Int64), strict=True)
+
+
+def test_map_strict_cast_still_checks_outer_row_validity() -> None:
+    # A Map anywhere in the dtype skips the entry comparison, not the row comparison.
+    m = pl.Series("m", [{"a": 1}], dtype=pl.Map(pl.String, pl.Int64))
+    x = pl.Series("x", [None], dtype=pl.Int64)
+
+    with_map = pl.DataFrame([m, x]).to_struct("s")
+    without_map = pl.DataFrame([x]).to_struct("s")
+    for s in (with_map, without_map):
+        with pytest.raises(InvalidOperationError, match="conversion from `struct"):
+            s.cast(pl.String, strict=True)
+
+
+def test_map_strict_cast_checks_a_null_row_of_a_struct_field() -> None:
+    m = pl.Series("m", [None], dtype=pl.Map(pl.String, pl.Int64))
+    s = pl.DataFrame([m]).to_struct("s")
+    with pytest.raises(InvalidOperationError, match="conversion from `struct"):
+        s.cast(pl.String, strict=True)
 
 
 def test_map_concat_requires_matching_dtypes() -> None:
@@ -829,18 +855,13 @@ def test_map_entries_expr_and_series() -> None:
 def arrow_map_retaining_entries(
     keys: list[str], values: list[int], offsets: list[int], valid: list[bool]
 ) -> pl.Series:
-    """Build an Arrow Map with entries under null rows."""
+    """Use PyArrow's standard constructor to keep entries under null rows."""
     pa = pytest.importorskip("pyarrow")
-    entries = pa.StructArray.from_arrays(
-        [pa.array(keys, pa.large_string()), pa.array(values, pa.int64())],
-        names=["key", "value"],
-    )
-    map_type = pa.map_(pa.field("key", pa.large_string(), nullable=False), pa.int64())
-    arr = pa.Array.from_buffers(
-        map_type,
-        len(valid),
-        [pa.array(valid).buffers()[1], pa.array(offsets, pa.int32()).buffers()[1]],
-        children=[entries],
+    arr = pa.MapArray.from_arrays(
+        pa.array(offsets, pa.int32()),
+        pa.array(keys, pa.large_string()),
+        pa.array(values, pa.int64()),
+        mask=pa.array([not v for v in valid]),
     )
     s = pl.from_arrow(arr)
     assert isinstance(s, pl.Series)
@@ -848,15 +869,63 @@ def arrow_map_retaining_entries(
 
 
 def retaining_null_row_map() -> pl.Series:
-    """Rows `null` and `{b: 2, c: 3}`, with entry `a` hidden under the null row."""
+    """Rows `null` and `{b: 2, c: 3}`, with entry `a` kept under the null row."""
     return arrow_map_retaining_entries(
         ["a", "b", "c"], [1, 2, 3], [0, 1, 3], [False, True]
     )
 
 
-def test_map_null_row_hides_retained_entries() -> None:
+@pytest.mark.parametrize("n", [0, 1, 7, 8, 9, 63, 64, 65, 127, 128, 129])
+@pytest.mark.parametrize("skip", [0, 1, 3, 9])
+@pytest.mark.parametrize("pattern", ["valid", "null", "alternating", "runs"])
+def test_map_null_row_export_compaction_validity_runs(
+    n: int, skip: int, pattern: str
+) -> None:
+    pa = pytest.importorskip("pyarrow")
+    lengths = [i % 3 for i in range(n + skip)]
+    offsets = list(accumulate(lengths, initial=0))
+    valid = [
+        pattern == "valid"
+        or (pattern == "alternating" and i % 2 == 0)
+        or (pattern == "runs" and (i // 17) % 2 == 0)
+        for i in range(n + skip)
+    ]
+    keys = [str(i) for i in range(offsets[-1])]
+    values = list(range(offsets[-1]))
+    arr = pa.MapArray.from_arrays(
+        pa.array(offsets, pa.int32()),
+        pa.array(keys, pa.large_string()),
+        pa.array(values, pa.int64()),
+        mask=pa.array([not v for v in valid], pa.bool_()),
+    )
+    # Slice before import to exercise nonzero bitmap and list offsets.
+    result = pl.from_arrow(arr.slice(skip, n))
+    assert isinstance(result, pl.Series)
+    expected = [
+        {keys[j]: values[j] for j in range(offsets[i], offsets[i + 1])}
+        if valid[i]
+        else None
+        for i in range(skip, skip + n)
+    ]
+    assert result.to_list() == expected
+    exported = result.to_arrow()
+    exported.validate(full=True)
+    # Export compacts and rebases, so the entries are exactly the live ones.
+    assert exported.offsets.to_pylist() == list(
+        accumulate((len(row) if row is not None else 0 for row in expected), initial=0)
+    )
+    assert exported.keys.to_pylist() == [key for row in expected if row for key in row]
+
+
+def test_map_export_compacts_a_null_row_that_spans_entries() -> None:
     s = retaining_null_row_map()
     assert s.to_list() == [None, {"b": 2, "c": 3}]
+    # The import left entry `a` where the producer put it; the export drops it.
+    assert s.to_arrow().offsets.to_pylist() == [0, 0, 2]
+    assert s.to_arrow().values.to_pylist() == [
+        {"key": "b", "value": 2},
+        {"key": "c", "value": 3},
+    ]
 
     expected = [None, [{"key": "b", "value": 2}, {"key": "c", "value": 3}]]
     for out in (s.map.entries(), s.cast(ENTRIES)):
@@ -870,7 +939,7 @@ def test_map_null_row_hides_retained_entries() -> None:
 
 
 def test_map_null_row_strict_cast_inside_a_container() -> None:
-    # Hidden entries must not cause length mismatches in strict-cast validity checks.
+    # Entries a null row hides must not reach a strict-cast validity check.
     s = retaining_null_row_map()
     entries = [None, [{"key": "b", "value": 2}, {"key": "c", "value": 3}]]
 
@@ -886,7 +955,7 @@ def test_map_null_row_strict_cast_inside_a_container() -> None:
 
 def test_map_null_row_strict_cast_reaches_a_nested_map() -> None:
     pa = pytest.importorskip("pyarrow")
-    # Inner maps of `{p: null, q: {b: 2, c: 3}}`, with `a` hidden under `p`.
+    # Inner maps of `{p: null, q: {b: 2, c: 3}}`, with `a` under `p` on input.
     inner = retaining_null_row_map().rename("value").to_arrow()
     keys = pa.array(["p", "q"], pa.large_string())
     outer_entries = pa.StructArray.from_arrays([keys, inner], names=["key", "value"])
@@ -914,8 +983,8 @@ def test_map_null_row_strict_cast_reaches_a_nested_map() -> None:
     ]
 
 
-def test_map_null_row_compaction_survives_slicing() -> None:
-    # Rows 0 and 2 are null but still span entries `a` and `d`.
+def test_map_null_row_masking_survives_slicing() -> None:
+    # Rows 0 and 2 are null while still spanning entries `a` and `d`.
     s = arrow_map_retaining_entries(
         ["a", "b", "c", "d", "e"],
         [1, 2, 3, 4, 5],
@@ -1329,18 +1398,17 @@ def test_map_nested_key_conversion_is_an_error_not_a_panic(
 
 
 def _map_with_null_row_keeping_its_entries() -> pl.Series:
-    """An Arrow Map with entries retained under a null row."""
+    """An Arrow Map whose null row still spans an entry on input."""
     pa = pytest.importorskip("pyarrow")
 
     keys = pa.array([Decimal("1.50"), Decimal("2.50")], type=pa.decimal128(10, 2))
     values = pa.array([1, 2], type=pa.int64())
-    arr = pa.MapArray.from_arrays(pa.array([0, 1, 2], type=pa.int32()), keys, values)
-    # Mark row 0 null while the offsets keep pointing at its entry.
-    arr = pa.Array.from_buffers(
-        arr.type,
-        2,
-        [pa.py_buffer(bytes([0b10])), arr.buffers()[1]],
-        children=[arr.values],
+    # The mask nulls row 0 while the offsets keep pointing at its entry.
+    arr = pa.MapArray.from_arrays(
+        pa.array([0, 1, 2], type=pa.int32()),
+        keys,
+        values,
+        mask=pa.array([True, False]),
     )
     return pl.from_arrow(pa.table({"m": arr}))["m"]  # type: ignore[index]
 
@@ -1352,18 +1420,16 @@ LIVE_ROW = {Decimal("2.500"): 2}
 
 
 def test_map_null_row_keeping_its_entries() -> None:
-    # Arrow lets a null row keep its entries instead of being empty, and other producers
-    # do that. Null propagation must not null those entries: it runs before casting and
-    # row encoding, and nulling them breaks the non-null entry invariant.
+    # Arrow may keep entries under null rows; polars keeps them too and hides them.
     s = _map_with_null_row_keeping_its_entries()
     assert s.dtype == DEC_MAP
-    assert s.to_arrow().offsets.to_pylist() == [0, 1, 2]
+    assert s.to_arrow().offsets.to_pylist() == [0, 0, 1]
     assert s.to_list() == [None, {Decimal("2.50"): 2}]
 
     # Rescaling a Decimal key is the cast that revalidates the entries.
     assert s.cast(RESCALED_MAP).to_list() == [None, LIVE_ROW]
 
-    # Value casts drop hidden entries and remain exportable.
+    # Value casts remain exportable.
     widened = s.cast(pl.Map(pl.Decimal(10, 2), pl.Float64))
     assert widened.to_list() == [None, {Decimal("2.50"): 2.0}]
     assert widened.to_arrow().values.null_count == 0
@@ -1373,8 +1439,8 @@ def test_map_null_row_keeping_its_entries() -> None:
     assert s.to_frame().sort("m")["m"].to_list() == [None, {Decimal("2.50"): 2}]
 
 
-def test_map_sliced_null_row_leaves_its_entries_outside_the_window() -> None:
-    # Slicing away the null row leaves its entry in the child, before the offsets.
+def test_map_sliced_null_row_leaves_nothing_reachable() -> None:
+    # The null row's entry is hidden, so slicing the row away exposes nothing.
     sliced = _map_with_null_row_keeping_its_entries().slice(1, 1)
     assert sliced.to_list() == [{Decimal("2.50"): 2}]
 
@@ -1382,6 +1448,295 @@ def test_map_sliced_null_row_leaves_its_entries_outside_the_window() -> None:
     assert exported.offsets.to_pylist() == [0, 1]
     assert exported.keys.to_pylist() == [Decimal("2.50")]
     assert sliced.cast(RESCALED_MAP).to_list() == [LIVE_ROW]
+
+
+def test_map_slicing_leaves_live_entries_outside_the_window() -> None:
+    # Slicing past a live row may leave its entries outside the offsets, as with List.
+    s = pl.Series("m", [{Decimal("1.50"): 1}, {Decimal("2.50"): 2}], dtype=DEC_MAP)
+    sliced = s.slice(1, 1)
+    assert sliced.to_list() == [{Decimal("2.50"): 2}]
+
+    for out in (
+        sliced.cast(pl.Map(pl.Decimal(10, 2), pl.Float64)),
+        sliced.cast(RESCALED_MAP),
+    ):
+        exported = out.to_arrow()
+        assert exported.offsets.to_pylist() == [0, 1]
+        assert exported.keys.to_pylist() == [Decimal("2.50")]
+    assert sliced.map.entries().to_arrow().offsets.to_pylist() == [0, 1]
+
+
+def masked_null_row_map() -> pl.Series:
+    """Rows `{a: 1, b: 2}`, null, `{d: 4, e: 5}`, with `c` hidden under the null row."""
+    s = pl.Series("m", [{"a": 1, "b": 2}, {"c": 3}, {"d": 4, "e": 5}], dtype=MAP)
+    df = pl.DataFrame({"m": s, "keep": [True, False, True]})
+    return df.select(
+        pl.when(pl.col("keep")).then(pl.col("m")).otherwise(None)
+    ).to_series()
+
+
+def test_map_flat_accessors_skip_entries_hidden_by_a_null_row() -> None:
+    s = masked_null_row_map()
+    assert s.to_list() == [{"a": 1, "b": 2}, None, {"d": 4, "e": 5}]
+
+    # `entries` and the `List(Struct)` cast both expose live entries only.
+    expected = [
+        [{"key": "a", "value": 1}, {"key": "b", "value": 2}],
+        None,
+        [{"key": "d", "value": 4}, {"key": "e", "value": 5}],
+    ]
+    for out in (s.map.entries(), s.cast(ENTRIES)):
+        assert out.to_list() == expected
+        assert out.to_arrow().offsets.to_pylist() == [0, 2, 2, 4]
+
+    # A value cast pairs `values()` with `with_values()`, so both must skip `c`.
+    widened = s.cast(FLOAT_MAP)
+    assert widened.to_list() == [{"a": 1.0, "b": 2.0}, None, {"d": 4.0, "e": 5.0}]
+    assert widened.to_arrow().items.to_pylist() == [1.0, 2.0, 4.0, 5.0]
+
+
+def test_map_strict_cast_ignores_values_hidden_by_a_null_row() -> None:
+    pa = pytest.importorskip("pyarrow")
+    # Only the hidden entry's value is unparsable, so a strict cast of it would fail.
+    keys = pa.array(["a", "b"], pa.large_string())
+    values = pa.array(["xyz", "7"], pa.large_string())
+    mask = pa.array([True, False])
+    arr = pa.MapArray.from_arrays(
+        pa.array([0, 1, 2], pa.int32()), keys, values, mask=mask
+    )
+    s = pl.from_arrow(arr)
+    assert isinstance(s, pl.Series)
+    assert s.dtype == pl.Map(pl.String, pl.String)
+    assert s.cast(MAP).to_list() == [None, {"b": 7}]
+
+    # The same payload as a `List(Struct)`, where propagation nulls the hidden entry.
+    entries = pa.StructArray.from_arrays([keys, values], names=["key", "value"])
+    lst = pa.ListArray.from_arrays(pa.array([0, 1, 2], pa.int32()), entries, mask=mask)
+    from_list = pl.from_arrow(lst)
+    assert isinstance(from_list, pl.Series)
+    assert from_list.cast(MAP).to_list() == [None, {"b": 7}]
+
+
+def test_map_sliced_export_rebases_offsets() -> None:
+    pytest.importorskip("pyarrow")
+    rows = [{"a": 1}, {"b": 2, "c": 3}, {"d": 4}]
+    s = pl.Series("m", rows, dtype=MAP)
+
+    for offset, length in [(0, 3), (1, 2), (2, 1), (1, 1), (3, 0)]:
+        exported = s.slice(offset, length).to_arrow()
+        exported.validate(full=True)
+        assert exported.offsets.to_pylist()[0] == 0
+        assert exported.to_pylist() == [
+            list(row.items()) for row in rows[offset : offset + length]
+        ]
+
+
+@pytest.mark.parametrize("container", ["list", "struct"])
+def test_map_hidden_entries_under_a_nulled_container_row_export_valid_arrow(
+    container: str,
+) -> None:
+    pytest.importorskip("pyarrow")
+    # Nulling the outer row propagates nulls into the hidden Map entries, which the
+    # export must drop rather than hand to Arrow's non-nullable entries field.
+    df = pl.DataFrame({"m": masked_null_row_map().cast(FLOAT_MAP)})
+    if container == "list":
+        nested = _outer_nulled_container(df["m"].head(2))
+        dtype: pl.DataType = pl.List(FLOAT_MAP)
+        expected: list[Any] = [None, [None]]
+    else:
+        nested = df.select(
+            pl.when(pl.Series([False, True, True])).then(pl.struct("m")).otherwise(None)
+        ).to_series()
+        dtype = pl.Struct({"m": FLOAT_MAP})
+        expected = [None, {"m": None}, {"m": [("d", 4.0), ("e", 5.0)]}]
+
+    exported = nested.cast(dtype).to_arrow()
+    exported.validate(full=True)
+    assert exported.to_pylist() == expected
+    inner = exported.field("m") if container == "struct" else exported.values
+    assert inner.values.null_count == 0
+    assert inner.keys.null_count == 0
+
+
+def test_map_null_rows_written_in_place_are_compacted_on_export() -> None:
+    # Several paths null a Map row without touching its offsets. These are the ones an
+    # expression can reach; `deposit` and the empty-group aggregation of a scalar
+    # column are covered by the Rust tests in `logical::map`.
+    s = pl.Series("m", [{"a": 1, "b": 2}, {"c": 3}, {"d": 4, "e": 5}], dtype=MAP)
+    df = pl.DataFrame({"m": s, "keep": [True, False, True]})
+
+    masked = df.select(
+        pl.when(pl.col("keep")).then(pl.col("m")).otherwise(None)
+    ).to_series()
+    assert masked.to_list() == [{"a": 1, "b": 2}, None, {"d": 4, "e": 5}]
+    assert masked.to_arrow().offsets.to_pylist() == [0, 2, 2, 4]
+
+    shifted = s.shift(1)
+    assert shifted.to_list() == [None, {"a": 1, "b": 2}, {"c": 3}]
+    assert shifted.to_arrow().offsets.to_pylist() == [0, 0, 2, 3]
+
+    # A broadcast scalar gathered with null indices nulls rows of the materialized copy.
+    gathered = pl.DataFrame({"i": [0, None, 0, None]}).select(
+        pl.lit(s.slice(0, 1)).first().gather(pl.col("i"))
+    )["m"]
+    assert gathered.to_list() == [{"a": 1, "b": 2}, None, {"a": 1, "b": 2}, None]
+    assert gathered.to_arrow().offsets.to_pylist() == [0, 2, 2, 4, 4]
+
+
+def test_map_null_rows_in_a_container_are_compacted_on_export() -> None:
+    s = pl.Series("m", [{"a": 1.0, "b": 2.0}, {"c": 3.0}], dtype=FLOAT_MAP)
+    df = pl.DataFrame({"m": s, "keep": [False, True]})
+
+    # `to_arrow` alone does not propagate nulls into the container's child; the cast
+    # does.
+    nulled = df.select(
+        pl.when(pl.col("keep")).then(pl.col("m")).otherwise(None).implode()
+    ).to_series()
+    exported = nulled.cast(pl.List(FLOAT_MAP)).to_arrow()
+    assert exported.values.offsets.to_pylist() == [0, 0, 1]
+    assert exported.to_pylist() == [[None, [("c", 3.0)]]]
+
+    # Nulling the outer `List` row must reach the Map rows it spans.
+    lists = (
+        df.group_by("keep", maintain_order=True)
+        .agg("m")
+        .with_columns(outer_keep=pl.Series([False, True]))
+    )
+    outer_nulled = lists.select(
+        pl.when(pl.col("outer_keep")).then(pl.col("m")).otherwise(None)
+    ).to_series()
+    exported = outer_nulled.cast(pl.List(FLOAT_MAP)).to_arrow()
+    assert exported.to_pylist() == [None, [[("c", 3.0)]]]
+    assert exported.values.offsets.to_pylist() == [0, 0, 1]
+
+    struct_nulled = df.select(
+        pl.when(pl.col("keep")).then(pl.struct("m")).otherwise(None)
+    ).to_series()
+    exported = struct_nulled.cast(pl.Struct({"m": FLOAT_MAP})).to_arrow()
+    assert exported.to_pylist() == [None, {"m": [("c", 3.0)]}]
+    assert exported.field("m").offsets.to_pylist() == [0, 0, 1]
+
+    # Two array rows, so the nulled row is not the whole column.
+    wide = pl.Series(
+        "m",
+        [{"a": 1.0, "b": 2.0}, {"c": 3.0}, {"d": 4.0}, {"e": 5.0}],
+        dtype=FLOAT_MAP,
+    )
+    arrays = (
+        pl.DataFrame({"m": wide, "g": [1, 1, 2, 2]})
+        .group_by("g", maintain_order=True)
+        .agg("m")
+        .with_columns(
+            pl.col("m").cast(pl.Array(FLOAT_MAP, 2)), keep=pl.Series([False, True])
+        )
+    )
+    array_nulled = arrays.select(
+        pl.when(pl.col("keep")).then(pl.col("m")).otherwise(None)
+    ).to_series()
+    exported = array_nulled.cast(pl.Array(FLOAT_MAP, 2)).to_arrow()
+    assert exported.to_pylist() == [None, [[("d", 4.0)], [("e", 5.0)]]]
+    assert exported.values.offsets.to_pylist() == [0, 0, 0, 1, 2]
+
+
+def _outer_nulled_container(inner: pl.Series) -> pl.Series:
+    """Group `inner` into a two-row `List` and null the first row."""
+    lists = (
+        pl.DataFrame({"c": inner, "g": [1, 2]})
+        .group_by("g", maintain_order=True)
+        .agg("c")
+        .with_columns(keep=pl.Series([False, True]))
+    )
+    return lists.select(
+        pl.when(pl.col("keep")).then(pl.col("c")).otherwise(None)
+    ).to_series()
+
+
+def test_map_nested_container_is_compact_in_the_physical_tree() -> None:
+    # Inspect physical descendants: reconstructing children could mask lost repairs.
+    s = pl.Series("m", [{"a": 1.0, "b": 2.0}, {"c": 3.0}], dtype=FLOAT_MAP)
+    # Rows `{}` and `{c: 3, d: 4}`: nulling row 0 leaves this second field alone.
+    other = pl.Series("other", [{}, {"c": 3.0, "d": 4.0}], dtype=FLOAT_MAP)
+    structs = pl.DataFrame({"m": s, "other": other}).select(pl.struct("m", "other"))[
+        "m"
+    ]
+
+    exported = (
+        _outer_nulled_container(structs)
+        .cast(pl.List(pl.Struct({"m": FLOAT_MAP, "other": FLOAT_MAP})))
+        .to_arrow()
+    )
+    assert exported.to_pylist() == [
+        None,
+        [{"m": [("c", 3.0)], "other": [("c", 3.0), ("d", 4.0)]}],
+    ]
+    assert exported.values.field("m").offsets.to_pylist() == [0, 0, 1]
+    assert exported.values.field("other").offsets.to_pylist() == [0, 0, 2]
+
+
+@pytest.mark.parametrize("container", ["list", "array", "struct"])
+@pytest.mark.parametrize("cast_to_entries", [False, True], ids=["identity", "entries"])
+def test_map_propagation_keeps_repaired_entry_children(
+    container: str, cast_to_entries: bool
+) -> None:
+    pa = pytest.importorskip("pyarrow")
+    inner = pa.MapArray.from_arrays([0, 2, 3], ["a", "b", "c"], [1, 2, 3])
+    mask = pa.array([True, False])
+    value_dtype: pl.DataType
+    if container == "struct":
+        values = pa.StructArray.from_arrays([inner], names=["m"], mask=mask)
+        value_dtype = pl.Struct({"m": ENTRIES})
+    elif container == "array":
+        values = pa.FixedSizeListArray.from_arrays(inner, 1, mask=mask)
+        value_dtype = pl.Array(ENTRIES, 1)
+    else:
+        values = pa.ListArray.from_arrays([0, 1, 2], inner, mask=mask)
+        value_dtype = pl.List(ENTRIES)
+
+    s = pl.from_arrow(pa.MapArray.from_arrays([0, 2], ["x", "y"], values))
+    assert isinstance(s, pl.Series)
+    target = (
+        pl.List(pl.Struct({"key": pl.String, "value": value_dtype}))
+        if cast_to_entries
+        else s.dtype
+    )
+    result = s.cast(target)
+    if not cast_to_entries:
+        assert result.to_list() == s.to_list()
+
+    # Inspect the physical tree without reconstructing children, which could repair
+    # them and hide a discarded propagation result.
+    exported_values = result.to_arrow().values.field("value")
+    exported_inner = (
+        exported_values.field("m") if container == "struct" else exported_values.values
+    )
+    assert exported_inner.is_null().to_pylist() == [True, False]
+    assert exported_inner.offsets.to_pylist() == [0, 0, 1]
+    assert exported_inner.values.to_pylist() == [{"key": "c", "value": 3}]
+
+
+@pytest.mark.parametrize("wrap_in_struct", [False, True], ids=["map", "struct-of-map"])
+def test_map_extension_container_null_rows_are_compacted_on_export(
+    wrap_in_struct: bool,
+) -> None:
+    # `Extension` forwards propagation to its storage, so a Map under an extension
+    # must be exported the same way.
+    rows: list[Any] = [{"a": 1.0, "b": 2.0}, {"c": 3.0}]
+    storage: pl.DataType = FLOAT_MAP
+    live = [("c", 3.0)]
+    if wrap_in_struct:
+        rows = [{"m": row} for row in rows]
+        storage = pl.Struct({"m": FLOAT_MAP})
+        live = {"m": live}  # type: ignore[assignment]
+    ext = pl.Extension(name=MAP_EXTENSION_NAME, storage=storage)
+
+    exported = (
+        _outer_nulled_container(pl.Series("c", rows, dtype=ext))
+        .cast(pl.List(ext))
+        .to_arrow()
+    )
+    assert exported.to_pylist() == [None, [live]]
+    inner = exported.values.field("m") if wrap_in_struct else exported.values
+    assert inner.offsets.to_pylist() == [0, 0, 1]
 
 
 def test_map_sort_by_categorical_keys() -> None:
@@ -1433,18 +1788,19 @@ def test_map_sort_by_categorical_keys() -> None:
         ),
     ],
 )
-def test_map_null_row_entries_survive_nesting(
+def test_map_null_rows_survive_nesting(
     nest: Callable[[pl.Series], pl.Series],
     rescaled_dtype: pl.DataType,
     expected: list[Any],
 ) -> None:
-    # Entry validity must survive nested null propagation before key rescaling.
+    # The key rescaling below revalidates the entries, so it must see only the live
+    # ones -- nested null propagation nulls the rest.
     nested = nest(_map_with_null_row_keeping_its_entries())
     assert nested.cast(rescaled_dtype).to_list() == expected
 
 
 def test_map_null_entry_of_a_live_row_is_rejected() -> None:
-    # Only hidden null entries or keys may be dropped.
+    # Only null entries or keys that no live row owns may be dropped.
     entries = pl.Series("m", [[None, {"key": "a", "value": 1}]], dtype=ENTRIES)
     with pytest.raises(InvalidOperationError, match="Map entries cannot be null"):
         entries.cast(MAP)
@@ -1455,7 +1811,7 @@ def test_map_null_entry_of_a_live_row_is_rejected() -> None:
 
 
 def _list_of_entries_with_null_row(keys: list[str | None]) -> pl.Series:
-    """A `List(Struct)` with an entry retained under its first, null row."""
+    """A `List(Struct)` whose first, null row still spans an entry."""
     pa = pytest.importorskip("pyarrow")
     # `pa.MapArray.from_arrays` rejects null keys, so build the list by hand.
     entries = pa.StructArray.from_arrays(
@@ -1471,10 +1827,9 @@ def _list_of_entries_with_null_row(keys: list[str | None]) -> pl.Series:
 
 
 @pytest.mark.parametrize("keys", [[None, "b"], ["a", "b"]], ids=["invalid", "valid"])
-def test_map_hidden_entry_is_compacted_by_the_list_cast(keys: list[str | None]) -> None:
-    # List(Struct) null propagation causes hidden entries to be dropped during casting.
-    # Map import preserves valid hidden entries (test_map_null_row_keeping_its_entries).
-    # Neither path may export null entries or keys.
+def test_map_hidden_entry_is_compacted_on_export(keys: list[str | None]) -> None:
+    # `List(Struct)` null propagation may null the entry under a null row. The Map keeps
+    # it hidden; only the export must not carry a null entry or key into Arrow.
     s = _list_of_entries_with_null_row(keys).cast(MAP)
     exported = s.to_arrow()
     assert exported.offsets.to_pylist() == [0, 0, 1]
@@ -1580,3 +1935,628 @@ def test_map_sliced_value_casts_survive_nesting(
     assert pl.select(pl.struct(pl.lit(sliced).alias("m"))).to_series().cast(
         pl.Struct({"m": target})
     ).to_list() == [{"m": row} for row in expected]
+
+
+def assert_map_method(
+    s: pl.Series, method: str, expected: pl.Series, *args: Any
+) -> None:
+    """Assert that the `Series` and `Expr` forms of a `map` method both hold."""
+    assert_series_equal(getattr(s.map, method)(*args), expected)
+
+    df = pl.DataFrame({"m": s})
+    result = df.select(getattr(pl.col("m").map, method)(*args))
+    assert_series_equal(result["m"], expected)
+
+
+def map_of(key_dtype: PolarsDataType, key: Any, value: int = 42) -> pl.Series:
+    """A one-row map with a single entry, built from entries to fix the key dtype."""
+    entries = pl.Series(
+        "m",
+        [[{"key": key, "value": value}]],
+        dtype=pl.List(pl.Struct({"key": key_dtype, "value": pl.Int64})),
+    )
+    return entries.list.to_map()
+
+
+def test_map_keys_values_len_expr_and_series() -> None:
+    # Deliberately unsorted: entry order is preserved, not normalized.
+    s = pl.Series("m", [{"b": 1, "a": 2}, {}, None], dtype=MAP)
+
+    assert_map_method(s, "keys", pl.Series("m", [["b", "a"], [], None]))
+    assert_map_method(s, "values", pl.Series("m", [[1, 2], [], None]))
+    assert_map_method(s, "len", pl.Series("m", [2, 0, None], dtype=pl.UInt32))
+
+
+def test_map_keys_values_len_ignore_entries_under_null_rows() -> None:
+    s = retaining_null_row_map()
+
+    assert_map_method(s, "keys", pl.Series("m", [None, ["b", "c"]]))
+    assert_map_method(s, "values", pl.Series("m", [None, [2, 3]]))
+    assert_map_method(s, "len", pl.Series("m", [None, 2], dtype=pl.UInt32))
+
+
+def test_map_keys_values_len_on_sliced_and_chunked() -> None:
+    s = pl.Series("m", [{"a": 1}, {"b": 2, "c": 3}, None], dtype=MAP)
+
+    sliced = s.slice(1, 2)
+    assert_map_method(sliced, "keys", pl.Series("m", [["b", "c"], None]))
+    assert_map_method(sliced, "values", pl.Series("m", [[2, 3], None]))
+    assert_map_method(sliced, "len", pl.Series("m", [2, None], dtype=pl.UInt32))
+
+    # A slice without null rows keeps the storage offsets off zero, so the row
+    # boundaries have to be rebased onto the flattened field rather than reused.
+    dense = pl.Series("m", [{"a": 1}, {"b": 2, "c": 3}, {"d": 4}], dtype=MAP).slice(
+        1, 2
+    )
+    assert dense.map.entries().to_arrow().offsets.to_pylist() == [1, 3, 4]
+    assert_map_method(dense, "keys", pl.Series("m", [["b", "c"], ["d"]]))
+    assert_map_method(dense, "values", pl.Series("m", [[2, 3], [4]]))
+    assert_map_method(dense, "len", pl.Series("m", [2, 1], dtype=pl.UInt32))
+    assert_map_method(dense, "get", pl.Series("m", [3, None], dtype=pl.Int64), "c")
+    assert_map_method(dense, "contains_key", pl.Series("m", [True, False]), "c")
+
+    chunked = pl.concat([s, s.slice(0, 1)], rechunk=False)
+    assert chunked.n_chunks() == 2
+    assert chunked.map.keys().to_list() == [["a"], ["b", "c"], None, ["a"]]
+    assert chunked.map.values().to_list() == [[1], [2, 3], None, [1]]
+    assert chunked.map.len().to_list() == [1, 2, None, 1]
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "contains"),
+    [
+        pytest.param(
+            "a", [1, None, None, None], [True, False, False, None], id="first"
+        ),
+        pytest.param("c", [3, None, None, None], [True, False, False, None], id="last"),
+        pytest.param("z", [None] * 4, [False, False, False, None], id="missing"),
+        pytest.param(None, [None] * 4, [False, False, False, None], id="null-key"),
+    ],
+)
+def test_map_get_and_contains_key(
+    key: str | None, value: list[int | None], contains: list[bool | None]
+) -> None:
+    s = pl.Series("m", [{"a": 1, "b": 2, "c": 3}, {"b": 2}, {}, None], dtype=MAP)
+
+    assert_map_method(s, "get", pl.Series("m", value, dtype=pl.Int64), key)
+    assert_map_method(s, "contains_key", pl.Series("m", contains), key)
+
+
+def test_map_contains_key_finds_a_null_value() -> None:
+    # The one case where `contains_key` and `get` disagree.
+    s = pl.Series("m", [{"a": None}], dtype=MAP)
+
+    assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), "a")
+    assert_map_method(s, "contains_key", pl.Series("m", [True]), "a")
+
+
+def test_map_get_with_a_key_per_row() -> None:
+    df = pl.DataFrame(
+        {
+            "m": pl.Series([{"a": 1, "b": 2}, {"a": 3}, None], dtype=MAP),
+            "k": ["b", "b", "a"],
+        }
+    )
+
+    result = df.select(
+        pl.col("m").map.get(pl.col("k")).alias("v"),
+        pl.col("m").map.contains_key(pl.col("k")).alias("has"),
+    )
+    assert_series_equal(result["v"], pl.Series("v", [2, None, None], dtype=pl.Int64))
+    assert_series_equal(result["has"], pl.Series("has", [True, False, None]))
+
+
+def test_map_get_broadcasts_a_single_map_over_a_key_column() -> None:
+    df = pl.DataFrame({"k": ["a", "b", "z"]})
+    single = pl.lit(pl.Series("m", [{"a": 1, "b": 2}], dtype=MAP)).first()
+
+    result = df.select(
+        single.map.get(pl.col("k")).alias("v"),
+        single.map.contains_key(pl.col("k")).alias("has"),
+    )
+    assert_series_equal(result["v"], pl.Series("v", [1, 2, None], dtype=pl.Int64))
+    assert_series_equal(result["has"], pl.Series("has", [True, True, False]))
+
+
+def test_map_get_length_mismatch() -> None:
+    s = pl.Series("m", [{"a": 1}, {"b": 2}, {}], dtype=MAP)
+    keys = pl.Series("k", ["a", "b"])
+
+    for method in ("get", "contains_key"):
+        with pytest.raises(pl.exceptions.ShapeError, match="2 keys in 3 maps"):
+            getattr(s.map, method)(keys)
+
+
+def test_map_get_on_an_empty_column() -> None:
+    s = pl.Series("m", [], dtype=MAP)
+
+    assert_map_method(s, "keys", pl.Series("m", [], dtype=pl.List(pl.String)))
+    assert_map_method(s, "len", pl.Series("m", [], dtype=pl.UInt32))
+    assert_map_method(s, "get", pl.Series("m", [], dtype=pl.Int64), "a")
+    assert_map_method(s, "contains_key", pl.Series("m", [], dtype=pl.Boolean), "a")
+
+
+def test_map_get_ignores_entries_under_null_rows() -> None:
+    s = retaining_null_row_map()
+
+    # `a` lives under the null row, so it is not part of any map.
+    assert_map_method(s, "get", pl.Series("m", [None, None], dtype=pl.Int64), "a")
+    assert_map_method(s, "contains_key", pl.Series("m", [None, False]), "a")
+    assert_map_method(s, "get", pl.Series("m", [None, 2], dtype=pl.Int64), "b")
+    assert_map_method(s, "contains_key", pl.Series("m", [None, True]), "b")
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "key", "needle", "missing"),
+    [
+        pytest.param(pl.String, "a", "a", "z", id="string"),
+        # An `Int32` literal upcasts losslessly to the `Int64` keys.
+        pytest.param(
+            pl.Int64, 7, pl.lit(7, pl.Int32), pl.lit(8, pl.Int32), id="int-upcast"
+        ),
+        pytest.param(pl.Enum(["a", "z"]), "a", "a", "z", id="enum"),
+        pytest.param(pl.Categorical, "a", "a", "z", id="categorical"),
+        pytest.param(
+            pl.List(pl.Int64),
+            [1, 2],
+            pl.lit([1, 2], pl.List(pl.Int64)),
+            pl.lit([3], pl.List(pl.Int64)),
+            id="list",
+        ),
+        pytest.param(
+            pl.Struct({"x": pl.Int64}),
+            {"x": 1},
+            pl.lit({"x": 1}, pl.Struct({"x": pl.Int64})),
+            pl.lit({"x": 2}, pl.Struct({"x": pl.Int64})),
+            id="struct",
+        ),
+    ],
+)
+def test_map_get_key_dtypes(
+    key_dtype: pl.DataType, key: Any, needle: Any, missing: Any
+) -> None:
+    # Built from entries because a `List` or `Struct` is not a Python dict key.
+    s = map_of(key_dtype, key, value=1)
+    assert s.dtype == pl.Map(key_dtype, pl.Int64)
+
+    assert_map_method(s, "get", pl.Series("m", [1], dtype=pl.Int64), needle)
+    assert_map_method(s, "contains_key", pl.Series("m", [True]), needle)
+    assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), missing)
+    assert_map_method(s, "contains_key", pl.Series("m", [False]), missing)
+
+
+def test_map_get_a_nested_map_value() -> None:
+    dtype = pl.Map(pl.String, MAP)
+    s = pl.Series("m", [{"a": {"x": 1}}, {}], dtype=dtype)
+
+    assert_map_method(s, "get", pl.Series("m", [{"x": 1}, None], dtype=MAP), "a")
+    assert_map_method(s, "values", pl.Series("m", [[{"x": 1}], []], dtype=pl.List(MAP)))
+
+
+def test_map_ops_resolve_schema_without_data() -> None:
+    lf = pl.LazyFrame(schema={"m": MAP})
+
+    assert lf.select(pl.col("m").map.keys()).collect_schema() == {
+        "m": pl.List(pl.String)
+    }
+    assert lf.select(pl.col("m").map.values()).collect_schema() == {
+        "m": pl.List(pl.Int64)
+    }
+    assert lf.select(pl.col("m").map.len()).collect_schema() == {"m": pl.UInt32}
+    assert lf.select(pl.col("m").map.contains_key("a")).collect_schema() == {
+        "m": pl.Boolean
+    }
+    assert lf.select(pl.col("m").map.get("a")).collect_schema() == {"m": pl.Int64}
+
+
+@pytest.mark.parametrize(
+    ("method", "args"),
+    [
+        ("keys", ()),
+        ("values", ()),
+        ("len", ()),
+        ("contains_key", ("a",)),
+        ("get", ("a",)),
+    ],
+)
+def test_map_ops_require_map_dtype(method: str, args: tuple[Any, ...]) -> None:
+    df = pl.DataFrame({"m": [[1, 2]]})
+
+    with pytest.raises(InvalidOperationError, match=rf"`map\.{method}` requires a Map"):
+        df.select(getattr(pl.col("m").map, method)(*args))
+
+
+def test_map_get_in_group_by_and_streaming() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 2],
+            "m": pl.Series([{"a": 1}, {"b": 2}, {"a": 3}], dtype=MAP),
+        }
+    )
+
+    grouped = df.group_by("g", maintain_order=True).agg(
+        pl.col("m").map.get("a").alias("v"),
+        pl.col("m").map.len().alias("n"),
+    )
+    assert grouped["v"].to_list() == [[1, None], [3]]
+    assert grouped["n"].to_list() == [[1, 1], [1]]
+
+    streamed = df.lazy().select(
+        pl.col("m").map.get("a").alias("v"),
+        pl.col("m").map.contains_key("a").alias("has"),
+        pl.col("m").map.keys().alias("k"),
+    )
+    assert_frame_equal(streamed.collect(engine="streaming"), streamed.collect())
+
+
+@pytest.mark.parametrize(
+    ("map_dtype", "needle_dtype", "key", "hit", "miss"),
+    [
+        pytest.param(
+            pl.Datetime("us"),
+            pl.Datetime("ms"),
+            datetime(1970, 1, 1, 0, 0, 0, 1000),
+            datetime(1970, 1, 1, 0, 0, 0, 1000),
+            datetime(1970, 1, 1, 0, 0, 0, 2000),
+            id="datetime",
+        ),
+        pytest.param(
+            pl.Duration("us"),
+            pl.Duration("ms"),
+            timedelta(microseconds=1000),
+            timedelta(milliseconds=1),
+            timedelta(milliseconds=2),
+            id="duration",
+        ),
+    ],
+)
+def test_map_get_widens_a_coarser_temporal_key(
+    map_dtype: pl.DataType,
+    needle_dtype: pl.DataType,
+    key: Any,
+    hit: Any,
+    miss: Any,
+) -> None:
+    s = map_of(map_dtype, key)
+
+    assert_map_method(
+        s, "get", pl.Series("m", [42], dtype=pl.Int64), pl.lit(hit, needle_dtype)
+    )
+    assert_map_method(
+        s, "contains_key", pl.Series("m", [True]), pl.lit(hit, needle_dtype)
+    )
+    assert_map_method(
+        s, "get", pl.Series("m", [None], dtype=pl.Int64), pl.lit(miss, needle_dtype)
+    )
+    assert_map_method(
+        s, "contains_key", pl.Series("m", [False]), pl.lit(miss, needle_dtype)
+    )
+
+
+@pytest.mark.parametrize(
+    ("map_dtype", "needle_dtype", "key", "needle"),
+    [
+        pytest.param(
+            pl.Datetime("ms"),
+            pl.Datetime("us"),
+            datetime(1970, 1, 1, 0, 0, 0, 1000),
+            datetime(1970, 1, 1, 0, 0, 0, 1001),
+            id="datetime",
+        ),
+        pytest.param(
+            pl.Duration("ms"),
+            pl.Duration("us"),
+            timedelta(milliseconds=1),
+            timedelta(microseconds=1001),
+            id="duration",
+        ),
+    ],
+)
+def test_map_get_rejects_a_key_that_would_be_rounded(
+    map_dtype: pl.DataType, needle_dtype: pl.DataType, key: Any, needle: Any
+) -> None:
+    # Truncating the key onto the coarser unit would match an entry it does not equal.
+    s = map_of(map_dtype, key)
+
+    for method in ("get", "contains_key"):
+        with pytest.raises(InvalidOperationError, match="would be rounded"):
+            getattr(s.map, method)(pl.lit(needle, needle_dtype))
+
+
+@pytest.mark.parametrize("needle", ["z", pl.lit("z"), pl.col("k")])
+def test_map_get_rejects_an_unknown_enum_label(needle: Any) -> None:
+    # The needle cast is strict, as it is for `is_in`.
+    dtype = pl.Map(pl.Enum(["a", "b"]), pl.Int64)
+    df = pl.DataFrame(
+        {"m": pl.Series([{"a": 1}], dtype=dtype), "k": ["z"]},
+    )
+
+    for method in ("get", "contains_key"):
+        with pytest.raises(
+            InvalidOperationError, match="conversion from `str` to `enum`"
+        ):
+            df.select(getattr(pl.col("m").map, method)(needle))
+
+
+def test_map_get_rejects_a_key_the_map_cannot_be_searched_by() -> None:
+    # Resolving these would have to rewrite the map's keys, which is not a lookup.
+    string_keys = pl.Series("m", [{"a": 1}], dtype=MAP)
+    with pytest.raises(InvalidOperationError, match="cannot look up a `enum` key"):
+        string_keys.map.get(pl.lit("a", pl.Enum(["a"])))
+
+    # Narrowing a float needle would round it onto a key it does not equal.
+    narrow_floats = map_of(pl.Float32, 1.5)
+    with pytest.raises(InvalidOperationError, match="cannot look up a `f64` key"):
+        narrow_floats.map.get(pl.lit(1.5, pl.Float64))
+
+
+def test_map_get_narrows_a_wider_integer_key() -> None:
+    # The cast is exact or null, and a null needle is a key no map holds.
+    s = map_of(pl.Int32, 7)
+
+    assert_map_method(
+        s, "get", pl.Series("m", [42], dtype=pl.Int64), pl.lit(7, pl.Int64)
+    )
+    assert_map_method(s, "contains_key", pl.Series("m", [True]), pl.lit(7, pl.Int64))
+
+    # Out of the key type's range, so it cannot be a key of this map.
+    out_of_range = pl.lit(2**40, pl.Int64)
+    assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), out_of_range)
+    assert_map_method(s, "contains_key", pl.Series("m", [False]), out_of_range)
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "needle"),
+    [
+        pytest.param(pl.UInt128, 7, id="u128-python-int"),
+        pytest.param(pl.UInt128, pl.lit(7, pl.Int8), id="u128-i8"),
+        pytest.param(pl.UInt128, pl.lit(7, pl.Int64), id="u128-i64"),
+        pytest.param(pl.UInt64, pl.lit(7, pl.Int64), id="u64-i64"),
+        pytest.param(pl.Int64, pl.lit(7, pl.UInt128), id="i64-u128"),
+        pytest.param(pl.Int8, pl.lit(7, pl.UInt64), id="i8-u64"),
+    ],
+)
+def test_map_get_integer_key_without_a_common_supertype(
+    key_dtype: PolarsDataType, needle: Any
+) -> None:
+    s = map_of(key_dtype, 7)
+
+    assert_map_method(s, "get", pl.Series("m", [42], dtype=pl.Int64), needle)
+    assert_map_method(s, "contains_key", pl.Series("m", [True]), needle)
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "needle"),
+    [
+        pytest.param(pl.UInt128, -1, id="u128-python-int"),
+        pytest.param(pl.UInt128, pl.lit(-1, pl.Int64), id="u128-i64"),
+        pytest.param(pl.Int8, pl.lit(2**64 - 1, pl.UInt64), id="i8-u64"),
+    ],
+)
+def test_map_get_integer_key_outside_the_key_range_is_absent(
+    key_dtype: PolarsDataType, needle: Any
+) -> None:
+    s = map_of(key_dtype, 7)
+
+    assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), needle)
+    assert_map_method(s, "contains_key", pl.Series("m", [False]), needle)
+
+
+def test_map_get_integer_key_column_without_a_common_supertype() -> None:
+    df = pl.DataFrame(
+        {
+            "m": map_of(pl.UInt128, 7).gather([0, 0, 0]),
+            "k": pl.Series([7, -1, None], dtype=pl.Int64),
+        }
+    )
+
+    out = df.select(
+        pl.col("m").map.get(pl.col("k")).alias("v"),
+        pl.col("m").map.contains_key(pl.col("k")).alias("has"),
+    )
+    assert out["v"].to_list() == [42, None, None]
+    assert out["has"].to_list() == [True, False, False]
+
+
+def map_with_keys(key_dtype: PolarsDataType, keys: list[Any]) -> pl.Series:
+    """A one-row map whose entries are `keys`, numbered from 0."""
+    entries = pl.Series(
+        "m",
+        [[{"key": key, "value": i} for i, key in enumerate(keys)]],
+        dtype=pl.List(pl.Struct({"key": key_dtype, "value": pl.Int64})),
+    )
+    return entries.list.to_map()
+
+
+def test_map_get_float_keys_match_canonicalization() -> None:
+    # Lookup and key deduplication must agree for NaN and signed zero so every stored
+    # key remains retrievable.
+    nan = float("nan")
+    s = map_with_keys(pl.Float64, [nan, 0.0, float("inf")])
+
+    for i, key in enumerate([nan, 0.0, float("inf")]):
+        assert_map_method(
+            s, "get", pl.Series("m", [i], dtype=pl.Int64), pl.lit(key, pl.Float64)
+        )
+        assert_map_method(
+            s, "contains_key", pl.Series("m", [True]), pl.lit(key, pl.Float64)
+        )
+
+    # `-0.0` and `0.0` are the same key, from both directions.
+    assert_map_method(
+        s, "get", pl.Series("m", [1], dtype=pl.Int64), pl.lit(-0.0, pl.Float64)
+    )
+    collapsed = map_with_keys(pl.Float64, [-0.0, 0.0])
+    assert collapsed.map.len().to_list() == [1]
+    assert collapsed.map.get(pl.lit(0.0, pl.Float64)).to_list() == [1]
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "keys", "absent"),
+    [
+        pytest.param(
+            pl.List(pl.Float64),
+            [[1.0, None], [None], [], [float("nan")]],
+            [2.0],
+            id="list",
+        ),
+        pytest.param(
+            pl.Struct({"x": pl.Int64, "y": pl.String}),
+            [{"x": 1, "y": "a"}, {"x": None, "y": "a"}, {"x": 1, "y": None}],
+            {"x": None, "y": None},
+            id="struct",
+        ),
+        pytest.param(
+            pl.Array(pl.Int64, 2),
+            [[1, 2], [3, 4]],
+            [9, 9],
+            id="array",
+        ),
+        pytest.param(
+            # Map equality is entry-order-sensitive, so these are three distinct keys.
+            MAP,
+            [{"a": 1, "b": 2}, {}, {"b": 2, "a": 1}],
+            {"a": 1},
+            id="map",
+        ),
+    ],
+)
+def test_map_get_composite_keys(
+    key_dtype: PolarsDataType, keys: list[Any], absent: Any
+) -> None:
+    s = map_with_keys(key_dtype, keys)
+    assert s.map.len().to_list() == [len(keys)]
+
+    for i, key in enumerate(keys):
+        needle = pl.lit(pl.Series("k", [key], dtype=key_dtype)).first()
+        assert_map_method(s, "get", pl.Series("m", [i], dtype=pl.Int64), needle)
+        assert_map_method(s, "contains_key", pl.Series("m", [True]), needle)
+
+    missing = pl.lit(pl.Series("k", [absent], dtype=key_dtype)).first()
+    assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), missing)
+    assert_map_method(s, "contains_key", pl.Series("m", [False]), missing)
+
+    # A composite key cannot be null, so a null needle is never found.
+    for null in (None, pl.lit(None, key_dtype)):
+        assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), null)
+        assert_map_method(s, "contains_key", pl.Series("m", [False]), null)
+
+
+def test_map_composite_keys_cannot_be_null() -> None:
+    entries = pl.Series(
+        "m",
+        [[{"key": None, "value": 1}]],
+        dtype=pl.List(pl.Struct({"key": pl.List(pl.Int64), "value": pl.Int64})),
+    )
+    with pytest.raises(InvalidOperationError, match="Map keys cannot be null"):
+        entries.list.to_map()
+
+
+def test_map_get_composite_key_per_row() -> None:
+    key_dtype = pl.List(pl.Int64)
+    m = pl.Series(
+        "m",
+        [
+            [{"key": [1, 2], "value": 10}, {"key": [3], "value": 20}],
+            [{"key": [1, 2], "value": 30}],
+        ],
+        dtype=pl.List(pl.Struct({"key": key_dtype, "value": pl.Int64})),
+    ).list.to_map()
+    df = pl.DataFrame({"m": m, "k": pl.Series([[3], [3]], dtype=key_dtype)})
+
+    result = df.select(
+        pl.col("m").map.get(pl.col("k")).alias("v"),
+        pl.col("m").map.contains_key(pl.col("k")).alias("has"),
+    )
+    assert_series_equal(result["v"], pl.Series("v", [20, None], dtype=pl.Int64))
+    assert_series_equal(result["has"], pl.Series("has", [True, False]))
+
+
+def test_map_null_valued_keys_values_len_across_chunks() -> None:
+    # Maps with Null-typed values must retain their keys, entry counts, and null
+    # status across chunk boundaries.
+    dtype = pl.Map(pl.String, pl.Null)
+    s = pl.concat(
+        [
+            pl.Series("m", [{"a": None}, None], dtype=dtype),
+            pl.Series("m", [{"b": None, "c": None}], dtype=dtype),
+            pl.Series("m", [{}, {"d": None}], dtype=dtype),
+        ],
+        rechunk=False,
+    )
+    assert s.n_chunks() == 3
+
+    keys = pl.Series("m", [["a"], None, ["b", "c"], [], ["d"]])
+    values = pl.Series(
+        "m", [[None], None, [None, None], [], [None]], dtype=pl.List(pl.Null)
+    )
+    assert_map_method(s, "keys", keys)
+    assert_map_method(s, "values", values)
+    assert_map_method(s, "len", pl.Series("m", [1, None, 2, 0, 1], dtype=pl.UInt32))
+
+    assert_map_method(
+        s, "contains_key", pl.Series("m", [False, None, True, False, False]), "c"
+    )
+    assert_map_method(s, "get", pl.Series("m", [None] * 5, dtype=pl.Null), "c")
+
+    # Slicing cuts across the chunk boundary as well.
+    assert_series_equal(s.slice(1, 4).map.keys(), keys.slice(1, 4))
+    assert_series_equal(s.slice(1, 4).map.values(), values.slice(1, 4))
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "key"),
+    [
+        # A Map whose keys match the needle is still not a container to search.
+        pytest.param(pl.List(pl.Int64), [1, 2], id="matching-keys"),
+        pytest.param(pl.String, "a", id="other-keys"),
+    ],
+)
+def test_is_in_rejects_a_map_haystack(key_dtype: PolarsDataType, key: Any) -> None:
+    # Only `map.get` and `map.contains_key` may search a Map by its keys.
+    df = pl.DataFrame(
+        {
+            "l": pl.Series([[1, 2]], dtype=pl.List(pl.Int64)),
+            "m": map_with_keys(key_dtype, [key]),
+        }
+    )
+
+    with pytest.raises(InvalidOperationError, match="must be nested"):
+        df.select(pl.col("l").is_in(pl.col("m")))
+
+
+def test_map_get_overflowing_temporal_key_is_missing_not_an_error() -> None:
+    # Widening the needle can overflow. A Map key is never null, so an
+    # unrepresentable needle is simply absent, and a literal must agree with a column.
+    s = map_of(pl.Duration("ns"), timedelta(microseconds=1))
+    big = timedelta(milliseconds=10**13)
+
+    assert_map_method(
+        s, "get", pl.Series("m", [None], dtype=pl.Int64), pl.lit(big, pl.Duration("ms"))
+    )
+    df = pl.DataFrame({"m": s, "k": pl.Series([big], dtype=pl.Duration("ms"))})
+    result = df.select(
+        pl.col("m").map.get(pl.col("k")).alias("v"),
+        pl.col("m").map.contains_key(pl.col("k")).alias("has"),
+    )
+    assert_series_equal(result["v"], pl.Series("v", [None], dtype=pl.Int64))
+    assert_series_equal(result["has"], pl.Series("has", [False]))
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "needle_zone"),
+    [
+        pytest.param(pl.Datetime("us"), "UTC", id="naive-keys"),
+        pytest.param(pl.Datetime("us", "UTC"), "America/New_York", id="aware-keys"),
+    ],
+)
+def test_map_get_rejects_a_key_in_another_time_zone(
+    key_dtype: PolarsDataType, needle_zone: str
+) -> None:
+    # The kernel reports this as an opaque comparison failure. Catch it while resolving.
+    s = map_of(key_dtype, datetime(2020, 1, 1))
+    needle = pl.lit(datetime(2020, 1, 1)).dt.replace_time_zone(needle_zone)
+
+    for method in ("get", "contains_key"):
+        with pytest.raises(InvalidOperationError, match="time zones differ"):
+            getattr(s.map, method)(needle)

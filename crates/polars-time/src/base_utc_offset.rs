@@ -1,9 +1,13 @@
 #[cfg(feature = "timezones")]
-use arrow::legacy::time_zone::Tz;
-#[cfg(feature = "timezones")]
 use jiff::Timestamp;
 #[cfg(feature = "timezones")]
 use jiff::tz::{Dst, Offset};
+#[cfg(feature = "timezones")]
+use polars_arrow::legacy::time_zone::Tz;
+#[cfg(feature = "timezones")]
+use polars_arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
 #[cfg(feature = "timezones")]
 use polars_core::prelude::*;
 

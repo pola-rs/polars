@@ -37,7 +37,7 @@ atoi_simd = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
 streaming-iterator = { workspace = true }
 
-arrow-format = { workspace = true, optional = true, features = ["ipc"] }
+polars-arrow-format = { workspace = true, optional = true, features = ["ipc"] }
 
 # for IPC compression
 lz4 = { version = "1.24", optional = true }
@@ -87,9 +87,9 @@ full = [
   # parses timezones used in timestamp conversions
   "timezones",
 ]
-io_ipc = ["arrow-format", "polars-error/arrow-format"]
+io_ipc = ["polars-arrow-format", "polars-error/polars-arrow-format"]
 io_ipc_compression = ["lz4", "zstd", "io_ipc"]
-io_flight = ["io_ipc", "arrow-format/flight-data", "async-stream", "futures", "tokio"]
+io_flight = ["io_ipc", "polars-arrow-format/flight-data", "async-stream", "futures", "tokio"]
 
 io_avro = ["avro-schema", "polars-error/avro-schema"]
 io_avro_compression = [

@@ -1,5 +1,5 @@
-use arrow::bitmap::BitmapBuilder;
-use arrow::types::NativeType;
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::types::NativeType;
 
 use crate::parquet::error::ParquetResult;
 use crate::parquet::types::NativeType as ParquetNativeType;
@@ -64,7 +64,7 @@ where
 }
 
 /// A function that defines how to decode from the
-/// [`parquet::types::NativeType`][ParquetNativeType] to the [`arrow::types::NativeType`].
+/// [`parquet::types::NativeType`][ParquetNativeType] to the [`polars_arrow::types::NativeType`].
 ///
 /// This should almost always be inlined.
 pub(crate) trait DecoderFunction<P, T>: Copy

@@ -1,11 +1,17 @@
-//! Moving inner joins below the preserved side of a left/semi/anti join, and turning
-//! the `LEFT JOIN … WHERE right_key IS NULL` idiom into an anti join.
+//! Moving inner joins below the preserved side of a left/semi/anti join, pushing a
+//! semi/anti join down to the side of an inner join that holds its keys, and turning the
+//! `LEFT JOIN … WHERE right_key IS NULL` idiom into an anti join.
 //!
 //! `(A ⟕ B) ⋈ C` equals `(A ⋈ C) ⟕ B` when every key of the inner join comes from
 //! `A`: the null-extended rows of the left join are exactly the `A` rows without a
 //! match, whichever side of the inner join they meet.
 //!
-//! The second rewrite is an identity: the filter keeps only the unmatched rows, on
+//! `(A ⋈ B) ⋉ S` equals `(A ⋉ S) ⋈ B` when every key of the semi join comes from
+//! `A`: a semi/anti join keeps a subset of its left rows by their own values, which
+//! the inner join neither changes nor depends on. The two rewrites are inverses;
+//! whichever join narrows `A` more goes first.
+//!
+//! The last rewrite is an identity: the filter keeps only the unmatched rows, on
 //! which every column from `B` is null.
 
 use std::sync::Arc;
@@ -20,6 +26,8 @@ use recursive::recursive;
 use super::join_utils::{plain_inner_equi_join, unconstrained};
 use crate::plans::iterator::ArenaExprIter;
 use crate::plans::schema::det_join_schema;
+#[cfg(feature = "semi_anti_join")]
+use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::{StatsCache, node_stats_with_cache};
 use crate::plans::{
     AExpr, ExprIR, ExprPushdownGroup, IR, JoinOptionsIR, JoinTypeOptionsIR, MintermIter,
@@ -37,9 +45,11 @@ pub(super) fn push_through_outer_joins(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Node {
-    // Two passes: the anti rewrite must not run first, or the inner join above sees
-    // an `HStack` where it looks for the filter.
+    // The anti rewrite must not run first, or the inner join above sees an `HStack`
+    // where it looks for the filter.
     let root = run_pass(root, ir_arena, expr_arena, push_inner_through);
+    #[cfg(feature = "semi_anti_join")]
+    let root = run_pass(root, ir_arena, expr_arena, pushdown_semi_anti);
     #[cfg(feature = "semi_anti_join")]
     let root = run_pass(root, ir_arena, expr_arena, filter_to_anti);
     root
@@ -114,6 +124,16 @@ fn pushable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
 
 fn all_conjuncts_pushable(predicate: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
     MintermIter::new(predicate.node(), expr_arena).all(|node| pushable(node, expr_arena))
+}
+
+/// Elementwise, fallible or not: a filter another predicate may pass below.
+#[cfg(feature = "semi_anti_join")]
+fn no_conjunct_barrier(predicate: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
+    MintermIter::new(predicate.node(), expr_arena).all(|node| {
+        let mut group = ExprPushdownGroup::Pushable;
+        group.update_with_expr_rec(expr_arena.get(node), expr_arena, None);
+        !group.blocks_pushdown(false)
+    })
 }
 
 fn same_columns(a: &Schema, b: &Schema) -> bool {
@@ -274,8 +294,8 @@ fn candidate(join: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Opt
 
     // A schema that cannot be built (a suffix collision, say) means no rewrite, not
     // an error.
-    let inner_schema = det_join_schema(&a_schema, &c_schema, inner_options, expr_arena).ok()?;
-    let outer_schema = det_join_schema(&inner_schema, &b_schema, outer_options, expr_arena).ok()?;
+    let inner_schema = det_join_schema(&a_schema, &c_schema, inner_options).ok()?;
+    let outer_schema = det_join_schema(&inner_schema, &b_schema, outer_options).ok()?;
     if !same_columns(&outer_schema, output_schema) {
         return None;
     }
@@ -393,6 +413,244 @@ fn try_push(
         root,
         unplaced_filter,
     })
+}
+
+/// `Semi(T(Inner(A, B)), S)` becomes `T(Inner(Semi(A, S), B))` (or the mirror into
+/// `B`), where `T` is a chain of simple projections and elementwise filters. The pushed
+/// join is pushed on through whatever inner joins it lands on.
+///
+/// The inverse of [`push_inner_through`]. Both price the same two subplans, and only
+/// this one insists on a strict win, so they never undo each other.
+#[cfg(feature = "semi_anti_join")]
+fn pushdown_semi_anti(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) -> Node {
+    let mut stats = StatsCache::default();
+    pushdown_semi_anti_with(node, ir_arena, expr_arena, &mut stats)
+}
+
+#[cfg(feature = "semi_anti_join")]
+fn pushdown_semi_anti_with(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    stats: &mut StatsCache,
+) -> Node {
+    // The driver hands a filter over a join in as one node.
+    if let IR::Filter { input, predicate } = ir_arena.get(node) {
+        let (input, predicate) = (*input, predicate.clone());
+        let pushed = pushdown_semi_anti_with(input, ir_arena, expr_arena, stats);
+        if pushed == input {
+            return node;
+        }
+        return ir_arena.add(IR::Filter {
+            input: pushed,
+            predicate,
+        });
+    }
+    let Some(candidate) = pushdown_candidate(node, ir_arena, expr_arena) else {
+        return node;
+    };
+    let pushed = ir_arena.add(candidate.pushed_join(ir_arena));
+    if !pushdown_pays(&candidate, pushed, ir_arena, expr_arena, stats) {
+        // The candidate is the last node added, so its id is reused.
+        debug_assert_eq!(pushed.0, ir_arena.len() - 1);
+        ir_arena.pop();
+        stats.remove(&pushed);
+        return node;
+    }
+    let pushed = pushdown_semi_anti_with(pushed, ir_arena, expr_arena, stats);
+    candidate.rebuild(pushed, ir_arena)
+}
+
+/// The parts of a `Semi(T(Inner(A, B)), S)` that passed every check but cost.
+#[cfg(feature = "semi_anti_join")]
+struct PushdownCandidate {
+    /// The side of the inner join holding the semi join's keys, and the other.
+    side: Node,
+    other: Node,
+    side_is_left: bool,
+    s: Node,
+    inner: Node,
+    inner_schema: SchemaRef,
+    inner_options: Arc<JoinOptionsIR>,
+    /// The semi join's options, keyed by the side's own column names.
+    side_options: Arc<JoinOptionsIR>,
+    /// `T`, top down.
+    chain: Vec<Node>,
+}
+
+/// Match the pattern at the semi/anti join `node`, and find which side of the inner
+/// join below it holds every key.
+#[cfg(feature = "semi_anti_join")]
+fn pushdown_candidate(
+    node: Node,
+    ir_arena: &Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<PushdownCandidate> {
+    let IR::Join {
+        input_left,
+        input_right: s,
+        options,
+        ..
+    } = ir_arena.get(node)
+    else {
+        return None;
+    };
+    let JoinTypeOptionsIR::Equi {
+        on,
+        fused_predicate: None,
+    } = &options.options
+    else {
+        return None;
+    };
+    if !options.args.how.is_semi_anti() || !unconstrained(&options.args) || on.is_empty() {
+        return None;
+    }
+    let keys = on
+        .iter()
+        .map(|(left_key, _)| left_key.plain_column(expr_arena).cloned())
+        .collect::<Option<Vec<PlSmallStr>>>()?;
+    let (s, options) = (*s, options.clone());
+
+    // The nodes between the semi join and the inner join, top down.
+    let mut chain = Vec::new();
+    let mut below = *input_left;
+    let inner = loop {
+        match ir_arena.get(below) {
+            IR::SimpleProjection { input, .. } => {
+                chain.push(below);
+                below = *input;
+            },
+            IR::Filter { input, predicate } if no_conjunct_barrier(predicate, expr_arena) => {
+                chain.push(below);
+                below = *input;
+            },
+            IR::Join {
+                options: inner_options,
+                ..
+            } if plain_inner_equi_join(inner_options) => break below,
+            _ => return None,
+        }
+    };
+    let IR::Join {
+        input_left: a,
+        input_right: b,
+        schema: inner_schema,
+        options: inner_options,
+    } = ir_arena.get(inner)
+    else {
+        unreachable!()
+    };
+    let (a, b, inner_schema, inner_options) = (*a, *b, inner_schema.clone(), inner_options.clone());
+    let a_schema = ir_arena.get(a).schema(ir_arena);
+    let b_schema = ir_arena.get(b).schema(ir_arena);
+
+    // `A`'s columns keep their names through the join; a `B` column may be renamed
+    // or coalesced away.
+    let (side, other, side_is_left, side_keys) = if keys.iter().all(|name| a_schema.contains(name))
+    {
+        (a, b, true, keys)
+    } else {
+        let b_output_names = join_right_output_names(&a_schema, &b_schema, &inner_options).ok()?;
+        let b_column = |name: &PlSmallStr| -> Option<PlSmallStr> {
+            b_schema
+                .iter_names()
+                .zip(&b_output_names)
+                .find(|(_, output_name)| output_name.as_ref() == Some(name))
+                .map(|(column, _)| column.clone())
+        };
+        let columns = keys.iter().map(b_column).collect::<Option<Vec<_>>>()?;
+        (b, a, false, columns)
+    };
+
+    let mut side_options = (*options).clone();
+    if let JoinTypeOptionsIR::Equi { on, .. } = &mut side_options.options {
+        for ((left_key, _), name) in on.iter_mut().zip(side_keys) {
+            if left_key.output_name() != &name {
+                let column = expr_arena.add(AExpr::Column(name.clone()));
+                *left_key = ExprIR::new(column, OutputName::ColumnLhs(name));
+            }
+        }
+    }
+    Some(PushdownCandidate {
+        side,
+        other,
+        side_is_left,
+        s,
+        inner,
+        inner_schema,
+        inner_options,
+        side_options: Arc::new(side_options),
+        chain,
+    })
+}
+
+#[cfg(feature = "semi_anti_join")]
+impl PushdownCandidate {
+    /// The semi join on its side alone.
+    fn pushed_join(&self, ir_arena: &Arena<IR>) -> IR {
+        IR::Join {
+            input_left: self.side,
+            input_right: self.s,
+            schema: ir_arena.get(self.side).schema(ir_arena).into_owned(),
+            options: self.side_options.clone(),
+        }
+    }
+
+    /// The inner join over `pushed` in place of its side, and `T` over that.
+    fn rebuild(self, pushed: Node, ir_arena: &mut Arena<IR>) -> Node {
+        let (input_left, input_right) = if self.side_is_left {
+            (pushed, self.other)
+        } else {
+            (self.other, pushed)
+        };
+        let mut root = ir_arena.add(IR::Join {
+            input_left,
+            input_right,
+            schema: self.inner_schema,
+            options: self.inner_options,
+        });
+        for &step in self.chain.iter().rev() {
+            let mut ir = ir_arena.get(step).clone();
+            for slot in ir.inputs_mut() {
+                *slot = root;
+            }
+            root = ir_arena.add(ir);
+        }
+        root
+    }
+}
+
+/// Whether the semi join narrows its side to fewer rows than the inner join emits.
+///
+/// A semi join is priced at the bound on its right side's rows, and stays put
+/// without one: an estimate of that side that is too low would push down a join that
+/// keeps most rows. An anti join's estimate errs the other way.
+#[cfg(feature = "semi_anti_join")]
+fn pushdown_pays(
+    candidate: &PushdownCandidate,
+    pushed: Node,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+    stats: &mut StatsCache,
+) -> bool {
+    let before = node_stats_with_cache(candidate.inner, ir_arena, expr_arena, stats);
+    let after = node_stats_with_cache(pushed, ir_arena, expr_arena, stats);
+    let right = node_stats_with_cache(candidate.s, ir_arena, expr_arena, stats);
+    let (Some(before), Some(after), Some(right)) = (before, after, right) else {
+        return false;
+    };
+    let mut after = after.filtered;
+    if matches!(candidate.side_options.args.how, JoinType::Semi) {
+        let Some(bound) = right.max_rows() else {
+            return false;
+        };
+        if bound > right.filtered {
+            let side = node_stats_with_cache(candidate.side, ir_arena, expr_arena, stats);
+            let side_rows = side.map_or(f64::INFINITY, |side| side.filtered);
+            after = (after * bound / right.filtered).min(side_rows);
+        }
+    }
+    after < before.filtered
 }
 
 /// `Filter(is_null(rk) ∧ …)(Left(A, B))` becomes `Anti(A, B)` with `B`'s columns

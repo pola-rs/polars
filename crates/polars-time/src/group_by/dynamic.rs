@@ -1,78 +1,20 @@
-use arrow::legacy::time_zone::Tz;
+use polars_arrow::legacy::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_par;
+use polars_defs::time::duration::ensure_duration_matches_dtype;
+use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptions, Label, RollingGroupOptions};
 use polars_ops::series::SeriesMethods;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice::SortedSlice;
 use rayon::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
 #[repr(transparent)]
 struct Wrap<T>(pub T);
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct DynamicGroupOptions {
-    /// Time or index column.
-    pub index_column: PlSmallStr,
-    /// Start a window at this interval.
-    pub every: Duration,
-    /// Window duration.
-    pub period: Duration,
-    /// Offset window boundaries.
-    pub offset: Duration,
-    /// Truncate the time column values to the window.
-    pub label: Label,
-    /// Add the boundaries to the DataFrame.
-    pub include_boundaries: bool,
-    pub closed_window: ClosedWindow,
-    pub start_by: StartBy,
-}
-
-impl Default for DynamicGroupOptions {
-    fn default() -> Self {
-        Self {
-            index_column: "".into(),
-            every: Duration::new(1),
-            period: Duration::new(1),
-            offset: Duration::new(1),
-            label: Label::Left,
-            include_boundaries: false,
-            closed_window: ClosedWindow::Left,
-            start_by: Default::default(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct RollingGroupOptions {
-    /// Time or index column.
-    pub index_column: PlSmallStr,
-    /// Window duration.
-    pub period: Duration,
-    pub offset: Duration,
-    pub closed_window: ClosedWindow,
-}
-
-impl Default for RollingGroupOptions {
-    fn default() -> Self {
-        Self {
-            index_column: "".into(),
-            period: Duration::new(1),
-            offset: Duration::new(1),
-            closed_window: ClosedWindow::Left,
-        }
-    }
-}
 
 fn check_sortedness_slice(v: &[i64]) -> PolarsResult<()> {
     polars_ensure!(v.is_sorted_ascending(), ComputeError: "input data is not sorted");
@@ -364,7 +306,10 @@ impl Wrap<&DataFrame> {
             });
 
             update_bounds(lower, upper);
-            PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, true))
+            // The upper bound of a window is not a monotonic function of its lower
+            // bound (month clamping, DST), so the group ends may move backwards.
+            let monotonic = slice_groups_are_monotonic(&groups);
+            PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, monotonic))
         } else {
             let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
@@ -379,7 +324,8 @@ impl Wrap<&DataFrame> {
                 options.start_by,
             )?;
             update_bounds(lower, upper);
-            PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, true))
+            let monotonic = slice_groups_are_monotonic(&groups);
+            PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, monotonic))
         }?;
         // note that if 'group_by' is none we can be sure that the index column, the lower column and the
         // upper column remain/are sorted
@@ -494,6 +440,9 @@ impl Wrap<&DataFrame> {
 #[cfg(test)]
 mod test {
     use polars_compute::rolling::QuantileMethod;
+    use polars_core::chunked_array::temporal::string::StringMethods;
+    use polars_defs::time::duration::Duration;
+    use polars_defs::time::group_by::RollingGroupOptions;
     use polars_ops::prelude::*;
 
     use super::*;

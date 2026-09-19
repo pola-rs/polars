@@ -1,4 +1,4 @@
-use arrow::array::Array;
+use polars_arrow::array::Array;
 use polars_row::RowEncodingOptions;
 use polars_utils::idx_map::bytes_idx_map::{BytesIndexMap, Entry};
 use polars_utils::itertools::Itertools;
@@ -109,7 +109,7 @@ impl Grouper for RowEncodedHashGrouper {
     fn get_keys_in_group_order(&self, schema: &Schema) -> DataFrame {
         unsafe {
             let mut key_rows: Vec<&[u8]> = Vec::with_capacity(self.idx_map.len() as usize);
-            for (_, key) in self.idx_map.iter_hash_keys() {
+            for (_, key) in self.idx_map.iter_hash_keys_to_buffer_end() {
                 key_rows.push_unchecked(key);
             }
             self.finalize_keys(schema, key_rows)

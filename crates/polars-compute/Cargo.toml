@@ -9,7 +9,6 @@ repository = { workspace = true }
 description = "Private compute kernels for the Polars DataFrame library"
 
 [dependencies]
-arrow = { workspace = true }
 atoi_simd = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 either = { workspace = true }
@@ -19,6 +18,7 @@ hashbrown = { workspace = true }
 itoa = { workspace = true, optional = true }
 jiff = { workspace = true, optional = true }
 num-traits = { workspace = true }
+polars-arrow = { workspace = true }
 polars-buffer = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
@@ -34,7 +34,7 @@ bigdecimal = { workspace = true }
 num-bigint = { workspace = true }
 rand = { workspace = true }
 
-arrow = { workspace = true, features = ["proptest"] }
+polars-arrow = { workspace = true, features = ["proptest"] }
 proptest = { workspace = true }
 
 [build-dependencies]
@@ -43,7 +43,7 @@ version_check = { workspace = true }
 [features]
 cast = [
   "gather",
-  "arrow/timezones",
+  "polars-arrow/timezones",
   "dep:atoi_simd",
   "dep:jiff",
   "dep:fast-float2",
@@ -52,11 +52,11 @@ cast = [
 ]
 gather = []
 nightly = []
-simd = ["arrow/simd"]
+simd = ["polars-arrow/simd"]
 approx_unique = []
 approx_quantile = []
 dtype-array = []
-dtype-decimal = ["arrow/dtype-decimal", "dtype-i128"]
+dtype-decimal = ["polars-arrow/dtype-decimal", "dtype-i128"]
 dtype-i128 = []
 dtype-u128 = []
 dtype-f16 = ["dep:half"]

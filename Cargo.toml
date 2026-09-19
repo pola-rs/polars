@@ -73,7 +73,7 @@ num-bigint = "0.4.6"
 num-derive = "0.4.2"
 num-traits = "0.2"
 numpy = "0.29"
-object_store = { version = "0.14.1", default-features = false, features = ["fs"] }
+object_store = { version = "0.14.2", default-features = false, features = ["fs"] }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"
@@ -114,11 +114,14 @@ zmij = "1.0.0"
 zstd = "0.13"
 
 polars = { version = "0.55.1", path = "crates/polars", default-features = false }
+polars-arrow = { version = "0.55.1", path = "crates/polars-arrow", default-features = false }
+polars-arrow-format = { version = "0.2.0" }
 polars-async = { version = "0.55.1", path = "crates/polars-async", default-features = false }
 polars-buffer = { version = "0.55.1", path = "crates/polars-buffer", default-features = false }
 polars-compute = { version = "0.55.1", path = "crates/polars-compute", default-features = false }
 polars-config = { version = "0.55.1", path = "crates/polars-config", default-features = false }
 polars-core = { version = "0.55.1", path = "crates/polars-core", default-features = false }
+polars-defs = { version = "0.55.1", path = "crates/polars-defs", default-features = false }
 polars-descriptions = { version = "0.55.1", path = "crates/polars-descriptions", default-features = false }
 polars-dtype = { version = "0.55.1", path = "crates/polars-dtype", default-features = false }
 polars-dylib = { version = "0.55.1", path = "crates/polars-dylib", default-features = false }
@@ -145,22 +148,6 @@ polars-utils = { version = "0.55.1", path = "crates/polars-utils", default-featu
 pyo3-polars = { version = "0.28.0", path = "pyo3-polars/pyo3-polars" }
 pyo3-polars-derive = { version = "0.22.0", path = "pyo3-polars/pyo3-polars-derive" }
 
-[workspace.dependencies.arrow-format]
-package = "polars-arrow-format"
-version = "0.2.0"
-
-[workspace.dependencies.arrow]
-package = "polars-arrow"
-version = "0.55.1"
-path = "crates/polars-arrow"
-default-features = false
-features = [
-  "compute_aggregate",
-  "compute_arithmetics",
-  "compute_bitwise",
-  "compute_comparison",
-]
-
 [workspace.lints.clippy]
 chunks_exact_to_as_chunks = "allow" # https://github.com/rust-lang/rust-clippy/issues/17359
 collapsible_if = "allow"
@@ -169,9 +156,6 @@ question_mark = "allow" # https://github.com/rust-lang/rust-clippy/issues/17384
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
-# `DnsResolver` (https://github.com/apache/arrow-rs-object-store/pull/728) is unreleased,
-# drop this patch once object_store 0.14.2 is out.
-object_store = { git = "https://github.com/apache/arrow-rs-object-store", rev = "b07471e2bc341278f86e30cf80a850d56cbe2c67" }
 color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "20f5eea183563bb4cfac9a4d65901d4a1002cde2" }
 
 # https://github.com/tikv/jemallocator/pull/168

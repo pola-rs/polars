@@ -1,7 +1,7 @@
 use std::io::{Read, Seek};
 
-use arrow::io::avro::{self, read};
-use arrow::record_batch::RecordBatch;
+use polars_arrow::io::avro::{self, read};
+use polars_arrow::record_batch::RecordBatch;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 

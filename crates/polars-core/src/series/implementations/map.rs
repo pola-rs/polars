@@ -1,3 +1,5 @@
+use polars_compute::find_validity_mismatch::find_validity_mismatch_shallow;
+
 use super::*;
 use crate::chunked_array::ops::sort::arg_sort_multiple::argsort_multiple_row_fmt;
 use crate::prelude::*;
@@ -16,7 +18,8 @@ impl SeriesWrap<MapChunked> {
     }
 
     /// # Safety
-    /// `apply` must only add, remove, or reorder whole rows.
+    /// `apply` must only add, remove, reorder or null whole rows. It must never make a null
+    /// row valid: that row's entries are unconstrained.
     unsafe fn apply_on_storage<F>(&self, apply: F) -> Series
     where
         F: FnOnce(&Series) -> Series,
@@ -218,8 +221,7 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Series {
-        // SAFETY: only row validity changes; entries remain intact.
-        unsafe { self.apply_on_storage(move |s| s.with_validity(validity)) }
+        self.0.with_row_validity(validity).into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
@@ -233,10 +235,14 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
-        // `other` is same-length cast output and may have a different dtype.
-        // `handle_casting_failures` compacts null Map rows at every depth first.
-        let other = other.try_map().map_or(other, |map| map.storage());
-        self.0.storage().find_validity_mismatch(other, idxs)
+        // `other` is same-length cast output, possibly with a different dtype. Entries that
+        // no live row owns, and the key merging a cast can do, would misalign the children,
+        // so only rows are comparable.
+        find_validity_mismatch_shallow(
+            self.0.storage().rechunk_validity().as_ref(),
+            other.rechunk_validity().as_ref(),
+            idxs,
+        )
     }
 
     fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
@@ -320,7 +326,6 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     fn propagate_nulls(&self) -> Option<Series> {
-        // List propagation would null entries retained by null Map rows.
         self.0.propagate_nulls().map(IntoSeries::into_series)
     }
 
