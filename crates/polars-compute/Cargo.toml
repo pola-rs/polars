@@ -11,11 +11,12 @@ description = "Private compute kernels for the Polars DataFrame library"
 [dependencies]
 atoi_simd = { workspace = true, optional = true }
 bytemuck = { workspace = true }
-chrono = { workspace = true, optional = true }
+either = { workspace = true }
 fast-float2 = { workspace = true, optional = true }
 half = { workspace = true, optional = true, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }
 itoa = { workspace = true, optional = true }
+jiff = { workspace = true, optional = true }
 num-traits = { workspace = true }
 polars-arrow = { workspace = true }
 polars-buffer = { workspace = true }
@@ -42,9 +43,9 @@ version_check = { workspace = true }
 [features]
 cast = [
   "gather",
-  "polars-arrow/chrono-tz",
+  "polars-arrow/timezones",
   "dep:atoi_simd",
-  "dep:chrono",
+  "dep:jiff",
   "dep:fast-float2",
   "dep:itoa",
   "dep:zmij",

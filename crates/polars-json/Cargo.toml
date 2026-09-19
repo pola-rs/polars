@@ -14,21 +14,19 @@ polars-compute = { workspace = true, features = ["cast"] }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 
-chrono = { workspace = true }
-chrono-tz = { workspace = true, optional = true }
 fallible-streaming-iterator = { version = "0.1" }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
+jiff = { workspace = true }
 num-traits = { workspace = true }
 simd-json = { workspace = true }
 streaming-iterator = { workspace = true }
 zmij = { workspace = true }
 
 [features]
-chrono-tz = ["dep:chrono-tz", "polars-arrow/chrono-tz"]
 dtype-decimal = ["polars-arrow/dtype-decimal", "polars-compute/dtype-decimal"]
-timezones = ["polars-arrow/chrono-tz"]
+timezones = ["polars-arrow/timezones"]
 
 [lints]
 workspace = true

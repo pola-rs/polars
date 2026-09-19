@@ -864,14 +864,14 @@ def from_repr(data: str) -> DataFrame | Series:
     ... )
     >>> df
     shape: (2, 4)
-    ┌─────────────────┬───────────────────┬───────┬────────────────────────────────┐
-    │ source_actor_id ┆ source_channel_id ┆ ident ┆ timestamp                      │
-    │ ---             ┆ ---               ┆ ---   ┆ ---                            │
-    │ i32             ┆ i64               ┆ str   ┆ datetime[μs, Asia/Tokyo]       │
-    ╞═════════════════╪═══════════════════╪═══════╪════════════════════════════════╡
-    │ 123456780       ┆ 9876543210        ┆ a:b:c ┆ 2023-03-25 10:56:59.663053 JST │
-    │ 803065983       ┆ 2055938745        ┆ x:y:z ┆ 2023-03-25 12:38:18.050545 JST │
-    └─────────────────┴───────────────────┴───────┴────────────────────────────────┘
+    ┌─────────────────┬───────────────────┬───────┬─────────────────────────────────┐
+    │ source_actor_id ┆ source_channel_id ┆ ident ┆ timestamp                       │
+    │ ---             ┆ ---               ┆ ---   ┆ ---                             │
+    │ i32             ┆ i64               ┆ str   ┆ datetime[μs, Asia/Tokyo]        │
+    ╞═════════════════╪═══════════════════╪═══════╪═════════════════════════════════╡
+    │ 123456780       ┆ 9876543210        ┆ a:b:c ┆ 2023-03-25T10:56:59.663053+09:… │
+    │ 803065983       ┆ 2055938745        ┆ x:y:z ┆ 2023-03-25T12:38:18.050545+09:… │
+    └─────────────────┴───────────────────┴───────┴─────────────────────────────────┘
 
     From Series repr:
 
@@ -1024,10 +1024,28 @@ def _from_dataframe_repr(tbl: str, table_repr: TableRepr) -> DataFrame:
             col == "" and dtype is not None and dtype != String and dtype != Categorical
             for col, dtype in zip(row, schema.values(), strict=True)
         ):
+            # A wrapped `String`/`Categorical` cell breaks at a word boundary, so
+            # its pieces are rejoined with a space; every other dtype wraps
+            # mid-token (e.g. a long datetime/float literal), so its pieces
+            # must be concatenated directly, with no separator.
             pad = pl.Series(
                 [
-                    "" if x == "" or y == "" else " "
-                    for x, y in zip(out_rows[-1], row, strict=True)
+                    ""
+                    if (
+                        x == ""
+                        or y == ""
+                        or (
+                            dtype is not None
+                            and dtype != String
+                            and dtype != Categorical
+                        )
+                    )
+                    else " "
+                    for (x, y), dtype in zip(
+                        zip(out_rows[-1], row, strict=True),
+                        schema.values(),
+                        strict=True,
+                    )
                 ],
                 dtype=String,
             )

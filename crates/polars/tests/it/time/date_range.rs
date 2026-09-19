@@ -1,18 +1,12 @@
-use chrono::NaiveDate;
+use jiff::civil::Date as NaiveDate;
 use polars::prelude::*;
 #[allow(unused_imports)]
 use polars::time::date_range;
 
 #[test]
 fn test_time_units_9413() {
-    let start = NaiveDate::from_ymd_opt(2022, 1, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let stop = NaiveDate::from_ymd_opt(2022, 1, 5)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
+    let start = NaiveDate::new(2022, 1, 1).unwrap().at(0, 0, 0, 0);
+    let stop = NaiveDate::new(2022, 1, 5).unwrap().at(0, 0, 0, 0);
     let actual = date_range(
         "date".into(),
         start,
@@ -27,11 +21,11 @@ fn test_time_units_9413() {
     let expected = r#"Ok(shape: (5,)
 Series: 'date' [datetime[ms]]
 [
-	2022-01-01 00:00:00
-	2022-01-02 00:00:00
-	2022-01-03 00:00:00
-	2022-01-04 00:00:00
-	2022-01-05 00:00:00
+	2022-01-01T00:00:00
+	2022-01-02T00:00:00
+	2022-01-03T00:00:00
+	2022-01-04T00:00:00
+	2022-01-05T00:00:00
 ])"#;
     assert_eq!(result, expected);
     let actual = date_range(
@@ -48,11 +42,11 @@ Series: 'date' [datetime[ms]]
     let expected = r#"Ok(shape: (5,)
 Series: 'date' [datetime[μs]]
 [
-	2022-01-01 00:00:00
-	2022-01-02 00:00:00
-	2022-01-03 00:00:00
-	2022-01-04 00:00:00
-	2022-01-05 00:00:00
+	2022-01-01T00:00:00
+	2022-01-02T00:00:00
+	2022-01-03T00:00:00
+	2022-01-04T00:00:00
+	2022-01-05T00:00:00
 ])"#;
     assert_eq!(result, expected);
     let actual = date_range(
@@ -69,11 +63,11 @@ Series: 'date' [datetime[μs]]
     let expected = r#"Ok(shape: (5,)
 Series: 'date' [datetime[ns]]
 [
-	2022-01-01 00:00:00
-	2022-01-02 00:00:00
-	2022-01-03 00:00:00
-	2022-01-04 00:00:00
-	2022-01-05 00:00:00
+	2022-01-01T00:00:00
+	2022-01-02T00:00:00
+	2022-01-03T00:00:00
+	2022-01-04T00:00:00
+	2022-01-05T00:00:00
 ])"#;
     assert_eq!(result, expected);
     assert_eq!(result, expected);

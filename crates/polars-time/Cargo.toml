@@ -18,9 +18,7 @@ polars-ops = { workspace = true }
 polars-utils = { workspace = true }
 
 bytemuck = { workspace = true }
-chrono = { workspace = true }
-chrono-tz = { workspace = true, optional = true }
-now = { version = "0.1" }
+jiff = { workspace = true }
 num-traits = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
@@ -53,7 +51,6 @@ serde = ["dep:serde", "polars-utils/serde", "polars-compute/serde", "polars-defs
 dsl-schema = ["dep:schemars", "polars-utils/dsl-schema", "polars-compute/dsl-schema", "polars-defs/dsl-schema"]
 temporal = ["polars-core/temporal", "polars-defs/temporal"]
 timezones = [
-  "chrono-tz",
   "dtype-datetime",
   "polars-core/timezones",
   "polars-arrow/timezones",
