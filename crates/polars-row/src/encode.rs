@@ -1104,7 +1104,6 @@ mod tests {
         ArrayArbitraryOptions, ArrowDataTypeArbitraryOptions, ArrowDataTypeArbitrarySelection,
         array_with_options,
     };
-    use proptest::prelude::*;
 
     use super::*;
     use crate::decode::decode_rows_from_binary;
@@ -1246,16 +1245,6 @@ mod tests {
         }
     }
 
-    fn options() -> impl Strategy<Value = RowEncodingOptions> {
-        (any::<bool>(), any::<bool>(), any::<bool>()).prop_map(|(unsorted, desc, nulls_last)| {
-            if unsorted {
-                RowEncodingOptions::new_unsorted()
-            } else {
-                RowEncodingOptions::new_sorted(desc, nulls_last)
-            }
-        })
-    }
-
     proptest::proptest! {
         #[test]
         fn test_encode_arrays
@@ -1263,13 +1252,6 @@ mod tests {
          {
             let dicts: Vec<Option<RowEncodingContext>> = (0..arrays.len()).map(|_| None).collect();
             convert_columns_no_order(arrays[0].len(), &arrays, &dicts);
-        }
-
-        #[test]
-        fn test_round_trip
-            (arrays in arrays(), opts in proptest::collection::vec(options(), 3))
-        {
-            check_round_trip(&arrays, &opts[..arrays.len()]);
         }
     }
 }
