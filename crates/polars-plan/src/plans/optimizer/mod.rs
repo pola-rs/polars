@@ -92,16 +92,12 @@ pub type HiveJoinFn = fn(&DataFrame, &DataFrame, &str, &str, JoinArgs) -> Polars
 /// Applies the scan predicate of a scan IR node to that node.
 pub type ApplyScanPredicateFn = fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>;
 
-pub type EvaluateFunctionFn = fn(IRFunctionExpr, &mut [Column]) -> PolarsResult<Column>;
-
 /// Functions the optimizer needs from the execution layer, injected by the caller so that
 /// polars-plan does not depend on the crates implementing them.
 #[derive(Clone, Copy)]
 pub struct ExecutionHooks {
     pub apply_scan_predicate_to_scan_ir: ApplyScanPredicateFn,
     pub hive_join: HiveJoinFn,
-    /// Evaluates a built-in function on literal arguments for constant folding.
-    pub evaluate_function: EvaluateFunctionFn,
 }
 
 #[recursive::recursive]
@@ -197,7 +193,6 @@ pub fn optimize(
             pushdown_maintain_errors,
             opt_flags.streaming(),
             opt_flags.partition_hive(),
-            opt_flags.simplify_expr(),
             hooks,
         );
         let ir = ir_arena.take(root);
@@ -216,7 +211,6 @@ pub fn optimize(
             pushdown_maintain_errors,
             opt_flags.streaming(),
             opt_flags.partition_hive(),
-            opt_flags.simplify_expr(),
             opt_flags.row_estimate(),
             hooks,
         )?;

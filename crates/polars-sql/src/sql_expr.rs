@@ -679,14 +679,19 @@ impl SQLExprVisitor<'_> {
         }
         // need special handling for interval offsets and comparisons
         let (mut lhs, mut rhs) = match (left, op, right) {
-            (_, SQLBinaryOperator::Minus | SQLBinaryOperator::Plus, SQLExpr::Interval(v)) => {
-                let mut duration = interval_to_duration(v, false)?;
-                if matches!(op, SQLBinaryOperator::Minus) {
-                    duration = -duration;
-                }
-                let expr = self.visit_expr(left)?;
-                let offset = duration.to_string();
-                return Ok(expr.dt().offset_by(lit(offset)));
+            (_, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) => {
+                let duration = interval_to_duration(v, false)?;
+                return Ok(self
+                    .visit_expr(left)?
+                    .dt()
+                    .offset_by(lit(format!("-{duration}"))));
+            },
+            (_, SQLBinaryOperator::Plus, SQLExpr::Interval(v)) => {
+                let duration = interval_to_duration(v, false)?;
+                return Ok(self
+                    .visit_expr(left)?
+                    .dt()
+                    .offset_by(lit(format!("{duration}"))));
             },
             (SQLExpr::Interval(v1), _, SQLExpr::Interval(v2)) => {
                 // shortcut interval comparison evaluation (-> bool)

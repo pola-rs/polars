@@ -279,7 +279,6 @@ impl DslPlan {
             &mut expr_arena,
             &mut lp_arena,
             &mut OptFlags::default(),
-            None,
         )?;
         let plan = IRPlan::new(node, lp_arena, expr_arena);
 

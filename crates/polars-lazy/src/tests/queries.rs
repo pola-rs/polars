@@ -590,7 +590,6 @@ fn test_simplify_expr() {
         &mut expr_arena,
         &mut lp_arena,
         &mut OptFlags::SIMPLIFY_EXPR,
-        None,
     )
     .unwrap();
 
@@ -673,14 +672,7 @@ fn test_type_coercion() {
 
     let mut expr_arena = Arena::new();
     let mut lp_arena = Arena::new();
-    let lp_top = to_alp(
-        lp,
-        &mut expr_arena,
-        &mut lp_arena,
-        &mut OptFlags::default(),
-        None,
-    )
-    .unwrap();
+    let lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
 
     if let IR::Select { expr, .. } = lp_arena.get(lp_top) {
         if let AExpr::BinaryExpr { left, right, .. } = expr_arena.get(expr[0].node()) {

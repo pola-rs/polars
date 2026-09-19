@@ -54,15 +54,10 @@ pub fn to_alp(
     lp_arena: &mut Arena<IR>,
     // Only `SIMPLIFY_EXPR`, `TYPE_COERCION`, `TYPE_CHECK`, and `PREDICATE_PUSHDOWN` are respected.
     opt_flags: &mut OptFlags,
-    evaluate_function: Option<optimizer::EvaluateFunctionFn>,
 ) -> PolarsResult<Node> {
-    let type_coercion = opt_flags.contains(OptFlags::TYPE_COERCION);
-    let simplify = opt_flags
-        .simplify_expr()
-        .then(|| SimplifyExprRule::new(evaluate_function, type_coercion));
     let conversion_optimizer = ConversionOptimizer::new(
-        simplify,
-        type_coercion,
+        opt_flags.contains(OptFlags::SIMPLIFY_EXPR),
+        opt_flags.contains(OptFlags::TYPE_COERCION),
         opt_flags.contains(OptFlags::TYPE_CHECK),
     );
 

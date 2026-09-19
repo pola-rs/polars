@@ -277,15 +277,6 @@ def test_len_null_count_comparison_optimized(
     )
 
 
-@pytest.mark.parametrize("reverse", [False, True])
-def test_nested_constants_preserve_literal_coercion(reverse: bool) -> None:
-    frame = pl.DataFrame({"x": [-128, 0, 127]}, schema={"x": pl.Int8})
-    value = pl.lit(1000) - pl.lit(999)
-    expr = value + pl.col("x") if reverse else pl.col("x") + value
-    expected = pl.DataFrame({"x": [-127, 1, -128]}, schema={"x": pl.Int8})
-    assert_frame_equal(frame.select(expr.alias("x")), expected)
-
-
 def test_collapse_joins() -> None:
     a = pl.LazyFrame({"a": [1, 2, 3], "b": [2, 2, 2]})
     b = pl.LazyFrame({"x": [7, 1, 2]})

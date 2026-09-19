@@ -26,7 +26,6 @@ impl DslPlan {
             &mut expr_arena,
             &mut lp_arena,
             &mut OptFlags::schema_only(),
-            None,
         )?;
 
         Ok(lp_arena.get(node).schema(&lp_arena).into_owned())

@@ -1,6 +1,3 @@
-#[cfg(feature = "temporal")]
-mod constant_folding;
-
 mod simplify_functions;
 
 use num_traits::Zero;
@@ -520,24 +517,7 @@ fn string_addition_to_linear_concat(
     }
 }
 
-pub struct SimplifyExprRule {
-    #[cfg(feature = "temporal")]
-    evaluate_function: Option<optimizer::EvaluateFunctionFn>,
-    coerce: Option<TypeCoercionRule>,
-}
-
-impl SimplifyExprRule {
-    pub fn new(
-        _evaluate_function: Option<optimizer::EvaluateFunctionFn>,
-        type_coercion: bool,
-    ) -> Self {
-        Self {
-            #[cfg(feature = "temporal")]
-            evaluate_function: _evaluate_function,
-            coerce: type_coercion.then_some(TypeCoercionRule {}),
-        }
-    }
-}
+pub struct SimplifyExprRule {}
 
 impl OptimizationRule for SimplifyExprRule {
     #[allow(clippy::float_cmp)]
@@ -549,18 +529,6 @@ impl OptimizationRule for SimplifyExprRule {
         ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
-
-        if ctx.post_visit
-            && matches!(expr, AExpr::Cast { expr, .. } if matches!(expr_arena.get(*expr), AExpr::Literal(_)))
-        {
-            let Some(rule) = &mut self.coerce else {
-                return Ok(None);
-            };
-            // Keep failures exposed by folding a child at execution time.
-            return Ok(rule
-                .optimize_expr(expr_arena, expr_node, schema, ctx)
-                .unwrap_or(None));
-        }
 
         if let AExpr::BinaryExpr { left, op, right } = expr {
             let (left, op, right) = (*left, *op, *right);
@@ -972,18 +940,6 @@ impl OptimizationRule for SimplifyExprRule {
                 options,
                 ..
             } => {
-                #[cfg(feature = "temporal")]
-                if ctx.post_visit
-                    && let Some(evaluate_function) = self.evaluate_function
-                    && let Some(expr) = constant_folding::fold_function(
-                        input,
-                        function,
-                        expr_arena,
-                        evaluate_function,
-                    )?
-                {
-                    return Ok(Some(expr));
-                }
                 return optimize_functions(
                     input.clone(),
                     function.clone(),

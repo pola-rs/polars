@@ -24,7 +24,6 @@ impl LazyFrame {
             expr_arena,
             lp_arena,
             &mut OptFlags::schema_only(),
-            None,
         )?;
 
         let schema = lp_arena.get(node).schema(lp_arena).into_owned();
@@ -56,7 +55,6 @@ impl LazyFrame {
                     &mut expr_arena,
                     &mut lp_arena,
                     &mut OptFlags::schema_only(),
-                    None,
                 )?;
 
                 let schema = lp_arena.get(node).schema(&lp_arena).into_owned();
@@ -92,7 +90,6 @@ impl LazyFrame {
                             &mut arenas.expr_arena,
                             &mut arenas.lp_arena,
                             &mut OptFlags::schema_only(),
-                            None,
                         )?;
 
                         let schema = arenas
