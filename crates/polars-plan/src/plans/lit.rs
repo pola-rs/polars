@@ -1,7 +1,5 @@
 use std::hash::{Hash, Hasher};
 
-#[cfg(feature = "dtype-datetime")]
-use chrono::Datelike;
 #[cfg(feature = "temporal")]
 use jiff::SignedDuration;
 #[cfg(feature = "temporal")]

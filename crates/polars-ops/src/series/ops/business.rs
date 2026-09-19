@@ -4,7 +4,7 @@ use polars_arrow::bitmap::Bitmap;
 use polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-date")]
-use polars_core::utils::polars_arrow::temporal_conversions::{SECONDS_IN_DAY, date32_to_date};
+use polars_core::utils::polars_arrow::temporal_conversions::date32_to_date;
 use polars_core::{binary_output_height, ternary_output_height};
 use polars_defs::expr::Roll;
 use polars_utils::binary_search::{find_first_ge_index, find_first_gt_index};

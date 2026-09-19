@@ -6,6 +6,7 @@ pub use patterns::Pattern;
 use polars_utils::cache::LruCachedFunc;
 
 use self::strptime::StrpTimeState;
+use super::*;
 use crate::chunked_array::ops::arity::unary_elementwise;
 #[cfg(feature = "dtype-date")]
 use crate::chunked_array::temporal::date::naive_date_to_date;

@@ -500,7 +500,7 @@ fn anyvalue_to_py<'py>(py: Python<'py>, av: AnyValue<'_>) -> Option<Bound<'py, P
         AnyValue::String(s) => s.into_pyobject(py).ok().map(|b| b.into_any()),
         #[cfg(feature = "dtype-date")]
         AnyValue::Date(days) => {
-            let date = arrow::temporal_conversions::date32_to_date_opt(days)?;
+            let date = polars_arrow::temporal_conversions::date32_to_date_opt(days)?;
             PyDate::new(py, date.year() as i32, date.month() as u8, date.day() as u8)
                 .ok()
                 .map(|b| b.into_any())

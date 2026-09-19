@@ -13,7 +13,7 @@ pub mod string;
 #[cfg(feature = "dtype-time")]
 mod time;
 
-#[cfg(feature = "dtype-date")]
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 use jiff::civil::Date as NaiveDate;
 use jiff::civil::DateTime as NaiveDateTime;
 #[cfg(any(feature = "dtype-time", feature = "dtype-date"))]
