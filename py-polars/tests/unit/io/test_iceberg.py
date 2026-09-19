@@ -108,6 +108,7 @@ if TYPE_CHECKING:
     LessThan: Any
     LessThanOrEqual: Any
     Not: Any
+    NotEqualTo: Any
     NotNaN: Any
     Or: Any
     Reference: Any
@@ -125,6 +126,7 @@ else:
         LessThan,
         LessThanOrEqual,
         Not,
+        NotEqualTo,
         NotNaN,
         Or,
         Reference,
@@ -321,6 +323,12 @@ class TestIcebergScanIO:
             (3, "3", datetime(2023, 3, 2, 22, 0)),
         ]
 
+        res = lf.filter(pl.col("id") != 2)
+        assert res.collect().rows() == [
+            (1, "1", datetime(2023, 3, 1, 18, 15)),
+            (3, "3", datetime(2023, 3, 2, 22, 0)),
+        ]
+
     def test_scan_iceberg_filter_is_in_empty(self, tmp_path: Path) -> None:
         tbl, _ = new_iceberg_table(
             tmp_path,
@@ -383,6 +391,15 @@ class TestIcebergExpressions:
     def test_parse_eq(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') == '2023-08-08')")
         assert _convert_predicate(expr) == EqualTo("ts", "2023-08-08")
+
+    def test_parse_noteq(self) -> None:
+        expr = _to_ast("(pa.compute.field('ts') != '2023-08-08')")
+        assert _convert_predicate(expr) == NotEqualTo("ts", "2023-08-08")
+
+        # A bare `!=` predicate must still push down, not silently vanish.
+        assert try_convert_pyarrow_predicate(
+            "(pa.compute.field('ts') != '2023-08-08')"
+        ) == NotEqualTo("ts", "2023-08-08")
 
     def test_parse_lt(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') < '2023-08-08')")
