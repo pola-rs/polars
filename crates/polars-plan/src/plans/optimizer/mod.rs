@@ -49,8 +49,6 @@ use polars_core::config::verbose;
 pub use predicate_pushdown::{
     DynamicPred, DynamicPredWeakRef, PredicateExpr, PredicatePushDown, TrivialPredicateExpr,
 };
-#[cfg(feature = "temporal")]
-pub(crate) use simplify_expr::ConstantFoldingRule;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use sortedness::{

@@ -42,7 +42,8 @@ impl<'a> IRBuilder<'a> {
         let b = self.add_alp(lp);
 
         // Run the optimizer
-        let mut conversion_optimizer = ConversionOptimizer::new(true, true, true, vec![]);
+        let mut conversion_optimizer =
+            ConversionOptimizer::new(Some(SimplifyExprRule::new(None, true)), true, true);
         conversion_optimizer.fill_scratch(b.lp_arena.get(b.root).exprs(), b.expr_arena);
         conversion_optimizer
             .optimize_exprs(b.expr_arena, b.lp_arena, b.root, false)

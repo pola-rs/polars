@@ -6,12 +6,10 @@ use crate::constants::{get_pl_element_name, get_pl_structfields_name};
 
 /// Applies expression simplification and type coercion during conversion to IR.
 pub struct ConversionOptimizer {
-    scratch: Vec<(Node, usize)>,
+    scratch: Vec<(Node, usize, Visit)>,
     schemas: Vec<Schema>,
 
     simplify: Option<SimplifyExprRule>,
-    rules: Vec<Box<dyn OptimizationRule>>,
-    rule_scratch: Vec<(Node, usize)>,
     coerce: Option<TypeCoercionRule>,
     check: Option<TypeCheckRule>,
     // IR's can be cached in the DSL.
@@ -22,30 +20,27 @@ pub struct ConversionOptimizer {
     pub(super) used_arenas: PlIndexSet<u32>,
 }
 
+#[derive(Clone, Copy)]
+enum Visit {
+    Prepare,
+    Enter,
+    Exit,
+}
+
 struct ExtendVec<'a> {
-    out: &'a mut Vec<(Node, usize)>,
+    out: &'a mut Vec<(Node, usize, Visit)>,
     schema_idx: usize,
+    visit: Visit,
 }
 impl Extend<Node> for ExtendVec<'_> {
     fn extend<T: IntoIterator<Item = Node>>(&mut self, iter: T) {
         self.out
-            .extend(iter.into_iter().map(|n| (n, self.schema_idx)))
+            .extend(iter.into_iter().map(|n| (n, self.schema_idx, self.visit)))
     }
 }
 
 impl ConversionOptimizer {
-    pub fn new(
-        simplify: bool,
-        type_coercion: bool,
-        type_check: bool,
-        rules: Vec<Box<dyn OptimizationRule>>,
-    ) -> Self {
-        let simplify = if simplify {
-            Some(SimplifyExprRule {})
-        } else {
-            None
-        };
-
+    pub fn new(simplify: Option<SimplifyExprRule>, type_coercion: bool, type_check: bool) -> Self {
         let coerce = if type_coercion {
             Some(TypeCoercionRule {})
         } else {
@@ -62,8 +57,6 @@ impl ConversionOptimizer {
             scratch: Vec::with_capacity(8),
             schemas: Vec::new(),
             simplify,
-            rules,
-            rule_scratch: Vec::new(),
             coerce,
             check,
             used_arenas: Default::default(),
@@ -71,13 +64,12 @@ impl ConversionOptimizer {
     }
 
     pub fn push_scratch(&mut self, expr: Node, expr_arena: &Arena<AExpr>) {
-        self.scratch.push((expr, 0));
-        // traverse all subexpressions and add to the stack
-        let expr = unsafe { expr_arena.get_unchecked(expr) };
-
-        expr.inputs_rev_strict(&mut ExtendVec {
+        self.scratch.push((expr, 0, Visit::Enter));
+        // Prepare the inputs before coercing the root expression.
+        expr_arena.get(expr).inputs_rev_strict(&mut ExtendVec {
             out: &mut self.scratch,
             schema_idx: 0,
+            visit: Visit::Prepare,
         });
     }
 
@@ -87,8 +79,7 @@ impl ConversionOptimizer {
         N: Borrow<Node>,
     {
         for e in exprs {
-            let node = *e.borrow();
-            self.push_scratch(node, expr_arena);
+            self.push_scratch(*e.borrow(), expr_arena);
         }
     }
 
@@ -130,12 +121,46 @@ impl ConversionOptimizer {
         };
 
         self.schemas.clear();
-        self.rule_scratch.clear();
-        while let Some((current_expr_node, schema_idx)) = self.scratch.pop() {
+        while let Some((current_expr_node, schema_idx, visit)) = self.scratch.pop() {
             let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
-
             if expr.is_leaf() {
                 continue;
+            }
+
+            ctx.post_visit = matches!(visit, Visit::Exit);
+            {
+                let schema = if schema_idx == 0 {
+                    &schema
+                } else {
+                    &self.schemas[schema_idx - 1]
+                };
+                if let Some(rule) = &mut self.simplify {
+                    while let Some(x) =
+                        rule.optimize_expr(expr_arena, current_expr_node, schema, ctx)?
+                    {
+                        expr_arena.replace(current_expr_node, x);
+                    }
+                }
+                if matches!(visit, Visit::Exit) {
+                    continue;
+                }
+                if let Some(rule) = &mut self.coerce {
+                    while let Some(x) =
+                        rule.optimize_expr(expr_arena, current_expr_node, schema, ctx)?
+                    {
+                        expr_arena.replace(current_expr_node, x);
+                    }
+                }
+            }
+
+            let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
+            if expr.is_leaf() {
+                continue;
+            }
+            if self.simplify.is_some() && matches!(visit, Visit::Enter) {
+                // Revisit the parent after simplifying its children.
+                self.scratch
+                    .push((current_expr_node, schema_idx, Visit::Exit));
             }
 
             // Evaluation expressions still need to do rules on the evaluation expression but the
@@ -159,11 +184,10 @@ impl ConversionOptimizer {
                 let mut schema = schema.clone();
                 schema.insert(get_pl_element_name(), element_dtype.clone());
                 self.schemas.push(schema);
-                self.scratch.push((*evaluation, self.schemas.len()));
+                self.scratch.push((*evaluation, self.schemas.len(), visit));
             }
 
             // Similar for StructEval
-            // Effectively, we are mimicking in-order processing traversal logic (left > parent > right).
             #[cfg(feature = "dtype-struct")]
             if let AExpr::StructEval { expr, evaluation } = expr {
                 let schema = if schema_idx == 0 {
@@ -179,54 +203,16 @@ impl ConversionOptimizer {
                 schema.insert(get_pl_structfields_name(), struct_dtype);
                 self.schemas.push(schema);
                 for e in evaluation {
-                    self.scratch.push((e.node(), self.schemas.len()))
+                    self.scratch.push((e.node(), self.schemas.len(), visit))
                 }
             }
 
-            let schema = if schema_idx == 0 {
-                &schema
-            } else {
-                &self.schemas[schema_idx - 1]
-            };
-
-            if let Some(rule) = &mut self.simplify {
-                while let Some(x) =
-                    rule.optimize_expr(expr_arena, current_expr_node, schema, ctx)?
-                {
-                    expr_arena.replace(current_expr_node, x);
-                }
-            }
-            if let Some(rule) = &mut self.coerce {
-                while let Some(x) =
-                    rule.optimize_expr(expr_arena, current_expr_node, schema, ctx)?
-                {
-                    expr_arena.replace(current_expr_node, x);
-                }
-            }
-
-            let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
-            if !self.rules.is_empty() {
-                self.rule_scratch.push((current_expr_node, schema_idx));
-            }
             // traverse subexpressions and add to the stack
             expr.inputs_rev_strict(&mut ExtendVec {
                 out: &mut self.scratch,
                 schema_idx,
+                visit,
             });
-        }
-
-        // These rules run after coercion, from children to parents.
-        for (node, schema_idx) in self.rule_scratch.drain(..).rev() {
-            let schema = if schema_idx == 0 {
-                &schema
-            } else {
-                &self.schemas[schema_idx - 1]
-            };
-            for rule in &mut self.rules {
-                while let Some(expr) = rule.optimize_expr(expr_arena, node, schema, ctx)? {
-                    expr_arena.replace(node, expr);
-                }
-            }
         }
 
         Ok(())
