@@ -3,6 +3,8 @@ use std::borrow::Borrow;
 use self::type_check::TypeCheckRule;
 use super::*;
 use crate::constants::{get_pl_element_name, get_pl_structfields_name};
+#[cfg(feature = "temporal")]
+use crate::plans::optimizer::FoldTemporalConstants;
 
 /// Applies expression simplification and type coercion during conversion to IR.
 pub struct ConversionOptimizer {
@@ -10,6 +12,10 @@ pub struct ConversionOptimizer {
     schemas: Vec<Schema>,
 
     simplify: Option<SimplifyExprRule>,
+    #[cfg(feature = "temporal")]
+    fold_temporal: Option<FoldTemporalConstants>,
+    #[cfg(feature = "temporal")]
+    fold_scratch: Vec<(Node, usize)>,
     coerce: Option<TypeCoercionRule>,
     check: Option<TypeCheckRule>,
     // IR's can be cached in the DSL.
@@ -32,7 +38,19 @@ impl Extend<Node> for ExtendVec<'_> {
 }
 
 impl ConversionOptimizer {
-    pub fn new(simplify: bool, type_coercion: bool, type_check: bool) -> Self {
+    pub fn new(
+        simplify: bool,
+        type_coercion: bool,
+        type_check: bool,
+        _evaluate_function: Option<optimizer::EvaluateFunctionFn>,
+    ) -> Self {
+        #[cfg(feature = "temporal")]
+        let fold_temporal = if simplify {
+            _evaluate_function.map(|evaluate_function| FoldTemporalConstants { evaluate_function })
+        } else {
+            None
+        };
+
         let simplify = if simplify {
             Some(SimplifyExprRule {})
         } else {
@@ -55,6 +73,10 @@ impl ConversionOptimizer {
             scratch: Vec::with_capacity(8),
             schemas: Vec::new(),
             simplify,
+            #[cfg(feature = "temporal")]
+            fold_temporal,
+            #[cfg(feature = "temporal")]
+            fold_scratch: Vec::new(),
             coerce,
             check,
             used_arenas: Default::default(),
@@ -121,6 +143,8 @@ impl ConversionOptimizer {
         };
 
         self.schemas.clear();
+        #[cfg(feature = "temporal")]
+        self.fold_scratch.clear();
         while let Some((current_expr_node, schema_idx)) = self.scratch.pop() {
             let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
 
@@ -195,11 +219,43 @@ impl ConversionOptimizer {
             }
 
             let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
+            #[cfg(feature = "temporal")]
+            if self.fold_temporal.is_some()
+                && match expr {
+                    AExpr::Cast { .. } => true,
+                    AExpr::Function { function, .. } => FoldTemporalConstants::can_fold(function),
+                    _ => false,
+                }
+            {
+                self.fold_scratch.push((current_expr_node, schema_idx));
+            }
             // traverse subexpressions and add to the stack
             expr.inputs_rev_strict(&mut ExtendVec {
                 out: &mut self.scratch,
                 schema_idx,
             });
+        }
+
+        // Finish coercion before folding constants, then fold children before their parents.
+        #[cfg(feature = "temporal")]
+        if let Some(rule) = &mut self.fold_temporal {
+            for (node, schema_idx) in self.fold_scratch.drain(..).rev() {
+                let schema = if schema_idx == 0 {
+                    &schema
+                } else {
+                    &self.schemas[schema_idx - 1]
+                };
+                // Folding an argument can expose a literal cast. Keep failures at execution time.
+                if let Some(coerce) = &mut self.coerce
+                    && matches!(expr_arena.get(node), AExpr::Cast { expr, .. } if matches!(expr_arena.get(*expr), AExpr::Literal(_)))
+                    && let Ok(Some(expr)) = coerce.optimize_expr(expr_arena, node, schema, ctx)
+                {
+                    expr_arena.replace(node, expr);
+                }
+                if let Some(expr) = rule.optimize_expr(expr_arena, node, schema, ctx)? {
+                    expr_arena.replace(node, expr);
+                }
+            }
         }
 
         Ok(())

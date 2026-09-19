@@ -5,6 +5,18 @@ pub(crate) struct FoldTemporalConstants {
     pub evaluate_function: EvaluateFunctionFn,
 }
 
+impl FoldTemporalConstants {
+    pub(crate) fn can_fold(function: &IRFunctionExpr) -> bool {
+        match function {
+            #[cfg(feature = "offset_by")]
+            IRFunctionExpr::TemporalExpr(IRTemporalFunction::OffsetBy) => true,
+            #[cfg(feature = "strings")]
+            IRFunctionExpr::StringExpr(IRStringFunction::Strptime(_, _)) => true,
+            _ => false,
+        }
+    }
+}
+
 impl OptimizationRule for FoldTemporalConstants {
     fn optimize_expr(
         &mut self,
@@ -19,14 +31,7 @@ impl OptimizationRule for FoldTemporalConstants {
         else {
             return Ok(None);
         };
-        let foldable = match function {
-            #[cfg(feature = "offset_by")]
-            IRFunctionExpr::TemporalExpr(IRTemporalFunction::OffsetBy) => true,
-            #[cfg(feature = "strings")]
-            IRFunctionExpr::StringExpr(IRStringFunction::Strptime(_, _)) => true,
-            _ => false,
-        };
-        if !foldable {
+        if !Self::can_fold(function) {
             return Ok(None);
         }
         let mut columns = Vec::with_capacity(input.len());

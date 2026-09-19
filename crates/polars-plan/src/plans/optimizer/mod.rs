@@ -49,6 +49,8 @@ use polars_core::config::verbose;
 pub use predicate_pushdown::{
     DynamicPred, DynamicPredWeakRef, PredicateExpr, PredicatePushDown, TrivialPredicateExpr,
 };
+#[cfg(feature = "temporal")]
+pub(crate) use simplify_expr::FoldTemporalConstants;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use sortedness::{
@@ -147,18 +149,6 @@ pub fn optimize(
         () => {
             _get_or_init_members(_opt_members, root, ir_arena, expr_arena)
         };
-    }
-
-    #[cfg(feature = "temporal")]
-    if opt_flags.simplify_expr() {
-        root = opt.optimize_loop(
-            &mut [Box::new(simplify_expr::FoldTemporalConstants {
-                evaluate_function: hooks.evaluate_function,
-            })],
-            expr_arena,
-            ir_arena,
-            root,
-        )?;
     }
 
     // Run before slice pushdown

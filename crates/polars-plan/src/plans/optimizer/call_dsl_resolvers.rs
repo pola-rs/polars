@@ -257,7 +257,13 @@ pub(super) fn call_dsl_resolvers(
 
                 let mut ir_node = {
                     let mut opt_flags = opt_flags;
-                    to_alp(dsl, expr_arena, ir_arena, &mut opt_flags)?
+                    to_alp(
+                        dsl,
+                        expr_arena,
+                        ir_arena,
+                        &mut opt_flags,
+                        Some(hooks.evaluate_function),
+                    )?
                 };
 
                 let ir_node_schema = ir_arena.get(ir_node).schema(ir_arena).into_owned();

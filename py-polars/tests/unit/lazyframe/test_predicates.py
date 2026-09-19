@@ -2159,3 +2159,77 @@ def test_date_timestamp_bounds_io_plugin(engine: EngineType) -> None:
     assert_frame_equal(query.collect(engine=engine), frame.slice(1, 2))
     assert received
     assert all("Datetime" not in str(predicate) for predicate in received)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_nested_temporal_constants_reach_scan(
+    tmp_path: Path, engine: EngineType
+) -> None:
+    frame = pl.DataFrame({"d": [date(2000, 1, day) for day in range(1, 10)] + [None]})
+    path = tmp_path / "dates.parquet"
+    frame.write_parquet(path)
+    low = pl.lit("2000-01-01").str.to_datetime("%Y-%m-%d", time_unit="ms")
+    for unit in ("us", "ns", "ms", "us"):
+        low = low.dt.offset_by("1d").cast(pl.Datetime(unit))  # type: ignore[arg-type]
+    high = low.dt.offset_by("2d")
+    query = pl.scan_parquet(path).filter(pl.col("d") >= low, pl.col("d") < high)
+    assert query.collect_schema() == frame.schema
+    assert_frame_equal(query.collect(engine=engine), frame.slice(4, 2))
+    assert_frame_equal(
+        query.collect(engine=engine),
+        query.collect(
+            engine=engine, optimizations=pl.QueryOptFlags(simplify_expression=False)
+        ),
+    )
+    plan = query.explain()
+    assert "SELECTION:" in plan
+    assert "cast(Datetime" not in plan
+    assert "strptime" not in plan
+    assert "offset_by" not in plan
+
+
+def test_nested_temporal_constants_in_eval() -> None:
+    frame = pl.LazyFrame({"d": [[date(2000, 1, 1), date(2000, 1, 5), None], []]})
+    bound = (
+        pl.lit("2000-01-01")
+        .str.to_date("%Y-%m-%d")
+        .dt.offset_by("1d")
+        .dt.offset_by("2d")
+    )
+    query = frame.select(pl.col("d").list.eval(pl.element() >= bound))
+    assert_frame_equal(query.collect(), pl.DataFrame({"d": [[False, True, None], []]}))
+    plan = query.explain()
+    assert "strptime" not in plan
+    assert "offset_by" not in plan
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.lit("invalid").str.to_date("%Y-%m-%d"),
+        pl.lit("2000-01-01").str.to_date("%Y-%m-%d").dt.offset_by("invalid"),
+        pl.lit("2500-01-01").str.to_date("%Y-%m-%d").cast(pl.Datetime("ns")),
+    ],
+)
+def test_temporal_folding_preserves_execution_errors(expr: pl.Expr) -> None:
+    query = pl.LazyFrame({"x": [1, 2]}).select(expr)
+    query.collect_schema()
+    query.explain()
+    with pytest.raises((ComputeError, InvalidOperationError)):
+        query.collect()
+
+
+@pytest.mark.parametrize("height", [0, 1, 3])
+def test_temporal_constant_folding_projection_height(height: int) -> None:
+    frame = pl.DataFrame({"x": pl.Series(range(height), dtype=pl.Int64)})
+    value = (
+        pl.lit("2000-01-01")
+        .str.to_date("%Y-%m-%d")
+        .dt.offset_by("1d")
+        .dt.offset_by("1d")
+    )
+    query = frame.lazy().select("x", value.alias("value"))
+    assert_frame_equal(
+        query.collect(), frame.with_columns(pl.lit(date(2000, 1, 3)).alias("value"))
+    )
+    assert "offset_by" not in query.explain()

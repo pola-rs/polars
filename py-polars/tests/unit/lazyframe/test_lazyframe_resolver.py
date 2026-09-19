@@ -555,3 +555,18 @@ def test_lazyframe_resolver_date_timestamp_bounds(simplify_expression: bool) -> 
     filters = resolver.resolve_lazyframe.call_args.kwargs["filters"]
     assert len(filters) == 2
     assert all(("Datetime" not in str(f.expr)) == simplify_expression for f in filters)
+
+
+def test_temporal_constant_folding_in_resolved_plan() -> None:
+    value = (
+        pl.lit("2000-01-01")
+        .str.to_date("%Y-%m-%d")
+        .dt.offset_by("1d")
+        .dt.offset_by("1d")
+    )
+    inner = pl.LazyFrame({"x": [1, 2]}).select("x", value.alias("value"))
+    query = InMemoryLazyFrameResolver(inner).lazy()
+    assert_frame_equal(query.collect(), inner.collect())
+    plan = query.explain()
+    assert "strptime" not in plan
+    assert "offset_by" not in plan

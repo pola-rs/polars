@@ -538,6 +538,7 @@ impl LazyFrame {
             &mut expr_arena,
             &mut lp_arena,
             &mut self.opt_state,
+            None,
         )?;
         let plan = IRPlan::new(node, lp_arena, expr_arena);
         Ok(plan)
@@ -557,22 +558,22 @@ impl LazyFrame {
         if opt_flags.contains(OptFlags::EAGER) {
             opt_flags &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
         }
-        let root = to_alp(self.logical_plan, expr_arena, ir_arena, &mut opt_flags)?;
-
-        let lp_top = optimize(
-            root,
-            opt_flags,
-            ir_arena,
-            expr_arena,
-            scratch,
-            ExecutionHooks {
-                apply_scan_predicate_to_scan_ir,
-                hive_join,
-                evaluate_function: |function, columns| {
-                    polars_expr::dispatch::function_expr_to_udf(function).call_udf(columns)
-                },
+        let hooks = ExecutionHooks {
+            apply_scan_predicate_to_scan_ir,
+            hive_join,
+            evaluate_function: |function, columns| {
+                polars_expr::dispatch::function_expr_to_udf(function).call_udf(columns)
             },
+        };
+        let root = to_alp(
+            self.logical_plan,
+            expr_arena,
+            ir_arena,
+            &mut opt_flags,
+            Some(hooks.evaluate_function),
         )?;
+
+        let lp_top = optimize(root, opt_flags, ir_arena, expr_arena, scratch, hooks)?;
 
         Ok(lp_top)
     }
