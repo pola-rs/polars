@@ -124,8 +124,23 @@ unsafe fn target_get_unchecked<'a, A: StaticArray>(
     arr.get_unchecked(arr_idx)
 }
 
+/// How many elements a gather has to read before answering it off a repeated chunk is worth it.
+///
+/// Reading the answer off the one element a chunk repeats costs a constant: the chunk's buffers
+/// are cloned rather than read, which is an atomic on each of them.  Copying the elements out
+/// costs one copy each.  The constant only pays for itself over enough elements -- and it is the
+/// worse of the two under a thread pool, because every worker clones the *same* chunk, so the
+/// atomics land on one cache line while the copies do not share anything at all.  A group-by over
+/// many small groups gathers each of them separately, which is where that shows.
+const REPEATED_GATHER_LIMIT: usize = 256;
+
 /// The chunk's values on their own, if they are one slot every element of it reads.
 fn values_repeated<A: StaticArray>(target: &A) -> Option<A> {
+    // Dropping the mask to ask about the values alone costs a clone of the array; a chunk with no
+    // mask answers the same question in place.
+    if target.validity().is_none() {
+        return PlArray::is_scalar(target).then(|| target.clone());
+    }
     let values = target.clone().with_validity_typed(None);
     PlArray::is_scalar(&values).then_some(values)
 }
@@ -139,7 +154,7 @@ where
     let it = indices.iter().copied();
     if targets.len() == 1 {
         let target = targets.first().unwrap();
-        if !indices.is_empty()
+        if indices.len() >= REPEATED_GATHER_LIMIT
             && !target.is_empty()
             && let Some(repeated) = values_repeated(*target)
         {
