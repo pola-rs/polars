@@ -1,7 +1,7 @@
 #[cfg(feature = "temporal")]
-mod temporal;
+mod constant_folding;
 #[cfg(feature = "temporal")]
-pub(crate) use temporal::FoldTemporalConstants;
+pub(crate) use constant_folding::ConstantFoldingRule;
 
 mod simplify_functions;
 

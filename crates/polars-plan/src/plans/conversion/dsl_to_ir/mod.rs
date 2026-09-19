@@ -56,11 +56,21 @@ pub fn to_alp(
     opt_flags: &mut OptFlags,
     evaluate_function: Option<optimizer::EvaluateFunctionFn>,
 ) -> PolarsResult<Node> {
+    let rules: Vec<Box<dyn OptimizationRule>> = match evaluate_function {
+        #[cfg(feature = "temporal")]
+        Some(evaluate_function) if opt_flags.simplify_expr() => {
+            vec![Box::new(optimizer::ConstantFoldingRule::new(
+                evaluate_function,
+                opt_flags.contains(OptFlags::TYPE_COERCION),
+            ))]
+        },
+        _ => vec![],
+    };
     let conversion_optimizer = ConversionOptimizer::new(
         opt_flags.contains(OptFlags::SIMPLIFY_EXPR),
         opt_flags.contains(OptFlags::TYPE_COERCION),
         opt_flags.contains(OptFlags::TYPE_CHECK),
-        evaluate_function,
+        rules,
     );
 
     let mut ctxt = DslConversionContext {

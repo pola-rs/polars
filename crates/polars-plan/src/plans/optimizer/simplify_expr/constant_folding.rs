@@ -1,12 +1,20 @@
 use super::*;
 use crate::plans::optimizer::EvaluateFunctionFn;
 
-pub(crate) struct FoldTemporalConstants {
-    pub evaluate_function: EvaluateFunctionFn,
+pub(crate) struct ConstantFoldingRule {
+    evaluate_function: EvaluateFunctionFn,
+    coerce: Option<TypeCoercionRule>,
 }
 
-impl FoldTemporalConstants {
-    pub(crate) fn can_fold(function: &IRFunctionExpr) -> bool {
+impl ConstantFoldingRule {
+    pub(crate) fn new(evaluate_function: EvaluateFunctionFn, type_coercion: bool) -> Self {
+        Self {
+            evaluate_function,
+            coerce: type_coercion.then_some(TypeCoercionRule {}),
+        }
+    }
+
+    fn can_fold(function: &IRFunctionExpr) -> bool {
         match function {
             #[cfg(feature = "offset_by")]
             IRFunctionExpr::TemporalExpr(IRTemporalFunction::OffsetBy) => true,
@@ -17,14 +25,24 @@ impl FoldTemporalConstants {
     }
 }
 
-impl OptimizationRule for FoldTemporalConstants {
+impl OptimizationRule for ConstantFoldingRule {
     fn optimize_expr(
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        _schema: &Schema,
-        _ctx: OptimizeExprContext,
+        schema: &Schema,
+        ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
+        if matches!(expr_arena.get(expr_node), AExpr::Cast { expr, .. } if matches!(expr_arena.get(*expr), AExpr::Literal(_)))
+        {
+            let Some(rule) = &mut self.coerce else {
+                return Ok(None);
+            };
+            // Folding an argument can expose a literal cast. Keep failures at execution time.
+            return Ok(rule
+                .optimize_expr(expr_arena, expr_node, schema, ctx)
+                .unwrap_or(None));
+        }
         let AExpr::Function {
             input, function, ..
         } = expr_arena.get(expr_node)
