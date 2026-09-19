@@ -401,6 +401,15 @@ class TestIcebergExpressions:
             "(pa.compute.field('ts') != '2023-08-08')"
         ) == NotEqualTo("ts", "2023-08-08")
 
+    def test_parse_ne_missing(self) -> None:
+        # `.ne_missing()` lowers to `(({col} != {lit}) | ({col}).is_null())`
+        # (see `validity_comparison_to_pa` in pyarrow.rs); the `!=` half hits
+        # the same conversion gap as a bare `!=`.
+        expr = try_convert_pyarrow_predicate(
+            "((pa.compute.field('ts') != '2023-08-08') | (pa.compute.field('ts')).is_null())"
+        )
+        assert expr == Or(NotEqualTo("ts", "2023-08-08"), IsNull("ts"))
+
     def test_parse_lt(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') < '2023-08-08')")
         assert _convert_predicate(expr) == LessThan("ts", "2023-08-08")
