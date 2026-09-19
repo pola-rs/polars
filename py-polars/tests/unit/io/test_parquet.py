@@ -1146,6 +1146,22 @@ def test_parquet_statistics_uint64_16683() -> None:
     assert statistics.max == u64_max
 
 
+def test_parquet_enum_statistics() -> None:
+    df = pl.Series(
+        "a", ["d", "b", "d", None, None, None], dtype=pl.Enum(["z", "d", "b", "a"])
+    ).to_frame()
+    file = io.BytesIO()
+    df.write_parquet(file, row_group_size=3)
+    metadata = pq.read_metadata(file)
+
+    statistics = metadata.row_group(0).column(0).statistics
+    assert (statistics.min, statistics.max, statistics.null_count) == ("b", "d", 0)
+    statistics = metadata.row_group(1).column(0).statistics
+    assert (statistics.min, statistics.max, statistics.null_count) == (None, None, 3)
+    file.seek(0)
+    assert_frame_equal(pl.read_parquet(file), df)
+
+
 def test_parquet_decimal_statistics_29347() -> None:
     # The bug needs a precision of 19 or more, so that the values are stored as a fixed
     # length byte array rather than an INT64, a chunk spanning more than one page, and a

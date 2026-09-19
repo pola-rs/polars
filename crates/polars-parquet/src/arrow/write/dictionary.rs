@@ -464,6 +464,25 @@ pub fn array_to_pages<K: DictionaryKey>(
     options: WriteOptions,
     encoding: Encoding,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
+    let original_array = array;
+    let masked_array;
+    let array = if options.statistics.min_value || options.statistics.max_value {
+        // Only referenced, non-null dictionary values contribute to statistics.
+        let values = array.values();
+        let mut validity = MutableBitmap::from_len_zeroed(values.len());
+        for key in array.keys_iter().flatten() {
+            validity.set(key, !values.is_null(key));
+        }
+        masked_array = DictionaryArray::try_new(
+            array.dtype().clone(),
+            array.keys().clone(),
+            values.with_validity(validity.into()),
+        )?;
+        &masked_array
+    } else {
+        array
+    };
+
     match encoding {
         Encoding::PlainDictionary | Encoding::RleDictionary => {
             // write DictPage
@@ -608,7 +627,7 @@ pub fn array_to_pages<K: DictionaryKey>(
             };
 
             // write DataPages pointing to DictPage
-            let data_pages = serialize_keys(array, type_, nested, statistics, options);
+            let data_pages = serialize_keys(original_array, type_, nested, statistics, options);
 
             Ok(DynIter::new(
                 std::iter::once(Ok(Page::Dict(dict_page))).chain(data_pages),
