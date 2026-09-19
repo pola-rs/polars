@@ -128,13 +128,6 @@ impl<V> BytesIndexMap<V> {
         unsafe { (t.0.key_hash, t.0.get(&self.key_data), &t.1) }
     }
 
-    /// Iterates over the (hash, key) pairs in insertion order.
-    pub fn iter_hash_keys(&self) -> impl Iterator<Item = (u64, &[u8])> {
-        self.tuples
-            .iter()
-            .map(|t| unsafe { (t.0.key_hash, t.0.get(&self.key_data)) })
-    }
-
     /// Iterates over the (hash, key) pairs in insertion order, where each key slice runs to the
     /// end of the buffer that holds it. Readers that know the key length can then read past the
     /// key without bound checks.

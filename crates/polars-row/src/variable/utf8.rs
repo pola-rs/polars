@@ -130,8 +130,7 @@ unsafe fn encode_view(dst: *mut MaybeUninit<u8>, view: &View, buffers: &[Buffer<
         block[..12].copy_from_slice(&raw[4..]);
         encode_short(dst, block, len, t);
     } else {
-        let buffer = buffers.get_unchecked(view.buffer_idx as usize);
-        let src = buffer.as_ptr().add(view.offset as usize);
+        let src = view.get_external_slice_unchecked(buffers).as_ptr();
         if len >= BLOCK {
             encode_long(dst, src, len, t);
         } else {
@@ -279,13 +278,11 @@ unsafe fn decode_long(row: &[u8], t: u8, builder: &mut ViewBuilder) -> (usize, u
 
 /// Decode one value and push it to `builder`. Returns `false` for null.
 #[inline(always)]
-unsafe fn decode_one(row: &mut &[u8], opt: RowEncodingOptions, builder: &mut ViewBuilder) -> bool {
-    if *row.get_unchecked(0) == opt.null_sentinel() {
+unsafe fn decode_one(row: &mut &[u8], null_sentinel: u8, t: u8, builder: &mut ViewBuilder) -> bool {
+    if *row.get_unchecked(0) == null_sentinel {
         *row = row.get_unchecked(1..);
         return false;
     }
-
-    let t = descending_mask(opt);
 
     // Short values become inline views straight from a block load.
     if row.len() >= BLOCK {
@@ -310,12 +307,14 @@ unsafe fn decode_one(row: &mut &[u8], opt: RowEncodingOptions, builder: &mut Vie
 }
 
 pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8ViewArray {
+    let null_sentinel = opt.null_sentinel();
+    let t = descending_mask(opt);
     let num_rows = rows.len();
     let mut builder = ViewBuilder::with_capacity(num_rows);
     let mut validity = BitmapBuilder::new();
 
     for row in rows.iter_mut() {
-        if !decode_one(row, opt, &mut builder) {
+        if !decode_one(row, null_sentinel, t, &mut builder) {
             validity.reserve(num_rows);
             validity.extend_constant(builder.len(), true);
             validity.push(false);
@@ -326,7 +325,7 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8Vie
 
     if !validity.is_empty() {
         for row in rows[builder.len()..].iter_mut() {
-            let is_valid = decode_one(row, opt, &mut builder);
+            let is_valid = decode_one(row, null_sentinel, t, &mut builder);
             validity.push(is_valid);
             if !is_valid {
                 builder.push_null();

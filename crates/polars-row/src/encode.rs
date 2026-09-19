@@ -101,12 +101,12 @@ pub fn convert_columns_amortized<'a>(
     let masked_out_write_offset = total_num_bytes;
     let mut scratches = EncodeScratches::default();
     let all_flat = encoders.iter().all(|e| e.state.is_none());
-    let column_offsets = all_flat.then(|| fixed_column_offsets(&encoders, fields.clone()));
-    if let Some((column_offsets, stride)) = column_offsets.flatten().filter(|_| encoders.len() > 1)
-    {
+    let column_offsets = (all_flat && encoders.len() > 1)
+        .then(|| fixed_column_offsets(&encoders, fields.clone()))
+        .flatten();
+    if let Some((column_offsets, stride)) = column_offsets {
         // All rows have the same width. Values are written at `row * stride` plus the offset
         // of the column, which does not need the offsets to be updated per column.
-        debug_assert_eq!(row_widths.constant_width(), Some(stride));
         let mut tile_offsets = Vec::with_capacity(ENCODE_ROW_TILE);
 
         let mut start = 0;
@@ -754,7 +754,7 @@ unsafe fn encode_flat_array(
         D::Utf8View => {
             let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
             if opt.contains(RowEncodingOptions::NO_ORDER) {
-                no_order::encode_view_no_order(buffer, &array.to_binview(), opt, offsets);
+                no_order::encode_view_no_order(buffer, array, opt, offsets);
             } else {
                 utf8::encode_str_view(buffer, array, opt, offsets);
             }

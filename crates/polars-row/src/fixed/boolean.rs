@@ -17,24 +17,23 @@ use polars_arrow::datatypes::ArrowDataType;
 
 use crate::row::RowEncodingOptions;
 
+#[inline(always)]
+fn sentinel(opt_value: Option<bool>, opt: RowEncodingOptions) -> u8 {
+    match opt_value {
+        None => opt.null_sentinel(),
+        Some(false) => opt.bool_false_sentinel(),
+        Some(true) => opt.bool_true_sentinel(),
+    }
+}
+
 pub(crate) unsafe fn encode_bool<I: Iterator<Item = Option<bool>>>(
     buffer: &mut [MaybeUninit<u8>],
     input: I,
     opt: RowEncodingOptions,
     offsets: &mut [usize],
 ) {
-    let null_sentinel = opt.null_sentinel();
-    let true_sentinel = opt.bool_true_sentinel();
-    let false_sentinel = opt.bool_false_sentinel();
-
     for (offset, opt_value) in offsets.iter_mut().zip(input) {
-        let b = match opt_value {
-            None => null_sentinel,
-            Some(false) => false_sentinel,
-            Some(true) => true_sentinel,
-        };
-
-        *buffer.get_unchecked_mut(*offset) = MaybeUninit::new(b);
+        *buffer.get_unchecked_mut(*offset) = MaybeUninit::new(sentinel(opt_value, opt));
         *offset += 1;
     }
 }
@@ -46,17 +45,8 @@ pub(crate) unsafe fn encode_bool_strided(
     arr: &BooleanArray,
     opt: RowEncodingOptions,
 ) {
-    let null_sentinel = opt.null_sentinel();
-    let true_sentinel = opt.bool_true_sentinel();
-    let false_sentinel = opt.bool_false_sentinel();
-
     for (i, opt_value) in arr.iter().enumerate() {
-        let b = match opt_value {
-            None => null_sentinel,
-            Some(false) => false_sentinel,
-            Some(true) => true_sentinel,
-        };
-        *out.add(i * stride) = MaybeUninit::new(b);
+        *out.add(i * stride) = MaybeUninit::new(sentinel(opt_value, opt));
     }
 }
 
@@ -85,7 +75,8 @@ pub(crate) unsafe fn decode_bool(rows: &mut [&[u8]], opt: RowEncodingOptions) ->
     BooleanArray::new(ArrowDataType::Boolean, values, Some(validity))
 }
 
-/// Collects decoded booleans and their validity.
+/// Collects decoded booleans and their validity. Both are pushed 64 rows at a time as one
+/// word.
 pub(crate) struct BooleanCollector {
     values: BitmapBuilder,
     validity: BitmapBuilder,
@@ -113,11 +104,21 @@ impl BooleanCollector {
         let true_sentinel = opt.bool_true_sentinel();
         self.values.reserve(num_rows);
         self.validity.reserve(num_rows);
-        for i in 0..num_rows {
-            let b = *ptr.add(i * stride);
-            self.has_nulls |= b == null_sentinel;
-            self.values.push_unchecked(b == true_sentinel);
-            self.validity.push_unchecked(b != null_sentinel);
+
+        let mut row = 0;
+        while row < num_rows {
+            let len = (num_rows - row).min(64);
+            let mut values = 0u64;
+            let mut valid = 0u64;
+            for i in 0..len {
+                let b = *ptr.add((row + i) * stride);
+                values |= ((b == true_sentinel) as u64) << i;
+                valid |= ((b != null_sentinel) as u64) << i;
+            }
+            self.has_nulls |= valid != (u64::MAX >> (64 - len));
+            self.values.push_word_with_len_unchecked(values, len);
+            self.validity.push_word_with_len_unchecked(valid, len);
+            row += len;
         }
     }
 

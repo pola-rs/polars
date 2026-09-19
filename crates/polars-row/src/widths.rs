@@ -107,14 +107,6 @@ impl RowWidths {
         }
     }
 
-    /// The width of every row if all rows have the same width.
-    pub fn constant_width(&self) -> Option<usize> {
-        match self {
-            Self::Constant { width, .. } => Some(*width),
-            Self::Variable { .. } => None,
-        }
-    }
-
     pub fn num_rows(&self) -> usize {
         match self {
             Self::Constant { num_rows, .. } => *num_rows,
