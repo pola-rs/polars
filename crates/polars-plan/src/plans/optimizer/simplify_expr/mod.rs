@@ -187,26 +187,6 @@ macro_rules! eval_binary_same_type {
                     }
                     .into()
                 },
-                (
-                    LiteralValue::Dyn(DynLiteralValue::Float($l)),
-                    LiteralValue::Dyn(DynLiteralValue::Float($r)),
-                ) => {
-                    let $l = *$l;
-                    let $r = *$r;
-                    Some(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(
-                        $ret,
-                    ))))
-                },
-                (
-                    LiteralValue::Dyn(DynLiteralValue::Int($l)),
-                    LiteralValue::Dyn(DynLiteralValue::Int($r)),
-                ) => {
-                    let $l = *$l;
-                    let $r = *$r;
-                    Some(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(
-                        $ret,
-                    ))))
-                },
                 _ => None,
             }
         } else {
@@ -362,11 +342,7 @@ fn eval_negate(ae: &AExpr) -> Option<AExpr> {
                 _ => return None,
             }
             .into(),
-            LiteralValue::Dyn(d) => LiteralValue::Dyn(match d {
-                DynLiteralValue::Int(v) => DynLiteralValue::Int(v.checked_neg()?),
-                DynLiteralValue::Float(v) => DynLiteralValue::Float(v.neg()),
-                _ => return None,
-            }),
+            LiteralValue::Dyn(d) => LiteralValue::Dyn(fold_dyn_negate(d)?),
             _ => return None,
         },
         _ => return None,
@@ -643,6 +619,13 @@ impl OptimizationRule for SimplifyExprRule {
                 let left_aexpr = expr_arena.get(*left);
                 let right_aexpr = expr_arena.get(*right);
 
+                if let (AExpr::Literal(LiteralValue::Dyn(l)), AExpr::Literal(LiteralValue::Dyn(r))) =
+                    (left_aexpr, right_aexpr)
+                    && let Some(v) = fold_dyn_binary(l, r, *op)
+                {
+                    return Ok(Some(AExpr::Literal(LiteralValue::Dyn(v))));
+                }
+
                 // Inline dynamic value casts
                 // Ensure that dynamic values upcast in lined
                 // This will allow const folding later
@@ -803,12 +786,6 @@ impl OptimizationRule for SimplifyExprRule {
                                 ) => {
                                     Some(AExpr::Literal(<Scalar as From<f64>>::from(x / y).into()))
                                 },
-                                (
-                                    LiteralValue::Dyn(DynLiteralValue::Int(x)),
-                                    LiteralValue::Dyn(DynLiteralValue::Int(y)),
-                                ) => Some(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(
-                                    x.wrapping_floor_div_mod(*y).0,
-                                )))),
                                 _ => None,
                             }
                         } else {

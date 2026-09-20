@@ -542,6 +542,38 @@ pub fn f64_to_dec128(x: f64, p: usize, s: usize) -> Option<i128> {
     unsafe { Some((x * POW10_F64[s]).round_ties_even().to_int_unchecked()) }
 }
 
+/// Shortest decimal representation of `x`, or None if it has more significant
+/// digits than a f64 carries exactly.
+fn f64_shortest_repr(x: f64) -> Option<String> {
+    if !x.is_finite() {
+        return None;
+    }
+    let repr = format!("{x}");
+    let digits = repr.trim_start_matches(['-', '0', '.']);
+    if digits.bytes().filter(u8::is_ascii_digit).count() > f64::DIGITS as usize {
+        return None;
+    }
+    Some(repr)
+}
+
+/// Number of fractional digits needed to represent `x` exactly, if known.
+pub fn f64_dec128_scale(x: f64) -> Option<usize> {
+    let repr = f64_shortest_repr(x)?;
+    Some(repr.split_once('.').map_or(0, |(_, f)| f.len()))
+}
+
+/// Converts a f64 to a Decimal128 using its shortest decimal representation,
+/// returning None if that needs more fractional digits than `s`, the digits
+/// are not exact, or the value doesn't fit.
+pub fn f64_to_dec128_exact(x: f64, p: usize, s: usize) -> Option<i128> {
+    let repr = f64_shortest_repr(x)?;
+    let frac_digits = repr.split_once('.').map_or(0, |(_, f)| f.len());
+    if s > p || frac_digits > s {
+        return None;
+    }
+    str_to_dec128(repr.as_bytes(), p, s, false)
+}
+
 /// Converts between two Decimal128s, with a new precision and scale, returning
 /// None if the value doesn't fit.
 #[inline]

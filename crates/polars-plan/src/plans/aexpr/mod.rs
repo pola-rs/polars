@@ -1,6 +1,8 @@
 mod builder;
 mod canonical;
 mod determinism;
+mod dyn_fold;
+pub(crate) use dyn_fold::{fold_dyn_binary, fold_dyn_negate, try_fold_dyn};
 mod equality;
 mod evaluate;
 pub(crate) mod filter_constraint;
@@ -11,6 +13,7 @@ pub(crate) mod or_factoring;
 pub mod predicates;
 mod scalar;
 mod schema;
+pub(crate) use schema::widen_decimal;
 mod traverse;
 
 use std::hash::{Hash, Hasher};
