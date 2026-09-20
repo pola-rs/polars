@@ -1161,6 +1161,22 @@ def test_parquet_enum_statistics() -> None:
     assert_frame_equal(pl.read_parquet(file), df)
 
 
+def test_parquet_enum_statistics_null_keys() -> None:
+    # Non-strict conversion leaves an out-of-range physical key beneath the null.
+    df = (
+        pl.Series("a", [0, 255], dtype=pl.UInt8)
+        .cat.to(pl.Enum(["a", "b"]), strict=False)
+        .to_frame()
+    )
+    file = io.BytesIO()
+    df.write_parquet(file)
+
+    statistics = pq.read_metadata(file).row_group(0).column(0).statistics
+    assert (statistics.min, statistics.max, statistics.null_count) == ("a", "a", 1)
+    file.seek(0)
+    assert_frame_equal(pl.read_parquet(file), df)
+
+
 def test_parquet_decimal_statistics_29347() -> None:
     # The bug needs a precision of 19 or more, so that the values are stored as a fixed
     # length byte array rather than an INT64, a chunk spanning more than one page, and a
