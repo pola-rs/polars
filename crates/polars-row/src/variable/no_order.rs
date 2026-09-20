@@ -11,14 +11,16 @@
 /// After the sentinel value (and possible length), the data is then given.
 use std::mem::MaybeUninit;
 
-use polars_arrow::array::{Array, BinaryViewArray, BinaryViewArrayGeneric, View, ViewType};
+use polars_arrow::array::builder::StaticArrayBuilder;
+use polars_arrow::array::{
+    Array, BinaryViewArray, BinaryViewArrayBuilder, BinaryViewArrayGeneric, View, ViewType,
+};
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_buffer::Buffer;
 
-use super::view_builder::ViewBuilder;
+use super::BLOCK_SIZE;
 use crate::row::RowEncodingOptions;
-use crate::utils::{BLOCK, inline_view};
 
 #[inline(always)]
 pub fn len_from_item(value: Option<usize>, opt: RowEncodingOptions) -> usize {
@@ -47,9 +49,12 @@ pub unsafe fn len_from_buffer(buffer: &[u8], opt: RowEncodingOptions) -> usize {
 }
 
 /// Write the `n` bytes at `src` to `dst` with two overlapping stores.
+///
+/// # Safety
+/// `src` must be readable and `dst` writable for `max(n, 4)` bytes when `n >= 4`, else `n`.
 #[inline(always)]
 unsafe fn write_short(dst: *mut u8, src: *const u8, n: usize) {
-    debug_assert!(n <= BLOCK);
+    debug_assert!(n <= BLOCK_SIZE);
     if n >= 8 {
         let lo = std::ptr::read_unaligned(src as *const u64);
         let hi = std::ptr::read_unaligned(src.add(n - 8) as *const u64);
@@ -68,6 +73,9 @@ unsafe fn write_short(dst: *mut u8, src: *const u8, n: usize) {
 }
 
 /// Write the header and `len` bytes at `src` to `dst`. Returns the number of bytes written.
+///
+/// # Safety
+/// `src` must be readable for `max(len, 16)` bytes and `dst` writable for the returned length.
 #[inline(always)]
 unsafe fn encode_bytes(dst: *mut u8, src: *const u8, len: usize) -> usize {
     let header = if len >= 254 {
@@ -80,7 +88,7 @@ unsafe fn encode_bytes(dst: *mut u8, src: *const u8, len: usize) -> usize {
     };
     let dst = dst.add(header);
 
-    if len >= BLOCK {
+    if len >= BLOCK_SIZE {
         std::ptr::copy_nonoverlapping(src, dst, len);
     } else {
         write_short(dst, src, len);
@@ -88,12 +96,14 @@ unsafe fn encode_bytes(dst: *mut u8, src: *const u8, len: usize) -> usize {
     header + len
 }
 
+/// # Safety
+/// `dst` must be writable for the encoded length and `view` must point into `buffers`.
 #[inline(always)]
 unsafe fn encode_view(dst: *mut u8, view: &View, buffers: &[Buffer<u8>]) -> usize {
     let len = view.length as usize;
     if len <= View::MAX_INLINE_SIZE as usize {
-        // The view is [len: u32][12 inline bytes]. Byte 3 of the length is zero here, so the
-        // encoding is the view from byte 3 with `len` put in that byte.
+        // The view is [len: u32 little-endian][12 inline bytes]. Byte 3 of the length is zero
+        // here, so the encoding is the view from byte 3 with `len` put in that byte.
         let src = (view as *const View as *const u8).add(3);
         let n = len + 1;
         if n >= 8 {
@@ -167,10 +177,10 @@ pub unsafe fn encode_variable_no_order<'a, I: Iterator<Item = Option<&'a [u8]>>>
                 *offset += 1;
             },
             Some(v) => {
-                if v.len() >= BLOCK {
+                if v.len() >= BLOCK_SIZE {
                     *offset += encode_bytes(out.add(*offset), v.as_ptr(), v.len());
                 } else {
-                    let mut block = [0u8; BLOCK];
+                    let mut block = [0u8; BLOCK_SIZE];
                     std::ptr::copy_nonoverlapping(v.as_ptr(), block.as_mut_ptr(), v.len());
                     *offset += encode_bytes(out.add(*offset), block.as_ptr(), v.len());
                 }
@@ -180,8 +190,11 @@ pub unsafe fn encode_variable_no_order<'a, I: Iterator<Item = Option<&'a [u8]>>>
 }
 
 /// Decode one value and push it to `builder`. Returns `false` for null.
+///
+/// # Safety
+/// `row` must start with a null sentinel or an encoded value.
 #[inline(always)]
-unsafe fn decode_one(row: &mut &[u8], builder: &mut ViewBuilder) -> bool {
+unsafe fn decode_one(row: &mut &[u8], builder: &mut BinaryViewArrayBuilder) -> bool {
     let sentinel = *row.get_unchecked(0);
     if sentinel == 0xFF {
         *row = row.get_unchecked(1..);
@@ -189,10 +202,10 @@ unsafe fn decode_one(row: &mut &[u8], builder: &mut ViewBuilder) -> bool {
     }
 
     // Short values become inline views straight from a block load.
-    if sentinel <= View::MAX_INLINE_SIZE as u8 && row.len() > BLOCK {
+    if sentinel <= View::MAX_INLINE_SIZE as u8 && row.len() > BLOCK_SIZE {
         let len = sentinel as usize;
-        let block = std::ptr::read_unaligned(row.as_ptr().add(1) as *const [u8; BLOCK]);
-        builder.push_inline(inline_view(block, len));
+        let block = std::ptr::read_unaligned(row.as_ptr().add(1) as *const [u8; BLOCK_SIZE]);
+        builder.push_inline_view_ignore_validity(View::new_inline_from_block(block, len));
         *row = row.get_unchecked(1 + len..);
         return true;
     }
@@ -204,7 +217,7 @@ unsafe fn decode_one(row: &mut &[u8], builder: &mut ViewBuilder) -> bool {
         (5, length as usize)
     };
     let end = header + length;
-    builder.push_bytes(row.get_unchecked(header..end));
+    builder.push_value_ignore_validity(row.get_unchecked(header..end));
     *row = row.get_unchecked(end..);
     true
 }
@@ -216,7 +229,8 @@ pub unsafe fn decode_variable_no_order(
     debug_assert!(opt.contains(RowEncodingOptions::NO_ORDER));
 
     let num_rows = rows.len();
-    let mut builder = ViewBuilder::with_capacity(num_rows);
+    let mut builder = BinaryViewArrayBuilder::new(ArrowDataType::BinaryView);
+    builder.reserve(num_rows);
     let mut validity = BitmapBuilder::new();
 
     for row in rows.iter_mut() {
@@ -224,7 +238,7 @@ pub unsafe fn decode_variable_no_order(
             validity.reserve(num_rows);
             validity.extend_constant(builder.len(), true);
             validity.push(false);
-            builder.push_null();
+            builder.push_null_ignore_validity();
             break;
         }
     }
@@ -234,10 +248,10 @@ pub unsafe fn decode_variable_no_order(
             let is_valid = decode_one(row, &mut builder);
             validity.push(is_valid);
             if !is_valid {
-                builder.push_null();
+                builder.push_null_ignore_validity();
             }
         }
     }
 
-    builder.freeze(ArrowDataType::BinaryView, validity.into_opt_validity())
+    builder.freeze_with_validity(validity.into_opt_validity())
 }

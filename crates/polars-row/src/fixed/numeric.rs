@@ -259,24 +259,26 @@ pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
     }
 }
 
-/// Encode `values` with nulls as the sentinel followed by zeros. `dst` gives the location of
-/// each row.
-#[inline(always)]
-unsafe fn encode_values_with_validity<T: FixedLengthEncoding>(
-    values: &[T],
+unsafe fn encode_slice_with_validity<T: FixedLengthEncoding>(
+    buffer: &mut [MaybeUninit<u8>],
+    input: &[T],
     validity: &Bitmap,
     opt: RowEncodingOptions,
-    mut dst: impl FnMut(usize) -> *mut MaybeUninit<u8>,
+    row_starts: &mut [usize],
 ) {
     let descending = opt.contains(RowEncodingOptions::DESCENDING);
     let null_sentinel = opt.null_sentinel();
+    let out = buffer.as_mut_ptr();
 
+    // Nulls are written as the sentinel followed by zeros.
     let mut encode_chunk = |mask: u64, start: usize, end: usize| {
-        for (i, value) in values[start..end].iter().enumerate() {
+        for (i, value) in input[start..end].iter().enumerate() {
             let is_valid = (mask >> i) & 1 != 0;
             let sentinel = if is_valid { 1 } else { null_sentinel };
             let encoded = T::keep_or_zero(encode_value(*value, descending), is_valid);
-            write_value::<T>(dst(start + i), sentinel, encoded);
+            let offset = row_starts.get_unchecked_mut(start + i);
+            write_value::<T>(out.add(*offset), sentinel, encoded);
+            *offset += T::ENCODED_LEN;
         }
     };
 
@@ -288,25 +290,9 @@ unsafe fn encode_values_with_validity<T: FixedLengthEncoding>(
     }
     // The remainder holds fewer than 128 bits: `lo` has up to 64 and `hi` the rest.
     let ([lo, hi], _) = masks.remainder();
-    let mid = start + (values.len() - start).min(64);
+    let mid = start + (input.len() - start).min(64);
     encode_chunk(lo, start, mid);
-    encode_chunk(hi, mid, values.len());
-}
-
-unsafe fn encode_slice_with_validity<T: FixedLengthEncoding>(
-    buffer: &mut [MaybeUninit<u8>],
-    input: &[T],
-    validity: &Bitmap,
-    opt: RowEncodingOptions,
-    row_starts: &mut [usize],
-) {
-    let out = buffer.as_mut_ptr();
-    encode_values_with_validity(input, validity, opt, |i| {
-        let offset = row_starts.get_unchecked_mut(i);
-        let dst = out.add(*offset);
-        *offset += T::ENCODED_LEN;
-        dst
-    });
+    encode_chunk(hi, mid, input.len());
 }
 
 pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>(
