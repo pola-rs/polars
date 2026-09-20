@@ -729,10 +729,10 @@ impl Column {
                 } else {
                     let validity = indices.rechunk_validity();
                     // Use dtype-aware validity updates so Struct fields see the nulls.
-                    scalar
-                        .take_materialized_series()
-                        .with_validity(validity)
-                        .into_column()
+                    let mut out = scalar.take_materialized_series().with_validity(validity);
+                    // Gather indices can insert nulls between equal values.
+                    out.set_sorted_flag(IsSorted::Not);
+                    out.into_column()
                 }
             },
         }

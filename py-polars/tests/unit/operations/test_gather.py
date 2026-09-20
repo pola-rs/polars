@@ -523,3 +523,16 @@ def test_gather_values_that_repeat_under_a_mask(
         assert (
             masked.gather(idx).estimated_size() < written.gather(idx).estimated_size()
         )
+
+
+@pytest.mark.parametrize("value", [1, 1.5, "a", True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_gather_scalar_with_interleaved_nulls(
+    value: int | float | str | bool, nulls_last: bool
+) -> None:
+    frame = pl.DataFrame({"x": [value]})
+    result = frame.gather(pl.Series([None, 0, None], dtype=pl.UInt32))
+    values = [value, None, None] if nulls_last else [None, None, value]
+    assert_frame_equal(
+        result.sort("x", nulls_last=nulls_last), pl.DataFrame({"x": values})
+    )
