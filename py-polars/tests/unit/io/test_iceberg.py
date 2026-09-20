@@ -3426,7 +3426,7 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
         "[ParquetFileReader]: Predicate pushdown: reading 1 / 1 row groups" in capture
     )
     assert (
-        "[ParquetFileReader]: Pre-filtered decode enabled (1 live [1 pass-1, 0 pass-2], 1 non-live)"
+        "[ParquetFileReader]: Pre-filtered decode enabled (1 live [1 column predicates, 0 rest], 1 non-live)"
         in capture
     )
 

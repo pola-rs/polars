@@ -28,7 +28,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
 use crate::scan_predicate::skip_files_mask::SkipFilesMask;
-use crate::scan_predicate::{PhysicalColumnPredicates, ScanPredicate, StagedScanPredicate};
+use crate::scan_predicate::{PhysicalColumnPredicate, ScanPredicate, StagedScanPredicate};
 
 pub fn create_scan_predicate(
     predicate: &ExprIR,
@@ -180,48 +180,15 @@ pub fn create_scan_predicate(
         }
     }
 
-    let (column_predicates, staged) = if create_column_predicates {
-        let column_predicates =
-            create_column_predicates_for(predicate.node(), expr_arena, schema, state)?;
-        let staged = split_staged_predicate(predicate.node(), expr_arena, &live_columns)
-            .map(|split| {
-                if std::env::var("POLARS_OUTPUT_COLUMN_PREDS").as_deref() == Ok("1") {
-                    eprintln!(
-                        "staged_predicate: {} | {}",
-                        ExprIRDisplay::display_node(split.first, expr_arena),
-                        ExprIRDisplay::display_node(split.second, expr_arena)
-                    );
-                }
-                PolarsResult::Ok(StagedScanPredicate {
-                    first: create_physical_expr(
-                        &ExprIR::from_node(split.first, expr_arena),
-                        expr_arena,
-                        schema,
-                        state,
-                    )?,
-                    first_columns: Arc::new(split.first_columns),
-                    second: create_physical_expr(
-                        &ExprIR::from_node(split.second, expr_arena),
-                        expr_arena,
-                        schema,
-                        state,
-                    )?,
-                    column_predicates: create_column_predicates_for(
-                        split.first,
-                        expr_arena,
-                        schema,
-                        state,
-                    )?,
-                })
-            })
-            .transpose()?;
-        (column_predicates, staged)
+    let staged = if create_column_predicates && filters_rows {
+        Some(create_staged_predicate(
+            predicate.node(),
+            expr_arena,
+            schema,
+            state,
+        )?)
     } else {
-        let column_predicates = PhysicalColumnPredicates {
-            predicates: PlHashMap::default(),
-            is_sumwise_complete: false,
-        };
-        (column_predicates, None)
+        None
     };
 
     PolarsResult::Ok(ScanPredicate {
@@ -231,105 +198,73 @@ pub fn create_scan_predicate(
         live_columns,
         skip_batch_predicate,
         runtime_ranges,
-        column_predicates,
         hive_predicate,
         hive_predicate_is_full_predicate,
     })
 }
 
-fn create_column_predicates_for(
+fn create_staged_predicate(
     predicate: Node,
     expr_arena: &mut Arena<AExpr>,
     schema: &Arc<Schema>,
     state: &mut ExpressionConversionState,
-) -> PolarsResult<PhysicalColumnPredicates> {
+) -> PolarsResult<StagedScanPredicate> {
     let column_predicates = aexpr_to_column_predicates(predicate, expr_arena, schema);
+    let rest = column_predicates.rest.into_iter().reduce(|left, right| {
+        expr_arena.add(AExpr::BinaryExpr {
+            left,
+            op: Operator::And,
+            right,
+        })
+    });
     if std::env::var("POLARS_OUTPUT_COLUMN_PREDS").as_deref() == Ok("1") {
         eprintln!("column_predicates: {{");
-        for (pred, spec) in column_predicates.predicates.values() {
+        for p in column_predicates.predicates.values() {
             eprintln!(
-                "  {} ({spec:?}),",
-                ExprIRDisplay::display_node(*pred, expr_arena)
+                "  {} ({:?}, filter_while_decoding: {}),",
+                ExprIRDisplay::display_node(p.predicate, expr_arena),
+                p.specialized,
+                p.filter_while_decoding
             );
         }
-        eprintln!(
-            "  is_sumwise_complete: {}",
-            column_predicates.is_sumwise_complete
-        );
         eprintln!("}}");
+        if let Some(rest) = rest {
+            eprintln!(
+                "rest_predicate: {}",
+                ExprIRDisplay::display_node(rest, expr_arena)
+            );
+        }
     }
-    Ok(PhysicalColumnPredicates {
-        predicates: column_predicates
+    Ok(StagedScanPredicate {
+        column_predicates: column_predicates
             .predicates
             .into_iter()
-            .map(|(n, (p, s))| {
+            .map(|(name, p)| {
                 PolarsResult::Ok((
-                    n,
-                    (
-                        create_physical_expr(
-                            &ExprIR::new(p, OutputName::Alias(PlSmallStr::EMPTY)),
+                    name,
+                    PhysicalColumnPredicate {
+                        predicate: create_physical_expr(
+                            &ExprIR::new(p.predicate, OutputName::Alias(PlSmallStr::EMPTY)),
                             expr_arena,
                             schema,
                             state,
                         )?,
-                        s,
-                    ),
+                        specialized: p.specialized,
+                        filter_while_decoding: p.filter_while_decoding,
+                    },
                 ))
             })
-            .collect::<PolarsResult<PlHashMap<_, _>>>()?,
-        is_sumwise_complete: column_predicates.is_sumwise_complete,
-    })
-}
-
-struct SplitPredicate {
-    first: Node,
-    first_columns: PlIndexSet<PlSmallStr>,
-    second: Node,
-}
-
-/// Splits a row predicate into the conjuncts that read a single column and the rest,
-/// when the first part leaves some live column unread.
-fn split_staged_predicate(
-    predicate: Node,
-    expr_arena: &mut Arena<AExpr>,
-    live_columns: &PlIndexSet<PlSmallStr>,
-) -> Option<SplitPredicate> {
-    let mut first = Vec::new();
-    let mut second = Vec::new();
-    let mut first_columns = PlIndexSet::default();
-
-    for minterm in MintermIter::new(predicate, expr_arena) {
-        let mut names = aexpr_to_leaf_names_iter(minterm, expr_arena);
-        let single = names.next().cloned().filter(|_| names.next().is_none());
-        match single {
-            Some(name) => {
-                first_columns.insert(name);
-                first.push(minterm);
-            },
-            None => second.push(minterm),
-        }
-    }
-
-    if first.is_empty() || second.is_empty() || first_columns.len() == live_columns.len() {
-        return None;
-    }
-
-    let conjoin = |nodes: Vec<Node>, expr_arena: &mut Arena<AExpr>| {
-        nodes
-            .into_iter()
-            .reduce(|left, right| {
-                expr_arena.add(AExpr::BinaryExpr {
-                    left,
-                    op: Operator::And,
-                    right,
-                })
+            .collect::<PolarsResult<_>>()?,
+        rest: rest
+            .map(|rest| {
+                create_physical_expr(
+                    &ExprIR::from_node(rest, expr_arena),
+                    expr_arena,
+                    schema,
+                    state,
+                )
             })
-            .unwrap()
-    };
-    Some(SplitPredicate {
-        first: conjoin(first, expr_arena),
-        first_columns,
-        second: conjoin(second, expr_arena),
+            .transpose()?,
     })
 }
 

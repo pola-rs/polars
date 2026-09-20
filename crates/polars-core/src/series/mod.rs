@@ -460,7 +460,7 @@ impl Series {
         let do_clone = match dtype {
             D::Unknown(UnknownKind::Any) => true,
             D::Unknown(UnknownKind::Int(_)) if slf.dtype().is_integer() => true,
-            D::Unknown(UnknownKind::Float) if slf.dtype().is_float() => true,
+            D::Unknown(UnknownKind::Float(_)) if slf.dtype().is_float() => true,
             D::Unknown(UnknownKind::Str)
                 if slf.dtype().is_string() | slf.dtype().is_categorical() =>
             {
@@ -477,7 +477,7 @@ impl Series {
         pub fn cast_dtype(dtype: &DataType) -> Option<DataType> {
             match dtype {
                 D::Unknown(UnknownKind::Int(v)) => Some(materialize_dyn_int(*v).dtype()),
-                D::Unknown(UnknownKind::Float) => Some(DataType::Float64),
+                D::Unknown(UnknownKind::Float(_)) => Some(DataType::Float64),
                 D::Unknown(UnknownKind::Str) => Some(DataType::String),
                 // Best leave as is.
                 D::List(inner) => cast_dtype(inner.as_ref()).map(Box::new).map(D::List),

@@ -1,6 +1,7 @@
 use polars_core::series::arithmetic::NumericListOp;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::matches_any_order;
+use polars_utils::total_ord::TotalOrdWrap;
 
 use super::*;
 
@@ -266,6 +267,25 @@ pub(super) fn coerced_binop_dtype(
     Ok(Some(st))
 }
 
+fn dyn_int_to_dyn_float(
+    is_literal: bool,
+    node: Node,
+    v: i128,
+    expr_arena: &mut Arena<AExpr>,
+) -> Node {
+    if is_literal {
+        expr_arena.add(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(
+            v as f64,
+        ))))
+    } else {
+        expr_arena.add(AExpr::Cast {
+            expr: node,
+            dtype: DataType::Unknown(UnknownKind::Float(TotalOrdWrap(f64::NAN))),
+            options: CastOptions::NonStrict,
+        })
+    }
+}
+
 pub(super) fn process_binary(
     expr_arena: &mut Arena<AExpr>,
     input_schema: &Schema,
@@ -284,7 +304,7 @@ pub(super) fn process_binary(
         (Unknown(UnknownKind::Any), Unknown(UnknownKind::Any)) => return Ok(None),
         (
             Unknown(UnknownKind::Any),
-            Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
+            Unknown(UnknownKind::Int(_) | UnknownKind::Float(_) | UnknownKind::Str),
         ) => {
             let right = unpack!(materialize(right));
             let right = expr_arena.add(right);
@@ -296,7 +316,7 @@ pub(super) fn process_binary(
             }));
         },
         (
-            Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
+            Unknown(UnknownKind::Int(_) | UnknownKind::Float(_) | UnknownKind::Str),
             Unknown(UnknownKind::Any),
         ) => {
             let left = unpack!(materialize(left));
@@ -308,24 +328,18 @@ pub(super) fn process_binary(
                 right: node_right,
             }));
         },
-        (Unknown(UnknownKind::Int(_)), Unknown(UnknownKind::Float)) => {
-            let left = expr_arena.add(AExpr::Cast {
-                expr: node_left,
-                dtype: Unknown(UnknownKind::Float),
-                options: CastOptions::NonStrict,
-            });
+        (Unknown(UnknownKind::Int(v)), Unknown(UnknownKind::Float(_))) => {
+            let is_literal = matches!(left, AExpr::Literal(LiteralValue::Dyn(_)));
+            let left = dyn_int_to_dyn_float(is_literal, node_left, *v, expr_arena);
             return Ok(Some(AExpr::BinaryExpr {
                 left,
                 op,
                 right: node_right,
             }));
         },
-        (Unknown(UnknownKind::Float), Unknown(UnknownKind::Int(_))) => {
-            let right = expr_arena.add(AExpr::Cast {
-                expr: node_right,
-                dtype: Unknown(UnknownKind::Float),
-                options: CastOptions::NonStrict,
-            });
+        (Unknown(UnknownKind::Float(_)), Unknown(UnknownKind::Int(v))) => {
+            let is_literal = matches!(right, AExpr::Literal(LiteralValue::Dyn(_)));
+            let right = dyn_int_to_dyn_float(is_literal, node_right, *v, expr_arena);
             return Ok(Some(AExpr::BinaryExpr {
                 left: node_left,
                 op,

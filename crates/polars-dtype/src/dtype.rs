@@ -28,6 +28,7 @@ use polars_utils::format_tuple;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::total_ord::TotalOrdWrap;
 #[cfg(any(feature = "serde-lazy", feature = "serde"))]
 use serde::{Deserialize, Serialize};
 
@@ -94,7 +95,9 @@ impl IntoMetadata for Metadata {
 pub enum UnknownKind {
     // Hold the value to determine the concrete size.
     Int(i128),
-    Float,
+    // Hold the value to determine the decimal scale. NaN means the value is
+    // not known.
+    Float(TotalOrdWrap<f64>),
     // Can be Categorical or String
     Str,
     #[default]
@@ -105,7 +108,7 @@ impl UnknownKind {
     pub fn materialize(&self) -> Option<DataType> {
         let dtype = match self {
             UnknownKind::Int(v) => dyn_int_dtype(*v),
-            UnknownKind::Float => DataType::Float64,
+            UnknownKind::Float(_) => DataType::Float64,
             UnknownKind::Str => DataType::String,
             UnknownKind::Any => return None,
         };
@@ -217,6 +220,7 @@ impl PartialEq for DataType {
                 },
                 (Unknown(l), Unknown(r)) => match (l, r) {
                     (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
+                    (UnknownKind::Float(_), UnknownKind::Float(_)) => true,
                     _ => l == r,
                 },
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
@@ -624,7 +628,7 @@ impl DataType {
             // An unknown type is stored the way it is materialized, which is what a `Series` of
             // one is read back as; there is no array of a type that is unknown outright.
             Unknown(kind) => match kind {
-                UnknownKind::Float => primitive!(Float64),
+                UnknownKind::Float(_) => primitive!(Float64),
                 UnknownKind::Str => PlArrayType::Utf8View,
                 UnknownKind::Int(value) => dyn_int_dtype(*value).to_pl_array_type(),
                 UnknownKind::Any => {
@@ -1040,7 +1044,7 @@ impl DataType {
             DataType::Float16
                 | DataType::Float32
                 | DataType::Float64
-                | DataType::Unknown(UnknownKind::Float)
+                | DataType::Unknown(UnknownKind::Float(_))
         )
     }
 
@@ -1442,7 +1446,7 @@ impl DataType {
             Unknown(kind) => {
                 let dt = match kind {
                     UnknownKind::Any => ArrowDataType::Unknown,
-                    UnknownKind::Float => ArrowDataType::Float64,
+                    UnknownKind::Float(_) => ArrowDataType::Float64,
                     UnknownKind::Str => ArrowDataType::Utf8View,
                     UnknownKind::Int(v) => {
                         return dyn_int_dtype(*v).try_to_arrow(compat_level);
@@ -1658,7 +1662,7 @@ impl Display for DataType {
             DataType::Unknown(kind) => match kind {
                 UnknownKind::Any => "unknown",
                 UnknownKind::Int(_) => "dyn int",
-                UnknownKind::Float => "dyn float",
+                UnknownKind::Float(_) => "dyn float",
                 UnknownKind::Str => "dyn str",
             },
         };

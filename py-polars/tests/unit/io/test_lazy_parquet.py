@@ -1124,7 +1124,7 @@ def test_scan_parquet_prefilter_with_cast(
         capture = capfd.readouterr().err
 
     assert (
-        "[ParquetFileReader]: Pre-filtered decode enabled (1 live [1 pass-1, 0 pass-2], 1 non-live)"
+        "[ParquetFileReader]: Pre-filtered decode enabled (1 live [1 column predicates, 0 rest], 1 non-live)"
         in capture
     )
     assert (

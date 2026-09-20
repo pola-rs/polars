@@ -600,14 +600,6 @@ async fn start_reader_impl(
                                 .cloned()
                                 .unwrap_or_else(|| Scalar::null(dtype.clone())),
                         ));
-
-                        // The column predicates of the full predicate and of the first
-                        // stage each lose this column.
-                        Arc::make_mut(&mut predicate.column_predicates).is_sumwise_complete = false;
-                        if let Some(staged) = &mut predicate.staged {
-                            Arc::make_mut(&mut staged.column_predicates).is_sumwise_complete =
-                                false;
-                        }
                     }
                 },
                 MissingColumnsPolicy::Raise => return Err(missing_column_err(missing_col_name)),
