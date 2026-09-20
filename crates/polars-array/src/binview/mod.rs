@@ -269,7 +269,7 @@ impl PlBinaryViewArray {
         if self.views_are_scalar() {
             None
         } else {
-            self.total_bytes_len.store(UNKNOWN_BYTES_LEN);
+            self.forget_total_bytes_len();
             Some(&mut self.views)
         }
     }
@@ -300,7 +300,7 @@ impl PlBinaryViewArray {
     /// Every view of this array must still read bytes the buffers hold once they are written.
     #[inline]
     pub unsafe fn data_buffers_mut(&mut self) -> &mut Buffer<Buffer<u8>> {
-        self.total_bytes_len.store(UNKNOWN_BYTES_LEN);
+        self.forget_total_bytes_len();
         &mut self.buffers
     }
 
@@ -414,6 +414,12 @@ impl PlBinaryViewArray {
         total
     }
 
+    /// Drops what [`Self::total_bytes_len`] last answered, which the mask has a say in.
+    #[inline]
+    fn forget_total_bytes_len(&self) {
+        self.total_bytes_len.store(UNKNOWN_BYTES_LEN);
+    }
+
     /// Walks the views to count the bytes the valid elements hold.
     fn compute_total_bytes_len(&self) -> usize {
         if self.views_are_scalar() {
@@ -477,7 +483,7 @@ impl PlBinaryViewArray {
         }
 
         self.length = length;
-        self.total_bytes_len.store(UNKNOWN_BYTES_LEN);
+        self.forget_total_bytes_len();
     }
 
     /// Creates a [`PlBinaryViewArray`] of `length` copies of the element at `index`.
@@ -591,7 +597,11 @@ impl PlBinaryViewArray {
     }
 }
 
-crate::impl_array_methods!(PlBinaryViewArray, &[u8]);
+crate::impl_array_methods!(
+    PlBinaryViewArray,
+    &[u8];
+    on_validity_change = Self::forget_total_bytes_len
+);
 
 /// The bytes `length` copies of the element `view` reads lay end to end.
 fn scalar_bytes_len(view: View, length: usize) -> u64 {
@@ -708,3 +718,25 @@ impl Eq for PlBinaryViewArray {}
 crate::impl_element_debug!(PlBinaryViewArray, "PlBinaryViewArray");
 
 crate::impl_pl_array!(PlBinaryViewArray, PlArrayType::BinaryView);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A mask decides which views [`PlBinaryViewArray::total_bytes_len`] counts, so replacing one
+    /// has to drop what it last answered -- whichever representation the views are in.
+    #[test]
+    fn total_bytes_len_follows_the_mask() {
+        let mut scalar = PlBinaryViewArray::new_scalar(b"hello", 4);
+        assert_eq!(scalar.total_bytes_len(), 20);
+        scalar.set_validity(Some(PlBitmap::from_iter([true, false, false, false])));
+        assert_eq!(scalar.total_bytes_len(), 5);
+
+        let values = [b"hello".as_slice(), b"world".as_slice()];
+        let mut flat = PlBinaryViewArray::from_values_iter(values);
+        assert_eq!(flat.total_bytes_len(), 10);
+        flat.set_validity(Some(PlBitmap::from_iter([true, false])));
+        assert_eq!(flat.total_bytes_len(), 5);
+        assert_eq!(flat.without_validity().total_bytes_len(), 10);
+    }
+}

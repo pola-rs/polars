@@ -1,9 +1,12 @@
 //! Macros over the array types of this crate.
 
 /// Implements the inherent methods every array of this crate shares.
+///
+/// An array that caches something the validity mask decides names the method that drops that cache
+/// as `on_validity_change`, and the generated setters call it.
 macro_rules! impl_array_methods {
-    ([$($generics:tt)*] $array:ty, $value:ty $(,)?) => {
-        $crate::impl_array_methods!([$($generics)*] $array);
+    ([$($generics:tt)*] $array:ty, $value:ty $(; on_validity_change = $hook:path)? $(,)?) => {
+        $crate::impl_array_methods!([$($generics)*] $array $(; on_validity_change = $hook)?);
 
         impl<$($generics)*> $array {
             /// Returns the element at `i`, or `None` if it is null.
@@ -25,7 +28,7 @@ macro_rules! impl_array_methods {
             }
         }
     };
-    ([$($generics:tt)*] $array:ty $(,)?) => {
+    ([$($generics:tt)*] $array:ty $(; on_validity_change = $hook:path)? $(,)?) => {
         impl<$($generics)*> $array {
             /// The number of elements in this array.
             #[inline(always)]
@@ -98,12 +101,14 @@ macro_rules! impl_array_methods {
             pub fn set_validity(&mut self, validity: Option<$crate::PlBitmap>) {
                 let length = self.len();
                 self.validity = $crate::broadcast::validity_covering(validity, length);
+                $( $hook(self); )?
             }
 
             /// Drops the validity mask, making every element valid.
             #[must_use]
             pub fn without_validity(mut self) -> Self {
                 self.validity = None;
+                $( $hook(&self); )?
                 self
             }
 
@@ -146,8 +151,8 @@ macro_rules! impl_array_methods {
             }
         }
     };
-    ($array:ty $(, $value:ty)? $(,)?) => {
-        $crate::impl_array_methods!([] $array $(, $value)?);
+    ($array:ty $(, $value:ty)? $(; on_validity_change = $hook:path)? $(,)?) => {
+        $crate::impl_array_methods!([] $array $(, $value)? $(; on_validity_change = $hook)?);
     };
 }
 pub(crate) use impl_array_methods;
