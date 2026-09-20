@@ -542,12 +542,19 @@ pub fn f64_to_dec128(x: f64, p: usize, s: usize) -> Option<i128> {
     unsafe { Some((x * POW10_F64[s]).round_ties_even().to_int_unchecked()) }
 }
 
-/// Number of fractional digits needed to represent `x` exactly.
+/// Number of fractional digits needed to represent `x` exactly. Returns None
+/// if `x` has more significant digits than a f64 can carry exactly, as its
+/// decimal digits are then not known.
 pub fn f64_dec128_scale(x: f64) -> Option<usize> {
     if !x.is_finite() {
         return None;
     }
-    Some(format!("{x}").split_once('.').map_or(0, |(_, f)| f.len()))
+    let repr = format!("{x}");
+    let digits = repr.trim_start_matches(['-', '0', '.']);
+    if digits.bytes().filter(u8::is_ascii_digit).count() > f64::DIGITS as usize {
+        return None;
+    }
+    Some(repr.split_once('.').map_or(0, |(_, f)| f.len()))
 }
 
 /// Converts a f64 to a Decimal128 using its shortest decimal representation,

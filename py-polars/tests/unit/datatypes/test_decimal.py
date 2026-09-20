@@ -733,15 +733,28 @@ def test_decimal_dynamic_literal_arithmetic_folding() -> None:
 
 
 def test_decimal_dynamic_float_literal_exact_digits() -> None:
+    lf = pl.LazyFrame({"d": [D("1.23456789012345")]}, schema={"d": pl.Decimal(38, 14)})
+    q = lf.select(
+        eq=pl.col("d") == 1.23456789012345, sub=pl.col("d") - 1.23456789012345
+    )
+    expected = pl.DataFrame(
+        {"eq": [True], "sub": [D("0")]},
+        schema={"eq": pl.Boolean, "sub": pl.Decimal(38, 14)},
+    )
+    assert_frame_equal(q.collect(), expected)
+
+    # More significant digits than a f64 carries exactly: the literal stays a
+    # float and the decimal falls back to float.
     lf = pl.LazyFrame(
         {"d": [D("1.2345678901234567")]}, schema={"d": pl.Decimal(38, 16)}
     )
     q = lf.select(
-        eq=pl.col("d") == 1.2345678901234567, sub=pl.col("d") - 1.2345678901234567
+        eq=pl.col("d") == 1.2345678901234567,
+        sub=pl.col("d") - 1.2345678901234567,
+        noise=pl.col("d") + (pl.lit(1) - pl.lit(0.9999)),
     )
     expected = pl.DataFrame(
-        {"eq": [True], "sub": [D("0")]},
-        schema={"eq": pl.Boolean, "sub": pl.Decimal(38, 16)},
+        {"eq": [True], "sub": [0.0], "noise": [1.2345678901234567 + (1 - 0.9999)]}
     )
     assert_frame_equal(q.collect(), expected)
 
