@@ -278,7 +278,11 @@ def test_decimal_arithmetic_literal() -> None:
             "f": [D("20.35"), D("10.44"), D("39.46")],
             "d": ["137.3674333333333333333333333", "783", "0"],
         },
-        schema={"i": pl.Decimal(38, 10), "f": pl.Decimal(38, 10), "d": pl.Decimal(38, 10)},
+        schema={
+            "i": pl.Decimal(38, 10),
+            "f": pl.Decimal(38, 10),
+            "d": pl.Decimal(38, 10),
+        },
     )
     assert_frame_equal(out, expected)
 
@@ -595,7 +599,7 @@ def dyn_lit_lf() -> pl.LazyFrame:
         (pl.col("d") <= 1.55, [True, True, False, None], pl.Boolean),
         (pl.col("d") == 1.55, [False, True, False, None], pl.Boolean),
         (pl.col("d") != 1.55, [True, False, True, None], pl.Boolean),
-        (1.55 < pl.col("d"), [False, False, True, None], pl.Boolean),
+        (pl.lit(1.55) < pl.col("d"), [False, False, True, None], pl.Boolean),
         (pl.col("d") > 1, [True, True, True, None], pl.Boolean),
         (
             pl.col("d").is_between(1.55, 1.56),
@@ -658,8 +662,6 @@ def test_decimal_dynamic_float_literal_widens_scale(
         mul=pl.col("d") * 1.555,
         small=pl.col("d") + 1e-7,
     )
-    # A float literal with more digits than the column scale casts the column
-    # to a wider scale, never to a float.
     assert "Float64" not in q.explain()
     expected = pl.DataFrame(
         {

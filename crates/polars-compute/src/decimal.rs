@@ -542,6 +542,21 @@ pub fn f64_to_dec128(x: f64, p: usize, s: usize) -> Option<i128> {
     unsafe { Some((x * POW10_F64[s]).round_ties_even().to_int_unchecked()) }
 }
 
+/// Number of fractional digits needed to represent `x` exactly.
+pub fn f64_dec128_scale(x: f64) -> Option<usize> {
+    if !x.is_finite() {
+        return None;
+    }
+    Some(format!("{x}").split_once('.').map_or(0, |(_, f)| f.len()))
+}
+
+/// Whether `x` can be represented as a Decimal128 with the given precision and scale.
+pub fn f64_fits_dec128(x: f64, p: usize, s: usize) -> bool {
+    s <= p
+        && x.abs() < POW10_F64[p - s]
+        && f64_to_dec128(x, p, s).is_some_and(|r| dec128_fits(r, p))
+}
+
 /// Converts between two Decimal128s, with a new precision and scale, returning
 /// None if the value doesn't fit.
 #[inline]

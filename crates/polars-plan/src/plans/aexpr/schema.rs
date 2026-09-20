@@ -197,7 +197,7 @@ impl AExpr {
                             Boolean => Some(IDX_DTYPE),
                             UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
                             #[cfg(feature = "dtype-decimal")]
-                            Decimal(_, scale) => Some(Decimal(DEC128_MAX_PREC, *scale)),
+                            dt @ Decimal(_, _) => Some(widen_decimal(dt.clone())),
                             _ => None,
                         };
                         if let Some(dt) = dt {
@@ -654,10 +654,6 @@ fn get_arithmetic_field(
                         other_dtype.leaf_dtype(),
                     )?)
                 },
-                #[cfg(feature = "dtype-decimal")]
-                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
-                    Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
-                },
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
@@ -715,10 +711,6 @@ fn get_arithmetic_field(
                         other_dtype.leaf_dtype(),
                     )?)
                 },
-                #[cfg(feature = "dtype-decimal")]
-                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
-                    Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
-                },
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
@@ -775,13 +767,6 @@ fn get_arithmetic_field(
                         polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                     },
                 },
-                #[cfg(feature = "dtype-decimal")]
-                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
-                    let dtype = Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right));
-                    left_field.set_dtype(dtype);
-                    return Ok(left_field);
-                },
-
                 (l @ List(a), r @ List(b))
                     if ![a, b]
                         .into_iter()
@@ -940,11 +925,9 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             InvalidOperation: "division with 'String' datatypes is not allowed"
         ),
         #[cfg(feature = "dtype-decimal")]
-        (Decimal(_, scale_left), Decimal(_, scale_right)) => {
-            Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
-        },
-        #[cfg(feature = "dtype-decimal")]
-        (Decimal(_, _), dtype) | (dtype, Decimal(_, _)) if dtype.is_primitive_numeric() => {
+        (Decimal(_, _), dtype) | (dtype, Decimal(_, _))
+            if dtype.is_decimal() || dtype.is_primitive_numeric() =>
+        {
             widen_decimal(try_get_supertype(left_dtype, right_dtype)?)
         },
         #[cfg(all(feature = "dtype-u8", feature = "dtype-f16"))]

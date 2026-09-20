@@ -1,9 +1,7 @@
 use bitflags::bitflags;
 use num_traits::Signed;
 #[cfg(feature = "dtype-decimal")]
-use polars_compute::decimal::{
-    DEC128_MAX_PREC, POW10_F64, dec128_fits, f64_to_dec128, i128_to_dec128,
-};
+use polars_compute::decimal::{DEC128_MAX_PREC, f64_dec128_scale, f64_fits_dec128, i128_to_dec128};
 
 use super::*;
 
@@ -642,34 +640,15 @@ fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType
     }
 }
 
-#[cfg(feature = "dtype-decimal")]
-/// Number of fractional digits needed to represent `v` exactly, based on its
-/// shortest round-trip representation.
-fn dyn_float_scale(v: f64) -> Option<usize> {
-    if !v.is_finite() {
-        return None;
-    }
-    let repr = format!("{v:e}");
-    let (mantissa, exp) = repr.split_once('e')?;
-    let exp: i64 = exp.parse().ok()?;
-    let frac_digits = mantissa.split_once('.').map_or(0, |(_, f)| f.len()) as i64;
-    Some((frac_digits - exp).max(0) as usize)
-}
-
 /// Supertype of a decimal and a dynamic float literal. Keeps the decimal and
 /// widens the scale as needed, or returns `None` if the literal cannot be
 /// represented as a decimal.
 #[cfg(feature = "dtype-decimal")]
 fn dyn_float_decimal_supertype(v: f64, prec: usize, scale: usize) -> Option<DataType> {
-    let scale = scale.max(dyn_float_scale(v)?);
-    let fits = |p: usize| {
-        scale <= p
-            && v.abs() < POW10_F64[p - scale]
-            && f64_to_dec128(v, p, scale).is_some_and(|x| dec128_fits(x, p))
-    };
-    if fits(prec) {
+    let scale = scale.max(f64_dec128_scale(v)?);
+    if f64_fits_dec128(v, prec, scale) {
         Some(DataType::Decimal(prec, scale))
-    } else if fits(DEC128_MAX_PREC) {
+    } else if f64_fits_dec128(v, DEC128_MAX_PREC, scale) {
         Some(DataType::Decimal(DEC128_MAX_PREC, scale))
     } else {
         None
