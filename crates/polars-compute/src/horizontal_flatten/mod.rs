@@ -1,9 +1,10 @@
 //! The kernel behind `concat_arr`, which lays a row of arrays out end to end.
 
 use polars_array::builder::{ShareStrategy, StaticArrayBuilder, builder_like};
+use polars_array::collect::{ArrayCollectIterExt, ArrayFromIter};
 use polars_array::{
     PlArray, PlArrayBuilder, PlArrayType, PlBinaryArrayBuilder, PlBinaryViewArrayBuilder,
-    PlBooleanArrayBuilder, PlPrimitiveArrayBuilder, PlUtf8ViewArrayBuilder,
+    PlBooleanArray, PlPrimitiveArray, PlUtf8ViewArrayBuilder, StaticArray,
     with_match_pl_primitive_array_type,
 };
 
@@ -66,18 +67,20 @@ pub fn horizontal_flatten(
     match arrays[0].array_type() {
         PlArrayType::Primitive(_) => {
             return with_match_pl_primitive_array_type!(&*arrays[0], |$T| {
-                flatten_typed(
-                    PlPrimitiveArrayBuilder::<$T>::new(),
+                Box::new(flatten_elementwise::<PlPrimitiveArray<$T>>(
                     arrays,
                     widths,
                     &repeats,
-                    output_height,
                     out_len,
-                )
+                )) as Box<dyn PlArray>
             })
             .expect("a primitive array has a primitive element type");
         },
-        PlArrayType::Boolean => typed!(PlBooleanArrayBuilder::new()),
+        PlArrayType::Boolean => {
+            return Box::new(flatten_elementwise::<PlBooleanArray>(
+                arrays, widths, &repeats, out_len,
+            ));
+        },
         PlArrayType::BinaryView => typed!(PlBinaryViewArrayBuilder::new()),
         PlArrayType::Utf8View => typed!(PlUtf8ViewArrayBuilder::new()),
         PlArrayType::Binary => typed!(PlBinaryArrayBuilder::new()),
@@ -95,6 +98,61 @@ pub fn horizontal_flatten(
     }
 
     builder.freeze()
+}
+
+/// Lays the rows out one value at a time, collecting them into the array they belong to.
+///
+/// A row takes `widths[i]` values from each array, which is a handful — so entering a builder for
+/// each run costs more than the run copies, wherever a value is a plain copy rather than a slice
+/// of a shared buffer.  Walking the output instead keeps the whole lay-out to one trusted collect.
+fn flatten_elementwise<A>(
+    arrays: &[Box<dyn PlArray>],
+    widths: &[usize],
+    repeats: &[bool],
+    out_len: usize,
+) -> A
+where
+    A: StaticArray + for<'a> ArrayFromIter<Option<<A as StaticArray>::ValueT<'a>>>,
+{
+    let typed: Vec<&A> = arrays
+        .iter()
+        .map(|array| {
+            array
+                .as_any()
+                .downcast_ref::<A>()
+                .expect("the arrays all hold the array type dispatched on")
+        })
+        .collect();
+
+    // Where in the output the walk is: which array the next value comes from, how many of its
+    // values this row has taken already, and which row that is.
+    let mut array = 0;
+    let mut taken = 0;
+    let mut row = 0;
+
+    (0..out_len)
+        .map(|_| {
+            // An array may be zero values wide, in which case the row takes nothing from it and
+            // the walk moves straight on to the next.
+            while taken == widths[array] {
+                taken = 0;
+                array += 1;
+                if array == widths.len() {
+                    array = 0;
+                    row += 1;
+                }
+            }
+
+            // A broadcast array holds the one row it stands for, and is read at that row's offsets.
+            let start = if repeats[array] { 0 } else { row * widths[array] };
+            taken += 1;
+
+            // SAFETY: the array holds `widths[array]` values per row it covers, and the walk is
+            // inside the run this row takes from it — the assertions in `is_broadcast` above are
+            // what say the array covers every row.
+            unsafe { typed[array].get_unchecked(start + taken - 1) }
+        })
+        .collect_arr_trusted()
 }
 
 /// Lays the rows out through a builder whose array type is already known.
