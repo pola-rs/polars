@@ -42,6 +42,20 @@ where
     let values = values.flat_values().expect("the values are not repeated");
     debug_assert_eq!(values.len(), length * width);
 
+    sum_each_run::<T, S>(values, width, validity)
+}
+
+/// The sum of each run of `width` values, one per run, as a chunk of its own.
+///
+/// This is the walk the fast paths above are there to skip, and it is kept out of line so that the
+/// checks that skip it do not share a frame with it: the sum of one run is a handful of
+/// instructions, and the whole walk is those instructions once per element.
+#[inline(never)]
+fn sum_each_run<T, S>(values: &[T], width: usize, validity: Option<PlBitmap>) -> PlArrayRef
+where
+    T: NativeType + ToPrimitive,
+    S: NativeType + NumCast + std::iter::Sum,
+{
     let summed: Vec<_> = (0..values.len())
         .step_by(width)
         .map(|start| {
