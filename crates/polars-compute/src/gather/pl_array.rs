@@ -3,7 +3,7 @@
 use polars_array::arrow::bridge::{chunk_to_arrow, with_arrow_chunk};
 use polars_array::bitmap::combine_validities_and;
 use polars_array::builder::new_full_null_like;
-use polars_array::{PlArray, PlBitmap, PlBitmapRef, PlPrimitiveArray};
+use polars_array::{PlArray, PlBitmap, PlBitmapRef, PlPrimitiveArray, PlStructArray};
 use polars_utils::IdxSize;
 
 use super::bitmap::{take_bitmap_nulls_unchecked, take_bitmap_unchecked};
@@ -52,10 +52,41 @@ pub unsafe fn take_unchecked(
         };
     }
 
+    // A struct keeps a representation per field, and a null row of one is often a null in every
+    // field rather than a bit of its own -- which leaves the array above answering `false` while
+    // each field alone would gather off its one value. Gather them one at a time, so a field
+    // reaches the fast paths above in its own right.
+    if let Some(array) = values.as_any().downcast_ref::<PlStructArray>() {
+        return Box::new(unsafe { take_struct_unchecked(array, indices) });
+    }
+
     let indices = chunk_to_arrow(indices);
     with_arrow_chunk(values, |values| unsafe {
         take_arrow_unchecked(values, &indices)
     })
+}
+
+/// Returns the rows of `array` at `indices`, gathering each field and the mask over them apart.
+///
+/// # Safety
+/// Every non-null index must be in bounds of `array`.
+unsafe fn take_struct_unchecked(
+    array: &PlStructArray,
+    indices: &PlPrimitiveArray<IdxSize>,
+) -> PlStructArray {
+    let fields = array
+        .fields()
+        .iter()
+        // SAFETY: a field holds one element per row, so the caller's indices are in bounds of it.
+        .map(|field| unsafe { take_unchecked(field.as_ref(), indices) })
+        .collect();
+
+    // SAFETY: the caller's indices are in bounds of the mask, which covers every row.
+    let validity = unsafe { gather_validity(array.validity(), indices) };
+
+    // SAFETY: every field was gathered by the same indices and so holds `indices.len()` elements,
+    // and the mask covers exactly that many.
+    unsafe { PlStructArray::new_unchecked(fields, indices.len(), validity) }
 }
 
 /// The validity of a gather from a chunk whose values are scalar: the mask alone is gathered.
