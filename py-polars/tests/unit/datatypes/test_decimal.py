@@ -275,10 +275,14 @@ def test_decimal_arithmetic_literal() -> None:
     expected = pl.DataFrame(
         {
             "i": [D("1"), D("101"), D("1000.1")],
-            "f": [20.35, 10.44, 39.46],
+            "f": [D("20.35"), D("10.44"), D("39.46")],
             "d": ["137.3674333333333333333333333", "783", "0"],
         },
-        schema={"i": pl.Decimal(38, 10), "f": pl.Float64, "d": pl.Decimal(38, 10)},
+        schema={
+            "i": pl.Decimal(38, 10),
+            "f": pl.Decimal(38, 10),
+            "d": pl.Decimal(38, 10),
+        },
     )
     assert_frame_equal(out, expected)
 
@@ -578,6 +582,214 @@ def test_decimal_dynamic_float_st() -> None:
     ).collect().to_dict(as_series=False) == {"a": [D("0.5")]}
 
 
+@pytest.fixture
+def dyn_lit_lf() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {"d": [D("1.54"), D("1.55"), D("1.56"), None]},
+        schema={"d": pl.Decimal(15, 2)},
+    )
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected", "expected_dtype"),
+    [
+        (pl.col("d") > 1.5, [True, True, True, None], pl.Boolean),
+        (pl.col("d") >= 1.55, [False, True, True, None], pl.Boolean),
+        (pl.col("d") < 1.55, [True, False, False, None], pl.Boolean),
+        (pl.col("d") <= 1.55, [True, True, False, None], pl.Boolean),
+        (pl.col("d") == 1.55, [False, True, False, None], pl.Boolean),
+        (pl.col("d") != 1.55, [True, False, True, None], pl.Boolean),
+        (pl.lit(1.55) < pl.col("d"), [False, False, True, None], pl.Boolean),
+        (
+            pl.col("d").is_between(1.55, 1.56),
+            [False, True, True, None],
+            pl.Boolean,
+        ),
+        (
+            pl.col("d") * 1.5,
+            [D("2.31"), D("2.32"), D("2.34"), None],
+            pl.Decimal(38, 2),
+        ),
+        (
+            pl.col("d") + 0.5,
+            [D("2.04"), D("2.05"), D("2.06"), None],
+            pl.Decimal(38, 2),
+        ),
+        (
+            pl.col("d") / 2.0,
+            [D("0.77"), D("0.78"), D("0.78"), None],
+            pl.Decimal(38, 2),
+        ),
+        (
+            pl.col("d").fill_null(1.5),
+            [D("1.54"), D("1.55"), D("1.56"), D("1.50")],
+            pl.Decimal(15, 2),
+        ),
+        (
+            pl.when(pl.col("d") > 1.55).then(9.5).otherwise(pl.col("d")),
+            [D("1.54"), D("1.55"), D("9.50"), None],
+            pl.Decimal(15, 2),
+        ),
+    ],
+)
+def test_decimal_dynamic_literal_no_column_cast(
+    dyn_lit_lf: pl.LazyFrame,
+    expr: pl.Expr,
+    expected: list[object],
+    expected_dtype: pl.DataType,
+) -> None:
+    q = dyn_lit_lf.select(expr.alias("out"))
+    assert "cast" not in q.explain()
+    assert_series_equal(
+        q.collect().get_column("out"),
+        pl.Series("out", expected, dtype=expected_dtype),
+    )
+
+
+def test_decimal_dynamic_float_literal_widens_scale(
+    dyn_lit_lf: pl.LazyFrame,
+) -> None:
+    q = dyn_lit_lf.select(
+        gt=pl.col("d") > 1.555,
+        ge=pl.col("d") >= 1.555,
+        eq=pl.col("d") == 1.555,
+        mul=pl.col("d") * 1.555,
+        small=pl.col("d") + 1e-7,
+    )
+    assert "Float64" not in q.explain()
+    expected = pl.DataFrame(
+        {
+            "gt": [False, False, True, None],
+            "ge": [False, False, True, None],
+            "eq": [False, False, False, None],
+            "mul": [D("2.395"), D("2.410"), D("2.426"), None],
+            "small": [D("1.5400001"), D("1.5500001"), D("1.5600001"), None],
+        },
+        schema={
+            "gt": pl.Boolean,
+            "ge": pl.Boolean,
+            "eq": pl.Boolean,
+            "mul": pl.Decimal(38, 3),
+            "small": pl.Decimal(38, 7),
+        },
+    )
+    assert_frame_equal(q.collect(), expected)
+
+
+def test_decimal_dynamic_float_literal_keeps_integer_digits() -> None:
+    lf = pl.LazyFrame({"d": [D("999")]}, schema={"d": pl.Decimal(3, 0)})
+    q = lf.select(add=pl.col("d") + 0.1, gt=pl.col("d") > 0.1)
+    expected = pl.DataFrame(
+        {"add": [D("999.1")], "gt": [True]},
+        schema={"add": pl.Decimal(38, 1), "gt": pl.Boolean},
+    )
+    assert_frame_equal(q.collect(), expected)
+
+
+def test_decimal_dynamic_literal_merged_values() -> None:
+    lf = pl.LazyFrame(
+        {"d": [D("1.00"), D("1.00")], "p": [True, False]},
+        schema={"d": pl.Decimal(15, 2), "p": pl.Boolean},
+    )
+    q = lf.select(out=pl.col("d") + pl.when("p").then(0.1).otherwise(0.001))
+    assert_series_equal(q.collect().get_column("out"), pl.Series("out", [1.1, 1.001]))
+
+    lf = pl.LazyFrame(
+        {"d": [D("1"), D("1")], "p": [True, False]},
+        schema={"d": pl.Decimal(3, 0), "p": pl.Boolean},
+    )
+    for big in [1000, -1000]:
+        q = lf.select(out=pl.col("d") + pl.when("p").then(1).otherwise(big))
+        assert_series_equal(
+            q.collect().get_column("out"),
+            pl.Series("out", [D("2"), D(str(1 + big))], pl.Decimal(38, 0)),
+        )
+
+
+@pytest.mark.parametrize(
+    ("lit_expr", "expected"),
+    [
+        (pl.lit(0.1) * pl.lit(0.001), D("1.0001")),
+        (pl.lit(0.1) * pl.lit(0.002) - 0.0001, D("1.0001")),
+        (pl.lit(1.5) % pl.lit(1.0), D("1.5")),
+        (pl.lit(1.5) // pl.lit(1.0), D("2")),
+        (-pl.lit(0.25), D("0.75")),
+        (pl.lit(2) * pl.lit(0.25), D("1.5")),
+    ],
+)
+def test_decimal_dynamic_literal_arithmetic_folding(
+    lit_expr: pl.Expr, expected: D
+) -> None:
+    lf = pl.LazyFrame({"d": [D("1.00")]}, schema={"d": pl.Decimal(15, 2)})
+    q = lf.select(out=pl.col("d") + lit_expr)
+    dtype = q.collect_schema()["out"]
+    assert dtype.is_decimal()
+    for optimizations in [pl.QueryOptFlags(), pl.QueryOptFlags.none()]:
+        assert_series_equal(
+            q.collect(optimizations=optimizations).get_column("out"),
+            pl.Series("out", [expected], dtype),
+        )
+
+
+def test_decimal_dynamic_literal_computed_values_not_trusted() -> None:
+    lf = pl.LazyFrame({"d": [D("1.00")]}, schema={"d": pl.Decimal(15, 2)})
+    q = lf.select(out=pl.col("d") + pl.lit(0.1).pow(3))
+    assert q.collect_schema()["out"] == pl.Float64
+    assert q.collect().get_column("out").to_list() == [1.001]
+
+    lf = pl.LazyFrame({"d": [D("0.1"), None]}, schema={"d": pl.Decimal(38, 28)})
+    q = lf.select(
+        abs=pl.col("d") == pl.lit(0.1).abs(),
+        mul=pl.col("d") == pl.lit(0.1) * 1.0,
+        fill=pl.col("d").fill_null(pl.lit(0.1) * 1.0),
+        tern=pl.when(pl.col("d").is_null()).then(pl.lit(0.1) * 1.0).otherwise("d"),
+        coalesce=pl.coalesce("d", pl.lit(0.1) * 1.0),
+    )
+    for optimizations in [pl.QueryOptFlags(), pl.QueryOptFlags.none()]:
+        out = q.collect(optimizations=optimizations)
+        assert out.row(0) == (True, True, D("0.1"), D("0.1"), D("0.1"))
+        assert out.row(1) == (None, None, D("0.1"), D("0.1"), D("0.1"))
+
+
+def test_decimal_dynamic_float_literal_exact_digits() -> None:
+    lf = pl.LazyFrame({"d": [D("1.23456789012345")]}, schema={"d": pl.Decimal(38, 14)})
+    q = lf.select(
+        eq=pl.col("d") == 1.23456789012345, sub=pl.col("d") - 1.23456789012345
+    )
+    expected = pl.DataFrame(
+        {"eq": [True], "sub": [D("0")]},
+        schema={"eq": pl.Boolean, "sub": pl.Decimal(38, 14)},
+    )
+    assert_frame_equal(q.collect(), expected)
+
+    # more significant digits than a f64 carries exactly
+    lf = pl.LazyFrame(
+        {"d": [D("1.2345678901234567")]}, schema={"d": pl.Decimal(38, 16)}
+    )
+    q = lf.select(
+        eq=pl.col("d") == 1.2345678901234567,
+        sub=pl.col("d") - 1.2345678901234567,
+        noise=pl.col("d") + (pl.lit(1) - pl.lit(0.9999)),
+    )
+    expected = pl.DataFrame(
+        {"eq": [True], "sub": [0.0], "noise": [1.2345678901234567 + (1 - 0.9999)]}
+    )
+    assert_frame_equal(q.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    "lit",
+    [float("nan"), float("inf"), 1e40, 1e-40, pl.lit(1.5, dtype=pl.Float64)],
+)
+def test_decimal_float_literal_fallback_to_float(
+    dyn_lit_lf: pl.LazyFrame, lit: float | pl.Expr
+) -> None:
+    q = dyn_lit_lf.select(pl.col("d") * lit)
+    assert q.collect_schema()["d"] == pl.Float64
+    q = dyn_lit_lf.select(pl.col("d") > lit)
+    assert "cast(Float64)" in q.explain()
+
+
 def test_decimal_strict_scale_inference_17770() -> None:
     values = [D("0.1"), D("0.10"), D("1.0121")]
     s = pl.Series(values, strict=True)
@@ -652,15 +864,16 @@ def test_decimal_arithmetic_schema() -> None:
 
 def test_decimal_arithmetic_schema_float_20369() -> None:
     s = pl.Series("x", [1.0], dtype=pl.Decimal(15, 6))
-    assert_series_equal((s - 1.0), pl.Series("x", [0.0]))
-    assert_series_equal((3.0 - s), pl.Series("literal", [2.0]))
-    assert_series_equal((3.0 / s), pl.Series("literal", [3.0]))
-    assert_series_equal((s / 3.0), pl.Series("x", [0.333333]))
+    dt = pl.Decimal(38, 6)
+    assert_series_equal((s - 1.0), pl.Series("x", [D("0")], dt))
+    assert_series_equal((3.0 - s), pl.Series("literal", [D("2")], dt))
+    assert_series_equal((3.0 / s), pl.Series("literal", [D("3")], dt))
+    assert_series_equal((s / 3.0), pl.Series("x", [D("0.333333")], dt))
 
-    assert_series_equal((s + 1.0), pl.Series("x", [2.0]))
-    assert_series_equal((1.0 + s), pl.Series("literal", [2.0]))
-    assert_series_equal((s * 1.0), pl.Series("x", [1.0]))
-    assert_series_equal((1.0 * s), pl.Series("literal", [1.0]))
+    assert_series_equal((s + 1.0), pl.Series("x", [D("2")], dt))
+    assert_series_equal((1.0 + s), pl.Series("literal", [D("2")], dt))
+    assert_series_equal((s * 1.0), pl.Series("x", [D("1")], dt))
+    assert_series_equal((1.0 * s), pl.Series("literal", [D("1")], dt))
 
 
 def test_decimal_arithmetic_schema_int() -> None:

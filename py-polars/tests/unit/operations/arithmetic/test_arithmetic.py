@@ -1122,7 +1122,8 @@ def test_truediv_decimal_schema_28372() -> None:
         {"x": [1.0, 2.5, 3.5656]}, schema={"x": pl.Decimal(15, 2)}
     ).select(f=pl.col.x.sum() / 7.0, i=pl.col.x.sum() / 7)
     expected = pl.LazyFrame(
-        {"f": [1.01], "i": [1.01]}, schema_overrides={"i": pl.Decimal(38, 2)}
+        {"f": [1.01], "i": [1.01]},
+        schema_overrides={"f": pl.Decimal(38, 2), "i": pl.Decimal(38, 2)},
     )
     assert_schema_equal(lf.collect_schema(), expected.collect_schema())
     assert_frame_equal(lf, expected)
