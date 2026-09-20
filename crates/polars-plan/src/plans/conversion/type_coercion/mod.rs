@@ -730,7 +730,7 @@ impl OptimizationRule for TypeCoercionRule {
                     }
 
                     match super_type {
-                        DataType::Unknown(UnknownKind::Float) => super_type = DataType::Float64,
+                        DataType::Unknown(UnknownKind::Float(_)) => super_type = DataType::Float64,
                         DataType::Unknown(UnknownKind::Int(v)) => {
                             super_type = materialize_dyn_int(v).dtype()
                         },
@@ -1409,7 +1409,7 @@ fn try_inline_literal_cast(
             .try_materialize_to_dtype(dtype, options)?
             .into(),
         lv if lv.is_null() => match dtype {
-            DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
+            DataType::Unknown(UnknownKind::Float(_) | UnknownKind::Int(_) | UnknownKind::Str) => {
                 LiteralValue::untyped_null()
             },
             _ => return Ok(None),
@@ -1668,7 +1668,7 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
         // When casting unknown float to Float32 we can't tell if the value will
         // fit, so can't do anything. When casting to Float64 we can assume
         // it'll work since presumably it's no larger than a f64 in practice.
-        (DataType::Float64, DataType::Unknown(UnknownKind::Float)) => true,
+        (DataType::Float64, DataType::Unknown(UnknownKind::Float(_))) => true,
         // Handles both String and UnknownKind::Str:
         (DataType::String, from) => from.is_string(),
         (to, from) if to.is_primitive_numeric() && from.is_primitive_numeric() => {

@@ -10,7 +10,7 @@ use polars_core::prelude::*;
 use polars_core::series::ops::int_range::new_int_range;
 use polars_core::utils::materialize_dyn_int;
 use polars_utils::float16::pf16;
-use polars_utils::total_ord::{TotalEq, TotalHash};
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -351,7 +351,9 @@ impl LiteralValue {
         match self {
             Self::Dyn(d) => match d {
                 DynLiteralValue::Int(v) => DataType::Unknown(UnknownKind::Int(*v)),
-                DynLiteralValue::Float(_) => DataType::Unknown(UnknownKind::Float),
+                DynLiteralValue::Float(v) => {
+                    DataType::Unknown(UnknownKind::Float(TotalOrdWrap(*v)))
+                },
                 DynLiteralValue::Str(_) => DataType::Unknown(UnknownKind::Str),
                 DynLiteralValue::List(_) => todo!(),
             },

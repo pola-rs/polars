@@ -1,6 +1,7 @@
 use polars_core::series::arithmetic::NumericListOp;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::matches_any_order;
+use polars_utils::total_ord::TotalOrdWrap;
 
 use super::*;
 
@@ -284,7 +285,7 @@ pub(super) fn process_binary(
         (Unknown(UnknownKind::Any), Unknown(UnknownKind::Any)) => return Ok(None),
         (
             Unknown(UnknownKind::Any),
-            Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
+            Unknown(UnknownKind::Int(_) | UnknownKind::Float(_) | UnknownKind::Str),
         ) => {
             let right = unpack!(materialize(right));
             let right = expr_arena.add(right);
@@ -296,7 +297,7 @@ pub(super) fn process_binary(
             }));
         },
         (
-            Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
+            Unknown(UnknownKind::Int(_) | UnknownKind::Float(_) | UnknownKind::Str),
             Unknown(UnknownKind::Any),
         ) => {
             let left = unpack!(materialize(left));
@@ -308,10 +309,10 @@ pub(super) fn process_binary(
                 right: node_right,
             }));
         },
-        (Unknown(UnknownKind::Int(_)), Unknown(UnknownKind::Float)) => {
+        (Unknown(UnknownKind::Int(v)), Unknown(UnknownKind::Float(_))) => {
             let left = expr_arena.add(AExpr::Cast {
                 expr: node_left,
-                dtype: Unknown(UnknownKind::Float),
+                dtype: Unknown(UnknownKind::Float(TotalOrdWrap(*v as f64))),
                 options: CastOptions::NonStrict,
             });
             return Ok(Some(AExpr::BinaryExpr {
@@ -320,10 +321,10 @@ pub(super) fn process_binary(
                 right: node_right,
             }));
         },
-        (Unknown(UnknownKind::Float), Unknown(UnknownKind::Int(_))) => {
+        (Unknown(UnknownKind::Float(_)), Unknown(UnknownKind::Int(v))) => {
             let right = expr_arena.add(AExpr::Cast {
                 expr: node_right,
-                dtype: Unknown(UnknownKind::Float),
+                dtype: Unknown(UnknownKind::Float(TotalOrdWrap(*v as f64))),
                 options: CastOptions::NonStrict,
             });
             return Ok(Some(AExpr::BinaryExpr {

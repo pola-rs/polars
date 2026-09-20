@@ -835,8 +835,17 @@ fn get_arithmetic_field(
         },
     };
 
-    left_field.set_dtype(super_type);
+    left_field.set_dtype(widen_decimal(super_type));
     Ok(left_field)
+}
+
+/// Decimal arithmetic always outputs the maximum precision.
+fn widen_decimal(dtype: DataType) -> DataType {
+    match dtype {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, scale) => DataType::Decimal(DEC128_MAX_PREC, scale),
+        dt => dt,
+    }
 }
 
 fn get_truediv_field(left: Node, right: Node, ctx: &ToFieldContext) -> PolarsResult<Field> {
@@ -935,12 +944,8 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
         },
         #[cfg(feature = "dtype-decimal")]
-        (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_primitive_numeric() => {
-            if dtype.is_float() {
-                Float64
-            } else {
-                Decimal(DEC128_MAX_PREC, *scale)
-            }
+        (Decimal(_, _), dtype) | (dtype, Decimal(_, _)) if dtype.is_primitive_numeric() => {
+            widen_decimal(try_get_supertype(left_dtype, right_dtype)?)
         },
         #[cfg(all(feature = "dtype-u8", feature = "dtype-f16"))]
         (UInt8 | Int8, Float16) => Float16,

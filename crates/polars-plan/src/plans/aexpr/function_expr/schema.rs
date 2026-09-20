@@ -901,7 +901,7 @@ pub(crate) fn args_to_supertype<D: AsRef<DataType>>(dtypes: &[D]) -> PolarsResul
         _ => {
             if let DataType::Unknown(kind) = st {
                 match kind {
-                    UnknownKind::Float => st = DataType::Float64,
+                    UnknownKind::Float(_) => st = DataType::Float64,
                     UnknownKind::Int(v) => {
                         st = materialize_dyn_int(v).dtype();
                     },

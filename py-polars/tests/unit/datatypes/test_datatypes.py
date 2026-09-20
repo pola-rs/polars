@@ -265,7 +265,9 @@ def test_max_min(
 
 def test_unknown_resolve() -> None:
     q = pl.LazyFrame({"dec": [D("0.25")]})
-    assert "Float64" in q.select(pl.col("dec") * (1.0 * 1)).explain()
+    plan = q.select(pl.col("dec") * (1.0 * 1)).explain()
+    assert "1.00" in plan
+    assert "dyn" not in plan
     q = pl.LazyFrame({"x": 76}, schema={"x": pl.Int32}).select(
         pl.col.x * (pl.lit(100.0) * pl.lit(1))
     )

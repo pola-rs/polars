@@ -1,7 +1,9 @@
 use bitflags::bitflags;
 use num_traits::Signed;
 #[cfg(feature = "dtype-decimal")]
-use polars_compute::decimal::{DEC128_MAX_PREC, i128_to_dec128};
+use polars_compute::decimal::{
+    DEC128_MAX_PREC, POW10_F64, dec128_fits, f64_to_dec128, i128_to_dec128,
+};
 
 use super::*;
 
@@ -454,7 +456,7 @@ pub fn get_supertype_with_options(
                 Some(List(Box::new(st)))
             }
             #[cfg(feature = "dtype-struct")]
-            (Struct(inner), right @ Unknown(UnknownKind::Float | UnknownKind::Int(_))) => {
+            (Struct(inner), right @ Unknown(UnknownKind::Float(_) | UnknownKind::Int(_))) => {
                 match inner.first() {
                     Some(inner) => get_supertype(&inner.dtype, right),
                     None => None
@@ -480,7 +482,11 @@ pub fn get_supertype_with_options(
             #[cfg(all(feature = "dtype-decimal", feature = "dtype-f16"))]
             (Decimal(_, _), Float16) => Some(Float64),
             #[cfg(feature = "dtype-decimal")]
-            (Decimal(_, _), Float32 | Float64 | Unknown(UnknownKind::Float)) => Some(Float64),
+            (Decimal(prec, scale), Unknown(UnknownKind::Float(v))) => {
+                Some(dyn_float_decimal_supertype(v.0, *prec, *scale).unwrap_or(Float64))
+            },
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(_, _), Float32 | Float64) => Some(Float64),
             #[cfg(feature = "dtype-decimal")]
             (Decimal(prec, scale), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => {
                 let fits = |v| { i128_to_dec128(v, *prec, *scale).is_some() };
@@ -505,7 +511,7 @@ pub fn get_supertype_with_options(
             }
             (dt, Unknown(kind)) => {
                 match kind {
-                    UnknownKind::Float | UnknownKind::Int(_) if  dt.is_string() => {
+                    UnknownKind::Float(_) | UnknownKind::Int(_) if  dt.is_string() => {
                         if options.allow_primitive_to_string() {
                             Some(dt.clone())
                         } else {
@@ -513,12 +519,12 @@ pub fn get_supertype_with_options(
                         }
                     },
                     // Materialize float to float
-                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() => Some(dt.clone()),
-                    UnknownKind::Float if dt.is_integer() => {
+                    UnknownKind::Float(_) | UnknownKind::Int(_) if dt.is_float() => Some(dt.clone()),
+                    UnknownKind::Float(v) if dt.is_integer() => {
                         if dt.is_known() {
                             Some(Float64)
                         } else {
-                            Some(Unknown(UnknownKind::Float))
+                            Some(Unknown(UnknownKind::Float(*v)))
                         }
                     },
                     // Materialize str
@@ -558,9 +564,13 @@ pub fn get_supertype_with_options(
                         get_supertype(dt, &int_dtype)
                     },
                     #[cfg(feature = "dtype-decimal")]
-                    UnknownKind::Int(_) if dt.is_decimal() => {
-                        let DataType::Decimal(_prec, scale) = dt else { unreachable!() };
-                        Some(DataType::Decimal(DEC128_MAX_PREC, *scale))
+                    UnknownKind::Int(v) if dt.is_decimal() => {
+                        let DataType::Decimal(prec, scale) = dt else { unreachable!() };
+                        if i128_to_dec128(*v, *prec, *scale).is_some() {
+                            Some(dt.clone())
+                        } else {
+                            Some(DataType::Decimal(DEC128_MAX_PREC, *scale))
+                        }
                     }
                     _ => Some(Unknown(UnknownKind::Any))
                 }
@@ -629,6 +639,40 @@ fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType
             new_fields.push(Field::new(a.name.clone(), st))
         }
         Some(DataType::Struct(new_fields))
+    }
+}
+
+#[cfg(feature = "dtype-decimal")]
+/// Number of fractional digits needed to represent `v` exactly, based on its
+/// shortest round-trip representation.
+fn dyn_float_scale(v: f64) -> Option<usize> {
+    if !v.is_finite() {
+        return None;
+    }
+    let repr = format!("{v:e}");
+    let (mantissa, exp) = repr.split_once('e')?;
+    let exp: i64 = exp.parse().ok()?;
+    let frac_digits = mantissa.split_once('.').map_or(0, |(_, f)| f.len()) as i64;
+    Some((frac_digits - exp).max(0) as usize)
+}
+
+/// Supertype of a decimal and a dynamic float literal. Keeps the decimal and
+/// widens the scale as needed, or returns `None` if the literal cannot be
+/// represented as a decimal.
+#[cfg(feature = "dtype-decimal")]
+fn dyn_float_decimal_supertype(v: f64, prec: usize, scale: usize) -> Option<DataType> {
+    let scale = scale.max(dyn_float_scale(v)?);
+    let fits = |p: usize| {
+        scale <= p
+            && v.abs() < POW10_F64[p - scale]
+            && f64_to_dec128(v, p, scale).is_some_and(|x| dec128_fits(x, p))
+    };
+    if fits(prec) {
+        Some(DataType::Decimal(prec, scale))
+    } else if fits(DEC128_MAX_PREC) {
+        Some(DataType::Decimal(DEC128_MAX_PREC, scale))
+    } else {
+        None
     }
 }
 
