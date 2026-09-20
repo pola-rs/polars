@@ -56,8 +56,6 @@ pub(super) struct RowGroupDecoder {
     pub(super) predicate_field_indices: Arc<[usize]>,
     /// The conjuncts of the predicate that read one column.
     pub(super) predicate_columns: Arc<[PredicateColumn]>,
-    /// Whether one of `predicate_columns` reads the row index.
-    pub(super) predicate_reads_row_index: bool,
     /// The part of the predicate `predicate_columns` do not cover.
     pub(super) rest_predicate: Option<Arc<dyn PhysicalIoExpr>>,
     /// The predicate fields no predicate column reads. Sorted.
@@ -504,9 +502,10 @@ impl Pass {
 }
 
 /// The passes of the next row group from the rows each predicate column kept in the
-/// last one: the most selective first, each in a pass of its own while it rejects
-/// enough rows, the others together. The fields only the rest of the predicate reads
-/// get a pass of their own when the passes before them reject enough rows.
+/// last one: the most selective first, a column in a pass of its own while it rejects
+/// enough rows, otherwise together with the next. The fields only the rest of the
+/// predicate reads get a pass of their own when the passes before them reject enough
+/// rows.
 ///
 /// A column in a later pass is measured on the rows the passes before it kept. Over the
 /// whole row group it keeps between `after` and `after + num_rows - before` rows, so it
@@ -541,27 +540,32 @@ fn plan_passes(
         }
     }
 
+    // A column that keeps most rows shares its pass with the next one in the order.
     let mut out: Vec<Vec<usize>> = Vec::new();
-    let mut dense = Vec::new();
-    let mut last_kept = 100;
+    let mut pass = Vec::new();
     for c in order {
-        let p = percent(selectivity[c]);
-        if keeps_most_rows(p, 100) {
-            dense.push(c);
-        } else {
-            out.push(vec![c]);
-            last_kept = p;
+        pass.push(c);
+        if !keeps_most_rows(percent(selectivity[c]), 100) {
+            out.push(std::mem::take(&mut pass));
         }
     }
-    if !dense.is_empty() {
-        last_kept = match passes.iter().position(|p| *p == dense) {
-            Some(i) => percent(pass_selectivity[i]),
-            None => dense
-                .iter()
-                .fold(100, |acc, &c| acc * percent(selectivity[c]) / 100),
-        };
-        out.push(dense);
+    if !pass.is_empty() {
+        out.push(pass);
     }
+
+    let last_kept = match out.last() {
+        None => 100,
+        Some(last) => {
+            let same_columns =
+                |p: &Vec<usize>| p.len() == last.len() && last.iter().all(|c| p.contains(c));
+            match passes.iter().position(same_columns) {
+                Some(i) => percent(pass_selectivity[i]),
+                None => last
+                    .iter()
+                    .fold(100, |acc, &c| acc * percent(selectivity[c]) / 100),
+            }
+        },
+    };
     if has_rest_fields && (out.is_empty() || !keeps_most_rows(last_kept, 100)) {
         out.push(Vec::new());
     }
@@ -604,22 +608,24 @@ impl RowGroupDecoder {
 
         for (i, pass) in passes.iter().enumerate() {
             let is_last = i + 1 == passes.len();
-            let items: Vec<Item> =
-                (i == 0 && self.row_index.is_some() && !self.predicate_reads_row_index)
-                    .then_some(Item::Source(Source::RowIndex))
-                    .into_iter()
-                    .chain(pass.iter().map(|&c| Item::PredicateColumn(c)))
-                    .chain(
-                        is_last
-                            .then_some(
-                                self.rest_field_indices
-                                    .iter()
-                                    .map(|&f| Item::Source(Source::Field(f))),
-                            )
-                            .into_iter()
-                            .flatten(),
-                    )
-                    .collect();
+            let mut items = Vec::with_capacity(pass.len() + 1 + self.rest_field_indices.len());
+            if i == 0
+                && self.row_index.is_some()
+                && self
+                    .predicate_columns
+                    .iter()
+                    .all(|c| c.source != Source::RowIndex)
+            {
+                items.push(Item::Source(Source::RowIndex));
+            }
+            items.extend(pass.iter().map(|&c| Item::PredicateColumn(c)));
+            if is_last {
+                items.extend(
+                    self.rest_field_indices
+                        .iter()
+                        .map(|&f| Item::Source(Source::Field(f))),
+                );
+            }
             let decoded = self
                 .decode_items(
                     items,
@@ -979,6 +985,29 @@ mod tests {
                 true
             ),
             vec![vec![1], vec![0], vec![]]
+        );
+        // A dense column ahead of one that is not stays ahead and shares its pass, so
+        // both are measured on the same rows next.
+        assert_eq!(
+            plan_passes(
+                &[vec![0], vec![1], vec![]],
+                100,
+                &[(100, 86), (86, 73)],
+                &[(100, 86), (86, 73), (73, 73)],
+                true
+            ),
+            vec![vec![0, 1], vec![]]
+        );
+        // A pass is matched by its columns regardless of their order.
+        assert_eq!(
+            plan_passes(
+                &[vec![1, 0], vec![]],
+                100,
+                &[(100, 90), (100, 91)],
+                &[(100, 90), (90, 90)],
+                true
+            ),
+            vec![vec![0, 1]]
         );
         // A column with no rows to measure keeps every row and stays in place.
         assert_eq!(

@@ -441,9 +441,6 @@ impl ParquetReadImpl {
             predicate,
             use_prefiltered,
             predicate_field_indices,
-            predicate_reads_row_index: predicate_columns
-                .iter()
-                .any(|c| c.source == Source::RowIndex),
             predicate_columns,
             rest_predicate,
             rest_field_indices,
