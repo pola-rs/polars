@@ -7,11 +7,8 @@ use std::sync::Arc;
 
 pub use functions::{create_scan_predicate, initialize_scan_predicate};
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{
-    AnyValue, Column, Field, GroupPositions, PlBitmap, PlHashMap, PlIndexMap, PlIndexSet,
-};
-use polars_core::scalar::Scalar;
-use polars_core::schema::{Schema, SchemaRef};
+use polars_core::prelude::{PlBitmap, PlIndexMap, PlIndexSet};
+use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::prelude::{PhysicalExpr, phys_expr_to_io_expr};
 use polars_io::predicates::{
