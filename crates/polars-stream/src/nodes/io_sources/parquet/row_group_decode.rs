@@ -507,29 +507,46 @@ impl Pass {
 /// last one: the most selective first, each in a pass of its own while it rejects
 /// enough rows, the others together. The fields only the rest of the predicate reads
 /// get a pass of their own when the passes before them reject enough rows.
+///
+/// A column in a later pass is measured on the rows the passes before it kept. Over the
+/// whole row group it keeps between `after` and `after + num_rows - before` rows, so it
+/// moves before a column of an earlier pass only when that range lies below the rows
+/// that column kept. The rows a pass keeps as a whole come from `pass_selectivity`, as
+/// its columns may reject the same rows.
 fn plan_passes(
     passes: &[Vec<usize>],
+    num_rows: usize,
     selectivity: &[(usize, usize)],
+    pass_selectivity: &[(usize, usize)],
     has_rest_fields: bool,
 ) -> Vec<Vec<usize>> {
-    // A column with no rows to measure counts as keeping every row.
-    let kept_percent = |c: usize| match selectivity[c] {
-        (0, _) => 100,
-        (before, after) => after * 100 / before,
+    // No rows to measure counts as keeping every row.
+    let percent = |(before, after): (usize, usize)| match before {
+        0 => 100,
+        _ => after * 100 / before,
     };
-    let mut order: Vec<usize> = passes.iter().flatten().copied().collect();
-    order.sort_by_key(|&c| kept_percent(c));
+
+    let mut order: Vec<usize> = Vec::new();
+    for pass in passes {
+        let mut pass = pass.clone();
+        pass.sort_by_key(|&c| selectivity[c].1);
+        for c in pass {
+            let (before, after) = selectivity[c];
+            let upper = after + num_rows - before;
+            let mut i = order.len();
+            while i > 0 && upper < selectivity[order[i - 1]].1 {
+                i -= 1;
+            }
+            order.insert(i, c);
+        }
+    }
 
     let mut out: Vec<Vec<usize>> = Vec::new();
     let mut dense = Vec::new();
     let mut last_kept = 100;
     for c in order {
-        let p = kept_percent(c);
+        let p = percent(selectivity[c]);
         if keeps_most_rows(p, 100) {
-            if dense.is_empty() {
-                last_kept = 100;
-            }
-            last_kept = last_kept * p / 100;
             dense.push(c);
         } else {
             out.push(vec![c]);
@@ -537,6 +554,12 @@ fn plan_passes(
         }
     }
     if !dense.is_empty() {
+        last_kept = match passes.iter().position(|p| *p == dense) {
+            Some(i) => percent(pass_selectivity[i]),
+            None => dense
+                .iter()
+                .fold(100, |acc, &c| acc * percent(selectivity[c]) / 100),
+        };
         out.push(dense);
     }
     if has_rest_fields && (out.is_empty() || !keeps_most_rows(last_kept, 100)) {
@@ -575,8 +598,9 @@ impl RowGroupDecoder {
         // The rows kept so far. `None` while every row is.
         let mut mask: Option<Bitmap> = None;
         let mut kept = projection_height;
-        // The rows before and after each predicate column's conjunct.
+        // The rows before and after each predicate column's conjunct, and each pass.
         let mut selectivity = vec![(0, 0); self.predicate_columns.len()];
+        let mut pass_selectivity = Vec::with_capacity(passes.len());
 
         for (i, pass) in passes.iter().enumerate() {
             let is_last = i + 1 == passes.len();
@@ -624,6 +648,7 @@ impl RowGroupDecoder {
                 }
             }
 
+            let kept_before = kept;
             match pass_mask.filter(|m| m.unset_bits() > 0) {
                 None => live_columns.extend(filtered.into_iter().map(|d| (d.source, d.column))),
                 Some(pass_mask) => {
@@ -649,6 +674,7 @@ impl RowGroupDecoder {
                     });
                 },
             }
+            pass_selectivity.push((kept_before, kept));
         }
 
         if let Some(rest) = &self.rest_predicate {
@@ -682,7 +708,13 @@ impl RowGroupDecoder {
 
         drop(row_group_data);
 
-        let next_passes = plan_passes(&passes, &selectivity, !self.rest_field_indices.is_empty());
+        let next_passes = plan_passes(
+            &passes,
+            projection_height,
+            &selectivity,
+            &pass_selectivity,
+            !self.rest_field_indices.is_empty(),
+        );
         if next_passes != *passes {
             if polars_core::config::verbose() {
                 let names: Vec<Vec<&str>> = next_passes
@@ -876,29 +908,84 @@ mod tests {
         assert_eq!(
             plan_passes(
                 &[vec![0, 1, 2, 3]],
+                100,
                 &[(100, 90), (100, 20), (100, 50), (100, 99)],
+                &[(100, 10)],
                 true
             ),
             vec![vec![1], vec![2], vec![0, 3]]
         );
         // Dense columns that reject enough together still get the rest apart.
         assert_eq!(
-            plan_passes(&[vec![0, 1]], &[(100, 90), (100, 90)], true),
+            plan_passes(
+                &[vec![0, 1]],
+                100,
+                &[(100, 90), (100, 90)],
+                &[(100, 80)],
+                true
+            ),
             vec![vec![0, 1], vec![]]
         );
         assert_eq!(
-            plan_passes(&[vec![0, 1]], &[(100, 90), (100, 90)], false),
+            plan_passes(
+                &[vec![0, 1]],
+                100,
+                &[(100, 90), (100, 90)],
+                &[(100, 80)],
+                false
+            ),
+            vec![vec![0, 1]]
+        );
+        // Dense columns that reject the same rows are measured as a pass, not multiplied.
+        assert_eq!(
+            plan_passes(
+                &[vec![0, 1], vec![]],
+                100,
+                &[(100, 90), (100, 90)],
+                &[(100, 90), (90, 90)],
+                true
+            ),
             vec![vec![0, 1]]
         );
         // Everything staged: the rest alone.
         assert_eq!(
-            plan_passes(&[vec![0], vec![1]], &[(100, 10), (10, 5)], true),
+            plan_passes(
+                &[vec![0], vec![1]],
+                100,
+                &[(100, 10), (10, 5)],
+                &[(100, 10), (10, 5)],
+                true
+            ),
             vec![vec![0], vec![1], vec![]]
+        );
+        // A later column is measured on fewer rows: it stays behind unless it keeps
+        // fewer rows than the earlier one however the rejected rows fall.
+        assert_eq!(
+            plan_passes(
+                &[vec![0], vec![1], vec![]],
+                100,
+                &[(100, 40), (40, 1)],
+                &[(100, 40), (40, 1), (1, 1)],
+                true
+            ),
+            vec![vec![0], vec![1], vec![]]
+        );
+        assert_eq!(
+            plan_passes(
+                &[vec![0], vec![1], vec![]],
+                100,
+                &[(100, 80), (80, 4)],
+                &[(100, 80), (80, 4), (4, 4)],
+                true
+            ),
+            vec![vec![1], vec![0], vec![]]
         );
         // A column with no rows to measure keeps every row and stays in place.
         assert_eq!(
             plan_passes(
                 &[vec![0], vec![1], vec![2]],
+                100,
+                &[(100, 0), (0, 0), (0, 0)],
                 &[(100, 0), (0, 0), (0, 0)],
                 false
             ),
@@ -906,7 +993,7 @@ mod tests {
         );
         // No predicate columns: the rest is the only pass.
         assert_eq!(
-            plan_passes(&[Vec::new()], &[], true),
+            plan_passes(&[Vec::new()], 100, &[], &[(100, 100)], true),
             vec![Vec::<usize>::new()]
         );
     }
