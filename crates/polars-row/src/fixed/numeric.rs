@@ -32,6 +32,21 @@ pub trait FixedLengthEncoding: Copy + Debug {
     }
 }
 
+macro_rules! invert_and_keep_or_zero {
+    ($t:ty) => {
+        #[inline(always)]
+        fn invert(encoded: Self::Encoded) -> Self::Encoded {
+            (!Self::from_ne_bytes(encoded)).to_ne_bytes()
+        }
+
+        #[inline(always)]
+        fn keep_or_zero(encoded: Self::Encoded, keep: bool) -> Self::Encoded {
+            let mask = (0 as $t).wrapping_sub(keep as $t);
+            (Self::from_ne_bytes(encoded) & mask).to_ne_bytes()
+        }
+    };
+}
+
 // encode as big endian
 macro_rules! encode_unsigned {
     ($n:expr, $t:ty) => {
@@ -48,16 +63,7 @@ macro_rules! encode_unsigned {
                 Self::from_be_bytes(encoded)
             }
 
-            #[inline(always)]
-            fn invert(encoded: Self::Encoded) -> Self::Encoded {
-                (!Self::from_ne_bytes(encoded)).to_ne_bytes()
-            }
-
-            #[inline(always)]
-            fn keep_or_zero(encoded: Self::Encoded, keep: bool) -> Self::Encoded {
-                let mask = (0 as $t).wrapping_sub(keep as $t);
-                (Self::from_ne_bytes(encoded) & mask).to_ne_bytes()
-            }
+            invert_and_keep_or_zero!($t);
         }
     };
 }
@@ -94,16 +100,7 @@ macro_rules! encode_signed {
                 Self::from_be_bytes(encoded)
             }
 
-            #[inline(always)]
-            fn invert(encoded: Self::Encoded) -> Self::Encoded {
-                (!Self::from_ne_bytes(encoded)).to_ne_bytes()
-            }
-
-            #[inline(always)]
-            fn keep_or_zero(encoded: Self::Encoded, keep: bool) -> Self::Encoded {
-                let mask = (0 as $t).wrapping_sub(keep as $t);
-                (Self::from_ne_bytes(encoded) & mask).to_ne_bytes()
-            }
+            invert_and_keep_or_zero!($t);
         }
     };
 }

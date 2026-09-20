@@ -27,8 +27,6 @@ pub unsafe fn decode_rows_from_binary<'a>(
 ) -> Vec<ArrayRef> {
     assert_eq!(arr.null_count(), 0);
     rows.clear();
-    // Each row slice runs to the end of the values buffer. Decoders can then read blocks past
-    // the end of a row without bound checks on the row.
     let values = arr.values().as_slice();
     let offsets = arr.offsets();
     rows.extend(
@@ -41,8 +39,7 @@ pub unsafe fn decode_rows_from_binary<'a>(
 
 /// Decode `rows` into a arrow format
 ///
-/// A row slice may extend past the end of that row. Decoding is faster when it does, since
-/// decoders can then read whole blocks at the start of a value.
+/// A row slice may extend past the end of that row.
 ///
 /// # Safety
 /// This will not do any bound checks. Caller must ensure the `rows` are valid
