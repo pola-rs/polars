@@ -98,8 +98,7 @@ mod tests {
     fn test_plan_passes() {
         use super::{Selectivity, plan_passes};
 
-        #[allow(non_snake_case)]
-        fn S(input_rows: usize, kept_rows: usize) -> Selectivity {
+        fn sel(input_rows: usize, kept_rows: usize) -> Selectivity {
             Selectivity {
                 input_rows,
                 kept_rows,
@@ -111,8 +110,8 @@ mod tests {
             plan_passes(
                 &[vec![0, 1, 2, 3]],
                 100,
-                &[S(100, 90), S(100, 20), S(100, 50), S(100, 99)],
-                &[S(100, 10)],
+                &[sel(100, 90), sel(100, 20), sel(100, 50), sel(100, 99)],
+                &[sel(100, 10)],
                 true
             ),
             vec![vec![1], vec![2], vec![0, 3]]
@@ -122,8 +121,8 @@ mod tests {
             plan_passes(
                 &[vec![0, 1]],
                 100,
-                &[S(100, 90), S(100, 90)],
-                &[S(100, 80)],
+                &[sel(100, 90), sel(100, 90)],
+                &[sel(100, 80)],
                 true
             ),
             vec![vec![0, 1], vec![]]
@@ -132,8 +131,8 @@ mod tests {
             plan_passes(
                 &[vec![0, 1]],
                 100,
-                &[S(100, 90), S(100, 90)],
-                &[S(100, 80)],
+                &[sel(100, 90), sel(100, 90)],
+                &[sel(100, 80)],
                 false
             ),
             vec![vec![0, 1]]
@@ -143,8 +142,8 @@ mod tests {
             plan_passes(
                 &[vec![0, 1], vec![]],
                 100,
-                &[S(100, 90), S(100, 90)],
-                &[S(100, 90), S(90, 90)],
+                &[sel(100, 90), sel(100, 90)],
+                &[sel(100, 90), sel(90, 90)],
                 true
             ),
             vec![vec![0, 1]]
@@ -154,8 +153,8 @@ mod tests {
             plan_passes(
                 &[vec![0], vec![1]],
                 100,
-                &[S(100, 10), S(10, 5)],
-                &[S(100, 10), S(10, 5)],
+                &[sel(100, 10), sel(10, 5)],
+                &[sel(100, 10), sel(10, 5)],
                 true
             ),
             vec![vec![0], vec![1], vec![]]
@@ -166,8 +165,8 @@ mod tests {
             plan_passes(
                 &[vec![0], vec![1], vec![]],
                 100,
-                &[S(100, 40), S(40, 1)],
-                &[S(100, 40), S(40, 1), S(1, 1)],
+                &[sel(100, 40), sel(40, 1)],
+                &[sel(100, 40), sel(40, 1), sel(1, 1)],
                 true
             ),
             vec![vec![0], vec![1], vec![]]
@@ -176,8 +175,8 @@ mod tests {
             plan_passes(
                 &[vec![0], vec![1], vec![]],
                 100,
-                &[S(100, 80), S(80, 4)],
-                &[S(100, 80), S(80, 4), S(4, 4)],
+                &[sel(100, 80), sel(80, 4)],
+                &[sel(100, 80), sel(80, 4), sel(4, 4)],
                 true
             ),
             vec![vec![1], vec![0], vec![]]
@@ -188,8 +187,8 @@ mod tests {
             plan_passes(
                 &[vec![0], vec![1], vec![]],
                 100,
-                &[S(100, 86), S(86, 73)],
-                &[S(100, 86), S(86, 73), S(73, 73)],
+                &[sel(100, 86), sel(86, 73)],
+                &[sel(100, 86), sel(86, 73), sel(73, 73)],
                 true
             ),
             vec![vec![0, 1], vec![]]
@@ -199,8 +198,8 @@ mod tests {
             plan_passes(
                 &[vec![1, 0], vec![]],
                 100,
-                &[S(100, 90), S(100, 91)],
-                &[S(100, 90), S(90, 90)],
+                &[sel(100, 90), sel(100, 91)],
+                &[sel(100, 90), sel(90, 90)],
                 true
             ),
             vec![vec![0, 1]]
@@ -210,15 +209,15 @@ mod tests {
             plan_passes(
                 &[vec![0], vec![1], vec![2]],
                 100,
-                &[S(100, 0), S(0, 0), S(0, 0)],
-                &[S(100, 0), S(0, 0), S(0, 0)],
+                &[sel(100, 0), sel(0, 0), sel(0, 0)],
+                &[sel(100, 0), sel(0, 0), sel(0, 0)],
                 false
             ),
             vec![vec![0], vec![1, 2]]
         );
         // No predicate columns: the rest is the only pass.
         assert_eq!(
-            plan_passes(&[Vec::new()], 100, &[], &[S(100, 100)], true),
+            plan_passes(&[Vec::new()], 100, &[], &[sel(100, 100)], true),
             vec![Vec::<usize>::new()]
         );
     }

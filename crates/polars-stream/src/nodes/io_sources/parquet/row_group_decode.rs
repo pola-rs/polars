@@ -394,14 +394,6 @@ enum Kept {
     Filtered(Bitmap),
 }
 
-impl Kept {
-    fn mask(&self) -> &Bitmap {
-        match self {
-            Kept::Masked(m) | Kept::Filtered(m) => m,
-        }
-    }
-}
-
 struct Decoded {
     source: Source,
     column: Column,
@@ -576,7 +568,9 @@ impl RowGroupDecoder {
                     live_columns.push((d.source, d.column));
                     continue;
                 };
-                let m = kept_rows.mask();
+                let m = match &kept_rows {
+                    Kept::Masked(m) | Kept::Filtered(m) => m,
+                };
                 selectivity[c] = Selectivity {
                     input_rows: kept,
                     kept_rows: m.set_bits(),

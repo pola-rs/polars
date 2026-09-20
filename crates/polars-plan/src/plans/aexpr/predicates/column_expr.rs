@@ -193,9 +193,6 @@ fn specialize(
                 usize::MAX,
             )?;
 
-            // EqualOneOf describes the full set membership: include
-            // Scalar::Null under nulls_equal=true so the specialization is
-            // sound regardless of how the runtime chooses to invoke it.
             let values = values
                 .iter()
                 .map(|av| Scalar::new(dtype.clone(), av.into_static()))

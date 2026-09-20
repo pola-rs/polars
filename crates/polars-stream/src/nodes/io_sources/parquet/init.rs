@@ -23,21 +23,22 @@ use crate::utils::tokio_handle_ext::{self, AbortOnDropHandle};
 
 /// Whether the decoder may evaluate a predicate on this column as it decodes the values.
 fn filter_while_decoding(projection: &ArrowFieldProjection) -> bool {
+    use ArrowDataType as A;
     let ArrowFieldProjection::Plain(arrow_field) = projection else {
         return false;
     };
-    if matches!(arrow_field.dtype(), ArrowDataType::FixedSizeBinary(_)) {
-        return false;
-    }
-    use DataType as D;
-    match DataType::from_arrow_field(arrow_field) {
-        #[cfg(feature = "dtype-categorical")]
-        D::Enum(_, _) | D::Categorical(_, _) => false,
-        #[cfg(feature = "dtype-decimal")]
-        D::Decimal(_, _) => false,
-        #[cfg(feature = "dtype-f16")]
-        D::Float16 => false,
-        D::Float32 | D::Float64 | D::Int128 | D::UInt128 => false,
+    match arrow_field.dtype() {
+        A::Dictionary(..)
+        | A::Decimal(..)
+        | A::Decimal32(..)
+        | A::Decimal64(..)
+        | A::Decimal256(..)
+        | A::Float16
+        | A::Float32
+        | A::Float64
+        | A::Int128
+        | A::UInt128
+        | A::FixedSizeBinary(_) => false,
         dtype => !dtype.is_nested(),
     }
 }
