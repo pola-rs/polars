@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -2216,7 +2216,7 @@ def test_join_on_preserved_input_filter() -> None:
 
 
 @pytest.mark.parametrize("how", ["inner", "left"])
-def test_join_on_filter_with_aggregate_key(how: str) -> None:
+def test_join_on_filter_with_aggregate_key(how: Literal["inner", "left"]) -> None:
     left = pl.LazyFrame({"k": [3]})
     right = pl.LazyFrame({"v": [1, 2]})
     query = f"SELECT * FROM l {how} JOIN r ON k = SUM(v) AND v < 2"

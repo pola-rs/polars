@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import hypothesis.strategies as st
 import numpy as np
@@ -1023,6 +1023,28 @@ def test_outer_join_where_pushes_non_preserved_input_filter(
     )
     assert "NESTED LOOP JOIN" not in query.explain()
     assert "NESTED LOOP JOIN" in query.explain(optimizations=disabled)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("how", ["left", "right"])
+def test_outer_join_where_pushed_condition_downgrades_to_cross(
+    engine: EngineType, how: Literal["left", "right"]
+) -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3]})
+    right = pl.LazyFrame({"b": [0, 1, 2]})
+    filtered = "a" if how == "right" else "b"
+    query = left.join_where(right, pl.col(filtered) > 1, how=how).filter(
+        pl.col(filtered).is_not_null()
+    )
+    plan = query.explain()
+    assert "CROSS JOIN" in plan
+    assert "NESTED LOOP JOIN" not in plan
+    expected = pl.DataFrame({"a": [1, 2, 3]}).join(
+        pl.DataFrame({"b": [0, 1, 2]}).filter(pl.col("b") > 1), how="cross"
+    ) if how == "left" else pl.DataFrame({"a": [1, 2, 3]}).filter(
+        pl.col("a") > 1
+    ).join(pl.DataFrame({"b": [0, 1, 2]}), how="cross")
+    assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
 
 
 @pytest.mark.parametrize("key_first", [False, True])

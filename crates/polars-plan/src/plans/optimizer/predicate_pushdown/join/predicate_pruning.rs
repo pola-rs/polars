@@ -804,7 +804,7 @@ pub fn try_rewrite_join_type(
             (JoinType::Right, JoinType::Inner) => {
                 let mut join_output_key_selectors = PlIndexMap::with_capacity(right_on.len());
 
-                for (l, r) in left_on.iter().zip(right_on) {
+                for (l, r) in left_on.iter().zip(right_on.iter()) {
                     // Unwrap any Cast expressions that may have been inserted for type coercion.
                     // For non full-joins coalesce can still insert casts into the key exprs.
                     let l_node = match expr_arena.get(l.node()) {
@@ -937,7 +937,7 @@ pub fn try_rewrite_join_type(
                 let mut coalesced_to_left: PlIndexSet<PlSmallStr> =
                     PlIndexSet::with_capacity(right_on.len());
 
-                for (l, r) in left_on.iter().zip(right_on) {
+                for (l, r) in left_on.iter().zip(right_on.iter()) {
                     // Unwrap any Cast expressions that may have been inserted for type coercion.
                     // For non full-joins coalesce can still insert casts into the key exprs.
                     let l_node = match expr_arena.get(l.node()) {
@@ -1070,6 +1070,28 @@ pub fn try_rewrite_join_type(
         for (_, predicate_expr) in acc_predicates.iter_mut() {
             map_column_references(predicate_expr, expr_arena, &original_to_new_names_map);
         }
+    }
+
+    // An outer join whose ON condition was fully pushed down keeps a `true == true` key.
+    // Once inner, that key only costs a hash join over a single bucket.
+    if new_join_type == JoinType::Inner
+        && !options.args.should_coalesce()
+        && !options.args.validation.needs_checks()
+        && matches!(&options.options, JoinTypeOptionsIR::Equi { on, fused_predicate: None } if !on.is_empty())
+        && left_on.iter().zip(right_on.iter()).all(|(l, r)| {
+            matches!(
+                (expr_arena.get(l.node()), expr_arena.get(r.node())),
+                (AExpr::Literal(l), AExpr::Literal(r)) if l.bool() == Some(true) && r.bool() == Some(true)
+            )
+        })
+    {
+        options.args.how = JoinType::Cross;
+        options.options = JoinTypeOptionsIR::Equi {
+            on: Vec::new(),
+            fused_predicate: None,
+        };
+        left_on.clear();
+        right_on.clear();
     }
 
     Ok(project_to_original.map(|p| (p, original_output_schema)))
