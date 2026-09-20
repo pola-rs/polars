@@ -40,8 +40,7 @@ pub(super) struct PredicateColumn {
     pub(super) predicate: Arc<dyn PhysicalIoExpr>,
     /// Evaluates the predicate while decoding, when the decoder may.
     pub(super) decode_filter: Option<PredicateFilter>,
-    /// The value of every kept row when the predicate is an equality, so the values
-    /// need not be decoded.
+    /// The value of every kept row when the predicate is an equality.
     pub(super) constant: Option<Scalar>,
 }
 
@@ -508,10 +507,9 @@ impl Pass {
 /// rows.
 ///
 /// A column in a later pass is measured on the rows the passes before it kept. Over the
-/// whole row group it keeps between `after` and `after + num_rows - before` rows, so it
+/// whole row group it keeps between `after` and `after + num_rows - before` rows, and
 /// moves before a column of an earlier pass only when that range lies below the rows
-/// that column kept. The rows a pass keeps as a whole come from `pass_selectivity`, as
-/// its columns may reject the same rows.
+/// that column kept. The rows a pass keeps as a whole come from `pass_selectivity`.
 fn plan_passes(
     passes: &[Vec<usize>],
     num_rows: usize,
@@ -741,8 +739,7 @@ impl RowGroupDecoder {
             *self.passes.lock().unwrap() = Arc::new(next_passes);
         }
 
-        // Output order is the row index, `predicate_field_indices`, then the other
-        // columns, like `decode_projected_columns`.
+        // The row index, `predicate_field_indices`, then the other columns.
         live_columns.sort_unstable_by_key(|(source, _)| *source);
         let columns = live_columns
             .into_iter()

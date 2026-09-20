@@ -328,9 +328,7 @@ impl PhysicalIoExpr for PhysicalExprWithConstCols<Arc<dyn PhysicalIoExpr>> {
     }
 }
 
-/// The row predicate split into the conjuncts that read a single column and the rest,
-/// which a reader may evaluate one after the other: rows that fail one never need the
-/// columns read after it.
+/// The row predicate split into the conjuncts that read a single column and the rest.
 #[derive(Clone)]
 pub struct StagedScanIOPredicate {
     pub column_predicates: Arc<PlIndexMap<PlSmallStr, ColumnPredicate>>,
