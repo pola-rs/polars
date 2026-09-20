@@ -609,9 +609,8 @@ pub fn subslice_extend_validity(
     }
 }
 
-/// Appends each of the `length` bits of `validity` starting at `start` `repeats` times over.
-#[inline(never)]
 /// Appends the `length` bits of `validity` starting at `start`, `repeats` times over.
+#[inline(never)]
 pub fn subslice_extend_repeated_validity(
     dst: &mut OptBitmapBuilder,
     validity: Option<PlBitmapRef<'_>>,
@@ -637,6 +636,8 @@ pub fn subslice_extend_repeated_validity(
     }
 }
 
+/// Appends each of the `length` bits of `validity` starting at `start` `repeats` times over.
+#[inline(never)]
 pub fn subslice_extend_each_repeated_validity(
     dst: &mut OptBitmapBuilder,
     validity: Option<PlBitmapRef<'_>>,
