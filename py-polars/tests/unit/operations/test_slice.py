@@ -581,3 +581,26 @@ def test_series_slice_neg_offset_29183() -> None:
     assert_series_equal(a.slice(-4), a)
     assert_series_equal(a.slice(-5), a)
     assert_series_equal(a.slice(-500), a)
+
+
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [
+        (-2, 1),
+        (-4, 3),
+        (-40, 5),
+        (-2, 5),
+        (-50, 45),
+        (-7, 0),
+    ],
+)
+def test_streaming_negative_slice_uneven_morsels(offset: int, length: int) -> None:
+    a = list(range(42))
+    lf = pl.concat([pl.LazyFrame({"x": a[:2]}), pl.LazyFrame({"x": a[2:]})])
+    expected = pl.DataFrame({"x": slice_ref(a, offset, length)}, schema={"x": pl.Int64})
+
+    assert_frame_equal(lf.slice(offset, length).collect(engine="streaming"), expected)
+    assert_frame_equal(
+        lf.select(pl.col("x").slice(offset, length)).collect(engine="streaming"),
+        expected,
+    )
