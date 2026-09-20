@@ -4,6 +4,7 @@ use polars_array::arrow::bridge::{chunk_to_arrow, with_arrow_chunk};
 use polars_array::bitmap::combine_validities_and;
 use polars_array::builder::new_full_null_like;
 use polars_array::{PlArray, PlBitmap, PlBitmapRef, PlPrimitiveArray, PlStructArray};
+use polars_arrow::datatypes::IdxArr;
 use polars_utils::IdxSize;
 
 use super::bitmap::{take_bitmap_nulls_unchecked, take_bitmap_unchecked};
@@ -16,6 +17,21 @@ use super::take_arrow_unchecked;
 pub unsafe fn take_unchecked(
     values: &dyn PlArray,
     indices: &PlPrimitiveArray<IdxSize>,
+) -> Box<dyn PlArray> {
+    unsafe { take_shared_indices(values, indices, &mut None) }
+}
+
+/// As [`take_unchecked`], reusing the Arrow indices a caller above has already converted.
+///
+/// A struct is gathered one field at a time, and every field reads the same indices; converting
+/// them for the Arrow kernel once rather than once per field is what `arrow` carries.
+///
+/// # Safety
+/// Every non-null index must be in bounds of `values`.
+unsafe fn take_shared_indices(
+    values: &dyn PlArray,
+    indices: &PlPrimitiveArray<IdxSize>,
+    arrow: &mut Option<IdxArr>,
 ) -> Box<dyn PlArray> {
     if indices.is_empty() {
         return values.sliced(0, 0);
@@ -57,12 +73,12 @@ pub unsafe fn take_unchecked(
     // each field alone would gather off its one value. Gather them one at a time, so a field
     // reaches the fast paths above in its own right.
     if let Some(array) = values.as_any().downcast_ref::<PlStructArray>() {
-        return Box::new(unsafe { take_struct_unchecked(array, indices) });
+        return Box::new(unsafe { take_struct_unchecked(array, indices, arrow) });
     }
 
-    let indices = chunk_to_arrow(indices);
+    let indices = arrow.get_or_insert_with(|| chunk_to_arrow(indices));
     with_arrow_chunk(values, |values| unsafe {
-        take_arrow_unchecked(values, &indices)
+        take_arrow_unchecked(values, indices)
     })
 }
 
@@ -73,12 +89,13 @@ pub unsafe fn take_unchecked(
 unsafe fn take_struct_unchecked(
     array: &PlStructArray,
     indices: &PlPrimitiveArray<IdxSize>,
+    arrow: &mut Option<IdxArr>,
 ) -> PlStructArray {
     let fields = array
         .fields()
         .iter()
         // SAFETY: a field holds one element per row, so the caller's indices are in bounds of it.
-        .map(|field| unsafe { take_unchecked(field.as_ref(), indices) })
+        .map(|field| unsafe { take_shared_indices(field.as_ref(), indices, arrow) })
         .collect();
 
     // SAFETY: the caller's indices are in bounds of the mask, which covers every row.
