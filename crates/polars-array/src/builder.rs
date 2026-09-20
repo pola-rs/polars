@@ -589,8 +589,29 @@ pub(crate) fn assert_subslice(array_len: usize, start: usize, length: usize) {
 }
 
 /// Appends the `length` bits of `validity` starting at `start` to `dst`.
-#[inline(never)]
+#[inline]
 pub fn subslice_extend_validity(
+    dst: &mut OptBitmapBuilder,
+    validity: Option<PlBitmapRef<'_>>,
+    start: usize,
+    length: usize,
+) {
+    // Nothing null on either side is two counters moving on, which is less work than the call
+    // that would move them -- and it is the shape almost every `subslice_extend` has, once per
+    // run of values copied, so a kernel that copies a handful of values per call pays the call
+    // and not the work.  Everything else is a walk over bits, and keeps its own frame.
+    if let (None, OptBitmapBuilder::AllTrue { bit_len, bit_cap }) = (validity, &mut *dst) {
+        *bit_cap = usize::max(*bit_cap, *bit_len + length);
+        *bit_len += length;
+        return;
+    }
+
+    subslice_extend_masked_validity(dst, validity, start, length);
+}
+
+/// [`subslice_extend_validity`] where one of the two sides holds a null.
+#[inline(never)]
+fn subslice_extend_masked_validity(
     dst: &mut OptBitmapBuilder,
     validity: Option<PlBitmapRef<'_>>,
     start: usize,
