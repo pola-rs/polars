@@ -48,6 +48,18 @@ def test_check_cpu_flags_unknown_flag(
         check_cpu_flags(unknown_feature_flags)
 
 
+def test_check_cpu_flags_undetectable(
+    plmonkeypatch: PlMonkeyPatch, recwarn: pytest.WarningsRecorder
+) -> None:
+    """CPU flags that could not be read at all should skip the check."""
+    mock_read_cpu_flags = Mock(return_value={})
+    plmonkeypatch.setattr(_cpu_check, "_read_cpu_flags", mock_read_cpu_flags)
+
+    check_cpu_flags(TEST_FEATURE_FLAGS)
+
+    assert len(recwarn) == 0
+
+
 def test_check_cpu_flags_skipped_no_flags(plmonkeypatch: PlMonkeyPatch) -> None:
     mock_read_cpu_flags = Mock()
     plmonkeypatch.setattr(_cpu_check, "_read_cpu_flags", mock_read_cpu_flags)

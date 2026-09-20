@@ -256,6 +256,15 @@ def check_cpu_flags(feature_flags: str) -> None:
 
     supported_cpu_flags = _read_cpu_flags()
 
+    if not supported_cpu_flags:
+        # We could not read the CPU's capabilities at all, which is different
+        # from reading them and finding a feature missing. `_read_cpu_flags`
+        # returns an empty mapping when `_SUPPORTS_CPUID` is False, i.e. when
+        # `platform.machine()` could not identify the architecture. Falling
+        # through would report the first expected flag as an unknown feature
+        # flag, which points at the wrong problem, so skip the check instead.
+        return
+
     missing_features = []
     for f in expected_cpu_flags:
         if f not in supported_cpu_flags:
