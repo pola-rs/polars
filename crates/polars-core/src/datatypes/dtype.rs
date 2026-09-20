@@ -69,7 +69,7 @@ pub enum UnknownKind {
     // Hold the value to determine the concrete size.
     Int(i128),
     // Hold the value to determine the decimal scale. NaN means the value is
-    // not known, e.g. after merging different literals.
+    // not known.
     Float(TotalOrdWrap<f64>),
     // Can be Categorical or String
     Str,

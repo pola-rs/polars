@@ -121,8 +121,7 @@ impl OptimizationRule for TypeCoercionRule {
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
 
-        // Fold literal arithmetic first so the literal is materialized exactly
-        // wherever it is used.
+        // Fold literal arithmetic before coercing.
         if !matches!(expr, AExpr::Literal(_))
             && let Some(v) = try_fold_dyn(expr, expr_arena)
         {

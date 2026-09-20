@@ -45,8 +45,7 @@ impl AExpr {
     pub fn to_field_impl(&self, ctx: &ToFieldContext) -> PolarsResult<Field> {
         let mut field = self.to_field_inner(ctx)?;
 
-        // The value in a dynamic literal dtype is only known for a literal or
-        // an expression that folds to one.
+        // The value is only known for a literal or an expression that folds to one.
         if let DataType::Unknown(kind @ (UnknownKind::Float(_) | UnknownKind::Int(_))) =
             &field.dtype
             && !matches!(self, AExpr::Literal(_))

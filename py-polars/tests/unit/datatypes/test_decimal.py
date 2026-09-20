@@ -691,8 +691,6 @@ def test_decimal_dynamic_literal_merged_values() -> None:
         {"d": [D("1.00"), D("1.00")], "p": [True, False]},
         schema={"d": pl.Decimal(15, 2), "p": pl.Boolean},
     )
-    # Different float literals in a ternary have no single scale, so the
-    # decimal falls back to float.
     q = lf.select(out=pl.col("d") + pl.when("p").then(0.1).otherwise(0.001))
     assert_series_equal(q.collect().get_column("out"), pl.Series("out", [1.1, 1.001]))
 
@@ -764,8 +762,7 @@ def test_decimal_dynamic_float_literal_exact_digits() -> None:
     )
     assert_frame_equal(q.collect(), expected)
 
-    # More significant digits than a f64 carries exactly: the literal stays a
-    # float and the decimal falls back to float.
+    # more significant digits than a f64 carries exactly
     lf = pl.LazyFrame(
         {"d": [D("1.2345678901234567")]}, schema={"d": pl.Decimal(38, 16)}
     )

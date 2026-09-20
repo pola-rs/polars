@@ -638,9 +638,8 @@ fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType
     }
 }
 
-/// Supertype of a decimal and a dynamic float literal. Keeps the decimal,
-/// widening the scale as needed while keeping the integer digits, or returns
-/// `None` if the literal cannot be represented as a decimal.
+/// Supertype of a decimal and a dynamic float literal, or `None` if the
+/// literal cannot be represented as a decimal.
 #[cfg(feature = "dtype-decimal")]
 fn dyn_float_decimal_supertype(v: f64, prec: usize, scale: usize) -> Option<DataType> {
     let new_scale = scale.max(f64_dec128_scale(v)?);

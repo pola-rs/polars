@@ -542,8 +542,8 @@ pub fn f64_to_dec128(x: f64, p: usize, s: usize) -> Option<i128> {
     unsafe { Some((x * POW10_F64[s]).round_ties_even().to_int_unchecked()) }
 }
 
-/// Shortest decimal representation of `x`, if its digits are exact. Returns
-/// None if `x` has more significant digits than a f64 can carry exactly.
+/// Shortest decimal representation of `x`, or None if it has more significant
+/// digits than a f64 carries exactly.
 fn f64_shortest_repr(x: f64) -> Option<String> {
     if !x.is_finite() {
         return None;

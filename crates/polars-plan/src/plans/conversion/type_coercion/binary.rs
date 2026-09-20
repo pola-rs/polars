@@ -267,7 +267,6 @@ pub(super) fn coerced_binop_dtype(
     Ok(Some(st))
 }
 
-/// A dynamic int literal stays a dynamic literal when it becomes a float.
 fn dyn_int_to_dyn_float(
     is_literal: bool,
     node: Node,
