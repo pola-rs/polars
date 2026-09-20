@@ -90,17 +90,29 @@ fn chain_from(cluster: &Cluster, anchor: usize) -> (f64, Vec<usize>) {
     (cost, placed)
 }
 
+#[derive(PartialEq, Eq)]
+enum DomainIdentity<'a> {
+    Class(usize),
+    Column(&'a PlSmallStr),
+}
+
+struct DomainEstimate<'a> {
+    identity: Option<DomainIdentity<'a>>,
+    domain: f64,
+}
+
 /// Product of the key domains bridging `candidate` to the placed leaves, or `None`
 /// if it is not connected to them at all.
 ///
-/// Several edges can carry the same key: the implied edges of a coalesced name reach
-/// every leaf holding it. They are all estimates of that one key's domain, so they
-/// contribute one factor between them rather than one each, and the smallest wins.
+/// Keys in one equality class estimate the same domain, so they contribute one
+/// factor between them, with the smallest estimate winning. Direct edges on the
+/// same candidate column also contribute only one factor.
 /// Only keys that are actually independent multiply.
 ///
 /// A key with no output name cannot be matched up, so it counts on its own.
 fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -> Option<f64> {
-    let mut per_key: Vec<(Option<&PlSmallStr>, f64)> = Vec::new();
+    let mut per_key: Vec<DomainEstimate<'_>> = Vec::new();
+    let mut max_rows = cluster.leaves[candidate].stats.unfiltered;
 
     for bridge in cluster.bridging(is_placed, candidate) {
         let domain = key_domain(
@@ -109,25 +121,23 @@ fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -
             &cluster.leaves[candidate].stats,
             bridge.candidate_name,
         );
-        let name = bridge.candidate_name;
+        let identity = bridge
+            .class
+            .map(DomainIdentity::Class)
+            .or_else(|| bridge.candidate_name.map(DomainIdentity::Column));
+        max_rows = max_rows.max(cluster.leaves[bridge.placed_leaf].stats.unfiltered);
 
         match per_key
             .iter_mut()
-            .find(|(seen, _)| name.is_some() && *seen == name)
+            .find(|estimate| identity.is_some() && estimate.identity == identity)
         {
-            Some((_, smallest)) => *smallest = smallest.min(domain),
-            None => per_key.push((name, domain)),
+            Some(estimate) => estimate.domain = estimate.domain.min(domain),
+            None => per_key.push(DomainEstimate { identity, domain }),
         }
     }
 
-    // The largest relation the composite key is read from, which bounds the product.
-    let max_rows = cluster
-        .bridging(is_placed, candidate)
-        .map(|bridge| cluster.leaves[bridge.placed_leaf].stats.unfiltered)
-        .fold(cluster.leaves[candidate].stats.unfiltered, f64::max);
-
     (!per_key.is_empty())
-        .then(|| composite_key_domain(per_key.iter().map(|(_, domain)| *domain), max_rows))
+        .then(|| composite_key_domain(per_key.iter().map(|estimate| estimate.domain), max_rows))
 }
 
 #[cfg(test)]
@@ -135,7 +145,7 @@ mod tests {
     use polars_core::prelude::{DataType, Schema};
     use polars_utils::arena::{Arena, Node};
 
-    use super::super::cluster::{Edge, Leaf};
+    use super::super::cluster::{ColumnKey, Leaf};
     use super::*;
     use crate::plans::{ExprIR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats};
     use crate::prelude::JoinArgs;
@@ -172,37 +182,20 @@ mod tests {
         let key = ExprIR::from_column_name("k".into(), &mut expr_arena);
 
         let leaves = vec![leaf(0, 100.0), leaf(1, 200.0), leaf(2, 400.0)];
-        // The clique over the three holders of `k`.
-        let edges = vec![
-            Edge {
-                left_leaf: 0,
-                right_leaf: 1,
-                left_key: key.clone(),
-                right_key: key.clone(),
-                left_name: Some("k".into()),
-                right_name: Some("k".into()),
-            },
-            Edge {
-                left_leaf: 0,
-                right_leaf: 2,
-                left_key: key.clone(),
-                right_key: key.clone(),
-                left_name: Some("k".into()),
-                right_name: Some("k".into()),
-            },
-            Edge {
-                left_leaf: 1,
-                right_leaf: 2,
-                left_key: key.clone(),
-                right_key: key.clone(),
-                left_name: Some("k".into()),
-                right_name: Some("k".into()),
-            },
+        let key_classes = vec![
+            (0..3)
+                .map(|leaf| ColumnKey {
+                    leaf,
+                    key: key.clone(),
+                })
+                .collect(),
         ];
 
         let cluster = Cluster {
             leaves,
-            edges,
+            edges: Vec::new(),
+            key_classes,
+            classes_by_leaf: vec![vec![0]; 3],
             output_schema: Schema::default().into(),
             restore: Vec::new(),
             options: dummy_options(),

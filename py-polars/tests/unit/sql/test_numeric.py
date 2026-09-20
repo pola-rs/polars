@@ -296,9 +296,9 @@ def test_literal_arithmetic_fallback(
     assert res.item() == expected
 
 
-def test_literal_scientific_notation_unsupported() -> None:
-    with pytest.raises(SQLInterfaceError, match="cannot parse literal"):
-        pl.sql("SELECT 1e2 + 0.5 AS x", eager=True)
+def test_literal_scientific_notation_arithmetic() -> None:
+    result = pl.sql("SELECT 1e2 + 0.5 AS x", eager=True)
+    assert_frame_equal(result, pl.DataFrame({"x": [100.5]}))
 
 
 def test_int_div_true_division() -> None:

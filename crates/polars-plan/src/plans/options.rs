@@ -455,6 +455,7 @@ pub enum JoinTypeOptionsIR {
     /// `fused_predicate`, that predicate as well.
     ///
     /// An empty `on` is a plain cross join.
+    /// Join keys may be scalar. Execution broadcasts keys to their input's height.
     Equi {
         on: Vec<(ExprIR, ExprIR)>,
         /// Boolean match condition in the join's output namespace, evaluated per

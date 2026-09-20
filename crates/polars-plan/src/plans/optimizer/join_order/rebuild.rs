@@ -96,14 +96,31 @@ pub(super) fn rebuild(
     Ok(acc_node)
 }
 
-/// The key pairs bridging the already-joined leaves and `candidate`, oriented so the
-/// accumulated side comes first.
-///
-/// The same pair can be reached through several placed leaves once transitively
-/// implied edges are in play, and a join may not name a key twice.
+/// Emit a spanning tree for each equality class reached by the new leaf.
 fn keys_joining(cluster: &Cluster, is_placed: &[bool], candidate: usize) -> Vec<(ExprIR, ExprIR)> {
-    let mut on: Vec<(ExprIR, ExprIR)> = Vec::new();
-    for bridge in cluster.bridging(is_placed, candidate) {
+    let mut on = Vec::new();
+    for &class in &cluster.classes_by_leaf[candidate] {
+        let keys = &cluster.key_classes[class];
+        let mut placed = keys.iter().filter(|key| is_placed[key.leaf]);
+        let Some(first) = placed.next() else {
+            continue;
+        };
+        let mut candidates = keys.iter().filter(|key| key.leaf == candidate);
+        let first_candidate = candidates.next().unwrap();
+        on.push((first.key.clone(), first_candidate.key.clone()));
+        for key in candidates {
+            on.push((first.key.clone(), key.key.clone()));
+        }
+        // Once the class spans two joined leaves, all its placed columns have
+        // already been equated. Before then, one leaf may hold several columns
+        // whose equality still needs to be enforced by this join.
+        if placed.clone().all(|key| key.leaf == first.leaf) {
+            for key in placed {
+                on.push((key.key.clone(), first_candidate.key.clone()));
+            }
+        }
+    }
+    for bridge in cluster.direct_bridging(is_placed, candidate) {
         let pair = (bridge.placed_key.clone(), bridge.candidate_key.clone());
         if !on.contains(&pair) {
             on.push(pair);
