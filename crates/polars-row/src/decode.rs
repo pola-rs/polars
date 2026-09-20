@@ -42,8 +42,7 @@ pub unsafe fn decode_rows_from_binary<'a>(
 /// Decode `rows` into a arrow format
 ///
 /// A row slice may extend past the end of that row. Decoding is faster when it does, since
-/// decoders can then read whole blocks at the start of a value. The contents of `rows` after
-/// decoding are unspecified.
+/// decoders can then read whole blocks at the start of a value.
 ///
 /// # Safety
 /// This will not do any bound checks. Caller must ensure the `rows` are valid
@@ -58,137 +57,12 @@ pub unsafe fn decode_rows(
     assert_eq!(opts.len(), dtypes.len());
     assert_eq!(dicts.len(), dtypes.len());
 
-    if let Some(arrays) = decode_fixed_rows(rows, opts, dicts, dtypes) {
-        return arrays;
-    }
-
     dtypes
         .iter()
         .zip(opts)
         .zip(dicts)
         .map(|((dtype, opt), dict)| decode(rows, *opt, dict.as_ref(), dtype))
         .collect()
-}
-
-/// Number of rows decoded across all columns at a time.
-const DECODE_ROW_TILE: usize = 1024;
-
-enum FixedCollector {
-    Null,
-    Boolean(boolean::BooleanCollector),
-    Primitive(Box<dyn FixedPrimitiveCollector>),
-}
-
-trait FixedPrimitiveCollector {
-    unsafe fn decode_strided(
-        &mut self,
-        ptr: *const u8,
-        stride: usize,
-        num_rows: usize,
-        opt: RowEncodingOptions,
-    );
-    fn finish(self: Box<Self>) -> ArrayRef;
-}
-
-impl<T: NativeType + FixedLengthEncoding> FixedPrimitiveCollector
-    for numeric::PrimitiveCollector<T>
-{
-    unsafe fn decode_strided(
-        &mut self,
-        ptr: *const u8,
-        stride: usize,
-        num_rows: usize,
-        opt: RowEncodingOptions,
-    ) {
-        numeric::PrimitiveCollector::decode_strided(self, ptr, stride, num_rows, opt)
-    }
-
-    fn finish(self: Box<Self>) -> ArrayRef {
-        numeric::PrimitiveCollector::finish(*self).to_boxed()
-    }
-}
-
-/// Decode rows that only hold flat fixed size values and lie next to each other in memory.
-/// Values are then read with a constant stride and the row slices are not updated.
-unsafe fn decode_fixed_rows(
-    rows: &[&[u8]],
-    opts: &[RowEncodingOptions],
-    dicts: &[Option<RowEncodingContext>],
-    dtypes: &[ArrowDataType],
-) -> Option<Vec<ArrayRef>> {
-    use ArrowDataType as D;
-
-    let mut stride = 0;
-    let mut column_offsets = Vec::with_capacity(dtypes.len());
-    for ((dtype, opt), dict) in dtypes.iter().zip(opts).zip(dicts) {
-        let is_flat = match dtype {
-            D::Null | D::Boolean => true,
-            D::Int128 => dict.is_none(),
-            dt => dt.is_numeric(),
-        };
-        if !is_flat {
-            return None;
-        }
-        column_offsets.push(stride);
-        stride += fixed_size(dtype, *opt, dict.as_ref())?;
-    }
-
-    let num_rows = rows.len();
-    let Some(first) = rows.first() else {
-        return Some(
-            dtypes
-                .iter()
-                .map(|dtype| new_empty_array(dtype.clone()))
-                .collect(),
-        );
-    };
-    // All reads go through the first slice, so it must cover every row.
-    let base = first.as_ptr();
-    if first.len() < num_rows * stride {
-        return None;
-    }
-    let is_contiguous = rows
-        .iter()
-        .enumerate()
-        .all(|(i, row)| row.as_ptr() == base.add(i * stride));
-    if !is_contiguous {
-        return None;
-    }
-
-    let mut collectors: Vec<FixedCollector> = dtypes
-        .iter()
-        .map(|dtype| match dtype {
-            D::Null => FixedCollector::Null,
-            D::Boolean => FixedCollector::Boolean(boolean::BooleanCollector::with_capacity(num_rows)),
-            dt => with_match_arrow_primitive_type!(dt, |$T| {
-                FixedCollector::Primitive(Box::new(numeric::PrimitiveCollector::<$T>::with_capacity(num_rows)))
-            }),
-        })
-        .collect();
-
-    let mut start = 0;
-    while start < num_rows {
-        let len = DECODE_ROW_TILE.min(num_rows - start);
-        for ((collector, offset), opt) in collectors.iter_mut().zip(&column_offsets).zip(opts) {
-            let ptr = base.add(start * stride + offset);
-            match collector {
-                FixedCollector::Null => {},
-                FixedCollector::Boolean(c) => c.decode_strided(ptr, stride, len, *opt),
-                FixedCollector::Primitive(c) => c.decode_strided(ptr, stride, len, *opt),
-            }
-        }
-        start += len;
-    }
-
-    let arrays = collectors
-        .into_iter()
-        .map(|collector| match collector {
-            FixedCollector::Null => NullArray::new(D::Null, num_rows).to_boxed(),
-            FixedCollector::Boolean(c) => c.finish().to_boxed(),
-            FixedCollector::Primitive(c) => c.finish(),
-        })
-        .collect();
-    Some(arrays)
 }
 
 unsafe fn decode_validity(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Option<Bitmap> {

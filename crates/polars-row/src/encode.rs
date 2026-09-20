@@ -100,41 +100,7 @@ pub fn convert_columns_amortized<'a>(
 
     let masked_out_write_offset = total_num_bytes;
     let mut scratches = EncodeScratches::default();
-    let all_flat = encoders.iter().all(|e| e.state.is_none());
-    let column_offsets = (all_flat && encoders.len() > 1)
-        .then(|| fixed_column_offsets(&encoders, fields.clone()))
-        .flatten();
-    if let Some((column_offsets, stride)) = column_offsets {
-        // All rows have the same width. Values are written at `row * stride` plus the offset
-        // of the column, which does not need the offsets to be updated per column.
-        let mut tile_offsets = Vec::with_capacity(ENCODE_ROW_TILE);
-
-        let mut start = 0;
-        while start < num_rows {
-            let len = ENCODE_ROW_TILE.min(num_rows - start);
-            for ((encoder, (opt, dict)), column_offset) in
-                encoders.iter().zip(fields.clone()).zip(&column_offsets)
-            {
-                let array = encoder.array.sliced(start, len);
-                let out = &mut buffer[start * stride + column_offset..];
-                unsafe {
-                    encode_flat_array_strided(
-                        out,
-                        stride,
-                        array.as_ref(),
-                        opt,
-                        dict,
-                        &mut tile_offsets,
-                    )
-                };
-            }
-            start += len;
-        }
-        // The encoders did not move the offsets to the end of the rows.
-        for (i, offset) in offsets[1..].iter_mut().enumerate() {
-            *offset = (i + 1) * stride;
-        }
-    } else if encoders.len() > 1 && all_flat {
+    if encoders.len() > 1 && encoders.iter().all(|e| e.state.is_none()) {
         let mut start = 0;
         while start < num_rows {
             let len = ENCODE_ROW_TILE.min(num_rows - start);
@@ -784,53 +750,6 @@ unsafe fn encode_flat_array(
         | D::Interval(_) => unreachable!(),
 
         _ => unreachable!(),
-    }
-}
-
-/// The byte offset of each column within a row and the row width, if all columns have a fixed
-/// size.
-fn fixed_column_offsets<'a>(
-    encoders: &[Encoder],
-    fields: impl IntoIterator<Item = (RowEncodingOptions, Option<&'a RowEncodingContext>)>,
-) -> Option<(Vec<usize>, usize)> {
-    let mut offset = 0;
-    let mut offsets = Vec::with_capacity(encoders.len());
-    for (encoder, (opt, dict)) in encoders.iter().zip(fields) {
-        offsets.push(offset);
-        offset += fixed_size(encoder.array.dtype(), opt, dict)?;
-    }
-    Some((offsets, offset))
-}
-
-/// Encode a flat array with the values `stride` bytes apart, starting at the beginning of
-/// `buffer`.
-unsafe fn encode_flat_array_strided(
-    buffer: &mut [MaybeUninit<u8>],
-    stride: usize,
-    array: &dyn Array,
-    opt: RowEncodingOptions,
-    dict: Option<&RowEncodingContext>,
-    offsets: &mut Vec<usize>,
-) {
-    use ArrowDataType as D;
-
-    let is_categorical = matches!(dict, Some(RowEncodingContext::Categorical(_)));
-    match array.dtype() {
-        D::Boolean if !is_categorical => {
-            let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
-            boolean::encode_bool_strided(buffer.as_mut_ptr(), stride, array, opt);
-        },
-        dt if dt.is_numeric() && !is_categorical && !matches!(dt, D::Int128 if dict.is_some()) => {
-            with_match_arrow_primitive_type!(dt, |$T| {
-                let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-                numeric::encode_strided(buffer.as_mut_ptr(), stride, array, opt);
-            })
-        },
-        _ => {
-            offsets.clear();
-            offsets.extend((0..array.len()).map(|i| i * stride));
-            encode_flat_array(buffer, array, opt, dict, offsets);
-        },
     }
 }
 

@@ -309,27 +309,6 @@ unsafe fn encode_slice_with_validity<T: FixedLengthEncoding>(
     });
 }
 
-/// Encode values `stride` bytes apart starting at `out`.
-pub(crate) unsafe fn encode_strided<T: NativeType + FixedLengthEncoding>(
-    out: *mut MaybeUninit<u8>,
-    stride: usize,
-    arr: &PrimitiveArray<T>,
-    opt: RowEncodingOptions,
-) {
-    let values = arr.values().as_slice();
-    match arr.validity().filter(|_| arr.null_count() > 0) {
-        None => {
-            let descending = opt.contains(RowEncodingOptions::DESCENDING);
-            for (i, value) in values.iter().enumerate() {
-                write_value::<T>(out.add(i * stride), 1, encode_value(*value, descending));
-            }
-        },
-        Some(validity) => {
-            encode_values_with_validity(values, validity, opt, |i| out.add(i * stride));
-        },
-    }
-}
-
 pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
     input: I,
@@ -365,91 +344,40 @@ unsafe fn decode_value<T: FixedLengthEncoding>(
     (value, is_valid)
 }
 
-/// Collects decoded values and their validity. Validity is pushed 64 rows at a time as one
-/// word.
-pub(crate) struct PrimitiveCollector<T> {
-    values: Vec<T>,
-    validity: BitmapBuilder,
-    has_nulls: bool,
-}
-
-impl<T: NativeType> PrimitiveCollector<T> {
-    pub fn with_capacity(num_rows: usize) -> Self {
-        Self {
-            values: Vec::with_capacity(num_rows),
-            validity: BitmapBuilder::with_capacity(num_rows),
-            has_nulls: false,
-        }
-    }
-
-    #[inline(always)]
-    unsafe fn push_chunk(&mut self, word: u64, len: usize) {
-        self.has_nulls |= word != (u64::MAX >> (64 - len));
-        self.validity.push_word_with_len_unchecked(word, len);
-    }
-
-    pub fn finish(self) -> PrimitiveArray<T> {
-        let validity = if self.has_nulls {
-            self.validity.into_opt_validity()
-        } else {
-            None
-        };
-        PrimitiveArray::new(T::PRIMITIVE.into(), self.values.into(), validity)
-    }
-}
-
-impl<T: NativeType + FixedLengthEncoding> PrimitiveCollector<T> {
-    /// Decode `num_rows` values. `src` gives the location of each row.
-    #[inline(always)]
-    unsafe fn decode(
-        &mut self,
-        num_rows: usize,
-        opt: RowEncodingOptions,
-        mut src: impl FnMut(usize) -> *const u8,
-    ) {
-        let descending = opt.contains(RowEncodingOptions::DESCENDING);
-        let null_sentinel = opt.null_sentinel();
-        self.values.reserve(num_rows);
-        self.validity.reserve(num_rows);
-
-        let out = self.values.as_mut_ptr().add(self.values.len());
-        let mut row = 0;
-        while row < num_rows {
-            let len = (num_rows - row).min(64);
-            let mut word = 0u64;
-            for i in 0..len {
-                let (value, is_valid) = decode_value::<T>(src(row + i), descending, null_sentinel);
-                word |= (is_valid as u64) << i;
-                out.add(row + i).write(value);
-            }
-            self.push_chunk(word, len);
-            row += len;
-        }
-        self.values.set_len(self.values.len() + num_rows);
-    }
-
-    /// Decode `num_rows` values that are `stride` bytes apart starting at `ptr`.
-    pub unsafe fn decode_strided(
-        &mut self,
-        ptr: *const u8,
-        stride: usize,
-        num_rows: usize,
-        opt: RowEncodingOptions,
-    ) {
-        self.decode(num_rows, opt, |i| ptr.add(i * stride));
-    }
-}
-
 pub(crate) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
 ) -> PrimitiveArray<T> {
-    let mut out = PrimitiveCollector::<T>::with_capacity(rows.len());
-    out.decode(rows.len(), opt, |i| {
-        let row = rows.get_unchecked_mut(i);
-        let ptr = row.as_ptr();
-        *row = row.get_unchecked(T::ENCODED_LEN..);
-        ptr
-    });
-    out.finish()
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
+    let null_sentinel = opt.null_sentinel();
+    let num_rows = rows.len();
+    let mut values = Vec::<T>::with_capacity(num_rows);
+    let mut validity = BitmapBuilder::with_capacity(num_rows);
+    let mut has_nulls = false;
+
+    // Validity is pushed 64 rows at a time as one word.
+    let out = values.as_mut_ptr();
+    let mut row = 0;
+    while row < num_rows {
+        let len = (num_rows - row).min(64);
+        let mut word = 0u64;
+        for i in 0..len {
+            let slice = rows.get_unchecked_mut(row + i);
+            let (value, is_valid) = decode_value::<T>(slice.as_ptr(), descending, null_sentinel);
+            *slice = slice.get_unchecked(T::ENCODED_LEN..);
+            word |= (is_valid as u64) << i;
+            out.add(row + i).write(value);
+        }
+        has_nulls |= word != (u64::MAX >> (64 - len));
+        validity.push_word_with_len_unchecked(word, len);
+        row += len;
+    }
+    values.set_len(num_rows);
+
+    let validity = if has_nulls {
+        validity.into_opt_validity()
+    } else {
+        None
+    };
+    PrimitiveArray::new(T::PRIMITIVE.into(), values.into(), validity)
 }

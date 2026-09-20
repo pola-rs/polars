@@ -2,13 +2,11 @@
 //! Builds a [`BinaryViewArray`] from decoded values.
 //!
 //! Unlike [`MutableBinaryViewArray`](polars_arrow::array::MutableBinaryViewArray) this lets
-//! decoders write value bytes straight into the data buffer.
+//! decoders push ready made inline views.
 use polars_arrow::array::{BinaryViewArray, View};
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_buffer::Buffer;
-
-use crate::utils::BLOCK;
 
 /// A data buffer is not grown past this length, except for a single value that is larger.
 const MAX_BUFFER_LEN: usize = i32::MAX as usize;
@@ -49,98 +47,32 @@ impl ViewBuilder {
         self.views.push(view);
     }
 
-    #[inline(always)]
     pub fn push_bytes(&mut self, bytes: &[u8]) {
         if bytes.len() <= View::MAX_INLINE_SIZE as usize {
             self.push_inline(View::new_inline(bytes));
-        } else {
-            unsafe {
-                let dst = self.start_value(bytes.len());
-                std::ptr::copy_nonoverlapping(bytes.as_ptr(), dst, bytes.len());
-                let prefix = u32::from_le_bytes(bytes[..4].try_into().unwrap());
-                self.finish_value(bytes.len(), prefix);
-            }
+            return;
         }
-    }
-
-    /// Start a value of at least `len` bytes. Returns where to write the bytes. Up to `len` +
-    /// [`BLOCK`] bytes may be written. Use [`Self::grow_value`] if more room is needed and
-    /// [`Self::finish_value`] once all bytes are written.
-    #[inline(always)]
-    pub unsafe fn start_value(&mut self, len: usize) -> *mut u8 {
-        if self.buffer.len() + len.max(BLOCK) > MAX_BUFFER_LEN && !self.buffer.is_empty() {
+        let length = u32::try_from(bytes.len()).expect("value longer than u32::MAX bytes");
+        // A single value may be larger than the limit and then gets its own buffer.
+        if self.buffer.len() + bytes.len() > MAX_BUFFER_LEN && !self.buffer.is_empty() {
             self.flush_buffer();
         }
-        self.buffer.reserve(len + BLOCK);
-        self.buffer.as_mut_ptr().add(self.buffer.len())
-    }
-
-    /// Make room for `additional` more bytes in the value being written, of which `written`
-    /// bytes are done. Returns the new location of the start of the value.
-    #[inline(always)]
-    pub unsafe fn grow_value(&mut self, written: usize, additional: usize) -> *mut u8 {
-        if self.buffer.len() + written + additional > MAX_BUFFER_LEN && !self.buffer.is_empty() {
-            self.move_value_to_new_buffer(written, additional);
-        } else {
-            self.buffer.reserve(written + additional);
-        }
-        self.buffer.as_mut_ptr().add(self.buffer.len())
-    }
-
-    #[cold]
-    unsafe fn move_value_to_new_buffer(&mut self, written: usize, additional: usize) {
-        let mut buffer = Vec::with_capacity(written + additional + BLOCK);
-        std::ptr::copy_nonoverlapping(
-            self.buffer.as_ptr().add(self.buffer.len()),
-            buffer.as_mut_ptr(),
-            written,
-        );
-        std::mem::swap(&mut self.buffer, &mut buffer);
-        self.total_buffer_len += buffer.len();
-        self.completed_buffers.push(Buffer::from(buffer));
+        let offset = self.buffer.len();
+        self.buffer.extend_from_slice(bytes);
+        let view = View {
+            length,
+            prefix: u32::from_le_bytes(bytes[..4].try_into().unwrap()),
+            buffer_idx: self.completed_buffers.len() as u32,
+            offset: offset as u32,
+        };
+        self.total_bytes_len += bytes.len();
+        self.views.push(view);
     }
 
     fn flush_buffer(&mut self) {
         let buffer = std::mem::take(&mut self.buffer);
         self.total_buffer_len += buffer.len();
         self.completed_buffers.push(Buffer::from(buffer));
-    }
-
-    /// Finish the value started with [`Self::start_value`]. `prefix` holds the first 4 bytes
-    /// of the value.
-    ///
-    /// # Safety
-    /// `len` bytes must have been written and `len > View::MAX_INLINE_SIZE`.
-    #[inline(always)]
-    pub unsafe fn finish_value(&mut self, len: usize, prefix: u32) {
-        debug_assert!(len > View::MAX_INLINE_SIZE as usize);
-        let length = u32::try_from(len).expect("value longer than u32::MAX bytes");
-        let offset = self.buffer.len();
-        self.buffer.set_len(offset + len);
-        let view = View {
-            length,
-            prefix,
-            buffer_idx: self.completed_buffers.len() as u32,
-            offset: offset as u32,
-        };
-        self.total_bytes_len += len;
-        self.views.push(view);
-    }
-
-    /// Finish a value started with [`Self::start_value`] that turned out to fit inline.
-    ///
-    /// # Safety
-    /// `len` bytes must have been written.
-    #[inline(never)]
-    pub unsafe fn finish_short_value(&mut self, len: usize) {
-        let bytes = self
-            .buffer
-            .spare_capacity_mut()
-            .get_unchecked(..len)
-            .as_ptr()
-            .cast::<u8>();
-        let view = View::new_inline(std::slice::from_raw_parts(bytes, len));
-        self.push_inline(view);
     }
 
     pub fn freeze(mut self, dtype: ArrowDataType, validity: Option<Bitmap>) -> BinaryViewArray {

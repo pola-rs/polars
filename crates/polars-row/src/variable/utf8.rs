@@ -91,33 +91,18 @@ unsafe fn encode_short(dst: *mut MaybeUninit<u8>, block: [u8; BLOCK], len: usize
     }
 }
 
-/// Encode a string of at least [`BLOCK`] bytes followed by the terminator.
-#[inline(always)]
-unsafe fn encode_long(dst: *mut MaybeUninit<u8>, src: *const u8, len: usize, t: u8) {
-    debug_assert!(len >= BLOCK);
-    let mut i = 0;
-    while i + BLOCK <= len {
-        let block = std::ptr::read_unaligned(src.add(i) as *const [u8; BLOCK]);
-        std::ptr::write_unaligned(dst.add(i) as *mut [u8; BLOCK], transform_block(block, t));
-        i += BLOCK;
-    }
-    // The last block overlaps with the previous one and writes the same bytes there.
-    let block = std::ptr::read_unaligned(src.add(len - BLOCK) as *const [u8; BLOCK]);
-    std::ptr::write_unaligned(
-        dst.add(len - BLOCK) as *mut [u8; BLOCK],
-        transform_block(block, t),
-    );
-    *dst.add(len) = MaybeUninit::new(t ^ 0x01);
-}
-
+/// Encode the bytes of a string followed by the terminator.
 #[inline(always)]
 unsafe fn encode_bytes(dst: *mut MaybeUninit<u8>, s: &[u8], t: u8) {
-    if s.len() >= BLOCK {
-        encode_long(dst, s.as_ptr(), s.len(), t);
-    } else {
+    if s.len() < BLOCK {
         let mut block = [0u8; BLOCK];
         std::ptr::copy_nonoverlapping(s.as_ptr(), block.as_mut_ptr(), s.len());
         encode_short(dst, block, s.len(), t);
+    } else {
+        for (i, &b) in s.iter().enumerate() {
+            *dst.add(i) = MaybeUninit::new(t ^ (b + 2));
+        }
+        *dst.add(s.len()) = MaybeUninit::new(t ^ 0x01);
     }
 }
 
@@ -130,14 +115,7 @@ unsafe fn encode_view(dst: *mut MaybeUninit<u8>, view: &View, buffers: &[Buffer<
         block[..12].copy_from_slice(&raw[4..]);
         encode_short(dst, block, len, t);
     } else {
-        let src = view.get_external_slice_unchecked(buffers).as_ptr();
-        if len >= BLOCK {
-            encode_long(dst, src, len, t);
-        } else {
-            let mut block = [0u8; BLOCK];
-            std::ptr::copy_nonoverlapping(src, block.as_mut_ptr(), len);
-            encode_short(dst, block, len, t);
-        }
+        encode_bytes(dst, view.get_external_slice_unchecked(buffers), t);
     }
 }
 
@@ -238,47 +216,15 @@ fn decode_block(mut block: [u8; BLOCK], t: u8) -> [u8; BLOCK] {
     block
 }
 
-/// Decode the value at the start of `row` into `builder` and return its length. Nulls are not
-/// handled here.
-#[inline(always)]
-unsafe fn decode_long(row: &[u8], t: u8, builder: &mut ViewBuilder) -> (usize, u32) {
-    let term = t ^ 0x01;
-    let mut dst = builder.start_value(BLOCK);
-    let mut prefix = [0u8; 4];
-    let mut i = 0;
-    loop {
-        if i + BLOCK <= row.len() {
-            let block = std::ptr::read_unaligned(row.as_ptr().add(i) as *const [u8; BLOCK]);
-            let end = find_byte(block, term);
-            let decoded = decode_block(block, t);
-            std::ptr::write_unaligned(dst.add(i) as *mut [u8; BLOCK], decoded);
-            if i == 0 {
-                prefix.copy_from_slice(&decoded[..4]);
-            }
-            i += end;
-            if end < BLOCK {
-                break;
-            }
-            dst = builder.grow_value(i, BLOCK);
-        } else {
-            dst = builder.grow_value(i, row.len() - i);
-            while *row.get_unchecked(i) != term {
-                let b = (*row.get_unchecked(i) ^ t).wrapping_sub(2);
-                *dst.add(i) = b;
-                if i < 4 {
-                    prefix[i] = b;
-                }
-                i += 1;
-            }
-            break;
-        }
-    }
-    (i, u32::from_le_bytes(prefix))
-}
-
 /// Decode one value and push it to `builder`. Returns `false` for null.
 #[inline(always)]
-unsafe fn decode_one(row: &mut &[u8], null_sentinel: u8, t: u8, builder: &mut ViewBuilder) -> bool {
+unsafe fn decode_one(
+    row: &mut &[u8],
+    null_sentinel: u8,
+    t: u8,
+    builder: &mut ViewBuilder,
+    scratch: &mut Vec<u8>,
+) -> bool {
     if *row.get_unchecked(0) == null_sentinel {
         *row = row.get_unchecked(1..);
         return false;
@@ -295,13 +241,8 @@ unsafe fn decode_one(row: &mut &[u8], null_sentinel: u8, t: u8, builder: &mut Vi
         }
     }
 
-    let (len, prefix) = decode_long(row, t, builder);
-    if len <= View::MAX_INLINE_SIZE as usize {
-        // Only happens close to the end of the buffer.
-        builder.finish_short_value(len);
-    } else {
-        builder.finish_value(len, prefix);
-    }
+    let len = decode_into_scratch(row, t, scratch);
+    builder.push_bytes(scratch);
     *row = row.get_unchecked(1 + len..);
     true
 }
@@ -311,10 +252,11 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8Vie
     let t = descending_mask(opt);
     let num_rows = rows.len();
     let mut builder = ViewBuilder::with_capacity(num_rows);
+    let mut scratch = Vec::new();
     let mut validity = BitmapBuilder::new();
 
     for row in rows.iter_mut() {
-        if !decode_one(row, null_sentinel, t, &mut builder) {
+        if !decode_one(row, null_sentinel, t, &mut builder, &mut scratch) {
             validity.reserve(num_rows);
             validity.extend_constant(builder.len(), true);
             validity.push(false);
@@ -325,7 +267,7 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8Vie
 
     if !validity.is_empty() {
         for row in rows[builder.len()..].iter_mut() {
-            let is_valid = decode_one(row, null_sentinel, t, &mut builder);
+            let is_valid = decode_one(row, null_sentinel, t, &mut builder, &mut scratch);
             validity.push(is_valid);
             if !is_valid {
                 builder.push_null();
