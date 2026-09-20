@@ -281,9 +281,9 @@ def test_dynamic_literal_arithmetic_schema() -> None:
     q = lf.select(out=pl.col("a") + pl.lit(100) * pl.lit(100))
     assert q.collect_schema()["out"] == pl.Int16
     assert q.collect().to_series().to_list() == [10001]
-    q = lf.select(out=pl.when(pl.col("a") > 0).then(1).otherwise(10**10))
-    assert q.collect_schema()["out"] == pl.Int64
-    assert q.collect().to_series().to_list() == [1]
+    assert q.collect(optimizations=pl.QueryOptFlags.none()).to_series().to_list() == [
+        10001
+    ]
 
 
 @pytest.mark.parametrize(

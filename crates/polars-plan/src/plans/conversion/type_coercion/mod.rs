@@ -36,6 +36,7 @@ use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
 
 use super::*;
+use crate::plans::aexpr::try_fold_dyn;
 
 pub struct TypeCoercionRule {}
 
@@ -119,6 +120,15 @@ impl OptimizationRule for TypeCoercionRule {
         ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
+
+        // Fold literal arithmetic first so the literal is materialized exactly
+        // wherever it is used.
+        if !matches!(expr, AExpr::Literal(_))
+            && let Some(v) = try_fold_dyn(expr, expr_arena)
+        {
+            return Ok(Some(AExpr::Literal(LiteralValue::Dyn(v))));
+        }
+
         let out = match *expr {
             ref ae @ AExpr::Cast { .. } => {
                 let AExpr::Cast {

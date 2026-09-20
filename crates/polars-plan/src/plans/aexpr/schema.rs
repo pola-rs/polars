@@ -42,8 +42,31 @@ impl AExpr {
     ///
     /// This is taken as `&mut bool` as for some expressions this is determined by the upper node
     /// (e.g. `alias`, `cast`).
-    #[recursive]
     pub fn to_field_impl(&self, ctx: &ToFieldContext) -> PolarsResult<Field> {
+        let mut field = self.to_field_inner(ctx)?;
+
+        // The value in a dynamic literal dtype is only known for a literal or
+        // an expression that folds to one.
+        if let DataType::Unknown(kind @ (UnknownKind::Float(_) | UnknownKind::Int(_))) =
+            &field.dtype
+            && !matches!(self, AExpr::Literal(_))
+        {
+            let dtype = match super::dyn_fold::try_fold_dyn(self, ctx.arena) {
+                Some(v) => LiteralValue::Dyn(v).get_datatype(),
+                None => match kind {
+                    UnknownKind::Float(_) => {
+                        DataType::Unknown(UnknownKind::Float(TotalOrdWrap(f64::NAN)))
+                    },
+                    _ => return Ok(field),
+                },
+            };
+            field.set_dtype(dtype);
+        }
+        Ok(field)
+    }
+
+    #[recursive]
+    fn to_field_inner(&self, ctx: &ToFieldContext) -> PolarsResult<Field> {
         use AExpr::*;
         use DataType::*;
         match self {
@@ -580,12 +603,6 @@ fn get_arithmetic_field(
     // further right_type is only determined when needed.
     let mut left_field = left_ae.to_field_impl(ctx)?;
     let right_field = right_ae.to_field_impl(ctx)?;
-    if let (Unknown(l), Unknown(r)) = (&left_field.dtype, &right_field.dtype)
-        && let Some(kind) = fold_dyn_arithmetic(l, r, op)
-    {
-        left_field.set_dtype(Unknown(kind));
-        return Ok(left_field);
-    }
     #[cfg(feature = "dtype-struct")]
     if let (DataType::Struct(fields), numeric) | (numeric, DataType::Struct(fields)) =
         (&left_field.dtype, &right_field.dtype)
@@ -837,36 +854,6 @@ fn widen_decimal(dtype: DataType) -> DataType {
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, scale) => DataType::Decimal(DEC128_MAX_PREC, scale),
         dt => dt,
-    }
-}
-
-/// Arithmetic on two dynamic literals gives the dynamic literal that constant
-/// folding will produce. Division folds to a typed float, so it is left out.
-fn fold_dyn_arithmetic(l: &UnknownKind, r: &UnknownKind, op: Operator) -> Option<UnknownKind> {
-    use UnknownKind::*;
-    let as_f64 = |k: &UnknownKind| match k {
-        Int(v) => Some(*v as f64),
-        Float(v) => Some(v.0),
-        _ => None,
-    };
-    match (l, r) {
-        (Int(a), Int(b)) => match op {
-            Operator::Plus => a.checked_add(*b),
-            Operator::Minus => a.checked_sub(*b),
-            Operator::Multiply => a.checked_mul(*b),
-            _ => None,
-        }
-        .map(Int),
-        _ => {
-            let (a, b) = (as_f64(l)?, as_f64(r)?);
-            let v = match op {
-                Operator::Plus => a + b,
-                Operator::Minus => a - b,
-                Operator::Multiply => a * b,
-                _ => return None,
-            };
-            Some(Float(TotalOrdWrap(v)))
-        },
     }
 }
 

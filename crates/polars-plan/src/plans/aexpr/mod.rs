@@ -1,6 +1,8 @@
 mod builder;
 mod canonical;
 mod determinism;
+mod dyn_fold;
+pub(crate) use dyn_fold::{fold_dyn_binary, fold_dyn_negate, try_fold_dyn};
 mod equality;
 mod evaluate;
 pub(crate) mod filter_constraint;

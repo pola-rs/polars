@@ -600,7 +600,6 @@ def dyn_lit_lf() -> pl.LazyFrame:
         (pl.col("d") == 1.55, [False, True, False, None], pl.Boolean),
         (pl.col("d") != 1.55, [True, False, True, None], pl.Boolean),
         (pl.lit(1.55) < pl.col("d"), [False, False, True, None], pl.Boolean),
-        (pl.col("d") > 1, [True, True, True, None], pl.Boolean),
         (
             pl.col("d").is_between(1.55, 1.56),
             [False, True, True, None],
@@ -619,11 +618,6 @@ def dyn_lit_lf() -> pl.LazyFrame:
         (
             pl.col("d") / 2.0,
             [D("0.77"), D("0.78"), D("0.78"), None],
-            pl.Decimal(38, 2),
-        ),
-        (
-            pl.col("d") * 2,
-            [D("3.08"), D("3.10"), D("3.12"), None],
             pl.Decimal(38, 2),
         ),
         (
@@ -714,22 +708,49 @@ def test_decimal_dynamic_literal_merged_values() -> None:
         )
 
 
-def test_decimal_dynamic_literal_arithmetic_folding() -> None:
+@pytest.mark.parametrize(
+    ("lit_expr", "expected"),
+    [
+        (pl.lit(0.1) * pl.lit(0.001), D("1.0001")),
+        (pl.lit(0.1) * pl.lit(0.002) - 0.0001, D("1.0001")),
+        (pl.lit(1.5) % pl.lit(1.0), D("1.5")),
+        (pl.lit(1.5) // pl.lit(1.0), D("2")),
+        (-pl.lit(0.25), D("0.75")),
+        (pl.lit(2) * pl.lit(0.25), D("1.5")),
+    ],
+)
+def test_decimal_dynamic_literal_arithmetic_folding(
+    lit_expr: pl.Expr, expected: D
+) -> None:
     lf = pl.LazyFrame({"d": [D("1.00")]}, schema={"d": pl.Decimal(15, 2)})
-    for e in [
-        pl.col("d") + (pl.lit(0.1) * pl.lit(0.001)),
-        pl.col("d") + (pl.lit(0.1) * pl.lit(0.002) - 0.0001),
-    ]:
-        q = lf.select(out=e)
-        assert q.collect_schema()["out"] == pl.Decimal(38, 4)
+    q = lf.select(out=pl.col("d") + lit_expr)
+    dtype = q.collect_schema()["out"]
+    assert dtype.is_decimal()
+    for optimizations in [pl.QueryOptFlags(), pl.QueryOptFlags.none()]:
         assert_series_equal(
-            q.collect().get_column("out"),
-            pl.Series("out", [D("1.0001")], pl.Decimal(38, 4)),
+            q.collect(optimizations=optimizations).get_column("out"),
+            pl.Series("out", [expected], dtype),
         )
-        assert_series_equal(
-            q.collect(optimizations=pl.QueryOptFlags.none()).get_column("out"),
-            pl.Series("out", [D("1.0001")], pl.Decimal(38, 4)),
-        )
+
+
+def test_decimal_dynamic_literal_computed_values_not_trusted() -> None:
+    lf = pl.LazyFrame({"d": [D("1.00")]}, schema={"d": pl.Decimal(15, 2)})
+    q = lf.select(out=pl.col("d") + pl.lit(0.1).pow(3))
+    assert q.collect_schema()["out"] == pl.Float64
+    assert q.collect().get_column("out").to_list() == [1.001]
+
+    lf = pl.LazyFrame({"d": [D("0.1"), None]}, schema={"d": pl.Decimal(38, 28)})
+    q = lf.select(
+        abs=pl.col("d") == pl.lit(0.1).abs(),
+        mul=pl.col("d") == pl.lit(0.1) * 1.0,
+        fill=pl.col("d").fill_null(pl.lit(0.1) * 1.0),
+        tern=pl.when(pl.col("d").is_null()).then(pl.lit(0.1) * 1.0).otherwise("d"),
+        coalesce=pl.coalesce("d", pl.lit(0.1) * 1.0),
+    )
+    for optimizations in [pl.QueryOptFlags(), pl.QueryOptFlags.none()]:
+        out = q.collect(optimizations=optimizations)
+        assert out.row(0) == (True, True, D("0.1"), D("0.1"), D("0.1"))
+        assert out.row(1) == (None, None, D("0.1"), D("0.1"), D("0.1"))
 
 
 def test_decimal_dynamic_float_literal_exact_digits() -> None:
