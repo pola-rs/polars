@@ -1039,11 +1039,15 @@ def test_outer_join_where_pushed_condition_downgrades_to_cross(
     plan = query.explain()
     assert "CROSS JOIN" in plan
     assert "NESTED LOOP JOIN" not in plan
-    expected = pl.DataFrame({"a": [1, 2, 3]}).join(
-        pl.DataFrame({"b": [0, 1, 2]}).filter(pl.col("b") > 1), how="cross"
-    ) if how == "left" else pl.DataFrame({"a": [1, 2, 3]}).filter(
-        pl.col("a") > 1
-    ).join(pl.DataFrame({"b": [0, 1, 2]}), how="cross")
+    expected = (
+        pl.DataFrame({"a": [1, 2, 3]}).join(
+            pl.DataFrame({"b": [0, 1, 2]}).filter(pl.col("b") > 1), how="cross"
+        )
+        if how == "left"
+        else pl.DataFrame({"a": [1, 2, 3]})
+        .filter(pl.col("a") > 1)
+        .join(pl.DataFrame({"b": [0, 1, 2]}), how="cross")
+    )
     assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
 
 
