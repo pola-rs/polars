@@ -1041,13 +1041,13 @@ def test_comparison_literal_downcast_rewrites() -> None:
 
     assert_rewrite(
         pl.col("datetime[ns]") == pl.lit(datetime(2026, 1, 1), dtype=pl.Datetime("ms")),
-        "is_between([2026-01-01 00:00:00, 2026-01-01 00:00:00.000999999])",
+        "is_between([2026-01-01T00:00:00, 2026-01-01T00:00:00.000999999])",
     )
 
     assert_rewrite(
         pl.col("datetime[ns]")
         <= pl.lit(datetime(2026, 1, 1, microsecond=1000), dtype=pl.Datetime("ms")),
-        "<= 2026-01-01 00:00:00.001999999",
+        "<= 2026-01-01T00:00:00.001999999",
     )
 
     assert_rewrite(

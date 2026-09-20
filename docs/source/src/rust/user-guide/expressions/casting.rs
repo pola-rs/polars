@@ -108,20 +108,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:bool]
 
     // --8<-- [start:dates]
-    use chrono::prelude::*;
+    use jiff::civil::{Date as NaiveDate, Time as NaiveTime};
 
     let df = df!(
         "date" => [
-            NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(),  // epoch
-            NaiveDate::from_ymd_opt(1970, 1, 10).unwrap(),  // 9 days later
+            NaiveDate::new(1970, 1, 1).unwrap(),  // epoch
+            NaiveDate::new(1970, 1, 10).unwrap(),  // 9 days later
         ],
         "datetime" => [
-            NaiveDate::from_ymd_opt(1970, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(),  // epoch
-            NaiveDate::from_ymd_opt(1970, 1, 1).unwrap().and_hms_opt(0, 1, 0).unwrap(),  // 1 minute later
+            NaiveDate::new(1970, 1, 1).unwrap().at(0, 0, 0, 0),  // epoch
+            NaiveDate::new(1970, 1, 1).unwrap().at(0, 1, 0, 0),  // 1 minute later
         ],
         "time" => [
-            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),  // reference time
-            NaiveTime::from_hms_opt(0, 0, 1).unwrap(),  // 1 second later
+            NaiveTime::new(0, 0, 0, 0).unwrap(),  // reference time
+            NaiveTime::new(0, 0, 1, 0).unwrap(),  // 1 second later
         ]
     )
     .unwrap()
@@ -146,8 +146,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:dates2]
     let df = df! (
             "date" => [
-                NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
-                NaiveDate::from_ymd_opt(2022, 1, 2).unwrap(),
+                NaiveDate::new(2022, 1, 1).unwrap(),
+                NaiveDate::new(2022, 1, 2).unwrap(),
             ],
             "string" => [
                 "2022-01-01",

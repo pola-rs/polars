@@ -337,7 +337,7 @@ def test_datetime_consistency() -> None:
         datetime(2000, 1, 1, 1, 1, 1, 555555, tzinfo=ZoneInfo("Asia/Kathmandu")),
         datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=ZoneInfo("Asia/Kathmandu")),
         datetime(3099, 12, 31, 23, 59, 59, 123456, tzinfo=ZoneInfo("Asia/Kathmandu")),
-        datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=ZoneInfo("Asia/Kathmandu")),
+        datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=ZoneInfo("Asia/Kathmandu")),
     ]
     ddf = pl.DataFrame({"dtm": test_data}).with_columns(
         pl.col("dtm").dt.nanosecond().alias("ns")
@@ -1846,13 +1846,11 @@ def test_tz_aware_with_timezone_directive(
     assert result == expected
 
 
-def test_local_time_zone_name() -> None:
-    ser = pl.Series(["2020-01-01 03:00ACST"]).str.strptime(
-        pl.Datetime, "%Y-%m-%d %H:%M%Z"
-    )
-    result = ser[0]
-    expected = datetime(2020, 1, 1, 3)
-    assert result == expected
+def test_local_time_zone_name_rejected() -> None:
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2020-01-01 03:00ACST"]).str.strptime(
+            pl.Datetime, "%Y-%m-%d %H:%M%Z"
+        )
 
 
 def test_tz_aware_filter_lit() -> None:

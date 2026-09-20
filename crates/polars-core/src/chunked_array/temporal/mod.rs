@@ -13,15 +13,13 @@ pub mod string;
 #[cfg(feature = "dtype-time")]
 mod time;
 
-#[cfg(feature = "dtype-date")]
-use chrono::NaiveDate;
-use chrono::NaiveDateTime;
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+use jiff::civil::Date as NaiveDate;
+use jiff::civil::DateTime as NaiveDateTime;
 #[cfg(any(feature = "dtype-time", feature = "dtype-date"))]
-use chrono::NaiveTime;
+use jiff::civil::Time as NaiveTime;
 #[cfg(feature = "timezones")]
-use chrono::TimeZone as _;
-#[cfg(feature = "timezones")]
-use chrono_tz::Tz;
+use jiff::tz::TimeZone as Tz;
 #[cfg(feature = "timezones")]
 use polars_arrow::legacy::kernels::{Ambiguous, NonExistent, convert_to_naive_local};
 #[cfg(feature = "timezones")]
@@ -50,11 +48,12 @@ pub fn try_localize_datetime(
     ambiguous: Ambiguous,
     non_existent: NonExistent,
 ) -> PolarsResult<Option<NaiveDateTime>> {
-    convert_to_naive_local(&chrono_tz::UTC, tz, ndt, ambiguous, non_existent)
+    convert_to_naive_local(&Tz::UTC, tz, ndt, ambiguous, non_existent)
 }
 
 #[cfg(feature = "timezones")]
 pub fn unlocalize_datetime(ndt: NaiveDateTime, tz: &Tz) -> NaiveDateTime {
     // e.g. '2021-01-01 03:00CDT' -> '2021-01-01 03:00'
-    tz.from_utc_datetime(&ndt).naive_local()
+    let ts = Tz::UTC.to_timestamp(ndt).expect("datetime out-of-range");
+    tz.to_datetime(ts)
 }

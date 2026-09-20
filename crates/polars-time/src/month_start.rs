@@ -1,4 +1,4 @@
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
 use polars_arrow::legacy::time_zone::Tz;
 #[cfg(feature = "timezones")]
 use polars_core::chunked_array::temporal::{try_localize_datetime, unlocalize_datetime};
@@ -20,28 +20,23 @@ pub(crate) fn roll_backward(
         Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
         _ => timestamp_to_datetime(t),
     };
-    let date = NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1).ok_or_else(|| {
+    let date = NaiveDate::new(ts.year(), ts.month(), 1).map_err(|_| {
         polars_err!(
             ComputeError: "Could not construct date {}-{}-1", ts.year(), ts.month()
         )
     })?;
-    let time = NaiveTime::from_hms_nano_opt(
-        ts.hour(),
-        ts.minute(),
-        ts.second(),
-        ts.and_utc().timestamp_subsec_nanos(),
-    )
-    .ok_or_else(|| {
-        polars_err!(
-            ComputeError:
-                "Could not construct time {}:{}:{}.{}",
-                ts.hour(),
-                ts.minute(),
-                ts.second(),
-                ts.and_utc().timestamp_subsec_nanos()
-        )
-    })?;
-    let ndt = NaiveDateTime::new(date, time);
+    let time = NaiveTime::new(ts.hour(), ts.minute(), ts.second(), ts.subsec_nanosecond())
+        .map_err(|_| {
+            polars_err!(
+                ComputeError:
+                    "Could not construct time {}:{}:{}.{}",
+                    ts.hour(),
+                    ts.minute(),
+                    ts.second(),
+                    ts.subsec_nanosecond()
+            )
+        })?;
+    let ndt = date.to_datetime(time);
     let t = match tz {
         #[cfg(feature = "timezones")]
         Some(tz) => datetime_to_timestamp(

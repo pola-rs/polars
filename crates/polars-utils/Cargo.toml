@@ -24,6 +24,7 @@ futures = { workspace = true, optional = true }
 half = { workspace = true, optional = false, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
+jiff = { workspace = true }
 libc = { workspace = true }
 memmap = { workspace = true, optional = true }
 num-derive = { workspace = true }

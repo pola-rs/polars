@@ -9,8 +9,8 @@ repository = { workspace = true }
 description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
-chrono = { workspace = true }
 futures = { workspace = true, optional = true }
+jiff = { workspace = true }
 polars-arrow = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }

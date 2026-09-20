@@ -37,7 +37,7 @@ impl Default for CsvWriterOptions {
 
 /// Options to serialize logical types to CSV.
 ///
-/// The default is to format times and dates as `chrono` crate formats them.
+/// The default is to format times and dates as `jiff`'s strftime engine formats them.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]

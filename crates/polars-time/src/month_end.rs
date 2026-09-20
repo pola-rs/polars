@@ -1,4 +1,4 @@
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime as NaiveDateTime;
 use polars_arrow::legacy::time_zone::Tz;
 #[cfg(feature = "timezones")]
 use polars_core::chunked_array::temporal::{try_localize_datetime, unlocalize_datetime};

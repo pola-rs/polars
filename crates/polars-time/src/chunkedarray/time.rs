@@ -55,7 +55,7 @@ impl TimeMethods for TimeChunked {
     fn parse_from_str_slice(name: PlSmallStr, v: &[&str], fmt: &str) -> TimeChunked {
         v.iter()
             .map(|s| {
-                NaiveTime::parse_from_str(s, fmt)
+                NaiveTime::strptime(fmt, s)
                     .ok()
                     .as_ref()
                     .map(time_to_time64ns)

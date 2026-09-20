@@ -2,7 +2,7 @@
 
 use bytemuck::allocation::zeroed_vec;
 #[cfg(feature = "timezones")]
-use chrono_tz::Tz;
+use jiff::tz::TimeZone as Tz;
 use polars_arrow::array::{ArrayRef, PrimitiveArray};
 use polars_arrow::bitmap::MutableBitmap;
 use polars_arrow::trusted_len::TrustedLen;
@@ -94,7 +94,7 @@ where
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
+        Some(tz) => group_by_values_iter(period, time, closed_window, tu, Tz::get(tz).ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
 

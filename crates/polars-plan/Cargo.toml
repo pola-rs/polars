@@ -31,14 +31,13 @@ bitflags = { workspace = true }
 blake3 = { workspace = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true, features = ["serde"] }
-chrono = { workspace = true, optional = true }
-chrono-tz = { workspace = true, optional = true }
 digest-io = { workspace = true }
 either = { workspace = true }
 futures = { workspace = true }
 hashbrown = { workspace = true }
 hex = { workspace = true }
 indexmap = { workspace = true }
+jiff = { workspace = true, optional = true }
 memmap = { workspace = true }
 murmur3 = { workspace = true }
 num-traits = { workspace = true }
@@ -88,7 +87,7 @@ json = ["polars-io/json", "polars-json"]
 scan_lines = []
 csv = ["polars-io/csv"]
 temporal = [
-  "chrono",
+  "dep:jiff",
   "polars-core/temporal",
   "polars-defs/temporal",
   "polars-core/dtype-date",
@@ -129,7 +128,7 @@ list_count = []
 array_count = ["dtype-array"]
 trigonometry = []
 sign = []
-timezones = ["chrono-tz", "polars-defs/timezones", "polars-core/timezones", "regex"]
+timezones = ["dep:jiff", "polars-defs/timezones", "polars-core/timezones", "regex"]
 binary_encoding = []
 string_encoding = []
 true_div = []

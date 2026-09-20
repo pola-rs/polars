@@ -267,7 +267,7 @@ pub trait TemporalMethods: AsSeries {
     }
 
     /// Convert Time into String with the given format.
-    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    /// See [jiff strftime/strptime](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html).
     fn to_string(&self, format: &str) -> PolarsResult<Series> {
         let s = self.as_series();
         match s.dtype() {
@@ -298,7 +298,7 @@ pub trait TemporalMethods: AsSeries {
     }
 
     /// Convert from Time into String with the given format.
-    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    /// See [jiff strftime/strptime](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html).
     ///
     /// Alias for `to_string`.
     fn strftime(&self, format: &str) -> PolarsResult<Series> {

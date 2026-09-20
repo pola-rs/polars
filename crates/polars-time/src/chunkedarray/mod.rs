@@ -11,13 +11,13 @@ mod rolling_window;
 #[cfg(feature = "dtype-time")]
 mod time;
 
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 #[cfg(feature = "dtype-date")]
 pub use date::DateMethods;
 #[cfg(feature = "dtype-datetime")]
 pub use datetime::DatetimeMethods;
 #[cfg(feature = "dtype-duration")]
 pub use duration::DurationMethods;
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
 use kernels::*;
 use polars_arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;

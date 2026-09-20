@@ -75,7 +75,7 @@ impl PipelineBudget {
                         count_limit={}, \
                         count_in_use={}, \
                         count_sat={:.2}",
-                        chrono::Utc::now(),
+                        jiff::Timestamp::now(),
                         self.kbytes_limit as f64 / 1e3,
                         kbytes_in_use as f64 / 1e3,
                         kbytes_in_use as f64 / self.kbytes_limit as f64,
