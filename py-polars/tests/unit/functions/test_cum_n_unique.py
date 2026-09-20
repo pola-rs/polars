@@ -84,9 +84,7 @@ def test_cum_n_unique_values(
     series = pl.Series("x", values, dtype=dtype)
 
     result = (
-        series.to_frame()
-        .select(pl.col("x").cum_n_unique(reverse=reverse))
-        .to_series()
+        series.to_frame().select(pl.col("x").cum_n_unique(reverse=reverse)).to_series()
     )
 
     expected = pl.Series(
@@ -123,9 +121,7 @@ def test_cum_n_unique_multiple_chunks(
     assert series.n_chunks() == 2
 
     result = (
-        series.to_frame()
-        .select(pl.col("x").cum_n_unique(reverse=reverse))
-        .to_series()
+        series.to_frame().select(pl.col("x").cum_n_unique(reverse=reverse)).to_series()
     )
 
     expected = pl.Series("x", expected_values, dtype=pl.get_index_type())
@@ -152,10 +148,7 @@ def test_cum_n_unique_over_groups(
         }
     )
     query = df.lazy().select(
-        pl.col("x")
-        .cum_n_unique(reverse=reverse)
-        .over("group")
-        .alias("distinct_count")
+        pl.col("x").cum_n_unique(reverse=reverse).over("group").alias("distinct_count")
     )
 
     expected = pl.DataFrame(
