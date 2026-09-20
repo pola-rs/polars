@@ -1668,6 +1668,14 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.cum_sum(reverse))
 
+    def cum_n_unique(self, *, reverse: bool = False) -> Expr:
+        """
+        Return the cumulative number of distinct values.
+
+        Null is counted as a distinct value.
+        """
+        return wrap_expr(self._pyexpr.cum_n_unique(reverse))
+
     def cum_prod(self, *, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative product computed at every element.

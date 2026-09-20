@@ -666,6 +666,22 @@ impl Expr {
         self.map_unary(FunctionExpr::CumSum { reverse })
     }
 
+    /// Return the cumulative number of distinct values, counting null once.
+    #[cfg(all(
+        feature = "cum_agg",
+        feature = "is_first_distinct",
+        feature = "is_last_distinct",
+    ))]
+    pub fn cum_n_unique(self, reverse: bool) -> Self {
+        let distinct = if reverse {
+            self.is_last_distinct()
+        } else {
+            self.is_first_distinct()
+        };
+
+        distinct.cast(IDX_DTYPE).cum_sum(reverse)
+    }
+
     /// Get an array with the cumulative product computed at every element.
     #[cfg(feature = "cum_agg")]
     pub fn cum_prod(self, reverse: bool) -> Self {
