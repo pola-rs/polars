@@ -1,3 +1,4 @@
+use polars_array::{PlArray, StaticArray};
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMaxPolicy};
 
@@ -136,6 +137,43 @@ pub fn arg_max_binary_offset(ca: &BinaryOffsetChunked) -> Option<usize> {
     arg_max_physical_generic(ca)
 }
 
+/// The index of the element no other one is `better` than, walking a chunk at a time.
+///
+/// `better` decides ties, and so which of several equal extremes the index names: `min` keeps
+/// the first of them and `max` the last, as [`Iterator::min_by`] and [`Iterator::max_by`] do.
+fn arg_extreme_physical_generic<'a, T, F>(ca: &'a ChunkedArray<T>, better: F) -> Option<usize>
+where
+    T: PolarsDataType,
+    F: Fn(&T::Physical<'a>, &T::Physical<'a>) -> bool,
+{
+    // Threading the index through the fold as part of its accumulator is what
+    // `.enumerate().flat_map(..).max_by(..)` does, and it makes the accumulator wide enough to
+    // spill: the comparison then reads the best value back out of memory on every element it
+    // keeps.  Holding the best outside the walk leaves the fold nothing to carry, so the whole
+    // chain stays in registers -- and `for_each` still folds, so the chunk's representation is
+    // hoisted out of the loop the way [`Iterator::fold`] hoists it.
+    let mut best: Option<(usize, T::Physical<'a>)> = None;
+    let mut offset = 0;
+
+    for arr in ca.downcast_iter() {
+        let mut i = 0;
+        arr.iter().for_each(|value| {
+            let idx = offset + i;
+            i += 1;
+
+            if let Some(value) = value {
+                match &best {
+                    Some((_, best_value)) if !better(&value, best_value) => {},
+                    _ => best = Some((idx, value)),
+                }
+            }
+        });
+        offset += arr.len();
+    }
+
+    best.map(|(idx, _)| idx)
+}
+
 fn arg_min_physical_generic<T>(ca: &ChunkedArray<T>) -> Option<usize>
 where
     T: PolarsDataType,
@@ -147,7 +185,8 @@ where
     match ca.is_sorted_flag() {
         IsSorted::Ascending => ca.first_non_null(),
         IsSorted::Descending => ca.last_non_null(),
-        IsSorted::Not => arg_min_opt_iter(ca.iter()),
+        // A later element that merely ties is not smaller, so the first minimum wins.
+        IsSorted::Not => arg_extreme_physical_generic(ca, |value, best| value < best),
     }
 }
 
@@ -162,7 +201,8 @@ where
     match ca.is_sorted_flag() {
         IsSorted::Ascending => ca.last_non_null(),
         IsSorted::Descending => ca.first_non_null(),
-        IsSorted::Not => arg_max_opt_iter(ca.iter()),
+        // A later element that ties is taken, so the last maximum wins.
+        IsSorted::Not => arg_extreme_physical_generic(ca, |value, best| value >= best),
     }
 }
 
