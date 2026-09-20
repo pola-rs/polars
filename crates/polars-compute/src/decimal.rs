@@ -550,11 +550,30 @@ pub fn f64_dec128_scale(x: f64) -> Option<usize> {
     Some(format!("{x}").split_once('.').map_or(0, |(_, f)| f.len()))
 }
 
-/// Whether `x` can be represented as a Decimal128 with the given precision and scale.
-pub fn f64_fits_dec128(x: f64, p: usize, s: usize) -> bool {
-    s <= p
-        && x.abs() < POW10_F64[p - s]
-        && f64_to_dec128(x, p, s).is_some_and(|r| dec128_fits(r, p))
+/// Converts a f64 to a Decimal128 using its shortest decimal representation,
+/// returning None if that needs more fractional digits than `s` or doesn't fit.
+pub fn f64_to_dec128_exact(x: f64, p: usize, s: usize) -> Option<i128> {
+    if !x.is_finite() || s > p {
+        return None;
+    }
+    let repr = format!("{x}");
+    let (int_part, frac_part) = repr.split_once('.').unwrap_or((repr.as_str(), ""));
+    if frac_part.len() > s {
+        return None;
+    }
+    let negative = int_part.starts_with('-');
+    let int_part: i128 = int_part.trim_start_matches('-').parse().ok()?;
+    let frac_part_len = frac_part.len();
+    let frac_part: i128 = if frac_part.is_empty() {
+        0
+    } else {
+        frac_part.parse().ok()?
+    };
+    let r = int_part
+        .checked_mul(POW10_I128[s])?
+        .checked_add(frac_part.checked_mul(POW10_I128[s - frac_part_len])?)?;
+    let r = if negative { -r } else { r };
+    dec128_fits(r, p).then_some(r)
 }
 
 /// Converts between two Decimal128s, with a new precision and scale, returning

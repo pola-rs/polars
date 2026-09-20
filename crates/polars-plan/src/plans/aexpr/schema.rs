@@ -2,6 +2,7 @@
 use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::series::arithmetic::NumericListOp;
 use polars_utils::format_pl_smallstr;
+use polars_utils::total_ord::TotalOrdWrap;
 use recursive::recursive;
 
 use super::*;
@@ -579,6 +580,12 @@ fn get_arithmetic_field(
     // further right_type is only determined when needed.
     let mut left_field = left_ae.to_field_impl(ctx)?;
     let right_field = right_ae.to_field_impl(ctx)?;
+    if let (Unknown(l), Unknown(r)) = (&left_field.dtype, &right_field.dtype)
+        && let Some(kind) = fold_dyn_arithmetic(l, r, op)
+    {
+        left_field.set_dtype(Unknown(kind));
+        return Ok(left_field);
+    }
     #[cfg(feature = "dtype-struct")]
     if let (DataType::Struct(fields), numeric) | (numeric, DataType::Struct(fields)) =
         (&left_field.dtype, &right_field.dtype)
@@ -830,6 +837,36 @@ fn widen_decimal(dtype: DataType) -> DataType {
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, scale) => DataType::Decimal(DEC128_MAX_PREC, scale),
         dt => dt,
+    }
+}
+
+/// Arithmetic on two dynamic literals gives the dynamic literal that constant
+/// folding will produce. Division folds to a typed float, so it is left out.
+fn fold_dyn_arithmetic(l: &UnknownKind, r: &UnknownKind, op: Operator) -> Option<UnknownKind> {
+    use UnknownKind::*;
+    let as_f64 = |k: &UnknownKind| match k {
+        Int(v) => Some(*v as f64),
+        Float(v) => Some(v.0),
+        _ => None,
+    };
+    match (l, r) {
+        (Int(a), Int(b)) => match op {
+            Operator::Plus => a.checked_add(*b),
+            Operator::Minus => a.checked_sub(*b),
+            Operator::Multiply => a.checked_mul(*b),
+            _ => None,
+        }
+        .map(Int),
+        _ => {
+            let (a, b) = (as_f64(l)?, as_f64(r)?);
+            let v = match op {
+                Operator::Plus => a + b,
+                Operator::Minus => a - b,
+                Operator::Multiply => a * b,
+                _ => return None,
+            };
+            Some(Float(TotalOrdWrap(v)))
+        },
     }
 }
 

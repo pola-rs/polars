@@ -1,7 +1,10 @@
 use bitflags::bitflags;
 use num_traits::Signed;
 #[cfg(feature = "dtype-decimal")]
-use polars_compute::decimal::{DEC128_MAX_PREC, f64_dec128_scale, f64_fits_dec128, i128_to_dec128};
+use polars_compute::decimal::{
+    DEC128_MAX_PREC, f64_dec128_scale, f64_to_dec128_exact, i128_to_dec128,
+};
+use polars_utils::total_ord::TotalOrdWrap;
 
 use super::*;
 
@@ -153,6 +156,11 @@ pub fn get_supertype_with_options(
 ) -> Option<DataType> {
     fn inner(l: &DataType, r: &DataType, options: SuperTypeOptions) -> Option<DataType> {
         use DataType::*;
+        if let (Unknown(l), Unknown(r)) = (l, r)
+            && let Some(kind) = merge_dyn_kinds(l, r)
+        {
+            return Some(Unknown(kind));
+        }
         if l == r {
             return Some(l.clone());
         }
@@ -534,26 +542,18 @@ pub fn get_supertype_with_options(
                     dynam if dt.is_null() => Some(Unknown(*dynam)),
                     // Find integers sizes
                     UnknownKind::Int(v) if dt.is_primitive_numeric() => {
-                        // Both dyn int
-                        if let Unknown(UnknownKind::Int(v_other)) = dt {
-                            // Take the maximum value to ensure we bubble up the required minimal size.
-                            Some(Unknown(UnknownKind::Int(std::cmp::max(*v, *v_other))))
-                        }
-                        // dyn int vs number
-                        else {
-                            let smallest_fitting_dtype = if dt.is_unsigned_integer() && !v.is_negative() {
-                                materialize_dyn_int_pos(*v).dtype()
-                            } else {
-                                materialize_smallest_dyn_int(*v).dtype()
-                            };
-                            match dt {
-                                UInt64 if smallest_fitting_dtype.is_signed_integer() => {
-                                    // Ensure we don't cast to float when dealing with dynamic literals
-                                    Some(Int64)
-                                },
-                                _ => {
-                                    get_supertype(dt, &smallest_fitting_dtype)
-                                }
+                        let smallest_fitting_dtype = if dt.is_unsigned_integer() && !v.is_negative() {
+                            materialize_dyn_int_pos(*v).dtype()
+                        } else {
+                            materialize_smallest_dyn_int(*v).dtype()
+                        };
+                        match dt {
+                            UInt64 if smallest_fitting_dtype.is_signed_integer() => {
+                                // Ensure we don't cast to float when dealing with dynamic literals
+                                Some(Int64)
+                            },
+                            _ => {
+                                get_supertype(dt, &smallest_fitting_dtype)
                             }
                         }
                     }
@@ -640,16 +640,42 @@ fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType
     }
 }
 
-/// Supertype of a decimal and a dynamic float literal. Keeps the decimal and
-/// widens the scale as needed, or returns `None` if the literal cannot be
-/// represented as a decimal.
+/// Merge the values of two dynamic literal kinds. The result must be valid for
+/// both, so an int keeps the largest magnitude and a float only keeps a value
+/// both agree on.
+fn merge_dyn_kinds(l: &UnknownKind, r: &UnknownKind) -> Option<UnknownKind> {
+    use UnknownKind::*;
+    let merged = match (l, r) {
+        (Int(a), Int(b)) => Int(if a.unsigned_abs() >= b.unsigned_abs() {
+            *a
+        } else {
+            *b
+        }),
+        (Float(a), Float(b)) => Float(if a == b { *a } else { TotalOrdWrap(f64::NAN) }),
+        (Int(i), Float(f)) | (Float(f), Int(i)) => Float(if *i as f64 == f.0 {
+            *f
+        } else {
+            TotalOrdWrap(f64::NAN)
+        }),
+        _ => return None,
+    };
+    Some(merged)
+}
+
+/// Supertype of a decimal and a dynamic float literal. Keeps the decimal,
+/// widening the scale as needed while keeping the integer digits, or returns
+/// `None` if the literal cannot be represented as a decimal.
 #[cfg(feature = "dtype-decimal")]
 fn dyn_float_decimal_supertype(v: f64, prec: usize, scale: usize) -> Option<DataType> {
-    let scale = scale.max(f64_dec128_scale(v)?);
-    if f64_fits_dec128(v, prec, scale) {
-        Some(DataType::Decimal(prec, scale))
-    } else if f64_fits_dec128(v, DEC128_MAX_PREC, scale) {
-        Some(DataType::Decimal(DEC128_MAX_PREC, scale))
+    let new_scale = scale.max(f64_dec128_scale(v)?);
+    let new_prec = prec - scale + new_scale;
+    if new_prec > DEC128_MAX_PREC {
+        return None;
+    }
+    if f64_to_dec128_exact(v, new_prec, new_scale).is_some() {
+        Some(DataType::Decimal(new_prec, new_scale))
+    } else if f64_to_dec128_exact(v, DEC128_MAX_PREC, new_scale).is_some() {
+        Some(DataType::Decimal(DEC128_MAX_PREC, new_scale))
     } else {
         None
     }

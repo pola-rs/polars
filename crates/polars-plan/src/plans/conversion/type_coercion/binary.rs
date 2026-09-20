@@ -267,6 +267,27 @@ pub(super) fn coerced_binop_dtype(
     Ok(Some(st))
 }
 
+/// A dynamic int literal stays a dynamic literal when it becomes a float, so
+/// it can still adapt to the other side later.
+fn dyn_int_to_dyn_float(
+    is_literal: bool,
+    node: Node,
+    v: i128,
+    expr_arena: &mut Arena<AExpr>,
+) -> Node {
+    if is_literal {
+        expr_arena.add(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(
+            v as f64,
+        ))))
+    } else {
+        expr_arena.add(AExpr::Cast {
+            expr: node,
+            dtype: DataType::Unknown(UnknownKind::Float(TotalOrdWrap(v as f64))),
+            options: CastOptions::NonStrict,
+        })
+    }
+}
+
 pub(super) fn process_binary(
     expr_arena: &mut Arena<AExpr>,
     input_schema: &Schema,
@@ -310,11 +331,8 @@ pub(super) fn process_binary(
             }));
         },
         (Unknown(UnknownKind::Int(v)), Unknown(UnknownKind::Float(_))) => {
-            let left = expr_arena.add(AExpr::Cast {
-                expr: node_left,
-                dtype: Unknown(UnknownKind::Float(TotalOrdWrap(*v as f64))),
-                options: CastOptions::NonStrict,
-            });
+            let is_literal = matches!(left, AExpr::Literal(LiteralValue::Dyn(_)));
+            let left = dyn_int_to_dyn_float(is_literal, node_left, *v, expr_arena);
             return Ok(Some(AExpr::BinaryExpr {
                 left,
                 op,
@@ -322,11 +340,8 @@ pub(super) fn process_binary(
             }));
         },
         (Unknown(UnknownKind::Float(_)), Unknown(UnknownKind::Int(v))) => {
-            let right = expr_arena.add(AExpr::Cast {
-                expr: node_right,
-                dtype: Unknown(UnknownKind::Float(TotalOrdWrap(*v as f64))),
-                options: CastOptions::NonStrict,
-            });
+            let is_literal = matches!(right, AExpr::Literal(LiteralValue::Dyn(_)));
+            let right = dyn_int_to_dyn_float(is_literal, node_right, *v, expr_arena);
             return Ok(Some(AExpr::BinaryExpr {
                 left: node_left,
                 op,

@@ -68,7 +68,8 @@ impl IntoMetadata for Metadata {
 pub enum UnknownKind {
     // Hold the value to determine the concrete size.
     Int(i128),
-    // Hold the value to determine the decimal scale.
+    // Hold the value to determine the decimal scale. NaN means the value is
+    // not known, e.g. after merging different literals.
     Float(TotalOrdWrap<f64>),
     // Can be Categorical or String
     Str,
@@ -192,6 +193,7 @@ impl PartialEq for DataType {
                 },
                 (Unknown(l), Unknown(r)) => match (l, r) {
                     (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
+                    (UnknownKind::Float(_), UnknownKind::Float(_)) => true,
                     _ => l == r,
                 },
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
