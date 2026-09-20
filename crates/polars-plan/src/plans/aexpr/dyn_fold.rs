@@ -2,8 +2,7 @@ use polars_utils::floor_divmod::FloorDivMod;
 
 use super::*;
 
-/// Folds arithmetic on two dynamic literals. Simplification uses this too, so
-/// the dtype of a literal expression matches its folded literal.
+/// Folds arithmetic on two dynamic literals.
 pub(crate) fn fold_dyn_binary(
     l: &DynLiteralValue,
     r: &DynLiteralValue,

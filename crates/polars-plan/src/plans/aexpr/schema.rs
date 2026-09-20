@@ -51,7 +51,7 @@ impl AExpr {
             &field.dtype
             && !matches!(self, AExpr::Literal(_))
         {
-            let dtype = match super::dyn_fold::try_fold_dyn(self, ctx.arena) {
+            let dtype = match try_fold_dyn(self, ctx.arena) {
                 Some(v) => LiteralValue::Dyn(v).get_datatype(),
                 None => match kind {
                     UnknownKind::Float(_) => {
@@ -849,7 +849,7 @@ fn get_arithmetic_field(
 }
 
 /// Decimal arithmetic always outputs the maximum precision.
-fn widen_decimal(dtype: DataType) -> DataType {
+pub(crate) fn widen_decimal(dtype: DataType) -> DataType {
     match dtype {
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, scale) => DataType::Decimal(DEC128_MAX_PREC, scale),

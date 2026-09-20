@@ -13,6 +13,7 @@ pub(crate) mod or_factoring;
 pub mod predicates;
 mod scalar;
 mod schema;
+pub(crate) use schema::widen_decimal;
 mod traverse;
 
 use std::hash::{Hash, Hasher};

@@ -2,7 +2,7 @@ use bitflags::bitflags;
 use num_traits::Signed;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::{
-    DEC128_MAX_PREC, f64_dec128_scale, f64_to_dec128_exact, i128_to_dec128,
+    DEC128_MAX_PREC, dec128_fits, f64_dec128_scale, f64_to_dec128_exact, i128_to_dec128,
 };
 
 use super::*;
@@ -648,12 +648,11 @@ fn dyn_float_decimal_supertype(v: f64, prec: usize, scale: usize) -> Option<Data
     if new_prec > DEC128_MAX_PREC {
         return None;
     }
-    if f64_to_dec128_exact(v, new_prec, new_scale).is_some() {
+    let x = f64_to_dec128_exact(v, DEC128_MAX_PREC, new_scale)?;
+    if dec128_fits(x, new_prec) {
         Some(DataType::Decimal(new_prec, new_scale))
-    } else if f64_to_dec128_exact(v, DEC128_MAX_PREC, new_scale).is_some() {
-        Some(DataType::Decimal(DEC128_MAX_PREC, new_scale))
     } else {
-        None
+        Some(DataType::Decimal(DEC128_MAX_PREC, new_scale))
     }
 }
 

@@ -267,8 +267,7 @@ pub(super) fn coerced_binop_dtype(
     Ok(Some(st))
 }
 
-/// A dynamic int literal stays a dynamic literal when it becomes a float, so
-/// it can still adapt to the other side later.
+/// A dynamic int literal stays a dynamic literal when it becomes a float.
 fn dyn_int_to_dyn_float(
     is_literal: bool,
     node: Node,
@@ -282,7 +281,7 @@ fn dyn_int_to_dyn_float(
     } else {
         expr_arena.add(AExpr::Cast {
             expr: node,
-            dtype: DataType::Unknown(UnknownKind::Float(TotalOrdWrap(v as f64))),
+            dtype: DataType::Unknown(UnknownKind::Float(TotalOrdWrap(f64::NAN))),
             options: CastOptions::NonStrict,
         })
     }
