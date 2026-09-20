@@ -1,16 +1,18 @@
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor;
 use polars_core::frame::DataFrame;
+use polars_core::prelude::DataType;
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
+use polars_io::predicates::{ColumnPredicateExpr, SpecializedColumnPredicate};
 use polars_io::prelude::ParallelStrategy;
+use polars_parquet::read::PredicateFilter;
 use polars_utils::IdxSize;
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
-use super::row_group_decode::RowGroupDecoder;
+use super::row_group_decode::{PredicateColumn, RowGroupDecoder, Source};
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -353,69 +355,96 @@ impl ParquetReadImpl {
             Default::default()
         };
 
-        // Runtime constants (hive, missing columns) may leave the first pass without any
-        // column of this file. Then there is one pass and the column predicates, which
-        // only cover the first pass, cannot be used.
-        let (use_staged, first_pass_field_indices, second_pass_field_indices): (
-            bool,
-            Arc<[usize]>,
-            Arc<[usize]>,
-        ) = match predicate.as_ref().and_then(|p| p.staged.as_ref()) {
-            Some(staged) if use_prefiltered => {
-                let (first, second): (Vec<usize>, Vec<usize>) =
-                    predicate_field_indices.iter().copied().partition(|&i| {
-                        staged
-                            .first_columns
-                            .contains(projected_arrow_fields[i].output_name())
+        // The predicate columns, each with its decode filter when the decoder may evaluate
+        // the predicate on the values as it decodes them.
+        let staged = predicate.as_ref().and_then(|p| p.staged.as_ref());
+        let predicate_columns: Arc<[PredicateColumn]> = match staged {
+            Some(staged) if use_prefiltered => staged
+                .column_predicates
+                .iter()
+                .map(|(name, p)| {
+                    let Some(field_idx) = projected_arrow_fields
+                        .iter()
+                        .position(|f| f.output_name() == name)
+                    else {
+                        assert_eq!(Some(name), row_index.as_ref().map(|ri| &ri.name));
+                        return PredicateColumn {
+                            source: Source::RowIndex,
+                            predicate: p.predicate.clone(),
+                            decode_filter: None,
+                            constant: None,
+                        };
+                    };
+                    let projection = &projected_arrow_fields[field_idx];
+                    let arrow_field = projection.arrow_field();
+                    let constant = p.specialized.as_ref().and_then(|s| match s {
+                        SpecializedColumnPredicate::Equal(sc) if !sc.is_null() => Some(sc.clone()),
+                        _ => None,
                     });
-                if first.is_empty() {
-                    (false, predicate_field_indices.clone(), Default::default())
-                } else {
-                    (true, first.into(), second.into())
-                }
-            },
-            _ => (false, predicate_field_indices.clone(), Default::default()),
+                    let decode_filter = (p.filter_while_decoding
+                        && matches!(projection, ArrowFieldProjection::Plain(_))
+                        && !arrow_field.dtype().is_nested()
+                        && !matches!(arrow_field.dtype(), ArrowDataType::FixedSizeBinary(_)))
+                    .then(|| PredicateFilter {
+                        predicate: Arc::new(ColumnPredicateExpr::new(
+                            name.clone(),
+                            DataType::from_arrow_field(arrow_field),
+                            arrow_field.dtype.clone(),
+                            p.predicate.clone(),
+                            p.specialized.clone(),
+                        )),
+                        include_values: constant.is_none(),
+                    });
+                    PredicateColumn {
+                        source: Source::Field(field_idx),
+                        predicate: p.predicate.clone(),
+                        decode_filter,
+                        constant,
+                    }
+                })
+                .collect(),
+            _ => Default::default(),
         };
+        let rest_predicate = match staged {
+            Some(staged) if use_prefiltered => staged.rest.clone(),
+            _ => predicate.as_ref().map(|p| p.predicate.clone()),
+        };
+        let rest_field_indices: Arc<[usize]> = predicate_field_indices
+            .iter()
+            .copied()
+            .filter(|&i| {
+                predicate_columns
+                    .iter()
+                    .all(|c| c.source != Source::Field(i))
+            })
+            .collect();
+        // Until a row group is measured: the predicate columns, then the rest.
+        let mut passes = vec![(0..predicate_columns.len()).collect::<Vec<_>>()];
+        if !predicate_columns.is_empty() && !rest_field_indices.is_empty() {
+            passes.push(Vec::new());
+        }
 
         if use_prefiltered && self.verbose {
             eprintln!(
-                "[ParquetFileReader]: Pre-filtered decode enabled ({} live [{} pass-1, {} pass-2], {} non-live)",
+                "[ParquetFileReader]: Pre-filtered decode enabled ({} live [{} column predicates, {} rest], {} non-live)",
                 predicate_field_indices.len(),
-                first_pass_field_indices.len(),
-                second_pass_field_indices.len(),
+                predicate_columns.len(),
+                rest_field_indices.len(),
                 non_predicate_field_indices.len()
             )
         }
-
-        let allow_column_predicates = predicate.as_ref().is_some_and(|p| {
-            let column_predicates = if use_staged {
-                &p.staged.as_ref().unwrap().column_predicates
-            } else {
-                &p.column_predicates
-            };
-            column_predicates.is_sumwise_complete
-                && !projected_arrow_fields.iter().any(|f| {
-                    matches!(f.arrow_field().dtype(), ArrowDataType::FixedSizeBinary(_))
-                        && column_predicates.predicates.contains_key(f.output_name())
-                })
-        }) && row_index.is_none()
-            && !projected_arrow_fields.iter().any(|x| {
-                x.arrow_field().dtype().is_nested()
-                    || matches!(x, ArrowFieldProjection::Mapped { .. })
-            });
 
         RowGroupDecoder {
             num_pipelines: self.config.num_pipelines,
             projected_arrow_fields,
             row_index,
             predicate,
-            allow_column_predicates,
             use_prefiltered,
-            use_staged,
-            staging_off: AtomicBool::new(false),
             predicate_field_indices,
-            first_pass_field_indices,
-            second_pass_field_indices,
+            predicate_columns,
+            rest_predicate,
+            rest_field_indices,
+            passes: Mutex::new(Arc::new(passes)),
             non_predicate_field_indices,
             target_values_per_thread,
         }

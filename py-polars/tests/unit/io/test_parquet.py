@@ -2039,13 +2039,15 @@ def _staged_df() -> pl.DataFrame:
         (pl.col("q") == 0) & (pl.col("a") < pl.col("b")),
         # `q` is read by both passes.
         (pl.col("q") >= 0) & (pl.col("q") < pl.col("a")),
-        # The first pass alone reads every predicate column: no staging.
+        # Every predicate column has a conjunct of its own.
         (pl.col("a") > 0) & (pl.col("b") > 0) & (pl.col("a") > pl.col("b")),
+        # Only single-column conjuncts.
+        (pl.col("q") == 0) & (pl.col("a") > 2) & (pl.col("b") == 3),
         # First pass keeps every row / no row.
         (pl.col("q").is_not_null() | pl.col("q").is_null())
         & (pl.col("a") < pl.col("b")),
         (pl.col("q") > 100) & (pl.col("a") < pl.col("b")),
-        # Every second-pass column is already read by the first pass: no staging.
+        # The rest of the predicate reads no column of its own.
         (pl.col("q") == 0) & (pl.col("a") > 0) & ((pl.col("q") + pl.col("a")) < 5),
     ],
 )
@@ -2129,10 +2131,47 @@ def test_staged_prefiltering_density_changes(
 
     non_live = 1 if projection is None else 0
     assert (
-        f"Pre-filtered decode enabled (4 live [2 pass-1, 2 pass-2], {non_live} non-live)"
+        f"Pre-filtered decode enabled (4 live [2 column predicates, 2 rest], {non_live} non-live)"
         in capture
     )
     assert_frame_equal(result, expected.filter(expr))
+
+
+def test_staged_prefiltering_orders_by_selectivity(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # `s` keeps half the rows, `q` a quarter, `a` every row; the passes are replanned
+    # after the first row group.
+    n = 64
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4] * (n // 4),
+            "q": [0, 1, 2, 3] * (n // 4),
+            "s": ([0] * 8 + [1] * 8) * (n // 16),
+            "b": [5] * n,
+            "c": [str(i) for i in range(n)],
+        }
+    )
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=16)
+    expr = (
+        (pl.col("q") == 0)
+        & (pl.col("s") == 0)
+        & (pl.col("a") > 0)
+        & (pl.col("b") > pl.col("a"))
+    )
+
+    f.seek(0)
+    lf = pl.scan_parquet(f, parallel="prefiltered", use_statistics=False)
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        result = lf.filter(expr).collect()
+        capture = capfd.readouterr().err
+
+    assert 'Predicate passes: [["q"], ["s"], ["a"]]' in capture
+    assert_frame_equal(result, df.filter(expr))
 
 
 def test_staged_prefiltering_nested_column() -> None:

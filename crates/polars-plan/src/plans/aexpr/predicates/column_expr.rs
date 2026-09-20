@@ -17,11 +17,36 @@ use crate::plans::{
     AExpr, IRBooleanFunction, IRFunctionExpr, MintermIter, aexpr_to_leaf_names_iter,
 };
 
-pub struct ColumnPredicates {
-    pub predicates: PlIndexMap<PlSmallStr, (Node, Option<SpecializedColumnPredicate>)>,
+/// The conjuncts of a row predicate that read one column, conjoined.
+pub struct ColumnPredicate {
+    pub predicate: Node,
+    pub specialized: Option<SpecializedColumnPredicate>,
+    /// Whether a reader may evaluate the predicate on the values as it decodes them.
+    pub filter_while_decoding: bool,
+}
 
-    /// Are all column predicates AND-ed together the original predicate.
-    pub is_sumwise_complete: bool,
+/// A row predicate split into the conjuncts that read a single column and the rest.
+pub struct ColumnPredicates {
+    pub predicates: PlIndexMap<PlSmallStr, ColumnPredicate>,
+    /// The conjuncts that read no or several columns.
+    pub rest: Vec<Node>,
+}
+
+/// Whether a reader may evaluate a predicate on this type as it decodes the values.
+fn filter_while_decoding(dtype: &DataType) -> bool {
+    use DataType as D;
+    match dtype {
+        #[cfg(feature = "dtype-categorical")]
+        D::Enum(_, _) | D::Categorical(_, _) => false,
+        #[cfg(feature = "dtype-decimal")]
+        D::Decimal(_, _) => false,
+        #[cfg(feature = "object")]
+        D::Object(_) => false,
+        #[cfg(feature = "dtype-f16")]
+        D::Float16 => false,
+        D::Float32 | D::Float64 | D::Int128 | D::UInt128 => false,
+        _ => !dtype.is_nested(),
+    }
 }
 
 pub fn aexpr_to_column_predicates(
@@ -29,9 +54,8 @@ pub fn aexpr_to_column_predicates(
     expr_arena: &mut Arena<AExpr>,
     schema: &Schema,
 ) -> ColumnPredicates {
-    let mut predicates =
-        PlIndexMap::<PlSmallStr, (Node, Option<SpecializedColumnPredicate>)>::default();
-    let mut is_sumwise_complete = true;
+    let mut predicates = PlIndexMap::<PlSmallStr, ColumnPredicate>::default();
+    let mut rest = Vec::new();
 
     let minterms = MintermIter::new(root, expr_arena).collect::<Vec<_>>();
 
@@ -41,261 +65,210 @@ pub fn aexpr_to_column_predicates(
         leaf_names.extend(aexpr_to_leaf_names_iter(minterm, expr_arena).cloned());
 
         if leaf_names.len() != 1 {
-            is_sumwise_complete = false;
+            rest.push(minterm);
             continue;
         }
 
         let column = leaf_names.pop().unwrap();
         let Some(dtype) = schema.get(&column) else {
-            is_sumwise_complete = false;
+            rest.push(minterm);
             continue;
         };
-
-        // We really don't want to deal with these types.
-        use DataType as D;
-        match dtype {
-            #[cfg(feature = "dtype-categorical")]
-            D::Enum(_, _) | D::Categorical(_, _) => {
-                is_sumwise_complete = false;
-                continue;
-            },
-            #[cfg(feature = "dtype-decimal")]
-            D::Decimal(_, _) => {
-                is_sumwise_complete = false;
-                continue;
-            },
-            #[cfg(feature = "object")]
-            D::Object(_) => {
-                is_sumwise_complete = false;
-                continue;
-            },
-            #[cfg(feature = "dtype-f16")]
-            D::Float16 => {
-                is_sumwise_complete = false;
-                continue;
-            },
-            D::Float32 | D::Float64 | D::Int128 | D::UInt128 => {
-                is_sumwise_complete = false;
-                continue;
-            },
-            _ if dtype.is_nested() => {
-                is_sumwise_complete = false;
-                continue;
-            },
-            _ => {},
-        }
 
         let dtype = dtype.clone();
         let entry = predicates.entry(column);
 
         entry
-            .and_modify(|n| {
-                let left = n.0;
-                n.0 = expr_arena.add(AExpr::BinaryExpr {
-                    left,
+            .and_modify(|p| {
+                p.predicate = expr_arena.add(AExpr::BinaryExpr {
+                    left: p.predicate,
                     op: Operator::LogicalAnd,
                     right: minterm,
                 });
-                n.1 = None;
+                p.specialized = None;
             })
-            .or_insert_with(|| {
-                (
-                    minterm,
-                    Some(()).and_then(|_| {
-                        let aexpr = expr_arena.get(minterm);
+            .or_insert_with(|| ColumnPredicate {
+                predicate: minterm,
+                filter_while_decoding: filter_while_decoding(&dtype),
+                specialized: Some(()).and_then(|_| {
+                    let aexpr = expr_arena.get(minterm);
 
-                        match aexpr {
-                            #[cfg(all(feature = "regex", feature = "strings"))]
-                            AExpr::Function {
-                                input,
-                                function: IRFunctionExpr::StringExpr(str_function),
-                                options: _,
-                            } if matches!(
-                                str_function,
-                                crate::plans::IRStringFunction::Contains { literal: _, strict: true } |
-                                crate::plans::IRStringFunction::EndsWith |
-                                crate::plans::IRStringFunction::StartsWith
-                            ) => {
-                                use crate::plans::IRStringFunction;
+                    match aexpr {
+                        #[cfg(all(feature = "regex", feature = "strings"))]
+                        AExpr::Function {
+                            input,
+                            function: IRFunctionExpr::StringExpr(str_function),
+                            options: _,
+                        } if matches!(
+                            str_function,
+                            crate::plans::IRStringFunction::Contains {
+                                literal: _,
+                                strict: true
+                            } | crate::plans::IRStringFunction::EndsWith
+                                | crate::plans::IRStringFunction::StartsWith
+                        ) =>
+                        {
+                            use crate::plans::IRStringFunction;
 
-                                assert_eq!(input.len(), 2);
-                                into_column(input[0].node(), expr_arena)?;
-                                let lv = constant_evaluate(
-                                        input[1].node(),
-                                        expr_arena,
-                                        schema,
-                                        0,
-                                    )??;
+                            assert_eq!(input.len(), 2);
+                            into_column(input[0].node(), expr_arena)?;
+                            let lv = constant_evaluate(input[1].node(), expr_arena, schema, 0)??;
 
-                                if !lv.is_scalar() {
-                                    return None;
-                                }
-                                let lv = lv.extract_str()?;
+                            if !lv.is_scalar() {
+                                return None;
+                            }
+                            let lv = lv.extract_str()?;
 
-                                match str_function {
-                                    IRStringFunction::Contains { literal, strict: _ } => {
-                                        let pattern = if *literal {
-                                            regex::escape(lv)
-                                        } else {
-                                            lv.to_string()
-                                        };
-                                        let pattern = regex::bytes::Regex::new(&pattern).ok()?;
-                                        Some(SpecializedColumnPredicate::RegexMatch(pattern))
-                                    },
-                                    IRStringFunction::StartsWith => Some(SpecializedColumnPredicate::StartsWith(lv.as_bytes().into())),
-                                    IRStringFunction::EndsWith => Some(SpecializedColumnPredicate::EndsWith(lv.as_bytes().into())),
-                                    _ => unreachable!(),
-                                }
-                            },
-                            AExpr::Function {
-                                input,
-                                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
-                                options: _,
-                            } => {
-                                assert_eq!(input.len(), 1);
-                                if into_column(input[0].node(), expr_arena)
-                                    .is_some()
-                                {
-                                    Some(SpecializedColumnPredicate::Equal(Scalar::null(
-                                        dtype,
-                                    )))
-                                } else {
-                                    None
-                                }
-                            },
-                            #[cfg(feature = "is_between")]
-                            AExpr::Function {
-                                input,
-                                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
-                                options: _,
-                            } => {
-                                into_column(input[0].node(), expr_arena)?;
+                            match str_function {
+                                IRStringFunction::Contains { literal, strict: _ } => {
+                                    let pattern = if *literal {
+                                        regex::escape(lv)
+                                    } else {
+                                        lv.to_string()
+                                    };
+                                    let pattern = regex::bytes::Regex::new(&pattern).ok()?;
+                                    Some(SpecializedColumnPredicate::RegexMatch(pattern))
+                                },
+                                IRStringFunction::StartsWith => Some(
+                                    SpecializedColumnPredicate::StartsWith(lv.as_bytes().into()),
+                                ),
+                                IRStringFunction::EndsWith => {
+                                    Some(SpecializedColumnPredicate::EndsWith(lv.as_bytes().into()))
+                                },
+                                _ => unreachable!(),
+                            }
+                        },
+                        AExpr::Function {
+                            input,
+                            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
+                            options: _,
+                        } => {
+                            assert_eq!(input.len(), 1);
+                            if into_column(input[0].node(), expr_arena).is_some() {
+                                Some(SpecializedColumnPredicate::Equal(Scalar::null(dtype)))
+                            } else {
+                                None
+                            }
+                        },
+                        #[cfg(feature = "is_between")]
+                        AExpr::Function {
+                            input,
+                            function:
+                                IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
+                            options: _,
+                        } => {
+                            into_column(input[0].node(), expr_arena)?;
 
-                                let (Some(l), Some(r)) = (
-                                    constant_evaluate(
-                                        input[1].node(),
-                                        expr_arena,
-                                        schema,
-                                        0,
-                                    )?,
-                                    constant_evaluate(
-                                        input[2].node(),
-                                        expr_arena,
-                                        schema,
-                                        0,
-                                    )?,
-                                ) else {
-                                    return None;
-                                };
-                                let l = l.to_any_value()?;
-                                let r = r.to_any_value()?;
-                                if l.dtype() != dtype || r.dtype() != dtype {
-                                    return None;
-                                }
+                            let (Some(l), Some(r)) = (
+                                constant_evaluate(input[1].node(), expr_arena, schema, 0)?,
+                                constant_evaluate(input[2].node(), expr_arena, schema, 0)?,
+                            ) else {
+                                return None;
+                            };
+                            let l = l.to_any_value()?;
+                            let r = r.to_any_value()?;
+                            if l.dtype() != dtype || r.dtype() != dtype {
+                                return None;
+                            }
 
-                                let (low_closed, high_closed) = match closed {
-                                    ClosedInterval::Both => (true, true),
-                                    ClosedInterval::Left => (true, false),
-                                    ClosedInterval::Right => (false, true),
-                                    ClosedInterval::None => (false, false),
-                                };
-                                is_between(
-                                    &dtype,
-                                    Some(Scalar::new(dtype.clone(), l.into_static())),
-                                    Some(Scalar::new(dtype.clone(), r.into_static())),
-                                    low_closed,
-                                    high_closed,
+                            let (low_closed, high_closed) = match closed {
+                                ClosedInterval::Both => (true, true),
+                                ClosedInterval::Left => (true, false),
+                                ClosedInterval::Right => (false, true),
+                                ClosedInterval::None => (false, false),
+                            };
+                            is_between(
+                                &dtype,
+                                Some(Scalar::new(dtype.clone(), l.into_static())),
+                                Some(Scalar::new(dtype.clone(), r.into_static())),
+                                low_closed,
+                                high_closed,
+                            )
+                        },
+                        #[cfg(feature = "is_in")]
+                        AExpr::Function {
+                            input,
+                            function:
+                                IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+                            options: _,
+                        } => {
+                            into_column(input[0].node(), expr_arena)?;
+
+                            let (values, had_nulls) = super::try_extract_is_in_haystack(
+                                input[1].node(),
+                                expr_arena,
+                                schema,
+                                &dtype,
+                                usize::MAX,
+                            )?;
+
+                            // EqualOneOf describes the full set membership: include
+                            // Scalar::Null under nulls_equal=true so the specialization is
+                            // sound regardless of how the runtime chooses to invoke it.
+                            let values = values
+                                .iter()
+                                .map(|av| Scalar::new(dtype.clone(), av.into_static()))
+                                .chain(
+                                    (*nulls_equal && had_nulls)
+                                        .then(|| Scalar::new(dtype.clone(), AnyValue::Null)),
                                 )
-                            },
-                            #[cfg(feature = "is_in")]
-                            AExpr::Function {
-                                input,
-                                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
-                                options: _,
-                            } => {
-                                into_column(input[0].node(), expr_arena)?;
+                                .collect();
 
-                                let (values, had_nulls) = super::try_extract_is_in_haystack(
-                                    input[1].node(),
-                                    expr_arena,
-                                    schema,
-                                    &dtype,
-                                    usize::MAX,
-                                )?;
+                            Some(SpecializedColumnPredicate::EqualOneOf(values))
+                        },
+                        AExpr::Function {
+                            input,
+                            function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
+                            options: _,
+                        } => {
+                            if !dtype.is_bool() {
+                                return None;
+                            }
 
-                                // EqualOneOf describes the full set membership: include
-                                // Scalar::Null under nulls_equal=true so the specialization is
-                                // sound regardless of how the runtime chooses to invoke it.
-                                let values = values
-                                    .iter()
-                                    .map(|av| Scalar::new(dtype.clone(), av.into_static()))
-                                    .chain(
-                                        (*nulls_equal && had_nulls)
-                                            .then(|| Scalar::new(dtype.clone(), AnyValue::Null)),
-                                    )
-                                    .collect();
-
-                                Some(SpecializedColumnPredicate::EqualOneOf(values))
-                            },
-                            AExpr::Function {
-                                input,
-                                function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
-                                options: _,
-                            } => {
-                                if !dtype.is_bool() {
-                                    return None;
-                                }
-
-                                assert_eq!(input.len(), 1);
-                                if into_column(input[0].node(), expr_arena)
-                                    .is_some()
-                                {
-                                    Some(SpecializedColumnPredicate::Equal(false.into()))
-                                } else {
-                                    None
-                                }
-                            },
-                            AExpr::BinaryExpr { left, op, right } => {
-                                let ((_, _), (lv, lv_node)) =
-                                    get_binary_expr_col_and_lv(*left, *right, expr_arena, schema)?;
-                                let lv = lv?;
-                                let av = lv.to_any_value()?;
-                                if av.dtype() != dtype {
-                                    return None;
-                                }
-                                let scalar = Scalar::new(dtype.clone(), av.into_static());
-                                use Operator as O;
-                                match (op, lv_node == *right) {
-                                    (O::Eq, _) if scalar.is_null() => None,
-                                    (O::Eq | O::EqValidity, _) => {
-                                        Some(SpecializedColumnPredicate::Equal(scalar))
-                                    },
-                                    (O::Lt, true) | (O::Gt, false) => {
-                                        is_between(&dtype, None, Some(scalar), false, false)
-                                    },
-                                    (O::Lt, false) | (O::Gt, true) => {
-                                        is_between(&dtype, Some(scalar), None, false, false)
-                                    },
-                                    (O::LtEq, true) | (O::GtEq, false) => {
-                                        is_between(&dtype, None, Some(scalar), false, true)
-                                    },
-                                    (O::LtEq, false) | (O::GtEq, true) => {
-                                        is_between(&dtype, Some(scalar), None, true, false)
-                                    },
-                                    _ => None,
-                                }
-                            },
-                            _ => None,
-                        }
-                    }),
-                )
+                            assert_eq!(input.len(), 1);
+                            if into_column(input[0].node(), expr_arena).is_some() {
+                                Some(SpecializedColumnPredicate::Equal(false.into()))
+                            } else {
+                                None
+                            }
+                        },
+                        AExpr::BinaryExpr { left, op, right } => {
+                            let ((_, _), (lv, lv_node)) =
+                                get_binary_expr_col_and_lv(*left, *right, expr_arena, schema)?;
+                            let lv = lv?;
+                            let av = lv.to_any_value()?;
+                            if av.dtype() != dtype {
+                                return None;
+                            }
+                            let scalar = Scalar::new(dtype.clone(), av.into_static());
+                            use Operator as O;
+                            match (op, lv_node == *right) {
+                                (O::Eq, _) if scalar.is_null() => None,
+                                (O::Eq | O::EqValidity, _) => {
+                                    Some(SpecializedColumnPredicate::Equal(scalar))
+                                },
+                                (O::Lt, true) | (O::Gt, false) => {
+                                    is_between(&dtype, None, Some(scalar), false, false)
+                                },
+                                (O::Lt, false) | (O::Gt, true) => {
+                                    is_between(&dtype, Some(scalar), None, false, false)
+                                },
+                                (O::LtEq, true) | (O::GtEq, false) => {
+                                    is_between(&dtype, None, Some(scalar), false, true)
+                                },
+                                (O::LtEq, false) | (O::GtEq, true) => {
+                                    is_between(&dtype, Some(scalar), None, true, false)
+                                },
+                                _ => None,
+                            }
+                        },
+                        _ => None,
+                    }
+                }),
             });
     }
 
-    ColumnPredicates {
-        predicates,
-        is_sumwise_complete,
-    }
+    ColumnPredicates { predicates, rest }
 }
 
 fn is_between(
@@ -374,16 +347,9 @@ mod tests {
         let expr_ir = to_expr_ir(expr, &mut ctx)?;
         let column_predicates = aexpr_to_column_predicates(expr_ir.node(), &mut arena, &schema);
         assert_eq!(column_predicates.predicates.len(), 1);
-        let Some((col_name2, (_, predicate))) =
-            column_predicates.predicates.clone().into_iter().next()
-        else {
-            panic!(
-                "Unexpected column predicates: {:?}",
-                column_predicates.predicates
-            );
-        };
+        let (col_name2, predicate) = column_predicates.predicates.into_iter().next().unwrap();
         assert_eq!(col_name, col_name2);
-        Ok(predicate)
+        Ok(predicate.specialized)
     }
 
     #[test]

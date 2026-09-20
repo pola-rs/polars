@@ -270,21 +270,23 @@ pub trait SkipBatchPredicate: Send + Sync {
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap>;
 }
 
+/// The conjuncts of a row predicate that read one column, conjoined.
 #[derive(Clone)]
-pub struct ColumnPredicates {
-    pub predicates:
-        PlHashMap<PlSmallStr, (Arc<dyn PhysicalIoExpr>, Option<SpecializedColumnPredicate>)>,
-    pub is_sumwise_complete: bool,
+pub struct ColumnPredicate {
+    pub predicate: Arc<dyn PhysicalIoExpr>,
+    pub specialized: Option<SpecializedColumnPredicate>,
+    /// Whether a reader may evaluate the predicate on the values as it decodes them.
+    pub filter_while_decoding: bool,
 }
 
-// I want to be explicit here.
-#[allow(clippy::derivable_impls)]
-impl Default for ColumnPredicates {
-    fn default() -> Self {
-        Self {
-            predicates: PlHashMap::default(),
-            is_sumwise_complete: false,
-        }
+/// `a AND b`.
+struct AndIoExpr(Arc<dyn PhysicalIoExpr>, Arc<dyn PhysicalIoExpr>);
+
+impl PhysicalIoExpr for AndIoExpr {
+    fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
+        let a = self.0.evaluate_io(df)?;
+        let b = self.1.evaluate_io(df)?;
+        Ok((a.bool()? & b.bool()?).into_series())
     }
 }
 
@@ -326,37 +328,35 @@ impl PhysicalIoExpr for PhysicalExprWithConstCols<Arc<dyn PhysicalIoExpr>> {
     }
 }
 
-/// The row predicate split into two conjunctions a reader may evaluate one after the
-/// other: rows that fail `first` never need the columns only `second` reads.
+/// The row predicate split into the conjuncts that read a single column and the rest.
 #[derive(Clone)]
 pub struct StagedScanIOPredicate {
-    pub first: Arc<dyn PhysicalIoExpr>,
-    pub first_columns: Arc<PlIndexSet<PlSmallStr>>,
-    pub second: Arc<dyn PhysicalIoExpr>,
-    /// Partial predicates for each column of `first`. Complete when they add up to
-    /// `first`, whether or not [`ScanIOPredicate::column_predicates`] is complete.
-    pub column_predicates: Arc<ColumnPredicates>,
+    pub column_predicates: Arc<PlIndexMap<PlSmallStr, ColumnPredicate>>,
+    /// The conjuncts that read no or several columns, conjoined.
+    pub rest: Option<Arc<dyn PhysicalIoExpr>>,
 }
 
 impl StagedScanIOPredicate {
+    /// Every conjunct on a constant column becomes part of `rest`.
     fn with_constant_columns(&self, constants: &[(PlSmallStr, Scalar)]) -> Self {
-        let mut first_columns = self.first_columns.as_ref().clone();
         let mut column_predicates = self.column_predicates.as_ref().clone();
+        let mut rest = self.rest.clone();
         for (c, _) in constants {
-            first_columns.swap_remove(c);
-            column_predicates.predicates.remove(c);
+            if let Some(p) = column_predicates.shift_remove(c) {
+                rest = Some(match rest {
+                    None => p.predicate,
+                    Some(rest) => Arc::new(AndIoExpr(rest, p.predicate)),
+                });
+            }
         }
         Self {
-            first: Arc::new(PhysicalExprWithConstCols {
-                constants: constants.to_vec(),
-                child: self.first.clone(),
-            }),
-            first_columns: Arc::new(first_columns),
-            second: Arc::new(PhysicalExprWithConstCols {
-                constants: constants.to_vec(),
-                child: self.second.clone(),
-            }),
             column_predicates: Arc::new(column_predicates),
+            rest: rest.map(|rest| {
+                Arc::new(PhysicalExprWithConstCols {
+                    constants: constants.to_vec(),
+                    child: rest,
+                }) as _
+            }),
         }
     }
 }
@@ -431,7 +431,7 @@ impl RuntimeRangeHint {
 pub struct ScanIOPredicate {
     pub predicate: Arc<dyn PhysicalIoExpr>,
 
-    /// `predicate` as two conjunctions when `first` leaves some of the live columns unread.
+    /// `predicate` split for readers that filter while decoding.
     pub staged: Option<StagedScanIOPredicate>,
 
     /// Whether `predicate` filters rows at all. False when the scan only has
@@ -446,9 +446,6 @@ pub struct ScanIOPredicate {
 
     /// Columns whose batches are skipped by a range published at run time.
     pub runtime_ranges: Vec<RuntimeRangeHint>,
-
-    /// Partial predicates for each column of `predicate`.
-    pub column_predicates: Arc<ColumnPredicates>,
 
     /// Predicate parts only referring to hive columns.
     pub hive_predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -495,12 +492,6 @@ impl ScanIOPredicate {
                 child: skip_batch_predicate,
             }));
         }
-
-        let mut column_predicates = self.column_predicates.as_ref().clone();
-        for (c, _) in constant_columns.iter() {
-            column_predicates.predicates.remove(c);
-        }
-        self.column_predicates = Arc::new(column_predicates);
 
         if let Some(staged) = self.staged.as_mut() {
             *staged = staged.with_constant_columns(&constant_columns);
