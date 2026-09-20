@@ -414,6 +414,16 @@ impl PlBinaryViewArray {
         total
     }
 
+    /// What [`Self::total_bytes_len`] last answered, or [`None`] if it has not been asked.
+    ///
+    /// A consumer that only wants the answer if it is free -- one sizing a buffer it can grow, or
+    /// handing the count on to an array of its own -- asks this rather than walk every view.
+    #[inline]
+    pub fn try_total_bytes_len(&self) -> Option<usize> {
+        let cached = self.total_bytes_len.load();
+        (cached != UNKNOWN_BYTES_LEN).then_some(cached as usize)
+    }
+
     /// Drops what [`Self::total_bytes_len`] last answered, which the mask has a say in.
     #[inline]
     fn forget_total_bytes_len(&self) {

@@ -81,34 +81,44 @@ pub fn binary_to_arrow_large_binary(array: &PlBinaryArray) -> BinaryArray<i64> {
 
 /// Exports a [`PlBinaryViewArray`] as an Arrow [`BinaryViewArray`].
 pub fn binview_to_arrow_binview(array: &PlBinaryViewArray) -> BinaryViewArray {
+    // Both arrays keep what their valid elements read, and both walk every view to work it out.
+    // Hand the answer over where this array holds one, so the exported array does not walk for a
+    // count that has already been paid for -- the IPC writer asks every array it writes.
+    let total_bytes_len = array.try_total_bytes_len();
     let (views, buffers, validity) = array.to_flat().into_owned().into_inner();
+    let total_buffer_len = buffers.iter().map(|buffer| buffer.len()).sum();
 
     // SAFETY: the views came out of a `PlBinaryViewArray`, which validates every one of them
     // against the buffers it reads.
     unsafe {
-        BinaryViewArray::new_unchecked_unknown_md(
+        BinaryViewArray::new_unchecked(
             ArrowDataType::BinaryView,
             views,
             buffers,
             validity,
-            None,
+            total_bytes_len,
+            total_buffer_len,
         )
     }
 }
 
 /// Exports a [`PlUtf8ViewArray`] as an Arrow [`Utf8ViewArray`].
 pub fn utf8view_to_arrow_utf8view(array: &PlUtf8ViewArray) -> Utf8ViewArray {
-    let (views, buffers, validity) = array.as_binview().to_flat().into_owned().into_inner();
+    let array = array.as_binview();
+    let total_bytes_len = array.try_total_bytes_len();
+    let (views, buffers, validity) = array.to_flat().into_owned().into_inner();
+    let total_buffer_len = buffers.iter().map(|buffer| buffer.len()).sum();
 
     // SAFETY: every element of a `PlUtf8ViewArray` is valid UTF-8, and the views came out of a
     // `PlBinaryViewArray`, which validates every one of them against the buffers it reads.
     unsafe {
-        Utf8ViewArray::new_unchecked_unknown_md(
+        Utf8ViewArray::new_unchecked(
             ArrowDataType::Utf8View,
             views,
             buffers,
             validity,
-            None,
+            total_bytes_len,
+            total_buffer_len,
         )
     }
 }
