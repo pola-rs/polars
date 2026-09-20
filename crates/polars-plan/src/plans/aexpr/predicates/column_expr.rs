@@ -347,16 +347,9 @@ mod tests {
         let expr_ir = to_expr_ir(expr, &mut ctx)?;
         let column_predicates = aexpr_to_column_predicates(expr_ir.node(), &mut arena, &schema);
         assert_eq!(column_predicates.predicates.len(), 1);
-        let Some((col_name2, (_, predicate))) =
-            column_predicates.predicates.clone().into_iter().next()
-        else {
-            panic!(
-                "Unexpected column predicates: {:?}",
-                column_predicates.predicates
-            );
-        };
+        let (col_name2, predicate) = column_predicates.predicates.into_iter().next().unwrap();
         assert_eq!(col_name, col_name2);
-        Ok(predicate)
+        Ok(predicate.specialized)
     }
 
     #[test]
