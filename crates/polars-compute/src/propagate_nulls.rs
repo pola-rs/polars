@@ -84,14 +84,17 @@ pub fn propagate_nulls_fsl(array: &PlFixedSizeListArray) -> Option<PlFixedSizeLi
 fn propagate_nulls_fsl_impl(array: &PlFixedSizeListArray) -> Option<PlFixedSizeListArray> {
     let values = array.values();
 
-    let Some(validity) = nulls(array.validity()) else {
+    // A null element covers `width` values, so an element no values wide has nothing under it for
+    // a null to reach: every range below is empty and the mask comes back the mask it was.  Only
+    // the values are left to read, which is what a chunk holding no null reads anyway.
+    let width = array.width();
+    let Some(validity) = nulls(array.validity()).filter(|_| width > 0) else {
         let values = propagate_nulls(values)?;
 
         // SAFETY: pushing nulls down leaves the values as many as they were.
         return Some(unsafe { fsl_with_values(array, values) });
     };
 
-    let width = array.width();
     let child = if validity.unset_bits() == array.len() {
         unset_ranges(values, || std::iter::once(0..values.len()))
     } else if array.values_are_flat() {
