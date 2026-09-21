@@ -961,11 +961,11 @@ def test_scan_without_statistics_is_not_eligible(tmp_path: Path) -> None:
     assert q.collect(engine="streaming").get_column("k").sort().to_list() == [220, 240]
 
 
-def test_broad_range_reads_bounds_only(
+def test_broad_range_filters_rows_by_bloom(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # Shuffled keys: every row group spans the range; nothing is skipped and no
-    # row is filtered.
+    # Shuffled keys: every row group spans the range, so nothing is skipped and
+    # the bloom filter over the build keys filters the rows instead.
     n = N_ROW_GROUPS * ROWS_PER_GROUP
     keys = pl.Series("k", range(n)).shuffle(seed=1)
     path = tmp_path / "shuffled.parquet"
@@ -975,7 +975,8 @@ def test_broad_range_reads_bounds_only(
     q = pl.scan_parquet(path).join(dim(220, 240), on="k")
     out, err = reader_log(q, plmonkeypatch, capfd)
     assert "reading 10 / 10 row groups" in err
-    assert "Pre-filtered decode" not in err
+    assert "bloom: Some" in err
+    assert "Pre-filtered decode enabled (1 live [1 column predicates" in err
     assert out.get_column("k").sort().to_list() == [220, 240]
 
 

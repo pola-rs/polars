@@ -3,9 +3,11 @@
 //!
 //! A join whose one side is known to be small gets that side forced as build side;
 //! one whose side is only estimated small gets it preferred. Every probe key that
-//! reads a parquet scan column unchanged gets a batch-only dynamic predicate on that
-//! scan. The join publishes the range of its build keys once the build is done; the
-//! scan then skips row groups outside it and never filters rows by it.
+//! reads a parquet scan column unchanged gets a dynamic predicate on that scan. The
+//! join publishes the range of its build keys once the build is done, and the scan
+//! skips row groups outside it. When the build keys are estimated to be a small
+//! share of the scan's distinct keys the join also publishes a bloom filter over
+//! them, and the predicate is evaluated per row; otherwise it only skips batches.
 //!
 //! A forced join blocks its probe input until the build is done, so its range is
 //! always published before the scan opens. A preferred join with a filter reads its
@@ -39,14 +41,17 @@ use crate::plans::options::RuntimeFilter;
 use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::StatsCache;
 use crate::plans::{
-    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator, into_column,
-    is_inherently_nondeterministic,
+    AExpr, ExprIR, IR, IRFunctionExpr, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator,
+    into_column, is_inherently_nondeterministic,
 };
 use crate::prelude::{JoinType, MaintainOrderJoin};
 use crate::utils::has_aexpr;
 
 /// Estimated bytes a build side chosen here may take.
 const BUILD_BYTES: f64 = 256.0 * 1024.0 * 1024.0;
+/// Largest estimated share of the scan's distinct keys the build may hold for a
+/// bloom filter to be worth probing per row.
+const BLOOM_MAX_PASS_RATE: f64 = 0.3;
 
 pub(super) fn attach_join_runtime_filters(
     root: Node,
@@ -146,19 +151,35 @@ fn process_join(
         });
         (!filters.is_empty() && *probe_rows >= LOPSIDED_FACTOR * side.rows).then_some(side)
     });
-    let Some(BuildCandidate { left, forced, .. }) = chosen else {
+    let Some(BuildCandidate { left, forced, rows }) = chosen else {
         return;
     };
     let (filters, _) = traced[left as usize].take().unwrap();
+    let build_stats = if left { &left_stats } else { &right_stats };
 
     let mut runtime_filters = Vec::with_capacity(filters.len());
     for filter in filters {
+        // Distinct build keys: no more than the rows built, nor than the key's
+        // distinct count where the build side carries one.
+        let build_key = &on[filter.key_idx];
+        let build_key = if left { &build_key.0 } else { &build_key.1 };
+        let build_distinct = into_column(build_key.node(), expr_arena)
+            .and_then(|name| build_stats.key_distinct_estimate(name))
+            .map_or(rows, |ndv| ndv.min(rows));
+        let scan_key = column_name(&filter.predicate, expr_arena).clone();
+        let probe_distinct = side_stats(filter.scan, ir_arena, expr_arena, stats)
+            .and_then(|(scan_stats, _)| scan_stats.key_distinct_estimate(&scan_key));
+        let bloom =
+            !probe_distinct.is_some_and(|probe| build_distinct > probe * BLOOM_MAX_PASS_RATE);
+        if bloom {
+            evaluate_per_row(filter.predicate.node(), expr_arena);
+        }
         attach_to_scan(filter.scan, filter.predicate, ir_arena, expr_arena);
         runtime_filters.push(RuntimeFilter {
             key_idx: filter.key_idx,
             pred: filter.pred,
-            bloom_keys: None,
-            probe_distinct: None,
+            bloom_keys: bloom.then_some(build_distinct.ceil() as usize),
+            probe_distinct: probe_distinct.map(|d| d.ceil() as usize),
         });
     }
     let IR::Join { options, .. } = ir_arena.get_mut(node) else {
@@ -401,6 +422,18 @@ fn skips_batches(scan_type: &FileScanIR) -> bool {
     scan_type
         .flags()
         .contains(ScanFlags::SKIPS_BATCHES_BY_STATISTICS)
+}
+
+/// Let the scan evaluate the dynamic predicate per row, not only by statistics.
+fn evaluate_per_row(node: Node, expr_arena: &mut Arena<AExpr>) {
+    let AExpr::Function {
+        function: IRFunctionExpr::DynamicPred { batch_only, .. },
+        ..
+    } = expr_arena.get_mut(node)
+    else {
+        unreachable!()
+    };
+    *batch_only = false;
 }
 
 fn column_name<'a>(predicate: &ExprIR, expr_arena: &'a Arena<AExpr>) -> &'a PlSmallStr {
