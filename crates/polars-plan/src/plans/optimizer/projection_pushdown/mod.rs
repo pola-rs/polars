@@ -553,6 +553,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
                                 options: ProjectionOptions::default(),
                             }))
                         } else {
+                            // select(col(a).len()) -> select(len().alias(a))
+                            self.expr_arena.replace(len_nodes[0], AExpr::Len);
+
                             None
                         };
 
