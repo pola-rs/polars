@@ -47,6 +47,7 @@ pub(super) fn rebuild(
             allow_parallel: cluster.options.allow_parallel,
             force_parallel: cluster.options.force_parallel,
             runtime_filters: Vec::new(),
+            pass_through_above: None,
         });
 
         let schema = det_join_schema(&acc_schema, &leaf.schema, &options)?;

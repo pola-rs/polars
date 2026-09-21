@@ -1090,6 +1090,7 @@ pub fn lower_ir(
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
             let runtime_filters = options.runtime_filters.clone();
+            let pass_through_above = options.pass_through_above;
             let options = options.options.clone();
             // Only the hash equi join evaluates a fused predicate natively; other strategies get
             // a `Filter` on top, and the in-memory fallback applies it from `options`.
@@ -1402,6 +1403,7 @@ pub fn lower_ir(
                             right_on: trans_right_on,
                             args: args.clone(),
                             output_bool: false,
+                            pass_through_above,
                         },
                     )),
                     _ if args.how.is_equi() => {

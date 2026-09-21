@@ -17,6 +17,8 @@ mod flatten_merge_sorted;
 mod flatten_union;
 #[cfg(feature = "fused")]
 mod fused;
+#[cfg(feature = "semi_anti_join")]
+mod group_by_key_restriction;
 mod join_build_side;
 mod join_order;
 mod join_predicate_fusion;
@@ -234,6 +236,13 @@ pub fn optimize(
     }
     if opt_flags.join_order() && get_or_init_members!().has_joins_or_unions {
         root = join_order::join_order(root, ir_arena, expr_arena)?;
+    }
+
+    // Needs the final join order, and must come before projection pushdown so the
+    // shared side is projected for both of its readers.
+    #[cfg(feature = "semi_anti_join")]
+    if opt_flags.join_order() && get_or_init_members!().has_joins_or_unions {
+        group_by_key_restriction::restrict_grouped_join_inputs(root, ir_arena, expr_arena);
     }
 
     // After join ordering, and before projection pushdown drops what only the fused predicate

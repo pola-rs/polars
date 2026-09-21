@@ -285,6 +285,14 @@ pub(crate) fn node_stats_with_cache(
             })
         },
         IR::Select { input, expr, .. } => {
+            // `col.unique()` alone is a distinct on that column.
+            if let [e] = expr.as_slice()
+                && let Some(column) = unique_of_column(e.node(), expr_arena)
+            {
+                let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
+                let ndv = inner.key_distinct_count_product(&[column]);
+                return Some(one_row_per_group(inner, &[e.output_name()], ndv, None));
+            }
             if expr.is_empty() || !expr.iter().all(|e| keeps_height(e, expr_arena)) {
                 return None;
             }
@@ -488,6 +496,18 @@ fn shadowed_columns(
 /// other than the input, and is not modelled.
 fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
     expr.is_length_preserving(expr_arena) || expr.is_scalar(expr_arena)
+}
+
+/// The column `node` is `col(name).unique()` of.
+fn unique_of_column(node: Node, expr_arena: &Arena<AExpr>) -> Option<&PlSmallStr> {
+    match expr_arena.get(node) {
+        AExpr::Function {
+            input,
+            function: IRFunctionExpr::Unique(_),
+            ..
+        } => into_column(input[0].node(), expr_arena),
+        _ => None,
+    }
 }
 
 /// Estimates for a node emitting one row per distinct combination of `keys`,
