@@ -1792,7 +1792,8 @@ pub fn lower_ir(
                             ctx,
                         );
                     } else {
-                        let func = function_expr_to_udf(function.clone()).into_inner();
+                        let func =
+                            function_expr_to_udf(function.clone(), &[], expr_arena).into_inner();
                         let format_str = Some(format!("COLUMNAR {function}"));
                         PhysNodeKind::ColumnarFunction {
                             inputs: trans_inputs,
