@@ -207,6 +207,19 @@ pub fn extract_many(
             })?;
             let patterns = patterns.str()?;
             let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
+
+            // One element stands for the whole column: match it once and repeat the answer.
+            if ca.len() > 1
+                && let Some(scalar) = ca.scalar_value()
+            {
+                let mut builder = ListStringChunkedBuilder::new(ca.name().clone(), 1, 2);
+                match scalar {
+                    Some(val) => push_str(val, &mut builder, &ac, overlapping),
+                    None => builder.append_null(),
+                }
+                return Ok(builder.finish().new_from_index(0, ca.len()));
+            }
+
             let mut builder =
                 ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.len() * 2);
 
@@ -303,6 +316,19 @@ pub fn find_many(
             })?;
             let patterns = patterns.str()?;
             let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
+
+            // One element stands for the whole column: match it once and repeat the answer.
+            if ca.len() > 1
+                && let Some(scalar) = ca.scalar_value()
+            {
+                let mut builder = B::new(ca.name().clone(), 1, 2, DataType::UInt32);
+                match scalar {
+                    Some(val) => push_idx(val, &mut builder, &ac, overlapping),
+                    None => builder.append_null(),
+                }
+                return Ok(builder.finish().new_from_index(0, ca.len()));
+            }
+
             let mut builder = B::new(ca.name().clone(), ca.len(), ca.len() * 2, DataType::UInt32);
 
             for opt_val in ca.iter() {
