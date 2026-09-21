@@ -183,6 +183,12 @@ impl RuntimeRangeSource for DynamicPredWeakRef {
         let guard = inner.pred.read().unwrap();
         guard.as_ref().unwrap().runtime_range()
     }
+
+    fn is_set(&self) -> bool {
+        self.inner
+            .upgrade()
+            .is_some_and(|inner| inner.is_set.load(Ordering::Acquire))
+    }
 }
 
 fn all_of(name: PlSmallStr, len: usize, value: bool) -> Column {

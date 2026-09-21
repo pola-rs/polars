@@ -273,8 +273,31 @@ pub trait SkipBatchPredicate: Send + Sync {
 /// The conjuncts of a row predicate that read one column, conjoined.
 #[derive(Clone)]
 pub struct ColumnPredicate {
-    pub predicate: Arc<dyn PhysicalIoExpr>,
+    /// The static conjuncts, conjoined. `None` when the column only has dynamic ones.
+    pub predicate: Option<Arc<dyn PhysicalIoExpr>>,
     pub specialized: Option<SpecializedColumnPredicate>,
+    /// The conjuncts a producer sets at run time, each on its own.
+    pub dynamic: Vec<DynamicColumnPredicate>,
+}
+
+impl ColumnPredicate {
+    /// Every conjunct, static and dynamic, conjoined.
+    pub fn conjoined(&self) -> Arc<dyn PhysicalIoExpr> {
+        self.predicate
+            .iter()
+            .chain(self.dynamic.iter().map(|d| &d.predicate))
+            .cloned()
+            .reduce(|a, b| Arc::new(AndIoExpr(a, b)))
+            .unwrap()
+    }
+}
+
+/// A conjunct on one column that a producer sets at run time. It keeps every
+/// row until `source` says it is set.
+#[derive(Clone)]
+pub struct DynamicColumnPredicate {
+    pub predicate: Arc<dyn PhysicalIoExpr>,
+    pub source: Arc<dyn RuntimeRangeSource>,
 }
 
 /// `a AND b`.
@@ -341,9 +364,10 @@ impl StagedScanIOPredicate {
         let mut rest = self.rest.clone();
         for (c, _) in constants {
             if let Some(p) = column_predicates.shift_remove(c) {
+                let p = p.conjoined();
                 rest = Some(match rest {
-                    None => p.predicate,
-                    Some(rest) => Arc::new(AndIoExpr(rest, p.predicate)),
+                    None => p,
+                    Some(rest) => Arc::new(AndIoExpr(rest, p)),
                 });
             }
         }
@@ -375,6 +399,9 @@ pub enum RuntimeRange {
 
 pub trait RuntimeRangeSource: Send + Sync {
     fn runtime_range(&self) -> RuntimeRange;
+
+    /// Whether the producer has published.
+    fn is_set(&self) -> bool;
 }
 
 /// A column whose batches a reader may skip by a [`RuntimeRange`]. It is never

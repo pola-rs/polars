@@ -10,7 +10,7 @@ use polars_core::prelude::{
 use polars_core::schema::Schema;
 use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
-use polars_io::predicates::{RuntimeRangeHint, ScanIOPredicate};
+use polars_io::predicates::{RuntimeRangeHint, RuntimeRangeSource, ScanIOPredicate};
 use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
@@ -40,21 +40,19 @@ pub fn create_scan_predicate(
     create_skip_batch_predicate: bool,
     create_column_predicates: bool,
 ) -> PolarsResult<ScanPredicate> {
-    // Parts a scan only consults to skip batches become range hints and stay out
-    // of the row predicate and its statistics predicate.
+    // Every dynamic part gives a range hint to skip batches by. The parts a scan
+    // only consults for that stay out of the row predicate and its statistics
+    // predicate.
     let mut predicate = predicate.clone();
     let mut filters_rows = true;
-    let mut runtime_ranges = Vec::new();
+    let runtime_ranges: Vec<RuntimeRangeHint> = MintermIter::new(predicate.node(), expr_arena)
+        .filter_map(|part| runtime_range_hint(part, expr_arena))
+        .collect();
     let (batch_only, per_row): (Vec<Node>, Vec<Node>) =
         MintermIter::new(predicate.node(), expr_arena)
             .partition(|&part| is_batch_only(part, expr_arena));
     if !batch_only.is_empty() {
         filters_rows = !per_row.is_empty();
-        runtime_ranges.extend(
-            batch_only
-                .iter()
-                .filter_map(|&part| runtime_range_hint(part, expr_arena)),
-        );
         let node = per_row
             .into_iter()
             .reduce(|left, right| {
@@ -221,11 +219,19 @@ fn create_staged_predicate(
     if std::env::var("POLARS_OUTPUT_COLUMN_PREDS").as_deref() == Ok("1") {
         eprintln!("column_predicates: {{");
         for p in column_predicates.predicates.values() {
-            eprintln!(
-                "  {} ({:?}),",
-                ExprIRDisplay::display_node(p.predicate, expr_arena),
-                p.specialized,
-            );
+            if let Some(predicate) = p.predicate {
+                eprintln!(
+                    "  {} ({:?}),",
+                    ExprIRDisplay::display_node(predicate, expr_arena),
+                    p.specialized,
+                );
+            }
+            for &d in &p.dynamic {
+                eprintln!(
+                    "  {} (dynamic),",
+                    ExprIRDisplay::display_node(d, expr_arena)
+                );
+            }
         }
         eprintln!("}}");
         if let Some(rest) = rest {
@@ -240,16 +246,29 @@ fn create_staged_predicate(
             .predicates
             .into_iter()
             .map(|(name, p)| {
+                let mut physical = |node, expr_arena: &mut Arena<AExpr>| {
+                    create_physical_expr(
+                        &ExprIR::new(node, OutputName::Alias(PlSmallStr::EMPTY)),
+                        expr_arena,
+                        schema,
+                        state,
+                    )
+                };
+                let predicate = p
+                    .predicate
+                    .map(|node| physical(node, expr_arena))
+                    .transpose()?;
+                let mut dynamic = Vec::with_capacity(p.dynamic.len());
+                for node in p.dynamic {
+                    let source = dynamic_source(node, expr_arena);
+                    dynamic.push((physical(node, expr_arena)?, source));
+                }
                 PolarsResult::Ok((
                     name,
                     PhysicalColumnPredicate {
-                        predicate: create_physical_expr(
-                            &ExprIR::new(p.predicate, OutputName::Alias(PlSmallStr::EMPTY)),
-                            expr_arena,
-                            schema,
-                            state,
-                        )?,
+                        predicate,
                         specialized: p.specialized,
+                        dynamic,
                     },
                 ))
             })
@@ -267,7 +286,7 @@ fn create_staged_predicate(
     })
 }
 
-/// The range hint of a batch-only dynamic predicate over a scan column.
+/// The range hint of a dynamic predicate over a scan column.
 fn runtime_range_hint(part: Node, expr_arena: &Arena<AExpr>) -> Option<RuntimeRangeHint> {
     let AExpr::Function {
         input,
@@ -285,6 +304,18 @@ fn runtime_range_hint(part: Node, expr_arena: &Arena<AExpr>) -> Option<RuntimeRa
         source: Arc::new(pred.clone()),
         constant: None,
     })
+}
+
+/// The producer's handle of a dynamic predicate over one column.
+fn dynamic_source(part: Node, expr_arena: &Arena<AExpr>) -> Arc<dyn RuntimeRangeSource> {
+    let AExpr::Function {
+        function: IRFunctionExpr::DynamicPred { pred, .. },
+        ..
+    } = expr_arena.get(part)
+    else {
+        unreachable!()
+    };
+    Arc::new(pred.clone())
 }
 
 /// Whether the predicate part is exactly a dynamic predicate a scan may only use

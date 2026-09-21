@@ -17,10 +17,13 @@ use crate::plans::{
     AExpr, IRBooleanFunction, IRFunctionExpr, MintermIter, aexpr_to_leaf_names_iter,
 };
 
-/// The conjuncts of a row predicate that read one column, conjoined.
+/// The conjuncts of a row predicate that read one column: the static ones
+/// conjoined, and the ones a producer sets at run time each on their own, as a
+/// reader evaluates those only once they are set.
 pub struct ColumnPredicate {
-    pub predicate: Node,
+    pub predicate: Option<Node>,
     pub specialized: Option<SpecializedColumnPredicate>,
+    pub dynamic: Vec<Node>,
 }
 
 /// A row predicate split into the conjuncts that read a single column and the rest.
@@ -57,24 +60,42 @@ pub fn aexpr_to_column_predicates(
         };
 
         let dtype = dtype.clone();
-        let entry = predicates.entry(column);
-
-        entry
-            .and_modify(|p| {
-                p.predicate = expr_arena.add(AExpr::BinaryExpr {
-                    left: p.predicate,
+        let entry = predicates.entry(column).or_insert_with(|| ColumnPredicate {
+            predicate: None,
+            specialized: None,
+            dynamic: Vec::new(),
+        });
+        if is_dynamic(minterm, expr_arena) {
+            entry.dynamic.push(minterm);
+            continue;
+        }
+        entry.predicate = Some(match entry.predicate {
+            None => {
+                entry.specialized = specialize(minterm, expr_arena, schema, dtype);
+                minterm
+            },
+            Some(left) => {
+                entry.specialized = None;
+                expr_arena.add(AExpr::BinaryExpr {
+                    left,
                     op: Operator::LogicalAnd,
                     right: minterm,
-                });
-                p.specialized = None;
-            })
-            .or_insert_with(|| ColumnPredicate {
-                predicate: minterm,
-                specialized: specialize(minterm, expr_arena, schema, dtype),
-            });
+                })
+            },
+        });
     }
 
     ColumnPredicates { predicates, rest }
+}
+
+fn is_dynamic(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    matches!(
+        expr_arena.get(node),
+        AExpr::Function {
+            function: IRFunctionExpr::DynamicPred { .. },
+            ..
+        }
+    )
 }
 
 /// The specialization of a single-column conjunct on a column of `dtype`.

@@ -12,7 +12,7 @@ use polars_parquet::read::PredicateFilter;
 use polars_utils::IdxSize;
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
-use super::row_group_decode::{PredicateColumn, RowGroupDecoder, Source};
+use super::row_group_decode::{DynamicConjunct, PredicateColumn, RowGroupDecoder, Source};
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -385,6 +385,11 @@ impl ParquetReadImpl {
                 .column_predicates
                 .iter()
                 .map(|(name, p)| {
+                    let dynamic = p
+                        .dynamic
+                        .iter()
+                        .map(|d| DynamicConjunct::new(d.predicate.clone(), d.source.clone()))
+                        .collect();
                     let Some(field_idx) = projected_arrow_fields
                         .iter()
                         .position(|f| f.output_name() == name)
@@ -395,6 +400,7 @@ impl ParquetReadImpl {
                             predicate: p.predicate.clone(),
                             decode_filter: None,
                             constant: None,
+                            dynamic,
                         };
                     };
                     let projection = &projected_arrow_fields[field_idx];
@@ -403,13 +409,16 @@ impl ParquetReadImpl {
                         SpecializedColumnPredicate::Equal(sc) if !sc.is_null() => Some(sc.clone()),
                         _ => None,
                     });
-                    let decode_filter =
-                        filter_while_decoding(projection).then(|| PredicateFilter {
+                    let decode_filter = p
+                        .predicate
+                        .as_ref()
+                        .filter(|_| filter_while_decoding(projection))
+                        .map(|predicate| PredicateFilter {
                             predicate: Arc::new(ColumnPredicateExpr::new(
                                 name.clone(),
                                 DataType::from_arrow_field(arrow_field),
                                 arrow_field.dtype.clone(),
-                                p.predicate.clone(),
+                                predicate.clone(),
                                 p.specialized.clone(),
                             )),
                             include_values: constant.is_none(),
@@ -419,6 +428,7 @@ impl ParquetReadImpl {
                         predicate: p.predicate.clone(),
                         decode_filter,
                         constant,
+                        dynamic,
                     }
                 })
                 .collect(),
@@ -437,9 +447,17 @@ impl ParquetReadImpl {
                     .all(|c| c.source != Source::Field(i))
             })
             .collect();
-        // Until a row group is measured: the predicate columns, then the rest.
-        let mut passes = vec![(0..predicate_columns.len()).collect::<Vec<_>>()];
-        if !predicate_columns.is_empty() && !rest_field_indices.is_empty() {
+        // Until a row group is measured: the predicate columns with something to
+        // evaluate, then the ones whose conjuncts are all unset, with the rest.
+        let (evaluated, unset): (Vec<usize>, Vec<usize>) =
+            (0..predicate_columns.len()).partition(|&c| {
+                let c = &predicate_columns[c];
+                c.predicate.is_some() || c.dynamic.iter().any(|d| d.source.is_set())
+            });
+        let mut passes = vec![evaluated];
+        if !unset.is_empty() {
+            passes.push(unset);
+        } else if !predicate_columns.is_empty() && !rest_field_indices.is_empty() {
             passes.push(Vec::new());
         }
 

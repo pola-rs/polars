@@ -3,8 +3,27 @@
 /// Above this share of rows kept by a pass, the next pass is merged into it.
 const STAGED_MAX_KEPT_PERCENT: usize = 85;
 
-fn keeps_most_rows(kept: usize, total: usize) -> bool {
+pub(super) fn keeps_most_rows(kept: usize, total: usize) -> bool {
     kept * 100 > STAGED_MAX_KEPT_PERCENT * total
+}
+
+/// `passes` with each of `columns` moved to a pass of its own at the front, so it
+/// is measured on every row. An emptied pass goes, but a last pass for the rest
+/// stays.
+pub(super) fn promote(passes: &[Vec<usize>], columns: &[usize]) -> Vec<Vec<usize>> {
+    let mut out: Vec<Vec<usize>> = columns.iter().map(|&c| vec![c]).collect();
+    let last = passes.len() - 1;
+    for (i, pass) in passes.iter().enumerate() {
+        let pass: Vec<usize> = pass
+            .iter()
+            .copied()
+            .filter(|c| !columns.contains(c))
+            .collect();
+        if !pass.is_empty() || (i == last && passes[last].is_empty()) {
+            out.push(pass);
+        }
+    }
+    out
 }
 
 /// The rows a predicate column, or a pass, was evaluated on and the rows it kept.
@@ -94,6 +113,20 @@ pub(super) fn plan_passes(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_promote() {
+        use super::promote;
+        assert_eq!(
+            promote(&[vec![0, 1], vec![2], vec![]], &[2]),
+            vec![vec![2], vec![0, 1], vec![]]
+        );
+        assert_eq!(
+            promote(&[vec![0], vec![1, 2]], &[1]),
+            vec![vec![1], vec![0], vec![2]]
+        );
+        assert_eq!(promote(&[vec![0, 1]], &[0, 1]), vec![vec![0], vec![1]]);
+    }
+
     #[test]
     fn test_plan_passes() {
         use super::{Selectivity, plan_passes};
