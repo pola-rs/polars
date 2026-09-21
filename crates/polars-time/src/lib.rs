@@ -50,4 +50,5 @@ pub use truncate::*;
 pub use upsample::*;
 #[cfg(feature = "timezones")]
 pub use utils::known_timezones;
+pub use windows::index_space::*;
 pub use windows::window::Window;
