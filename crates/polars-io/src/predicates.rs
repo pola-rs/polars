@@ -293,7 +293,7 @@ impl ColumnPredicate {
 }
 
 /// A conjunct on one column that a producer sets at run time. It keeps every
-/// row until `source` says it is set.
+/// row until `source` says it filters rows.
 #[derive(Clone)]
 pub struct DynamicColumnPredicate {
     pub predicate: Arc<dyn PhysicalIoExpr>,
@@ -400,8 +400,8 @@ pub enum RuntimeRange {
 pub trait RuntimeRangeSource: Send + Sync {
     fn runtime_range(&self) -> RuntimeRange;
 
-    /// Whether the producer has published.
-    fn is_set(&self) -> bool;
+    /// Whether the producer has published a predicate that rejects rows.
+    fn filters_rows(&self) -> bool;
 }
 
 /// A column whose batches a reader may skip by a [`RuntimeRange`]. It is never

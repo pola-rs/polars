@@ -36,6 +36,12 @@ pub trait PredicateExpr: Send + Sync + Any {
     fn runtime_range(&self) -> RuntimeRange {
         RuntimeRange::Disabled
     }
+
+    // Whether `evaluate` can reject rows. A predicate that cannot is not
+    // evaluated per row.
+    fn filters_rows(&self) -> bool {
+        false
+    }
 }
 
 pub struct TrivialPredicateExpr;
@@ -184,10 +190,15 @@ impl RuntimeRangeSource for DynamicPredWeakRef {
         guard.as_ref().unwrap().runtime_range()
     }
 
-    fn is_set(&self) -> bool {
-        self.inner
-            .upgrade()
-            .is_some_and(|inner| inner.is_set.load(Ordering::Acquire))
+    fn filters_rows(&self) -> bool {
+        let Some(inner) = self.inner.upgrade() else {
+            return false;
+        };
+        if !inner.is_set.load(Ordering::Acquire) {
+            return false;
+        }
+        let guard = inner.pred.read().unwrap();
+        guard.as_ref().unwrap().filters_rows()
     }
 }
 

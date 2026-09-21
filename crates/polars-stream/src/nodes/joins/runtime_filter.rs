@@ -181,6 +181,10 @@ impl PredicateExpr for KeyFilter {
     fn runtime_range(&self) -> RuntimeRange {
         self.range.runtime_range()
     }
+
+    fn filters_rows(&self) -> bool {
+        self.bloom.is_some()
+    }
 }
 
 /// Min and max of one build key column. Empty until a non-null key is seen; an

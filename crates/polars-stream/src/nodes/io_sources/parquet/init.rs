@@ -448,11 +448,11 @@ impl ParquetReadImpl {
             })
             .collect();
         // Until a row group is measured: the predicate columns with something to
-        // evaluate, then the ones whose conjuncts are all unset, with the rest.
+        // evaluate, then the ones whose conjuncts all keep every row, with the rest.
         let (evaluated, unset): (Vec<usize>, Vec<usize>) =
             (0..predicate_columns.len()).partition(|&c| {
                 let c = &predicate_columns[c];
-                c.predicate.is_some() || c.dynamic.iter().any(|d| d.source.is_set())
+                c.predicate.is_some() || c.dynamic.iter().any(|d| d.source.filters_rows())
             });
         let mut passes = vec![evaluated];
         if !unset.is_empty() {

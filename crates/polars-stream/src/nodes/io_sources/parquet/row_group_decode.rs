@@ -71,12 +71,12 @@ impl DynamicConjunct {
     }
 
     fn is_active(&self) -> bool {
-        !self.bypassed.load(Ordering::Relaxed) && self.source.is_set()
+        !self.bypassed.load(Ordering::Relaxed) && self.source.filters_rows()
     }
 
-    /// Whether the conjunct is set and was not seen set before.
-    fn newly_set(&self) -> bool {
-        self.source.is_set() && !self.activated.swap(true, Ordering::Relaxed)
+    /// Whether the conjunct filters rows and was not seen doing so before.
+    fn newly_active(&self) -> bool {
+        self.source.filters_rows() && !self.activated.swap(true, Ordering::Relaxed)
     }
 
     /// Count the rows an evaluation saw and kept.
@@ -599,17 +599,18 @@ impl RowGroupDecoder {
         let row_group_data = Arc::new(row_group_data);
         let projection_height = row_group_data.row_group_metadata.num_rows();
         let mut passes = self.passes.lock().unwrap().clone();
-        // A conjunct just set is measured on every row of this row group.
-        let newly_set: Vec<usize> = (0..self.predicate_columns.len())
+        // A conjunct that just started filtering rows is measured on every row
+        // of this row group.
+        let newly_active: Vec<usize> = (0..self.predicate_columns.len())
             .filter(|&c| {
                 self.predicate_columns[c]
                     .dynamic
                     .iter()
-                    .any(|d| d.newly_set())
+                    .any(|d| d.newly_active())
             })
             .collect();
-        if !newly_set.is_empty() {
-            passes = Arc::new(promote(&passes, &newly_set));
+        if !newly_active.is_empty() {
+            passes = Arc::new(promote(&passes, &newly_active));
             *self.passes.lock().unwrap() = passes.clone();
         }
 
