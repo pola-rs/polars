@@ -175,9 +175,8 @@ impl IsInHaystack {
             dt if dt.is_nested() => {
                 let encoded =
                     _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[flat.into_column()])?;
-                Lookup::RowEncoded(RowEncodedLookup::new(
-                    encoded.downcast_iter().flat_map(|arr| arr.values_iter()),
-                ))
+                let rows = encoded.rechunk().downcast_as_array().clone();
+                Lookup::RowEncoded(RowEncodedLookup::new(rows))
             },
             dt if dt.to_physical().is_primitive_numeric() => {
                 let flat = flat.to_physical_repr();

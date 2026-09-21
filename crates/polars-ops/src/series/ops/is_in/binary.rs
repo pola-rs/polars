@@ -2,11 +2,11 @@ use std::hash::BuildHasher;
 
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry as TableEntry;
-use polars_arrow::array::{Array, View};
+use polars_arrow::array::{Array, BinaryArray, View};
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::*;
+use polars_utils::IdxSize;
 use polars_utils::aliases::PlRandomState;
-use polars_utils::idx_map::bytes_idx_map::{BytesIndexMap, Entry};
 
 use super::{SMALL_MAX, finish_chunk};
 
@@ -150,22 +150,32 @@ impl BinaryLookup {
     }
 }
 
-/// Row encoded nested values.
+/// Row encoded nested values, kept as one array and indexed by row.
 pub(super) struct RowEncodedLookup {
-    map: BytesIndexMap<()>,
+    rows: BinaryArray<i64>,
+    table: HashTable<IdxSize>,
     hasher: PlRandomState,
 }
 
 impl RowEncodedLookup {
-    pub(super) fn new<'a>(values: impl Iterator<Item = &'a [u8]>) -> Self {
-        let mut map = BytesIndexMap::new();
+    pub(super) fn new(rows: BinaryArray<i64>) -> Self {
         let hasher = PlRandomState::default();
-        for v in values {
-            if let Entry::Vacant(entry) = map.entry(hasher.hash_one(v), v) {
-                entry.insert(());
-            }
+        let mut table = HashTable::with_capacity(rows.len());
+        for (idx, bytes) in rows.values_iter().enumerate() {
+            let hash = hasher.hash_one(bytes);
+            table
+                .entry(
+                    hash,
+                    |&i| rows.value(i as usize) == bytes,
+                    |&i| hasher.hash_one(rows.value(i as usize)),
+                )
+                .or_insert(idx as IdxSize);
         }
-        Self { map, hasher }
+        Self {
+            rows,
+            table,
+            hasher,
+        }
     }
 
     pub(super) fn probe(
@@ -176,10 +186,12 @@ impl RowEncodedLookup {
     ) -> BooleanChunked {
         let chunks = ca.downcast_iter().map(|arr| {
             let mut out = BitmapBuilder::with_capacity(arr.len());
-            out.extend_trusted_len_iter(
-                arr.values_iter()
-                    .map(|bytes| self.map.contains_key(self.hasher.hash_one(bytes), bytes)),
-            );
+            out.extend_trusted_len_iter(arr.values_iter().map(|bytes| {
+                let hash = self.hasher.hash_one(bytes);
+                self.table
+                    .find(hash, |&i| self.rows.value(i as usize) == bytes)
+                    .is_some()
+            }));
             finish_chunk(out.freeze(), arr.validity(), nulls_equal, has_null)
         });
         BooleanChunked::from_chunk_iter(ca.name().clone(), chunks)

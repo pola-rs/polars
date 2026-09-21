@@ -133,8 +133,9 @@ where
 
         if let Some((min, range)) = T::Native::key_range(&keys)
             && range <= BITSET_MIN_BITS.max(keys.len() as u64 * BITSET_BITS_PER_VALUE)
+            && let Ok(range) = usize::try_from(range)
         {
-            let mut bits = MutableBitmap::from_len_zeroed(range as usize);
+            let mut bits = MutableBitmap::from_len_zeroed(range);
             for key in keys {
                 bits.set(T::Native::key_offset(key, min) as usize, true);
             }
