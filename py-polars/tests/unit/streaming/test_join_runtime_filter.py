@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import Any
 
+    from polars._typing import JoinStrategy
     from tests.conftest import PlMonkeyPatch
 
 pytestmark = pytest.mark.xdist_group("streaming")
@@ -1435,7 +1436,7 @@ def test_top_k_dynamic_predicate_still_filters_rows(
 
 @pytest.mark.parametrize("how", ["semi", "anti"])
 def test_join_above_a_semi_anti_join_traces_its_left_columns_only(
-    tmp_path: Path, how: str
+    tmp_path: Path, how: JoinStrategy
 ) -> None:
     # The semi/anti join outputs left columns only, so `k_right` is the left
     # input's own column, not the right input's `k` under the suffix.
@@ -1460,9 +1461,7 @@ def test_repeated_build_key(tmp_path: Path) -> None:
     path = tmp_path / "probe.parquet"
     pl.DataFrame({"a": range(1000), "b": range(1000)}).write_parquet(path)
     build = pl.LazyFrame({"k": [220, 240], "e": [0, 1]}).filter(pl.col("e") >= 0)
-    query = pl.scan_parquet(path).join(
-        build, left_on=["a", "b"], right_on=["k", "k"]
-    )
+    query = pl.scan_parquet(path).join(build, left_on=["a", "b"], right_on=["k", "k"])
     flags = pl.QueryOptFlags(predicate_pushdown=False)
     assert_frame_equal(
         query.collect(engine="streaming", optimizations=flags),
