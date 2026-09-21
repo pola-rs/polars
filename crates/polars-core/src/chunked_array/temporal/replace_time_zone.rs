@@ -7,7 +7,9 @@ use polars_arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 
-use crate::chunked_array::ops::arity::try_binary_elementwise;
+use crate::chunked_array::ops::arity::{
+    try_binary_elementwise, try_unary_elementwise_amortized,
+};
 use crate::prelude::*;
 
 pub fn replace_time_zone(
@@ -124,24 +126,18 @@ pub fn impl_replace_time_zone(
 ) -> PolarsResult<Int64Chunked> {
     match ambiguous.len() {
         1 => {
-            let iter = datetime.phys.downcast_iter().map(|arr| {
-                let element_iter = arr.iter().map(|timestamp_opt| match timestamp_opt {
-                    Some(timestamp) => {
-                        let ndt = timestamp_to_datetime(timestamp);
-                        let res = convert_to_naive_local(
-                            from_tz,
-                            to_tz,
-                            ndt,
-                            Ambiguous::from_str(ambiguous.get(0).unwrap())?,
-                            non_existent,
-                        )?;
-                        Ok::<_, PolarsError>(res.map(datetime_to_timestamp))
-                    },
-                    None => Ok(None),
-                });
-                element_iter.try_collect_arr()
-            });
-            ChunkedArray::try_from_chunk_iter(datetime.phys.name().clone(), iter)
+            let ambiguous = Ambiguous::from_str(ambiguous.get(0).unwrap())?;
+
+            // Every element of a chunk that repeats one instant names one local time, so the
+            // conversion is worth one call rather than one per element.
+            try_unary_elementwise_amortized(datetime.physical(), |timestamp_opt| {
+                let Some(timestamp) = timestamp_opt else {
+                    return Ok(None);
+                };
+                let ndt = timestamp_to_datetime(timestamp);
+                let res = convert_to_naive_local(from_tz, to_tz, ndt, ambiguous, non_existent)?;
+                Ok::<_, PolarsError>(res.map(datetime_to_timestamp))
+            })
         },
         _ => try_binary_elementwise(
             datetime.physical(),
