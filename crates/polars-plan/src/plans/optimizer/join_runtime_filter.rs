@@ -169,17 +169,25 @@ fn process_join(
     let mut runtime_filters = Vec::with_capacity(filters.len());
     for filter in filters {
         // Distinct build keys: no more than the rows built, nor than the key's
-        // distinct count where the build side carries one.
+        // distinct count where the build side carries one. That count describes
+        // the unfiltered side, so it is scaled by the share of rows its filters
+        // keep, which is exact for a unique key.
         let build_key = &on[filter.key_idx];
         let build_key = if left { &build_key.0 } else { &build_key.1 };
+        let kept = (build_stats.filtered / build_stats.unfiltered).min(1.0);
         let build_distinct = into_column(build_key.node(), expr_arena)
             .and_then(|name| build_stats.key_distinct_estimate(name))
-            .map_or(rows, |ndv| ndv.min(rows));
+            .map_or(rows, |ndv| (ndv * kept).min(rows));
         let scan_key = column_name(&filter.predicate, expr_arena).clone();
         let probe_distinct = side_stats(filter.scan, ir_arena, expr_arena, stats)
             .and_then(|(scan_stats, _)| scan_stats.key_distinct_estimate(&scan_key));
         let bloom =
             !probe_distinct.is_some_and(|probe| build_distinct > probe * BLOOM_MAX_PASS_RATE);
+        if polars_config::config().verbose() {
+            eprintln!(
+                "runtime filter on {scan_key}: {build_distinct:.0} distinct build keys of {rows:.0} rows, {probe_distinct:?} distinct probe keys, bloom: {bloom}"
+            );
+        }
         if bloom {
             evaluate_per_row(filter.predicate.node(), expr_arena);
         }
