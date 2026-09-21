@@ -512,6 +512,17 @@ impl SQLExprVisitor<'_> {
                 SQLBinaryOperator::Eq
             };
             self.visit_binary_op(expr, &op, pattern)
+        } else if !case_insensitive
+            && pat.len() > 2
+            && pat.starts_with('%')
+            && pat.ends_with('%')
+            && !pat[1..pat.len() - 1].contains(['%', '_'])
+        {
+            // plain substring match (eg: '%foo%' with no other wildcard chars)
+            let needle = pat[1..pat.len() - 1].to_string();
+            let expr = self.visit_expr(expr)?;
+            let matches = expr.str().contains_literal(lit(needle));
+            Ok(if negated { matches.not() } else { matches })
         } else {
             // create regex from pattern containing SQL wildcard chars ('%' => '.*', '_' => '.')
             let mut rx = regex::escape(pat.as_str())
