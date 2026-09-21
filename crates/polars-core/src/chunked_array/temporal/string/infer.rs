@@ -421,8 +421,23 @@ pub fn sniff_time_fmt(val: &str) -> Option<&'static str> {
 }
 
 /// Scan the non-null values for the first that `infer` accepts.
-pub fn infer_from_values<T>(ca: &StringChunked, infer: impl FnMut(&str) -> Option<T>) -> Option<T> {
-    ca.iter().flatten().find_map(infer)
+pub fn infer_from_values<T>(
+    ca: &StringChunked,
+    mut infer: impl FnMut(&str) -> Option<T>,
+) -> Option<T> {
+    for arr in ca.downcast_iter() {
+        // One element stands for the whole chunk, and one value it does not accept is every
+        // value it does not accept: a column that never parses costs one call, not one per row.
+        let found = match arr.scalar_value() {
+            Some(value) => value.and_then(&mut infer),
+            None => arr.iter().flatten().find_map(&mut infer),
+        };
+        if found.is_some() {
+            return found;
+        }
+    }
+
+    None
 }
 
 #[cfg(feature = "dtype-datetime")]
