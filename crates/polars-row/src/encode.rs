@@ -547,24 +547,6 @@ enum EncoderState {
     Struct(Vec<Encoder>),
 }
 
-unsafe fn encode_strs<'a>(
-    buffer: &mut [MaybeUninit<u8>],
-    iter: impl Iterator<Item = Option<&'a str>>,
-    opt: RowEncodingOptions,
-    offsets: &mut [usize],
-) {
-    if opt.contains(RowEncodingOptions::NO_ORDER) {
-        no_order::encode_variable_no_order(
-            buffer,
-            iter.map(|v| v.map(str::as_bytes)),
-            opt,
-            offsets,
-        );
-    } else {
-        utf8::encode_str(buffer, iter, opt, offsets);
-    }
-}
-
 unsafe fn encode_bins<'a>(
     buffer: &mut [MaybeUninit<u8>],
     iter: impl Iterator<Item = Option<&'a [u8]>>,
@@ -666,13 +648,23 @@ unsafe fn encode_flat_array(
             let array = downcast::<PlBinaryArray>(array);
             encode_bins(buffer, array.iter(), opt, offsets);
         },
+        // A view array is written out of its views rather than its elements, which is what the
+        // two kernels below take; every other array type hands its elements to an iterator.
         A::BinaryView => {
             let array = downcast::<PlBinaryViewArray>(array);
-            encode_bins(buffer, array.iter(), opt, offsets);
+            if opt.contains(RowEncodingOptions::NO_ORDER) {
+                no_order::encode_binview_no_order(buffer, array, opt, offsets);
+            } else {
+                binary::encode_iter(buffer, array.iter(), opt, offsets);
+            }
         },
         A::Utf8View => {
             let array = downcast::<PlUtf8ViewArray>(array);
-            encode_strs(buffer, array.iter(), opt, offsets);
+            if opt.contains(RowEncodingOptions::NO_ORDER) {
+                no_order::encode_binview_no_order(buffer, array.as_binview(), opt, offsets);
+            } else {
+                utf8::encode_str_view(buffer, array, opt, offsets);
+            }
         },
 
         A::FixedSizeBinary => todo!(),
@@ -1139,6 +1131,58 @@ mod tests {
                 // No nulls
                 let array = array.with_validity(None);
                 check_round_trip(std::slice::from_ref(&array), &[dtype], &[opt]);
+            }
+        }
+    }
+
+    /// The view encoders read one view and one mask bit per element, so every shape where a
+    /// chunk stands for its elements instead has to reach the element-wise kernels and come back
+    /// with the same rows.
+    #[test]
+    fn test_view_representations_round_trip() {
+        use polars_array::{PlBinaryViewArray, PlBitmap};
+        use polars_arrow::bitmap::Bitmap;
+
+        let n = 37usize;
+        let long = "a long value that no view holds inline";
+        // The shapes below are only worth listing if they really do reach the fallback.
+        assert!(PlUtf8ViewArray::new_scalar("ab", n).flat_views().is_none());
+        assert!(PlUtf8ViewArray::new_scalar("ab", 1).flat_views().is_none());
+        assert!(PlUtf8ViewArray::new_full_null(n).flat_views().is_none());
+        let mask = |keep: fn(usize) -> bool| {
+            Some(PlBitmap::from_bitmap(Bitmap::from_iter((0..n).map(keep))))
+        };
+
+        for value in ["", "ab", "an inline twelve", long] {
+            let flat: PlUtf8ViewArray = (0..n)
+                .map(|i| Some(if i % 3 == 0 { value } else { long }))
+                .collect();
+            // Every shape a chunk can be in, for the same values.
+            let shapes: Vec<PlUtf8ViewArray> = vec![
+                PlUtf8ViewArray::new_scalar(value, n),
+                PlUtf8ViewArray::new_scalar(value, 1),
+                PlUtf8ViewArray::new_scalar(value, n).with_validity(mask(|i| i % 4 != 0)),
+                PlUtf8ViewArray::new_scalar(value, n).with_validity(mask(|_| false)),
+                PlUtf8ViewArray::new_full_null(n),
+                flat.clone(),
+                flat.sliced(1, n - 2),
+                flat.clone().with_validity(mask(|i| i % 5 != 0)),
+            ];
+
+            for opt in all_options() {
+                for strs in &shapes {
+                    let bins: PlBinaryViewArray = strs.as_binview().clone();
+                    check_round_trip(
+                        &[strs.to_boxed()],
+                        std::slice::from_ref(&ArrowDataType::Utf8View),
+                        &[opt],
+                    );
+                    check_round_trip(
+                        &[bins.to_boxed()],
+                        std::slice::from_ref(&ArrowDataType::BinaryView),
+                        &[opt],
+                    );
+                }
             }
         }
     }

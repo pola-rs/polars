@@ -1,10 +1,12 @@
 //! The builder of a [`PlUtf8ViewArray`].
 
+use polars_arrow::array::View;
 use polars_utils::IdxSize;
 use polars_utils::index::ChunkId;
 
 use super::PlUtf8ViewArray;
 use crate::binview::{PlBinaryViewArray, PlBinaryViewArrayBuilder};
+use crate::bitmap::PlBitmap;
 use crate::builder::{ShareStrategy, StaticArrayBuilder};
 
 /// A builder of a [`PlUtf8ViewArray`].
@@ -37,6 +39,35 @@ impl PlUtf8ViewArrayBuilder {
     #[inline]
     pub fn push_value(&mut self, value: &str) {
         self.0.push_value(value.as_bytes());
+    }
+
+    /// Appends a value, leaving the validity mask untouched.
+    #[inline]
+    pub fn push_value_ignore_validity(&mut self, value: &str) {
+        self.0.push_value_ignore_validity(value.as_bytes());
+    }
+
+    /// Appends the element `view` holds inline, leaving the validity mask untouched.
+    ///
+    /// # Safety
+    /// `view` must be inline, and its bytes must be valid UTF-8.
+    #[inline]
+    pub unsafe fn push_inline_view_ignore_validity(&mut self, view: View) {
+        unsafe { self.0.push_inline_view_ignore_validity(view) };
+    }
+
+    /// Appends a null, leaving the validity mask untouched.
+    #[inline]
+    pub fn push_null_ignore_validity(&mut self) {
+        self.0.push_null_ignore_validity();
+    }
+
+    /// The elements appended so far under `validity`, in place of whatever mask was pushed
+    /// alongside them.
+    #[inline]
+    pub fn freeze_with_validity(self, validity: Option<PlBitmap>) -> PlUtf8ViewArray {
+        // SAFETY: every value appended was a `&str`.
+        unsafe { PlUtf8ViewArray::from_binview_unchecked(self.0.freeze_with_validity(validity)) }
     }
 
     /// Appends `value` as an element of its own, `repeats` times over.

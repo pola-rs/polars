@@ -65,6 +65,42 @@ impl PlBinaryViewArrayBuilder {
         self.views.push(view);
     }
 
+    /// Appends the element `view` holds inline, leaving the validity mask untouched.
+    ///
+    /// # Safety
+    /// `view` must be inline — holding its own bytes rather than naming a data buffer — because
+    /// nothing rebases it onto the buffers of this builder.
+    #[inline]
+    pub unsafe fn push_inline_view_ignore_validity(&mut self, view: View) {
+        debug_assert!(view.is_inline());
+        self.views.push(view);
+    }
+
+    /// Appends a null, leaving the validity mask untouched.
+    #[inline]
+    pub fn push_null_ignore_validity(&mut self) {
+        self.views.push(View::default());
+    }
+
+    /// The elements appended so far under `validity`, in place of whatever mask was pushed
+    /// alongside them.
+    ///
+    /// A decoder that learns only at the end whether it read a null builds the mask on the side
+    /// and hands it over here, rather than pushing a bit per element it almost always sets.
+    pub fn freeze_with_validity(mut self, validity: Option<PlBitmap>) -> PlBinaryViewArray {
+        self.flush_active();
+        let length = self.views.len();
+        // SAFETY: as in `freeze`, and the caller's mask holds one bit per element appended.
+        unsafe {
+            PlBinaryViewArray::new_unchecked(
+                Buffer::from(self.views),
+                Buffer::from(self.buffers),
+                length,
+                validity,
+            )
+        }
+    }
+
     /// Appends `value` as an element of its own, `repeats` times over.
     pub fn extend_repeated(&mut self, value: &[u8], repeats: usize) {
         if repeats == 0 {
