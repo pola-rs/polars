@@ -29,13 +29,11 @@ const BLOOM_MAX_BYTES: usize = 32 << 20;
 /// and hold one entry per filter, in the same order.
 pub(super) struct RuntimeFilters {
     filters: Vec<(RuntimeFilter, KeyFilterSpec)>,
-    /// Key names of the planned build side, for verbose output.
-    key_names: Vec<PlSmallStr>,
 }
 
 impl RuntimeFilters {
-    /// `key_schema` holds the keys of the side the plan named as build side;
-    /// the probe side's keys have the same dtypes.
+    /// `key_schema` holds the join keys by position; both sides have the same
+    /// dtypes.
     pub(super) fn new(filters: Vec<RuntimeFilter>, key_schema: &Schema) -> Self {
         let filters = filters
             .into_iter()
@@ -44,10 +42,7 @@ impl RuntimeFilters {
                 (filter, spec)
             })
             .collect();
-        Self {
-            filters,
-            key_names: key_schema.iter_names().cloned().collect(),
-        }
+        Self { filters }
     }
 
     pub(super) fn is_empty(&self) -> bool {
@@ -87,7 +82,7 @@ impl RuntimeFilters {
             if config::verbose() {
                 eprintln!(
                     "publishing runtime filter for key {}: {key_filter:?}",
-                    self.key_names[filter.key_idx]
+                    filter.key_idx
                 );
             }
             filter.pred.set(Arc::new(key_filter));

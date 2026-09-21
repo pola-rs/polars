@@ -1453,3 +1453,19 @@ def test_join_above_a_semi_anti_join_traces_its_left_columns_only(
         query.collect(engine="in-memory"),
         check_row_order=False,
     )
+
+
+def test_repeated_build_key(tmp_path: Path) -> None:
+    # Filters are keyed by position; the same build column may appear twice.
+    path = tmp_path / "probe.parquet"
+    pl.DataFrame({"a": range(1000), "b": range(1000)}).write_parquet(path)
+    build = pl.LazyFrame({"k": [220, 240], "e": [0, 1]}).filter(pl.col("e") >= 0)
+    query = pl.scan_parquet(path).join(
+        build, left_on=["a", "b"], right_on=["k", "k"]
+    )
+    flags = pl.QueryOptFlags(predicate_pushdown=False)
+    assert_frame_equal(
+        query.collect(engine="streaming", optimizations=flags),
+        query.collect(engine="in-memory", optimizations=flags),
+        check_row_order=False,
+    )

@@ -1534,11 +1534,7 @@ impl EquiJoinNode {
 
         // A filter is only published for the side the plan named.
         debug_assert!(runtime_filters.is_empty() || args.build_side.is_some());
-        let key_schema = match build_side_left(args.build_side.as_ref()) {
-            Some(false) => &right_key_schema,
-            _ => &left_key_schema,
-        };
-        let runtime_filters = RuntimeFilters::new(runtime_filters, key_schema);
+        let runtime_filters = RuntimeFilters::new(runtime_filters, &unique_key_schema);
 
         let left_payload_schema = Arc::new(select_schema(&left_input_schema, &left_payload_select));
         let right_payload_schema =
