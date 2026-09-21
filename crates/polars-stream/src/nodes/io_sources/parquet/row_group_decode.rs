@@ -83,8 +83,12 @@ impl DynamicConjunct {
     fn measure(&self, input_rows: usize, kept_rows: usize) {
         let input = self.input_rows.fetch_add(input_rows, Ordering::Relaxed) + input_rows;
         let kept = self.kept_rows.fetch_add(kept_rows, Ordering::Relaxed) + kept_rows;
-        if keeps_most_rows(kept, input) {
-            self.bypassed.store(true, Ordering::Relaxed);
+        if keeps_most_rows(kept, input) && !self.bypassed.swap(true, Ordering::Relaxed) {
+            if polars_core::config::verbose() {
+                eprintln!(
+                    "[ParquetFileReader]: Dynamic predicate bypassed, it kept {kept} of {input} rows"
+                );
+            }
         }
     }
 }

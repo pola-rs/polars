@@ -3,6 +3,7 @@
 //! use to skip batches by their statistics, and optionally a bloom filter over
 //! the keys, which scans probe per row.
 
+use polars_core::config;
 use polars_core::prelude::*;
 use polars_expr::hash_keys::HashKeys;
 use polars_io::predicates::{RuntimeRange, cast_bound};
@@ -18,6 +19,9 @@ const BLOOM_MIN_BITS_PER_KEY: usize = 4;
 /// Largest share of the probe's distinct keys the build may hold for the bloom
 /// filter to be worth probing.
 const BLOOM_MAX_PASS_RATE: f64 = 0.3;
+/// Smallest bloom filter that is built, so a build estimated far too small
+/// still gets a usable one.
+const BLOOM_MIN_BYTES: usize = 64 << 10;
 /// Largest bloom filter that is published.
 const BLOOM_MAX_BYTES: usize = 32 << 20;
 
@@ -35,7 +39,10 @@ pub struct KeyFilterSpec {
 
 impl KeyFilterSpec {
     fn bloom(&self) -> Option<SplitBlockBloom> {
-        let bloom = SplitBlockBloom::with_capacity(self.bloom_keys?, BLOOM_BITS_PER_KEY);
+        let keys = self
+            .bloom_keys?
+            .max(BLOOM_MIN_BYTES * 8 / BLOOM_BITS_PER_KEY);
+        let bloom = SplitBlockBloom::with_capacity(keys, BLOOM_BITS_PER_KEY);
         (bloom.size_bytes() <= BLOOM_MAX_BYTES).then_some(bloom)
     }
 
@@ -103,6 +110,13 @@ impl KeyFilterBuilder {
                 .spec
                 .probe_distinct
                 .is_some_and(|probe| distinct as f64 > probe as f64 * BLOOM_MAX_PASS_RATE);
+            if (overloaded || weak) && config::verbose() {
+                eprintln!(
+                    "dropping bloom filter of {} bytes: {distinct} distinct build keys, {:?} distinct probe keys",
+                    b.bloom.size_bytes(),
+                    b.spec.probe_distinct
+                );
+            }
             (!overloaded && !weak).then_some(KeyBloom {
                 spec: b.spec,
                 bloom: b.bloom,
