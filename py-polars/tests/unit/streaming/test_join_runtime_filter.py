@@ -1431,3 +1431,25 @@ def test_top_k_dynamic_predicate_still_filters_rows(
     assert "Pre-filtered decode enabled" in err
     assert "Dynamic predicate bypassed" not in err
     assert out.get_column("k").to_list() == [0, 1, 2, 3, 4]
+
+
+@pytest.mark.parametrize("how", ["semi", "anti"])
+def test_join_above_a_semi_anti_join_traces_its_left_columns_only(
+    tmp_path: Path, how: str
+) -> None:
+    # The semi/anti join outputs left columns only, so `k_right` is the left
+    # input's own column, not the right input's `k` under the suffix.
+    path = tmp_path / "probe.parquet"
+    pl.DataFrame({"k": range(20_000)}).write_parquet(path, row_group_size=1_000)
+    left = pl.LazyFrame({"k": range(1_000), "k_right": [15_000] * 1_000})
+    dimension = pl.LazyFrame({"k_right": [15_000, 15_001], "e": [0, 1]}).filter(
+        pl.col("e") >= 0
+    )
+    query = left.join(
+        pl.scan_parquet(path), on="k", how=how, build_side="force_left"
+    ).join(dimension, on="k_right")
+    assert_frame_equal(
+        query.collect(engine="streaming"),
+        query.collect(engine="in-memory"),
+        check_row_order=False,
+    )

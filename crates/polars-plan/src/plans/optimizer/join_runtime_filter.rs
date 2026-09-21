@@ -405,11 +405,15 @@ fn scan_origin(
                 let name = column_name(predicate, expr_arena).clone();
                 let schema_left = ir_arena.get(*input_left).schema(ir_arena);
                 let schema_right = ir_arena.get(*input_right).schema(ir_arena);
-                let right_names =
-                    join_right_output_names(&schema_left, &schema_right, options).ok()?;
-                let from_right = right_names
-                    .iter()
-                    .position(|output| output.as_ref() == Some(&name));
+                // A semi or anti join outputs the left columns only.
+                let from_right = if options.args.how.is_semi_anti() {
+                    None
+                } else {
+                    join_right_output_names(&schema_left, &schema_right, options)
+                        .ok()?
+                        .iter()
+                        .position(|output| output.as_ref() == Some(&name))
+                };
                 match from_right {
                     Some(idx) if !probe_left => {
                         let input_name = schema_right.get_at_index(idx)?.0.clone();

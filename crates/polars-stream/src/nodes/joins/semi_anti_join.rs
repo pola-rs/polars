@@ -453,7 +453,11 @@ impl BuildState {
                 sketch_per_p: vec![CardinalitySketch::default(); num_partitions],
                 key_idxs_values_per_p: vec![Vec::new(); num_partitions],
                 key_idxs_offsets_per_p: vec![0; num_partitions],
-                key_filters: params.runtime_filters.new_builders(),
+                key_filters: if params.publishes_runtime_filters() {
+                    params.runtime_filters.new_builders()
+                } else {
+                    Vec::new()
+                },
             })
             .collect();
         Self {
