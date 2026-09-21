@@ -48,7 +48,7 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
     #[inline]
     pub fn push_value(&mut self, value: T) {
         self.values.push(bytes::to_bytes(value));
-        self.validity.extend_constant(1, true);
+        self.validity.push(true);
     }
 
     /// Appends every value `values` yields, in order, none of them null.
@@ -65,7 +65,7 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
     #[inline]
     pub fn push_null(&mut self) {
         self.values.push(Bytes::<T>::zeros());
-        self.validity.extend_constant(1, false);
+        self.validity.push(false);
     }
 
     /// Appends `value`, or a null if it is [`None`].

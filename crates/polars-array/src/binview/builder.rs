@@ -55,7 +55,7 @@ impl PlBinaryViewArrayBuilder {
     pub fn push_value(&mut self, value: &[u8]) {
         let view = self.copy_value(value);
         self.views.push(view);
-        self.validity.extend_constant(1, true);
+        self.validity.push(true);
     }
 
     /// Appends `value` as an element of its own, leaving the validity mask untouched.
@@ -80,7 +80,7 @@ impl PlBinaryViewArrayBuilder {
     #[inline]
     pub fn push_null(&mut self) {
         self.views.push(View::default());
-        self.validity.extend_constant(1, false);
+        self.validity.push(false);
     }
 
     /// Appends `value`, or a null if it is [`None`].
@@ -199,7 +199,7 @@ impl PlBinaryViewArrayBuilder {
                     self.validity.extend_constant(valid_run, true);
                     valid_run = 0;
                 }
-                self.validity.extend_constant(1, false);
+                self.validity.push(false);
                 continue;
             }
 

@@ -55,7 +55,7 @@ impl<B: PlArrayBuilder> PlListArrayBuilder<B> {
         let end = self.values.len() as u64;
         debug_assert!(end >= self.last_offset(), "the child builder cannot shrink");
         self.offsets.push(end);
-        self.validity.extend_constant(1, true);
+        self.validity.push(true);
     }
 
     /// The end of the last element appended, which is where the next one starts.

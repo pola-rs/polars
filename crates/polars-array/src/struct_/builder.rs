@@ -68,7 +68,7 @@ impl PlStructArrayBuilder {
             );
         }
         self.length += 1;
-        self.validity.extend_constant(1, true);
+        self.validity.push(true);
     }
 
     /// The builders of the fields, paired with the fields of `other` they append.

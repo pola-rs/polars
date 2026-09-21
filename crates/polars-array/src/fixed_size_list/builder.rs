@@ -69,7 +69,7 @@ impl<B: PlArrayBuilder> PlFixedSizeListArrayBuilder<B> {
             self.length,
         );
         self.length += 1;
-        self.validity.extend_constant(1, true);
+        self.validity.push(true);
     }
 
     /// Panics unless `other` is as wide as the lists this builds.

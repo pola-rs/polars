@@ -37,14 +37,14 @@ impl PlBooleanArrayBuilder {
     #[inline]
     pub fn push_value(&mut self, value: bool) {
         self.values.push(value);
-        self.validity.extend_constant(1, true);
+        self.validity.push(true);
     }
 
     /// Appends a null.
     #[inline]
     pub fn push_null(&mut self) {
         self.values.push(false);
-        self.validity.extend_constant(1, false);
+        self.validity.push(false);
     }
 
     /// Appends `value`, or a null if it is [`None`].

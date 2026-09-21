@@ -53,14 +53,14 @@ impl PlBinaryArrayBuilder {
     pub fn push_value(&mut self, value: &[u8]) {
         self.values.extend_from_slice(value);
         self.push_offset(value.len());
-        self.validity.extend_constant(1, true);
+        self.validity.push(true);
     }
 
     /// Appends a null.
     #[inline]
     pub fn push_null(&mut self) {
         self.push_offset(0);
-        self.validity.extend_constant(1, false);
+        self.validity.push(false);
     }
 
     /// Appends `value`, or a null if it is [`None`].

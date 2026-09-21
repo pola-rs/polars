@@ -56,7 +56,7 @@ impl PlFixedSizeBinaryArrayBuilder {
 
         self.values.extend_from_slice(value);
         self.length += 1;
-        self.validity.extend_constant(1, true);
+        self.validity.push(true);
     }
 
     /// Appends a null.
@@ -64,7 +64,7 @@ impl PlFixedSizeBinaryArrayBuilder {
     pub fn push_null(&mut self) {
         self.values.resize(self.values.len() + self.width, 0);
         self.length += 1;
-        self.validity.extend_constant(1, false);
+        self.validity.push(false);
     }
 
     /// Appends `value`, or a null if it is [`None`].
