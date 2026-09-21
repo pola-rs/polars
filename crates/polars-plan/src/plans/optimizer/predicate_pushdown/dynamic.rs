@@ -42,6 +42,13 @@ pub trait PredicateExpr: Send + Sync + Any {
     fn filters_rows(&self) -> bool {
         true
     }
+
+    // Whether the predicate stays as it is once set. A reader may stop
+    // evaluating a fixed predicate that rejects too little; one that tightens
+    // over time must be kept.
+    fn is_fixed(&self) -> bool {
+        false
+    }
 }
 
 pub struct TrivialPredicateExpr;
@@ -195,6 +202,17 @@ impl RuntimeRangeSource for DynamicPredWeakRef {
     }
 
     fn filters_rows(&self) -> bool {
+        self.with_set(|pred| pred.filters_rows())
+    }
+
+    fn is_fixed(&self) -> bool {
+        self.with_set(|pred| pred.is_fixed())
+    }
+}
+
+impl DynamicPredWeakRef {
+    /// `f` on the predicate once it is set, `false` before.
+    fn with_set(&self, f: impl FnOnce(&dyn PredicateExpr) -> bool) -> bool {
         let Some(inner) = self.inner.upgrade() else {
             return false;
         };
@@ -202,7 +220,7 @@ impl RuntimeRangeSource for DynamicPredWeakRef {
             return false;
         }
         let guard = inner.pred.read().unwrap();
-        guard.as_ref().unwrap().filters_rows()
+        f(guard.as_ref().unwrap().as_ref())
     }
 }
 

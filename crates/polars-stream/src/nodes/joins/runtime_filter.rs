@@ -270,6 +270,10 @@ impl PredicateExpr for KeyFilter {
     fn filters_rows(&self) -> bool {
         self.bloom.is_some()
     }
+
+    fn is_fixed(&self) -> bool {
+        true
+    }
 }
 
 /// Min and max of one build key column. Empty until a non-null key is seen; an

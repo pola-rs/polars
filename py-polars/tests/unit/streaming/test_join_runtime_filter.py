@@ -1422,10 +1422,12 @@ def test_top_k_dynamic_predicate_still_filters_rows(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    # A sort with a slice publishes a per-row dynamic predicate of its own; the
-    # scan must keep evaluating it.
+    # A sort with a slice publishes a per-row dynamic predicate of its own that
+    # keeps every row until the sort has a bound. The scan must keep evaluating
+    # it and never bypass it for keeping too many rows.
     q = shuffled_fact.sort("k").head(5)
     assert "dynamic_predicate" in q.explain(engine="streaming")
     out, err = reader_log(q, plmonkeypatch, capfd)
     assert "Pre-filtered decode enabled" in err
+    assert "Dynamic predicate bypassed" not in err
     assert out.get_column("k").to_list() == [0, 1, 2, 3, 4]

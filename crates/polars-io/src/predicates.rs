@@ -402,6 +402,10 @@ pub trait RuntimeRangeSource: Send + Sync {
 
     /// Whether the producer has published a predicate that rejects rows.
     fn filters_rows(&self) -> bool;
+
+    /// Whether the published predicate stays as it is, so a reader may stop
+    /// evaluating it when it rejects too little.
+    fn is_fixed(&self) -> bool;
 }
 
 /// A column whose batches a reader may skip by a [`RuntimeRange`]. It is never

@@ -42,8 +42,9 @@ pub(super) struct PredicateColumn {
 }
 
 /// A conjunct on a predicate column that a producer sets at run time. It is
-/// evaluated once it is set and rejects rows, and no longer once it keeps most
-/// of the rows it sees, as the producer checks every row again.
+/// evaluated once it is set and rejects rows. A fixed one is no longer
+/// evaluated once it keeps most of the rows it sees, as the producer checks
+/// every row again; one that tightens over time is always evaluated.
 pub(super) struct DynamicConjunct {
     pub(super) predicate: Arc<dyn PhysicalIoExpr>,
     pub(super) source: Arc<dyn RuntimeRangeSource>,
@@ -86,7 +87,10 @@ impl DynamicConjunct {
             measured.1 += kept_rows;
             *measured
         };
-        if keeps_most_rows(kept, input) && !self.bypassed.swap(true, Ordering::Relaxed) {
+        if keeps_most_rows(kept, input)
+            && self.source.is_fixed()
+            && !self.bypassed.swap(true, Ordering::Relaxed)
+        {
             if polars_core::config::verbose() {
                 eprintln!(
                     "[ParquetFileReader]: Dynamic predicate bypassed, it kept {kept} of {input} rows"
