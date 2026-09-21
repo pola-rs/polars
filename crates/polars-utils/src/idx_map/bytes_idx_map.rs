@@ -67,20 +67,22 @@ impl<V> BytesIndexMap<V> {
     }
 
     pub fn get(&self, hash: u64, key: &[u8]) -> Option<&V> {
-        let idx = self.table.find(hash.wrapping_mul(self.seed), |i| unsafe {
-            let t = self.tuples.get_unchecked(*i as usize);
-            hash == t.0.key_hash && key == t.0.get(&self.key_data)
-        })?;
-        unsafe { Some(&self.tuples.get_unchecked(*idx as usize).1) }
+        let idx = self.get_index_of(hash, key)?;
+        unsafe { Some(&self.tuples.get_unchecked(idx as usize).1) }
     }
 
     pub fn contains_key(&self, hash: u64, key: &[u8]) -> bool {
+        self.get_index_of(hash, key).is_some()
+    }
+
+    /// Gets the index by insertion order of the given key.
+    pub fn get_index_of(&self, hash: u64, key: &[u8]) -> Option<IdxSize> {
         self.table
             .find(hash.wrapping_mul(self.seed), |i| unsafe {
                 let t = self.tuples.get_unchecked(*i as usize);
                 hash == t.0.key_hash && key == t.0.get(&self.key_data)
             })
-            .is_some()
+            .copied()
     }
 
     pub fn entry<'k>(&mut self, hash: u64, key: &'k [u8]) -> Entry<'_, 'k, V> {

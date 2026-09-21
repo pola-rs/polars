@@ -5,7 +5,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use polars_arrow::array::builder::ShareStrategy;
 use polars_async::executor;
-use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
@@ -29,9 +28,11 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
 use super::runtime_filter::KeyRange;
-use super::{BufferedStream, LOPSIDED_SAMPLE_FACTOR};
+use super::{
+    BufferedStream, LOPSIDED_SAMPLE_FACTOR, emit_morsel_size, fold_sample, sample_sink, send_frames,
+};
 use crate::expression::StreamExpr;
-use crate::morsel::{SourceToken, get_ideal_morsel_size};
+use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
@@ -436,47 +437,24 @@ fn estimate_cardinality(
     params: &EquiJoinParams,
     state: &ExecutionState,
 ) -> PolarsResult<f64> {
-    let sample_limit = params.sample_limit;
-    if morsels.is_empty() || sample_limit == 0 {
+    if morsels.is_empty() || params.sample_limit == 0 {
         return Ok(0.0);
     }
-
-    let mut total_height = 0;
-    let mut to_process_end = 0;
-    while to_process_end < morsels.len() && total_height < sample_limit {
-        total_height += morsels[to_process_end].height();
-        to_process_end += 1;
-    }
-    let last_morsel_idx = to_process_end - 1;
-    let last_morsel_len = morsels[last_morsel_idx].height();
-    let last_morsel_slice = last_morsel_len - total_height.saturating_sub(sample_limit);
-
-    RAYON.install(|| {
-        let sample_cardinality = morsels[..to_process_end]
-            .par_iter()
-            .enumerate()
-            .try_fold(
-                CardinalitySketch::new,
-                |mut sketch, (morsel_idx, morsel)| {
-                    let sliced;
-                    let pin_df = morsel.df_blocking();
-                    let df = if morsel_idx == last_morsel_idx {
-                        sliced = pin_df.slice(0, last_morsel_slice);
-                        &sliced
-                    } else {
-                        &*pin_df
-                    };
-                    let hash_keys =
-                        ASYNC.block_on(select_keys(df, key_selectors, params, state))?;
-                    hash_keys.sketch_cardinality(&mut sketch);
-                    PolarsResult::Ok(sketch)
-                },
-            )
-            .map(|sketch| PolarsResult::Ok(sketch?.estimate()))
-            .try_reduce_with(|a, b| Ok(a + b))
-            .unwrap()?;
-        Ok(sample_cardinality as f64 / total_height.min(sample_limit) as f64)
-    })
+    let (sketch, rows) = fold_sample(
+        morsels,
+        params.sample_limit,
+        CardinalitySketch::new,
+        |mut sketch, df| {
+            let hash_keys = ASYNC.block_on(select_keys(df, key_selectors, params, state))?;
+            hash_keys.sketch_cardinality(&mut sketch);
+            Ok(sketch)
+        },
+        |mut a, b| {
+            a.combine(&b);
+            a
+        },
+    )?;
+    Ok(sketch.estimate() as f64 / rows as f64)
 }
 
 fn estimate_size_per_row(morsels: &[Morsel]) -> f64 {
@@ -509,32 +487,6 @@ impl SampleState {
     /// Whether a side is being read.
     fn is_open(&self, left: bool) -> bool {
         self.only_side.is_none_or(|only| only == left)
-    }
-
-    async fn sink(
-        mut recv: PortReceiver,
-        morsels: &mut Vec<Morsel>,
-        len: &mut usize,
-        this_final_len: Arc<RelaxedCell<usize>>,
-        other_final_len: Arc<RelaxedCell<usize>>,
-        join_sample_limit: usize,
-    ) -> PolarsResult<()> {
-        while let Ok(mut morsel) = recv.recv().await {
-            *len += morsel.height();
-            if *len >= join_sample_limit
-                || *len
-                    >= other_final_len
-                        .load()
-                        .saturating_mul(LOPSIDED_SAMPLE_FACTOR)
-            {
-                morsel.source_token().stop();
-            }
-
-            drop(morsel.take_consume_token());
-            morsels.push(morsel);
-        }
-        this_final_len.store(*len);
-        Ok(())
     }
 
     fn try_transition_to_build(
@@ -1478,7 +1430,7 @@ struct EmitUnmatchedState {
 impl EmitUnmatchedState {
     async fn emit_unmatched(
         &mut self,
-        mut send: PortSender,
+        send: PortSender,
         params: &EquiJoinParams,
         num_pipelines: usize,
     ) -> PolarsResult<()> {
@@ -1487,23 +1439,24 @@ impl EmitUnmatchedState {
             .iter()
             .map(|p| p.hash_table.num_keys() as usize)
             .sum();
-        let ideal_morsel_count = (total_len / get_ideal_morsel_size()).max(1);
-        let morsel_count = ideal_morsel_count.next_multiple_of(num_pipelines);
-        let morsel_size = total_len.div_ceil(morsel_count).max(1);
+        let morsel_size = emit_morsel_size(total_len, num_pipelines);
 
-        let wait_group = WaitGroup::default();
-        let source_token = SourceToken::new();
         let mut unmarked_idxs = Vec::new();
-        while let Some(p) = self.partitions.get(self.active_partition_idx) {
-            loop {
+        let partitions = &self.partitions;
+        let active_partition_idx = &mut self.active_partition_idx;
+        let offset_in_active_p = &mut self.offset_in_active_p;
+        send_frames(send, &mut self.morsel_seq, || {
+            while let Some(p) = partitions.get(*active_partition_idx) {
                 // Generate a chunk of unmarked key indices.
-                self.offset_in_active_p += p.hash_table.unmarked_keys(
+                *offset_in_active_p += p.hash_table.unmarked_keys(
                     &mut unmarked_idxs,
-                    self.offset_in_active_p as IdxSize,
+                    *offset_in_active_p as IdxSize,
                     morsel_size as IdxSize,
                 ) as usize;
                 if unmarked_idxs.is_empty() {
-                    break;
+                    *active_partition_idx += 1;
+                    *offset_in_active_p = 0;
+                    continue;
                 }
 
                 // Gather and create full-null counterpart.
@@ -1520,28 +1473,11 @@ impl EmitUnmatchedState {
                         probe_df
                     }
                 };
-                let out_df = postprocess_join(out_df, params);
-
-                // Send and wait until consume token is consumed.
-                let mut morsel =
-                    Morsel::new_unregistered(out_df, self.morsel_seq, source_token.clone());
-                self.morsel_seq = self.morsel_seq.successor();
-                morsel.set_consume_token(wait_group.token());
-                if send.send(morsel).await.is_err() {
-                    return Ok(());
-                }
-
-                wait_group.wait().await;
-                if source_token.stop_requested() {
-                    return Ok(());
-                }
+                return Some(postprocess_join(out_df, params));
             }
-
-            self.active_partition_idx += 1;
-            self.offset_in_active_p = 0;
-        }
-
-        Ok(())
+            None
+        })
+        .await
     }
 }
 
@@ -1889,7 +1825,7 @@ impl ComputeNode for EquiJoinNode {
                 if let Some(left_recv) = recv_ports[0].take() {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
-                        SampleState::sink(
+                        sample_sink(
                             left_recv.serial(),
                             &mut sample_state.left,
                             &mut sample_state.left_len,
@@ -1902,7 +1838,7 @@ impl ComputeNode for EquiJoinNode {
                 if let Some(right_recv) = recv_ports[1].take() {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
-                        SampleState::sink(
+                        sample_sink(
                             right_recv.serial(),
                             &mut sample_state.right,
                             &mut sample_state.right_len,
