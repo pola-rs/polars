@@ -1,4 +1,4 @@
-# GPU Support [Open Beta]
+# GPU Support \[Open Beta\]
 
 Polars provides a GPU-accelerated execution engine for Python users of the Lazy API on NVIDIA GPUs
 using [RAPIDS cuDF](https://docs.rapids.ai/api/cudf/stable/cudf_polars/). This functionality is
