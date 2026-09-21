@@ -348,13 +348,17 @@ pub struct JoinOptionsIR {
     pub runtime_filters: Vec<RuntimeFilter>,
 }
 
-/// The range of the build-side key at `key_idx` of the join's `on`, published
-/// through `pred` for the probe side.
+/// The build-side key at `key_idx` of the join's `on`, published through
+/// `pred` for the probe side: its range, and a bloom filter over its values
+/// when `bloom_keys` gives the number of distinct keys to size it for.
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct RuntimeFilter {
     pub key_idx: usize,
     pub pred: DynamicPred,
+    pub bloom_keys: Option<usize>,
+    /// The probe side's distinct keys, when the plan can estimate them.
+    pub probe_distinct: Option<usize>,
 }
 
 impl JoinOptionsIR {

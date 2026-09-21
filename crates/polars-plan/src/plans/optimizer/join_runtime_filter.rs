@@ -157,6 +157,8 @@ fn process_join(
         runtime_filters.push(RuntimeFilter {
             key_idx: filter.key_idx,
             pred: filter.pred,
+            bloom_keys: None,
+            probe_distinct: None,
         });
     }
     let IR::Join { options, .. } = ir_arena.get_mut(node) else {
