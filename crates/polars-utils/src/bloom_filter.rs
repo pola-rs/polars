@@ -102,10 +102,6 @@ impl SplitBlockBloom {
         }
     }
 
-    pub fn num_blocks(&self) -> usize {
-        self.blocks.len()
-    }
-
     pub fn size_bytes(&self) -> usize {
         self.blocks.len() * BLOCK_BYTES
     }

@@ -507,8 +507,8 @@ impl Pass {
         // there is none.
         let dynamic_mask = |c: &PredicateColumn, column: &Column| -> PolarsResult<Option<Bitmap>> {
             let mut mask: Option<Bitmap> = None;
+            let df = column.clone().into_frame();
             for d in c.dynamic.iter().filter(|d| d.is_active()) {
-                let df = unsafe { DataFrame::new_unchecked(column.len(), vec![column.clone()]) };
                 let m = evaluate_mask(d.predicate.as_ref(), &df)?;
                 d.measure(m.len(), m.set_bits());
                 mask = Some(and_masks(mask, m));

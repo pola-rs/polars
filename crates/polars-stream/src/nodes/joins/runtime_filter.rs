@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::config;
 use polars_core::prelude::*;
 use polars_expr::hash_keys::HashKeys;
@@ -146,8 +147,12 @@ impl KeyFilterSpec {
     }
 
     fn hash_keys(&self, column: &Column) -> HashKeys {
-        let df = unsafe { DataFrame::new_unchecked(column.len(), vec![column.clone()]) };
-        HashKeys::from_df(&df, self.random_state.clone(), false, false)
+        HashKeys::from_df(
+            &column.clone().into_frame(),
+            self.random_state.clone(),
+            false,
+            false,
+        )
     }
 }
 
@@ -259,7 +264,7 @@ impl PredicateExpr for KeyFilter {
         if column.dtype() != &spec.dtype {
             return Ok(None);
         }
-        let mut mask = polars_arrow::bitmap::MutableBitmap::with_capacity(column.len());
+        let mut mask = BitmapBuilder::with_capacity(column.len());
         spec.hash_keys(column).for_each_hash(|_, hash| {
             mask.push(hash.is_some_and(|hash| bloom.contains(hash)));
         });
