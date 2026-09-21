@@ -234,11 +234,13 @@ impl Grouper for BinviewHashGrouper {
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     let view = views.get_unchecked(idx as usize);
                     grouper.contains_key(h, view, buffers)
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     grouper.contains_null()
+                } else {
+                    false
                 };
 
                 if has_group != invert {
@@ -275,11 +277,13 @@ impl Grouper for BinviewHashGrouper {
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     let view = views.get_unchecked(idx as usize);
                     grouper.contains_key(h, view, buffers)
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     grouper.contains_null()
+                } else {
+                    false
                 };
 
                 contains_key.push(has_group != invert);
@@ -314,11 +318,13 @@ impl Grouper for BinviewHashGrouper {
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     let view = views.get_unchecked(idx as usize);
                     (p, grouper.group_idx(h, view, buffers))
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     (null_p, grouper.null_group_idx())
+                } else {
+                    (null_p, None)
                 };
 
                 if let Some(group_idx) = group_idx {
