@@ -588,14 +588,15 @@ impl utils::Decoder for BinViewDecoder {
             )?,
             // A shared regex pools its scratch cache behind a mutex for all but the owning thread.
             (St::Plain(iter), Spce::RegexMatch(regex)) => {
-                let local = polars_utils::regex_cache::compile_bytes_regex(regex.as_str()).ok();
-                let re = local.as_ref().unwrap_or(regex);
-                predicate::decode_matches(
-                    iter.max_num_values,
-                    iter.values,
-                    |v| re.is_match(v),
-                    pred_true_mask,
-                )?
+                polars_utils::regex_cache::with_regex_cache(|cache| {
+                    let re = cache.compile_bytes(regex.as_str()).unwrap_or(regex);
+                    predicate::decode_matches(
+                        iter.max_num_values,
+                        iter.values,
+                        |v| re.is_match(v),
+                        pred_true_mask,
+                    )
+                })?
             },
             _ => return Ok(false),
         }
