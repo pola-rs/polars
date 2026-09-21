@@ -1402,6 +1402,7 @@ pub fn lower_ir(
                             right_on: trans_right_on,
                             args: args.clone(),
                             output_bool: false,
+                            runtime_filters: runtime_filters.clone(),
                         },
                     )),
                     _ if args.how.is_equi() => {

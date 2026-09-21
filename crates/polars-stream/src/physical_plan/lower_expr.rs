@@ -1136,6 +1136,7 @@ fn lower_exprs_with_ctx(
                         build_side: None,
                     },
                     output_bool: true,
+                    runtime_filters: Vec::new(),
                 };
 
                 // SemiAntiJoin with output_bool returns a column with the same name as the first

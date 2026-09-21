@@ -13,6 +13,7 @@ use polars_defs::join::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
 use polars_expr::groups::{Grouper, new_hash_grouper};
 use polars_expr::hash_keys::HashKeys;
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
+use polars_plan::plans::options::RuntimeFilter;
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
@@ -21,6 +22,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::sparse_init_vec::SparseInitVec;
 use rayon::prelude::*;
 
+use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::{
     BufferedStream, LOPSIDED_SAMPLE_FACTOR, emit_morsel_size, fold_sample, sample_sink, send_frames,
 };
@@ -66,6 +68,9 @@ struct SemiAntiJoinParams {
     is_anti: bool,
     return_bool: bool,
     build_side: Option<JoinBuildSide>,
+    // Key filters for the scans below the planned probe side, set once from
+    // the build of the planned build side.
+    runtime_filters: RuntimeFilters,
     random_state: PlRandomState,
     sample_limit: usize,
 }
@@ -73,6 +78,18 @@ struct SemiAntiJoinParams {
 impl SemiAntiJoinParams {
     fn left_is_build(&self) -> bool {
         self.left_is_build.unwrap()
+    }
+
+    /// Whether the build keys go to the runtime filters: the filters exist and
+    /// describe the side being built.
+    fn publishes_runtime_filters(&self) -> bool {
+        let planned_left = matches!(
+            self.build_side,
+            Some(JoinBuildSide::ForceLeft | JoinBuildSide::PreferLeft)
+        );
+        !self.runtime_filters.is_empty()
+            && !self.runtime_filters.is_set()
+            && self.left_is_build == Some(planned_left)
     }
 
     /// Whether the built rows that no probe row matches are the output.
@@ -100,11 +117,13 @@ pub struct SemiAntiJoinNode {
 }
 
 impl SemiAntiJoinNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         unique_key_schema: Arc<Schema>,
         output_schema: Arc<Schema>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
+        runtime_filters: Vec<RuntimeFilter>,
         args: JoinArgs,
         return_bool: bool,
         num_pipelines: usize,
@@ -132,10 +151,27 @@ impl SemiAntiJoinNode {
             }
         };
 
+        // A filter is only published for the side the plan named. The keys of
+        // both sides have the same dtypes.
+        debug_assert!(runtime_filters.is_empty() || args.build_side.is_some());
+        let params = SemiAntiJoinParams {
+            left_is_build,
+            left_key_selectors,
+            right_key_selectors,
+            output_schema,
+            random_state: PlRandomState::default(),
+            nulls_equal: args.nulls_equal,
+            return_bool,
+            is_anti,
+            build_side: args.build_side,
+            runtime_filters: RuntimeFilters::new(runtime_filters, &unique_key_schema),
+            sample_limit,
+        };
         let state = if left_is_build.is_some() {
             SemiAntiJoinState::Build(BuildState::new(
                 num_pipelines,
                 num_pipelines,
+                &params,
                 BufferedStream::default(),
             ))
         } else {
@@ -144,18 +180,7 @@ impl SemiAntiJoinNode {
 
         Ok(Self {
             state,
-            params: SemiAntiJoinParams {
-                left_is_build,
-                left_key_selectors,
-                right_key_selectors,
-                output_schema,
-                random_state: PlRandomState::default(),
-                nulls_equal: args.nulls_equal,
-                return_bool,
-                is_anti,
-                build_side: args.build_side,
-                sample_limit,
-            },
+            params,
             grouper: new_hash_grouper(unique_key_schema),
             spill_ctx: MostRecentSpillContext::new("semi-anti-join".into()),
         })
@@ -349,6 +374,7 @@ impl SampleState {
         let mut build_state = BuildState::new(
             state.num_pipelines,
             state.num_pipelines,
+            params,
             sampled_probe_morsels,
         );
 
@@ -404,6 +430,8 @@ struct LocalBuilder {
     // let stop = key_idxs_offsets[(i + 1) * num_partitions + p];
     key_idxs_values_per_p: Vec<Vec<IdxSize>>,
     key_idxs_offsets_per_p: Vec<usize>,
+    // The key of each runtime filter seen by this builder.
+    key_filters: Vec<KeyFilterBuilder>,
 }
 
 struct BuildState {
@@ -415,6 +443,7 @@ impl BuildState {
     fn new(
         num_pipelines: usize,
         num_partitions: usize,
+        params: &SemiAntiJoinParams,
         sampled_probe_morsels: BufferedStream,
     ) -> Self {
         let local_builders = (0..num_pipelines)
@@ -424,6 +453,11 @@ impl BuildState {
                 sketch_per_p: vec![CardinalitySketch::default(); num_partitions],
                 key_idxs_values_per_p: vec![Vec::new(); num_partitions],
                 key_idxs_offsets_per_p: vec![0; num_partitions],
+                key_filters: if params.publishes_runtime_filters() {
+                    params.runtime_filters.new_builders()
+                } else {
+                    Vec::new()
+                },
             })
             .collect();
         Self {
@@ -446,16 +480,20 @@ impl BuildState {
             &params.right_key_selectors
         };
 
+        let publishes_runtime_filters = params.publishes_runtime_filters();
         while let Ok(morsel) = recv.recv().await {
             let df = morsel.df().await;
-            let hash_keys = select_keys(
-                &df,
-                key_selectors,
+            let keys = select_key_columns(&df, key_selectors, &state.in_memory_exec_state).await?;
+            if publishes_runtime_filters {
+                params
+                    .runtime_filters
+                    .extend(&keys, &mut local.key_filters)?;
+            }
+            let hash_keys = hash_keys(
+                &keys,
                 params,
                 params.null_is_valid_when_built(params.left_is_build()),
-                &state.in_memory_exec_state,
-            )
-            .await?;
+            );
 
             hash_keys.gen_idxs_per_partition(
                 &partitioner,
@@ -486,6 +524,20 @@ impl BuildState {
         self.local_builders
             .iter()
             .all(|b| b.keys.iter().all(|keys| keys.is_empty()))
+    }
+
+    /// Hand every build key to the runtime filters; filters of a side that was
+    /// not built get a predicate that skips nothing.
+    fn publish_runtime_filters(&mut self, params: &SemiAntiJoinParams) {
+        if !params.publishes_runtime_filters() {
+            params.runtime_filters.publish_nothing();
+            return;
+        }
+        let locals = self
+            .local_builders
+            .iter_mut()
+            .map(|l| std::mem::take(&mut l.key_filters));
+        params.runtime_filters.publish_merged(locals);
     }
 
     fn finalize(&mut self, params: &SemiAntiJoinParams, grouper: &dyn Grouper) -> ProbeState {
@@ -946,6 +998,7 @@ impl ComputeNode for SemiAntiJoinNode {
         // or finish without reading the probe side when nothing can come out.
         if let SemiAntiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
+                build_state.publish_runtime_filters(&self.params);
                 if self.params.empty_build_gives_empty_output() && build_state.is_empty() {
                     self.state = SemiAntiJoinState::Done;
                 } else {

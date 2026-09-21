@@ -3,9 +3,11 @@
 //!
 //! A join whose one side is known to be small gets that side forced as build side;
 //! one whose side is only estimated small gets it preferred. Every probe key that
-//! reads a parquet scan column unchanged gets a batch-only dynamic predicate on that
-//! scan. The join publishes the range of its build keys once the build is done; the
-//! scan then skips row groups outside it and never filters rows by it.
+//! reads a parquet scan column unchanged gets a dynamic predicate on that scan. The
+//! join publishes the range of its build keys once the build is done, and the scan
+//! skips row groups outside it. When the build keys are estimated to be a small
+//! share of the scan's distinct keys the join also publishes a bloom filter over
+//! them, and the predicate is evaluated per row; otherwise it only skips batches.
 //!
 //! A forced join blocks its probe input until the build is done, so its range is
 //! always published before the scan opens. A preferred join with a filter reads its
@@ -19,6 +21,11 @@
 //! Only a scan that skips batches by their statistics can use the range, so a plan
 //! without one is left alone, and a join is only given a build side once a key
 //! reached one.
+//!
+//! A semi join publishes from either side and an anti join from its left side
+//! only, as the rows of its right side that match no left key change nothing. The
+//! semi/anti join node reads its sides in order only when one is forced, so those
+//! joins get forced build sides only.
 
 use std::sync::Arc;
 
@@ -35,12 +42,12 @@ use super::predicate_pushdown::utils::{
 use crate::dsl::{FileScanIR, ScanFlags};
 use crate::plans::aexpr::predicates::supports_runtime_range;
 use crate::plans::optimizer::predicate_pushdown::{DynamicPred, new_batch_only_dynamic_pred};
-use crate::plans::options::RuntimeFilter;
+use crate::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::StatsCache;
 use crate::plans::{
-    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator, into_column,
-    is_inherently_nondeterministic,
+    AExpr, ExprIR, IR, IRFunctionExpr, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator,
+    into_column, is_inherently_nondeterministic,
 };
 use crate::prelude::{JoinType, MaintainOrderJoin};
 use crate::utils::has_aexpr;
@@ -122,6 +129,10 @@ fn process_join(
     // Try the right side first when candidates rank equally.
     let mut sides = build_candidates(false, &right_stats, right_width);
     sides.extend(build_candidates(true, &left_stats, left_width));
+    let how = &options.args.how;
+    if how.is_semi_anti() {
+        sides.retain(|s| s.forced && (how.is_semi() || s.left));
+    }
     sides.sort_by(|a, b| b.forced.cmp(&a.forced).then(a.rows.total_cmp(&b.rows)));
 
     // A side is traced once, as a forced and a preferred candidate share the trace.
@@ -146,17 +157,40 @@ fn process_join(
         });
         (!filters.is_empty() && *probe_rows >= LOPSIDED_FACTOR * side.rows).then_some(side)
     });
-    let Some(BuildCandidate { left, forced, .. }) = chosen else {
+    let Some(BuildCandidate { left, forced, rows }) = chosen else {
         return;
     };
     let (filters, _) = traced[left as usize].take().unwrap();
+    let build_stats = if left { &left_stats } else { &right_stats };
 
     let mut runtime_filters = Vec::with_capacity(filters.len());
     for filter in filters {
+        // The key's distinct count is that of the unfiltered side.
+        let build_key = &on[filter.key_idx];
+        let build_key = if left { &build_key.0 } else { &build_key.1 };
+        let kept = (build_stats.filtered / build_stats.unfiltered).min(1.0);
+        let build_distinct = into_column(build_key.node(), expr_arena)
+            .and_then(|name| build_stats.key_distinct_estimate(name))
+            .map_or(rows, |ndv| (ndv * kept).min(rows));
+        let scan_key = column_name(&filter.predicate, expr_arena).clone();
+        let probe_distinct = side_stats(filter.scan, ir_arena, expr_arena, stats)
+            .and_then(|(scan_stats, _)| scan_stats.key_distinct_estimate(&scan_key));
+        let bloom = !probe_distinct
+            .is_some_and(|probe| build_distinct > probe * MAX_BUILD_PROBE_DISTINCT_RATIO);
+        if polars_config::config().verbose() {
+            eprintln!(
+                "runtime filter on {scan_key}: {build_distinct:.0} distinct build keys of {rows:.0} rows, {probe_distinct:?} distinct probe keys, bloom: {bloom}"
+            );
+        }
+        if bloom {
+            evaluate_per_row(filter.predicate.node(), expr_arena);
+        }
         attach_to_scan(filter.scan, filter.predicate, ir_arena, expr_arena);
         runtime_filters.push(RuntimeFilter {
             key_idx: filter.key_idx,
             pred: filter.pred,
+            bloom_keys: bloom.then_some(build_distinct.ceil() as usize),
+            probe_distinct: probe_distinct.map(|d| d.ceil() as usize),
         });
     }
     let IR::Join { options, .. } = ir_arena.get_mut(node) else {
@@ -245,11 +279,11 @@ fn trace_probe_keys(
     traced
 }
 
-/// Whether the join may publish a range or be crossed by one: an inner equi join
-/// the streaming engine can run as a hash join that blocks its probe side until
-/// the build is done. Sorted inputs may still make it a merge join, which drops
-/// the range. A key that may evaluate differently each time gives no range, as
-/// the join evaluates it again when it builds.
+/// Whether the join may publish a filter or be crossed by one: an inner, semi or
+/// anti equi join the streaming engine can run as a hash join that blocks its
+/// probe side until the build is done. Sorted inputs may still make it a merge
+/// join, which drops the filter. A key that may evaluate differently each time
+/// gives no filter, as the join evaluates it again when it builds.
 fn is_eligible_join(options: &JoinOptionsIR, expr_arena: &Arena<AExpr>) -> bool {
     let args = &options.args;
     let JoinTypeOptionsIR::Equi { on, .. } = &options.options else {
@@ -260,7 +294,7 @@ fn is_eligible_join(options: &JoinOptionsIR, expr_arena: &Arena<AExpr>) -> bool 
             !is_inherently_nondeterministic(left.node(), expr_arena)
                 && !is_inherently_nondeterministic(right.node(), expr_arena)
         })
-        && args.how == JoinType::Inner
+        && (args.how == JoinType::Inner || args.how.is_semi_anti())
         && args.maintain_order == MaintainOrderJoin::None
         && !args.nulls_equal
         && args.slice.is_none()
@@ -371,11 +405,15 @@ fn scan_origin(
                 let name = column_name(predicate, expr_arena).clone();
                 let schema_left = ir_arena.get(*input_left).schema(ir_arena);
                 let schema_right = ir_arena.get(*input_right).schema(ir_arena);
-                let right_names =
-                    join_right_output_names(&schema_left, &schema_right, options).ok()?;
-                let from_right = right_names
-                    .iter()
-                    .position(|output| output.as_ref() == Some(&name));
+                // A semi or anti join outputs the left columns only.
+                let from_right = if options.args.how.is_semi_anti() {
+                    None
+                } else {
+                    join_right_output_names(&schema_left, &schema_right, options)
+                        .ok()?
+                        .iter()
+                        .position(|output| output.as_ref() == Some(&name))
+                };
                 match from_right {
                     Some(idx) if !probe_left => {
                         let input_name = schema_right.get_at_index(idx)?.0.clone();
@@ -399,6 +437,18 @@ fn skips_batches(scan_type: &FileScanIR) -> bool {
     scan_type
         .flags()
         .contains(ScanFlags::SKIPS_BATCHES_BY_STATISTICS)
+}
+
+/// Let the scan evaluate the dynamic predicate per row, not only by statistics.
+fn evaluate_per_row(node: Node, expr_arena: &mut Arena<AExpr>) {
+    let AExpr::Function {
+        function: IRFunctionExpr::DynamicPred { batch_only, .. },
+        ..
+    } = expr_arena.get_mut(node)
+    else {
+        unreachable!()
+    };
+    *batch_only = false;
 }
 
 fn column_name<'a>(predicate: &ExprIR, expr_arena: &'a Arena<AExpr>) -> &'a PlSmallStr {

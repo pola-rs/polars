@@ -4,7 +4,7 @@ use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{RwLock, Weak};
 
-use polars_io::predicates::{RuntimeRange, RuntimeRangeSource};
+use polars_io::predicates::{DynamicPredicateSource, RuntimeRange};
 use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
@@ -31,16 +31,33 @@ pub trait PredicateExpr: Send + Sync + Any {
         Ok(None)
     }
 
-    // The range of values that can match, for a reader that skips batches by
-    // their statistics. Only a predicate that is exactly a range gives one.
+    // A range every matching value lies in, for a reader that skips batches by
+    // their statistics. `Disabled` when the predicate gives none.
     fn runtime_range(&self) -> RuntimeRange {
         RuntimeRange::Disabled
+    }
+
+    // Whether `evaluate` can reject rows. A predicate that cannot is not
+    // evaluated per row.
+    fn filters_rows(&self) -> bool {
+        true
+    }
+
+    // Whether a reader may stop evaluating the predicate when it rejects too
+    // little: the predicate stays as it is once set, and its producer checks
+    // every row again. A predicate that tightens over time must be kept.
+    fn can_bypass(&self) -> bool {
+        false
     }
 }
 
 pub struct TrivialPredicateExpr;
 
-impl PredicateExpr for TrivialPredicateExpr {}
+impl PredicateExpr for TrivialPredicateExpr {
+    fn filters_rows(&self) -> bool {
+        false
+    }
+}
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 struct Inner {
@@ -172,7 +189,7 @@ impl DynamicPredWeakRef {
     }
 }
 
-impl RuntimeRangeSource for DynamicPredWeakRef {
+impl DynamicPredicateSource for DynamicPredWeakRef {
     fn runtime_range(&self) -> RuntimeRange {
         let Some(inner) = self.inner.upgrade() else {
             return RuntimeRange::Disabled;
@@ -182,6 +199,28 @@ impl RuntimeRangeSource for DynamicPredWeakRef {
         }
         let guard = inner.pred.read().unwrap();
         guard.as_ref().unwrap().runtime_range()
+    }
+
+    fn filters_rows(&self) -> bool {
+        self.with_set(|pred| pred.filters_rows())
+    }
+
+    fn can_bypass(&self) -> bool {
+        self.with_set(|pred| pred.can_bypass())
+    }
+}
+
+impl DynamicPredWeakRef {
+    /// `f` on the predicate once it is set, `false` before.
+    fn with_set(&self, f: impl FnOnce(&dyn PredicateExpr) -> bool) -> bool {
+        let Some(inner) = self.inner.upgrade() else {
+            return false;
+        };
+        if !inner.is_set.load(Ordering::Acquire) {
+            return false;
+        }
+        let guard = inner.pred.read().unwrap();
+        f(guard.as_ref().unwrap().as_ref())
     }
 }
 
