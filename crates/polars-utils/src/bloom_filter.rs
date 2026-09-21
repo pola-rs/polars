@@ -33,19 +33,27 @@ fn store_block(block: [u32; 8], bytes: &mut [u8; BLOCK_BYTES]) {
     unsafe { std::ptr::write_unaligned(bytes.as_mut_ptr().cast(), block.map(u32::to_le)) }
 }
 
-/// The block of `hash` in `bitset`, a whole number of blocks.
+/// The byte offset of the block of `hash` in `bitset`, which holds at least
+/// one block.
+#[inline]
+fn block_offset(bitset: &[u8], hash: u64) -> usize {
+    let num_blocks = bitset.len() / BLOCK_BYTES;
+    assert!(num_blocks > 0);
+    block_index(hash, num_blocks) * BLOCK_BYTES
+}
+
 #[inline]
 fn block_bytes(bitset: &[u8], hash: u64) -> &[u8; BLOCK_BYTES] {
-    let b = block_index(hash, bitset.len() / BLOCK_BYTES);
-    // SAFETY: `b` is below the number of whole blocks in `bitset`.
-    unsafe { &*(bitset.as_ptr().add(b * BLOCK_BYTES) as *const [u8; BLOCK_BYTES]) }
+    let offset = block_offset(bitset, hash);
+    // SAFETY: `offset + BLOCK_BYTES <= bitset.len()`.
+    unsafe { &*(bitset.as_ptr().add(offset) as *const [u8; BLOCK_BYTES]) }
 }
 
 #[inline]
 fn block_bytes_mut(bitset: &mut [u8], hash: u64) -> &mut [u8; BLOCK_BYTES] {
-    let b = block_index(hash, bitset.len() / BLOCK_BYTES);
-    // SAFETY: `b` is below the number of whole blocks in `bitset`.
-    unsafe { &mut *(bitset.as_mut_ptr().add(b * BLOCK_BYTES) as *mut [u8; BLOCK_BYTES]) }
+    let offset = block_offset(bitset, hash);
+    // SAFETY: `offset + BLOCK_BYTES <= bitset.len()`.
+    unsafe { &mut *(bitset.as_mut_ptr().add(offset) as *mut [u8; BLOCK_BYTES]) }
 }
 
 #[inline]
@@ -57,13 +65,13 @@ fn block_contains(block: [u32; 8], mask: [u32; 8]) -> bool {
     found
 }
 
-/// Whether `hash` is in the filter held by `bitset`, a whole number of blocks.
+/// Whether `hash` is in the filter held by `bitset`, at least one block.
 pub fn is_in_set(bitset: &[u8], hash: u64) -> bool {
     let block = load_block(block_bytes(bitset, hash));
     block_contains(block, block_mask(hash))
 }
 
-/// Add `hash` to the filter held by `bitset`, a whole number of blocks.
+/// Add `hash` to the filter held by `bitset`, at least one block.
 pub fn insert(bitset: &mut [u8], hash: u64) {
     let bytes = block_bytes_mut(bitset, hash);
     let mut block = load_block(bytes);
@@ -164,6 +172,18 @@ mod tests {
             assert_eq!(bloom.contains(h), is_in_set(&bitset, h));
         }
         assert!(hashes.iter().all(|&h| bloom.contains(h)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn is_in_set_needs_a_block() {
+        is_in_set(&[], 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn insert_needs_a_block() {
+        insert(&mut [0u8; 31], 0);
     }
 
     #[test]
