@@ -306,8 +306,18 @@ impl Grouper for BinviewHashGrouper {
         unsafe {
             let null_p = partitioner.null_partition();
             let buffers = hash_keys.keys.data_buffers();
+            // The views are read at an index, so they have to hold one slot per element; a
+            // chunk whose views stand for every element -- including one of a single element,
+            // which is the same buffer either way -- is that one view repeated.
             let keys = hash_keys.keys.to_flat();
-            let views = keys.flat_views().expect("written out flat above").as_slice();
+            let repeated;
+            let views = match keys.flat_views() {
+                Some(views) => views.as_slice(),
+                None => {
+                    repeated = vec![keys.scalar_views().unwrap_or_default(); keys.len()];
+                    repeated.as_slice()
+                },
+            };
             hash_keys.for_each_hash(|idx, opt_h| {
                 let (p, group_idx) = if let Some(h) = opt_h {
                     let p = partitioner.hash_to_partition(h);
