@@ -11,7 +11,7 @@ from polars.dataframe import DataFrame
 from polars.datatypes.constants import N_INFER_DEFAULT
 
 if TYPE_CHECKING:
-    from polars._typing import JSONEncoder
+    from polars._typing import JSONEncoder, SchemaDict
     from polars.schema import Schema
 
 
@@ -150,6 +150,7 @@ def json_normalize(
     separator: str = ".",
     max_level: int | None = None,
     schema: Schema | None = None,
+    schema_overrides: SchemaDict | None = None,
     strict: bool = True,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     encoder: JSONEncoder | None = None,
@@ -178,6 +179,9 @@ def json_normalize(
     schema
         Overwrite the `Schema` when the normalized data is passed to
         the `DataFrame` constructor.
+    schema_overrides
+        Support type specification or override of one or more columns; note that
+        any dtypes inferred from the schema param will be overridden.
     strict
         Whether Polars should be strict when constructing the DataFrame.
     infer_schema_length
@@ -236,7 +240,7 @@ def json_normalize(
     max_level += 1
 
     if isinstance(data, Sequence) and len(data) == 0:
-        return DataFrame(schema=schema)
+        return DataFrame(schema=schema, schema_overrides=schema_overrides)
     elif isinstance(data, Mapping):
         data = [data]
     elif isinstance(data, Iterable) and not isinstance(data, str):  # type: ignore[redundant-expr]
@@ -256,6 +260,7 @@ def json_normalize(
             encoder=encoder,
         ),
         schema=schema,
+        schema_overrides=schema_overrides,
         strict=strict,
         infer_schema_length=infer_schema_length,
     )
