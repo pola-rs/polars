@@ -509,7 +509,10 @@ impl Series {
             },
 
             #[cfg(feature = "dtype-struct")]
-            ArrowDataType::Struct(_) => {
+            ArrowDataType::Struct(fields) => {
+                let names = fields.iter().map(|field| field.name.as_str()).collect_vec();
+                crate::frame::validation::ensure_names_unique(&names)?;
+
                 let (chunks, dtype) = to_physical_and_dtype(chunks, md)?;
 
                 unsafe {
