@@ -265,7 +265,7 @@ def import_optional(
         Error prefix to use in the raised exception (appears before the module name).
     err_suffix: str, optional
         Error suffix to use in the raised exception (follows the module name).
-    min_version : {str, tuple[int]}, optional
+    min_version : {str, tuple[int, ...]}, optional
         If a minimum module version is required, specify it here.
     min_err_prefix : str, optional
         Override the standard "requires" prefix for the minimum version error message.
