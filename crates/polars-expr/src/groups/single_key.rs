@@ -193,11 +193,13 @@ where
                         &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
                     let key = arr.value_unchecked(idx as usize);
                     grouper.contains_key(&key)
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
                     grouper.contains_null()
+                } else {
+                    false
                 };
 
                 if has_group != invert {
@@ -234,11 +236,13 @@ where
                         &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
                     let key = arr.value_unchecked(idx as usize);
                     grouper.contains_key(&key)
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
                     grouper.contains_null()
+                } else {
+                    false
                 };
 
                 contains_key.push(has_group != invert);
@@ -273,11 +277,13 @@ where
                         &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
                     let key = arr.value_unchecked(idx as usize);
                     (p, grouper.group_idx(&key))
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
                     (null_p, grouper.null_group_idx())
+                } else {
+                    (null_p, None)
                 };
 
                 if let Some(group_idx) = group_idx {

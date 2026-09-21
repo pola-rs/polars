@@ -236,11 +236,13 @@ impl Grouper for BinviewHashGrouper {
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     grouper.contains_key(h, &view_at(idx as usize), buffers)
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     grouper.contains_null()
+                } else {
+                    false
                 };
 
                 if has_group != invert {
@@ -276,11 +278,13 @@ impl Grouper for BinviewHashGrouper {
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     grouper.contains_key(h, &view_at(idx as usize), buffers)
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     grouper.contains_null()
+                } else {
+                    false
                 };
 
                 contains_key.push(has_group != invert);
@@ -306,31 +310,21 @@ impl Grouper for BinviewHashGrouper {
         unsafe {
             let null_p = partitioner.null_partition();
             let buffers = hash_keys.keys.data_buffers();
-            // The views are read at an index, so they have to hold one slot per element; a
-            // chunk whose views stand for every element -- including one of a single element,
-            // which is the same buffer either way -- is that one view repeated.
-            let keys = hash_keys.keys.to_flat();
-            let repeated;
-            let views = match keys.flat_views() {
-                Some(views) => views.as_slice(),
-                None => {
-                    repeated = vec![keys.scalar_views().unwrap_or_default(); keys.len()];
-                    repeated.as_slice()
-                },
-            };
+            let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             hash_keys.for_each_hash(|idx, opt_h| {
                 let (p, group_idx) = if let Some(h) = opt_h {
                     let p = partitioner.hash_to_partition(h);
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
-                    let view = views.get_unchecked(idx as usize);
-                    (p, grouper.group_idx(h, view, buffers))
-                } else {
+                    (p, grouper.group_idx(h, &view_at(idx as usize), buffers))
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     (null_p, grouper.null_group_idx())
+                } else {
+                    (null_p, None)
                 };
 
                 if let Some(group_idx) = group_idx {
