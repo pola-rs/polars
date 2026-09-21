@@ -443,8 +443,6 @@ pub(crate) fn set_cache_states(
                     *count == v.children.len() as u32
                 }
                 && {
-                    // Barrier predicates, and fallible predicates under `maintain_errors`, stay
-                    // above the cache. Keep those filters in place (#29414).
                     let parents = *v.parents.first().unwrap();
                     let predicate = get_filter_predicate(parents, lp_arena)
                         .expect("expected filter; this is an optimizer bug");
