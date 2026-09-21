@@ -12717,6 +12717,10 @@ class DataFrame:
         row order when the key is equal between the both dataframes.
 
         The key(s) must be sorted in ascending order.
+
+        Null values are treated as the smallest values. Therefore, input frames
+        with null values in the key column must be sorted with nulls first.
+        Input frames sorted with nulls last do not satisfy this requirement.
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
