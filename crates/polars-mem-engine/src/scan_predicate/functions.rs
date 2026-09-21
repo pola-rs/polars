@@ -260,7 +260,14 @@ fn create_staged_predicate(
                     .transpose()?;
                 let mut dynamic = Vec::with_capacity(p.dynamic.len());
                 for node in p.dynamic {
-                    let source = dynamic_source(node, expr_arena);
+                    let AExpr::Function {
+                        function: IRFunctionExpr::DynamicPred { pred, .. },
+                        ..
+                    } = expr_arena.get(node)
+                    else {
+                        unreachable!()
+                    };
+                    let source: Arc<dyn DynamicPredicateSource> = Arc::new(pred.clone());
                     dynamic.push((physical(node, expr_arena)?, source));
                 }
                 PolarsResult::Ok((
@@ -304,18 +311,6 @@ fn runtime_range_hint(part: Node, expr_arena: &Arena<AExpr>) -> Option<RuntimeRa
         source: Arc::new(pred.clone()),
         constant: None,
     })
-}
-
-/// The producer's handle of a dynamic predicate over one column.
-fn dynamic_source(part: Node, expr_arena: &Arena<AExpr>) -> Arc<dyn DynamicPredicateSource> {
-    let AExpr::Function {
-        function: IRFunctionExpr::DynamicPred { pred, .. },
-        ..
-    } = expr_arena.get(part)
-    else {
-        unreachable!()
-    };
-    Arc::new(pred.clone())
 }
 
 /// Whether the predicate part is exactly a dynamic predicate a scan may only use
