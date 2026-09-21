@@ -833,3 +833,53 @@ def test_window_array_agg_partition_by() -> None:
             "res": [[1, 2, 3], [1, 2, 3], [1, 2, 3], [4, 5], [4, 5]],
         },
     )
+
+
+@pytest.mark.parametrize(
+    "order_by",
+    [
+        "a NULLS LAST",
+        "a NULLS FIRST",
+        "a DESC NULLS LAST",
+        "a DESC NULLS FIRST",
+    ],
+)
+def test_window_order_by_nulls_multiple_keys_29390(order_by: str) -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["x", "x", "x", "y", "y", "y"],
+            "a": [20.0, None, 10.0, None, 40.0, 30.0],
+        }
+    )
+    key, _, nulls = order_by.partition(" NULLS ")
+    direction = "DESC" if "DESC" in key else "ASC"
+    two_keys = f"{order_by}, grp {direction} NULLS {nulls}"
+
+    single = df.sql(
+        f"SELECT a, ROW_NUMBER() OVER (ORDER BY {order_by}) AS rn FROM self ORDER BY rn"
+    )
+    multi_query = (
+        f"SELECT a, ROW_NUMBER() OVER (ORDER BY {two_keys}) AS rn FROM self ORDER BY rn"
+    )
+    multi = df.sql(multi_query)
+    assert_sql_matches(df, query=multi_query, compare_with="sqlite", expected=multi)
+    # nulls land in the same rows with or without the tiebreak key
+    assert multi["a"].is_null().to_list() == single["a"].is_null().to_list()
+
+
+@pytest.mark.parametrize(
+    "order_by",
+    [
+        "a, CAST(0 AS BIGINT)",
+        "a, 1",
+        "CASE WHEN a > 1 THEN 1 ELSE 0 END, a",
+    ],
+)
+def test_window_order_by_scalar_and_literal_keys(order_by: str) -> None:
+    df = pl.DataFrame({"a": [3, 1, 2]})
+    assert_sql_matches(
+        df,
+        query=f"SELECT a, ROW_NUMBER() OVER (ORDER BY {order_by}) AS rn FROM self ORDER BY a",
+        compare_with="sqlite",
+        engines=["in-memory", "streaming"],
+    )
