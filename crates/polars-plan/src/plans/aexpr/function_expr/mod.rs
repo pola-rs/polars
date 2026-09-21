@@ -253,6 +253,7 @@ pub enum IRFunctionExpr {
     ApproxQuantileSketch {
         method: ApproxQuantileMethod,
         error: f64,
+        use_formal_bound: bool,
     },
     #[cfg(feature = "approx_quantile")]
     ApproxQuantileEstimate {
@@ -633,9 +634,14 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantileSketch { method, error } => {
+            ApproxQuantileSketch {
+                method,
+                error,
+                use_formal_bound,
+            } => {
                 method.hash(state);
                 error.to_bits().hash(state);
+                use_formal_bound.hash(state);
             },
             #[cfg(feature = "approx_quantile")]
             ApproxQuantileEstimate { values_dtype } => values_dtype.hash(state),
