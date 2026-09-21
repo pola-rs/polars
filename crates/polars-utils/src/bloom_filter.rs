@@ -8,6 +8,7 @@ const SALT: [u32; 8] = [
 
 const BLOCK_BYTES: usize = 32;
 
+/// Always below `num_blocks`.
 #[inline]
 fn block_index(hash: u64, num_blocks: usize) -> usize {
     (((hash >> 32) * num_blocks as u64) >> 32) as usize
@@ -20,17 +21,31 @@ fn block_mask(hash: u64) -> [u32; 8] {
 }
 
 #[inline]
-fn load_block(bitset: &[u8]) -> [u32; 8] {
-    let chunks = bitset.as_chunks::<4>().0;
-    std::array::from_fn(|i| u32::from_le_bytes(chunks[i]))
+fn load_block(bytes: &[u8; BLOCK_BYTES]) -> [u32; 8] {
+    // SAFETY: the block is 8 words of 4 bytes.
+    let words: [u32; 8] = unsafe { std::ptr::read_unaligned(bytes.as_ptr().cast()) };
+    words.map(u32::from_le)
 }
 
 #[inline]
-fn store_block(block: [u32; 8], bitset: &mut [u8]) {
-    let chunks = bitset.as_chunks_mut::<4>().0;
-    for (i, x) in block.iter().enumerate() {
-        chunks[i] = x.to_le_bytes();
-    }
+fn store_block(block: [u32; 8], bytes: &mut [u8; BLOCK_BYTES]) {
+    // SAFETY: the block is 8 words of 4 bytes.
+    unsafe { std::ptr::write_unaligned(bytes.as_mut_ptr().cast(), block.map(u32::to_le)) }
+}
+
+/// The block of `hash` in `bitset`, a whole number of blocks.
+#[inline]
+fn block_bytes(bitset: &[u8], hash: u64) -> &[u8; BLOCK_BYTES] {
+    let b = block_index(hash, bitset.len() / BLOCK_BYTES);
+    // SAFETY: `b` is below the number of whole blocks in `bitset`.
+    unsafe { &*(bitset.as_ptr().add(b * BLOCK_BYTES) as *const [u8; BLOCK_BYTES]) }
+}
+
+#[inline]
+fn block_bytes_mut(bitset: &mut [u8], hash: u64) -> &mut [u8; BLOCK_BYTES] {
+    let b = block_index(hash, bitset.len() / BLOCK_BYTES);
+    // SAFETY: `b` is below the number of whole blocks in `bitset`.
+    unsafe { &mut *(bitset.as_mut_ptr().add(b * BLOCK_BYTES) as *mut [u8; BLOCK_BYTES]) }
 }
 
 #[inline]
@@ -44,21 +59,19 @@ fn block_contains(block: [u32; 8], mask: [u32; 8]) -> bool {
 
 /// Whether `hash` is in the filter held by `bitset`, a whole number of blocks.
 pub fn is_in_set(bitset: &[u8], hash: u64) -> bool {
-    let b = block_index(hash, bitset.len() / BLOCK_BYTES);
-    let block = load_block(&bitset[b * BLOCK_BYTES..(b + 1) * BLOCK_BYTES]);
+    let block = load_block(block_bytes(bitset, hash));
     block_contains(block, block_mask(hash))
 }
 
 /// Add `hash` to the filter held by `bitset`, a whole number of blocks.
 pub fn insert(bitset: &mut [u8], hash: u64) {
-    let b = block_index(hash, bitset.len() / BLOCK_BYTES);
-    let slice = &mut bitset[b * BLOCK_BYTES..(b + 1) * BLOCK_BYTES];
-    let mut block = load_block(slice);
+    let bytes = block_bytes_mut(bitset, hash);
+    let mut block = load_block(bytes);
     let mask = block_mask(hash);
     for i in 0..8 {
         block[i] |= mask[i];
     }
-    store_block(block, slice);
+    store_block(block, bytes);
 }
 
 /// A split-block bloom filter over 64-bit hashes.
@@ -105,7 +118,8 @@ impl SplitBlockBloom {
     #[inline]
     pub fn insert(&mut self, hash: u64) {
         let b = block_index(hash, self.blocks.len());
-        let block = &mut self.blocks[b];
+        // SAFETY: `b` is below the number of blocks.
+        let block = unsafe { self.blocks.get_unchecked_mut(b) };
         let mask = block_mask(hash);
         for i in 0..8 {
             block[i] |= mask[i];
@@ -114,7 +128,9 @@ impl SplitBlockBloom {
 
     #[inline]
     pub fn contains(&self, hash: u64) -> bool {
-        let block = self.blocks[block_index(hash, self.blocks.len())];
+        let b = block_index(hash, self.blocks.len());
+        // SAFETY: `b` is below the number of blocks.
+        let block = unsafe { *self.blocks.get_unchecked(b) };
         block_contains(block, block_mask(hash))
     }
 
