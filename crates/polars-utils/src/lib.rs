@@ -15,6 +15,7 @@ pub mod arena;
 pub mod arg_min_max;
 pub mod array;
 pub mod binary_search;
+pub mod bloom_filter;
 pub mod bool;
 pub mod broadcast;
 pub mod cache;

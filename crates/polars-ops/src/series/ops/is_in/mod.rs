@@ -1,51 +1,324 @@
 use std::hash::Hash;
 
 use polars_array::bitmap::combine_validities_and;
-use polars_arrow::bitmap::BitmapBuilder;
-use polars_core::prelude::arity::{unary_elementwise, unary_elementwise_values};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
 use polars_core::{with_match_categorical_physical_type, with_match_physical_numeric_polars_type};
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
+use self::binary::{BinaryLookup, RowEncodedLookup};
+use self::primitive::{PrimitiveLookup, PrimitiveProbe};
 use self::row_encode::_get_rows_encoded_ca_unordered;
 
-fn is_in_helper_ca<'a, T>(
-    ca: &'a ChunkedArray<T>,
-    other: &'a ChunkedArray<T>,
-    nulls_equal: bool,
-) -> PolarsResult<BooleanChunked>
-where
-    T: PolarsDataType,
-    T::Physical<'a>: TotalHash + TotalEq + ToTotalOrd + Copy,
-    <T::Physical<'a> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
-{
-    let mut set = PlHashSet::with_capacity(other.len());
-    other.downcast_iter().for_each(|iter| {
-        iter.iter().for_each(|opt_val| {
-            if let Some(v) = opt_val {
-                set.insert(v.to_total_ord());
-            }
-        })
-    });
+mod binary;
+mod primitive;
 
-    if nulls_equal {
-        if other.has_nulls() {
-            // If the rhs has nulls, then nulls in the left set evaluates to true.
-            Ok(unary_elementwise(ca, |val| {
-                val.is_none_or(|v| set.contains(&v.to_total_ord()))
-            }))
-        } else {
-            // The rhs has no nulls; nulls in the left evaluates to false.
-            Ok(unary_elementwise(ca, |val| {
-                val.is_some_and(|v| set.contains(&v.to_total_ord()))
-            }))
+/// Haystacks with at most this many values are probed with a linear scan.
+const SMALL_MAX: usize = 8;
+
+/// Pushes one bit per value; `values.len()` bits in total.
+#[inline(always)]
+fn probe_words<V: Copy>(values: &[V], out: &mut BitmapBuilder, f: impl Fn(V) -> bool) {
+    out.reserve(values.len());
+    let mut chunks = values.chunks_exact(64);
+    for chunk in &mut chunks {
+        let mut word = 0u64;
+        for (i, &v) in chunk.iter().enumerate() {
+            word |= (f(v) as u64) << i;
         }
-    } else {
-        Ok(
-            unary_elementwise_values(ca, |v| set.contains(&v.to_total_ord()))
-                .with_name(ca.name().clone()),
-        )
+        // SAFETY: reserved above.
+        unsafe { out.push_word_with_len_unchecked(word, 64) };
     }
+    let rem = chunks.remainder();
+    if !rem.is_empty() {
+        let mut word = 0u64;
+        for (i, &v) in rem.iter().enumerate() {
+            word |= (f(v) as u64) << i;
+        }
+        // SAFETY: reserved above.
+        unsafe { out.push_word_with_len_unchecked(word, rem.len()) };
+    }
+}
+
+/// Combines the membership of the values with the validity of the needles.
+fn finish_chunk(
+    values: Bitmap,
+    validity: Option<PlBitmapRef<'_>>,
+    nulls_equal: bool,
+    has_null: bool,
+) -> PlBooleanArray {
+    let length = values.len();
+    let Some(validity) = validity else {
+        return PlBooleanArray::new(values, length, None);
+    };
+    if !nulls_equal {
+        return PlBooleanArray::new(values, length, Some(PlBitmap::from(validity)));
+    }
+
+    // A null needle is in the haystack exactly when the haystack holds a null. A mask of one bit
+    // says that of every element at once, so it needs no walk of its own.
+    let values = match validity.scalar_value() {
+        Some(true) => values,
+        Some(false) => Bitmap::new_with_value(has_null, length),
+        None => {
+            let validity = validity.flat_bitmap().expect("a mask is scalar or flat");
+            if has_null {
+                polars_arrow::bitmap::or_not(&values, validity)
+            } else {
+                polars_arrow::bitmap::and(&values, validity)
+            }
+        },
+    };
+    PlBooleanArray::new(values, length, None)
+}
+
+enum Lookup {
+    /// The haystack itself is null.
+    OuterNull,
+    /// Only the null count of the haystack matters.
+    NullNeedle,
+    Primitive(Box<dyn PrimitiveProbe>),
+    Binary(BinaryLookup),
+    RowEncoded(RowEncodedLookup),
+    Boolean {
+        has_true: bool,
+        has_false: bool,
+    },
+    #[cfg(feature = "dtype-decimal")]
+    Decimal {
+        prec: usize,
+        scale: usize,
+        lookup: PrimitiveLookup<Int128Type>,
+    },
+}
+
+/// A single haystack prepared for probing with needles of a fixed dtype.
+pub struct IsInHaystack {
+    lookup: Lookup,
+    has_null: bool,
+    needle_dtype: DataType,
+}
+
+#[cfg(feature = "dtype-decimal")]
+const DECIMAL_SENTINEL_NEEDLE: i128 = i128::MAX;
+#[cfg(feature = "dtype-decimal")]
+const DECIMAL_SENTINEL_HAYSTACK: i128 = i128::MAX - 1;
+
+impl IsInHaystack {
+    /// `haystack` must be a `List` or `Array` series of length 1.
+    pub fn new(haystack: &Series, needle_dtype: &DataType) -> PolarsResult<Self> {
+        let is_container = matches!(haystack.dtype(), DataType::List(_));
+        #[cfg(feature = "dtype-array")]
+        let is_container = is_container || matches!(haystack.dtype(), DataType::Array(..));
+        polars_ensure!(is_container, opq = is_in, needle_dtype, haystack.dtype());
+        assert_eq!(haystack.len(), 1);
+
+        if haystack.has_nulls() {
+            return Ok(Self {
+                lookup: Lookup::OuterNull,
+                has_null: false,
+                needle_dtype: needle_dtype.clone(),
+            });
+        }
+
+        let flat = haystack.explode(ExplodeOptions {
+            empty_as_null: false,
+            keep_nulls: true,
+        })?;
+        let has_null = flat.has_nulls();
+        let mismatch = || polars_err!(opq = is_in, needle_dtype, haystack.dtype());
+
+        let lookup = match needle_dtype {
+            #[cfg(feature = "dtype-categorical")]
+            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                    let phys = categorical_haystack::<$C>(dt, haystack.dtype(), &flat)?;
+                    Lookup::Primitive(Box::new(PrimitiveLookup::<<$C as PolarsCategoricalType>::PolarsPhysical>::new(&phys)))
+                })
+            },
+            DataType::String => {
+                let flat = match flat.dtype() {
+                    DataType::String => flat,
+                    #[cfg(feature = "dtype-categorical")]
+                    DataType::Enum(_, _) | DataType::Categorical(_, _) => {
+                        flat.cast(&DataType::String)?
+                    },
+                    _ => return Err(mismatch()),
+                };
+                let ca = flat.str().unwrap().as_binary();
+                Lookup::Binary(BinaryLookup::new(
+                    ca.downcast_iter()
+                        .flat_map(|arr| arr.iter().flatten()),
+                ))
+            },
+            DataType::Binary => {
+                let ca = flat.binary().map_err(|_| mismatch())?;
+                Lookup::Binary(BinaryLookup::new(
+                    ca.downcast_iter()
+                        .flat_map(|arr| arr.iter().flatten()),
+                ))
+            },
+            DataType::Boolean => {
+                let ca = flat.bool().map_err(|_| mismatch())?;
+                let num_true = ca.sum().unwrap_or(0) as usize;
+                Lookup::Boolean {
+                    has_true: num_true > 0,
+                    has_false: ca.len() - ca.null_count() > num_true,
+                }
+            },
+            DataType::Null => Lookup::NullNeedle,
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(needle_prec, needle_scale) => {
+                let ca = flat.decimal().map_err(|_| mismatch())?;
+                let prec = (*needle_prec).max(ca.precision());
+                let scale = (*needle_scale).max(ca.scale());
+                let phys = ca.into_phys_with_prec_scale_or_sentinel(
+                    prec,
+                    scale,
+                    DECIMAL_SENTINEL_HAYSTACK,
+                );
+                Lookup::Decimal {
+                    prec,
+                    scale,
+                    lookup: PrimitiveLookup::new(&phys),
+                }
+            },
+            dt if dt.is_nested() => {
+                let encoded =
+                    _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[flat.into_column()])?;
+                let rows = encoded.rechunk().downcast_as_array().clone();
+                Lookup::RowEncoded(RowEncodedLookup::new(rows))
+            },
+            dt if dt.to_physical().is_primitive_numeric() => {
+                let flat = flat.to_physical_repr();
+                polars_ensure!(
+                    flat.dtype() == &dt.to_physical(),
+                    opq = is_in,
+                    dt,
+                    haystack.dtype()
+                );
+                with_match_physical_numeric_polars_type!(flat.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = flat.as_ref().as_ref().as_ref();
+                    Lookup::Primitive(Box::new(PrimitiveLookup::<$T>::new(ca)))
+                })
+            },
+            dt => polars_bail!(opq = is_in, dt),
+        };
+
+        Ok(Self {
+            lookup,
+            has_null,
+            needle_dtype: needle_dtype.clone(),
+        })
+    }
+
+    pub fn probe(&self, needle: &Series, nulls_equal: bool) -> PolarsResult<BooleanChunked> {
+        polars_ensure!(
+            needle.dtype() == &self.needle_dtype,
+            SchemaMismatch: "is_in: expected needle of dtype {}, got {}",
+            self.needle_dtype, needle.dtype()
+        );
+        let name = needle.name().clone();
+        let has_null = self.has_null;
+
+        let out = match &self.lookup {
+            Lookup::OuterNull => BooleanChunked::full_null(name, needle.len()),
+            Lookup::NullNeedle => {
+                if nulls_equal {
+                    BooleanChunked::full(name, has_null, needle.len())
+                } else {
+                    BooleanChunked::full_null(name, needle.len())
+                }
+            },
+            Lookup::Primitive(lookup) => {
+                lookup.probe_series(&needle.to_physical_repr(), nulls_equal, has_null)
+            },
+            Lookup::Binary(lookup) => match needle.dtype() {
+                DataType::String => {
+                    lookup.probe(&needle.str().unwrap().as_binary(), nulls_equal, has_null)
+                },
+                _ => lookup.probe(needle.binary().unwrap(), nulls_equal, has_null),
+            },
+            Lookup::RowEncoded(lookup) => {
+                let encoded =
+                    _get_rows_encoded_ca_unordered(name, &[needle.clone().into_column()])?;
+                let mut out = lookup.probe(&encoded, nulls_equal, has_null);
+                if !nulls_equal {
+                    out.with_validities(&[needle.rechunk_validity()]);
+                }
+                out
+            },
+            Lookup::Boolean {
+                has_true,
+                has_false,
+            } => {
+                let ca = needle.bool().unwrap();
+                let chunks = ca.downcast_iter().map(|arr| {
+                    // The values of a chunk that repeats one element are one bit wide, so read
+                    // them out over the elements they stand for before answering off them.
+                    let own_values = || match arr.values().flat_bitmap() {
+                        Some(values) => values.clone(),
+                        None => Bitmap::new_with_value(
+                            arr.values().scalar_value().unwrap_or(false),
+                            arr.len(),
+                        ),
+                    };
+                    let values = match (has_true, has_false) {
+                        (true, true) => Bitmap::new_with_value(true, arr.len()),
+                        (true, false) => own_values(),
+                        (false, true) => !&own_values(),
+                        (false, false) => Bitmap::new_with_value(false, arr.len()),
+                    };
+                    finish_chunk(values, arr.validity(), nulls_equal, has_null)
+                });
+                BooleanChunked::from_chunk_iter(name, chunks)
+            },
+            #[cfg(feature = "dtype-decimal")]
+            Lookup::Decimal {
+                prec,
+                scale,
+                lookup,
+            } => {
+                let phys = needle
+                    .decimal()
+                    .unwrap()
+                    .into_phys_with_prec_scale_or_sentinel(*prec, *scale, DECIMAL_SENTINEL_NEEDLE);
+                lookup.probe(&phys, nulls_equal, has_null)
+            },
+        };
+        Ok(out)
+    }
+}
+
+/// Maps a String, Categorical or Enum haystack to the physical categories of the needle.
+#[cfg(feature = "dtype-categorical")]
+fn categorical_haystack<T: PolarsCategoricalType>(
+    needle_dtype: &DataType,
+    haystack_dtype: &DataType,
+    flat: &Series,
+) -> PolarsResult<ChunkedArray<T::PolarsPhysical>> {
+    let out = match (needle_dtype, flat.dtype()) {
+        (DataType::Enum(_, mapping) | DataType::Categorical(_, mapping), DataType::String) => {
+            let ca = flat.str().unwrap();
+            // Strings without a category can never match; only nulls stay null.
+            ca.iter()
+                .filter_map(|opt_s| match opt_s {
+                    None => Some(None),
+                    Some(s) => mapping.get_cat(s).map(|c| Some(T::Native::from_cat(c))),
+                })
+                .collect_ca(PlSmallStr::EMPTY)
+        },
+        (DataType::Categorical(lcats, _), DataType::Categorical(rcats, _)) => {
+            ensure_same_categories(lcats, rcats)?;
+            flat.cat::<T>().unwrap().physical().clone()
+        },
+        (DataType::Enum(lfcats, _), DataType::Enum(rfcats, _)) => {
+            ensure_same_frozen_categories(lfcats, rfcats)?;
+            flat.cat::<T>().unwrap().physical().clone()
+        },
+        _ => polars_bail!(opq = is_in, needle_dtype, haystack_dtype),
+    };
+    Ok(out)
 }
 
 fn is_in_helper_list_ca<'a, T>(
@@ -58,6 +331,7 @@ where
     for<'b> T::Physical<'b>: TotalHash + TotalEq + ToTotalOrd + Copy,
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
+    debug_assert_ne!(other.len(), 1);
     let rechunked = other.rechunk();
     let other = &rechunked;
     let chunk = other.downcast_as_array();
@@ -88,7 +362,7 @@ where
     let inner = inner.downcast_as_array();
     let validity = other.rechunk_validity();
 
-    let mut ca: BooleanChunked = if ca_in.len() == 1 && other.len() != 1 {
+    let mut ca: BooleanChunked = if ca_in.len() == 1 {
         let value = ca_in.get(0);
 
         match value {
@@ -193,6 +467,7 @@ where
     for<'b> T::Physical<'b>: TotalHash + TotalEq + ToTotalOrd + Copy,
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
+    debug_assert_ne!(other.len(), 1);
     let width = other.width();
     let rechunked = other.rechunk();
     let chunk = rechunked.downcast_as_array();
@@ -217,7 +492,7 @@ where
     let inner = inner.downcast_as_array();
     let validity = other.rechunk_validity();
 
-    let mut ca: BooleanChunked = if ca_in.len() == 1 && other.len() != 1 {
+    let mut ca: BooleanChunked = if ca_in.len() == 1 {
         let value = ca_in.get(0);
 
         match value {
@@ -321,41 +596,9 @@ where
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
     match other.dtype() {
-        DataType::List(..) => {
-            let other = other.list()?;
-            if other.len() == 1 {
-                if other.has_nulls() {
-                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
-                }
-
-                let other = other.explode(ExplodeOptions {
-                    empty_as_null: false,
-                    keep_nulls: true,
-                })?;
-                let other = other.as_ref().as_ref();
-                is_in_helper_ca(ca_in, other, nulls_equal)
-            } else {
-                is_in_helper_list_ca(ca_in, other, nulls_equal)
-            }
-        },
+        DataType::List(..) => is_in_helper_list_ca(ca_in, other.list()?, nulls_equal),
         #[cfg(feature = "dtype-array")]
-        DataType::Array(..) => {
-            let other = other.array()?;
-            if other.len() == 1 {
-                if other.has_nulls() {
-                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
-                }
-
-                let other = other.explode(ExplodeOptions {
-                    empty_as_null: false,
-                    keep_nulls: true,
-                })?;
-                let other = other.as_ref().as_ref();
-                is_in_helper_ca(ca_in, other, nulls_equal)
-            } else {
-                is_in_helper_array_ca(ca_in, other, nulls_equal)
-            }
-        },
+        DataType::Array(..) => is_in_helper_array_ca(ca_in, other.array()?, nulls_equal),
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     }
 }
@@ -402,39 +645,11 @@ fn is_in_binary(
 ) -> PolarsResult<BooleanChunked> {
     match other.dtype() {
         DataType::List(dt) if DataType::Binary == **dt => {
-            let other = other.list()?;
-            if other.len() == 1 {
-                if other.has_nulls() {
-                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
-                }
-
-                let other = other.explode(ExplodeOptions {
-                    empty_as_null: false,
-                    keep_nulls: true,
-                })?;
-                let other = other.binary()?;
-                is_in_helper_ca(ca_in, other, nulls_equal)
-            } else {
-                is_in_helper_list_ca(ca_in, other, nulls_equal)
-            }
+            is_in_helper_list_ca(ca_in, other.list()?, nulls_equal)
         },
         #[cfg(feature = "dtype-array")]
         DataType::Array(dt, _) if DataType::Binary == **dt => {
-            let other = other.array()?;
-            if other.len() == 1 {
-                if other.has_nulls() {
-                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
-                }
-
-                let other = other.explode(ExplodeOptions {
-                    empty_as_null: false,
-                    keep_nulls: true,
-                })?;
-                let other = other.binary()?;
-                is_in_helper_ca(ca_in, other, nulls_equal)
-            } else {
-                is_in_helper_array_ca(ca_in, other, nulls_equal)
-            }
+            is_in_helper_array_ca(ca_in, other.array()?, nulls_equal)
         },
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     }
@@ -445,70 +660,13 @@ fn is_in_boolean(
     other: &Series,
     nulls_equal: bool,
 ) -> PolarsResult<BooleanChunked> {
-    fn is_in_boolean_broadcast(
-        ca_in: &BooleanChunked,
-        other: &BooleanChunked,
-        nulls_equal: bool,
-    ) -> PolarsResult<BooleanChunked> {
-        let has_true = other.any();
-        let nc = other.null_count();
-
-        let has_false = if nc == 0 {
-            !other.all()
-        } else {
-            (other.sum().unwrap() as usize + nc) != other.len()
-        };
-        let value_map = |v| if v { has_true } else { has_false };
-        if nulls_equal {
-            if other.has_nulls() {
-                // If the rhs has nulls, then nulls in the left set evaluates to true.
-                Ok(ca_in.apply(|opt_v| Some(opt_v.is_none_or(value_map))))
-            } else {
-                // The rhs has no nulls; nulls in the left evaluates to false.
-                Ok(ca_in.apply(|opt_v| Some(opt_v.is_some_and(value_map))))
-            }
-        } else {
-            Ok(ca_in
-                .apply_values(value_map)
-                .with_name(ca_in.name().clone()))
-        }
-    }
-
     match other.dtype() {
         DataType::List(dt) if ca_in.dtype() == &**dt => {
-            let other = other.list()?;
-            if other.len() == 1 {
-                if other.has_nulls() {
-                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
-                }
-
-                let other = other.explode(ExplodeOptions {
-                    empty_as_null: false,
-                    keep_nulls: true,
-                })?;
-                let other = other.bool()?;
-                is_in_boolean_broadcast(ca_in, other, nulls_equal)
-            } else {
-                is_in_helper_list_ca(ca_in, other, nulls_equal)
-            }
+            is_in_helper_list_ca(ca_in, other.list()?, nulls_equal)
         },
         #[cfg(feature = "dtype-array")]
         DataType::Array(dt, _) if ca_in.dtype() == &**dt => {
-            let other = other.array()?;
-            if other.len() == 1 {
-                if other.has_nulls() {
-                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
-                }
-
-                let other = other.explode(ExplodeOptions {
-                    empty_as_null: false,
-                    keep_nulls: true,
-                })?;
-                let other = other.bool()?;
-                is_in_boolean_broadcast(ca_in, other, nulls_equal)
-            } else {
-                is_in_helper_array_ca(ca_in, other, nulls_equal)
-            }
+            is_in_helper_array_ca(ca_in, other.array()?, nulls_equal)
         },
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     }
@@ -529,13 +687,7 @@ where
                 let ca = s.str()?;
                 let ca: ChunkedArray<T::PolarsPhysical> = ca
                     .iter()
-                    .flat_map(|opt_s| {
-                        if let Some(s) = opt_s {
-                            Some(mapping.get_cat(s).map(T::Native::from_cat))
-                        } else {
-                            Some(None)
-                        }
-                    })
+                    .map(|opt_s| opt_s.and_then(|s| mapping.get_cat(s).map(T::Native::from_cat)))
                     .collect_ca(PlSmallStr::EMPTY);
                 Ok(ca.into_series())
             }) as _
@@ -565,49 +717,13 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
     if nulls_equal {
         let ca_in = s.null()?;
         Ok(match other.dtype() {
-            DataType::List(_) => {
-                let other = other.list()?;
-                if other.len() == 1 {
-                    if other.has_nulls() {
-                        return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
-                    }
-
-                    let other = other.explode(ExplodeOptions {
-                        empty_as_null: false,
-                        keep_nulls: true,
-                    })?;
-                    BooleanChunked::from_iter_values(
-                        ca_in.name().clone(),
-                        std::iter::repeat_n(other.has_nulls(), ca_in.len()),
-                    )
-                } else {
-                    other.apply_amortized_generic(|opt_s| {
-                        Some(opt_s.map(|s| s.as_ref().has_nulls()) == Some(true))
-                    })
-                }
-            },
+            DataType::List(_) => other.list()?.apply_amortized_generic(|opt_s| {
+                Some(opt_s.map(|s| s.as_ref().has_nulls()) == Some(true))
+            }),
             #[cfg(feature = "dtype-array")]
-            DataType::Array(_, _) => {
-                let other = other.array()?;
-                if other.len() == 1 {
-                    if other.has_nulls() {
-                        return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
-                    }
-
-                    let other = other.explode(ExplodeOptions {
-                        empty_as_null: false,
-                        keep_nulls: true,
-                    })?;
-                    BooleanChunked::from_iter_values(
-                        ca_in.name().clone(),
-                        std::iter::repeat_n(other.has_nulls(), ca_in.len()),
-                    )
-                } else {
-                    other.apply_amortized_generic(|opt_s| {
-                        Some(opt_s.map(|s| s.as_ref().has_nulls()) == Some(true))
-                    })
-                }
-            },
+            DataType::Array(_, _) => other.array()?.apply_amortized_generic(|opt_s| {
+                Some(opt_s.map(|s| s.as_ref().has_nulls()) == Some(true))
+            }),
             _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
         })
     } else {
@@ -631,16 +747,16 @@ fn is_in_decimal(
 
     // We convert both sides to a common scale, mapping any out-of-range values to unique integers,
     // allowing us to then use is_in on the integer representation.
-    let sentinel_in = i128::MAX;
-    let sentinel_other = i128::MAX - 1;
-    let ca_in_phys = ca_in.into_phys_with_prec_scale_or_sentinel(prec, scale, sentinel_in);
+    let ca_in_phys =
+        ca_in.into_phys_with_prec_scale_or_sentinel(prec, scale, DECIMAL_SENTINEL_NEEDLE);
 
     match other.dtype() {
         DataType::List(_) => {
             let other = other.list()?;
             let other = other.apply_to_inner(&|s| {
                 let s = s.decimal()?;
-                let s = s.into_phys_with_prec_scale_or_sentinel(prec, scale, sentinel_other);
+                let s =
+                    s.into_phys_with_prec_scale_or_sentinel(prec, scale, DECIMAL_SENTINEL_HAYSTACK);
                 Ok(s.to_owned().into_series())
             })?;
             let other = other.into_series();
@@ -651,7 +767,8 @@ fn is_in_decimal(
             let other = other.array()?;
             let other = other.apply_to_inner(&|s| {
                 let s = s.decimal()?;
-                let s = s.into_phys_with_prec_scale_or_sentinel(prec, scale, sentinel_other);
+                let s =
+                    s.into_phys_with_prec_scale_or_sentinel(prec, scale, DECIMAL_SENTINEL_HAYSTACK);
                 Ok(s.to_owned().into_series())
             })?;
             let other = other.into_series();
@@ -676,20 +793,7 @@ fn is_in_row_encoded(
                         .into_series(),
                 )
             })?;
-            if other.len() == 1 {
-                if other.has_nulls() {
-                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
-                }
-
-                let other = other.explode(ExplodeOptions {
-                    empty_as_null: false,
-                    keep_nulls: true,
-                })?;
-                let other = other.binary_offset()?;
-                is_in_helper_ca(&ca_in, other, nulls_equal)
-            } else {
-                is_in_helper_list_ca(&ca_in, &other, nulls_equal)
-            }
+            is_in_helper_list_ca(&ca_in, &other, nulls_equal)
         },
         #[cfg(feature = "dtype-array")]
         DataType::Array(_, _) => {
@@ -700,20 +804,7 @@ fn is_in_row_encoded(
                         .into_series(),
                 )
             })?;
-            if other.len() == 1 {
-                if other.has_nulls() {
-                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
-                }
-
-                let other = other.explode(ExplodeOptions {
-                    empty_as_null: false,
-                    keep_nulls: true,
-                })?;
-                let other = other.binary_offset()?;
-                is_in_helper_ca(&ca_in, other, nulls_equal)
-            } else {
-                is_in_helper_array_ca(&ca_in, &other, nulls_equal)
-            }
+            is_in_helper_array_ca(&ca_in, &other, nulls_equal)
         },
         _ => unreachable!(),
     }?;
@@ -786,6 +877,10 @@ pub fn is_in(
 
     if let Some(out) = repeat_one_answer(needle, haystack, nulls_equal) {
         return out;
+    }
+
+    if haystack.len() == 1 {
+        return IsInHaystack::new(haystack, needle.dtype())?.probe(needle, nulls_equal);
     }
 
     match needle.dtype() {

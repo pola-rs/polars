@@ -12,8 +12,8 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::prelude::{PhysicalExpr, phys_expr_to_io_expr};
 use polars_io::predicates::{
-    ColumnPredicate, RuntimeRangeHint, ScanIOPredicate, SkipBatchPredicate,
-    SpecializedColumnPredicate, StagedScanIOPredicate,
+    ColumnPredicate, DynamicColumnPredicate, DynamicPredicateSource, RuntimeRangeHint,
+    ScanIOPredicate, SkipBatchPredicate, SpecializedColumnPredicate, StagedScanIOPredicate,
 };
 use polars_utils::pl_str::PlSmallStr;
 
@@ -26,8 +26,9 @@ pub struct StagedScanPredicate {
 
 #[derive(Clone)]
 pub struct PhysicalColumnPredicate {
-    pub predicate: Arc<dyn PhysicalExpr>,
+    pub predicate: Option<Arc<dyn PhysicalExpr>>,
     pub specialized: Option<SpecializedColumnPredicate>,
+    pub dynamic: Vec<(Arc<dyn PhysicalExpr>, Arc<dyn DynamicPredicateSource>)>,
 }
 
 impl StagedScanPredicate {
@@ -40,8 +41,16 @@ impl StagedScanPredicate {
                         (
                             name.clone(),
                             ColumnPredicate {
-                                predicate: phys_expr_to_io_expr(p.predicate.clone()),
+                                predicate: p.predicate.clone().map(phys_expr_to_io_expr),
                                 specialized: p.specialized.clone(),
+                                dynamic: p
+                                    .dynamic
+                                    .iter()
+                                    .map(|(predicate, source)| DynamicColumnPredicate {
+                                        predicate: phys_expr_to_io_expr(predicate.clone()),
+                                        source: source.clone(),
+                                    })
+                                    .collect(),
                             },
                         )
                     })

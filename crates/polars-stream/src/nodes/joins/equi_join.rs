@@ -15,7 +15,6 @@ use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_ops::series::coalesce_columns;
-use polars_plan::plans::TrivialPredicateExpr;
 use polars_plan::plans::options::RuntimeFilter;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
@@ -27,7 +26,7 @@ use polars_utils::sparse_init_vec::SparseInitVec;
 use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
-use super::runtime_filter::KeyRange;
+use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::{
     BufferedStream, LOPSIDED_SAMPLE_FACTOR, emit_morsel_size, fold_sample, sample_sink, send_frames,
 };
@@ -184,7 +183,6 @@ struct EquiJoinParams {
     preserve_order_probe: bool,
     left_key_schema: Arc<Schema>,
     left_key_selectors: Vec<StreamExpr>,
-    right_key_schema: Arc<Schema>,
     right_key_selectors: Vec<StreamExpr>,
     left_payload_select: Vec<Option<PlSmallStr>>,
     right_payload_select: Vec<Option<PlSmallStr>>,
@@ -192,9 +190,9 @@ struct EquiJoinParams {
     right_payload_schema: Arc<Schema>,
     args: JoinArgs,
     fused_predicate: Option<FusedPredicate>,
-    // Key min/max ranges for the scans below the planned probe side, set once
-    // from a complete sample of the planned build side or from its build.
-    runtime_filters: Vec<RuntimeFilter>,
+    // Key filters for the scans below the planned probe side, set once from a
+    // complete sample of the planned build side or from its build.
+    runtime_filters: RuntimeFilters,
     random_state: PlRandomState,
     sample_limit: usize,
 }
@@ -214,41 +212,12 @@ impl EquiJoinParams {
         build_side_left(self.args.build_side.as_ref())
     }
 
-    /// Whether the build keys' ranges go to the runtime filters: the filters exist,
+    /// Whether the build keys go to the runtime filters: the filters exist,
     /// were not set from a sample, and describe the side being built.
     fn publishes_runtime_filters(&self) -> bool {
         !self.runtime_filters.is_empty()
-            && !self.runtime_filters[0].pred.is_set()
+            && !self.runtime_filters.is_set()
             && self.left_is_build == self.planned_build_left()
-    }
-
-    /// Set every runtime filter to the range of its key on the given side.
-    fn publish_runtime_filters(&mut self, left: bool, ranges: Vec<KeyRange>) {
-        let key_schema = if left {
-            &self.left_key_schema
-        } else {
-            &self.right_key_schema
-        };
-        for (filter, range) in self.runtime_filters.iter().zip(ranges) {
-            if config::verbose() {
-                let name = key_schema
-                    .get_at_index(filter.key_idx)
-                    .map(|(n, _)| n.as_str());
-                eprintln!(
-                    "publishing runtime filter for key {}: {range:?}",
-                    name.unwrap_or("?")
-                );
-            }
-            filter.pred.set(Arc::new(range));
-        }
-    }
-
-    /// Widen the range of every runtime filter with its key column.
-    fn extend_key_ranges(&self, keys: &DataFrame, ranges: &mut [KeyRange]) -> PolarsResult<()> {
-        for (filter, range) in self.runtime_filters.iter().zip(ranges) {
-            range.extend(&keys.columns()[filter.key_idx])?;
-        }
-        Ok(())
     }
 
     /// Should we emit unmatched rows from the build side?
@@ -599,9 +568,9 @@ impl SampleState {
         )?))
     }
 
-    /// Hand the key ranges of a completely sampled side to the runtime filters.
-    /// The range holds whichever side is built later, as no key of the other
-    /// side outside it can match.
+    /// Hand the keys of a completely sampled side to the runtime filters. The
+    /// filter holds whichever side is built later, as no key of the other side
+    /// outside it can match.
     fn publish_runtime_filters(
         &self,
         left: bool,
@@ -613,28 +582,28 @@ impl SampleState {
         } else {
             (&self.right, &params.right_key_selectors)
         };
-        let new_ranges = || vec![KeyRange::default(); params.runtime_filters.len()];
-        let ranges = RAYON.install(|| {
+        let new_builders = || params.runtime_filters.new_builders();
+        let builders = RAYON.install(|| {
             morsels
                 .par_iter()
-                .try_fold(new_ranges, |mut ranges, morsel| {
+                .try_fold(new_builders, |mut builders, morsel| {
                     let df = morsel.df_blocking();
                     let keys = ASYNC.block_on(select_key_columns(
                         &df,
                         key_selectors,
                         &state.in_memory_exec_state,
                     ))?;
-                    params.extend_key_ranges(&keys, &mut ranges)?;
-                    PolarsResult::Ok(ranges)
+                    params.runtime_filters.extend(&keys, &mut builders)?;
+                    PolarsResult::Ok(builders)
                 })
-                .try_reduce(new_ranges, |mut a, b| {
+                .try_reduce(new_builders, |mut a, b| {
                     for (a, b) in a.iter_mut().zip(b) {
                         a.merge(b);
                     }
                     Ok(a)
                 })
         })?;
-        params.publish_runtime_filters(left, ranges);
+        params.runtime_filters.publish(builders);
         Ok(())
     }
 
@@ -666,7 +635,7 @@ impl SampleState {
         let mut build_state = BuildState::new(
             state.num_pipelines,
             state.num_pipelines,
-            params.runtime_filters.len(),
+            params,
             sampled_probe_morsels,
         );
 
@@ -713,8 +682,8 @@ struct LocalBuilder {
     // A cardinality sketch per partition for the keys seen by this builder.
     sketch_per_p: Vec<CardinalitySketch>,
 
-    // The range of the key of each runtime filter seen by this builder.
-    key_ranges: Vec<KeyRange>,
+    // The key of each runtime filter seen by this builder.
+    key_filters: Vec<KeyFilterBuilder>,
 
     // morsel_idxs_values_per_p[p][start..stop] contains the offsets into morsels[i]
     // for partition p, where start, stop are:
@@ -733,16 +702,18 @@ impl BuildState {
     fn new(
         num_pipelines: usize,
         num_partitions: usize,
-        num_runtime_filters: usize,
+        params: &EquiJoinParams,
         sampled_probe_morsels: BufferedStream,
     ) -> Self {
         let local_builders = (0..num_pipelines)
             .map(|_| LocalBuilder {
                 morsels: Vec::new(),
                 sketch_per_p: vec![CardinalitySketch::default(); num_partitions],
-                key_ranges: (0..num_runtime_filters)
-                    .map(|_| KeyRange::default())
-                    .collect(),
+                key_filters: if params.publishes_runtime_filters() {
+                    params.runtime_filters.new_builders()
+                } else {
+                    Vec::new()
+                },
                 morsel_idxs_values_per_p: vec![Vec::new(); num_partitions],
                 morsel_idxs_offsets_per_p: vec![0; num_partitions],
             })
@@ -780,7 +751,9 @@ impl BuildState {
                 select_keys_with_columns(&df, key_selectors, params, &state.in_memory_exec_state)
                     .await?;
             if publishes_runtime_filters {
-                params.extend_key_ranges(&keys, &mut local.key_ranges)?;
+                params
+                    .runtime_filters
+                    .extend(&keys, &mut local.key_filters)?;
             }
             let mut payload = select_payload(df.clone(), payload_selector);
             payload.rechunk_mut();
@@ -808,28 +781,19 @@ impl BuildState {
             .all(|b| b.morsels.iter().all(|(_, _, keys)| keys.is_empty()))
     }
 
-    /// Hand the range of every build key to the runtime filters. Filters set
-    /// from a sample keep their range, whichever side is built; filters of a
-    /// side that was not built get a range that skips nothing.
+    /// Hand every build key to the runtime filters. Filters set from a sample
+    /// keep their value, whichever side is built; filters of a side that was
+    /// not built get a predicate that skips nothing.
     fn publish_runtime_filters(&mut self, params: &mut EquiJoinParams) {
         if !params.publishes_runtime_filters() {
-            for filter in &params.runtime_filters {
-                if !filter.pred.is_set() {
-                    filter.pred.set(Arc::new(TrivialPredicateExpr));
-                }
-            }
+            params.runtime_filters.publish_nothing();
             return;
         }
-        let ranges = (0..params.runtime_filters.len())
-            .map(|i| {
-                let mut range = KeyRange::default();
-                for local in &mut self.local_builders {
-                    range.merge(std::mem::take(&mut local.key_ranges[i]));
-                }
-                range
-            })
-            .collect();
-        params.publish_runtime_filters(params.left_is_build.unwrap(), ranges);
+        let locals = self
+            .local_builders
+            .iter_mut()
+            .map(|l| std::mem::take(&mut l.key_filters));
+        params.runtime_filters.publish_merged(locals);
     }
 
     fn finalize_ordered(&mut self, params: &EquiJoinParams, table: &dyn IdxTable) -> ProbeState {
@@ -1567,28 +1531,9 @@ impl EquiJoinNode {
             &args,
         )?;
 
-        // A range is only published for the side the plan named.
+        // A filter is only published for the side the plan named.
         debug_assert!(runtime_filters.is_empty() || args.build_side.is_some());
-
-        let state = if left_is_build.is_some() {
-            EquiJoinState::Build(BuildState::new(
-                num_pipelines,
-                num_pipelines,
-                runtime_filters.len(),
-                BufferedStream::default(),
-            ))
-        } else {
-            // A forced side never samples, so this names a preferred one.
-            let only_side = if runtime_filters.is_empty() {
-                None
-            } else {
-                build_side_left(args.build_side.as_ref())
-            };
-            EquiJoinState::Sample(SampleState {
-                only_side,
-                ..Default::default()
-            })
-        };
+        let runtime_filters = RuntimeFilters::new(runtime_filters, &unique_key_schema);
 
         let left_payload_schema = Arc::new(select_schema(&left_input_schema, &left_payload_select));
         let right_payload_schema =
@@ -1607,26 +1552,47 @@ impl EquiJoinNode {
             })
             .transpose()?;
 
+        let params = EquiJoinParams {
+            left_is_build,
+            preserve_order_build,
+            preserve_order_probe,
+            left_key_schema,
+            left_key_selectors,
+            right_key_selectors,
+            left_payload_select,
+            right_payload_select,
+            left_payload_schema,
+            right_payload_schema,
+            args,
+            fused_predicate,
+            runtime_filters,
+            random_state: PlRandomState::default(),
+            sample_limit,
+        };
+
+        let state = if left_is_build.is_some() {
+            EquiJoinState::Build(BuildState::new(
+                num_pipelines,
+                num_pipelines,
+                &params,
+                BufferedStream::default(),
+            ))
+        } else {
+            // A forced side never samples, so this names a preferred one.
+            let only_side = if params.runtime_filters.is_empty() {
+                None
+            } else {
+                params.planned_build_left()
+            };
+            EquiJoinState::Sample(SampleState {
+                only_side,
+                ..Default::default()
+            })
+        };
+
         Ok(Self {
             state,
-            params: EquiJoinParams {
-                left_is_build,
-                preserve_order_build,
-                preserve_order_probe,
-                left_key_schema,
-                left_key_selectors,
-                right_key_schema,
-                right_key_selectors,
-                left_payload_select,
-                right_payload_select,
-                left_payload_schema,
-                right_payload_schema,
-                args,
-                fused_predicate,
-                runtime_filters,
-                random_state: PlRandomState::default(),
-                sample_limit,
-            },
+            params,
             table: new_idx_table(unique_key_schema),
             spill_ctx: MostRecentSpillContext::new("equi-join".into()),
         })

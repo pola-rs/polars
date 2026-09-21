@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use polars_async::executor::TaskPriority;
@@ -9,14 +10,14 @@ use polars_core::series::Series;
 use polars_core::utils::polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
-use polars_io::predicates::{PhysicalIoExpr, ScanIOPredicate};
+use polars_io::predicates::{DynamicPredicateSource, PhysicalIoExpr, ScanIOPredicate};
 use polars_io::prelude::_internal::canonicalize_parquet_maps;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, PredicateFilter, PrimitiveLogicalType};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, UnitVec};
 
-use super::passes::{Selectivity, plan_passes};
+use super::passes::{Selectivity, keeps_most_rows, plan_passes, promote};
 use super::row_group_data_fetch::RowGroupData;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
@@ -31,11 +32,70 @@ pub(super) enum Source {
 /// The conjuncts of the predicate that read one column.
 pub(super) struct PredicateColumn {
     pub(super) source: Source,
-    pub(super) predicate: Arc<dyn PhysicalIoExpr>,
-    /// Evaluates the predicate while decoding, when the decoder may.
+    /// The static conjuncts, conjoined.
+    pub(super) predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    /// Evaluates `predicate` while decoding, when the decoder may.
     pub(super) decode_filter: Option<PredicateFilter>,
-    /// The value of every kept row when the predicate is an equality.
+    /// The value of every kept row when `predicate` is an equality.
     pub(super) constant: Option<Scalar>,
+    pub(super) dynamic: Vec<DynamicConjunct>,
+}
+
+/// A conjunct on a predicate column that a producer sets at run time. It is
+/// evaluated once it is set and rejects rows, and no longer once it keeps most
+/// of the rows it sees, when its source allows that.
+pub(super) struct DynamicConjunct {
+    pub(super) predicate: Arc<dyn PhysicalIoExpr>,
+    pub(super) source: Arc<dyn DynamicPredicateSource>,
+    /// Set once the conjunct was seen filtering rows, so the next row group
+    /// measures it on every row.
+    activated: AtomicBool,
+    measured: Mutex<Selectivity>,
+    bypassed: AtomicBool,
+}
+
+impl DynamicConjunct {
+    pub(super) fn new(
+        predicate: Arc<dyn PhysicalIoExpr>,
+        source: Arc<dyn DynamicPredicateSource>,
+    ) -> Self {
+        Self {
+            predicate,
+            source,
+            activated: AtomicBool::new(false),
+            measured: Mutex::new(Selectivity::default()),
+            bypassed: AtomicBool::new(false),
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        !self.bypassed.load(Ordering::Relaxed) && self.source.filters_rows()
+    }
+
+    /// Whether the conjunct filters rows and was not seen doing so before.
+    fn newly_active(&self) -> bool {
+        self.source.filters_rows() && !self.activated.swap(true, Ordering::Relaxed)
+    }
+
+    /// Count the rows an evaluation saw and kept.
+    fn measure(&self, input_rows: usize, kept_rows: usize) {
+        let measured = {
+            let mut measured = self.measured.lock().unwrap();
+            measured.input_rows += input_rows;
+            measured.kept_rows += kept_rows;
+            *measured
+        };
+        if keeps_most_rows(measured.kept_rows, measured.input_rows)
+            && self.source.can_bypass()
+            && !self.bypassed.swap(true, Ordering::Relaxed)
+            && polars_core::config::verbose()
+        {
+            eprintln!(
+                "[ParquetFileReader]: Dynamic predicate bypassed, it kept {} of {} rows",
+                measured.kept_rows, measured.input_rows
+            );
+        }
+    }
 }
 
 /// Turns row group data into DataFrames.
@@ -73,19 +133,34 @@ impl RowGroupDecoder {
             slice.0 == 0 && slice.1 >= row_group_data.row_group_metadata.num_rows()
         });
 
+        let nothing_to_evaluate = self.nothing_to_evaluate();
         if self.use_prefiltered
             && row_group_data.slice.is_none()
             && !self.predicate_field_indices.is_empty()
+            && !nothing_to_evaluate
         {
             self.row_group_data_to_df_prefiltered(row_group_data).await
         } else {
-            self.row_group_data_to_df_impl(row_group_data).await
+            self.row_group_data_to_df_impl(row_group_data, nothing_to_evaluate)
+                .await
         }
+    }
+
+    /// Whether the predicate keeps every row for now: it has no static part
+    /// and none of its dynamic conjuncts filters rows.
+    fn nothing_to_evaluate(&self) -> bool {
+        self.use_prefiltered
+            && self.rest_predicate.is_none()
+            && self
+                .predicate_columns
+                .iter()
+                .all(|c| c.predicate.is_none() && c.dynamic.iter().all(|d| !d.is_active()))
     }
 
     async fn row_group_data_to_df_impl(
         &self,
         row_group_data: RowGroupData,
+        nothing_to_evaluate: bool,
     ) -> PolarsResult<DataFrame> {
         let row_group_data = Arc::new(row_group_data);
 
@@ -120,7 +195,11 @@ impl RowGroupDecoder {
 
         let df = unsafe { DataFrame::new_unchecked(projection_height, out_columns) };
 
-        let df = if let Some(predicate) = self.predicate.as_ref().filter(|p| p.filters_rows) {
+        let df = if let Some(predicate) = self
+            .predicate
+            .as_ref()
+            .filter(|p| p.filters_rows && !nothing_to_evaluate)
+        {
             let mask = predicate.predicate.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
 
@@ -424,14 +503,34 @@ impl Pass {
                 (c.source, Some((i, c)))
             },
         };
+        // The rows of `column` that its active dynamic conjuncts keep, `None` when
+        // there is none.
+        let dynamic_mask = |c: &PredicateColumn, column: &Column| -> PolarsResult<Option<Bitmap>> {
+            let mut mask: Option<Bitmap> = None;
+            let df = column.clone().into_frame();
+            for d in c.dynamic.iter().filter(|d| d.is_active()) {
+                let m = evaluate_mask(d.predicate.as_ref(), &df)?;
+                d.measure(m.len(), m.set_bits());
+                mask = Some(and_masks(mask, m));
+            }
+            Ok(mask)
+        };
         let evaluate = |column: &Column| -> PolarsResult<Option<(usize, Kept)>> {
-            predicate_column
-                .map(|(i, c)| {
+            let Some((i, c)) = predicate_column else {
+                return Ok(None);
+            };
+            let mut mask = match &c.predicate {
+                Some(p) => {
                     let df =
                         unsafe { DataFrame::new_unchecked(self.num_rows, vec![column.clone()]) };
-                    Ok((i, Kept::Masked(evaluate_mask(c.predicate.as_ref(), &df)?)))
-                })
-                .transpose()
+                    Some(evaluate_mask(p.as_ref(), &df)?)
+                },
+                None => None,
+            };
+            if let Some(m) = dynamic_mask(c, column)? {
+                mask = Some(and_masks(mask, m));
+            }
+            Ok(mask.map(|m| (i, Kept::Masked(m))))
         };
 
         let field_idx = match source {
@@ -475,9 +574,18 @@ impl Pass {
                 Some(v) => Column::new_scalar(column.name().clone(), v.clone(), mask.set_bits()),
                 None => column,
             };
+            let mut column = projection.apply_transform(column)?;
+            let mut mask = mask;
+            if let Some(m) = dynamic_mask(c, &column)?
+                && m.unset_bits() > 0
+            {
+                column =
+                    column.filter(&BooleanChunked::from_bitmap(PlSmallStr::EMPTY, m.clone()))?;
+                mask = compose_masks(&mask, &m);
+            }
             return Ok(Decoded {
                 source,
-                column: projection.apply_transform(column)?,
+                column,
                 predicate: Some((i, Kept::Filtered(mask))),
             });
         }
@@ -508,7 +616,21 @@ impl RowGroupDecoder {
 
         let row_group_data = Arc::new(row_group_data);
         let projection_height = row_group_data.row_group_metadata.num_rows();
-        let passes = self.passes.lock().unwrap().clone();
+        let mut passes = self.passes.lock().unwrap().clone();
+        // A conjunct that just started filtering rows is measured on every row
+        // of this row group.
+        let newly_active: Vec<usize> = (0..self.predicate_columns.len())
+            .filter(|&c| {
+                self.predicate_columns[c]
+                    .dynamic
+                    .iter()
+                    .any(|d| d.newly_active())
+            })
+            .collect();
+        if !newly_active.is_empty() {
+            passes = Arc::new(promote(&passes, &newly_active));
+            *self.passes.lock().unwrap() = passes.clone();
+        }
 
         let use_decode_filters = !row_group_data
             .row_group_metadata
@@ -575,10 +697,7 @@ impl RowGroupDecoder {
                     input_rows: kept,
                     kept_rows: m.set_bits(),
                 };
-                pass_mask = Some(match pass_mask {
-                    None => m.clone(),
-                    Some(pm) => &pm & m,
-                });
+                pass_mask = Some(and_masks(pass_mask, m.clone()));
                 match kept_rows {
                     Kept::Masked(_) => live_columns.push((d.source, d.column)),
                     Kept::Filtered(own) => filtered.push((d.source, d.column, own)),
@@ -748,6 +867,14 @@ fn evaluate_mask(predicate: &dyn PhysicalIoExpr, df: &DataFrame) -> PolarsResult
     let mut mask = predicate.evaluate_io(df)?.bool().unwrap().clone();
     mask.rechunk_mut();
     Ok(mask.downcast_as_array().true_and_valid().into_bitmap())
+}
+
+/// `mask` narrowed by `m`, both over the same rows.
+fn and_masks(mask: Option<Bitmap>, m: Bitmap) -> Bitmap {
+    match mask {
+        None => m,
+        Some(mask) => &mask & &m,
+    }
 }
 
 /// Narrows `outer` by `inner`, which holds one bit per set bit of `outer`.

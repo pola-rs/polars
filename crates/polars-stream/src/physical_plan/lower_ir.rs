@@ -1398,6 +1398,7 @@ pub fn lower_ir(
                             right_on: trans_right_on,
                             args: args.clone(),
                             output_bool: false,
+                            runtime_filters: runtime_filters.clone(),
                         },
                     )),
                     _ if args.how.is_equi() => {
@@ -1787,7 +1788,8 @@ pub fn lower_ir(
                             ctx,
                         );
                     } else {
-                        let func = function_expr_to_udf(function.clone()).into_inner();
+                        let func =
+                            function_expr_to_udf(function.clone(), &[], expr_arena).into_inner();
                         let format_str = Some(format!("COLUMNAR {function}"));
                         PhysNodeKind::ColumnarFunction {
                             inputs: trans_inputs,

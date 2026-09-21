@@ -497,6 +497,8 @@ pub enum PhysNodeKind {
         right_on: Vec<ExprIR>,
         args: JoinArgs,
         output_bool: bool,
+        /// See `JoinOptionsIR::runtime_filters`.
+        runtime_filters: Vec<RuntimeFilter>,
     },
 
     CrossJoin {
