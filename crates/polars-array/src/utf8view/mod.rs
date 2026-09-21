@@ -278,9 +278,14 @@ impl PlUtf8ViewArray {
         let views: Vec<View> = views
             .as_slice()
             .iter()
-            .enumerate()
-            // SAFETY: `i` is in bounds of the array the views came from.
-            .map(|(i, &view)| update_view(view, unsafe { self.value_unchecked(i) }))
+            .map(|&view| {
+                // SAFETY: the view is one of this array's, so it reads bytes the buffers hold,
+                // and every one of them is valid UTF-8.
+                let value = unsafe {
+                    std::str::from_utf8_unchecked(view.get_slice_unchecked(buffers.as_slice()))
+                };
+                update_view(view, value)
+            })
             .collect();
 
         // SAFETY: the caller keeps every view reading bytes the buffers hold, and valid UTF-8.
