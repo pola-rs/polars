@@ -1,6 +1,6 @@
 #[cfg(feature = "approx_quantile")]
 use polars_compute::approx_quantile::ApproxQuantileMethod;
-use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_core::error::{PolarsContext, PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use polars_core::prelude::*;
 use polars_core::scalar::Scalar;
@@ -712,13 +712,24 @@ pub fn as_struct(cols: &[Column]) -> PolarsResult<Column> {
 }
 
 pub fn as_list(s: &mut [Column]) -> PolarsResult<Column> {
-    let first = s[0].to_unit_list();
-    let other: Vec<Column> = s[1..].iter().map(Column::to_unit_list).collect();
+    use polars_utils::broadcast::broadcast_len;
 
-    first
-        .list()?
-        .lst_concat(&other)
-        .map(IntoColumn::into_column)
+    let broadcast_len = broadcast_len(s.iter()).context("list as_list")?;
+    let first = s[0].to_unit_list();
+    let first_ca = first.list()?.clone().broadcast_owned_to(broadcast_len)?;
+    let other: Vec<Column> = s[1..]
+        .iter()
+        .map(|col| {
+            let unit_list = col.to_unit_list();
+            let ca = unit_list
+                .list()?
+                .clone()
+                .broadcast_owned_to(broadcast_len)?;
+            Ok(ca.into_column())
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    first_ca.lst_concat(&other).map(IntoColumn::into_column)
 }
 
 #[cfg(feature = "log")]
