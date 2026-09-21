@@ -9,6 +9,7 @@ use polars_core::config;
 use polars_core::prelude::*;
 use polars_expr::hash_keys::HashKeys;
 use polars_io::predicates::{RuntimeRange, cast_bound};
+use polars_plan::plans::optimizer::BLOOM_MAX_PASS_RATE;
 use polars_plan::plans::options::RuntimeFilter;
 use polars_plan::plans::{PredicateExpr, TrivialPredicateExpr};
 use polars_utils::bloom_filter::SplitBlockBloom;
@@ -16,14 +17,9 @@ use polars_utils::cardinality_sketch::CardinalitySketch;
 
 /// Bits per key a bloom filter is sized for.
 const BLOOM_BITS_PER_KEY: usize = 8;
-/// A bloom filter that ends up with fewer bits per distinct key than this lets
-/// too many rows through and is not published.
+/// A bloom filter with fewer bits per distinct key than this is not published.
 const BLOOM_MIN_BITS_PER_KEY: usize = 4;
-/// Largest share of the probe's distinct keys the build may hold for the bloom
-/// filter to be worth probing.
-const BLOOM_MAX_PASS_RATE: f64 = 0.3;
-/// Smallest bloom filter that is built, so a build estimated far too small
-/// still gets a usable one.
+/// Smallest bloom filter that is built.
 const BLOOM_MIN_BYTES: usize = 64 << 10;
 /// Largest bloom filter that is published.
 const BLOOM_MAX_BYTES: usize = 32 << 20;
@@ -91,6 +87,17 @@ impl RuntimeFilters {
         }
     }
 
+    /// Set every filter to what the builders of every local build collected.
+    pub fn publish_merged(&self, locals: impl IntoIterator<Item = Vec<KeyFilterBuilder>>) {
+        let mut builders = self.new_builders();
+        for local in locals {
+            for (builder, seen) in builders.iter_mut().zip(local) {
+                builder.merge(seen);
+            }
+        }
+        self.publish(builders);
+    }
+
     /// Set every filter not published yet to one that skips nothing.
     pub fn publish_nothing(&self) {
         for (filter, _) in &self.filters {
@@ -101,15 +108,15 @@ impl RuntimeFilters {
     }
 }
 
-/// How a join builds the filter of one key: the key's dtype, the number of
-/// distinct keys a bloom filter is sized for (`None` gives the range
-/// only), the probe's distinct keys when the plan could estimate them, and
-/// the hash seed the build and probe sides share.
+/// How a join builds the filter of one key.
 #[derive(Clone, Debug)]
 pub struct KeyFilterSpec {
     pub dtype: DataType,
+    /// Distinct keys the bloom filter is sized for; `None` gives the range only.
     pub bloom_keys: Option<usize>,
+    /// The probe's distinct keys, when the plan could estimate them.
     pub probe_distinct: Option<usize>,
+    /// Shared by the build and probe sides.
     pub random_state: PlRandomState,
 }
 
@@ -132,7 +139,7 @@ impl KeyFilterSpec {
     }
 
     fn hash_keys(&self, column: &Column) -> HashKeys {
-        let df = DataFrame::new(column.len(), vec![column.clone()]).unwrap();
+        let df = unsafe { DataFrame::new_unchecked(column.len(), vec![column.clone()]) };
         HashKeys::from_df(&df, self.random_state.clone(), false, false)
     }
 }

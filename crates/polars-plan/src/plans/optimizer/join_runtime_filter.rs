@@ -54,9 +54,9 @@ use crate::utils::has_aexpr;
 
 /// Estimated bytes a build side chosen here may take.
 const BUILD_BYTES: f64 = 256.0 * 1024.0 * 1024.0;
-/// Largest estimated share of the scan's distinct keys the build may hold for a
-/// bloom filter to be worth probing per row.
-const BLOOM_MAX_PASS_RATE: f64 = 0.3;
+/// Largest share of the probe's distinct keys the build may hold for a bloom
+/// filter to be worth probing per row.
+pub const BLOOM_MAX_PASS_RATE: f64 = 0.3;
 
 pub(super) fn attach_join_runtime_filters(
     root: Node,
@@ -168,10 +168,7 @@ fn process_join(
 
     let mut runtime_filters = Vec::with_capacity(filters.len());
     for filter in filters {
-        // Distinct build keys: no more than the rows built, nor than the key's
-        // distinct count where the build side carries one. That count describes
-        // the unfiltered side, so it is scaled by the share of rows its filters
-        // keep, which is exact for a unique key.
+        // The key's distinct count is that of the unfiltered side.
         let build_key = &on[filter.key_idx];
         let build_key = if left { &build_key.0 } else { &build_key.1 };
         let kept = (build_stats.filtered / build_stats.unfiltered).min(1.0);

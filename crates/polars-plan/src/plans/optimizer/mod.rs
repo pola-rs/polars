@@ -22,6 +22,7 @@ mod join_order;
 mod join_predicate_fusion;
 mod join_pushthrough;
 mod join_runtime_filter;
+pub use join_runtime_filter::BLOOM_MAX_PASS_RATE;
 mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;

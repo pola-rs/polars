@@ -786,13 +786,11 @@ impl BuildState {
             params.runtime_filters.publish_nothing();
             return;
         }
-        let mut builders = params.runtime_filters.new_builders();
-        for local in &mut self.local_builders {
-            for (builder, seen) in builders.iter_mut().zip(local.key_filters.drain(..)) {
-                builder.merge(seen);
-            }
-        }
-        params.runtime_filters.publish(builders);
+        let locals = self
+            .local_builders
+            .iter_mut()
+            .map(|l| std::mem::take(&mut l.key_filters));
+        params.runtime_filters.publish_merged(locals);
     }
 
     fn finalize_ordered(&mut self, params: &EquiJoinParams, table: &dyn IdxTable) -> ProbeState {

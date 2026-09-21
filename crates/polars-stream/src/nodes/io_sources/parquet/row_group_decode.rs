@@ -51,8 +51,7 @@ pub(super) struct DynamicConjunct {
     /// Set once the conjunct was seen filtering rows, so the next row group
     /// measures it on every row.
     activated: AtomicBool,
-    /// The rows it was evaluated on and the rows it kept.
-    measured: Mutex<(usize, usize)>,
+    measured: Mutex<Selectivity>,
     bypassed: AtomicBool,
 }
 
@@ -65,7 +64,7 @@ impl DynamicConjunct {
             predicate,
             source,
             activated: AtomicBool::new(false),
-            measured: Mutex::new((0, 0)),
+            measured: Mutex::new(Selectivity::default()),
             bypassed: AtomicBool::new(false),
         }
     }
@@ -81,21 +80,21 @@ impl DynamicConjunct {
 
     /// Count the rows an evaluation saw and kept.
     fn measure(&self, input_rows: usize, kept_rows: usize) {
-        let (input, kept) = {
+        let measured = {
             let mut measured = self.measured.lock().unwrap();
-            measured.0 += input_rows;
-            measured.1 += kept_rows;
+            measured.input_rows += input_rows;
+            measured.kept_rows += kept_rows;
             *measured
         };
-        if keeps_most_rows(kept, input)
+        if keeps_most_rows(measured.kept_rows, measured.input_rows)
             && self.source.is_fixed()
             && !self.bypassed.swap(true, Ordering::Relaxed)
+            && polars_core::config::verbose()
         {
-            if polars_core::config::verbose() {
-                eprintln!(
-                    "[ParquetFileReader]: Dynamic predicate bypassed, it kept {kept} of {input} rows"
-                );
-            }
+            eprintln!(
+                "[ParquetFileReader]: Dynamic predicate bypassed, it kept {} of {} rows",
+                measured.kept_rows, measured.input_rows
+            );
         }
     }
 }
@@ -135,14 +134,16 @@ impl RowGroupDecoder {
             slice.0 == 0 && slice.1 >= row_group_data.row_group_metadata.num_rows()
         });
 
+        let nothing_to_evaluate = self.nothing_to_evaluate();
         if self.use_prefiltered
             && row_group_data.slice.is_none()
             && !self.predicate_field_indices.is_empty()
-            && !self.nothing_to_evaluate()
+            && !nothing_to_evaluate
         {
             self.row_group_data_to_df_prefiltered(row_group_data).await
         } else {
-            self.row_group_data_to_df_impl(row_group_data).await
+            self.row_group_data_to_df_impl(row_group_data, nothing_to_evaluate)
+                .await
         }
     }
 
@@ -160,6 +161,7 @@ impl RowGroupDecoder {
     async fn row_group_data_to_df_impl(
         &self,
         row_group_data: RowGroupData,
+        nothing_to_evaluate: bool,
     ) -> PolarsResult<DataFrame> {
         let row_group_data = Arc::new(row_group_data);
 
@@ -197,7 +199,7 @@ impl RowGroupDecoder {
         let df = if let Some(predicate) = self
             .predicate
             .as_ref()
-            .filter(|p| p.filters_rows && !self.nothing_to_evaluate())
+            .filter(|p| p.filters_rows && !nothing_to_evaluate)
         {
             let mask = predicate.predicate.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
@@ -510,10 +512,7 @@ impl Pass {
                 let df = unsafe { DataFrame::new_unchecked(column.len(), vec![column.clone()]) };
                 let m = evaluate_mask(d.predicate.as_ref(), &df)?;
                 d.measure(m.len(), m.set_bits());
-                mask = Some(match mask {
-                    None => m,
-                    Some(mask) => &mask & &m,
-                });
+                mask = Some(and_masks(mask, m));
             }
             Ok(mask)
         };
@@ -530,10 +529,7 @@ impl Pass {
                 None => None,
             };
             if let Some(m) = dynamic_mask(c, column)? {
-                mask = Some(match mask {
-                    None => m,
-                    Some(mask) => &mask & &m,
-                });
+                mask = Some(and_masks(mask, m));
             }
             Ok(mask.map(|m| (i, Kept::Masked(m))))
         };
@@ -702,10 +698,7 @@ impl RowGroupDecoder {
                     input_rows: kept,
                     kept_rows: m.set_bits(),
                 };
-                pass_mask = Some(match pass_mask {
-                    None => m.clone(),
-                    Some(pm) => &pm & m,
-                });
+                pass_mask = Some(and_masks(pass_mask, m.clone()));
                 match kept_rows {
                     Kept::Masked(_) => live_columns.push((d.source, d.column)),
                     Kept::Filtered(own) => filtered.push((d.source, d.column, own)),
@@ -882,6 +875,14 @@ fn evaluate_mask(predicate: &dyn PhysicalIoExpr, df: &DataFrame) -> PolarsResult
 }
 
 /// Narrows `outer` by `inner`, which holds one bit per set bit of `outer`.
+/// `mask` narrowed by `m`, both over the same rows.
+fn and_masks(mask: Option<Bitmap>, m: Bitmap) -> Bitmap {
+    match mask {
+        None => m,
+        Some(mask) => &mask & &m,
+    }
+}
+
 fn compose_masks(outer: &Bitmap, inner: &Bitmap) -> Bitmap {
     assert_eq!(inner.len(), outer.set_bits());
     if inner.unset_bits() == 0 {

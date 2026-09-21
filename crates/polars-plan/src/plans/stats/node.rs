@@ -356,9 +356,8 @@ impl NodeStats {
         Some(domain.clamp(MIN_CARDINALITY, self.unfiltered))
     }
 
-    /// Distinct values in `name`, from the larger of its distinct count and its
-    /// integer domain. A scan's distinct count is that of its largest chunk, so
-    /// it understates a file; the domain of a dense integer key does not.
+    /// Distinct values in `name`: the larger of its distinct count and its
+    /// integer domain.
     pub fn key_distinct_estimate(&self, name: &str) -> Option<f64> {
         match (self.distinct_count_key(name), self.int_domain(name)) {
             (Some(ndv), Some(domain)) => Some(ndv.max(domain)),
