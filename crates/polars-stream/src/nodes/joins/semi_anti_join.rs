@@ -42,18 +42,19 @@ async fn select_key_columns(
     unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns) }
 }
 
-fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams) -> HashKeys {
-    HashKeys::from_df(keys, params.random_state.clone(), params.nulls_equal, false)
+fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
+    HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
 }
 
 async fn select_keys(
     df: &DataFrame,
     key_selectors: &[StreamExpr],
     params: &SemiAntiJoinParams,
+    null_is_valid: bool,
     state: &ExecutionState,
 ) -> PolarsResult<HashKeys> {
     let keys = select_key_columns(df, key_selectors, state).await?;
-    Ok(hash_keys(&keys, params))
+    Ok(hash_keys(&keys, params, null_is_valid))
 }
 
 struct SemiAntiJoinParams {
@@ -72,6 +73,22 @@ struct SemiAntiJoinParams {
 impl SemiAntiJoinParams {
     fn left_is_build(&self) -> bool {
         self.left_is_build.unwrap()
+    }
+
+    /// Whether the built rows that no probe row matches are the output.
+    fn emits_unmatched_build(&self) -> bool {
+        self.is_anti && self.left_is_build()
+    }
+
+    /// Whether null keys get a group when the given side is built. The rows
+    /// of an anti join's left side must stay, whatever their keys.
+    fn null_is_valid_when_built(&self, left: bool) -> bool {
+        self.nulls_equal || (self.is_anti && left)
+    }
+
+    /// Whether the join outputs nothing when no build rows came in.
+    fn empty_build_gives_empty_output(&self) -> bool {
+        !self.return_bool && (!self.is_anti || self.left_is_build())
     }
 }
 
@@ -98,23 +115,22 @@ impl SemiAntiJoinNode {
             .unwrap();
         let is_anti = args.how == JoinType::Anti;
 
-        // Only an unordered semi join that outputs rows can be built from the left side.
-        let left_is_build =
-            if is_anti || return_bool || args.maintain_order != MaintainOrderJoin::None {
-                Some(false)
-            } else {
-                match args.build_side {
-                    Some(JoinBuildSide::ForceLeft) => Some(true),
-                    Some(JoinBuildSide::ForceRight) => Some(false),
-                    Some(JoinBuildSide::PreferLeft | JoinBuildSide::PreferRight) | None => {
-                        if sample_limit == 0 {
-                            Some(args.build_side == Some(JoinBuildSide::PreferLeft))
-                        } else {
-                            None
-                        }
-                    },
-                }
-            };
+        // Only an unordered join that outputs rows can be built from the left side.
+        let left_is_build = if return_bool || args.maintain_order != MaintainOrderJoin::None {
+            Some(false)
+        } else {
+            match args.build_side {
+                Some(JoinBuildSide::ForceLeft) => Some(true),
+                Some(JoinBuildSide::ForceRight) => Some(false),
+                Some(JoinBuildSide::PreferLeft | JoinBuildSide::PreferRight) | None => {
+                    if sample_limit == 0 {
+                        Some(args.build_side == Some(JoinBuildSide::PreferLeft))
+                    } else {
+                        None
+                    }
+                },
+            }
+        };
 
         let state = if left_is_build.is_some() {
             SemiAntiJoinState::Build(BuildState::new(
@@ -166,6 +182,7 @@ impl RetainedBytes {
     fn from_sample(
         morsels: &[Morsel],
         key_selectors: &[StreamExpr],
+        null_is_valid: bool,
         params: &SemiAntiJoinParams,
         state: &ExecutionState,
     ) -> PolarsResult<Self> {
@@ -182,7 +199,7 @@ impl RetainedBytes {
             || (CardinalitySketch::new(), 0usize, 0usize),
             |(mut sketch, key_bytes, row_bytes), df| {
                 let keys = ASYNC.block_on(select_key_columns(df, key_selectors, state))?;
-                hash_keys(&keys, params).sketch_cardinality(&mut sketch);
+                hash_keys(&keys, params, null_is_valid).sketch_cardinality(&mut sketch);
                 Ok((
                     sketch,
                     key_bytes + keys.estimated_size(),
@@ -251,7 +268,7 @@ impl SampleState {
 
         if config::verbose() {
             eprintln!(
-                "choosing semi-join build side, sample lengths are: {} vs. {}",
+                "choosing semi/anti-join build side, sample lengths are: {} vs. {}",
                 self.left_len, self.right_len
             );
         }
@@ -267,12 +284,14 @@ impl SampleState {
                 let left = RetainedBytes::from_sample(
                     &self.left,
                     &params.left_key_selectors,
+                    params.null_is_valid_when_built(true),
                     params,
                     &state.in_memory_exec_state,
                 )?;
                 let right = RetainedBytes::from_sample(
                     &self.right,
                     &params.right_key_selectors,
+                    params.null_is_valid_when_built(false),
                     params,
                     &state.in_memory_exec_state,
                 )?;
@@ -289,7 +308,7 @@ impl SampleState {
 
         if config::verbose() {
             eprintln!(
-                "semi-join build side chosen: {}",
+                "semi/anti-join build side chosen: {}",
                 if left_is_build { "left" } else { "right" }
             );
         }
@@ -429,8 +448,14 @@ impl BuildState {
 
         while let Ok(morsel) = recv.recv().await {
             let df = morsel.df().await;
-            let hash_keys =
-                select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
+            let hash_keys = select_keys(
+                &df,
+                key_selectors,
+                params,
+                params.null_is_valid_when_built(params.left_is_build()),
+                &state.in_memory_exec_state,
+            )
+            .await?;
 
             hash_keys.gen_idxs_per_partition(
                 &partitioner,
@@ -658,8 +683,14 @@ impl ProbeState {
                 continue;
             }
 
-            let hash_keys =
-                select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
+            let hash_keys = select_keys(
+                &df,
+                key_selectors,
+                params,
+                params.nulls_equal,
+                &state.in_memory_exec_state,
+            )
+            .await?;
 
             unsafe {
                 let out_df = if params.return_bool {
@@ -723,8 +754,14 @@ impl ProbeState {
                 continue;
             }
 
-            let hash_keys =
-                select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
+            let hash_keys = select_keys(
+                &df,
+                key_selectors,
+                params,
+                params.nulls_equal,
+                &state.in_memory_exec_state,
+            )
+            .await?;
             unsafe {
                 partitions[0].mark_groups_partitioned_groupers(
                     partitions,
@@ -778,8 +815,9 @@ impl ProbeState {
         })
     }
 
-    /// The rows of each partition whose group was marked by any probe pipeline.
-    fn marked_rows(&mut self) -> Vec<Vec<IdxSize>> {
+    /// The rows of each partition whose group a probe pipeline marked, or the
+    /// other rows for `unmatched`.
+    fn output_rows(&mut self, unmatched: bool) -> Vec<Vec<IdxSize>> {
         let payloads = &self.payload_per_partition;
         let mut marks_per_partition: Vec<Vec<MutableBitmap>> =
             (0..payloads.len()).map(|_| Vec::new()).collect();
@@ -799,6 +837,9 @@ impl ProbeState {
                     for m in &marks {
                         let mut merged_mut = &mut merged;
                         merged_mut |= m;
+                    }
+                    if unmatched {
+                        merged = !merged;
                     }
                     payload
                         .group_idxs
@@ -901,12 +942,11 @@ impl ComputeNode for SemiAntiJoinNode {
         };
         let probe_idx = 1 - build_idx;
 
-        // If we are building and the build input is done, transition to probing.
-        // A semi join with nothing to match is done without reading the probe side.
+        // If we are building and the build input is done, transition to probing,
+        // or finish without reading the probe side when nothing can come out.
         if let SemiAntiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
-                let emits_matches = !self.params.is_anti && !self.params.return_bool;
-                if emits_matches && build_state.is_empty() {
+                if self.params.empty_build_gives_empty_output() && build_state.is_empty() {
                     self.state = SemiAntiJoinState::Done;
                 } else {
                     let mut probe_state = build_state.finalize(&self.params, &*self.grouper);
@@ -918,13 +958,15 @@ impl ComputeNode for SemiAntiJoinNode {
             }
         }
 
-        // If we are probing and the probe input is done, emit the matched
-        // build rows if we built the left side, otherwise we're done.
+        // If we are probing and the probe input is done, emit the matched (or
+        // for an anti join unmatched) build rows if we built the left side,
+        // otherwise we're done.
         if let SemiAntiJoinState::Probe(probe_state) = &mut self.state {
             let samples_consumed = probe_state.sampled_probe_morsels.is_empty();
             if samples_consumed && recv[probe_idx] == PortState::Done {
                 if self.params.left_is_build() {
-                    let rows_per_partition = probe_state.marked_rows();
+                    let rows_per_partition =
+                        probe_state.output_rows(self.params.emits_unmatched_build());
                     self.state = SemiAntiJoinState::EmitBuild(EmitBuildState {
                         partitions: core::mem::take(&mut probe_state.payload_per_partition),
                         rows_per_partition,

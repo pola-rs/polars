@@ -36,11 +36,21 @@ def assert_semi(
     build_side: JoinBuildSide = "auto",
     **kwargs: Any,
 ) -> pl.LazyFrame:
+    """Check the semi join, and the anti join as the rest of the left rows."""
     q = left.join(right, how="semi", build_side=build_side, **kwargs)
-    unoptimized = q.collect(optimizations=pl.QueryOptFlags.none())
+    reference = q.collect(engine="in-memory", optimizations=pl.QueryOptFlags.none())
     out = q.collect(engine="streaming")
     assert_frame_equal(out, expected, check_row_order=False)
-    assert_frame_equal(unoptimized, expected, check_row_order=False)
+    assert_frame_equal(reference, expected, check_row_order=False)
+
+    anti = left.join(right, how="anti", build_side=build_side, **kwargs)
+    anti_out = anti.collect(engine="streaming")
+    assert_frame_equal(
+        anti_out,
+        anti.collect(engine="in-memory", optimizations=pl.QueryOptFlags.none()),
+        check_row_order=False,
+    )
+    assert anti_out.height + out.height == left.collect().height
     return q
 
 
@@ -52,7 +62,7 @@ def build_side_chosen(
     capfd.readouterr()
     q.collect(engine="streaming")
     err = capfd.readouterr().err
-    lines = [line for line in err.splitlines() if "semi-join build side chosen" in line]
+    lines = [line for line in err.splitlines() if "join build side chosen" in line]
     assert len(lines) <= 1, err
     return lines[0].rsplit(" ", 1)[1] if lines else None
 
@@ -187,10 +197,14 @@ def test_sampling_builds_smaller_left(
 
     q = assert_semi(small, large, expected, on="k")
     assert build_side_chosen(q, plmonkeypatch, capfd) == "left"
+    q = small.join(large, on="k", how="anti")
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "left"
 
     # The large side is complete and its distinct keys are few: it is built.
     expected = large.collect().filter((pl.col("k") % 2 == 0) & (pl.col("k") < 2000))
     q = assert_semi(large, small, expected, on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
+    q = large.join(small, on="k", how="anti")
     assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
 
 
@@ -253,7 +267,7 @@ def test_sampling_hints(
         assert build_side_chosen(q, plmonkeypatch, capfd) == side
 
 
-def test_ordered_anti_and_is_in_keep_right_build(
+def test_ordered_and_is_in_keep_right_build(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000")
@@ -271,14 +285,52 @@ def test_ordered_anti_and_is_in_keep_right_build(
     )
     assert_frame_equal(q.collect(engine="streaming"), expected)
 
-    q = left.join(right, on="k", how="anti", build_side="force_left")
-    expected = pl.DataFrame({"k": [5, 5], "v": [0, 2]})
-    assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
-    assert build_side_chosen(q, plmonkeypatch, capfd) is None
-
     q = left.select(pl.col("k").is_in(right.select("k").collect()["k"].implode()))
     expected = pl.DataFrame({"k": [False, True, False, True, True, True]})
     assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_anti_null_keys_sampled_left_build(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Null left keys must come out of a left-built anti join unless a null on
+    # the right matches them.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000")
+    small = pl.LazyFrame({"k": [None, 0, None, 1, 10, 5], "v": [0, 1, 2, 3, 4, 5]})
+    large = pl.LazyFrame({"k": np.arange(0, 4_000_000, 2)}).with_columns(
+        pl.when(pl.col("k") == 2).then(None).otherwise(pl.col("k")).alias("k")
+    )
+    for nulls_equal, kept in [(False, [0, 2, 3, 5]), (True, [3, 5])]:
+        q = small.join(large, on="k", how="anti", nulls_equal=nulls_equal)
+        expected = small.collect().filter(pl.col("v").is_in(kept))
+        assert_frame_equal(
+            q.collect(engine="streaming"), expected, check_row_order=False
+        )
+        assert build_side_chosen(q, plmonkeypatch, capfd) == "left"
+
+
+def test_anti_sampling_counts_null_keys_it_keeps(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # A left-built anti join keeps its null-key rows as groups, so the
+    # sample must count them or the left side looks cheaper than it is.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000")
+    n = 1000
+    left = pl.LazyFrame(
+        {
+            "a": pl.Series([None] * n, dtype=pl.Int64),
+            "b": [f"{i:0>40}" for i in range(n)],
+            "v": np.arange(n),
+        }
+    )
+    right = pl.LazyFrame(
+        {"a": np.arange(1500) % 3, "b": [f"{i:0>40}" for i in range(1500)]}
+    )
+    q = left.join(right, on=["a", "b"], how="anti")
+    assert_frame_equal(
+        q.collect(engine="streaming"), left.collect(), check_row_order=False
+    )
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
 
 
 def test_left_build_output_projection() -> None:
@@ -291,3 +343,7 @@ def test_left_build_output_projection() -> None:
 
     q = left.join(right, on="k", how="semi", build_side="force_left").select(pl.len())
     assert q.collect(engine="streaming").item() == 2
+
+    q = left.join(right, on="k", how="anti", build_side="force_left").select("b", "a")
+    expected = pl.DataFrame({"b": ["y"], "a": [2]})
+    assert_frame_equal(q.collect(engine="streaming"), expected)
