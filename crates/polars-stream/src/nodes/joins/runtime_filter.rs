@@ -127,8 +127,8 @@ impl KeyFilterSpec {
         let keys = self
             .bloom_keys?
             .max(BLOOM_MIN_BYTES * 8 / BLOOM_BITS_PER_KEY);
-        let bloom = SplitBlockBloom::with_capacity(keys, BLOOM_BITS_PER_KEY);
-        (bloom.size_bytes() <= BLOOM_MAX_BYTES).then_some(bloom)
+        let bytes = SplitBlockBloom::size_for(keys, BLOOM_BITS_PER_KEY);
+        (bytes <= BLOOM_MAX_BYTES).then(|| SplitBlockBloom::with_capacity(keys, BLOOM_BITS_PER_KEY))
     }
 
     fn hash_keys(&self, column: &Column) -> HashKeys {
@@ -355,5 +355,9 @@ impl PredicateExpr for KeyRange {
                 hi: hi.clone(),
             },
         }
+    }
+
+    fn filters_rows(&self) -> bool {
+        false
     }
 }

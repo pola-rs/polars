@@ -68,16 +68,24 @@ pub struct SplitBlockBloom {
 }
 
 impl SplitBlockBloom {
-    /// A filter sized for `num_keys` keys at `bits_per_key` bits each, rounded
-    /// up to a power of two blocks.
-    pub fn with_capacity(num_keys: usize, bits_per_key: usize) -> Self {
-        let num_blocks = num_keys
+    fn num_blocks_for(num_keys: usize, bits_per_key: usize) -> usize {
+        num_keys
             .saturating_mul(bits_per_key)
             .div_ceil(BLOCK_BYTES * 8)
             .max(1)
-            .next_power_of_two();
+            .next_power_of_two()
+    }
+
+    /// The bytes `with_capacity` allocates.
+    pub fn size_for(num_keys: usize, bits_per_key: usize) -> usize {
+        Self::num_blocks_for(num_keys, bits_per_key).saturating_mul(BLOCK_BYTES)
+    }
+
+    /// A filter sized for `num_keys` keys at `bits_per_key` bits each, rounded
+    /// up to a power of two blocks.
+    pub fn with_capacity(num_keys: usize, bits_per_key: usize) -> Self {
         Self {
-            blocks: vec![[0; 8]; num_blocks],
+            blocks: vec![[0; 8]; Self::num_blocks_for(num_keys, bits_per_key)],
         }
     }
 

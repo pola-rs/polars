@@ -40,13 +40,17 @@ pub trait PredicateExpr: Send + Sync + Any {
     // Whether `evaluate` can reject rows. A predicate that cannot is not
     // evaluated per row.
     fn filters_rows(&self) -> bool {
-        false
+        true
     }
 }
 
 pub struct TrivialPredicateExpr;
 
-impl PredicateExpr for TrivialPredicateExpr {}
+impl PredicateExpr for TrivialPredicateExpr {
+    fn filters_rows(&self) -> bool {
+        false
+    }
+}
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 struct Inner {

@@ -7,11 +7,10 @@ pub(super) fn keeps_most_rows(kept: usize, total: usize) -> bool {
     kept * 100 > STAGED_MAX_KEPT_PERCENT * total
 }
 
-/// `passes` with each of `columns` moved to a pass of its own at the front, so it
-/// is measured on every row. An emptied pass goes, but a last pass for the rest
-/// stays.
+/// `passes` with `columns` moved to one pass at the front, so each is measured
+/// on every row. An emptied pass goes, but a last pass for the rest stays.
 pub(super) fn promote(passes: &[Vec<usize>], columns: &[usize]) -> Vec<Vec<usize>> {
-    let mut out: Vec<Vec<usize>> = columns.iter().map(|&c| vec![c]).collect();
+    let mut out: Vec<Vec<usize>> = vec![columns.to_vec()];
     let last = passes.len() - 1;
     for (i, pass) in passes.iter().enumerate() {
         let pass: Vec<usize> = pass
@@ -124,7 +123,11 @@ mod tests {
             promote(&[vec![0], vec![1, 2]], &[1]),
             vec![vec![1], vec![0], vec![2]]
         );
-        assert_eq!(promote(&[vec![0, 1]], &[0, 1]), vec![vec![0], vec![1]]);
+        assert_eq!(promote(&[vec![0, 1]], &[0, 1]), vec![vec![0, 1]]);
+        assert_eq!(
+            promote(&[vec![0], vec![1], vec![2]], &[1, 2]),
+            vec![vec![1, 2], vec![0]]
+        );
     }
 
     #[test]

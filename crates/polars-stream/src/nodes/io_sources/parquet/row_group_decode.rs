@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use polars_async::executor::TaskPriority;
@@ -42,16 +42,16 @@ pub(super) struct PredicateColumn {
 }
 
 /// A conjunct on a predicate column that a producer sets at run time. It is
-/// evaluated once set, and no longer once it keeps most rows, as the producer
-/// checks every row again.
+/// evaluated once it is set and rejects rows, and no longer once it keeps most
+/// of the rows it sees, as the producer checks every row again.
 pub(super) struct DynamicConjunct {
     pub(super) predicate: Arc<dyn PhysicalIoExpr>,
     pub(super) source: Arc<dyn RuntimeRangeSource>,
-    /// Set once the conjunct was seen set, so the next row group measures it on
-    /// every row.
+    /// Set once the conjunct was seen filtering rows, so the next row group
+    /// measures it on every row.
     activated: AtomicBool,
-    input_rows: AtomicUsize,
-    kept_rows: AtomicUsize,
+    /// The rows it was evaluated on and the rows it kept.
+    measured: Mutex<(usize, usize)>,
     bypassed: AtomicBool,
 }
 
@@ -64,8 +64,7 @@ impl DynamicConjunct {
             predicate,
             source,
             activated: AtomicBool::new(false),
-            input_rows: AtomicUsize::new(0),
-            kept_rows: AtomicUsize::new(0),
+            measured: Mutex::new((0, 0)),
             bypassed: AtomicBool::new(false),
         }
     }
@@ -81,8 +80,12 @@ impl DynamicConjunct {
 
     /// Count the rows an evaluation saw and kept.
     fn measure(&self, input_rows: usize, kept_rows: usize) {
-        let input = self.input_rows.fetch_add(input_rows, Ordering::Relaxed) + input_rows;
-        let kept = self.kept_rows.fetch_add(kept_rows, Ordering::Relaxed) + kept_rows;
+        let (input, kept) = {
+            let mut measured = self.measured.lock().unwrap();
+            measured.0 += input_rows;
+            measured.1 += kept_rows;
+            *measured
+        };
         if keeps_most_rows(kept, input) && !self.bypassed.swap(true, Ordering::Relaxed) {
             if polars_core::config::verbose() {
                 eprintln!(
@@ -131,11 +134,23 @@ impl RowGroupDecoder {
         if self.use_prefiltered
             && row_group_data.slice.is_none()
             && !self.predicate_field_indices.is_empty()
+            && !self.nothing_to_evaluate()
         {
             self.row_group_data_to_df_prefiltered(row_group_data).await
         } else {
             self.row_group_data_to_df_impl(row_group_data).await
         }
+    }
+
+    /// Whether the predicate keeps every row for now: it has no static part
+    /// and none of its dynamic conjuncts filters rows.
+    fn nothing_to_evaluate(&self) -> bool {
+        self.use_prefiltered
+            && self.rest_predicate.is_none()
+            && self
+                .predicate_columns
+                .iter()
+                .all(|c| c.predicate.is_none() && c.dynamic.iter().all(|d| !d.is_active()))
     }
 
     async fn row_group_data_to_df_impl(
@@ -175,7 +190,11 @@ impl RowGroupDecoder {
 
         let df = unsafe { DataFrame::new_unchecked(projection_height, out_columns) };
 
-        let df = if let Some(predicate) = self.predicate.as_ref().filter(|p| p.filters_rows) {
+        let df = if let Some(predicate) = self
+            .predicate
+            .as_ref()
+            .filter(|p| p.filters_rows && !self.nothing_to_evaluate())
+        {
             let mask = predicate.predicate.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
 

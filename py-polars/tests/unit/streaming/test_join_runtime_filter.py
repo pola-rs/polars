@@ -1415,3 +1415,17 @@ def test_semi_join_range_prunes_row_groups(
     assert groups == "1 / 10 row groups"
     assert out.get_column("k").sort().to_list() == [220, 240]
     assert_matches_in_memory(q, out)
+
+
+def test_top_k_dynamic_predicate_still_filters_rows(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # A sort with a slice publishes a per-row dynamic predicate of its own; the
+    # scan must keep evaluating it.
+    q = shuffled_fact.sort("k").head(5)
+    assert "dynamic_predicate" in q.explain(engine="streaming")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert "Pre-filtered decode enabled" in err
+    assert out.get_column("k").to_list() == [0, 1, 2, 3, 4]
