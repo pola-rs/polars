@@ -564,6 +564,23 @@ def test_approx_quantile_smallest_error(method: ApproxQuantileMethod) -> None:
     assert got.to_list() == [0.0, 10.0, 19.0]
 
 
+@pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)
+def test_approx_quantile_lossless_rank(method: ApproxQuantileMethod) -> None:
+    for n in range(4, 16):
+        quantiles = [0.0, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9, 1.0]
+        s = pl.Series("a", _shuffled(n), dtype=pl.Float64)
+        got = (
+            s.to_frame()
+            .select(
+                pl.col("a").approx_quantile(
+                    quantiles, error=2**-32, method=method, error_tightness="formal"
+                )
+            )["a"]
+            .explode()
+        )
+        assert got.to_list() == [float(_rank(q, n)) for q in quantiles]
+
+
 @pytest.mark.slow
 def test_approx_quantile_protected_tail_is_exact() -> None:
     # This is what picking a method buys: `req_lo` keeps the low ranks exact and

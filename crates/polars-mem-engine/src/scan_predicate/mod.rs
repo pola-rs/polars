@@ -28,7 +28,6 @@ pub struct StagedScanPredicate {
 pub struct PhysicalColumnPredicate {
     pub predicate: Arc<dyn PhysicalExpr>,
     pub specialized: Option<SpecializedColumnPredicate>,
-    pub filter_while_decoding: bool,
 }
 
 impl StagedScanPredicate {
@@ -43,7 +42,6 @@ impl StagedScanPredicate {
                             ColumnPredicate {
                                 predicate: phys_expr_to_io_expr(p.predicate.clone()),
                                 specialized: p.specialized.clone(),
-                                filter_while_decoding: p.filter_while_decoding,
                             },
                         )
                     })

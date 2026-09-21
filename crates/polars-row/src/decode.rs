@@ -13,7 +13,7 @@ use self::encode::fixed_size;
 use self::row::{RowEncodingCategoricalContext, RowEncodingOptions};
 use self::variable::utf8::decode_str;
 use super::*;
-use crate::fixed::numeric::{FixedLengthEncoding, FromSlice};
+use crate::fixed::numeric::FixedLengthEncoding;
 use crate::fixed::{boolean, decimal, numeric};
 use crate::variable::{binary, no_order, utf8};
 
@@ -30,11 +30,17 @@ pub unsafe fn decode_rows_from_binary<'a>(
 ) -> Vec<Box<dyn PlArray>> {
     assert_eq!(arr.null_count(), 0);
     rows.clear();
+    // Upstream hands each decoder a slice that runs to the end of the buffer rather than to the
+    // end of its row, off the offsets; a `PlBinaryArray` does not lend out its bytes, and the
+    // decoders only ever read forward, so the exact rows do just as well.
     rows.extend(arr.values_iter());
     decode_rows(rows, opts, dicts, dtypes)
 }
 
 /// Decode `rows` into a arrow format
+///
+/// A row slice may extend past the end of that row.
+///
 /// # Safety
 /// This will not do any bound checks. Caller must ensure the `rows` are valid
 /// encodings.
@@ -209,10 +215,7 @@ unsafe fn decode_cat<T: NativeType + FixedLengthEncoding + CatNative>(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
     ctx: &RowEncodingCategoricalContext,
-) -> PlPrimitiveArray<T>
-where
-    T::Encoded: FromSlice,
-{
+) -> PlPrimitiveArray<T> {
     if ctx.is_enum || !opt.is_ordered() {
         numeric::decode_primitive::<T>(rows, opt)
     } else {

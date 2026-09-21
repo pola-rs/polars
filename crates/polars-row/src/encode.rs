@@ -1017,6 +1017,8 @@ pub fn fixed_size(
 
 #[cfg(test)]
 mod tests {
+    use polars_array::arrow::export::to_arrow;
+    use polars_array::{PlBinaryViewArray, PlUtf8ViewArray};
     use polars_arrow::array::Array;
     use polars_arrow::array::proptest::{
         ArrayArbitraryOptions, ArrowDataTypeArbitraryOptions, ArrowDataTypeArbitrarySelection,
@@ -1024,6 +1026,151 @@ mod tests {
     };
 
     use super::*;
+    use crate::decode::decode_rows_from_binary;
+
+    fn contains_float(dtype: &ArrowDataType) -> bool {
+        use ArrowDataType as D;
+        match dtype {
+            D::Float16 | D::Float32 | D::Float64 => true,
+            D::List(f) | D::LargeList(f) | D::FixedSizeList(f, _) => contains_float(f.dtype()),
+            D::Struct(fs) => fs.iter().any(|f| contains_float(f.dtype())),
+            _ => false,
+        }
+    }
+
+    /// Encode, decode and check that the result round trips. Floats are compared through
+    /// their encoding since the encoding canonicalizes them.
+    ///
+    /// A `PlArray` carries no dtype of its own, so the dtypes the decoder is to answer in are
+    /// passed alongside, and two of them are compared as the Arrow arrays they export to.
+    fn check_round_trip(
+        arrays: &[Box<dyn PlArray>],
+        dtypes: &[ArrowDataType],
+        opts: &[RowEncodingOptions],
+    ) {
+        let num_rows = arrays[0].len();
+        let dicts: Vec<Option<RowEncodingContext>> = (0..arrays.len()).map(|_| None).collect();
+
+        let rows = convert_columns(num_rows, arrays, opts, &dicts);
+        let encoded = rows.into_array();
+        let mut scratch = Vec::new();
+        let decoded =
+            unsafe { decode_rows_from_binary(&encoded, opts, &dicts, dtypes, &mut scratch) };
+
+        for ((array, decoded), dtype) in arrays.iter().zip(&decoded).zip(dtypes) {
+            assert_eq!(array.len(), decoded.len());
+            if !contains_float(dtype) {
+                assert_eq!(to_arrow(&**array), to_arrow(&**decoded));
+            }
+        }
+
+        let rows = convert_columns(num_rows, &decoded, opts, &dicts);
+        let reencoded = rows.into_array();
+        assert_eq!(to_arrow(&encoded), to_arrow(&reencoded));
+    }
+
+    fn all_options() -> Vec<RowEncodingOptions> {
+        vec![
+            RowEncodingOptions::new_unsorted(),
+            RowEncodingOptions::new_sorted(false, false),
+            RowEncodingOptions::new_sorted(false, true),
+            RowEncodingOptions::new_sorted(true, false),
+            RowEncodingOptions::new_sorted(true, true),
+        ]
+    }
+
+    #[test]
+    fn test_string_lengths_round_trip() {
+        let lengths = [
+            0usize, 1, 2, 3, 4, 5, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 23, 31, 32, 33, 47, 63, 64,
+            65, 100, 253, 254, 255, 256, 300, 1000,
+        ];
+        let mut values: Vec<Option<String>> = Vec::new();
+        for (i, len) in lengths.iter().enumerate() {
+            values.push(Some(
+                (0..*len)
+                    .map(|j| (b'a' + ((i + j) % 26) as u8) as char)
+                    .collect(),
+            ));
+            values.push(Some("é".repeat(*len / 2)));
+            if i % 3 == 0 {
+                values.push(None);
+            }
+        }
+        let strs: PlUtf8ViewArray = values.iter().map(|v| v.as_deref()).collect();
+        let bins: PlBinaryViewArray = values
+            .iter()
+            .map(|v| v.as_deref().map(str::as_bytes))
+            .collect();
+        let ints: PlPrimitiveArray<u64> = (0..values.len() as u64).map(Some).collect();
+        let int_dtype = ArrowDataType::UInt64;
+        let num_rows = values.len();
+
+        for opt in all_options() {
+            for (array, dtype) in [
+                (strs.to_boxed(), ArrowDataType::Utf8View),
+                (bins.to_boxed(), ArrowDataType::BinaryView),
+            ] {
+                check_round_trip(
+                    std::slice::from_ref(&array),
+                    std::slice::from_ref(&dtype),
+                    &[opt],
+                );
+                check_round_trip(
+                    &[array.clone(), ints.to_boxed()],
+                    &[dtype.clone(), int_dtype.clone()],
+                    &[opt, opt],
+                );
+                check_round_trip(
+                    &[ints.to_boxed(), array.clone()],
+                    &[int_dtype.clone(), dtype.clone()],
+                    &[opt, opt],
+                );
+                let shifted = polars_array::concatenate::concatenate(&[
+                    array.sliced(1, num_rows - 1).as_ref(),
+                    array.sliced(0, 1).as_ref(),
+                ])
+                .unwrap();
+                check_round_trip(
+                    &[array.clone(), shifted],
+                    &[dtype.clone(), dtype.clone()],
+                    &[opt, opt],
+                );
+                // No nulls
+                let array = array.with_validity(None);
+                check_round_trip(std::slice::from_ref(&array), &[dtype], &[opt]);
+            }
+        }
+    }
+
+    /// The decoded strings cross the size limit of one data buffer. Slow without
+    /// optimizations, so run with `cargo test --release -- --ignored`.
+    #[test]
+    #[ignore]
+    fn test_string_buffer_rollover() {
+        let value = "x".repeat(1 << 20);
+        let values: Vec<Option<&str>> = (0..2048).map(|_| Some(value.as_str())).collect();
+        let strs = values.into_iter().collect::<PlUtf8ViewArray>().to_boxed();
+        for opt in [
+            RowEncodingOptions::new_sorted(false, false),
+            RowEncodingOptions::new_unsorted(),
+        ] {
+            let dicts = [None];
+            let rows = convert_columns(strs.len(), std::slice::from_ref(&strs), &[opt], &dicts);
+            let encoded = rows.into_array();
+            let mut scratch = Vec::new();
+            let decoded = unsafe {
+                decode_rows_from_binary(
+                    &encoded,
+                    &[opt],
+                    &dicts,
+                    &[ArrowDataType::Utf8View],
+                    &mut scratch,
+                )
+            };
+            assert_eq!(to_arrow(&*strs), to_arrow(&*decoded[0]));
+        }
+    }
 
     proptest::prop_compose! {
         fn arrays

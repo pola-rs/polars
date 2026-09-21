@@ -41,12 +41,19 @@ impl<K: TotalHash + TotalEq, V> TotalIndexMap<K, V> {
     }
 
     pub fn get(&self, key: &K) -> Option<&V> {
+        let idx = self.get_index_of(key)?;
+        unsafe { Some(&self.tuples.get_unchecked(idx as usize).1) }
+    }
+
+    /// Gets the index by insertion order of the given key.
+    pub fn get_index_of(&self, key: &K) -> Option<IdxSize> {
         let hash = self.random_state.tot_hash_one(key);
-        let idx = self.table.find(hash, |i| unsafe {
-            let t = self.tuples.get_unchecked(*i as usize);
-            hash == self.random_state.tot_hash_one(&t.0) && key.tot_eq(&t.0)
-        })?;
-        unsafe { Some(&self.tuples.get_unchecked(*idx as usize).1) }
+        self.table
+            .find(hash, |i| unsafe {
+                let t = self.tuples.get_unchecked(*i as usize);
+                hash == self.random_state.tot_hash_one(&t.0) && key.tot_eq(&t.0)
+            })
+            .copied()
     }
 
     pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
