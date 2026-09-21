@@ -503,13 +503,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     }
                 }
 
-                // select(<scalar expression over len()>)
-                //
-                // The `len()` is exposed as a `select(len())`, which is what the optimizations
-                // below (and further down the plan) look for. Any residual expression on top of
-                // it is split off into a separate `select()`, e.g. SQL's `COUNT(*)`, which lowers
-                // to `len().cast(Int64)`.
-                'select_len: {
+                'select_len_pushdown: {
                     let IR::Select { expr: exprs, .. } = storage.get(key) else {
                         unreachable!()
                     };
@@ -517,9 +511,6 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     let mut len_nodes: Vec<Node> = Vec::new();
 
                     for e in exprs.iter() {
-                        // Note: `Scalar` means the expression outputs a single row regardless of
-                        // the height of its input, so a residual can be moved onto the 1-row
-                        // output of the `select(len())` without changing its height.
                         if !matches!(
                             aexpr_projection_height_rec(
                                 e.node(),
@@ -535,43 +526,35 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             self.ae_nodes_scratch,
                             self.ae_height_scratch,
                         ) {
-                            break 'select_len;
+                            break 'select_len_pushdown;
                         }
                     }
 
                     if len_nodes.is_empty() {
-                        break 'select_len;
+                        break 'select_len_pushdown;
                     }
 
-                    // If the `len()` is the entire projection there is no residual, and this node
-                    // becomes the `select(len())` itself.
-                    let has_residual = exprs.len() != 1 || len_nodes[0] != exprs[0].node();
+                    let insert_select_len_ir =
+                        if exprs.len() != 1 || len_nodes[0] != exprs[0].node() {
+                            for node in len_nodes {
+                                self.expr_arena.replace(node, AExpr::Column(get_len_name()));
+                            }
 
-                    for node in len_nodes {
-                        self.expr_arena.replace(
-                            node,
-                            if has_residual {
-                                AExpr::Column(get_len_name())
-                            } else {
-                                AExpr::Len
-                            },
-                        );
-                    }
-
-                    let len_select = has_residual.then(|| {
-                        storage.add(IR::Select {
-                            input: input_node,
-                            expr: vec![ExprIR::new(
-                                self.expr_arena.add(AExpr::Len),
-                                OutputName::Alias(get_len_name()),
-                            )],
-                            schema: Arc::new(Schema::from_iter([(
-                                get_len_name(),
-                                DataType::IDX_DTYPE,
-                            )])),
-                            options: ProjectionOptions::default(),
-                        })
-                    });
+                            Some(storage.add(IR::Select {
+                                input: input_node,
+                                expr: vec![ExprIR::new(
+                                    self.expr_arena.add(AExpr::Len),
+                                    OutputName::Alias(get_len_name()),
+                                )],
+                                schema: Arc::new(Schema::from_iter([(
+                                    get_len_name(),
+                                    DataType::IDX_DTYPE,
+                                )])),
+                                options: ProjectionOptions::default(),
+                            }))
+                        } else {
+                            None
+                        };
 
                     let IR::Select {
                         input, expr: exprs, ..
@@ -589,12 +572,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                     let in_edge = &mut edges.inputs()[0];
 
-                    if let Some(len_select) = len_select {
-                        *input = len_select;
-                        *in_edge.parent_key_and_port_mut() = ParentKeyAndPort {
-                            node: len_select,
-                            idx: 0,
-                        };
+                    if let Some(node) = insert_select_len_ir {
+                        *input = node;
+                        *in_edge.parent_key_and_port_mut() = ParentKeyAndPort { node, idx: 0 };
                     }
 
                     *in_edge.projection_mut() = Projection::Len;
