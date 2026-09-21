@@ -352,16 +352,16 @@ raise an issue to discuss what you feel is missing or could be improved.
 
 #### Building and serving the user guide
 
-The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for
+The user guide is built using [Zensical](https://zensical.org/). You install the dependencies for
 building the user guide by running `make build` in the root of the repo. Additionally, you need to
 make sure the [graphviz](https://graphviz.org/) `dot` binary is on your path.
 
-Activate the virtual environment and run `mkdocs serve` to build and serve the user guide, so you
+Activate the virtual environment and run `zensical serve` to build and serve the user guide, so you
 can view it locally and see updates as you make changes.
 
 #### Creating a new user guide page
 
-Each user guide page is based on a `.md` markdown file. This file must be listed in `mkdocs.yml`.
+Each user guide page is based on a `.md` markdown file. This file must be listed in `zensical.toml`.
 
 #### Adding a shell code block
 
