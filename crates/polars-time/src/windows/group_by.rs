@@ -7,7 +7,7 @@ use polars_core::runtime::RAYON;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
 use polars_defs::time::duration::Duration;
-use polars_defs::time::group_by::{ClosedWindow, StartBy};
+use polars_defs::time::group_by::{ClosedWindow, DynamicWindowPlacement, StartBy};
 use rayon::prelude::*;
 
 use crate::prelude::*;
@@ -20,6 +20,7 @@ fn update_groups_and_bounds(
     closed_window: ClosedWindow,
     include_lower_bound: bool,
     include_upper_bound: bool,
+    placement: Option<&DynamicWindowPlacement>,
     lower_bound: &mut Vec<i64>,
     upper_bound: &mut Vec<i64>,
     groups: &mut Vec<[IdxSize; 2]>,
@@ -28,6 +29,18 @@ fn update_groups_and_bounds(
     let mut stride = 0;
 
     'bounds: while let Some(bi) = iter.nth(stride) {
+        if let Some(placement) = placement {
+            if placement.start_range.is_past(bi.start) {
+                break;
+            }
+            if placement.start_range.is_before(bi.start) {
+                // Skip windows that start before the range. `get_stride` never overshoots,
+                // so windows close to the range are still visited one by one.
+                stride = iter.get_stride(placement.start_range.first);
+                continue 'bounds;
+            }
+        }
+
         let mut has_member = false;
         // find starting point of window
         for &t in &time[start..time.len().saturating_sub(1)] {
@@ -108,6 +121,7 @@ pub fn group_by_windows(
     include_lower_bound: bool,
     include_upper_bound: bool,
     start_by: StartBy,
+    placement: Option<DynamicWindowPlacement>,
 ) -> PolarsResult<(GroupsSlice, Vec<i64>, Vec<i64>)> {
     let start = time[0];
     // the boundary we define here is not yet correct. It doesn't take 'period' into account
@@ -141,12 +155,14 @@ pub fn group_by_windows(
                     tu,
                     tz.parse::<Tz>().ok().as_ref(),
                     start_by,
+                    placement.map(|p| p.origin),
                 )?,
                 start_offset,
                 time,
                 closed_window,
                 include_lower_bound,
                 include_upper_bound,
+                placement.as_ref(),
                 &mut lower_bound,
                 &mut upper_bound,
                 &mut groups,
@@ -154,12 +170,20 @@ pub fn group_by_windows(
         },
         _ => {
             update_groups_and_bounds(
-                window.get_overlapping_bounds_iter(boundary, closed_window, tu, None, start_by)?,
+                window.get_overlapping_bounds_iter(
+                    boundary,
+                    closed_window,
+                    tu,
+                    None,
+                    start_by,
+                    placement.map(|p| p.origin),
+                )?,
                 start_offset,
                 time,
                 closed_window,
                 include_lower_bound,
                 include_upper_bound,
+                placement.as_ref(),
                 &mut lower_bound,
                 &mut upper_bound,
                 &mut groups,
@@ -906,6 +930,10 @@ pub struct GroupByDynamicWindower {
     include_lower_bound: bool,
     include_upper_bound: bool,
 
+    placement: Option<DynamicWindowPlacement>,
+    /// No window can start in the placement's range any more.
+    past_range: bool,
+
     num_seen: IdxSize,
     next_lower_bound: i64,
     active: VecDeque<ActiveDynWindow>,
@@ -928,6 +956,7 @@ impl GroupByDynamicWindower {
         tz: Option<Tz>,
         include_lower_bound: bool,
         include_upper_bound: bool,
+        placement: Option<DynamicWindowPlacement>,
     ) -> Self {
         Self {
             period,
@@ -942,6 +971,9 @@ impl GroupByDynamicWindower {
 
             include_lower_bound,
             include_upper_bound,
+
+            placement,
+            past_range: false,
 
             num_seen: 0,
             next_lower_bound: 0,
@@ -980,13 +1012,16 @@ impl GroupByDynamicWindower {
     }
 
     fn start_lower_bound(&self, first: i64) -> PolarsResult<i64> {
-        Window::new(self.every, self.period, self.offset).first_window_start(
-            first,
-            self.closed,
-            self.tu,
-            self.tz.as_ref(),
-            self.start_by,
-        )
+        match self.placement {
+            Some(placement) => Ok(placement.origin),
+            None => Window::new(self.every, self.period, self.offset).first_window_start(
+                first,
+                self.closed,
+                self.tu,
+                self.tz.as_ref(),
+                self.start_by,
+            ),
+        }
     }
 
     pub fn insert(
@@ -1046,11 +1081,20 @@ impl GroupByDynamicWindower {
                 }
             }
 
-            while is_above_lower_bound(t, self.next_lower_bound, self.closed) {
+            while !self.past_range && is_above_lower_bound(t, self.next_lower_bound, self.closed) {
                 match self.find_first_window_around(self.next_lower_bound, t)? {
                     Ok((lower_bound, upper_bound)) => {
                         self.next_lower_bound =
                             self.every.add(self.tu, lower_bound, self.tz.as_ref())?;
+                        if let Some(placement) = &self.placement {
+                            if placement.start_range.is_past(lower_bound) {
+                                self.past_range = true;
+                                break;
+                            }
+                            if placement.start_range.is_before(lower_bound) {
+                                continue;
+                            }
+                        }
                         self.non_monotonic_upper_bounds |=
                             self.prev_upper_bound.is_some_and(|prev| upper_bound < prev);
                         self.prev_upper_bound = Some(upper_bound);
@@ -1097,6 +1141,12 @@ impl GroupByDynamicWindower {
         self.active.front().map_or(self.num_seen, |w| w.start)
     }
 
+    /// Whether no further input can produce a window: every window that could start in the
+    /// placement's range has been opened and closed.
+    pub fn is_done(&self) -> bool {
+        self.past_range && self.active.is_empty()
+    }
+
     pub fn finalize(
         &mut self,
         windows: &mut Vec<[IdxSize; 2]>,
@@ -1122,6 +1172,7 @@ impl GroupByDynamicWindower {
         self.num_seen = 0;
         self.prev_upper_bound = None;
         self.non_monotonic_upper_bounds = false;
+        self.past_range = false;
     }
 
     pub fn num_seen(&self) -> IdxSize {

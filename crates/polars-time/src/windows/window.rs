@@ -110,8 +110,9 @@ impl Window {
         tu: TimeUnit,
         tz: Option<&'a Tz>,
         start_by: StartBy,
+        origin: Option<i64>,
     ) -> PolarsResult<BoundsIter<'a>> {
-        BoundsIter::new(*self, closed_window, boundary, tu, tz, start_by)
+        BoundsIter::new(*self, closed_window, boundary, tu, tz, start_by, origin)
     }
 
     /// The start of the first window for data whose first value is `t0`, as placed by
@@ -176,8 +177,12 @@ impl<'a> BoundsIter<'a> {
         tu: TimeUnit,
         tz: Option<&'a Tz>,
         start_by: StartBy,
+        origin: Option<i64>,
     ) -> PolarsResult<Self> {
-        let start = window.first_window_start(boundary.start, closed_window, tu, tz, start_by)?;
+        let start = match origin {
+            Some(origin) => origin,
+            None => window.first_window_start(boundary.start, closed_window, tu, tz, start_by)?,
+        };
         let stop = window.period.add(tu, start, tz)?;
         Ok(Self {
             window,

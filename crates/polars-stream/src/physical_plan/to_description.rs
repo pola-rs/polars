@@ -795,6 +795,7 @@ pub fn phys_props(
                 include_boundaries,
                 closed_window,
                 start_by,
+                placement: _,
             } = options;
             (
                 PhysicalPropsDescription::DynamicGroupBy {
