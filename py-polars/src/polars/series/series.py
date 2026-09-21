@@ -1371,9 +1371,7 @@ class Series(metaclass=_Meta):
         return get_series_item_by_key(self, key)
 
     def __setitem__(
-        self,
-        key: int | Series | np.ndarray[Any, Any] | Sequence[object] | tuple[object],
-        value: Any,
+        self, key: int | Series | np.ndarray[Any, Any] | Sequence[object], value: Any
     ) -> None:
         """
         Set Series values in-place using a single index, boolean mask, or index array.
@@ -2071,7 +2069,7 @@ class Series(metaclass=_Meta):
         stats.columns = ["statistic", "value"]
         return stats.filter(F.col("value").is_not_null())
 
-    def sum(self) -> int | float | PyDecimal:
+    def sum(self) -> Any:
         """
         Reduce this Series to the sum value.
 
@@ -2180,7 +2178,7 @@ class Series(metaclass=_Meta):
         return self._s.min()
 
     @unstable()
-    def min_by(self, by: IntoExpr) -> Expr:
+    def min_by(self, by: IntoExpr) -> Any | None:
         """
         Get the minimum value in this Series, ordered by an expression.
 
@@ -2218,7 +2216,7 @@ class Series(metaclass=_Meta):
         return self._s.max()
 
     @unstable()
-    def max_by(self, by: IntoExpr) -> Expr:
+    def max_by(self, by: IntoExpr) -> Any | None:
         """
         Get the maximum value in this Series, ordered by an expression.
 
@@ -9860,7 +9858,7 @@ class Series(metaclass=_Meta):
         """
         return self._s.last(ignore_nulls=ignore_nulls)
 
-    def approx_n_unique(self) -> PythonLiteral | None:
+    def approx_n_unique(self) -> int:
         """
         Approximate count of unique values.
 

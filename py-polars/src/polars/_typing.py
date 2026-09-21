@@ -292,7 +292,7 @@ JoinWhereStrategy: TypeAlias = Literal["inner", "left", "right"]  # JoinType
 ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side
-ConcatMethod = Literal[
+ConcatMethod: TypeAlias = Literal[
     "vertical",
     "vertical_relaxed",
     "diagonal",
@@ -309,7 +309,7 @@ CorrelationMethod: TypeAlias = Literal["pearson", "spearman"]
 DbReadEngine: TypeAlias = Literal["adbc", "connectorx"]
 DbWriteEngine: TypeAlias = Literal["sqlalchemy", "adbc"]
 DbWriteMode: TypeAlias = Literal["replace", "append", "fail"]
-EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
+EpochTimeUnit: TypeAlias = Literal["ns", "us", "ms", "s", "d"]
 JaxExportType: TypeAlias = Literal["array", "dict"]
 Orientation: TypeAlias = Literal["col", "row"]
 SearchSortedSide: TypeAlias = Literal["any", "left", "right"]
@@ -391,7 +391,7 @@ class BasicCursor(Protocol):
         """Execute a query."""
 
 
-class Cursor(BasicCursor):
+class Cursor(BasicCursor, Protocol):
     def fetchall(self, *args: Any, **kwargs: Any) -> Any:
         """Fetch all results."""
 
@@ -463,7 +463,7 @@ FileSource: TypeAlias = (
     | list[bytes]
 )
 
-JSONEncoder = Callable[[Any], bytes] | Callable[[Any], str]
+JSONEncoder: TypeAlias = Callable[[Any], bytes | str]
 
 DeprecationType: TypeAlias = Literal[
     "function",
