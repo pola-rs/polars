@@ -1222,3 +1222,36 @@ def test_is_in_literal_haystack_categorical_mismatch() -> None:
     haystack = pl.Series(["a"], dtype=pl.Enum(["a", "c"]))
     with pytest.raises(InvalidOperationError):
         s.is_in(haystack.implode())
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("dtype", "needles"),
+    [
+        (pl.List(pl.Int64), [None, [1], [2], None]),
+        (pl.Array(pl.Int64, 1), [None, [1], [2], None]),
+        (pl.Struct({"a": pl.Int64}), [None, {"a": 1}, {"a": 2}, None]),
+    ],
+)
+def test_is_in_nested_null_needles_in_aggregation(
+    engine: EngineType, dtype: pl.DataType, needles: list[object]
+) -> None:
+    haystack = pl.Series([needles[0], needles[1]], dtype=dtype).implode()
+    df = pl.DataFrame({"g": [0, 1, 1, 0], "n": pl.Series(needles, dtype=dtype)})
+    is_in = pl.col("n").is_in(haystack)
+    result = (
+        df.lazy()
+        .group_by("g", maintain_order=True)
+        .agg(
+            total=is_in.sum(),
+            nulls=is_in.null_count(),
+            first=is_in.first(),
+            last=is_in.last(),
+        )
+        .collect(engine=engine)
+    )
+    assert result["total"].to_list() == [0, 1]
+    assert result["nulls"].to_list() == [2, 0]
+    assert result["first"].to_list() == [None, True]
+    assert result["last"].to_list() == [None, False]
+    assert df.select(is_in.null_count()).item() == 2
