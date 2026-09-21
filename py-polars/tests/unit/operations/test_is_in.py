@@ -14,7 +14,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from polars._typing import PolarsDataType
+    from polars._typing import EngineType, PolarsDataType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -918,7 +918,7 @@ def _reference_is_in(
     ],
 )
 def test_is_in_literal_haystack_paths(
-    engine: str,
+    engine: EngineType,
     nulls_equal: bool,
     null_in_haystack: bool,
     dtype: pl.DataType,
@@ -943,7 +943,7 @@ def test_is_in_literal_haystack_paths(
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 def test_is_in_literal_haystack_many_chunks(
-    engine: str, plmonkeypatch: PlMonkeyPatch
+    engine: EngineType, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
     n = 2_000
@@ -983,7 +983,7 @@ def test_is_in_all_null_literal_haystack() -> None:
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 def test_is_in_multi_row_literal_haystack(
-    engine: str, plmonkeypatch: PlMonkeyPatch
+    engine: EngineType, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "3")
     n = 10
@@ -1091,7 +1091,7 @@ LONG = "x" * 20
     ],
 )
 def test_is_in_literal_haystack_edge_cases(
-    engine: str,
+    engine: EngineType,
     nulls_equal: bool,
     dtype: pl.DataType,
     needles: list[object],
@@ -1155,7 +1155,7 @@ def test_is_in_literal_matches_per_row_haystack(
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_is_in_literal_haystack_array_dtype(engine: str) -> None:
+def test_is_in_literal_haystack_array_dtype(engine: EngineType) -> None:
     haystack = pl.Series([[1, 2, 3]], dtype=pl.Array(pl.Int64, 3))
     result = (
         pl.LazyFrame({"n": [1, 4, None]})
@@ -1167,7 +1167,7 @@ def test_is_in_literal_haystack_array_dtype(engine: str) -> None:
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_is_in_literal_haystack_scalar_needle(engine: str) -> None:
+def test_is_in_literal_haystack_scalar_needle(engine: EngineType) -> None:
     lf = pl.LazyFrame({"n": [1, 2, 3]})
     result = lf.select(
         a=pl.lit(2).is_in([1, 2]),
@@ -1199,7 +1199,7 @@ def test_is_in_literal_haystack_streaming_filter_and_group_by(
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_is_in_literal_haystack_chunked_needle_with_nulls(engine: str) -> None:
+def test_is_in_literal_haystack_chunked_needle_with_nulls(engine: EngineType) -> None:
     a = pl.Series("s", ["a", None, "b", LONG])
     b = pl.Series("s", [None, "c", LONG, "a"])
     s = pl.concat([a, b], rechunk=False)
