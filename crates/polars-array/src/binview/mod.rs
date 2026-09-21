@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use buffers::{copy_only_value, copy_value, own_only_value};
 use polars_arrow::array::View;
-use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::bitmap::{Bitmap, OptBitmapBuilder};
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -680,7 +680,10 @@ impl<V: AsRef<[u8]>> FromIterator<Option<V>> for PlBinaryViewArray {
 
         let mut views = Vec::with_capacity(lower);
         let mut buffers = Vec::new();
-        let mut validity = BitmapBuilder::with_capacity(lower);
+        // A collect whose values are `Option` almost never sees a null: count the elements while
+        // they are all valid, and start writing bits only once one is not.
+        let mut validity = OptBitmapBuilder::default();
+        validity.reserve(lower);
 
         iter.for_each(|value| match value {
             Some(value) => {
