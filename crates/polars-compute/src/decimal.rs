@@ -255,6 +255,20 @@ fn div_128_pow10(x: i128, e: usize) -> i128 {
 
     let n = x.unsigned_abs();
     let z = n + ((POW10_I128[e] as u128) / 2); // Can't overflow.
+
+    // Most values fit in 64 bits, where a single division replaces the
+    // 128x128 widening multiply.
+    if z <= u64::MAX as u128 && POW10_I128[e] <= u64::MAX as i128 {
+        let d = POW10_I128[e] as u64;
+        let zu = z as u64;
+        let mut ret = (zu / d) as i128;
+        // z = n + d/2, so d divides z iff n is exactly halfway; round to even.
+        if zu.is_multiple_of(d) && ret % 2 == 1 {
+            ret -= 1;
+        }
+        return if x < 0 { -ret } else { ret };
+    }
+
     let c = POW10_127_INV_MUL[e];
     let s = POW10_127_SHIFT[e];
     let (lo, hi) = widening_mul_128(z, c);
