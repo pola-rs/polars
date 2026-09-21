@@ -117,6 +117,14 @@ where
 #[cfg(feature = "dtype-decimal")]
 const DECIMAL_SUM_OVERFLOW: i128 = i128::MIN;
 
+/// Tests the sentinel on the high word, which no valid decimal reaches.
+/// A full i128 compare cannot forward from the addition's 8-byte stores.
+#[cfg(feature = "dtype-decimal")]
+#[inline(always)]
+fn is_sum_overflow(x: i128) -> bool {
+    (x >> 64) as i64 == i64::MIN
+}
+
 #[cfg(feature = "dtype-decimal")]
 #[derive(Clone)]
 struct DecimalSumReducer;
@@ -137,7 +145,7 @@ impl Reducer for DecimalSumReducer {
 
     #[inline(always)]
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        *a = if *a == DECIMAL_SUM_OVERFLOW || *b == DECIMAL_SUM_OVERFLOW {
+        *a = if is_sum_overflow(*a) || is_sum_overflow(*b) {
             DECIMAL_SUM_OVERFLOW
         } else {
             dec128_add(*a, *b, DEC128_MAX_PREC).unwrap_or(DECIMAL_SUM_OVERFLOW)
@@ -146,7 +154,7 @@ impl Reducer for DecimalSumReducer {
 
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<i128>, _seq_id: u64) {
-        if *a != DECIMAL_SUM_OVERFLOW {
+        if !is_sum_overflow(*a) {
             *a = dec128_add(*a, b.unwrap_or(0), DEC128_MAX_PREC).unwrap_or(DECIMAL_SUM_OVERFLOW);
         }
     }
