@@ -9,6 +9,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
 use crate::dsl::Expr;
+use crate::plans::aexpr::ExprPushdownGroup;
 use crate::plans::aexpr::filter_constraint::widen_over_predicates;
 use crate::plans::deep_copy::deep_copy_ir_delete_cache_id;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
@@ -434,12 +435,23 @@ pub(crate) fn set_cache_states(
             // # RUN PREDICATE PUSHDOWN
             // Run this after projection pushdown, otherwise the predicate columns will not be projected.
 
-            // - If all predicates of parent are the same we will restart predicate pushdown from the parent FILTER node.
-            // - Otherwise we will start predicate pushdown from the cache node.
-            let allow_parent_predicate_pushdown = v.predicate_union.len() == 1 && {
-                let (_pred, count) = v.predicate_union.iter().next().unwrap();
-                *count == v.children.len() as u32
-            };
+            // Restart pushdown from the parent filter if every reference has the same pushable
+            // predicate. Otherwise, optimize the cached subplan.
+            let allow_parent_predicate_pushdown = v.predicate_union.len() == 1
+                && {
+                    let (_pred, count) = v.predicate_union.iter().next().unwrap();
+                    *count == v.children.len() as u32
+                }
+                && {
+                    // Barrier predicates, and fallible predicates under `maintain_errors`, stay
+                    // above the cache. Keep those filters in place (#29414).
+                    let parents = *v.parents.first().unwrap();
+                    let predicate = get_filter_predicate(parents, lp_arena)
+                        .expect("expected filter; this is an optimizer bug");
+                    let mut group = ExprPushdownGroup::Pushable;
+                    group.update_with_expr_rec(expr_arena.get(predicate.node()), expr_arena, None);
+                    !group.blocks_pushdown(pushdown_maintain_errors)
+                };
 
             if allow_parent_predicate_pushdown {
                 let parents = *v.parents.first().unwrap();
@@ -459,6 +471,7 @@ pub(crate) fn set_cache_states(
 
                 let mut updated_cache_node = node;
 
+                // Pushdown moved the filter below the cache, leaving only projections above it.
                 loop {
                     match lp_arena.get(updated_cache_node) {
                         IR::Cache { .. } => break,
