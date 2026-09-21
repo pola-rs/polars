@@ -256,7 +256,7 @@ def test_linear_spaces_values(interval: ClosedInterval) -> None:
             expected = pl.linear_space(
                 start, end, ns, eager=True, closed=interval
             ).rename("")
-            assert_series_equal(row, expected)
+            assert row == expected.to_list()
 
 
 @pytest.mark.parametrize("interval", ["both", "left", "right", "none"])
