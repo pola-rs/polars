@@ -2170,7 +2170,13 @@ def test_join_where_eager_perf_21145() -> None:
 
     p = pl.col("left").is_between(pl.lit(0, dtype=pl.Int64), pl.col("right"))
     runtime_eager = time_func(lambda: left.join_where(right, p))
-    runtime_lazy = time_func(lambda: left.lazy().join_where(right.lazy(), p).collect())
+    # Reference the same engine the eager path runs on: what is under test is that the
+    # eager optimization flags still let `join_where` become a range join, not a cross
+    # join and a filter. Timing against the default (streaming) engine instead would make
+    # this ratio track how the two engines compare, which is a different question.
+    runtime_lazy = time_func(
+        lambda: left.lazy().join_where(right.lazy(), p).collect(engine="in-memory")
+    )
     runtime_ratio = runtime_eager / runtime_lazy
 
     # Pick as high as reasonably possible for CI stability
