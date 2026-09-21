@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -16,6 +17,29 @@ from polars.plugins import (
     register_plugin_function,
 )
 from tests.conftest import PlMonkeyPatch
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        ({}, True),
+        ({"is_deterministic": True}, True),
+        ({"is_deterministic": False}, False),
+    ],
+)
+def test_register_plugin_function_determinism(
+    tmp_path: Path, options: dict[str, Any], expected: bool
+) -> None:
+    plugin_path = tmp_path / "lib.so"
+    plugin_path.touch()
+    expr = register_plugin_function(
+        plugin_path=plugin_path, function_name="hello", args="x", **options
+    )
+
+    serialized = json.loads(expr.meta.serialize(format="json"))
+    flags = serialized["Function"]["function"]["FfiPlugin"]["flags"]["flags"]
+    assert ("DETERMINISTIC" in flags.split(" | ")) is expected
 
 
 @pytest.mark.write_disk

@@ -26,6 +26,7 @@ pub fn register_plugin_function(
     cast_to_supertype: bool,
     pass_name_to_apply: bool,
     changes_length: bool,
+    is_deterministic: bool,
 ) -> PyResult<PyExpr> {
     let cast_to_supertypes = if cast_to_supertype {
         Some(CastingRules::cast_to_supertypes())
@@ -40,6 +41,7 @@ pub fn register_plugin_function(
     flags.set(FunctionFlags::LENGTH_PRESERVING, !changes_length);
     flags.set(FunctionFlags::PASS_NAME_TO_APPLY, pass_name_to_apply);
     flags.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);
+    flags.set(FunctionFlags::DETERMINISTIC, is_deterministic);
     flags.set(
         FunctionFlags::INPUT_WILDCARD_EXPANSION,
         input_wildcard_expansion,

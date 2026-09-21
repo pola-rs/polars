@@ -251,3 +251,94 @@ impl NodeVisitor for InsertCachesVisitor<'_> {
         ControlFlow::Continue(())
     }
 }
+
+#[cfg(all(test, feature = "ffi_plugin"))]
+mod tests {
+    use std::sync::Arc;
+
+    use polars_core::prelude::*;
+
+    use super::*;
+    use crate::plans::{ExprIR, FunctionFlags, FunctionOptions, IRFunctionExpr, OutputName};
+
+    #[test]
+    fn test_cspe_ffi_plugin_determinism() {
+        for is_deterministic in [false, true] {
+            let mut ir_arena = Arena::new();
+            let mut expr_arena = Arena::new();
+            let df = Arc::new(df!("x" => [1i64, 2, 3]).unwrap());
+            let schema = df.schema().clone();
+            let mut flags = FunctionOptions::default();
+            flags
+                .flags
+                .set(FunctionFlags::DETERMINISTIC, is_deterministic);
+
+            // Build equivalent subplans independently to exercise structural matching.
+            let inputs = (0..2)
+                .map(|_| {
+                    let input = ir_arena.add(IR::DataFrameScan {
+                        df: df.clone(),
+                        schema: schema.clone(),
+                        output_schema: None,
+                    });
+                    let column = ExprIR::from_column_name("x".into(), &mut expr_arena);
+                    let plugin = expr_arena.add(AExpr::Function {
+                        input: vec![column],
+                        options: flags,
+                        function: IRFunctionExpr::FfiPlugin {
+                            flags,
+                            lib: "plugin.so".into(),
+                            symbol: "test_function".into(),
+                            kwargs: Arc::from([]),
+                        },
+                    });
+                    ir_arena.add(IR::Select {
+                        input,
+                        expr: vec![ExprIR::new(plugin, OutputName::ColumnLhs("x".into()))],
+                        schema: schema.clone(),
+                        options: Default::default(),
+                    })
+                })
+                .collect();
+            let root = ir_arena.add(IR::Union {
+                inputs,
+                options: Default::default(),
+            });
+
+            assert!(common_subplan_elimination(
+                root,
+                &mut ir_arena,
+                &expr_arena,
+                false,
+            ));
+
+            let IR::Union { inputs, .. } = ir_arena.get(root) else {
+                panic!("expected a union");
+            };
+            let caches: Vec<_> = inputs
+                .iter()
+                .map(|&node| {
+                    let cache = if is_deterministic {
+                        ir_arena.get(node)
+                    } else {
+                        // Non-deterministic plugins must stay outside the shared cache.
+                        let IR::Select { input, .. } = ir_arena.get(node) else {
+                            panic!("expected an uncached plugin projection");
+                        };
+                        ir_arena.get(*input)
+                    };
+                    let IR::Cache { input, id } = cache else {
+                        panic!("expected a shared cache");
+                    };
+                    if is_deterministic {
+                        assert!(matches!(ir_arena.get(*input), IR::Select { .. }));
+                    } else {
+                        assert!(matches!(ir_arena.get(*input), IR::DataFrameScan { .. }));
+                    }
+                    (*input, *id)
+                })
+                .collect();
+            assert_eq!(caches[0], caches[1]);
+        }
+    }
+}

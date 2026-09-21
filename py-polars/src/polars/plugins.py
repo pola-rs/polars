@@ -34,6 +34,7 @@ def register_plugin_function(
     input_wildcard_expansion: bool = False,
     pass_name_to_apply: bool = False,
     use_abs_path: bool = False,
+    is_deterministic: bool = True,
 ) -> Expr:
     """
     Register a plugin function.
@@ -75,6 +76,13 @@ def register_plugin_function(
         If set to `True`, the path will be resolved to an absolute path.
         The path to the dynamic library is relative to the virtual environment by
         default.
+    is_deterministic
+        Indicate that the function produces the same output for the same inputs,
+        allowing common subexpression and subplan elimination. Non-determinism
+        that negligibly affects the outcome, such as floating-point reduction
+        order differences, is allowed. Defaults to `True`. Set to `False` for
+        functions with randomness, observable side effects, or results that depend
+        on external state.
 
     Returns
     -------
@@ -104,6 +112,7 @@ def register_plugin_function(
             cast_to_supertype=cast_to_supertype,
             pass_name_to_apply=pass_name_to_apply,
             changes_length=changes_length,
+            is_deterministic=is_deterministic,
         )
     )
 
