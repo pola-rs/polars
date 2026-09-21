@@ -12,6 +12,7 @@ pub mod temporal;
 pub use arrow_kernels::*;
 pub use dictionary_to::*;
 use polars_array::bitmap::combine_validities_and;
+use polars_array::collect::ArrayCollectIterExt;
 use polars_array::{
     PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef, PlBooleanArray,
     PlNullArray, PlPrimitiveArray, PlUtf8ViewArray,
@@ -617,19 +618,16 @@ where
         };
     }
 
-    let values = from.flat_values().unwrap();
-    let mut fits = MaskBuilder::with_capacity(values.len());
-    let mut out = Vec::with_capacity(values.len());
-    for &value in values.iter() {
-        let cast = op(value);
-        fits.push(cast.is_some());
-        out.push(cast.unwrap_or_default());
-    }
-    let out = PlPrimitiveArray::from_vec(out);
-    match fits.finish() {
-        None => out.with_validity(from.validity().map(PlBitmap::from)),
-        Some(fits) => out.with_validity(Some(and_validity(from.validity(), fits))),
-    }
+    // The trusted collect writes the value and the bit of each element through reserved room;
+    // pushing them onto a `Vec` and a mask builder instead costs a sixth of the cast again.
+    let out: PlPrimitiveArray<O> = from
+        .flat_values()
+        .unwrap()
+        .iter()
+        .map(|&value| op(value))
+        .collect_arr_trusted();
+    let validity = combine_validities_and(from.validity(), out.validity());
+    out.with_validity(validity)
 }
 
 /// Applies `op` to the bytes of every element, leaving a null wherever it answers `None`.
@@ -681,16 +679,18 @@ where
     }
 
     let values = array.flat_values().unwrap();
-    let mut fits = MaskBuilder::with_capacity(values.len());
-    for &value in values.iter() {
-        fits.push(keep(value));
+    // A bit at a time costs several times what the whole cast should: collect the mask a word at
+    // a time, and ask it afterwards whether it dropped anything.
+    let fits = polars_arrow::bitmap::Bitmap::from_trusted_len_iter(
+        values.iter().map(|&value| keep(value)),
+    );
+    if fits.unset_bits() == 0 {
+        return array.clone();
     }
-    match fits.finish() {
-        None => array.clone(),
-        Some(fits) => array
-            .clone()
-            .with_validity(Some(and_validity(array.validity(), fits))),
-    }
+
+    array
+        .clone()
+        .with_validity(Some(and_validity(array.validity(), fits)))
 }
 
 /// And `mask` into `validity`, which is how a cast reports the values it dropped.
