@@ -3,11 +3,14 @@
 //! use to skip batches by their statistics, and optionally a bloom filter over
 //! the keys, which scans probe per row.
 
+use std::sync::Arc;
+
 use polars_core::config;
 use polars_core::prelude::*;
 use polars_expr::hash_keys::HashKeys;
 use polars_io::predicates::{RuntimeRange, cast_bound};
-use polars_plan::plans::PredicateExpr;
+use polars_plan::plans::options::RuntimeFilter;
+use polars_plan::plans::{PredicateExpr, TrivialPredicateExpr};
 use polars_utils::bloom_filter::SplitBlockBloom;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 
@@ -25,8 +28,81 @@ const BLOOM_MIN_BYTES: usize = 64 << 10;
 /// Largest bloom filter that is published.
 const BLOOM_MAX_BYTES: usize = 32 << 20;
 
-/// How a join builds the filter of one key: its dtype on the probe side, the
-/// number of distinct keys a bloom filter is sized for (`None` gives the range
+/// The runtime filters of a join and how each is built. Published once, from
+/// the side the plan named as build side.
+pub struct RuntimeFilters {
+    filters: Vec<(RuntimeFilter, KeyFilterSpec)>,
+    /// Key names of the planned build side, for verbose output.
+    key_names: Vec<PlSmallStr>,
+}
+
+impl RuntimeFilters {
+    /// `key_schema` holds the keys of the side the plan named as build side;
+    /// the probe side's keys have the same dtypes.
+    pub fn new(filters: Vec<RuntimeFilter>, key_schema: &Schema) -> Self {
+        let filters = filters
+            .into_iter()
+            .map(|filter| {
+                let spec = KeyFilterSpec::new(&filter, key_schema);
+                (filter, spec)
+            })
+            .collect();
+        Self {
+            filters,
+            key_names: key_schema.iter_names().cloned().collect(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.filters.is_empty()
+    }
+
+    /// Whether the filters were published already.
+    pub fn is_set(&self) -> bool {
+        self.filters.first().is_some_and(|(f, _)| f.pred.is_set())
+    }
+
+    pub fn new_builders(&self) -> Vec<KeyFilterBuilder> {
+        self.filters
+            .iter()
+            .map(|(_, spec)| KeyFilterBuilder::new(spec))
+            .collect()
+    }
+
+    /// Add the key column of every filter to its builder.
+    pub fn extend(&self, keys: &DataFrame, builders: &mut [KeyFilterBuilder]) -> PolarsResult<()> {
+        for ((filter, _), builder) in self.filters.iter().zip(builders) {
+            builder.extend(&keys.columns()[filter.key_idx])?;
+        }
+        Ok(())
+    }
+
+    /// Set every filter to what its builder collected.
+    pub fn publish(&self, builders: Vec<KeyFilterBuilder>) {
+        for ((filter, _), builder) in self.filters.iter().zip(builders) {
+            let key_filter = builder.finish();
+            if config::verbose() {
+                eprintln!(
+                    "publishing runtime filter for key {}: {key_filter:?}",
+                    self.key_names[filter.key_idx]
+                );
+            }
+            filter.pred.set(Arc::new(key_filter));
+        }
+    }
+
+    /// Set every filter not published yet to one that skips nothing.
+    pub fn publish_nothing(&self) {
+        for (filter, _) in &self.filters {
+            if !filter.pred.is_set() {
+                filter.pred.set(Arc::new(TrivialPredicateExpr));
+            }
+        }
+    }
+}
+
+/// How a join builds the filter of one key: the key's dtype, the number of
+/// distinct keys a bloom filter is sized for (`None` gives the range
 /// only), the probe's distinct keys when the plan could estimate them, and
 /// the hash seed the build and probe sides share.
 #[derive(Clone, Debug)]
@@ -38,6 +114,15 @@ pub struct KeyFilterSpec {
 }
 
 impl KeyFilterSpec {
+    fn new(filter: &RuntimeFilter, key_schema: &Schema) -> Self {
+        Self {
+            dtype: key_schema.get_at_index(filter.key_idx).unwrap().1.clone(),
+            bloom_keys: filter.bloom_keys,
+            probe_distinct: filter.probe_distinct,
+            random_state: PlRandomState::default(),
+        }
+    }
+
     fn bloom(&self) -> Option<SplitBlockBloom> {
         let keys = self
             .bloom_keys?

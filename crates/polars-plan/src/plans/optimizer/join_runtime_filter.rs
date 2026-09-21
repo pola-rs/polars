@@ -21,6 +21,11 @@
 //! Only a scan that skips batches by their statistics can use the range, so a plan
 //! without one is left alone, and a join is only given a build side once a key
 //! reached one.
+//!
+//! A semi join publishes from either side and an anti join from its left side
+//! only, as the rows of its right side that match no left key change nothing. The
+//! semi/anti join node reads its sides in order only when one is forced, so those
+//! joins get forced build sides only.
 
 use std::sync::Arc;
 
@@ -127,6 +132,10 @@ fn process_join(
     // Try the right side first when candidates rank equally.
     let mut sides = build_candidates(false, &right_stats, right_width);
     sides.extend(build_candidates(true, &left_stats, left_width));
+    let how = &options.args.how;
+    if how.is_semi_anti() {
+        sides.retain(|s| s.forced && (how.is_semi() || s.left));
+    }
     sides.sort_by(|a, b| b.forced.cmp(&a.forced).then(a.rows.total_cmp(&b.rows)));
 
     // A side is traced once, as a forced and a preferred candidate share the trace.
@@ -268,11 +277,11 @@ fn trace_probe_keys(
     traced
 }
 
-/// Whether the join may publish a range or be crossed by one: an inner equi join
-/// the streaming engine can run as a hash join that blocks its probe side until
-/// the build is done. Sorted inputs may still make it a merge join, which drops
-/// the range. A key that may evaluate differently each time gives no range, as
-/// the join evaluates it again when it builds.
+/// Whether the join may publish a filter or be crossed by one: an inner, semi or
+/// anti equi join the streaming engine can run as a hash join that blocks its
+/// probe side until the build is done. Sorted inputs may still make it a merge
+/// join, which drops the filter. A key that may evaluate differently each time
+/// gives no filter, as the join evaluates it again when it builds.
 fn is_eligible_join(options: &JoinOptionsIR, expr_arena: &Arena<AExpr>) -> bool {
     let args = &options.args;
     let JoinTypeOptionsIR::Equi { on, .. } = &options.options else {
@@ -283,7 +292,7 @@ fn is_eligible_join(options: &JoinOptionsIR, expr_arena: &Arena<AExpr>) -> bool 
             !is_inherently_nondeterministic(left.node(), expr_arena)
                 && !is_inherently_nondeterministic(right.node(), expr_arena)
         })
-        && args.how == JoinType::Inner
+        && (args.how == JoinType::Inner || args.how.is_semi_anti())
         && args.maintain_order == MaintainOrderJoin::None
         && !args.nulls_equal
         && args.slice.is_none()

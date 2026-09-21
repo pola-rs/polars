@@ -15,7 +15,6 @@ use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_ops::series::coalesce_columns;
-use polars_plan::plans::TrivialPredicateExpr;
 use polars_plan::plans::options::RuntimeFilter;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
@@ -27,7 +26,7 @@ use polars_utils::sparse_init_vec::SparseInitVec;
 use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
-use super::runtime_filter::{KeyFilterBuilder, KeyFilterSpec};
+use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::{
     BufferedStream, LOPSIDED_SAMPLE_FACTOR, emit_morsel_size, fold_sample, sample_sink, send_frames,
 };
@@ -185,7 +184,6 @@ struct EquiJoinParams {
     preserve_order_probe: bool,
     left_key_schema: Arc<Schema>,
     left_key_selectors: Vec<StreamExpr>,
-    right_key_schema: Arc<Schema>,
     right_key_selectors: Vec<StreamExpr>,
     left_payload_select: Vec<Option<PlSmallStr>>,
     right_payload_select: Vec<Option<PlSmallStr>>,
@@ -195,33 +193,9 @@ struct EquiJoinParams {
     fused_predicate: Option<FusedPredicate>,
     // Key filters for the scans below the planned probe side, set once from a
     // complete sample of the planned build side or from its build.
-    runtime_filters: Vec<(RuntimeFilter, KeyFilterSpec)>,
+    runtime_filters: RuntimeFilters,
     random_state: PlRandomState,
     sample_limit: usize,
-}
-
-/// How the node builds a runtime filter. The bloom filter hashes the key as
-/// the probe side holds it, so the build key must have that dtype.
-fn key_filter_spec(
-    filter: &RuntimeFilter,
-    left_key_schema: &Schema,
-    right_key_schema: &Schema,
-    args: &JoinArgs,
-) -> KeyFilterSpec {
-    let build_left = build_side_left(args.build_side.as_ref()).unwrap();
-    let (build_schema, probe_schema) = if build_left {
-        (left_key_schema, right_key_schema)
-    } else {
-        (right_key_schema, left_key_schema)
-    };
-    let dtype = probe_schema.get_at_index(filter.key_idx).unwrap().1.clone();
-    let same_dtype = build_schema.get_at_index(filter.key_idx).unwrap().1 == &dtype;
-    KeyFilterSpec {
-        dtype,
-        bloom_keys: filter.bloom_keys.filter(|_| same_dtype),
-        probe_distinct: filter.probe_distinct,
-        random_state: PlRandomState::default(),
-    }
 }
 
 /// The side a plan's build side names, if any.
@@ -243,49 +217,8 @@ impl EquiJoinParams {
     /// were not set from a sample, and describe the side being built.
     fn publishes_runtime_filters(&self) -> bool {
         !self.runtime_filters.is_empty()
-            && !self.runtime_filters[0].0.pred.is_set()
+            && !self.runtime_filters.is_set()
             && self.left_is_build == self.planned_build_left()
-    }
-
-    fn new_key_filter_builders(&self) -> Vec<KeyFilterBuilder> {
-        self.runtime_filters
-            .iter()
-            .map(|(_, spec)| KeyFilterBuilder::new(spec))
-            .collect()
-    }
-
-    /// Set every runtime filter to the filter built from its key on the given side.
-    fn publish_runtime_filters(&mut self, left: bool, builders: Vec<KeyFilterBuilder>) {
-        let key_schema = if left {
-            &self.left_key_schema
-        } else {
-            &self.right_key_schema
-        };
-        for ((filter, _), builder) in self.runtime_filters.iter().zip(builders) {
-            let key_filter = builder.finish();
-            if config::verbose() {
-                let name = key_schema
-                    .get_at_index(filter.key_idx)
-                    .map(|(n, _)| n.as_str());
-                eprintln!(
-                    "publishing runtime filter for key {}: {key_filter:?}",
-                    name.unwrap_or("?")
-                );
-            }
-            filter.pred.set(Arc::new(key_filter));
-        }
-    }
-
-    /// Add the key column of every runtime filter to its builder.
-    fn extend_key_filters(
-        &self,
-        keys: &DataFrame,
-        builders: &mut [KeyFilterBuilder],
-    ) -> PolarsResult<()> {
-        for ((filter, _), builder) in self.runtime_filters.iter().zip(builders) {
-            builder.extend(&keys.columns()[filter.key_idx])?;
-        }
-        Ok(())
     }
 
     /// Should we emit unmatched rows from the build side?
@@ -650,7 +583,7 @@ impl SampleState {
         } else {
             (&self.right, &params.right_key_selectors)
         };
-        let new_builders = || params.new_key_filter_builders();
+        let new_builders = || params.runtime_filters.new_builders();
         let builders = RAYON.install(|| {
             morsels
                 .par_iter()
@@ -661,7 +594,7 @@ impl SampleState {
                         key_selectors,
                         &state.in_memory_exec_state,
                     ))?;
-                    params.extend_key_filters(&keys, &mut builders)?;
+                    params.runtime_filters.extend(&keys, &mut builders)?;
                     PolarsResult::Ok(builders)
                 })
                 .try_reduce(new_builders, |mut a, b| {
@@ -671,7 +604,7 @@ impl SampleState {
                     Ok(a)
                 })
         })?;
-        params.publish_runtime_filters(left, builders);
+        params.runtime_filters.publish(builders);
         Ok(())
     }
 
@@ -777,7 +710,7 @@ impl BuildState {
             .map(|_| LocalBuilder {
                 morsels: Vec::new(),
                 sketch_per_p: vec![CardinalitySketch::default(); num_partitions],
-                key_filters: params.new_key_filter_builders(),
+                key_filters: params.runtime_filters.new_builders(),
                 morsel_idxs_values_per_p: vec![Vec::new(); num_partitions],
                 morsel_idxs_offsets_per_p: vec![0; num_partitions],
             })
@@ -815,7 +748,9 @@ impl BuildState {
                 select_keys_with_columns(&df, key_selectors, params, &state.in_memory_exec_state)
                     .await?;
             if publishes_runtime_filters {
-                params.extend_key_filters(&keys, &mut local.key_filters)?;
+                params
+                    .runtime_filters
+                    .extend(&keys, &mut local.key_filters)?;
             }
             let mut payload = select_payload(df.clone(), payload_selector);
             payload.rechunk_mut();
@@ -848,20 +783,16 @@ impl BuildState {
     /// not built get a predicate that skips nothing.
     fn publish_runtime_filters(&mut self, params: &mut EquiJoinParams) {
         if !params.publishes_runtime_filters() {
-            for (filter, _) in &params.runtime_filters {
-                if !filter.pred.is_set() {
-                    filter.pred.set(Arc::new(TrivialPredicateExpr));
-                }
-            }
+            params.runtime_filters.publish_nothing();
             return;
         }
-        let mut builders = params.new_key_filter_builders();
+        let mut builders = params.runtime_filters.new_builders();
         for local in &mut self.local_builders {
             for (builder, seen) in builders.iter_mut().zip(local.key_filters.drain(..)) {
                 builder.merge(seen);
             }
         }
-        params.publish_runtime_filters(params.left_is_build.unwrap(), builders);
+        params.runtime_filters.publish(builders);
     }
 
     fn finalize_ordered(&mut self, params: &EquiJoinParams, table: &dyn IdxTable) -> ProbeState {
@@ -1601,13 +1532,11 @@ impl EquiJoinNode {
 
         // A filter is only published for the side the plan named.
         debug_assert!(runtime_filters.is_empty() || args.build_side.is_some());
-        let runtime_filters = runtime_filters
-            .into_iter()
-            .map(|filter| {
-                let spec = key_filter_spec(&filter, &left_key_schema, &right_key_schema, &args);
-                (filter, spec)
-            })
-            .collect_vec();
+        let key_schema = match build_side_left(args.build_side.as_ref()) {
+            Some(false) => &right_key_schema,
+            _ => &left_key_schema,
+        };
+        let runtime_filters = RuntimeFilters::new(runtime_filters, key_schema);
 
         let left_payload_schema = Arc::new(select_schema(&left_input_schema, &left_payload_select));
         let right_payload_schema =
@@ -1632,7 +1561,6 @@ impl EquiJoinNode {
             preserve_order_probe,
             left_key_schema,
             left_key_selectors,
-            right_key_schema,
             right_key_selectors,
             left_payload_select,
             right_payload_select,

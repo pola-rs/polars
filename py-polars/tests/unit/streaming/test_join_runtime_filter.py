@@ -1357,3 +1357,61 @@ def test_bloom_key_dtypes(
     q = pl.scan_parquet(path).join(build, on="k")
     err = bloom_run(q, plmonkeypatch, capfd, [220, 240], column="v")
     assert "bloom of" in err
+
+
+# A semi join publishes from either side, an anti join from its left side only.
+
+
+def test_semi_join_publishes_from_either_side(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    q = shuffled_fact.join(tiny(220, 240, 1000), on="k", how="semi")
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: ForceRight" in plan
+    assert plan.count("dynamic_predicate") == 1
+    err = bloom_run(q, plmonkeypatch, capfd, [220, 240])
+    assert "bloom of" in err
+
+    q = tiny(220, 240, 1000).join(shuffled_fact, on="k", how="semi")
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: ForceLeft" in plan
+    assert plan.count("dynamic_predicate") == 1
+    err = bloom_run(q, plmonkeypatch, capfd, [220, 240])
+    assert "bloom of" in err
+
+
+def test_anti_join_publishes_from_the_left_only(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    q = tiny(220, 240, 1000).join(shuffled_fact, on="k", how="anti")
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: ForceLeft" in plan
+    assert plan.count("dynamic_predicate") == 1
+    err = bloom_run(q, plmonkeypatch, capfd, [1000])
+    assert "bloom of" in err
+
+    q = shuffled_fact.join(tiny(220, 240, 1000), on="k", how="anti")
+    plan = q.explain(engine="streaming")
+    assert "dynamic_predicate" not in plan
+    out = q.collect(engine="streaming")
+    assert out.height == N_ROW_GROUPS * ROWS_PER_GROUP - 2
+    assert_matches_in_memory(q, out)
+
+
+def test_preferred_semi_join_gets_no_filter(shuffled_fact: pl.LazyFrame) -> None:
+    q = shuffled_fact.join(unbounded_dim(220, 240), on="k", how="semi")
+    assert "dynamic_predicate" not in q.explain(engine="streaming")
+
+
+def test_semi_join_range_prunes_row_groups(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    q = fact.join(tiny(220, 240), on="k", how="semi")
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "1 / 10 row groups"
+    assert out.get_column("k").sort().to_list() == [220, 240]
+    assert_matches_in_memory(q, out)
