@@ -157,11 +157,11 @@ fn specialize(
             ) else {
                 return None;
             };
-            let l = l.to_any_value()?;
-            let r = r.to_any_value()?;
-            if l.dtype() != dtype || r.dtype() != dtype {
+            if l.get_datatype() != dtype || r.get_datatype() != dtype {
                 return None;
             }
+            let l = l.to_any_value()?;
+            let r = r.to_any_value()?;
 
             let (low_closed, high_closed) = match closed {
                 ClosedInterval::Both => (true, true),
@@ -223,10 +223,10 @@ fn specialize(
             let ((_, _), (lv, lv_node)) =
                 get_binary_expr_col_and_lv(*left, *right, expr_arena, schema)?;
             let lv = lv?;
-            let av = lv.to_any_value()?;
-            if av.dtype() != dtype {
+            if lv.get_datatype() != dtype {
                 return None;
             }
+            let av = lv.to_any_value()?;
             let scalar = Scalar::new(dtype.clone(), av.into_static());
             use Operator as O;
             match (op, lv_node == *right) {
