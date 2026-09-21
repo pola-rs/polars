@@ -480,6 +480,27 @@ pub fn decode_plain_generic(
     Ok(())
 }
 
+thread_local! {
+    static LOCAL_REGEX: std::cell::RefCell<Option<(Box<str>, regex::bytes::Regex)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn with_local_regex<R>(src: &regex::bytes::Regex, f: impl FnOnce(&regex::bytes::Regex) -> R) -> R {
+    // A regex serves its scratch cache from a pool that is lock-free only for
+    // the thread owning it. Sharing one across the decode threads puts every
+    // other thread on a mutex once per value, so each keeps its own copy and
+    // recompiles once per pattern.
+    LOCAL_REGEX.with_borrow_mut(|slot| {
+        if slot.as_ref().is_none_or(|(pat, _)| &**pat != src.as_str()) {
+            let Ok(re) = regex::bytes::Regex::new(src.as_str()) else {
+                return f(src);
+            };
+            *slot = Some((src.as_str().into(), re));
+        }
+        f(&slot.as_ref().unwrap().1)
+    })
+}
+
 impl utils::Decoder for BinViewDecoder {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = BinaryViewArray;
@@ -586,12 +607,14 @@ impl utils::Decoder for BinViewDecoder {
                 |v| v.ends_with(pattern),
                 pred_true_mask,
             )?,
-            (St::Plain(iter), Spce::RegexMatch(regex)) => predicate::decode_matches(
-                iter.max_num_values,
-                iter.values,
-                |v| regex.is_match(v),
-                pred_true_mask,
-            )?,
+            (St::Plain(iter), Spce::RegexMatch(regex)) => with_local_regex(regex, |re| {
+                predicate::decode_matches(
+                    iter.max_num_values,
+                    iter.values,
+                    |v| re.is_match(v),
+                    pred_true_mask,
+                )
+            })?,
             _ => return Ok(false),
         }
 
