@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import re
+import subprocess
+import sys
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
@@ -1684,3 +1686,41 @@ def test_series_from_arrow_large_list_keeps_fast_explode_28626(
     assert imported.to_list() == values
     assert imported.flags["FAST_EXPLODE"] is fast_explode
     assert imported.explode(empty_as_null=True, keep_nulls=True).to_list() == exploded
+
+
+# The deadlock wedges every thread in the interpreter, so run it out-of-process
+# where a hang surfaces as a timeout instead of taking the test session with it
+_CONCURRENT_TO_ARROW_SCRIPT = """\
+import sys
+import threading
+
+import polars as pl
+sys.setswitchinterval(1e-6)
+
+s = pl.Series("a", range(100_000))
+barrier = threading.Barrier(8, timeout=30)
+
+def work():
+    barrier.wait()
+    for _ in range(500):
+        s.to_arrow()
+
+threads = [threading.Thread(target=work) for _ in range(8)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+"""
+
+
+def test_series_to_arrow_concurrent_no_deadlock() -> None:
+    # `to_arrow` must not hold the series read lock across the call into pyarrow while
+    # the `rechunk` it starts with blocks on the write lock holding the GIL: one thread
+    # then waits for the GIL holding the lock, the other for the lock holding the GIL
+    proc = subprocess.run(
+        [sys.executable, "-c", _CONCURRENT_TO_ARROW_SCRIPT],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr
