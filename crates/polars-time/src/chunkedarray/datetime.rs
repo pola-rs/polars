@@ -11,12 +11,17 @@ use polars_core::prelude::*;
 use super::*;
 
 /// Extracts one field of the local wall time of every element, reading the instants with
+/// `$to_datetime`.
 macro_rules! extract_with {
     ($ca:expr, $field:expr, $to_datetime:path) => {{
         let ca = $ca;
 
+        // UTC names the same wall time as the instant itself, so only another zone is worth a
+        // lookup per element.
         #[cfg(feature = "timezones")]
-        if let DataType::Datetime(_, Some(time_zone)) = ca.dtype() {
+        if let DataType::Datetime(_, Some(time_zone)) = ca.dtype()
+            && time_zone != &TimeZone::UTC
+        {
             let tz = time_zone
                 .to_chrono()
                 .expect("a column's time zone is validated when it is set");
