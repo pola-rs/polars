@@ -434,15 +434,30 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         };
         let scale = *scale;
         let prec = DEC128_MAX_PREC;
-        let sum = self
-            .0
-            .physical()
-            .iter()
-            .flatten()
-            .try_fold(0i128, |acc, v| {
+        let mut sum = 0i128;
+        for arr in self.0.physical().downcast_iter() {
+            let count = arr.len() - arr.null_count();
+            if count == 0 {
+                continue;
+            }
+
+            // A chunk that repeats one value adds it `count` times, and every partial sum along
+            // the way lies between the total before the chunk and the total after it — so one
+            // multiply answers for all of them. If it overflows, the walk below says where.
+            if let Some(value) = arr.scalar_value_ignore_validity()
+                && let Some(total) = value
+                    .checked_mul(count as i128)
+                    .and_then(|chunk| dec128_add(sum, chunk, prec))
+            {
+                sum = total;
+                continue;
+            }
+
+            sum = arr.iter().flatten().try_fold(sum, |acc, v| {
                 dec128_add(acc, v, prec)
                     .ok_or_else(|| polars_err!(ComputeError: "overflow in decimal addition in sum"))
             })?;
+        }
         let av = AnyValue::Decimal(sum, prec, scale);
         Ok(Scalar::new(DataType::Decimal(prec, scale), av))
     }
