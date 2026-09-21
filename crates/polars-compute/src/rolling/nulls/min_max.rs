@@ -1,78 +1,38 @@
 use polars_utils::min_max::{MaxPropagateNan, MinPropagateNan};
 
 use super::super::min_max::MinMaxWindow;
+use super::van_herk::rolling_minmax_van_herk_nulls;
 
 pub type MinWindow<'a, T> = MinMaxWindow<'a, T, MinPropagateNan>;
 pub type MaxWindow<'a, T> = MinMaxWindow<'a, T, MaxPropagateNan>;
 
 use super::*;
 
-pub fn rolling_min<T>(
-    arr: &PrimitiveArray<T>,
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-    _params: Option<RollingFnParams>,
-) -> ArrayRef
-where
-    T: NativeType + IsFloat,
-{
-    if weights.is_some() {
-        panic!("weights not yet supported on array with null values")
-    }
-    if center {
-        rolling_apply_agg_window::<MinMaxWindow<T, MinPropagateNan>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets_center,
-            None,
-        )
-    } else {
-        rolling_apply_agg_window::<MinMaxWindow<T, MinPropagateNan>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets,
-            None,
-        )
-    }
+macro_rules! rolling_minmax_nulls_func {
+    ($rolling_m:ident, $policy:ident, $is_min:literal) => {
+        pub fn $rolling_m<T>(
+            arr: &PrimitiveArray<T>,
+            window_size: usize,
+            min_periods: usize,
+            center: bool,
+            weights: Option<&[f64]>,
+            _params: Option<RollingFnParams>,
+        ) -> ArrayRef
+        where
+            T: NativeType + PartialOrd + IsFloat + Bounded,
+        {
+            if weights.is_some() {
+                panic!("weights not yet supported on array with null values")
+            }
+            rolling_minmax_van_herk_nulls::<$is_min, T, $policy>(
+                arr,
+                window_size,
+                min_periods,
+                center,
+            )
+        }
+    };
 }
 
-pub fn rolling_max<T>(
-    arr: &PrimitiveArray<T>,
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-    _params: Option<RollingFnParams>,
-) -> ArrayRef
-where
-    T: NativeType + std::iter::Sum + Zero + AddAssign + Copy + PartialOrd + Bounded + IsFloat,
-{
-    if weights.is_some() {
-        panic!("weights not yet supported on array with null values")
-    }
-    if center {
-        rolling_apply_agg_window::<MinMaxWindow<T, MaxPropagateNan>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets_center,
-            None,
-        )
-    } else {
-        rolling_apply_agg_window::<MinMaxWindow<T, MaxPropagateNan>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets,
-            None,
-        )
-    }
-}
+rolling_minmax_nulls_func!(rolling_min, MinPropagateNan, true);
+rolling_minmax_nulls_func!(rolling_max, MaxPropagateNan, false);

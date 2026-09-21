@@ -539,6 +539,13 @@ impl Bitmap {
         super::bitmap_ops::select_constant(self, truthy, falsy)
     }
 
+    /// Dilate set bits to the following `w.saturating_sub(1)` positions.
+    ///
+    /// The result is extended with unset bits to `out_len`, which must be at least `self.len()`.
+    pub fn dilate(&self, w: usize, out_len: usize) -> Self {
+        super::bitmap_ops::dilate(self, w, out_len)
+    }
+
     /// Calculates the number of edges from `0 -> 1` and `1 -> 0`.
     pub fn num_edges(&self) -> usize {
         super::bitmap_ops::num_edges(self)

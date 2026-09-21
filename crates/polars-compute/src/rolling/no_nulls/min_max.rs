@@ -1,6 +1,7 @@
 use polars_utils::min_max::{MaxPropagateNan, MinMaxPolicy, MinPropagateNan};
 
 use super::super::min_max::MinMaxWindow;
+use super::super::van_herk;
 use super::*;
 
 pub type MinWindow<'a, T> = MinMaxWindow<'a, T, MinPropagateNan>;
@@ -20,7 +21,7 @@ where
 }
 
 macro_rules! rolling_minmax_func {
-    ($rolling_m:ident, $policy:ident) => {
+    ($rolling_m:ident, $policy:ident, $is_min:literal) => {
         pub fn $rolling_m<T>(
             values: &[T],
             window_size: usize,
@@ -37,12 +38,11 @@ macro_rules! rolling_minmax_func {
                 false => det_offsets,
             };
             match weights {
-                None => rolling_apply_agg_window::<MinMaxWindow<T, $policy>, _, _, _>(
+                None => rolling_minmax_van_herk::<$is_min, T, $policy>(
                     values,
                     window_size,
                     min_periods,
-                    offset_fn,
-                    None,
+                    center,
                 ),
                 Some(weights) => {
                     assert!(
@@ -68,8 +68,44 @@ macro_rules! rolling_minmax_func {
     };
 }
 
-rolling_minmax_func!(rolling_min, MinPropagateNan);
-rolling_minmax_func!(rolling_max, MaxPropagateNan);
+rolling_minmax_func!(rolling_min, MinPropagateNan, true);
+rolling_minmax_func!(rolling_max, MaxPropagateNan, false);
+
+fn rolling_minmax_van_herk<const MIN: bool, T, P>(
+    values: &[T],
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+) -> PolarsResult<ArrayRef>
+where
+    T: NativeType + PartialOrd + IsFloat + Bounded,
+    P: MinMaxPolicy,
+{
+    let n = values.len();
+    if window_size == 0 {
+        // Every window is empty, so every output is null.
+        return Ok(PrimitiveArray::<T>::new_null(T::PRIMITIVE.into(), n).boxed());
+    }
+    let shift = if center {
+        window_size.div_ceil(2) - 1
+    } else {
+        0
+    };
+    let out = van_herk::rolling_minmax_centered::<MIN, T, P>(values, window_size, shift);
+
+    let offset_fn = match center {
+        true => det_offsets_center,
+        false => det_offsets,
+    };
+    let validity: Option<Bitmap> =
+        create_validity(min_periods, n, window_size, offset_fn, None, center).and_then(Into::into);
+
+    Ok(Box::new(PrimitiveArray::<T>::new(
+        T::PRIMITIVE.into(),
+        out.into(),
+        validity,
+    )))
+}
 
 #[cfg(test)]
 mod test {

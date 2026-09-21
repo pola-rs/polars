@@ -362,13 +362,11 @@ def test_rolling_by_non_temporal_window_size() -> None:
 def test_rolling_extrema(dtype: PolarsDataType) -> None:
     # sorted data and nulls flags trigger different kernels
     df = (
-        (
-            pl.DataFrame(
-                {
-                    "col1": pl.int_range(0, 7, eager=True),
-                    "col2": pl.int_range(0, 7, eager=True).reverse(),
-                }
-            )
+        pl.DataFrame(
+            {
+                "col1": pl.int_range(0, 7, eager=True),
+                "col2": pl.int_range(0, 7, eager=True).reverse(),
+            }
         )
         .with_columns(
             pl.when(pl.int_range(0, pl.len(), eager=False) < 2)
@@ -425,6 +423,124 @@ def test_rolling_extrema(dtype: PolarsDataType) -> None:
     assert result.to_dict(as_series=False) == {
         k: pl.Series(v, dtype=dtype).to_list() for k, v in expected.items()
     }
+
+
+@pytest.mark.parametrize("with_nulls", [False, True])
+@pytest.mark.parametrize("with_nan", [False, True])
+def test_rolling_extrema_matches_naive(with_nulls: bool, with_nan: bool) -> None:
+    values: list[float | None] = [float((i * 17) % 23 - 11) for i in range(131)]
+    if with_nan:
+        values[17] = float("nan")
+    values[79] = float("inf")
+    values[101] = -float("inf")
+    if with_nulls:
+        for i in range(0, len(values), 11):
+            values[i] = None
+
+    s = pl.Series(values)
+    for window_size in (2, 9, 65, 130):
+        min_samples_values = (
+            (1, window_size) if window_size == 2 else (1, 2, window_size)
+        )
+        for min_samples in min_samples_values:
+            for center in (False, True):
+                for operation in ("min", "max"):
+                    expected: list[float | None] = []
+                    for i in range(len(values)):
+                        start, stop = (
+                            (max(0, i + 1 - window_size), i + 1)
+                            if not center
+                            else (
+                                max(0, i - window_size // 2),
+                                min(len(values), i - window_size // 2 + window_size),
+                            )
+                        )
+                        window = [v for v in values[start:stop] if v is not None]
+                        if len(window) < min_samples:
+                            expected.append(None)
+                        elif np.isnan(window).any():
+                            expected.append(float("nan"))
+                        else:
+                            expected.append(
+                                min(window) if operation == "min" else max(window)
+                            )
+
+                    result = getattr(s, f"rolling_{operation}")(
+                        window_size, min_samples=min_samples, center=center
+                    )
+                    assert_series_equal(result, pl.Series(expected, dtype=s.dtype))
+
+
+def test_rolling_extrema_edge_cases() -> None:
+    s = pl.Series("a", [None, 1.0, 5.0])
+    assert_series_equal(s.rolling_min(1), s)
+    assert_series_equal(s.rolling_max(1), s)
+    # A window of one is the element itself, centered or not.
+    assert_series_equal(s.rolling_min(1, center=True), s)
+    # A window of zero covers nothing: the output is all null.
+    assert_series_equal(
+        s.rolling_min(0, min_samples=0), pl.Series("a", [None] * 3, dtype=s.dtype)
+    )
+
+    for center, min_values, max_values in (
+        (False, [None, 1.0, 1.0], [None, 1.0, 5.0]),
+        (True, [1.0, 1.0, 1.0], [5.0, 5.0, 5.0]),
+    ):
+        result = s.to_frame().select(
+            pl.col("a")
+            .rolling_min(2**64 - 1, min_samples=1, center=center)
+            .alias("min"),
+            pl.col("a")
+            .rolling_max(2**64 - 1, min_samples=1, center=center)
+            .alias("max"),
+        )
+        assert_frame_equal(result, pl.DataFrame({"min": min_values, "max": max_values}))
+
+    sliced = pl.Series("a", [9.9, None, 1.0, 5.0, None, 3.0, 4.0]).slice(1)
+    assert_series_equal(
+        sliced.rolling_min(2, min_samples=1),
+        pl.Series("a", [None, 1.0, 1.0, 5.0, 3.0, 3.0]),
+    )
+
+    u8 = pl.Series("a", [255, 0, 1, 200, 50], dtype=pl.UInt8)
+    result = u8.to_frame().select(
+        pl.col("a").rolling_min(9, min_samples=1).alias("min"),
+        pl.col("a").rolling_max(9, min_samples=1).alias("max"),
+    )
+    expected = pl.DataFrame(
+        {
+            "min": pl.Series([255, 0, 0, 0, 0], dtype=pl.UInt8),
+            "max": pl.Series([255] * 5, dtype=pl.UInt8),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    assert_series_equal(
+        pl.Series([None, None, 3.0]).rolling_min(2, min_samples=0),
+        pl.Series([None, None, 3.0]),
+    )
+
+
+def test_rolling_extrema_preserves_first_tie() -> None:
+    zero_bits = np.array(
+        [0x8000000000000000, 0, 0x8000000000000000, 0], dtype=np.uint64
+    )
+    expected_zero_bits = [0x8000000000000000] * 2 + [0, 0x8000000000000000]
+    zeros = pl.Series(zero_bits.view(np.float64))
+    for window_size, center in ((2, False), (3, True)):
+        for operation in ("min", "max"):
+            result = getattr(zeros, f"rolling_{operation}")(
+                window_size, min_samples=1, center=center
+            )
+            assert result.to_numpy().view(np.uint64).tolist() == expected_zero_bits
+
+    nan_bits = np.array([0x7FF8000000000001, 0x7FF8000000000002], dtype=np.uint64)
+    nan1, nan2 = nan_bits.view(np.float64)
+    values = pl.Series([None, nan1, 5.0, nan2, 7.0])
+    expected_nan_bits = [nan_bits[0]] * 4 + [nan_bits[1]]
+    for operation in ("min", "max"):
+        result = getattr(values, f"rolling_{operation}")(4, min_samples=1, center=True)
+        assert result.to_numpy().view(np.uint64).tolist() == expected_nan_bits
 
 
 @pytest.mark.parametrize(
