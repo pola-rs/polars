@@ -42,7 +42,7 @@ use super::predicate_pushdown::utils::{
 use crate::dsl::{FileScanIR, ScanFlags};
 use crate::plans::aexpr::predicates::supports_runtime_range;
 use crate::plans::optimizer::predicate_pushdown::{DynamicPred, new_batch_only_dynamic_pred};
-use crate::plans::options::RuntimeFilter;
+use crate::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::StatsCache;
 use crate::plans::{
@@ -54,9 +54,6 @@ use crate::utils::has_aexpr;
 
 /// Estimated bytes a build side chosen here may take.
 const BUILD_BYTES: f64 = 256.0 * 1024.0 * 1024.0;
-/// Largest share of the probe's distinct keys the build may hold for a bloom
-/// filter to be worth probing per row.
-pub const BLOOM_MAX_PASS_RATE: f64 = 0.3;
 
 pub(super) fn attach_join_runtime_filters(
     root: Node,
@@ -178,8 +175,8 @@ fn process_join(
         let scan_key = column_name(&filter.predicate, expr_arena).clone();
         let probe_distinct = side_stats(filter.scan, ir_arena, expr_arena, stats)
             .and_then(|(scan_stats, _)| scan_stats.key_distinct_estimate(&scan_key));
-        let bloom =
-            !probe_distinct.is_some_and(|probe| build_distinct > probe * BLOOM_MAX_PASS_RATE);
+        let bloom = !probe_distinct
+            .is_some_and(|probe| build_distinct > probe * MAX_BUILD_PROBE_DISTINCT_RATIO);
         if polars_config::config().verbose() {
             eprintln!(
                 "runtime filter on {scan_key}: {build_distinct:.0} distinct build keys of {rows:.0} rows, {probe_distinct:?} distinct probe keys, bloom: {bloom}"

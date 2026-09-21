@@ -10,7 +10,7 @@ use polars_core::prelude::{
 use polars_core::schema::Schema;
 use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
-use polars_io::predicates::{RuntimeRangeHint, RuntimeRangeSource, ScanIOPredicate};
+use polars_io::predicates::{DynamicPredicateSource, RuntimeRangeHint, ScanIOPredicate};
 use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
@@ -307,7 +307,7 @@ fn runtime_range_hint(part: Node, expr_arena: &Arena<AExpr>) -> Option<RuntimeRa
 }
 
 /// The producer's handle of a dynamic predicate over one column.
-fn dynamic_source(part: Node, expr_arena: &Arena<AExpr>) -> Arc<dyn RuntimeRangeSource> {
+fn dynamic_source(part: Node, expr_arena: &Arena<AExpr>) -> Arc<dyn DynamicPredicateSource> {
     let AExpr::Function {
         function: IRFunctionExpr::DynamicPred { pred, .. },
         ..

@@ -297,7 +297,7 @@ impl ColumnPredicate {
 #[derive(Clone)]
 pub struct DynamicColumnPredicate {
     pub predicate: Arc<dyn PhysicalIoExpr>,
-    pub source: Arc<dyn RuntimeRangeSource>,
+    pub source: Arc<dyn DynamicPredicateSource>,
 }
 
 /// `a AND b`.
@@ -397,15 +397,17 @@ pub enum RuntimeRange {
     Range { lo: Scalar, hi: Scalar },
 }
 
-pub trait RuntimeRangeSource: Send + Sync {
+/// A reader's view of a predicate that a producer sets at run time.
+pub trait DynamicPredicateSource: Send + Sync {
     fn runtime_range(&self) -> RuntimeRange;
 
     /// Whether the producer has published a predicate that rejects rows.
     fn filters_rows(&self) -> bool;
 
-    /// Whether the published predicate stays as it is, so a reader may stop
-    /// evaluating it when it rejects too little.
-    fn is_fixed(&self) -> bool;
+    /// Whether a reader may stop evaluating the predicate when it rejects too
+    /// little: it stays as it is once set, and the producer checks every row
+    /// again.
+    fn can_bypass(&self) -> bool;
 }
 
 /// A column whose batches a reader may skip by a [`RuntimeRange`]. It is never
@@ -413,7 +415,7 @@ pub trait RuntimeRangeSource: Send + Sync {
 #[derive(Clone)]
 pub struct RuntimeRangeHint {
     pub column: PlSmallStr,
-    pub source: Arc<dyn RuntimeRangeSource>,
+    pub source: Arc<dyn DynamicPredicateSource>,
     /// The column's value in this file when it is not stored in the file, such as
     /// a hive column or a missing column with a default.
     pub constant: Option<Scalar>,

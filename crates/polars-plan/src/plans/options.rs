@@ -348,6 +348,10 @@ pub struct JoinOptionsIR {
     pub runtime_filters: Vec<RuntimeFilter>,
 }
 
+/// Largest ratio of distinct build keys to distinct probe keys for which a
+/// bloom filter is published.
+pub const MAX_BUILD_PROBE_DISTINCT_RATIO: f64 = 0.3;
+
 /// The build-side key at `key_idx` of the join's `on`, published through
 /// `pred` for the probe side: its range, and a bloom filter over its values
 /// when `bloom_keys` gives the number of distinct keys to size it for.

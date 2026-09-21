@@ -9,8 +9,7 @@ use polars_core::config;
 use polars_core::prelude::*;
 use polars_expr::hash_keys::HashKeys;
 use polars_io::predicates::{RuntimeRange, cast_bound};
-use polars_plan::plans::optimizer::BLOOM_MAX_PASS_RATE;
-use polars_plan::plans::options::RuntimeFilter;
+use polars_plan::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use polars_plan::plans::{PredicateExpr, TrivialPredicateExpr};
 use polars_utils::bloom_filter::SplitBlockBloom;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -25,8 +24,9 @@ const BLOOM_MIN_BYTES: usize = 64 << 10;
 const BLOOM_MAX_BYTES: usize = 32 << 20;
 
 /// The runtime filters of a join and how each is built. Published once, from
-/// the side the plan named as build side.
-pub struct RuntimeFilters {
+/// the side the plan named as build side. Builders come from `new_builders`
+/// and hold one entry per filter, in the same order.
+pub(super) struct RuntimeFilters {
     filters: Vec<(RuntimeFilter, KeyFilterSpec)>,
     /// Key names of the planned build side, for verbose output.
     key_names: Vec<PlSmallStr>,
@@ -35,7 +35,7 @@ pub struct RuntimeFilters {
 impl RuntimeFilters {
     /// `key_schema` holds the keys of the side the plan named as build side;
     /// the probe side's keys have the same dtypes.
-    pub fn new(filters: Vec<RuntimeFilter>, key_schema: &Schema) -> Self {
+    pub(super) fn new(filters: Vec<RuntimeFilter>, key_schema: &Schema) -> Self {
         let filters = filters
             .into_iter()
             .map(|filter| {
@@ -49,16 +49,16 @@ impl RuntimeFilters {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.filters.is_empty()
     }
 
     /// Whether the filters were published already.
-    pub fn is_set(&self) -> bool {
+    pub(super) fn is_set(&self) -> bool {
         self.filters.first().is_some_and(|(f, _)| f.pred.is_set())
     }
 
-    pub fn new_builders(&self) -> Vec<KeyFilterBuilder> {
+    pub(super) fn new_builders(&self) -> Vec<KeyFilterBuilder> {
         self.filters
             .iter()
             .map(|(_, spec)| KeyFilterBuilder::new(spec))
@@ -66,7 +66,12 @@ impl RuntimeFilters {
     }
 
     /// Add the key column of every filter to its builder.
-    pub fn extend(&self, keys: &DataFrame, builders: &mut [KeyFilterBuilder]) -> PolarsResult<()> {
+    pub(super) fn extend(
+        &self,
+        keys: &DataFrame,
+        builders: &mut [KeyFilterBuilder],
+    ) -> PolarsResult<()> {
+        assert_eq!(builders.len(), self.filters.len());
         for ((filter, _), builder) in self.filters.iter().zip(builders) {
             builder.extend(&keys.columns()[filter.key_idx])?;
         }
@@ -74,7 +79,8 @@ impl RuntimeFilters {
     }
 
     /// Set every filter to what its builder collected.
-    pub fn publish(&self, builders: Vec<KeyFilterBuilder>) {
+    pub(super) fn publish(&self, builders: Vec<KeyFilterBuilder>) {
+        assert_eq!(builders.len(), self.filters.len());
         for ((filter, _), builder) in self.filters.iter().zip(builders) {
             let key_filter = builder.finish();
             if config::verbose() {
@@ -88,9 +94,10 @@ impl RuntimeFilters {
     }
 
     /// Set every filter to what the builders of every local build collected.
-    pub fn publish_merged(&self, locals: impl IntoIterator<Item = Vec<KeyFilterBuilder>>) {
+    pub(super) fn publish_merged(&self, locals: impl IntoIterator<Item = Vec<KeyFilterBuilder>>) {
         let mut builders = self.new_builders();
         for local in locals {
+            assert_eq!(local.len(), builders.len());
             for (builder, seen) in builders.iter_mut().zip(local) {
                 builder.merge(seen);
             }
@@ -99,7 +106,7 @@ impl RuntimeFilters {
     }
 
     /// Set every filter not published yet to one that skips nothing.
-    pub fn publish_nothing(&self) {
+    pub(super) fn publish_nothing(&self) {
         for (filter, _) in &self.filters {
             if !filter.pred.is_set() {
                 filter.pred.set(Arc::new(TrivialPredicateExpr));
@@ -110,14 +117,14 @@ impl RuntimeFilters {
 
 /// How a join builds the filter of one key.
 #[derive(Clone, Debug)]
-pub struct KeyFilterSpec {
-    pub dtype: DataType,
+struct KeyFilterSpec {
+    dtype: DataType,
     /// Distinct keys the bloom filter is sized for; `None` gives the range only.
-    pub bloom_keys: Option<usize>,
+    bloom_keys: Option<usize>,
     /// The probe's distinct keys, when the plan could estimate them.
-    pub probe_distinct: Option<usize>,
+    probe_distinct: Option<usize>,
     /// Shared by the build and probe sides.
-    pub random_state: PlRandomState,
+    random_state: PlRandomState,
 }
 
 impl KeyFilterSpec {
@@ -145,7 +152,7 @@ impl KeyFilterSpec {
 }
 
 /// Collects the keys one builder sees for a `KeyFilter`.
-pub struct KeyFilterBuilder {
+pub(super) struct KeyFilterBuilder {
     range: KeyRange,
     bloom: Option<BloomBuilder>,
 }
@@ -157,7 +164,7 @@ struct BloomBuilder {
 }
 
 impl KeyFilterBuilder {
-    pub fn new(spec: &KeyFilterSpec) -> Self {
+    fn new(spec: &KeyFilterSpec) -> Self {
         Self {
             range: KeyRange::default(),
             bloom: spec.bloom().map(|bloom| BloomBuilder {
@@ -169,7 +176,7 @@ impl KeyFilterBuilder {
     }
 
     /// Add the non-null values of `column`.
-    pub fn extend(&mut self, column: &Column) -> PolarsResult<()> {
+    fn extend(&mut self, column: &Column) -> PolarsResult<()> {
         self.range.extend(column)?;
         if let Some(b) = &mut self.bloom {
             b.spec.hash_keys(column).for_each_hash(|_, hash| {
@@ -183,7 +190,7 @@ impl KeyFilterBuilder {
     }
 
     /// Add everything `other` collected.
-    pub fn merge(&mut self, other: Self) {
+    pub(super) fn merge(&mut self, other: Self) {
         self.range.merge(other.range);
         if let (Some(a), Some(b)) = (&mut self.bloom, other.bloom) {
             a.bloom.union_with(&b.bloom);
@@ -194,14 +201,14 @@ impl KeyFilterBuilder {
     /// The filter to publish. The bloom filter is left out when it holds too
     /// many distinct keys for its size, or too large a share of the probe's
     /// distinct keys to be worth probing.
-    pub fn finish(self) -> KeyFilter {
+    fn finish(self) -> KeyFilter {
         let bloom = self.bloom.and_then(|b| {
             let distinct = b.sketch.estimate();
             let overloaded = distinct.saturating_mul(BLOOM_MIN_BITS_PER_KEY) > b.bloom.num_bits();
             let weak = b
                 .spec
                 .probe_distinct
-                .is_some_and(|probe| distinct as f64 > probe as f64 * BLOOM_MAX_PASS_RATE);
+                .is_some_and(|probe| distinct as f64 > probe as f64 * MAX_BUILD_PROBE_DISTINCT_RATIO);
             if (overloaded || weak) && config::verbose() {
                 eprintln!(
                     "dropping bloom filter of {} bytes: {distinct} distinct build keys, {:?} distinct probe keys",
@@ -224,7 +231,7 @@ impl KeyFilterBuilder {
 /// The range of one build key column and, when it pays, a bloom filter over
 /// its values.
 #[derive(Clone, Debug)]
-pub struct KeyFilter {
+struct KeyFilter {
     range: KeyRange,
     bloom: Option<KeyBloom>,
 }
@@ -278,7 +285,7 @@ impl PredicateExpr for KeyFilter {
         self.bloom.is_some()
     }
 
-    fn is_fixed(&self) -> bool {
+    fn can_bypass(&self) -> bool {
         true
     }
 }
@@ -286,13 +293,13 @@ impl PredicateExpr for KeyFilter {
 /// Min and max of one build key column. Empty until a non-null key is seen; an
 /// empty range published after the build means nothing can match.
 #[derive(Clone, Debug, Default)]
-pub struct KeyRange {
+struct KeyRange {
     bounds: Option<(Scalar, Scalar)>,
 }
 
 impl KeyRange {
     /// Widen the range to cover the non-null values of `column`.
-    pub fn extend(&mut self, column: &Column) -> PolarsResult<()> {
+    fn extend(&mut self, column: &Column) -> PolarsResult<()> {
         let min = column.min_reduce()?;
         let max = column.max_reduce()?;
         if !min.is_null() && !max.is_null() {
@@ -304,7 +311,7 @@ impl KeyRange {
     }
 
     /// Widen the range to cover `other`.
-    pub fn merge(&mut self, other: Self) {
+    fn merge(&mut self, other: Self) {
         let Some((min, max)) = other.bounds else {
             return;
         };

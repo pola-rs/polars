@@ -4,7 +4,7 @@ use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{RwLock, Weak};
 
-use polars_io::predicates::{RuntimeRange, RuntimeRangeSource};
+use polars_io::predicates::{DynamicPredicateSource, RuntimeRange};
 use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
@@ -31,8 +31,8 @@ pub trait PredicateExpr: Send + Sync + Any {
         Ok(None)
     }
 
-    // The range of values that can match, for a reader that skips batches by
-    // their statistics. Only a predicate that is exactly a range gives one.
+    // A range every matching value lies in, for a reader that skips batches by
+    // their statistics. `Disabled` when the predicate gives none.
     fn runtime_range(&self) -> RuntimeRange {
         RuntimeRange::Disabled
     }
@@ -43,10 +43,10 @@ pub trait PredicateExpr: Send + Sync + Any {
         true
     }
 
-    // Whether the predicate stays as it is once set. A reader may stop
-    // evaluating a fixed predicate that rejects too little; one that tightens
-    // over time must be kept.
-    fn is_fixed(&self) -> bool {
+    // Whether a reader may stop evaluating the predicate when it rejects too
+    // little: the predicate stays as it is once set, and its producer checks
+    // every row again. A predicate that tightens over time must be kept.
+    fn can_bypass(&self) -> bool {
         false
     }
 }
@@ -189,7 +189,7 @@ impl DynamicPredWeakRef {
     }
 }
 
-impl RuntimeRangeSource for DynamicPredWeakRef {
+impl DynamicPredicateSource for DynamicPredWeakRef {
     fn runtime_range(&self) -> RuntimeRange {
         let Some(inner) = self.inner.upgrade() else {
             return RuntimeRange::Disabled;
@@ -205,8 +205,8 @@ impl RuntimeRangeSource for DynamicPredWeakRef {
         self.with_set(|pred| pred.filters_rows())
     }
 
-    fn is_fixed(&self) -> bool {
-        self.with_set(|pred| pred.is_fixed())
+    fn can_bypass(&self) -> bool {
+        self.with_set(|pred| pred.can_bypass())
     }
 }
 

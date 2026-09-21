@@ -23,7 +23,7 @@ pub mod in_memory;
 pub mod merge_join;
 #[cfg(feature = "iejoin")]
 pub mod range_join;
-pub mod runtime_filter;
+mod runtime_filter;
 #[cfg(feature = "semi_anti_join")]
 pub mod semi_anti_join;
 mod utils;

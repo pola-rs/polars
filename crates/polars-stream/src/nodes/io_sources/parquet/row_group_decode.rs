@@ -10,7 +10,7 @@ use polars_core::series::Series;
 use polars_core::utils::polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
-use polars_io::predicates::{PhysicalIoExpr, RuntimeRangeSource, ScanIOPredicate};
+use polars_io::predicates::{DynamicPredicateSource, PhysicalIoExpr, ScanIOPredicate};
 use polars_io::prelude::_internal::canonicalize_parquet_maps;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, PredicateFilter, PrimitiveLogicalType};
@@ -42,12 +42,11 @@ pub(super) struct PredicateColumn {
 }
 
 /// A conjunct on a predicate column that a producer sets at run time. It is
-/// evaluated once it is set and rejects rows. A fixed one is no longer
-/// evaluated once it keeps most of the rows it sees, as the producer checks
-/// every row again; one that tightens over time is always evaluated.
+/// evaluated once it is set and rejects rows, and no longer once it keeps most
+/// of the rows it sees, when its source allows that.
 pub(super) struct DynamicConjunct {
     pub(super) predicate: Arc<dyn PhysicalIoExpr>,
-    pub(super) source: Arc<dyn RuntimeRangeSource>,
+    pub(super) source: Arc<dyn DynamicPredicateSource>,
     /// Set once the conjunct was seen filtering rows, so the next row group
     /// measures it on every row.
     activated: AtomicBool,
@@ -58,7 +57,7 @@ pub(super) struct DynamicConjunct {
 impl DynamicConjunct {
     pub(super) fn new(
         predicate: Arc<dyn PhysicalIoExpr>,
-        source: Arc<dyn RuntimeRangeSource>,
+        source: Arc<dyn DynamicPredicateSource>,
     ) -> Self {
         Self {
             predicate,
@@ -87,7 +86,7 @@ impl DynamicConjunct {
             *measured
         };
         if keeps_most_rows(measured.kept_rows, measured.input_rows)
-            && self.source.is_fixed()
+            && self.source.can_bypass()
             && !self.bypassed.swap(true, Ordering::Relaxed)
             && polars_core::config::verbose()
         {
@@ -874,7 +873,6 @@ fn evaluate_mask(predicate: &dyn PhysicalIoExpr, df: &DataFrame) -> PolarsResult
     })
 }
 
-/// Narrows `outer` by `inner`, which holds one bit per set bit of `outer`.
 /// `mask` narrowed by `m`, both over the same rows.
 fn and_masks(mask: Option<Bitmap>, m: Bitmap) -> Bitmap {
     match mask {
@@ -883,6 +881,7 @@ fn and_masks(mask: Option<Bitmap>, m: Bitmap) -> Bitmap {
     }
 }
 
+/// Narrows `outer` by `inner`, which holds one bit per set bit of `outer`.
 fn compose_masks(outer: &Bitmap, inner: &Bitmap) -> Bitmap {
     assert_eq!(inner.len(), outer.set_bits());
     if inner.unset_bits() == 0 {
