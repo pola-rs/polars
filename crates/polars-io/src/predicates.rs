@@ -275,8 +275,6 @@ pub trait SkipBatchPredicate: Send + Sync {
 pub struct ColumnPredicate {
     pub predicate: Arc<dyn PhysicalIoExpr>,
     pub specialized: Option<SpecializedColumnPredicate>,
-    /// Whether a reader may evaluate the predicate on the values as it decodes them.
-    pub filter_while_decoding: bool,
 }
 
 /// `a AND b`.

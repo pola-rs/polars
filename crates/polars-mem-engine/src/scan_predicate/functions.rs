@@ -222,10 +222,9 @@ fn create_staged_predicate(
         eprintln!("column_predicates: {{");
         for p in column_predicates.predicates.values() {
             eprintln!(
-                "  {} ({:?}, filter_while_decoding: {}),",
+                "  {} ({:?}),",
                 ExprIRDisplay::display_node(p.predicate, expr_arena),
                 p.specialized,
-                p.filter_while_decoding
             );
         }
         eprintln!("}}");
@@ -251,7 +250,6 @@ fn create_staged_predicate(
                             state,
                         )?,
                         specialized: p.specialized,
-                        filter_while_decoding: p.filter_while_decoding,
                     },
                 ))
             })
