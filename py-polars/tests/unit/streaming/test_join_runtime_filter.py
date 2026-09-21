@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import Any
 
+    from polars._typing import JoinStrategy
     from tests.conftest import PlMonkeyPatch
 
 pytestmark = pytest.mark.xdist_group("streaming")
@@ -961,11 +962,11 @@ def test_scan_without_statistics_is_not_eligible(tmp_path: Path) -> None:
     assert q.collect(engine="streaming").get_column("k").sort().to_list() == [220, 240]
 
 
-def test_broad_range_reads_bounds_only(
+def test_broad_range_filters_rows_by_bloom(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # Shuffled keys: every row group spans the range; nothing is skipped and no
-    # row is filtered.
+    # Shuffled keys: every row group spans the range, so nothing is skipped and
+    # the bloom filter over the build keys filters the rows instead.
     n = N_ROW_GROUPS * ROWS_PER_GROUP
     keys = pl.Series("k", range(n)).shuffle(seed=1)
     path = tmp_path / "shuffled.parquet"
@@ -975,7 +976,8 @@ def test_broad_range_reads_bounds_only(
     q = pl.scan_parquet(path).join(dim(220, 240), on="k")
     out, err = reader_log(q, plmonkeypatch, capfd)
     assert "reading 10 / 10 row groups" in err
-    assert "Pre-filtered decode" not in err
+    assert "bloom: Some" in err
+    assert "Pre-filtered decode enabled (1 live [1 column predicates" in err
     assert out.get_column("k").sort().to_list() == [220, 240]
 
 
@@ -1195,3 +1197,274 @@ def test_decimal_and_string_keys_prune(
     out, read = row_groups_read(fact.join(build, on="s"), plmonkeypatch, capfd)
     assert read == "1 / 10 row groups"
     assert out.get_column("v").sort().to_list() == [220, 240]
+
+
+# A bloom filter over the build keys filters the rows of a scan the range cannot
+# prune: the keys of every row group span the range.
+
+
+@pytest.fixture
+def shuffled_fact(tmp_path: Path) -> pl.LazyFrame:
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    keys = pl.Series("k", range(n)).shuffle(seed=1)
+    df = pl.DataFrame({"k": keys, "k2": keys % 7, "v": keys})
+    path = tmp_path / "shuffled.parquet"
+    df.write_parquet(path, row_group_size=ROWS_PER_GROUP, statistics="full")
+    return pl.scan_parquet(path)
+
+
+def bloom_run(
+    q: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    keys: list[Any],
+    column: str = "k",
+) -> str:
+    """Collect on both engines, check they agree on `keys`, and return the log."""
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert out.get_column(column).sort().to_list() == keys
+    assert_matches_in_memory(q, out)
+    return err
+
+
+def test_bloom_with_a_static_predicate_on_the_key(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    q = shuffled_fact.filter(pl.col("k") > 500).join(tiny(220, 240, 620, 640), on="k")
+    err = bloom_run(q, plmonkeypatch, capfd, [620, 640])
+    assert "bloom of" in err
+    assert "reading 10 / 10 row groups" in err
+
+
+def test_bloom_set_after_the_scan_opened(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # The preferred side reaches the sample limit, so the scan opens before the
+    # filter is published and sees it set part way, if at all.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1")
+    build = unbounded_dim(220, 240, 620, 640)
+    for q in (
+        shuffled_fact.join(build, on="k"),
+        shuffled_fact.filter(pl.col("k") > 500).join(build, on="k"),
+        shuffled_fact.join(build, on="k").select("v", "d"),
+    ):
+        assert "BUILD SIDE: Prefer" in q.explain(engine="streaming")
+        out, err = reader_log(q, plmonkeypatch, capfd)
+        assert "reading 10 / 10 row groups" in err
+        assert_matches_in_memory(q, out)
+
+
+def test_weak_bloom_is_bypassed(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # String keys carry no distinct count, so the plan cannot tell the filter is
+    # weak; the reader stops evaluating it once it keeps most rows.
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    path = tmp_path / "strings.parquet"
+    pl.DataFrame({"s": [f"s{i % 40}" for i in range(n)], "v": range(n)}).write_parquet(
+        path, row_group_size=ROWS_PER_GROUP, statistics="full"
+    )
+    build = pl.LazyFrame({"s": [f"s{i}" for i in range(50)], "e": range(50)}).filter(
+        pl.col("e") >= 0
+    )
+    q = pl.scan_parquet(path).join(build, on="s")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert "bloom of" in err
+    assert "Dynamic predicate bypassed" in err
+    assert out.height == n
+    assert_matches_in_memory(q, out)
+
+
+def test_bloom_gate_keeps_the_range_only(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # The build holds three of the seven values `k2` takes: not worth probing
+    # per row.
+    q = shuffled_fact.join(tiny(0, 1, 2, key="k2"), on="k2")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert "bloom: None" in err
+    assert "bloom of" not in err
+    assert out.get_column("k2").unique().sort().to_list() == [0, 1, 2]
+    assert_matches_in_memory(q, out)
+
+
+def test_two_blooms_on_one_scan_key(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    q = shuffled_fact.join(dim(220, 240, 260), on="k").join(tiny(240, 260, 280), on="k")
+    assert q.explain(engine="streaming").count("dynamic_predicate") == 2
+    err = bloom_run(q, plmonkeypatch, capfd, [240, 260])
+    assert err.count("bloom of") == 2
+    assert "Pre-filtered decode enabled (1 live [1 column predicates" in err
+
+
+def test_bloom_on_composite_keys(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    other = pl.LazyFrame(
+        {"k": [230, 231, 232], "k2": [230 % 7, 231 % 7, 6], "d": [1, 2, 3]}
+    ).filter(pl.col("d") > 0)
+    q = shuffled_fact.join(other, on=["k", "k2"])
+    err = bloom_run(q, plmonkeypatch, capfd, [230, 231])
+    assert err.count("bloom of") >= 1
+
+
+def test_bloom_never_matches_null_keys(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    keys = pl.Series("k", range(n)).shuffle(seed=3)
+    keys_with_nulls = keys.to_frame().select(
+        pl.when(keys % 5 == 0).then(None).otherwise(keys).alias("k")
+    )
+    path = tmp_path / "nulls.parquet"
+    keys_with_nulls.with_columns(v=pl.int_range(n)).write_parquet(
+        path, row_group_size=ROWS_PER_GROUP, statistics="full"
+    )
+    build = pl.LazyFrame({"k": [None, 220, 221, 225], "e": [0, 1, 2, 3]}).filter(
+        pl.col("e") >= 0
+    )
+    q = pl.scan_parquet(path).join(build, on="k")
+    err = bloom_run(q, plmonkeypatch, capfd, [221])
+    assert "bloom of" in err
+
+
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt16, pl.String, pl.Date])
+def test_bloom_key_dtypes(
+    tmp_path: Path,
+    dtype: pl.DataType,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    keys = pl.Series("k", range(n)).shuffle(seed=4)
+    path = tmp_path / "typed.parquet"
+    pl.DataFrame({"k": keys.cast(dtype), "v": keys}).write_parquet(
+        path, row_group_size=ROWS_PER_GROUP, statistics="full"
+    )
+    build = pl.LazyFrame(
+        {"k": pl.Series([220, 240], dtype=pl.Int64).cast(dtype), "e": [0, 1]}
+    ).filter(pl.col("e") >= 0)
+    q = pl.scan_parquet(path).join(build, on="k")
+    err = bloom_run(q, plmonkeypatch, capfd, [220, 240], column="v")
+    assert "bloom of" in err
+
+
+# A semi join publishes from either side, an anti join from its left side only.
+
+
+def test_semi_join_publishes_from_either_side(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    q = shuffled_fact.join(tiny(220, 240, 1000), on="k", how="semi")
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: ForceRight" in plan
+    assert plan.count("dynamic_predicate") == 1
+    err = bloom_run(q, plmonkeypatch, capfd, [220, 240])
+    assert "bloom of" in err
+
+    q = tiny(220, 240, 1000).join(shuffled_fact, on="k", how="semi")
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: ForceLeft" in plan
+    assert plan.count("dynamic_predicate") == 1
+    err = bloom_run(q, plmonkeypatch, capfd, [220, 240])
+    assert "bloom of" in err
+
+
+def test_anti_join_publishes_from_the_left_only(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    q = tiny(220, 240, 1000).join(shuffled_fact, on="k", how="anti")
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: ForceLeft" in plan
+    assert plan.count("dynamic_predicate") == 1
+    err = bloom_run(q, plmonkeypatch, capfd, [1000])
+    assert "bloom of" in err
+
+    q = shuffled_fact.join(tiny(220, 240, 1000), on="k", how="anti")
+    plan = q.explain(engine="streaming")
+    assert "dynamic_predicate" not in plan
+    out = q.collect(engine="streaming")
+    assert out.height == N_ROW_GROUPS * ROWS_PER_GROUP - 2
+    assert_matches_in_memory(q, out)
+
+
+def test_preferred_semi_join_gets_no_filter(shuffled_fact: pl.LazyFrame) -> None:
+    q = shuffled_fact.join(unbounded_dim(220, 240), on="k", how="semi")
+    assert "dynamic_predicate" not in q.explain(engine="streaming")
+
+
+def test_semi_join_range_prunes_row_groups(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    q = fact.join(tiny(220, 240), on="k", how="semi")
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "1 / 10 row groups"
+    assert out.get_column("k").sort().to_list() == [220, 240]
+    assert_matches_in_memory(q, out)
+
+
+def test_top_k_dynamic_predicate_still_filters_rows(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # A sort with a slice publishes a per-row dynamic predicate of its own that
+    # keeps every row until the sort has a bound. The scan must keep evaluating
+    # it and never bypass it for keeping too many rows.
+    q = shuffled_fact.sort("k").head(5)
+    assert "dynamic_predicate" in q.explain(engine="streaming")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert "Pre-filtered decode enabled" in err
+    assert "Dynamic predicate bypassed" not in err
+    assert out.get_column("k").to_list() == [0, 1, 2, 3, 4]
+
+
+@pytest.mark.parametrize("how", ["semi", "anti"])
+def test_join_above_a_semi_anti_join_traces_its_left_columns_only(
+    tmp_path: Path, how: JoinStrategy
+) -> None:
+    # The semi/anti join outputs left columns only, so `k_right` is the left
+    # input's own column, not the right input's `k` under the suffix.
+    path = tmp_path / "probe.parquet"
+    pl.DataFrame({"k": range(20_000)}).write_parquet(path, row_group_size=1_000)
+    left = pl.LazyFrame({"k": range(1_000), "k_right": [15_000] * 1_000})
+    dimension = pl.LazyFrame({"k_right": [15_000, 15_001], "e": [0, 1]}).filter(
+        pl.col("e") >= 0
+    )
+    query = left.join(
+        pl.scan_parquet(path), on="k", how=how, build_side="force_left"
+    ).join(dimension, on="k_right")
+    assert_frame_equal(
+        query.collect(engine="streaming"),
+        query.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+def test_repeated_build_key(tmp_path: Path) -> None:
+    # Filters are keyed by position; the same build column may appear twice.
+    path = tmp_path / "probe.parquet"
+    pl.DataFrame({"a": range(1000), "b": range(1000)}).write_parquet(path)
+    build = pl.LazyFrame({"k": [220, 240], "e": [0, 1]}).filter(pl.col("e") >= 0)
+    query = pl.scan_parquet(path).join(build, left_on=["a", "b"], right_on=["k", "k"])
+    flags = pl.QueryOptFlags(predicate_pushdown=False)
+    assert_frame_equal(
+        query.collect(engine="streaming", optimizations=flags),
+        query.collect(engine="in-memory", optimizations=flags),
+        check_row_order=False,
+    )

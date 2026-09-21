@@ -356,6 +356,15 @@ impl NodeStats {
         Some(domain.clamp(MIN_CARDINALITY, self.unfiltered))
     }
 
+    /// Distinct values in `name`: the larger of its distinct count and its
+    /// integer domain.
+    pub fn key_distinct_estimate(&self, name: &str) -> Option<f64> {
+        match (self.distinct_count_key(name), self.int_domain(name)) {
+            (Some(ndv), Some(domain)) => Some(ndv.max(domain)),
+            (ndv, domain) => ndv.or(domain),
+        }
+    }
+
     /// Distinct combinations of `keys`, or `None` unless every one is known.
     ///
     /// The product assumes the keys are independent, which is an upper bound; the
