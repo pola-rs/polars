@@ -142,14 +142,41 @@ pub unsafe fn encode_binview_no_order(
 ) {
     debug_assert!(opt.contains(RowEncodingOptions::NO_ORDER));
 
-    let (Some(views), Some(validity)) = (array.flat_views(), flat_validity(array.validity()))
-    else {
+    let Some(validity) = flat_validity(array.validity()) else {
         return encode_variable_no_order(buffer, array.iter(), opt, offsets);
     };
 
-    let views = views.as_slice();
     let buffers = array.data_buffers().as_slice();
     let out = buffer.as_mut_ptr() as *mut u8;
+
+    let Some(views) = array.flat_views() else {
+        // Every row reads the same view: resolve it once, rather than asking the array for an
+        // element at a time and resolving it again on each.
+        let Some(view) = array.scalar_views() else {
+            return;
+        };
+
+        match validity {
+            None => {
+                for offset in offsets.iter_mut() {
+                    *offset += encode_view(out.add(*offset), &view, buffers);
+                }
+            },
+            Some(validity) => {
+                for (offset, is_valid) in offsets.iter_mut().zip(validity.iter()) {
+                    if is_valid {
+                        *offset += encode_view(out.add(*offset), &view, buffers);
+                    } else {
+                        *out.add(*offset) = 0xFF;
+                        *offset += 1;
+                    }
+                }
+            },
+        }
+        return;
+    };
+
+    let views = views.as_slice();
 
     match validity {
         None => {

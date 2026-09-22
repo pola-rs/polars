@@ -157,16 +157,45 @@ pub unsafe fn encode_str_view(
     opt: RowEncodingOptions,
     offsets: &mut [usize],
 ) {
-    let validity = flat_validity(array.as_binview().validity());
-    let (Some(views), Some(validity)) = (array.flat_views(), validity) else {
+    let Some(validity) = flat_validity(array.as_binview().validity()) else {
         return encode_str(buffer, array.iter(), opt, offsets);
     };
 
     let null_sentinel = opt.null_sentinel();
     let xor_mask = descending_mask(opt);
-    let views = views.as_slice();
     let buffers = array.data_buffers().as_slice();
     let out = buffer.as_mut_ptr();
+
+    let Some(views) = array.flat_views() else {
+        // Every row reads the same view: resolve it once, rather than asking the array for an
+        // element at a time and resolving it again on each.
+        let Some(view) = array.scalar_views() else {
+            return;
+        };
+
+        match validity {
+            None => {
+                for offset in offsets.iter_mut() {
+                    encode_view(out.add(*offset), &view, buffers, xor_mask);
+                    *offset += 1 + view.length as usize;
+                }
+            },
+            Some(validity) => {
+                for (offset, is_valid) in offsets.iter_mut().zip(validity.iter()) {
+                    if is_valid {
+                        encode_view(out.add(*offset), &view, buffers, xor_mask);
+                        *offset += 1 + view.length as usize;
+                    } else {
+                        *out.add(*offset) = MaybeUninit::new(null_sentinel);
+                        *offset += 1;
+                    }
+                }
+            },
+        }
+        return;
+    };
+
+    let views = views.as_slice();
 
     match validity {
         None => {
