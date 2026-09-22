@@ -230,8 +230,6 @@ pub mod kll {
 
     /// Compactors at or below this capacity are replaced by [`Sampler`].
     const SAMPLER_CUTOFF: usize = 8;
-    /// Require at least this amount of compactors to exist above the sampler.
-    const MIN_COMPACTORS_ABOVE_SAMPLER: usize = 3;
 
     /// Smallest `k` guaranteeing rank error <= `error * n` w.p. >= 1 - `delta` for a
     /// *single* query value, with `delta` = `FAILURE_PROBABILITY`.
@@ -493,10 +491,8 @@ pub mod kll {
                     compactor_threshold(self.k, self.levels.len() - 1 - level) <= SAMPLER_CUTOFF
                 })
                 .count();
-            // Leave some compactors intact above the sampler, so that the sampler
-            // output has enough space to go.
-            let max_sampler_level =
-                (self.levels.len() - 1).saturating_sub(MIN_COMPACTORS_ABOVE_SAMPLER);
+            // Make sure there is space for the sampler output to go.
+            let max_sampler_level = self.levels.len().saturating_sub(2);
             self.sampler_level = usize::min(sampler_level, max_sampler_level);
         }
 
