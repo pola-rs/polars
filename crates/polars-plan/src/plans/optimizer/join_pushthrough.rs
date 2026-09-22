@@ -644,8 +644,10 @@ fn pushdown_pays(
     let mut after = after.filtered;
     if matches!(candidate.side_options.args.how, JoinType::Semi) {
         let side = node_stats_with_cache(candidate.side, ir_arena, expr_arena, stats);
-        let semi_input = candidate.chain.first().copied().unwrap_or(candidate.inner);
-        let semi_input = node_stats_with_cache(semi_input, ir_arena, expr_arena, stats);
+        let semi_input = match candidate.chain.first() {
+            Some(&top) => node_stats_with_cache(top, ir_arena, expr_arena, stats),
+            None => Some(before.clone()),
+        };
         if let (Some(side), Some(semi_input)) = (&side, semi_input)
             && side.filtered <= semi_input.filtered
         {

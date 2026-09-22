@@ -1416,17 +1416,20 @@ def test_preferred_semi_join_publishes_its_right_side(
     assert out.get_column("k").sort().to_list() == [220, 240]
     assert_matches_in_memory(q, out)
 
-    # A preferred left side keeps every row, so it is not built on an estimate.
-    q = unbounded_dim(220, 240).join(fact, on="k", how="semi")
-    assert "dynamic_predicate" not in q.explain(engine="streaming")
 
+def test_empty_preferred_semi_join_side_reads_nothing(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
     q = fact.join(unbounded_dim(-1), on="k", how="semi")
     out, groups = row_groups_read(q, plmonkeypatch, capfd)
     assert groups is None
     assert out.height == 0
 
 
-def test_preferred_anti_join_gets_no_filter(fact: pl.LazyFrame) -> None:
+def test_preferred_left_or_anti_side_gets_no_filter(fact: pl.LazyFrame) -> None:
+    # Building either keeps its rows, so neither is built on an estimate.
+    q = unbounded_dim(220, 240).join(fact, on="k", how="semi")
+    assert "dynamic_predicate" not in q.explain(engine="streaming")
     q = fact.join(unbounded_dim(220, 240), on="k", how="anti")
     assert "dynamic_predicate" not in q.explain(engine="streaming")
 

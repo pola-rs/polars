@@ -24,25 +24,14 @@ use rayon::prelude::*;
 
 use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, emit_morsel_size, fold_sample, sample_sink, send_frames,
+    BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, emit_morsel_size, fold_sample,
+    sample_sink, select_key_columns, send_frames,
 };
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
 
 /// Bytes a hash table takes per key on top of the key itself.
 const KEY_SLOT_OVERHEAD: f64 = 16.0;
-
-async fn select_key_columns(
-    df: &DataFrame,
-    key_selectors: &[StreamExpr],
-    state: &ExecutionState,
-) -> PolarsResult<DataFrame> {
-    let mut key_columns = Vec::new();
-    for selector in key_selectors {
-        key_columns.push(selector.evaluate(df, state).await?.into_column());
-    }
-    unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns) }
-}
 
 fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
     HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
@@ -82,11 +71,7 @@ impl SemiAntiJoinParams {
 
     /// The side the plan asked to build from, if any.
     fn planned_build_left(&self) -> Option<bool> {
-        match self.build_side {
-            Some(JoinBuildSide::ForceLeft | JoinBuildSide::PreferLeft) => Some(true),
-            Some(JoinBuildSide::ForceRight | JoinBuildSide::PreferRight) => Some(false),
-            None => None,
-        }
+        build_side_left(self.build_side.as_ref())
     }
 
     /// Whether the build keys go to the runtime filters: the filters exist,
@@ -391,13 +376,11 @@ impl SampleState {
         )?))
     }
 
-    /// Hand the keys of a completely sampled side to the runtime filters. The
-    /// filter holds whichever side is built later, as no key of the other side
-    /// outside it can match.
+    /// Hand the keys of a completely sampled side to the runtime filters.
     fn publish_runtime_filters(
         &self,
         left: bool,
-        params: &mut SemiAntiJoinParams,
+        params: &SemiAntiJoinParams,
         state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         let (morsels, key_selectors) = if left {
@@ -405,29 +388,11 @@ impl SampleState {
         } else {
             (&self.right, &params.right_key_selectors)
         };
-        let new_builders = || params.runtime_filters.new_builders();
-        let builders = RAYON.install(|| {
-            morsels
-                .par_iter()
-                .try_fold(new_builders, |mut builders, morsel| {
-                    let df = morsel.df_blocking();
-                    let keys = ASYNC.block_on(select_key_columns(
-                        &df,
-                        key_selectors,
-                        &state.in_memory_exec_state,
-                    ))?;
-                    params.runtime_filters.extend(&keys, &mut builders)?;
-                    PolarsResult::Ok(builders)
-                })
-                .try_reduce(new_builders, |mut a, b| {
-                    for (a, b) in a.iter_mut().zip(b) {
-                        a.merge(b);
-                    }
-                    Ok(a)
-                })
-        })?;
-        params.runtime_filters.publish(builders);
-        Ok(())
+        params.runtime_filters.publish_from_sample(
+            morsels,
+            key_selectors,
+            &state.in_memory_exec_state,
+        )
     }
 
     /// Start building from `left_is_build`, feeding it the morsels sampled from
