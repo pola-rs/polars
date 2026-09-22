@@ -1853,6 +1853,11 @@ def test_cspe_nested_cache_under_shared_subplan_no_union_28945() -> None:
         q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
     )
 
+    # The shared pushable filter is moved past the cache into the subplan.
+    plan = q.explain()
+    assert plan.count("CACHE[id:") == 2, plan
+    assert plan.count("FILTER") == 1, plan
+
 
 def test_cspe_nested_user_caches_28945() -> None:
     inner = pl.LazyFrame({"x": [1, 2, 3]}).cache()
@@ -1963,6 +1968,66 @@ def test_cspe_nondeterministic_still_caches_inputs_28733() -> None:
     # can be cached
     plan = copied.explain()
     assert plan.count("WITH_COLUMNS") == 1, plan
+
+
+@pytest.mark.parametrize(
+    ("expr", "n_filters"),
+    [
+        # CSPE caches each deterministic filter once.
+        (pl.col("id").is_unique(), 1),
+        (pl.col("id") > pl.col("id").mean(), 1),
+        # Each reference keeps its own non-deterministic filter.
+        (pl.col("id").shuffle(seed=1) == pl.col("id"), 2),
+    ],
+)
+def test_cspe_explicit_cache_shared_barrier_filter_29414(
+    expr: pl.Expr, n_filters: int
+) -> None:
+    # These predicates must stay above the explicit cache without causing a panic.
+    cached = pl.LazyFrame({"id": range(10)}).cache()
+    filtered = cached.filter(expr)
+    q = pl.concat([filtered, filtered])
+
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
+
+    plan = q.explain()
+    assert plan.count("CACHE[id:") == 2, plan
+    assert plan.count("FILTER") == n_filters, plan
+
+
+def test_cspe_shared_nondeterministic_filter_29414() -> None:
+    # CSPE inserts a cache below the shuffle filter.
+    lf = pl.LazyFrame({"id": range(10)})
+    f = lf.filter(pl.col("id").shuffle(seed=1) == pl.col("id"))
+    q = pl.concat([f, f])
+
+    # The seed makes the optimized and unoptimized results comparable.
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
+
+    plan = q.explain()
+    assert "CACHE[id:" in plan, plan
+    assert plan.count("FILTER") == 2, plan
+
+
+def test_cspe_explicit_cache_shared_fallible_filter_29414(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # A strict cast crosses the cache only when `maintain_errors` is disabled.
+    cached = pl.LazyFrame({"id": [1, 2, 3]}).cache()
+    filtered = cached.filter(pl.col("id").cast(pl.Int32) > 1)
+    q = pl.concat([filtered, filtered])
+    expected = pl.DataFrame({"id": [2, 3, 2, 3]})
+
+    assert_frame_equal(q.collect(), expected)
+    plan = q.explain()
+    assert plan.count("CACHE[id:") == 2, plan
+    assert plan.count("FILTER") == 1, plan
+
+    plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+    assert_frame_equal(q.collect(), expected)
+    plan = q.explain()
+    assert plan.count("CACHE[id:") == 2, plan
+    assert plan.count("FILTER") == 1, plan
 
 
 def year_totals() -> pl.LazyFrame:
