@@ -221,6 +221,18 @@ impl IsInHaystack {
         let name = needle.name().clone();
         let has_null = self.has_null;
 
+        // A needle that reads one element throughout is probed once: what the haystack answers
+        // for that element is what it answers for every element it stands for. `is_in` itself
+        // does this in `repeat_one_answer`, but a constant haystack is prepared once and probed
+        // here without going through it.
+        if needle.len() > 1 && needle.repeats_one_element() {
+            let one = self.probe(&needle.slice(0, 1), nulls_equal)?;
+            return Ok(match one.get(0) {
+                Some(value) => BooleanChunked::full(name, value, needle.len()),
+                None => BooleanChunked::full_null(name, needle.len()),
+            });
+        }
+
         let out = match &self.lookup {
             Lookup::OuterNull => BooleanChunked::full_null(name, needle.len()),
             Lookup::NullNeedle => {
