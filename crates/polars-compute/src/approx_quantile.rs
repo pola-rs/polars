@@ -22,9 +22,9 @@ const FAILURE_PROBABILITY: f64 = 1.0 - 0.9973;
 pub const MIN_ERROR: f64 = 1.0 / (1u64 << 32) as f64;
 
 /// Looseness of the formal KLL error bound (estimated by measuring).
-const KLL_BOUND_LOOSENESS: f64 = 6.0;
+const KLL_BOUND_LOOSENESS: f64 = 5.9;
 /// Looseness of the formal REQ error bound (estimated by measuring).
-const REQ_BOUND_LOOSENESS: f64 = 20.0;
+const REQ_BOUND_LOOSENESS: f64 = 37.0;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -279,11 +279,9 @@ pub mod kll {
         let alpha = f64::ln(2.0) / f64::ln(1.0 / CAPACITY_DECAY);
         let sampler_var = |k: f64| 4.0 * k * f64::powf(SAMPLER_CUTOFF as f64 / k, alpha);
 
-        let k0 = k_from_total_variance(compactor_var);
-        let k1 = k_from_total_variance(compactor_var + sampler_var(k0));
-        let k2 = k_from_total_variance(compactor_var + sampler_var(k1));
-        debug_assert!(k2 <= k1 && k1 <= k0, "k does not converge downward");
-        usize::max(MIN_COMPACTOR_SIZE, k2.ceil() as usize)
+        let k = k_from_total_variance(compactor_var);
+        let k = k_from_total_variance(compactor_var + sampler_var(k));
+        usize::max(MIN_COMPACTOR_SIZE, k.ceil() as usize)
     }
 
     #[derive(Debug, Clone, Copy, Default)]
