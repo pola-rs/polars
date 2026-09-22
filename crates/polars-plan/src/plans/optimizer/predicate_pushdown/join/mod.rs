@@ -588,37 +588,59 @@ fn downgradable_outer_join_below(
                 ..
             } => {
                 let how = &options.args.how;
-                if matches!(how, JoinType::Left | JoinType::Right | JoinType::Full)
-                    && options.is_pure_equi()
+                let suffix = options.args.suffix();
+                let schema_left = lp_arena.get(*input_left).schema(lp_arena);
+                let schema_right = lp_arena.get(*input_right).schema(lp_arena);
+                let coalesced_keys: PlIndexSet<PlSmallStr> = if options.args.should_coalesce()
+                    && matches!(how, JoinType::Right | JoinType::Full)
                 {
-                    let coalesced_keys: PlIndexSet<PlSmallStr> = if options.args.should_coalesce() {
-                        options
-                            .options
-                            .left_on()
-                            .map(|e| e.output_name().clone())
-                            .collect()
-                    } else {
-                        Default::default()
-                    };
-                    let origin = if matches!(how, JoinType::Full) && coalesced_keys.contains(&name)
-                    {
-                        ExprOrigin::None
-                    } else {
-                        ExprOrigin::get_column_origin(
-                            &name,
-                            &lp_arena.get(*input_left).schema(lp_arena),
-                            &lp_arena.get(*input_right).schema(lp_arena),
-                            options.args.suffix(),
-                            Some(&|x| matches!(how, JoinType::Right) && coalesced_keys.contains(x)),
-                        )
-                        .unwrap()
-                    };
-                    if downgraded_join_type(how, origin).is_some() {
-                        return Ok(true);
-                    }
+                    options
+                        .options
+                        .left_on()
+                        .map(|e| e.output_name().clone())
+                        .collect()
+                } else {
+                    Default::default()
+                };
+                let origin = if matches!(how, JoinType::Full) && coalesced_keys.contains(&name) {
+                    ExprOrigin::None
+                } else {
+                    ExprOrigin::get_column_origin(
+                        &name,
+                        &schema_left,
+                        &schema_right,
+                        suffix,
+                        Some(&|x| matches!(how, JoinType::Right) && coalesced_keys.contains(x)),
+                    )
+                    .unwrap()
+                };
+                if options.is_pure_equi() && downgraded_join_type(how, origin).is_some() {
+                    return Ok(true);
                 }
-                stack.push((*input_left, name.clone(), predicate.clone()));
-                stack.push((*input_right, name, predicate));
+                // Only the side whose rows the join keeps can take the predicate.
+                match origin {
+                    ExprOrigin::Left if !matches!(how, JoinType::Right | JoinType::Full) => {
+                        stack.push((*input_left, name, predicate));
+                    },
+                    ExprOrigin::Right
+                        if match how {
+                            JoinType::Left | JoinType::Full => false,
+                            #[cfg(feature = "asof_join")]
+                            JoinType::AsOf(_) => false,
+                            _ => true,
+                        } =>
+                    {
+                        let mut predicate = predicate;
+                        remove_suffix(&mut predicate, expr_arena, &schema_right, suffix);
+                        let name = if schema_right.contains(&name) {
+                            name
+                        } else {
+                            name.strip_suffix(suffix.as_str()).unwrap().into()
+                        };
+                        stack.push((*input_right, name, predicate));
+                    },
+                    _ => {},
+                }
             },
             IR::Select { input, expr, .. }
             | IR::HStack {

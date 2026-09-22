@@ -4930,6 +4930,25 @@ def test_join_key_downgrade_follows_pushdown_through_projections() -> None:
     assert_frame_equal(q.collect(), expect, check_row_order=False)
 
 
+def test_join_key_downgrade_ignores_the_unreachable_join_side() -> None:
+    sales = pl.LazyFrame(
+        {"ticket": [1, 2, 3], "amount": [10, 20, 30], "reason": [7, None, 7]}
+    )
+    a = pl.LazyFrame({"ticket": [2, 3], "x": [1, 2]})
+    b = pl.LazyFrame({"ticket": [2], "reason": [9]})
+    lookup = pl.LazyFrame({"reason": [7, 10], "desc": ["x", "y"]})
+
+    # The key is the left `reason`; the right input holds another `reason`.
+    returns = a.join(b, on="ticket", how="left")
+    q = sales.join(returns, on="ticket", how="left").join(lookup, on="reason")
+
+    plan = q.explain()
+    assert plan.count("LEFT JOIN:") == 2
+    assert "is_not_null" not in plan
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
 def test_join_key_keeps_outer_join_when_nulls_match() -> None:
     sales = pl.LazyFrame({"ticket": [1, 2, 3], "amount": [10, 20, 30]})
     returns = pl.LazyFrame({"ticket": [2, 4], "reason": [7, None]})
