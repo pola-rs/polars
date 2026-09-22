@@ -226,10 +226,6 @@ pub(crate) struct PolarsObjectStoreBuilder {
 }
 
 impl PolarsObjectStoreBuilder {
-    pub(super) fn path(&self) -> &PlRefPath {
-        &self.path
-    }
-
     /// Scheme and authority of `path`, e.g. `s3://bucket`. Empty for paths without a
     /// scheme.
     fn authority(&self) -> PlRefPath {
