@@ -424,8 +424,7 @@ fn aexpr_slice_pushdown_top(
             break 'pushdown_current_slice;
         }
 
-        let (current_input_node, current_slice) = if let Some((dummy_node, slice)) = len_cmp_slice
-        {
+        let (current_input_node, current_slice) = if let Some((dummy_node, slice)) = len_cmp_slice {
             (dummy_node, Slice::Extracted(slice))
         } else {
             match expr_arena.get(current_ae_node) {
