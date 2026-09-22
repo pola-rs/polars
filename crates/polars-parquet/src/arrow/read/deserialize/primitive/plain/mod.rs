@@ -550,6 +550,7 @@ mod tests {
                 Vec::<polars_arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
             decode_masked_required(ArrayChunks::new(bytes).unwrap(), mask.clone(), &mut result)
                 .unwrap();
+            assert_eq!(result.capacity(), mask.set_bits());
 
             let result = bytemuck::cast_vec::<_, u32>(result);
             assert_eq!(reference_result, result);
