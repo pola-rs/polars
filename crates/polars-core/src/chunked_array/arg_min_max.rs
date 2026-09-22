@@ -196,6 +196,17 @@ where
     best.map(|(idx, _)| idx)
 }
 
+/// Whether every element of `ca` reads one and the same value, whatever its mask says.
+fn values_repeat<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
+    let [_] = ca.chunks().as_slice() else {
+        return false;
+    };
+    // SAFETY: the column was just seen to hold exactly one chunk.
+    unsafe { ca.downcast_get_unchecked(0) }
+        .scalar_value_ignore_validity()
+        .is_some()
+}
+
 fn arg_min_physical_generic<T>(ca: &ChunkedArray<T>) -> Option<usize>
 where
     T: PolarsDataType,
@@ -207,7 +218,9 @@ where
     match ca.is_sorted_flag() {
         IsSorted::Ascending => ca.first_non_null(),
         IsSorted::Descending => ca.last_non_null(),
-        // A later element that merely ties is not smaller, so the first minimum wins.
+        // A later element that merely ties is not smaller, so the first minimum wins -- and
+        // where every element reads one value they all tie, so that rule alone names the answer.
+        IsSorted::Not if values_repeat(ca) => ca.first_non_null(),
         IsSorted::Not => arg_extreme_physical_generic(ca, |value, best| value < best),
     }
 }
@@ -223,7 +236,9 @@ where
     match ca.is_sorted_flag() {
         IsSorted::Ascending => ca.last_non_null(),
         IsSorted::Descending => ca.first_non_null(),
-        // A later element that ties is taken, so the last maximum wins.
+        // A later element that ties is taken, so the last maximum wins -- and where every
+        // element reads one value they all tie, so that rule alone names the answer.
+        IsSorted::Not if values_repeat(ca) => ca.last_non_null(),
         IsSorted::Not => arg_extreme_physical_generic(ca, |value, best| value >= best),
     }
 }
