@@ -297,21 +297,16 @@ fn flip_comparison(op: Operator) -> Operator {
 }
 
 /// If `ae` is a comparison between `len()` and a non-negative integer literal, returns the
-/// `len()` node together with the leading-rows slice that needs to be materialized to answer it.
-///
-/// `len()` is height `H::Scalar`, so unlike a `Column` it doesn't survive the generic
-/// Column-height candidate propagation in [`aexpr_slice_pushdown_top`] on its own; this is used
-/// to seed it as a push candidate directly, the same way `first()`/`last()` reuse their (still
-/// `H::Column`) input's candidacy.
-fn len_cmp_head_slice(ae: &AExpr, expr_arena: &Arena<AExpr>) -> Option<(Node, ExtractedSlice)> {
+/// leading-rows slice that needs to be materialized to answer it.
+fn len_cmp_head_slice(ae: &AExpr, expr_arena: &Arena<AExpr>) -> Option<ExtractedSlice> {
     let AExpr::BinaryExpr { left, op, right } = ae else {
         return None;
     };
 
-    let (op, len_node, literal_node) = if matches!(expr_arena.get(*left), AExpr::Len) {
-        (*op, *left, *right)
+    let (op, literal_node) = if matches!(expr_arena.get(*left), AExpr::Len) {
+        (*op, *right)
     } else if matches!(expr_arena.get(*right), AExpr::Len) {
-        (flip_comparison(*op), *right, *left)
+        (flip_comparison(*op), *left)
     } else {
         return None;
     };
@@ -331,13 +326,10 @@ fn len_cmp_head_slice(ae: &AExpr, expr_arena: &Arena<AExpr>) -> Option<(Node, Ex
         _ => return None,
     };
 
-    Some((
-        len_node,
-        ExtractedSlice {
-            offset: 0,
-            len: idxsize_try_from(head_len).ok()?,
-        },
-    ))
+    Some(ExtractedSlice {
+        offset: 0,
+        len: idxsize_try_from(head_len).ok()?,
+    })
 }
 
 fn aexpr_slice_pushdown_top(
@@ -416,13 +408,15 @@ fn aexpr_slice_pushdown_top(
 
     // `len()` is `H::Scalar`, so it was dropped from `state.candidate_push_locations` by the
     // Column-height propagation above (a plain scalar computation has nothing to push a slice
-    // into). If `ae` is a `len() <cmp> n` comparison, seed the `len()` node back in as the sole
-    // candidate so it goes through the same machinery as `first()`/`last()` below.
-    let len_cmp_slice = len_cmp_head_slice(ae, expr_arena);
+    // into). If `ae` is a `len() <cmp> n` comparison, seed a dummy `Column` node in as the sole
+    // candidate so it goes through the same machinery as `first()`/`last()` below, without
+    // needing to special-case `Len` there.
+    let len_cmp_slice = len_cmp_head_slice(ae, expr_arena)
+        .map(|slice| (expr_arena.add(AExpr::Column(PlSmallStr::EMPTY)), slice));
     if state.candidate_push_locations.is_empty()
-        && let Some((len_node, _)) = len_cmp_slice
+        && let Some((dummy_node, _)) = len_cmp_slice
     {
-        state.candidate_push_locations.push(len_node);
+        state.candidate_push_locations.push(dummy_node);
     }
 
     'pushdown_current_slice: {
@@ -430,10 +424,11 @@ fn aexpr_slice_pushdown_top(
             break 'pushdown_current_slice;
         }
 
-        let (current_input_node, current_slice) = if let Some((len_node, slice)) = len_cmp_slice {
-            (len_node, Slice::Extracted(slice))
+        let (current_input_node, current_slice) = if let Some((dummy_node, slice)) = len_cmp_slice
+        {
+            (dummy_node, Slice::Extracted(slice))
         } else {
-            match ae {
+            match expr_arena.get(current_ae_node) {
                 AExpr::Slice {
                     input,
                     offset,
@@ -508,9 +503,9 @@ fn aexpr_slice_pushdown_top(
             };
 
             'update_common_slice: {
-                if !matches!(expr_arena.get(slice_input), AExpr::Column(_) | AExpr::Len) {
+                let AExpr::Column(_) = expr_arena.get(slice_input) else {
                     break 'update_common_slice;
-                }
+                };
 
                 if sliced_at_candidate {
                     all_slice_ae_nodes_with_direct_col_input.insert(candidate_node);
