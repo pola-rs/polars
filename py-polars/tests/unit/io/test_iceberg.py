@@ -81,7 +81,7 @@ from polars.io.iceberg._utils import (
     _to_ast,
     try_convert_pyarrow_predicate,
 )
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.io.conftest import normalize_path_separator_pl
 from tests.unit.io.test_scan_row_deletion import write_position_deletes  # noqa: F401
 
@@ -4042,6 +4042,78 @@ def test_scan_iceberg_min_max_statistics_filter(
     )
 
     assert iceberg_table_filter_seen
+
+
+def test_import_decimal_from_iceberg_binary_repr_sign_extend_29449() -> None:
+    from polars._plr import PySeries
+    from polars._utils.wrap import wrap_s
+
+    # Iceberg stores the unscaled value as a two's-complement big-endian integer
+    # using the minimum number of bytes, so the leading bytes must be sign-extended.
+    assert_series_equal(
+        wrap_s(
+            PySeries._import_decimal_from_iceberg_binary_repr(
+                bytes_list=[b"\xf0\xc9\xa7", b"\x04\xe2", b"\x00", b"\xff", None],
+                precision=7,
+                scale=2,
+            )
+        ),
+        pl.Series(
+            [D("-9969.53"), D("12.50"), D("0.00"), D("-0.01"), None],
+            dtype=pl.Decimal(precision=7, scale=2),
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_negative_decimal_statistics_29449(tmp_path: Path) -> None:
+    dtype = pl.Decimal(precision=7, scale=2)
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "profit", DecimalType(7, 2), required=False)
+        ),
+    )
+
+    tbl.append(
+        pa.table({"profit": pa.array([D("-9969.53"), D("12.50")], pa.decimal128(7, 2))})
+    )
+
+    expect = pl.DataFrame(
+        {"profit": pl.Series([D("-9969.53"), D("12.50")], dtype=dtype)}
+    )
+
+    for reader_override in ["native", "pyiceberg"]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl, reader_override=reader_override).collect(),  # type: ignore[arg-type]
+            expect,
+        )
+
+        # The lower bound is the 3-byte two's-complement `f0c9a7`. Decoding it as
+        # unsigned used to raise a precision error here.
+        assert_frame_equal(
+            pl.scan_iceberg(tbl, reader_override=reader_override)  # type: ignore[arg-type]
+            .filter(pl.col("profit") > 0)
+            .collect(),
+            expect.filter(pl.col("profit") > 0),
+        )
+
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl(
+        filter_columns=["profit"]
+    )
+
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.min_max_statistics is not None
+    assert_frame_equal(
+        scan_data.min_max_statistics.select("profit_min", "profit_max"),
+        pl.DataFrame(
+            {
+                "profit_min": pl.Series([D("-9969.53")], dtype=dtype),
+                "profit_max": pl.Series([D("12.50")], dtype=dtype),
+            }
+        ),
+    )
 
 
 @pytest.mark.write_disk
