@@ -365,9 +365,8 @@ where
     }
 }
 
-/// The side of the join whose rows are dropped when nulls in `name`, an output column, are
-/// dropped. A coalesced key of a full join is null for unmatched rows of either side, so it
-/// gives `None`.
+/// The side whose row must be present when `name`, an output column, is not null. A coalesced
+/// key of a full join takes its value from either input, so it implies neither side.
 pub(super) fn non_null_side_for_column(
     name: &str,
     schema_left: &Schema,
