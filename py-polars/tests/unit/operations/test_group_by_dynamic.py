@@ -1512,3 +1512,38 @@ def test_group_by_dynamic_dst_non_monotonic_upper_bound_29190(
     ).alias("t")
 
     _assert_rows_within_own_window(ts, "30m", "1d", engine)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("index", "every"),
+    [
+        (pl.Series("t", [datetime(2024, 1, 1)]), "1h"),
+        (pl.Series("t", [0], dtype=pl.Int64), "1i"),
+        pytest.param(
+            pl.Series("t", [date(2024, 1, 1)]),
+            "1d",
+            # reason: for a Date index the boundaries are Datetime, since `every` may be
+            # sub-day, but the plan declares them as Date.
+            marks=pytest.mark.may_fail_lazy_schema,
+        ),
+    ],
+)
+def test_group_by_dynamic_empty_include_boundaries_columns(
+    engine: EngineType, index: pl.Series, every: str
+) -> None:
+    def group_by(lf: pl.LazyFrame) -> pl.DataFrame:
+        return (
+            lf.group_by_dynamic("t", every=every, period=every, include_boundaries=True)
+            .agg(pl.col("v").sum())
+            .collect(engine=engine)
+        )
+
+    lf = pl.LazyFrame({"t": index, "v": [1]})
+    result = group_by(lf.clear())
+    expected = group_by(lf)
+
+    assert result.height == 0
+    assert result.columns == expected.columns
+    if index.dtype != pl.Date:
+        assert result.schema == expected.schema
