@@ -2585,7 +2585,10 @@ def test_struct_eval_allows_length_preserving(expr: pl.Expr, variant: str) -> No
     df = pl.DataFrame({"s": [{"a": [0, 1]}, {"a": [2]}]})
     out = df.select(getattr(pl.col.s.struct, variant)(expr.alias("r")))
     assert out.height == df.height
-    assert "r" in out.schema["s"].to_schema()
+
+    dtype = out.schema["s"]
+    assert isinstance(dtype, pl.Struct)
+    assert "r" in dtype.to_schema()
 
 
 @pytest.mark.parametrize(
