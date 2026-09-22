@@ -11,9 +11,70 @@ pub trait AggList {
     unsafe fn agg_list(&self, _groups: &GroupsType) -> Series;
 }
 
+/// [`AggList::agg_list`] for a chunk that reads one element throughout, given as `scalar`.
+///
+/// Every index a group could hold reads that same element, so the lists differ only in their
+/// lengths: the values are that one element repeated over the total, and the offsets are the
+/// group lengths added up. Nothing is gathered, which is also why no group index has to be in
+/// bounds here.
+fn agg_list_scalar<T: PolarsNumericType>(
+    name: PlSmallStr,
+    scalar: Option<T::Native>,
+    groups: &GroupsType,
+) -> Series {
+    let mut offsets = Vec::<u64>::with_capacity(groups.len() + 1);
+    let mut length_so_far = 0u64;
+    offsets.push(length_so_far);
+    let mut can_fast_explode = true;
+
+    match groups {
+        GroupsType::Idx(groups) => {
+            for (_, idx) in groups.iter() {
+                can_fast_explode &= !idx.is_empty();
+                length_so_far += idx.len() as u64;
+                offsets.push(length_so_far);
+            }
+        },
+        GroupsType::Slice { groups, .. } => {
+            for &[_, len] in groups.iter() {
+                can_fast_explode &= len != 0;
+                length_so_far += idxsize_to_u64(len);
+                offsets.push(length_so_far);
+            }
+        },
+    }
+
+    let total = length_so_far as usize;
+    let values = match scalar {
+        Some(value) => PlPrimitiveArray::new_scalar(value, total),
+        None => PlPrimitiveArray::<T::Native>::new_full_null(total),
+    };
+
+    let length = offsets.len() - 1;
+    // SAFETY: the offsets are the group lengths added up, so they only increase.
+    let arr = unsafe { PlListArray::new_unchecked(Box::new(values), offsets.into(), length, None) };
+    // SAFETY: the chunk is the list array just built over this column's own inner dtype.
+    let mut ca = unsafe {
+        ListChunked::from_chunks_and_dtype_unchecked(
+            name,
+            vec![Box::new(arr)],
+            DataType::List(Box::new(T::get_static_dtype())),
+        )
+    };
+    if can_fast_explode {
+        ca.set_fast_explode()
+    }
+    ca.into()
+}
+
 impl<T: PolarsNumericType> AggList for ChunkedArray<T> {
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         let ca = self.rechunk();
+
+        // A chunk that reads one element throughout makes every gather below read it too.
+        if let Some(scalar) = ca.downcast_iter().next().unwrap().scalar_value() {
+            return agg_list_scalar::<T>(self.name().clone(), scalar, groups);
+        }
 
         match groups {
             GroupsType::Idx(groups) => {
@@ -310,4 +371,58 @@ where
     }
 
     chunk.into_series()
+}
+
+#[cfg(test)]
+mod test {
+    use polars_utils::idx_vec::IdxVec;
+
+    use super::*;
+
+    /// Aggregating a column that reads one element throughout gives the lists the same column
+    /// gives flat, whatever the groups and whether the element is null.
+    #[test]
+    fn test_agg_list_scalar() {
+        let length = 7;
+        let idx: GroupsIdx = [
+            (0, IdxVec::from_iter([0, 3, 6])),
+            (1, IdxVec::new()),
+            (2, IdxVec::from_iter([2])),
+            (4, IdxVec::from_iter([4, 5])),
+        ]
+        .into_iter()
+        .collect();
+        let groups = [
+            GroupsType::Idx(idx),
+            GroupsType::Slice {
+                groups: vec![[0, 3], [3, 0], [3, 4]],
+                overlapping: false,
+                monotonic: true,
+            },
+        ];
+
+        for value in [Some(7i32), None] {
+            let scalar = match value {
+                Some(value) => PlPrimitiveArray::new_scalar(value, length),
+                None => PlPrimitiveArray::<i32>::new_full_null(length),
+            };
+            let scalar =
+                Int32Chunked::with_chunk(PlSmallStr::from_static("a"), scalar).into_series();
+            let flat = Series::new(
+                PlSmallStr::from_static("a"),
+                vec![value; length].into_iter().collect::<Vec<_>>(),
+            );
+
+            for groups in &groups {
+                // SAFETY: every index above is in bounds of the seven elements.
+                let (from_scalar, from_flat) =
+                    unsafe { (scalar.agg_list(groups), flat.agg_list(groups)) };
+                assert_eq!(from_scalar, from_flat, "value {value:?}");
+                assert_eq!(
+                    from_scalar.list().unwrap()._can_fast_explode(),
+                    from_flat.list().unwrap()._can_fast_explode(),
+                );
+            }
+        }
+    }
 }
