@@ -83,6 +83,7 @@ impl TimeUnit {
 #[cfg(feature = "temporal")]
 impl TimeUnit {
     /// The naive UTC datetime of the timestamp `t` in this unit.
+    #[inline]
     pub fn timestamp_to_datetime(self, t: i64) -> NaiveDateTime {
         match self {
             TimeUnit::Nanoseconds => timestamp_ns_to_datetime(t),
@@ -92,6 +93,7 @@ impl TimeUnit {
     }
 
     /// The naive UTC datetime `dt` as a timestamp in this unit.
+    #[inline]
     pub fn datetime_to_timestamp(self, dt: NaiveDateTime) -> i64 {
         match self {
             TimeUnit::Nanoseconds => datetime_to_timestamp_ns(dt),
