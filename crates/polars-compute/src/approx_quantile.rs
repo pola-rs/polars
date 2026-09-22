@@ -271,7 +271,7 @@ pub mod kll {
         //   * `feed` conserves weight, so at most `n / 2^h` emissions happen at height `h`,
         //     each a step of size `2^h` (KLL Lemma 2). Summed, that is at most `n * 2^L`.
         //   * Level L-1 sits at depth D = H - L and was replaced, so `k * c^D ≤ CUTOFF`.
-        //     Hence `2^D ≥ (k / CUTOFF)^α` where `α = ln 2 / ln(1/c)` (KLL Thm. 2).
+        //     Hence `2^D ≥ (k / CUTOFF)^α` where `α = ln 2 / ln(1/c)` (KLL Theorem. 2).
         //   * Recall `n/k ≥ 2^(H-2)` ⇒ `2^H ≤ 4 * n/k`.
         //   * Compute the full variance:
         //       n * 2^L = n * 2^H / 2^D ≤ (4 * n²/k) / (k / CUTOFF)^α
