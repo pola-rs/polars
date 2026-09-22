@@ -853,11 +853,15 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysPlanBuilder) {
             let input_schema = Arc::clone(stream.output_schema(phys_sm));
             // A multiplexer only fans out the stream it wraps, so it belongs to the same IR
             // node as that stream's producer.
-            phys_sm.current_ir_node = phys_sm[stream.node].ir_node();
-            let multiplexer_node = phys_sm.insert(PhysNode::new_multi_output(
-                (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
-                PhysNodeKind::Multiplexer { input: stream },
-            ));
+            let ir_node = phys_sm[stream.node]
+                .ir_node()
+                .expect("lowered physical nodes are attributed to an IR node");
+            let multiplexer_node = phys_sm.with_ir_node(ir_node, |phys_sm| {
+                phys_sm.insert(PhysNode::new_multi_output(
+                    (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
+                    PhysNodeKind::Multiplexer { input: stream },
+                ))
+            });
             (stream, PhysStream::first(multiplexer_node))
         })
         .collect();
@@ -888,8 +892,8 @@ fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysPlanBuilder) {
     let mut replacements: SecondaryMap<PhysNodeKey, Vec<PhysStream>> = split_map
         .into_iter()
         .map(|(k, n)| {
-            // The clones are the same source split per consumer, so they keep its IR node.
-            phys_sm.current_ir_node = n.ir_node();
+            // The clones are the same source split per consumer; `insert` keeps the IR node
+            // they already carry.
             let repls = (0..refcount[k]).map(|_| PhysStream::first(phys_sm.insert(n.clone())));
             (k, repls.collect())
         })
@@ -968,19 +972,21 @@ fn rechunk_group_by_inputs(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNo
     });
 }
 
-/// Lowers the IR rooted at `root` into `phys_sm` and returns the root physical node together
-/// with the filled slotmap.
+/// Lowers the IR rooted at `root` into a physical plan and returns the root physical node
+/// together with the slotmap holding the plan.
 pub fn build_physical_plan(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: SlotMap<PhysNodeKey, PhysNode>,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysNodeKey, SlotMap<PhysNodeKey, PhysNode>)> {
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
     let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
     let mut cache_nodes = PlHashMap::new();
-    let mut phys_sm = PhysPlanBuilder::new(phys_sm, ir_arena.len());
+    let mut phys_sm = PhysPlanBuilder::new(
+        SlotMap::with_capacity_and_key(ir_arena.len()),
+        ir_arena.len(),
+    );
     let phys_root = lower_ir::lower_ir(
         root,
         ir_arena,

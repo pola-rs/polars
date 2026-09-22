@@ -178,23 +178,33 @@ pub fn lower_ir(
     ctx: StreamingLowerIRContext<'_>,
     disable_morsel_split: Option<bool>,
 ) -> PolarsResult<PhysStream> {
-    let prev_ir_node = phys_sm.current_ir_node;
     if phys_sm.is_original_ir_node(node) {
-        phys_sm.current_ir_node = Some(node);
+        phys_sm.with_ir_node(node, |phys_sm| {
+            lower_ir_inner(
+                node,
+                ir_arena,
+                expr_arena,
+                phys_sm,
+                schema_cache,
+                expr_cache,
+                cache_nodes,
+                ctx,
+                disable_morsel_split,
+            )
+        })
+    } else {
+        lower_ir_inner(
+            node,
+            ir_arena,
+            expr_arena,
+            phys_sm,
+            schema_cache,
+            expr_cache,
+            cache_nodes,
+            ctx,
+            disable_morsel_split,
+        )
     }
-    let result = lower_ir_inner(
-        node,
-        ir_arena,
-        expr_arena,
-        phys_sm,
-        schema_cache,
-        expr_cache,
-        cache_nodes,
-        ctx,
-        disable_morsel_split,
-    );
-    phys_sm.current_ir_node = prev_ir_node;
-    result
 }
 
 #[allow(clippy::too_many_arguments)]

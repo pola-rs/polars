@@ -455,6 +455,38 @@ def test_multiplexer_inherits_input_attribution() -> None:
         assert multiplexer["ir_node_id"] == by_id[input_id]["ir_node_id"]
 
 
+def test_split_source_clones_keep_source_attribution() -> None:
+    """Fanning an in-memory source out twice clones it per consumer.
+
+    The clones replace the multiplexer, and each keeps the `DataFrameScan` IR
+    node of the source it copies.
+    """
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).filter(pl.col("a") > pl.col("a").mean())
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    (scan_id,) = [n["id"] for n in ir if n["properties"]["type"] == "DataFrameScan"]
+    sources = [n for n in phys if n["properties"]["type"] == "InMemorySource"]
+    assert len(sources) > 1
+    assert all(n["ir_node_id"] == scan_id for n in sources)
+
+
+def test_fused_drop_keeps_filter_attribution() -> None:
+    """A projection fused into the filter below it leaves a node owned by the filter."""
+    lf = (
+        pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+        .filter(pl.col("b") > 4)
+        .select("a")
+    )
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    (filter_id,) = [n["id"] for n in ir if n["properties"]["type"] == "Filter"]
+    (phys_filter,) = [n for n in phys if n["properties"]["type"] == "Filter"]
+    assert phys_filter["ir_node_id"] == filter_id
+    assert not [n for n in phys if n["properties"]["type"] == "SimpleProjection"]
+
+
 def test_on_query_failed_called() -> None:
     """A failing query reports `on_query_failed` with the error message."""
     module, observer = fake_cloud_observer()
