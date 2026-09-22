@@ -364,7 +364,6 @@ pub mod kll {
         consumed_items: u64,
         /// Maximum number of items before we compact.
         total_capacity: usize,
-        bound_is_formal: bool,
         sampler: Sampler<T>,
         sampler_level: usize,
         #[cfg_attr(feature = "serde", serde(skip, default = "rand::make_rng"))]
@@ -381,7 +380,6 @@ pub mod kll {
                 k: self.k,
                 consumed_items: self.consumed_items,
                 total_capacity: self.total_capacity,
-                bound_is_formal: self.bound_is_formal,
                 sampler: self.sampler.clone(),
                 sampler_level: self.sampler_level,
                 rng: rand::make_rng(),
@@ -410,7 +408,6 @@ pub mod kll {
                 rng: rand::make_rng(),
                 scratch: Vec::default(),
                 sampler_level: 0,
-                bound_is_formal: use_formal_bound,
                 sampler: Sampler {
                     item: None,
                     weight: 0,
@@ -497,10 +494,6 @@ pub mod kll {
 
         /// The lowest level whose compactor is larger than [`SAMPLER_CUTOFF`].
         fn recompute_sampler_level(&mut self) {
-            if self.bound_is_formal {
-                return;
-            }
-
             let sampler_level = (0..self.levels.len())
                 .filter(|level| {
                     compactor_threshold(self.k, self.levels.len() - 1 - level) <= SAMPLER_CUTOFF
@@ -643,7 +636,6 @@ pub mod kll {
         fn merge(&mut self, other: &Self) {
             // `k` is a function of the error, so k₁ = k₂ ⇒ ε₁ = ε₂.
             assert_eq!(self.k, other.k);
-            assert_eq!(self.bound_is_formal, other.bound_is_formal);
 
             // Make sure we have enough compactors on the left side.
             while self.levels.len() < other.levels.len() {
