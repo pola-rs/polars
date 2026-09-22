@@ -212,7 +212,18 @@ impl Wrap<&DataFrame> {
     ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
         polars_ensure!(!options.every.negative, ComputeError: "'every' argument must be positive");
         if dt.is_empty() {
-            return dt.cast(time_type).map(|s| (s, vec![], Default::default()));
+            let mut bounds = vec![];
+            if options.include_boundaries {
+                bounds.push(Column::new_empty(
+                    PlSmallStr::from_static(LB_NAME),
+                    dt.dtype(),
+                ));
+                bounds.push(Column::new_empty(
+                    PlSmallStr::from_static(UB_NAME),
+                    dt.dtype(),
+                ));
+            }
+            return dt.cast(time_type).map(|s| (s, bounds, Default::default()));
         }
 
         // A requirement for the index so we can set this such that downstream code has this info.

@@ -5459,6 +5459,30 @@ def test_enum_table_statistics(
     assert_frame_equal(out, df.filter(predicate))
 
 
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.parametrize(
+    "dtype", [pl.Enum(["banana", "pear", "apple", "zebra"]), pl.Categorical()]
+)
+@pytest.mark.parametrize(
+    "operation", ["eq", "ne", "lt", "le", "gt", "ge", "eq_missing", "is_between"]
+)
+def test_scan_categorical_literal_predicate(
+    engine: EngineType, dtype: pl.DataType, operation: str
+) -> None:
+    df = pl.DataFrame({"x": ["apple", "banana", "pear", None]}, schema={"x": dtype})
+    value = pl.lit("pear", dtype=dtype)
+    if operation == "is_between":
+        predicate = pl.col("x").is_between(value, pl.lit("apple", dtype=dtype))
+    else:
+        predicate = getattr(pl.col("x"), operation)(value)
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+    out = pl.scan_parquet(f.getvalue()).filter(predicate).collect(engine=engine)
+
+    assert_frame_equal(out, df.filter(predicate))
+
+
 def test_enum_table_statistics_prune() -> None:
     dtype = pl.Enum(["b", "a", "c"])
     stats = pl.DataFrame(
