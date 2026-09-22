@@ -5,6 +5,7 @@ use polars_array::{
     PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmapRef, PlBooleanArray,
     PlFixedSizeListArray, PlListArray, PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
 };
+use polars_arrow::Either;
 use polars_arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_arrow::types::{NativeType, PrimitiveType};
 use polars_arrow::with_match_primitive_type;
@@ -523,15 +524,37 @@ fn get_encoder(
 }
 
 /// The number of bytes every element of `array` holds, read off the views.
+///
+/// The representation is settled once for the whole walk: asking the array element by element
+/// would resolve every index through the broadcast index again.
 fn view_lengths(array: &PlBinaryViewArray) -> impl ExactSizeIterator<Item = usize> {
-    // SAFETY: every index is below the length the iterator counts up to.
-    (0..array.len()).map(|i| unsafe { array.view_unchecked(i) }.length as usize)
+    match array.flat_views() {
+        Some(views) => Either::Left(views.as_slice().iter().map(|view| view.length as usize)),
+        // The array repeats one view, or holds no element at all.
+        None => {
+            let length = array.scalar_views().map_or(0, |view| view.length as usize);
+            Either::Right(std::iter::repeat_n(length, array.len()))
+        },
+    }
 }
 
 /// The number of bytes every element of `array` holds, read off the offsets.
+///
+/// The representation is settled once for the whole walk, as in [`view_lengths`].
 fn value_lengths(array: &PlBinaryArray) -> impl ExactSizeIterator<Item = usize> {
-    // SAFETY: every index is below the length the iterator counts up to.
-    (0..array.len()).map(|i| unsafe { array.value_length_unchecked(i) })
+    match array.flat_offsets() {
+        Some(offsets) => Either::Left(
+            offsets
+                .as_slice()
+                .windows(2)
+                .map(|pair| (pair[1] - pair[0]) as usize),
+        ),
+        // The array repeats one range, or holds no element at all.
+        None => {
+            let length = array.scalar_offsets().map_or(0, |range| range.len());
+            Either::Right(std::iter::repeat_n(length, array.len()))
+        },
+    }
 }
 
 struct Encoder {
