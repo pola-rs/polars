@@ -524,15 +524,18 @@ impl SQLExprVisitor<'_> {
             let matches = expr.str().contains_literal(lit(needle));
             Ok(if negated { matches.not() } else { matches })
         } else {
-            // create regex from pattern containing SQL wildcard chars ('%' => '.*', '_' => '.')
-            let mut rx = regex::escape(pat.as_str())
-                .replace('%', ".*")
-                .replace('_', ".");
-
-            rx = format!(
-                "^{}{}$",
+            // create regex from pattern containing SQL wildcard chars ('%' => '.*', '_' => '.');
+            // a leading/trailing '%' is the same as leaving that side unanchored, which is faster
+            let body = pat.trim_start_matches('%');
+            let start_anchor = if body.len() == pat.len() { "^" } else { "" };
+            let trimmed = body.trim_end_matches('%');
+            let end_anchor = if trimmed.len() == body.len() { "$" } else { "" };
+            let rx = format!(
+                "{}{}{}{}",
                 if case_insensitive { "(?is)" } else { "(?s)" },
-                rx
+                start_anchor,
+                regex::escape(trimmed).replace('%', ".*").replace('_', "."),
+                end_anchor,
             );
 
             let expr = self.visit_expr(expr)?;
