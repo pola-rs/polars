@@ -5,6 +5,7 @@ import contextlib
 import io
 import itertools
 import json
+import math
 import os
 import pickle
 import struct
@@ -350,6 +351,24 @@ class TestIcebergScanIO:
         capfd.readouterr()
         pl.scan_iceberg(tbl.metadata_location).filter(pl.col("id") != 1).collect()
         assert "num_sources: 1" in capfd.readouterr().err
+
+    def test_scan_iceberg_noteq_null_and_nan(self, tmp_path: Path) -> None:
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(
+                NestedField(1, "id", LongType()),
+                NestedField(2, "value", DoubleType()),
+            ),
+        )
+        pl.DataFrame(
+            {"id": [1, 2, 3], "value": [1.0, None, float("nan")]},
+            schema={"id": pl.Int64, "value": pl.Float64},
+        ).write_iceberg(tbl, mode="append")
+
+        res = pl.scan_iceberg(tbl.metadata_location).filter(pl.col("value") != 1.0)
+        [(row_id, value)] = res.collect().rows()
+        assert row_id == 3
+        assert math.isnan(value)
 
     def test_scan_iceberg_filter_is_in_empty(self, tmp_path: Path) -> None:
         tbl, _ = new_iceberg_table(
