@@ -25,10 +25,11 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::{unique_column_name, unitvec};
-use slotmap::SlotMap;
 
 use super::fmt::fmt_exprs;
-use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
+use super::{
+    PhysNode, PhysNodeKey, PhysNodeKind, PhysPlanBuilder, PhysStream, StreamingLowerIRContext,
+};
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_group_by::{
     GroupByLowerKind, build_group_by_stream, try_build_streaming_group_by,
@@ -57,7 +58,7 @@ pub(crate) struct LowerExprContext<'a> {
     pub(crate) prepare_visualization: bool,
     pub(crate) sortedness: &'a IRPlanSorted,
     pub(crate) expr_arena: &'a mut Arena<AExpr>,
-    pub(crate) phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
+    pub(crate) phys_sm: &'a mut PhysPlanBuilder,
     pub(crate) cache: &'a mut ExprCache,
     pub(crate) node_scratch: &'a mut ScratchVec<Node>,
     pub(crate) ae_height_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
@@ -2806,7 +2807,7 @@ pub fn lower_exprs(
     input: PhysStream,
     exprs: &[ExprIR],
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>)> {
@@ -2836,7 +2837,7 @@ pub fn build_select_stream(
     input: PhysStream,
     exprs: &[ExprIR],
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
@@ -2857,7 +2858,7 @@ pub fn build_hstack_stream(
     input: PhysStream,
     exprs: &[ExprIR],
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {

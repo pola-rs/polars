@@ -32,10 +32,9 @@ use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
 use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
-use slotmap::SlotMap;
 
 use super::lower_expr::build_hstack_stream;
-use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
+use super::{PhysNode, PhysNodeKind, PhysPlanBuilder, PhysStream};
 use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
@@ -53,7 +52,7 @@ pub fn build_slice_stream(
     input: PhysStream,
     offset: i64,
     length: usize,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
 ) -> PhysStream {
     if offset >= 0 {
         let offset = offset as usize;
@@ -82,7 +81,7 @@ pub fn build_filter_stream(
     input: PhysStream,
     predicate: ExprIR,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
@@ -138,7 +137,7 @@ pub fn build_row_idx_stream(
     input: PhysStream,
     name: PlSmallStr,
     offset: Option<IdxSize>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
 ) -> PhysStream {
     let input_schema = input.output_schema(phys_sm);
     let mut output_schema = (**input_schema).clone();
@@ -160,13 +159,50 @@ pub struct StreamingLowerIRContext<'a> {
     pub sortedness: &'a IRPlanSorted,
 }
 
+/// Lowers `node` and everything below it to physical nodes.
+///
+/// Every physical node inserted while lowering an IR node of the original plan is attributed
+/// to that IR node. Lowering also appends temporary IR nodes to the arena and lowers them
+/// recursively; those are not part of the plan the query observer sees, so nodes lowered from
+/// them inherit the attribution of the original IR node whose lowering created them.
 #[recursive::recursive]
 #[allow(clippy::too_many_arguments)]
 pub fn lower_ir(
     node: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
+    schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
+    expr_cache: &mut ExprCache,
+    cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
+    ctx: StreamingLowerIRContext<'_>,
+    disable_morsel_split: Option<bool>,
+) -> PolarsResult<PhysStream> {
+    let prev_ir_node = phys_sm.current_ir_node;
+    if phys_sm.is_original_ir_node(node) {
+        phys_sm.current_ir_node = Some(node);
+    }
+    let result = lower_ir_inner(
+        node,
+        ir_arena,
+        expr_arena,
+        phys_sm,
+        schema_cache,
+        expr_cache,
+        cache_nodes,
+        ctx,
+        disable_morsel_split,
+    );
+    phys_sm.current_ir_node = prev_ir_node;
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
+fn lower_ir_inner(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut PhysPlanBuilder,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
     cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
@@ -1902,7 +1938,7 @@ fn append_sorted_key_column(
     keys_sorted: Option<&Vec<AExprSorted>>,
     broadcast_nulls: Option<bool>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>, Option<PlSmallStr>)> {
@@ -1953,7 +1989,7 @@ fn lower_subtree_to_inmem_engine(
     ir_node_output_schema: Arc<Schema>,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
     let mem_engine_executor = create_physical_plan(

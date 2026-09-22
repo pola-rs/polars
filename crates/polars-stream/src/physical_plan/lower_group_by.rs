@@ -20,9 +20,10 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, unique_column_name};
 use recursive::recursive;
-use slotmap::SlotMap;
 
-use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
+use super::{
+    ExprCache, PhysNode, PhysNodeKind, PhysPlanBuilder, PhysStream, StreamingLowerIRContext,
+};
 use crate::physical_plan::lower_expr::{
     build_hstack_stream, build_select_stream, compute_output_schema, is_elementwise_rec_cached,
     is_fake_elementwise_function, is_input_independent,
@@ -63,7 +64,7 @@ fn build_group_by_fallback(
     options: Arc<GroupbyOptions>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
     format_str: Option<String>,
 ) -> PolarsResult<PhysStream> {
     let input_schema = input.output_schema(phys_sm).clone();
@@ -592,7 +593,7 @@ fn try_lower_agg_input_expr(
     keys: &[ExprIR],
     expr: Node,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<Option<(PhysStream, Node, /* all_keys_included */ bool)>> {
@@ -755,7 +756,7 @@ pub fn try_build_streaming_group_by(
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     gbl_kind: GroupByLowerKind,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<Option<PhysStream>> {
@@ -1107,7 +1108,7 @@ pub fn try_build_sorted_group_by(
     options: Arc<GroupbyOptions>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
@@ -1286,7 +1287,7 @@ pub fn build_group_by_stream(
     options: Arc<GroupbyOptions>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut PhysPlanBuilder,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
