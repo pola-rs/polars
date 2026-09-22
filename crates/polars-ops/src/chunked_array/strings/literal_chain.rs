@@ -134,25 +134,18 @@ mod test {
         let chain = LiteralChain::parse(pat).unwrap();
         let re = regex::Regex::new(pat).unwrap();
         for s in haystacks {
-            assert_eq!(chain.is_match(s.as_bytes()), re.is_match(s), "{pat} on {s:?}");
+            assert_eq!(
+                chain.is_match(s.as_bytes()),
+                re.is_match(s),
+                "{pat} on {s:?}"
+            );
         }
     }
 
     #[test]
     fn test_literal_chain_matches_regex() {
         let haystacks = [
-            "",
-            "a",
-            "ab",
-            "aab",
-            "ba",
-            "abab",
-            "a\nb",
-            "xaybz",
-            "aXb",
-            "abXab",
-            "é€b",
-            "bXa",
+            "", "a", "ab", "aab", "ba", "abab", "a\nb", "xaybz", "aXb", "abXab", "é€b", "bXa",
         ];
         for pat in [
             "^(?s).*a.*b.*$",

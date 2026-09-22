@@ -336,7 +336,9 @@ pub trait StringNameSpaceImpl: AsString {
     fn contains(&self, pat: &str, strict: bool) -> PolarsResult<BooleanChunked> {
         let ca = self.as_string();
         if let Some(chain) = LiteralChain::cached(pat) {
-            return Ok(unary_elementwise_values(ca, |s| chain.is_match(s.as_bytes())));
+            return Ok(unary_elementwise_values(ca, |s| {
+                chain.is_match(s.as_bytes())
+            }));
         }
         let res_reg = polars_utils::regex_cache::compile_regex(pat);
         let opt_reg = if strict { Some(res_reg?) } else { res_reg.ok() };
