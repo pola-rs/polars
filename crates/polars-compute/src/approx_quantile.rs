@@ -233,6 +233,7 @@ pub mod kll {
 
     /// Smallest `k` guaranteeing rank error <= `error * n` w.p. >= 1 - `delta` for a
     /// *single* query value, with `delta` = `FAILURE_PROBABILITY`.
+    #[inline(never)]
     fn compute_k(error: f64) -> usize {
         assert!((MIN_ERROR..1.0).contains(&error), "invalid error: {error}");
 
