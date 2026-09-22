@@ -24,25 +24,14 @@ use rayon::prelude::*;
 
 use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, emit_morsel_size, fold_sample, sample_sink, send_frames,
+    BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, emit_morsel_size, fold_sample,
+    sample_sink, select_key_columns, send_frames,
 };
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
 
 /// Bytes a hash table takes per key on top of the key itself.
 const KEY_SLOT_OVERHEAD: f64 = 16.0;
-
-async fn select_key_columns(
-    df: &DataFrame,
-    key_selectors: &[StreamExpr],
-    state: &ExecutionState,
-) -> PolarsResult<DataFrame> {
-    let mut key_columns = Vec::new();
-    for selector in key_selectors {
-        key_columns.push(selector.evaluate(df, state).await?.into_column());
-    }
-    unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns) }
-}
 
 fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
     HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
@@ -80,16 +69,17 @@ impl SemiAntiJoinParams {
         self.left_is_build.unwrap()
     }
 
-    /// Whether the build keys go to the runtime filters: the filters exist and
-    /// describe the side being built.
+    /// The side the plan asked to build from, if any.
+    fn planned_build_left(&self) -> Option<bool> {
+        build_side_left(self.build_side.as_ref())
+    }
+
+    /// Whether the build keys go to the runtime filters: the filters exist,
+    /// were not set from a sample, and describe the side being built.
     fn publishes_runtime_filters(&self) -> bool {
-        let planned_left = matches!(
-            self.build_side,
-            Some(JoinBuildSide::ForceLeft | JoinBuildSide::PreferLeft)
-        );
         !self.runtime_filters.is_empty()
             && !self.runtime_filters.is_set()
-            && self.left_is_build == Some(planned_left)
+            && self.left_is_build == self.planned_build_left()
     }
 
     /// Whether the built rows that no probe row matches are the output.
@@ -175,7 +165,16 @@ impl SemiAntiJoinNode {
                 BufferedStream::default(),
             ))
         } else {
-            SemiAntiJoinState::Sample(SampleState::default())
+            // A forced side never samples, so this names a preferred one.
+            let only_side = if params.runtime_filters.is_empty() {
+                None
+            } else {
+                params.planned_build_left()
+            };
+            SemiAntiJoinState::Sample(SampleState {
+                only_side,
+                ..Default::default()
+            })
         };
 
         Ok(Self {
@@ -262,11 +261,20 @@ struct SampleState {
     left_len: usize,
     right: Vec<Morsel>,
     right_len: usize,
+    /// The only side being read: the preferred build side of a join with runtime
+    /// filters, until it ends or reaches the sample limit. A side that ends is
+    /// complete, so its keys are published before the other side is read.
+    only_side: Option<bool>,
 }
 
 impl SampleState {
     fn len(&self, left: bool) -> usize {
         if left { self.left_len } else { self.right_len }
+    }
+
+    /// Whether a side is being read.
+    fn is_open(&self, left: bool) -> bool {
+        self.only_side.is_none_or(|only| only == left)
     }
 
     fn try_transition_to_build(
@@ -276,6 +284,28 @@ impl SampleState {
         state: &StreamingExecutionState,
         spill_ctx: &MostRecentSpillContext,
     ) -> PolarsResult<Option<BuildState>> {
+        if let Some(left) = self.only_side {
+            let idx = if left { 0 } else { 1 };
+            let len = self.len(left);
+            if len >= params.sample_limit {
+                if config::verbose() {
+                    eprintln!("preferred build side reached the sample limit, sampling both sides");
+                }
+            } else if recv[idx] == PortState::Done {
+                if config::verbose() {
+                    eprintln!("preferred build side done with {len} rows, publishing its keys");
+                }
+                self.publish_runtime_filters(left, params, state)?;
+                // Nothing can match an empty side; the other side is never read.
+                if len == 0 {
+                    return Ok(Some(self.start_build(left, params, state, spill_ctx)?));
+                }
+            } else {
+                return Ok(None);
+            }
+            self.only_side = None;
+        }
+
         let left_saturated = self.left_len >= params.sample_limit;
         let right_saturated = self.right_len >= params.sample_limit;
         let left_done = recv[0] == PortState::Done || left_saturated;
@@ -344,6 +374,25 @@ impl SampleState {
             state,
             spill_ctx,
         )?))
+    }
+
+    /// Hand the keys of a completely sampled side to the runtime filters.
+    fn publish_runtime_filters(
+        &self,
+        left: bool,
+        params: &SemiAntiJoinParams,
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
+        let (morsels, key_selectors) = if left {
+            (&self.left, &params.left_key_selectors)
+        } else {
+            (&self.right, &params.right_key_selectors)
+        };
+        params.runtime_filters.publish_from_sample(
+            morsels,
+            key_selectors,
+            &state.in_memory_exec_state,
+        )
     }
 
     /// Start building from `left_is_build`, feeding it the morsels sampled from
@@ -1047,7 +1096,8 @@ impl ComputeNode for SemiAntiJoinNode {
                     if recv[idx] == PortState::Done {
                         continue;
                     }
-                    recv[idx] = if sample_state.len(left) < self.params.sample_limit {
+                    let open = sample_state.is_open(left);
+                    recv[idx] = if open && sample_state.len(left) < self.params.sample_limit {
                         PortState::Ready
                     } else {
                         PortState::Blocked
@@ -1124,10 +1174,11 @@ impl ComputeNode for SemiAntiJoinNode {
         match &mut self.state {
             SemiAntiJoinState::Sample(sample_state) => {
                 assert!(send_ports[0].is_none());
-                // A side without a port is done.
+                // A side without a port is done, unless it is not being read.
                 let final_len = |left: bool| {
                     let idx = if left { 0 } else { 1 };
-                    let len = if recv_ports[idx].is_none() {
+                    let known = recv_ports[idx].is_none() && sample_state.is_open(left);
+                    let len = if known {
                         sample_state.len(left)
                     } else {
                         usize::MAX

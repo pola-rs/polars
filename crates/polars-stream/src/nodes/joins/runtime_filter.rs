@@ -8,12 +8,19 @@ use std::sync::Arc;
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::config;
 use polars_core::prelude::*;
+use polars_core::runtime::{ASYNC, RAYON};
 use polars_expr::hash_keys::HashKeys;
 use polars_io::predicates::{RuntimeRange, cast_bound};
 use polars_plan::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use polars_plan::plans::{PredicateExpr, TrivialPredicateExpr};
 use polars_utils::bloom_filter::SplitBlockBloom;
 use polars_utils::cardinality_sketch::CardinalitySketch;
+use rayon::prelude::*;
+
+use super::select_key_columns;
+use crate::expression::StreamExpr;
+use crate::morsel::Morsel;
+use crate::nodes::ExecutionState;
 
 /// Bits per key a bloom filter is sized for.
 const BLOOM_BITS_PER_KEY: usize = 8;
@@ -87,6 +94,36 @@ impl RuntimeFilters {
             }
             filter.pred.set(Arc::new(key_filter));
         }
+    }
+
+    /// Set every filter to the keys of a completely sampled side. The filter
+    /// holds whichever side is built later, as no key of the other side outside
+    /// it can match.
+    pub(super) fn publish_from_sample(
+        &self,
+        morsels: &[Morsel],
+        key_selectors: &[StreamExpr],
+        state: &ExecutionState,
+    ) -> PolarsResult<()> {
+        let new_builders = || self.new_builders();
+        let builders = RAYON.install(|| {
+            morsels
+                .par_iter()
+                .try_fold(new_builders, |mut builders, morsel| {
+                    let df = morsel.df_blocking();
+                    let keys = ASYNC.block_on(select_key_columns(&df, key_selectors, state))?;
+                    self.extend(&keys, &mut builders)?;
+                    PolarsResult::Ok(builders)
+                })
+                .try_reduce(new_builders, |mut a, b| {
+                    for (a, b) in a.iter_mut().zip(b) {
+                        a.merge(b);
+                    }
+                    Ok(a)
+                })
+        })?;
+        self.publish(builders);
+        Ok(())
     }
 
     /// Set every filter to what the builders of every local build collected.

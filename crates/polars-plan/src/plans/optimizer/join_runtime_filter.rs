@@ -23,9 +23,9 @@
 //! reached one.
 //!
 //! A semi join publishes from either side and an anti join from its left side
-//! only, as the rows of its right side that match no left key change nothing. The
-//! semi/anti join node reads its sides in order only when one is forced, so those
-//! joins get forced build sides only.
+//! only, as the rows of its right side that match no left key change nothing. A
+//! semi join may prefer its right side on an estimate; a left side is only built
+//! when forced, as building it keeps its rows.
 
 use std::sync::Arc;
 
@@ -130,8 +130,10 @@ fn process_join(
     let mut sides = build_candidates(false, &right_stats, right_width);
     sides.extend(build_candidates(true, &left_stats, left_width));
     let how = &options.args.how;
-    if how.is_semi_anti() {
-        sides.retain(|s| s.forced && (how.is_semi() || s.left));
+    if how.is_semi() {
+        sides.retain(|s| s.forced || !s.left);
+    } else if how.is_anti() {
+        sides.retain(|s| s.forced && s.left);
     }
     sides.sort_by(|a, b| b.forced.cmp(&a.forced).then(a.rows.total_cmp(&b.rows)));
 
