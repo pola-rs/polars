@@ -15,16 +15,42 @@ use crate::datatypes::{
 use crate::datatypes::{CategoricalChunked, PolarsCategoricalType};
 use crate::series::IsSorted;
 
+/// The index of the element no other one is `better` than.
+///
+/// `better` decides ties, and so which of several equal extremes the index names: it is what
+/// tells [`arg_min_opt_iter`] to keep the first of them and [`arg_max_opt_iter`] the last, as
+/// [`Iterator::min_by`] and [`Iterator::max_by`] do.
+fn arg_extreme_opt_iter<T, I, F>(iter: I, better: F) -> Option<usize>
+where
+    I: IntoIterator<Item = Option<T>>,
+    F: Fn(&T, &T) -> bool,
+{
+    // The index belongs outside the fold rather than in the accumulator it carries; see
+    // [`arg_extreme_physical_generic`] for what carrying it costs.
+    let mut best: Option<(usize, T)> = None;
+    let mut next_idx = 0;
+
+    iter.into_iter().for_each(|value| {
+        let idx = next_idx;
+        next_idx += 1;
+
+        if let Some(value) = value {
+            match &best {
+                Some((_, best_value)) if !better(&value, best_value) => {},
+                _ => best = Some((idx, value)),
+            }
+        }
+    });
+
+    best.map(|(idx, _)| idx)
+}
+
 pub fn arg_min_opt_iter<T, I>(iter: I) -> Option<usize>
 where
     I: IntoIterator<Item = Option<T>>,
     T: Ord,
 {
-    iter.into_iter()
-        .enumerate()
-        .flat_map(|(idx, val)| Some((idx, val?)))
-        .min_by(|x, y| Ord::cmp(&x.1, &y.1))
-        .map(|x| x.0)
+    arg_extreme_opt_iter(iter, |value, best| value < best)
 }
 
 pub fn arg_max_opt_iter<T, I>(iter: I) -> Option<usize>
@@ -32,11 +58,7 @@ where
     I: IntoIterator<Item = Option<T>>,
     T: Ord,
 {
-    iter.into_iter()
-        .enumerate()
-        .flat_map(|(idx, val)| Some((idx, val?)))
-        .max_by(|x, y| Ord::cmp(&x.1, &y.1))
-        .map(|x| x.0)
+    arg_extreme_opt_iter(iter, |value, best| value >= best)
 }
 
 pub fn arg_min_numeric<T>(ca: &ChunkedArray<T>) -> Option<usize>
