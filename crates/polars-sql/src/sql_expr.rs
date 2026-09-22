@@ -512,6 +512,17 @@ impl SQLExprVisitor<'_> {
                 SQLBinaryOperator::Eq
             };
             self.visit_binary_op(expr, &op, pattern)
+        } else if !case_insensitive
+            && pat.len() > 2
+            && pat.starts_with('%')
+            && pat.ends_with('%')
+            && !pat[1..pat.len() - 1].contains(['%', '_'])
+        {
+            // plain substring match (eg: '%foo%' with no other wildcard chars)
+            let needle = pat[1..pat.len() - 1].to_string();
+            let expr = self.visit_expr(expr)?;
+            let matches = expr.str().contains_literal(lit(needle));
+            Ok(if negated { matches.not() } else { matches })
         } else {
             // create regex from pattern containing SQL wildcard chars ('%' => '.*', '_' => '.')
             let mut rx = regex::escape(pat.as_str())
@@ -1120,14 +1131,10 @@ impl SQLExprVisitor<'_> {
                     .map_err(|_| polars_err!(SQLSyntax: "invalid hex string literal: '{}'", x))?)
             },
             SQLValue::Null => Expr::Literal(LiteralValue::untyped_null()),
-            SQLValue::Number(s, _) => {
-                // Check for existence of decimal separator dot
-                if s.contains('.') {
-                    s.parse::<f64>().map(lit).map_err(|_| ())
-                } else {
-                    s.parse::<i64>().map(lit).map_err(|_| ())
-                }
-                .map_err(|_| polars_err!(SQLInterface: "cannot parse literal: {:?}", s))?
+            SQLValue::Number(s, _) => match parse_numeric_literal(s, false)? {
+                AnyValue::Int64(value) => lit(value),
+                AnyValue::Float64(value) => lit(value),
+                _ => unreachable!(),
             },
             SQLValue::SingleQuotedByteStringLiteral(b) => {
                 // note: for PostgreSQL this represents a BIT string literal (eg: b'10101') not a BYTE string
@@ -1172,17 +1179,7 @@ impl SQLExprVisitor<'_> {
                         polars_bail!(SQLInterface: "unary op {:?} not supported for numeric SQL value", op)
                     },
                 };
-                // Check for existence of decimal separator dot
-                if s.contains('.') {
-                    s.parse::<f64>()
-                        .map(|n: f64| AnyValue::Float64(if negate { -n } else { n }))
-                        .map_err(|_| ())
-                } else {
-                    s.parse::<i64>()
-                        .map(|n: i64| AnyValue::Int64(if negate { -n } else { n }))
-                        .map_err(|_| ())
-                }
-                .map_err(|_| polars_err!(SQLInterface: "cannot parse literal: {:?}", s))?
+                parse_numeric_literal(s, negate)?
             },
             SQLValue::SingleQuotedByteStringLiteral(b) => {
                 // note: for PostgreSQL this represents a BIT literal (eg: b'10101') not BYTE
@@ -1860,4 +1857,19 @@ pub(crate) fn resolve_compound_identifier(
         column = column.struct_().field_by_name(name);
     }
     Ok(vec![column])
+}
+
+fn parse_numeric_literal(s: &str, negate: bool) -> PolarsResult<AnyValue<'static>> {
+    let value = if s.contains(['.', 'e', 'E']) {
+        s.parse::<f64>()
+            .map(|n| AnyValue::Float64(if negate { -n } else { n }))
+            .map_err(|_| ())
+    } else {
+        s.parse::<i64>()
+            .ok()
+            .and_then(|n| if negate { n.checked_neg() } else { Some(n) })
+            .map(AnyValue::Int64)
+            .ok_or(())
+    };
+    value.map_err(|_| polars_err!(SQLInterface: "cannot parse literal: {:?}", s))
 }

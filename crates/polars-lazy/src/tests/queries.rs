@@ -2079,3 +2079,23 @@ fn test_join_where_left_maintain_order() -> PolarsResult<()> {
     assert_eq!(a.len(), 998 * 2 + 1 + 1001);
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "iejoin")]
+fn test_join_where_left_pushed_condition_keeps_validation() -> PolarsResult<()> {
+    // `validate` is not reachable from `join_where` in Python.
+    use polars_defs::join::JoinValidation;
+    let left = df!["a" => [1, 2]]?.lazy();
+    let right = df!["b" => [1, 2]]?.lazy();
+
+    let query = left
+        .join_builder()
+        .with(right)
+        .how(JoinType::Left)
+        .validate(JoinValidation::OneToOne)
+        .join_where(vec![col("b").gt(lit(0))])
+        .filter(col("b").is_not_null());
+
+    assert!(query.collect().is_err());
+    Ok(())
+}

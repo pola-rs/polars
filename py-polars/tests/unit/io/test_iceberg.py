@@ -17,7 +17,7 @@ from datetime import date, datetime
 from decimal import Decimal as D
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -81,13 +81,14 @@ from polars.io.iceberg._utils import (
     _to_ast,
     try_convert_pyarrow_predicate,
 )
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.io.conftest import normalize_path_separator_pl
 from tests.unit.io.test_scan_row_deletion import write_position_deletes  # noqa: F401
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
     from tests.unit.io.test_scan_row_deletion import (
         WritePositionDeletes,
@@ -102,10 +103,12 @@ if TYPE_CHECKING:
     GreaterThan: Any
     GreaterThanOrEqual: Any
     In: Any
+    IsNaN: Any
     IsNull: Any
     LessThan: Any
     LessThanOrEqual: Any
     Not: Any
+    NotNaN: Any
     Or: Any
     Reference: Any
 else:
@@ -117,10 +120,12 @@ else:
         GreaterThan,
         GreaterThanOrEqual,
         In,
+        IsNaN,
         IsNull,
         LessThan,
         LessThanOrEqual,
         Not,
+        NotNaN,
         Or,
         Reference,
     )
@@ -441,6 +446,31 @@ class TestIcebergExpressions:
             "((pa.compute.field('id') > 10) | ((pa.compute.field('id') * 2) > 4))"
         )
         assert expr is None
+
+
+@pytest.mark.parametrize(
+    ("predicate", "expected_factory"),
+    [
+        ("(pa.compute.field('value') == NaN)", lambda: IsNaN("value")),
+        ("(pa.compute.field('value') != NaN)", lambda: NotNaN("value")),
+        (
+            "((pa.compute.field('value') != NaN) | "
+            "(pa.compute.field('value')).is_null())",
+            lambda: Or(NotNaN("value"), IsNull("value")),
+        ),
+        ("~(pa.compute.field('value') != NaN)", lambda: Not(NotNaN("value"))),
+        ("(pa.compute.field('value') > NaN)", lambda: None),
+        ("(pa.compute.field('value') <= NaN)", lambda: None),
+        (
+            "(pa.compute.field('value') == 'NaN')",
+            lambda: EqualTo("value", "NaN"),
+        ),
+    ],
+)
+def test_convert_nan_predicate(
+    predicate: str, expected_factory: Callable[[], Any]
+) -> None:
+    assert try_convert_pyarrow_predicate(predicate) == expected_factory()
 
 
 @dataclass(kw_only=True)
@@ -832,6 +862,22 @@ def test_sink_iceberg_sort_order_floats(
     assert [struct.pack(">d", value) for value in actual["value"]] == [
         struct.pack(">d", ordered[i]) for i in expected_ids
     ]
+
+
+def test_sink_iceberg_sort_key_exprs_are_serializable() -> None:
+    # Sink-plan serialization happens before sort keys are built; test them directly.
+    from polars.io.iceberg._sink import _sort_key_exprs
+
+    exprs, _, _ = _sort_key_exprs(
+        IcebergSchema(NestedField(1, "value", LongType())),
+        SortOrder(SortField(1, BucketTransform(4))),
+        pl.Schema({"value": pl.Int64}),
+    )
+
+    lf = pl.LazyFrame({"value": [1, 2, 3]}).select(exprs)
+    roundtripped = pl.LazyFrame.deserialize(io.BytesIO(lf.serialize()))
+
+    assert_frame_equal(roundtripped.collect(), lf.collect())
 
 
 @pytest.mark.parametrize("missing", [False, True])
@@ -3409,7 +3455,7 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
         "[ParquetFileReader]: Predicate pushdown: reading 1 / 1 row groups" in capture
     )
     assert (
-        "[ParquetFileReader]: Pre-filtered decode enabled (1 live [1 pass-1, 0 pass-2], 1 non-live)"
+        "[ParquetFileReader]: Pre-filtered decode enabled (1 live [1 column predicates, 0 rest], 1 non-live)"
         in capture
     )
 
@@ -4027,6 +4073,78 @@ def test_scan_iceberg_min_max_statistics_filter(
     assert iceberg_table_filter_seen
 
 
+def test_import_decimal_from_iceberg_binary_repr_sign_extend_29449() -> None:
+    from polars._plr import PySeries
+    from polars._utils.wrap import wrap_s
+
+    # Iceberg stores the unscaled value as a two's-complement big-endian integer
+    # using the minimum number of bytes, so the leading bytes must be sign-extended.
+    assert_series_equal(
+        wrap_s(
+            PySeries._import_decimal_from_iceberg_binary_repr(
+                bytes_list=[b"\xf0\xc9\xa7", b"\x04\xe2", b"\x00", b"\xff", None],
+                precision=7,
+                scale=2,
+            )
+        ),
+        pl.Series(
+            [D("-9969.53"), D("12.50"), D("0.00"), D("-0.01"), None],
+            dtype=pl.Decimal(precision=7, scale=2),
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_negative_decimal_statistics_29449(tmp_path: Path) -> None:
+    dtype = pl.Decimal(precision=7, scale=2)
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "profit", DecimalType(7, 2), required=False)
+        ),
+    )
+
+    tbl.append(
+        pa.table({"profit": pa.array([D("-9969.53"), D("12.50")], pa.decimal128(7, 2))})
+    )
+
+    expect = pl.DataFrame(
+        {"profit": pl.Series([D("-9969.53"), D("12.50")], dtype=dtype)}
+    )
+
+    for reader_override in ["native", "pyiceberg"]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl, reader_override=reader_override).collect(),  # type: ignore[arg-type]
+            expect,
+        )
+
+        # The lower bound is the 3-byte two's-complement `f0c9a7`. Decoding it as
+        # unsigned used to raise a precision error here.
+        assert_frame_equal(
+            pl.scan_iceberg(tbl, reader_override=reader_override)  # type: ignore[arg-type]
+            .filter(pl.col("profit") > 0)
+            .collect(),
+            expect.filter(pl.col("profit") > 0),
+        )
+
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl(
+        filter_columns=["profit"]
+    )
+
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.min_max_statistics is not None
+    assert_frame_equal(
+        scan_data.min_max_statistics.select("profit_min", "profit_max"),
+        pl.DataFrame(
+            {
+                "profit_min": pl.Series([D("-9969.53")], dtype=dtype),
+                "profit_max": pl.Series([D("12.50")], dtype=dtype),
+            }
+        ),
+    )
+
+
 @pytest.mark.write_disk
 def test_scan_iceberg_categorical_24140(tmp_path: Path) -> None:
     catalog = SqlCatalog(
@@ -4294,6 +4412,67 @@ def test_iceberg_filter_bool_26474(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize("reader_override", ["native", "pyiceberg"])
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+@pytest.mark.parametrize(
+    ("predicate", "expected_filter_factory"),
+    [
+        (pl.col("value") == float("nan"), lambda: IsNaN("value")),
+        (pl.col("value") != float("nan"), lambda: NotNaN("value")),
+        (
+            pl.col("value").eq_missing(float("nan")),
+            lambda: And(IsNaN("value"), Not(IsNull("value"))),
+        ),
+        (
+            pl.col("value").ne_missing(float("nan")),
+            lambda: Or(NotNaN("value"), IsNull("value")),
+        ),
+        (pl.col("value") > float("nan"), lambda: None),
+    ],
+)
+def test_scan_iceberg_nan_comparisons(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    reader_override: Literal["native", "pyiceberg"],
+    dtype: pl.DataType,
+    predicate: pl.Expr,
+    expected_filter_factory: Callable[[], Any | None],
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(
+                2,
+                "value",
+                FloatType() if dtype == pl.Float32 else DoubleType(),
+                required=False,
+            ),
+        ),
+    )
+    df = pl.DataFrame(
+        {
+            "id": [0, 1, 2, 3],
+            "value": pl.Series([None, float("nan"), 1.0, 2.0], dtype=dtype),
+        }
+    )
+    df.write_iceberg(tbl, mode="append")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    capfd.readouterr()
+    actual = (
+        pl.scan_iceberg(tbl, reader_override=reader_override)
+        .filter(predicate)
+        .collect()
+    )
+    capture = capfd.readouterr().err
+
+    assert_frame_equal(actual, df.filter(predicate), check_row_order=False)
+    assert f"iceberg_table_filter = {expected_filter_factory()!r}" in capture
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_partial_and_pushdown(
     tmp_path: Path,
     plmonkeypatch: PlMonkeyPatch,
@@ -4526,6 +4705,43 @@ def test_scan_iceberg_self_join_28465(tmp_path: Path) -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"x": 1}))
 
 
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.parametrize("query_kind", ["projection", "predicate"])
+def test_scan_iceberg_branch_caches_29345(
+    tmp_path: Path, engine: EngineType, query_kind: str
+) -> None:
+    table, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(2, "http_method", StringType()),
+            NestedField(3, "endpoint", StringType()),
+        ),
+    )
+    pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "http_method": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+            "endpoint": ["/a", None, "/c", None, "/e"],
+        }
+    ).write_iceberg(table, mode="append")
+
+    lf = pl.scan_iceberg(table, reader_override="pyiceberg")
+    if query_kind == "projection":
+        left = lf.filter(pl.col("id") > 0)
+        right = lf.filter(pl.col("endpoint").is_not_null()).select("id").limit(2)
+        q = left.join(right, on="id", how="semi").select("id", "http_method")
+        expected = pl.DataFrame({"id": [1, 3], "http_method": ["GET", "PUT"]})
+    else:
+        low = lf.filter(pl.col("id") <= 2).select("id")
+        high = lf.filter(pl.col("id") >= 4).select("id")
+        q = pl.concat([low, high])
+        expected = pl.DataFrame({"id": [1, 2, 4, 5]})
+
+    for _ in range(2):
+        assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+
 def test_scan_iceberg_schema_change_24498(
     tmp_path: Path,
 ) -> None:
@@ -4557,3 +4773,45 @@ def test_scan_iceberg_schema_change_24498(
         table,
         snapshot_id=table.snapshots()[2].snapshot_id,
     ).collect_schema() == {"a": pl.Int64, "b": pl.Int64}
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renamed_column_with_pruned_metadata(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Pruning must preserve renamed columns, which Iceberg maps by field ID.
+    from polars._plr import PyLazyFrame
+    from polars._utils.wrap import wrap_ldf
+
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("namespace")
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "old", IntegerType()),
+            NestedField(2, "other", IntegerType()),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+    pl.DataFrame(
+        {"old": [1, 2, 3], "other": [4, 5, 6]},
+        schema={"old": pl.Int32, "other": pl.Int32},
+    ).write_iceberg(tbl, mode="append")
+
+    with tbl.update_schema() as sch:
+        sch.rename_column("old", "new")
+
+    plmonkeypatch.setenv("POLARS_PRUNE_PARQUET_METADATA", "1")
+
+    lf = wrap_ldf(
+        PyLazyFrame.new_from_dataset_object(
+            new_iceberg_scan_resolver(tbl), resolve_heavy_sources=4
+        )
+    )
+
+    assert lf.select("new").collect().to_series().to_list() == [1, 2, 3]

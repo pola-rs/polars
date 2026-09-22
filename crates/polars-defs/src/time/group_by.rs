@@ -1,3 +1,4 @@
+use polars_core::datatypes::{DataType, TimeUnit};
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -92,6 +93,19 @@ impl Default for DynamicGroupOptions {
             closed_window: ClosedWindow::Left,
             start_by: Default::default(),
         }
+    }
+}
+
+/// The dtype of the `_lower_boundary` and `_upper_boundary` columns of a dynamic group-by on
+/// an index of `index_dtype`.
+///
+/// A `Date` index gets `Datetime` boundaries, because `every`, `period` and `offset` may be
+/// sub-day and a `Date` cannot hold the resulting window bounds.
+pub fn dynamic_boundary_dtype(index_dtype: &DataType) -> DataType {
+    if index_dtype.is_date() {
+        DataType::Datetime(TimeUnit::Microseconds, None)
+    } else {
+        index_dtype.clone()
     }
 }
 

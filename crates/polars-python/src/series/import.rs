@@ -10,6 +10,7 @@ use pyo3::types::{PyCapsule, PyTuple, PyType};
 
 use super::PySeries;
 use crate::error::PyPolarsErr;
+use crate::utils::EnterPolarsExt as _;
 
 /// Import `__arrow_c_array__` across Python boundary
 pub(crate) fn call_arrow_c_array<'py>(
@@ -105,37 +106,64 @@ pub(crate) fn open_stream_capsule(
     }
 }
 
-pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<PySeries> {
-    let mut stream = open_stream_capsule(capsule)?;
+/// Moves an FFI stream reader across a GIL-release boundary.
+///
+/// # Safety
+/// The Arrow C stream interface is a plain C ABI: producers must be callable without
+/// the GIL held, and Python-backed producers (pyarrow and friends) re-acquire it
+/// internally. The reader is only ever touched by the single thread that owns it.
+struct SendStreamReader(ArrowArrayStreamReader<Box<ArrowArrayStream>>);
+unsafe impl Send for SendStreamReader {}
 
-    let mut produced_arrays: Vec<Box<dyn Array>> = vec![];
-    while let Some(array) = unsafe { stream.next() } {
-        produced_arrays.push(array.map_err(PyPolarsErr::from)?);
-    }
+pub(crate) fn import_stream_pycapsule(
+    py: Python<'_>,
+    capsule: &Bound<PyCapsule>,
+) -> PyResult<PySeries> {
+    let stream = SendStreamReader(open_stream_capsule(capsule)?);
 
-    // Series::try_from fails for an empty vec of chunks
-    let s = if produced_arrays.is_empty() {
-        let polars_dt = DataType::from_arrow_field(stream.field());
-        Series::new_empty(stream.field().name.clone(), &polars_dt)
-    } else {
-        Series::try_from((stream.field(), produced_arrays)).map_err(PyPolarsErr::from)?
-    };
+    // Both draining the stream and converting the chunks can be arbitrarily expensive
+    // (decoding on the producer side, arrow -> polars casts on ours), so neither may
+    // hold the GIL; otherwise concurrent Python threads serialize on this call.
+    let s = py.enter_polars(move || {
+        let mut stream = stream;
+
+        let mut produced_arrays: Vec<Box<dyn Array>> = vec![];
+        while let Some(array) = unsafe { stream.0.next() } {
+            produced_arrays.push(array?);
+        }
+
+        // Series::try_from fails for an empty vec of chunks
+        if produced_arrays.is_empty() {
+            let polars_dt = DataType::from_arrow_field(stream.0.field());
+            Ok(Series::new_empty(stream.0.field().name.clone(), &polars_dt))
+        } else {
+            Series::try_from((stream.0.field(), produced_arrays))
+        }
+    })?;
     Ok(PySeries::new(s))
 }
 #[pymethods]
 impl PySeries {
     #[classmethod]
-    pub fn from_arrow_c_array(_cls: &Bound<PyType>, ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+    pub fn from_arrow_c_array(
+        _cls: &Bound<PyType>,
+        py: Python<'_>,
+        ob: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
         let (schema_capsule, array_capsule) = call_arrow_c_array(ob)?;
         let (field, array) = import_array_pycapsules(&schema_capsule, &array_capsule)?;
-        let s = Series::try_from((&field, array)).unwrap();
+        let s = py.enter_polars(|| Series::try_from((&field, array)))?;
         Ok(PySeries::new(s))
     }
 
     #[classmethod]
-    pub fn from_arrow_c_stream(_cls: &Bound<PyType>, ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+    pub fn from_arrow_c_stream(
+        _cls: &Bound<PyType>,
+        py: Python<'_>,
+        ob: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
         let capsule = call_arrow_c_stream(ob)?;
-        import_stream_pycapsule(&capsule)
+        import_stream_pycapsule(py, &capsule)
     }
 
     #[classmethod]
@@ -167,43 +195,48 @@ impl PySeries {
         //   value.
         let max_abs_decimal_value = 10_i128.pow(u32::try_from(precision).unwrap()) - 1;
 
-        let out: Vec<i128> = bytes_list
+        let out: Vec<Option<i128>> = bytes_list
             .try_iter()?
             .map(|bytes| {
                 let be_bytes: Option<PyBackedBytes> = bytes?.extract()?;
 
-                let mut le_bytes: [u8; 16] = [0; _];
+                let Some(be_bytes) = be_bytes.as_deref() else {
+                    return Ok(None);
+                };
 
-                if let Some(be_bytes) = be_bytes.as_deref() {
-                    if be_bytes.len() > le_bytes.len() {
-                        return Err(PyValueError::new_err(format!(
-                            "iceberg binary data for decimal exceeded 16 bytes: {}",
-                            be_bytes.len()
-                        )));
-                    }
+                if be_bytes.len() > size_of::<i128>() {
+                    return Err(PyValueError::new_err(format!(
+                        "iceberg binary data for decimal exceeded 16 bytes: {}",
+                        be_bytes.len()
+                    )));
+                }
 
-                    for (i, byte) in be_bytes.iter().rev().enumerate() {
-                        le_bytes[i] = *byte;
-                    }
+                // Sign-extend: the value is stored using the minimum number of
+                // bytes, so every byte above the ones given repeats the sign bit.
+                let is_negative = be_bytes.first().is_some_and(|b| b & 0x80 != 0);
+                let mut le_bytes: [u8; 16] = if is_negative { [0xFF; _] } else { [0; _] };
+
+                for (i, byte) in be_bytes.iter().rev().enumerate() {
+                    le_bytes[i] = *byte;
                 }
 
                 let value = i128::from_le_bytes(le_bytes);
 
-                if value.abs() > max_abs_decimal_value {
+                if value.unsigned_abs() > max_abs_decimal_value.unsigned_abs() {
                     return Err(PyValueError::new_err(format!(
                         "iceberg decoded value for decimal exceeded precision: \
                         value: {value}, precision: {precision}",
                     )));
                 }
 
-                Ok(value)
+                Ok(Some(value))
             })
             .collect::<PyResult<_>>()?;
 
         Ok(PySeries::from(unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::EMPTY,
-                vec![PrimitiveArray::<i128>::from_vec(out).boxed()],
+                vec![PrimitiveArray::<i128>::from_iter(out).boxed()],
                 &DataType::Decimal(precision, scale),
             )
         }))

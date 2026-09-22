@@ -368,8 +368,18 @@ pub(crate) fn is_subquery_expr(expr: &SQLExpr) -> bool {
 
 /// Check if a SQL expression contains a subquery, in any of its forms.
 pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
+    expr_contains(expr, is_subquery_expr)
+}
+
+/// Check if a SQL expression contains a scalar subquery (`(SELECT ...)` used as
+/// a value), as opposed to a predicate subquery (`EXISTS`, `IN`).
+pub(crate) fn expr_contains_scalar_subquery(expr: &SQLExpr) -> bool {
+    expr_contains(expr, |e| matches!(e, SQLExpr::Subquery(_)))
+}
+
+fn expr_contains(expr: &SQLExpr, is_match: impl Fn(&SQLExpr) -> bool) -> bool {
     visit_expressions(expr, |e| {
-        if is_subquery_expr(e) {
+        if is_match(e) {
             ControlFlow::Break(())
         } else {
             ControlFlow::Continue(())

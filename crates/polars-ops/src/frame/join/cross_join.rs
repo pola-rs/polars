@@ -192,7 +192,10 @@ pub(super) fn fused_cross_filter(
                 if !emit_unmatched_left {
                     cross_join_options.predicate.apply(joined, false)
                 } else {
-                    let mask = cross_join_options.predicate.evaluate(&joined)?;
+                    let mask = cross_join_options
+                        .predicate
+                        .evaluate(&joined)?
+                        .broadcast_owned_to(joined.height())?;
 
                     let len_left = left_chunk.height();
                     debug_assert_eq!(joined.height(), len_left * len_right);

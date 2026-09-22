@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Collection
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal as D
 from typing import TYPE_CHECKING
 
@@ -14,7 +14,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from polars._typing import PolarsDataType
+    from polars._typing import EngineType, PolarsDataType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_struct_logical_is_in() -> None:
@@ -841,3 +842,416 @@ def test_is_in_does_not_match_null_on_temporal_overflow() -> None:
     ):
         with pytest.raises(InvalidOperationError, match="same time unit"):
             df.select(expr)
+
+
+def _reference_is_in(
+    needles: list[object], haystack: list[object], nulls_equal: bool
+) -> list[bool | None]:
+    def same(a: object, b: object) -> bool:
+        if isinstance(a, float) and isinstance(b, float):
+            return (a != a and b != b) or a == b
+        return a == b
+
+    out: list[bool | None] = []
+    for n in needles:
+        if n is None:
+            out.append(any(h is None for h in haystack) if nulls_equal else None)
+        else:
+            out.append(any(h is not None and same(n, h) for h in haystack))
+    return out
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("null_in_haystack", [False, True])
+@pytest.mark.parametrize(
+    ("dtype", "needles", "haystack"),
+    [
+        # linear scan
+        (pl.Int64, [1, 2, 3, None, -5, 2**62], [1, -5, 2**62, 9, 10]),
+        # bitset with negative values
+        (pl.Int32, [-100, 0, 100, 5000, None, 7], list(range(-100, 100, 3)) + [5000]),
+        # bitset with values spanning most of the type
+        (pl.Int8, [-128, 127, 0, None], list(range(-128, 128, 2))),
+        # hash set: range too wide for a bitset
+        (
+            pl.Int64,
+            [0, 10**12, -(10**12), 5, None, 6],
+            [i * 10**9 for i in range(-1000, 1000, 7)] + [5],
+        ),
+        # extremes make the range overflow
+        (
+            pl.Int64,
+            [-(2**63), 2**63 - 1, 0, None],
+            [-(2**63), 2**63 - 1] + list(range(20)),
+        ),
+        (pl.UInt64, [0, 2**64 - 1, 3, None], [2**64 - 1, 3] + list(range(10, 30))),
+        (
+            pl.Int128,
+            [-(2**100), 2**100, 1, None],
+            [-(2**100), 2**100, 2, 3, 4, 5, 6, 7, 8],
+        ),
+        (pl.Float64, [1.0, -0.0, float("nan"), None, 2.5], [0.0, float("nan"), 2.5]),
+        (
+            pl.Float32,
+            [1.0, -0.0, float("nan"), None, 2.5],
+            [0.0, float("nan")] + [float(i) for i in range(10)],
+        ),
+        (pl.String, ["a", "", "bb", None, "zzz"], ["a", "", "ccc", "dddd"]),
+        (
+            pl.String,
+            ["a", "", "bb", None, "x50", "x51"],
+            [f"x{i}" for i in range(100)] + [""],
+        ),
+        (pl.Binary, [b"a", b"", b"bb", None], [b"a", b"", b"ccc"]),
+        (pl.Boolean, [True, False, None], [True]),
+        (pl.Boolean, [True, False, None], [False]),
+        (pl.Boolean, [True, False, None], []),
+        (pl.Date, [date(2020, 1, 1), date(2021, 1, 1), None], [date(2020, 1, 1)]),
+        (pl.Decimal(10, 2), [D("1.50"), D("2.00"), None], [D("1.5"), D("3")]),
+        (pl.List(pl.Int64), [[1, 2], [3], [], None, [None]], [[1, 2], [], [None]]),
+        (
+            pl.Struct({"a": pl.Int64, "b": pl.String}),
+            [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}, None, {"a": None, "b": None}],
+            [{"a": 1, "b": "x"}, {"a": None, "b": None}],
+        ),
+    ],
+)
+def test_is_in_literal_haystack_paths(
+    engine: EngineType,
+    nulls_equal: bool,
+    null_in_haystack: bool,
+    dtype: pl.DataType,
+    needles: list[object],
+    haystack: list[object],
+) -> None:
+    if null_in_haystack:
+        haystack = [*haystack, None]
+    needle_s = pl.Series("n", needles, dtype=dtype)
+    haystack_s = pl.Series(haystack, dtype=dtype)
+    expected = _reference_is_in(needles, haystack, nulls_equal)
+
+    result = (
+        needle_s.to_frame()
+        .lazy()
+        .select(pl.col("n").is_in(haystack_s.implode(), nulls_equal=nulls_equal))
+        .collect(engine=engine)
+        .to_series()
+    )
+    assert result.to_list() == expected
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_is_in_literal_haystack_many_chunks(
+    engine: EngineType, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    n = 2_000
+    df = pl.DataFrame({"i": range(n), "s": [str(i) for i in range(n)]})
+    df = pl.concat([df.slice(i * 100, 100) for i in range(n // 100)])
+    haystack = list(range(0, n, 10))
+    result = (
+        df.lazy()
+        .select(
+            i=pl.col("i").is_in(haystack),
+            s=pl.col("s").is_in([str(i) for i in haystack]),
+        )
+        .collect(engine=engine)
+    )
+    expected = [i % 10 == 0 for i in range(n)]
+    assert result["i"].to_list() == expected
+    assert result["s"].to_list() == expected
+
+
+def test_is_in_literal_haystack_in_group_by() -> None:
+    df = pl.DataFrame({"g": [1, 1, 2, 2, 3], "v": [1, 5, 2, 9, None]})
+    result = (
+        df.lazy()
+        .group_by("g", maintain_order=True)
+        .agg(pl.col("v").is_in([1, 2, 9]).sum())
+        .collect()
+    )
+    assert result["v"].to_list() == [1, 2, 0]
+
+
+def test_is_in_all_null_literal_haystack() -> None:
+    s = pl.Series("n", [1, None])
+    haystack = pl.Series([None], dtype=pl.Int64)
+    assert s.is_in(haystack).to_list() == [False, None]
+    assert s.is_in(haystack, nulls_equal=True).to_list() == [False, True]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_is_in_multi_row_literal_haystack(
+    engine: EngineType, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "3")
+    n = 10
+    result = (
+        pl.DataFrame({"n": range(n)})
+        .lazy()
+        .select(pl.col("n").is_in(pl.Series([[i] for i in range(n)])).sum())
+        .collect(engine=engine)
+    )
+    assert result.item() == n
+
+
+LONG = "x" * 20
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    ("dtype", "needles", "haystack"),
+    [
+        # empty haystacks
+        (pl.Int64, [1, None], []),
+        (pl.Float64, [1.0, None], []),
+        (pl.String, ["a", None], []),
+        (pl.List(pl.Int64), [[1], None], []),
+        # all-null needles
+        (pl.Int64, [None, None], [1, 2]),
+        (pl.String, [None, None], ["a"]),
+        (pl.Boolean, [None, None], [True]),
+        (pl.Struct({"a": pl.Int64}), [None, None], [{"a": 1}]),
+        # many duplicates of a few values
+        (pl.Int64, [1, 2, 3], [1, 2] * 20),
+        (pl.String, ["a", "b", "c"], ["a", "b"] * 20),
+        # bitset near the ends of the type
+        (
+            pl.UInt64,
+            [2**64 - 1, 2**64 - 3, 0, 5, None],
+            list(range(2**64 - 20, 2**64, 2)),
+        ),
+        (
+            pl.Int64,
+            [-(2**63), -(2**63) + 4, 0, None],
+            list(range(-(2**63), -(2**63) + 20)),
+        ),
+        (pl.Int16, [-32768, 32767, 0, 1, None], list(range(-32768, 32767, 1000))),
+        # needles below and far above the bitset range
+        (pl.Int32, [-1, 0, 99, 100, 10**6, -(10**6)], list(range(100))),
+        # long strings: linear scan and hash table, duplicates, shared prefixes
+        (
+            pl.String,
+            [LONG, LONG + "y", "x" * 19, "short", None],
+            [LONG, LONG, "x" * 21, "short"],
+        ),
+        (
+            pl.String,
+            [LONG, LONG + "y", "x" * 19, f"{LONG}5", f"{LONG}50", "short", None],
+            [f"{LONG}{i}" for i in range(40)] + [LONG, LONG, "short"],
+        ),
+        (
+            pl.String,
+            ["abcdefghijkl", "abcdefghijklm", "abcdefghijk", "", None],
+            ["abcdefghijkl", "abcdefghijklm", ""] + [str(i) for i in range(10)],
+        ),
+        # zero bytes must not be confused with inline padding
+        (
+            pl.Binary,
+            [bytes(20), bytes(12), bytes(11), bytes(1), b"", None],
+            [bytes(20), bytes(12), bytes(1)] + [bytes([i]) for i in range(1, 10)],
+        ),
+        (pl.Binary, [bytes(12), bytes(11), bytes(13), b"", None], [bytes(12), b""]),
+        # nested values through the hash table
+        (
+            pl.List(pl.Int64),
+            [[1, 2], [3], [], [None], None, [1, 2, 3]],
+            [[i] for i in range(20)] + [[1, 2], [None], []],
+        ),
+        (
+            pl.Struct({"a": pl.Int64, "b": pl.String}),
+            [{"a": 1, "b": LONG}, {"a": 1, "b": None}, {"a": None, "b": None}, None],
+            [{"a": i, "b": LONG} for i in range(20)] + [{"a": 1, "b": None}],
+        ),
+        (
+            pl.List(pl.List(pl.Int64)),
+            [[[1], [2]], [[1]], [], None],
+            [[[1], [2]], []],
+        ),
+        # temporal types
+        (
+            pl.Datetime("ms", "UTC"),
+            [datetime(2020, 1, 1), datetime(2021, 1, 1), None],
+            [datetime(2020, 1, 1)],
+        ),
+        (
+            pl.Duration("us"),
+            [timedelta(days=1), timedelta(days=2), None],
+            [timedelta(days=1)],
+        ),
+        (pl.Time, [time(1, 2, 3), time(4, 5, 6), None], [time(1, 2, 3)]),
+        # decimals with different scales, and values that do not fit the common scale
+        (
+            pl.Decimal(5, 2),
+            [D("1.50"), D("999.99"), D("0.01"), None],
+            [D("1.5"), D("0.01")],
+        ),
+    ],
+)
+def test_is_in_literal_haystack_edge_cases(
+    engine: EngineType,
+    nulls_equal: bool,
+    dtype: pl.DataType,
+    needles: list[object],
+    haystack: list[object],
+) -> None:
+    needle_s = pl.Series("n", needles, dtype=dtype)
+    haystack_s = pl.Series(haystack, dtype=dtype)
+    expected = _reference_is_in(needles, haystack, nulls_equal)
+
+    result = (
+        needle_s.to_frame()
+        .lazy()
+        .select(pl.col("n").is_in(haystack_s.implode(), nulls_equal=nulls_equal))
+        .collect(engine=engine)
+        .to_series()
+    )
+    assert result.to_list() == expected
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    ("dtype", "needles", "haystack"),
+    [
+        (pl.Int64, [1, 2, None, 5, 7], list(range(0, 10, 2)) + [None]),
+        (pl.Int64, [1, 2, None, 5, 7], list(range(0, 10**7, 10**5)) + [None]),
+        (pl.Float64, [1.0, float("nan"), -0.0, None], [0.0, float("nan"), None]),
+        (pl.String, ["a", LONG, None, "b"], ["a", LONG, None]),
+        (
+            pl.String,
+            ["a", LONG, None, "b"],
+            [str(i) for i in range(30)] + ["a", LONG, None],
+        ),
+        (pl.Boolean, [True, False, None], [False, None]),
+        (pl.List(pl.Int64), [[1], [], None], [[1], None]),
+        (
+            pl.Struct({"a": pl.Int64}),
+            [{"a": 1}, {"a": None}, None],
+            [{"a": 1}, {"a": None}, None],
+        ),
+    ],
+)
+def test_is_in_literal_matches_per_row_haystack(
+    nulls_equal: bool,
+    dtype: pl.DataType,
+    needles: list[object],
+    haystack: list[object],
+) -> None:
+    # The same haystack in every row goes through the per-row kernel.
+    haystack_s = pl.Series(haystack, dtype=dtype)
+    df = pl.DataFrame(
+        {
+            "n": pl.Series(needles, dtype=dtype),
+            "h": pl.Series([haystack] * len(needles), dtype=pl.List(dtype)),
+        }
+    )
+    result = df.select(
+        literal=pl.col("n").is_in(haystack_s.implode(), nulls_equal=nulls_equal),
+        per_row=pl.col("n").is_in(pl.col("h"), nulls_equal=nulls_equal),
+    )
+    assert result["literal"].to_list() == result["per_row"].to_list()
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_is_in_literal_haystack_array_dtype(engine: EngineType) -> None:
+    haystack = pl.Series([[1, 2, 3]], dtype=pl.Array(pl.Int64, 3))
+    result = (
+        pl.LazyFrame({"n": [1, 4, None]})
+        .select(pl.col("n").is_in(pl.lit(haystack)))
+        .collect(engine=engine)
+        .to_series()
+    )
+    assert result.to_list() == [True, False, None]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_is_in_literal_haystack_scalar_needle(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"n": [1, 2, 3]})
+    result = lf.select(
+        a=pl.lit(2).is_in([1, 2]),
+        b=pl.lit(5).is_in([1, 2]),
+        c=pl.lit(None, dtype=pl.Int64).is_in([1, 2]),
+        d=pl.lit(None, dtype=pl.Int64).is_in([1, None], nulls_equal=True),
+    ).collect(engine=engine)
+    assert result.row(0) == (True, False, None, True)
+    assert result.height == 1
+
+
+def test_is_in_literal_haystack_streaming_filter_and_group_by(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "7")
+    n = 100
+    lf = pl.LazyFrame({"g": [i % 3 for i in range(n)], "v": range(n)})
+    keep = [1, 5, 9, 50, 99]
+
+    result = lf.filter(pl.col("v").is_in(keep)).collect(engine="streaming")
+    assert result["v"].to_list() == keep
+
+    result = (
+        lf.group_by("g", maintain_order=True)
+        .agg(pl.col("v").is_in(keep).sum())
+        .collect(engine="streaming")
+    )
+    assert result["v"].to_list() == [2, 1, 2]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_is_in_literal_haystack_chunked_needle_with_nulls(engine: EngineType) -> None:
+    a = pl.Series("s", ["a", None, "b", LONG])
+    b = pl.Series("s", [None, "c", LONG, "a"])
+    s = pl.concat([a, b], rechunk=False)
+    assert s.n_chunks() == 2
+    result = (
+        s.to_frame()
+        .lazy()
+        .select(
+            a=pl.col("s").is_in(["a", LONG]),
+            b=pl.col("s").is_in(["a", LONG, None], nulls_equal=True),
+        )
+        .collect(engine=engine)
+    )
+    assert result["a"].to_list() == [True, None, False, True, None, False, True, True]
+    assert result["b"].to_list() == [True, True, False, True, True, False, True, True]
+
+
+def test_is_in_literal_haystack_categorical_mismatch() -> None:
+    s = pl.Series("n", ["a", "b"], dtype=pl.Enum(["a", "b"]))
+    haystack = pl.Series(["a"], dtype=pl.Enum(["a", "c"]))
+    with pytest.raises(InvalidOperationError):
+        s.is_in(haystack.implode())
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("dtype", "needles"),
+    [
+        (pl.List(pl.Int64), [None, [1], [2], None]),
+        (pl.Array(pl.Int64, 1), [None, [1], [2], None]),
+        (pl.Struct({"a": pl.Int64}), [None, {"a": 1}, {"a": 2}, None]),
+    ],
+)
+def test_is_in_nested_null_needles_in_aggregation(
+    engine: EngineType, dtype: pl.DataType, needles: list[object]
+) -> None:
+    haystack = pl.Series([needles[0], needles[1]], dtype=dtype).implode()
+    df = pl.DataFrame({"g": [0, 1, 1, 0], "n": pl.Series(needles, dtype=dtype)})
+    is_in = pl.col("n").is_in(haystack)
+    result = (
+        df.lazy()
+        .group_by("g", maintain_order=True)
+        .agg(
+            total=is_in.sum(),
+            nulls=is_in.null_count(),
+            first=is_in.first(),
+            last=is_in.last(),
+        )
+        .collect(engine=engine)
+    )
+    assert result["total"].to_list() == [0, 1]
+    assert result["nulls"].to_list() == [2, 0]
+    assert result["first"].to_list() == [None, True]
+    assert result["last"].to_list() == [None, False]
+    assert df.select(is_in.null_count()).item() == 2

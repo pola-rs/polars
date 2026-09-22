@@ -1076,6 +1076,15 @@ pub fn row_encode(
         }
     }
 
+    let length = if c.iter().any(|c| c.is_empty()) {
+        0
+    } else {
+        c.iter().map(Column::len).max().unwrap_or(0)
+    };
+    for c in c.iter_mut() {
+        c.broadcast_in_place_to(length)?;
+    }
+
     let name = PlSmallStr::from_static("row_encoded");
     match variant {
         RowEncodingVariant::Unordered => _get_rows_encoded_ca_unordered(name, c),

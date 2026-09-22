@@ -5,7 +5,6 @@ import importlib
 import importlib.util
 import sys
 from dataclasses import dataclass, replace
-from functools import partial
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
@@ -351,18 +350,37 @@ def _partition_key_exprs(
     return exprs
 
 
-def _apply_sort_transform(
-    series: pl.Series, *, transform: Callable[[pa.Array], pa.Array], dtype: pa.DataType
-) -> pl.Series:
-    import polars as pl
+class _SortTransform:
+    """Apply an Iceberg sort transform without pickling its cached callable."""
 
-    return pl.Series(series.name, transform(series.to_arrow().cast(dtype)))
+    def __init__(
+        self, transform: Transform[Any, Any], source_type: IcebergType
+    ) -> None:
+        self.transform = transform
+        self.source_type = source_type
+        self.resolved: NoPickleOption[
+            tuple[Callable[[pa.Array], pa.Array], pa.DataType]
+        ] = NoPickleOption()
+
+    def __call__(self, series: pl.Series) -> pl.Series:
+        import polars as pl
+
+        if (resolved := self.resolved.get()) is None:
+            from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+            resolved = (
+                self.transform.pyarrow_transform(self.source_type),
+                schema_to_pyarrow(self.source_type),
+            )
+            self.resolved.set(resolved)
+
+        transform, dtype = resolved
+        return pl.Series(series.name, transform(series.to_arrow().cast(dtype)))
 
 
 def _sort_key_exprs(
     schema: Schema, sort_order: SortOrder, input_schema: pl.Schema
 ) -> tuple[list[pl.Expr], list[bool], list[bool]]:
-    from pyiceberg.io.pyarrow import schema_to_pyarrow
     from pyiceberg.table.sorting import NullOrder, SortDirection
     from pyiceberg.transforms import (
         BucketTransform,
@@ -443,11 +461,7 @@ def _sort_key_exprs(
                 raise NotImplementedError(msg)
         elif isinstance(transform, BucketTransform):
             expr = expr.map_batches(
-                partial(
-                    _apply_sort_transform,
-                    transform=transform.pyarrow_transform(source_type),
-                    dtype=schema_to_pyarrow(source_type),
-                ),
+                _SortTransform(transform, source_type),
                 return_dtype=pl.Int32,
                 is_elementwise=True,
             )

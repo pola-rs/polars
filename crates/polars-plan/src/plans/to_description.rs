@@ -14,6 +14,7 @@ use polars_utils::aliases::{InitHashMaps, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::index::idxsize_to_u64;
 
+use crate::dsl::dsl_resolver::DslResolverTrait;
 use crate::dsl::{HConcatOptions, SinkTypeIR, UnifiedScanArgs, UnionOptions};
 use crate::plans::options::JoinTypeOptionsIR;
 use crate::plans::{AExpr, ExprIR, IR};
@@ -471,8 +472,30 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             keys: key.iter().map(|k| k.to_string()).collect(),
             maintain_order: *maintain_order,
         },
-        #[allow(unreachable_patterns)]
-        _ => IrPropsDescription::Other,
+        IR::Resolver {
+            resolver,
+            resolver_schema,
+            projection,
+            slice,
+            filters,
+            filter_drop_columns_idx,
+            resolved_dsl,
+            resolved_ir,
+        } => IrPropsDescription::Resolver {
+            name: resolver.name().ok().map(|x| x.to_string()),
+            schema_names: resolver_schema
+                .iter_names()
+                .map(ToString::to_string)
+                .collect(),
+            projection: projection
+                .as_deref()
+                .map(|cols| cols.iter().map(ToString::to_string).collect()),
+            slice: *slice,
+            filters: fmt_exprs(filters, expr_arena),
+            filter_drop_columns_idx: *filter_drop_columns_idx,
+            num_cached_resolves: resolved_dsl.lock().unwrap().len(),
+            is_resolved: resolved_ir.is_some(),
+        },
     }
 }
 
