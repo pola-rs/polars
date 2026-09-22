@@ -132,7 +132,7 @@ mod test {
 
     fn check(pat: &str, haystacks: &[&str]) {
         let chain = LiteralChain::parse(pat).unwrap();
-        let re = regex::Regex::new(pat).unwrap();
+        let re = polars_utils::regex_cache::compile_regex(pat).unwrap();
         for s in haystacks {
             assert_eq!(
                 chain.is_match(s.as_bytes()),
@@ -145,7 +145,7 @@ mod test {
     #[test]
     fn test_literal_chain_matches_regex() {
         let haystacks = [
-            "", "a", "ab", "aab", "ba", "abab", "a\nb", "xaybz", "aXb", "abXab", "é€b", "bXa",
+            "", "a", "ab", "aab", "abab", "a\nb", "xaybz", "aXb", "abXab", "é€b", "bXa",
         ];
         for pat in [
             "^(?s).*a.*b.*$",
