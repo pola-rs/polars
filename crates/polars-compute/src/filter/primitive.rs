@@ -76,56 +76,64 @@ pub fn filter_values_into<T: Pod>(out: &mut Vec<T>, values: &[T], mask: &Bitmap)
 }
 
 /// `L` is the type the kernels work on and must have the same size and alignment as `T`.
-fn filter_into<T: Pod, L: Pod>(
-    out: &mut Vec<T>,
-    values: &[T],
-    mask: &Bitmap,
-    (pad, bulk_filter): Bulk<L>,
-) {
+fn filter_into<T: Pod, L: Pod>(out: &mut Vec<T>, values: &[T], mask: &Bitmap, bulk: Bulk<L>) {
     assert_eq!(values.len(), mask.len());
     assert_eq!(size_of::<T>(), size_of::<L>());
     assert_eq!(align_of::<T>(), align_of::<L>());
 
     let mask_bits_set = mask.set_bits();
+    if mask_bits_set == 0 {
+        return;
+    }
+
+    let pad = bulk.0;
     let start = out.len();
     if out.capacity() - start < mask_bits_set {
         out.reserve(mask_bits_set + pad);
     }
 
     // The kernels write up to `pad` values past the last value they keep. When
-    // that does not fit, the last values are appended one by one instead.
+    // that does not fit, the last kept values go through a separate buffer.
     let spare = out.capacity() - start;
-    let num_bulk = mask_bits_set.min(spare.saturating_sub(pad));
-    let bulk_len = if spare >= mask_bits_set + pad {
-        values.len()
-    } else if num_bulk == 0 {
+    if spare >= mask_bits_set + pad {
+        unsafe {
+            filter_to_ptr(values, mask, out.as_mut_ptr().add(start).cast(), bulk);
+            out.set_len(start + mask_bits_set);
+        }
+        return;
+    }
+
+    let num_head = spare.saturating_sub(pad);
+    let head_len = if num_head == 0 {
         0
     } else {
         BitMask::from_bitmap(mask)
-            .nth_set_bit_idx_rev(mask_bits_set - num_bulk - 1, mask.len())
+            .nth_set_bit_idx_rev(mask_bits_set - num_head - 1, mask.len())
             .unwrap()
     };
-    let bulk_mask;
-    let bulk_mask = if bulk_len == values.len() {
-        mask
-    } else {
-        bulk_mask = mask.clone().sliced(0, bulk_len);
-        &bulk_mask
-    };
-
-    unsafe {
-        let out_ptr = out.as_mut_ptr().add(start).cast::<L>();
-        let values = cast_slice::<T, L>(&values[..bulk_len]);
-        let (values, mask_bytes, out_ptr) = scalar_filter_offset(values, bulk_mask, out_ptr);
-        let (values, mask_bytes, out_ptr) = bulk_filter(values, mask_bytes, out_ptr);
-        scalar_filter(values, mask_bytes, out_ptr);
-        out.set_len(start + num_bulk);
+    if head_len > 0 {
+        let head_mask = mask.clone().sliced(0, head_len);
+        unsafe {
+            let out_ptr = out.as_mut_ptr().add(start).cast();
+            filter_to_ptr(&values[..head_len], &head_mask, out_ptr, bulk);
+            out.set_len(start + num_head);
+        }
     }
 
-    if bulk_len < values.len() {
-        let rest_mask = mask.clone().sliced(bulk_len, values.len() - bulk_len);
-        let rest = values[bulk_len..].iter().zip(rest_mask.iter());
-        out.extend(rest.filter_map(|(v, keep)| keep.then_some(*v)));
+    let tail_mask = mask.clone().sliced(head_len, values.len() - head_len);
+    let mut tail = Vec::new();
+    filter_into(&mut tail, &values[head_len..], &tail_mask, bulk);
+    out.extend_from_slice(&tail);
+}
+
+/// # Safety
+/// `out` must be valid for `mask.set_bits() + bulk.0` writes.
+unsafe fn filter_to_ptr<T: Pod, L: Pod>(values: &[T], mask: &Bitmap, out: *mut L, bulk: Bulk<L>) {
+    unsafe {
+        let values = cast_slice::<T, L>(values);
+        let (values, mask_bytes, out) = scalar_filter_offset(values, mask, out);
+        let (values, mask_bytes, out) = (bulk.1)(values, mask_bytes, out);
+        scalar_filter(values, mask_bytes, out);
     }
 }
 
