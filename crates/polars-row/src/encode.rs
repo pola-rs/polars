@@ -703,7 +703,11 @@ unsafe fn encode_flat_array(
         },
         D::BinaryView => {
             let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-            encode_bins(buffer, array.iter(), opt, offsets);
+            if opt.contains(RowEncodingOptions::NO_ORDER) {
+                no_order::encode_view_no_order(buffer, array, opt, offsets);
+            } else {
+                binary::encode_iter(buffer, array.iter(), opt, offsets);
+            }
         },
         D::Utf8 => {
             let array = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
@@ -715,7 +719,11 @@ unsafe fn encode_flat_array(
         },
         D::Utf8View => {
             let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-            encode_strs(buffer, array.iter(), opt, offsets);
+            if opt.contains(RowEncodingOptions::NO_ORDER) {
+                no_order::encode_view_no_order(buffer, array, opt, offsets);
+            } else {
+                utf8::encode_str_view(buffer, array, opt, offsets);
+            }
         },
 
         // Lexical ordered Categorical are cast to PrimitiveArray above.
@@ -1017,6 +1025,129 @@ mod tests {
     };
 
     use super::*;
+    use crate::decode::decode_rows_from_binary;
+
+    fn contains_float(dtype: &ArrowDataType) -> bool {
+        use ArrowDataType as D;
+        match dtype {
+            D::Float16 | D::Float32 | D::Float64 => true,
+            D::List(f) | D::LargeList(f) | D::FixedSizeList(f, _) => contains_float(f.dtype()),
+            D::Struct(fs) => fs.iter().any(|f| contains_float(f.dtype())),
+            _ => false,
+        }
+    }
+
+    /// Encode, decode and check that the result round trips. Floats are compared through
+    /// their encoding since the encoding canonicalizes them.
+    fn check_round_trip(arrays: &[ArrayRef], opts: &[RowEncodingOptions]) {
+        let num_rows = arrays[0].len();
+        let dicts: Vec<Option<RowEncodingContext>> = (0..arrays.len()).map(|_| None).collect();
+        let dtypes: Vec<ArrowDataType> = arrays.iter().map(|a| a.dtype().clone()).collect();
+
+        let rows = convert_columns(num_rows, arrays, opts, &dicts);
+        let encoded = rows.into_array();
+        let mut scratch = Vec::new();
+        let decoded =
+            unsafe { decode_rows_from_binary(&encoded, opts, &dicts, &dtypes, &mut scratch) };
+
+        for (array, decoded) in arrays.iter().zip(&decoded) {
+            assert_eq!(array.len(), decoded.len());
+            if !contains_float(array.dtype()) {
+                assert_eq!(array, decoded);
+            }
+        }
+
+        let rows = convert_columns(num_rows, &decoded, opts, &dicts);
+        let reencoded = rows.into_array();
+        assert_eq!(encoded, reencoded);
+    }
+
+    fn all_options() -> Vec<RowEncodingOptions> {
+        vec![
+            RowEncodingOptions::new_unsorted(),
+            RowEncodingOptions::new_sorted(false, false),
+            RowEncodingOptions::new_sorted(false, true),
+            RowEncodingOptions::new_sorted(true, false),
+            RowEncodingOptions::new_sorted(true, true),
+        ]
+    }
+
+    #[test]
+    fn test_string_lengths_round_trip() {
+        let lengths = [
+            0usize, 1, 2, 3, 4, 5, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 23, 31, 32, 33, 47, 63, 64,
+            65, 100, 253, 254, 255, 256, 300, 1000,
+        ];
+        let mut values: Vec<Option<String>> = Vec::new();
+        for (i, len) in lengths.iter().enumerate() {
+            values.push(Some(
+                (0..*len)
+                    .map(|j| (b'a' + ((i + j) % 26) as u8) as char)
+                    .collect(),
+            ));
+            values.push(Some("é".repeat(*len / 2)));
+            if i % 3 == 0 {
+                values.push(None);
+            }
+        }
+        let strs =
+            Utf8ViewArray::from_slice(values.iter().map(|v| v.as_deref()).collect::<Vec<_>>());
+        let bins = BinaryViewArray::from_slice(
+            values
+                .iter()
+                .map(|v| v.as_deref().map(str::as_bytes))
+                .collect::<Vec<_>>(),
+        );
+        let ints: PrimitiveArray<u64> = (0..values.len() as u64).map(Some).collect();
+        let num_rows = values.len();
+
+        for opt in all_options() {
+            for array in [strs.to_boxed(), bins.to_boxed()] {
+                check_round_trip(std::slice::from_ref(&array), &[opt]);
+                check_round_trip(&[array.clone(), ints.to_boxed()], &[opt, opt]);
+                check_round_trip(&[ints.to_boxed(), array.clone()], &[opt, opt]);
+                let mut shifted = array.sliced(1, num_rows - 1).to_boxed();
+                shifted = polars_arrow::compute::concatenate::concatenate(&[
+                    shifted.as_ref(),
+                    array.sliced(0, 1).as_ref(),
+                ])
+                .unwrap();
+                check_round_trip(&[array.clone(), shifted], &[opt, opt]);
+                // No nulls
+                let array = array.with_validity(None);
+                check_round_trip(std::slice::from_ref(&array), &[opt]);
+            }
+        }
+    }
+
+    /// The decoded strings cross the size limit of one data buffer. Slow without
+    /// optimizations, so run with `cargo test --release -- --ignored`.
+    #[test]
+    #[ignore]
+    fn test_string_buffer_rollover() {
+        let value = "x".repeat(1 << 20);
+        let values: Vec<Option<&str>> = (0..2048).map(|_| Some(value.as_str())).collect();
+        let strs = Utf8ViewArray::from_slice(values).to_boxed();
+        for opt in [
+            RowEncodingOptions::new_sorted(false, false),
+            RowEncodingOptions::new_unsorted(),
+        ] {
+            let dicts = [None];
+            let rows = convert_columns(strs.len(), std::slice::from_ref(&strs), &[opt], &dicts);
+            let encoded = rows.into_array();
+            let mut scratch = Vec::new();
+            let decoded = unsafe {
+                decode_rows_from_binary(
+                    &encoded,
+                    &[opt],
+                    &dicts,
+                    &[strs.dtype().clone()],
+                    &mut scratch,
+                )
+            };
+            assert_eq!(&strs, &decoded[0]);
+        }
+    }
 
     proptest::prop_compose! {
         fn arrays

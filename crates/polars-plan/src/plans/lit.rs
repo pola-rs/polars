@@ -332,6 +332,15 @@ impl LiteralValue {
         !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
     }
 
+    /// Whether this literal has exactly one value, including a single row `Series`.
+    pub fn is_single_value(&self) -> bool {
+        match self {
+            LiteralValue::Series(s) => s.len() == 1,
+            LiteralValue::Range { .. } => false,
+            _ => true,
+        }
+    }
+
     pub fn is_nan(&self) -> bool {
         self.to_any_value().is_some_and(|av| av.is_nan())
     }

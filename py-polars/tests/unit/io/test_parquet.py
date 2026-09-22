@@ -1146,6 +1146,38 @@ def test_parquet_statistics_uint64_16683() -> None:
     assert statistics.max == u64_max
 
 
+def test_parquet_enum_statistics() -> None:
+    df = pl.Series(
+        "a", ["d", "b", "d", None, None, None], dtype=pl.Enum(["z", "d", "b", "a"])
+    ).to_frame()
+    file = io.BytesIO()
+    df.write_parquet(file, row_group_size=3)
+    metadata = pq.read_metadata(file)
+
+    statistics = metadata.row_group(0).column(0).statistics
+    assert (statistics.min, statistics.max, statistics.null_count) == ("b", "d", 0)
+    statistics = metadata.row_group(1).column(0).statistics
+    assert (statistics.min, statistics.max, statistics.null_count) == (None, None, 3)
+    file.seek(0)
+    assert_frame_equal(pl.read_parquet(file), df)
+
+
+def test_parquet_enum_statistics_null_keys() -> None:
+    # Non-strict conversion leaves an out-of-range physical key beneath the null.
+    df = (
+        pl.Series("a", [0, 255], dtype=pl.UInt8)
+        .cat.to(pl.Enum(["a", "b"]), strict=False)
+        .to_frame()
+    )
+    file = io.BytesIO()
+    df.write_parquet(file)
+
+    statistics = pq.read_metadata(file).row_group(0).column(0).statistics
+    assert (statistics.min, statistics.max, statistics.null_count) == ("a", "a", 1)
+    file.seek(0)
+    assert_frame_equal(pl.read_parquet(file), df)
+
+
 def test_parquet_decimal_statistics_29347() -> None:
     # The bug needs a precision of 19 or more, so that the values are stored as a fixed
     # length byte array rather than an INT64, a chunk spanning more than one page, and a
@@ -5456,6 +5488,30 @@ def test_enum_table_statistics(
         .filter(predicate)
         .collect(engine=engine)
     )
+    assert_frame_equal(out, df.filter(predicate))
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.parametrize(
+    "dtype", [pl.Enum(["banana", "pear", "apple", "zebra"]), pl.Categorical()]
+)
+@pytest.mark.parametrize(
+    "operation", ["eq", "ne", "lt", "le", "gt", "ge", "eq_missing", "is_between"]
+)
+def test_scan_categorical_literal_predicate(
+    engine: EngineType, dtype: pl.DataType, operation: str
+) -> None:
+    df = pl.DataFrame({"x": ["apple", "banana", "pear", None]}, schema={"x": dtype})
+    value = pl.lit("pear", dtype=dtype)
+    if operation == "is_between":
+        predicate = pl.col("x").is_between(value, pl.lit("apple", dtype=dtype))
+    else:
+        predicate = getattr(pl.col("x"), operation)(value)
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+    out = pl.scan_parquet(f.getvalue()).filter(predicate).collect(engine=engine)
+
     assert_frame_equal(out, df.filter(predicate))
 
 

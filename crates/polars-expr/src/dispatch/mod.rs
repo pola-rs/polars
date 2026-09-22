@@ -5,8 +5,10 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, GroupPositions};
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
-use polars_plan::plans::{IRBooleanFunction, IRFunctionExpr, IRPowFunction};
+use polars_plan::plans::{AExpr, IRBooleanFunction, IRFunctionExpr, IRPowFunction};
+use polars_plan::prelude::expr_ir::ExprIR;
 use polars_utils::IdxSize;
+use polars_utils::arena::Arena;
 
 use crate::prelude::{AggregationContext, PhysicalExpr};
 use crate::state::ExecutionState;
@@ -138,7 +140,13 @@ mod trigonometry;
 
 pub use groups_dispatch::drop_items;
 
-pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUdf>> {
+/// `input` and `expr_arena` let a function pick a variant based on its arguments, e.g. a
+/// constant argument that can be prepared once.
+pub fn function_expr_to_udf(
+    func: IRFunctionExpr,
+    input: &[ExprIR],
+    expr_arena: &Arena<AExpr>,
+) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRFunctionExpr as F;
     match func {
         // Namespaces
@@ -162,7 +170,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::Bitwise(func) => bitwise::function_expr_to_udf(func),
 
         // Other expressions
-        F::Boolean(func) => boolean::function_expr_to_udf(func),
+        F::Boolean(func) => boolean::function_expr_to_udf(func, input, expr_arena),
         #[cfg(feature = "business")]
         F::Business(func) => business::function_expr_to_udf(func),
         #[cfg(feature = "abs")]

@@ -802,6 +802,7 @@ fn visualize_plan_rec(
             right_on,
             args,
             output_bool: _,
+            runtime_filters: _,
         } => {
             let base_label = match phys_sm[node_key].kind {
                 PhysNodeKind::MergeJoin { .. } => "merge-join",

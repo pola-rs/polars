@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::{BitmapBuilder, MutableBitmap};
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::with_match_categorical_physical_type;
@@ -43,6 +43,7 @@ pub trait Grouper: Any + Send + Sync {
 
     /// Returns the (indices of the) keys found in the groupers. If
     /// invert is true it instead returns the keys not found in the groupers.
+    /// A null key whose nulls are not valid is never found.
     /// # Safety
     /// All groupers must have the same schema.
     unsafe fn probe_partitioned_groupers(
@@ -55,7 +56,8 @@ pub trait Grouper: Any + Send + Sync {
     );
 
     /// Returns for each key if it is found in the groupers. If invert is true
-    /// it returns true if it isn't found.
+    /// it returns true if it isn't found. A null key whose nulls are not
+    /// valid is never found.
     /// # Safety
     /// All groupers must have the same schema.
     unsafe fn contains_key_partitioned_groupers(
@@ -65,6 +67,20 @@ pub trait Grouper: Any + Send + Sync {
         partitioner: &HashPartitioner,
         invert: bool,
         contains_key: &mut BitmapBuilder,
+    );
+
+    /// Marks the group of each key found in the groupers, in the marks of
+    /// that group's partition. A null key whose nulls are not valid marks
+    /// nothing.
+    /// # Safety
+    /// All groupers must have the same schema, and marks[p] must have a bit
+    /// for every group of groupers[p].
+    unsafe fn mark_groups_partitioned_groupers(
+        &self,
+        groupers: &[Box<dyn Grouper>],
+        keys: &HashKeys,
+        partitioner: &HashPartitioner,
+        marks: &mut [MutableBitmap],
     );
 
     fn as_any(&self) -> &dyn Any;

@@ -1234,6 +1234,7 @@ fn to_graph_rec<'a>(
             right_on,
             args,
             output_bool: _,
+            runtime_filters: _,
         } => {
             let args = args.clone();
             let output_schema = node.output_schema(0).clone();
@@ -1286,12 +1287,17 @@ fn to_graph_rec<'a>(
 
             match node.kind {
                 #[cfg(feature = "semi_anti_join")]
-                SemiAntiJoin { output_bool, .. } => ctx.graph.add_node(
+                SemiAntiJoin {
+                    output_bool,
+                    ref runtime_filters,
+                    ..
+                } => ctx.graph.add_node(
                     nodes::joins::semi_anti_join::SemiAntiJoinNode::new(
                         unique_key_schema,
                         output_schema,
                         left_key_selectors,
                         right_key_selectors,
+                        runtime_filters.clone(),
                         args,
                         output_bool,
                         ctx.num_pipelines,

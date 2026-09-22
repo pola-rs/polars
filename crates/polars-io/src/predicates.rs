@@ -273,10 +273,31 @@ pub trait SkipBatchPredicate: Send + Sync {
 /// The conjuncts of a row predicate that read one column, conjoined.
 #[derive(Clone)]
 pub struct ColumnPredicate {
-    pub predicate: Arc<dyn PhysicalIoExpr>,
+    /// The static conjuncts, conjoined. `None` when the column only has dynamic ones.
+    pub predicate: Option<Arc<dyn PhysicalIoExpr>>,
     pub specialized: Option<SpecializedColumnPredicate>,
-    /// Whether a reader may evaluate the predicate on the values as it decodes them.
-    pub filter_while_decoding: bool,
+    /// The conjuncts a producer sets at run time, each on its own.
+    pub dynamic: Vec<DynamicColumnPredicate>,
+}
+
+impl ColumnPredicate {
+    /// Every conjunct, static and dynamic, conjoined.
+    pub fn conjoined(&self) -> Arc<dyn PhysicalIoExpr> {
+        self.predicate
+            .iter()
+            .chain(self.dynamic.iter().map(|d| &d.predicate))
+            .cloned()
+            .reduce(|a, b| Arc::new(AndIoExpr(a, b)))
+            .unwrap()
+    }
+}
+
+/// A conjunct on one column that a producer sets at run time. It keeps every
+/// row until `source` says it filters rows.
+#[derive(Clone)]
+pub struct DynamicColumnPredicate {
+    pub predicate: Arc<dyn PhysicalIoExpr>,
+    pub source: Arc<dyn DynamicPredicateSource>,
 }
 
 /// `a AND b`.
@@ -343,9 +364,10 @@ impl StagedScanIOPredicate {
         let mut rest = self.rest.clone();
         for (c, _) in constants {
             if let Some(p) = column_predicates.shift_remove(c) {
+                let p = p.conjoined();
                 rest = Some(match rest {
-                    None => p.predicate,
-                    Some(rest) => Arc::new(AndIoExpr(rest, p.predicate)),
+                    None => p,
+                    Some(rest) => Arc::new(AndIoExpr(rest, p)),
                 });
             }
         }
@@ -375,8 +397,17 @@ pub enum RuntimeRange {
     Range { lo: Scalar, hi: Scalar },
 }
 
-pub trait RuntimeRangeSource: Send + Sync {
+/// A reader's view of a predicate that a producer sets at run time.
+pub trait DynamicPredicateSource: Send + Sync {
     fn runtime_range(&self) -> RuntimeRange;
+
+    /// Whether the producer has published a predicate that rejects rows.
+    fn filters_rows(&self) -> bool;
+
+    /// Whether a reader may stop evaluating the predicate when it rejects too
+    /// little: it stays as it is once set, and the producer checks every row
+    /// again.
+    fn can_bypass(&self) -> bool;
 }
 
 /// A column whose batches a reader may skip by a [`RuntimeRange`]. It is never
@@ -384,7 +415,7 @@ pub trait RuntimeRangeSource: Send + Sync {
 #[derive(Clone)]
 pub struct RuntimeRangeHint {
     pub column: PlSmallStr,
-    pub source: Arc<dyn RuntimeRangeSource>,
+    pub source: Arc<dyn DynamicPredicateSource>,
     /// The column's value in this file when it is not stored in the file, such as
     /// a hive column or a missing column with a default.
     pub constant: Option<Scalar>,

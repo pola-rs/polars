@@ -10,6 +10,7 @@ from polars.exceptions import ComputeError
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars._typing import PolarsDataType
     from polars.lazyframe.frame import LazyFrame
     from tests.conftest import PlMonkeyPatch
 
@@ -30,6 +31,7 @@ def assert_fast_count(
     expected_count: int,
     *,
     expected_name: str = "len",
+    expected_dtype: PolarsDataType | None = None,
     capfd: pytest.CaptureFixture[str],
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
@@ -49,7 +51,7 @@ def assert_fast_count(
         # * Otherwise should have at least one `project: 0` (there is 1 per file).
         assert project_logs == {"project: 0"}
 
-    assert result.schema == {expected_name: pl.get_index_type()}
+    assert result.schema == {expected_name: expected_dtype or pl.get_index_type()}
     assert result.item() == expected_count
 
     # We disable the fast-count optimization to check that the normal scan
@@ -105,6 +107,26 @@ def test_count_csv(
     lf = pl.scan_csv(io_files_path / path).select(pl.len())
 
     assert_fast_count(lf, n_rows, capfd=capfd, plmonkeypatch=plmonkeypatch)
+
+
+def test_count_csv_sql_count_star_29393(
+    io_files_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # SQL `COUNT(*)` lowers to `len().cast(Int64)`, which should still hit the
+    # fast-count path.
+    ctx = pl.SQLContext()
+    ctx.register("foods", pl.scan_csv(io_files_path / "foods1.csv"))
+    lf = ctx.execute("SELECT COUNT(*) FROM foods")
+
+    assert_fast_count(
+        lf,
+        27,
+        expected_dtype=pl.Int64,
+        capfd=capfd,
+        plmonkeypatch=plmonkeypatch,
+    )
 
 
 def test_count_csv_comment_char(
