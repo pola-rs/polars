@@ -83,6 +83,7 @@ pub(super) fn process_join(
     )?;
 
     let (mut pushdown_left, mut pushdown_right) = key_non_null_predicates(
+        opt,
         &options,
         &left_on,
         &right_on,
@@ -90,8 +91,7 @@ pub(super) fn process_join(
         input_right,
         lp_arena,
         expr_arena,
-        &mut opt.dedup_state,
-    );
+    )?;
 
     if match &options.args.how {
         // Full-join with no coalesce. We can only push filters if they do not remove NULLs, but
@@ -497,6 +497,7 @@ pub(super) fn process_join(
 /// so the predicate is useless anywhere else.
 #[expect(clippy::too_many_arguments)]
 fn key_non_null_predicates(
+    opt: &mut PredicatePushDown,
     options: &JoinOptionsIR,
     left_on: &[ExprIR],
     right_on: &[ExprIR],
@@ -504,16 +505,15 @@ fn key_non_null_predicates(
     input_right: Node,
     lp_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    dedup: &mut PredicateDedupState,
-) -> (
+) -> PolarsResult<(
     PlIndexMap<PlSmallStr, ExprIR>,
     PlIndexMap<PlSmallStr, ExprIR>,
-) {
+)> {
     let mut pushdown_left = init_indexmap(None);
     let mut pushdown_right = init_indexmap(None);
 
     if options.args.nulls_equal || options.is_non_equi() {
-        return (pushdown_left, pushdown_right);
+        return Ok((pushdown_left, pushdown_right));
     }
 
     let (left_keys_non_null, right_keys_non_null) = match options.args.how {
@@ -527,14 +527,14 @@ fn key_non_null_predicates(
         _ => (false, false),
     };
 
-    let mut collect = |on: &[ExprIR], input: Node, out: &mut PlIndexMap<PlSmallStr, ExprIR>| {
+    let mut collect = |on: &[ExprIR],
+                       input: Node,
+                       out: &mut PlIndexMap<PlSmallStr, ExprIR>|
+     -> PolarsResult<()> {
         for key in on {
             let AExpr::Column(name) = expr_arena.get(key.node()) else {
                 continue;
             };
-            if !downgradable_outer_join_below(input, name, lp_arena) {
-                continue;
-            }
             let column = ExprIR::new(key.node(), OutputName::ColumnLhs(name.clone()));
             let predicate = AExprBuilder::function(
                 vec![column],
@@ -542,27 +542,37 @@ fn key_non_null_predicates(
                 expr_arena,
             )
             .expr_ir_retain_name(expr_arena);
-            insert_predicate_dedup(out, &predicate, expr_arena, dedup);
+            if downgradable_outer_join_below(opt, input, &predicate, lp_arena, expr_arena)? {
+                insert_predicate_dedup(out, &predicate, expr_arena, &mut opt.dedup_state);
+            }
         }
+        Ok(())
     };
 
     if left_keys_non_null {
-        collect(left_on, input_left, &mut pushdown_left);
+        collect(left_on, input_left, &mut pushdown_left)?;
     }
     if right_keys_non_null {
-        collect(right_on, input_right, &mut pushdown_right);
+        collect(right_on, input_right, &mut pushdown_right)?;
     }
 
-    (pushdown_left, pushdown_right)
+    Ok((pushdown_left, pushdown_right))
 }
 
-/// Whether `name.is_not_null()` pushed into `node` reaches an outer join that
-/// `try_rewrite_join_type` makes stricter because of it.
-fn downgradable_outer_join_below(node: Node, name: &PlSmallStr, lp_arena: &Arena<IR>) -> bool {
-    let mut stack = vec![node];
-    while let Some(node) = stack.pop() {
+/// Whether `predicate`, `name.is_not_null()` for one column, pushed into `node` reaches an
+/// outer join that `try_rewrite_join_type` makes stricter because of it.
+fn downgradable_outer_join_below(
+    opt: &mut PredicatePushDown,
+    node: Node,
+    predicate: &ExprIR,
+    lp_arena: &Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<bool> {
+    let name = predicate.output_name().clone();
+    let mut stack = vec![(node, name.clone(), predicate.clone())];
+    while let Some((node, name, predicate)) = stack.pop() {
         let lp = lp_arena.get(node);
-        if !lp.schema(lp_arena).contains(name) {
+        if !lp.schema(lp_arena).contains(&name) {
             continue;
         }
         match lp {
@@ -585,11 +595,12 @@ fn downgradable_outer_join_below(node: Node, name: &PlSmallStr, lp_arena: &Arena
                     } else {
                         Default::default()
                     };
-                    let origin = if matches!(how, JoinType::Full) && coalesced_keys.contains(name) {
+                    let origin = if matches!(how, JoinType::Full) && coalesced_keys.contains(&name)
+                    {
                         ExprOrigin::None
                     } else {
                         ExprOrigin::get_column_origin(
-                            name,
+                            &name,
                             &lp_arena.get(*input_left).schema(lp_arena),
                             &lp_arena.get(*input_right).schema(lp_arena),
                             options.args.suffix(),
@@ -598,19 +609,42 @@ fn downgradable_outer_join_below(node: Node, name: &PlSmallStr, lp_arena: &Arena
                         .unwrap()
                     };
                     if downgraded_join_type(how, origin).is_some() {
-                        return true;
+                        return Ok(true);
                     }
                 }
-                stack.extend([*input_left, *input_right]);
+                stack.push((*input_left, name.clone(), predicate.clone()));
+                stack.push((*input_right, name, predicate));
             },
-            IR::Select { .. }
-            | IR::HStack { .. }
-            | IR::SimpleProjection { .. }
-            | IR::Filter { .. } => stack.extend(lp.inputs()),
+            IR::Select { input, expr, .. }
+            | IR::HStack {
+                input, exprs: expr, ..
+            } => {
+                let mut acc_predicates = init_indexmap(Some(1));
+                acc_predicates.insert(name.clone(), predicate);
+                let (eligibility, alias_rename_map) = pushdown_eligibility(
+                    expr,
+                    &[],
+                    &acc_predicates,
+                    expr_arena,
+                    opt.nodes_scratch.get(),
+                    opt.maintain_errors,
+                    lp_arena.get(*input),
+                )?;
+                if !matches!(eligibility, PushdownEligibility::Full) {
+                    continue;
+                }
+                let (name, mut predicate) = acc_predicates.pop().unwrap();
+                let name = alias_rename_map.get(&name).cloned().unwrap_or(name);
+                map_column_references(&mut predicate, expr_arena, &alias_rename_map);
+                stack.push((*input, name, predicate));
+            },
+            IR::SimpleProjection { input, .. } | IR::Filter { input, .. } => {
+                stack.push((*input, name, predicate));
+            },
             _ => {},
         }
     }
-    false
+    Ok(false)
 }
 
 fn apply_join_key_reduction_select(
