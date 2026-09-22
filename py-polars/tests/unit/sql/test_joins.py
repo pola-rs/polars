@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -2115,3 +2115,115 @@ def test_join_on_pattern_predicates(join_type: str) -> None:
         """,
         compare_with="duckdb",
     )
+
+
+def test_join_disjunction_over_several_relations() -> None:
+    # Each OR branch pairs a dimension condition with a fact condition. What the
+    # disjunction implies about each relation alone is pushed into the scans; the
+    # disjunction itself is applied where the relations meet, after reordering.
+    frames = {
+        "sales": pl.DataFrame(
+            {
+                "cust": [1, 2, 3, 4, 1, 2, 3, 4],
+                "addr": [10, 20, 30, 40, 40, 30, 20, 10],
+                "price": [120, 75, 175, 10, 60, 130, 5, 160],
+                "profit": [150, 200, 100, 999, 250, 160, 60, 20],
+                "qty": [1, 2, 3, 4, 5, 6, 7, 8],
+            }
+        ),
+        "demo": pl.DataFrame(
+            {
+                "cust": [1, 2, 3, 4],
+                "marital": ["M", "S", "W", "M"],
+                "education": ["Advanced Degree", "College", "2 yr Degree", "College"],
+            }
+        ),
+        "address": pl.DataFrame(
+            {
+                "addr": [10, 20, 30, 40],
+                "state": ["TX", "OR", "VA", "NY"],
+                "country": ["United States"] * 4,
+            }
+        ),
+    }
+    query = """
+        SELECT SUM(qty) AS total
+        FROM sales, demo, address
+        WHERE sales.cust = demo.cust
+          AND ((marital = 'M' AND education = 'Advanced Degree'
+                AND price BETWEEN 100 AND 150)
+            OR (marital = 'S' AND education = 'College'
+                AND price BETWEEN 50 AND 100)
+            OR (marital = 'W' AND education = '2 yr Degree'
+                AND price BETWEEN 150 AND 200))
+          AND ((sales.addr = address.addr AND country = 'United States'
+                AND state IN ('TX', 'OH') AND profit BETWEEN 100 AND 200)
+            OR (sales.addr = address.addr AND country = 'United States'
+                AND state IN ('OR', 'NM') AND profit BETWEEN 150 AND 300)
+            OR (sales.addr = address.addr AND country = 'United States'
+                AND state IN ('VA', 'MS') AND profit BETWEEN 50 AND 250))
+    """
+    assert_sql_matches(frames, query=query, compare_with="duckdb")
+
+    plan = pl.SQLContext(frames=frames).execute(query).explain()
+    # Every relation is filtered before it is joined.
+    for derived in ('col("state")', 'col("marital")', 'col("price")', 'col("profit")'):
+        assert plan.rindex(derived) > plan.rindex("INNER JOIN:"), plan
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT", "RIGHT"])
+@pytest.mark.parametrize("qualified", [False, True])
+@pytest.mark.parametrize("with_key", [False, True])
+def test_join_on_input_filter(join_type: str, qualified: bool, with_key: bool) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2, 3, None], "comment": ["ok", "bad", None, "ok"]}),
+        "b": pl.DataFrame(
+            {
+                "k": [1, 1, 2, 3, 4, None],
+                "comment": ["bad", "ok", None, "bad", "ok", "ok"],
+            }
+        ),
+    }
+    side = "a" if join_type == "RIGHT" else "b"
+    if qualified:
+        column = f"{side}.comment"
+    else:
+        frames[side] = frames[side].rename({"comment": "note"})
+        column = "note"
+    condition = f"{column} NOT LIKE '%bad%'"
+    if with_key:
+        condition = f"a.k = b.k AND {condition}"
+    query = f"SELECT a.k, b.k AS bk FROM a {join_type} JOIN b ON {condition}"
+    assert_sql_matches(
+        frames, query=query, compare_with="duckdb", check_row_order=False
+    )
+    plan = pl.SQLContext(frames).execute(query).explain()
+    assert "NESTED LOOP JOIN" not in plan
+
+
+def test_join_on_preserved_input_filter() -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2, 3], "v": [1, -1, None]}),
+        "b": pl.DataFrame({"k": [1, 2, 3], "v": [-1, 1, None]}),
+    }
+    query = """
+        SELECT a.k, b.k AS bk
+        FROM a LEFT JOIN b ON a.k = b.k AND a.v > 0 AND b.v > 0
+    """
+    assert_sql_matches(
+        frames, query=query, compare_with="duckdb", check_row_order=False
+    )
+
+
+@pytest.mark.parametrize("how", ["inner", "left"])
+def test_join_on_filter_with_aggregate_key(how: Literal["inner", "left"]) -> None:
+    left = pl.LazyFrame({"k": [3]})
+    right = pl.LazyFrame({"v": [1, 2]})
+    query = f"SELECT * FROM l {how} JOIN r ON k = SUM(v) AND v < 2"
+    sql = pl.SQLContext(l=left, r=right).execute(query)
+    api = left.join_where(
+        right, pl.col("k") == pl.col("v").sum(), pl.col("v") < 2, how=how
+    )
+    expected = pl.DataFrame({"k": [3], "v": [1]})
+    for result in [sql, api]:
+        assert_frame_equal(result.collect(), expected, check_row_order=False)

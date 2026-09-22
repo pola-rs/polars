@@ -61,8 +61,8 @@ def test_scan_err_rebuild_store_19933() -> None:
     with contextlib.suppress(Exception):
         q.collect()
 
-    # Note: We get called 2 times per attempt
-    if call_count != 4:
+    # Note: We get called once per attempt, and the store is rebuilt once on error.
+    if call_count != 2:
         raise AssertionError(call_count)
 
 

@@ -1,6 +1,6 @@
-use arrow::array::FixedSizeBinaryArray;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::{ArrowDataType, ExtensionType};
+use polars_arrow::array::FixedSizeBinaryArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::{ArrowDataType, ExtensionType};
 use polars_buffer::Buffer;
 
 mod mutable;

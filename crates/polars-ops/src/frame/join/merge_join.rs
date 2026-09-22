@@ -2,16 +2,16 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::iter::repeat_n;
 
-use arrow::array::Array;
-use arrow::array::builder::ShareStrategy;
+use polars_arrow::array::Array;
+use polars_arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_defs::join::{JoinArgs, JoinType};
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::TotalOrd;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
-use crate::frame::{JoinArgs, JoinType};
 use crate::series::coalesce_columns;
 
 #[allow(clippy::too_many_arguments)]

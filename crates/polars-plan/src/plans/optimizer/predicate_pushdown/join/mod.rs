@@ -5,6 +5,7 @@ mod predicate_pruning;
 use hive::rewrite_hive;
 use predicate_pruning::*;
 
+use crate::plans::aexpr::or_factoring::or_implied_predicates;
 use crate::plans::optimizer::join_utils::remove_suffix;
 
 const IEJOIN_MAX_PREDICATES: usize = 2;
@@ -43,6 +44,16 @@ pub(super) fn process_join(
 
     let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
     let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
+
+    push_down_join_condition(
+        &mut input_left,
+        &mut input_right,
+        &schema_left,
+        &schema_right,
+        &mut options,
+        lp_arena,
+        expr_arena,
+    )?;
 
     let mut opt_join_key_reduction_select = try_reduce_redundant_join_keys(
         opt,
@@ -284,7 +295,14 @@ pub(super) fn process_join(
         init_indexmap(Some(acc_predicates.len()));
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
-    for (_, predicate) in acc_predicates {
+    // Which sides of the join a predicate can be pushed to, and whether it has to
+    // stay above the join as well.
+    struct Placement {
+        push_left: bool,
+        push_right: bool,
+        keep_local: bool,
+    }
+    let classify = |predicate: &ExprIR, expr_arena: &Arena<AExpr>| {
         let mut push_left = true;
         let mut push_right = true;
 
@@ -370,11 +388,18 @@ pub(super) fn process_join(
             JoinType::IEJoin | JoinType::Range => !(push_left || push_right),
         };
 
-        if has_residual {
-            local_predicates.push(predicate.clone())
+        Placement {
+            push_left,
+            push_right,
+            keep_local: has_residual,
         }
+    };
 
-        if push_left {
+    let mut push = |predicate: ExprIR,
+                    placement: &Placement,
+                    expr_arena: &mut Arena<AExpr>,
+                    opt: &mut PredicatePushDown| {
+        if placement.push_left {
             let mut predicate = predicate.clone();
             map_column_references(&mut predicate, expr_arena, &output_key_to_left_input_map);
             insert_predicate_dedup(
@@ -385,7 +410,7 @@ pub(super) fn process_join(
             );
         }
 
-        if push_right {
+        if placement.push_right {
             let mut predicate = predicate;
             map_column_references(&mut predicate, expr_arena, &output_key_to_right_input_map);
             remove_suffix(
@@ -401,6 +426,25 @@ pub(super) fn process_join(
                 &mut opt.dedup_state,
             );
         }
+    };
+
+    for (_, predicate) in acc_predicates {
+        let placement = classify(&predicate, expr_arena);
+        if !placement.keep_local {
+            push(predicate, &placement, expr_arena, opt);
+            continue;
+        }
+
+        // A disjunction spanning both sides stays here, but what it implies about
+        // either side alone can still go down.
+        for derived in or_implied_predicates(predicate.node(), expr_arena) {
+            let derived = ExprIR::from_node(derived, expr_arena);
+            let placement = classify(&derived, expr_arena);
+            if !placement.keep_local {
+                push(derived, &placement, expr_arena, opt);
+            }
+        }
+        local_predicates.push(predicate);
     }
 
     opt.pushdown_and_assign(input_left, pushdown_left, lp_arena, expr_arena)?;
@@ -554,7 +598,7 @@ fn try_reduce_redundant_join_keys(
         .options
         .set_keys(new_left_on, new_right_on);
 
-    *output_schema = det_join_schema(schema_left, schema_right, options, expr_arena)?;
+    *output_schema = det_join_schema(schema_left, schema_right, options)?;
 
     let original_names = original_schema.iter_names().collect::<Vec<_>>();
     let new_names = output_schema.iter_names().collect::<Vec<_>>();

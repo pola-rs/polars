@@ -1,26 +1,26 @@
 //! APIs exposing `crate::parquet`'s statistics as arrow's statistics.
 
-use arrow::array::{
+mod bounds;
+
+use polars_arrow::array::{
     Array, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, MutableBinaryViewArray,
     MutableBooleanArray, MutableFixedSizeBinaryArray, MutablePrimitiveArray, NullArray,
-    PrimitiveArray, Utf8ViewArray,
+    PrimitiveArray, Utf8ViewArray, new_null_array,
 };
-use arrow::datatypes::{ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit};
-use arrow::types::{days_ms, i256};
-use ethnum::I256;
-use num_traits::{AsPrimitive, FromBytes};
+use polars_arrow::datatypes::{ArrowDataType, Field, IntegerType};
+use polars_arrow::types::{NativeType, i256};
 use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{ParquetTimeUnit, RowGroupMetadata};
-use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::schema::types::PhysicalType as ParquetPhysicalType;
+pub use self::bounds::{ArrowBound, BoundConversion, PhysicalBound};
+use super::{FileMetadata, RowGroupMetadata};
+use crate::parquet::error::ParquetResult;
+use crate::parquet::metadata::ColumnOrder;
+pub use crate::parquet::metadata::RawBounds;
+use crate::parquet::schema::types::{PhysicalType as ParquetPhysicalType, PrimitiveType};
 use crate::parquet::statistics::Statistics as ParquetStatistics;
-use crate::read::{
-    ColumnChunkMetadata, PrimitiveLogicalType, convert_days_ms, convert_i128, convert_i256,
-    convert_year_month, int96_to_i64_ns,
-};
+use crate::read::ColumnChunkMetadata;
 
 /// Parquet statistics for a nesting level
 #[derive(Debug, PartialEq)]
@@ -39,8 +39,8 @@ pub enum Statistics {
 pub struct ColumnStatistics {
     field: Field,
 
-    logical_type: Option<PrimitiveLogicalType>,
-    physical_type: ParquetPhysicalType,
+    primitive_type: PrimitiveType,
+    column_order: ColumnOrder,
 
     /// Statistics of the leaf array of the column
     statistics: ParquetStatistics,
@@ -53,7 +53,7 @@ pub struct ArrowColumnStatistics {
     pub distinct_count: Option<u64>,
 
     // While these two are Box<dyn Array>, they will only ever contain one valid value. This might
-    // seems dumb, and don't get me wrong it is, but arrow::Scalar is basically useless.
+    // seems dumb, and don't get me wrong it is, but polars_arrow::Scalar is basically useless.
     pub min_value: Option<Box<dyn Array>>,
     pub max_value: Option<Box<dyn Array>>,
 }
@@ -66,220 +66,84 @@ pub struct ArrowColumnStatisticsArrays {
     pub max_value: Box<dyn Array>,
 }
 
-fn timestamp(logical_type: Option<&PrimitiveLogicalType>, time_unit: TimeUnit, x: i64) -> i64 {
-    let unit = if let Some(PrimitiveLogicalType::Timestamp { unit, .. }) = logical_type {
-        unit
-    } else {
-        return x;
-    };
-
-    match (unit, time_unit) {
-        (ParquetTimeUnit::Milliseconds, TimeUnit::Second) => x / 1_000,
-        (ParquetTimeUnit::Microseconds, TimeUnit::Second) => x / 1_000_000,
-        (ParquetTimeUnit::Nanoseconds, TimeUnit::Second) => x * 1_000_000_000,
-
-        (ParquetTimeUnit::Milliseconds, TimeUnit::Millisecond) => x,
-        (ParquetTimeUnit::Microseconds, TimeUnit::Millisecond) => x / 1_000,
-        (ParquetTimeUnit::Nanoseconds, TimeUnit::Millisecond) => x / 1_000_000,
-
-        (ParquetTimeUnit::Milliseconds, TimeUnit::Microsecond) => x * 1_000,
-        (ParquetTimeUnit::Microseconds, TimeUnit::Microsecond) => x,
-        (ParquetTimeUnit::Nanoseconds, TimeUnit::Microsecond) => x / 1_000,
-
-        (ParquetTimeUnit::Milliseconds, TimeUnit::Nanosecond) => x * 1_000_000,
-        (ParquetTimeUnit::Microseconds, TimeUnit::Nanosecond) => x * 1_000,
-        (ParquetTimeUnit::Nanoseconds, TimeUnit::Nanosecond) => x,
-    }
-}
-
 impl ColumnStatistics {
     pub fn into_arrow(self) -> ParquetResult<ArrowColumnStatistics> {
-        use ParquetStatistics as S;
-        let (null_count, distinct_count) = match &self.statistics {
-            S::Binary(s) => (s.null_count, s.distinct_count),
-            S::Boolean(s) => (s.null_count, s.distinct_count),
-            S::FixedLen(s) => (s.null_count, s.distinct_count),
-            S::Int32(s) => (s.null_count, s.distinct_count),
-            S::Int64(s) => (s.null_count, s.distinct_count),
-            S::Int96(s) => (s.null_count, s.distinct_count),
-            S::Float(s) => (s.null_count, s.distinct_count),
-            S::Double(s) => (s.null_count, s.distinct_count),
-        };
+        let null_count = self.statistics.null_count().map(|v| v as u64);
+        let distinct_count = self.statistics.distinct_count().map(|v| v as u64);
 
-        let null_count = null_count.map(|v| v as u64);
-        let distinct_count = distinct_count.map(|v| v as u64);
-
-        macro_rules! rmap {
-            ($expect:ident, $map:expr) => {{
-                let s = self.statistics.$expect();
-
-                let min = s.min_value;
-                let max = s.max_value;
-
-                let min = ($map)(min)?.map(|x| Box::new(x) as Box<dyn Array>);
-                let max = ($map)(max)?.map(|x| Box::new(x) as Box<dyn Array>);
-
-                (min, max)
-            }};
-            ($expect:ident, @prim $from:ty $(as $to:ty)? $(, $map:expr)?) => {{
-                rmap!(
-                    $expect,
-                    |x: Option<$from>| {
-                        $(
-                        let x = x.map(|x| AsPrimitive::<$to>::as_(x));
-                        )?
-                        $(
-                        let x = x.map($map);
-                        )?
-                        ParquetResult::Ok(x.map(|x| PrimitiveArray::$(<$to>::)?new(
-                            self.field.dtype().clone(),
-                            vec![x].into(),
-                            None,
-                        )))
-                    }
-                )
-            }};
-            (@binary $(, $map:expr)?) => {{
-                rmap!(
-                    expect_binary,
-                    |x: Option<Vec<u8>>| {
-                        $(
-                        let x = x.map($map);
-                        )?
-                        ParquetResult::Ok(x.map(|x| BinaryViewArray::from_slice([Some(x)])))
-                    }
-                )
-            }};
-            (@string) => {{
-                rmap!(
-                    expect_binary,
-                    |x: Option<Vec<u8>>| {
-                        let x = x.map(String::from_utf8).transpose().map_err(|_| {
-                            ParquetError::oos("Invalid UTF8 in Statistics")
-                        })?;
-                        ParquetResult::Ok(x.map(|x| Utf8ViewArray::from_slice([Some(x)])))
-                    }
-                )
-            }};
-        }
-
-        use ArrowDataType as D;
-        use ParquetPhysicalType as PPT;
-        let (min_value, max_value) = match (self.field.dtype(), &self.physical_type) {
-            (D::Null, _) => (None, None),
-
-            (D::Boolean, _) => rmap!(expect_boolean, |x: Option<bool>| ParquetResult::Ok(
-                x.map(|x| BooleanArray::new(ArrowDataType::Boolean, vec![x].into(), None,))
-            )),
-
-            (D::Int8, _) => rmap!(expect_int32, @prim i32 as i8),
-            (D::Int16, _) => rmap!(expect_int32, @prim i32 as i16),
-            (D::Int32 | D::Date32 | D::Time32(_), _) => rmap!(expect_int32, @prim i32 as i32),
-
-            // some implementations of parquet write arrow's date64 into i32.
-            (D::Date64, PPT::Int32) => rmap!(expect_int32, @prim i32 as i64, |x| x * 86400000),
-
-            (D::Int64 | D::Time64(_) | D::Duration(_), _) | (D::Date64, PPT::Int64) => {
-                rmap!(expect_int64, @prim i64 as i64)
+        let conversion =
+            BoundConversion::new(self.field.dtype(), &self.primitive_type, self.column_order)?;
+        let (min_value, max_value) = match conversion {
+            Some(conversion) => {
+                let (min, max) = self.statistics.bounds();
+                let (min, max) = conversion.convert_bounds(min, max)?;
+                let array =
+                    |bound: Option<ArrowBound>| bound.map(|b| b.into_array(self.field.dtype()));
+                (array(min), array(max))
             },
-
-            (D::Interval(IntervalUnit::YearMonth), _) => rmap!(
-                expect_binary,
-                @prim Vec<u8>,
-                |x| convert_year_month(&x)
-            ),
-            (D::Interval(IntervalUnit::DayTime), _) => rmap!(
-                expect_binary,
-                @prim Vec<u8>,
-                |x| convert_days_ms(&x)
-            ),
-
-            (D::UInt8, _) => rmap!(expect_int32, @prim i32 as u8),
-            (D::UInt16, _) => rmap!(expect_int32, @prim i32 as u16),
-            (D::UInt32, PPT::Int32) => rmap!(expect_int32, @prim i32 as u32),
-
-            // some implementations of parquet write arrow's u32 into i64.
-            (D::UInt32, PPT::Int64) => rmap!(expect_int64, @prim i64 as u32),
-            (D::UInt64, _) => rmap!(expect_int64, @prim i64 as u64),
-
-            (D::Timestamp(time_unit, _), PPT::Int96) => {
-                rmap!(expect_int96, @prim [u32; 3], |x| {
-                    timestamp(self.logical_type.as_ref(), *time_unit, int96_to_i64_ns(x).unwrap_or(i64::MAX))
-                })
-            },
-            (D::Timestamp(time_unit, _), PPT::Int64) => {
-                rmap!(expect_int64, @prim i64, |x| {
-                    timestamp(self.logical_type.as_ref(), *time_unit, x)
-                })
-            },
-
-            (D::Float16, PPT::FixedLenByteArray(2))
-                if matches!(
-                    self.logical_type.as_ref(),
-                    Some(PrimitiveLogicalType::Float16)
-                ) =>
-            {
-                rmap!(expect_fixedlen, @prim Vec<u8>, |v| pf16::from_le_bytes(&[v[0], v[1]]))
-            },
-            (D::Float32, _) => rmap!(expect_float, @prim f32),
-            (D::Float64, _) => rmap!(expect_double, @prim f64),
-
-            (D::Decimal(_, _), PPT::Int32) => rmap!(expect_int32, @prim i32 as i128),
-            (D::Decimal(_, _), PPT::Int64) => rmap!(expect_int64, @prim i64 as i128),
-            (D::Decimal(_, _), PPT::FixedLenByteArray(n)) if *n > 16 => {
-                return Err(ParquetError::not_supported(format!(
-                    "Can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}",
-                )));
-            },
-            (D::Decimal(_, _), PPT::FixedLenByteArray(n)) => rmap!(
-                expect_fixedlen,
-                @prim Vec<u8>,
-                |x| convert_i128(&x, *n)
-            ),
-            (D::Decimal256(_, _), PPT::Int32) => {
-                rmap!(expect_int32, @prim i32, |x: i32| i256(I256::new(x.into())))
-            },
-            (D::Decimal256(_, _), PPT::Int64) => {
-                rmap!(expect_int64, @prim i64, |x: i64| i256(I256::new(x.into())))
-            },
-            (D::Decimal256(_, _), PPT::FixedLenByteArray(n)) if *n > 16 => {
-                return Err(ParquetError::not_supported(format!(
-                    "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}",
-                )));
-            },
-            (D::Decimal256(_, _), PPT::FixedLenByteArray(_)) => rmap!(
-                expect_fixedlen,
-                @prim Vec<u8>,
-                |x| convert_i256(&x)
-            ),
-            (D::Binary, _) => rmap!(@binary),
-            (D::LargeBinary, _) => rmap!(@binary),
-            (D::Utf8, _) => rmap!(@string),
-            (D::LargeUtf8, _) => rmap!(@string),
-
-            (D::BinaryView, _) => rmap!(@binary),
-            (D::Utf8View, _) => rmap!(@string),
-
-            (D::FixedSizeBinary(_), _) => {
-                rmap!(expect_fixedlen, |x: Option<Vec<u8>>| ParquetResult::Ok(
-                    x.map(|x| FixedSizeBinaryArray::new(
-                        self.field.dtype().clone(),
-                        x.into(),
-                        None
-                    ))
-                ))
-            },
-
-            other => todo!("{:?}", other),
+            None => (None, None),
         };
 
         Ok(ArrowColumnStatistics {
             null_count,
             distinct_count,
-
             min_value,
             max_value,
         })
+    }
+}
+
+impl ArrowBound<'_> {
+    /// The bound as a one-element array of `dtype`.
+    fn into_array(self, dtype: &ArrowDataType) -> Box<dyn Array> {
+        fn primitive<T: NativeType>(dtype: &ArrowDataType, value: T) -> Box<dyn Array> {
+            PrimitiveArray::new(dtype.clone(), vec![value].into(), None).boxed()
+        }
+        match self {
+            Self::Boolean(v) => {
+                BooleanArray::new(ArrowDataType::Boolean, vec![v].into(), None).boxed()
+            },
+            Self::Int8(v) => primitive(dtype, v),
+            Self::Int16(v) => primitive(dtype, v),
+            Self::Int32(v) => primitive(dtype, v),
+            Self::Int64(v) => primitive(dtype, v),
+            Self::UInt8(v) => primitive(dtype, v),
+            Self::UInt16(v) => primitive(dtype, v),
+            Self::UInt32(v) => primitive(dtype, v),
+            Self::UInt64(v) => primitive(dtype, v),
+            Self::Float16(v) => primitive(dtype, v),
+            Self::Float32(v) => primitive(dtype, v),
+            Self::Float64(v) => primitive(dtype, v),
+            Self::Int128(v) => primitive(dtype, v),
+            Self::Int256(v) => primitive(dtype, v),
+            Self::Bytes(v) if matches!(dtype, ArrowDataType::FixedSizeBinary(_)) => {
+                FixedSizeBinaryArray::new(dtype.clone(), v.to_vec().into(), None).boxed()
+            },
+            Self::Bytes(v) => BinaryViewArray::from_slice([Some(v)]).boxed(),
+            Self::Str(v) => Utf8ViewArray::from_slice([Some(v)]).boxed(),
+        }
+    }
+}
+
+/// Null bounds for every row group, with the null counts the chunks report.
+fn unavailable_bounds(
+    field: &Field,
+    row_groups: &[RowGroupMetadata],
+    field_idx: usize,
+) -> ArrowColumnStatisticsArrays {
+    let mut null_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
+    let mut distinct_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
+    for rg in row_groups {
+        let column = &rg.parquet_columns()[field_idx];
+        null_count.push(column.null_count().map(|v| v as IdxSize));
+        distinct_count.push(column.distinct_count().map(|v| v as IdxSize));
+    }
+    let nulls = || new_null_array(field.dtype().clone(), row_groups.len());
+    ArrowColumnStatisticsArrays {
+        null_count: null_count.freeze(),
+        distinct_count: distinct_count.freeze(),
+        min_value: nulls(),
+        max_value: nulls(),
     }
 }
 
@@ -292,6 +156,7 @@ pub fn deserialize_all(
     field: &Field,
     row_groups: &[RowGroupMetadata],
     field_idx: usize,
+    column_order: ColumnOrder,
     footer_buf: &[u8],
 ) -> ParquetResult<Option<ArrowColumnStatisticsArrays>> {
     assert!(!row_groups.is_empty());
@@ -303,246 +168,95 @@ pub fn deserialize_all(
         D::FixedSizeList(..) => Ok(None),
         D::Struct(..) => Ok(None),
 
-        _ => {
+        D::Null => {
             let mut null_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
             let mut distinct_count =
                 MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
+            for rg in row_groups {
+                null_count.push(Some(rg.num_rows() as IdxSize));
+                distinct_count.push(Some(0));
+            }
+            Ok(Some(ArrowColumnStatisticsArrays {
+                null_count: null_count.freeze(),
+                distinct_count: distinct_count.freeze(),
+                min_value: NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
+                max_value: NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
+            }))
+        },
 
+        _ => {
             let primitive_type = &row_groups[0].parquet_columns()[field_idx]
                 .descriptor()
                 .descriptor
                 .primitive_type;
+            let physical_type = primitive_type.physical_type;
 
-            let logical_type = &primitive_type.logical_type;
-            let physical_type = &primitive_type.physical_type;
+            let Some(conversion) =
+                BoundConversion::new(field.dtype(), primitive_type, column_order)?
+            else {
+                return Ok(Some(unavailable_bounds(field, row_groups, field_idx)));
+            };
 
-            macro_rules! rmap {
-                ($expect:ident, $map:expr, $arr:ty$(, $arg:expr)?) => {{
-                    let mut min_arr = <$arr>::with_capacity(row_groups.len()$(, $arg)?);
-                    let mut max_arr = <$arr>::with_capacity(row_groups.len()$(, $arg)?);
+            let mut null_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
+            let mut distinct_count =
+                MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
 
-                    for rg in row_groups {
-                        let column = &rg.parquet_columns()[field_idx];
-                        let s = column.statistics(footer_buf).transpose()?;
-
-                        let (v_min, v_max, v_null_count, v_distinct_count) = match s {
-                            None => (None, None, None, None),
-                            Some(s) => {
-                                let s = s.$expect();
-
-                                let min = s.min_value;
-                                let max = s.max_value;
-
-                                let min = ($map)(min)?;
-                                let max = ($map)(max)?;
-
-                                (
-                                min,
-                                max,
-                                s.null_count.map(|v| v as IdxSize),
-                                s.distinct_count.map(|v| v as IdxSize),
-                                )
+            // Decodes every group's bounds into a pair of `$arr`s, whose values the
+            // `$variant` of [`ArrowBound`] carries.
+            macro_rules! collect {
+                ($arr:expr, $variant:ident) => {{
+                    let mut min_arr = $arr;
+                    let mut max_arr = $arr;
+                    macro_rules! value {
+                        ($bound:expr) => {
+                            match $bound {
+                                Some(ArrowBound::$variant(v)) => Some(v),
+                                Some(_) => unreachable!(),
+                                None => None,
                             }
                         };
-
-                        min_arr.push(v_min);
-                        max_arr.push(v_max);
-                        null_count.push(v_null_count);
-                        distinct_count.push(v_distinct_count);
                     }
-
+                    for rg in row_groups {
+                        let column = &rg.parquet_columns()[field_idx];
+                        let (min, max) = match column.raw_bounds(footer_buf) {
+                            Some(raw) => conversion.decode_bounds(physical_type, raw)?,
+                            None => (None, None),
+                        };
+                        min_arr.push(value!(min));
+                        max_arr.push(value!(max));
+                        null_count.push(column.null_count().map(|v| v as IdxSize));
+                        distinct_count.push(column.distinct_count().map(|v| v as IdxSize));
+                    }
                     (min_arr.freeze().to_boxed(), max_arr.freeze().to_boxed())
-                }};
-                ($expect:ident, $arr:ty, @prim $from:ty $(as $to:ty)? $(, $map:expr)?) => {{
-                    rmap!(
-                        $expect,
-                        |x: Option<$from>| {
-                            $(
-                            let x = x.map(|x| AsPrimitive::<$to>::as_(x));
-                            )?
-                            $(
-                            let x = x.map($map);
-                            )?
-                            ParquetResult::Ok(x)
-                        },
-                        $arr
-                    )
-                }};
-                (@binary $(, $map:expr)?) => {{
-                    rmap!(
-                        expect_binary,
-                        |x: Option<Vec<u8>>| {
-                            $(
-                            let x = x.map($map);
-                            )?
-                            ParquetResult::Ok(x)
-                        },
-                        MutableBinaryViewArray<[u8]>
-                    )
-                }};
-                (@string) => {{
-                    rmap!(
-                        expect_binary,
-                        |x: Option<Vec<u8>>| {
-                            let x = x.map(String::from_utf8).transpose().map_err(|_| {
-                                ParquetError::oos("Invalid UTF8 in Statistics")
-                            })?;
-                            ParquetResult::Ok(x)
-                        },
-                        MutableBinaryViewArray<str>
-                    )
                 }};
             }
 
-            use ArrowDataType as D;
-            use ParquetPhysicalType as PPT;
-            let (min_value, max_value) = match (field.dtype(), physical_type) {
-                (D::Null, _) => {
-                    for rg in row_groups {
-                        null_count.push(Some(rg.num_rows() as IdxSize));
-                        distinct_count.push(Some(0));
-                    }
-                    (
-                        NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
-                        NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
-                    )
+            let n = row_groups.len();
+            use BoundConversion as C;
+            let (min_value, max_value) = match conversion {
+                C::Boolean => collect!(MutableBooleanArray::with_capacity(n), Boolean),
+                C::Int8 => collect!(MutablePrimitiveArray::<i8>::with_capacity(n), Int8),
+                C::Int16 => collect!(MutablePrimitiveArray::<i16>::with_capacity(n), Int16),
+                C::Int32 => collect!(MutablePrimitiveArray::<i32>::with_capacity(n), Int32),
+                C::Int64 | C::DaysToMillis | C::Timestamp { .. } => {
+                    collect!(MutablePrimitiveArray::<i64>::with_capacity(n), Int64)
                 },
-
-                (D::Boolean, _) => rmap!(
-                    expect_boolean,
-                    |x: Option<bool>| ParquetResult::Ok(x),
-                    MutableBooleanArray
-                ),
-
-                (D::Int8, _) => rmap!(expect_int32, MutablePrimitiveArray::<i8>, @prim i32 as i8),
-                (D::Int16, _) => {
-                    rmap!(expect_int32, MutablePrimitiveArray::<i16>, @prim i32 as i16)
+                C::UInt8 => collect!(MutablePrimitiveArray::<u8>::with_capacity(n), UInt8),
+                C::UInt16 => collect!(MutablePrimitiveArray::<u16>::with_capacity(n), UInt16),
+                C::UInt32 => collect!(MutablePrimitiveArray::<u32>::with_capacity(n), UInt32),
+                C::UInt64 => collect!(MutablePrimitiveArray::<u64>::with_capacity(n), UInt64),
+                C::Float16 => collect!(MutablePrimitiveArray::<pf16>::with_capacity(n), Float16),
+                C::Float32 => collect!(MutablePrimitiveArray::<f32>::with_capacity(n), Float32),
+                C::Float64 => collect!(MutablePrimitiveArray::<f64>::with_capacity(n), Float64),
+                C::Decimal128 => collect!(MutablePrimitiveArray::<i128>::with_capacity(n), Int128),
+                C::Decimal256 => collect!(MutablePrimitiveArray::<i256>::with_capacity(n), Int256),
+                C::Binary => match field.dtype() {
+                    D::FixedSizeBinary(width) => {
+                        collect!(MutableFixedSizeBinaryArray::with_capacity(*width, n), Bytes)
+                    },
+                    _ => collect!(MutableBinaryViewArray::<[u8]>::with_capacity(n), Bytes),
                 },
-                (D::Int32 | D::Date32 | D::Time32(_), _) => {
-                    rmap!(expect_int32, MutablePrimitiveArray::<i32>, @prim i32 as i32)
-                },
-
-                // some implementations of parquet write arrow's date64 into i32.
-                (D::Date64, PPT::Int32) => {
-                    rmap!(expect_int32, MutablePrimitiveArray::<i64>, @prim i32 as i64, |x| x * 86400000)
-                },
-
-                (D::Int64 | D::Time64(_) | D::Duration(_), _) | (D::Date64, PPT::Int64) => {
-                    rmap!(expect_int64, MutablePrimitiveArray::<i64>, @prim i64 as i64)
-                },
-
-                (D::Interval(IntervalUnit::YearMonth), _) => rmap!(
-                    expect_binary,
-                    MutablePrimitiveArray::<i32>,
-                    @prim Vec<u8>,
-                    |x| convert_year_month(&x)
-                ),
-                (D::Interval(IntervalUnit::DayTime), _) => rmap!(
-                    expect_binary,
-                    MutablePrimitiveArray::<days_ms>,
-                    @prim Vec<u8>,
-                    |x| convert_days_ms(&x)
-                ),
-
-                (D::UInt8, _) => rmap!(expect_int32, MutablePrimitiveArray::<u8>, @prim i32 as u8),
-                (D::UInt16, _) => {
-                    rmap!(expect_int32, MutablePrimitiveArray::<u16>, @prim i32 as u16)
-                },
-                (D::UInt32, PPT::Int32) => {
-                    rmap!(expect_int32, MutablePrimitiveArray::<u32>, @prim i32 as u32)
-                },
-
-                // some implementations of parquet write arrow's u32 into i64.
-                (D::UInt32, PPT::Int64) => {
-                    rmap!(expect_int64, MutablePrimitiveArray::<u32>, @prim i64 as u32)
-                },
-                (D::UInt64, _) => {
-                    rmap!(expect_int64, MutablePrimitiveArray::<u64>, @prim i64 as u64)
-                },
-
-                (D::Timestamp(time_unit, _), PPT::Int96) => {
-                    rmap!(expect_int96, MutablePrimitiveArray::<i64>, @prim [u32; 3], |x| {
-                        timestamp(logical_type.as_ref(), *time_unit, int96_to_i64_ns(x).unwrap_or(i64::MAX))
-                    })
-                },
-                (D::Timestamp(time_unit, _), PPT::Int64) => {
-                    rmap!(expect_int64, MutablePrimitiveArray::<i64>, @prim i64, |x| {
-                        timestamp(logical_type.as_ref(), *time_unit, x)
-                    })
-                },
-
-                (D::Float16, _) => {
-                    rmap!(expect_fixedlen, MutablePrimitiveArray::<pf16>, @prim Vec<u8>, |v| {
-                        let le_bytes: [u8; 2] = [v[0], v[1]];
-                        pf16::from_le_bytes(&le_bytes)
-                    })
-                },
-                (D::Float32, _) => rmap!(expect_float, MutablePrimitiveArray::<f32>, @prim f32),
-                (D::Float64, _) => rmap!(expect_double, MutablePrimitiveArray::<f64>, @prim f64),
-
-                (D::Decimal(_, _), PPT::Int32) => {
-                    rmap!(expect_int32, MutablePrimitiveArray::<i128>, @prim i32 as i128)
-                },
-                (D::Decimal(_, _), PPT::Int64) => {
-                    rmap!(expect_int64, MutablePrimitiveArray::<i128>, @prim i64 as i128)
-                },
-                (D::Decimal(_, _), PPT::FixedLenByteArray(n)) if *n > 16 => {
-                    return Err(ParquetError::not_supported(format!(
-                        "Can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}",
-                    )));
-                },
-                (D::Decimal(_, _), PPT::FixedLenByteArray(n)) => rmap!(
-                    expect_fixedlen,
-                    MutablePrimitiveArray::<i128>,
-                    @prim Vec<u8>,
-                    |x| convert_i128(&x, *n)
-                ),
-                (D::Decimal256(_, _), PPT::Int32) => {
-                    rmap!(expect_int32, MutablePrimitiveArray::<i256>, @prim i32, |x: i32| i256(I256::new(x.into())))
-                },
-                (D::Decimal256(_, _), PPT::Int64) => {
-                    rmap!(expect_int64, MutablePrimitiveArray::<i256>, @prim i64, |x: i64| i256(I256::new(x.into())))
-                },
-                (D::Decimal256(_, _), PPT::FixedLenByteArray(n)) if *n > 16 => {
-                    return Err(ParquetError::not_supported(format!(
-                        "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}",
-                    )));
-                },
-                (D::Decimal256(_, _), PPT::FixedLenByteArray(_)) => rmap!(
-                    expect_fixedlen,
-                    MutablePrimitiveArray::<i256>,
-                    @prim Vec<u8>,
-                    |x| convert_i256(&x)
-                ),
-                (D::Binary, _) => rmap!(@binary),
-                (D::LargeBinary, _) => rmap!(@binary),
-                (D::Utf8, _) => rmap!(@string),
-                (D::LargeUtf8, _) => rmap!(@string),
-
-                (D::BinaryView, _) => rmap!(@binary),
-                (D::Utf8View, _) => rmap!(@string),
-
-                (D::FixedSizeBinary(width), _) => {
-                    struct FixedSizeBinaryArray2;
-
-                    impl FixedSizeBinaryArray2 {
-                        fn with_capacity(
-                            row_groups_len: usize,
-                            row_width: usize,
-                        ) -> MutableFixedSizeBinaryArray {
-                            MutableFixedSizeBinaryArray::with_capacity(row_width, row_groups_len)
-                        }
-                    }
-
-                    rmap!(
-                        expect_fixedlen,
-                        |x: Option<Vec<u8>>| ParquetResult::Ok(x),
-                        FixedSizeBinaryArray2,
-                        *width
-                    )
-                },
-
-                other => todo!("{:?}", other),
+                C::Utf8 => collect!(MutableBinaryViewArray::<str>::with_capacity(n), Str),
             };
 
             Ok(Some(ArrowColumnStatisticsArrays {
@@ -563,31 +277,31 @@ pub fn deserialize_all(
 pub fn deserialize<'a>(
     field: &Field,
     columns: &mut impl ExactSizeIterator<Item = &'a ColumnChunkMetadata>,
-    footer_buf: &[u8],
+    metadata: &FileMetadata,
 ) -> ParquetResult<Option<Statistics>> {
     use ArrowDataType as D;
     match field.dtype() {
         D::List(field) | D::LargeList(field) | D::Map(field, _) => Ok(Some(Statistics::List(
-            deserialize(field.as_ref(), columns, footer_buf)?.map(Box::new),
+            deserialize(field.as_ref(), columns, metadata)?.map(Box::new),
         ))),
         D::Dictionary(key, dtype, ordered) => Ok(Some(Statistics::Dictionary(
             *key,
             deserialize(
                 &Field::new(PlSmallStr::EMPTY, dtype.as_ref().clone(), true),
                 columns,
-                footer_buf,
+                metadata,
             )?
             .map(Box::new),
             *ordered,
         ))),
         D::FixedSizeList(field, width) => Ok(Some(Statistics::FixedSizeList(
-            deserialize(field.as_ref(), columns, footer_buf)?.map(Box::new),
+            deserialize(field.as_ref(), columns, metadata)?.map(Box::new),
             *width,
         ))),
         D::Struct(fields) => {
             let field_columns = fields
                 .iter()
-                .map(|f| deserialize(f, columns, footer_buf))
+                .map(|f| deserialize(f, columns, metadata))
                 .collect::<ParquetResult<_>>()?;
             Ok(Some(Statistics::Struct(field_columns)))
         },
@@ -595,20 +309,66 @@ pub fn deserialize<'a>(
             let column = columns.next().unwrap();
 
             Ok(column
-                .statistics(footer_buf)
+                .statistics(&metadata.footer_buf)
                 .transpose()?
                 .map(|statistics| {
                     let primitive_type = &column.descriptor().descriptor.primitive_type;
 
                     Statistics::Column(Box::new(ColumnStatistics {
                         field: field.clone(),
-
-                        logical_type: primitive_type.logical_type,
-                        physical_type: primitive_type.physical_type,
+                        primitive_type: primitive_type.clone(),
+                        column_order: metadata.column_order(column.leaf_index()),
 
                         statistics,
                     }))
                 }))
         },
+    }
+}
+
+/// Reads the bounds of one leaf straight from the footer bytes, for a field polars
+/// decodes as `dtype`, without materialising statistics arrays.
+pub struct LeafBounds {
+    field_idx: usize,
+    physical_type: ParquetPhysicalType,
+    conversion: BoundConversion,
+}
+
+impl LeafBounds {
+    /// `None` when the leaf's statistics cannot bound the values polars decodes
+    /// as `field`'s type.
+    pub fn new(field: &Field, metadata: &FileMetadata, field_idx: usize) -> Option<Self> {
+        let primitive_type = &metadata.schema_descr.columns()[field_idx]
+            .descriptor
+            .primitive_type;
+        let conversion = BoundConversion::new(
+            field.dtype(),
+            primitive_type,
+            metadata.column_order(field_idx),
+        )
+        .ok()??;
+        Some(Self {
+            field_idx,
+            physical_type: primitive_type.physical_type,
+            conversion,
+        })
+    }
+
+    pub fn conversion(&self) -> BoundConversion {
+        self.conversion
+    }
+
+    /// The min and max of the leaf in `row_group`. Either is `None` when the
+    /// chunk does not give it, does not give it exactly, or gives it malformed.
+    pub fn bounds<'a>(
+        &self,
+        row_group: &RowGroupMetadata,
+        footer_buf: &'a [u8],
+    ) -> (Option<ArrowBound<'a>>, Option<ArrowBound<'a>>) {
+        let column = &row_group.parquet_columns()[self.field_idx];
+        column
+            .raw_bounds(footer_buf)
+            .and_then(|raw| self.conversion.decode_bounds(self.physical_type, raw).ok())
+            .unwrap_or((None, None))
     }
 }

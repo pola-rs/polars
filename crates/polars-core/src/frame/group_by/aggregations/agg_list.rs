@@ -1,4 +1,4 @@
-use arrow::offset::Offsets;
+use polars_arrow::offset::Offsets;
 
 use super::*;
 use crate::chunked_array::builder::ListNullChunkedBuilder;

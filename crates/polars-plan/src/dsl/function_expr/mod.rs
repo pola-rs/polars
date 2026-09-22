@@ -1,6 +1,8 @@
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
+#[cfg(feature = "cutqcut")]
+mod binning;
 #[cfg(feature = "bitwise")]
 mod bitwise;
 mod boolean;
@@ -38,6 +40,8 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "dtype-array")]
 pub use array::ArrayFunction;
+#[cfg(feature = "cutqcut")]
+pub use binning::{BinMethod, BinOptions, DslIntervalSpec, FractionSpec};
 #[cfg(feature = "cov")]
 pub use correlation::CorrelationMethod;
 pub use list::ListFunction;
@@ -306,6 +310,8 @@ pub enum FunctionExpr {
         allow_duplicates: bool,
         include_breaks: bool,
     },
+    #[cfg(feature = "cutqcut")]
+    Bin(BinOptions),
     #[cfg(feature = "rle")]
     RLE,
     #[cfg(feature = "rle")]
@@ -672,6 +678,8 @@ impl Hash for FunctionExpr {
                 allow_duplicates.hash(state);
                 include_breaks.hash(state);
             },
+            #[cfg(feature = "cutqcut")]
+            Bin(options) => options.hash(state),
             #[cfg(feature = "rle")]
             RLE => {},
             #[cfg(feature = "rle")]
@@ -893,6 +901,8 @@ impl Display for FunctionExpr {
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
             QCut { .. } => "qcut",
+            #[cfg(feature = "cutqcut")]
+            Bin(options) => options.method.name(),
             #[cfg(feature = "dtype-array")]
             Reshape(_) => "reshape",
             #[cfg(feature = "repeat_by")]

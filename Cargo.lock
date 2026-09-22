@@ -2882,8 +2882,9 @@ dependencies = [
 
 [[package]]
 name = "object_store"
-version = "0.14.1"
-source = "git+https://github.com/apache/arrow-rs-object-store?rev=b07471e2bc341278f86e30cf80a850d56cbe2c67#b07471e2bc341278f86e30cf80a850d56cbe2c67"
+version = "0.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1796bc93603f78c5760a69f2d58badc9618d22adade0a95385bb2adbae4eb94"
 dependencies = [
  "async-trait",
  "aws-lc-rs",
@@ -3069,6 +3070,7 @@ dependencies = [
  "polars-buffer",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-expr",
  "polars-io",
@@ -3177,7 +3179,6 @@ dependencies = [
  "bigdecimal",
  "bytemuck",
  "chrono",
- "either",
  "fast-float2",
  "half",
  "hashbrown 0.17.1",
@@ -3210,6 +3211,7 @@ dependencies = [
 name = "polars-core"
 version = "0.55.1"
 dependencies = [
+ "atoi_simd",
  "bincode",
  "bitflags",
  "boxcar",
@@ -3249,6 +3251,22 @@ dependencies = [
  "uuid",
  "version_check",
  "xxhash-rust",
+]
+
+[[package]]
+name = "polars-defs"
+version = "0.55.1"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "polars-arrow",
+ "polars-compute",
+ "polars-core",
+ "polars-error",
+ "polars-utils",
+ "schemars",
+ "serde",
+ "strum_macros 0.28.0",
 ]
 
 [[package]]
@@ -3328,6 +3346,7 @@ dependencies = [
  "polars-buffer",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-io",
  "polars-json",
  "polars-ops",
@@ -3339,6 +3358,7 @@ dependencies = [
  "rayon",
  "recursive",
  "regex",
+ "serde",
  "version_check",
 ]
 
@@ -3386,7 +3406,6 @@ dependencies = [
  "polars-json",
  "polars-parquet",
  "polars-schema",
- "polars-time",
  "polars-utils",
  "pyo3",
  "rand 0.10.2",
@@ -3441,6 +3460,8 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-defs",
+ "polars-descriptions",
  "polars-expr",
  "polars-io",
  "polars-json",
@@ -3465,7 +3486,9 @@ dependencies = [
  "futures",
  "memmap2",
  "polars-arrow",
+ "polars-config",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-expr",
  "polars-io",
@@ -3520,7 +3543,6 @@ dependencies = [
  "base64 0.22.1",
  "bytemuck",
  "chrono",
- "chrono-tz",
  "either",
  "hashbrown 0.17.1",
  "hex",
@@ -3533,6 +3555,7 @@ dependencies = [
  "polars-buffer",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-json",
  "polars-schema",
@@ -3623,14 +3646,13 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-defs",
  "polars-descriptions",
  "polars-error",
  "polars-ffi",
  "polars-io",
  "polars-json",
- "polars-ops",
  "polars-parquet",
- "polars-time",
  "polars-utils",
  "pyo3",
  "rayon",
@@ -3642,6 +3664,7 @@ dependencies = [
  "sha2 0.11.0",
  "slotmap",
  "strum_macros 0.28.0",
+ "tempfile",
  "tokio",
  "version_check",
 ]
@@ -3672,6 +3695,7 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-defs",
  "polars-descriptions",
  "polars-dtype",
  "polars-error",
@@ -3718,7 +3742,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "2.0.0-rc.1"
+version = "2.0.0-rc.2"
 dependencies = [
  "either",
  "libc",
@@ -3729,7 +3753,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "2.0.0-rc.1"
+version = "2.0.0-rc.2"
 dependencies = [
  "either",
  "libc",
@@ -3740,7 +3764,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "2.0.0-rc.1"
+version = "2.0.0-rc.2"
 dependencies = [
  "either",
  "libc",
@@ -3769,12 +3793,12 @@ dependencies = [
  "hex",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-lazy",
  "polars-ops",
  "polars-plan",
  "polars-testing",
- "polars-time",
  "polars-utils",
  "regex",
  "serde",
@@ -3804,6 +3828,7 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-defs",
  "polars-descriptions",
  "polars-error",
  "polars-expr",
@@ -3842,7 +3867,6 @@ dependencies = [
 name = "polars-time"
 version = "0.55.1"
 dependencies = [
- "atoi_simd",
  "bytemuck",
  "chrono",
  "chrono-tz",
@@ -3851,6 +3875,7 @@ dependencies = [
  "polars-arrow",
  "polars-compute",
  "polars-core",
+ "polars-defs",
  "polars-error",
  "polars-ops",
  "polars-utils",
@@ -4541,9 +4566,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.43"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "aws-lc-rs",
  "log",

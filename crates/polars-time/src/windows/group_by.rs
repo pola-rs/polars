@@ -1,79 +1,23 @@
 use std::collections::VecDeque;
 
-use arrow::legacy::time_zone::Tz;
-use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
-use arrow::trusted_len::TrustedLen;
 use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as _;
 use now::DateTimeNow;
+use polars_arrow::legacy::time_zone::Tz;
+use polars_arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
+use polars_arrow::trusted_len::TrustedLen;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::{ClosedWindow, StartBy};
 use rayon::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
 
 use crate::prelude::*;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[strum(serialize_all = "snake_case")]
-pub enum ClosedWindow {
-    Left,
-    Right,
-    Both,
-    None,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[strum(serialize_all = "snake_case")]
-pub enum Label {
-    Left,
-    Right,
-    DataPoint,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[strum(serialize_all = "snake_case")]
-#[derive(Default)]
-pub enum StartBy {
-    #[default]
-    WindowBound,
-    DataPoint,
-    /// only useful if periods are weekly
-    Monday,
-    Tuesday,
-    Wednesday,
-    Thursday,
-    Friday,
-    Saturday,
-    Sunday,
-}
-
-impl StartBy {
-    pub fn weekday(&self) -> Option<u32> {
-        match self {
-            StartBy::Monday => Some(0),
-            StartBy::Tuesday => Some(1),
-            StartBy::Wednesday => Some(2),
-            StartBy::Thursday => Some(3),
-            StartBy::Friday => Some(4),
-            StartBy::Saturday => Some(5),
-            StartBy::Sunday => Some(6),
-            _ => None,
-        }
-    }
-}
 
 #[allow(clippy::too_many_arguments)]
 fn update_groups_and_bounds(
@@ -973,6 +917,7 @@ impl RollingWindower {
 #[derive(Debug)]
 struct ActiveDynWindow {
     start: IdxSize,
+    end: Option<IdxSize>,
     lower_bound: i64,
     upper_bound: i64,
 }
@@ -1006,6 +951,11 @@ pub struct GroupByDynamicWindower {
     num_seen: IdxSize,
     next_lower_bound: i64,
     active: VecDeque<ActiveDynWindow>,
+
+    /// Upper bound of the most recently opened window.
+    prev_upper_bound: Option<i64>,
+    // Kept track of because of clamping/DST
+    non_monotonic_upper_bounds: bool,
 }
 
 impl GroupByDynamicWindower {
@@ -1048,6 +998,8 @@ impl GroupByDynamicWindower {
             num_seen: 0,
             next_lower_bound: 0,
             active: Default::default(),
+            prev_upper_bound: None,
+            non_monotonic_upper_bounds: false,
         }
     }
 
@@ -1210,16 +1162,43 @@ impl GroupByDynamicWindower {
         }
 
         for &t in time {
-            while let Some(w) = self.active.front()
-                && !is_below_upper_bound(t, w.upper_bound, self.closed)
-            {
-                let w = self.active.pop_front().unwrap();
-                windows.push([w.start, self.num_seen - w.start]);
-                if self.include_lower_bound {
-                    lower_bound.push(w.lower_bound);
+            // Close every window that `t` has moved past.
+            // This sets flags for monotonicity.
+            if self.non_monotonic_upper_bounds {
+                for w in self.active.iter_mut() {
+                    if w.end.is_none() && !is_below_upper_bound(t, w.upper_bound, self.closed) {
+                        w.end = Some(self.num_seen);
+                    }
                 }
-                if self.include_upper_bound {
-                    upper_bound.push(w.upper_bound);
+
+                while let Some(w) = self.active.front()
+                    && w.end.is_some()
+                {
+                    let w = self.active.pop_front().unwrap();
+                    Self::emit(
+                        &w,
+                        self.num_seen,
+                        self.include_lower_bound,
+                        self.include_upper_bound,
+                        windows,
+                        lower_bound,
+                        upper_bound,
+                    );
+                }
+            } else {
+                while let Some(w) = self.active.front()
+                    && !is_below_upper_bound(t, w.upper_bound, self.closed)
+                {
+                    let w = self.active.pop_front().unwrap();
+                    Self::emit(
+                        &w,
+                        self.num_seen,
+                        self.include_lower_bound,
+                        self.include_upper_bound,
+                        windows,
+                        lower_bound,
+                        upper_bound,
+                    );
                 }
             }
 
@@ -1228,8 +1207,12 @@ impl GroupByDynamicWindower {
                     Ok((lower_bound, upper_bound)) => {
                         self.next_lower_bound =
                             (self.add)(&self.every, lower_bound, self.tz.as_ref())?;
+                        self.non_monotonic_upper_bounds |=
+                            self.prev_upper_bound.is_some_and(|prev| upper_bound < prev);
+                        self.prev_upper_bound = Some(upper_bound);
                         self.active.push_back(ActiveDynWindow {
                             start: self.num_seen,
+                            end: None,
                             lower_bound,
                             upper_bound,
                         });
@@ -1247,6 +1230,25 @@ impl GroupByDynamicWindower {
         Ok(())
     }
 
+    fn emit(
+        w: &ActiveDynWindow,
+        num_seen: IdxSize,
+        include_lower_bound: bool,
+        include_upper_bound: bool,
+        windows: &mut Vec<[IdxSize; 2]>,
+        lower_bound: &mut Vec<i64>,
+        upper_bound: &mut Vec<i64>,
+    ) {
+        let end = w.end.unwrap_or(num_seen);
+        windows.push([w.start, end - w.start]);
+        if include_lower_bound {
+            lower_bound.push(w.lower_bound);
+        }
+        if include_upper_bound {
+            upper_bound.push(w.upper_bound);
+        }
+    }
+
     pub fn lowest_needed_index(&self) -> IdxSize {
         self.active.front().map_or(self.num_seen, |w| w.start)
     }
@@ -1257,18 +1259,25 @@ impl GroupByDynamicWindower {
         lower_bound: &mut Vec<i64>,
         upper_bound: &mut Vec<i64>,
     ) {
+        let num_seen = self.num_seen;
+        let (include_lower_bound, include_upper_bound) =
+            (self.include_lower_bound, self.include_upper_bound);
         for w in self.active.drain(..) {
-            windows.push([w.start, self.num_seen - w.start]);
-            if self.include_lower_bound {
-                lower_bound.push(w.lower_bound);
-            }
-            if self.include_upper_bound {
-                upper_bound.push(w.upper_bound);
-            }
+            Self::emit(
+                &w,
+                num_seen,
+                include_lower_bound,
+                include_upper_bound,
+                windows,
+                lower_bound,
+                upper_bound,
+            );
         }
 
         self.next_lower_bound = 0;
         self.num_seen = 0;
+        self.prev_upper_bound = None;
+        self.non_monotonic_upper_bounds = false;
     }
 
     pub fn num_seen(&self) -> IdxSize {

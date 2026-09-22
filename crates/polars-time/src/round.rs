@@ -1,7 +1,8 @@
-use arrow::legacy::time_zone::Tz;
-use arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+use polars_arrow::legacy::time_zone::Tz;
+use polars_arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 use polars_core::prelude::arity::broadcast_try_binary_elementwise;
 use polars_core::prelude::*;
+use polars_defs::time::duration::Duration;
 use polars_utils::cache::LruCache;
 
 use crate::prelude::*;

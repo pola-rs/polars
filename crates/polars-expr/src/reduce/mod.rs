@@ -2,6 +2,8 @@
 mod any_all;
 #[cfg(feature = "approx_unique")]
 mod approx_n_unique;
+#[cfg(feature = "approx_quantile")]
+mod approx_quantile;
 #[cfg(feature = "bitwise")]
 mod bitwise;
 mod convert;
@@ -25,10 +27,10 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use arrow::array::{Array, PrimitiveArray, StaticArray};
-use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 pub use convert::into_reduction;
 pub use min_max::{new_max_reduction, new_min_reduction};
+use polars_arrow::array::{Array, PrimitiveArray, StaticArray};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 use polars_core::prelude::*;
 
 use crate::EvictIdx;

@@ -8,8 +8,8 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, PlIndexMap, ScratchIndexMap, ScratchIndexSet};
 use polars_core::schema::Schema;
+use polars_defs::join::{JoinCoalesce, JoinType};
 use polars_io::RowIndex;
-use polars_ops::frame::{JoinCoalesce, JoinType};
 #[allow(clippy::disallowed_types)]
 use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
@@ -1019,13 +1019,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     )
                 };
 
-                let new_output_schema = det_join_schema(
-                    &new_input_schema_left,
-                    &new_input_schema_right,
-                    options,
-                    self.expr_arena,
-                )
-                .unwrap();
+                let new_output_schema =
+                    det_join_schema(&new_input_schema_left, &new_input_schema_right, options)
+                        .unwrap();
 
                 if project_left.len() != input_schema_left.len() {
                     *edges.inputs()[0].projection_state_mut() = ProjectionState {

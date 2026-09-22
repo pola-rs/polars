@@ -379,3 +379,26 @@ def test_select_from_table_with_reserved_names() -> None:
         eager=True,
     )
     assert out.rows() == [(5, 2)]
+
+
+@pytest.mark.parametrize("literal", ["1e-5", "1E5", "2e3", "-2e+3", "+1E-05", "1.5e2"])
+def test_scientific_notation_literals(literal: str) -> None:
+    value = float(literal)
+    result = pl.sql(f"SELECT {literal} AS value", eager=True)
+    assert_frame_equal(result, pl.DataFrame({"value": [value]}))
+    result = pl.sql(f"SELECT ARRAY[{literal}] AS values", eager=True)
+    assert_frame_equal(result, pl.DataFrame({"values": [[value]]}))
+    frame = pl.DataFrame({"value": [value, None, 42.0]})
+    assert_frame_equal(
+        frame.sql(f"SELECT * FROM self WHERE value IN ({literal})"),
+        frame.head(1),
+    )
+
+
+@pytest.mark.parametrize("literal", ["9223372036854775808", "18446744073709551615"])
+@pytest.mark.parametrize(
+    "expression", ["{literal}", "ARRAY[{literal}]", "1 IN ({literal})"]
+)
+def test_integer_literal_overflow(literal: str, expression: str) -> None:
+    with pytest.raises(SQLInterfaceError, match="cannot parse literal"):
+        pl.sql(f"SELECT {expression.format(literal=literal)}", eager=True)

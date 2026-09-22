@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_async::executor::{self};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::prelude::{ArrowSchema, DataType};
@@ -37,6 +37,7 @@ use crate::utils::tokio_handle_ext;
 pub mod builder;
 pub mod init;
 mod metadata_utils;
+mod passes;
 mod projection;
 mod row_group_data_fetch;
 mod row_group_decode;

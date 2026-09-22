@@ -1,4 +1,5 @@
 use std::io::{BufReader, Cursor};
+use std::num::NonZeroU32;
 use std::sync::{LazyLock, RwLock};
 
 use either::Either;
@@ -15,6 +16,11 @@ use polars_io::utils::stream_buf_reader::ReaderSource;
 use super::*;
 #[cfg(feature = "parquet")]
 use crate::dsl::MetadataPerSource::Unresolved;
+#[cfg(feature = "parquet")]
+use crate::plans::parquet_footers::{
+    read_footers, read_parquet_metadata, read_parquet_num_rows, resolve_for_splitting,
+    select_footer_indices,
+};
 
 pub(super) async fn dsl_to_ir(
     sources: ScanSources,
@@ -272,6 +278,8 @@ pub(super) async fn parquet_file_info(
     row_index: Option<&RowIndex>,
     // Per-source byte sizes from path expansion, aligned with `sources`.
     bytes_per_source: Option<&[u64]>,
+    // See `UnifiedScanArgs::resolve_heavy_sources`.
+    resolve_heavy_sources: Option<NonZeroU32>,
     use_statistics: bool,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, MetadataPerSource)> {
@@ -342,21 +350,13 @@ pub(super) async fn parquet_file_info(
     } else {
         use polars_config::ResolveMode;
 
-        // Indices of the footers to be sampled. Value is `Some` only when
-        // file coverage is incomplete.
+        // Use exact statistics when the sample covers every source.
         let partial_sample = matches!(mode, ResolveMode::Sampled)
             .then(|| {
-                // Default cap: the IO concurrency budget floored at
-                // `SAMPLE_FLOOR`. An explicit limit is authoritative, even
-                // below the floor.
-                let limit = polars_config::config().resolve_sample_limit().map_or_else(
-                    || (polars_io::pl_async::get_concurrency_limit() as usize).max(SAMPLE_FLOOR),
-                    |o| o as usize,
-                );
-                sample_size(n_sources, limit)
+                select_footer_indices(n_sources, bytes_per_source, resolve_heavy_sources, true)
             })
-            .filter(|&k| k != n_sources)
-            .map(|k| sampled_source_indices(n_sources, k));
+            // `+ 1` for source 0, which is read separately.
+            .filter(|indices| indices.len() + 1 != n_sources);
 
         match mode {
             ResolveMode::None => {
@@ -411,25 +411,10 @@ pub(super) async fn parquet_file_info(
                     debug_assert!(b.iter().all(|&size| size > 0));
                 });
                 let rest_fut = async move {
-                    let mut futures = sample
+                    let pairs = read_footers(sources, sample, cloud_options).await;
+                    let rows = pairs
                         .iter()
-                        .map(|&i| async move {
-                            (
-                                i,
-                                read_parquet_metadata(sources.at(i), cloud_options)
-                                    .await
-                                    .ok(),
-                            )
-                        })
-                        .collect::<FuturesUnordered<_>>();
-                    let mut pairs: Vec<(usize, FileMetadataRef)> = Vec::with_capacity(sample.len());
-                    let mut rows = 0usize;
-                    while let Some((i, meta)) = futures.next().await {
-                        if let Some(m) = meta {
-                            rows = rows.saturating_add(m.num_rows);
-                            pairs.push((i, m));
-                        }
-                    }
+                        .fold(0usize, |acc, (_, m)| acc.saturating_add(m.num_rows));
                     PolarsResult::Ok((pairs, rows))
                 };
                 let ((reader_schema, first_num_rows, first_metadata), (mut pairs, other_rows)) =
@@ -770,81 +755,6 @@ fn is_unsigned_int(primitive_type: &polars_parquet::parquet::schema::types::Prim
     )
 }
 
-/// Minimum sample so a scan still extrapolates from enough files; below this,
-/// two-mode datasets can miss a mode entirely and misestimate badly.
-#[cfg(feature = "parquet")]
-const SAMPLE_FLOOR: usize = 16;
-
-/// Footer-wave size (incl. file 0) for [`ResolveMode::Sampled`]: `sqrt(n)`,
-/// floored at `SAMPLE_FLOOR`, capped at `limit`, never above the file count.
-#[cfg(feature = "parquet")]
-fn sample_size(n_sources: usize, limit: usize) -> usize {
-    // `limit` last so it stays a hard ceiling.
-    ((n_sources as f64).sqrt().ceil() as usize)
-        .max(SAMPLE_FLOOR)
-        .min(limit.max(1))
-        .min(n_sources)
-}
-
-/// Evenly-strided sample of `k - 1` indices in `1..n_sources` (file 0 is
-/// read separately).
-#[cfg(feature = "parquet")]
-fn sampled_source_indices(n_sources: usize, k: usize) -> Vec<usize> {
-    if k <= 1 {
-        return Vec::new();
-    }
-    let extra = k - 1;
-    let span = n_sources - 1;
-    (0..extra).map(|j| 1 + (j * span) / extra).collect()
-}
-
-/// Fetch one source's full footer for [`parquet_file_info`].
-#[cfg(feature = "parquet")]
-async fn read_parquet_metadata(
-    source: ScanSourceRef<'_>,
-    #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
-) -> PolarsResult<FileMetadataRef> {
-    use polars_core::error::feature_gated;
-
-    if source.is_cloud_url() {
-        let path = source.as_path().unwrap();
-        feature_gated!("cloud", {
-            let mut reader =
-                ParquetObjectStore::from_uri(path.clone(), cloud_options, None).await?;
-            reader.get_metadata().await.cloned()
-        })
-    } else {
-        let memslice = source.to_memslice()?;
-        let mut cursor = Cursor::new(memslice);
-        let md = polars_parquet::parquet::read::read_metadata(&mut cursor)?;
-        Ok(Arc::new(md))
-    }
-}
-
-/// Fetch one source's `num_rows` (thrift field 3 only); skips
-/// schema, row_groups, and the rest. Used by [`parquet_file_info`]
-/// in `RowCounts` resolve mode.
-#[cfg(feature = "parquet")]
-async fn read_parquet_num_rows(
-    source: ScanSourceRef<'_>,
-    #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
-) -> PolarsResult<i64> {
-    use polars_core::error::feature_gated;
-
-    if source.is_cloud_url() {
-        let path = source.as_path().unwrap();
-        feature_gated!("cloud", {
-            let mut reader =
-                ParquetObjectStore::from_uri(path.clone(), cloud_options, None).await?;
-            reader.num_rows_only().await
-        })
-    } else {
-        let memslice = source.to_memslice()?;
-        let mut cursor = Cursor::new(memslice);
-        polars_parquet::parquet::read::read_num_rows(&mut cursor).map_err(Into::into)
-    }
-}
-
 pub fn max_metadata_scan_cached() -> usize {
     static MAX_SCANS_METADATA_CACHED: LazyLock<usize> = LazyLock::new(|| {
         let value = std::env::var("POLARS_MAX_CACHED_METADATA_SCANS").map_or(8, |v| {
@@ -879,7 +789,7 @@ const SAMPLED_ROWS_REL_ERR: f32 = 0.1;
 /// `None` for a file written by anything else.
 #[cfg(feature = "ipc")]
 #[allow(clippy::useless_conversion)]
-fn ipc_rows_from_footer(metadata: &arrow::io::ipc::read::FileMetadata) -> Option<u64> {
+fn ipc_rows_from_footer(metadata: &polars_arrow::io::ipc::read::FileMetadata) -> Option<u64> {
     polars_io::ipc::pl_ipc_metadata::PlIpcMetadata::from_ipc_footer(metadata)?
         .num_rows()
         .map(u64::from)
@@ -888,9 +798,9 @@ fn ipc_rows_from_footer(metadata: &arrow::io::ipc::read::FileMetadata) -> Option
 #[cfg(feature = "ipc")]
 fn sum_block_rows<R: std::io::Read + std::io::Seek>(
     reader: &mut R,
-    blocks: &[arrow::io::ipc::format::ipc::Block],
+    blocks: &[polars_arrow::io::ipc::format::ipc::Block],
 ) -> Option<u64> {
-    arrow::io::ipc::read::get_row_count_from_blocks(reader, blocks)
+    polars_arrow::io::ipc::read::get_row_count_from_blocks(reader, blocks)
         .ok()
         .and_then(|rows| u64::try_from(rows).ok())
 }
@@ -899,7 +809,7 @@ fn sum_block_rows<R: std::io::Read + std::io::Seek>(
 #[cfg(feature = "ipc")]
 fn ipc_rows_from_blocks<R: std::io::Read + std::io::Seek>(
     reader: &mut R,
-    blocks: &[arrow::io::ipc::format::ipc::Block],
+    blocks: &[polars_arrow::io::ipc::format::ipc::Block],
 ) -> Card {
     if blocks.len() <= MAX_SAMPLED_BLOCKS {
         return match sum_block_rows(reader, blocks) {
@@ -931,9 +841,9 @@ fn ipc_rows_from_blocks<R: std::io::Read + std::io::Seek>(
 #[cfg(feature = "ipc")]
 fn ipc_metadata_and_rows<R: std::io::Read + std::io::Seek>(
     mut reader: R,
-) -> PolarsResult<(arrow::io::ipc::read::FileMetadata, Card)> {
+) -> PolarsResult<(polars_arrow::io::ipc::read::FileMetadata, Card)> {
     ASYNC.block_in_place(move || {
-        let metadata = arrow::io::ipc::read::read_file_metadata(&mut reader)?;
+        let metadata = polars_arrow::io::ipc::read::read_file_metadata(&mut reader)?;
         let rows = match ipc_rows_from_footer(&metadata) {
             Some(rows) => Card::Exact(rows),
             None => ipc_rows_from_blocks(&mut reader, &metadata.blocks),
@@ -949,7 +859,7 @@ pub(super) async fn ipc_file_info(
     n_sources: usize,
     row_index: Option<&RowIndex>,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
-) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
+) -> PolarsResult<(FileInfo, polars_arrow::io::ipc::read::FileMetadata)> {
     use polars_core::error::feature_gated;
 
     let (metadata, first_rows) = match first_scan_source {
@@ -1450,12 +1360,15 @@ pub async fn ndjson_file_info(
     ))
 }
 
-// Add flags that influence metadata/schema here
+// Include all sources and options that affect the cached schema or metadata.
 #[derive(Eq, Hash, PartialEq)]
 enum CachedSourceKey {
     ParquetIpc {
-        first_path: PlRefPath,
+        paths: Buffer<PlRefPath>,
         schema_overwrite: Option<SchemaRef>,
+        resolve_heavy_sources: Option<NonZeroU32>,
+        // Heavy-source selection depends on the sizes, not just the paths.
+        bytes_per_source: Option<Buffer<u64>>,
     },
     CsvJson {
         paths: Buffer<PlRefPath>,
@@ -1502,9 +1415,17 @@ impl SourcesToFileInfo {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { options } => {
                 if let Some(schema) = &options.schema {
-                    // We were passed a schema, we don't have to call `parquet_file_info`,
-                    // but this does mean we don't have scan statistics or any
-                    // resolved footer metadata.
+                    // Skip schema and statistics inference; retain any supplied row count.
+                    // Resolve footers only for splitting, when requested.
+                    let metadata_per_source = match (
+                        unified_scan_args.resolve_heavy_sources,
+                        bytes_per_source.as_deref(),
+                    ) {
+                        (Some(n_parts), Some(bytes)) => {
+                            resolve_for_splitting(sources, bytes, n_parts, cloud_options).await
+                        },
+                        _ => Unresolved,
+                    };
 
                     (
                         FileInfo {
@@ -1517,7 +1438,7 @@ impl SourcesToFileInfo {
                         },
                         FileScanIR::Parquet {
                             options,
-                            metadata_per_source: Unresolved,
+                            metadata_per_source,
                             bytes_per_source: bytes_per_source.clone(),
                         },
                     )
@@ -1543,6 +1464,7 @@ impl SourcesToFileInfo {
                             sources,
                             unified_scan_args.row_index.as_ref(),
                             bytes_per_source.as_deref(),
+                            unified_scan_args.resolve_heavy_sources,
                             options.use_statistics,
                             cloud_options,
                         )
@@ -1794,8 +1716,10 @@ impl SourcesToFileInfo {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { options } => {
                 let key = CachedSourceKey::ParquetIpc {
-                    first_path: paths[0].clone(),
+                    paths: paths.clone(),
                     schema_overwrite: options.schema.clone(),
+                    resolve_heavy_sources: unified_scan_args.resolve_heavy_sources,
+                    bytes_per_source: bytes_per_source.clone(),
                 };
 
                 let guard = self.inner.read().unwrap();
@@ -1805,8 +1729,10 @@ impl SourcesToFileInfo {
             #[cfg(feature = "ipc")]
             FileScanDsl::Ipc { options: _ } => {
                 let key = CachedSourceKey::ParquetIpc {
-                    first_path: paths[0].clone(),
+                    paths: paths.clone(),
                     schema_overwrite: None,
+                    resolve_heavy_sources: None,
+                    bytes_per_source: None,
                 };
 
                 let guard = self.inner.read().unwrap();

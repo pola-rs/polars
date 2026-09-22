@@ -34,10 +34,10 @@ use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-use arrow::compute::aggregate::estimated_bytes_size;
 pub use from::*;
 pub use iterator::SeriesIter;
 use num_traits::NumCast;
+use polars_arrow::compute::aggregate::estimated_bytes_size;
 use polars_error::feature_gated;
 use polars_utils::broadcast::BroadcastLength;
 use polars_utils::float::IsFloat;
@@ -422,7 +422,7 @@ impl Series {
         let do_clone = match dtype {
             D::Unknown(UnknownKind::Any) => true,
             D::Unknown(UnknownKind::Int(_)) if slf.dtype().is_integer() => true,
-            D::Unknown(UnknownKind::Float) if slf.dtype().is_float() => true,
+            D::Unknown(UnknownKind::Float(_)) if slf.dtype().is_float() => true,
             D::Unknown(UnknownKind::Str)
                 if slf.dtype().is_string() | slf.dtype().is_categorical() =>
             {
@@ -439,7 +439,7 @@ impl Series {
         pub fn cast_dtype(dtype: &DataType) -> Option<DataType> {
             match dtype {
                 D::Unknown(UnknownKind::Int(v)) => Some(materialize_dyn_int(*v).dtype()),
-                D::Unknown(UnknownKind::Float) => Some(DataType::Float64),
+                D::Unknown(UnknownKind::Float(_)) => Some(DataType::Float64),
                 D::Unknown(UnknownKind::Str) => Some(DataType::String),
                 // Best leave as is.
                 D::List(inner) => cast_dtype(inner.as_ref()).map(Box::new).map(D::List),
@@ -534,8 +534,9 @@ impl Series {
     ///
     /// Payloads must be safe to read as `dtype`: categorical codes in range for every
     /// non-null slot, and Maps satisfying the `MapChunked` storage safety contract. Null
-    /// entries or keys under null rows are allowed and compacted; those in live rows are
-    /// errors. Unsafe payloads can cause invalid memory access downstream.
+    /// Map rows may span entries, and those entries may themselves be null; they are left
+    /// alone. Null entries or keys in live rows are errors. Unsafe payloads can cause
+    /// invalid memory access downstream.
     ///
     /// # Key uniqueness
     /// Not required for safety. Whole-row transformations preserve existing uniqueness;
@@ -616,12 +617,12 @@ impl Series {
 
             #[cfg(feature = "dtype-map")]
             (D::List(_), D::Map(_, _)) => {
-                use crate::chunked_array::logical::{CanonicalizeMode, canonicalize_map_storage};
+                use crate::chunked_array::logical::ensure_live_entries_non_null;
 
                 let storage = self.from_physical_unchecked(&dtype.map_storage_dtype().unwrap())?;
-                // Repair hidden nulls from dtype-blind propagation; reject live ones.
-                let storage = canonicalize_map_storage(&storage, CanonicalizeMode::NullsOnly)?
-                    .unwrap_or(storage);
+                // Nulls that propagation left under null rows are legal; only live rows
+                // must own no null entry or key.
+                ensure_live_entries_non_null(storage.list().unwrap())?;
                 Ok(MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series())
             },
             #[cfg(feature = "dtype-extension")]
@@ -1224,7 +1225,7 @@ mod test {
                     ArrowDataType::Int32,
                     true,
                 ))),
-                unsafe { arrow::offset::Offsets::new_unchecked(vec![0, 1]) }.into(),
+                unsafe { polars_arrow::offset::Offsets::new_unchecked(vec![0, 1]) }.into(),
                 PrimitiveArray::new(ArrowDataType::Int32, vec![1i32].into(), None).to_boxed(),
                 None,
             )],

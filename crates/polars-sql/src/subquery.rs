@@ -6,11 +6,17 @@ use std::borrow::Cow;
 use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
+use polars_core::utils::try_get_supertype;
+use polars_defs::join::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_lazy::prelude::*;
-use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
-use polars_plan::prelude::{AggExpr, Selector};
+use polars_plan::plans::{
+    ExprPushdownGroup, ExprToIRContext, NodeStats, is_inherently_nondeterministic, node_stats,
+    to_expr_ir,
+};
+use polars_plan::prelude::{AggExpr, DslPlan, Selector};
 use polars_plan::utils::{expr_to_leaf_column_names_iter, has_expr};
 use polars_utils::aliases::PlHashSet;
+use polars_utils::arena::Arena;
 use polars_utils::{format_pl_smallstr, unique_column_name};
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Query,
@@ -24,7 +30,7 @@ use crate::sql_expr::{parse_sql_expr, sql_in_membership};
 use crate::sql_visitors::{expr_contains_subquery, is_subquery_expr};
 
 impl SQLContext {
-    // Entry point: offer each WHERE conjunct to the rewrite, returning the
+    // Entry point: offer each WHERE conjunct to the rewrites, returning the
     // (possibly join-extended) frame together with the conjuncts left for the
     // ordinary filter path. In `KeepTrue` mode each top-level AND-conjunct is
     // offered independently. In `RemoveTrue` mode conjuncts can't be split
@@ -37,13 +43,11 @@ impl SQLContext {
         expr: &'a SQLExpr,
         filter_mode: FilterMode,
         schema: &Schema,
+        stage: RewriteStage,
     ) -> PolarsResult<(LazyFrame, Vec<&'a SQLExpr>)> {
         let residual = match filter_mode {
             FilterMode::RemoveTrue => {
-                let mut unwrapped = expr;
-                while let SQLExpr::Nested(inner) = unwrapped {
-                    unwrapped = inner;
-                }
+                let unwrapped = unwrap_nested(expr);
                 match self.try_rewrite_subquery_conjunct(&lf, unwrapped, filter_mode, schema)? {
                     Some(new_lf) => {
                         lf = new_lf;
@@ -62,18 +66,24 @@ impl SQLContext {
 
                 // A subquery rewrite can row-index the frame, which blocks predicate
                 // pushdown. Apply the conjuncts holding no subquery before that.
-                if !plain.is_empty() {
-                    let early = plain
-                        .iter()
-                        .map(|c| parse_sql_expr(c, self, Some(schema)))
-                        .collect::<PolarsResult<Vec<_>>>()?;
+                let mut residual = Vec::new();
+                let mut early = Vec::new();
+                for conj in plain {
+                    let parsed = parse_sql_expr(conj, self, Some(schema))?;
+                    if stage.offers(&parsed, schema) {
+                        early.push(parsed);
+                    } else {
+                        residual.push(conj);
+                    }
+                }
+                if !early.is_empty() {
                     lf = lf.filter(all_horizontal(early)?);
                 }
 
-                let mut residual = Vec::new();
                 for conj in with_subquery {
-                    if let Some(new_lf) =
-                        self.try_rewrite_subquery_conjunct(&lf, conj, filter_mode, schema)?
+                    if self.stage_offers_membership(conj, schema, stage)?
+                        && let Some(new_lf) =
+                            self.try_rewrite_subquery_conjunct(&lf, conj, filter_mode, schema)?
                     {
                         lf = new_lf;
                     } else {
@@ -84,6 +94,26 @@ impl SQLContext {
             },
         };
         Ok((lf, residual))
+    }
+
+    // Whether the stage offers a subquery conjunct to the rewrites: before scalar
+    // lowering only when its membership key is harmless on every row. A key
+    // holding a subquery of its own can't be parsed before that subquery is
+    // lowered.
+    fn stage_offers_membership(
+        &mut self,
+        conj: &SQLExpr,
+        schema: &Schema,
+        stage: RewriteStage,
+    ) -> PolarsResult<bool> {
+        if stage == RewriteStage::AfterScalarLowering {
+            return Ok(true);
+        }
+        Ok(match membership_predicate(conj).map(|m| m.key) {
+            None => true,
+            Some(key) if expr_contains_subquery(key) => false,
+            Some(key) => harmless_on_every_row(&parse_sql_expr(key, self, Some(schema))?, schema),
+        })
     }
 
     // Dispatch one conjunct to the matching rewrite. `RemoveTrue` mode (DELETE)
@@ -119,6 +149,60 @@ impl SQLContext {
         }
     }
 
+    // Lower `lhs [NOT] IN (subquery)` and `lhs = (subquery)` over an uncorrelated
+    // subquery of any shape to a semi / anti join against the subquery evaluated
+    // whole. A scalar subquery is reduced to its single value first, so more than
+    // one row still raises.
+    #[cfg(feature = "semi_anti_join")]
+    pub(crate) fn try_rewrite_uncorrelated_subquery_conjunct(
+        &mut self,
+        lf: &LazyFrame,
+        conj: &SQLExpr,
+        filter_mode: FilterMode,
+        outer_schema: &Schema,
+    ) -> PolarsResult<Option<LazyFrame>> {
+        let removing = filter_mode == FilterMode::RemoveTrue;
+        let Some(Membership {
+            key: lhs,
+            subquery,
+            negated,
+            scalar,
+        }) = membership_predicate(conj)
+        else {
+            return Ok(None);
+        };
+        if negated && removing {
+            return Ok(None);
+        }
+        let anti = negated != removing;
+        if is_correlated_subquery(subquery) || expr_contains_subquery(lhs) {
+            return Ok(None);
+        }
+        let Some(left_key) = self.try_parse_outer_only_expr(lhs, outer_schema)? else {
+            return Ok(None);
+        };
+
+        let mut inner_lf = self.execute_isolated(|ctx| ctx.execute_query(subquery))?;
+        let inner_schema = self.get_frame_schema(&mut inner_lf)?;
+        polars_ensure!(inner_schema.len() == 1, SQLSyntax: "SQL subquery returns more than one column");
+        let right_key = col(inner_schema.get_at_index(0).unwrap().0.clone());
+        if scalar {
+            inner_lf = inner_lf.select([first().as_expr().item(true)]);
+        }
+
+        build_semi_anti_join(
+            lf,
+            inner_lf,
+            outer_schema,
+            &inner_schema,
+            vec![left_key],
+            vec![right_key],
+            anti,
+            // Only `KeepTrue` "NOT IN" needs 3VL correction.
+            anti && !scalar && filter_mode == FilterMode::KeepTrue,
+        )
+    }
+
     // Lower `[NOT] EXISTS (SELECT ... FROM rel WHERE rel.k = outer.k ...)` to a
     // semi / anti join by decorrelating the equi-correlation predicate(s) into
     // join keys. DISTINCT is ignored: existence is invariant under
@@ -148,26 +232,22 @@ impl SQLContext {
         else {
             return Ok(None);
         };
-        if let Some(SubqueryConjuncts {
-            left_on,
-            right_on,
-            local_filters,
-        }) =
+        if let Some(conjuncts) =
             ctx.split_subquery_conjuncts(&selection, &inner_names, &inner_schema, outer_schema)?
         {
             // An uncorrelated EXISTS (no correlation key found) has no join key
             // to build from, so leave it to the existing path.
-            return Ok(if left_on.is_empty() {
+            return Ok(if conjuncts.left_on.is_empty() {
                 None
             } else {
-                Some(ctx.finish_decorrelated_join(
+                ctx.finish_decorrelated_join(
                     lf,
                     inner_lf,
-                    left_on,
-                    right_on,
-                    local_filters,
+                    outer_schema,
+                    &inner_schema,
+                    conjuncts,
                     negated,
-                )?)
+                )?
             });
         }
         ctx.try_rewrite_exists_as_count_filter(
@@ -310,9 +390,6 @@ impl SQLContext {
             return Ok(None);
         };
         let right_key = right_key.meta().undo_aliases();
-        if !usable_as_join_key(&left_key) || !usable_as_join_key(&right_key) {
-            return Ok(None);
-        }
 
         let SubqueryConjuncts {
             mut left_on,
@@ -334,29 +411,22 @@ impl SQLContext {
             None => SubqueryConjuncts::default(),
         };
 
-        // Correlation keys for the "NOT IN" 3VL correction
-        let corr_outer = left_on.clone();
-        let corr_inner = right_on.clone();
-        left_on.insert(0, left_key.clone());
-        right_on.insert(0, right_key.clone());
+        left_on.insert(0, left_key);
+        right_on.insert(0, right_key);
 
-        // Inline, so filtered inner frame can be reused for the correction
         let inner_lf = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
         inner_lf.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
-        let joined = build_semi_anti_join(lf, inner_lf.clone(), left_on, right_on, anti)?;
-
-        // Only `KeepTrue` "NOT IN" needs 3VL correction.
-        if !(anti && filter_mode == FilterMode::KeepTrue) {
-            return Ok(Some(joined));
-        }
-        Ok(Some(refine_not_in_anti_join(
-            joined,
+        build_semi_anti_join(
+            lf,
             inner_lf,
-            &left_key,
-            &right_key,
-            &corr_outer,
-            &corr_inner,
-        )?))
+            outer_schema,
+            &inner_schema,
+            left_on,
+            right_on,
+            anti,
+            // Only `KeepTrue` "NOT IN" needs 3VL correction.
+            anti && filter_mode == FilterMode::KeepTrue,
+        )
     }
 
     // Apply the local filters to the inner relation, hand this (isolated, now
@@ -368,14 +438,28 @@ impl SQLContext {
         self,
         lf: &LazyFrame,
         inner_lf: LazyFrame,
-        left_on: Vec<Expr>,
-        right_on: Vec<Expr>,
-        local_filters: Vec<Expr>,
+        outer_schema: &Schema,
+        inner_schema: &Schema,
+        conjuncts: SubqueryConjuncts,
         anti: bool,
-    ) -> PolarsResult<LazyFrame> {
+    ) -> PolarsResult<Option<LazyFrame>> {
+        let SubqueryConjuncts {
+            left_on,
+            right_on,
+            local_filters,
+        } = conjuncts;
         let inner_lf = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
         inner_lf.set_cached_arena(self.lp_arena, self.expr_arena);
-        build_semi_anti_join(lf, inner_lf, left_on, right_on, anti)
+        build_semi_anti_join(
+            lf,
+            inner_lf,
+            outer_schema,
+            inner_schema,
+            left_on,
+            right_on,
+            anti,
+            false,
+        )
     }
 
     // Resolve the subquery's FROM (a single relation, possibly with joins) into
@@ -443,6 +527,55 @@ impl SQLContext {
             right_on,
             local_filters,
         }))
+    }
+
+    // The plan-time row statistics of a frame whose schema this context resolved,
+    // or `None` when its plan isn't modelled.
+    fn estimated_rows(&mut self, lf: &mut LazyFrame) -> PolarsResult<Option<NodeStats>> {
+        self.get_frame_schema(lf)?;
+        let DslPlan::IR {
+            node: Some(node),
+            version,
+            ..
+        } = &lf.logical_plan
+        else {
+            return Ok(None);
+        };
+        if *version != self.lp_arena.version() {
+            return Ok(None);
+        }
+        Ok(node_stats(*node, &self.lp_arena, &self.expr_arena))
+    }
+
+    // Split a subquery's WHERE into its correlation comparisons and its
+    // inner-only filters, or `None` when a conjunct is neither. A comparison
+    // spelled twice is kept once: it would duplicate a group-by key.
+    fn split_correlation_conjuncts(
+        &mut self,
+        selection: &SQLExpr,
+        inner_names: &PlHashSet<String>,
+        inner_schema: &Schema,
+        outer_schema: &Schema,
+    ) -> PolarsResult<Option<(Vec<CorrPredicate>, Vec<Expr>)>> {
+        let mut corr_preds: Vec<CorrPredicate> = Vec::new();
+        let mut local_filters = Vec::new();
+        let selection = factored_selection(selection);
+        for conj in MintermIter::new(&selection) {
+            if let Some(pred) =
+                scalar_correlation_predicate(conj, inner_names, inner_schema, outer_schema)
+            {
+                if !corr_preds.iter().any(|p| p.same_comparison(&pred)) {
+                    corr_preds.push(pred);
+                }
+            } else if let Some(filter) =
+                self.try_parse_inner_only_expr(conj, inner_names, inner_schema)?
+            {
+                local_filters.push(filter);
+            } else {
+                return Ok(None);
+            }
+        }
+        Ok(Some((corr_preds, local_filters)))
     }
 
     // Parse an outer-query expression, or `None` if it doesn't stand on the outer
@@ -531,7 +664,7 @@ impl SQLContext {
     // is NULL. Returns `None` when uncorrelated or not a scalar-aggregate shape.
     fn try_decorrelate_scalar_subquery(
         &mut self,
-        lf: LazyFrame,
+        mut lf: LazyFrame,
         outer_schema: &Schema,
         subquery: &Query,
     ) -> PolarsResult<Option<(LazyFrame, PlSmallStr)>> {
@@ -562,28 +695,12 @@ impl SQLContext {
         if !has_expr(&agg_expr, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
             return Ok(None);
         }
-        let count_like = matches!(
-            agg_output_root(&agg_expr),
-            Expr::Len | Expr::Agg(AggExpr::Count { .. })
-        );
 
-        // Split the WHERE into correlation predicates and inner-only filters.
-        let mut corr_preds = Vec::new();
-        let mut local_filters = Vec::new();
-        let selection = factored_selection(selection);
-        for conj in MintermIter::new(&selection) {
-            if let Some(pred) =
-                scalar_correlation_predicate(conj, &inner_names, &inner_schema, outer_schema)
-            {
-                corr_preds.push(pred);
-            } else if let Some(filter) =
-                ctx.try_parse_inner_only_expr(conj, &inner_names, &inner_schema)?
-            {
-                local_filters.push(filter);
-            } else {
-                return Ok(None);
-            }
-        }
+        let Some((corr_preds, local_filters)) =
+            ctx.split_correlation_conjuncts(selection, &inner_names, &inner_schema, outer_schema)?
+        else {
+            return Ok(None);
+        };
         // No correlation: leave it to the uncorrelated scalar-subquery path.
         if corr_preds.is_empty() {
             return Ok(None);
@@ -601,7 +718,13 @@ impl SQLContext {
             .iter()
             .map(|name| prefixed_inner(&prefix, name))
             .collect();
-        let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
+        let mut inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
+        let equality_only = corr_preds.iter().all(|p| p.op == SQLBinaryOperator::Eq);
+        let restrict = equality_only && group_local_aggregate(&agg_expr) && {
+            let inner_rows = ctx.estimated_rows(&mut inner_renamed)?;
+            let outer_rows = self.estimated_rows(&mut lf)?;
+            restriction_pays_off(outer_rows.as_ref(), inner_rows.as_ref())
+        };
         inner_renamed.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
 
         let agg_expr = agg_expr.map_expr(|e| match e {
@@ -611,17 +734,20 @@ impl SQLContext {
             other => other,
         });
 
-        if corr_preds.iter().all(|p| p.op == SQLBinaryOperator::Eq) {
+        if equality_only {
             let outer_on: Vec<Expr> = corr_preds.iter().map(|p| col(p.outer.clone())).collect();
             let inner_on: Vec<Expr> = corr_preds
                 .iter()
                 .map(|p| col(prefixed_inner(&prefix, &p.inner)))
                 .collect();
-            let grouped = inner_renamed
-                .group_by(inner_on.clone())
-                .agg([agg_expr.alias(result_name.clone())]);
-            let joined =
-                left_join_aggregate(lf, grouped, outer_on, inner_on, &result_name, count_like)?;
+            let joined = equality_correlated_aggregate(
+                lf,
+                inner_renamed,
+                outer_on,
+                inner_on,
+                agg_expr.alias(result_name.clone()),
+                restrict,
+            )?;
             return Ok(Some((joined, result_name)));
         }
 
@@ -635,16 +761,15 @@ impl SQLContext {
             .with(inner_renamed)
             .how(JoinType::Inner)
             .join_where(join_preds);
-        let grouped = matched
-            .group_by([col(idx_name.clone())])
-            .agg([agg_expr.alias(result_name.clone())]);
+        let agg = agg_expr.alias(result_name.clone());
+        let count_like = count_like(&agg);
+        let grouped = matched.group_by([col(idx_name.clone())]).agg([agg]);
 
         let joined = left_join_aggregate(
             outer_indexed,
             grouped,
             vec![col(idx_name.clone())],
             vec![col(idx_name.clone())],
-            &result_name,
             count_like,
         )?
         .drop(Selector::ByName {
@@ -695,22 +820,11 @@ impl SQLContext {
         };
         let value = value.meta().undo_aliases();
 
-        let mut corr_preds = Vec::new();
-        let mut local_filters = Vec::new();
-        let selection = factored_selection(selection);
-        for conj in MintermIter::new(&selection) {
-            if let Some(pred) =
-                scalar_correlation_predicate(conj, &inner_names, &inner_schema, outer_schema)
-            {
-                corr_preds.push(pred);
-            } else if let Some(filter) =
-                ctx.try_parse_inner_only_expr(conj, &inner_names, &inner_schema)?
-            {
-                local_filters.push(filter);
-            } else {
-                return Ok(None);
-            }
-        }
+        let Some((corr_preds, local_filters)) =
+            ctx.split_correlation_conjuncts(selection, &inner_names, &inner_schema, outer_schema)?
+        else {
+            return Ok(None);
+        };
         // No correlation: the generic `IN` path already handles this.
         if corr_preds.is_empty() {
             return Ok(None);
@@ -745,7 +859,7 @@ impl SQLContext {
             let grouped = inner_renamed
                 .group_by(inner_on.clone())
                 .agg([value.alias(set_name.clone())]);
-            left_join_aggregate(lf, grouped, outer_on, inner_on, &set_name, false)?
+            left_join_aggregate(lf, grouped, outer_on, inner_on, None)?
         } else {
             let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
             let idx_name = format_pl_smallstr!("{prefix}idx");
@@ -764,8 +878,7 @@ impl SQLContext {
                 grouped,
                 vec![col(idx_name.clone())],
                 vec![col(idx_name.clone())],
-                &set_name,
-                false,
+                None,
             )?
             .drop(Selector::ByName {
                 names: Arc::from([idx_name]),
@@ -808,24 +921,21 @@ impl SQLContext {
             return Ok(None);
         };
 
-        let mut corr_preds = Vec::new();
-        let mut local_filters = Vec::new();
-        if let Some(selection) = &select.selection {
-            let selection = factored_selection(selection);
-            for conj in MintermIter::new(&selection) {
-                if let Some(pred) =
-                    scalar_correlation_predicate(conj, &inner_names, &inner_schema, outer_schema)
-                {
-                    corr_preds.push(pred);
-                } else if let Some(filter) =
-                    ctx.try_parse_inner_only_expr(conj, &inner_names, &inner_schema)?
-                {
-                    local_filters.push(filter);
-                } else {
+        let (corr_preds, local_filters) = match &select.selection {
+            Some(selection) => {
+                let Some(split) = ctx.split_correlation_conjuncts(
+                    selection,
+                    &inner_names,
+                    &inner_schema,
+                    outer_schema,
+                )?
+                else {
                     return Ok(None);
-                }
-            }
-        }
+                };
+                split
+            },
+            None => (Vec::new(), Vec::new()),
+        };
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let flag_name = format_pl_smallstr!("{prefix}exists");
@@ -918,23 +1028,160 @@ impl SQLContext {
     }
 }
 
-// Semi/anti join the outer frame against the (filtered, arena-cached) inner.
+/// When WHERE conjuncts are offered to the join rewrites.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RewriteStage {
+    /// Before the correlated scalar subqueries are lowered: a conjunct moves
+    /// ahead of them only if it is harmless on every row.
+    BeforeScalarLowering,
+    /// After: every conjunct is offered.
+    AfterScalarLowering,
+}
+
+impl RewriteStage {
+    fn offers(self, expr: &Expr, schema: &Schema) -> bool {
+        self == Self::AfterScalarLowering || harmless_on_every_row(expr, schema)
+    }
+}
+
+// A `[NOT] IN (subquery)` or `= (subquery)` conjunct taken apart.
+#[cfg_attr(not(feature = "semi_anti_join"), allow(dead_code))]
+struct Membership<'a> {
+    /// The outer-side expression compared against the subquery.
+    key: &'a SQLExpr,
+    subquery: &'a Query,
+    negated: bool,
+    /// `= (subquery)`: the subquery stands for its single value.
+    scalar: bool,
+}
+
+fn membership_predicate(conj: &SQLExpr) -> Option<Membership<'_>> {
+    match unwrap_nested(conj) {
+        SQLExpr::InSubquery {
+            expr,
+            subquery,
+            negated,
+        } => Some(Membership {
+            key: expr,
+            subquery,
+            negated: *negated,
+            scalar: false,
+        }),
+        SQLExpr::BinaryOp {
+            left,
+            op: SQLBinaryOperator::Eq,
+            right,
+        } => match (left.as_ref(), right.as_ref()) {
+            (key, SQLExpr::Subquery(subquery)) | (SQLExpr::Subquery(subquery), key) => {
+                Some(Membership {
+                    key,
+                    subquery,
+                    negated: false,
+                    scalar: true,
+                })
+            },
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn unwrap_nested(mut expr: &SQLExpr) -> &SQLExpr {
+    while let SQLExpr::Nested(inner) = expr {
+        expr = inner;
+    }
+    expr
+}
+
+// Whether the expression can be evaluated on rows a later filter removes: it
+// is elementwise, infallible and deterministic by the planner's classification.
+fn harmless_on_every_row(expr: &Expr, schema: &Schema) -> bool {
+    let mut arena = Arena::new();
+    let mut ctx = ExprToIRContext::new(&mut arena, schema);
+    let Ok(expr) = to_expr_ir(expr.clone(), &mut ctx) else {
+        return false;
+    };
+    let mut group = ExprPushdownGroup::Pushable;
+    group.update_with_expr_rec(arena.get(expr.node()), &arena, None);
+    matches!(group, ExprPushdownGroup::Pushable)
+        && !is_inherently_nondeterministic(expr.node(), &arena)
+}
+
+// Semi/anti join the outer frame against the (filtered, arena-cached) inner, or
+// `None` for keys the join cannot stand in for the comparison on. The first key
+// pair is the membership key, the rest correlation keys. With `correct_not_in`
+// the anti join is refined to `NOT IN`'s three-valued logic.
 #[cfg(feature = "semi_anti_join")]
+#[allow(clippy::too_many_arguments)]
 fn build_semi_anti_join(
     lf: &LazyFrame,
     inner_lf: LazyFrame,
+    outer_schema: &Schema,
+    inner_schema: &Schema,
     left_on: Vec<Expr>,
     right_on: Vec<Expr>,
     anti: bool,
-) -> PolarsResult<LazyFrame> {
+    correct_not_in: bool,
+) -> PolarsResult<Option<LazyFrame>> {
     let join_type = if anti { JoinType::Anti } else { JoinType::Semi };
-    lf.clone()
+    let Some((left_on, right_on)) =
+        try_prepare_join_keys(outer_schema, inner_schema, left_on, right_on)
+    else {
+        return Ok(None);
+    };
+    let joined = lf
+        .clone()
         .join_builder()
-        .with(inner_lf)
-        .left_on(left_on)
-        .right_on(right_on)
+        .with(inner_lf.clone())
+        .left_on(left_on.clone())
+        .right_on(right_on.clone())
         .how(join_type)
-        .finish()
+        .finish()?;
+    if !correct_not_in {
+        return Ok(Some(joined));
+    }
+    let (left_key, corr_outer) = left_on.split_first().unwrap();
+    let (right_key, corr_inner) = right_on.split_first().unwrap();
+    Ok(Some(refine_not_in_anti_join(
+        joined, inner_lf, left_key, right_key, corr_outer, corr_inner,
+    )?))
+}
+
+// The keys of a semi / anti join standing in for a comparison, numeric pairs cast
+// to their supertype as the comparison would. `None` for a pair the join cannot
+// stand in for: not elementwise over columns, reading no column, holding an
+// untyped literal (whose type the comparison would take from the other operand),
+// of unresolvable types, or of different non-numeric types.
+#[cfg(feature = "semi_anti_join")]
+fn try_prepare_join_keys(
+    outer_schema: &Schema,
+    inner_schema: &Schema,
+    mut left_on: Vec<Expr>,
+    mut right_on: Vec<Expr>,
+) -> Option<(Vec<Expr>, Vec<Expr>)> {
+    let untyped_literal = |e: &Expr| matches!(e, Expr::Literal(LiteralValue::Dyn(_)));
+    for (left, right) in left_on.iter_mut().zip(right_on.iter_mut()) {
+        if !usable_as_join_key(left)
+            || !usable_as_join_key(right)
+            || expr_to_leaf_column_names_iter(left).next().is_none()
+            || has_expr(left, untyped_literal)
+            || has_expr(right, untyped_literal)
+        {
+            return None;
+        }
+        let l = left.to_field(outer_schema).ok()?.dtype;
+        let r = right.to_field(inner_schema).ok()?.dtype;
+        if l == r {
+            continue;
+        }
+        if !(l.is_primitive_numeric() && r.is_primitive_numeric()) {
+            return None;
+        }
+        let st = try_get_supertype(&l, &r).ok()?;
+        *left = std::mem::take(left).cast(st.clone());
+        *right = std::mem::take(right).cast(st);
+    }
+    Some((left_on, right_on))
 }
 
 // Account for 3VL interaction with NULL values
@@ -1591,15 +1838,102 @@ fn prefixed_inner(prefix: &str, name: &str) -> PlSmallStr {
     format_pl_smallstr!("{prefix}c_{name}")
 }
 
-// Left-join a per-group aggregate onto the outer frame, filling unmatched `COUNT`
-// results with 0 (every other aggregate stays NULL for unmatched rows).
+// The inner frame has to be this many times larger than the outer frame for the
+// restriction of its groups to the outer keys to pay for the semi join.
+const RESTRICTION_LOPSIDED_FACTOR: f64 = 2.0;
+
+// Whether the inner frame is large enough relative to the outer frame, by the
+// sizes of their sources or by their estimates after filtering, for the key
+// restriction to be worth its semi join. Unknown statistics decline.
+fn restriction_pays_off(outer: Option<&NodeStats>, inner: Option<&NodeStats>) -> bool {
+    let (Some(outer), Some(inner)) = (outer, inner) else {
+        return false;
+    };
+    outer.unfiltered * RESTRICTION_LOPSIDED_FACTOR <= inner.unfiltered
+        || outer.filtered * RESTRICTION_LOPSIDED_FACTOR <= inner.filtered
+}
+
+// Lower an equality-correlated scalar aggregate: group the inner frame by the
+// correlation keys and left-join the per-group result onto the outer frame,
+// with the inner frame first restricted to the groups the outer keys ask for
+// when `restrict`.
+fn equality_correlated_aggregate(
+    outer: LazyFrame,
+    inner: LazyFrame,
+    outer_on: Vec<Expr>,
+    inner_on: Vec<Expr>,
+    agg: Expr,
+    restrict: bool,
+) -> PolarsResult<LazyFrame> {
+    let (outer, inner) = if restrict {
+        restrict_to_outer_keys(outer, inner, &outer_on, &inner_on)?
+    } else {
+        (outer, inner)
+    };
+    let count_like = count_like(&agg);
+    let grouped = inner.group_by(inner_on.clone()).agg([agg]);
+    left_join_aggregate(outer, grouped, outer_on, inner_on, count_like)
+}
+
+// Restrict the inner frame to the rows whose keys occur in the outer frame by a
+// semi join against the outer keys. The outer frame is cached so that both the
+// restriction and the join back read one evaluation of it. A semi join never
+// duplicates inner rows.
+#[cfg(feature = "semi_anti_join")]
+fn restrict_to_outer_keys(
+    outer: LazyFrame,
+    inner: LazyFrame,
+    outer_on: &[Expr],
+    inner_on: &[Expr],
+) -> PolarsResult<(LazyFrame, LazyFrame)> {
+    let outer = outer.cache();
+    // One outer column may serve several key pairs; it is projected once.
+    let mut requested: Vec<Expr> = Vec::with_capacity(outer_on.len());
+    for key in outer_on {
+        if !requested.contains(key) {
+            requested.push(key.clone());
+        }
+    }
+    let requested_keys = outer.clone().select(requested);
+    let restricted = inner
+        .join_builder()
+        .with(requested_keys)
+        .left_on(inner_on)
+        .right_on(outer_on)
+        .how(JoinType::Semi)
+        .finish()?;
+    Ok((outer, restricted))
+}
+
+#[cfg(not(feature = "semi_anti_join"))]
+fn restrict_to_outer_keys(
+    outer: LazyFrame,
+    inner: LazyFrame,
+    _outer_on: &[Expr],
+    _inner_on: &[Expr],
+) -> PolarsResult<(LazyFrame, LazyFrame)> {
+    Ok((outer, inner))
+}
+
+// Whether a per-group aggregate reads nothing but its own group's rows, so
+// dropping other groups cannot change its value.
+fn group_local_aggregate(agg: &Expr) -> bool {
+    !has_expr(agg, |e| {
+        matches!(
+            e,
+            Expr::AnonymousFunction { .. } | Expr::Over { .. } | Expr::SubPlan(_, _)
+        )
+    })
+}
+
+// Left-join a per-group aggregate onto the outer frame, filling an unmatched
+// `COUNT` result with 0 (every other aggregate stays NULL for unmatched rows).
 fn left_join_aggregate(
     outer: LazyFrame,
     grouped: LazyFrame,
     left_on: Vec<Expr>,
     right_on: Vec<Expr>,
-    result_name: &PlSmallStr,
-    count_like: bool,
+    count_like: Option<PlSmallStr>,
 ) -> PolarsResult<LazyFrame> {
     let joined = outer
         .join_builder()
@@ -1608,13 +1942,22 @@ fn left_join_aggregate(
         .right_on(right_on)
         .how(JoinType::Left)
         .coalesce(JoinCoalesce::CoalesceColumns)
-        .maintain_order(MaintainOrderJoin::Left)
         .finish()?;
-    Ok(if count_like {
-        joined.with_columns([col(result_name.clone()).fill_null(lit(0))])
-    } else {
-        joined
+    Ok(match count_like {
+        Some(result_name) => joined.with_columns([col(result_name).fill_null(lit(0))]),
+        None => joined,
     })
+}
+
+// The output name of an aggregate whose value over no rows is 0 rather than
+// NULL: a (possibly aliased or cast) `COUNT`.
+fn count_like(agg: &Expr) -> Option<PlSmallStr> {
+    matches!(
+        agg_output_root(agg),
+        Expr::Len | Expr::Agg(AggExpr::Count { .. })
+    )
+    .then(|| agg.clone().meta().output_name().ok())
+    .flatten()
 }
 
 // Peel the alias/cast wrappers SQL puts around an aggregate to reach the
@@ -1638,6 +1981,15 @@ struct CorrPredicate {
 }
 
 impl CorrPredicate {
+    // Whether both conjuncts compare the same columns the same way; an equality
+    // reads the same from either side.
+    fn same_comparison(&self, other: &Self) -> bool {
+        let symmetric = self.op == SQLBinaryOperator::Eq && other.op == SQLBinaryOperator::Eq;
+        self.outer == other.outer
+            && self.inner == other.inner
+            && (symmetric || self.op == other.op && self.inner_on_left == other.inner_on_left)
+    }
+
     fn to_expr(&self, prefix: &str) -> Expr {
         let outer = col(self.outer.clone());
         let inner = col(prefixed_inner(prefix, &self.inner));

@@ -27,14 +27,18 @@ use polars_core::error::feature_gated;
 use polars_core::frame::PivotColumnNaming;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
+#[cfg(feature = "is_between")]
+use polars_defs::expr::ClosedInterval;
+use polars_defs::join::{
+    JoinArgs, JoinBuildSide, JoinCoalesce, JoinType, JoinValidation, MaintainOrderJoin,
+};
+use polars_defs::time::group_by::{DynamicGroupOptions, RollingGroupOptions};
 use polars_io::RowIndex;
 use polars_mem_engine::scan_predicate::functions::apply_scan_predicate_to_scan_ir;
 use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
 use polars_observer::{PlannedQuery, QueryObserver};
-use polars_ops::frame::{JoinBuildSide, JoinCoalesce, MaintainOrderJoin};
-#[cfg(feature = "is_between")]
-use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
+use polars_plan::plans::ExecutionHooks;
 use polars_plan::prelude::ir_plan_to_description;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -55,6 +59,19 @@ impl IntoLazy for DataFrame {
             cached_arena: Default::default(),
         }
     }
+}
+
+/// Join implementation handed to the optimizer for its hive partition rewrite.
+fn hive_join(
+    left: &DataFrame,
+    right: &DataFrame,
+    left_on: &str,
+    right_on: &str,
+    args: JoinArgs,
+) -> PolarsResult<DataFrame> {
+    use polars_ops::frame::DataFrameJoinOps;
+
+    left.join(right, [left_on], [right_on], args, None)
 }
 
 impl IntoLazy for LazyFrame {
@@ -548,7 +565,10 @@ impl LazyFrame {
             ir_arena,
             expr_arena,
             scratch,
-            apply_scan_predicate_to_scan_ir,
+            ExecutionHooks {
+                apply_scan_predicate_to_scan_ir,
+                hive_join,
+            },
         )?;
 
         Ok(lp_top)
@@ -2167,6 +2187,8 @@ impl JoinBuilder {
     /// The expressions you want to join both tables on.
     ///
     /// The passed expressions must be valid in both `LazyFrame`s in the join.
+    /// Selectors expand independently against each input schema. The results are
+    /// paired in order and both sides must produce the same nonzero number of keys.
     pub fn on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         let on = on.as_ref().to_vec();
         self.left_on.clone_from(&on);
@@ -2176,7 +2198,8 @@ impl JoinBuilder {
 
     /// The expressions you want to join the left table on.
     ///
-    /// The passed expressions must be valid in the left table.
+    /// The passed expressions and selectors must be valid in the left table.
+    /// The total expanded key count must be nonzero and match the right side.
     pub fn left_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         self.left_on = on.as_ref().to_vec();
         self
@@ -2184,7 +2207,8 @@ impl JoinBuilder {
 
     /// The expressions you want to join the right table on.
     ///
-    /// The passed expressions must be valid in the right table.
+    /// The passed expressions and selectors must be valid in the right table.
+    /// The total expanded key count must be nonzero and match the left side.
     pub fn right_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         self.right_on = on.as_ref().to_vec();
         self

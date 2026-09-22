@@ -1,12 +1,33 @@
 #![allow(unused)]
 use polars_core::error::{PolarsResult, polars_bail, polars_err};
 use polars_core::schema::*;
+use polars_defs::join::{JoinBuildSide, JoinValidation};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{AExpr, aexpr_to_leaf_names_iter};
 use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
-use crate::plans::{ExprIR, OutputName};
+use crate::plans::{ExprIR, JoinOptionsIR, JoinTypeOptionsIR, OutputName};
+use crate::prelude::{JoinArgs, JoinType, MaintainOrderJoin};
+
+/// Nothing about the join pins it to its inputs as written: no slice, no order to
+/// keep, no side named for validation, no forced build side.
+pub(super) fn unconstrained(args: &JoinArgs) -> bool {
+    args.slice.is_none()
+        && matches!(args.maintain_order, MaintainOrderJoin::None)
+        && matches!(args.validation, JoinValidation::ManyToMany)
+        && matches!(
+            args.build_side,
+            None | Some(JoinBuildSide::PreferLeft | JoinBuildSide::PreferRight)
+        )
+}
+
+/// An inner join on keys alone, free to be placed elsewhere in a chain of joins.
+pub(super) fn plain_inner_equi_join(options: &JoinOptionsIR) -> bool {
+    matches!(options.args.how, JoinType::Inner)
+        && unconstrained(&options.args)
+        && matches!(&options.options, JoinTypeOptionsIR::Equi { on, fused_predicate: None } if !on.is_empty())
+}
 
 /// Join origin of an expression
 #[derive(Debug, Clone, PartialEq, Copy)]

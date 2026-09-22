@@ -1,0 +1,49 @@
+[package]
+name = "polars-defs"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Shared option, argument and enum definitions for the Polars DataFrame library"
+
+[dependencies]
+polars-arrow = { workspace = true }
+polars-compute = { workspace = true }
+polars-core = { workspace = true }
+polars-error = { workspace = true }
+polars-utils = { workspace = true }
+
+chrono = { workspace = true }
+chrono-tz = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+strum_macros = { workspace = true }
+
+[features]
+default = []
+serde = ["dep:serde", "polars-core/serde", "polars-compute/serde", "polars-utils/serde"]
+dsl-schema = [
+  "dep:schemars",
+  "polars-core/dsl-schema",
+  "polars-compute/dsl-schema",
+  "polars-utils/dsl-schema",
+]
+
+# Feature gates that change the shape of a definition (variants, derives).
+asof_join = []
+iejoin = []
+semi_anti_join = []
+random = []
+rolling_window_by = []
+
+temporal = ["polars-core/temporal"]
+dtype-date = ["polars-core/dtype-date", "temporal"]
+dtype-datetime = ["polars-core/dtype-datetime", "temporal"]
+dtype-time = ["polars-core/dtype-time", "temporal"]
+dtype-duration = ["polars-core/dtype-duration", "temporal"]
+timezones = ["dep:chrono-tz", "dtype-datetime", "polars-core/timezones", "polars-arrow/timezones"]
+
+[lints]
+workspace = true

@@ -1,6 +1,6 @@
-use arrow::array::{BinaryArray, FixedSizeBinaryArray};
-use arrow::bitmap::Bitmap;
-use arrow::types::Offset;
+use polars_arrow::array::{BinaryArray, FixedSizeBinaryArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::types::Offset;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 use super::{TotalEqKernel, TotalOrdKernel};

@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
-use arrow::ffi::export_iterator;
 use either::Either;
 use parking_lot::Mutex;
 #[cfg(feature = "pivot")]
 use polars::frame::PivotColumnNaming;
 use polars::io::RowIndex;
 use polars::prelude::iceberg_sink_state::IcebergSinkState;
-use polars::time::*;
+use polars_arrow::ffi::export_iterator;
 #[cfg(feature = "csv")]
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
@@ -414,14 +413,33 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[pyo3(signature = (
-        dataset_object
+        dataset_object,
+        resolve_heavy_sources = None,
     ))]
-    fn new_from_dataset_object(dataset_object: Py<PyAny>) -> PyResult<Self> {
-        let lf =
-            LazyFrame::from(DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build())
-                .into();
+    fn new_from_dataset_object(
+        dataset_object: Py<PyAny>,
+        // Equivalent to `scan_parquet(_resolve_heavy_sources=)` for expanded datasets.
+        resolve_heavy_sources: Option<u32>,
+    ) -> PyResult<Self> {
+        let resolve_heavy_sources = resolve_heavy_sources
+            .map(|n| {
+                std::num::NonZeroU32::new(n).ok_or_else(|| {
+                    PyValueError::new_err("resolve_heavy_sources must be at least 1")
+                })
+            })
+            .transpose()?;
 
-        Ok(lf)
+        let mut dsl = DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build();
+
+        if let Some(n_parts) = resolve_heavy_sources
+            && let polars_plan::dsl::DslPlan::Scan {
+                unified_scan_args, ..
+            } = &mut dsl
+        {
+            unified_scan_args.resolve_heavy_sources = Some(n_parts);
+        }
+
+        Ok(LazyFrame::from(dsl).into())
     }
 
     #[staticmethod]
@@ -527,6 +545,39 @@ impl PyLazyFrame {
 
     fn describe_optimized_plan_tree(&self, py: Python) -> PyResult<String> {
         py.enter_polars(|| self.ldf.read().describe_optimized_plan_tree())
+    }
+
+    /// Optimize and return retained `(source index, row group count)` pairs for tests,
+    /// grouped by Parquet scan.
+    #[cfg(feature = "parquet")]
+    fn _retained_parquet_footers(&self, py: Python) -> PyResult<Vec<Vec<(usize, usize)>>> {
+        use polars_plan::dsl::FileScanIR;
+        use polars_plan::plans::{ArenaLpIter as _, IR};
+
+        py.enter_polars(|| {
+            let plan = self.ldf.read().clone().to_alp_optimized()?;
+
+            PolarsResult::Ok(
+                plan.lp_arena
+                    .iter(plan.lp_top)
+                    .filter_map(|(_, ir)| match ir {
+                        IR::Scan { scan_type, .. } => match scan_type.as_ref() {
+                            FileScanIR::Parquet {
+                                metadata_per_source,
+                                ..
+                            } => Some(
+                                metadata_per_source
+                                    .iter_resolved()
+                                    .map(|(i, md)| (i, md.row_groups.len()))
+                                    .collect(),
+                            ),
+                            _ => None,
+                        },
+                        _ => None,
+                    })
+                    .collect(),
+            )
+        })
     }
 
     fn to_dot(&self, py: Python<'_>, optimized: bool) -> PyResult<String> {
@@ -1693,7 +1744,7 @@ impl Iterator for ArrowStreamIterator {
             Some(Ok(df)) => {
                 let height = df.height();
                 let arrays = df.rechunk_into_arrow(CompatLevel::newest());
-                Some(Ok(Box::new(arrow::array::StructArray::new(
+                Some(Ok(Box::new(polars_arrow::array::StructArray::new(
                     self.dtype.clone(),
                     height,
                     arrays,

@@ -215,10 +215,6 @@ fn create_physical_expr_inner(
             let group_by =
                 create_physical_expressions_from_nodes(&partition_by, expr_arena, schema, state)?;
             let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
-            // sort and then dedup removes consecutive duplicates == all duplicates
-            apply_columns.sort();
-            apply_columns.dedup();
-
             if apply_columns.is_empty() {
                 if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
                     apply_columns.push(get_literal_name())
@@ -635,12 +631,13 @@ fn create_physical_expr_inner(
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
+            let udf = function_expr_to_udf(function.clone(), &input, expr_arena);
             let input = create_physical_expressions_from_irs(&input, expr_arena, schema, state)?;
             let is_fallible = expr_arena.get(expression).is_fallible_top_level(expr_arena);
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
-                function_expr_to_udf(function.clone()),
+                udf,
                 function_expr_to_groups_udf(&function),
                 node_to_expr(expression, expr_arena),
                 options,

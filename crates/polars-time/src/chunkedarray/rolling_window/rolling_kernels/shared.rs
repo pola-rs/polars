@@ -1,18 +1,19 @@
 //! This module implements logic shared between nulls and no_nulls.
 
-use arrow::array::{ArrayRef, PrimitiveArray};
-use arrow::bitmap::MutableBitmap;
-use arrow::trusted_len::TrustedLen;
-use arrow::types::NativeType;
 use bytemuck::allocation::zeroed_vec;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+use polars_arrow::array::{ArrayRef, PrimitiveArray};
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::trusted_len::TrustedLen;
+use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_core::prelude::*;
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::ClosedWindow;
 
-use crate::windows::duration::Duration;
-use crate::windows::group_by::{ClosedWindow, group_by_values_iter};
+use crate::windows::group_by::group_by_values_iter;
 
 pub(crate) trait RollingAggWindow<T: NativeType, Out: NativeType> {
     /// # Safety

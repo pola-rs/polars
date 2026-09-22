@@ -108,6 +108,12 @@ impl OptimizationRule for FusedArithmetic {
                         expr_arena.get(c).to_dtype(&to_field_cx)?,
                     ]
                 };
+                if dtypes
+                    .iter()
+                    .any(|dtype| !dtype.is_unknown() && !dtype.is_primitive_numeric())
+                {
+                    return Ok(None);
+                }
                 let Some(supertype) = dtypes
                     .iter()
                     .filter(|dtype| !dtype.is_unknown())

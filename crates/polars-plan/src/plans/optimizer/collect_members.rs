@@ -28,6 +28,8 @@ impl UniqueScans {
 
 pub(super) struct MemberCollector {
     pub(crate) has_joins_or_unions: bool,
+    /// A left, semi or anti join.
+    pub(crate) has_preserving_join: bool,
     pub(crate) has_sink_multiple: bool,
     pub(crate) has_filter_with_join_input: bool,
     pub(crate) has_distinct: bool,
@@ -45,6 +47,7 @@ impl MemberCollector {
     pub(super) fn new() -> Self {
         Self {
             has_joins_or_unions: false,
+            has_preserving_join: false,
             has_sink_multiple: false,
             has_filter_with_join_input: false,
             has_distinct: false,
@@ -65,7 +68,12 @@ impl MemberCollector {
         for (_node, alp) in lp_arena.iter(root) {
             match alp {
                 SinkMultiple { .. } => self.has_sink_multiple = true,
-                Join { .. } | Union { .. } => self.has_joins_or_unions = true,
+                Join { options, .. } => {
+                    self.has_joins_or_unions = true;
+                    self.has_preserving_join |= matches!(options.args.how, JoinType::Left)
+                        || options.args.how.is_semi_anti();
+                },
+                Union { .. } => self.has_joins_or_unions = true,
                 Filter { input, .. } => {
                     self.has_filter_with_join_input |= matches!(lp_arena.get(*input), Join { options, .. } if options.args.how.is_cross())
                 },

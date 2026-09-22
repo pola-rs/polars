@@ -1,5 +1,3 @@
-#[cfg(feature = "dtype-decimal")]
-use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::utils::materialize_dyn_int;
 
 use super::*;
@@ -164,7 +162,7 @@ impl IRFunctionExpr {
                     #[cfg(feature = "dtype-i128")]
                     T::Int128 => T::Int128,
                     #[cfg(feature = "dtype-decimal")]
-                    T::Decimal(_p, s) => T::Decimal(DEC128_MAX_PREC, *s),
+                    dt @ T::Decimal(_, _) => widen_decimal(dt.clone()),
                     _ => T::Int64,
                 }
             }),
@@ -230,13 +228,14 @@ impl IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantile { .. } => {
-                // A list of quantiles in, a list of estimates out.
-                let quantiles_are_list = mapper.args()[1].dtype().is_list();
-                mapper.map_dtype(|dtype| match quantiles_are_list {
-                    true => DataType::List(Box::new(dtype.clone())),
-                    false => dtype.clone(),
-                })
+            ApproxQuantileSketch { .. } => mapper.with_dtype(DataType::Binary),
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantileEstimate { values_dtype } => {
+                if mapper.args()[1].dtype().is_list() {
+                    mapper.with_dtype(DataType::List(Box::new(values_dtype.clone())))
+                } else {
+                    mapper.with_dtype(values_dtype.clone())
+                }
             },
             #[cfg(feature = "hist")]
             Hist {
@@ -276,7 +275,7 @@ impl IRFunctionExpr {
                 DataType::UInt16 => DataType::Int32,
                 DataType::UInt8 => DataType::Int16,
                 #[cfg(feature = "dtype-decimal")]
-                DataType::Decimal(_, scale) => DataType::Decimal(DEC128_MAX_PREC, *scale),
+                dt @ DataType::Decimal(_, _) => widen_decimal(dt.clone()),
                 dt => dt.clone(),
             }),
             #[cfg(feature = "pct_change")]
@@ -330,9 +329,9 @@ impl IRFunctionExpr {
                     polars_ensure!(l.len() == breaks.len() + 1, ShapeMismatch: "provide len(breaks) + 1 labels");
                     l.clone()
                 } else {
-                    use polars_ops::series::compute_labels;
+                    use polars_core::utils::cut::compute_cut_labels;
 
-                    compute_labels(breaks, *left_closed)?
+                    compute_cut_labels(breaks, *left_closed)?
                 };
                 let enum_dtype = DataType::from_frozen_categories(FrozenCategories::new(
                     cut_labels.iter().map(|s| s.as_str()),
@@ -378,6 +377,33 @@ impl IRFunctionExpr {
                     ),
                 ]);
                 mapper.with_dtype(struct_dt)
+            },
+            #[cfg(feature = "cutqcut")]
+            Bin(options) => {
+                let n_bins = options.method.n_bins();
+                let bin_dtype = match &options.labels {
+                    None => DataType::UInt32,
+                    Some(labels) => {
+                        polars_ensure!(
+                            labels.len() == n_bins,
+                            ShapeMismatch: "`{}` produces {} bins but got {} labels",
+                            options.method.name(), n_bins, labels.len()
+                        );
+                        DataType::from_frozen_categories(FrozenCategories::new(
+                            labels.iter().map(|s| s.as_str()),
+                        )?)
+                    },
+                };
+                if !options.include_intervals {
+                    return mapper.with_dtype(bin_dtype);
+                }
+                // The input has been converted to the correct type during DSL -> IR conversion.
+                let bound = mapper.args()[0].dtype().clone();
+                mapper.with_dtype(DataType::Struct(vec![
+                    Field::new(PlSmallStr::from_static("bin"), bin_dtype),
+                    Field::new(PlSmallStr::from_static("left"), bound.clone()),
+                    Field::new(PlSmallStr::from_static("right"), bound),
+                ]))
             },
             #[cfg(feature = "rle")]
             RLE => mapper.map_dtype(|dt| {
@@ -489,7 +515,7 @@ impl IRFunctionExpr {
             }),
             #[cfg(feature = "dtype-struct")]
             RowDecode(fields, _) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
-            DynamicPred { .. } => mapper.with_dtype(DataType::Boolean),
+            DynamicPred { .. } | DynamicSkipBatch { .. } => mapper.with_dtype(DataType::Boolean),
         }
     }
 
@@ -873,7 +899,7 @@ pub(crate) fn args_to_supertype<D: AsRef<DataType>>(dtypes: &[D]) -> PolarsResul
         _ => {
             if let DataType::Unknown(kind) = st {
                 match kind {
-                    UnknownKind::Float => st = DataType::Float64,
+                    UnknownKind::Float(_) => st = DataType::Float64,
                     UnknownKind::Int(v) => {
                         st = materialize_dyn_int(v).dtype();
                     },

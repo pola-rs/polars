@@ -5,7 +5,7 @@ mod binary;
 ))]
 mod datetime;
 mod functions;
-#[cfg(feature = "is_in")]
+#[cfg(any(feature = "is_in", feature = "dtype-map"))]
 mod is_in;
 
 use binary::process_binary;
@@ -16,10 +16,16 @@ use binary::process_binary;
 use datetime::coerce_temporal_dt;
 #[cfg(all(feature = "range", feature = "dtype-datetime"))]
 use datetime::{ensure_datetime, ensure_int, temporal_range_output_type};
+#[cfg(any(feature = "is_in", feature = "dtype-map"))]
+use is_in::MembershipForm;
 use polars_core::chunked_array::cast::CastOptions;
-#[cfg(all(
-    feature = "range",
-    any(feature = "dtype-date", feature = "dtype-datetime")
+#[cfg(any(
+    all(
+        feature = "range",
+        any(feature = "dtype-date", feature = "dtype-datetime")
+    ),
+    feature = "is_in",
+    feature = "dtype-map"
 ))]
 use polars_core::utils::try_get_supertype;
 use polars_core::utils::{
@@ -30,6 +36,7 @@ use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
 
 use super::*;
+use crate::plans::aexpr::try_fold_dyn;
 
 pub struct TypeCoercionRule {}
 
@@ -113,6 +120,14 @@ impl OptimizationRule for TypeCoercionRule {
         ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
+
+        // Fold literal arithmetic before coercing.
+        if !matches!(expr, AExpr::Literal(_))
+            && let Some(v) = try_fold_dyn(expr, expr_arena)
+        {
+            return Ok(Some(AExpr::Literal(LiteralValue::Dyn(v))));
+        }
+
         let out = match *expr {
             ref ae @ AExpr::Cast { .. } => {
                 let AExpr::Cast {
@@ -441,106 +456,62 @@ impl OptimizationRule for TypeCoercionRule {
 
                 Some(out)
             },
-            #[cfg(feature = "is_in")]
+            // Map lookup must work without the `is_in` feature.
+            #[cfg(feature = "dtype-map")]
             AExpr::Function {
-                ref function,
-                ref input,
-                options,
-            } if {
-                let mut matches = matches!(
-                    function,
-                    IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. })
-                        | IRFunctionExpr::ListExpr(IRListFunction::Contains { .. })
-                );
-                #[cfg(feature = "dtype-array")]
-                {
-                    matches |= matches!(
+                function:
+                    IRFunctionExpr::MapExpr(
+                        ref func @ (IRMapFunction::Get | IRMapFunction::ContainsKey),
+                    ),
+                ..
+            } => {
+                let op = match func {
+                    IRMapFunction::Get => "map.get",
+                    _ => "map.contains_key",
+                };
+                coerce_is_in(
+                    expr_node,
+                    expr_arena,
+                    schema,
+                    MembershipForm::Contains,
+                    |input, arena| is_in::resolve_map_key(input, arena, schema, op),
+                )?
+            },
+            #[cfg(feature = "is_in")]
+            AExpr::Function { ref function, .. }
+                if {
+                    let mut matches = matches!(
                         function,
-                        IRFunctionExpr::ArrayExpr(IRArrayFunction::Contains { .. })
+                        IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. })
+                            | IRFunctionExpr::ListExpr(IRListFunction::Contains { .. })
                     );
-                }
-                matches
-            } =>
+                    #[cfg(feature = "dtype-array")]
+                    {
+                        matches |= matches!(
+                            function,
+                            IRFunctionExpr::ArrayExpr(IRArrayFunction::Contains { .. })
+                        );
+                    }
+                    matches
+                } =>
             {
-                let (op, flat, nested, is_contains) = match function {
+                let (op, form) = match function {
                     IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) => {
-                        ("is_in", 0, 1, false)
+                        ("is_in", MembershipForm::IsIn)
                     },
                     IRFunctionExpr::ListExpr(IRListFunction::Contains { .. }) => {
-                        ("list.contains", 1, 0, true)
+                        ("list.contains", MembershipForm::Contains)
                     },
                     #[cfg(feature = "dtype-array")]
                     IRFunctionExpr::ArrayExpr(IRArrayFunction::Contains { .. }) => {
-                        ("arr.contains", 1, 0, true)
+                        ("arr.contains", MembershipForm::Contains)
                     },
                     _ => unreachable!(),
                 };
 
-                let Some(result) =
-                    is_in::resolve_is_in(input, expr_arena, schema, is_contains, op, flat, nested)?
-                else {
-                    return Ok(None);
-                };
-
-                let function = function.clone();
-                let mut input = input.to_vec();
-                use self::is_in::IsInTypeCoercionResult;
-                match result {
-                    IsInTypeCoercionResult::SuperType(flat_type, nested_type) => {
-                        let (_, type_left) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-                        let (_, type_other) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
-                        cast_expr_ir(
-                            &mut input[flat],
-                            &type_left,
-                            &flat_type,
-                            expr_arena,
-                            CastOptions::NonStrict,
-                        )?;
-                        cast_expr_ir(
-                            &mut input[nested],
-                            &type_other,
-                            &nested_type,
-                            expr_arena,
-                            CastOptions::NonStrict,
-                        )?;
-                    },
-                    IsInTypeCoercionResult::SelfCast { dtype, strict } => {
-                        let (_, type_self) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-                        let options = if strict {
-                            CastOptions::Strict
-                        } else {
-                            CastOptions::NonStrict
-                        };
-                        cast_expr_ir(&mut input[flat], &type_self, &dtype, expr_arena, options)?;
-                    },
-                    IsInTypeCoercionResult::OtherCast { dtype, strict } => {
-                        let (_, type_other) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
-                        let options = if strict {
-                            CastOptions::Strict
-                        } else {
-                            CastOptions::NonStrict
-                        };
-                        cast_expr_ir(&mut input[nested], &type_other, &dtype, expr_arena, options)?;
-                    },
-                    IsInTypeCoercionResult::Implode => {
-                        assert!(!is_contains);
-                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                            input: input[1].node(),
-                            maintain_order: true,
-                        }));
-                        input[1].set_node(other_input);
-                    },
-                }
-
-                Some(AExpr::Function {
-                    function,
-                    input,
-                    options,
-                })
+                coerce_is_in(expr_node, expr_arena, schema, form, |input, arena| {
+                    is_in::resolve_is_in(input, arena, schema, form, op, None)
+                })?
             },
             AExpr::Function {
                 ref function,
@@ -768,7 +739,7 @@ impl OptimizationRule for TypeCoercionRule {
                     }
 
                     match super_type {
-                        DataType::Unknown(UnknownKind::Float) => super_type = DataType::Float64,
+                        DataType::Unknown(UnknownKind::Float(_)) => super_type = DataType::Float64,
                         DataType::Unknown(UnknownKind::Int(v)) => {
                             super_type = materialize_dyn_int(v).dtype()
                         },
@@ -1328,6 +1299,110 @@ fn inline_or_prune_cast(
     Ok(out)
 }
 
+/// Apply membership or Map lookup casts chosen by `resolve`.
+///
+/// `expr_node` must be an [`AExpr::Function`] whose operands are laid out as `form` says.
+#[cfg(any(feature = "is_in", feature = "dtype-map"))]
+fn coerce_is_in(
+    expr_node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    schema: &Schema,
+    form: MembershipForm,
+    resolve: impl FnOnce(
+        &[ExprIR],
+        &Arena<AExpr>,
+    ) -> PolarsResult<Option<is_in::IsInTypeCoercionResult>>,
+) -> PolarsResult<Option<AExpr>> {
+    let AExpr::Function {
+        function,
+        input,
+        options,
+    } = expr_arena.get(expr_node)
+    else {
+        unreachable!("caller matched a function expression")
+    };
+    let options = *options;
+    let (flat, nested) = (form.flat(), form.nested());
+
+    let Some(result) = resolve(input, expr_arena)? else {
+        return Ok(None);
+    };
+
+    let function = function.clone();
+    let mut input = input.to_vec();
+    use self::is_in::IsInTypeCoercionResult;
+    match result {
+        IsInTypeCoercionResult::SuperType(flat_type, nested_type) => {
+            let (_, type_left) =
+                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
+            let (_, type_other) =
+                unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
+            cast_expr_ir(
+                &mut input[flat],
+                &type_left,
+                &flat_type,
+                expr_arena,
+                CastOptions::NonStrict,
+            )?;
+            cast_expr_ir(
+                &mut input[nested],
+                &type_other,
+                &nested_type,
+                expr_arena,
+                CastOptions::NonStrict,
+            )?;
+        },
+        IsInTypeCoercionResult::SelfCast { dtype, strict } => {
+            let (_, type_self) =
+                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
+            let options = if strict {
+                CastOptions::Strict
+            } else {
+                CastOptions::NonStrict
+            };
+            cast_expr_ir(&mut input[flat], &type_self, &dtype, expr_arena, options)?;
+        },
+        IsInTypeCoercionResult::OtherCast { dtype, strict } => {
+            let (_, type_other) =
+                unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
+            let options = if strict {
+                CastOptions::Strict
+            } else {
+                CastOptions::NonStrict
+            };
+            cast_expr_ir(&mut input[nested], &type_other, &dtype, expr_arena, options)?;
+        },
+        #[cfg(feature = "dtype-map")]
+        IsInTypeCoercionResult::LenientSelfCast(dtype) => {
+            let (_, type_self) =
+                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
+            // Unrepresentable keys become null rather than raising.
+            cast_expr_ir_with(
+                &mut input[flat],
+                &type_self,
+                &dtype,
+                expr_arena,
+                CastOptions::NonStrict,
+                CastOptions::NonStrict,
+            )?;
+        },
+        IsInTypeCoercionResult::Implode => {
+            assert!(!form.is_contains());
+            let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                input: input[nested].node(),
+                maintain_order: true,
+            }));
+            input[nested].set_node(other_input);
+        },
+    }
+
+    Ok(Some(AExpr::Function {
+        function,
+        input,
+        options,
+    }))
+}
+
 fn try_inline_literal_cast(
     lv: &LiteralValue,
     dtype: &DataType,
@@ -1343,7 +1418,7 @@ fn try_inline_literal_cast(
             .try_materialize_to_dtype(dtype, options)?
             .into(),
         lv if lv.is_null() => match dtype {
-            DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
+            DataType::Unknown(UnknownKind::Float(_) | UnknownKind::Int(_) | UnknownKind::Str) => {
                 LiteralValue::untyped_null()
             },
             _ => return Ok(None),
@@ -1395,6 +1470,26 @@ fn cast_expr_ir(
     expr_arena: &mut Arena<AExpr>,
     options: CastOptions,
 ) -> PolarsResult<()> {
+    // Non-literal casts are strict; `options` controls only literal folding.
+    cast_expr_ir_with(
+        e,
+        from_dtype,
+        to_dtype,
+        expr_arena,
+        options,
+        CastOptions::Strict,
+    )
+}
+
+/// Use `literal_options` for folding and `cast_options` for inserted casts.
+fn cast_expr_ir_with(
+    e: &mut ExprIR,
+    from_dtype: &DataType,
+    to_dtype: &DataType,
+    expr_arena: &mut Arena<AExpr>,
+    literal_options: CastOptions,
+    cast_options: CastOptions,
+) -> PolarsResult<()> {
     if from_dtype == to_dtype {
         return Ok(());
     }
@@ -1402,7 +1497,7 @@ fn cast_expr_ir(
     check_cast(from_dtype, to_dtype)?;
 
     if let AExpr::Literal(lv) = expr_arena.get(e.node()) {
-        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, options)? {
+        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, literal_options)? {
             e.set_node(expr_arena.add(AExpr::Literal(literal)));
             e.set_dtype(to_dtype.clone());
             return Ok(());
@@ -1412,7 +1507,7 @@ fn cast_expr_ir(
     e.set_node(expr_arena.add(AExpr::Cast {
         expr: e.node(),
         dtype: to_dtype.clone(),
-        options: CastOptions::Strict,
+        options: cast_options,
     }));
     e.set_dtype(to_dtype.clone());
 
@@ -1582,7 +1677,7 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
         // When casting unknown float to Float32 we can't tell if the value will
         // fit, so can't do anything. When casting to Float64 we can assume
         // it'll work since presumably it's no larger than a f64 in practice.
-        (DataType::Float64, DataType::Unknown(UnknownKind::Float)) => true,
+        (DataType::Float64, DataType::Unknown(UnknownKind::Float(_))) => true,
         // Handles both String and UnknownKind::Str:
         (DataType::String, from) => from.is_string(),
         (to, from) if to.is_primitive_numeric() && from.is_primitive_numeric() => {

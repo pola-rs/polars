@@ -10,8 +10,6 @@ mod string;
 
 use std::sync::Arc;
 
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
 pub use boolean::*;
 #[cfg(feature = "dtype-categorical")]
 pub use categorical::*;
@@ -19,6 +17,8 @@ pub use categorical::*;
 pub(crate) use fixed_size_list::*;
 pub use list::*;
 pub use null::*;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
 pub use primitive::*;
 pub use string::*;
 

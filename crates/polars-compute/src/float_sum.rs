@@ -2,11 +2,11 @@ use std::ops::{Add, IndexMut};
 #[cfg(feature = "simd")]
 use std::simd::{prelude::*, *};
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float};
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::types::NativeType;
 #[cfg(feature = "simd")]
 use polars_utils::float16::pf16;
 

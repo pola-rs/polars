@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::compute::utils::combine_validities_and_many;
+use polars_arrow::compute::utils::combine_validities_and_many;
 use polars_row::{RowEncodingContext, RowEncodingOptions, RowsEncoded, convert_columns};
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;

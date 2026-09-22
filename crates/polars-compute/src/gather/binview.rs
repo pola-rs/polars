@@ -1,4 +1,4 @@
-use arrow::array::{BinaryViewArrayGeneric, ViewType};
+use polars_arrow::array::{BinaryViewArrayGeneric, ViewType};
 
 use self::primitive::take_values_and_validity_unchecked;
 use super::*;
