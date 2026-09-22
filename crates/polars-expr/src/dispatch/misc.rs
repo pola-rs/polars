@@ -1,8 +1,12 @@
 #[cfg(feature = "approx_quantile")]
 use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
-use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
+use polars_core::prelude::row_encode::{
+    _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_vertical_par_ordered,
+    encode_rows_vertical_par_unordered,
+};
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::series::ops::NullBehavior;
@@ -23,6 +27,7 @@ use polars_plan::plans::{AExprSorted, DynamicPredWeakRef, RowEncodingVariant};
 use polars_plan::plans::{IRBinMethod, IRBinOptions};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 #[cfg(feature = "abs")]
@@ -1057,6 +1062,8 @@ pub(super) fn ewm_sum_by(
     .map(Column::from)
 }
 
+const ROW_ENCODE_PAR_MIN_ROWS: usize = 1 << 16;
+
 pub fn row_encode(
     c: &mut [Column],
     dts: Vec<DataType>,
@@ -1072,18 +1079,17 @@ pub fn row_encode(
         }
     }
 
-    let length = if c.iter().any(|c| c.is_empty()) {
-        0
-    } else {
-        c.iter().map(Column::len).max().unwrap_or(0)
-    };
+    let length = broadcast_len(c.iter())?;
     for c in c.iter_mut() {
         c.broadcast_in_place_to(length)?;
     }
 
-    let name = PlSmallStr::from_static("row_encoded");
+    let parallel = length >= ROW_ENCODE_PAR_MIN_ROWS && RAYON.current_num_threads() > 1;
     match variant {
-        RowEncodingVariant::Unordered => _get_rows_encoded_ca_unordered(name, c),
+        RowEncodingVariant::Unordered if parallel => {
+            encode_rows_vertical_par_unordered(c).map(|ca| ca.rechunk().into_owned())
+        },
+        RowEncodingVariant::Unordered => _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, c),
         RowEncodingVariant::Ordered {
             descending,
             nulls_last,
@@ -1096,10 +1102,24 @@ pub fn row_encode(
             assert_eq!(c.len(), descending.len());
             assert_eq!(c.len(), nulls_last.len());
 
-            _get_rows_encoded_ca(name, c, &descending, &nulls_last, broadcast_nulls)
+            if parallel {
+                encode_rows_vertical_par_ordered(c, &descending, &nulls_last, broadcast_nulls)
+                    .map(|ca| ca.rechunk().into_owned())
+            } else {
+                _get_rows_encoded_ca(
+                    PlSmallStr::EMPTY,
+                    c,
+                    &descending,
+                    &nulls_last,
+                    broadcast_nulls,
+                )
+            }
         },
     }
-    .map(IntoColumn::into_column)
+    .map(|ca| {
+        ca.with_name(PlSmallStr::from_static("row_encoded"))
+            .into_column()
+    })
 }
 
 #[cfg(feature = "dtype-struct")]

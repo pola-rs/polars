@@ -9,30 +9,9 @@ use crate::prelude::*;
 use crate::runtime::RAYON;
 use crate::utils::_split_offsets;
 
-pub fn encode_rows_vertical_par_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked> {
-    let n_threads = RAYON.current_num_threads();
-    let len = by[0].len();
-    let splits = _split_offsets(len, n_threads);
-
-    let chunks = splits.into_par_iter().map(|(offset, len)| {
-        let sliced = by
-            .iter()
-            .map(|s| s.slice(offset as i64, len))
-            .collect::<Vec<_>>();
-        let rows = _get_rows_encoded_unordered(&sliced)?;
-        Ok(rows.into_array())
-    });
-    let chunks = RAYON.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
-
-    Ok(BinaryOffsetChunked::from_chunk_iter(
-        PlSmallStr::EMPTY,
-        chunks?,
-    ))
-}
-
-// Almost the same but broadcast nulls to the row-encoded array.
-pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
+fn encode_rows_vertical_par(
     by: &[Column],
+    encode: impl Fn(&[Column]) -> PolarsResult<PlBinaryArray> + Sync,
 ) -> PolarsResult<BinaryOffsetChunked> {
     let n_threads = RAYON.current_num_threads();
     let len = by[0].len();
@@ -43,7 +22,39 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
             .iter()
             .map(|s| s.slice(offset as i64, len))
             .collect::<Vec<_>>();
-        let rows = _get_rows_encoded_unordered(&sliced)?;
+        encode(&sliced)
+    });
+    let chunks = RAYON.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
+
+    Ok(BinaryOffsetChunked::from_chunk_iter(
+        PlSmallStr::EMPTY,
+        chunks?,
+    ))
+}
+
+pub fn encode_rows_vertical_par_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked> {
+    encode_rows_vertical_par(by, |sliced| {
+        Ok(_get_rows_encoded_unordered(sliced)?.into_array())
+    })
+}
+
+pub fn encode_rows_vertical_par_ordered(
+    by: &[Column],
+    descending: &[bool],
+    nulls_last: &[bool],
+    broadcast_nulls: bool,
+) -> PolarsResult<BinaryOffsetChunked> {
+    encode_rows_vertical_par(by, |sliced| {
+        _get_rows_encoded_arr(sliced, descending, nulls_last, broadcast_nulls)
+    })
+}
+
+// Almost the same but broadcast nulls to the row-encoded array.
+pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
+    by: &[Column],
+) -> PolarsResult<BinaryOffsetChunked> {
+    encode_rows_vertical_par(by, |sliced| {
+        let rows = _get_rows_encoded_unordered(sliced)?;
 
         let validities = sliced
             .iter()
@@ -60,13 +71,7 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
 
         let validity = combine_validities_and_many(&validities);
         Ok(rows.into_array().with_validity(validity))
-    });
-    let chunks = RAYON.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
-
-    Ok(BinaryOffsetChunked::from_chunk_iter(
-        PlSmallStr::EMPTY,
-        chunks?,
-    ))
+    })
 }
 
 /// Get the [`RowEncodingContext`] for a certain [`DataType`].
@@ -244,6 +249,16 @@ pub fn _get_rows_encoded_ca(
     nulls_last: &[bool],
     broadcast_nulls: bool,
 ) -> PolarsResult<BinaryOffsetChunked> {
+    let rows_arr = _get_rows_encoded_arr(by, descending, nulls_last, broadcast_nulls)?;
+    Ok(BinaryOffsetChunked::with_chunk(name, rows_arr))
+}
+
+pub fn _get_rows_encoded_arr(
+    by: &[Column],
+    descending: &[bool],
+    nulls_last: &[bool],
+    broadcast_nulls: bool,
+) -> PolarsResult<PlBinaryArray> {
     let mut rows_arr = _get_rows_encoded(by, descending, nulls_last)?.into_array();
     if broadcast_nulls {
         let validities = by
@@ -253,7 +268,7 @@ pub fn _get_rows_encoded_ca(
         let combined = combine_validities_and_many(&validities);
         rows_arr.set_validity(combined);
     }
-    Ok(BinaryOffsetChunked::with_chunk(name, rows_arr))
+    Ok(rows_arr)
 }
 
 pub fn _get_rows_encoded_ca_unordered(
