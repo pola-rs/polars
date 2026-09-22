@@ -17,7 +17,7 @@ from datetime import date, datetime
 from decimal import Decimal as D
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -103,10 +103,12 @@ if TYPE_CHECKING:
     GreaterThan: Any
     GreaterThanOrEqual: Any
     In: Any
+    IsNaN: Any
     IsNull: Any
     LessThan: Any
     LessThanOrEqual: Any
     Not: Any
+    NotNaN: Any
     Or: Any
     Reference: Any
 else:
@@ -118,10 +120,12 @@ else:
         GreaterThan,
         GreaterThanOrEqual,
         In,
+        IsNaN,
         IsNull,
         LessThan,
         LessThanOrEqual,
         Not,
+        NotNaN,
         Or,
         Reference,
     )
@@ -442,6 +446,31 @@ class TestIcebergExpressions:
             "((pa.compute.field('id') > 10) | ((pa.compute.field('id') * 2) > 4))"
         )
         assert expr is None
+
+
+@pytest.mark.parametrize(
+    ("predicate", "expected_factory"),
+    [
+        ("(pa.compute.field('value') == NaN)", lambda: IsNaN("value")),
+        ("(pa.compute.field('value') != NaN)", lambda: NotNaN("value")),
+        (
+            "((pa.compute.field('value') != NaN) | "
+            "(pa.compute.field('value')).is_null())",
+            lambda: Or(NotNaN("value"), IsNull("value")),
+        ),
+        ("~(pa.compute.field('value') != NaN)", lambda: Not(NotNaN("value"))),
+        ("(pa.compute.field('value') > NaN)", lambda: None),
+        ("(pa.compute.field('value') <= NaN)", lambda: None),
+        (
+            "(pa.compute.field('value') == 'NaN')",
+            lambda: EqualTo("value", "NaN"),
+        ),
+    ],
+)
+def test_convert_nan_predicate(
+    predicate: str, expected_factory: Callable[[], Any]
+) -> None:
+    assert try_convert_pyarrow_predicate(predicate) == expected_factory()
 
 
 @dataclass(kw_only=True)
@@ -4308,6 +4337,67 @@ def test_iceberg_filter_bool_26474(tmp_path: Path) -> None:
             dfs_concat.filter(predicate),
             check_row_order=False,
         )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("reader_override", ["native", "pyiceberg"])
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+@pytest.mark.parametrize(
+    ("predicate", "expected_filter_factory"),
+    [
+        (pl.col("value") == float("nan"), lambda: IsNaN("value")),
+        (pl.col("value") != float("nan"), lambda: NotNaN("value")),
+        (
+            pl.col("value").eq_missing(float("nan")),
+            lambda: And(IsNaN("value"), Not(IsNull("value"))),
+        ),
+        (
+            pl.col("value").ne_missing(float("nan")),
+            lambda: Or(NotNaN("value"), IsNull("value")),
+        ),
+        (pl.col("value") > float("nan"), lambda: None),
+    ],
+)
+def test_scan_iceberg_nan_comparisons(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    reader_override: Literal["native", "pyiceberg"],
+    dtype: pl.DataType,
+    predicate: pl.Expr,
+    expected_filter_factory: Callable[[], Any | None],
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(
+                2,
+                "value",
+                FloatType() if dtype == pl.Float32 else DoubleType(),
+                required=False,
+            ),
+        ),
+    )
+    df = pl.DataFrame(
+        {
+            "id": [0, 1, 2, 3],
+            "value": pl.Series([None, float("nan"), 1.0, 2.0], dtype=dtype),
+        }
+    )
+    df.write_iceberg(tbl, mode="append")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    capfd.readouterr()
+    actual = (
+        pl.scan_iceberg(tbl, reader_override=reader_override)
+        .filter(predicate)
+        .collect()
+    )
+    capture = capfd.readouterr().err
+
+    assert_frame_equal(actual, df.filter(predicate), check_row_order=False)
+    assert f"iceberg_table_filter = {expected_filter_factory()!r}" in capture
 
 
 @pytest.mark.write_disk
