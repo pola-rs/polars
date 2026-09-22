@@ -568,6 +568,11 @@ fn downgradable_outer_join_below(
     lp_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<bool> {
+    let passes = |eligibility: &PushdownEligibility, name: &PlSmallStr| match eligibility {
+        PushdownEligibility::Full => true,
+        PushdownEligibility::Partial { to_local } => !to_local.contains(name),
+        PushdownEligibility::NoPushdown => false,
+    };
     let name = predicate.output_name().clone();
     let mut stack = vec![(node, name.clone(), predicate.clone())];
     while let Some((node, name, predicate)) = stack.pop() {
@@ -630,7 +635,7 @@ fn downgradable_outer_join_below(
                     opt.maintain_errors,
                     lp_arena.get(*input),
                 )?;
-                if !matches!(eligibility, PushdownEligibility::Full) {
+                if !passes(&eligibility, &name) {
                     continue;
                 }
                 let (name, mut predicate) = acc_predicates.pop().unwrap();
@@ -638,7 +643,28 @@ fn downgradable_outer_join_below(
                 map_column_references(&mut predicate, expr_arena, &alias_rename_map);
                 stack.push((*input, name, predicate));
             },
-            IR::SimpleProjection { input, .. } | IR::Filter { input, .. } => {
+            IR::Filter {
+                input,
+                predicate: filter,
+            } => {
+                let mut acc_predicates = init_indexmap(Some(2));
+                acc_predicates.insert(name.clone(), predicate.clone());
+                let tmp_key = temporary_unique_key(&acc_predicates);
+                acc_predicates.insert(tmp_key.clone(), filter.clone());
+                let (eligibility, _) = pushdown_eligibility(
+                    &[],
+                    &[(&tmp_key, filter.clone())],
+                    &acc_predicates,
+                    expr_arena,
+                    opt.nodes_scratch.get(),
+                    opt.maintain_errors,
+                    lp_arena.get(*input),
+                )?;
+                if passes(&eligibility, &name) {
+                    stack.push((*input, name, predicate));
+                }
+            },
+            IR::SimpleProjection { input, .. } => {
                 stack.push((*input, name, predicate));
             },
             _ => {},

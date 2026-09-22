@@ -4905,6 +4905,22 @@ def test_join_key_downgrade_follows_pushdown_through_projections() -> None:
     expect = q.collect(optimizations=pl.QueryOptFlags.none())
     assert_frame_equal(q.collect(), expect, check_row_order=False)
 
+    # A filter that blocks pushdown stops the walk as well.
+    q = joined.filter(pl.col("amount") > pl.col("amount").mean()).join(
+        lookup, on="reason"
+    )
+    plan = q.explain()
+    assert "LEFT JOIN:" in plan
+    assert "is_not_null" not in plan
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+    # A plain filter is passed.
+    q = joined.filter(pl.col("amount") > 15).join(lookup, on="reason")
+    assert "LEFT JOIN:" not in q.explain()
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
     # A rename is followed down.
     q = joined.rename({"reason": "r"}).join(lookup.rename({"reason": "r"}), on="r")
     plan = q.explain()
