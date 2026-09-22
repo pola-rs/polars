@@ -61,7 +61,7 @@ signature:
 pub struct PhysPlanBuilder {
     phys_sm: SlotMap<PhysNodeKey, PhysNode>,
     /// IR node whose lowering is currently inserting physical nodes.
-    pub current_ir_node: Option<Node>,
+    current_ir_node: Option<Node>,
     /// Length of the IR arena before lowering started. Nodes at or beyond
     /// this index were added by lowering itself and are not in the plan the
     /// observer sees.
@@ -73,11 +73,14 @@ It implements `Deref` and `DerefMut` to the slotmap, so indexing, `get`,
 `remove`, and the schema accessors on `PhysStream` keep working unchanged.
 Its one inserting method is `insert(&mut self, node: PhysNode) -> PhysNodeKey`,
 which sets `node.ir_node = self.current_ir_node` and inserts. It also exposes
-`is_original_ir_node(Node) -> bool` and `into_inner() -> SlotMap<..>`. Inherent methods win
-over dereferenced ones during method resolution, so the existing
-`phys_sm.insert(PhysNode::new(..))` call sites compile unchanged and now
-stamp. Bypassing the stamp requires an explicit `(**phys_sm).insert(..)`,
-which nothing does.
+`is_original_ir_node(Node) -> bool`, a scoped
+`with_ir_node(Node, impl FnOnce(&mut Self) -> R) -> R` that sets and restores
+the current attribution, and `into_inner() -> SlotMap<..>`. `insert` keeps an
+attribution a node already carries and debug-asserts the node ends up
+attributed. Inherent methods win over dereferenced ones during method
+resolution, so the existing `phys_sm.insert(PhysNode::new(..))` call sites
+compile unchanged and now stamp. Bypassing the stamp requires an explicit
+`(**phys_sm).insert(..)`, which nothing does.
 
 The parameter type changes from `&mut SlotMap<PhysNodeKey, PhysNode>` to
 `&mut PhysPlanBuilder` on `lower_ir`, the `build_*_stream` helpers,
@@ -85,7 +88,7 @@ The parameter type changes from `&mut SlotMap<PhysNodeKey, PhysNode>` to
 two post-lowering passes that insert nodes (`insert_multiplexers`,
 `split_multiplexers`). The drop-fusing and rechunk passes and the node
 visitors keep taking the plain slotmap and receive it through deref coercion.
-`build_physical_plan` takes the slotmap by value and returns it alongside the
+`build_physical_plan` constructs the slotmap and returns it alongside the
 root key, so its two callers in `skeleton.rs` destructure the pair. Read-only
 consumers (`to_graph`, `to_description`, `fmt`) keep taking the plain
 slotmap.
@@ -103,11 +106,11 @@ fill it.
 the builder from it and the slotmap it was given. The current body of `lower_ir` becomes
 an inner function. The public `lower_ir` wrapper:
 
-1. saves `builder.current_ir_node`;
-2. sets it to `Some(node)` if `node.0 < builder.original_ir_len`, and leaves
-   it unchanged otherwise;
-3. calls the inner function;
-4. restores the saved value and returns the result.
+1. if the node's index is below the recorded length, runs the inner function
+   inside `with_ir_node(node, ..)`, which sets the current attribution and
+   restores the previous one afterwards;
+2. otherwise runs the inner function unchanged, so a temporary IR node
+   inherits the enclosing original node.
 
 The recursive `lower_ir!` macro already calls `lower_ir`, so every child sets
 and restores its own node, including original children under a temporary
@@ -115,6 +118,12 @@ parent. Early returns inside the body need no handling because the wrapper
 owns the restore. The root is always original, so the current node is `Some`
 for the whole of lowering, and a temporary IR node inherits the original IR
 node whose lowering created it.
+
+Every attribution is an id the observer can look up: lowering only descends
+through nodes reachable from the root via `IR::inputs()` (including a
+`Resolver`'s resolved node, which `inputs()` yields), and
+`ir_plan_to_description` walks the same edges, so every `ir_node_id` in the
+physical payload names a node in the IR payload.
 
 Outcomes:
 
@@ -128,16 +137,16 @@ Outcomes:
   order-preserving distinct with keep-last) insert their physical node while
   the original IR node is current, so they need no special handling.
 - **Post-lowering passes that insert run through the builder.** Every insert
-  in the crate goes through one method. Before inserting a multiplexer, the
-  pass sets `builder.current_ir_node` to `builder[stream.node].ir_node()` for
-  the stream being fanned out. Fan-out is not only a cache artefact: one IR node's lowering
+  in the crate goes through one method. The multiplexer pass inserts each
+  multiplexer inside `with_ir_node` scoped to the IR node of the stream being
+  fanned out. Fan-out is not only a cache artefact: one IR node's lowering
   can consume a stream twice, so inheriting from the input is the general
   rule. The multiplexer-splitting pass clones an in-memory source per
-  consumer; it sets `builder.current_ir_node` to the source's id before
-  inserting each clone, so the clones keep the source's id. Drop fusing swaps the filter
-  into the projection's slot, so the surviving node keeps the `Filter` IR's
-  id; the dropped `SimpleProjection` IR node ends up with no physical nodes,
-  and the orphaned slot is unreachable from the root and never described.
+  consumer; the clones already carry the source's id and `insert` keeps it.
+  Drop fusing swaps the filter into the projection's slot, so the surviving
+  node keeps the `Filter` IR's id; the dropped `SimpleProjection` IR node ends
+  up with no physical nodes, and the orphaned slot is unreachable from the
+  root and never described.
 
 At the end of `build_physical_plan`, a `debug_assert!` checks that every node
 in the slotmap has `ir_node == Some(n)` with `n.0 < original_ir_len`. This
