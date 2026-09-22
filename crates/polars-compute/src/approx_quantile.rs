@@ -278,10 +278,11 @@ pub mod kll {
         let sampler_var =
             |k: f64| (4.0 / CAPACITY_DECAY) * k * f64::powf(SAMPLER_CUTOFF as f64 / k, alpha);
 
-        let mut k = k_from_total_variance(compactor_var);
-        k = k_from_total_variance(compactor_var + sampler_var(k));
-        k = k_from_total_variance(compactor_var + sampler_var(k));
-        f64::max(MIN_COMPACTOR_SIZE as f64, k) as usize
+        let k0 = k_from_total_variance(compactor_var);
+        let k1 = k_from_total_variance(compactor_var + sampler_var(k0));
+        let k2 = k_from_total_variance(compactor_var + sampler_var(k1));
+        debug_assert!(k0 <= k1 && k1 <= k2, "k does not converge downward");
+        f64::max(MIN_COMPACTOR_SIZE as f64, k2) as usize
     }
 
     #[derive(Debug, Clone, Copy, Default)]
