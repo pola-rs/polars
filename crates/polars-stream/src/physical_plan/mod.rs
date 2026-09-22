@@ -840,7 +840,7 @@ fn _visit_nodes_impl(
     }
 }
 
-fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysPlanBuilder) {
     let mut refcount: PlIndexMap<_, usize> = PlIndexMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(*i).or_insert(0) += 1;
@@ -851,6 +851,9 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
         .filter(|(_stream, refcount)| *refcount > 1)
         .map(|(stream, refcount)| {
             let input_schema = Arc::clone(stream.output_schema(phys_sm));
+            // A multiplexer only fans out the stream it wraps, so it belongs to the same IR
+            // node as that stream's producer.
+            phys_sm.current_ir_node = phys_sm[stream.node].ir_node();
             let multiplexer_node = phys_sm.insert(PhysNode::new_multi_output(
                 (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
                 PhysNodeKind::Multiplexer { input: stream },
@@ -867,7 +870,7 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
     });
 }
 
-fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysPlanBuilder) {
     let mut refcount: SecondaryMap<PhysNodeKey, usize> = SecondaryMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(i.node).unwrap().or_insert(0) += 1;
@@ -885,6 +888,8 @@ fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey
     let mut replacements: SecondaryMap<PhysNodeKey, Vec<PhysStream>> = split_map
         .into_iter()
         .map(|(k, n)| {
+            // The clones are the same source split per consumer, so they keep its IR node.
+            phys_sm.current_ir_node = n.ir_node();
             let repls = (0..refcount[k]).map(|_| PhysStream::first(phys_sm.insert(n.clone())));
             (k, repls.collect())
         })
@@ -993,6 +998,13 @@ pub fn build_physical_plan(
 
     // TODO: remove this after fusing pre-select into group-by node.
     rechunk_group_by_inputs(vec![phys_root.node], &mut phys_sm);
+
+    debug_assert!(
+        phys_sm.values().all(|n| n
+            .ir_node()
+            .is_some_and(|ir| phys_sm.is_original_ir_node(ir))),
+        "every physical node must be attributed to an IR node of the original plan"
+    );
 
     Ok((phys_root.node, phys_sm.into_inner()))
 }
