@@ -22,7 +22,7 @@ const FAILURE_PROBABILITY: f64 = 1.0 - 0.9973;
 pub const MIN_ERROR: f64 = 1.0 / (1u64 << 32) as f64;
 
 /// Looseness of the formal KLL error bound (estimated by measuring).
-const KLL_BOUND_LOOSENESS: f64 = 4.0;
+const KLL_BOUND_LOOSENESS: f64 = 6.0;
 /// Looseness of the formal REQ error bound (estimated by measuring).
 const REQ_BOUND_LOOSENESS: f64 = 20.0;
 
