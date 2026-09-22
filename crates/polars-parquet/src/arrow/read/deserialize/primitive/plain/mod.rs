@@ -1,6 +1,7 @@
 use polars_arrow::array::{PrimitiveArray, Splitable};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::types::{AlignedBytes, NativeType, PrimitiveType};
+use polars_compute::filter::filter_values_into;
 use polars_utils::vec::with_cast_mut_vec;
 
 use super::DecoderFunction;
@@ -320,6 +321,12 @@ fn decode_masked_required<B: AlignedBytes>(
 
     assert!(mask.len() <= values.len());
 
+    // The vectorized kernels need the values to be aligned for `B`.
+    if let Ok(values) = bytemuck::try_cast_slice::<_, B>(values.bytes) {
+        filter_values_into(target, values, &mask);
+        return Ok(());
+    }
+
     let start_length = target.len();
     target.reserve(num_rows);
     let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
@@ -528,17 +535,25 @@ mod tests {
             }
         }
 
-        let mut result =
-            Vec::<polars_arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
-        decode_masked_required(
-            ArrayChunks::new(bytemuck::cast_slice(values.as_slice())).unwrap(),
-            mask.clone(),
-            &mut result,
-        )
-        .unwrap();
+        let num_bytes = size_of_val(values.as_slice());
 
-        let result = bytemuck::cast_vec::<_, u32>(result);
-        assert_eq!(reference_result, result);
+        // Once aligned and once not, to cover both paths.
+        let mut shifted = vec![0u32; values.len() + 1];
+        let shifted = bytemuck::cast_slice_mut::<u32, u8>(shifted.as_mut_slice());
+        shifted[1..1 + num_bytes].copy_from_slice(bytemuck::cast_slice(values.as_slice()));
+
+        for bytes in [
+            bytemuck::cast_slice(values.as_slice()),
+            &shifted[1..1 + num_bytes],
+        ] {
+            let mut result =
+                Vec::<polars_arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
+            decode_masked_required(ArrayChunks::new(bytes).unwrap(), mask.clone(), &mut result)
+                .unwrap();
+
+            let result = bytemuck::cast_vec::<_, u32>(result);
+            assert_eq!(reference_result, result);
+        }
     }
 
     fn _test_decode_masked_optional(validity: &Bitmap, values: &Vec<u32>, mask: &Bitmap) {

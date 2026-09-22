@@ -14,6 +14,7 @@ use polars_arrow::array::{
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::bitmap::utils::SlicesIterator;
 use polars_arrow::with_match_primitive_type_full;
+pub use primitive::filter_values_into;
 
 pub fn filter(array: &dyn Array, mask: &BooleanArray) -> Box<dyn Array> {
     assert_eq!(array.len(), mask.len());
