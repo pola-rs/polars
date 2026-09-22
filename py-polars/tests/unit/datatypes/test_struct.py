@@ -2364,27 +2364,42 @@ def test_numeric_op_on_struct_raises_28563(op: Any) -> None:
         lf.select(op(pl.col("meta"))).collect()
 
 
-def test_struct_eval() -> None:
+# `struct.eval` is available both as an expression and on `Series`; tests that only
+# reference struct fields (and no outer columns) are run against both.
+def _eval_via_expr(df: pl.DataFrame, *exprs: Any, **named_exprs: Any) -> pl.DataFrame:
+    return df.select(pl.col.s.struct.eval(*exprs, **named_exprs))
+
+
+def _eval_via_series(df: pl.DataFrame, *exprs: Any, **named_exprs: Any) -> pl.DataFrame:
+    return df.get_column("s").struct.eval(*exprs, **named_exprs).to_frame()
+
+
+parametrize_struct_eval = pytest.mark.parametrize(
+    "struct_eval", [_eval_via_expr, _eval_via_series], ids=["expr", "series"]
+)
+
+
+@parametrize_struct_eval
+def test_struct_eval(struct_eval: Any) -> None:
     df = pl.DataFrame(
-        {"a": [{"field_1": [1, 2, 3]}]},
-        schema={"a": pl.Struct({"field_1": pl.List(pl.Int64)})},
+        {"s": [{"field_1": [1, 2, 3]}]},
+        schema={"s": pl.Struct({"field_1": pl.List(pl.Int64)})},
     )
-    q = df.lazy().select(
-        pl.col("a").struct.eval(pl.field("field_1").list.sum().alias("field_1_total"))
-    )
+    out = struct_eval(df, pl.field("field_1").list.sum().alias("field_1_total"))
     expected = pl.DataFrame(
-        {"a": [{"field_1_total": 6}]},
-        schema={"a": pl.Struct({"field_1_total": pl.Int64})},
+        {"s": [{"field_1_total": 6}]},
+        schema={"s": pl.Struct({"field_1_total": pl.Int64})},
     )
 
-    assert q.collect_schema() == expected.schema
-    assert_frame_equal(q.collect(), expected)
+    assert out.schema == expected.schema
+    assert_frame_equal(out, expected)
 
 
-def test_struct_eval_drops_unselected_fields() -> None:
+@parametrize_struct_eval
+def test_struct_eval_drops_unselected_fields(struct_eval: Any) -> None:
     df = pl.DataFrame({"s": [{"x": 1, "y": 2, "z": 3}, {"x": 4, "y": 5, "z": 6}]})
 
-    out = df.select(pl.col.s.struct.eval(pl.field("y")))
+    out = struct_eval(df, pl.field("y"))
     expected = pl.DataFrame({"s": [{"y": 2}, {"y": 5}]})
     assert_frame_equal(out, expected)
 
@@ -2414,22 +2429,23 @@ def test_struct_eval_field_order_and_rename() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_struct_eval_empty() -> None:
+@parametrize_struct_eval
+def test_struct_eval_empty(struct_eval: Any) -> None:
     df = pl.DataFrame({"s": [{"x": 1}, {"x": 2}, {"x": 3}]})
 
-    q = df.lazy().select(pl.col.s.struct.eval())
+    out = struct_eval(df)
     expected = pl.DataFrame({"s": [{}, {}, {}]}, schema={"s": pl.Struct({})})
 
-    assert q.collect_schema() == expected.schema
-    out = q.collect()
+    assert out.schema == expected.schema
     assert out.height == df.height
     assert_frame_equal(out, expected)
 
 
-def test_struct_eval_preserves_outer_validity() -> None:
+@parametrize_struct_eval
+def test_struct_eval_preserves_outer_validity(struct_eval: Any) -> None:
     df = pl.DataFrame({"s": [{"x": 1, "y": 2}, None, {"x": 3, "y": 4}]})
 
-    out = df.select(pl.col.s.struct.eval(pl.field("x") * 2))
+    out = struct_eval(df, pl.field("x") * 2)
     expected = pl.DataFrame({"s": [{"x": 2}, None, {"x": 6}]})
     assert_frame_equal(out, expected)
 
@@ -2484,11 +2500,12 @@ def test_struct_eval_over() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_struct_eval_nested() -> None:
+@parametrize_struct_eval
+def test_struct_eval_nested(struct_eval: Any) -> None:
     df = pl.DataFrame(
         {"s": [{"a": 1, "b": {"c": 2, "d": 3}}, {"a": 4, "b": {"c": 5, "d": 6}}]}
     )
-    out = df.select(pl.col.s.struct.eval(pl.field("b").struct.eval(pl.field("d") * 10)))
+    out = struct_eval(df, pl.field("b").struct.eval(pl.field("d") * 10))
     expected = pl.DataFrame({"s": [{"b": {"d": 30}}, {"b": {"d": 60}}]})
     assert_frame_equal(out, expected)
 
@@ -2500,3 +2517,43 @@ def test_struct_eval_in_list_eval() -> None:
     )
     expected = pl.DataFrame({"s": [[{"a": 1}, {"a": 3}, None], None]})
     assert_frame_equal(q.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.field("a").explode(),
+        pl.field("a").list.get(0).filter(pl.field("a").list.len() > 1),
+        pl.field("a").slice(0, 1),
+        pl.field("a").head(1),
+        pl.field("a").unique(),
+    ],
+    ids=["explode", "filter", "slice", "head", "unique"],
+)
+@pytest.mark.parametrize("variant", ["eval", "with_fields"])
+def test_struct_eval_forbid_non_length_preserving(expr: pl.Expr, variant: str) -> None:
+    df = pl.DataFrame({"s": [{"a": [0, 1]}]})
+    struct_expr = getattr(pl.col.s.struct, variant)(expr.alias("a"))
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=rf"`struct\.{variant}` is not allowed with non-length preserving",
+    ):
+        df.lazy().select(struct_expr).collect()
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.field("a").list.sum(),
+        pl.field("a").list.sum().first(),
+        pl.lit(1),
+        pl.int_range(0, pl.len()),
+        pl.field("a").list.len().reverse(),
+    ],
+    ids=["elementwise", "scalar", "literal", "range", "length_preserving"],
+)
+def test_struct_eval_allows_length_preserving(expr: pl.Expr) -> None:
+    df = pl.DataFrame({"s": [{"a": [0, 1]}, {"a": [2]}]})
+    out = df.select(pl.col.s.struct.eval(expr.alias("a")))
+    assert out.height == df.height

@@ -6,7 +6,7 @@ use polars_utils::collection::{Collection, CollectionWrap};
 use polars_utils::scratch_vec::ScratchVec;
 
 use crate::dsl::WindowMapping;
-use crate::plans::{AExpr, aexpr_tree_traversal};
+use crate::plans::{AExpr, IRFunctionExpr, aexpr_tree_traversal};
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -45,11 +45,37 @@ impl ExprProjectionHeight {
 #[recursive::recursive]
 pub fn aexpr_projection_height_rec(
     ae_node: Node,
-    mut expr_arena: &Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
     stack: &mut ScratchVec<Node>,
     edges_stack: &mut ScratchVec<ExprProjectionHeight>,
 ) -> ExprProjectionHeight {
-    let mut visitor = ExprHeightVisitor::default();
+    aexpr_projection_height_rec_with(
+        ae_node,
+        expr_arena,
+        stack,
+        edges_stack,
+        ExprProjectionHeight::Unknown,
+    )
+}
+
+/// As [`aexpr_projection_height_rec`], but resolves `StructField` references to
+/// `struct_field_height` instead of [`ExprProjectionHeight::Unknown`].
+///
+/// A `StructField` has the height of the struct it is evaluated against, which is unrelated to the
+/// height of the frame. Within the `evaluation` of an `AExpr::StructEval` that struct is the
+/// reference height, so there it is [`ExprProjectionHeight::Column`].
+#[recursive::recursive]
+pub fn aexpr_projection_height_rec_with(
+    ae_node: Node,
+    mut expr_arena: &Arena<AExpr>,
+    stack: &mut ScratchVec<Node>,
+    edges_stack: &mut ScratchVec<ExprProjectionHeight>,
+    struct_field_height: ExprProjectionHeight,
+) -> ExprProjectionHeight {
+    let mut visitor = ExprHeightVisitor {
+        struct_field_height,
+        _phantom: PhantomData,
+    };
 
     aexpr_tree_traversal(
         ae_node,
@@ -62,8 +88,19 @@ pub fn aexpr_projection_height_rec(
     .unwrap()
 }
 
-#[derive(Default)]
-pub struct ExprHeightVisitor<'a>(PhantomData<&'a ()>);
+pub struct ExprHeightVisitor<'a> {
+    struct_field_height: ExprProjectionHeight,
+    _phantom: PhantomData<&'a ()>,
+}
+
+impl Default for ExprHeightVisitor<'_> {
+    fn default() -> Self {
+        Self {
+            struct_field_height: ExprProjectionHeight::Unknown,
+            _phantom: PhantomData,
+        }
+    }
+}
 
 impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
     type Key = Node;
@@ -86,14 +123,12 @@ impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
         storage: &mut Self::Storage,
         edges: &mut dyn crate::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue, SubtreeVisit> {
-        ControlFlow::Continue(
-            if let Some(height) = aexpr_projection_height(storage.get(key), None) {
-                edges.outputs()[0] = height;
-                SubtreeVisit::Skip
-            } else {
-                SubtreeVisit::Visit
-            },
-        )
+        ControlFlow::Continue(if let Some(height) = self.height(storage.get(key), None) {
+            edges.outputs()[0] = height;
+            SubtreeVisit::Skip
+        } else {
+            SubtreeVisit::Visit
+        })
     }
 
     fn post_visit(
@@ -102,9 +137,27 @@ impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
         storage: &mut Self::Storage,
         edges: &mut dyn crate::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue> {
-        edges.outputs()[0] =
-            aexpr_projection_height(storage.get(key), Some(&mut *edges.inputs())).unwrap();
+        // @NOTE. `post_visit` also runs for nodes whose subtree `pre_visit` skipped, so the
+        // `StructField` override has to live in `height()` rather than in `pre_visit`.
+        edges.outputs()[0] = self
+            .height(storage.get(key), Some(&mut *edges.inputs()))
+            .unwrap();
         ControlFlow::Continue(())
+    }
+}
+
+impl ExprHeightVisitor<'_> {
+    fn height(
+        &self,
+        aexpr: &AExpr,
+        input_heights: Option<&mut dyn Collection<ExprProjectionHeight>>,
+    ) -> Option<ExprProjectionHeight> {
+        #[cfg(feature = "dtype-struct")]
+        if matches!(aexpr, AExpr::StructField(_)) {
+            return Some(self.struct_field_height);
+        }
+
+        aexpr_projection_height(aexpr, input_heights)
     }
 }
 
@@ -173,6 +226,13 @@ pub fn aexpr_projection_height(
                 }
             }
         },
+
+        // `repeat` produces as many values as its `n` argument asks for, which is a length that
+        // is determined by the data rather than by the input height -- same as a range.
+        Function {
+            function: IRFunctionExpr::Repeat,
+            ..
+        } => H::Range,
 
         AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
             if options.flags.returns_scalar() {
