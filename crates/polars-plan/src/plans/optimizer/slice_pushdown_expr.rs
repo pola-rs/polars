@@ -406,11 +406,6 @@ fn aexpr_slice_pushdown_top(
         *col_hit_count = col_hit_count.map(|x| x + 1);
     }
 
-    // `len()` is `H::Scalar`, so it was dropped from `state.candidate_push_locations` by the
-    // Column-height propagation above (a plain scalar computation has nothing to push a slice
-    // into). If `ae` is a `len() <cmp> n` comparison, seed a dummy `Column` node in as the sole
-    // candidate so it goes through the same machinery as `first()`/`last()` below, without
-    // needing to special-case `Len` there.
     let len_cmp_slice = len_cmp_head_slice(ae, expr_arena)
         .map(|slice| (expr_arena.add(AExpr::Column(PlSmallStr::EMPTY)), slice));
     if state.candidate_push_locations.is_empty()
