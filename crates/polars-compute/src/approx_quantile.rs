@@ -282,7 +282,7 @@ pub mod kll {
         let k0 = k_from_total_variance(compactor_var);
         let k1 = k_from_total_variance(compactor_var + sampler_var(k0));
         let k2 = k_from_total_variance(compactor_var + sampler_var(k1));
-        debug_assert!(k0 <= k1 && k1 <= k2, "k does not converge downward");
+        debug_assert!(k2 <= k1 && k1 <= k0, "k does not converge downward");
         usize::max(MIN_COMPACTOR_SIZE, k2.ceil() as usize)
     }
 
