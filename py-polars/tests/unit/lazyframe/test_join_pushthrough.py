@@ -495,7 +495,7 @@ def qualifying_keys(fact: pl.LazyFrame, at_least: float) -> pl.LazyFrame:
     )
 
 
-@pytest.mark.parametrize("at_least", [9_000.0, 0.0])
+@pytest.mark.parametrize("at_least", [10_000.0, 0.0])
 def test_semi_join_probing_no_more_rows_moves_below_inner_join(
     tmp_path: Path, at_least: float
 ) -> None:
@@ -523,7 +523,7 @@ def test_semi_join_above_a_selective_filter_stays(tmp_path: Path) -> None:
     lf = (
         fact.join(dim, left_on="f_dim", right_on="d_key")
         .filter(pl.col("f_val") + pl.col("d_flag").cast(pl.Float64) < 100)
-        .join(qualifying_keys(fact, 9_000.0), on="f_dim", how="semi")
+        .join(qualifying_keys(fact, 10_000.0), on="f_dim", how="semi")
     )
     assert all_joins(lf.explain(optimizations=ON))[:2] == [
         "SEMI JOIN:",
