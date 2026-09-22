@@ -10,7 +10,7 @@ use polars_core::prelude::{
 use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
 use polars_defs::time::duration::ensure_duration_matches_dtype;
-use polars_defs::time::group_by::{DynamicGroupOptions, Label};
+use polars_defs::time::group_by::{DynamicGroupOptions, Label, dynamic_boundary_dtype};
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};
 use polars_expr::state::ExecutionState;
 use polars_time::prelude::GroupByDynamicWindower;
@@ -170,18 +170,14 @@ impl DynamicGroupBy {
 
             let index_column = &df.columns()[index_column_idx];
             let index_dtype = index_column.dtype();
-            let mut bound_dtype_physical = index_dtype.to_physical();
-            let mut bound_dtype = index_dtype;
-            if index_dtype.is_date() {
-                bound_dtype = &DataType::Datetime(TimeUnit::Microseconds, None);
-                bound_dtype_physical = DataType::Int64;
-            }
+            let bound_dtype = dynamic_boundary_dtype(index_dtype);
+            let bound_dtype_physical = bound_dtype.to_physical();
             lower = lower.cast(&bound_dtype_physical).unwrap();
             upper = upper.cast(&bound_dtype_physical).unwrap();
             (lower, upper) = unsafe {
                 (
-                    lower.from_physical_unchecked(bound_dtype)?,
-                    upper.from_physical_unchecked(bound_dtype)?,
+                    lower.from_physical_unchecked(&bound_dtype)?,
+                    upper.from_physical_unchecked(&bound_dtype)?,
                 )
             };
 
