@@ -129,9 +129,13 @@ fn process_join(
     // Try the right side first when candidates rank equally.
     let mut sides = build_candidates(false, &right_stats, right_width);
     sides.extend(build_candidates(true, &left_stats, left_width));
+    // A semi join builds its right side on an estimate too; an anti join only
+    // builds a bounded left side.
     let how = &options.args.how;
-    if how.is_semi_anti() {
-        sides.retain(|s| s.forced && (how.is_semi() || s.left));
+    if how.is_semi() {
+        sides.retain(|s| s.forced || !s.left);
+    } else if how.is_anti() {
+        sides.retain(|s| s.forced && s.left);
     }
     sides.sort_by(|a, b| b.forced.cmp(&a.forced).then(a.rows.total_cmp(&b.rows)));
 

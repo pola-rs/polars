@@ -1403,9 +1403,82 @@ def test_anti_join_publishes_from_the_left_only(
     assert_matches_in_memory(q, out)
 
 
-def test_preferred_semi_join_gets_no_filter(shuffled_fact: pl.LazyFrame) -> None:
-    q = shuffled_fact.join(unbounded_dim(220, 240), on="k", how="semi")
+def test_preferred_semi_join_publishes_its_right_side(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    q = fact.join(unbounded_dim(220, 240), on="k", how="semi")
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: PreferRight" in plan
+    assert plan.count("dynamic_predicate") == 1
+
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "1 / 10 row groups"
+    assert out.get_column("k").sort().to_list() == [220, 240]
+    assert_matches_in_memory(q, out)
+
+    # A preferred left side keeps every row, so it is not built on an estimate.
+    q = unbounded_dim(220, 240).join(fact, on="k", how="semi")
     assert "dynamic_predicate" not in q.explain(engine="streaming")
+
+    q = fact.join(unbounded_dim(-1), on="k", how="semi")
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups is None
+    assert out.height == 0
+
+
+def test_preferred_anti_join_gets_no_filter(fact: pl.LazyFrame) -> None:
+    q = fact.join(unbounded_dim(220, 240), on="k", how="anti")
+    assert "dynamic_predicate" not in q.explain(engine="streaming")
+
+
+def test_semi_join_right_side_outgrowing_its_estimate(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Fifty rows where ten were estimated: the preferred side reaches the sample
+    # limit, both sides are sampled, and the right side is built and published from
+    # the build, after the scan has opened.
+    big = unbounded_dim(*range(0, 1000, 20)).filter(pl.col("d") % 1 == 0)
+    q = fact.join(big, on="k", how="semi")
+    assert "BUILD SIDE: PreferRight" in q.explain(engine="streaming")
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "4")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert "reached the sample limit" in err
+    assert "build side chosen: right" in err
+    assert out.get_column("k").sort().to_list() == list(range(0, 1000, 20))
+    assert_matches_in_memory(q, out)
+
+
+def test_semi_join_left_side_built_before_the_right_published(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The preferred side reaches the sample limit; the two-row left side ends and is
+    # built instead, so the filter on its scan is set to keep every row.
+    q = fact.filter(pl.col("v") % 500 == 220).join(
+        unbounded_dim(*range(200, 400, 20)), on="k", how="semi"
+    )
+    assert "BUILD SIDE: PreferRight" in q.explain(engine="streaming")
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "4")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert "reached the sample limit" in err
+    assert "publishing its keys" not in err
+    assert "build side chosen: left" in err
+    assert out.get_column("k").to_list() == [220]
+
+
+def test_semi_join_published_keys_hold_when_the_left_side_is_built(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The preferred side ends under the limit and publishes its complete keys; the
+    # scan reads two row groups, one row survives, and the sample builds the left
+    # side instead. The keys still hold: no left key outside them can match.
+    q = fact.filter(pl.col("v") % 500 == 220).join(
+        unbounded_dim(*range(200, 400, 20)), on="k", how="semi"
+    )
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    after = err.split("publishing its keys", 1)[1]
+    assert "Predicate pushdown: reading 2 / 10 row groups" in after
+    assert "build side chosen: left" in after
+    assert out.get_column("k").to_list() == [220]
 
 
 def test_semi_join_range_prunes_row_groups(
