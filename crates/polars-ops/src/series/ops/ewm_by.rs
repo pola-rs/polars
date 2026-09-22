@@ -76,7 +76,7 @@ fn dispatch_ewm_by<const IS_MEAN: bool>(
         ),
         #[cfg(feature = "dtype-datetime")]
         (_, DataType::Datetime(time_unit, _)) => {
-            let half_life = adjust_half_life_to_time_unit(half_life, time_unit);
+            let half_life = time_unit.from_ns(half_life);
             dispatch_ewm_by::<IS_MEAN>(
                 s,
                 &times.cast(&DataType::Int64)?,
@@ -221,14 +221,6 @@ where
         arr = arr.with_validity_typed(validity);
     }
     ChunkedArray::with_chunk(values.name().clone(), arr)
-}
-
-fn adjust_half_life_to_time_unit(half_life: i64, time_unit: &TimeUnit) -> i64 {
-    match time_unit {
-        TimeUnit::Milliseconds => half_life / 1_000_000,
-        TimeUnit::Microseconds => half_life / 1_000,
-        TimeUnit::Nanoseconds => half_life,
-    }
 }
 
 #[inline]
