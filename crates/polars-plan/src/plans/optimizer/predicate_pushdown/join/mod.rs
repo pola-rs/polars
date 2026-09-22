@@ -82,13 +82,24 @@ pub(super) fn process_join(
         &mut opt.dedup_state,
     )?;
 
+    let (mut pushdown_left, mut pushdown_right) = key_non_null_predicates(
+        &options,
+        &left_on,
+        &right_on,
+        input_left,
+        input_right,
+        lp_arena,
+        expr_arena,
+        &mut opt.dedup_state,
+    );
+
     if match &options.args.how {
         // Full-join with no coalesce. We can only push filters if they do not remove NULLs, but
         // we don't have a reliable way to guarantee this.
         JoinType::Full => !options.args.should_coalesce(),
 
         _ => false,
-    } || acc_predicates.is_empty()
+    } || (acc_predicates.is_empty() && pushdown_left.is_empty() && pushdown_right.is_empty())
     {
         let lp = rewrite_hive(
             IR::Join {
@@ -289,10 +300,6 @@ pub(super) fn process_join(
         }
     }
 
-    let mut pushdown_left: PlIndexMap<PlSmallStr, ExprIR> =
-        init_indexmap(Some(acc_predicates.len()));
-    let mut pushdown_right: PlIndexMap<PlSmallStr, ExprIR> =
-        init_indexmap(Some(acc_predicates.len()));
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
     // Which sides of the join a predicate can be pushed to, and whether it has to
@@ -483,6 +490,127 @@ pub(super) fn process_join(
     let lp = apply_join_key_reduction_select(lp, opt_join_key_reduction_select, lp_arena);
 
     Ok(lp)
+}
+
+/// `key.is_not_null()` for every join key whose null rows the join drops, but only for keys
+/// that can turn an outer join below into a stricter join. The join drops those rows itself,
+/// so the predicate is useless anywhere else.
+#[expect(clippy::too_many_arguments)]
+fn key_non_null_predicates(
+    options: &JoinOptionsIR,
+    left_on: &[ExprIR],
+    right_on: &[ExprIR],
+    input_left: Node,
+    input_right: Node,
+    lp_arena: &Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    dedup: &mut PredicateDedupState,
+) -> (
+    PlIndexMap<PlSmallStr, ExprIR>,
+    PlIndexMap<PlSmallStr, ExprIR>,
+) {
+    let mut pushdown_left = init_indexmap(None);
+    let mut pushdown_right = init_indexmap(None);
+
+    if options.args.nulls_equal || options.is_non_equi() {
+        return (pushdown_left, pushdown_right);
+    }
+
+    let (left_keys_non_null, right_keys_non_null) = match options.args.how {
+        JoinType::Inner => (true, true),
+        JoinType::Left => (false, true),
+        JoinType::Right => (true, false),
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Semi => (true, true),
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Anti => (false, true),
+        _ => (false, false),
+    };
+
+    let mut collect = |on: &[ExprIR], input: Node, out: &mut PlIndexMap<PlSmallStr, ExprIR>| {
+        for key in on {
+            let AExpr::Column(name) = expr_arena.get(key.node()) else {
+                continue;
+            };
+            if !downgradable_outer_join_below(input, name, lp_arena) {
+                continue;
+            }
+            let column = ExprIR::new(key.node(), OutputName::ColumnLhs(name.clone()));
+            let predicate = AExprBuilder::function(
+                vec![column],
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
+                expr_arena,
+            )
+            .expr_ir_retain_name(expr_arena);
+            insert_predicate_dedup(out, &predicate, expr_arena, dedup);
+        }
+    };
+
+    if left_keys_non_null {
+        collect(left_on, input_left, &mut pushdown_left);
+    }
+    if right_keys_non_null {
+        collect(right_on, input_right, &mut pushdown_right);
+    }
+
+    (pushdown_left, pushdown_right)
+}
+
+/// Whether `name.is_not_null()` pushed into `node` reaches an outer join that
+/// `try_rewrite_join_type` makes stricter because of it.
+fn downgradable_outer_join_below(node: Node, name: &PlSmallStr, lp_arena: &Arena<IR>) -> bool {
+    let mut stack = vec![node];
+    while let Some(node) = stack.pop() {
+        let lp = lp_arena.get(node);
+        if !lp.schema(lp_arena).contains(name) {
+            continue;
+        }
+        match lp {
+            IR::Join {
+                input_left,
+                input_right,
+                options,
+                ..
+            } => {
+                let how = &options.args.how;
+                if matches!(how, JoinType::Left | JoinType::Right | JoinType::Full)
+                    && options.is_pure_equi()
+                {
+                    let coalesced_keys: PlIndexSet<PlSmallStr> = if options.args.should_coalesce() {
+                        options
+                            .options
+                            .left_on()
+                            .map(|e| e.output_name().clone())
+                            .collect()
+                    } else {
+                        Default::default()
+                    };
+                    let origin = if matches!(how, JoinType::Full) && coalesced_keys.contains(name) {
+                        ExprOrigin::None
+                    } else {
+                        ExprOrigin::get_column_origin(
+                            name,
+                            &lp_arena.get(*input_left).schema(lp_arena),
+                            &lp_arena.get(*input_right).schema(lp_arena),
+                            options.args.suffix(),
+                            Some(&|x| matches!(how, JoinType::Right) && coalesced_keys.contains(x)),
+                        )
+                        .unwrap()
+                    };
+                    if downgraded_join_type(how, origin).is_some() {
+                        return true;
+                    }
+                }
+                stack.extend([*input_left, *input_right]);
+            },
+            IR::Select { .. }
+            | IR::HStack { .. }
+            | IR::SimpleProjection { .. }
+            | IR::Filter { .. } => stack.extend(lp.inputs()),
+            _ => {},
+        }
+    }
+    false
 }
 
 fn apply_join_key_reduction_select(

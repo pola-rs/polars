@@ -365,6 +365,28 @@ where
     }
 }
 
+/// The stricter join an outer join becomes when a filter above it drops rows that are null
+/// on `non_null_side`.
+pub(super) fn downgraded_join_type(how: &JoinType, non_null_side: ExprOrigin) -> Option<JoinType> {
+    match non_null_side {
+        ExprOrigin::Both => Some(JoinType::Inner),
+
+        ExprOrigin::Left => match how {
+            JoinType::Full => Some(JoinType::Left),
+            JoinType::Right => Some(JoinType::Inner),
+            _ => None,
+        },
+
+        ExprOrigin::Right => match how {
+            JoinType::Full => Some(JoinType::Right),
+            JoinType::Left => Some(JoinType::Inner),
+            _ => None,
+        },
+
+        ExprOrigin::None => None,
+    }
+}
+
 /// Attempts to rewrite the join-type based on NULL-removing filters.
 ///
 /// Changing between some join types may cause the output column order to change. If this is the
@@ -734,23 +756,7 @@ pub fn try_rewrite_join_type(
         }
     }
 
-    let Some(new_join_type) = (match non_null_side {
-        ExprOrigin::Both => Some(JoinType::Inner),
-
-        ExprOrigin::Left => match &options.args.how {
-            JoinType::Full => Some(JoinType::Left),
-            JoinType::Right => Some(JoinType::Inner),
-            _ => None,
-        },
-
-        ExprOrigin::Right => match &options.args.how {
-            JoinType::Full => Some(JoinType::Right),
-            JoinType::Left => Some(JoinType::Inner),
-            _ => None,
-        },
-
-        ExprOrigin::None => None,
-    }) else {
+    let Some(new_join_type) = downgraded_join_type(&options.args.how, non_null_side) else {
         return Ok(None);
     };
 
