@@ -81,6 +81,9 @@ impl PhysNodeKey {
 pub struct PhysNode {
     output_schemas: UnitVec<Arc<Schema>>,
     kind: PhysNodeKind,
+    /// The IR node whose lowering created this node. Set by `PhysPlanBuilder::insert`; always
+    /// `Some` once `build_physical_plan` has returned.
+    ir_node: Option<Node>,
 }
 
 impl PhysNode {
@@ -88,6 +91,7 @@ impl PhysNode {
         Self {
             output_schemas: unitvec![output_schema],
             kind,
+            ir_node: None,
         }
     }
 
@@ -95,7 +99,12 @@ impl PhysNode {
         Self {
             output_schemas,
             kind,
+            ir_node: None,
         }
+    }
+
+    pub fn ir_node(&self) -> Option<Node> {
+        self.ir_node
     }
 
     pub fn output_schema(&self, port_idx: usize) -> &Arc<Schema> {

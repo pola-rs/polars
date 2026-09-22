@@ -44,12 +44,12 @@ pub fn physical_plan_to_description(
     }
 
     while let Some(key) = queue.pop_front() {
-        let node = &phys_sm[key];
-        let kind = node.kind();
-        let (properties, inputs) = phys_props(kind, expr_arena);
+        let phys_node = &phys_sm[key];
+        let (properties, inputs) = phys_props(phys_node.kind(), expr_arena);
         let node = PhysicalNodeDescription {
             id: key.data().as_ffi(),
             input_ids: inputs.iter().map(|k| k.data().as_ffi()).collect(),
+            ir_node_id: phys_node.ir_node().map(|n| n.0),
             properties,
         };
 
