@@ -199,6 +199,15 @@ fn concatenate_impl(list: ArrayList<'_, '_, dyn PlArray>) -> PolarsResult<Box<dy
         );
     }
 
+    // A concatenation that only one array contributes to is that array: hand it back rather than
+    // copying it into a fresh one, which also keeps whatever representation it already has.
+    let mut non_empty = list.iter().filter(|array| !array.is_empty());
+    match (non_empty.next(), non_empty.next()) {
+        (None, _) => return Ok(list.at(0).sliced(0, 0)),
+        (Some(only), None) => return Ok(only.to_boxed()),
+        _ => {},
+    }
+
     match array_type {
         PlArrayType::Boolean => {
             let get = downcast_get::<PlBooleanArray>(&list, array_type)?;
