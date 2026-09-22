@@ -242,7 +242,7 @@ pub mod kll {
         // Hoeffding's tail `2 exp(-t² / 2Σw²)` (KLL Lemma 1) at `t = εn`, solved for `Σw²`.
         let z = f64::sqrt(2.0 * f64::ln(2.0 / FAILURE_PROBABILITY));
 
-        // Compute k from the total variance (`Σw²`) and multipliy by the "error spread" (`•/error`)
+        // Compute k from the total variance (`Σw²`) and multiply by the "error spread" (`•/error`)
         let k_from_total_variance = |var: f64| z * f64::sqrt(var) / error;
 
         // `Σw²` of the compactors in units of (n/k)²:
