@@ -594,7 +594,9 @@ def test_series_slice_neg_offset_29183() -> None:
         (-7, 0),
     ],
 )
-def test_streaming_negative_slice_uneven_morsels_29398(offset: int, length: int) -> None:
+def test_streaming_negative_slice_uneven_morsels_29398(
+    offset: int, length: int
+) -> None:
     a = list(range(42))
     lf = pl.concat([pl.LazyFrame({"x": a[:2]}), pl.LazyFrame({"x": a[2:]})])
     expected = pl.DataFrame({"x": slice_ref(a, offset, length)}, schema={"x": pl.Int64})
