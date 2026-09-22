@@ -77,7 +77,9 @@ impl AExpr {
                 container.extend([*expr, *evaluation]);
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 container.extend([*expr]);
                 container.extend(evaluation.iter().map(|x| x.node()));
             },
@@ -169,7 +171,9 @@ impl AExpr {
                 container.extend([*expr]);
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 // Evaluation is included. In case this is not allowed, use `inputs_rev_strict()`.
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
@@ -200,7 +204,9 @@ impl AExpr {
 
         match self {
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 // Evaluation is explicitly excluded. It is up to the caller to handle
                 // any tree traversal if required.
                 _ = evaluation;
@@ -281,7 +287,9 @@ impl AExpr {
                 variant: _,
             } => container.extend([*evaluation, *expr]),
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
             },
@@ -358,7 +366,9 @@ impl AExpr {
                 return self;
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 *expr = inputs[0];
                 _ = evaluation; // Intentional.
                 return self;
@@ -468,7 +478,9 @@ impl AExpr {
                 return self;
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 assert_eq!(inputs.len(), evaluation.len() + 1);
                 *expr = inputs[0];
                 for (e, node) in evaluation.iter_mut().zip(inputs[1..].iter()) {

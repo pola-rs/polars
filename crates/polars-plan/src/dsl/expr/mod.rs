@@ -174,6 +174,7 @@ pub enum Expr {
     StructEval {
         expr: Arc<Expr>,
         evaluation: Vec<Expr>,
+        variant: StructEvalVariant,
     },
     /// SQL SubQueries
     /// Plan,
@@ -407,9 +408,11 @@ impl Hash for Expr {
             Expr::StructEval {
                 expr: input,
                 evaluation,
+                variant,
             } => {
                 input.hash(state);
                 evaluation.hash(state);
+                variant.hash(state);
             },
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
@@ -592,6 +595,29 @@ impl Expr {
     pub fn n_ary(function: impl Into<FunctionExpr>, input: Vec<Expr>) -> Expr {
         let function = function.into();
         Expr::Function { input, function }
+    }
+}
+
+/// Determines what happens to the fields of the input struct that are not part of the
+/// `evaluation` of an [`Expr::StructEval`].
+#[cfg(feature = "dtype-struct")]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum StructEvalVariant {
+    /// `struct.with_fields`: retain the input fields, overwriting on name collision.
+    WithFields,
+    /// `struct.eval`: drop the input fields that are not selected.
+    Select,
+}
+
+#[cfg(feature = "dtype-struct")]
+impl StructEvalVariant {
+    pub fn to_name(&self) -> &'static str {
+        match self {
+            Self::WithFields => "struct.with_fields",
+            Self::Select => "struct.eval",
+        }
     }
 }
 

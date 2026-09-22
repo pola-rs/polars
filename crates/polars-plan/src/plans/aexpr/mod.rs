@@ -229,6 +229,7 @@ pub enum AExpr {
     StructEval {
         expr: Node,
         evaluation: Vec<ExprIR>,
+        variant: StructEvalVariant,
     },
     Function {
         /// Function arguments

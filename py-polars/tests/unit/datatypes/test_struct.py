@@ -2362,3 +2362,141 @@ def test_numeric_op_on_struct_raises_28563(op: Any) -> None:
     lf = pl.LazyFrame({"meta": [{"id": 1}, {"id": 2}]})
     with pytest.raises(InvalidOperationError):
         lf.select(op(pl.col("meta"))).collect()
+
+
+def test_struct_eval() -> None:
+    df = pl.DataFrame(
+        {"a": [{"field_1": [1, 2, 3]}]},
+        schema={"a": pl.Struct({"field_1": pl.List(pl.Int64)})},
+    )
+    q = df.lazy().select(
+        pl.col("a").struct.eval(pl.field("field_1").list.sum().alias("field_1_total"))
+    )
+    expected = pl.DataFrame(
+        {"a": [{"field_1_total": 6}]},
+        schema={"a": pl.Struct({"field_1_total": pl.Int64})},
+    )
+
+    assert q.collect_schema() == expected.schema
+    assert_frame_equal(q.collect(), expected)
+
+
+def test_struct_eval_drops_unselected_fields() -> None:
+    df = pl.DataFrame({"s": [{"x": 1, "y": 2, "z": 3}, {"x": 4, "y": 5, "z": 6}]})
+
+    out = df.select(pl.col.s.struct.eval(pl.field("y")))
+    expected = pl.DataFrame({"s": [{"y": 2}, {"y": 5}]})
+    assert_frame_equal(out, expected)
+
+    # Compare against `with_fields`, which retains the unselected fields.
+    out = df.select(pl.col.s.struct.with_fields(pl.field("y")))
+    assert_frame_equal(out, df)
+
+
+def test_struct_eval_field_order_and_rename() -> None:
+    df = pl.DataFrame({"a": [10, 20], "s": [{"x": 1, "y": 2}, {"x": 3, "y": 4}]})
+
+    out = df.select(
+        pl.col.s.struct.eval(
+            pl.field("y").alias("first"),
+            pl.field("x").alias("second"),
+            third=pl.field("x") * pl.col("a"),
+        )
+    )
+    expected = pl.DataFrame(
+        {
+            "s": [
+                {"first": 2, "second": 1, "third": 10},
+                {"first": 4, "second": 3, "third": 60},
+            ]
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_struct_eval_empty() -> None:
+    df = pl.DataFrame({"s": [{"x": 1}, {"x": 2}, {"x": 3}]})
+
+    q = df.lazy().select(pl.col.s.struct.eval())
+    expected = pl.DataFrame({"s": [{}, {}, {}]}, schema={"s": pl.Struct({})})
+
+    assert q.collect_schema() == expected.schema
+    out = q.collect()
+    assert out.height == df.height
+    assert_frame_equal(out, expected)
+
+
+def test_struct_eval_preserves_outer_validity() -> None:
+    df = pl.DataFrame({"s": [{"x": 1, "y": 2}, None, {"x": 3, "y": 4}]})
+
+    out = df.select(pl.col.s.struct.eval(pl.field("x") * 2))
+    expected = pl.DataFrame({"s": [{"x": 2}, None, {"x": 6}]})
+    assert_frame_equal(out, expected)
+
+
+def test_struct_eval_non_elementwise() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "s": [{"x": 10}, {"x": 20}, {"x": 30}]})
+
+    out = df.select(
+        pl.col.s.struct.eval(pl.field("x").cum_sum(), pl.col("a").reverse())
+    )
+    expected = pl.DataFrame(
+        {"s": [{"x": 10, "a": 3}, {"x": 30, "a": 2}, {"x": 60, "a": 1}]}
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_struct_eval_raises_on_duplicate_field() -> None:
+    df = pl.DataFrame({"a": [1], "s": [{"x": 1}]})
+    with pytest.raises(DuplicateError):
+        df.select(pl.col.s.struct.eval(pl.col.a + 1, pl.col.a - 1))
+
+
+def test_struct_eval_raises_on_non_struct() -> None:
+    df = pl.DataFrame({"a": [1]})
+    with pytest.raises(InvalidOperationError, match=r"struct\.eval"):
+        df.select(pl.col.a.struct.eval(pl.field("x")))
+
+
+def test_struct_eval_group_by() -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": ["a", "b", "a", "b"],
+            "s": [{"x": 1, "y": 1}, {"x": 2, "y": 2}, {"x": 3, "y": 3}, None],
+        }
+    )
+    q = lf.group_by("g").agg(pl.col.s.struct.eval(pl.field("x") * 2))
+    out = q.collect().sort("g")
+    expected = pl.DataFrame(
+        {"g": ["a", "b"], "s": [[{"x": 2}, {"x": 6}], [{"x": 4}, None]]}
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_struct_eval_over() -> None:
+    lf = pl.LazyFrame({"g": ["a", "b", "a", "b"], "x": [1, 10, 2, 20]})
+    s = pl.struct(v=pl.col("x"), w=pl.col("x"))
+    q = lf.select(pl.col("g"), s.struct.eval(pl.field("v").cum_sum()).over("g"))
+    out = q.collect()
+    expected = pl.DataFrame(
+        {"g": ["a", "b", "a", "b"], "v": [{"v": 1}, {"v": 10}, {"v": 3}, {"v": 30}]}
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_struct_eval_nested() -> None:
+    df = pl.DataFrame(
+        {"s": [{"a": 1, "b": {"c": 2, "d": 3}}, {"a": 4, "b": {"c": 5, "d": 6}}]}
+    )
+    out = df.select(pl.col.s.struct.eval(pl.field("b").struct.eval(pl.field("d") * 10)))
+    expected = pl.DataFrame({"s": [{"b": {"d": 30}}, {"b": {"d": 60}}]})
+    assert_frame_equal(out, expected)
+
+
+def test_struct_eval_in_list_eval() -> None:
+    df = pl.DataFrame({"s": [[{"a": 1, "b": 1}, {"a": 2, "b": 3}, None], None]})
+    q = df.lazy().select(
+        pl.col.s.list.eval(pl.element().struct.eval(pl.field("a").cum_sum()))
+    )
+    expected = pl.DataFrame({"s": [[{"a": 1}, {"a": 3}, None], None]})
+    assert_frame_equal(q.collect(), expected)

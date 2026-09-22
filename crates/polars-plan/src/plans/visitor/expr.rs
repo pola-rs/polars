@@ -103,8 +103,8 @@ impl TreeWalker for Expr {
             },
             Eval { expr: input, evaluation, variant } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)?, variant },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr: input, evaluation } => {
-                StructEval { expr: am(input, &mut f)?, evaluation: evaluation.into_iter().map(f).collect::<Result<_, _>>()?  }
+            StructEval { expr: input, evaluation, variant } => {
+                StructEval { expr: am(input, &mut f)?, evaluation: evaluation.into_iter().map(f).collect::<Result<_, _>>()?, variant  }
             },
             SubPlan(_, _) => self,
             Selector(_) => self,

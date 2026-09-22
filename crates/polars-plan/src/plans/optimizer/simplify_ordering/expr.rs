@@ -212,7 +212,9 @@ impl ExprOrderSimplifier<'_> {
             AExpr::Element => O::INDEPENDENT,
 
             #[cfg(feature = "dtype-struct")]
-            AExpr::StructEval { expr, evaluation } => {
+            AExpr::StructEval {
+                expr, evaluation, ..
+            } => {
                 check_return_cached!();
 
                 let evaluation_len = evaluation.len();

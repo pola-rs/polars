@@ -591,7 +591,11 @@ fn create_physical_expr_inner(
             )))
         },
         #[cfg(feature = "dtype-struct")]
-        StructEval { expr, evaluation } => {
+        StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_field = expr_arena
                 .get(expression)
@@ -615,6 +619,7 @@ fn create_physical_expr_inner(
                 input,
                 evaluation,
                 node_to_expr(expression, expr_arena),
+                variant,
                 output_field,
                 is_scalar,
                 state.allow_threading,

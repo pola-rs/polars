@@ -98,7 +98,9 @@ impl StackOptimizer {
                     // traverse subexpressions and add to the stack
                     match expr {
                         #[cfg(feature = "dtype-struct")]
-                        AExpr::StructEval { expr, evaluation } => {
+                        AExpr::StructEval {
+                            expr, evaluation, ..
+                        } => {
                             let struct_field = expr_arena
                                 .get(current_expr_node)
                                 .to_field_impl(&ToFieldContext::new(expr_arena, schema))?;

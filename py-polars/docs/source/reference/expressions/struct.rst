@@ -16,3 +16,4 @@ The following methods are available under the `expr.struct` attribute.
     Expr.struct.rename_fields
     Expr.struct.drop
     Expr.struct.with_fields
+    Expr.struct.eval

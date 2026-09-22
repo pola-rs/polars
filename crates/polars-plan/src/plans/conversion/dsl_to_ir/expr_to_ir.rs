@@ -532,12 +532,16 @@ pub(super) fn to_aexpr_impl(
             )
         },
         #[cfg(feature = "dtype-struct")]
-        Expr::StructEval { expr, evaluation } => {
+        Expr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => {
             let (expr, output_name) = recurse_arc!(expr)?;
             let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
 
             let DataType::Struct(fields) = &expr_dtype else {
-                polars_bail!(op = "struct.with_fields", expr_dtype);
+                polars_bail!(op = variant.to_name(), expr_dtype);
             };
 
             let struct_schema = Schema::from_iter(fields.iter().cloned());
@@ -566,6 +570,7 @@ pub(super) fn to_aexpr_impl(
                 AExpr::StructEval {
                     expr,
                     evaluation: eval_ir,
+                    variant,
                 },
                 output_name,
             )
