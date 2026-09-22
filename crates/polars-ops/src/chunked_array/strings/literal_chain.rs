@@ -1,9 +1,12 @@
+use std::cell::RefCell;
+use std::sync::Arc;
+
 use memchr::memmem::Finder;
+use polars_utils::cache::LruCache;
 use regex_syntax::hir::{Class, Hir, HirKind, Look};
 
-/// A regex of plain literals joined by `(?s).*`, e.g. `^(?s).*foo.*bar.*$` (which is what SQL
-/// `LIKE '%foo%bar%'` becomes). Matching it with substring searches in order is several times
-/// faster than running the regex engine.
+/// A regex of plain literals joined by `(?s).*`, e.g. `(?s)foo.*bar` from SQL
+/// `LIKE '%foo%bar%'`, matched with substring searches in order.
 pub(super) struct LiteralChain {
     prefix: Option<Box<[u8]>>,
     middle: Vec<Finder<'static>>,
@@ -44,62 +47,50 @@ fn to_token(hir: &Hir) -> Option<Token> {
     }
 }
 
+thread_local! {
+    static LOCAL_CHAIN_CACHE: RefCell<LruCache<String, Option<Arc<LiteralChain>>>> =
+        RefCell::new(LruCache::with_capacity(32));
+}
+
 impl LiteralChain {
-    pub(super) fn parse(pat: &str) -> Option<Self> {
+    /// Like `parse`, but cached per thread, including patterns that are not a chain.
+    pub(super) fn cached(pat: &str) -> Option<Arc<Self>> {
+        LOCAL_CHAIN_CACHE.with_borrow_mut(|cache| {
+            cache
+                .get_or_insert_with(pat, |pat| Self::parse(pat).map(Arc::new))
+                .clone()
+        })
+    }
+
+    fn parse(pat: &str) -> Option<Self> {
         let hir = regex_syntax::parse(pat).ok()?;
         let HirKind::Concat(items) = hir.kind() else {
             return None;
         };
-        let mut tokens = items.iter().map(to_token).collect::<Option<Vec<_>>>()?;
+        let tokens = items.iter().map(to_token).collect::<Option<Vec<_>>>()?;
 
-        let mut prefix = None;
-        if matches!(tokens.first(), Some(Token::Start)) {
-            tokens.remove(0);
-            match tokens.first() {
-                Some(Token::Literal(_)) => {
-                    let Token::Literal(lit) = tokens.remove(0) else {
-                        unreachable!()
-                    };
-                    prefix = Some(lit);
-                },
-                Some(Token::Any) => {},
-                _ => return None,
-            }
-        }
-        let mut suffix = None;
-        if matches!(tokens.last(), Some(Token::End)) {
-            tokens.pop();
-            match tokens.last() {
-                Some(Token::Literal(_)) => {
-                    let Some(Token::Literal(lit)) = tokens.pop() else {
-                        unreachable!()
-                    };
-                    suffix = Some(lit);
-                },
-                Some(Token::Any) => {},
-                _ => return None,
-            }
-        }
+        let (prefix, rest) = match tokens.as_slice() {
+            [Token::Start, Token::Literal(lit), rest @ ..] => (Some(lit.clone()), rest),
+            [Token::Start, rest @ ..] => (None, rest),
+            rest => (None, rest),
+        };
+        let (suffix, rest) = match rest {
+            [rest @ .., Token::Literal(lit), Token::End] => (Some(lit.clone()), rest),
+            [rest @ .., Token::End] => (None, rest),
+            rest => (None, rest),
+        };
 
-        // What is left must alternate between `.*` and literals. Without any `.*` the regex
-        // engine is already fast (plain literal or exact match), so leave those to it.
+        // Without any `.*` this is a plain literal or exact match, which the regex engine handles.
         let mut seen_any = false;
         let mut middle = Vec::new();
-        let mut prev_is_literal = prefix.is_some();
-        for token in tokens {
+        for token in rest {
             match token {
-                Token::Any => {
-                    seen_any = true;
-                    prev_is_literal = false;
-                },
-                Token::Literal(lit) if !prev_is_literal => {
-                    middle.push(Finder::new(&lit).into_owned());
-                    prev_is_literal = true;
-                },
+                Token::Any => seen_any = true,
+                Token::Literal(lit) => middle.push(Finder::new(lit).into_owned()),
                 _ => return None,
             }
         }
-        if !seen_any || (prev_is_literal && suffix.is_some()) {
+        if !seen_any {
             return None;
         }
 

@@ -525,11 +525,10 @@ impl SQLExprVisitor<'_> {
             Ok(if negated { matches.not() } else { matches })
         } else {
             // create regex from pattern containing SQL wildcard chars ('%' => '.*', '_' => '.');
-            // a leading/trailing '%' is the same as leaving that side unanchored, which is faster
-            let body = pat.trim_start_matches('%');
-            let start_anchor = if body.len() == pat.len() { "^" } else { "" };
-            let trimmed = body.trim_end_matches('%');
-            let end_anchor = if trimmed.len() == body.len() { "$" } else { "" };
+            // a leading/trailing '%' means that side is not anchored
+            let start_anchor = if pat.starts_with('%') { "" } else { "^" };
+            let end_anchor = if pat.ends_with('%') { "" } else { "$" };
+            let trimmed = pat.trim_matches('%');
             let rx = format!(
                 "{}{}{}{}",
                 if case_insensitive { "(?is)" } else { "(?s)" },
