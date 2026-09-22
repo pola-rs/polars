@@ -238,7 +238,7 @@ pub mod kll {
         assert!((MIN_ERROR..1.0).contains(&error), "invalid error: {error}");
 
         // `Σ_{d >= 1} r^d` for `r < 1`.
-        let geometric_sum = |r| 1.0 / (1.0 - r);
+        let geometric_tail = |r| r / (1.0 - r);
 
         // Hoeffding's tail `2 exp(-t² / 2Σw²)` (KLL Lemma 1) at `t = εn`, solved for `Σw²`.
         let z = f64::sqrt(2.0 * f64::ln(2.0 / FAILURE_PROBABILITY));
@@ -265,25 +265,25 @@ pub mod kll {
         //    items were ingested in total, i.e., `k * 2^(H-2) ≤ n.`
         //    Rewrite ⇒ n/k ≥ 2^(H-2) ⇒ 2^(H-1) ≤ 2*(n/k).
         //  * Finish: Total variance (in terms of n/k) is 2 * ((1/(2c) + 1/(2c)^2 + ...).
-        let compactor_var = 2.0 * geometric_sum(1.0 / (2.0 * CAPACITY_DECAY));
+        let compactor_var = 2.0 * geometric_tail(1.0 / (2.0 * CAPACITY_DECAY));
 
         // `Σw²` of the sampler in units of (n/k)²:
-        // We add an additional "sampler compactor" that adds at least the
-        //   * The compactor sits a at level D = H - L.
-        //     Then, k * c^D ≤ CUTOFF derives to 2^D ≥ (k / CUTOFF)^α where α = ln 2 / ln (1/c).
-        //   * Recall n/k ≥ 2^(H-2) ⇒ 2^H ≤ 4*n/k.
+        //   * `feed` conserves weight, so at most `n / 2^h` emissions happen at height `h`,
+        //     each a step of size `2^h` (KLL Lemma 2). Summed, that is at most `n * 2^L`.
+        //   * Level L-1 sits at depth D = H - L and was replaced, so `k * c^D ≤ CUTOFF`.
+        //     Hence `2^D ≥ (k / CUTOFF)^α` where `α = ln 2 / ln(1/c)` (KLL Thm. 2).
+        //   * Recall `n/k ≥ 2^(H-2)` ⇒ `2^H ≤ 4 * n/k`.
         //   * Compute the full variance:
-        //       n * 2^L = n * 2^(H−D) = n * 2^H / 2^D ≤ (4*n²/k) / (k / CUTOFF)^α)
-        //     = (n²/k²) * 4/k * (CUTOFF / k)^α
+        //       n * 2^L = n * 2^H / 2^D ≤ (4 * n²/k) / (k / CUTOFF)^α
+        //               = (n²/k²) * 4 * k * (CUTOFF / k)^α
         let alpha = f64::ln(2.0) / f64::ln(1.0 / CAPACITY_DECAY);
-        let sampler_var =
-            |k: f64| (4.0 / CAPACITY_DECAY) * k * f64::powf(SAMPLER_CUTOFF as f64 / k, alpha);
+        let sampler_var = |k: f64| 4.0 * k * f64::powf(SAMPLER_CUTOFF as f64 / k, alpha);
 
         let k0 = k_from_total_variance(compactor_var);
         let k1 = k_from_total_variance(compactor_var + sampler_var(k0));
         let k2 = k_from_total_variance(compactor_var + sampler_var(k1));
         debug_assert!(k0 <= k1 && k1 <= k2, "k does not converge downward");
-        f64::max(MIN_COMPACTOR_SIZE as f64, k2) as usize
+        usize::max(MIN_COMPACTOR_SIZE, k2.ceil() as usize)
     }
 
     #[derive(Debug, Clone, Copy, Default)]
