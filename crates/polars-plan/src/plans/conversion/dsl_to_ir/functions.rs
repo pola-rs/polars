@@ -952,6 +952,10 @@ pub(super) fn convert_functions(
                 None => None,
             };
             let method = method.resolve(quantiles.as_deref());
+            let error = match use_formal_bound {
+                true => error,
+                false => method.empirical_error_to_formal(error),
+            };
 
             let values_dtype = e[0]
                 .dtype(ctx.schema, ctx.arena)?
@@ -959,11 +963,7 @@ pub(super) fn convert_functions(
                 .materialize_unknown(false)?;
             let sketch = AExprBuilder::function(
                 vec![e[0].clone()],
-                I::ApproxQuantileSketch {
-                    method,
-                    error,
-                    use_formal_bound,
-                },
+                I::ApproxQuantileSketch { method, error },
                 ctx.arena,
             );
             let estimate = AExprBuilder::function(

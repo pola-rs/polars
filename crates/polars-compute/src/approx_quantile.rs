@@ -386,10 +386,7 @@ pub mod kll {
     pub struct KLLSketch<T: fmt::Debug + Clone + TotalOrd>(IngestingState<T>);
 
     impl<T: fmt::Debug + Clone + TotalOrd> KLLSketch<T> {
-        pub fn new(mut error: f64, use_formal_bound: bool) -> Self {
-            if !use_formal_bound {
-                error = ApproxQuantileMethod::KLL.empirical_error_to_formal(error);
-            }
+        pub fn new(error: f64) -> Self {
             let k = compute_k(error);
             let state = IngestingState {
                 items: Vec::new(),
@@ -853,10 +850,7 @@ pub mod req {
     pub struct ReqSketch<T: fmt::Debug + Clone + TotalOrd>(IngestingState<T>);
 
     impl<T: fmt::Debug + Clone + TotalOrd> ReqSketch<T> {
-        pub fn new(mut error: f64, hra: bool, use_formal_bound: bool) -> Self {
-            if !use_formal_bound {
-                error = ApproxQuantileMethod::ReqSketch { hra }.empirical_error_to_formal(error);
-            }
+        pub fn new(error: f64, hra: bool) -> Self {
             let n = initial_n(error);
             let k = compute_k(error, n);
             assert!(n > k, "n must be greater than k");
@@ -901,10 +895,10 @@ pub mod req {
     }
 
     impl<T: fmt::Debug + Clone + TotalOrd> DoubleReqSketch<T> {
-        pub fn new(error: f64, use_formal_bound: bool) -> Self {
+        pub fn new(error: f64) -> Self {
             DoubleReqSketch {
-                lra: ReqSketch::new(error, false, use_formal_bound),
-                hra: ReqSketch::new(error, true, use_formal_bound),
+                lra: ReqSketch::new(error, false),
+                hra: ReqSketch::new(error, true),
             }
         }
 
@@ -1257,16 +1251,12 @@ pub enum Sketch<T: fmt::Debug + Clone + TotalOrd> {
 }
 
 impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
-    pub fn new(method: &ApproxQuantileMethod, error: f64, use_formal_bound: bool) -> Self {
+    pub fn new(method: &ApproxQuantileMethod, error: f64) -> Self {
         match method {
             ApproxQuantileMethod::Auto => unreachable!(),
-            ApproxQuantileMethod::KLL => Sketch::Kll(KLLSketch::new(error, use_formal_bound)),
-            ApproxQuantileMethod::ReqSketch { hra } => {
-                Sketch::Req(ReqSketch::new(error, *hra, use_formal_bound))
-            },
-            ApproxQuantileMethod::DoubleReqSketch => {
-                Sketch::DoubleReq(DoubleReqSketch::new(error, use_formal_bound))
-            },
+            ApproxQuantileMethod::KLL => Sketch::Kll(KLLSketch::new(error)),
+            ApproxQuantileMethod::ReqSketch { hra } => Sketch::Req(ReqSketch::new(error, *hra)),
+            ApproxQuantileMethod::DoubleReqSketch => Sketch::DoubleReq(DoubleReqSketch::new(error)),
         }
     }
 
@@ -1355,7 +1345,7 @@ mod tests {
             }};
         }
 
-        assert_diverges!("ReqSketch", ReqSketch::new(0.01, true, true));
-        assert_diverges!("KLLSketch", KLLSketch::new(0.01, true));
+        assert_diverges!("ReqSketch", ReqSketch::new(0.01, true));
+        assert_diverges!("KLLSketch", KLLSketch::new(0.01));
     }
 }

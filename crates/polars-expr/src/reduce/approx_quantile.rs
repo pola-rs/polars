@@ -13,26 +13,16 @@ pub fn new_approx_quantile_sketch_reduction(
     dtype: DataType,
     method: ApproxQuantileMethod,
     error: f64,
-    use_formal_bound: bool,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
     use SketchReducer as R;
     use VecGroupedReduction as VGR;
     Ok(match dtype {
-        DataType::Boolean => Box::new(VGR::new(
-            dtype,
-            R::<BooleanType, bool>::new(method, error, use_formal_bound),
-        )),
-        DataType::String => Box::new(VGR::new(
-            dtype,
-            R::<StringType, str>::new(method, error, use_formal_bound),
-        )),
+        DataType::Boolean => Box::new(VGR::new(dtype, R::<BooleanType, bool>::new(method, error))),
+        DataType::String => Box::new(VGR::new(dtype, R::<StringType, str>::new(method, error))),
         _ if dtype.is_primitive_numeric() || dtype.is_temporal() || dtype.is_decimal() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 type Item<$T> = <$T as PolarsNumericType>::Native;
-                Box::new(VGR::new(
-                    dtype,
-                    R::<$T, Item<$T>>::new(method, error, use_formal_bound),
-                ))
+                Box::new(VGR::new(dtype, R::<$T, Item<$T>>::new(method, error)))
             })
         },
         _ => {
@@ -53,9 +43,9 @@ impl<T, B: ToOwned + ?Sized> SketchReducer<T, B>
 where
     B::Owned: fmt::Debug + Clone + TotalOrd,
 {
-    fn new(method: ApproxQuantileMethod, error: f64, use_formal_bound: bool) -> Self {
+    fn new(method: ApproxQuantileMethod, error: f64) -> Self {
         Self {
-            template: Sketch::new(&method, error, use_formal_bound),
+            template: Sketch::new(&method, error),
             dtype: PhantomData,
         }
     }

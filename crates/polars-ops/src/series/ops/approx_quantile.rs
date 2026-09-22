@@ -23,19 +23,14 @@ pub fn sketches_to_series<T: fmt::Debug + Clone + TotalOrd + serde::Serialize>(
     Ok(builder.finish().into_series())
 }
 
-fn build_sketch<T>(
-    items: &[T],
-    error: f64,
-    method: &ApproxQuantileMethod,
-    use_formal_bound: bool,
-) -> FinalizedSketch<T>
+fn build_sketch<T>(items: &[T], error: f64, method: &ApproxQuantileMethod) -> FinalizedSketch<T>
 where
     T: fmt::Debug + Clone + TotalOrd + Send + Sync,
 {
     const THREAD_BOUNDARY: usize = if cfg!(debug_assertions) { 1 } else { 100_000 };
 
     let build = |items: &[T]| {
-        let mut sketch = Sketch::new(method, error, use_formal_bound);
+        let mut sketch = Sketch::new(method, error);
         for item in items {
             sketch.update(item);
         }
@@ -69,7 +64,6 @@ pub fn approx_quantile_sketch(
     s: &Series,
     error: f64,
     method: &ApproxQuantileMethod,
-    use_formal_bound: bool,
 ) -> PolarsResult<Series> {
     let out = match s.dtype() {
         dt if dt.is_primitive_numeric() || dt.is_temporal() || dt.is_decimal() => {
@@ -79,17 +73,17 @@ pub fn approx_quantile_sketch(
                 let ca: &ChunkedArray<$T> = physical.as_ref().as_ref();
                 let ca = ca.drop_nulls();
                 let ca = ca.rechunk();
-                let sketch = build_sketch(ca.cont_slice()?, error, method, use_formal_bound);
+                let sketch = build_sketch(ca.cont_slice()?, error, method);
                 sketches_to_series(&[sketch])
             })
         },
         DataType::Boolean => {
             let items: Vec<bool> = s.bool()?.iter().flatten().collect();
-            sketches_to_series(&[build_sketch(&items, error, method, use_formal_bound)])
+            sketches_to_series(&[build_sketch(&items, error, method)])
         },
         DataType::String => {
             let items: Vec<&str> = s.str()?.iter().flatten().collect();
-            sketches_to_series(&[build_sketch(&items, error, method, use_formal_bound)])
+            sketches_to_series(&[build_sketch(&items, error, method)])
         },
         dt => {
             polars_bail!(InvalidOperation: "`approx_quantile` operation not supported for dtype `{dt}`")
