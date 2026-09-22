@@ -131,9 +131,9 @@ unsafe fn encode_view(dst: *mut u8, view: &View, buffers: &[Buffer<u8>]) -> usiz
 
 /// Writes one row per element of `array`, reading its views rather than its elements.
 ///
-/// The walk wants one view and one mask bit per element; a chunk that stands for its elements
-/// rather than holding one each -- including a chunk of a single element, whose one view is the
-/// same buffer either way -- goes through [`encode_variable_no_order`] instead.
+/// The walk wants one mask bit per element; a chunk whose mask stands for every element of it
+/// goes through [`encode_variable_no_order`] instead. Views that repeat are resolved once and
+/// written into every row they stand for.
 pub unsafe fn encode_binview_no_order(
     buffer: &mut [MaybeUninit<u8>],
     array: &PlBinaryViewArray,

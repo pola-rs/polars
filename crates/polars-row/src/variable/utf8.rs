@@ -148,9 +148,9 @@ fn descending_mask(opt: RowEncodingOptions) -> u8 {
 
 /// Writes one row per element of `array`, reading its views rather than its elements.
 ///
-/// The walk wants one view and one mask bit per element; a chunk that stands for its elements
-/// rather than holding one each -- including a chunk of a single element, whose one view is the
-/// same buffer either way -- goes through [`encode_str`] instead.
+/// The walk wants one mask bit per element; a chunk whose mask stands for every element of it
+/// goes through [`encode_str`] instead. Views that repeat are resolved once and
+/// written into every row they stand for.
 pub unsafe fn encode_str_view(
     buffer: &mut [MaybeUninit<u8>],
     array: &PlUtf8ViewArray,
