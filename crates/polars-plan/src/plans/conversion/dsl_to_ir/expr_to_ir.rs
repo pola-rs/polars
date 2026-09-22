@@ -3,7 +3,8 @@ use super::*;
 use crate::constants::{get_pl_element_name, get_pl_structfields_name};
 use crate::plans::iterator::ArenaExprIter;
 use crate::plans::projection_height::{
-    ExprProjectionHeight, aexpr_projection_height_rec, aexpr_projection_height_rec_with,
+    ExprHeightOptions, ExprProjectionHeight, aexpr_projection_height_rec,
+    aexpr_projection_height_rec_with,
 };
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
@@ -574,7 +575,10 @@ pub(super) fn to_aexpr_impl(
                             ctx.arena,
                             &mut Default::default(),
                             &mut Default::default(),
-                            ExprProjectionHeight::Column,
+                            ExprHeightOptions {
+                                struct_field: ExprProjectionHeight::Column,
+                                structural_unknowns_only: true,
+                            },
                         ),
                         ExprProjectionHeight::Unknown
                     ),

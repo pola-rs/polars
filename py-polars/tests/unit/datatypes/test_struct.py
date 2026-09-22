@@ -2526,9 +2526,9 @@ def test_struct_eval_in_list_eval() -> None:
         pl.field("a").list.get(0).filter(pl.field("a").list.len() > 1),
         pl.field("a").slice(0, 1),
         pl.field("a").head(1),
-        pl.field("a").unique(),
+        pl.field("a").list.len().sum().over(pl.len(), mapping_strategy="explode"),
     ],
-    ids=["explode", "filter", "slice", "head", "unique"],
+    ids=["explode", "filter", "slice", "head", "over_explode"],
 )
 @pytest.mark.parametrize("variant", ["eval", "with_fields"])
 def test_struct_eval_forbid_non_length_preserving(expr: pl.Expr, variant: str) -> None:
@@ -2550,10 +2550,58 @@ def test_struct_eval_forbid_non_length_preserving(expr: pl.Expr, variant: str) -
         pl.lit(1),
         pl.int_range(0, pl.len()),
         pl.field("a").list.len().reverse(),
+        pl.repeat(1, pl.len()),
+        pl.field("a").list.len().gather(0),
+        pl.field("a").list.len().map_batches(lambda s: s * 2),
+        pl.field("a").list.len().search_sorted(pl.field("a").list.len()),
+        pl.fold(
+            acc=pl.lit(0),
+            function=operator.add,
+            exprs=[pl.field("a").list.len(), pl.field("a").list.sum()],
+        ),
+        pl.reduce(
+            function=operator.add,
+            exprs=[pl.field("a").list.len(), pl.field("a").list.sum()],
+        ),
     ],
-    ids=["elementwise", "scalar", "literal", "range", "length_preserving"],
+    ids=[
+        "elementwise",
+        "scalar",
+        "literal",
+        "range",
+        "length_preserving",
+        "repeat",
+        "gather_scalar",
+        "map_batches",
+        "search_sorted",
+        "fold",
+        "reduce",
+    ],
 )
-def test_struct_eval_allows_length_preserving(expr: pl.Expr) -> None:
+@pytest.mark.parametrize("variant", ["eval", "with_fields"])
+def test_struct_eval_allows_length_preserving(expr: pl.Expr, variant: str) -> None:
+    # An expression whose height is not statically known is not the same as one that
+    # changes the height; only the latter may be rejected. See the "forbid" test above.
     df = pl.DataFrame({"s": [{"a": [0, 1]}, {"a": [2]}]})
-    out = df.select(pl.col.s.struct.eval(expr.alias("a")))
+    out = df.select(getattr(pl.col.s.struct, variant)(expr.alias("r")))
     assert out.height == df.height
+    assert "r" in out.schema["s"].to_schema()
+
+
+@pytest.mark.parametrize(
+    "input_expr",
+    [pl.col.s, pl.col.s.sort(), pl.col.s.unique(maintain_order=True)],
+    ids=["elementwise", "sort", "unique"],
+)
+def test_struct_eval_empty_non_elementwise_input(input_expr: pl.Expr) -> None:
+    # A non-elementwise input takes a different lowering path in the streaming engine,
+    # where an empty projection used to build an `as_struct` without any fields.
+    lf = pl.LazyFrame({"s": [{"x": 10}, {"x": 10}, None]})
+    q = lf.select(input_expr.struct.eval())
+
+    assert q.collect_schema() == pl.Schema({"s": pl.Struct({})})
+    out = q.collect()
+    assert out.schema == pl.Schema({"s": pl.Struct({})})
+    # The field-less struct keeps the height and the outer validity of the input.
+    assert out.height == lf.select(input_expr).collect().height
+    assert out["s"].null_count() == 1

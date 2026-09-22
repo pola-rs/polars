@@ -1708,6 +1708,24 @@ fn lower_exprs_with_ctx(
             },
             AExpr::StructEval {
                 expr: inner,
+                evaluation,
+                variant,
+            } if matches!(variant, StructEvalVariant::Select) && evaluation.is_empty() => {
+                // `struct.eval()` without any expressions produces a field-less struct with the
+                // height and the outer validity of the input. None of the unnesting below applies,
+                // and `as_struct` rejects an empty field list, so lower it as a cast instead.
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                let cast = ctx.expr_arena.add(AExpr::Cast {
+                    expr: trans_exprs[0],
+                    dtype: DataType::Struct(Vec::new()),
+                    options: CastOptions::NonStrict,
+                });
+                input_streams.insert(trans_input);
+                transformed_exprs.push(cast);
+            },
+
+            AExpr::StructEval {
+                expr: inner,
                 mut evaluation,
                 variant,
             } => {
