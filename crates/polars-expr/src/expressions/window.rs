@@ -434,8 +434,13 @@ impl PhysicalExpr for WindowExpr {
             if let Some((order_by, options)) = &self.order_by {
                 let order_by = order_by.evaluate(df, state)?;
                 polars_ensure!(order_by.len() == df.height(), ShapeMismatch: "the order by expression evaluated to a length: {} that doesn't match the input DataFrame: {}", order_by.len(), df.height());
-                groups = update_groups_sort_by(&groups, order_by.as_materialized_series(), options)?
-                    .into_sliceable()
+                groups = update_groups_sort_by(
+                    &groups,
+                    order_by.as_materialized_series(),
+                    options,
+                    true,
+                )?
+                .into_sliceable()
             }
 
             let out: PolarsResult<GroupPositions> = Ok(groups);
@@ -924,8 +929,12 @@ impl PhysicalExpr for WindowExpr {
 
         let mut subgroups = GroupsType::Idx(subgroups.into());
         if let Some((order_by, _, options)) = order_by {
-            subgroups =
-                update_groups_sort_by(&subgroups, order_by.as_materialized_series(), &options)?;
+            subgroups = update_groups_sort_by(
+                &subgroups,
+                order_by.as_materialized_series(),
+                &options,
+                false,
+            )?;
         }
         let subgroups = subgroups.into_sliceable();
         let mut data = self
