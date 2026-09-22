@@ -195,15 +195,23 @@ where
         return None;
     }
 
-    if ranges().map(|range| range.len()).sum::<usize>() == length {
+    // The ranges are walked once more, and only once more: what they cover in total is counted
+    // while the mask is written rather than in a walk of its own.
+    let mut mask = BitmapBuilder::with_capacity(length);
+    let mut covered = 0;
+    for range in ranges() {
+        if range.is_empty() {
+            continue;
+        }
+        extend_from_validity(&mut mask, validity, range.start);
+        mask.extend_constant(range.len(), false);
+        covered += range.len();
+    }
+
+    if covered == length {
         return Some(PlBitmap::new_scalar(false, length));
     }
 
-    let mut mask = BitmapBuilder::with_capacity(length);
-    for range in ranges() {
-        extend_from_validity(&mut mask, validity, range.start);
-        mask.extend_constant(range.len(), false);
-    }
     extend_from_validity(&mut mask, validity, length);
 
     Some(PlBitmap::from_bitmap(mask.freeze()))
