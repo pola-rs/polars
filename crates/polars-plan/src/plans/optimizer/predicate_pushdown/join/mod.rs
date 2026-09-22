@@ -509,14 +509,8 @@ fn key_non_null_predicates(
     PlIndexMap<PlSmallStr, ExprIR>,
     PlIndexMap<PlSmallStr, ExprIR>,
 )> {
-    let mut pushdown_left = init_indexmap(None);
-    let mut pushdown_right = init_indexmap(None);
-
-    if options.args.nulls_equal || options.is_non_equi() {
-        return Ok((pushdown_left, pushdown_right));
-    }
-
     let (left_keys_non_null, right_keys_non_null) = match options.args.how {
+        _ if options.args.nulls_equal || options.is_non_equi() => (false, false),
         JoinType::Inner => (true, true),
         JoinType::Left => (false, true),
         JoinType::Right => (true, false),
@@ -527,35 +521,37 @@ fn key_non_null_predicates(
         _ => (false, false),
     };
 
-    let mut collect = |on: &[ExprIR],
-                       input: Node,
-                       out: &mut PlIndexMap<PlSmallStr, ExprIR>|
-     -> PolarsResult<()> {
-        for key in on {
-            let AExpr::Column(name) = expr_arena.get(key.node()) else {
-                continue;
-            };
-            let column = ExprIR::new(key.node(), OutputName::ColumnLhs(name.clone()));
-            let predicate = AExprBuilder::function(
-                vec![column],
-                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
-                expr_arena,
-            )
-            .expr_ir_retain_name(expr_arena);
-            if downgradable_outer_join_below(opt, input, &predicate, lp_arena, expr_arena)? {
-                insert_predicate_dedup(out, &predicate, expr_arena, &mut opt.dedup_state);
+    let mut collect =
+        |on: &[ExprIR], input: Node| -> PolarsResult<PlIndexMap<PlSmallStr, ExprIR>> {
+            let mut out = init_indexmap(None);
+            for key in on {
+                let Some(name) = into_column(key.node(), expr_arena) else {
+                    continue;
+                };
+                let column = ExprIR::new(key.node(), OutputName::ColumnLhs(name.clone()));
+                let predicate = AExprBuilder::function(
+                    vec![column],
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
+                    expr_arena,
+                )
+                .expr_ir_retain_name(expr_arena);
+                if downgradable_outer_join_below(opt, input, &predicate, lp_arena, expr_arena)? {
+                    insert_predicate_dedup(&mut out, &predicate, expr_arena, &mut opt.dedup_state);
+                }
             }
-        }
-        Ok(())
+            Ok(out)
+        };
+
+    let pushdown_left = if left_keys_non_null {
+        collect(left_on, input_left)?
+    } else {
+        init_indexmap(None)
     };
-
-    if left_keys_non_null {
-        collect(left_on, input_left, &mut pushdown_left)?;
-    }
-    if right_keys_non_null {
-        collect(right_on, input_right, &mut pushdown_right)?;
-    }
-
+    let pushdown_right = if right_keys_non_null {
+        collect(right_on, input_right)?
+    } else {
+        init_indexmap(None)
+    };
     Ok((pushdown_left, pushdown_right))
 }
 
@@ -568,126 +564,61 @@ fn downgradable_outer_join_below(
     lp_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<bool> {
-    let passes = |eligibility: &PushdownEligibility, name: &PlSmallStr| match eligibility {
-        PushdownEligibility::Full => true,
-        PushdownEligibility::Partial { to_local } => !to_local.contains(name),
-        PushdownEligibility::NoPushdown => false,
-    };
-    let name = predicate.output_name().clone();
-    let mut stack = vec![(node, name.clone(), predicate.clone())];
-    while let Some((node, name, predicate)) = stack.pop() {
-        let lp = lp_arena.get(node);
-        if !lp.schema(lp_arena).contains(&name) {
+    let mut stack = vec![(node, predicate.clone())];
+    while let Some((node, mut predicate)) = stack.pop() {
+        let IR::Join {
+            input_left,
+            input_right,
+            options,
+            schema,
+        } = lp_arena.get(node)
+        else {
+            if let Some(input) = push_past(
+                node,
+                &mut predicate,
+                lp_arena,
+                expr_arena,
+                opt.nodes_scratch.get(),
+                opt.maintain_errors,
+            )? {
+                stack.push((input, predicate));
+            }
+            continue;
+        };
+        let name = aexpr_to_leaf_names_iter(predicate.node(), expr_arena)
+            .next()
+            .unwrap()
+            .clone();
+        if !schema.contains(&name) {
             continue;
         }
-        match lp {
-            IR::Join {
-                input_left,
-                input_right,
-                options,
-                ..
-            } => {
-                let how = &options.args.how;
-                let suffix = options.args.suffix();
-                let schema_left = lp_arena.get(*input_left).schema(lp_arena);
-                let schema_right = lp_arena.get(*input_right).schema(lp_arena);
-                let coalesced_keys: PlIndexSet<PlSmallStr> = if options.args.should_coalesce()
-                    && matches!(how, JoinType::Right | JoinType::Full)
-                {
-                    options
-                        .options
-                        .left_on()
-                        .map(|e| e.output_name().clone())
-                        .collect()
-                } else {
-                    Default::default()
-                };
-                let origin = if matches!(how, JoinType::Full) && coalesced_keys.contains(&name) {
-                    ExprOrigin::None
-                } else {
-                    ExprOrigin::get_column_origin(
-                        &name,
-                        &schema_left,
-                        &schema_right,
-                        suffix,
-                        Some(&|x| matches!(how, JoinType::Right) && coalesced_keys.contains(x)),
-                    )
-                    .unwrap()
-                };
-                if options.is_pure_equi() && downgraded_join_type(how, origin).is_some() {
-                    return Ok(true);
-                }
-                // Only the side whose rows the join keeps can take the predicate.
-                match origin {
-                    ExprOrigin::Left if !matches!(how, JoinType::Right | JoinType::Full) => {
-                        stack.push((*input_left, name, predicate));
-                    },
-                    ExprOrigin::Right
-                        if match how {
-                            JoinType::Left | JoinType::Full => false,
-                            #[cfg(feature = "asof_join")]
-                            JoinType::AsOf(_) => false,
-                            _ => true,
-                        } =>
-                    {
-                        let mut predicate = predicate;
-                        remove_suffix(&mut predicate, expr_arena, &schema_right, suffix);
-                        let name = if schema_right.contains(&name) {
-                            name
-                        } else {
-                            name.strip_suffix(suffix.as_str()).unwrap().into()
-                        };
-                        stack.push((*input_right, name, predicate));
-                    },
-                    _ => {},
-                }
+        let how = &options.args.how;
+        let schema_left = lp_arena.get(*input_left).schema(lp_arena);
+        let schema_right = lp_arena.get(*input_right).schema(lp_arena);
+        let origin = key_column_origin(&name, &schema_left, &schema_right, options);
+        if options.is_pure_equi() && downgraded_join_type(how, origin).is_some() {
+            return Ok(true);
+        }
+        // Only the side whose rows the join keeps can take the predicate.
+        match origin {
+            ExprOrigin::Left if !matches!(how, JoinType::Right | JoinType::Full) => {
+                stack.push((*input_left, predicate));
             },
-            IR::Select { input, expr, .. }
-            | IR::HStack {
-                input, exprs: expr, ..
-            } => {
-                let mut acc_predicates = init_indexmap(Some(1));
-                acc_predicates.insert(name.clone(), predicate);
-                let (eligibility, alias_rename_map) = pushdown_eligibility(
-                    expr,
-                    &[],
-                    &acc_predicates,
+            ExprOrigin::Right
+                if match how {
+                    JoinType::Left | JoinType::Full => false,
+                    #[cfg(feature = "asof_join")]
+                    JoinType::AsOf(_) => false,
+                    _ => true,
+                } =>
+            {
+                remove_suffix(
+                    &mut predicate,
                     expr_arena,
-                    opt.nodes_scratch.get(),
-                    opt.maintain_errors,
-                    lp_arena.get(*input),
-                )?;
-                if !passes(&eligibility, &name) {
-                    continue;
-                }
-                let (name, mut predicate) = acc_predicates.pop().unwrap();
-                let name = alias_rename_map.get(&name).cloned().unwrap_or(name);
-                map_column_references(&mut predicate, expr_arena, &alias_rename_map);
-                stack.push((*input, name, predicate));
-            },
-            IR::Filter {
-                input,
-                predicate: filter,
-            } => {
-                let mut acc_predicates = init_indexmap(Some(2));
-                acc_predicates.insert(name.clone(), predicate.clone());
-                let tmp_key = temporary_unique_key(&acc_predicates);
-                acc_predicates.insert(tmp_key.clone(), filter.clone());
-                let (eligibility, _) = pushdown_eligibility(
-                    &[],
-                    &[(&tmp_key, filter.clone())],
-                    &acc_predicates,
-                    expr_arena,
-                    opt.nodes_scratch.get(),
-                    opt.maintain_errors,
-                    lp_arena.get(*input),
-                )?;
-                if passes(&eligibility, &name) {
-                    stack.push((*input, name, predicate));
-                }
-            },
-            IR::SimpleProjection { input, .. } => {
-                stack.push((*input, name, predicate));
+                    &schema_right,
+                    options.args.suffix(),
+                );
+                stack.push((*input_right, predicate));
             },
             _ => {},
         }

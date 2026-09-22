@@ -4897,37 +4897,31 @@ def test_join_key_downgrade_follows_pushdown_through_projections() -> None:
     lookup = pl.LazyFrame({"reason": [7, 10], "desc": ["x", "y"]})
     joined = sales.join(returns, on="ticket", how="left", coalesce=True)
 
+    def check(q: pl.LazyFrame, *, downgraded: bool) -> None:
+        plan = q.explain()
+        assert ("LEFT JOIN:" in plan) != downgraded
+        assert ("is_not_null" in plan) == downgraded
+        expect = q.collect(optimizations=pl.QueryOptFlags.none())
+        assert_frame_equal(q.collect(), expect, check_row_order=False)
+
     # The key is recomputed in between, so the predicate stays above it.
     q = joined.with_columns(pl.col("reason").fill_null(7)).join(lookup, on="reason")
-    plan = q.explain()
-    assert "LEFT JOIN:" in plan
-    assert "is_not_null" not in plan
-    expect = q.collect(optimizations=pl.QueryOptFlags.none())
-    assert_frame_equal(q.collect(), expect, check_row_order=False)
+    check(q, downgraded=False)
 
     # A filter that blocks pushdown stops the walk as well.
     q = joined.filter(pl.col("amount") > pl.col("amount").mean()).join(
         lookup, on="reason"
     )
-    plan = q.explain()
-    assert "LEFT JOIN:" in plan
-    assert "is_not_null" not in plan
-    expect = q.collect(optimizations=pl.QueryOptFlags.none())
-    assert_frame_equal(q.collect(), expect, check_row_order=False)
+    check(q, downgraded=False)
 
     # A plain filter is passed.
     q = joined.filter(pl.col("amount") > 15).join(lookup, on="reason")
-    assert "LEFT JOIN:" not in q.explain()
-    expect = q.collect(optimizations=pl.QueryOptFlags.none())
-    assert_frame_equal(q.collect(), expect, check_row_order=False)
+    check(q, downgraded=True)
 
     # A rename is followed down.
     q = joined.rename({"reason": "r"}).join(lookup.rename({"reason": "r"}), on="r")
-    plan = q.explain()
-    assert "LEFT JOIN:" not in plan
-    assert 'FILTER col("reason").is_not_null()' in plan
-    expect = q.collect(optimizations=pl.QueryOptFlags.none())
-    assert_frame_equal(q.collect(), expect, check_row_order=False)
+    check(q, downgraded=True)
+    assert 'FILTER col("reason").is_not_null()' in q.explain()
 
 
 def test_join_key_downgrade_ignores_the_unreachable_join_side() -> None:

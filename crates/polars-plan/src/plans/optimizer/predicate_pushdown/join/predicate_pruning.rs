@@ -365,6 +365,38 @@ where
     }
 }
 
+/// The side of the join `name`, an output column, comes from. A coalesced key of a full join
+/// comes from neither side: dropping its nulls does not drop the rows of one side.
+pub(super) fn key_column_origin(
+    name: &str,
+    schema_left: &Schema,
+    schema_right: &Schema,
+    options: &JoinOptionsIR,
+) -> ExprOrigin {
+    let coalesced_key = |name: &str| {
+        options.args.should_coalesce() && options.options.left_on().any(|e| e.output_name() == name)
+    };
+    match options.args.how {
+        JoinType::Full if coalesced_key(name) => ExprOrigin::None,
+        JoinType::Right => ExprOrigin::get_column_origin(
+            name,
+            schema_left,
+            schema_right,
+            options.args.suffix(),
+            Some(&coalesced_key),
+        )
+        .unwrap(),
+        _ => ExprOrigin::get_column_origin(
+            name,
+            schema_left,
+            schema_right,
+            options.args.suffix(),
+            None,
+        )
+        .unwrap(),
+    }
+}
+
 /// The stricter join an outer join becomes when a filter above it drops rows that are null
 /// on `non_null_side`.
 pub(super) fn downgraded_join_type(how: &JoinType, non_null_side: ExprOrigin) -> Option<JoinType> {
@@ -720,19 +752,8 @@ pub fn try_rewrite_join_type(
     }
 
     let mut coalesced_to_right: PlIndexSet<PlSmallStr> = Default::default();
-    // Removing NULLs on these columns do not allow for join downgrading.
-    // We only need to track these for full-join - e.g. for left-join, removing NULLs from any left
-    // column does not cause any join rewrites.
-    let mut coalesced_full_join_key_outputs: PlIndexSet<PlSmallStr> = Default::default();
-
-    if options.args.should_coalesce() {
-        match &options.args.how {
-            JoinType::Full => {
-                coalesced_full_join_key_outputs = lhs_input_column_keys_iter!().collect()
-            },
-            JoinType::Right => coalesced_to_right = lhs_input_column_keys_iter!().collect(),
-            _ => {},
-        }
+    if options.args.should_coalesce() && matches!(options.args.how, JoinType::Right) {
+        coalesced_to_right = lhs_input_column_keys_iter!().collect();
     }
 
     let mut non_null_side = ExprOrigin::None;
@@ -740,18 +761,8 @@ pub fn try_rewrite_join_type(
     for predicate in acc_predicates.values() {
         for node in MintermIter::new(predicate.node(), expr_arena) {
             predicate_non_null_column_outputs(node, expr_arena, &mut |non_null_column| {
-                if coalesced_full_join_key_outputs.contains(non_null_column) {
-                    return;
-                }
-
-                non_null_side |= ExprOrigin::get_column_origin(
-                    non_null_column.as_str(),
-                    schema_left,
-                    schema_right,
-                    options.args.suffix(),
-                    Some(&|x| coalesced_to_right.contains(x)),
-                )
-                .unwrap();
+                non_null_side |=
+                    key_column_origin(non_null_column, schema_left, schema_right, options);
             });
         }
     }

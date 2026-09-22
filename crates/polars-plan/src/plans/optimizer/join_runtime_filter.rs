@@ -36,9 +36,7 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::join_build_side::{LOPSIDED_FACTOR, side_stats};
-use super::predicate_pushdown::utils::{
-    PushdownEligibility, map_column_references, pushdown_eligibility, temporary_unique_key,
-};
+use super::predicate_pushdown::utils::{map_column_references, push_past};
 use crate::dsl::{FileScanIR, ScanFlags};
 use crate::plans::aexpr::predicates::supports_runtime_range;
 use crate::plans::optimizer::predicate_pushdown::{DynamicPred, new_batch_only_dynamic_pred};
@@ -320,68 +318,22 @@ fn scan_origin(
             .iter()
             .any(|e| has_aexpr(e.node(), expr_arena, |ae| matches!(ae, AExpr::Over { .. })))
     };
-    // Only tells the predicates of one eligibility check apart.
-    let key = PlSmallStr::from_static("__POLARS_RUNTIME_FILTER");
     loop {
         match ir_arena.get(node) {
             IR::Scan { scan_type, .. } => return skips_batches(scan_type).then_some(node),
-            IR::SimpleProjection { input, columns } => {
-                let name = column_name(predicate, expr_arena);
-                if !columns.contains(name) {
-                    return None;
-                }
-                node = *input;
-            },
             IR::Filter {
-                input,
-                predicate: filter,
-            } => {
-                if has_window(std::slice::from_ref(filter), expr_arena) {
-                    return None;
-                }
-                let mut acc = PlIndexMap::default();
-                acc.insert(key.clone(), predicate.clone());
-                let tmp_key = temporary_unique_key(&acc);
-                acc.insert(tmp_key.clone(), filter.clone());
-                let (eligibility, _) = pushdown_eligibility(
-                    &[],
-                    &[(&tmp_key, filter.clone())],
-                    &acc,
-                    expr_arena,
-                    scratch,
-                    true,
-                    ir_arena.get(*input),
-                )
-                .ok()?;
-                if !matches!(eligibility, PushdownEligibility::Full) {
-                    return None;
-                }
-                node = *input;
+                predicate: filter, ..
+            } if has_window(std::slice::from_ref(filter), expr_arena) => return None,
+            IR::Select { expr, .. } | IR::HStack { exprs: expr, .. }
+                if has_window(expr, expr_arena) =>
+            {
+                return None;
             },
-            IR::Select { input, expr, .. }
-            | IR::HStack {
-                input, exprs: expr, ..
-            } => {
-                if has_window(expr, expr_arena) {
-                    return None;
-                }
-                let mut acc = PlIndexMap::default();
-                acc.insert(key.clone(), predicate.clone());
-                let (eligibility, renames) = pushdown_eligibility(
-                    expr,
-                    &[],
-                    &acc,
-                    expr_arena,
-                    scratch,
-                    true,
-                    ir_arena.get(*input),
-                )
-                .ok()?;
-                if !matches!(eligibility, PushdownEligibility::Full) {
-                    return None;
-                }
-                map_column_references(predicate, expr_arena, &renames);
-                node = *input;
+            IR::SimpleProjection { .. }
+            | IR::Filter { .. }
+            | IR::Select { .. }
+            | IR::HStack { .. } => {
+                node = push_past(node, predicate, ir_arena, expr_arena, scratch, true).ok()??;
             },
             IR::Join {
                 input_left,

@@ -197,6 +197,70 @@ fn get_maybe_aliased_projection_to_input_name_map(
     }
 }
 
+/// The input `predicate`, on one column, may be pushed to past `node` when that is a filter or
+/// projection; the predicate is renamed to the input's column on the way. `None` when the
+/// predicate stays above `node`.
+pub(crate) fn push_past(
+    node: Node,
+    predicate: &mut ExprIR,
+    ir_arena: &Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    scratch: &mut UnitVec<Node>,
+    maintain_errors: bool,
+) -> PolarsResult<Option<Node>> {
+    // Only tells the predicates of one eligibility check apart.
+    let key = PlSmallStr::from_static("__POLARS_PUSH_PAST");
+    match ir_arena.get(node) {
+        IR::SimpleProjection { input, columns } => {
+            let name = aexpr_to_leaf_names_iter(predicate.node(), expr_arena)
+                .next()
+                .unwrap();
+            Ok(columns.contains(name).then_some(*input))
+        },
+        IR::Filter {
+            input,
+            predicate: filter,
+        } => {
+            let mut acc = PlIndexMap::default();
+            acc.insert(key, predicate.clone());
+            let tmp_key = temporary_unique_key(&acc);
+            acc.insert(tmp_key.clone(), filter.clone());
+            let (eligibility, _) = pushdown_eligibility(
+                &[],
+                &[(&tmp_key, filter.clone())],
+                &acc,
+                expr_arena,
+                scratch,
+                maintain_errors,
+                ir_arena.get(*input),
+            )?;
+            Ok(matches!(eligibility, PushdownEligibility::Full).then_some(*input))
+        },
+        IR::Select { input, expr, .. }
+        | IR::HStack {
+            input, exprs: expr, ..
+        } => {
+            let mut acc = PlIndexMap::default();
+            acc.insert(key, predicate.clone());
+            let (eligibility, renames) = pushdown_eligibility(
+                expr,
+                &[],
+                &acc,
+                expr_arena,
+                scratch,
+                maintain_errors,
+                ir_arena.get(*input),
+            )?;
+            if !matches!(eligibility, PushdownEligibility::Full) {
+                return Ok(None);
+            }
+            map_column_references(predicate, expr_arena, &renames);
+            Ok(Some(*input))
+        },
+        _ => Ok(None),
+    }
+}
+
 #[derive(Debug)]
 pub enum PushdownEligibility {
     Full,
