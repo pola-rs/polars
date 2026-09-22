@@ -7,9 +7,7 @@ use polars_arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 
-use crate::chunked_array::ops::arity::{
-    try_binary_elementwise, try_unary_elementwise_amortized,
-};
+use crate::chunked_array::ops::arity::{try_binary_elementwise, try_unary_elementwise_amortized};
 use crate::prelude::*;
 
 pub fn replace_time_zone(
