@@ -47,8 +47,9 @@ def when(
     Warnings
     --------
     Polars computes all expressions passed to `when-then-otherwise` in parallel and
-    filters afterwards. This means each expression must be valid on its own, regardless
-    of the conditions in the `when-then-otherwise` chain.
+    only applies the `when` conditions afterwards, as shown in the example below.
+    This means each expression must be valid on its own, regardless of the conditions
+    in the `when-then-otherwise` chain.
 
     Notes
     -----
@@ -76,6 +77,28 @@ def when(
     │ 3   ┆ 4   ┆ 1   │
     │ 4   ┆ 0   ┆ 1   │
     └─────┴─────┴─────┘
+
+    A `when-then-otherwise` expression does not restrict the evaluation of the
+    expressions passed to `then` and `otherwise` to the rows where the `when`
+    condition is true. In the example below, `pl.col("bar").sum()` is computed over
+    the full column first, and the `when` condition is applied to the already-computed
+    result.
+
+    >>> df.with_columns(
+    ...     pl.when(pl.col("foo") > 2)
+    ...     .then(pl.col("bar").sum())
+    ...     .alias("sum")
+    ... )
+    shape: (3, 3)
+    ┌─────┬─────┬──────┐
+    │ foo ┆ bar ┆ sum  │
+    │ --- ┆ --- ┆ ---  │
+    │ i64 ┆ i64 ┆ i64  │
+    ╞═════╪═════╪══════╡
+    │ 1   ┆ 3   ┆ null │
+    │ 3   ┆ 4   ┆ 7    │
+    │ 4   ┆ 0   ┆ 7    │
+    └─────┴─────┴──────┘
 
     Note that `when-then` always executes all expressions.
 
