@@ -1,4 +1,5 @@
 use polars_arrow::legacy::error::PolarsResult;
+use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::utils::{SuperTypeFlags, try_get_supertype, try_get_supertype_with_options};
 use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;
@@ -1301,11 +1302,29 @@ pub(super) fn convert_functions(
             I::ExtendConstant
         },
 
-        F::RowEncode(v) => {
+        F::RowEncode(mut v) => {
             let dts = e
                 .iter()
-                .map(|e| Ok(e.dtype(ctx.schema, ctx.arena)?.clone()))
+                .map(|e| {
+                    e.dtype(ctx.schema, ctx.arena)?
+                        .clone()
+                        .materialize_unknown(true)
+                })
                 .collect::<PolarsResult<Vec<_>>>()?;
+            if let RowEncodingVariant::Ordered {
+                descending,
+                nulls_last,
+                ..
+            } = &mut v
+            {
+                for opts in [descending, nulls_last].into_iter().flatten() {
+                    _broadcast_bools(e.len(), opts);
+                    polars_ensure!(
+                        opts.len() == e.len(),
+                        ShapeMismatch: "row_encode: got {} columns but {} sort options", e.len(), opts.len()
+                    );
+                }
+            }
             I::RowEncode(dts, v)
         },
         #[cfg(feature = "dtype-struct")]

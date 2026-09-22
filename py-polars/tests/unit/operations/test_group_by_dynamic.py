@@ -855,24 +855,53 @@ def test_group_by_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) 
 
 
 # https://github.com/pola-rs/polars/issues/11339
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("include_boundaries", [True, False])
-def test_group_by_dynamic_lazy_schema(include_boundaries: bool) -> None:
-    lf = pl.LazyFrame(
-        {
-            "dt": pl.datetime_range(
-                start=datetime(2022, 2, 10),
-                end=datetime(2022, 2, 12),
-                eager=True,
-            ),
-            "n": range(3),
-        }
-    )
+@pytest.mark.parametrize(
+    ("index", "every"),
+    [
+        (
+            pl.datetime_range(datetime(2022, 2, 10), datetime(2022, 2, 12), eager=True),
+            "2d",
+        ),
+        (pl.date_range(date(2022, 2, 10), date(2022, 2, 12), eager=True), "2d"),
+        # A sub-day window on a Date index: the boundaries cannot be Dates.
+        (pl.date_range(date(2022, 2, 10), date(2022, 2, 12), eager=True), "12h"),
+        (pl.Series([1, 2, 3]), "2i"),
+    ],
+)
+def test_group_by_dynamic_lazy_schema(
+    engine: EngineType, include_boundaries: bool, index: pl.Series, every: str
+) -> None:
+    lf = pl.LazyFrame({"dt": index, "n": range(3)})
 
     result = lf.group_by_dynamic(
-        "dt", every="2d", closed="right", include_boundaries=include_boundaries
+        "dt", every=every, closed="right", include_boundaries=include_boundaries
     ).agg(pl.col("dt").min().alias("dt_min"))
 
-    assert result.collect_schema() == result.collect().schema
+    assert result.collect_schema() == result.collect(engine=engine).schema
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("every", ["1d", "12h"])
+def test_group_by_dynamic_date_index_boundaries_are_datetime(
+    engine: EngineType, every: str
+) -> None:
+    # A window bound of a Date index is not a Date: `every`, `period` and `offset`
+    # may be sub-day.
+    lf = pl.LazyFrame({"t": [date(2024, 1, 1), date(2024, 1, 2)], "v": [1, 2]})
+    q = lf.group_by_dynamic(
+        "t", every=every, period=every, include_boundaries=True
+    ).agg(pl.col("v").sum())
+
+    expected = pl.Datetime(time_unit="us")
+    assert q.collect_schema()["_lower_boundary"] == expected
+    assert q.collect_schema()["_upper_boundary"] == expected
+    result = q.collect(engine=engine)
+    assert result.schema["_lower_boundary"] == expected
+    assert result.schema["_upper_boundary"] == expected
+    # The index column keeps its own dtype.
+    assert result.schema["t"] == pl.Date
 
 
 def test_group_by_dynamic_12414() -> None:
@@ -1512,3 +1541,30 @@ def test_group_by_dynamic_dst_non_monotonic_upper_bound_29190(
     ).alias("t")
 
     _assert_rows_within_own_window(ts, "30m", "1d", engine)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("index", "every"),
+    [
+        (pl.Series("t", [datetime(2024, 1, 1)]), "1h"),
+        (pl.Series("t", [0], dtype=pl.Int64), "1i"),
+        (pl.Series("t", [date(2024, 1, 1)]), "1d"),
+    ],
+)
+def test_group_by_dynamic_empty_include_boundaries_columns(
+    engine: EngineType, index: pl.Series, every: str
+) -> None:
+    def group_by(lf: pl.LazyFrame) -> pl.DataFrame:
+        return (
+            lf.group_by_dynamic("t", every=every, period=every, include_boundaries=True)
+            .agg(pl.col("v").sum())
+            .collect(engine=engine)
+        )
+
+    lf = pl.LazyFrame({"t": index, "v": [1]})
+    result = group_by(lf.clear())
+    expected = group_by(lf)
+
+    assert result.height == 0
+    assert result.schema == expected.schema

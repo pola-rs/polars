@@ -4,6 +4,7 @@ use std::{fmt, mem};
 
 pub use kll::KLLSketch;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};
+use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::TotalOrd;
 use rand::RngExt;
 use rand::rngs::SmallRng;
@@ -91,40 +92,121 @@ impl ApproxQuantileMethod {
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct FinalizedState<T: fmt::Debug + Clone + TotalOrd> {
+pub struct FinalizedSketch<T: fmt::Debug + Clone + TotalOrd> {
     /// All retained items, sorted.
     items: Box<[T]>,
     /// Inclusive cumulative weight, i.e. `cum_weight[i]` is the 1-based rank of
     /// `items[i]`. `None` when every item has weight 1.
     cum_weight: Option<Box<[u64]>>,
+    /// Number of times the weights count every ingested item.
+    weight_factor: u64,
 }
 
-impl<T: fmt::Debug + Clone + TotalOrd> FinalizedState<T> {
+impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
     fn new(items: Box<[T]>, cum_weight: Option<Box<[u64]>>) -> Self {
-        Self { items, cum_weight }
+        Self {
+            items,
+            cum_weight,
+            weight_factor: 1,
+        }
     }
 
     /// The number of items this sketch ingested.
     fn num_items(&self) -> u64 {
+        debug_assert!(self.total_weight().is_multiple_of(self.weight_factor));
+        self.total_weight() / self.weight_factor
+    }
+
+    /// The summed weight of all retained items.
+    fn total_weight(&self) -> u64 {
         match &self.cum_weight {
             Some(cum_weight) => cum_weight.last().copied().unwrap_or(0),
             None => self.items.len() as u64,
         }
     }
 
-    fn estimate_quantile(&self, quantile: f64) -> PolarsResult<Option<&T>> {
+    pub fn estimate_quantile(&self, quantile: f64) -> PolarsResult<Option<&T>> {
         polars_ensure!(
             (0.0..=1.0).contains(&quantile),
             ComputeError: "`quantile` should be between 0.0 and 1.0",
         );
-        if self.items.is_empty() {
-            return Ok(None);
-        }
         // We round with ties toward ∞ for consistency with the regular quantile.
-        let estimated_rank =
-            (quantile * self.num_items().saturating_sub(1) as f64).round() as u64 + 1;
-        let idx = estimate_quantile_index(self.cum_weight.as_deref(), estimated_rank);
+        let num_items = self.num_items();
+        let item_rank = (quantile * num_items.saturating_sub(1) as f64).round();
+        let weighted_rank = match num_items {
+            0 => return Ok(None),
+            1 => 1,
+            _ => {
+                1 + (item_rank * (self.total_weight() - 1) as f64 / (num_items - 1) as f64).round()
+                    as u64
+            },
+        };
+        let idx = estimate_quantile_index(self.cum_weight.as_deref(), weighted_rank);
         Ok(Some(&self.items[idx]))
+    }
+
+    /// Split into the retained items and each item's individual weight.
+    fn into_items_and_weights(self) -> (Vec<T>, Vec<u64>) {
+        let items = self.items.into_vec();
+        let weights = match self.cum_weight {
+            Some(cum_weight) => {
+                let mut weights = cum_weight.into_vec();
+                let mut last = 0;
+                for w in weights.iter_mut() {
+                    (*w, last) = (*w - last, *w);
+                }
+                weights
+            },
+            None => vec![1; items.len()],
+        };
+        (items, weights)
+    }
+
+    /// Combine two sketches of the same items into one, summing their weights.
+    fn merge_halves(s1: Self, s2: Self) -> Self {
+        assert_eq!(s1.num_items(), s2.num_items());
+        let weight_factor = s1.weight_factor + s2.weight_factor;
+
+        if s1.cum_weight.is_none() && s2.cum_weight.is_none() {
+            let mut items = Vec::new();
+            merge_sorted(
+                &mut items,
+                s1.items.into_vec().into_iter(),
+                s2.items.into_vec().into_iter(),
+                TotalOrd::tot_cmp,
+            );
+            return Self {
+                items: items.into_boxed_slice(),
+                cum_weight: None,
+                weight_factor,
+            };
+        }
+
+        let (items1, weights1) = s1.into_items_and_weights();
+        let (items2, weights2) = s2.into_items_and_weights();
+
+        let mut merged = Vec::new();
+        merge_sorted(
+            &mut merged,
+            Itertools::zip_eq(items1.into_iter(), weights1),
+            Itertools::zip_eq(items2.into_iter(), weights2),
+            |(item1, _), (item2, _)| TotalOrd::tot_cmp(item1, item2),
+        );
+
+        let mut items = Vec::with_capacity(merged.len());
+        let mut cum_weights = Vec::with_capacity(merged.len());
+        let mut cum_weight = 0;
+        for (item, weight) in merged {
+            cum_weight += weight;
+            items.push(item);
+            cum_weights.push(cum_weight);
+        }
+
+        Self {
+            items: items.into_boxed_slice(),
+            cum_weight: Some(cum_weights.into_boxed_slice()),
+            weight_factor,
+        }
     }
 }
 
@@ -241,7 +323,7 @@ pub mod kll {
         }
 
         /// Stop ingesting, keeping only what this sketch retained.
-        pub fn finalize(self) -> FinalizedState<T> {
+        pub fn finalize(self) -> FinalizedSketch<T> {
             self.0.finalize()
         }
     }
@@ -416,7 +498,7 @@ pub mod kll {
             self.compact(false);
         }
 
-        fn finalize(self) -> FinalizedState<T> {
+        fn finalize(self) -> FinalizedSketch<T> {
             let IngestingState {
                 mut items,
                 levels,
@@ -431,7 +513,7 @@ pub mod kll {
 
             // With a single compactor every item has weight 1.
             if levels.len() == 1 {
-                return FinalizedState::new(items.into_boxed_slice(), None);
+                return FinalizedSketch::new(items.into_boxed_slice(), None);
             }
 
             // Merge all sorted levels
@@ -444,7 +526,7 @@ pub mod kll {
             debug_assert_eq!(scratch.len(), items.len());
             debug_assert_eq!(cum_weights.last().unwrap_or(&0), &consumed_items);
 
-            FinalizedState::new(
+            FinalizedSketch::new(
                 scratch.into_boxed_slice(),
                 Some(cum_weights.into_boxed_slice()),
             )
@@ -610,8 +692,7 @@ pub mod req {
         }
 
         /// Stop ingesting, keeping only what this sketch retained.
-        #[inline]
-        pub fn finalize(self) -> FinalizedState<T> {
+        pub fn finalize(self) -> FinalizedSketch<T> {
             self.0.finalize()
         }
     }
@@ -646,8 +727,8 @@ pub mod req {
         }
 
         /// Stop ingesting, keeping only what both sketches retained.
-        pub fn finalize(self) -> (FinalizedState<T>, FinalizedState<T>) {
-            (self.lra.finalize(), self.hra.finalize())
+        pub fn finalize(self) -> FinalizedSketch<T> {
+            FinalizedSketch::merge_halves(self.lra.finalize(), self.hra.finalize())
         }
     }
 
@@ -868,7 +949,7 @@ pub mod req {
             compactor[..promote_count].sort_unstable_by(cmp_desc::<HRA, T>);
         }
 
-        fn finalize(self) -> FinalizedState<T> {
+        fn finalize(self) -> FinalizedSketch<T> {
             let IngestingState {
                 mut items,
                 levels,
@@ -884,7 +965,7 @@ pub mod req {
 
             // With a single compactor every item has weight 1.
             if levels.len() == 1 {
-                return FinalizedState::new(items.into_boxed_slice(), None);
+                return FinalizedSketch::new(items.into_boxed_slice(), None);
             }
 
             // Merge all sorted levels
@@ -897,7 +978,7 @@ pub mod req {
             debug_assert_eq!(scratch.len(), items.len());
             debug_assert_eq!(cum_weights.last().unwrap_or(&0), &consumed_items);
 
-            FinalizedState::new(
+            FinalizedSketch::new(
                 scratch.into_boxed_slice(),
                 Some(cum_weights.into_boxed_slice()),
             )
@@ -907,12 +988,6 @@ pub mod req {
 
 /// H-way merge-sort of the per-level sorted runs into a single sorted run, and
 /// the inclusive cumulative weight of every merged item.
-///
-/// `levels[i]` holds the items of level `i`, each standing for `2^i` ingested
-/// items, so the last cumulative weight is the total number of ingested items.
-///
-/// The merged items are written into `out`, which is cleared first so that
-/// callers can hand over a scratch buffer.
 fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
     levels: &[&[T]],
     out: &mut Vec<T>,
@@ -1016,47 +1091,10 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
 
     pub fn finalize(self) -> FinalizedSketch<T> {
         match self {
-            Sketch::Kll(s) => FinalizedSketch::Single(s.finalize()),
-            Sketch::Req(s) => FinalizedSketch::Single(s.finalize()),
-            Sketch::DoubleReq(s) => {
-                let (lra, hra) = s.finalize();
-                FinalizedSketch::Double(lra, hra)
-            },
+            Sketch::Kll(s) => s.finalize(),
+            Sketch::Req(s) => s.finalize(),
+            Sketch::DoubleReq(s) => s.finalize(),
         }
-    }
-}
-
-/// A [`Sketch`] that has stopped ingesting, holding only what it retained.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum FinalizedSketch<T: fmt::Debug + Clone + TotalOrd> {
-    Single(FinalizedState<T>),
-    /// A relative-error pair, accurate at the low and the high end respectively.
-    Double(FinalizedState<T>, FinalizedState<T>),
-}
-
-impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
-    pub fn estimate_quantile(&self, quantile: f64) -> PolarsResult<Option<&T>> {
-        let (lra, hra) = match self {
-            Self::Single(state) => return state.estimate_quantile(quantile),
-            Self::Double(lra, hra) => (lra, hra),
-        };
-        if quantile <= 0.5 {
-            return lra.estimate_quantile(quantile);
-        }
-        // Both sketches are randomized independently, so the hra estimate just
-        // above 0.5 may fall below the lra estimate just below it. Clamping to
-        // the lra median keeps the answers non-decreasing.
-        let (Some(estimate), Some(pivot)) = (
-            hra.estimate_quantile(quantile)?,
-            lra.estimate_quantile(0.5)?,
-        ) else {
-            return Ok(None);
-        };
-        Ok(Some(match TotalOrd::tot_cmp(estimate, pivot).is_ge() {
-            true => estimate,
-            false => pivot,
-        }))
     }
 }
 

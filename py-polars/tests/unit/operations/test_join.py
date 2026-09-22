@@ -4852,3 +4852,112 @@ def test_computed_join_key_uses_own_input_schema(
         }
     )
     assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("outer_how", "next_how", "key", "expected_outer"),
+    [
+        # A key that must be non-null on the outer join's nullable side tightens it.
+        ("left", "inner", "reason", "INNER"),
+        ("left", "semi", "reason", "INNER"),
+        ("left", "right", "reason", "INNER"),
+        ("full", "inner", "reason", "RIGHT"),
+        ("full", "inner", "amount", "LEFT"),
+        # The preserved side may keep NULL keys; an anti join drops nothing on its left.
+        ("left", "inner", "amount", "LEFT"),
+        ("left", "inner", "ticket", "LEFT"),
+        ("left", "anti", "reason", "LEFT"),
+    ],
+)
+def test_join_key_downgrades_outer_join_below(
+    outer_how: JoinStrategy, next_how: JoinStrategy, key: str, expected_outer: str
+) -> None:
+    sales = pl.LazyFrame({"ticket": [1, 2, 3, 4], "amount": [10, 20, 30, 40]})
+    returns = pl.LazyFrame({"ticket": [2, 4, 5], "reason": [7, None, 7]})
+    lookup = pl.LazyFrame({key: [7, 10], "desc": ["x", "y"]})
+
+    q = sales.join(returns, on="ticket", how=outer_how, coalesce=True).join(
+        lookup, on=key, how=next_how
+    )
+
+    plan = q.explain()
+    assert f"{expected_outer} JOIN:" in plan
+    if expected_outer != outer_how.upper():
+        assert f"{outer_how.upper()} JOIN:" not in plan
+    else:
+        assert "is_not_null" not in plan
+
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+def test_join_key_downgrade_follows_pushdown_through_projections() -> None:
+    sales = pl.LazyFrame({"ticket": [1, 2, 3, 4], "amount": [10, 20, 30, 40]})
+    returns = pl.LazyFrame({"ticket": [2, 4, 5], "reason": [7, None, 7]})
+    lookup = pl.LazyFrame({"reason": [7, 10], "desc": ["x", "y"]})
+    joined = sales.join(returns, on="ticket", how="left", coalesce=True)
+
+    def check(q: pl.LazyFrame, *, downgraded: bool) -> None:
+        plan = q.explain()
+        assert ("LEFT JOIN:" in plan) != downgraded
+        assert ("is_not_null" in plan) == downgraded
+        expect = q.collect(optimizations=pl.QueryOptFlags.none())
+        assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+    # The key is recomputed in between, so the predicate stays above it.
+    q = joined.with_columns(pl.col("reason").fill_null(7)).join(lookup, on="reason")
+    check(q, downgraded=False)
+
+    # A filter that blocks pushdown stops the walk as well.
+    q = joined.filter(pl.col("amount") > pl.col("amount").mean()).join(
+        lookup, on="reason"
+    )
+    check(q, downgraded=False)
+
+    # A window filter keeps itself local but lets a predicate on its partition key pass.
+    q = joined.filter(pl.col("amount") >= pl.col("amount").mean().over("reason")).join(
+        lookup, on="reason"
+    )
+    check(q, downgraded=True)
+
+    # A plain filter is passed.
+    q = joined.filter(pl.col("amount") > 15).join(lookup, on="reason")
+    check(q, downgraded=True)
+
+    # A rename is followed down.
+    q = joined.rename({"reason": "r"}).join(lookup.rename({"reason": "r"}), on="r")
+    check(q, downgraded=True)
+    assert 'FILTER col("reason").is_not_null()' in q.explain()
+
+
+def test_join_key_downgrade_ignores_the_unreachable_join_side() -> None:
+    sales = pl.LazyFrame(
+        {"ticket": [1, 2, 3], "amount": [10, 20, 30], "reason": [7, None, 7]}
+    )
+    a = pl.LazyFrame({"ticket": [2, 3], "x": [1, 2]})
+    b = pl.LazyFrame({"ticket": [2], "reason": [9]})
+    lookup = pl.LazyFrame({"reason": [7, 10], "desc": ["x", "y"]})
+
+    # The key is the left `reason`; the right input holds another `reason`.
+    returns = a.join(b, on="ticket", how="left")
+    q = sales.join(returns, on="ticket", how="left").join(lookup, on="reason")
+
+    plan = q.explain()
+    assert plan.count("LEFT JOIN:") == 2
+    assert "is_not_null" not in plan
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+def test_join_key_keeps_outer_join_when_nulls_match() -> None:
+    sales = pl.LazyFrame({"ticket": [1, 2, 3], "amount": [10, 20, 30]})
+    returns = pl.LazyFrame({"ticket": [2, 4], "reason": [7, None]})
+    reasons = pl.LazyFrame({"reason": [7, None]})
+
+    q = sales.join(returns, on="ticket", how="left", coalesce=True).join(
+        reasons, on="reason", how="inner", nulls_equal=True
+    )
+
+    assert "LEFT JOIN:" in q.explain()
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)

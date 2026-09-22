@@ -46,13 +46,23 @@ where
     }
 
     #[inline(always)]
+    fn group_idx(&self, key: &T::Physical<'static>) -> Option<IdxSize> {
+        self.idx_map.get_index_of(key)
+    }
+
+    #[inline(always)]
+    fn null_group_idx(&self) -> Option<IdxSize> {
+        (self.null_idx < IdxSize::MAX).then_some(self.null_idx)
+    }
+
+    #[inline(always)]
     fn contains_key(&self, key: &T::Physical<'static>) -> bool {
-        self.idx_map.get(key).is_some()
+        self.group_idx(key).is_some()
     }
 
     #[inline(always)]
     fn contains_null(&self) -> bool {
-        self.null_idx < IdxSize::MAX
+        self.null_group_idx().is_some()
     }
 
     fn finalize_keys(&self, schema: &Schema, keys: Vec<T::Physical<'static>>) -> DataFrame {
@@ -183,11 +193,13 @@ where
                         &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
                     let key = arr.value_unchecked(idx as usize);
                     grouper.contains_key(&key)
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
                     grouper.contains_null()
+                } else {
+                    false
                 };
 
                 if has_group != invert {
@@ -224,14 +236,61 @@ where
                         &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
                     let key = arr.value_unchecked(idx as usize);
                     grouper.contains_key(&key)
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
                     grouper.contains_null()
+                } else {
+                    false
                 };
 
                 contains_key.push(has_group != invert);
+            });
+        }
+    }
+
+    /// # Safety
+    /// All groupers must be a SingleKeyHashGrouper<T>.
+    unsafe fn mark_groups_partitioned_groupers(
+        &self,
+        groupers: &[Box<dyn Grouper>],
+        hash_keys: &HashKeys,
+        partitioner: &HashPartitioner,
+        marks: &mut [MutableBitmap],
+    ) {
+        let HashKeys::Single(hash_keys) = hash_keys else {
+            unreachable!()
+        };
+        let ca: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
+        let arr = ca.downcast_as_array();
+        assert!(partitioner.num_partitions() == groupers.len());
+        assert!(marks.len() == groupers.len());
+
+        unsafe {
+            let null_p = partitioner.null_partition();
+            for_each_hash_single(ca, &hash_keys.random_state, |idx, opt_h| {
+                let (p, group_idx) = if let Some(h) = opt_h {
+                    let p = partitioner.hash_to_partition(h);
+                    let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
+                    let grouper =
+                        &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
+                    let key = arr.value_unchecked(idx as usize);
+                    (p, grouper.group_idx(&key))
+                } else if hash_keys.null_is_valid {
+                    let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
+                    let grouper =
+                        &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
+                    (null_p, grouper.null_group_idx())
+                } else {
+                    (null_p, None)
+                };
+
+                if let Some(group_idx) = group_idx {
+                    marks
+                        .get_unchecked_mut(p)
+                        .set_unchecked(group_idx as usize, true);
+                }
             });
         }
     }
