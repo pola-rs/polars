@@ -622,9 +622,11 @@ impl PushdownCandidate {
 
 /// Whether the semi join narrows its side to fewer rows than the inner join emits.
 ///
-/// A semi join is priced at the bound on its right side's rows, and stays put
-/// without one: an estimate of that side that is too low would push down a join that
-/// keeps most rows. An anti join's estimate errs the other way.
+/// A semi join that probes no more rows pushed than it does now costs nothing extra
+/// whatever its right side keeps. Otherwise it is priced at the bound on its right
+/// side's rows, and stays put without one: an estimate of that side that is too low
+/// would push down a join that keeps most rows. An anti join's estimate errs the
+/// other way.
 #[cfg(feature = "semi_anti_join")]
 fn pushdown_pays(
     candidate: &PushdownCandidate,
@@ -641,11 +643,18 @@ fn pushdown_pays(
     };
     let mut after = after.filtered;
     if matches!(candidate.side_options.args.how, JoinType::Semi) {
+        let side = node_stats_with_cache(candidate.side, ir_arena, expr_arena, stats);
+        let semi_input = candidate.chain.first().copied().unwrap_or(candidate.inner);
+        let semi_input = node_stats_with_cache(semi_input, ir_arena, expr_arena, stats);
+        if let (Some(side), Some(semi_input)) = (&side, semi_input)
+            && side.filtered <= semi_input.filtered
+        {
+            return true;
+        }
         let Some(bound) = right.max_rows() else {
             return false;
         };
         if bound > right.filtered {
-            let side = node_stats_with_cache(candidate.side, ir_arena, expr_arena, stats);
             let side_rows = side.map_or(f64::INFINITY, |side| side.filtered);
             after = (after * bound / right.filtered).min(side_rows);
         }
