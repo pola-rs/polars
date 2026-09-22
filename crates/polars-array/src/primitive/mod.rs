@@ -227,6 +227,15 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         (!self.values_are_scalar()).then_some(&mut self.values)
     }
 
+    /// The backing values buffer, taken out of this array, if it holds one slot per element.
+    ///
+    /// Prefer this over cloning [`Self::flat_values`] where the array is not needed afterwards:
+    /// a buffer nothing else shares hands its allocation over instead of copying it.
+    #[inline]
+    pub fn into_flat_values(self) -> Option<Buffer<T>> {
+        (!self.values_are_scalar()).then_some(self.values)
+    }
+
     /// The value every element of this array reads, if the values buffer holds a single slot.
     #[inline]
     pub fn scalar_value_ignore_validity(&self) -> Option<T> {

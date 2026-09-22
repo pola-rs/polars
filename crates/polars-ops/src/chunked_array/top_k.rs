@@ -88,10 +88,11 @@ where
         return ChunkedArray::with_chunk_like(ca, arr);
     }
 
+    // Taken out of the chunk rather than cloned out of it: a values buffer nothing else shares
+    // hands its allocation over instead of copying it.
     let mut vec = chunk
-        .flat_values()
+        .into_flat_values()
         .expect("the values are not repeated")
-        .clone()
         .to_vec();
 
     // Partition.
@@ -136,9 +137,8 @@ fn top_k_binary_impl(
 
     let buffers = chunk.data_buffers().clone();
     let mut views = chunk
-        .flat_views()
+        .into_flat_views()
         .expect("the views are not repeated")
-        .clone()
         .to_vec();
 
     // Partition.

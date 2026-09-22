@@ -260,6 +260,15 @@ impl PlBinaryViewArray {
         (!self.views_are_scalar()).then_some(&self.views)
     }
 
+    /// The backing views buffer, taken out of this array, if it holds one slot per element.
+    ///
+    /// Prefer this over cloning [`Self::flat_views`] where the array is not needed afterwards:
+    /// a buffer nothing else shares hands its allocation over instead of copying it.
+    #[inline]
+    pub fn into_flat_views(self) -> Option<Buffer<View>> {
+        (!self.views_are_scalar()).then_some(self.views)
+    }
+
     /// The backing views buffer, if it holds one slot per element.
     ///
     /// # Safety
