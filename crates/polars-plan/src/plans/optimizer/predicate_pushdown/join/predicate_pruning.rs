@@ -365,9 +365,10 @@ where
     }
 }
 
-/// The side of the join `name`, an output column, comes from. A coalesced key of a full join
-/// comes from neither side: dropping its nulls does not drop the rows of one side.
-pub(super) fn key_column_origin(
+/// The side of the join whose rows are dropped when nulls in `name`, an output column, are
+/// dropped. A coalesced key of a full join is null for unmatched rows of either side, so it
+/// gives `None`.
+pub(super) fn non_null_side_for_column(
     name: &str,
     schema_left: &Schema,
     schema_right: &Schema,
@@ -762,7 +763,7 @@ pub fn try_rewrite_join_type(
         for node in MintermIter::new(predicate.node(), expr_arena) {
             predicate_non_null_column_outputs(node, expr_arena, &mut |non_null_column| {
                 non_null_side |=
-                    key_column_origin(non_null_column, schema_left, schema_right, options);
+                    non_null_side_for_column(non_null_column, schema_left, schema_right, options);
             });
         }
     }

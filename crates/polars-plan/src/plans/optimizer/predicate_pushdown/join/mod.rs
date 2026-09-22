@@ -559,13 +559,13 @@ fn key_non_null_predicates(
 /// outer join that `try_rewrite_join_type` makes stricter because of it.
 fn downgradable_outer_join_below(
     opt: &mut PredicatePushDown,
-    node: Node,
+    mut node: Node,
     predicate: &ExprIR,
     lp_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<bool> {
-    let mut stack = vec![(node, predicate.clone())];
-    while let Some((node, mut predicate)) = stack.pop() {
+    let mut predicate = predicate.clone();
+    loop {
         let IR::Join {
             input_left,
             input_right,
@@ -573,16 +573,18 @@ fn downgradable_outer_join_below(
             schema,
         } = lp_arena.get(node)
         else {
-            if let Some(input) = push_past(
+            let Some(input) = push_past(
                 node,
                 &mut predicate,
                 lp_arena,
                 expr_arena,
                 opt.nodes_scratch.get(),
                 opt.maintain_errors,
-            )? {
-                stack.push((input, predicate));
-            }
+            )?
+            else {
+                return Ok(false);
+            };
+            node = input;
             continue;
         };
         let name = aexpr_to_leaf_names_iter(predicate.node(), expr_arena)
@@ -590,20 +592,18 @@ fn downgradable_outer_join_below(
             .unwrap()
             .clone();
         if !schema.contains(&name) {
-            continue;
+            return Ok(false);
         }
         let how = &options.args.how;
         let schema_left = lp_arena.get(*input_left).schema(lp_arena);
         let schema_right = lp_arena.get(*input_right).schema(lp_arena);
-        let origin = key_column_origin(&name, &schema_left, &schema_right, options);
+        let origin = non_null_side_for_column(&name, &schema_left, &schema_right, options);
         if options.is_pure_equi() && downgraded_join_type(how, origin).is_some() {
             return Ok(true);
         }
         // Only the side whose rows the join keeps can take the predicate.
-        match origin {
-            ExprOrigin::Left if !matches!(how, JoinType::Right | JoinType::Full) => {
-                stack.push((*input_left, predicate));
-            },
+        node = match origin {
+            ExprOrigin::Left if !matches!(how, JoinType::Right | JoinType::Full) => *input_left,
             ExprOrigin::Right
                 if match how {
                     JoinType::Left | JoinType::Full => false,
@@ -618,12 +618,11 @@ fn downgradable_outer_join_below(
                     &schema_right,
                     options.args.suffix(),
                 );
-                stack.push((*input_right, predicate));
+                *input_right
             },
-            _ => {},
-        }
+            _ => return Ok(false),
+        };
     }
-    Ok(false)
 }
 
 fn apply_join_key_reduction_select(

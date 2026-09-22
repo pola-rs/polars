@@ -222,7 +222,7 @@ pub(crate) fn push_past(
             predicate: filter,
         } => {
             let mut acc = PlIndexMap::default();
-            acc.insert(key, predicate.clone());
+            acc.insert(key.clone(), predicate.clone());
             let tmp_key = temporary_unique_key(&acc);
             acc.insert(tmp_key.clone(), filter.clone());
             let (eligibility, _) = pushdown_eligibility(
@@ -234,14 +234,14 @@ pub(crate) fn push_past(
                 maintain_errors,
                 ir_arena.get(*input),
             )?;
-            Ok(matches!(eligibility, PushdownEligibility::Full).then_some(*input))
+            Ok(eligibility.allows(&key).then_some(*input))
         },
         IR::Select { input, expr, .. }
         | IR::HStack {
             input, exprs: expr, ..
         } => {
             let mut acc = PlIndexMap::default();
-            acc.insert(key, predicate.clone());
+            acc.insert(key.clone(), predicate.clone());
             let (eligibility, renames) = pushdown_eligibility(
                 expr,
                 &[],
@@ -251,7 +251,7 @@ pub(crate) fn push_past(
                 maintain_errors,
                 ir_arena.get(*input),
             )?;
-            if !matches!(eligibility, PushdownEligibility::Full) {
+            if !eligibility.allows(&key) {
                 return Ok(None);
             }
             map_column_references(predicate, expr_arena, &renames);
@@ -267,6 +267,17 @@ pub enum PushdownEligibility {
     // Partial can happen when there are window exprs.
     Partial { to_local: Vec<PlSmallStr> },
     NoPushdown,
+}
+
+impl PushdownEligibility {
+    /// Whether the predicate under `key` may be pushed down.
+    pub fn allows(&self, key: &PlSmallStr) -> bool {
+        match self {
+            Self::Full => true,
+            Self::Partial { to_local } => !to_local.contains(key),
+            Self::NoPushdown => false,
+        }
+    }
 }
 
 #[allow(clippy::type_complexity)]

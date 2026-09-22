@@ -4914,6 +4914,12 @@ def test_join_key_downgrade_follows_pushdown_through_projections() -> None:
     )
     check(q, downgraded=False)
 
+    # A window filter keeps itself local but lets a predicate on its partition key pass.
+    q = joined.filter(pl.col("amount") >= pl.col("amount").mean().over("reason")).join(
+        lookup, on="reason"
+    )
+    check(q, downgraded=True)
+
     # A plain filter is passed.
     q = joined.filter(pl.col("amount") > 15).join(lookup, on="reason")
     check(q, downgraded=True)
