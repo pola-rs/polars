@@ -18,6 +18,28 @@ where
     Ok(eq_phys(lhs.physical(), rhs.physical()))
 }
 
+/// `cmp` between every element of `ca` and the one string the other side reads.
+///
+/// A chunk that stands for its elements reads one string itself, and is compared once: what that
+/// comparison answers is what every element it stands for answers.
+fn cat_against_one_str<T: PolarsCategoricalType, Cmp>(
+    ca: &CategoricalChunked<T>,
+    name: PlSmallStr,
+    cmp: Cmp,
+) -> BooleanChunked
+where
+    Cmp: Fn(&str) -> bool,
+{
+    match ca.scalar_str() {
+        Some(Some(s)) => BooleanChunked::full(name, cmp(s), ca.len()),
+        Some(None) => BooleanChunked::full_null(name, ca.len()),
+        None => ca
+            .iter_str()
+            .map(|opt_s| opt_s.map(&cmp))
+            .collect_ca_trusted(name),
+    }
+}
+
 fn cat_compare_helper<T: PolarsCategoricalType, Cmp, CmpPhys>(
     lhs: &CategoricalChunked<T>,
     rhs: &CategoricalChunked<T>,
@@ -33,34 +55,39 @@ where
     if lhs.is_enum() {
         return Ok(cmp_phys(lhs.physical(), rhs.physical()));
     }
-    let mapping = lhs.get_mapping();
+    let name = lhs.name().clone();
     match (lhs.len(), rhs.len()) {
         (lhs_len, 1) => {
-            let Some(cat) = rhs.physical().get(0) else {
-                return Ok(BooleanChunked::full_null(lhs.name().clone(), lhs_len));
+            let Some(v) = rhs.scalar_str().flatten() else {
+                return Ok(BooleanChunked::full_null(name, lhs_len));
             };
-
-            // SAFETY: physical is in range of the mapping.
-            let v = unsafe { mapping.cat_to_str_unchecked(cat.as_cat()) };
-            Ok(lhs
-                .iter_str()
-                .map(|opt_s| opt_s.map(|s| cmp(s, v)))
-                .collect_ca_trusted(lhs.name().clone()))
+            Ok(cat_against_one_str(lhs, name, |s| cmp(s, v)))
         },
         (1, rhs_len) => {
-            let Some(cat) = lhs.physical().get(0) else {
-                return Ok(BooleanChunked::full_null(lhs.name().clone(), rhs_len));
+            let Some(v) = lhs.scalar_str().flatten() else {
+                return Ok(BooleanChunked::full_null(name, rhs_len));
             };
-
-            // SAFETY: physical is in range of the mapping.
-            let v = unsafe { mapping.cat_to_str_unchecked(cat.as_cat()) };
-            Ok(rhs
-                .iter_str()
-                .map(|opt_s| opt_s.map(|s| cmp(v, s)))
-                .collect_ca_trusted(lhs.name().clone()))
+            Ok(cat_against_one_str(rhs, name, |s| cmp(v, s)))
         },
         (lhs_len, rhs_len) => {
             assert!(lhs_len == rhs_len);
+
+            // A side that reads one string throughout is the same thing to the comparison as a
+            // column of one element: the walk is against that one string, and where both sides
+            // read one the answer is a single comparison.
+            if let Some(v) = rhs.scalar_str() {
+                let Some(v) = v else {
+                    return Ok(BooleanChunked::full_null(name, lhs_len));
+                };
+                return Ok(cat_against_one_str(lhs, name, |s| cmp(s, v)));
+            }
+            if let Some(v) = lhs.scalar_str() {
+                let Some(v) = v else {
+                    return Ok(BooleanChunked::full_null(name, rhs_len));
+                };
+                return Ok(cat_against_one_str(rhs, name, |s| cmp(v, s)));
+            }
+
             Ok(lhs
                 .iter_str()
                 .zip(rhs.iter_str())
@@ -69,7 +96,7 @@ where
                     (_, None) => None,
                     (Some(l), Some(r)) => Some(cmp(l, r)),
                 })
-                .collect_ca_trusted(lhs.name().clone()))
+                .collect_ca_trusted(name))
         },
     }
 }
@@ -153,6 +180,16 @@ where
         },
         (lhs_len, rhs_len) => {
             assert!(lhs_len == rhs_len);
+
+            // A categorical that reads one string throughout answers as a column of one element
+            // does: hand the string kernel that one string rather than walking two iterators.
+            if let Some(s) = lhs.scalar_str() {
+                let Some(s) = s else {
+                    return BooleanChunked::full_null(lhs.name().clone(), rhs_len);
+                };
+                return cmp_str_scalar(s, rhs).with_name(lhs.name().clone());
+            }
+
             lhs.iter_str()
                 .zip(rhs.iter())
                 .map(|(l, r)| match (l, r) {
@@ -251,9 +288,7 @@ fn cat_str_scalar_compare_helper<T: PolarsCategoricalType, Cmp>(
 where
     Cmp: Fn(&str, &str) -> bool,
 {
-    lhs.iter_str()
-        .map(|opt_l| opt_l.map(|l| cmp(l, rhs)))
-        .collect_ca_trusted(lhs.name().clone())
+    cat_against_one_str(lhs, lhs.name().clone(), |l| cmp(l, rhs))
 }
 
 fn cat_str_scalar_phys_compare_helper<T: PolarsCategoricalType, Cmp>(
