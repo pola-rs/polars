@@ -18,6 +18,7 @@ from ast import (
     Invert,
     List,
     Name,
+    NotEq,
     UnaryOp,
 )
 from dataclasses import dataclass
@@ -245,6 +246,9 @@ def _(a: Constant) -> Any:
 
 @_convert_predicate.register(Name)
 def _(a: Name) -> Any:
+    if a.id == "NaN":
+        msg = "NaN literal is not supported in this predicate position"
+        raise ValueError(msg)
     return a.id
 
 
@@ -306,7 +310,15 @@ def _(a: BinOp) -> Any:
 def _(a: Compare) -> Any:
     op = a.ops[0]
     lhs = _convert_predicate(a.left)[0]
-    rhs = _convert_predicate(a.comparators[0])
+    rhs_ast = a.comparators[0]
+
+    if isinstance(rhs_ast, Name) and rhs_ast.id == "NaN":
+        if isinstance(op, Eq):
+            return pyiceberg.expressions.IsNaN(lhs)  # type: ignore[misc]
+        if isinstance(op, NotEq):
+            return pyiceberg.expressions.NotNaN(lhs)  # type: ignore[misc]
+
+    rhs = _convert_predicate(rhs_ast)
 
     if isinstance(op, Gt):
         return pyiceberg.expressions.GreaterThan(lhs, rhs)  # type: ignore[misc, call-arg]
