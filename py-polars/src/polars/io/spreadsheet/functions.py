@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, NoReturn, cast, overload
 
 import polars._reexport as pl
-from polars import from_arrow
 from polars import functions as F
 from polars._dependencies import _PYARROW_AVAILABLE, import_optional
 from polars._utils.expired import RenamedParameter, removed_parameters
