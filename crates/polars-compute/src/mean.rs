@@ -72,10 +72,26 @@ impl MeanAcc for i128 {
     }
 }
 
+/// Same result as `x as f64` would be, which `ethnum::I256::as_f64` is not: it rounds the two
+/// 128-bit halves separately.
+fn i256_to_f64(x: i256) -> f64 {
+    if let Ok(v) = i128::try_from(x) {
+        return i128_to_f64(v);
+    }
+    // As in `i128_to_f64`; here `abs >= 2^127`, so `64 <= shift <= 192`.
+    let abs = x.0.unsigned_abs();
+    let shift = 192 - abs.leading_zeros();
+    let sticky = (abs.trailing_zeros() < shift) as u64;
+    let top = (abs >> shift).as_u64() | sticky;
+    let scale = f64::from_bits(((1023 + shift) as u64) << 52);
+    let out = top as f64 * scale;
+    if x.0.is_negative() { -out } else { out }
+}
+
 impl MeanAcc for i256 {
     #[inline]
     fn into_f64(self) -> f64 {
-        self.0.as_f64()
+        i256_to_f64(self)
     }
 }
 

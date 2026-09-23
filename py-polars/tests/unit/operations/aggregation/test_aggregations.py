@@ -287,6 +287,9 @@ def test_datetime_mean_no_saturation_29373() -> None:
         ([2**127 - 1] * 3, pl.Int128),
         ([-(2**127)] * 3, pl.Int128),
         ([2**128 - 1] * 3, pl.UInt128),
+        # Past 2^128 the sum must still be rounded to Float64 once, not per 128-bit half.
+        ([2**127, 2**127, 2**75 + 1], pl.UInt128),
+        ([-(2**127), -(2**127), -(2**75 + 1)], pl.Int128),
     ],
 )
 def test_int128_mean_exact_29373(values: list[int], dtype: pl.DataType) -> None:
