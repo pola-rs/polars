@@ -201,7 +201,11 @@ fn specialize(
         #[cfg(feature = "is_in")]
         AExpr::Function {
             input,
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            function:
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                    nulls_equal,
+                    needle_cast: None,
+                }),
             options: _,
         } => {
             into_column(input[0].node(), expr_arena)?;

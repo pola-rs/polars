@@ -1101,12 +1101,16 @@ fn lower_exprs_with_ctx(
 
             // A semi join only sees the haystack's elements, so a null haystack would look like one
             // holding a null. An imploded haystack is never null. It also needs equal key dtypes,
-            // so a pair the kernel compares natively, such as aware datetimes in different zones,
-            // takes the generic path.
+            // so a guarded needle cast, or a pair the kernel compares natively such as aware
+            // datetimes in different zones, takes the generic path.
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 input: ref inner_exprs,
-                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+                function:
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                        nulls_equal,
+                        needle_cast: None,
+                    }),
                 options: _,
             } if matches!(
                 ctx.expr_arena.get(inner_exprs[1].node()),

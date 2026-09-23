@@ -498,7 +498,11 @@ fn aexpr_to_skip_batch_predicate_rec(
             } => match function {
                 IRFunctionExpr::Boolean(f) => match f {
                     #[cfg(feature = "is_in")]
-                    IRBooleanFunction::IsIn { nulls_equal } => {
+                    // A guarded needle cast has no statistics to prune with.
+                    IRBooleanFunction::IsIn {
+                        nulls_equal,
+                        needle_cast: None,
+                    } => {
                         if !is_scalar_ae(input[1].node(), arena) {
                             return None;
                         }
