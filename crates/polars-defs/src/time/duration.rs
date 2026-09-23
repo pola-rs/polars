@@ -418,12 +418,10 @@ impl Duration {
 
     /// Estimated duration of the window duration in `tu`. Not a very good one if not a
     /// constant duration.
-    ///
-    /// Dispatches to the specialized `duration_ns`, `duration_us` and `duration_ms`, whose
-    /// unit conversions are constants.
     #[doc(hidden)]
     #[inline]
     pub const fn duration(&self, tu: TimeUnit) -> i64 {
+        // The arms' unit conversions are constants.
         match tu {
             TimeUnit::Nanoseconds => self.duration_ns(),
             TimeUnit::Microseconds => self.duration_us(),
@@ -446,7 +444,7 @@ impl Duration {
         self.duration_inline(TimeUnit::Milliseconds)
     }
 
-    /// `duration` for a `tu` known at compile time, so that the conversions fold.
+    // `duration` for a `tu` known at compile time, so that the conversions fold.
     #[inline(always)]
     const fn duration_inline(&self, tu: TimeUnit) -> i64 {
         self.months * 28 * 24 * 3600 * tu.from_nsecs(NANOSECONDS)
@@ -457,11 +455,10 @@ impl Duration {
 
     /// Not-to-exceed estimated duration of the window duration in `tu`. The actual duration
     /// will be less or equal than the estimate.
-    ///
-    /// Dispatches like [`Self::duration`].
     #[doc(hidden)]
     #[inline]
     pub const fn nte_duration(&self, tu: TimeUnit) -> i64 {
+        // The arms' unit conversions are constants.
         match tu {
             TimeUnit::Nanoseconds => self.nte_duration_ns(),
             TimeUnit::Microseconds => self.nte_duration_us(),
@@ -484,7 +481,7 @@ impl Duration {
         self.nte_duration_inline(TimeUnit::Milliseconds)
     }
 
-    /// `nte_duration` for a `tu` known at compile time, so that the conversions fold.
+    // `nte_duration` for a `tu` known at compile time, so that the conversions fold.
     #[inline(always)]
     const fn nte_duration_inline(&self, tu: TimeUnit) -> i64 {
         self.months * (31 * 24 + 1) * 3600 * tu.from_nsecs(NANOSECONDS)
@@ -760,7 +757,7 @@ impl Duration {
         }
     }
 
-    /// `truncate` for a `tu` known at compile time, so that the conversions fold.
+    // `truncate` for a `tu` known at compile time, so that the conversions fold.
     #[cfg(feature = "temporal")]
     #[inline(always)]
     fn truncate_inline(&self, tu: TimeUnit, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
@@ -790,13 +787,12 @@ impl Duration {
     }
 
     /// Truncate the timestamp `t` in `tu` by the window boundary.
-    ///
-    /// Dispatches to the specialized `truncate_ns`, `truncate_us` and `truncate_ms`, so a
-    /// constant `tu` costs nothing and a loop-invariant one a predictable branch. The arms are
-    /// never inlined so the calendar code stays out of callers' hot loops.
     #[cfg(feature = "temporal")]
     #[inline]
     pub fn truncate(&self, tu: TimeUnit, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+        // The arms have constant unit conversions and are never inlined, so a constant `tu`
+        // costs nothing, a loop-invariant one a predictable branch, and the calendar code
+        // stays out of the callers' hot loops.
         match tu {
             TimeUnit::Nanoseconds => self.truncate_ns(t, tz),
             TimeUnit::Microseconds => self.truncate_us(t, tz),
@@ -822,7 +818,7 @@ impl Duration {
         self.truncate_inline(TimeUnit::Milliseconds, t, tz)
     }
 
-    /// `add` for a `tu` known at compile time, so that the conversions fold.
+    // `add` for a `tu` known at compile time, so that the conversions fold.
     #[cfg(feature = "temporal")]
     #[inline(always)]
     fn add_inline(&self, tu: TimeUnit, mut t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
@@ -906,10 +902,6 @@ impl Duration {
     }
 
     /// Add this duration to the timestamp `t` in `tu`.
-    ///
-    /// Dispatches to the specialized `add_ns`, `add_us` and `add_ms`, so a constant `tu`
-    /// costs nothing and a loop-invariant one a predictable branch. The arms are never inlined
-    /// so the calendar code stays out of callers' hot loops.
     #[cfg(feature = "temporal")]
     #[inline]
     pub fn add(&self, tu: TimeUnit, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
@@ -921,6 +913,9 @@ impl Duration {
             // A constant duration needs no calendar: keep this path inline at the call site.
             return Ok(t + tu.from_nsecs(self.signed_nsecs()));
         }
+        // The arms have constant unit conversions and are never inlined, so a constant `tu`
+        // costs nothing, a loop-invariant one a predictable branch, and the calendar code
+        // stays out of the callers' hot loops.
         match tu {
             TimeUnit::Nanoseconds => self.add_ns(t, tz),
             TimeUnit::Microseconds => self.add_us(t, tz),
