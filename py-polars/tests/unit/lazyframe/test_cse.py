@@ -1804,41 +1804,6 @@ def test_cspe_shared_subplan_is_costed_with_the_common_bounds(tmp_path: Path) ->
     )
 
 
-def test_cspe_reference_filters_are_estimated_within_the_shared_bounds(
-    tmp_path: Path,
-) -> None:
-    # The shared subplan keeps `0 <= a < 1007`. Each branch keeps 1000 of those
-    # rows, not 1000 of the whole column.
-    pl.DataFrame({"a": range(100_000), "k": range(100_000)}).write_parquet(
-        tmp_path / "fact.parquet"
-    )
-    pl.DataFrame({"k": range(100_000), "v": range(100_000)}).write_parquet(
-        tmp_path / "dim.parquet"
-    )
-    pl.DataFrame({"j": range(800), "w": range(800)}).write_parquet(
-        tmp_path / "right.parquet"
-    )
-    base = pl.scan_parquet(tmp_path / "fact.parquet").join(
-        pl.scan_parquet(tmp_path / "dim.parquet"), on="k"
-    )
-    left = pl.concat(
-        [
-            base.filter(pl.col("a") >= i, pl.col("a") < i + 1000).select(
-                pl.col("a").cast(pl.Float64)
-            )
-            for i in range(8)
-        ]
-    )
-    small = pl.scan_parquet(tmp_path / "right.parquet")
-    right = small.join(small, on="j", suffix="_r").select("w")
-    q = left.join(right, how="cross")
-
-    for cse in [False, True]:
-        flags = pl.QueryOptFlags(comm_subplan_elim=cse)
-        assert "BUILD SIDE: PreferRight" in q.explain(optimizations=flags)
-    assert q.select(pl.len()).collect().item() == 8_000 * 800
-
-
 def test_cspe_cache_removal_keeps_nested_caches(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:

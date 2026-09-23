@@ -691,7 +691,6 @@ fn parquet_column_stats(
                     a.int_range
                 },
                 int_range_partial: sampled || !complete,
-                kept: None,
             };
             (name, stats)
         })

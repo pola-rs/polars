@@ -16,12 +16,11 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 
-use super::{
-    Card, DEFAULT_REL_ERR, KeptValues, ScanColumnStats, ScanColumnStatsMap, leaf_row_count,
-};
+use super::{Card, DEFAULT_REL_ERR, ScanColumnStats, ScanColumnStatsMap, leaf_row_count};
 use crate::plans::aexpr::filter_constraint::{ColumnBounds, and_chain_bounds};
 use crate::plans::{
-    AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, into_column,
+    AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, MintermIter,
+    into_column,
 };
 use crate::prelude::{JoinType, Operator};
 
@@ -99,15 +98,22 @@ pub(crate) fn node_stats_with_cache(
                 filtered = sliced(filtered, slice.clone());
                 max_rows = max_rows.map(|m| sliced(m, slice.clone()));
             }
-            let stats = NodeStats {
+            let columns = scan_columns(ir);
+            if let Some(p) = predicate {
+                filtered = apply_predicate(
+                    filtered,
+                    unfiltered,
+                    p.node(),
+                    expr_arena,
+                    columns.as_deref(),
+                    &file_info.schema,
+                );
+            }
+            Some(NodeStats {
                 filtered,
                 unfiltered,
                 max_rows,
-                columns: scan_columns(ir),
-            };
-            Some(match predicate {
-                None => stats,
-                Some(p) => stats.filter_by(p.node(), expr_arena, &file_info.schema),
+                columns,
             })
         },
 
@@ -158,8 +164,15 @@ pub(crate) fn node_stats_with_cache(
         },
         IR::Filter { input, predicate } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
-            let schema = ir_arena.get(*input).schema(ir_arena);
-            Some(inner.filter_by(predicate.node(), expr_arena, &schema))
+            let filtered = apply_predicate(
+                inner.filtered,
+                inner.unfiltered,
+                predicate.node(),
+                expr_arena,
+                inner.columns.as_deref(),
+                &ir_arena.get(*input).schema(ir_arena),
+            );
+            Some(inner.filter(filtered))
         },
         IR::SimpleProjection { input, .. } | IR::Cache { input, .. } => {
             node_stats_with_cache(*input, ir_arena, expr_arena, cache)
@@ -239,7 +252,7 @@ pub(crate) fn node_stats_with_cache(
                     filtered,
                     unfiltered: rows(left.unfiltered, right.unfiltered)?,
                     max_rows: join_max_rows(how, &left, &right),
-                    columns: join_columns(&left, &right, how),
+                    columns: join_columns(&left, &right),
                 }
             };
 
@@ -248,7 +261,15 @@ pub(crate) fn node_stats_with_cache(
             let stats = match fused_predicate {
                 None => stats,
                 Some(fused_predicate) => {
-                    stats.filter_by(fused_predicate.node(), expr_arena, &ir.schema(ir_arena))
+                    let filtered = apply_predicate(
+                        stats.filtered,
+                        stats.unfiltered,
+                        fused_predicate.node(),
+                        expr_arena,
+                        stats.columns.as_deref(),
+                        &ir.schema(ir_arena),
+                    );
+                    stats.filter(filtered)
                 },
             };
 
@@ -298,31 +319,6 @@ impl NodeStats {
     fn filter(mut self, filtered: f64) -> Self {
         self.filtered = filtered;
         self
-    }
-
-    /// The same node with `predicate` applied to it. A column the predicate narrows
-    /// records the values it kept, so a later filter on it is estimated within them.
-    fn filter_by(self, predicate: Node, expr_arena: &Arena<AExpr>, schema: &Schema) -> Self {
-        let selectivity = predicate_selectivity(
-            predicate,
-            expr_arena,
-            self.columns.as_deref(),
-            schema,
-            self.unfiltered,
-        );
-        let filtered = (self.filtered * selectivity.fraction).max(MIN_CARDINALITY);
-        let mut out = self.filter(filtered);
-        if let Some(columns) = &mut out.columns
-            && !selectivity.kept.is_empty()
-        {
-            let columns = Arc::make_mut(columns);
-            for (name, kept) in selectivity.kept {
-                if let Some(stats) = columns.get_mut(&name) {
-                    stats.kept = Some(kept);
-                }
-            }
-        }
-        out
     }
 
     /// The same leaf narrowed by `slice`, applied to the estimate and the bound.
@@ -422,37 +418,22 @@ fn join_max_rows(how: &JoinType, left: &NodeStats, right: &NodeStats) -> Option<
 /// Column statistics of a join output: those of both sides, minus any name they
 /// share. A shared name is either coalesced or suffixed, and which side the output
 /// column came from is no longer clear.
-///
-/// The side an outer join fills with nulls loses what earlier filters kept.
-fn join_columns(
-    left: &NodeStats,
-    right: &NodeStats,
-    how: &JoinType,
-) -> Option<Arc<ScanColumnStatsMap>> {
-    let (left_gains_nulls, right_gains_nulls) = match how {
-        JoinType::Left => (false, true),
-        JoinType::Right => (true, false),
-        JoinType::Full => (true, true),
-        _ => (false, false),
-    };
-    let empty = ScanColumnStatsMap::default();
-    let (left, right) = (
-        left.columns.as_deref().unwrap_or(&empty),
-        right.columns.as_deref().unwrap_or(&empty),
-    );
-    let mut merged = ScanColumnStatsMap::default();
-    let mut take_from = |from: &ScanColumnStatsMap, other: &ScanColumnStatsMap, gains_nulls| {
-        for (name, stats) in from.iter().filter(|(name, _)| !other.contains_key(*name)) {
-            let mut stats = stats.clone();
-            if gains_nulls {
-                stats.kept = None;
-            }
-            merged.insert(name.clone(), stats);
-        }
-    };
-    take_from(left, right, left_gains_nulls);
-    take_from(right, left, right_gains_nulls);
-    (!merged.is_empty()).then(|| Arc::new(merged))
+fn join_columns(left: &NodeStats, right: &NodeStats) -> Option<Arc<ScanColumnStatsMap>> {
+    match (&left.columns, &right.columns) {
+        (None, None) => None,
+        (Some(columns), None) | (None, Some(columns)) => Some(columns.clone()),
+        (Some(left), Some(right)) => {
+            let mut merged = ScanColumnStatsMap::default();
+            let mut take_from = |from: &ScanColumnStatsMap, other: &ScanColumnStatsMap| {
+                for (name, stats) in from.iter().filter(|(name, _)| !other.contains_key(*name)) {
+                    merged.insert(name.clone(), stats.clone());
+                }
+            };
+            take_from(left, right);
+            take_from(right, left);
+            Some(Arc::new(merged))
+        },
+    }
 }
 
 /// Column statistics of a scan, keyed on its output names.
@@ -569,7 +550,6 @@ fn single_key_column(keys: &[&PlSmallStr], rows: f64) -> Option<Arc<ScanColumnSt
             avg_byte_width: None,
             int_range: None,
             int_range_partial: false,
-            kept: None,
         },
     );
     Some(Arc::new(map))
@@ -597,17 +577,26 @@ fn n_groups(rows: f64, n_keys: usize, ndv: Option<f64>) -> f64 {
     rows.powf(exponent).clamp(MIN_CARDINALITY, rows)
 }
 
-/// Fraction of rows a predicate keeps.
-struct Selectivity {
-    fraction: f64,
-    /// `false` when any part of it fell back to [`DEFAULT_SELECTIVITY`].
-    known: bool,
-    /// Per column of its `AND` chain, the values it keeps.
-    kept: Vec<(PlSmallStr, KeptValues)>,
+/// Rows left after `predicate`.
+///
+/// `rows` is what the conjuncts narrow. `unfiltered` is the relation the column
+/// statistics describe, which a slice may already have cut into.
+fn apply_predicate(
+    rows: f64,
+    unfiltered: f64,
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+    columns: Option<&ScanColumnStatsMap>,
+    schema: &Schema,
+) -> f64 {
+    let (selectivity, _) =
+        predicate_selectivity(predicate, expr_arena, columns, schema, unfiltered);
+    (rows * selectivity).max(MIN_CARDINALITY)
 }
 
-/// Estimated per column for the constraints of the `AND` chain of `predicate`, and one
-/// conjunct at a time for the rest.
+/// Fraction of rows `predicate` keeps, estimated per column for the constraints of
+/// its `AND` chain and one conjunct at a time for the rest. The flag is `false` when
+/// any part of it fell back to [`DEFAULT_SELECTIVITY`].
 #[recursive]
 fn predicate_selectivity(
     predicate: Node,
@@ -615,88 +604,46 @@ fn predicate_selectivity(
     columns: Option<&ScanColumnStatsMap>,
     schema: &Schema,
     rows: f64,
-) -> Selectivity {
-    let mut factors = Vec::new();
-    let mut kept = Vec::new();
+) -> (f64, bool) {
     // An `OR` is a single conjunct, so it skips the `AND` chain model.
-    if is_or(predicate, expr_arena) {
-        factors.push(conjunct_selectivity(
+    let factors: Vec<Option<f64>> = if is_or(predicate, expr_arena) {
+        vec![conjunct_selectivity(
             predicate, expr_arena, columns, schema, rows,
-        ));
+        )]
     } else {
         let chain = and_chain_bounds(predicate, schema, expr_arena);
         if chain.unsat {
-            return Selectivity {
-                fraction: 0.0,
-                known: true,
-                kept,
-            };
+            return (0.0, true);
         }
+        let mut factors = Vec::with_capacity(chain.columns.len() + chain.other.len());
+        let mut non_null_counted = Vec::new();
         for bounds in &chain.columns {
-            let estimate = column_selectivity(bounds, columns, schema, rows);
-            let fraction = estimate.map(|(fraction, values)| {
-                kept.push((bounds.name.clone(), values));
-                fraction
-            });
-            factors.push(fraction);
+            let factor = column_selectivity(bounds, columns, schema, rows);
+            if factor.is_some() {
+                non_null_counted.push(&bounds.name);
+            }
+            factors.push(factor);
         }
         for &conjunct in &chain.other {
-            if let Some((name, function)) = null_check(conjunct, expr_arena)
-                && let Some(keep_nulls) = match function {
-                    IRBooleanFunction::IsNotNull => Some(false),
-                    IRBooleanFunction::IsNull => Some(true),
-                    _ => None,
-                }
+            // The column's estimate already holds only its non-null rows.
+            if let Some((name, IRBooleanFunction::IsNotNull)) = null_check(conjunct, expr_arena)
+                && non_null_counted.contains(&name)
             {
-                let earlier = kept.iter().position(|(kept, _)| kept == name);
-                let before = match earlier {
-                    Some(i) => Some(&kept[i].1),
-                    None => columns
-                        .and_then(|columns| columns.get(name))
-                        .and_then(|stats| stats.kept.as_ref()),
-                };
-                let after = with_null_check(before, keep_nulls);
-                match earlier {
-                    Some(i) => {
-                        factors.push(Some(if kept[i].1 == after { 1.0 } else { 0.0 }));
-                        kept[i].1 = after;
-                    },
-                    None => {
-                        factors.push(conjunct_selectivity(
-                            conjunct, expr_arena, columns, schema, rows,
-                        ));
-                        kept.push((name.clone(), after));
-                    },
-                }
                 continue;
             }
             factors.push(conjunct_selectivity(
                 conjunct, expr_arena, columns, schema, rows,
             ));
         }
-    }
-    let mut fraction = 1.0;
+        factors
+    };
+    let mut selectivity = 1.0;
     let mut known = true;
     for factor in factors {
         known &= factor.is_some();
-        fraction *= factor.unwrap_or(DEFAULT_SELECTIVITY);
+        selectivity *= factor.unwrap_or(DEFAULT_SELECTIVITY);
     }
-    Selectivity {
-        fraction,
-        known,
-        kept,
-    }
-}
-
-/// The values of a column that kept `before` and then only its nulls, or only its
-/// non-null values.
-fn with_null_check(before: Option<&KeptValues>, keep_nulls: bool) -> KeptValues {
-    match (before, keep_nulls) {
-        (None, false) => KeptValues::NonNull,
-        (None | Some(KeptValues::Nulls), true) => KeptValues::Nulls,
-        (Some(KeptValues::Nulls), false) | (Some(_), true) => KeptValues::Values(Vec::new()),
-        (Some(before), false) => before.clone(),
-    }
+    (selectivity, known)
 }
 
 fn is_or(node: Node, expr_arena: &Arena<AExpr>) -> bool {
@@ -709,25 +656,13 @@ fn is_or(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     )
 }
 
-/// The values an integer column can hold.
-enum Domain<'a> {
-    /// Every value in the inclusive range `min..=max`, except `excluded`.
-    Range {
-        min: i128,
-        max: i128,
-        excluded: &'a [i128],
-    },
-    /// These values, sorted.
-    Values(&'a [i128]),
-}
-
-/// The values `name` can hold and its type, when they are known in the unit of its
-/// values. The flag says an earlier filter dropped the nulls.
-fn value_domain<'a>(
+/// Integer range and type of `name`, when the range covers all its data and is in
+/// the unit of its values.
+fn int_range<'a>(
     name: &str,
-    columns: Option<&'a ScanColumnStatsMap>,
+    columns: Option<&ScanColumnStatsMap>,
     schema: &'a Schema,
-) -> Option<(Domain<'a>, &'a DataType, bool)> {
+) -> Option<(i128, i128, &'a DataType)> {
     let dtype = schema.get(name)?;
     // Files of one scan may store a `Datetime`, `Duration` or `Time` in different
     // units, and their ranges are merged as stored.
@@ -735,37 +670,8 @@ fn value_domain<'a>(
         return None;
     }
     let stats = columns?.get(name)?;
-    let domain = match &stats.kept {
-        Some(KeptValues::Range {
-            lower,
-            upper,
-            excluded,
-        }) => Domain::Range {
-            min: *lower,
-            max: *upper,
-            excluded,
-        },
-        Some(KeptValues::Values(values)) => Domain::Values(values),
-        Some(KeptValues::Nulls) => Domain::Values(&[]),
-        Some(KeptValues::NonNull) | None => {
-            let (min, max) = stats.int_range?;
-            if stats.int_range_partial {
-                return None;
-            }
-            Domain::Range {
-                min,
-                max,
-                excluded: &[],
-            }
-        },
-    };
-    if let Domain::Range { min, max, .. } = domain
-        && max < min
-    {
-        return None;
-    }
-    let non_null = !matches!(stats.kept, None | Some(KeptValues::Nulls));
-    Some((domain, dtype, non_null))
+    let (min, max) = stats.int_range?;
+    (max >= min && !stats.int_range_partial).then_some((min, max, dtype))
 }
 
 fn int_value(value: &Scalar, dtype: &DataType) -> Option<i128> {
@@ -775,121 +681,50 @@ fn int_value(value: &Scalar, dtype: &DataType) -> Option<i128> {
 
 /// Fraction of rows holding a null in `name`, when it is known.
 fn null_fraction(name: &str, columns: Option<&ScanColumnStatsMap>, rows: f64) -> Option<f64> {
-    let stats = columns?.get(name)?;
-    match stats.kept {
-        Some(KeptValues::Nulls) => return Some(1.0),
-        Some(_) => return Some(0.0),
-        None => {},
-    }
-    let nulls = stats.null_count.confident(0.0)?;
+    let nulls = columns?.get(name)?.null_count.confident(0.0)?;
     Some((nulls as f64 / rows.max(MIN_CARDINALITY)).clamp(0.0, 1.0))
 }
 
 /// Fraction of rows a column's constraints keep, assuming its non-null values are
-/// spread evenly over its domain, and the values they keep.
+/// spread evenly over its integer range.
 fn column_selectivity(
     bounds: &ColumnBounds,
     columns: Option<&ScanColumnStatsMap>,
     schema: &Schema,
     rows: f64,
-) -> Option<(f64, KeptValues)> {
-    let (domain, dtype, narrowed) = value_domain(&bounds.name, columns, schema)?;
+) -> Option<f64> {
+    let (min, max, dtype) = int_range(&bounds.name, columns, schema)?;
     let lower = match &bounds.lower {
-        Some((value, inclusive)) => Some(int_value(value, dtype)? + i128::from(!inclusive)),
-        None => None,
+        Some((value, inclusive)) => int_value(value, dtype)? + i128::from(!inclusive),
+        None => min,
     };
     let upper = match &bounds.upper {
-        Some((value, inclusive)) => Some(int_value(value, dtype)? - i128::from(!inclusive)),
-        None => None,
+        Some((value, inclusive)) => int_value(value, dtype)? - i128::from(!inclusive),
+        None => max,
     };
-    let sorted = |values: &[Scalar]| -> Option<Vec<i128>> {
-        let mut values = values
+    let (lower, upper) = (lower.max(min), upper.min(max));
+    // The distinct values of `values` inside the kept range.
+    let kept_values = |values: &[Scalar]| -> Option<Vec<i128>> {
+        let mut kept = values
             .iter()
             .map(|value| int_value(value, dtype))
             .collect::<Option<Vec<_>>>()?;
-        values.sort_unstable();
-        values.dedup();
-        Some(values)
+        kept.retain(|v| (lower..=upper).contains(v));
+        kept.sort_unstable();
+        kept.dedup();
+        Some(kept)
     };
-    let excluded = sorted(&bounds.excluded)?;
-    let allowed = match bounds.allowed.as_deref() {
-        Some(allowed) => Some(sorted(allowed)?),
-        None => None,
-    };
-    let keeps = |v: &i128| {
-        lower.is_none_or(|lower| *v >= lower)
-            && upper.is_none_or(|upper| *v <= upper)
-            && excluded.binary_search(v).is_err()
-            && allowed
-                .as_ref()
-                .is_none_or(|allowed| allowed.binary_search(v).is_ok())
-    };
-    let (fraction, kept) = match domain {
-        Domain::Values(values) => {
-            let kept: Vec<i128> = values.iter().copied().filter(keeps).collect();
-            let fraction = if values.is_empty() {
-                0.0
-            } else {
-                kept.len() as f64 / values.len() as f64
-            };
-            (fraction, KeptValues::Values(kept))
+    let excluded = kept_values(&bounds.excluded)?;
+    let kept = match &bounds.allowed {
+        Some(allowed) => {
+            let mut allowed = kept_values(allowed)?;
+            allowed.retain(|v| excluded.binary_search(v).is_err());
+            allowed.len() as i128
         },
-        Domain::Range {
-            min,
-            max,
-            excluded: already_excluded,
-        } => {
-            let in_domain =
-                |v: &i128| (min..=max).contains(v) && already_excluded.binary_search(v).is_err();
-            let size = range_len(min, max) - already_excluded.len() as f64;
-            if size <= 0.0 {
-                return Some((0.0, KeptValues::Values(Vec::new())));
-            }
-            match &allowed {
-                Some(allowed) => {
-                    let kept: Vec<i128> = allowed
-                        .iter()
-                        .copied()
-                        .filter(|v| in_domain(v) && keeps(v))
-                        .collect();
-                    (kept.len() as f64 / size, KeptValues::Values(kept))
-                },
-                None => {
-                    let lower = lower.unwrap_or(min).max(min);
-                    let upper = upper.unwrap_or(max).min(max);
-                    let mut excluded: Vec<i128> = already_excluded
-                        .iter()
-                        .chain(&excluded)
-                        .copied()
-                        .filter(|v| (lower..=upper).contains(v))
-                        .collect();
-                    excluded.sort_unstable();
-                    excluded.dedup();
-                    let kept = (range_len(lower, upper) - excluded.len() as f64).max(0.0);
-                    let values = KeptValues::Range {
-                        lower,
-                        upper,
-                        excluded,
-                    };
-                    (kept / size, values)
-                },
-            }
-        },
+        None => (upper - lower + 1).max(0) - excluded.len() as i128,
     };
-    let non_null = if narrowed {
-        1.0
-    } else {
-        1.0 - null_fraction(&bounds.name, columns, rows).unwrap_or(0.0)
-    };
-    Some((fraction * non_null, kept))
-}
-
-/// Number of values in the inclusive range `lower..=upper`.
-fn range_len(lower: i128, upper: i128) -> f64 {
-    if upper < lower {
-        return 0.0;
-    }
-    upper.abs_diff(lower) as f64 + 1.0
+    let non_null = 1.0 - null_fraction(&bounds.name, columns, rows).unwrap_or(0.0);
+    Some(kept.max(0) as f64 / (max - min + 1) as f64 * non_null)
 }
 
 /// Fraction of rows one conjunct keeps, or `None` when nothing describes it.
@@ -906,10 +741,9 @@ fn conjunct_selectivity(
         right,
     } = expr_arena.get(conjunct)
     {
-        let left = predicate_selectivity(*left, expr_arena, columns, schema, rows);
-        let right = predicate_selectivity(*right, expr_arena, columns, schema, rows);
-        return (left.known && right.known)
-            .then_some(left.fraction + right.fraction - left.fraction * right.fraction);
+        let (left, left_known) = predicate_selectivity(*left, expr_arena, columns, schema, rows);
+        let (right, right_known) = predicate_selectivity(*right, expr_arena, columns, schema, rows);
+        return (left_known && right_known).then_some(left + right - left * right);
     }
     let (name, function) = null_check(conjunct, expr_arena)?;
 
@@ -1041,19 +875,6 @@ mod tests {
     use polars_core::prelude::AnyValue;
 
     use super::*;
-
-    /// Rows left after `predicate`, over a relation whose statistics are `columns`.
-    fn apply_predicate(
-        rows: f64,
-        unfiltered: f64,
-        predicate: Node,
-        expr_arena: &Arena<AExpr>,
-        columns: Option<&ScanColumnStatsMap>,
-        schema: &Schema,
-    ) -> f64 {
-        let selectivity = predicate_selectivity(predicate, expr_arena, columns, schema, unfiltered);
-        (rows * selectivity.fraction).max(MIN_CARDINALITY)
-    }
 
     fn leaf(unfiltered: f64, filtered: f64) -> NodeStats {
         NodeStats {
@@ -1767,278 +1588,6 @@ mod tests {
     }
 
     #[test]
-    fn a_second_filter_is_estimated_within_the_range_the_first_kept() {
-        let (stats, schema) = ranged_column(DataType::Int64, (0, 99_999));
-        let stats = NodeStats {
-            filtered: 100_000.0,
-            unfiltered: 100_000.0,
-            ..stats
-        };
-        let mut expr_arena = Arena::new();
-        let range = |expr_arena: &mut Arena<AExpr>, lo: i64, hi: i64| {
-            let lower = compare(expr_arena, Operator::GtEq, Scalar::from(lo));
-            let upper = compare(expr_arena, Operator::Lt, Scalar::from(hi));
-            and(expr_arena, lower, upper)
-        };
-        let shared = range(&mut expr_arena, 0, 1007);
-        let branch = range(&mut expr_arena, 5, 1005);
-
-        let stats = stats.filter_by(shared, &expr_arena, &schema);
-        assert!(
-            (stats.filtered - 1007.0).abs() < 1e-9,
-            "got {}",
-            stats.filtered
-        );
-        let stats = stats.filter_by(branch, &expr_arena, &schema);
-        assert!(
-            (stats.filtered - 1000.0).abs() < 1e-9,
-            "got {}",
-            stats.filtered
-        );
-        // The key domain is untouched.
-        assert_eq!(stats.column("a").unwrap().int_range, Some((0, 99_999)));
-    }
-
-    #[cfg(feature = "is_in")]
-    #[test]
-    fn a_later_filter_is_estimated_within_the_values_is_in_kept() {
-        let (stats, schema) = ranged_column(DataType::Int64, (0, 999));
-        let stats = NodeStats {
-            filtered: 100_000.0,
-            unfiltered: 100_000.0,
-            ..stats
-        };
-        let mut expr_arena = Arena::new();
-        let node = is_in(&mut expr_arena, &[0, 999]);
-        let eq = compare(&mut expr_arena, Operator::Eq, Scalar::from(0i64));
-
-        let stats = stats.filter_by(node, &expr_arena, &schema);
-        assert!(
-            (stats.filtered - 200.0).abs() < 1e-9,
-            "got {}",
-            stats.filtered
-        );
-        let again = stats.clone().filter_by(node, &expr_arena, &schema);
-        assert!(
-            (again.filtered - 200.0).abs() < 1e-9,
-            "got {}",
-            again.filtered
-        );
-        let zero = stats.filter_by(eq, &expr_arena, &schema);
-        assert!(
-            (zero.filtered - 100.0).abs() < 1e-9,
-            "got {}",
-            zero.filtered
-        );
-    }
-
-    #[test]
-    fn a_range_filter_drops_the_nulls_for_later_filters() {
-        let stats = leaf(1000.0, 1000.0).with_column(
-            "a",
-            ScanColumnStats {
-                int_range: Some((0, 0)),
-                null_count: Card::Exact(875),
-                ..Default::default()
-            },
-        );
-        let schema = Schema::from_iter([(PlSmallStr::from_str("a"), DataType::Int64)]);
-        let mut expr_arena = Arena::new();
-        let bound = compare(&mut expr_arena, Operator::GtEq, Scalar::from(0i64));
-        let a = expr_arena.add(AExpr::Column(PlSmallStr::from_str("a")));
-        let null_check = |expr_arena: &mut Arena<AExpr>, function| {
-            expr_arena.add(AExpr::Function {
-                input: vec![ExprIR::from_node(a, expr_arena)],
-                function: IRFunctionExpr::Boolean(function),
-                options: crate::prelude::FunctionOptions::elementwise(),
-            })
-        };
-        let not_null = null_check(&mut expr_arena, IRBooleanFunction::IsNotNull);
-        let is_null = null_check(&mut expr_arena, IRBooleanFunction::IsNull);
-        let self_eq = expr_arena.add(AExpr::BinaryExpr {
-            left: a,
-            op: Operator::Eq,
-            right: a,
-        });
-
-        let stats = stats.filter_by(bound, &expr_arena, &schema);
-        assert!(
-            (stats.filtered - 125.0).abs() < 1e-9,
-            "got {}",
-            stats.filtered
-        );
-        for check in [not_null, self_eq] {
-            let kept = stats.clone().filter_by(check, &expr_arena, &schema);
-            assert!(
-                (kept.filtered - 125.0).abs() < 1e-9,
-                "got {}",
-                kept.filtered
-            );
-        }
-        let kept = stats.filter_by(is_null, &expr_arena, &schema);
-        assert_eq!(kept.filtered, MIN_CARDINALITY);
-    }
-
-    #[test]
-    fn an_outer_join_drops_what_filters_kept_on_its_null_side() {
-        let kept = |name: &str| {
-            leaf(1000.0, 10.0).with_column(
-                name,
-                ScanColumnStats {
-                    int_range: Some((0, 999)),
-                    kept: Some(KeptValues::Range {
-                        lower: 0,
-                        upper: 9,
-                        excluded: Vec::new(),
-                    }),
-                    ..Default::default()
-                },
-            )
-        };
-        let (left, right) = (kept("l"), kept("r"));
-        let has_kept = |columns: &ScanColumnStatsMap, name: &str| columns[name].kept.is_some();
-
-        let inner = join_columns(&left, &right, &JoinType::Inner).unwrap();
-        assert!(has_kept(&inner, "l") && has_kept(&inner, "r"));
-        let outer = join_columns(&left, &right, &JoinType::Left).unwrap();
-        assert!(has_kept(&outer, "l") && !has_kept(&outer, "r"));
-        let outer = join_columns(&left, &right, &JoinType::Full).unwrap();
-        assert!(!has_kept(&outer, "l") && !has_kept(&outer, "r"));
-    }
-
-    #[test]
-    fn a_later_filter_sees_the_values_an_earlier_one_excluded() {
-        let (stats, schema) = ranged_column(DataType::Int64, (0, 9));
-        let stats = NodeStats {
-            filtered: 100_000.0,
-            unfiltered: 100_000.0,
-            ..stats
-        };
-        let mut expr_arena = Arena::new();
-        let mut node = compare(&mut expr_arena, Operator::NotEq, Scalar::from(1i64));
-        for v in 2..=8i64 {
-            let ne = compare(&mut expr_arena, Operator::NotEq, Scalar::from(v));
-            node = and(&mut expr_arena, node, ne);
-        }
-        let one = compare(&mut expr_arena, Operator::Eq, Scalar::from(1i64));
-
-        let stats = stats.filter_by(node, &expr_arena, &schema);
-        assert!(
-            (stats.filtered - 20_000.0).abs() < 1e-9,
-            "got {}",
-            stats.filtered
-        );
-        let again = stats.clone().filter_by(node, &expr_arena, &schema);
-        assert!(
-            (again.filtered - 20_000.0).abs() < 1e-9,
-            "got {}",
-            again.filtered
-        );
-        let excluded = stats.filter_by(one, &expr_arena, &schema);
-        assert_eq!(excluded.filtered, MIN_CARDINALITY);
-    }
-
-    #[test]
-    fn a_standalone_null_check_is_seen_by_later_filters() {
-        let stats = leaf(1000.0, 1000.0).with_column(
-            "a",
-            ScanColumnStats {
-                int_range: Some((0, 0)),
-                null_count: Card::Exact(875),
-                ..Default::default()
-            },
-        );
-        let schema = Schema::from_iter([(PlSmallStr::from_str("a"), DataType::Int64)]);
-        let mut expr_arena = Arena::new();
-        let bound = compare(&mut expr_arena, Operator::GtEq, Scalar::from(0i64));
-        let a = expr_arena.add(AExpr::Column(PlSmallStr::from_str("a")));
-        let null_check = |expr_arena: &mut Arena<AExpr>, function| {
-            expr_arena.add(AExpr::Function {
-                input: vec![ExprIR::from_node(a, expr_arena)],
-                function: IRFunctionExpr::Boolean(function),
-                options: crate::prelude::FunctionOptions::elementwise(),
-            })
-        };
-        let not_null = null_check(&mut expr_arena, IRBooleanFunction::IsNotNull);
-        let is_null = null_check(&mut expr_arena, IRBooleanFunction::IsNull);
-        let self_eq = expr_arena.add(AExpr::BinaryExpr {
-            left: a,
-            op: Operator::Eq,
-            right: a,
-        });
-
-        for check in [not_null, self_eq] {
-            let kept = stats.clone().filter_by(check, &expr_arena, &schema);
-            assert!(
-                (kept.filtered - 125.0).abs() < 1e-9,
-                "got {}",
-                kept.filtered
-            );
-            let kept = kept.filter_by(bound, &expr_arena, &schema);
-            assert!(
-                (kept.filtered - 125.0).abs() < 1e-9,
-                "got {}",
-                kept.filtered
-            );
-        }
-        let nulls = stats.filter_by(is_null, &expr_arena, &schema);
-        assert!(
-            (nulls.filtered - 875.0).abs() < 1e-9,
-            "got {}",
-            nulls.filtered
-        );
-        let again = nulls.clone().filter_by(is_null, &expr_arena, &schema);
-        assert!(
-            (again.filtered - 875.0).abs() < 1e-9,
-            "got {}",
-            again.filtered
-        );
-        let values = nulls.filter_by(bound, &expr_arena, &schema);
-        assert_eq!(values.filtered, MIN_CARDINALITY);
-    }
-
-    fn column_check(expr_arena: &mut Arena<AExpr>, function: IRBooleanFunction) -> (Node, Node) {
-        let a = expr_arena.add(AExpr::Column(PlSmallStr::from_str("a")));
-        let check = expr_arena.add(AExpr::Function {
-            input: vec![ExprIR::from_node(a, expr_arena)],
-            function: IRFunctionExpr::Boolean(function),
-            options: crate::prelude::FunctionOptions::elementwise(),
-        });
-        let self_eq = expr_arena.add(AExpr::BinaryExpr {
-            left: a,
-            op: Operator::Eq,
-            right: a,
-        });
-        (check, self_eq)
-    }
-
-    #[test]
-    fn a_null_check_keeps_the_range_an_earlier_filter_kept() {
-        let (stats, schema) = ranged_column(DataType::Int64, (0, 99_999));
-        let stats = NodeStats {
-            filtered: 100_000.0,
-            unfiltered: 100_000.0,
-            ..stats
-        };
-        let mut expr_arena = Arena::new();
-        let bound = compare(&mut expr_arena, Operator::Lt, Scalar::from(1000i64));
-        let (not_null, self_eq) = column_check(&mut expr_arena, IRBooleanFunction::IsNotNull);
-
-        for check in [not_null, self_eq] {
-            let kept = stats
-                .clone()
-                .filter_by(bound, &expr_arena, &schema)
-                .filter_by(check, &expr_arena, &schema)
-                .filter_by(bound, &expr_arena, &schema);
-            assert!(
-                (kept.filtered - 1000.0).abs() < 1e-9,
-                "got {}",
-                kept.filtered
-            );
-        }
-    }
-
-    #[test]
     fn a_full_width_integer_range_is_counted() {
         for (dtype, range, bound) in [
             (DataType::UInt64, (0, u64::MAX as i128), Scalar::from(0u64)),
@@ -2051,12 +1600,15 @@ mod tests {
             let (stats, schema) = ranged_column(dtype, range);
             let mut expr_arena = Arena::new();
             let bound = compare(&mut expr_arena, Operator::GtEq, bound);
-            let kept = stats.filter_by(bound, &expr_arena, &schema);
-            assert!(
-                (kept.filtered - 1000.0).abs() < 1e-9,
-                "got {}",
-                kept.filtered
+            let kept = apply_predicate(
+                1000.0,
+                1000.0,
+                bound,
+                &expr_arena,
+                stats.columns.as_deref(),
+                &schema,
             );
+            assert!((kept - 1000.0).abs() < 1e-9, "got {kept}");
         }
     }
 
@@ -2074,21 +1626,23 @@ mod tests {
             polars_core::prelude::FrozenCategories::new(["x", "y"]).unwrap(),
         );
         let schema = Schema::from_iter([(PlSmallStr::from_str("a"), dtype)]);
+        let map = stats.columns.as_deref();
         let mut expr_arena = Arena::new();
-        let (not_null, _) = column_check(&mut expr_arena, IRBooleanFunction::IsNotNull);
-        let (is_null, _) = column_check(&mut expr_arena, IRBooleanFunction::IsNull);
+        let a = expr_arena.add(AExpr::Column(PlSmallStr::from_str("a")));
+        let mut null_check = |function| {
+            expr_arena.add(AExpr::Function {
+                input: vec![ExprIR::from_node(a, &expr_arena)],
+                function: IRFunctionExpr::Boolean(function),
+                options: crate::prelude::FunctionOptions::elementwise(),
+            })
+        };
+        let not_null = null_check(IRBooleanFunction::IsNotNull);
+        let is_null = null_check(IRBooleanFunction::IsNull);
 
         for (first, second) in [(not_null, is_null), (is_null, not_null)] {
             let both = and(&mut expr_arena, first, second);
-            let kept = stats.clone().filter_by(both, &expr_arena, &schema);
-            assert_eq!(kept.filtered, MIN_CARDINALITY);
+            let kept = apply_predicate(1000.0, 1000.0, both, &expr_arena, map, &schema);
+            assert_eq!(kept, MIN_CARDINALITY);
         }
-        let both = and(&mut expr_arena, not_null, not_null);
-        let kept = stats.filter_by(both, &expr_arena, &schema);
-        assert!(
-            (kept.filtered - 1000.0).abs() < 1e-9,
-            "got {}",
-            kept.filtered
-        );
     }
 }
