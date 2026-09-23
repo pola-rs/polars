@@ -23,6 +23,8 @@ use crate::prelude::*;
 pub enum DynLiteralValue {
     Str(PlSmallStr),
     Int(i128),
+    #[cfg_attr(feature = "serde", serde(with = "polars_utils::serde_float"))]
+    #[cfg_attr(feature = "dsl-schema", schemars(with = "f64"))]
     Float(f64),
     List(DynListLiteralValue),
 }
@@ -46,6 +48,11 @@ impl Eq for DynLiteralValue {}
 pub enum DynListLiteralValue {
     Str(Box<[Option<PlSmallStr>]>),
     Int(Box<[Option<i128>]>),
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "polars_utils::serde_float::option_slice")
+    )]
+    #[cfg_attr(feature = "dsl-schema", schemars(with = "Box<[Option<f64>]>"))]
     Float(Box<[Option<f64>]>),
     List(Box<[Option<DynListLiteralValue>]>),
 }
