@@ -695,20 +695,21 @@ fn integration_write(
 type IntegrationRead = (ArrowSchema, Vec<RecordBatchT<Box<dyn Array>>>);
 
 fn integration_read(data: &[u8], limit: Option<usize>) -> PolarsResult<IntegrationRead> {
-    let mut reader = Cursor::new(data);
-    let metadata = p_read::read_metadata(&mut reader)?;
+    let metadata = p_read::read_metadata(&mut Cursor::new(data))?;
     let schema = p_read::infer_schema(&metadata)?;
-
-    let reader = FileReader::new(
-        Cursor::new(data),
-        metadata.row_groups,
-        schema.clone(),
-        limit,
-    );
-
-    let batches = reader.collect::<PolarsResult<Vec<_>>>()?;
+    let batches = read_with_schema(data, schema.clone(), limit)?;
 
     Ok((schema, batches))
+}
+
+/// Decodes `data` as `schema`, instead of the schema inferred from the file.
+fn read_with_schema(
+    data: &[u8],
+    schema: ArrowSchema,
+    limit: Option<usize>,
+) -> PolarsResult<Vec<RecordBatchT<Box<dyn Array>>>> {
+    let metadata = p_read::read_metadata(&mut Cursor::new(data))?;
+    FileReader::new(Cursor::new(data), metadata.row_groups, schema, limit).collect()
 }
 
 fn assert_roundtrip(
@@ -879,17 +880,8 @@ fn list_int_nullable() -> PolarsResult<()> {
 /// the file, the levels are refused instead of being decoded into the wrong values.
 #[test]
 fn list_nesting_mismatch_is_refused() -> PolarsResult<()> {
-    let mut array = MutableListArray::<i64, _>::new_with_field(
-        MutablePrimitiveArray::<i64>::new(),
-        "item".into(),
-        true,
-    );
-    array
-        .try_extend(vec![Some(vec![Some(1), None, Some(3)]), None, Some(vec![])])
-        .unwrap();
-    let array = array.into_box();
-    let field = Field::new("a1".into(), array.dtype().clone(), true);
-    let schema = ArrowSchema::from_iter([field]);
+    let array = data(0..12i64, true);
+    let schema = ArrowSchema::from_iter([Field::new("a1".into(), array.dtype().clone(), true)]);
     let chunk = RecordBatchT::try_new(array.len(), Arc::new(schema.clone()), vec![array])?;
     let data = integration_write(&schema, &[chunk])?;
 
@@ -902,10 +894,7 @@ fn list_nesting_mismatch_is_refused() -> PolarsResult<()> {
         ))),
         true,
     )]);
-    let metadata = p_read::read_metadata(&mut Cursor::new(&data))?;
-    let err = FileReader::new(Cursor::new(&data), metadata.row_groups, mismatched, None)
-        .collect::<PolarsResult<Vec<_>>>()
-        .unwrap_err();
+    let err = read_with_schema(&data, mismatched, None).unwrap_err();
     assert!(
         err.to_string().contains("nesting mismatch"),
         "unexpected error: {err}"
