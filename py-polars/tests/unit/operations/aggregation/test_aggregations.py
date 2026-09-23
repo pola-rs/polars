@@ -137,6 +137,32 @@ def test_int_mean_exact_hand_picked_29373() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64],
+)
+def test_int_mean_extremes_with_nulls_29373(dtype: pl.DataType) -> None:
+    info = np.iinfo(str(dtype).lower())
+    rng = np.random.default_rng(2)
+    n = 1_000
+    choices = [int(info.min), int(info.max), int(info.min) + 1, int(info.max) - 1, 0]
+    s = pl.Series(
+        [
+            choices[i] if valid else None
+            for i, valid in zip(
+                rng.integers(0, len(choices), size=n), rng.random(n) < 0.7, strict=True
+            )
+        ],
+        dtype=dtype,
+    )
+    # Offsets that are not a multiple of the validity word size.
+    for offset, length in [(0, n), (3, 77), (37, 900), (1, 31)]:
+        window = [v for v in s.slice(offset, length).to_list() if v is not None]
+        expected = float(sum(window)) / len(window)
+        assert s.slice(offset, length).mean() == expected
+        assert s.slice(offset, length).drop_nulls().mean() == expected
+
+
 def test_int_mean_chunk_layout_independent_29373() -> None:
     rng = np.random.default_rng(0)
     values = rng.integers(2**62, 2**63 - 1, size=10_000, dtype=np.int64)
