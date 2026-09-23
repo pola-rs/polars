@@ -624,21 +624,21 @@ mod tests {
         };
 
         let (spec, buffered, planned) = pair();
-        let mut ab = KeyFilterBuilder::new(&spec);
-        ab.merge(buffered);
-        ab.merge(planned);
+        let mut buffered_first = KeyFilterBuilder::new(&spec);
+        buffered_first.merge(buffered);
+        buffered_first.merge(planned);
 
         let (spec, buffered, planned) = pair();
-        let mut ba = KeyFilterBuilder::new(&spec);
-        ba.merge(planned);
-        ba.merge(buffered);
+        let mut planned_first = KeyFilterBuilder::new(&spec);
+        planned_first.merge(planned);
+        planned_first.merge(buffered);
 
         let (_, buffered, mut planned) = pair();
         planned.merge(buffered);
 
-        let ab = published(ab, &probe).unwrap();
-        assert!(ab.1[..8_000].iter().all(|m| *m));
-        assert_eq!(ab, published(ba, &probe).unwrap());
-        assert_eq!(ab, published(planned, &probe).unwrap());
+        let expected = published(buffered_first, &probe).unwrap();
+        assert!(expected.1[..8_000].iter().all(|m| *m));
+        assert_eq!(expected, published(planned_first, &probe).unwrap());
+        assert_eq!(expected, published(planned, &probe).unwrap());
     }
 }
