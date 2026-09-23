@@ -80,7 +80,7 @@ enum Nullability {
 // literals it is compared against. A categorical or an enum orders by its
 // categories instead, so nothing here may reason about its bounds. A column that
 // is not in `schema` is treated the same way. So is an `is_in` that doesn't
-// compare in its column's dtype, such as datetimes in another time zone.
+// compare in its column's dtype, such as strings searched for an enum.
 fn compares_in_literal_order(node: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> bool {
     expr_arena.iter(node).all(|(_, ae)| match ae {
         AExpr::Column(name) => schema
