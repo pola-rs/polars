@@ -68,21 +68,26 @@ impl FileReaderBuilder for IpcReaderBuilder {
             )
             .max(1);
 
-        let prefetch_kbytes_limit = std::env::var("POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET")
-            .map(|x| {
-                x.parse::<NonZeroUsize>()
+        let prefetch_kbytes_limit =
+            match std::env::var("POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET") {
+                Ok(x) => x
+                    .parse::<NonZeroUsize>()
                     .unwrap_or_else(|_| {
                         panic!("invalid value for POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET: {x}")
                     })
-                    .get()
-            })
-            .unwrap_or({
-                // Similar to Parquet.
-                let target_chunk_size_kb = FetchConfig::random_access().chunk_size.div_ceil(1024);
-                4 * execution_state.num_pipelines * target_chunk_size_kb
-            })
-            // Avoid deadlock.
-            .max(polars_io::cloud::concurrency_config::get_download_chunk_size().div_ceil(1024));
+                    .get(),
+                Err(_) => {
+                    // Similar to Parquet.
+                    let target_chunk_size_kb =
+                        FetchConfig::random_access().chunk_size.div_ceil(1024);
+                    (4 * execution_state.num_pipelines * target_chunk_size_kb)
+                        // Avoid deadlock.
+                        .max(
+                            polars_io::cloud::concurrency_config::get_download_chunk_size()
+                                .div_ceil(1024),
+                        )
+                },
+            };
 
         if config::verbose() {
             eprintln!(
