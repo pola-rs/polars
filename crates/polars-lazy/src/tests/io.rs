@@ -1,5 +1,6 @@
 #[cfg(feature = "is_between")]
 use polars_defs::expr::ClosedInterval;
+use polars_defs::join::JoinCoalesce;
 use polars_io::RowIndex;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::slice_enum::Slice;
@@ -781,6 +782,470 @@ fn scan_anonymous_fn_count() -> PolarsResult<()> {
             .as_materialized_series()
             .first(),
         Scalar::new(DataType::UInt32, AnyValue::UInt32(5))
+    );
+
+    Ok(())
+}
+
+/// Regression test helpers for #29441.
+///
+/// The row index of a scan belongs to the scan *node*, not to the schema of the
+/// file it reads. That schema is resolved once per source and shared between all
+/// scan nodes over those sources, and it is cached across collections, so a
+/// node's logical columns must never end up in it.
+#[cfg(any(
+    feature = "parquet",
+    feature = "csv",
+    feature = "ipc",
+    feature = "json"
+))]
+fn assert_scan_file_schema(q: LazyFrame, file_columns: &[&str]) {
+    let plan = q.to_alp().unwrap();
+    let mut n_scans = 0;
+
+    for (_, ir) in plan.lp_arena.iter(plan.lp_top) {
+        let IR::Scan {
+            file_info,
+            unified_scan_args,
+            ..
+        } = ir
+        else {
+            continue;
+        };
+        n_scans += 1;
+
+        let names: Vec<_> = file_info.schema.iter_names().cloned().collect();
+        let names = match &unified_scan_args.row_index {
+            // The scan node prepends its own row index.
+            Some(ri) => {
+                assert_eq!(names[0], ri.name);
+                &names[1..]
+            },
+            None => &names[..],
+        };
+        assert_eq!(
+            names,
+            file_columns
+                .iter()
+                .map(|s| (*s).into())
+                .collect::<Vec<PlSmallStr>>()
+        );
+    }
+
+    assert!(n_scans > 0, "expected a scan node in the plan");
+}
+
+/// Row order of a join is not part of its contract.
+#[cfg(any(
+    feature = "parquet",
+    feature = "csv",
+    feature = "ipc",
+    feature = "json"
+))]
+fn sort_all(df: DataFrame) -> DataFrame {
+    df.sort(df.get_column_names(), SortMultipleOptions::default())
+        .unwrap()
+}
+
+/// Asserts that `make_lf` produces a `LazyFrame` that stays reusable: a query
+/// built from a `LazyFrame` that has already been collected in another query
+/// must give the same result as the same query built from a fresh scan, and
+/// collecting a query must not leave state behind in the plan of a later query.
+#[cfg(any(
+    feature = "parquet",
+    feature = "csv",
+    feature = "ipc",
+    feature = "json"
+))]
+fn assert_scan_stays_reusable(
+    make_lf: &dyn Fn(OptFlags) -> PolarsResult<LazyFrame>,
+    file_columns: &[&str],
+) -> PolarsResult<()> {
+    type Builder = dyn Fn(LazyFrame) -> PolarsResult<LazyFrame>;
+
+    /// Joins `lf` with its own `with_row_index` version: both scan the same
+    /// sources, only one of them carries a row index.
+    fn join_own_row_index(lf: LazyFrame) -> PolarsResult<LazyFrame> {
+        let idx = lf
+            .clone()
+            .select([col("a")])
+            .with_row_index("i", None)
+            .select([col("i")]);
+        idx.join(
+            lf.with_row_index("i", None),
+            [col("i")],
+            [col("i")],
+            JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+        )
+    }
+
+    let builders: Vec<(&str, Box<Builder>)> = vec![
+        ("collect", Box::new(Ok)),
+        (
+            "collect_after_drop",
+            Box::new(|lf| Ok(lf.drop(cols(["b"])))),
+        ),
+        (
+            "collect_with_row_index",
+            Box::new(|lf| Ok(lf.with_row_index("i", None))),
+        ),
+        (
+            "collect_with_offset_row_index",
+            Box::new(|lf| Ok(lf.with_row_index("i", Some(10)))),
+        ),
+        (
+            "collect_self_join",
+            Box::new(|lf| {
+                lf.clone()
+                    .join(lf, [col("a")], [col("a")], JoinArgs::new(JoinType::Inner))
+            }),
+        ),
+        ("join_with_own_row_index", Box::new(join_own_row_index)),
+        (
+            "dropped_join_with_own_row_index",
+            Box::new(|lf| join_own_row_index(lf.drop(cols(["b"])))),
+        ),
+    ];
+
+    let mut opt_flag_sets = vec![
+        OptFlags::default(),
+        OptFlags::empty(),
+        OptFlags::default().difference(OptFlags::PROJECTION_PUSHDOWN),
+    ];
+    if cfg!(feature = "cse") {
+        opt_flag_sets.push(OptFlags::default().difference(OptFlags::COMM_SUBPLAN_ELIM));
+    }
+
+    for flags in opt_flag_sets {
+        for (name, build) in &builders {
+            // A freshly created scan is the reference the reused one must match.
+            let expected = sort_all(build(make_lf(flags)?)?.collect()?);
+
+            let reused = make_lf(flags)?;
+            assert_scan_file_schema(reused.clone(), file_columns);
+
+            // Querying the `LazyFrame` repeatedly, and querying it after it has
+            // already been used in another query, must give that same result.
+            for _ in 0..2 {
+                let q = build(reused.clone())?;
+                assert_scan_file_schema(q.clone(), file_columns);
+                assert_eq!(
+                    sort_all(q.collect()?),
+                    expected,
+                    "query '{name}' changed after the LazyFrame was reused"
+                );
+            }
+
+            assert_scan_file_schema(reused, file_columns);
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "parquet")]
+#[test]
+fn test_scan_parquet_reuse_29441() -> PolarsResult<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+
+    let path = std::env::temp_dir().join(format!("polars_29441_{}.parquet", std::process::id()));
+    {
+        let mut df = df!("a" => [1i64, 2, 3], "b" => [4i64, 5, 6])?;
+        let f = std::fs::File::create(&path)?;
+        ParquetWriter::new(f).finish(&mut df)?;
+    }
+
+    let make_lf = |flags: OptFlags| {
+        LazyFrame::scan_parquet(
+            PlRefPath::new(path.to_str().unwrap()),
+            ScanArgsParquet::default(),
+        )
+        .map(|lf| lf.with_optimizations(flags))
+    };
+
+    let mut out = assert_scan_stays_reusable(&make_lf, &["a", "b"]);
+
+    // `allow_missing_columns` turns the leaked row index into a silently
+    // all-null column instead of an error (see the issue), so check that path
+    // as well.
+    if out.is_ok() {
+        let make_lf = |flags: OptFlags| {
+            LazyFrame::scan_parquet(
+                PlRefPath::new(path.to_str().unwrap()),
+                ScanArgsParquet {
+                    allow_missing_columns: true,
+                    ..Default::default()
+                },
+            )
+            .map(|lf| lf.with_optimizations(flags))
+        };
+        out = assert_scan_stays_reusable(&make_lf, &["a", "b"]);
+    }
+
+    std::fs::remove_file(&path)?;
+    out
+}
+
+#[cfg(feature = "csv")]
+#[test]
+fn test_scan_csv_reuse_29441() -> PolarsResult<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+
+    let path = std::env::temp_dir().join(format!("polars_29441_{}.csv", std::process::id()));
+    std::fs::write(&path, "a,b\n1,4\n2,5\n3,6\n")?;
+
+    let make_lf = |flags: OptFlags| {
+        LazyCsvReader::new(PlRefPath::new(path.to_str().unwrap()))
+            .finish()
+            .map(|lf| lf.with_optimizations(flags))
+    };
+
+    let out = assert_scan_stays_reusable(&make_lf, &["a", "b"]);
+
+    std::fs::remove_file(&path)?;
+    out
+}
+
+#[cfg(feature = "ipc")]
+#[test]
+fn test_scan_ipc_reuse_29441() -> PolarsResult<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+
+    let path = std::env::temp_dir().join(format!("polars_29441_{}.ipc", std::process::id()));
+    {
+        let mut df = df!("a" => [1i64, 2, 3], "b" => [4i64, 5, 6])?;
+        let f = std::fs::File::create(&path)?;
+        IpcWriter::new(f).finish(&mut df)?;
+    }
+    let path = PlRefPath::new(path.to_str().unwrap());
+
+    let make_lf = |flags: OptFlags| {
+        LazyFrame::scan_ipc(path.clone(), Default::default(), Default::default())
+            .map(|lf| lf.with_optimizations(flags))
+    };
+
+    assert_scan_stays_reusable(&make_lf, &["a", "b"])
+}
+
+#[cfg(feature = "json")]
+#[test]
+fn test_scan_ndjson_reuse_29441() -> PolarsResult<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+
+    let path = std::env::temp_dir().join(format!("polars_29441_{}.ndjson", std::process::id()));
+    {
+        let mut df = df!("a" => [1i64, 2, 3], "b" => [4i64, 5, 6])?;
+        let f = std::fs::File::create(&path)?;
+        JsonWriter::new(f).finish(&mut df)?;
+    }
+
+    let make_lf = |flags: OptFlags| {
+        LazyJsonLineReader::new(PlRefPath::new(path.to_str().unwrap()))
+            .finish()
+            .map(|lf| lf.with_optimizations(flags))
+    };
+
+    assert_scan_stays_reusable(&make_lf, &["a", "b"])
+}
+
+/// A row count that a scan node knows upfront (an Iceberg snapshot reports
+/// physical and deleted rows) belongs to that node. Another scan node over the
+/// same sources must not be served it through the shared, cached file info.
+#[cfg(feature = "parquet")]
+#[test]
+fn test_scan_row_count_is_not_shared() -> PolarsResult<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+
+    let path =
+        std::env::temp_dir().join(format!("polars_row_count_{}.parquet", std::process::id()));
+    {
+        let mut df = df!("a" => [1i64, 2, 3])?;
+        let f = std::fs::File::create(&path)?;
+        ParquetWriter::new(f).finish(&mut df)?;
+    }
+    let path = PlRefPath::new(path.to_str().unwrap());
+
+    fn with_row_count(mut lf: LazyFrame, row_count: (u64, u64)) -> LazyFrame {
+        match &mut lf.logical_plan {
+            DslPlan::Scan {
+                unified_scan_args,
+                cached_ir,
+                ..
+            } => {
+                assert_eq!(unified_scan_args.row_count, None);
+                unified_scan_args.row_count = Some(row_count);
+                *cached_ir.lock().unwrap() = None;
+            },
+            other => panic!("expected a scan, got {other:?}"),
+        }
+        lf
+    }
+
+    let known = with_row_count(
+        LazyFrame::scan_parquet(path.clone(), ScanArgsParquet::default())?,
+        (3, 0),
+    );
+    let other = with_row_count(
+        LazyFrame::scan_parquet(path, ScanArgsParquet::default())?,
+        (100, 50),
+    );
+
+    // Both nodes are resolved within a single conversion.
+    let q = known.join(
+        other,
+        [col("a")],
+        [col("a")],
+        JoinArgs::new(JoinType::Inner),
+    )?;
+
+    let plan = q.clone().to_alp().unwrap();
+    let mut rows: Vec<Option<u64>> = plan
+        .lp_arena
+        .iter(plan.lp_top)
+        .filter_map(|(_, ir)| match ir {
+            IR::Scan { file_info, .. } => Some(match file_info.stats.rows {
+                polars_plan::plans::Card::Exact(v) => Some(v),
+                _ => None,
+            }),
+            _ => None,
+        })
+        .collect();
+    rows.sort();
+    assert_eq!(rows, [Some(3), Some(50)]);
+
+    // The overlay only replaces the row estimate: the column statistics that the
+    // footers provided must survive on every node.
+    for (_, ir) in plan.lp_arena.iter(plan.lp_top) {
+        if let IR::Scan { file_info, .. } = ir {
+            assert!(file_info.stats.column("a").is_some());
+        }
+    }
+
+    // And the query itself is unaffected by the made-up counts.
+    assert_eq!(
+        sort_all(q.collect()?)
+            .column("a")?
+            .i64()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+
+    Ok(())
+}
+
+/// A row index whose name collides with a column of the file must be an error:
+/// the row index belongs to the scan node, so it may not silently replace the
+/// column of the same name that the file provides.
+#[cfg(all(feature = "parquet", feature = "csv"))]
+#[test]
+fn test_row_index_name_in_file_errors() -> PolarsResult<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+
+    let parquet =
+        std::env::temp_dir().join(format!("polars_row_index_{}.parquet", std::process::id()));
+    {
+        let mut df = df!("a" => [1i64, 2, 3], "b" => [4i64, 5, 6])?;
+        let f = std::fs::File::create(&parquet)?;
+        ParquetWriter::new(f).finish(&mut df)?;
+    }
+    let csv = std::env::temp_dir().join(format!("polars_row_index_{}.csv", std::process::id()));
+    std::fs::write(&csv, "a,b\n1,4\n2,5\n3,6\n")?;
+
+    let paths: Vec<(&str, PlRefPath)> = vec![
+        ("parquet", PlRefPath::new(parquet.to_str().unwrap())),
+        ("csv", PlRefPath::new(csv.to_str().unwrap())),
+    ];
+
+    for (name, path) in paths {
+        let lf = if name == "parquet" {
+            LazyFrame::scan_parquet(path, ScanArgsParquet::default())?
+        } else {
+            LazyCsvReader::new(path).finish()?
+        };
+
+        let err = lf.clone().with_row_index("a", None).collect().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("cannot add row_index with name 'a': column already exists in file"),
+            "{name}: {err}"
+        );
+
+        // The file's own `a` column is unaffected.
+        let out = lf.select([col("a")]).collect()?;
+        assert_eq!(
+            out.column("a")?
+                .i64()?
+                .into_no_null_iter()
+                .collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+    }
+
+    std::fs::remove_file(&parquet)?;
+    std::fs::remove_file(&csv)?;
+    Ok(())
+}
+
+/// Every part of a scan node that is resolved from its sources must belong to
+/// that node: two scans of the same file with different options must each keep
+/// their own schema, in the same query and across queries.
+#[cfg(feature = "csv")]
+#[test]
+fn test_scan_csv_options_are_not_shared() -> PolarsResult<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+
+    let path = std::env::temp_dir().join(format!("polars_scan_opts_{}.csv", std::process::id()));
+    std::fs::write(&path, "1,4\n4,5\n3,6\n")?;
+    let path = PlRefPath::new(path.to_str().unwrap());
+
+    // `has_header` changes the inferred schema: the first line is read as
+    // column names or as data.
+    let with_header = LazyCsvReader::new(path.clone())
+        .with_has_header(true)
+        .finish()?;
+    let no_header = LazyCsvReader::new(path.clone())
+        .with_has_header(false)
+        .finish()?;
+
+    // Both scans are resolved within a single conversion.
+    let q = with_header
+        .clone()
+        .join(
+            no_header.clone(),
+            [col("1")],
+            [col("column_1")],
+            JoinArgs::new(JoinType::Inner),
+        )?
+        .select([col("1"), col("column_0")]);
+
+    let plan = q.clone().to_alp().unwrap();
+    let mut schemas: Vec<Vec<PlSmallStr>> = plan
+        .lp_arena
+        .iter(plan.lp_top)
+        .filter_map(|(_, ir)| match ir {
+            IR::Scan { file_info, .. } => Some(file_info.schema.iter_names().cloned().collect()),
+            _ => None,
+        })
+        .collect();
+    schemas.sort();
+    assert_eq!(schemas, [["1", "4"], ["column_0", "column_1"]]);
+
+    let out = q.collect()?;
+    assert_eq!(out.get_column_names(), &["1", "column_0"]);
+    assert_eq!(
+        out.column("1")?
+            .i64()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        [4]
+    );
+    assert_eq!(
+        out.column("column_0")?
+            .i64()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        [1]
     );
 
     Ok(())

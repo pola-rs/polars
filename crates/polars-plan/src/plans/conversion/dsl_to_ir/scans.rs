@@ -5,7 +5,6 @@ use std::sync::{LazyLock, RwLock};
 use either::Either;
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
-use polars_io::RowIndex;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 use polars_io::prelude::*;
@@ -128,6 +127,16 @@ pub(super) async fn dsl_to_ir(
                 .await?
         };
 
+        // Some scan nodes know the row count of their sources upfront (e.g. an
+        // Iceberg snapshot reports physical and deleted rows). Like the row
+        // index, that count belongs to this node: the resolved `FileInfo` is
+        // shared between scan nodes over the same sources and cached, so
+        // applying it here rather than during resolution keeps one node's count
+        // out of another node's plan.
+        if let Some((physical, deleted)) = unified_scan_args.row_count {
+            file_info.stats.rows = Card::Exact(u64::saturating_sub(physical, deleted));
+        }
+
         if unified_scan_args.hive_options.enabled.is_none() {
             // We expect this to be `Some(_)` after this point. If it hasn't been auto-enabled
             // we explicitly set it to disabled.
@@ -193,11 +202,15 @@ pub(super) async fn dsl_to_ir(
             None
         };
 
+        // The row index is a logical column of this scan node, not of the files it
+        // reads. The resolved `FileInfo` is shared between every scan node over the
+        // same sources (and cached in `cached_ir` across collections), so it must not
+        // carry any node's row index.
         if let Some(row_index) = &unified_scan_args.row_index {
-            let schema = Arc::make_mut(&mut file_info.schema);
-            *schema = schema
-                .new_inserting_at_index(0, row_index.name.clone(), IDX_DTYPE)
-                .unwrap();
+            insert_row_index_to_schema(
+                Arc::make_mut(&mut file_info.schema),
+                row_index.name.clone(),
+            )?;
         }
 
         let ir = if sources.is_empty() && !matches!(&(*scan_type), FileScanDsl::Anonymous { .. }) {
@@ -246,36 +259,9 @@ pub(super) fn insert_row_index_to_schema(
     Ok(())
 }
 
-#[cfg(any(feature = "parquet", feature = "ipc"))]
-fn prepare_output_schema(
-    mut schema: Schema,
-    row_index: Option<&RowIndex>,
-) -> PolarsResult<SchemaRef> {
-    if let Some(rc) = row_index {
-        insert_row_index_to_schema(&mut schema, rc.name.clone())?;
-    }
-    Ok(Arc::new(schema))
-}
-
-#[cfg(any(feature = "json", feature = "csv"))]
-fn prepare_schemas(
-    mut schema: Schema,
-    row_index: Option<&RowIndex>,
-) -> PolarsResult<(SchemaRef, SchemaRef)> {
-    Ok(if let Some(rc) = row_index {
-        let reader_schema = schema.clone();
-        insert_row_index_to_schema(&mut schema, rc.name.clone())?;
-        (Arc::new(reader_schema), Arc::new(schema))
-    } else {
-        let schema = Arc::new(schema);
-        (schema.clone(), schema)
-    })
-}
-
 #[cfg(feature = "parquet")]
 pub(super) async fn parquet_file_info(
     sources: &ScanSources,
-    row_index: Option<&RowIndex>,
     // Per-source byte sizes from path expansion, aligned with `sources`.
     bytes_per_source: Option<&[u64]>,
     // See `UnifiedScanArgs::resolve_heavy_sources`.
@@ -523,10 +509,7 @@ pub(super) async fn parquet_file_info(
         }
     };
 
-    let schema = prepare_output_schema(
-        Schema::from_arrow_schema(resolved.reader_schema.as_ref()),
-        row_index,
-    )?;
+    let schema = Arc::new(Schema::from_arrow_schema(resolved.reader_schema.as_ref()));
 
     let rows = match resolved.known_size {
         Some(known) => Card::Exact(known as u64),
@@ -857,7 +840,6 @@ fn ipc_metadata_and_rows<R: std::io::Read + std::io::Seek>(
 pub(super) async fn ipc_file_info(
     first_scan_source: ScanSourceRef<'_>,
     n_sources: usize,
-    row_index: Option<&RowIndex>,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, polars_arrow::io::ipc::read::FileMetadata)> {
     use polars_core::error::feature_gated;
@@ -895,10 +877,7 @@ pub(super) async fn ipc_file_info(
     };
 
     let file_info = FileInfo::new(
-        prepare_output_schema(
-            Schema::from_arrow_schema(metadata.schema.as_ref()),
-            row_index,
-        )?,
+        Arc::new(Schema::from_arrow_schema(metadata.schema.as_ref())),
         Some(Either::Left(Arc::clone(&metadata.schema))),
         ScanStats::new(rows),
     );
@@ -910,7 +889,6 @@ pub(super) async fn ipc_file_info(
 pub async fn csv_file_info(
     sources: &ScanSources,
     _first_scan_source: ScanSourceRef<'_>,
-    row_index: Option<&RowIndex>,
     csv_options: &mut CsvReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
     extra_columns_policy: ExtraColumnsPolicy,
@@ -1162,20 +1140,11 @@ pub async fn csv_file_info(
     );
 
     let (inferred_schema, estimated_n_rows) = merge_func(si_results.0, si_results.1)?;
-    let inferred_schema_ref = Arc::new(inferred_schema);
-
-    let (schema, reader_schema) = if let Some(rc) = row_index {
-        let mut output_schema = (*inferred_schema_ref).clone();
-        insert_row_index_to_schema(&mut output_schema, rc.name.clone())?;
-
-        (Arc::new(output_schema), inferred_schema_ref)
-    } else {
-        (inferred_schema_ref.clone(), inferred_schema_ref)
-    };
+    let schema = Arc::new(inferred_schema);
 
     Ok(FileInfo::new(
-        schema,
-        Some(Either::Right(reader_schema)),
+        schema.clone(),
+        Some(Either::Right(schema)),
         ScanStats::approx_rows(estimated_n_rows as u64),
     ))
 }
@@ -1184,7 +1153,6 @@ pub async fn csv_file_info(
 pub async fn ndjson_file_info(
     sources: &ScanSources,
     first_scan_source: ScanSourceRef<'_>,
-    row_index: Option<&RowIndex>,
     ndjson_options: &NDJsonReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
@@ -1347,15 +1315,9 @@ pub async fn ndjson_file_info(
         overwrite_schema(Arc::make_mut(&mut schema), overwriting_schema)?;
     }
 
-    let mut reader_schema = schema.clone();
-
-    if row_index.is_some() {
-        (schema, reader_schema) = prepare_schemas(Arc::unwrap_or_clone(schema), row_index)?
-    }
-
     Ok(FileInfo::new(
-        schema,
-        Some(Either::Right(reader_schema)),
+        schema.clone(),
+        Some(Either::Right(schema)),
         ScanStats::unknown(),
     ))
 }
@@ -1370,11 +1332,21 @@ enum CachedSourceKey {
         // Heavy-source selection depends on the sizes, not just the paths.
         bytes_per_source: Option<Buffer<u64>>,
     },
-    CsvJson {
+    /// The CSV schema is inferred from the file, so every option that feeds the
+    /// inference is part of the key: a differently-configured scan of the same
+    /// paths must not be served the schema inferred for this one.
+    #[cfg(feature = "csv")]
+    Csv {
         paths: Buffer<PlRefPath>,
-        schema: Option<SchemaRef>,
-        schema_overwrite: Option<SchemaRef>,
-        dtype_overwrite: Option<Arc<Vec<DataType>>>,
+        options: Arc<CsvReadOptions>,
+        extra_columns_policy: ExtraColumnsPolicy,
+        missing_columns_policy: MissingColumnsPolicy,
+    },
+    /// See [`Self::Csv`].
+    #[cfg(feature = "json")]
+    NDJson {
+        paths: Buffer<PlRefPath>,
+        options: NDJsonReadOptions,
     },
 }
 
@@ -1405,10 +1377,6 @@ impl SourcesToFileInfo {
             )
         };
 
-        let exact_row_count = unified_scan_args
-            .row_count
-            .map(|(total, deleted)| total - deleted);
-
         let cloud_options = unified_scan_args.cloud_options.as_ref();
 
         Ok(match scan_type {
@@ -1433,8 +1401,7 @@ impl SourcesToFileInfo {
                             reader_schema: Some(either::Either::Left(Arc::new(
                                 schema.to_arrow(CompatLevel::newest()),
                             ))),
-                            stats: exact_row_count
-                                .map_or_else(ScanStats::unknown, ScanStats::exact_rows),
+                            stats: ScanStats::unknown(),
                         },
                         FileScanIR::Parquet {
                             options,
@@ -1460,19 +1427,14 @@ impl SourcesToFileInfo {
 
                         // TODO: Reconcile the `resolve` strategy with the cache capacity to
                         // avoid throwaway work and control it here.
-                        let (mut file_info, mut metadata_per_source) = scans::parquet_file_info(
+                        let (file_info, mut metadata_per_source) = scans::parquet_file_info(
                             sources,
-                            unified_scan_args.row_index.as_ref(),
                             bytes_per_source.as_deref(),
                             unified_scan_args.resolve_heavy_sources,
                             options.use_statistics,
                             cloud_options,
                         )
                         .await?;
-
-                        if let Some(exact_row_count) = exact_row_count {
-                            file_info.stats.rows = Card::Exact(exact_row_count);
-                        }
 
                         if self.inner.read().unwrap().len() > max_metadata_scan_cached() {
                             // Cache pressure: drop the pre-decoded footers so
@@ -1505,17 +1467,8 @@ impl SourcesToFileInfo {
                     )
                 }
 
-                let (mut file_info, md) = scans::ipc_file_info(
-                    first_scan_source,
-                    sources.len(),
-                    unified_scan_args.row_index.as_ref(),
-                    cloud_options,
-                )
-                .await?;
-
-                if let Some(exact_row_count) = exact_row_count {
-                    file_info.stats.rows = Card::Exact(exact_row_count);
-                }
+                let (file_info, md) =
+                    scans::ipc_file_info(first_scan_source, sources.len(), cloud_options).await?;
 
                 PolarsResult::Ok((
                     file_info,
@@ -1528,12 +1481,11 @@ impl SourcesToFileInfo {
             .context(failed_here!(ipc scan))?,
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { mut options } => {
-                let mut file_info = if let Some(schema) = options.schema.clone() {
+                let file_info = if let Some(schema) = options.schema.clone() {
                     FileInfo {
                         schema: schema.clone(),
                         reader_schema: Some(either::Either::Right(schema)),
-                        stats: exact_row_count
-                            .map_or_else(ScanStats::unknown, ScanStats::exact_rows),
+                        stats: ScanStats::unknown(),
                     }
                 } else {
                     let first_scan_source =
@@ -1549,7 +1501,6 @@ impl SourcesToFileInfo {
                     scans::csv_file_info(
                         sources,
                         first_scan_source,
-                        unified_scan_args.row_index.as_ref(),
                         Arc::make_mut(&mut options),
                         cloud_options,
                         unified_scan_args.extra_columns_policy,
@@ -1558,21 +1509,16 @@ impl SourcesToFileInfo {
                     .await?
                 };
 
-                if let Some(exact_row_count) = exact_row_count {
-                    file_info.stats.rows = Card::Exact(exact_row_count);
-                }
-
                 PolarsResult::Ok((file_info, FileScanIR::Csv { options }))
             }
             .context(failed_here!(csv scan))?,
             #[cfg(feature = "json")]
             FileScanDsl::NDJson { options } => {
-                let mut file_info = if let Some(schema) = options.schema.clone() {
+                let file_info = if let Some(schema) = options.schema.clone() {
                     FileInfo {
                         schema: schema.clone(),
                         reader_schema: Some(either::Either::Right(schema)),
-                        stats: exact_row_count
-                            .map_or_else(ScanStats::unknown, ScanStats::exact_rows),
+                        stats: ScanStats::unknown(),
                     }
                 } else {
                     let first_scan_source =
@@ -1585,19 +1531,9 @@ impl SourcesToFileInfo {
                         )
                     }
 
-                    scans::ndjson_file_info(
-                        sources,
-                        first_scan_source,
-                        unified_scan_args.row_index.as_ref(),
-                        &options,
-                        cloud_options,
-                    )
-                    .await?
+                    scans::ndjson_file_info(sources, first_scan_source, &options, cloud_options)
+                        .await?
                 };
-
-                if let Some(exact_row_count) = exact_row_count {
-                    file_info.stats.rows = Card::Exact(exact_row_count);
-                }
 
                 PolarsResult::Ok((file_info, FileScanIR::NDJson { options }))
             }
@@ -1610,7 +1546,7 @@ impl SourcesToFileInfo {
                     polars_bail!(ComputeError: "DATASET_PROVIDER_VTABLE (python) not initialized")
                 };
 
-                let mut schema =
+                let schema =
                     {
                         let dataset_object = Arc::clone(&dataset_object);
                         AbortOnDropHandle(ASYNC.spawn_blocking(move || {
@@ -1621,16 +1557,11 @@ impl SourcesToFileInfo {
                     };
                 let reader_schema = schema.clone();
 
-                if let Some(row_index) = &unified_scan_args.row_index {
-                    insert_row_index_to_schema(Arc::make_mut(&mut schema), row_index.name.clone())?;
-                }
-
                 PolarsResult::Ok((
                     FileInfo {
                         schema,
                         reader_schema: Some(either::Either::Right(reader_schema)),
-                        stats: exact_row_count
-                            .map_or_else(ScanStats::unknown, ScanStats::exact_rows),
+                        stats: ScanStats::unknown(),
                     },
                     FileScanIR::PythonDataset {
                         dataset_object,
@@ -1648,8 +1579,7 @@ impl SourcesToFileInfo {
                     FileInfo {
                         schema: schema.clone(),
                         reader_schema: Some(either::Either::Right(schema.clone())),
-                        stats: exact_row_count
-                            .map_or_else(ScanStats::unknown, ScanStats::exact_rows),
+                        stats: ScanStats::unknown(),
                     },
                     FileScanIR::Lines { name },
                 )
@@ -1667,16 +1597,10 @@ impl SourcesToFileInfo {
                 )
             },
             FileScanDsl::Anonymous {
-                mut file_info,
+                file_info,
                 options,
                 function,
-            } => {
-                if let Some(exact_row_count) = exact_row_count {
-                    file_info.stats.rows = Card::Exact(exact_row_count);
-                }
-
-                (file_info, FileScanIR::Anonymous { options, function })
-            },
+            } => (file_info, FileScanIR::Anonymous { options, function }),
         })
     }
 
@@ -1741,11 +1665,11 @@ impl SourcesToFileInfo {
             },
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { options } => {
-                let key = CachedSourceKey::CsvJson {
+                let key = CachedSourceKey::Csv {
                     paths: paths.clone(),
-                    schema: options.schema.clone(),
-                    schema_overwrite: options.schema_overwrite.clone(),
-                    dtype_overwrite: options.dtype_overwrite.clone(),
+                    options: options.clone(),
+                    extra_columns_policy: unified_scan_args.extra_columns_policy,
+                    missing_columns_policy: unified_scan_args.missing_columns_policy,
                 };
                 let guard = self.inner.read().unwrap();
                 let v = guard.get(&key);
@@ -1753,11 +1677,9 @@ impl SourcesToFileInfo {
             },
             #[cfg(feature = "json")]
             FileScanDsl::NDJson { options } => {
-                let key = CachedSourceKey::CsvJson {
+                let key = CachedSourceKey::NDJson {
                     paths: paths.clone(),
-                    schema: options.schema.clone(),
-                    schema_overwrite: options.schema_overwrite.clone(),
-                    dtype_overwrite: None,
+                    options: options.clone(),
                 };
                 let guard = self.inner.read().unwrap();
                 let v = guard.get(&key);
