@@ -71,7 +71,7 @@ impl TimeUnit {
 
     /// `ns` nanoseconds expressed in this unit, truncated towards zero.
     #[inline(always)]
-    pub const fn from_ns(self, ns: i64) -> i64 {
+    pub const fn from_nsecs(self, ns: i64) -> i64 {
         match self {
             TimeUnit::Nanoseconds => ns,
             TimeUnit::Microseconds => ns / 1_000,

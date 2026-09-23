@@ -449,10 +449,10 @@ impl Duration {
     /// `duration` for a `tu` known at compile time, so that the conversions fold.
     #[inline(always)]
     const fn duration_inline(&self, tu: TimeUnit) -> i64 {
-        self.months * 28 * 24 * 3600 * tu.from_ns(NANOSECONDS)
-            + self.weeks * tu.from_ns(NS_WEEK)
-            + self.days * tu.from_ns(NS_DAY)
-            + tu.from_ns(self.nsecs)
+        self.months * 28 * 24 * 3600 * tu.from_nsecs(NANOSECONDS)
+            + self.weeks * tu.from_nsecs(NS_WEEK)
+            + self.days * tu.from_nsecs(NS_DAY)
+            + tu.from_nsecs(self.nsecs)
     }
 
     /// Not-to-exceed estimated duration of the window duration in `tu`. The actual duration
@@ -487,10 +487,10 @@ impl Duration {
     /// `nte_duration` for a `tu` known at compile time, so that the conversions fold.
     #[inline(always)]
     const fn nte_duration_inline(&self, tu: TimeUnit) -> i64 {
-        self.months * (31 * 24 + 1) * 3600 * tu.from_ns(NANOSECONDS)
-            + self.weeks * tu.from_ns(NTE_NS_WEEK)
-            + self.days * tu.from_ns(NTE_NS_DAY)
-            + tu.from_ns(self.nsecs)
+        self.months * (31 * 24 + 1) * 3600 * tu.from_nsecs(NANOSECONDS)
+            + self.weeks * tu.from_nsecs(NTE_NS_WEEK)
+            + self.days * tu.from_nsecs(NTE_NS_DAY)
+            + tu.from_nsecs(self.nsecs)
     }
 
     #[doc(hidden)]
@@ -768,7 +768,7 @@ impl Duration {
             (0, 0, 0, 0) => polars_bail!(ComputeError: "duration cannot be zero"),
             // truncate by ns/us/ms
             (0, 0, 0, _) => {
-                let duration = tu.from_ns(self.nsecs);
+                let duration = tu.from_nsecs(self.nsecs);
                 if duration == 0 {
                     return Ok(t);
                 }
@@ -776,13 +776,13 @@ impl Duration {
             },
             // truncate by days
             (0, 0, _, 0) => {
-                let duration = self.days * tu.from_ns(NS_DAY);
+                let duration = self.days * tu.from_nsecs(NS_DAY);
                 self.truncate_subweekly(tu, t, tz, duration)
             },
             // truncate by weeks
-            (0, _, 0, 0) => self.truncate_weekly(tu, t, tz, tu.from_ns(NS_DAY)),
+            (0, _, 0, 0) => self.truncate_weekly(tu, t, tz, tu.from_nsecs(NS_DAY)),
             // truncate by months
-            (_, 0, 0, 0) => self.truncate_monthly(tu, t, tz, tu.from_ns(NS_DAY)),
+            (_, 0, 0, 0) => self.truncate_monthly(tu, t, tz, tu.from_nsecs(NS_DAY)),
             _ => {
                 polars_bail!(ComputeError: "cannot mix month, week, day, and sub-daily units for this operation")
             },
@@ -851,7 +851,7 @@ impl Duration {
         }
 
         if d.weeks > 0 {
-            let t_weeks = tu.from_ns(NS_WEEK) * self.weeks;
+            let t_weeks = tu.from_nsecs(NS_WEEK) * self.weeks;
             t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
@@ -878,7 +878,7 @@ impl Duration {
         }
 
         if d.days > 0 {
-            let t_days = tu.from_ns(NS_DAY) * self.days;
+            let t_days = tu.from_nsecs(NS_DAY) * self.days;
             t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
@@ -902,7 +902,7 @@ impl Duration {
             };
         }
 
-        Ok(t + tu.from_ns(self.signed_nsecs()))
+        Ok(t + tu.from_nsecs(self.signed_nsecs()))
     }
 
     /// Add this duration to the timestamp `t` in `tu`.

@@ -76,7 +76,7 @@ fn dispatch_ewm_by<const IS_MEAN: bool>(
         ),
         #[cfg(feature = "dtype-datetime")]
         (_, DataType::Datetime(time_unit, _)) => {
-            let half_life = time_unit.from_ns(half_life);
+            let half_life = time_unit.from_nsecs(half_life);
             dispatch_ewm_by::<IS_MEAN>(
                 s,
                 &times.cast(&DataType::Int64)?,

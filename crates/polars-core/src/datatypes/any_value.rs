@@ -602,7 +602,7 @@ impl<'a> AnyValue<'a> {
                 AnyValue::Duration(av.extract::<i64>()?, *tu)
             },
             #[cfg(all(feature = "dtype-duration", feature = "dtype-time"))]
-            (AnyValue::Time(v), DataType::Duration(tu)) => AnyValue::Duration(tu.from_ns(*v), *tu),
+            (AnyValue::Time(v), DataType::Duration(tu)) => AnyValue::Duration(tu.from_nsecs(*v), *tu),
             #[cfg(feature = "dtype-duration")]
             (AnyValue::Duration(v, tu), DataType::Duration(tu_r)) => AnyValue::Duration(
                 match (tu, tu_r) {
