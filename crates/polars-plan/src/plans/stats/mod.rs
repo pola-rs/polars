@@ -109,10 +109,21 @@ pub struct ScanColumnStats {
     /// exist.
     #[cfg_attr(feature = "serde", serde(default))]
     pub int_range_partial: bool,
-    /// Inclusive range of the values a filter on the column kept, which also dropped
-    /// its nulls. `int_range` still describes the key domain.
+    /// The values a filter on the column kept. `int_range` still describes the key
+    /// domain.
     #[cfg_attr(feature = "serde", serde(default))]
-    pub kept_range: Option<(i128, i128)>,
+    pub kept: Option<KeptValues>,
+}
+
+/// The values a filter on an integer column kept. The filter also dropped its nulls.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum KeptValues {
+    /// Every value in this inclusive range.
+    Range(i128, i128),
+    /// These values, sorted.
+    Values(Vec<i128>),
 }
 
 impl ScanColumnStats {
