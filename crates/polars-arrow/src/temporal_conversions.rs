@@ -258,17 +258,17 @@ pub fn utf8_to_timestamp_scalar<T: chrono::TimeZone>(
     let fmt = StrftimeItems::new(fmt);
     let r = parse(&mut parsed, value, fmt).ok();
     if r.is_some() {
-        parsed
+        let dt = parsed
             .to_datetime()
             .map(|x| x.naive_utc())
             .map(|x| tz.from_utc_datetime(&x))
-            .map(|x| match tu {
-                TimeUnit::Second => x.timestamp(),
-                TimeUnit::Millisecond => x.timestamp_millis(),
-                TimeUnit::Microsecond => x.timestamp_micros(),
-                TimeUnit::Nanosecond => x.timestamp_nanos_opt().unwrap(),
-            })
-            .ok()
+            .ok()?;
+        match tu {
+            TimeUnit::Second => Some(dt.timestamp()),
+            TimeUnit::Millisecond => Some(dt.timestamp_millis()),
+            TimeUnit::Microsecond => Some(dt.timestamp_micros()),
+            TimeUnit::Nanosecond => dt.timestamp_nanos_opt(),
+        }
     } else {
         None
     }

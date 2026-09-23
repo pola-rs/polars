@@ -23,15 +23,14 @@ pub fn utf8_to_naive_timestamp_scalar(value: &str, fmt: &str, tu: &TimeUnit) -> 
     let fmt = StrftimeItems::new(fmt);
     let mut parsed = Parsed::new();
     chrono::format::parse(&mut parsed, value, fmt.clone()).ok();
-    parsed
-        .to_naive_datetime_with_offset(0)
-        .map(|x| match tu {
-            TimeUnit::Second => x.and_utc().timestamp(),
-            TimeUnit::Millisecond => x.and_utc().timestamp_millis(),
-            TimeUnit::Microsecond => x.and_utc().timestamp_micros(),
-            TimeUnit::Nanosecond => x.and_utc().timestamp_nanos_opt().unwrap(),
-        })
-        .ok()
+    let ndt = parsed.to_naive_datetime_with_offset(0).ok()?;
+    let dt = ndt.and_utc();
+    match tu {
+        TimeUnit::Second => Some(dt.timestamp()),
+        TimeUnit::Millisecond => Some(dt.timestamp_millis()),
+        TimeUnit::Microsecond => Some(dt.timestamp_micros()),
+        TimeUnit::Nanosecond => dt.timestamp_nanos_opt(),
+    }
 }
 
 /// Parses an ISO-8601 date (`YYYY-MM-DD`) into days since the Unix

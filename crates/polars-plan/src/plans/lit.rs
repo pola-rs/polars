@@ -1,7 +1,5 @@
 use std::hash::{Hash, Hasher};
 
-#[cfg(feature = "dtype-datetime")]
-use chrono::Datelike;
 #[cfg(feature = "temporal")]
 use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::CHEAP_SERIES_HASH_LIMIT;
@@ -582,23 +580,10 @@ impl Literal for Null {
 }
 
 #[cfg(feature = "dtype-datetime")]
-fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
-    // ~584 year around 1970
-    !(ndt.year() > 2554 || ndt.year() < 1386)
-}
-
-#[cfg(feature = "dtype-datetime")]
 impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {
-        if in_nanoseconds_window(&self) {
-            Expr::Literal(
-                Scalar::new_datetime(
-                    self.and_utc().timestamp_nanos_opt().unwrap(),
-                    TimeUnit::Nanoseconds,
-                    None,
-                )
-                .into(),
-            )
+        if let Some(nanos) = self.and_utc().timestamp_nanos_opt() {
+            Expr::Literal(Scalar::new_datetime(nanos, TimeUnit::Nanoseconds, None).into())
         } else {
             Expr::Literal(
                 Scalar::new_datetime(
@@ -691,6 +676,32 @@ impl Hash for LiteralValue {
             LiteralValue::Range(range) => range.hash(state),
             LiteralValue::Scalar(sc) => sc.hash(state),
             LiteralValue::Dyn(d) => d.hash(state),
+        }
+    }
+}
+
+#[cfg(all(test, feature = "dtype-datetime"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chrono_literal_out_of_nanoseconds_range() {
+        let dates = [
+            NaiveDate::from_ymd_opt(1400, 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(1677, 9, 21).unwrap(),
+            NaiveDate::from_ymd_opt(1677, 9, 22).unwrap(),
+            NaiveDate::from_ymd_opt(2262, 4, 11).unwrap(),
+            NaiveDate::from_ymd_opt(2262, 4, 12).unwrap(),
+            NaiveDate::from_ymd_opt(2500, 12, 31).unwrap(),
+        ];
+
+        for date in dates {
+            let expr = date.lit();
+            assert!(matches!(expr, Expr::Literal(_)));
+
+            let dt = date.and_hms_opt(12, 0, 0).unwrap();
+            let expr_dt = dt.lit();
+            assert!(matches!(expr_dt, Expr::Literal(_)));
         }
     }
 }

@@ -382,6 +382,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "is_between")]
     fn column_predicate_is_between() -> PolarsResult<()> {
         let col_name = "testcol";
         // ClosedInterval, expected min, expected max:

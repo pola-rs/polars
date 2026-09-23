@@ -17,10 +17,15 @@ pub fn date_range(
     tz: Option<&Tz>,
 ) -> PolarsResult<DatetimeChunked> {
     let (start, end) = match tu {
-        TimeUnit::Nanoseconds => (
-            start.and_utc().timestamp_nanos_opt().unwrap(),
-            end.and_utc().timestamp_nanos_opt().unwrap(),
-        ),
+        TimeUnit::Nanoseconds => {
+            let start = start.and_utc().timestamp_nanos_opt().ok_or_else(|| {
+                polars_err!(ComputeError: "datetime '{start}' is out of bounds for nanosecond resolution")
+            })?;
+            let end = end.and_utc().timestamp_nanos_opt().ok_or_else(|| {
+                polars_err!(ComputeError: "datetime '{end}' is out of bounds for nanosecond resolution")
+            })?;
+            (start, end)
+        },
         TimeUnit::Microseconds => (
             start.and_utc().timestamp_micros(),
             end.and_utc().timestamp_micros(),
