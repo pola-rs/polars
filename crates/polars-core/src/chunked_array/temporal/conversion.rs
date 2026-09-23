@@ -14,11 +14,7 @@ impl From<&AnyValue<'_>> for NaiveDateTime {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => date32_to_datetime(*v),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v, tu, _) => match tu {
-                TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),
-                TimeUnit::Microseconds => timestamp_us_to_datetime(*v),
-                TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
-            },
+            AnyValue::Datetime(v, tu, _) => tu.timestamp_to_datetime(*v),
             _ => panic!("can only convert date/datetime to NaiveDateTime"),
         }
     }
