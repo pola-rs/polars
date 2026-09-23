@@ -26,6 +26,9 @@ pub enum IRArrayFunction {
     #[cfg(feature = "is_in")]
     Contains {
         nulls_equal: bool,
+        /// Set by type coercion: cast the needle to this dtype when evaluating, and treat a
+        /// needle the cast cannot represent exactly as absent.
+        needle_cast: Option<DataType>,
     },
     #[cfg(feature = "array_count")]
     CountMatches,
@@ -122,7 +125,7 @@ impl IRArrayFunction {
                 .map_to_list_and_array_inner_dtype(),
             Join(_) => mapper.ensure_is_array()?.with_dtype(DataType::String),
             #[cfg(feature = "is_in")]
-            Contains { nulls_equal: _ } => mapper.ensure_is_array()?.with_dtype(DataType::Boolean),
+            Contains { .. } => mapper.ensure_is_array()?.with_dtype(DataType::Boolean),
             #[cfg(feature = "array_count")]
             CountMatches => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
             Shift => mapper.ensure_is_array()?.with_same_dtype(),
@@ -150,7 +153,7 @@ impl IRArrayFunction {
         use IRArrayFunction as A;
         match self {
             #[cfg(feature = "is_in")]
-            A::Contains { nulls_equal: _ } => FunctionOptions::elementwise(),
+            A::Contains { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "array_count")]
             A::CountMatches => FunctionOptions::elementwise(),
             A::Concat => FunctionOptions::elementwise()
@@ -230,7 +233,7 @@ impl Display for IRArrayFunction {
             Get(_) => "get",
             Join(_) => "join",
             #[cfg(feature = "is_in")]
-            Contains { nulls_equal: _ } => "contains",
+            Contains { .. } => "contains",
             #[cfg(feature = "array_count")]
             CountMatches => "count_matches",
             Shift => "shift",
@@ -239,7 +242,16 @@ impl Display for IRArrayFunction {
             #[cfg(feature = "array_to_struct")]
             ToStruct { fields: _ } => "to_struct",
         };
-        write!(f, "arr.{name}")
+        write!(f, "arr.{name}")?;
+        #[cfg(feature = "is_in")]
+        if let Contains {
+            needle_cast: Some(dtype),
+            ..
+        } = self
+        {
+            write!(f, "[needle: {dtype}]")?;
+        }
+        Ok(())
     }
 }
 

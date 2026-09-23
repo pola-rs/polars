@@ -9,6 +9,9 @@ pub enum IRListFunction {
     #[cfg(feature = "is_in")]
     Contains {
         nulls_equal: bool,
+        /// Set by type coercion: cast the needle to this dtype when evaluating, and treat a
+        /// needle the cast cannot represent exactly as absent.
+        needle_cast: Option<DataType>,
     },
     #[cfg(feature = "list_drop_nulls")]
     DropNulls,
@@ -74,7 +77,7 @@ impl IRListFunction {
         match self {
             Concat => mapper.map_to_list_supertype(),
             #[cfg(feature = "is_in")]
-            Contains { nulls_equal: _ } => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
+            Contains { .. } => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
             #[cfg(feature = "list_drop_nulls")]
             DropNulls => mapper.ensure_is_list()?.with_same_dtype(),
             #[cfg(feature = "list_sample")]
@@ -174,7 +177,7 @@ impl IRListFunction {
             L::Concat => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             #[cfg(feature = "is_in")]
-            L::Contains { nulls_equal: _ } => FunctionOptions::elementwise(),
+            L::Contains { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_sample")]
             L::Sample { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_gather")]
@@ -234,7 +237,7 @@ impl Display for IRListFunction {
         let name = match self {
             Concat => "concat",
             #[cfg(feature = "is_in")]
-            Contains { nulls_equal: _ } => "contains",
+            Contains { .. } => "contains",
             #[cfg(feature = "list_drop_nulls")]
             DropNulls => "drop_nulls",
             #[cfg(feature = "list_sample")]
@@ -277,6 +280,15 @@ impl Display for IRListFunction {
             #[cfg(feature = "dtype-map")]
             ToMap => "to_map",
         };
-        write!(f, "list.{name}")
+        write!(f, "list.{name}")?;
+        #[cfg(feature = "is_in")]
+        if let Contains {
+            needle_cast: Some(dtype),
+            ..
+        } = self
+        {
+            write!(f, "[needle: {dtype}]")?;
+        }
+        Ok(())
     }
 }

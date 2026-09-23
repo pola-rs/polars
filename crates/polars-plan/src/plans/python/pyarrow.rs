@@ -227,7 +227,11 @@ pub fn predicate_to_pa(
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            function:
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                    nulls_equal,
+                    needle_cast: None,
+                }),
             input,
             ..
         } => {
@@ -613,7 +617,11 @@ pub fn aexpr_to_pyarrow<'py>(
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            function:
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                    nulls_equal,
+                    needle_cast: None,
+                }),
             input,
             ..
         } => {

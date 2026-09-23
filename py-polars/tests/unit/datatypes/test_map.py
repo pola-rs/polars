@@ -2252,15 +2252,131 @@ def test_map_get_widens_a_coarser_temporal_key(
         ),
     ],
 )
-def test_map_get_rejects_a_key_that_would_be_rounded(
+def test_map_get_key_that_would_be_rounded_is_absent(
     map_dtype: pl.DataType, needle_dtype: pl.DataType, key: Any, needle: Any
 ) -> None:
     # Truncating the key onto the coarser unit would match an entry it does not equal.
     s = map_of(map_dtype, key)
 
-    for method in ("get", "contains_key"):
-        with pytest.raises(InvalidOperationError, match="would be rounded"):
-            getattr(s.map, method)(pl.lit(needle, needle_dtype))
+    for n in (pl.lit(needle, needle_dtype), pl.col("k")):
+        df = pl.DataFrame({"m": s, "k": pl.Series([needle], dtype=needle_dtype)})
+        out = df.select(
+            pl.col("m").map.get(n).alias("v"),
+            pl.col("m").map.contains_key(n).alias("has"),
+        )
+        assert out["v"].to_list() == [None]
+        assert out["has"].to_list() == [False]
+
+
+def _assert_key_cast(lf: pl.LazyFrame, dtype: str) -> None:
+    # The key is cast as the lookup runs; the Map is never rewritten.
+    plan = lf.explain()
+    assert f"[key: {dtype}]" in plan
+    assert ".cast(" not in plan
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "needle_dtype", "hit", "miss", "cast"),
+    [
+        pytest.param(pl.Int8, pl.Int64, 7, 300, "i8", id="int-narrowing"),
+        pytest.param(pl.UInt64, pl.Int8, 7, -1, "u64", id="int-sign"),
+        pytest.param(
+            pl.Datetime("ms"),
+            pl.Datetime("us"),
+            datetime(2020, 1, 1, 0, 0, 0, 1000),
+            datetime(2020, 1, 1, 0, 0, 0, 1001),
+            "datetime[ms]",
+            id="datetime-finer",
+        ),
+        pytest.param(
+            pl.Datetime("ns"),
+            pl.Datetime("us"),
+            datetime(2020, 1, 1),
+            datetime(2500, 1, 1),
+            "datetime[ns]",
+            id="datetime-coarser",
+        ),
+    ],
+)
+def test_map_get_casts_the_key_to_the_key_dtype(
+    key_dtype: PolarsDataType,
+    needle_dtype: PolarsDataType,
+    hit: Any,
+    miss: Any,
+    cast: str,
+) -> None:
+    lf = pl.LazyFrame(
+        {
+            "m": map_of(key_dtype, hit).gather([0, 0, 0, None]),
+            "k": pl.Series([hit, miss, None, miss], dtype=needle_dtype),
+        }
+    )
+
+    column = lf.select(
+        pl.col("m").map.get(pl.col("k")).alias("v"),
+        pl.col("m").map.contains_key(pl.col("k")).alias("has"),
+    )
+    _assert_key_cast(column, cast)
+    out = column.collect()
+    assert out["v"].to_list() == [42, None, None, None]
+    # A null Map stays null.
+    assert out["has"].to_list() == [True, False, False, None]
+
+    for value, found in ((hit, True), (miss, False)):
+        literal = lf.select(
+            pl.col("m").map.get(pl.lit(value, needle_dtype)).alias("v"),
+            pl.col("m").map.contains_key(pl.lit(value, needle_dtype)).alias("has"),
+        )
+        plan = literal.explain()
+        assert "[key:" not in plan
+        assert ".cast(" not in plan
+        # An inexact literal becomes a null key, which no Map holds.
+        assert ("[null]" in plan) != found
+        out = literal.collect()
+        assert out["v"].to_list() == [42 if found else None] * 3 + [None]
+        assert out["has"].to_list() == [found] * 3 + [None]
+
+
+def test_map_get_inexact_literal_key_keeps_the_shape() -> None:
+    df = pl.DataFrame({"g": [1, 1, 2], "m": map_of(pl.Int8, 7).gather([0, None, 0])})
+    exprs = [
+        pl.col("m").map.get(pl.lit(300, pl.Int64)).alias("v"),
+        pl.col("m").map.contains_key(pl.lit(300, pl.Int64)).alias("has"),
+    ]
+
+    out = df.select(exprs)
+    assert out["v"].to_list() == [None, None, None]
+    assert out["has"].to_list() == [False, None, False]
+    assert df.head(0).select(exprs).height == 0
+    out = df.group_by("g", maintain_order=True).agg(exprs)
+    assert out["has"].to_list() == [[False, None], [False]]
+
+
+@pytest.mark.parametrize(
+    ("needle_dtype", "key_dtype", "keys"),
+    [
+        pytest.param(pl.Int64, pl.Int8, list(range(30)), id="int"),
+        pytest.param(
+            pl.Datetime("us"),
+            pl.Datetime("ms"),
+            [datetime(2020, 1, 1) + timedelta(milliseconds=i) for i in range(30)],
+            id="temporal",
+        ),
+    ],
+)
+def test_map_key_cast_evaluates_the_key_once(
+    needle_dtype: PolarsDataType, key_dtype: PolarsDataType, keys: list[Any]
+) -> None:
+    # A shuffled key checked against a second evaluation would be looked up wrongly.
+    df = pl.DataFrame({"m": map_with_keys(key_dtype, keys).gather([0] * 30)})
+    needle = pl.lit(pl.Series(keys, dtype=needle_dtype)).shuffle()
+
+    out = df.select(
+        pl.col("m").map.contains_key(needle).alias("has"),
+        pl.col("m").map.get(needle).is_not_null().alias("found"),
+    )
+    assert out["has"].to_list() == [True] * 30
+    assert out["found"].to_list() == [True] * 30
 
 
 @pytest.mark.parametrize("needle", ["z", pl.lit("z"), pl.col("k")])

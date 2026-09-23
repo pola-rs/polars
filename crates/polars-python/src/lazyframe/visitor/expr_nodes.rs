@@ -1091,8 +1091,15 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         (PyArrayFunction::Join, *ignore_nulls).into_py_any(py)
                     },
                     #[cfg(feature = "is_in")]
-                    IRArrayFunction::Contains { nulls_equal } => {
-                        (PyArrayFunction::Contains, *nulls_equal).into_py_any(py)
+                    IRArrayFunction::Contains {
+                        nulls_equal,
+                        needle_cast: None,
+                    } => (PyArrayFunction::Contains, *nulls_equal).into_py_any(py),
+                    #[cfg(feature = "is_in")]
+                    IRArrayFunction::Contains { .. } => {
+                        return Err(PyNotImplementedError::new_err(
+                            "arr.contains with a needle cast",
+                        ));
                     },
                     #[cfg(feature = "array_count")]
                     IRArrayFunction::CountMatches => {
@@ -1132,8 +1139,15 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::ListExpr(listfun) => match listfun {
                     IRListFunction::Concat => (PyListFunction::Concat,).into_py_any(py),
                     #[cfg(feature = "is_in")]
-                    IRListFunction::Contains { nulls_equal } => {
-                        (PyListFunction::Contains, nulls_equal).into_py_any(py)
+                    IRListFunction::Contains {
+                        nulls_equal,
+                        needle_cast: None,
+                    } => (PyListFunction::Contains, nulls_equal).into_py_any(py),
+                    #[cfg(feature = "is_in")]
+                    IRListFunction::Contains { .. } => {
+                        return Err(PyNotImplementedError::new_err(
+                            "list.contains with a needle cast",
+                        ));
                     },
                     #[cfg(feature = "list_drop_nulls")]
                     IRListFunction::DropNulls => (PyListFunction::DropNulls,).into_py_any(py),
@@ -1580,8 +1594,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         (PyBooleanFunction::IsBetween, Into::<&str>::into(closed)).into_py_any(py)
                     },
                     #[cfg(feature = "is_in")]
-                    IRBooleanFunction::IsIn { nulls_equal } => {
-                        (PyBooleanFunction::IsIn, nulls_equal).into_py_any(py)
+                    IRBooleanFunction::IsIn {
+                        nulls_equal,
+                        needle_cast: None,
+                    } => (PyBooleanFunction::IsIn, nulls_equal).into_py_any(py),
+                    #[cfg(feature = "is_in")]
+                    IRBooleanFunction::IsIn { .. } => {
+                        return Err(PyNotImplementedError::new_err("is_in with a needle cast"));
                     },
                     IRBooleanFunction::IsClose {
                         abs_tol,

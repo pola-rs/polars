@@ -1074,10 +1074,15 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(stream);
             },
 
+            // A semi join needs equal key dtypes, so a guarded needle cast takes the generic path.
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 input: ref inner_exprs,
-                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+                function:
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                        nulls_equal,
+                        needle_cast: None,
+                    }),
                 options: _,
             } if is_scalar_ae(inner_exprs[1].node(), ctx.expr_arena)
                 && !is_single_literal_ae(inner_exprs[1].node(), ctx.expr_arena) =>

@@ -7,8 +7,15 @@ pub enum IRMapFunction {
     Keys,
     Values,
     Length,
-    ContainsKey,
-    Get,
+    ContainsKey {
+        /// Set by type coercion: cast the key to this dtype when evaluating, and treat a key
+        /// the cast cannot represent exactly as absent.
+        needle_cast: Option<DataType>,
+    },
+    Get {
+        /// See [`IRMapFunction::ContainsKey`].
+        needle_cast: Option<DataType>,
+    },
 }
 
 impl<'a> FieldsMapper<'a> {
@@ -49,17 +56,19 @@ impl IRMapFunction {
                 Ok(DataType::List(Box::new(value.clone())))
             }),
             Length => mapper.try_map_map_dtype("map.len", |_, _| Ok(IDX_DTYPE)),
-            ContainsKey => {
+            ContainsKey { .. } => {
                 mapper.try_map_map_dtype("map.contains_key", |_, _| Ok(DataType::Boolean))
             },
-            Get => mapper.try_map_map_dtype("map.get", |_, value| Ok(value.clone())),
+            Get { .. } => mapper.try_map_map_dtype("map.get", |_, value| Ok(value.clone())),
         }
     }
 
     pub fn function_options(&self) -> FunctionOptions {
         use IRMapFunction::*;
         match self {
-            Entries | Keys | Values | Length | ContainsKey | Get => FunctionOptions::elementwise(),
+            Entries | Keys | Values | Length | ContainsKey { .. } | Get { .. } => {
+                FunctionOptions::elementwise()
+            },
         }
     }
 }
@@ -73,10 +82,20 @@ impl Display for IRMapFunction {
             Keys => "keys",
             Values => "values",
             Length => "len",
-            ContainsKey => "contains_key",
-            Get => "get",
+            ContainsKey { .. } => "contains_key",
+            Get { .. } => "get",
         };
-        write!(f, "map.{name}")
+        write!(f, "map.{name}")?;
+        if let ContainsKey {
+            needle_cast: Some(dtype),
+        }
+        | Get {
+            needle_cast: Some(dtype),
+        } = self
+        {
+            write!(f, "[key: {dtype}]")?;
+        }
+        Ok(())
     }
 }
 

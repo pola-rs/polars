@@ -228,13 +228,10 @@ def test_is_in_large_uint64_21966() -> None:
     assert s.is_in(pl.Series([2**64 - 1], dtype=pl.UInt64)).item()
     assert not s.is_in(pl.Series([2**64 - 2], dtype=pl.UInt64)).item()
 
-    # No lossless supertype for UInt128 vs Int64 available
-    s = pl.Series([100], dtype=pl.UInt128)
-    with pytest.raises(
-        InvalidOperationError,
-        match=r"'is_in' cannot check for UInt128 values in List\(Int64\) data",
-    ):
-        s.is_in(pl.Series([100], dtype=pl.Int64)).item()
+    # UInt128 and Int64 have no common supertype. The needle is cast, and a needle out
+    # of range is a miss.
+    s = pl.Series([100, 2**127], dtype=pl.UInt128)
+    assert s.is_in(pl.Series([100, -1], dtype=pl.Int64)).to_list() == [True, False]
 
 
 def test_is_in_float_list_10764() -> None:
@@ -801,26 +798,156 @@ def test_is_in_non_nested_container() -> None:
         df.select(pl.col("a").is_in(pl.col("b")))
 
 
+MEMBERSHIP_OPS = ["is_in-list", "is_in-array", "list.contains", "arr.contains"]
+
+
+def _container(
+    op: str, rows: list[list[Any] | None], inner: PolarsDataType
+) -> pl.Series:
+    if op.endswith("list") or op == "list.contains":
+        return pl.Series("h", rows, dtype=pl.List(inner))
+    width = len(next(r for r in rows if r is not None))
+    return pl.Series("h", rows, dtype=pl.Array(inner, width))
+
+
+def _membership(
+    op: str, needle: pl.Expr, container: pl.Expr, *, nulls_equal: bool | None = None
+) -> pl.Expr:
+    kwargs = {} if nulls_equal is None else {"nulls_equal": nulls_equal}
+    if op.startswith("is_in"):
+        return needle.is_in(container, **kwargs)
+    if op == "list.contains":
+        return container.list.contains(needle, **kwargs)
+    return container.arr.contains(needle, **kwargs)
+
+
+_RUST_DTYPE = {
+    pl.Int8: "i8",
+    pl.Int64: "i64",
+    pl.UInt64: "u64",
+    pl.Float16: "f16",
+    pl.Float32: "f32",
+    pl.Datetime("ms"): "datetime[ms]",
+    pl.Datetime("ns"): "datetime[ns]",
+    pl.Duration("ms"): "duration[ms]",
+}
+
+
+def _assert_needle_cast(lf: pl.LazyFrame, dtype: str) -> None:
+    # The needle is cast as the function runs; the container is never rewritten.
+    plan = lf.explain()
+    assert f"[needle: {dtype}]" in plan
+    assert ".cast(" not in plan
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
 @pytest.mark.parametrize(
-    ("needle_dtype", "haystack_dtype"),
+    ("needle_dtype", "inner", "hit", "miss"),
     [
-        pytest.param(pl.Datetime("ms"), pl.Datetime("us"), id="datetime-coarser"),
-        pytest.param(pl.Datetime("us"), pl.Datetime("ms"), id="datetime-finer"),
-        pytest.param(pl.Duration("ms"), pl.Duration("us"), id="duration-coarser"),
-        pytest.param(pl.Duration("us"), pl.Duration("ms"), id="duration-finer"),
+        pytest.param(pl.Int64, pl.Int8, 7, 300, id="int-narrowing"),
+        pytest.param(pl.Int8, pl.UInt64, 7, -1, id="int-sign"),
+        pytest.param(pl.UInt128, pl.Int64, 7, 2**64, id="u128-signed"),
+        pytest.param(
+            pl.Datetime("us"),
+            pl.Datetime("ms"),
+            datetime(2020, 1, 1, 0, 0, 0, 1000),
+            datetime(2020, 1, 1, 0, 0, 0, 1001),
+            id="datetime-finer",
+        ),
+        pytest.param(
+            pl.Datetime("us"),
+            pl.Datetime("ns"),
+            datetime(2020, 1, 1),
+            datetime(2500, 1, 1),
+            id="datetime-coarser",
+        ),
+        pytest.param(
+            pl.Duration("us"),
+            pl.Duration("ms"),
+            timedelta(milliseconds=1),
+            timedelta(microseconds=1001),
+            id="duration-finer",
+        ),
     ],
 )
-def test_is_in_rejects_a_mismatched_time_unit(
-    needle_dtype: PolarsDataType, haystack_dtype: PolarsDataType
+def test_is_in_casts_the_needle_to_the_element_dtype(
+    op: str, needle_dtype: PolarsDataType, inner: PolarsDataType, hit: Any, miss: Any
 ) -> None:
-    # Matching the units needs a needle cast that can overflow to null, and a null
-    # needle matches null elements, so an overflow would read as a hit.
-    is_datetime = needle_dtype.base_type() is pl.Datetime
-    value = datetime(1970, 1, 1) if is_datetime else timedelta(0)
-    df = pl.DataFrame({"h": pl.Series("h", [[value]], dtype=pl.List(haystack_dtype))})
+    # A needle the cast cannot represent exactly (out of range, rounded, overflowing)
+    # equals no element, so it is a miss rather than an error or a rounded hit.
+    hay = [hit, hit] if op.endswith("array") or op == "arr.contains" else [hit]
+    lf = pl.LazyFrame(
+        {
+            "n": pl.Series([hit, miss, None], dtype=needle_dtype),
+            "h": _container(op, [hay, hay, hay], inner),
+        }
+    )
 
-    with pytest.raises(InvalidOperationError, match="same time unit"):
-        df.select(pl.lit(value, needle_dtype).is_in(pl.col("h")))
+    column = lf.select(_membership(op, pl.col("n"), pl.col("h")).alias("o"))
+    _assert_needle_cast(column, _RUST_DTYPE[inner])
+    # `is_in` defaults to `nulls_equal=False`, the `contains` methods to `True`.
+    null = None if op.startswith("is_in") else False
+    assert column.collect()["o"].to_list() == [True, False, null]
+
+    for value, expected in ((hit, True), (miss, False)):
+        literal = lf.select(
+            _membership(op, pl.lit(value, needle_dtype), pl.col("h")).alias("o")
+        )
+        plan = literal.explain()
+        assert "[needle:" not in plan
+        assert ".cast(" not in plan
+        # An inexact literal is resolved at plan time and never reaches the kernel.
+        assert (op.split("-")[0] in plan) == expected
+        assert literal.collect()["o"].to_list() == [expected] * 3
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    ("needle", "needle_dtype", "element", "inner"),
+    [
+        # Floors to a `ms` value whose cast back to `us` overflows to null.
+        pytest.param(
+            -(2**63) + 1,
+            pl.Datetime("us"),
+            -(2**63) // 1000,
+            pl.Datetime("ms"),
+            id="min-datetime",
+        ),
+        # Overflows to null, which must not read as a null element.
+        pytest.param(
+            16725225600000000, pl.Datetime("us"), None, pl.Datetime("ns"), id="overflow"
+        ),
+    ],
+)
+def test_is_in_needle_with_an_inexact_cast_never_matches(
+    op: str,
+    nulls_equal: bool,
+    needle: int,
+    needle_dtype: PolarsDataType,
+    element: int | None,
+    inner: PolarsDataType,
+) -> None:
+    hay = (
+        [element, element]
+        if op.endswith("array") or op == "arr.contains"
+        else [element]
+    )
+    df = pl.DataFrame(
+        {
+            "n": pl.Series([needle, needle]).cast(needle_dtype),
+            "h": _container(op, [hay, None], pl.Int64).cast(
+                _container(op, [hay], inner).dtype
+            ),
+        }
+    )
+
+    for n in (pl.col("n"), pl.lit(needle).cast(needle_dtype)):
+        out = df.select(
+            _membership(op, n, pl.col("h"), nulls_equal=nulls_equal).alias("o")
+        )
+        # A null container stays null.
+        assert out["o"].to_list() == [False, None]
 
 
 def test_is_in_does_not_match_null_on_temporal_overflow() -> None:
@@ -836,25 +963,79 @@ def test_is_in_does_not_match_null_on_temporal_overflow() -> None:
         pl.col("h").list.contains(pl.col("k")),
         pl.col("k").is_in(pl.col("h"), nulls_equal=True),
     ):
-        with pytest.raises(InvalidOperationError, match="same time unit"):
-            df.select(expr)
+        assert df.select(expr.alias("o"))["o"].to_list() == [False]
 
 
-MEMBERSHIP_OPS = ["is_in-list", "is_in-array", "list.contains", "arr.contains"]
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+def test_is_in_inexact_literal_needle_keeps_the_shape(op: str) -> None:
+    hay = [1, 2] if op.endswith("array") or op == "arr.contains" else [1]
+    df = pl.DataFrame({"g": [1, 1, 2], "h": _container(op, [hay, None, hay], pl.Int8)})
+    expr = _membership(op, pl.lit(300, pl.Int64), pl.col("h")).alias("o")
+
+    assert df.select(expr)["o"].to_list() == [False, None, False]
+    assert df.head(0).select(expr).height == 0
+    out = df.group_by("g", maintain_order=True).agg(expr)
+    assert out["o"].to_list() == [[False, None], [False]]
 
 
-def _container(op: str, rows: list[list[Any]], inner: PolarsDataType) -> pl.Series:
-    if op.endswith("list") or op == "list.contains":
-        return pl.Series("h", rows, dtype=pl.List(inner))
-    return pl.Series("h", rows, dtype=pl.Array(inner, len(rows[0])))
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize(
+    ("needle_dtype", "inner", "values"),
+    [
+        pytest.param(pl.Int64, pl.Int8, list(range(30)), id="int"),
+        pytest.param(
+            pl.Datetime("us"),
+            pl.Datetime("ms"),
+            [datetime(2020, 1, 1) + timedelta(milliseconds=i) for i in range(30)],
+            id="temporal",
+        ),
+    ],
+)
+def test_is_in_needle_cast_evaluates_the_needle_once(
+    op: str, needle_dtype: PolarsDataType, inner: PolarsDataType, values: list[Any]
+) -> None:
+    # Casting and guarding a needle must not evaluate it twice: a shuffled needle would
+    # then be checked against a different permutation than the one searched for.
+    df = pl.DataFrame({"h": _container(op, [values] * 30, inner)})
+    needle = pl.lit(pl.Series(values, dtype=needle_dtype)).shuffle()
+
+    out = df.select(_membership(op, needle, pl.col("h")).alias("o"))
+    assert out["o"].to_list() == [True] * 30
 
 
-def _membership(op: str, needle: pl.Expr, container: pl.Expr, **kwargs: Any) -> pl.Expr:
-    if op.startswith("is_in"):
-        return needle.is_in(container, **kwargs)
-    if op == "list.contains":
-        return container.list.contains(needle, **kwargs)
-    return container.arr.contains(needle, **kwargs)
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_needle_cast_masks_with_the_evaluated_container(
+    op: str, nulls_equal: bool
+) -> None:
+    # The null-container mask must come from the same evaluation the kernel searched.
+    n = 30
+    hay = [0, 1] if op.endswith("array") or op == "arr.contains" else [0]
+    rows = [hay if i % 3 else None for i in range(n)]
+    df = pl.DataFrame({"h": _container(op, rows, pl.Int8)})
+    needle = pl.lit(pl.Series([300] * n, dtype=pl.Int64))
+
+    out = df.select(
+        _membership(op, needle, pl.col("h").shuffle(), nulls_equal=nulls_equal).alias(
+            "o"
+        )
+    )
+    assert out["o"].null_count() == sum(r is None for r in rows)
+    assert out["o"].drop_nulls().to_list() == [False] * (n - out["o"].null_count())
+
+
+def test_is_in_needle_cast_with_a_scalar_haystack() -> None:
+    # A scalar haystack can lower to a semi join, which needs matching key dtypes.
+    lf = pl.LazyFrame(
+        {
+            "n": pl.Series([1, 2, 300, None], dtype=pl.Int64),
+            "h": pl.Series([[1, 2], [3], [4], [5]], dtype=pl.List(pl.Int8)),
+        }
+    )
+
+    expr = pl.col("n").is_in(pl.col("h").first())
+    _assert_needle_cast(lf.select(expr), "i8")
+    assert lf.select(expr).collect()["n"].to_list() == [True, True, False, None]
 
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
