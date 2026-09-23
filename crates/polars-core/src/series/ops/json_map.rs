@@ -10,7 +10,7 @@ use crate::chunked_array::logical::try_apply_map_entries;
 use crate::prelude::*;
 
 impl DataType {
-    /// Reject nested `Map`s whose keys are not strings, which JSON object keys must be.
+    /// Reject Maps with unsupported JSON key types, including nested Maps.
     pub fn ensure_json_map_keys(&self) -> PolarsResult<()> {
         if !self.contains_map() {
             return Ok(());
@@ -21,7 +21,7 @@ impl DataType {
                 polars_ensure!(
                     is_json_map_key(key),
                     ComputeError:
-                    "JSON only supports Map keys of type String, Categorical or Enum, got `{key}`\n\nConsider casting the keys to String, or `Expr.map.entries` to use the entries as a list of structs instead."
+                    "JSON Map keys must be String, Categorical or Enum, got `{key}`.\n\nCast keys to String or use `Expr.map.entries` to write a list of structs."
                 );
             }
             Ok(())

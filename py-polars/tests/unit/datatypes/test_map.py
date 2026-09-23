@@ -1398,7 +1398,7 @@ def test_map_json_read_keeps_first_position_and_last_value(path: str) -> None:
 
 
 def test_map_json_read_schema_overrides_keeps_order() -> None:
-    # The other columns are inferred from a separate parse of the input.
+    # Infer other columns while preserving Map entry order.
     members = [f'"k{i}":{i}' for i in range(40)] + ['"k3":100']
     obj = "{" + ",".join(members) + "}"
     keys = [f"k{i}" for i in range(40)]
@@ -1523,7 +1523,9 @@ UNSUPPORTED_KEY_MAPS = [
     pl.List(pl.Map(pl.Binary, pl.Int64)),
     pl.Map(pl.String, pl.Map(pl.Date, pl.Int64)),
 ]
-UNSUPPORTED_KEY_MSG = r"JSON only supports Map keys of type String, Categorical or Enum.*\n\n.*map\.entries"
+UNSUPPORTED_KEY_MSG = (
+    r"JSON Map keys must be String, Categorical or Enum.*\n\n.*map\.entries"
+)
 
 
 @pytest.mark.parametrize(
