@@ -19,7 +19,9 @@ use polars_utils::pl_str::unique_column_name;
 
 use super::join_utils::unconstrained;
 use crate::plans::schema::join_right_output_names;
-use crate::plans::stats::node_stats;
+use crate::plans::stats::{
+    NodeStats, StatsCache, composite_key_domain, node_stats, node_stats_with_cache,
+};
 use crate::plans::{
     AExpr, ExprIR, IR, IRAggExpr, IRBooleanFunction, IRBuilder, IRFunctionExpr, JoinTypeOptionsIR,
     LiteralValue, OutputName, ProjectionOptions,
@@ -132,13 +134,17 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
     };
     // A computed key would be applied twice: once by the partial group by and again by the
     // join, which keeps its key expressions.
-    let right_keys = on
+    let (left_keys, right_keys): (Vec<_>, Vec<_>) = on
         .iter()
         .map(|(l, r)| {
-            l.plain_column(expr_arena)?;
-            r.plain_column(expr_arena).cloned()
+            Some((
+                l.plain_column(expr_arena)?.clone(),
+                r.plain_column(expr_arena)?.clone(),
+            ))
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .unzip();
     if right_keys.is_empty() {
         return None;
     }
@@ -194,7 +200,7 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
         return None;
     }
     if !polars_config::config().eager_aggregation_skip_gate()
-        && !gate_passes(join, left, right, ir_arena, expr_arena)
+        && !gate_passes(left, right, &left_keys, &right_keys, ir_arena, expr_arena)
     {
         return None;
     }
@@ -307,15 +313,136 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
     Some(new_group_by)
 }
 
+/// Fire only if at least this share of R's non-null rows is expected to find a match.
+/// Below it, most of the pre-aggregation works on rows the join, or its runtime filters,
+/// would have dropped.
+const MIN_MATCHED_SHARE: f64 = 0.75;
+/// Fire only if each partial group is expected to fold at least this many R rows.
+const MIN_ROWS_PER_KEY: f64 = 1.5;
+/// Leave small inputs alone.
+const MIN_RIGHT_ROWS: f64 = 100_000.0;
+
+/// What the gate needs to know about one side of the join and its keys.
+struct SideStats {
+    /// Rows after the side's own filters.
+    rows: f64,
+    /// Rows before them.
+    unfiltered: f64,
+    /// Distinct keys before the filters.
+    ndv: f64,
+    /// Share of rows with a null in any key.
+    null_share: f64,
+    /// Inclusive range of a single integer key.
+    range: Option<(i128, i128)>,
+}
+
+impl SideStats {
+    fn new(stats: &NodeStats, keys: &[PlSmallStr]) -> Option<Self> {
+        let unfiltered = stats.unfiltered.max(1.0);
+        let ndv = match keys {
+            [key] => stats.key_distinct_estimate(key)?,
+            _ => composite_key_domain(
+                keys.iter()
+                    .map(|key| stats.key_distinct_estimate(key))
+                    .collect::<Option<Vec<_>>>()?
+                    .into_iter(),
+                unfiltered,
+            ),
+        }
+        .max(1.0);
+        let not_null = keys
+            .iter()
+            .map(|key| {
+                let nulls = stats
+                    .column(key)
+                    .and_then(|c| c.null_count.confident(0.0))
+                    .unwrap_or(0);
+                1.0 - (nulls as f64 / unfiltered).clamp(0.0, 1.0)
+            })
+            .product::<f64>();
+        let range = match keys {
+            [key] => stats.column(key).and_then(|c| c.int_range),
+            _ => None,
+        };
+        Some(Self {
+            rows: stats.filtered,
+            unfiltered,
+            ndv,
+            null_share: 1.0 - not_null,
+            range,
+        })
+    }
+
+    /// Share of rows the side's filters keep.
+    fn kept(&self) -> f64 {
+        (self.rows / self.unfiltered).clamp(0.0, 1.0)
+    }
+
+    /// Non-null rows per key before the filters.
+    fn rows_per_key(&self) -> f64 {
+        self.unfiltered * (1.0 - self.null_share) / self.ndv
+    }
+
+    /// Chance that a key keeps at least one row after the filters, taking the filter as
+    /// independent of the key.
+    fn key_survival(&self) -> f64 {
+        1.0 - (1.0 - self.kept()).powf(self.rows_per_key())
+    }
+}
+
+/// Share of R's keys that L also holds, both before filters. With integer ranges on both
+/// sides the keys are taken as spread evenly over their range; otherwise the smaller key
+/// set is taken to lie inside the larger.
+fn key_overlap(left: &SideStats, right: &SideStats) -> f64 {
+    let overlap = match (left.range, right.range) {
+        (Some((l_min, l_max)), Some((r_min, r_max))) => {
+            let length = |(min, max): (i128, i128)| (max - min + 1).max(1) as f64;
+            let density_left = left.ndv / length((l_min, l_max));
+            let density_right = right.ndv / length((r_min, r_max));
+            let shared = (l_max.min(r_max) - l_min.max(r_min) + 1).max(0) as f64;
+            density_left.min(density_right) * shared / right.ndv
+        },
+        _ => left.ndv / right.ndv,
+    };
+    overlap.clamp(0.0, 1.0)
+}
+
 /// Whether the rewrite is expected to pay off.
 fn gate_passes(
-    _join: Node,
-    _left: Node,
-    _right: Node,
-    _ir_arena: &Arena<IR>,
-    _expr_arena: &Arena<AExpr>,
+    left: Node,
+    right: Node,
+    left_keys: &[PlSmallStr],
+    right_keys: &[PlSmallStr],
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
 ) -> bool {
-    false
+    let mut cache = StatsCache::new();
+    let mut side = |node, keys| {
+        let stats = node_stats_with_cache(node, ir_arena, expr_arena, &mut cache)?;
+        SideStats::new(&stats, keys)
+    };
+    let (Some(left), Some(right)) = (side(left, left_keys), side(right, right_keys)) else {
+        if polars_config::config().verbose() {
+            eprintln!("eager aggregation: no key statistics: skipped");
+        }
+        return false;
+    };
+
+    let matched_share = key_overlap(&left, &right) * left.key_survival();
+    let right_rows = right.rows * (1.0 - right.null_share);
+    let right_keys_left = right.ndv * right.key_survival();
+    let rows_per_key = right_rows / right_keys_left.max(1.0);
+    let passes = matched_share >= MIN_MATCHED_SHARE
+        && rows_per_key >= MIN_ROWS_PER_KEY
+        && right_rows >= MIN_RIGHT_ROWS;
+    if polars_config::config().verbose() {
+        eprintln!(
+            "eager aggregation: matched share {matched_share:.3}, rows per key {rows_per_key:.2}, \
+             right rows {right_rows:.0}: {}",
+            if passes { "fires" } else { "skipped" }
+        );
+    }
+    passes
 }
 
 /// Checks that `node` is built from splittable aggregates of R columns, joined by

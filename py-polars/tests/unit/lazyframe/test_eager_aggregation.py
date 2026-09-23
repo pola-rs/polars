@@ -4,12 +4,15 @@ from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from tests.conftest import PlMonkeyPatch
 
 
@@ -318,3 +321,92 @@ def test_eager_aggregation_row_bound_unknown(plmonkeypatch: PlMonkeyPatch) -> No
     lf = _left().join(right, on="k", how="left").group_by("g").agg(pl.len())
     on, off = _plans(lf, plmonkeypatch)
     assert not _fired(on, off), on
+
+
+def _scan(tmp_path: Path, name: str, df: pl.DataFrame) -> pl.LazyFrame:
+    path = tmp_path / f"{name}.parquet"
+    df.write_parquet(path)
+    return pl.scan_parquet(path)
+
+
+def _gate_fires(lf: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch) -> bool:
+    on, off = _plans(lf, plmonkeypatch, skip_gate=False)
+    return _fired(on, off)
+
+
+def _count_by_group(left: pl.LazyFrame, right: pl.LazyFrame, how: Any) -> pl.LazyFrame:
+    return left.join(right, on="k", how=how).group_by("g").agg(pl.col("x").count())
+
+
+def test_eager_aggregation_gate(plmonkeypatch: PlMonkeyPatch, tmp_path: Path) -> None:
+    rng = np.random.default_rng(0)
+
+    def left_frame(keys: np.ndarray) -> pl.DataFrame:
+        return pl.DataFrame({"k": keys, "g": keys % 7, "y": keys % 5})
+
+    def right_frame(keys: np.ndarray) -> pl.DataFrame:
+        return pl.DataFrame(
+            {
+                "k": keys,
+                "x": rng.integers(0, 9, len(keys)),
+                "c": rng.choice(["plain", "special requests"], len(keys)),
+            }
+        )
+
+    # TPC-H Q13 shape: every order has a customer, many orders per customer, and a
+    # `NOT LIKE` filter the estimator only knows as a flat 20 %.
+    left = _scan(tmp_path, "q13_l", left_frame(np.arange(30_000)))
+    right = _scan(tmp_path, "q13_r", right_frame(rng.integers(0, 30_000, 600_000)))
+    right = right.filter(~pl.col("c").str.contains("%special%requests%"))
+    assert _gate_fires(_count_by_group(left, right, "left"), plmonkeypatch)
+
+    # L covers 80 % of R's dense key range.
+    left = _scan(tmp_path, "part_l", left_frame(np.arange(80_000)))
+    right = _scan(tmp_path, "part_r", right_frame(np.repeat(np.arange(100_000), 2)))
+    assert _gate_fires(_count_by_group(left, right, "inner"), plmonkeypatch)
+
+    # 90 % of R's keys are null; L covers all of the others.
+    left = _scan(tmp_path, "null_l", left_frame(np.arange(10_000)))
+    keys = pl.Series("k", np.repeat(np.arange(10_000), 12)).extend(
+        pl.Series("k", [None] * 1_080_000, dtype=pl.Int64)
+    )
+    right = _scan(
+        tmp_path,
+        "null_r",
+        right_frame(np.zeros(1_200_000, dtype=np.int64)).with_columns(keys),
+    )
+    lf = _count_by_group(left, right, "left")
+    assert _gate_fires(lf, plmonkeypatch)
+    assert "is_not_null" in lf.explain(engine="streaming")
+
+    # Only 1 % of R's keys are in L, although duplicate L keys make the join output as
+    # large as R.
+    left = _scan(tmp_path, "dup_l", left_frame(np.repeat(np.arange(1_000), 100)))
+    right = _scan(tmp_path, "dup_r", right_frame(rng.integers(0, 100_000, 1_000_000)))
+    assert not _gate_fires(_count_by_group(left, right, "left"), plmonkeypatch)
+
+    # Both sides filtered to 20 % over the same keys: only 59 % of R's rows still match.
+    left = _scan(tmp_path, "both_l", left_frame(np.repeat(np.arange(100_000), 4)))
+    right = _scan(tmp_path, "both_r", right_frame(np.repeat(np.arange(100_000), 6)))
+    lf = _count_by_group(
+        left.filter(pl.col("y") * 3 != 7), right.filter(pl.col("x") * 3 != 7), "inner"
+    )
+    assert not _gate_fires(lf, plmonkeypatch)
+
+    # Disjoint key ranges.
+    left = _scan(tmp_path, "disj_l", left_frame(np.arange(10_000)))
+    right = _scan(
+        tmp_path, "disj_r", right_frame(np.repeat(np.arange(100_000, 200_000), 2))
+    )
+    assert not _gate_fires(_count_by_group(left, right, "inner"), plmonkeypatch)
+
+    # R's key is unique, so nothing folds.
+    left = _scan(tmp_path, "uniq_l", left_frame(np.arange(200_000)))
+    right = _scan(tmp_path, "uniq_r", right_frame(np.arange(200_000)))
+    assert not _gate_fires(_count_by_group(left, right, "inner"), plmonkeypatch)
+
+    # A selective inner join: L keeps a small part of the key range.
+    left = _scan(tmp_path, "sel_l", left_frame(np.arange(100_000)))
+    right = _scan(tmp_path, "sel_r", right_frame(rng.integers(0, 100_000, 1_000_000)))
+    lf = _count_by_group(left.filter(pl.col("y") * 3 != 7), right, "inner")
+    assert not _gate_fires(lf, plmonkeypatch)
