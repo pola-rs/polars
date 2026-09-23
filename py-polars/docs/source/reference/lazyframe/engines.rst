@@ -15,17 +15,5 @@ method with an `engine` argument, or when set through
     Engine
     InMemoryEngine
     StreamingEngine
+    ~polars.lazyframe.engine_config.GPUEngine
     RemoteEngine
-
-GPUEngine
----------
-
-This object provides fine-grained control over the behavior of the
-GPU engine.
-
-.. currentmodule:: polars.lazyframe.engine_config
-
-.. autosummary::
-   :toctree: api/
-
-    GPUEngine
