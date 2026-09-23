@@ -18,7 +18,7 @@ use utils::*;
 use super::*;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
-use crate::utils::{check_input_node, has_aexpr};
+use crate::utils::check_input_node;
 
 pub struct PredicatePushDown {
     // How many cache nodes a predicate may be pushed down to.
