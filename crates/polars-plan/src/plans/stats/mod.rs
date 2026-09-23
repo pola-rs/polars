@@ -115,13 +115,23 @@ pub struct ScanColumnStats {
     pub kept: Option<KeptValues>,
 }
 
-/// The values a filter on an integer column kept. The filter also dropped its nulls.
+/// The values a filter on a column kept. Every variant but `Nulls` also means the
+/// nulls were dropped.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum KeptValues {
-    /// Every value in this inclusive range.
-    Range(i128, i128),
+    /// Every non-null value.
+    NonNull,
+    /// Only the nulls.
+    Nulls,
+    /// Every value in the inclusive range `lower..=upper`, except `excluded`.
+    Range {
+        lower: i128,
+        upper: i128,
+        /// Sorted.
+        excluded: Vec<i128>,
+    },
     /// These values, sorted.
     Values(Vec<i128>),
 }
