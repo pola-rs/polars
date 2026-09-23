@@ -215,8 +215,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
     let type_left_materialized = type_left.clone().materialize_unknown(false)?;
     let Some(type_other_inner) = element_dtype.or_else(|| type_other.inner_dtype()) else {
-        polars_bail!(InvalidOperation: "'{op:?}' cannot check for {type_left:?} values in {type_other:?} data.\n\
-        Hint: container dtype ({type_other:?}) must be nested");
+        polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left_materialized:?} values in {type_other:?} data.\n\
+        Hint: container dtype ({type_other:?}) must be nested{}", map_hint(form, &type_other, None));
     };
 
     let casted_inner_expr = match (&type_left_materialized, type_other_inner) {
@@ -255,20 +255,14 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         },
 
         #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => {
-            IsInTypeCoercionResult::OtherCast {
-                dtype: wrap_other(type_left_materialized),
-                strict: false,
-            }
-        },
-        #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
-            polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data")
+            polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left_materialized:?} values in {type_other:?} data")
         },
         // Matching the units would need a needle cast that can overflow to null, and a null
         // needle matches null elements here, so an overflow would read as a hit.
         (DataType::Datetime(needle_unit, _), DataType::Datetime(other_unit, _)) => {
-            // Equal units but unequal dtypes means the time zones differ, which equality handles.
+            // Equal units but unequal dtypes means the time zones differ; the kernel compares
+            // the physical values, so instants match across zones.
             if needle_unit == other_unit {
                 return Ok(None);
             }
@@ -296,13 +290,32 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 } else {
                     // We disabled lossless coercion of the operands in 2.0.
                     let lossy_supertype = try_get_supertype(dtml, dto)?;
-                    polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data.\n\
+                    polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left_materialized:?} values in {type_other:?} data.\n\
                         Hint: Before version 2.0, Polars would perform this check by lossily coercing the operands to {lossy_supertype:?}. \
                         However, since Polars 2.0, for '{op}' it is required to explicitly cast (one of) the operands to a compatible type.")
                 }
             }
-            polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data")
+            polars_bail!(
+                InvalidOperation: "'{op}' cannot check for {type_left_materialized:?} values in {type_other:?} data{}",
+                map_hint(form, &type_other, Some(dto)),
+            )
         },
     };
     Ok(Some(casted_inner_expr))
+}
+
+/// Point an `is_in` on a Map at the Map namespace.
+fn map_hint(
+    form: MembershipForm,
+    container: &DataType,
+    element: Option<&DataType>,
+) -> &'static str {
+    #[cfg(feature = "dtype-map")]
+    if !form.is_contains()
+        && (matches!(container, DataType::Map(..)) || matches!(element, Some(DataType::Map(..))))
+    {
+        return "\nHint: use `map.contains_key` to search a Map by its keys.";
+    }
+    let _ = (form, container, element);
+    ""
 }

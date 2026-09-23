@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as D
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -683,22 +683,18 @@ def test_is_in_struct_enum_17618(nulls_equal: bool) -> None:
 @pytest.mark.parametrize("nulls_equal", [False, True])
 def test_is_in_decimal(nulls_equal: bool) -> None:
     assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
-        pl.col("a").is_in([0.0, 0.1], nulls_equal=nulls_equal)
-    )["a"].to_list() == [True, False, True]
-    assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
         pl.col("a").is_in([D("0.0"), D("0.1")], nulls_equal=nulls_equal)
     )["a"].to_list() == [True, False, True]
-    assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
-        pl.col("a").is_in([1, 0, 2], nulls_equal=nulls_equal)
-    )["a"].to_list() == [True, False, False]
     missing_value = True if nulls_equal else None
     assert pl.DataFrame({"a": [D("0.0"), D("0.2"), None]}).select(
-        pl.col("a").is_in([0.0, 0.1, None], nulls_equal=nulls_equal)
+        pl.col("a").is_in([D("0.0"), D("0.1"), None], nulls_equal=nulls_equal)
     )["a"].to_list() == [True, False, missing_value]
-    missing_value = False if nulls_equal else None
-    assert pl.DataFrame({"a": [D("0.0"), D("0.2"), None]}).select(
-        pl.col("a").is_in([0.0, 0.1], nulls_equal=nulls_equal)
-    )["a"].to_list() == [True, False, missing_value]
+
+    for haystack in ([0.0, 0.1], [1, 0, 2]):
+        with pytest.raises(InvalidOperationError, match="cannot check for Decimal"):
+            pl.DataFrame({"a": [D("0.0")]}).select(
+                pl.col("a").is_in(haystack, nulls_equal=nulls_equal)
+            )
 
 
 def test_is_in_collection() -> None:
@@ -800,7 +796,7 @@ def test_is_in_non_nested_container() -> None:
     )
     with pytest.raises(
         InvalidOperationError,
-        match=r"(?s)cannot check for List\(Int64\) values in Int64 data.*container dtype \(Int64\) must be nested",
+        match=r"(?s)'is_in' cannot check for List\(Int64\) values in Int64 data.*container dtype \(Int64\) must be nested",
     ):
         df.select(pl.col("a").is_in(pl.col("b")))
 
@@ -842,6 +838,63 @@ def test_is_in_does_not_match_null_on_temporal_overflow() -> None:
     ):
         with pytest.raises(InvalidOperationError, match="same time unit"):
             df.select(expr)
+
+
+MEMBERSHIP_OPS = ["is_in-list", "is_in-array", "list.contains", "arr.contains"]
+
+
+def _container(op: str, rows: list[list[Any]], inner: PolarsDataType) -> pl.Series:
+    if op.endswith("list") or op == "list.contains":
+        return pl.Series("h", rows, dtype=pl.List(inner))
+    return pl.Series("h", rows, dtype=pl.Array(inner, len(rows[0])))
+
+
+def _membership(op: str, needle: pl.Expr, container: pl.Expr) -> pl.Expr:
+    if op.startswith("is_in"):
+        return needle.is_in(container)
+    if op == "list.contains":
+        return container.list.contains(needle)
+    return container.arr.contains(needle)
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize(
+    ("inner", "value"),
+    [
+        # Casting the elements to the needle's scale would round `1.005` onto `1.00`.
+        pytest.param(pl.Float64, 1.005, id="float"),
+        # Casting the elements to the needle's precision would overflow on this value.
+        pytest.param(pl.Int64, 2**62, id="int"),
+    ],
+)
+def test_is_in_rejects_a_decimal_needle_in_primitive_numeric_data(
+    op: str, inner: PolarsDataType, value: Any
+) -> None:
+    df = pl.DataFrame({"h": _container(op, [[value]], inner)})
+
+    with pytest.raises(InvalidOperationError, match="cannot check for Decimal"):
+        df.select(_membership(op, pl.lit(D("1.00"), pl.Decimal(10, 2)), pl.col("h")))
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("needle_dtype", [pl.Categorical, pl.Enum(["a"])])
+def test_is_in_categorical_needle_in_null_data(
+    op: str, needle_dtype: PolarsDataType
+) -> None:
+    df = pl.DataFrame({"h": _container(op, [[None]], pl.Null)})
+
+    out = df.select(_membership(op, pl.lit("a", needle_dtype), pl.col("h")).alias("o"))
+    assert out["o"].to_list() == [False]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+def test_is_in_error_names_the_materialized_needle_dtype(op: str) -> None:
+    df = pl.DataFrame({"h": _container(op, [[1]], pl.Int64)})
+
+    with pytest.raises(InvalidOperationError) as exc:
+        df.select(_membership(op, pl.lit(2.5), pl.col("h")))
+    assert f"'{op.split('-')[0]}' cannot check for Float64 values" in str(exc.value)
+    assert "Unknown" not in str(exc.value)
 
 
 def _reference_is_in(
