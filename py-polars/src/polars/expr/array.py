@@ -1005,11 +1005,19 @@ class ExprArrayNameSpace:
             Item that will be checked for membership
         nulls_equal : bool, default True
             If True, treat null as a distinct value. Null values will not propagate.
+            Note that :meth:`Expr.is_in` defaults to `False`.
 
         Returns
         -------
         Expr
             Expression of data type :class:`Boolean`.
+
+        Notes
+        -----
+        Only `item` is cast, to the type of the sub-array elements; the sub-arrays
+        are never rewritten. A value the cast cannot represent exactly, because it is
+        out of range or would be rounded, matches nothing. Integers and floats are not
+        compared with each other; cast one side explicitly.
 
         Examples
         --------
