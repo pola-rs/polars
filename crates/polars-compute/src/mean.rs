@@ -1,6 +1,10 @@
+use std::ops::{Add, AddAssign, Sub, SubAssign};
+
+use bytemuck::Zeroable;
+use num_traits::{NumCast, ToPrimitive};
 use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::bitmap::bitmask::BitMask;
-use polars_arrow::types::{NativeType, i256};
+use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 
 use crate::float_sum::{FloatSum, sum_arr_as_f64};
@@ -26,10 +30,96 @@ pub fn int_mean(sum: i128, count: usize, scale: i64, rounding: IntMeanRounding) 
     mean as i64
 }
 
-impl WrappingAdd for i256 {
+/// Wrapping 256-bit accumulator for exactly summing 128-bit integers.
+///
+/// Unlike the Decimal256 storage type `i256`, it has the arithmetic that sums and sliding windows
+/// need.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct I256Acc(pub ethnum::I256);
+
+// SAFETY: all-zero bits are the value 0.
+unsafe impl Zeroable for I256Acc {}
+
+impl Add for I256Acc {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: Self) -> Self {
+        Self(self.0.wrapping_add(rhs.0))
+    }
+}
+
+impl Sub for I256Acc {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: Self) -> Self {
+        Self(self.0.wrapping_sub(rhs.0))
+    }
+}
+
+impl AddAssign for I256Acc {
+    #[inline]
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
+
+impl SubAssign for I256Acc {
+    #[inline]
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs;
+    }
+}
+
+impl WrappingAdd for I256Acc {
     #[inline]
     fn wrapping_add(&self, v: &Self) -> Self {
-        i256(self.0.wrapping_add(v.0))
+        *self + *v
+    }
+}
+
+impl From<i128> for I256Acc {
+    #[inline]
+    fn from(v: i128) -> Self {
+        Self(v.into())
+    }
+}
+
+impl From<u128> for I256Acc {
+    #[inline]
+    fn from(v: u128) -> Self {
+        Self(v.into())
+    }
+}
+
+impl ToPrimitive for I256Acc {
+    fn to_i64(&self) -> Option<i64> {
+        self.0.try_into().ok()
+    }
+
+    fn to_u64(&self) -> Option<u64> {
+        self.0.try_into().ok()
+    }
+
+    fn to_i128(&self) -> Option<i128> {
+        self.0.try_into().ok()
+    }
+
+    fn to_u128(&self) -> Option<u128> {
+        self.0.try_into().ok()
+    }
+
+    fn to_f64(&self) -> Option<f64> {
+        Some(i256_to_f64(self.0))
+    }
+}
+
+impl NumCast for I256Acc {
+    #[inline]
+    fn from<N: ToPrimitive>(n: N) -> Option<Self> {
+        let v: Option<ethnum::I256> = n.to_i128().map(Into::into);
+        v.or_else(|| n.to_u128().map(Into::into)).map(Self)
     }
 }
 
@@ -74,24 +164,24 @@ impl MeanAcc for i128 {
 
 /// Same result as `x as f64` would be, which `ethnum::I256::as_f64` is not: it rounds the two
 /// 128-bit halves separately.
-fn i256_to_f64(x: i256) -> f64 {
+fn i256_to_f64(x: ethnum::I256) -> f64 {
     if let Ok(v) = i128::try_from(x) {
         return i128_to_f64(v);
     }
     // As in `i128_to_f64`; here `abs >= 2^127`, so `64 <= shift <= 192`.
-    let abs = x.0.unsigned_abs();
+    let abs = x.unsigned_abs();
     let shift = 192 - abs.leading_zeros();
     let sticky = (abs.trailing_zeros() < shift) as u64;
     let top = (abs >> shift).as_u64() | sticky;
     let scale = f64::from_bits(((1023 + shift) as u64) << 52);
     let out = top as f64 * scale;
-    if x.0.is_negative() { -out } else { out }
+    if x.is_negative() { -out } else { out }
 }
 
-impl MeanAcc for i256 {
+impl MeanAcc for I256Acc {
     #[inline]
     fn into_f64(self) -> f64 {
-        i256_to_f64(self)
+        i256_to_f64(self.0)
     }
 }
 
@@ -202,7 +292,7 @@ macro_rules! impl_split_int {
             impl SplitInt for $t {
                 /// Limbs of 32 bits, most significant first.
                 type Lanes = (i64, u64, u64, u64);
-                type Acc = i256;
+                type Acc = I256Acc;
 
                 #[inline(always)]
                 fn add_to(self, (a, b, c, d): Self::Lanes, keep: u64) -> Self::Lanes {
@@ -219,10 +309,10 @@ macro_rules! impl_split_int {
                 }
 
                 #[inline(always)]
-                fn combine((a, b, c, d): Self::Lanes) -> i256 {
-                    let hi = i256((((a as i128) << 32) + b as i128).into());
-                    let lo = i256((((c as i128) << 32) + d as i128).into());
-                    i256((hi.0 << 64) + lo.0)
+                fn combine((a, b, c, d): Self::Lanes) -> I256Acc {
+                    let hi = ethnum::I256::from(((a as i128) << 32) + b as i128);
+                    let lo = ethnum::I256::from(((c as i128) << 32) + d as i128);
+                    I256Acc((hi << 64) + lo)
                 }
             }
         )*
@@ -330,7 +420,7 @@ macro_rules! impl_split_mean_sum {
     };
 }
 
-impl_split_mean_sum!(i128, i128::from, {
+impl_split_mean_sum!(i128, Into::into, {
     // Called once per list, so it must inline across crates.
     #[inline]
     fn mean_slice(vals: &[Self]) -> Option<f64> {
@@ -345,9 +435,9 @@ impl_split_mean_sum!(i128, i128::from, {
     }
 }; u8, u16, u32, u64, i8, i16, i32, i64);
 
-impl_split_mean_sum!(i256, |v: Self| i256(v.into()), {
+impl_split_mean_sum!(I256Acc, Into::into, {
     // Gathered 128-bit values are also cheaper to sum in lanes than in 256 bits.
-    fn sum_iter(vals: impl Iterator<Item = Self>) -> i256 {
+    fn sum_iter(vals: impl Iterator<Item = Self>) -> I256Acc {
         split_sum_iter(vals)
     }
 }; u128, i128);

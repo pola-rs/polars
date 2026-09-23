@@ -14,7 +14,7 @@ use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_arrow::legacy::kernels::take_agg::*;
 use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use polars_arrow::types::NativeType;
-use polars_compute::mean::{IntMeanRounding, MeanAcc, MeanSum, int_mean};
+use polars_compute::mean::{I256Acc, IntMeanRounding, MeanAcc, MeanSum, int_mean};
 use polars_compute::rolling::no_nulls::{
     MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
 };
@@ -1235,40 +1235,36 @@ impl Float64Chunked {
 
 /// Exact sliding-window sums for integer means over overlapping, monotonic groups.
 pub(crate) trait RollingMeanSum: MeanSum {
-    /// Applies `finish` to the sum and non-null count of each group, or returns `None` if
-    /// there is no rolling kernel for this type.
+    /// Applies `finish` to the sum and non-null count of each group.
     fn rolling_mean<O, F>(
-        _arr: &PrimitiveArray<Self>,
-        _groups: &[[IdxSize; 2]],
-        _finish: F,
-    ) -> Option<PrimitiveArray<O>>
+        arr: &PrimitiveArray<Self>,
+        groups: &[[IdxSize; 2]],
+        finish: F,
+    ) -> PrimitiveArray<O>
     where
         O: NativeType,
-        F: Fn(Self::Acc, usize) -> O,
-    {
-        None
-    }
+        F: Fn(Self::Acc, usize) -> O;
 }
 
 macro_rules! impl_rolling_mean_sum {
-    ($($t:ty),*) => {
+    ($acc:ty; $($t:ty),*) => {
         $(
             impl RollingMeanSum for $t {
                 fn rolling_mean<O, F>(
                     arr: &PrimitiveArray<Self>,
                     groups: &[[IdxSize; 2]],
                     finish: F,
-                ) -> Option<PrimitiveArray<O>>
+                ) -> PrimitiveArray<O>
                 where
                     O: NativeType,
-                    F: Fn(i128, usize) -> O,
+                    F: Fn($acc, usize) -> O,
                 {
                     let values = arr.values().as_slice();
                     let bounds = |[first, len]: [IdxSize; 2]| (first as usize, (first + len) as usize);
-                    let out = match arr.validity().filter(|_| arr.null_count() > 0) {
+                    match arr.validity().filter(|_| arr.null_count() > 0) {
                         None => {
                             let mut window =
-                                <WideSumWindow<_> as RollingAggWindowNoNulls<_, i128>>::new(
+                                <WideSumWindow<_, $acc> as RollingAggWindowNoNulls<_, $acc>>::new(
                                     values, 0, 0, None, None,
                                 );
                             groups
@@ -1284,7 +1280,7 @@ macro_rules! impl_rolling_mean_sum {
                         },
                         Some(validity) => {
                             let mut window =
-                                <WideSumWindow<_> as RollingAggWindowNulls<_, i128>>::new(
+                                <WideSumWindow<_, $acc> as RollingAggWindowNulls<_, $acc>>::new(
                                     values, validity, 0, 0, None, None,
                                 );
                             groups
@@ -1298,17 +1294,15 @@ macro_rules! impl_rolling_mean_sum {
                                 })
                                 .collect()
                         },
-                    };
-                    Some(out)
+                    }
                 }
             }
         )*
     };
 }
 
-impl_rolling_mean_sum!(u8, u16, u32, u64, i8, i16, i32, i64);
-impl RollingMeanSum for i128 {}
-impl RollingMeanSum for u128 {}
+impl_rolling_mean_sum!(i128; u8, u16, u32, u64, i8, i16, i32, i64);
+impl_rolling_mean_sum!(I256Acc; i128, u128);
 
 impl<T> ChunkedArray<T>
 where
@@ -1371,17 +1365,12 @@ where
                 overlapping,
                 monotonic,
             } => {
-                let rolling =
-                    _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks())
-                        .then(|| {
-                            T::Native::rolling_mean(
-                                self.downcast_get(0).unwrap(),
-                                groups_slice,
-                                finish,
-                            )
-                        })
-                        .flatten();
-                if let Some(arr) = rolling {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
+                    let arr = T::Native::rolling_mean(
+                        self.downcast_get(0).unwrap(),
+                        groups_slice,
+                        finish,
+                    );
                     return ChunkedArray::<O>::from(arr).into_series();
                 }
                 let ca = self.rechunk();

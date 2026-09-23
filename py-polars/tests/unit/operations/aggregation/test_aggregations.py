@@ -312,22 +312,37 @@ def test_int_mean_edges_29373() -> None:
         assert q.collect(engine=engine)["a"].to_list() == [None, 3.0]
 
 
-@pytest.mark.parametrize("dtype", [pl.Int64, pl.Datetime("ns")])
-def test_rolling_group_mean_exact_29373(dtype: pl.DataType) -> None:
-    offsets = [3591, 153, -257, None, 3608, 3708]
-    values = [None if o is None else 2**60 + o for o in offsets]
-    df = pl.DataFrame({"i": range(len(values)), "a": values}).with_columns(
-        pl.col("a").cast(dtype)
+@pytest.mark.parametrize(
+    ("dtype", "base"),
+    [
+        (pl.Int64, 2**60),
+        (pl.Datetime("ns"), 2**60),
+        # Window sums leave the 128-bit range, so the sliding sum needs 256 bits.
+        (pl.Int128, 2**127 - 4000),
+        (pl.Int128, -(2**127) + 4000),
+        (pl.UInt128, 2**128 - 4000),
+        (pl.Decimal(38, 0), 10**38 - 4000),
+    ],
+)
+@pytest.mark.parametrize("with_nulls", [False, True])
+def test_rolling_group_mean_exact_29373(
+    dtype: pl.DataType, base: int, with_nulls: bool
+) -> None:
+    offsets = [3591, 153, -257, None if with_nulls else 0, 3608, 3708]
+    values = [None if o is None else base + o for o in offsets]
+    physical = pl.UInt128 if dtype == pl.UInt128 else pl.Int128
+    df = pl.DataFrame(
+        {"i": range(len(values)), "a": pl.Series(values, dtype=physical).cast(dtype)}
     )
     out = df.rolling("i", period="3i").agg(pl.col("a").mean().to_physical())
     expected = []
     for i in range(len(values)):
         window = [v for v in values[max(0, i - 2) : i + 1] if v is not None]
         total = sum(window)
-        if dtype == pl.Int64:
-            expected.append(float(total) / len(window))
-        else:
+        if dtype == pl.Datetime("ns"):
             expected.append(total // len(window))
+        else:
+            expected.append(float(total) / len(window))
     assert out["a"].to_list() == expected
 
 

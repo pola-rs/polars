@@ -1,5 +1,7 @@
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
+use bytemuck::Zeroable;
+
 use super::no_nulls::RollingAggWindowNoNulls;
 use super::nulls::RollingAggWindowNulls;
 use super::*;
@@ -21,7 +23,7 @@ pub struct SumWindow<'a, T, S> {
 impl<'a, T, S> SumWindow<'a, T, S>
 where
     T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
-    S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
+    S: Copy + Zeroable + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
     fn new_impl(slice: &'a [T], validity: Option<&'a Bitmap>) -> Self {
         Self {
@@ -111,7 +113,7 @@ where
 impl<T, S> RollingAggWindowNoNulls<T> for SumWindow<'_, T, S>
 where
     T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
-    S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
+    S: Copy + Zeroable + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
     type This<'a> = SumWindow<'a, T, S>;
 
@@ -160,7 +162,7 @@ where
 impl<T, S> RollingAggWindowNulls<T> for SumWindow<'_, T, S>
 where
     T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
-    S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
+    S: Copy + Zeroable + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
     type This<'a> = SumWindow<'a, T, S>;
 
@@ -225,23 +227,25 @@ where
     }
 }
 
-/// Sliding exact `i128` sum of integers; yields the accumulator rather than the input type.
+/// Sliding exact sum of integers in the wider accumulator `S`, which it yields rather than the
+/// input type.
 ///
 /// Empty or all-null windows yield `None`.
-pub struct WideSumWindow<'a, T>(SumWindow<'a, T, i128>);
+pub struct WideSumWindow<'a, T, S = i128>(SumWindow<'a, T, S>);
 
-impl<T> WideSumWindow<'_, T> {
+impl<T, S> WideSumWindow<'_, T, S> {
     /// Number of non-null values in the current window.
     pub fn count(&self) -> usize {
         self.0.end - self.0.start - self.0.null_count
     }
 }
 
-impl<T> RollingAggWindowNoNulls<T, i128> for WideSumWindow<'_, T>
+impl<T, S> RollingAggWindowNoNulls<T, S> for WideSumWindow<'_, T, S>
 where
     T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
+    S: Copy + Zeroable + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
-    type This<'a> = WideSumWindow<'a, T>;
+    type This<'a> = WideSumWindow<'a, T, S>;
 
     fn new<'a>(
         slice: &'a [T],
@@ -250,7 +254,7 @@ where
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
     ) -> Self::This<'a> {
-        WideSumWindow(<SumWindow<T, i128> as RollingAggWindowNoNulls<T>>::new(
+        WideSumWindow(<SumWindow<T, S> as RollingAggWindowNoNulls<T>>::new(
             slice,
             start,
             end,
@@ -263,7 +267,7 @@ where
         unsafe { RollingAggWindowNoNulls::update(&mut self.0, new_start, new_end) };
     }
 
-    fn get_agg(&self, _idx: usize) -> Option<i128> {
+    fn get_agg(&self, _idx: usize) -> Option<S> {
         (self.0.end != self.0.start).then_some(self.0.sum)
     }
 
@@ -272,11 +276,12 @@ where
     }
 }
 
-impl<T> RollingAggWindowNulls<T, i128> for WideSumWindow<'_, T>
+impl<T, S> RollingAggWindowNulls<T, S> for WideSumWindow<'_, T, S>
 where
     T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
+    S: Copy + Zeroable + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
-    type This<'a> = WideSumWindow<'a, T>;
+    type This<'a> = WideSumWindow<'a, T, S>;
 
     fn new<'a>(
         slice: &'a [T],
@@ -286,7 +291,7 @@ where
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
     ) -> Self::This<'a> {
-        WideSumWindow(<SumWindow<T, i128> as RollingAggWindowNulls<T>>::new(
+        WideSumWindow(<SumWindow<T, S> as RollingAggWindowNulls<T>>::new(
             slice,
             validity,
             start,
@@ -300,7 +305,7 @@ where
         unsafe { RollingAggWindowNulls::update(&mut self.0, new_start, new_end) };
     }
 
-    fn get_agg(&self, _idx: usize) -> Option<i128> {
+    fn get_agg(&self, _idx: usize) -> Option<S> {
         (self.count() != 0).then_some(self.0.sum)
     }
 

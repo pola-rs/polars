@@ -1,7 +1,6 @@
 use std::sync::OnceLock;
 
-use polars_arrow::types::i256;
-use polars_compute::mean::MeanAcc;
+use polars_compute::mean::{I256Acc, MeanAcc};
 use polars_error::PolarsResult;
 use polars_utils::broadcast::BroadcastLength;
 use polars_utils::pl_str::PlSmallStr;
@@ -130,13 +129,13 @@ impl ScalarColumn {
         };
         let s = self.as_single_value_series();
         let phys = s.to_physical_repr();
-        let value: Option<i256> = with_match_physical_integer_polars_type!(phys.dtype(), |$T| {
+        let value: Option<I256Acc> = with_match_physical_integer_polars_type!(phys.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
-            (!ca.is_empty()).then(|| ca.get(0)).flatten().map(|v| i256(v.into()))
+            (!ca.is_empty()).then(|| ca.get(0)).flatten().map(|v| I256Acc(v.into()))
         });
         Some(move |n: usize| {
             let value = value?;
-            let sum = i256(value.0.wrapping_mul((n as u128).into()));
+            let sum = I256Acc(value.0.wrapping_mul((n as u128).into()));
             (n != 0).then(|| sum.into_f64() / n as f64 / scale_factor)
         })
     }
