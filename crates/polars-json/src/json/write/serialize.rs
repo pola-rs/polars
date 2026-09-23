@@ -183,7 +183,7 @@ fn dictionary_utf8view_serializer<'a, K: DictionaryKey>(
     offset: usize,
     take: usize,
 ) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
-    let iter = array.iter_typed::<Utf8ViewArray>().unwrap().skip(offset);
+    let iter = array.iter_typed::<Utf8ViewArray>().unwrap();
     let f = |x: Option<&str>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
             utf8::write_str(buf, x).unwrap();
@@ -315,7 +315,7 @@ fn list_serializer<'a, O: Offset>(
     materialize_serializer(f, iter, offset, take)
 }
 
-/// Serializes each row as a JSON object. Keys must already be strings.
+/// Serializes each row as a JSON object. Keys must be strings or dictionary-encoded strings.
 fn map_serializer<'a>(
     array: &'a MapArray,
     offset: usize,
@@ -329,29 +329,21 @@ fn map_serializer<'a>(
     let [keys, values] = entries.values() else {
         unreachable!("map entries have two fields")
     };
-    let key_at: Box<dyn Fn(usize) -> &'a str + Send + Sync> = match keys.dtype() {
-        ArrowDataType::Utf8View => {
-            let keys = keys.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-            Box::new(move |i| keys.value(i))
-        },
-        ArrowDataType::LargeUtf8 => {
-            let keys = keys.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-            Box::new(move |i| keys.value(i))
-        },
-        dt => unreachable!("Map keys must be encoded as strings before writing JSON, got {dt:?}"),
-    };
 
     let offsets = array.offsets().as_slice();
     let start = offsets[0] as usize;
     let end = *offsets.last().unwrap() as usize;
-    let mut serializer = new_serializer(values.as_ref(), start, end - start);
+    // The key serializer writes each key as a JSON string.
+    let mut key_serializer = new_serializer(keys.as_ref(), start, end - start);
+    let mut value_serializer = new_serializer(values.as_ref(), start, end - start);
 
     let mut prev_offset = start;
     let f = move |offset: Option<&[i32]>, buf: &mut Vec<u8>| {
         if let Some(offset) = offset {
             let (row_start, row_end) = (offset[0] as usize, offset[1] as usize);
             for _ in prev_offset..row_start {
-                serializer.next().unwrap();
+                key_serializer.next().unwrap();
+                value_serializer.next().unwrap();
             }
 
             buf.push(b'{');
@@ -359,9 +351,9 @@ fn map_serializer<'a>(
                 if i != row_start {
                     buf.push(b',');
                 }
-                utf8::write_str(buf, key_at(i)).unwrap();
+                buf.extend(key_serializer.next().unwrap());
                 buf.push(b':');
-                buf.extend(serializer.next().unwrap());
+                buf.extend(value_serializer.next().unwrap());
             }
             buf.push(b'}');
             prev_offset = row_end;

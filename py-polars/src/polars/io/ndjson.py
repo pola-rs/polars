@@ -143,8 +143,8 @@ def read_ndjson(
     Notes
     -----
     A :class:`Map` column is read from a JSON object. It is never inferred, so request
-    it with `schema` or `schema_overrides`. Object keys are decoded according to the
-    key dtype, and a duplicate key keeps its first position and its last value.
+    it with `schema` or `schema_overrides`. Its keys must be of type String,
+    Categorical or Enum, and a duplicate key keeps its first position and last value.
 
     Examples
     --------
@@ -315,8 +315,8 @@ def scan_ndjson(
     Notes
     -----
     A :class:`Map` column is read from a JSON object. It is never inferred, so request
-    it with `schema` or `schema_overrides`. Object keys are decoded according to the
-    key dtype, and a duplicate key keeps its first position and its last value.
+    it with `schema` or `schema_overrides`. Its keys must be of type String,
+    Categorical or Enum, and a duplicate key keeps its first position and last value.
     """
     sources: list[str] | list[Path] | list[IO[str]] | list[IO[bytes]] = []
     if isinstance(source, (str, Path)):

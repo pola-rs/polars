@@ -89,32 +89,6 @@ pub fn ensure_json_writable(dtype: &DataType) -> PolarsResult<()> {
     dtype.ensure_json_map_keys()
 }
 
-/// Check that `df` is writable and encode its Map keys as JSON object keys.
-///
-/// Returns `None` if no column changed.
-fn prepare_json_write(df: &DataFrame) -> PolarsResult<Option<DataFrame>> {
-    for c in df.columns() {
-        ensure_json_writable(c.dtype())?;
-    }
-    if !df.columns().iter().any(|c| c.dtype().contains_map()) {
-        return Ok(None);
-    }
-
-    let columns = df
-        .columns()
-        .iter()
-        .map(|c| {
-            Ok(match c.as_materialized_series().map_keys_to_json()? {
-                Some(s) => s.into_column(),
-                None => c.clone(),
-            })
-        })
-        .collect::<PolarsResult<Vec<_>>>()?;
-    let mut df = DataFrame::new(df.height(), columns)?;
-    df.align_chunks_par();
-    Ok(Some(df))
-}
-
 /// The format to use to write the DataFrame to JSON: `Json` (a JSON array)
 /// or `JsonLines` (each row output on a separate line).
 ///
@@ -172,13 +146,14 @@ where
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         df.align_chunks_par();
-        let encoded = prepare_json_write(df)?;
-        let df = encoded.as_ref().unwrap_or(df);
         let fields = df
             .columns()
             .iter()
-            .map(|s| s.field().to_arrow(CompatLevel::newest()))
-            .collect::<Vec<_>>();
+            .map(|s| {
+                ensure_json_writable(s.dtype())?;
+                Ok(s.field().to_arrow(CompatLevel::newest()))
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
         let batches = df
             .iter_chunks(CompatLevel::newest(), false)
             .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
@@ -216,13 +191,14 @@ where
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        let encoded = prepare_json_write(df)?;
-        let df = encoded.as_ref().unwrap_or(df);
         let fields = df
             .columns()
             .iter()
-            .map(|s| s.field().to_arrow(CompatLevel::newest()))
-            .collect::<Vec<_>>();
+            .map(|s| {
+                ensure_json_writable(s.dtype())?;
+                Ok(s.field().to_arrow(CompatLevel::newest()))
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
         let chunks = df.iter_chunks(CompatLevel::newest(), false);
         let batches =
             chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));

@@ -2826,8 +2826,8 @@ class DataFrame:
 
         Notes
         -----
-        A :class:`Map` column is written as a JSON object. Keys that are not strings are
-        encoded as strings according to the key dtype, and the JSON readers decode them.
+        A :class:`Map` column is written as a JSON object, so its keys must be of type
+        String, Categorical or Enum.
 
         Examples
         --------
@@ -2923,8 +2923,8 @@ class DataFrame:
 
         Notes
         -----
-        A :class:`Map` column is written as a JSON object. Keys that are not strings are
-        encoded as strings according to the key dtype, and the JSON readers decode them.
+        A :class:`Map` column is written as a JSON object, so its keys must be of type
+        String, Categorical or Enum.
 
         Examples
         --------
