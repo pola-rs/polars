@@ -57,6 +57,12 @@ def read_json(
     --------
     read_ndjson
 
+    Notes
+    -----
+    A :class:`Map` column is read from a JSON object. It is never inferred, so request
+    it with `schema` or `schema_overrides`. Object keys are decoded according to the
+    key dtype, and a duplicate key keeps its first position and its last value.
+
     Examples
     --------
     >>> from io import StringIO

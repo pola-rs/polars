@@ -70,7 +70,6 @@ use std::ops::Deref;
 
 use polars_arrow::array::LIST_VALUES_NAME;
 use polars_arrow::legacy::conversion::chunk_to_struct;
-use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_error::{PolarsResult, polars_bail};
@@ -81,19 +80,39 @@ use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
 
 /// Reject dtypes that `polars-json` cannot serialize.
-pub fn ensure_json_writable(_dtype: &DataType) -> PolarsResult<()> {
+pub fn ensure_json_writable(dtype: &DataType) -> PolarsResult<()> {
     #[cfg(feature = "object")]
     polars_ensure!(
-        !_dtype.contains_objects(),
+        !dtype.contains_objects(),
         ComputeError: "cannot write 'Object' datatype to json"
     );
-    #[cfg(feature = "dtype-map")]
-    polars_ensure!(
-        !_dtype.contains_map(),
-        ComputeError:
-        "cannot write 'Map' datatype to json\n\nConsider `Expr.map.entries` to write the entries as a list of structs."
-    );
-    Ok(())
+    dtype.ensure_json_map_keys()
+}
+
+/// Check that `df` is writable and encode its Map keys as JSON object keys.
+///
+/// Returns `None` if no column changed.
+fn prepare_json_write(df: &DataFrame) -> PolarsResult<Option<DataFrame>> {
+    for c in df.columns() {
+        ensure_json_writable(c.dtype())?;
+    }
+    if !df.columns().iter().any(|c| c.dtype().contains_map()) {
+        return Ok(None);
+    }
+
+    let columns = df
+        .columns()
+        .iter()
+        .map(|c| {
+            Ok(match c.as_materialized_series().map_keys_to_json()? {
+                Some(s) => s.into_column(),
+                None => c.clone(),
+            })
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+    let mut df = DataFrame::new(df.height(), columns)?;
+    df.align_chunks_par();
+    Ok(Some(df))
 }
 
 /// The format to use to write the DataFrame to JSON: `Json` (a JSON array)
@@ -153,14 +172,13 @@ where
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         df.align_chunks_par();
+        let encoded = prepare_json_write(df)?;
+        let df = encoded.as_ref().unwrap_or(df);
         let fields = df
             .columns()
             .iter()
-            .map(|s| {
-                ensure_json_writable(s.dtype())?;
-                Ok(s.field().to_arrow(CompatLevel::newest()))
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
+            .map(|s| s.field().to_arrow(CompatLevel::newest()))
+            .collect::<Vec<_>>();
         let batches = df
             .iter_chunks(CompatLevel::newest(), false)
             .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
@@ -198,14 +216,13 @@ where
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        let encoded = prepare_json_write(df)?;
+        let df = encoded.as_ref().unwrap_or(df);
         let fields = df
             .columns()
             .iter()
-            .map(|s| {
-                ensure_json_writable(s.dtype())?;
-                Ok(s.field().to_arrow(CompatLevel::newest()))
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
+            .map(|s| s.field().to_arrow(CompatLevel::newest()))
+            .collect::<Vec<_>>();
         let chunks = df.iter_chunks(CompatLevel::newest(), false);
         let batches =
             chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
@@ -286,15 +303,40 @@ where
                 compression::maybe_decompress_bytes(&bytes, owned)?;
                 // the easiest way to avoid ownership issues is by implicitly figuring out if
                 // decompression happened (owned is only populated on decompress), then pick which bytes to parse
-                let json_value = if owned.is_empty() {
-                    simd_json::to_borrowed_value(&mut bytes).map_err(to_compute_err)?
-                } else {
-                    simd_json::to_borrowed_value(owned).map_err(to_compute_err)?
-                };
-                if let BorrowedValue::Array(array) = &json_value {
-                    if array.is_empty() & self.schema.is_none() & self.schema_overwrite.is_none() {
-                        return Ok(DataFrame::empty());
+                let json_bytes = if owned.is_empty() { &mut bytes } else { owned };
+
+                // Maps need the order-preserving tape. simd-json parses in place, so the tape
+                // gets its own copy if the schema must also be inferred.
+                let has_map = |schema: &Schema| schema.iter_values().any(|dt| dt.contains_map());
+                let map_guided = self.schema.as_deref().is_some_and(has_map)
+                    || self.schema_overwrite.is_some_and(has_map);
+                let mut tape_bytes = map_guided.then(|| {
+                    if self.schema.is_some() {
+                        std::mem::take(json_bytes)
+                    } else {
+                        json_bytes.clone()
                     }
+                });
+                let tape = tape_bytes
+                    .as_mut()
+                    .map(|b| simd_json::to_tape(b))
+                    .transpose()
+                    .map_err(to_compute_err)?;
+                let json_value = match &tape {
+                    Some(_) if self.schema.is_some() => None,
+                    _ => Some(simd_json::to_borrowed_value(json_bytes).map_err(to_compute_err)?),
+                };
+                let (is_array, is_empty_array) = match (&json_value, &tape) {
+                    (Some(BorrowedValue::Array(array)), _) => (true, array.is_empty()),
+                    (Some(_), _) => (false, false),
+                    (None, Some(tape)) => match tape.0[0] {
+                        simd_json::Node::Array { len, .. } => (true, len == 0),
+                        _ => (false, false),
+                    },
+                    (None, None) => unreachable!(),
+                };
+                if is_empty_array & self.schema.is_none() & self.schema_overwrite.is_none() {
+                    return Ok(DataFrame::empty());
                 }
 
                 let allow_extra_fields_in_struct = self.schema.is_some();
@@ -302,15 +344,16 @@ where
                 let mut schema = if let Some(schema) = self.schema {
                     Arc::unwrap_or_clone(schema)
                 } else {
+                    let json_value = json_value.as_ref().unwrap();
                     // Infer.
-                    let inner_dtype = if let BorrowedValue::Array(values) = &json_value {
+                    let inner_dtype = if let BorrowedValue::Array(values) = json_value {
                         infer::json_values_to_supertype(
                             values,
                             self.infer_schema_len
                                 .unwrap_or(NonZeroUsize::new(usize::MAX).unwrap()),
                         )?
                     } else {
-                        DataType::from_arrow_dtype(&polars_json::json::infer(&json_value)?)
+                        DataType::from_arrow_dtype(&polars_json::json::infer(json_value)?)
                     };
 
                     let DataType::Struct(fields) = inner_dtype else {
@@ -324,42 +367,45 @@ where
                     overwrite_schema(&mut schema, overwrite)?;
                 }
 
-                let mut needs_cast = false;
-                let deserialize_schema = schema
+                // Deserialize enums, categoricals and maps via their decode dtype first.
+                let deserialize_schema: Schema = schema
                     .iter()
-                    .map(|(name, dt)| {
-                        Field::new(
-                            name.clone(),
-                            dt.clone().map_leaves(&mut |leaf_dt| {
-                                // Deserialize enums and categoricals as strings first.
-                                match leaf_dt {
-                                    #[cfg(feature = "dtype-categorical")]
-                                    DataType::Enum(..) | DataType::Categorical(..) => {
-                                        needs_cast = true;
-                                        DataType::String
-                                    },
-                                    leaf_dt => leaf_dt,
-                                }
-                            }),
-                        )
-                    })
+                    .map(|(name, dt)| Field::new(name.clone(), dt.json_map_decode_dtype()))
                     .collect();
+                let needs_cast = deserialize_schema != schema;
 
-                let arrow_dtype =
-                    DataType::Struct(deserialize_schema).to_arrow(CompatLevel::newest());
+                let as_document_dtype = |dtype: ArrowDataType| {
+                    if is_array {
+                        ArrowDataType::LargeList(Box::new(polars_arrow::datatypes::Field::new(
+                            LIST_VALUES_NAME,
+                            dtype,
+                            true,
+                        )))
+                    } else {
+                        dtype
+                    }
+                };
+                let arrow_dtype = as_document_dtype(
+                    DataType::Struct(deserialize_schema.iter_fields().collect())
+                        .to_arrow(CompatLevel::newest()),
+                );
 
-                let arrow_dtype = if let BorrowedValue::Array(_) = &json_value {
-                    ArrowDataType::LargeList(Box::new(polars_arrow::datatypes::Field::new(
-                        LIST_VALUES_NAME,
-                        arrow_dtype,
-                        true,
-                    )))
-                } else {
-                    arrow_dtype
+                let guided_value;
+                let json_value = match &tape {
+                    Some(tape) => {
+                        let guide = as_document_dtype(
+                            DataType::Struct(schema.iter_fields().collect())
+                                .to_arrow(CompatLevel::newest()),
+                        );
+                        guided_value =
+                            polars_json::json::ordered::tape_to_value(tape, &guide, false)?;
+                        &guided_value
+                    },
+                    None => json_value.as_ref().unwrap(),
                 };
 
                 let arr = polars_json::json::deserialize(
-                    &json_value,
+                    json_value,
                     arrow_dtype,
                     allow_extra_fields_in_struct,
                 )?;
@@ -380,14 +426,11 @@ where
                         .iter_mut()
                         .zip(schema.iter_values())
                     {
-                        *col = col.cast_with_options(
-                            dt,
-                            if self.ignore_errors {
-                                CastOptions::NonStrict
-                            } else {
-                                CastOptions::Strict
-                            },
-                        )?;
+                        *col = col
+                            .as_materialized_series()
+                            .clone()
+                            .from_json_decoded(dt, self.ignore_errors)?
+                            .into_column();
                     }
                 }
 

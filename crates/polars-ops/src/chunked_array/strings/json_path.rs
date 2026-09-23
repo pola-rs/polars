@@ -100,37 +100,32 @@ pub trait Utf8JsonPathImpl: AsString {
         let ca = self.as_string();
         // Ignore extra fields instead of erroring if the dtype was explicitly given.
         let allow_extra_fields_in_struct = dtype.is_some();
-        let mut needs_cast = false;
         let decode_dtype = match &dtype {
-            Some(dt) => dt.clone().map_leaves(&mut |leaf_dt| {
-                match leaf_dt {
-                    #[cfg(feature = "dtype-categorical")]
-                    DataType::Enum(..) | DataType::Categorical(..) => {
-                        // Decode enums and categoricals as string, will cast later.
-                        needs_cast = true;
-                        DataType::String
-                    },
-                    leaf_dt => leaf_dt,
-                }
-            }),
+            // Decode enums, categoricals and maps as their decode dtype, and rebuild later.
+            Some(dt) => dt.json_map_decode_dtype(),
             None => ca.json_infer(infer_schema_len)?,
         };
+        // Maps need the order-preserving parse.
+        let guide = dtype
+            .as_ref()
+            .filter(|dt| dt.contains_map())
+            .map(|dt| dt.to_arrow(CompatLevel::newest()));
         let buf_size = ca.get_values_size() + ca.null_count() * "null".len();
         let iter = ca.iter().map(|x| x.unwrap_or("null"));
 
-        let array = polars_json::ndjson::deserialize::deserialize_iter(
+        let array = polars_json::ndjson::deserialize::deserialize_iter_guided(
             iter,
             decode_dtype.to_arrow(CompatLevel::newest()),
+            guide.as_ref(),
             buf_size,
             ca.len(),
             allow_extra_fields_in_struct,
         )
         .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
         let s = Series::try_from((PlSmallStr::EMPTY, array))?;
-        if needs_cast {
-            s.strict_cast(&dtype.unwrap())
-        } else {
-            Ok(s)
+        match dtype {
+            Some(dt) => s.from_json_decoded(&dt, false),
+            None => Ok(s),
         }
     }
 

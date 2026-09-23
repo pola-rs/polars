@@ -2824,6 +2824,11 @@ class DataFrame:
         --------
         DataFrame.write_ndjson
 
+        Notes
+        -----
+        A :class:`Map` column is written as a JSON object. Keys that are not strings are
+        encoded as strings according to the key dtype, and the JSON readers decode them.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -2915,6 +2920,11 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
+
+        Notes
+        -----
+        A :class:`Map` column is written as a JSON object. Keys that are not strings are
+        encoded as strings according to the key dtype, and the JSON readers decode them.
 
         Examples
         --------

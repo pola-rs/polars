@@ -140,6 +140,12 @@ def read_ndjson(
     the reader. Therefore always prefer `scan_ndjson` if you want to work with
     `LazyFrame` s.
 
+    Notes
+    -----
+    A :class:`Map` column is read from a JSON object. It is never inferred, so request
+    it with `schema` or `schema_overrides`. Object keys are decoded according to the
+    key dtype, and a duplicate key keeps its first position and its last value.
+
     Examples
     --------
     >>> from io import StringIO
@@ -305,6 +311,12 @@ def scan_ndjson(
             at any point without it being considered a breaking change.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
+
+    Notes
+    -----
+    A :class:`Map` column is read from a JSON object. It is never inferred, so request
+    it with `schema` or `schema_overrides`. Object keys are decoded according to the
+    key dtype, and a duplicate key keeps its first position and its last value.
     """
     sources: list[str] | list[Path] | list[IO[str]] | list[IO[bytes]] = []
     if isinstance(source, (str, Path)):

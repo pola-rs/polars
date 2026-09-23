@@ -177,13 +177,22 @@ fn parse_impl(
     bytes: &[u8],
     buffers: &mut PlIndexMap<BufferKey, Buffer>,
     scratch: &mut Scratch,
+    guide: Option<&ArrowDataType>,
     ignore_errors: bool,
 ) -> PolarsResult<usize> {
     scratch.json.clear();
     scratch.json.extend_from_slice(bytes);
     let n = scratch.json.len();
-    let value = simd_json::to_borrowed_value_with_buffers(&mut scratch.json, &mut scratch.buffers)
-        .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
+    let parse_err = |e| polars_err!(ComputeError: "error parsing line: {}", e);
+    let value = match guide {
+        Some(guide) => {
+            let tape = simd_json::to_tape_with_buffers(&mut scratch.json, &mut scratch.buffers)
+                .map_err(parse_err)?;
+            polars_json::json::ordered::tape_to_value(&tape, guide, ignore_errors)?
+        },
+        None => simd_json::to_borrowed_value_with_buffers(&mut scratch.json, &mut scratch.buffers)
+            .map_err(parse_err)?,
+    };
     match value {
         simd_json::BorrowedValue::Object(value) => {
             buffers.iter_mut().try_for_each(|(s, inner)| {
@@ -231,13 +240,14 @@ pub fn is_json_line(bytes: &[u8]) -> bool {
 fn parse_lines(
     bytes: &[u8],
     buffers: &mut PlIndexMap<BufferKey, Buffer>,
+    guide: Option<&ArrowDataType>,
     ignore_errors: bool,
 ) -> PolarsResult<()> {
     let mut scratch = Scratch::default();
 
     let iter = json_lines(bytes);
     for bytes in iter {
-        parse_impl(bytes, buffers, &mut scratch, ignore_errors)?;
+        parse_impl(bytes, buffers, &mut scratch, guide, ignore_errors)?;
     }
     Ok(())
 }
@@ -250,13 +260,44 @@ pub fn parse_ndjson(
 ) -> PolarsResult<DataFrame> {
     let capacity = n_rows_hint.unwrap_or_else(|| estimate_n_lines_in_chunk(bytes));
 
-    let mut buffers = init_buffers(schema, capacity, ignore_errors)?;
-    parse_lines(bytes, &mut buffers, ignore_errors)?;
+    // Map columns are parsed in source order and decoded after deserialization.
+    let has_map = schema.iter_values().any(|dt| dt.contains_map());
+    let guide = has_map
+        .then(|| DataType::Struct(schema.iter_fields().collect()).to_arrow(CompatLevel::newest()));
+    let decode_schema: Option<Schema> = has_map.then(|| {
+        schema
+            .iter()
+            .map(|(name, dt)| {
+                let dt = if dt.contains_map() {
+                    dt.json_map_decode_dtype()
+                } else {
+                    dt.clone()
+                };
+                Field::new(name.clone(), dt)
+            })
+            .collect()
+    });
+
+    let mut buffers = init_buffers(
+        decode_schema.as_ref().unwrap_or(schema),
+        capacity,
+        ignore_errors,
+    )?;
+    parse_lines(bytes, &mut buffers, guide.as_ref(), ignore_errors)?;
 
     DataFrame::new_infer_height(
         buffers
             .into_values()
-            .map(|buf| Ok(buf.into_series()?.into_column()))
+            .zip(schema.iter_values())
+            .map(|(buf, dt)| {
+                let s = buf.into_series()?;
+                let s = if dt.contains_map() {
+                    s.from_json_decoded(dt, ignore_errors)?
+                } else {
+                    s
+                };
+                Ok(s.into_column())
+            })
             .collect::<PolarsResult<_>>()
             .map_err(|e| match e {
                 // Nested types raise SchemaMismatch instead of ComputeError, we map it back here to

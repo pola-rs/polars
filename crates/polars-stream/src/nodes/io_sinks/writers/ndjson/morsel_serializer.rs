@@ -3,7 +3,7 @@ use polars_arrow::datatypes::{ArrowDataType, Field as ArrowField};
 use polars_async::executor::{self, TaskPriority};
 use polars_async::primitives::connector;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::CompatLevel;
+use polars_core::prelude::{CompatLevel, IntoColumn};
 use polars_error::PolarsResult;
 
 use crate::nodes::io_sinks::components::par_utils::rechunk_par;
@@ -90,12 +90,18 @@ impl MorselSerializer {
             .into_iter()
             .map(|c| {
                 let name = c.name().clone();
+                let c = match c.as_materialized_series().map_keys_to_json()? {
+                    Some(s) => s.into_column(),
+                    None => c,
+                };
                 let arr = c.rechunk_to_arrow(CompatLevel::newest());
 
                 let field = ArrowField::new(name, arr.dtype().clone(), true);
 
-                (arr, field)
+                Ok((arr, field))
             })
+            .collect::<PolarsResult<Vec<_>>>()?
+            .into_iter()
             .unzip();
 
         let array = StructArray::new(ArrowDataType::Struct(fields), height, arrays, None);
