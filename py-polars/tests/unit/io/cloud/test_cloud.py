@@ -292,7 +292,7 @@ def test_cloud_connection_refused_error() -> None:
     with pytest.raises(ConnectionRefusedError, match="Caused by:") as exc:
         q.collect()
 
-    assert "Connection refused" in str(exc.value)
+    assert "tcp connect error" in str(exc.value)
 
 
 @pytest.mark.slow
