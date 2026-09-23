@@ -289,7 +289,7 @@ def test_datetime_mean_no_saturation_29373() -> None:
         ([2**127 - 1] * 3, pl.Int128),
         ([-(2**127)] * 3, pl.Int128),
         ([2**128 - 1] * 3, pl.UInt128),
-        # Past 2^128 the sum must still be rounded to Float64 once, not per 128-bit half.
+        # Past 2^128 the sum must still be rounded to Float64 once, not per half.
         ([2**127, 2**127, 2**75 + 1], pl.UInt128),
         ([-(2**127), -(2**127), -(2**75 + 1)], pl.Int128),
     ],
@@ -337,7 +337,7 @@ def test_rolling_group_mean_exact_29373(
         {"i": range(len(values)), "a": pl.Series(values, dtype=physical).cast(dtype)}
     )
     out = df.rolling("i", period="3i").agg(pl.col("a").mean().to_physical())
-    expected = []
+    expected: list[float] = []
     for i in range(len(values)):
         window = [v for v in values[max(0, i - 2) : i + 1] if v is not None]
         total = sum(window)
@@ -353,7 +353,8 @@ def test_rolling_group_mean_exact_29373(
 def test_rolling_group_mean_empty_window_29373(
     dtype: pl.DataType, with_nulls: bool
 ) -> None:
-    values = [2**60 + 1, None if with_nulls else 2**60 + 3, 2**60 + 5]
+    first = 2**60 + 1
+    values = [first, None if with_nulls else 2**60 + 3, 2**60 + 5]
     df = pl.DataFrame({"i": [0, 1, 2], "a": values}).with_columns(
         pl.col("a").cast(dtype)
     )
@@ -361,10 +362,11 @@ def test_rolling_group_mean_empty_window_29373(
         pl.col("a").mean().to_physical()
     )
     window = [v for v in values[:2] if v is not None]
+    expected: list[float | None]
     if dtype == pl.Int64:
-        expected = [None, float(values[0]), float(sum(window)) / len(window)]
+        expected = [None, float(first), float(sum(window)) / len(window)]
     else:
-        expected = [None, values[0], sum(window) // len(window)]
+        expected = [None, first, sum(window) // len(window)]
     assert out["a"].to_list() == expected
 
 
