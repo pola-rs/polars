@@ -317,7 +317,8 @@ pub(crate) fn set_cache_states(
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for (cache_id, v) in cache_schema_and_children.into_iter().rev() {
             pred_pd.streaming = v.streaming;
-            let mut shared_optimized = false;
+            // The shared subplan, narrowed and optimized, once the cost check built it.
+            let mut shared_input = None;
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple distinct predicates, the caches carry different filters
             // above them (predicate pushdown was blocked by the cache nodes). Removing the caches
@@ -389,14 +390,17 @@ pub(crate) fn set_cache_states(
                 // Keeping the caches costs one evaluation of the subplan, plus a pass over the
                 // materialized rows for every reference that reads and filters them.
                 let keep_cost = if remove_caches && removal_cost.is_some() {
-                    let child = *v.children.first().unwrap();
                     // Caches block pushdown, so their children may still contain cross joins.
-                    // Range selectivity is unknown, so common bounds are applied after costing.
-                    let lp = lp_arena.take(child);
-                    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(child, lp);
-                    shared_optimized = true;
-                    subplan_cost(child, lp_arena, expr_arena)
+                    let input = narrowed_shared_subplan(
+                        &v.children,
+                        &v.parents,
+                        pushdown_maintain_errors,
+                        &mut pred_pd,
+                        lp_arena,
+                        expr_arena,
+                    )?;
+                    shared_input = Some(input);
+                    subplan_cost(input, lp_arena, expr_arena)
                         .map(|c| c.work + v.cache_nodes.len() as f64 * c.rows)
                 } else {
                     None
@@ -503,20 +507,17 @@ pub(crate) fn set_cache_states(
                     lp_arena.replace(filter_node, new_lp);
                 }
             } else {
-                let child = *v.children.first().unwrap();
-                let input = narrow_shared_subplan(
-                    &v.children,
-                    &v.parents,
-                    pushdown_maintain_errors,
-                    lp_arena,
-                    expr_arena,
-                )
-                .unwrap_or(child);
-                if input != child || !shared_optimized {
-                    let lp = lp_arena.take(input);
-                    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(input, lp);
-                }
+                let input = match shared_input {
+                    Some(input) => input,
+                    None => narrowed_shared_subplan(
+                        &v.children,
+                        &v.parents,
+                        pushdown_maintain_errors,
+                        &mut pred_pd,
+                        lp_arena,
+                        expr_arena,
+                    )?,
+                };
                 for &cache in &v.cache_nodes {
                     let IR::Cache {
                         input: cache_input, ..
@@ -566,6 +567,24 @@ fn narrow_shared_subplan(
         });
     }
     Some(node)
+}
+
+/// The shared subplan, narrowed by [`narrow_shared_subplan`] where it can be, after
+/// predicate pushdown.
+fn narrowed_shared_subplan(
+    children: &[Node],
+    parents: &[TwoParents],
+    maintain_errors: bool,
+    pred_pd: &mut PredicatePushDown,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<Node> {
+    let input = narrow_shared_subplan(children, parents, maintain_errors, lp_arena, expr_arena)
+        .unwrap_or(*children.first().unwrap());
+    let lp = lp_arena.take(input);
+    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
+    lp_arena.replace(input, lp);
+    Ok(input)
 }
 
 fn get_filter_predicate(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<&ExprIR> {

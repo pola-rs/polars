@@ -528,6 +528,49 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
     }
 }
 
+/// The value bounds of one column in an `AND` chain, merged over its conjuncts.
+pub(crate) struct ColumnBounds {
+    pub name: PlSmallStr,
+    /// `bool` = inclusive.
+    pub lower: Option<(Scalar, bool)>,
+    pub upper: Option<(Scalar, bool)>,
+    /// Number of `!= value` conjuncts left after merging with the bounds.
+    pub num_excluded: usize,
+}
+
+/// `predicate`'s `AND` chain split into per-column bounds and the conjuncts that
+/// set no bound.
+pub(crate) struct AndChainBounds {
+    /// The conjuncts cannot all hold.
+    pub unsat: bool,
+    pub columns: Vec<ColumnBounds>,
+    pub other: Vec<Node>,
+}
+
+pub(crate) fn and_chain_bounds(
+    predicate: Node,
+    schema: &Schema,
+    expr_arena: &Arena<AExpr>,
+) -> AndChainBounds {
+    let model = model_and_chain(predicate, schema, expr_arena);
+    let columns = model
+        .constraints
+        .into_iter()
+        .filter(|(_, cc)| cc.lower.is_some() || cc.upper.is_some() || !cc.excluded.is_empty())
+        .map(|(name, cc)| ColumnBounds {
+            name,
+            lower: cc.lower,
+            upper: cc.upper,
+            num_excluded: cc.excluded.len(),
+        })
+        .collect();
+    AndChainBounds {
+        unsat: model.unsat,
+        columns,
+        other: model.opaque,
+    }
+}
+
 /// Rewrites `predicate`'s `AND` chain to a tighter equivalent, or `None` if
 /// nothing changes. Either collapses to `Literal(false)` when the comparisons
 /// can't all hold (letting the filter become an empty scan), or merges redundant
@@ -1012,7 +1055,7 @@ fn list_inner(av: &AnyValue) -> Option<Series> {
 // series whose elements are the values. Bails on other shapes, an oversized
 // haystack, or a null member.
 #[cfg(feature = "is_in")]
-fn as_value_set(ae: &AExpr) -> Option<Vec<Scalar>> {
+pub(crate) fn as_value_set(ae: &AExpr) -> Option<Vec<Scalar>> {
     let AExpr::Literal(lit) = ae else {
         return None;
     };

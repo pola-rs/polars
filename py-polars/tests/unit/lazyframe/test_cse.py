@@ -1676,13 +1676,15 @@ def test_cspe_with_pushable_filters_scan_19479(tmp_path: Path) -> None:
 
 
 def wide_subplan_referenced(
-    tmp_path: Path, n: int, *, cross: bool = False
+    tmp_path: Path, n: int, *, cross: bool = False, overlapping: bool = False
 ) -> pl.LazyFrame:
     """`n` branches over one join-and-aggregate subplan, each with its own predicate.
 
     The predicates are all pushable, so the caches are removable; whether removing
     them is worth `n` copies of the join is the question. Written to parquet because
     the cost model reads its row counts from scan metadata.
+
+    Each branch keeps one group, or with `overlapping` all groups but one.
 
     With `cross`, the join is written as a cross join plus an equality, the form
     predicate pushdown rewrites into an equi join.
@@ -1708,25 +1710,29 @@ def wide_subplan_referenced(
     )
     base = joined.group_by("grp", "name").agg(pl.col("val").sum())
     return pl.concat(
-        [base.filter(pl.col("grp") == i).select("name", "val") for i in range(n)]
+        [
+            base.filter(
+                pl.col("grp") != i if overlapping else pl.col("grp") == i
+            ).select("name", "val")
+            for i in range(n)
+        ]
     )
 
 
 @pytest.mark.parametrize(
-    ("references", "caches"),
+    ("overlapping", "caches"),
     [
-        # Three narrowed copies cost less than evaluating the join and aggregate once
-        # and reading it back three times.
-        (3, 0),
-        # Eight of them do not: the predicates narrow too little to pay for redoing
-        # the join that often, so the subplan stays shared.
-        (8, 8),
+        # Together the narrowed copies read the subplan about once, which costs less
+        # than evaluating it once and reading it back per branch.
+        (False, 0),
+        # Each copy redoes nearly the whole join, so the subplan stays shared.
+        (True, 8),
     ],
 )
-def test_cspe_reference_count_drives_cache_removal(
-    tmp_path: Path, references: int, caches: int
+def test_cspe_predicate_overlap_drives_cache_removal(
+    tmp_path: Path, overlapping: bool, caches: int
 ) -> None:
-    q = wide_subplan_referenced(tmp_path, references)
+    q = wide_subplan_referenced(tmp_path, 8, overlapping=overlapping)
     assert q.explain().count("CACHE[id:") == caches
 
     assert_frame_equal(
@@ -1740,7 +1746,7 @@ def test_cspe_cross_join_subplan_is_costed_after_pushdown(tmp_path: Path) -> Non
     # The subplan sits under the cache as a cross join, since pushdown does not
     # descend into caches. Costed in that form its join prices as a cross product,
     # which no shared subplan can beat.
-    q = wide_subplan_referenced(tmp_path, 8, cross=True)
+    q = wide_subplan_referenced(tmp_path, 8, cross=True, overlapping=True)
 
     plan = q.explain()
     assert plan.count("CACHE[id:") == 8

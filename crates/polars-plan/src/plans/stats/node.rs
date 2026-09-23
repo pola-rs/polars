@@ -5,6 +5,9 @@
 
 use std::sync::Arc;
 
+use polars_core::prelude::DataType;
+use polars_core::scalar::Scalar;
+use polars_core::schema::Schema;
 use polars_utils::aliases::InitHashMaps;
 #[expect(clippy::disallowed_types)] // We don't iterate over it.
 use polars_utils::aliases::PlHashMap;
@@ -14,6 +17,9 @@ use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 
 use super::{Card, DEFAULT_REL_ERR, ScanColumnStats, ScanColumnStatsMap, leaf_row_count};
+#[cfg(feature = "is_in")]
+use crate::plans::aexpr::filter_constraint::as_value_set;
+use crate::plans::aexpr::filter_constraint::{ColumnBounds, and_chain_bounds};
 use crate::plans::{
     AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, MintermIter,
     into_column,
@@ -78,6 +84,7 @@ pub(crate) fn node_stats_with_cache(
     let stats = match ir {
         IR::Scan {
             predicate,
+            file_info,
             unified_scan_args,
             ..
         } => {
@@ -101,6 +108,7 @@ pub(crate) fn node_stats_with_cache(
                     p.node(),
                     expr_arena,
                     columns.as_deref(),
+                    &file_info.schema,
                 );
             }
             Some(NodeStats {
@@ -164,6 +172,7 @@ pub(crate) fn node_stats_with_cache(
                 predicate.node(),
                 expr_arena,
                 inner.columns.as_deref(),
+                &ir_arena.get(*input).schema(ir_arena),
             );
             Some(inner.filter(filtered))
         },
@@ -260,6 +269,7 @@ pub(crate) fn node_stats_with_cache(
                         fused_predicate.node(),
                         expr_arena,
                         stats.columns.as_deref(),
+                        &ir.schema(ir_arena),
                     );
                     stats.filter(filtered)
                 },
@@ -568,7 +578,7 @@ fn n_groups(rows: f64, n_keys: usize, ndv: Option<f64>) -> f64 {
     rows.powf(exponent).clamp(MIN_CARDINALITY, rows)
 }
 
-/// Rows left after `predicate`, estimated one `AND` conjunct at a time.
+/// Rows left after `predicate`.
 ///
 /// `rows` is what the conjuncts narrow. `unfiltered` is the relation the column
 /// statistics describe, which a slice may already have cut into.
@@ -578,13 +588,84 @@ fn apply_predicate(
     predicate: Node,
     expr_arena: &Arena<AExpr>,
     columns: Option<&ScanColumnStatsMap>,
+    schema: &Schema,
 ) -> f64 {
-    let mut selectivity = 1.0;
-    for conjunct in MintermIter::new(predicate, expr_arena) {
-        selectivity *= conjunct_selectivity(conjunct, expr_arena, columns, unfiltered)
-            .unwrap_or(DEFAULT_SELECTIVITY);
-    }
+    let (selectivity, _) =
+        predicate_selectivity(predicate, expr_arena, columns, schema, unfiltered);
     (rows * selectivity).max(MIN_CARDINALITY)
+}
+
+/// Fraction of rows `predicate` keeps, estimated per column for the bounds of its
+/// `AND` chain and one conjunct at a time for the rest. The flag is `false` when any
+/// part of it fell back to [`DEFAULT_SELECTIVITY`].
+#[recursive]
+fn predicate_selectivity(
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+    columns: Option<&ScanColumnStatsMap>,
+    schema: &Schema,
+    rows: f64,
+) -> (f64, bool) {
+    let chain = and_chain_bounds(predicate, schema, expr_arena);
+    if chain.unsat {
+        return (0.0, true);
+    }
+    let factors =
+        chain
+            .columns
+            .iter()
+            .map(|bounds| range_selectivity(bounds, columns, schema))
+            .chain(chain.other.iter().map(|&conjunct| {
+                conjunct_selectivity(conjunct, expr_arena, columns, schema, rows)
+            }));
+    let mut selectivity = 1.0;
+    let mut known = true;
+    for factor in factors {
+        known &= factor.is_some();
+        selectivity *= factor.unwrap_or(DEFAULT_SELECTIVITY);
+    }
+    (selectivity, known)
+}
+
+/// Integer range and type of `name`, for a column whose range is in the unit of its
+/// values.
+fn int_range<'a>(
+    name: &str,
+    columns: Option<&ScanColumnStatsMap>,
+    schema: &'a Schema,
+) -> Option<(i128, i128, &'a DataType)> {
+    let dtype = schema.get(name)?;
+    // A parquet `Time` is often stored in another unit than the one it is read in.
+    if !(dtype.is_integer() || (dtype.is_temporal() && !matches!(dtype, DataType::Time))) {
+        return None;
+    }
+    let (min, max) = columns?.get(name)?.int_range?;
+    (max >= min).then_some((min, max, dtype))
+}
+
+fn int_value(value: &Scalar, dtype: &DataType) -> Option<i128> {
+    (value.dtype() == dtype).then_some(())?;
+    value.as_any_value().extract::<i128>()
+}
+
+/// Fraction of a column's integer range that its bounds keep, assuming the values
+/// are spread evenly over it.
+fn range_selectivity(
+    bounds: &ColumnBounds,
+    columns: Option<&ScanColumnStatsMap>,
+    schema: &Schema,
+) -> Option<f64> {
+    let (min, max, dtype) = int_range(&bounds.name, columns, schema)?;
+    let lower = match &bounds.lower {
+        Some((value, inclusive)) => int_value(value, dtype)? + i128::from(!inclusive),
+        None => min,
+    };
+    let upper = match &bounds.upper {
+        Some((value, inclusive)) => int_value(value, dtype)? - i128::from(!inclusive),
+        None => max,
+    };
+    let kept = (upper.min(max) - lower.max(min) + 1).max(0) - bounds.num_excluded as i128;
+    Some(kept.max(0) as f64 / (max - min + 1) as f64)
 }
 
 /// Fraction of rows one conjunct keeps, or `None` when nothing describes it.
@@ -592,9 +673,37 @@ fn conjunct_selectivity(
     conjunct: Node,
     expr_arena: &Arena<AExpr>,
     columns: Option<&ScanColumnStatsMap>,
+    schema: &Schema,
     rows: f64,
 ) -> Option<f64> {
     let (name, function) = match expr_arena.get(conjunct) {
+        AExpr::BinaryExpr {
+            left,
+            op: Operator::Or | Operator::LogicalOr,
+            right,
+        } => {
+            let (left, left_known) =
+                predicate_selectivity(*left, expr_arena, columns, schema, rows);
+            let (right, right_known) =
+                predicate_selectivity(*right, expr_arena, columns, schema, rows);
+            return (left_known && right_known).then_some(left + right - left * right);
+        },
+        #[cfg(feature = "is_in")]
+        AExpr::Function {
+            input,
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
+            ..
+        } => {
+            let name = into_column(input[0].node(), expr_arena)?;
+            let (min, max, dtype) = int_range(name, columns, schema)?;
+            let values = as_value_set(expr_arena.get(input[1].node()))?;
+            let mut kept = 0;
+            for value in &values {
+                let value = int_value(value, dtype)?;
+                kept += usize::from((min..=max).contains(&value));
+            }
+            return Some(kept as f64 / (max - min + 1) as f64);
+        },
         AExpr::Function {
             input,
             function: IRFunctionExpr::Boolean(function),
@@ -717,6 +826,8 @@ pub fn key_domain(
 
 #[cfg(test)]
 mod tests {
+    use polars_core::prelude::AnyValue;
+
     use super::*;
 
     fn leaf(unfiltered: f64, filtered: f64) -> NodeStats {
@@ -1104,10 +1215,24 @@ mod tests {
         });
 
         // A quarter of the rows are null, against the flat 0.2 fallback.
-        let kept = apply_predicate(1000.0, 1000.0, is_null, &expr_arena, Some(map));
+        let kept = apply_predicate(
+            1000.0,
+            1000.0,
+            is_null,
+            &expr_arena,
+            Some(map),
+            &Schema::default(),
+        );
         assert!((kept - 250.0).abs() < 1e-9, "got {kept}");
         // An unknown column falls back.
-        let kept = apply_predicate(1000.0, 1000.0, is_null, &expr_arena, None);
+        let kept = apply_predicate(
+            1000.0,
+            1000.0,
+            is_null,
+            &expr_arena,
+            None,
+            &Schema::default(),
+        );
         assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
     }
 
@@ -1123,14 +1248,153 @@ mod tests {
             right: b,
         });
 
-        let one = apply_predicate(1000.0, 1000.0, a, &expr_arena, None);
+        let one = apply_predicate(1000.0, 1000.0, a, &expr_arena, None, &Schema::default());
         assert!((one - 200.0).abs() < 1e-9, "got {one}");
-        let two = apply_predicate(1000.0, 1000.0, and, &expr_arena, None);
+        let two = apply_predicate(1000.0, 1000.0, and, &expr_arena, None, &Schema::default());
         assert!((two - 40.0).abs() < 1e-9, "got {two}");
         // However many conjuncts pile up, an estimate never reaches zero.
         assert_eq!(
-            apply_predicate(1.0, 1.0, and, &expr_arena, None),
+            apply_predicate(1.0, 1.0, and, &expr_arena, None, &Schema::default()),
             MIN_CARDINALITY
         );
+    }
+
+    /// A leaf over one column `a` of `dtype` with the integer range `range`, and a
+    /// schema for it.
+    fn ranged_column(dtype: DataType, range: (i128, i128)) -> (NodeStats, Schema) {
+        let stats = leaf(1000.0, 1000.0).with_column(
+            "a",
+            ScanColumnStats {
+                int_range: Some(range),
+                ..Default::default()
+            },
+        );
+        let schema = Schema::from_iter([(PlSmallStr::from_str("a"), dtype)]);
+        (stats, schema)
+    }
+
+    fn compare(expr_arena: &mut Arena<AExpr>, op: Operator, value: Scalar) -> Node {
+        let left = expr_arena.add(AExpr::Column(PlSmallStr::from_str("a")));
+        let right = expr_arena.add(AExpr::Literal(value.into()));
+        expr_arena.add(AExpr::BinaryExpr { left, op, right })
+    }
+
+    fn and(expr_arena: &mut Arena<AExpr>, left: Node, right: Node) -> Node {
+        expr_arena.add(AExpr::BinaryExpr {
+            left,
+            op: Operator::And,
+            right,
+        })
+    }
+
+    #[test]
+    fn range_bounds_on_one_column_are_one_interval() {
+        let (stats, schema) = ranged_column(DataType::Int64, (0, 999));
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let lower = compare(&mut expr_arena, Operator::GtEq, Scalar::from(100i64));
+        let upper = compare(&mut expr_arena, Operator::Lt, Scalar::from(300i64));
+        let both = and(&mut expr_arena, lower, upper);
+
+        let kept = apply_predicate(1000.0, 1000.0, both, &expr_arena, map, &schema);
+        assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+        let kept = apply_predicate(1000.0, 1000.0, lower, &expr_arena, map, &schema);
+        assert!((kept - 900.0).abs() < 1e-9, "got {kept}");
+        // Without a range the column's bounds count once.
+        let kept = apply_predicate(1000.0, 1000.0, both, &expr_arena, None, &schema);
+        assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[cfg(feature = "dtype-date")]
+    #[test]
+    fn date_bounds_use_the_date_range() {
+        // 1992-01-01 to 1998-08-02 as days since the epoch.
+        let (stats, schema) = ranged_column(DataType::Date, (8035, 10440));
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let date = |days| Scalar::new(DataType::Date, AnyValue::Date(days));
+        // 1994-01-01 to 1995-01-01.
+        let lower = compare(&mut expr_arena, Operator::GtEq, date(8766));
+        let upper = compare(&mut expr_arena, Operator::Lt, date(9131));
+        let both = and(&mut expr_arena, lower, upper);
+
+        let kept = apply_predicate(1000.0, 1000.0, both, &expr_arena, map, &schema);
+        assert!((kept - 1000.0 * 365.0 / 2406.0).abs() < 1e-9, "got {kept}");
+
+        // A literal of another type says nothing about the range.
+        let other = compare(&mut expr_arena, Operator::GtEq, Scalar::from(8766i32));
+        let kept = apply_predicate(1000.0, 1000.0, other, &expr_arena, map, &schema);
+        assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[test]
+    fn bounds_outside_the_range_keep_no_rows() {
+        let (stats, schema) = ranged_column(DataType::Int64, (0, 999));
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let above = compare(&mut expr_arena, Operator::Gt, Scalar::from(999i64));
+        let kept = apply_predicate(1000.0, 1000.0, above, &expr_arena, map, &schema);
+        assert_eq!(kept, MIN_CARDINALITY);
+
+        let lower = compare(&mut expr_arena, Operator::Gt, Scalar::from(500i64));
+        let upper = compare(&mut expr_arena, Operator::Lt, Scalar::from(100i64));
+        let crossed = and(&mut expr_arena, lower, upper);
+        let kept = apply_predicate(1000.0, 1000.0, crossed, &expr_arena, map, &schema);
+        assert_eq!(kept, MIN_CARDINALITY);
+    }
+
+    #[test]
+    fn or_of_known_parts_is_their_union() {
+        let (stats, schema) = ranged_column(DataType::Int64, (0, 999));
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let one = compare(&mut expr_arena, Operator::Eq, Scalar::from(1i64));
+        let two = compare(&mut expr_arena, Operator::Eq, Scalar::from(2i64));
+        let either = expr_arena.add(AExpr::BinaryExpr {
+            left: one,
+            op: Operator::Or,
+            right: two,
+        });
+        let kept = apply_predicate(1_000_000.0, 1_000_000.0, either, &expr_arena, map, &schema);
+        assert!((kept - 1999.0).abs() < 1e-6, "got {kept}");
+
+        // One unknown side leaves the whole `OR` unknown.
+        let opaque = expr_arena.add(AExpr::Column(PlSmallStr::from_str("b")));
+        let either = expr_arena.add(AExpr::BinaryExpr {
+            left: one,
+            op: Operator::Or,
+            right: opaque,
+        });
+        let kept = apply_predicate(1000.0, 1000.0, either, &expr_arena, map, &schema);
+        assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[cfg(feature = "is_in")]
+    #[test]
+    fn is_in_keeps_the_values_inside_the_range() {
+        use polars_core::prelude::{NamedFrom, Series};
+
+        let (stats, schema) = ranged_column(DataType::Int64, (0, 999));
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let a = expr_arena.add(AExpr::Column(PlSmallStr::from_str("a")));
+        let values = Series::new(PlSmallStr::EMPTY, [1i64, 2, 5000]);
+        let haystack = expr_arena.add(AExpr::Literal(
+            Scalar::new(
+                DataType::List(Box::new(DataType::Int64)),
+                AnyValue::List(values),
+            )
+            .into(),
+        ));
+        let is_in = expr_arena.add(AExpr::Function {
+            input: vec![
+                ExprIR::from_node(a, &expr_arena),
+                ExprIR::from_node(haystack, &expr_arena),
+            ],
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal: false }),
+            options: crate::prelude::FunctionOptions::elementwise(),
+        });
+        let kept = apply_predicate(1000.0, 1000.0, is_in, &expr_arena, map, &schema);
+        assert!((kept - 2.0).abs() < 1e-9, "got {kept}");
     }
 }

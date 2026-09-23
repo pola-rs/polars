@@ -400,7 +400,7 @@ def test_build_side_of_several_morsels(
     pl.DataFrame(
         {"k": [300, 301, 302, 303, 304, 660, 661, 662, 663, 664]}
     ).write_parquet(path, row_group_size=1)
-    q = fact.join(pl.scan_parquet(path).filter(pl.col("k") > 0), on="k")
+    q = fact.join(pl.scan_parquet(path).filter((pl.col("k") * 2) > 0), on="k")
     assert "dynamic_predicate" in q.explain(engine="streaming")
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
@@ -1353,7 +1353,7 @@ def test_bloom_is_sized_from_the_build_keys_seen(
     # the 200k that arrive: more than a bloom filter of the planned size holds,
     # yet few enough of the probe keys to be worth probing.
     build = pl.LazyFrame({"k": range(0, n, 5), "a": range(0, n, 5)}).filter(
-        (pl.col("a") >= 0) & (pl.col("a") < n)
+        (pl.col("a") >= 0) & (pl.col("k") < n)
     )
     q = pl.scan_parquet(path).join(build, on="k")
     out, err = reader_log(q, plmonkeypatch, capfd)
