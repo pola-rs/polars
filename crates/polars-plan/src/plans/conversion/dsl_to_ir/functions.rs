@@ -1308,7 +1308,7 @@ pub(super) fn convert_functions(
                 .map(|e| {
                     e.dtype(ctx.schema, ctx.arena)?
                         .clone()
-                        .materialize_unknown(true)
+                        .materialize_unknown(false)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
             if let RowEncodingVariant::Ordered {
