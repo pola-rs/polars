@@ -914,12 +914,12 @@ impl Duration {
     #[inline]
     pub fn add(&self, tu: TimeUnit, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         if self.months == 0 && self.weeks == 0 && self.days == 0 {
+            // TODO: UTC with months == 0 can also have a fast path here, but checking for it here
+            // slows down hot loops of the other cases. If it turns out to be important, we might
+            // need to check once beforehand and convert it to nanos.
+
             // A constant duration needs no calendar: keep this path inline at the call site.
-            return Ok(match tu {
-                TimeUnit::Nanoseconds => t + self.signed_nsecs(),
-                TimeUnit::Microseconds => t + self.signed_nsecs() / 1_000,
-                TimeUnit::Milliseconds => t + self.signed_nsecs() / 1_000_000,
-            });
+            return Ok(t + tu.from_nsecs(self.signed_nsecs()));
         }
         match tu {
             TimeUnit::Nanoseconds => self.add_ns(t, tz),
