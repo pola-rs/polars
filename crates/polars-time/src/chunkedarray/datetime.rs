@@ -251,7 +251,9 @@ pub trait DatetimeMethods: AsDatetime {
                                             TimeUnit::Milliseconds => t.timestamp_millis(),
                                             TimeUnit::Microseconds => t.timestamp_micros(),
                                             TimeUnit::Nanoseconds => {
-                                                t.timestamp_nanos_opt().unwrap()
+                                                t.timestamp_nanos_opt().ok_or_else(|| {
+                                                    polars_err!(ComputeError: "datetime is out of bounds for nanosecond resolution")
+                                                })?
                                             },
                                         }))
                                     },

@@ -34,43 +34,68 @@ if TYPE_CHECKING:
 
 def test_semi_anti_join() -> None:
     df_a = pl.DataFrame({"key": [1, 2, 3], "payload": ["f", "i", None]})
-
     df_b = pl.DataFrame({"key": [3, 4, 5, None]})
 
-    assert df_a.join(df_b, on="key", how="anti").to_dict(as_series=False) == {
-        "key": [1, 2],
-        "payload": ["f", "i"],
-    }
-    assert df_a.join(df_b, on="key", how="semi").to_dict(as_series=False) == {
-        "key": [3],
-        "payload": [None],
-    }
+    expected_anti = pl.DataFrame(
+        {"key": [1, 2], "payload": ["f", "i"]}, schema=df_a.schema
+    )
+    expected_semi = pl.DataFrame({"key": [3], "payload": [None]}, schema=df_a.schema)
+
+    assert_frame_equal(
+        df_a.join(df_b, on="key", how="anti"),
+        expected_anti,
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df_a.join(df_b, on="key", how="semi"),
+        expected_semi,
+        check_row_order=False,
+    )
 
     # lazy
-    result = df_a.lazy().join(df_b.lazy(), on="key", how="anti").collect()
-    expected_values = {"key": [1, 2], "payload": ["f", "i"]}
-    assert result.to_dict(as_series=False) == expected_values
-
-    result = df_a.lazy().join(df_b.lazy(), on="key", how="semi").collect()
-    expected_values = {"key": [3], "payload": [None]}
-    assert result.to_dict(as_series=False) == expected_values
+    assert_frame_equal(
+        df_a.lazy().join(df_b.lazy(), on="key", how="anti").collect(),
+        expected_anti,
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df_a.lazy().join(df_b.lazy(), on="key", how="semi").collect(),
+        expected_semi,
+        check_row_order=False,
+    )
 
     df_a = pl.DataFrame(
         {"a": [1, 2, 3, 1], "b": ["a", "b", "c", "a"], "payload": [10, 20, 30, 40]}
     )
-
     df_b = pl.DataFrame({"a": [3, 3, 4, 5], "b": ["c", "c", "d", "e"]})
 
-    assert df_a.join(df_b, on=["a", "b"], how="anti").to_dict(as_series=False) == {
-        "a": [1, 2, 1],
-        "b": ["a", "b", "a"],
-        "payload": [10, 20, 40],
-    }
-    assert df_a.join(df_b, on=["a", "b"], how="semi").to_dict(as_series=False) == {
-        "a": [3],
-        "b": ["c"],
-        "payload": [30],
-    }
+    expected_multi_anti = pl.DataFrame(
+        {
+            "a": [1, 2, 1],
+            "b": ["a", "b", "a"],
+            "payload": [10, 20, 40],
+        },
+        schema=df_a.schema,
+    )
+    expected_multi_semi = pl.DataFrame(
+        {
+            "a": [3],
+            "b": ["c"],
+            "payload": [30],
+        },
+        schema=df_a.schema,
+    )
+
+    assert_frame_equal(
+        df_a.join(df_b, on=["a", "b"], how="anti"),
+        expected_multi_anti,
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df_a.join(df_b, on=["a", "b"], how="semi"),
+        expected_multi_semi,
+        check_row_order=False,
+    )
 
 
 def test_join_same_cat_src() -> None:
