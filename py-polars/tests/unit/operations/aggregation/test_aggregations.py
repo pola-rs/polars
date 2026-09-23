@@ -189,6 +189,25 @@ def test_int_mean_grouped_matches_reference_29373() -> None:
         assert dict(zip(out["g"], out["a"], strict=True)) == expected
 
 
+@pytest.mark.parametrize("with_nulls", [False, True])
+def test_int_mean_sorted_groups_29373(with_nulls: bool) -> None:
+    rng = np.random.default_rng(3)
+    n = 3_000
+    values: list[int | None] = [int(v) for v in rng.integers(2**62, 2**63 - 1, size=n)]
+    if with_nulls:
+        values[::7] = [None] * len(values[::7])
+    groups = sorted(rng.integers(0, 40, size=n).tolist())
+    df = pl.DataFrame({"g": groups, "a": values}).with_columns(pl.col("g").set_sorted())
+    out = df.group_by("g", maintain_order=True).agg(pl.col("a").mean())
+    expected = {}
+    for g in dict.fromkeys(groups):
+        window = [
+            v for k, v in zip(groups, values, strict=True) if k == g and v is not None
+        ]
+        expected[g] = float(sum(window)) / len(window)
+    assert dict(zip(out["g"], out["a"], strict=True)) == expected
+
+
 @pytest.mark.parametrize(
     ("dtype", "expected"),
     [

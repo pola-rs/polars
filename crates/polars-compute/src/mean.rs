@@ -143,6 +143,11 @@ pub trait MeanSum: NativeType {
 
     fn sum_slice(vals: &[Self]) -> Self::Acc;
     fn sum_arr(arr: &PrimitiveArray<Self>) -> Self::Acc;
+
+    /// `sum_slice(vals).into_f64() / len`, `None` if `vals` is empty.
+    fn mean_slice(vals: &[Self]) -> Option<f64> {
+        (!vals.is_empty()).then(|| Self::sum_slice(vals).into_f64() / vals.len() as f64)
+    }
 }
 
 /// An integer of at most 64 bits, split as `hi * 2^SHIFT + lo` so that `hi` and `lo` can be
@@ -211,6 +216,22 @@ fn split_sum<T: SplitInt>(vals: &[T]) -> i128 {
     vals.chunks(SPLIT_BLOCK).map(split_sum_block).sum()
 }
 
+/// Up to this many values, both split sums are exact in an `f64`.
+const SPLIT_F64_LEN: usize = 1 << 21;
+
+/// `split_sum(vals) as f64` for at most [`SPLIT_F64_LEN`] values.
+///
+/// Scaling by a power of two is exact, so the only rounding is in the final addition.
+#[inline(always)]
+fn split_sum_f64<T: SplitInt>(vals: &[T]) -> f64 {
+    debug_assert!(vals.len() <= SPLIT_F64_LEN);
+    let (hi, lo) = vals.iter().fold((0i64, 0u64), |(hi, lo), v| {
+        let (h, l) = v.split();
+        (hi.wrapping_add(h), lo.wrapping_add(l))
+    });
+    hi as f64 * (1u64 << T::SHIFT) as f64 + lo as f64
+}
+
 fn split_sum_masked<T: SplitInt>(vals: &[T], mask: BitMask<'_>) -> i128 {
     assert!(vals.len() == mask.len());
     vals.chunks(SPLIT_BLOCK)
@@ -263,6 +284,15 @@ macro_rules! impl_split_mean_sum {
                         },
                         None => split_sum(arr.values()),
                     }
+                }
+
+                fn mean_slice(vals: &[Self]) -> Option<f64> {
+                    let sum = match vals.len() {
+                        0 => return None,
+                        n if n <= SPLIT_F64_LEN => split_sum_f64(vals),
+                        _ => i128_to_f64(split_sum(vals)),
+                    };
+                    Some(sum / vals.len() as f64)
                 }
             }
         )*

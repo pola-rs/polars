@@ -6,7 +6,7 @@ use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::utils::combine_validities_and;
 use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_arrow::types::NativeType;
-use polars_compute::mean::{IntMeanRounding, MeanAcc, MeanSum};
+use polars_compute::mean::{IntMeanRounding, MeanSum};
 use polars_utils::float16::pf16;
 
 use super::*;
@@ -195,8 +195,7 @@ where
         .map(|w| {
             values
                 .get(w[0] as usize..w[1] as usize)
-                .filter(|sl| !sl.is_empty())
-                .map(|sl| T::sum_slice(sl).into_f64() / sl.len() as f64)
+                .and_then(T::mean_slice)
         })
         .collect();
     let new_validity = combine_validities_and(out.validity(), validity);

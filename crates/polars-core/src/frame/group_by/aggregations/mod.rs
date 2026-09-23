@@ -1389,6 +1389,21 @@ where
     where
         T::Native: RollingMeanSum,
     {
+        if let GroupsType::Slice {
+            groups: groups_slice,
+            overlapping,
+            monotonic,
+        } = groups
+            && self.chunks().len() == 1
+            && !self.has_nulls()
+            && !_use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks())
+        {
+            let values = self.downcast_get(0).unwrap().values().as_slice();
+            return _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
+                debug_assert!(first + len <= self.len() as IdxSize);
+                T::Native::mean_slice(&values[first as usize..(first + len) as usize])
+            });
+        }
         self.agg_mean_with::<Float64Type, _>(groups, |sum, count| sum.into_f64() / count as f64)
     }
 
