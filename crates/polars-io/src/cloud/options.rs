@@ -48,8 +48,9 @@ use crate::pl_async::with_concurrency_budget;
 
 #[cfg(feature = "aws")]
 fn to_io_err(err: reqwest::Error) -> PolarsError {
+    let kind = super::polars_object_store::io_error_kind_from_source(&err);
     PolarsError::IO {
-        error: Arc::new(std::io::Error::other(err)),
+        error: Arc::new(std::io::Error::new(kind, err)),
         msg: None,
     }
 }
