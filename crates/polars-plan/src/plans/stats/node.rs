@@ -641,20 +641,34 @@ fn predicate_selectivity(
             factors.push(fraction);
         }
         for &conjunct in &chain.other {
-            if let Some((name, function)) = null_check(conjunct, expr_arena) {
-                let state = match function {
-                    IRBooleanFunction::IsNotNull => Some(KeptValues::NonNull),
-                    IRBooleanFunction::IsNull => Some(KeptValues::Nulls),
+            if let Some((name, function)) = null_check(conjunct, expr_arena)
+                && let Some(keep_nulls) = match function {
+                    IRBooleanFunction::IsNotNull => Some(false),
+                    IRBooleanFunction::IsNull => Some(true),
                     _ => None,
-                };
-                if let Some(state) = state {
-                    // An earlier conjunct already settled which rows of the column
-                    // are null.
-                    if kept.iter().any(|(kept, _)| kept == name) {
-                        continue;
-                    }
-                    kept.push((name.clone(), state));
                 }
+            {
+                let earlier = kept.iter().position(|(kept, _)| kept == name);
+                let before = match earlier {
+                    Some(i) => Some(&kept[i].1),
+                    None => columns
+                        .and_then(|columns| columns.get(name))
+                        .and_then(|stats| stats.kept.as_ref()),
+                };
+                let after = with_null_check(before, keep_nulls);
+                match earlier {
+                    Some(i) => {
+                        factors.push(Some(if kept[i].1 == after { 1.0 } else { 0.0 }));
+                        kept[i].1 = after;
+                    },
+                    None => {
+                        factors.push(conjunct_selectivity(
+                            conjunct, expr_arena, columns, schema, rows,
+                        ));
+                        kept.push((name.clone(), after));
+                    },
+                }
+                continue;
             }
             factors.push(conjunct_selectivity(
                 conjunct, expr_arena, columns, schema, rows,
@@ -671,6 +685,17 @@ fn predicate_selectivity(
         fraction,
         known,
         kept,
+    }
+}
+
+/// The values of a column that kept `before` and then only its nulls, or only its
+/// non-null values.
+fn with_null_check(before: Option<&KeptValues>, keep_nulls: bool) -> KeptValues {
+    match (before, keep_nulls) {
+        (None, false) => KeptValues::NonNull,
+        (None | Some(KeptValues::Nulls), true) => KeptValues::Nulls,
+        (Some(KeptValues::Nulls), false) | (Some(_), true) => KeptValues::Values(Vec::new()),
+        (Some(before), false) => before.clone(),
     }
 }
 
@@ -816,11 +841,10 @@ fn column_selectivity(
         } => {
             let in_domain =
                 |v: &i128| (min..=max).contains(v) && already_excluded.binary_search(v).is_err();
-            let size = ((max - min + 1) as usize).saturating_sub(already_excluded.len());
-            if size == 0 {
+            let size = range_len(min, max) - already_excluded.len() as f64;
+            if size <= 0.0 {
                 return Some((0.0, KeptValues::Values(Vec::new())));
             }
-            let size = size as f64;
             match &allowed {
                 Some(allowed) => {
                     let kept: Vec<i128> = allowed
@@ -841,13 +865,13 @@ fn column_selectivity(
                         .collect();
                     excluded.sort_unstable();
                     excluded.dedup();
-                    let kept = ((upper - lower + 1).max(0) - excluded.len() as i128).max(0);
+                    let kept = (range_len(lower, upper) - excluded.len() as f64).max(0.0);
                     let values = KeptValues::Range {
                         lower,
                         upper,
                         excluded,
                     };
-                    (kept as f64 / size, values)
+                    (kept / size, values)
                 },
             }
         },
@@ -858,6 +882,14 @@ fn column_selectivity(
         1.0 - null_fraction(&bounds.name, columns, rows).unwrap_or(0.0)
     };
     Some((fraction * non_null, kept))
+}
+
+/// Number of values in the inclusive range `lower..=upper`.
+fn range_len(lower: i128, upper: i128) -> f64 {
+    if upper < lower {
+        return 0.0;
+    }
+    upper.abs_diff(lower) as f64 + 1.0
 }
 
 /// Fraction of rows one conjunct keeps, or `None` when nothing describes it.
@@ -1963,5 +1995,100 @@ mod tests {
         );
         let values = nulls.filter_by(bound, &expr_arena, &schema);
         assert_eq!(values.filtered, MIN_CARDINALITY);
+    }
+
+    fn column_check(expr_arena: &mut Arena<AExpr>, function: IRBooleanFunction) -> (Node, Node) {
+        let a = expr_arena.add(AExpr::Column(PlSmallStr::from_str("a")));
+        let check = expr_arena.add(AExpr::Function {
+            input: vec![ExprIR::from_node(a, expr_arena)],
+            function: IRFunctionExpr::Boolean(function),
+            options: crate::prelude::FunctionOptions::elementwise(),
+        });
+        let self_eq = expr_arena.add(AExpr::BinaryExpr {
+            left: a,
+            op: Operator::Eq,
+            right: a,
+        });
+        (check, self_eq)
+    }
+
+    #[test]
+    fn a_null_check_keeps_the_range_an_earlier_filter_kept() {
+        let (stats, schema) = ranged_column(DataType::Int64, (0, 99_999));
+        let stats = NodeStats {
+            filtered: 100_000.0,
+            unfiltered: 100_000.0,
+            ..stats
+        };
+        let mut expr_arena = Arena::new();
+        let bound = compare(&mut expr_arena, Operator::Lt, Scalar::from(1000i64));
+        let (not_null, self_eq) = column_check(&mut expr_arena, IRBooleanFunction::IsNotNull);
+
+        for check in [not_null, self_eq] {
+            let kept = stats
+                .clone()
+                .filter_by(bound, &expr_arena, &schema)
+                .filter_by(check, &expr_arena, &schema)
+                .filter_by(bound, &expr_arena, &schema);
+            assert!(
+                (kept.filtered - 1000.0).abs() < 1e-9,
+                "got {}",
+                kept.filtered
+            );
+        }
+    }
+
+    #[test]
+    fn a_full_width_integer_range_is_counted() {
+        for (dtype, range, bound) in [
+            (DataType::UInt64, (0, u64::MAX as i128), Scalar::from(0u64)),
+            (
+                DataType::Int64,
+                (i64::MIN as i128, i64::MAX as i128),
+                Scalar::from(i64::MIN),
+            ),
+        ] {
+            let (stats, schema) = ranged_column(dtype, range);
+            let mut expr_arena = Arena::new();
+            let bound = compare(&mut expr_arena, Operator::GtEq, bound);
+            let kept = stats.filter_by(bound, &expr_arena, &schema);
+            assert!(
+                (kept.filtered - 1000.0).abs() < 1e-9,
+                "got {}",
+                kept.filtered
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-categorical")]
+    fn opposite_null_checks_keep_nothing() {
+        let stats = leaf(1000.0, 1000.0).with_column(
+            "a",
+            ScanColumnStats {
+                null_count: Card::Exact(0),
+                ..Default::default()
+            },
+        );
+        let dtype = DataType::from_frozen_categories(
+            polars_core::prelude::FrozenCategories::new(["x", "y"]).unwrap(),
+        );
+        let schema = Schema::from_iter([(PlSmallStr::from_str("a"), dtype)]);
+        let mut expr_arena = Arena::new();
+        let (not_null, _) = column_check(&mut expr_arena, IRBooleanFunction::IsNotNull);
+        let (is_null, _) = column_check(&mut expr_arena, IRBooleanFunction::IsNull);
+
+        for (first, second) in [(not_null, is_null), (is_null, not_null)] {
+            let both = and(&mut expr_arena, first, second);
+            let kept = stats.clone().filter_by(both, &expr_arena, &schema);
+            assert_eq!(kept.filtered, MIN_CARDINALITY);
+        }
+        let both = and(&mut expr_arena, not_null, not_null);
+        let kept = stats.filter_by(both, &expr_arena, &schema);
+        assert!(
+            (kept.filtered - 1000.0).abs() < 1e-9,
+            "got {}",
+            kept.filtered
+        );
     }
 }
