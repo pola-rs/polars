@@ -1763,9 +1763,45 @@ def test_cspe_cross_join_subplan_is_costed_after_pushdown(tmp_path: Path) -> Non
 def test_cspe_row_estimate_flag_controls_cache_removal(tmp_path: Path) -> None:
     # Without the estimates the decision falls back to the structural rule, which
     # removes the caches whenever the predicates can be pushed.
-    q = wide_subplan_referenced(tmp_path, 8)
+    q = wide_subplan_referenced(tmp_path, 8, overlapping=True)
+    assert q.explain().count("CACHE[id:") == 8
     plan = q.explain(optimizations=pl.QueryOptFlags(row_estimate=False))
     assert "CACHE[id:" not in plan
+
+
+def test_cspe_shared_subplan_is_costed_with_the_common_bounds(tmp_path: Path) -> None:
+    # Together the branches keep `0 <= grp < 57`, under a tenth of the rows. Costed
+    # without that bound the shared subplan looks more expensive than eight
+    # narrowed copies.
+    rows = 20_000
+    pl.DataFrame(
+        {
+            "key": [i % 100 for i in range(rows)],
+            "grp": [i % 1_000 for i in range(rows)],
+            "val": list(range(rows)),
+        }
+    ).write_parquet(tmp_path / "fact.parquet")
+    pl.DataFrame(
+        {"key": list(range(100)), "name": [f"n{i}" for i in range(100)]}
+    ).write_parquet(tmp_path / "dim.parquet")
+    fact = pl.scan_parquet(tmp_path / "fact.parquet")
+    dim = pl.scan_parquet(tmp_path / "dim.parquet")
+    base = fact.join(dim, on="key").group_by("grp", "name").agg(pl.col("val").sum())
+    q = pl.concat(
+        [
+            base.filter(pl.col("grp") >= i, pl.col("grp") < i + 50).select(
+                "name", "val"
+            )
+            for i in range(8)
+        ]
+    )
+
+    assert q.explain().count("CACHE[id:") == 8
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
 
 
 def test_cspe_cache_removal_keeps_nested_caches(
