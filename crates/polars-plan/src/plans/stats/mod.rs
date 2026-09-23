@@ -109,6 +109,10 @@ pub struct ScanColumnStats {
     /// exist.
     #[cfg_attr(feature = "serde", serde(default))]
     pub int_range_partial: bool,
+    /// Inclusive range of the values a filter on the column kept, which also dropped
+    /// its nulls. `int_range` still describes the key domain.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub kept_range: Option<(i128, i128)>,
 }
 
 impl ScanColumnStats {

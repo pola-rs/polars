@@ -19,8 +19,7 @@ use recursive::recursive;
 use super::{Card, DEFAULT_REL_ERR, ScanColumnStats, ScanColumnStatsMap, leaf_row_count};
 use crate::plans::aexpr::filter_constraint::{ColumnBounds, and_chain_bounds};
 use crate::plans::{
-    AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, MintermIter,
-    into_column,
+    AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, into_column,
 };
 use crate::prelude::{JoinType, Operator};
 
@@ -98,22 +97,15 @@ pub(crate) fn node_stats_with_cache(
                 filtered = sliced(filtered, slice.clone());
                 max_rows = max_rows.map(|m| sliced(m, slice.clone()));
             }
-            let columns = scan_columns(ir);
-            if let Some(p) = predicate {
-                filtered = apply_predicate(
-                    filtered,
-                    unfiltered,
-                    p.node(),
-                    expr_arena,
-                    columns.as_deref(),
-                    &file_info.schema,
-                );
-            }
-            Some(NodeStats {
+            let stats = NodeStats {
                 filtered,
                 unfiltered,
                 max_rows,
-                columns,
+                columns: scan_columns(ir),
+            };
+            Some(match predicate {
+                None => stats,
+                Some(p) => stats.filter_by(p.node(), expr_arena, &file_info.schema),
             })
         },
 
@@ -164,15 +156,8 @@ pub(crate) fn node_stats_with_cache(
         },
         IR::Filter { input, predicate } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
-            let filtered = apply_predicate(
-                inner.filtered,
-                inner.unfiltered,
-                predicate.node(),
-                expr_arena,
-                inner.columns.as_deref(),
-                &ir_arena.get(*input).schema(ir_arena),
-            );
-            Some(inner.filter(filtered))
+            let schema = ir_arena.get(*input).schema(ir_arena);
+            Some(inner.filter_by(predicate.node(), expr_arena, &schema))
         },
         IR::SimpleProjection { input, .. } | IR::Cache { input, .. } => {
             node_stats_with_cache(*input, ir_arena, expr_arena, cache)
@@ -261,15 +246,7 @@ pub(crate) fn node_stats_with_cache(
             let stats = match fused_predicate {
                 None => stats,
                 Some(fused_predicate) => {
-                    let filtered = apply_predicate(
-                        stats.filtered,
-                        stats.unfiltered,
-                        fused_predicate.node(),
-                        expr_arena,
-                        stats.columns.as_deref(),
-                        &ir.schema(ir_arena),
-                    );
-                    stats.filter(filtered)
+                    stats.filter_by(fused_predicate.node(), expr_arena, &ir.schema(ir_arena))
                 },
             };
 
@@ -319,6 +296,31 @@ impl NodeStats {
     fn filter(mut self, filtered: f64) -> Self {
         self.filtered = filtered;
         self
+    }
+
+    /// The same node with `predicate` applied to it. A column the predicate narrows
+    /// keeps the range it kept, so a later filter on it is estimated within that range.
+    fn filter_by(self, predicate: Node, expr_arena: &Arena<AExpr>, schema: &Schema) -> Self {
+        let selectivity = predicate_selectivity(
+            predicate,
+            expr_arena,
+            self.columns.as_deref(),
+            schema,
+            self.unfiltered,
+        );
+        let filtered = (self.filtered * selectivity.fraction).max(MIN_CARDINALITY);
+        let mut out = self.filter(filtered);
+        if let Some(columns) = &mut out.columns
+            && !selectivity.kept_ranges.is_empty()
+        {
+            let columns = Arc::make_mut(columns);
+            for (name, range) in selectivity.kept_ranges {
+                if let Some(stats) = columns.get_mut(&name) {
+                    stats.kept_range = Some(range);
+                }
+            }
+        }
+        out
     }
 
     /// The same leaf narrowed by `slice`, applied to the estimate and the bound.
@@ -550,6 +552,7 @@ fn single_key_column(keys: &[&PlSmallStr], rows: f64) -> Option<Arc<ScanColumnSt
             avg_byte_width: None,
             int_range: None,
             int_range_partial: false,
+            kept_range: None,
         },
     );
     Some(Arc::new(map))
@@ -577,26 +580,17 @@ fn n_groups(rows: f64, n_keys: usize, ndv: Option<f64>) -> f64 {
     rows.powf(exponent).clamp(MIN_CARDINALITY, rows)
 }
 
-/// Rows left after `predicate`.
-///
-/// `rows` is what the conjuncts narrow. `unfiltered` is the relation the column
-/// statistics describe, which a slice may already have cut into.
-fn apply_predicate(
-    rows: f64,
-    unfiltered: f64,
-    predicate: Node,
-    expr_arena: &Arena<AExpr>,
-    columns: Option<&ScanColumnStatsMap>,
-    schema: &Schema,
-) -> f64 {
-    let (selectivity, _) =
-        predicate_selectivity(predicate, expr_arena, columns, schema, unfiltered);
-    (rows * selectivity).max(MIN_CARDINALITY)
+/// Fraction of rows a predicate keeps.
+struct Selectivity {
+    fraction: f64,
+    /// `false` when any part of it fell back to [`DEFAULT_SELECTIVITY`].
+    known: bool,
+    /// Per column of its `AND` chain, the inclusive range of values it keeps.
+    kept_ranges: Vec<(PlSmallStr, (i128, i128))>,
 }
 
-/// Fraction of rows `predicate` keeps, estimated per column for the constraints of
-/// its `AND` chain and one conjunct at a time for the rest. The flag is `false` when
-/// any part of it fell back to [`DEFAULT_SELECTIVITY`].
+/// Estimated per column for the constraints of the `AND` chain of `predicate`, and one
+/// conjunct at a time for the rest.
 #[recursive]
 fn predicate_selectivity(
     predicate: Node,
@@ -604,30 +598,34 @@ fn predicate_selectivity(
     columns: Option<&ScanColumnStatsMap>,
     schema: &Schema,
     rows: f64,
-) -> (f64, bool) {
+) -> Selectivity {
+    let mut factors = Vec::new();
+    let mut kept_ranges = Vec::new();
     // An `OR` is a single conjunct, so it skips the `AND` chain model.
-    let factors: Vec<Option<f64>> = if is_or(predicate, expr_arena) {
-        vec![conjunct_selectivity(
+    if is_or(predicate, expr_arena) {
+        factors.push(conjunct_selectivity(
             predicate, expr_arena, columns, schema, rows,
-        )]
+        ));
     } else {
         let chain = and_chain_bounds(predicate, schema, expr_arena);
         if chain.unsat {
-            return (0.0, true);
+            return Selectivity {
+                fraction: 0.0,
+                known: true,
+                kept_ranges,
+            };
         }
-        let mut factors = Vec::with_capacity(chain.columns.len() + chain.other.len());
-        let mut non_null_counted = Vec::new();
         for bounds in &chain.columns {
-            let factor = column_selectivity(bounds, columns, schema, rows);
-            if factor.is_some() {
-                non_null_counted.push(&bounds.name);
+            let estimate = column_selectivity(bounds, columns, schema, rows);
+            if let Some((_, range)) = estimate {
+                kept_ranges.push((bounds.name.clone(), range));
             }
-            factors.push(factor);
+            factors.push(estimate.map(|(fraction, _)| fraction));
         }
         for &conjunct in &chain.other {
             // The column's estimate already holds only its non-null rows.
             if let Some((name, IRBooleanFunction::IsNotNull)) = null_check(conjunct, expr_arena)
-                && non_null_counted.contains(&name)
+                && kept_ranges.iter().any(|(kept, _)| kept == name)
             {
                 continue;
             }
@@ -635,15 +633,18 @@ fn predicate_selectivity(
                 conjunct, expr_arena, columns, schema, rows,
             ));
         }
-        factors
-    };
-    let mut selectivity = 1.0;
+    }
+    let mut fraction = 1.0;
     let mut known = true;
     for factor in factors {
         known &= factor.is_some();
-        selectivity *= factor.unwrap_or(DEFAULT_SELECTIVITY);
+        fraction *= factor.unwrap_or(DEFAULT_SELECTIVITY);
     }
-    (selectivity, known)
+    Selectivity {
+        fraction,
+        known,
+        kept_ranges,
+    }
 }
 
 fn is_or(node: Node, expr_arena: &Arena<AExpr>) -> bool {
@@ -657,12 +658,12 @@ fn is_or(node: Node, expr_arena: &Arena<AExpr>) -> bool {
 }
 
 /// Integer range and type of `name`, when the range covers all its data and is in
-/// the unit of its values.
+/// the unit of its values. The flag says a filter already kept only this range.
 fn int_range<'a>(
     name: &str,
     columns: Option<&ScanColumnStatsMap>,
     schema: &'a Schema,
-) -> Option<(i128, i128, &'a DataType)> {
+) -> Option<(i128, i128, &'a DataType, bool)> {
     let dtype = schema.get(name)?;
     // Files of one scan may store a `Datetime`, `Duration` or `Time` in different
     // units, and their ranges are merged as stored.
@@ -670,8 +671,11 @@ fn int_range<'a>(
         return None;
     }
     let stats = columns?.get(name)?;
+    if let Some((min, max)) = stats.kept_range {
+        return (max >= min).then_some((min, max, dtype, true));
+    }
     let (min, max) = stats.int_range?;
-    (max >= min && !stats.int_range_partial).then_some((min, max, dtype))
+    (max >= min && !stats.int_range_partial).then_some((min, max, dtype, false))
 }
 
 fn int_value(value: &Scalar, dtype: &DataType) -> Option<i128> {
@@ -686,14 +690,14 @@ fn null_fraction(name: &str, columns: Option<&ScanColumnStatsMap>, rows: f64) ->
 }
 
 /// Fraction of rows a column's constraints keep, assuming its non-null values are
-/// spread evenly over its integer range.
+/// spread evenly over its integer range, and the range of values they keep.
 fn column_selectivity(
     bounds: &ColumnBounds,
     columns: Option<&ScanColumnStatsMap>,
     schema: &Schema,
     rows: f64,
-) -> Option<f64> {
-    let (min, max, dtype) = int_range(&bounds.name, columns, schema)?;
+) -> Option<(f64, (i128, i128))> {
+    let (min, max, dtype, narrowed) = int_range(&bounds.name, columns, schema)?;
     let lower = match &bounds.lower {
         Some((value, inclusive)) => int_value(value, dtype)? + i128::from(!inclusive),
         None => min,
@@ -715,16 +719,28 @@ fn column_selectivity(
         Some(kept)
     };
     let excluded = kept_values(&bounds.excluded)?;
-    let kept = match &bounds.allowed {
+    let (kept, range) = match &bounds.allowed {
         Some(allowed) => {
             let mut allowed = kept_values(allowed)?;
             allowed.retain(|v| excluded.binary_search(v).is_err());
-            allowed.len() as i128
+            let range = match (allowed.first(), allowed.last()) {
+                (Some(&first), Some(&last)) => (first, last),
+                _ => (lower, upper),
+            };
+            (allowed.len() as i128, range)
         },
-        None => (upper - lower + 1).max(0) - excluded.len() as i128,
+        None => (
+            (upper - lower + 1).max(0) - excluded.len() as i128,
+            (lower, upper),
+        ),
     };
-    let non_null = 1.0 - null_fraction(&bounds.name, columns, rows).unwrap_or(0.0);
-    Some(kept.max(0) as f64 / (max - min + 1) as f64 * non_null)
+    let non_null = if narrowed {
+        1.0
+    } else {
+        1.0 - null_fraction(&bounds.name, columns, rows).unwrap_or(0.0)
+    };
+    let fraction = kept.max(0) as f64 / (max - min + 1) as f64 * non_null;
+    Some((fraction, range))
 }
 
 /// Fraction of rows one conjunct keeps, or `None` when nothing describes it.
@@ -741,9 +757,10 @@ fn conjunct_selectivity(
         right,
     } = expr_arena.get(conjunct)
     {
-        let (left, left_known) = predicate_selectivity(*left, expr_arena, columns, schema, rows);
-        let (right, right_known) = predicate_selectivity(*right, expr_arena, columns, schema, rows);
-        return (left_known && right_known).then_some(left + right - left * right);
+        let left = predicate_selectivity(*left, expr_arena, columns, schema, rows);
+        let right = predicate_selectivity(*right, expr_arena, columns, schema, rows);
+        return (left.known && right.known)
+            .then_some(left.fraction + right.fraction - left.fraction * right.fraction);
     }
     let (name, function) = null_check(conjunct, expr_arena)?;
 
@@ -875,6 +892,19 @@ mod tests {
     use polars_core::prelude::AnyValue;
 
     use super::*;
+
+    /// Rows left after `predicate`, over a relation whose statistics are `columns`.
+    fn apply_predicate(
+        rows: f64,
+        unfiltered: f64,
+        predicate: Node,
+        expr_arena: &Arena<AExpr>,
+        columns: Option<&ScanColumnStatsMap>,
+        schema: &Schema,
+    ) -> f64 {
+        let selectivity = predicate_selectivity(predicate, expr_arena, columns, schema, unfiltered);
+        (rows * selectivity.fraction).max(MIN_CARDINALITY)
+    }
 
     fn leaf(unfiltered: f64, filtered: f64) -> NodeStats {
         NodeStats {
@@ -1585,5 +1615,38 @@ mod tests {
             let kept = apply_predicate(1000.0, 1000.0, both, &expr_arena, map, &schema);
             assert!((kept - 100.0).abs() < 1e-9, "got {kept}");
         }
+    }
+
+    #[test]
+    fn a_second_filter_is_estimated_within_the_range_the_first_kept() {
+        let (stats, schema) = ranged_column(DataType::Int64, (0, 99_999));
+        let stats = NodeStats {
+            filtered: 100_000.0,
+            unfiltered: 100_000.0,
+            ..stats
+        };
+        let mut expr_arena = Arena::new();
+        let range = |expr_arena: &mut Arena<AExpr>, lo: i64, hi: i64| {
+            let lower = compare(expr_arena, Operator::GtEq, Scalar::from(lo));
+            let upper = compare(expr_arena, Operator::Lt, Scalar::from(hi));
+            and(expr_arena, lower, upper)
+        };
+        let shared = range(&mut expr_arena, 0, 1007);
+        let branch = range(&mut expr_arena, 5, 1005);
+
+        let stats = stats.filter_by(shared, &expr_arena, &schema);
+        assert!(
+            (stats.filtered - 1007.0).abs() < 1e-9,
+            "got {}",
+            stats.filtered
+        );
+        let stats = stats.filter_by(branch, &expr_arena, &schema);
+        assert!(
+            (stats.filtered - 1000.0).abs() < 1e-9,
+            "got {}",
+            stats.filtered
+        );
+        // The key domain is untouched.
+        assert_eq!(stats.column("a").unwrap().int_range, Some((0, 99_999)));
     }
 }
