@@ -12,57 +12,51 @@ use crate::prelude::*;
 impl DataType {
     /// Reject nested `Map`s whose keys are not strings, which JSON object keys must be.
     pub fn ensure_json_map_keys(&self) -> PolarsResult<()> {
-        use DataType as D;
-        match self {
+        if !self.contains_map() {
+            return Ok(());
+        }
+        self.try_visit_with(|_dtype| {
             #[cfg(feature = "dtype-map")]
-            D::Map(key, value) => {
+            if let DataType::Map(key, _) = _dtype {
                 polars_ensure!(
                     is_json_map_key(key),
                     ComputeError:
                     "JSON only supports Map keys of type String, Categorical or Enum, got `{key}`\n\nConsider casting the keys to String, or `Expr.map.entries` to use the entries as a list of structs instead."
                 );
-                value.ensure_json_map_keys()
-            },
-            D::List(inner) => inner.ensure_json_map_keys(),
-            #[cfg(feature = "dtype-array")]
-            D::Array(inner, _) => inner.ensure_json_map_keys(),
-            #[cfg(feature = "dtype-struct")]
-            D::Struct(fields) => fields
-                .iter()
-                .try_for_each(|field| field.dtype.ensure_json_map_keys()),
-            #[cfg(feature = "dtype-extension")]
-            D::Extension(_, storage) => storage.ensure_json_map_keys(),
-            _ => Ok(()),
-        }
+            }
+            Ok(())
+        })
     }
 
     /// The dtype a JSON reader decodes into before [`Series::from_json_decoded`].
     ///
     /// Maps become `List(Struct {key: String, value})`, Arrays containing a Map become Lists
     /// and Enum/Categorical leaves become String.
-    pub fn json_map_decode_dtype(&self) -> DataType {
+    pub fn json_decode_dtype(&self) -> DataType {
         use DataType as D;
         match self {
             #[cfg(feature = "dtype-map")]
-            D::Map(_, value) => {
-                D::Map(Box::new(D::String), Box::new(value.json_map_decode_dtype()))
-                    .map_storage_dtype()
-                    .unwrap()
-            },
-            D::List(inner) => D::List(Box::new(inner.json_map_decode_dtype())),
+            D::Map(_, value) => D::Map(Box::new(D::String), Box::new(value.json_decode_dtype()))
+                .map_storage_dtype()
+                .unwrap(),
+            D::List(inner) => D::List(Box::new(inner.json_decode_dtype())),
             #[cfg(feature = "dtype-array")]
             D::Array(inner, _) if inner.contains_map() => {
-                D::List(Box::new(inner.json_map_decode_dtype()))
+                D::List(Box::new(inner.json_decode_dtype()))
             },
             #[cfg(feature = "dtype-array")]
-            D::Array(inner, width) => D::Array(Box::new(inner.json_map_decode_dtype()), *width),
+            D::Array(inner, width) => D::Array(Box::new(inner.json_decode_dtype()), *width),
             #[cfg(feature = "dtype-struct")]
             D::Struct(fields) => D::Struct(
                 fields
                     .iter()
-                    .map(|f| Field::new(f.name.clone(), f.dtype.json_map_decode_dtype()))
+                    .map(|f| Field::new(f.name.clone(), f.dtype.json_decode_dtype()))
                     .collect(),
             ),
+            #[cfg(feature = "dtype-extension")]
+            D::Extension(ext, storage) => {
+                D::Extension(ext.clone(), Box::new(storage.json_decode_dtype()))
+            },
             #[cfg(feature = "dtype-categorical")]
             D::Enum(..) | D::Categorical(..) => D::String,
             dt => dt.clone(),
@@ -81,7 +75,7 @@ fn is_json_map_key(dtype: &DataType) -> bool {
 }
 
 impl Series {
-    /// Build `target` from a series decoded as [`DataType::json_map_decode_dtype`].
+    /// Build `target` from a series decoded as [`DataType::json_decode_dtype`].
     ///
     /// Map keys are cast to the key dtype and deduplicated with first-position/last-value
     /// semantics. With `ignore_errors`, rows with an unknown Enum key or a wrong Array width
@@ -90,8 +84,7 @@ impl Series {
         #[cfg(feature = "dtype-map")]
         if target.contains_map() {
             target.ensure_json_map_keys()?;
-            let decoded = cast_leaf(self, &target.json_map_decode_dtype(), ignore_errors)?;
-            return from_json_decoded_rec(&decoded, target, ignore_errors);
+            return from_json_decoded_rec(&self, target, ignore_errors);
         }
         cast_leaf(self, target, ignore_errors)
     }
@@ -123,18 +116,18 @@ fn from_json_decoded_rec(
         DataType::Map(key_dtype, value_dtype) => {
             let mut ok_keys: Option<Bitmap> = None;
             let storage = try_apply_map_entries(series.list()?, |key, value| {
-                let decoded = decode_keys(key, key_dtype)?;
-                if decoded.null_count() > key.null_count() {
-                    let ok = (decoded.is_not_null() | key.is_null()).rechunk().into_owned();
+                // JSON object keys are never null, so a null marks an unknown Enum label.
+                let decoded = key.cast_with_options(key_dtype, CastOptions::NonStrict)?;
+                if let Some(ok) = decoded.rechunk_validity().filter(|v| v.unset_bits() > 0) {
                     if !ignore_errors {
-                        let idx = ok.iter().position(|ok| ok == Some(false)).unwrap();
+                        let idx = ok.iter().position(|ok| !ok).unwrap();
                         let key = key.str()?.get(idx).unwrap();
                         polars_bail!(
                             ComputeError:
-                            "cannot decode JSON object key \"{key}\" as Map key of type `{key_dtype}`"
+                            "JSON object key \"{key}\" is not a valid Map key of type `{key_dtype}`"
                         );
                     }
-                    ok_keys = Some(ok.downcast_as_array().values().clone());
+                    ok_keys = Some(ok);
                 }
                 let value = from_json_decoded_rec(value, value_dtype, ignore_errors)?;
                 Ok((decoded, value))
@@ -204,13 +197,4 @@ fn null_rows_where(list: &Series, mut bad: impl FnMut(usize, usize) -> bool) -> 
     } else {
         list.clone()
     }
-}
-
-/// Cast JSON object keys to `dtype`; keys that are not valid categories become null.
-#[cfg(feature = "dtype-map")]
-fn decode_keys(keys: &Series, dtype: &DataType) -> PolarsResult<Series> {
-    if keys.dtype() == dtype {
-        return Ok(keys.clone());
-    }
-    keys.cast_with_options(dtype, CastOptions::NonStrict)
 }

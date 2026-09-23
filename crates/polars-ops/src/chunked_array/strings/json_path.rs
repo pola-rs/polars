@@ -102,7 +102,7 @@ pub trait Utf8JsonPathImpl: AsString {
         let allow_extra_fields_in_struct = dtype.is_some();
         let decode_dtype = match &dtype {
             // Decode enums, categoricals and maps as their decode dtype, and rebuild later.
-            Some(dt) => dt.json_map_decode_dtype(),
+            Some(dt) => dt.json_decode_dtype(),
             None => ca.json_infer(infer_schema_len)?,
         };
         // Maps need the order-preserving parse.
@@ -113,7 +113,7 @@ pub trait Utf8JsonPathImpl: AsString {
         let buf_size = ca.get_values_size() + ca.null_count() * "null".len();
         let iter = ca.iter().map(|x| x.unwrap_or("null"));
 
-        let array = polars_json::ndjson::deserialize::deserialize_iter_guided(
+        let array = polars_json::ndjson::deserialize::deserialize_iter(
             iter,
             decode_dtype.to_arrow(CompatLevel::newest()),
             guide.as_ref(),

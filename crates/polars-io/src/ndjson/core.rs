@@ -6,6 +6,7 @@ pub use polars_arrow::array::StructArray;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::accumulate_dataframes_vertical;
+use polars_json::json::ordered::TapeGuide;
 use rayon::prelude::*;
 
 use crate::RowIndex;
@@ -177,7 +178,7 @@ fn parse_impl(
     bytes: &[u8],
     buffers: &mut PlIndexMap<BufferKey, Buffer>,
     scratch: &mut Scratch,
-    guide: Option<&ArrowDataType>,
+    guide: Option<&TapeGuide>,
     ignore_errors: bool,
 ) -> PolarsResult<usize> {
     scratch.json.clear();
@@ -240,7 +241,7 @@ pub fn is_json_line(bytes: &[u8]) -> bool {
 fn parse_lines(
     bytes: &[u8],
     buffers: &mut PlIndexMap<BufferKey, Buffer>,
-    guide: Option<&ArrowDataType>,
+    guide: Option<&TapeGuide>,
     ignore_errors: bool,
 ) -> PolarsResult<()> {
     let mut scratch = Scratch::default();
@@ -262,14 +263,15 @@ pub fn parse_ndjson(
 
     // Map columns are parsed in source order and decoded after deserialization.
     let has_map = schema.iter_values().any(|dt| dt.contains_map());
-    let guide = has_map
+    let guide_dtype = has_map
         .then(|| DataType::Struct(schema.iter_fields().collect()).to_arrow(CompatLevel::newest()));
+    let guide = guide_dtype.as_ref().map(TapeGuide::new);
     let decode_schema: Option<Schema> = has_map.then(|| {
         schema
             .iter()
             .map(|(name, dt)| {
                 let dt = if dt.contains_map() {
-                    dt.json_map_decode_dtype()
+                    dt.json_decode_dtype()
                 } else {
                     dt.clone()
                 };

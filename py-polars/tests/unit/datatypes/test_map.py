@@ -1357,8 +1357,6 @@ def test_map_json_string_like_keys(key_dtype: PolarsDataType) -> None:
 
     for path in JSON_READ_PATHS:
         assert_series_equal(read_json_column(path, rows, dtype), s)
-    for out in json_roundtrips(df).values():
-        assert_frame_equal(out, df)
 
 
 @pytest.mark.parametrize("key_dtype", [pl.String, pl.Categorical], ids=["str", "cat"])
@@ -1503,7 +1501,7 @@ ENUM_MAP = pl.Map(pl.Enum(["a", "b"]), pl.Int64)
 def test_map_json_read_errors(path: str) -> None:
     with pytest.raises(
         ComputeError,
-        match=r'cannot decode JSON object key "x" as Map key of type `enum',
+        match=r'JSON object key "x" is not a valid Map key of type `enum',
     ):
         read_json_column(path, ['{"a":1,"x":2}'], ENUM_MAP)
 

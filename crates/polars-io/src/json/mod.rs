@@ -68,7 +68,6 @@ use std::io::Write;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 
-use polars_arrow::array::LIST_VALUES_NAME;
 use polars_arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
@@ -281,38 +280,30 @@ where
                 // decompression happened (owned is only populated on decompress), then pick which bytes to parse
                 let json_bytes = if owned.is_empty() { &mut bytes } else { owned };
 
-                // Maps need the order-preserving tape. simd-json parses in place, so the tape
-                // gets its own copy if the schema must also be inferred.
+                // Maps need the order-preserving tape, which also gives the value to infer from.
                 let has_map = |schema: &Schema| schema.iter_values().any(|dt| dt.contains_map());
                 let map_guided = self.schema.as_deref().is_some_and(has_map)
                     || self.schema_overwrite.is_some_and(has_map);
-                let mut tape_bytes = map_guided.then(|| {
-                    if self.schema.is_some() {
-                        std::mem::take(json_bytes)
-                    } else {
-                        json_bytes.clone()
+                let (tape, json_value) = if map_guided {
+                    let tape = simd_json::to_tape(json_bytes).map_err(to_compute_err)?;
+                    let json_value = self
+                        .schema
+                        .is_none()
+                        .then(|| polars_json::json::ordered::tape_to_default_value(&tape));
+                    (Some(tape), json_value)
+                } else {
+                    let json_value =
+                        simd_json::to_borrowed_value(json_bytes).map_err(to_compute_err)?;
+                    (None, Some(json_value))
+                };
+                let is_array = match &tape {
+                    Some(tape) => matches!(tape.0[0], simd_json::Node::Array { .. }),
+                    None => matches!(json_value, Some(BorrowedValue::Array(_))),
+                };
+                if let Some(BorrowedValue::Array(array)) = &json_value {
+                    if array.is_empty() & self.schema.is_none() & self.schema_overwrite.is_none() {
+                        return Ok(DataFrame::empty());
                     }
-                });
-                let tape = tape_bytes
-                    .as_mut()
-                    .map(|b| simd_json::to_tape(b))
-                    .transpose()
-                    .map_err(to_compute_err)?;
-                let json_value = match &tape {
-                    Some(_) if self.schema.is_some() => None,
-                    _ => Some(simd_json::to_borrowed_value(json_bytes).map_err(to_compute_err)?),
-                };
-                let (is_array, is_empty_array) = match (&json_value, &tape) {
-                    (Some(BorrowedValue::Array(array)), _) => (true, array.is_empty()),
-                    (Some(_), _) => (false, false),
-                    (None, Some(tape)) => match tape.0[0] {
-                        simd_json::Node::Array { len, .. } => (true, len == 0),
-                        _ => (false, false),
-                    },
-                    (None, None) => unreachable!(),
-                };
-                if is_empty_array & self.schema.is_none() & self.schema_overwrite.is_none() {
-                    return Ok(DataFrame::empty());
                 }
 
                 let allow_extra_fields_in_struct = self.schema.is_some();
@@ -346,17 +337,13 @@ where
                 // Deserialize enums, categoricals and maps via their decode dtype first.
                 let deserialize_schema: Schema = schema
                     .iter()
-                    .map(|(name, dt)| Field::new(name.clone(), dt.json_map_decode_dtype()))
+                    .map(|(name, dt)| Field::new(name.clone(), dt.json_decode_dtype()))
                     .collect();
                 let needs_cast = deserialize_schema != schema;
 
                 let as_document_dtype = |dtype: ArrowDataType| {
                     if is_array {
-                        ArrowDataType::LargeList(Box::new(polars_arrow::datatypes::Field::new(
-                            LIST_VALUES_NAME,
-                            dtype,
-                            true,
-                        )))
+                        dtype.to_large_list(true)
                     } else {
                         dtype
                     }
@@ -373,6 +360,7 @@ where
                             DataType::Struct(schema.iter_fields().collect())
                                 .to_arrow(CompatLevel::newest()),
                         );
+                        let guide = polars_json::json::ordered::TapeGuide::new(&guide);
                         guided_value =
                             polars_json::json::ordered::tape_to_value(tape, &guide, false)?;
                         &guided_value
