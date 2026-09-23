@@ -4185,6 +4185,35 @@ def test_scan_iceberg_negative_decimal_statistics_29449(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        pl.col("x") == D("-5.00"),
+        pl.col("x") < 0,
+        pl.col("x") <= D("-5.00"),
+    ],
+)
+def test_scan_iceberg_equal_negative_decimal_29462(
+    tmp_path: Path, predicate: pl.Expr
+) -> None:
+    values = [D("-5.00")] * 3
+    dtype = pl.Decimal(precision=5, scale=2)
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "x", DecimalType(5, 2), required=False)),
+    )
+    tbl.append(pa.table({"x": pa.array(values, pa.decimal128(5, 2))}))
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native")  # type: ignore[arg-type]
+        .filter(predicate)
+        .collect(),
+        pl.DataFrame({"x": pl.Series(values, dtype=dtype)}),
+    )
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_categorical_24140(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
