@@ -648,7 +648,9 @@ fn parquet_column_stats(
                 a.distinct = Some(a.distinct.unwrap_or(0).max(d as u64));
             }
 
-            if !a.int_range_incomplete {
+            // A chunk holding only nulls has no range and cannot widen one.
+            let only_nulls = chunk_nulls.is_some() && non_null == 0;
+            if !a.int_range_incomplete && !only_nulls {
                 match chunk_int_range(chunk, footer_buf) {
                     Some((min, max)) => {
                         a.int_range = Some(match a.int_range {
