@@ -65,7 +65,7 @@ impl IndexSpace {
     }
 
     /// The zone the arithmetic runs in, as `Duration` and `Window` take it. `None` when the
-    /// index has no zone or one the engines ignore, see [`Self::new`].
+    /// index has no zone or one the engines ignore, see [`Self::dynamic`].
     pub fn tz(&self) -> Option<&Tz> {
         self.tz.as_ref()
     }
