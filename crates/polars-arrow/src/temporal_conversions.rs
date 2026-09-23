@@ -243,10 +243,52 @@ pub fn timeunit_scale(a: TimeUnit, b: TimeUnit) -> f64 {
     }
 }
 
+/// Parses a datetime string according to format `fmt`.
+///
+/// When `fmt == "%+"` (the ISO-8601 format used in JSON parsing), this also
+/// attempts common ISO-8601 fallback patterns to handle timestamps lacking seconds
+/// (e.g., `"2020-01-01T12:34+05:00"` or `"2020-01-01T12:34"`).
+///
+/// Returns a [`NaiveDateTime`] normalized to UTC if an explicit timezone offset was present,
+/// or preserving the naive wall-clock value if no offset was present.
+#[inline]
+pub fn parse_iso8601_datetime_components(value: &str, fmt: &str) -> Option<NaiveDateTime> {
+    let mut parsed = Parsed::new();
+    let fmt_items = StrftimeItems::new(fmt);
+    let mut r = parse(&mut parsed, value, fmt_items).ok();
+    if r.is_none() && fmt == "%+" {
+        for fallback in [
+            "%Y-%m-%dT%H:%M%#z",
+            "%Y-%m-%dT%H:%M:%S%.f%#z",
+            "%Y-%m-%dT%H:%M:%S%.f",
+            "%Y-%m-%dT%H:%M",
+            "%Y-%m-%d %H:%M:%S%.f%#z",
+            "%Y-%m-%d %H:%M%#z",
+            "%Y-%m-%d %H:%M:%S%.f",
+            "%Y-%m-%d %H:%M",
+        ] {
+            parsed = Parsed::new();
+            if parse(&mut parsed, value, StrftimeItems::new(fallback)).is_ok() {
+                r = Some(());
+                break;
+            }
+        }
+    }
+    if r.is_some() {
+        parsed
+            .to_datetime()
+            .map(|dt| dt.naive_utc())
+            .or_else(|_| parsed.to_naive_datetime_with_offset(0))
+            .ok()
+    } else {
+        None
+    }
+}
+
 /// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp with timezone.
 ///
 /// `tz` must be built from `timezone` (either via [`parse_offset`] or `chrono-tz`).
-/// Returns in scale `tz` of `TimeUnit`.
+/// Returns in scale `tu` of `TimeUnit`.
 #[inline]
 pub fn utf8_to_timestamp_scalar<T: chrono::TimeZone>(
     value: &str,
@@ -254,24 +296,14 @@ pub fn utf8_to_timestamp_scalar<T: chrono::TimeZone>(
     tz: &T,
     tu: &TimeUnit,
 ) -> Option<i64> {
-    let mut parsed = Parsed::new();
-    let fmt = StrftimeItems::new(fmt);
-    let r = parse(&mut parsed, value, fmt).ok();
-    if r.is_some() {
-        parsed
-            .to_datetime()
-            .map(|x| x.naive_utc())
-            .map(|x| tz.from_utc_datetime(&x))
-            .map(|x| match tu {
-                TimeUnit::Second => x.timestamp(),
-                TimeUnit::Millisecond => x.timestamp_millis(),
-                TimeUnit::Microsecond => x.timestamp_micros(),
-                TimeUnit::Nanosecond => x.timestamp_nanos_opt().unwrap(),
-            })
-            .ok()
-    } else {
-        None
-    }
+    let ndt = parse_iso8601_datetime_components(value, fmt)?;
+    let dt = tz.from_utc_datetime(&ndt);
+    Some(match tu {
+        TimeUnit::Second => dt.timestamp(),
+        TimeUnit::Millisecond => dt.timestamp_millis(),
+        TimeUnit::Microsecond => dt.timestamp_micros(),
+        TimeUnit::Nanosecond => dt.timestamp_nanos_opt().unwrap(),
+    })
 }
 
 /// Parses an offset of the form `"+WX:YZ"` or `"UTC"` into [`FixedOffset`].
