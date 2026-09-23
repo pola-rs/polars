@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use bitflags::bitflags;
-use polars_arrow::bitmap::Bitmap;
+use polars_array::PlBitmap;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_ops::prelude::ChunkJoinOptIds;
@@ -124,7 +124,7 @@ pub struct ExecutionState {
     pub with_fields: Option<Arc<StructChunked>>,
     #[cfg(feature = "dtype-struct")]
     pub with_fields_ac: Option<Arc<AggregationContext<'static>>>,
-    pub element: Arc<Option<(Column, Option<Bitmap>)>>,
+    pub element: Arc<Option<(Column, Option<PlBitmap>)>>,
     stop: Arc<RelaxedCell<bool>>,
 }
 

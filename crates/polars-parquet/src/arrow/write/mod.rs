@@ -484,9 +484,10 @@ pub fn array_to_page_simple(
             type_,
         ),
         ArrowDataType::LargeUtf8 => {
-            let array =
-                polars_compute::cast::cast(array, &ArrowDataType::LargeBinary, Default::default())
-                    .unwrap();
+            let array = polars_compute::cast::utf8_to_binary::<i64>(
+                array.as_any().downcast_ref().unwrap(),
+                ArrowDataType::LargeBinary,
+            );
             return binary::array_to_page::<i64>(
                 array.as_any().downcast_ref().unwrap(),
                 options,
@@ -511,9 +512,11 @@ pub fn array_to_page_simple(
             );
         },
         ArrowDataType::Utf8View => {
-            let array =
-                polars_compute::cast::cast(array, &ArrowDataType::BinaryView, Default::default())
-                    .unwrap();
+            let array = array
+                .as_any()
+                .downcast_ref::<Utf8ViewArray>()
+                .unwrap()
+                .to_binview();
             return binview::array_to_page(
                 array.as_any().downcast_ref().unwrap(),
                 options,
@@ -845,10 +848,11 @@ fn array_to_page_nested(
             boolean::nested_array_to_page(array, options, type_, nested)
         },
         LargeUtf8 => {
-            let array =
-                polars_compute::cast::cast(array, &LargeBinary, Default::default()).unwrap();
-            let array = array.as_any().downcast_ref().unwrap();
-            binary::nested_array_to_page::<i64>(array, options, type_, nested)
+            let array = polars_compute::cast::utf8_to_binary::<i64>(
+                array.as_any().downcast_ref().unwrap(),
+                LargeBinary,
+            );
+            binary::nested_array_to_page::<i64>(&array, options, type_, nested)
         },
         LargeBinary => {
             let array = array.as_any().downcast_ref().unwrap();
@@ -859,9 +863,12 @@ fn array_to_page_nested(
             binview::nested_array_to_page(array, options, type_, nested)
         },
         Utf8View => {
-            let array = polars_compute::cast::cast(array, &BinaryView, Default::default()).unwrap();
-            let array = array.as_any().downcast_ref().unwrap();
-            binview::nested_array_to_page(array, options, type_, nested)
+            let array = array
+                .as_any()
+                .downcast_ref::<Utf8ViewArray>()
+                .unwrap()
+                .to_binview();
+            binview::nested_array_to_page(&array, options, type_, nested)
         },
         UInt8 => {
             let array = array.as_any().downcast_ref().unwrap();

@@ -199,14 +199,8 @@ impl ComputeNode for RleNode {
                             values.push_any_value(last);
                         }
 
-                        // Actually gather the remaining values.
-                        unsafe {
-                            values.gather_extend(
-                                column.as_materialized_series(),
-                                &idxs,
-                                ShareStrategy::Always,
-                            )
-                        };
+                        let source = column.as_materialized_series().rechunk();
+                        unsafe { values.gather_extend(&source, &idxs, ShareStrategy::Always) };
                         drop(df_pin);
 
                         let lengths = Series::new(

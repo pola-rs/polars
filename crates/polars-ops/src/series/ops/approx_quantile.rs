@@ -73,7 +73,8 @@ pub fn approx_quantile_sketch(
                 let ca: &ChunkedArray<$T> = physical.as_ref().as_ref();
                 let ca = ca.drop_nulls();
                 let ca = ca.rechunk();
-                let sketch = build_sketch(ca.cont_slice()?, error, method);
+                let values = ca.to_cont_slice()?;
+                let sketch = build_sketch(values.as_slice(), error, method);
                 sketches_to_series(&[sketch])
             })
         },
@@ -130,7 +131,10 @@ pub fn approx_quantile_estimate(
             .to_unit_list()
             .into_series()
     };
-    let quantiles = quantiles.broadcast_to(sketch.len())?.list()?.to_owned();
+    let quantiles = quantiles
+        .broadcast_to(sketch.len())?
+        .list()?
+        .to_flat_layout();
     polars_ensure!(
         !quantiles.has_nulls(),
         ComputeError: "`quantile` should not be null",
@@ -194,9 +198,10 @@ fn approx_quantile_estimate_inner<
 ) -> PolarsResult<Vec<Option<T>>> {
     let mut out = Vec::with_capacity(values.len());
     let mut values = values.no_null_iter();
-    let lengths = quantiles
-        .downcast_iter()
-        .flat_map(|arr| arr.offsets().lengths());
+    let lengths = quantiles.downcast_iter().flat_map(|arr| {
+        // SAFETY: the row is in bounds of the chunk its length is read from.
+        (0..arr.len()).map(|row| unsafe { arr.value_range_unchecked(row) }.len())
+    });
     for (blob, len) in Iterator::zip(sketch.iter(), lengths) {
         let sketch: Option<FinalizedSketch<T>> = blob
             .map(pl_serialize::deserialize_from_reader::<_, _, false>)

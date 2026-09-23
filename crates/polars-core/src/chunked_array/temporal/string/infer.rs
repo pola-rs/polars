@@ -1,9 +1,9 @@
 use chrono::format::ParseErrorKind;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
-use polars_arrow::array::PrimitiveArray;
 
 use super::patterns::{self, Pattern};
 use super::strptime::StrpTimeState;
+use crate::chunked_array::ops::arity::unary_elementwise_amortized;
 #[cfg(feature = "dtype-date")]
 use crate::chunked_array::temporal::date::naive_date_to_date;
 use crate::prelude::*;
@@ -293,13 +293,9 @@ impl<T: PolarsNumericType> DatetimeInfer<T> {
 
 impl<T: PolarsNumericType> DatetimeInfer<T> {
     pub fn coerce_string(&mut self, ca: &StringChunked) -> Series {
-        let chunks = ca.downcast_iter().map(|array| {
-            let iter = array
-                .into_iter()
-                .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
-            PrimitiveArray::from_trusted_len_iter(iter)
-        });
-        ChunkedArray::<T>::from_chunk_iter(ca.name().clone(), chunks)
+        let parsed: ChunkedArray<T> =
+            unary_elementwise_amortized(ca, |opt_val| opt_val.and_then(|val| self.parse(val)));
+        parsed
             .into_series()
             .cast(&self.logical_type)
             .unwrap()
@@ -425,8 +421,23 @@ pub fn sniff_time_fmt(val: &str) -> Option<&'static str> {
 }
 
 /// Scan the non-null values for the first that `infer` accepts.
-pub fn infer_from_values<T>(ca: &StringChunked, infer: impl FnMut(&str) -> Option<T>) -> Option<T> {
-    ca.iter().flatten().find_map(infer)
+pub fn infer_from_values<T>(
+    ca: &StringChunked,
+    mut infer: impl FnMut(&str) -> Option<T>,
+) -> Option<T> {
+    for arr in ca.downcast_iter() {
+        // One element stands for the whole chunk, and one value it does not accept is every
+        // value it does not accept: a column that never parses costs one call, not one per row.
+        let found = match arr.scalar_value() {
+            Some(value) => value.and_then(&mut infer),
+            None => arr.iter().flatten().find_map(&mut infer),
+        };
+        if found.is_some() {
+            return found;
+        }
+    }
+
+    None
 }
 
 #[cfg(feature = "dtype-datetime")]

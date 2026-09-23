@@ -18,7 +18,7 @@
 use std::mem::ManuallyDrop;
 
 use polars_arrow::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray, StaticArray};
-use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 use polars_arrow::compute::utils::combine_validities_and;
 use polars_arrow::datatypes::reshape::{Dimension, ReshapeDimension};
 use polars_arrow::datatypes::{ArrowDataType, IdxArr, PhysicalType};
@@ -60,7 +60,11 @@ fn get_buffer_and_size(array: &dyn Array) -> (&[u8], usize) {
     }
 }
 
-unsafe fn from_buffer(mut buf: ManuallyDrop<Vec<u8>>, dtype: &ArrowDataType) -> ArrayRef {
+unsafe fn from_buffer(
+    mut buf: ManuallyDrop<Vec<u8>>,
+    dtype: &ArrowDataType,
+    validity: Option<Bitmap>,
+) -> ArrayRef {
     match dtype.to_physical_type() {
         PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let ptr = buf.as_mut_ptr();
@@ -73,7 +77,7 @@ unsafe fn from_buffer(mut buf: ManuallyDrop<Vec<u8>>, dtype: &ArrowDataType) -> 
                 cap_units / size_of::<$T>(),
             );
 
-            PrimitiveArray::from_data_default(buf.into(), None).boxed()
+            PrimitiveArray::from_data_default(buf.into(), validity).boxed()
 
         }),
         _ => {
@@ -109,30 +113,43 @@ unsafe fn aligned_vec(dt: &ArrowDataType, n_bytes: usize) -> Vec<u8> {
     }
 }
 
-fn arr_no_validities_recursive(arr: &dyn Array) -> bool {
-    arr.validity().is_none()
-        && arr
-            .as_any()
-            .downcast_ref::<FixedSizeListArray>()
-            .is_none_or(|x| arr_no_validities_recursive(x.values().as_ref()))
+/// Whether no level between `arr` and the leaf it nests carries a validity mask.
+///
+/// The leaf's own mask is gathered alongside its values, in the same runs of `stride` slots; a
+/// mask on a level in between would have to be gathered in a shape of its own, so an array that
+/// holds one takes the generic path.
+fn no_validity_above_leaf(arr: &dyn Array) -> bool {
+    arr.as_any()
+        .downcast_ref::<FixedSizeListArray>()
+        .is_none_or(|arr| arr.validity().is_none() && no_validity_above_leaf(arr.values().as_ref()))
 }
 
 /// `take` implementation for FixedSizeListArrays
 pub(super) unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxArr) -> ArrayRef {
     let (stride, leaf_type) = get_stride_and_leaf_type(values.dtype(), 1);
     if leaf_type.to_physical_type().is_primitive()
-        && arr_no_validities_recursive(values.values().as_ref())
+        && no_validity_above_leaf(values.values().as_ref())
     {
         let leaves = get_leaves(values);
 
         let (leaves_buf, leave_size) = get_buffer_and_size(leaves);
         let bytes_per_element = leave_size * stride;
 
+        // The leaf reads `stride` of its slots per element, so its mask is gathered in runs of
+        // that many bits, next to the run of bytes the values are copied from.
+        let leaf_validity = leaves.validity();
+        let mut new_leaf_validity =
+            leaf_validity.map(|_| BitmapBuilder::with_capacity(indices.len() * stride));
+
         let n_idx = indices.len();
         let total_bytes = bytes_per_element * n_idx;
 
         let mut buf = ManuallyDrop::new(aligned_vec(leaves.dtype(), total_bytes));
         let dst = buf.spare_capacity_mut();
+
+        let take_leaf_mask = |builder: &mut BitmapBuilder, i: usize| {
+            builder.subslice_extend_from_bitmap(leaf_validity.unwrap(), i * stride, stride);
+        };
 
         let mut count = 0;
         let outer_validity = if indices.null_count() == 0 {
@@ -144,6 +161,9 @@ pub(super) unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxAr
                     dst.as_mut_ptr().add(count * bytes_per_element) as *mut _,
                     bytes_per_element,
                 );
+                if let Some(builder) = new_leaf_validity.as_mut() {
+                    take_leaf_mask(builder, i);
+                }
                 count += 1;
             }
             None
@@ -158,6 +178,9 @@ pub(super) unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxAr
                         dst.as_mut_ptr().add(count * bytes_per_element) as *mut _,
                         bytes_per_element,
                     );
+                    if let Some(builder) = new_leaf_validity.as_mut() {
+                        take_leaf_mask(builder, i);
+                    }
                 } else {
                     new_validity.set_unchecked(count, false);
                     std::ptr::write_bytes(
@@ -165,6 +188,9 @@ pub(super) unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxAr
                         0,
                         bytes_per_element,
                     );
+                    if let Some(builder) = new_leaf_validity.as_mut() {
+                        builder.extend_constant(stride, false);
+                    }
                 }
 
                 count += 1;
@@ -189,7 +215,11 @@ pub(super) unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxAr
                 .as_ref(),
         );
 
-        let leaves = from_buffer(buf, leaves.dtype());
+        let leaves = from_buffer(
+            buf,
+            leaves.dtype(),
+            new_leaf_validity.and_then(BitmapBuilder::into_opt_validity),
+        );
         let mut shape = values.get_dims();
         shape[0] = Dimension::new(indices.len() as _);
         let shape = shape
@@ -208,6 +238,7 @@ pub(super) unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxAr
 #[cfg(test)]
 mod tests {
     use polars_arrow::array::StaticArray;
+    use polars_arrow::bitmap::Bitmap;
     use polars_arrow::datatypes::ArrowDataType;
 
     /// Test gather for FixedSizeListArray with outer validity but no inner validities.
@@ -245,6 +276,71 @@ mod tests {
                 take_unchecked(arr, &PrimitiveArray::<IdxSize>::from_slice([0, 1])),
                 dyn_arr
             )
+        }
+    }
+
+    /// A leaf mask is gathered in runs of `stride` bits, alongside the values it covers -- and a
+    /// null index reads as a null element whose slots are null too.
+    #[test]
+    fn gather_leaf_validity_in_runs() {
+        use polars_arrow::array::{FixedSizeListArray, Int64Array, PrimitiveArray};
+        use polars_arrow::datatypes::reshape::{Dimension, ReshapeDimension};
+        use polars_utils::IdxSize;
+
+        use super::take_unchecked;
+
+        unsafe {
+            // FixedSizeListArray[[1, None], [None, 4], [5, 6]]
+            let dyn_arr = FixedSizeListArray::from_shape(
+                Box::new(Int64Array::from([
+                    Some(1),
+                    None,
+                    None,
+                    Some(4),
+                    Some(5),
+                    Some(6),
+                ])),
+                &[
+                    ReshapeDimension::Specified(Dimension::new(3)),
+                    ReshapeDimension::Specified(Dimension::new(2)),
+                ],
+            )
+            .unwrap();
+
+            let arr = dyn_arr
+                .as_any()
+                .downcast_ref::<FixedSizeListArray>()
+                .unwrap();
+
+            let taken = take_unchecked(arr, &PrimitiveArray::<IdxSize>::from_slice([2, 0, 1]));
+            let expected = FixedSizeListArray::from_shape(
+                Box::new(Int64Array::from([
+                    Some(5),
+                    Some(6),
+                    Some(1),
+                    None,
+                    None,
+                    Some(4),
+                ])),
+                &[
+                    ReshapeDimension::Specified(Dimension::new(3)),
+                    ReshapeDimension::Specified(Dimension::new(2)),
+                ],
+            )
+            .unwrap();
+            assert_eq!(taken, expected);
+
+            let taken = take_unchecked(arr, &PrimitiveArray::<IdxSize>::from([Some(1), None]));
+            let expected = FixedSizeListArray::from_shape(
+                Box::new(Int64Array::from([None, Some(4), None, None])),
+                &[
+                    ReshapeDimension::Specified(Dimension::new(2)),
+                    ReshapeDimension::Specified(Dimension::new(2)),
+                ],
+            )
+            .unwrap()
+            .with_validity(Some(Bitmap::from_iter([true, false])));
+            assert_eq!(taken, expected);
         }
     }
 

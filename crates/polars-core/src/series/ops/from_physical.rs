@@ -172,11 +172,10 @@ mod test {
         let dtype = DataType::from_frozen_categories(FrozenCategories::new(["a", "b"]).unwrap());
         let physical = dtype.to_physical();
         let codes = |codes: &[u32]| {
-            Series::new(PlSmallStr::from_static("e"), codes)
+            let s = Series::new(PlSmallStr::from_static("e"), codes)
                 .cast(&physical)
-                .unwrap()
-                .chunks()[0]
-                .clone()
+                .unwrap();
+            polars_array::arrow::export::to_arrow(&*s.chunks()[0])
         };
 
         let err =

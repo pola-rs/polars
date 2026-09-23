@@ -15,3 +15,18 @@ where
         })
         .sum()
 }
+
+/// The sum of `count` copies of `value`, added up in the order a buffer holding them would be.
+pub(super) fn sum_repeated<T, S>(value: T, count: usize) -> S
+where
+    T: NativeType + ToPrimitive,
+    S: NumCast + std::iter::Sum,
+{
+    (0..count)
+        .map(|_| unsafe {
+            // SAFETY: as `sum_slice`, this is the cast the element type is summed through.
+            let s: S = NumCast::from(value).unwrap_unchecked();
+            s
+        })
+        .sum()
+}

@@ -4,6 +4,8 @@ use num_traits::AsPrimitive;
 use polars_arrow::bitmap::Bitmap;
 use polars_compute::cast::SerPrimitive;
 
+#[cfg(feature = "dtype-array")]
+use crate::chunked_array::array::collect_array_chunk;
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
@@ -473,25 +475,18 @@ fn any_values_to_binary_offset(
     values: &[AnyValue],
     strict: bool,
 ) -> PolarsResult<BinaryOffsetChunked> {
-    let mut builder = MutableBinaryArray::<i64>::new();
-    for av in values {
-        match av {
-            AnyValue::Binary(s) => builder.push(Some(*s)),
-            AnyValue::BinaryOwned(s) => builder.push(Some(&**s)),
-            AnyValue::Null => builder.push_null(),
-            av => {
-                if strict {
-                    return Err(invalid_value_error(&DataType::Binary, av));
-                } else {
-                    builder.push_null();
-                };
-            },
-        }
-    }
-    Ok(BinaryOffsetChunked::with_chunk(
-        Default::default(),
-        builder.into(),
-    ))
+    let arr: PlBinaryArray = values
+        .iter()
+        .map(|av| match av {
+            AnyValue::Binary(s) => Ok(Some(*s)),
+            AnyValue::BinaryOwned(s) => Ok(Some(&**s)),
+            AnyValue::Null => Ok(None),
+            av if strict => Err(invalid_value_error(&DataType::Binary, av)),
+            _ => Ok(None),
+        })
+        .try_collect_arr()?;
+
+    Ok(BinaryOffsetChunked::with_chunk(Default::default(), arr))
 }
 
 #[cfg(feature = "dtype-date")]
@@ -777,7 +772,7 @@ fn any_values_to_array(
     strict: bool,
     width: usize,
 ) -> PolarsResult<ArrayChunked> {
-    fn to_arr(s: &Series) -> Option<ArrayRef> {
+    fn to_arr(s: &Series) -> Option<PlArrayRef> {
         if s.chunks().len() > 1 {
             let s = s.rechunk();
             Some(s.chunks()[0].clone())
@@ -791,7 +786,7 @@ fn any_values_to_array(
     // This is handled downstream. The builder will choose the first non null type.
     let mut valid = true;
     #[allow(unused_mut)]
-    let mut out: ArrayChunked = if inner_type == &DataType::Null {
+    let elements: Vec<Option<PlArrayRef>> = if inner_type == &DataType::Null {
         avs.iter()
             .map(|av| match av {
                 AnyValue::List(b) | AnyValue::Array(b, _) => to_arr(b),
@@ -801,7 +796,7 @@ fn any_values_to_array(
                     None
                 },
             })
-            .collect_ca_with_dtype(PlSmallStr::EMPTY, target_dtype.clone())
+            .collect::<Vec<_>>()
     }
     // Make sure that wrongly inferred AnyValues don't deviate from the datatype.
     else {
@@ -824,8 +819,15 @@ fn any_values_to_array(
                     None
                 },
             })
-            .collect_ca_with_dtype(PlSmallStr::EMPTY, target_dtype.clone())
+            .collect::<Vec<_>>()
     };
+
+    let chunk = collect_array_chunk(elements, width, inner_type);
+    #[allow(unused_mut)]
+    let mut out: ArrayChunked = ChunkedArray::from_chunk_iter_and_field(
+        Arc::new(Field::new(PlSmallStr::EMPTY, target_dtype.clone())),
+        [chunk],
+    );
 
     if strict && !valid {
         polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);
@@ -898,7 +900,9 @@ fn any_values_to_struct(
     // Fast path for structs with no fields.
     if fields.is_empty() {
         let mut out = StructChunked::from_series(PlSmallStr::EMPTY, values.len(), [].iter())?;
-        out.set_outer_validity(Bitmap::opt_from_iter(values.iter().map(|av| !av.is_null())));
+        out.set_outer_validity(
+            Bitmap::opt_from_iter(values.iter().map(|av| !av.is_null())).map(PlBitmap::from_bitmap),
+        );
         return Ok(out.into_series());
     }
 
@@ -960,7 +964,9 @@ fn any_values_to_struct(
     let mut out =
         StructChunked::from_series(PlSmallStr::EMPTY, values.len(), series_fields.iter())?;
     if has_outer_validity {
-        out.set_outer_validity(Bitmap::opt_from_iter(values.iter().map(|av| !av.is_null())));
+        out.set_outer_validity(
+            Bitmap::opt_from_iter(values.iter().map(|av| !av.is_null())).map(PlBitmap::from_bitmap),
+        );
     }
     Ok(out.into_series())
 }

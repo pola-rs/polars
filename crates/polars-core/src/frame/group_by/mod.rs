@@ -70,17 +70,16 @@ impl DataFrame {
                 unreachable!()
             }
         } else {
-            // Skip null dtype.
             let by = by
                 .iter()
-                .filter(|s| !s.dtype().is_null())
+                .filter(|s| !s.dtype().is_null() && !s.reads_as_one_element())
                 .cloned()
                 .collect::<Vec<_>>();
             if by.is_empty() {
-                let groups = if self.height() == 0 {
+                let groups = if common_height == 0 {
                     vec![]
                 } else {
-                    vec![[0, self.height() as IdxSize]]
+                    vec![[0, common_height as IdxSize]]
                 };
 
                 Ok(GroupsType::new_slice(groups, false, true))

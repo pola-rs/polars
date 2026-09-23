@@ -18,7 +18,7 @@ pub fn flatten_df_iter(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
                     let mut out = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
                             s.name().clone(),
-                            vec![arr],
+                            vec![polars_array::arrow::import::from_arrow(&*arr)],
                             s.dtype(),
                         )
                     };

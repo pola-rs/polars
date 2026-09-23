@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
     from polars._typing import (
         ApproxQuantileMethod,
+        EngineType,
         PolarsDataType,
         TimeUnit,
     )
@@ -2016,3 +2017,65 @@ def test_max_sorted_all_nan_with_nulls(dtype: pl.DataType) -> None:
     mixed = pl.Series("a", [None, 1.0, nan], dtype=dtype).sort()
     assert mixed.flags["SORTED_ASC"]
     assert mixed.max() == 1.0
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        (7, pl.Int64),
+        ("aa", pl.String),
+        (b"aa", pl.Binary),
+        ("aa", pl.Categorical),
+        # Not the *first* category: `max_by` over a key whose maximum equals
+        # its physical type's minimum answers null, upstream and here alike,
+        # because the accumulator starts at that value.
+        ("bb", pl.Enum(["aa", "bb"])),
+    ],
+)
+def test_reduction_over_a_column_that_repeats_one_element(
+    value: Any, dtype: PolarsDataType
+) -> None:
+    n = 200
+    engines: list[EngineType] = ["in-memory", "streaming"]
+    written = pl.Series("a", [value] * n, dtype=dtype)
+    repeated = pl.select(
+        pl.repeat(pl.lit(value, dtype=dtype), n).alias("a")
+    ).to_series()
+    masked = pl.select(
+        pl.when(pl.int_range(0, n) % 3 != 0)
+        .then(pl.repeat(pl.lit(value, dtype=dtype), n))
+        .otherwise(None)
+        .alias("a")
+    ).to_series()
+    assert repeated.n_chunks() == 1
+
+    for a in (written, repeated, masked):
+        nulls = a.null_count()
+        lf = a.to_frame().lazy()
+        for engine in engines:
+            out = lf.select(
+                pl.col("a").min().alias("min"),
+                pl.col("a").max().alias("max"),
+                pl.col("a").approx_n_unique().alias("anu"),
+                pl.col("a").arg_min().alias("argmin"),
+                pl.col("a").arg_max().alias("argmax"),
+            ).collect(engine=engine)
+            assert out["min"].to_list() == [value]
+            assert out["max"].to_list() == [value]
+            assert out["anu"].to_list() == [1 + (nulls > 0)]
+            # Every element holds the same value, so every index names an extreme.
+            assert a[cast("int", out["argmin"].item())] == value
+            assert a[cast("int", out["argmax"].item())] == value
+
+    empty = pl.Series("a", [], dtype=dtype).to_frame().lazy()
+    all_null = pl.select(pl.repeat(None, n, dtype=dtype).alias("a")).lazy()
+    for frame, n_unique in ((empty, 0), (all_null, 1)):
+        for engine in engines:
+            out = frame.select(
+                pl.col("a").min().alias("min"),
+                pl.col("a").approx_n_unique().alias("anu"),
+                pl.col("a").arg_max().alias("argmax"),
+            ).collect(engine=engine)
+            assert out["min"].to_list() == [None]
+            assert out["anu"].to_list() == [n_unique]
+            assert out["argmax"].to_list() == [None]

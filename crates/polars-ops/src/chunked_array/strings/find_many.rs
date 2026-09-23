@@ -1,5 +1,4 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
-use polars_arrow::array::Utf8ViewArray;
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
@@ -20,8 +19,20 @@ fn build_ac(
         .map_err(|e| polars_err!(ComputeError: "could not build aho corasick automaton {}", e))
 }
 
+/// The element of a list of strings as the bytes it holds.
+fn list_element_as_binview(element: &dyn PlArray) -> PlBinaryViewArray {
+    match element.as_any().downcast_ref::<PlUtf8ViewArray>() {
+        Some(pat) => pat.clone().into_binview(),
+        None => element
+            .as_any()
+            .downcast_ref::<PlBinaryViewArray>()
+            .expect("the values of a list of strings are a view array")
+            .clone(),
+    }
+}
+
 fn build_ac_arr(
-    patterns: &Utf8ViewArray,
+    patterns: &PlBinaryViewArray,
     ascii_case_insensitive: bool,
     leftmost: bool,
 ) -> PolarsResult<AhoCorasick> {
@@ -180,7 +191,7 @@ pub fn extract_many(
                             let pat = pat.as_ref();
                             let pat = pat.str()?;
                             let pat = pat.rechunk();
-                            let pat = pat.downcast_as_array();
+                            let pat = pat.downcast_as_array().as_binview();
                             let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
                             push_str(val, &mut builder, &ac, overlapping);
                         },
@@ -196,6 +207,19 @@ pub fn extract_many(
             })?;
             let patterns = patterns.str()?;
             let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
+
+            // One element stands for the whole column: match it once and repeat the answer.
+            if ca.len() > 1
+                && let Some(scalar) = ca.scalar_value()
+            {
+                let mut builder = ListStringChunkedBuilder::new(ca.name().clone(), 1, 2);
+                match scalar {
+                    Some(val) => push_str(val, &mut builder, &ac, overlapping),
+                    None => builder.append_null(),
+                }
+                return Ok(builder.finish().new_from_index(0, ca.len()));
+            }
+
             let mut builder =
                 ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.len() * 2);
 
@@ -220,8 +244,8 @@ pub fn extract_many(
                     match z {
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {
-                            let pat = pat.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                            let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
+                            let pat = list_element_as_binview(&*pat);
+                            let ac = build_ac_arr(&pat, ascii_case_insensitive, leftmost)?;
                             push_str(val, &mut builder, &ac, overlapping);
                         },
                     }
@@ -276,7 +300,7 @@ pub fn find_many(
                             let pat = pat.as_ref();
                             let pat = pat.str()?;
                             let pat = pat.rechunk();
-                            let pat = pat.downcast_as_array();
+                            let pat = pat.downcast_as_array().as_binview();
                             let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
                             push_idx(val, &mut builder, &ac, overlapping);
                         },
@@ -292,6 +316,19 @@ pub fn find_many(
             })?;
             let patterns = patterns.str()?;
             let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
+
+            // One element stands for the whole column: match it once and repeat the answer.
+            if ca.len() > 1
+                && let Some(scalar) = ca.scalar_value()
+            {
+                let mut builder = B::new(ca.name().clone(), 1, 2, DataType::UInt32);
+                match scalar {
+                    Some(val) => push_idx(val, &mut builder, &ac, overlapping),
+                    None => builder.append_null(),
+                }
+                return Ok(builder.finish().new_from_index(0, ca.len()));
+            }
+
             let mut builder = B::new(ca.name().clone(), ca.len(), ca.len() * 2, DataType::UInt32);
 
             for opt_val in ca.iter() {
@@ -312,8 +349,8 @@ pub fn find_many(
                     match z {
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {
-                            let pat = pat.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                            let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
+                            let pat = list_element_as_binview(&*pat);
+                            let ac = build_ac_arr(&pat, ascii_case_insensitive, leftmost)?;
                             push_idx(val, &mut builder, &ac, overlapping);
                         },
                     }

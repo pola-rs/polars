@@ -10,15 +10,15 @@
 //! This allows the string row encoding to have a constant 1 byte overhead.
 use std::mem::MaybeUninit;
 
-use polars_arrow::array::builder::StaticArrayBuilder;
-use polars_arrow::array::{Array, PrimitiveArray, Utf8ViewArray, Utf8ViewArrayBuilder, View};
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{PlBitmap, PlPrimitiveArray, PlUtf8ViewArray, PlUtf8ViewArrayBuilder};
+use polars_arrow::array::View;
 use polars_arrow::bitmap::BitmapBuilder;
-use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_dtype::categorical::{CatNative, CategoricalMapping};
 
-use super::{BLOCK_SIZE, find_byte};
+use super::{BLOCK_SIZE, find_byte, flat_validity};
 use crate::row::RowEncodingOptions;
 
 #[inline]
@@ -146,19 +146,58 @@ fn descending_mask(opt: RowEncodingOptions) -> u8 {
     }
 }
 
+/// Writes one row per element of `array`, reading its views rather than its elements.
+///
+/// The walk wants one mask bit per element; a chunk whose mask stands for every element of it
+/// goes through [`encode_str`] instead. Views that repeat are resolved once and
+/// written into every row they stand for.
 pub unsafe fn encode_str_view(
     buffer: &mut [MaybeUninit<u8>],
-    array: &Utf8ViewArray,
+    array: &PlUtf8ViewArray,
     opt: RowEncodingOptions,
     offsets: &mut [usize],
 ) {
+    let Some(validity) = flat_validity(array.as_binview().validity()) else {
+        return encode_str(buffer, array.iter(), opt, offsets);
+    };
+
     let null_sentinel = opt.null_sentinel();
     let xor_mask = descending_mask(opt);
-    let views = array.views().as_slice();
     let buffers = array.data_buffers().as_slice();
     let out = buffer.as_mut_ptr();
 
-    match array.validity() {
+    let Some(views) = array.flat_views() else {
+        // Every row reads the same view: resolve it once, rather than asking the array for an
+        // element at a time and resolving it again on each.
+        let Some(view) = array.scalar_views() else {
+            return;
+        };
+
+        match validity {
+            None => {
+                for offset in offsets.iter_mut() {
+                    encode_view(out.add(*offset), &view, buffers, xor_mask);
+                    *offset += 1 + view.length as usize;
+                }
+            },
+            Some(validity) => {
+                for (offset, is_valid) in offsets.iter_mut().zip(validity.iter()) {
+                    if is_valid {
+                        encode_view(out.add(*offset), &view, buffers, xor_mask);
+                        *offset += 1 + view.length as usize;
+                    } else {
+                        *out.add(*offset) = MaybeUninit::new(null_sentinel);
+                        *offset += 1;
+                    }
+                }
+            },
+        }
+        return;
+    };
+
+    let views = views.as_slice();
+
+    match validity {
         None => {
             for (offset, view) in offsets.iter_mut().zip(views) {
                 encode_view(out.add(*offset), view, buffers, xor_mask);
@@ -247,7 +286,7 @@ unsafe fn decode_one(
     row: &mut &[u8],
     null_sentinel: u8,
     xor_mask: u8,
-    builder: &mut Utf8ViewArrayBuilder,
+    builder: &mut PlUtf8ViewArrayBuilder,
     scratch: &mut Vec<u8>,
 ) -> bool {
     if *row.get_unchecked(0) == null_sentinel {
@@ -273,12 +312,11 @@ unsafe fn decode_one(
     true
 }
 
-pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8ViewArray {
+pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> PlUtf8ViewArray {
     let null_sentinel = opt.null_sentinel();
     let xor_mask = descending_mask(opt);
     let num_rows = rows.len();
-    let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8View);
-    builder.reserve(num_rows);
+    let mut builder = PlUtf8ViewArrayBuilder::with_capacity(num_rows);
     let mut scratch = Vec::new();
     let mut validity = BitmapBuilder::new();
 
@@ -302,7 +340,7 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8Vie
         }
     }
 
-    builder.freeze_with_validity(validity.into_opt_validity())
+    builder.freeze_with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap))
 }
 
 /// The same as decode_str but inserts it into the given mapping, translating
@@ -311,7 +349,7 @@ pub unsafe fn decode_str_as_cat<T: NativeType + CatNative>(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
     mapping: &CategoricalMapping,
-) -> PrimitiveArray<T> {
+) -> PlPrimitiveArray<T> {
     let null_sentinel = opt.null_sentinel();
     let xor_mask = descending_mask(opt);
 
@@ -333,7 +371,7 @@ pub unsafe fn decode_str_as_cat<T: NativeType + CatNative>(
     }
 
     if out.len() == num_rows {
-        return PrimitiveArray::from_vec(out);
+        return PlPrimitiveArray::from_vec(out);
     }
 
     let mut validity = BitmapBuilder::with_capacity(num_rows);
@@ -356,5 +394,6 @@ pub unsafe fn decode_str_as_cat<T: NativeType + CatNative>(
         out.push(T::from_cat(mapping.insert_cat(s).unwrap()));
     }
 
-    PrimitiveArray::from_vec(out).with_validity(validity.into_opt_validity())
+    PlPrimitiveArray::from_vec(out)
+        .with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap))
 }

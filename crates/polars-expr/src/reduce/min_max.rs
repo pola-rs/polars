@@ -3,8 +3,9 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use num_traits::Bounded;
-use polars_arrow::array::BooleanArray;
 use polars_arrow::bitmap::Bitmap;
+#[cfg(feature = "dtype-categorical")]
+use polars_arrow::bitmap::iterator::TrueIdxIter;
 use polars_core::with_match_physical_integer_polars_type;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate::ca_nan_agg;
@@ -410,8 +411,8 @@ impl GroupedReduction for BoolMinGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
-        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
+        let arr = pl_boolean(v.freeze(), Some(m.freeze()));
+        Ok(BooleanChunked::with_chunk(PlSmallStr::EMPTY, arr).into_series())
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -526,12 +527,66 @@ impl GroupedReduction for BoolMaxGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
-        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
+        let arr = pl_boolean(v.freeze(), Some(m.freeze()));
+        Ok(BooleanChunked::with_chunk(PlSmallStr::EMPTY, arr).into_series())
     }
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+/// Folds every cat id `ca` holds that is not null into `combine`, reading each chunk's
+/// representation once rather than once per element.
+///
+/// A fold that carries state cannot hoist the representation test out of the generic iterator, so
+/// the test is otherwise paid per element; and a chunk that repeats one cat id is its own minimum
+/// and its own maximum, so it is read once whatever its length.
+#[cfg(feature = "dtype-categorical")]
+fn fold_cat_ids<T: PolarsCategoricalType>(
+    ca: &ChunkedArray<T::PolarsPhysical>,
+    mut combine: impl FnMut(T::Native),
+) {
+    for chunk in ca.downcast_iter() {
+        if chunk.is_empty() {
+            continue;
+        }
+
+        // Every element reads one cat id: the elements the mask keeps are all that one id.
+        if let Some(value) = chunk.scalar_value_ignore_validity() {
+            if chunk.null_count() < chunk.len() {
+                combine(value);
+            }
+            continue;
+        }
+
+        match (chunk.flat_values(), chunk.validity()) {
+            (Some(values), None) => {
+                for &value in values.iter() {
+                    combine(value);
+                }
+            },
+            (Some(values), Some(validity)) => match validity.flat_bitmap() {
+                Some(validity) => {
+                    for i in TrueIdxIter::new(values.len(), Some(validity)) {
+                        // SAFETY: the mask covers the values, so every index it names is one.
+                        combine(unsafe { *values.get_unchecked(i) });
+                    }
+                },
+                // A mask of one slot calls every element null or none of them.
+                None if validity.scalar_value() == Some(true) => {
+                    for &value in values.iter() {
+                        combine(value);
+                    }
+                },
+                None => (),
+            },
+            _ => {
+                for value in chunk.iter().flatten() {
+                    combine(value);
+                }
+            },
+        }
     }
 }
 
@@ -580,9 +635,7 @@ impl<T: PolarsCategoricalType> Reducer for CatMinReducer<T> {
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<T::PolarsPhysical>, _seq_id: u64) {
-        for cat in ca.iter().flatten() {
-            self.combine(v, &cat);
-        }
+        fold_cat_ids::<T>(ca, |cat| self.combine(v, &cat));
     }
 
     fn finish(
@@ -591,7 +644,7 @@ impl<T: PolarsCategoricalType> Reducer for CatMinReducer<T> {
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series> {
-        let cat_ids = PrimitiveArray::from_vec(v).with_validity(m);
+        let cat_ids = PlPrimitiveArray::from_vec(v).with_validity(m.map(PlBitmap::from_bitmap));
         let cat_ids = ChunkedArray::from(cat_ids);
         unsafe {
             Ok(
@@ -647,9 +700,7 @@ impl<T: PolarsCategoricalType> Reducer for CatMaxReducer<T> {
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<T::PolarsPhysical>, _seq_id: u64) {
-        for cat in ca.iter().flatten() {
-            self.combine(v, &cat);
-        }
+        fold_cat_ids::<T>(ca, |cat| self.combine(v, &cat));
     }
 
     fn finish(
@@ -658,7 +709,7 @@ impl<T: PolarsCategoricalType> Reducer for CatMaxReducer<T> {
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series> {
-        let cat_ids = PrimitiveArray::from_vec(v).with_validity(m);
+        let cat_ids = PlPrimitiveArray::from_vec(v).with_validity(m.map(PlBitmap::from_bitmap));
         let cat_ids = ChunkedArray::from(cat_ids);
         unsafe {
             Ok(

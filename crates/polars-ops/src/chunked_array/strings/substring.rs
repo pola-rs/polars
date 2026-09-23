@@ -231,11 +231,43 @@ pub fn update_view(mut view: View, start: usize, end: usize, val: &str) -> View 
     }
 }
 
+/// Slice every string of `ca` by one offset and one length, settled before the walk.
+fn substring_settled_args(
+    ca: &StringChunked,
+    offset: Option<i64>,
+    length: Option<u64>,
+) -> StringChunked {
+    let Some(offset) = offset else {
+        return StringChunked::full_null(ca.name().clone(), ca.len());
+    };
+    let length = length.unwrap_or(u64::MAX);
+
+    let mut out = unsafe {
+        ca.apply_views(|view, val| {
+            let (start, end) = substring_ternary_offsets_value(val, offset, length);
+            update_view(view, start, end, val)
+        })
+    };
+    if offset != 0 {
+        out.set_sorted_flag(IsSorted::Not);
+    }
+    out
+}
+
 pub(super) fn substring(
     ca: &StringChunked,
     offset: &Int64Chunked,
     length: &UInt64Chunked,
 ) -> StringChunked {
+    let repeats_over_ca = |arg_len: usize| arg_len == 1 || arg_len == ca.len();
+    if ca.len() != 1
+        && repeats_over_ca(offset.len())
+        && repeats_over_ca(length.len())
+        && let (Some(offset), Some(length)) = (offset.scalar_value(), length.scalar_value())
+    {
+        return substring_settled_args(ca, offset, length);
+    }
+
     match (ca.len(), offset.len(), length.len()) {
         (1, 1, _) => {
             let str_val = ca.get(0);
@@ -243,26 +275,7 @@ pub(super) fn substring(
             unary_elementwise(length, |length| substring_ternary(str_val, offset, length))
                 .with_name(ca.name().clone())
         },
-        (_, 1, 1) => {
-            let offset = offset.get(0);
-            let length = length.get(0).unwrap_or(u64::MAX);
-
-            let Some(offset) = offset else {
-                return StringChunked::full_null(ca.name().clone(), ca.len());
-            };
-
-            let mut out = unsafe {
-                ca.apply_views(|view, val| {
-                    let (start, end) = substring_ternary_offsets_value(val, offset, length);
-                    update_view(view, start, end, val)
-                })
-            };
-            // the array only remains sorted if we take a prefix
-            if offset != 0 {
-                out.set_sorted_flag(IsSorted::Not);
-            }
-            out
-        },
+        (_, 1, 1) => substring_settled_args(ca, offset.get(0), length.get(0)),
         (1, _, 1) => {
             let str_val = ca.get(0);
             let length = length.get(0);
@@ -303,21 +316,30 @@ pub(super) fn substring(
     }
 }
 
-pub(super) fn head(ca: &StringChunked, n: &Int64Chunked) -> PolarsResult<StringChunked> {
-    match (ca.len(), n.len()) {
-        (len, 1) => {
-            let n = n.get(0);
-            let Some(n) = n else {
-                return Ok(StringChunked::full_null(ca.name().clone(), len));
-            };
+/// Keep the first `n` characters of every string of `ca`, for one `n` settled before the walk.
+fn head_settled_n(ca: &StringChunked, n: Option<i64>) -> StringChunked {
+    let Some(n) = n else {
+        return StringChunked::full_null(ca.name().clone(), ca.len());
+    };
 
-            Ok(unsafe {
-                ca.apply_views(|view, val| {
-                    let end = head_binary_values(val, n);
-                    update_view(view, 0, end, val)
-                })
-            })
-        },
+    unsafe {
+        ca.apply_views(|view, val| {
+            let end = head_binary_values(val, n);
+            update_view(view, 0, end, val)
+        })
+    }
+}
+
+pub(super) fn head(ca: &StringChunked, n: &Int64Chunked) -> PolarsResult<StringChunked> {
+    if ca.len() != 1
+        && (n.len() == 1 || n.len() == ca.len())
+        && let Some(n) = n.scalar_value()
+    {
+        return Ok(head_settled_n(ca, n));
+    }
+
+    match (ca.len(), n.len()) {
+        (_, 1) => Ok(head_settled_n(ca, n.get(0))),
         // TODO! below should also work on only views
         (1, _) => {
             let str_val = ca.get(0);
@@ -330,22 +352,31 @@ pub(super) fn head(ca: &StringChunked, n: &Int64Chunked) -> PolarsResult<StringC
     }
 }
 
+/// Keep the last `n` characters of every string of `ca`, for one `n` settled before the walk.
+fn tail_settled_n(ca: &StringChunked, n: Option<i64>) -> StringChunked {
+    let Some(n) = n else {
+        return StringChunked::full_null(ca.name().clone(), ca.len());
+    };
+    let mut out = unsafe {
+        ca.apply_views(|view, val| {
+            let start = tail_binary_values(val, n);
+            update_view(view, start, val.len(), val)
+        })
+    };
+    out.set_sorted_flag(IsSorted::Not);
+    out
+}
+
 pub(super) fn tail(ca: &StringChunked, n: &Int64Chunked) -> PolarsResult<StringChunked> {
+    if ca.len() != 1
+        && (n.len() == 1 || n.len() == ca.len())
+        && let Some(n) = n.scalar_value()
+    {
+        return Ok(tail_settled_n(ca, n));
+    }
+
     Ok(match (ca.len(), n.len()) {
-        (len, 1) => {
-            let n = n.get(0);
-            let Some(n) = n else {
-                return Ok(StringChunked::full_null(ca.name().clone(), len));
-            };
-            let mut out = unsafe {
-                ca.apply_views(|view, val| {
-                    let start = tail_binary_values(val, n);
-                    update_view(view, start, val.len(), val)
-                })
-            };
-            out.set_sorted_flag(IsSorted::Not);
-            out
-        },
+        (_, 1) => tail_settled_n(ca, n.get(0)),
         // TODO! below should also work on only views
         (1, _) => {
             let str_val = ca.get(0);

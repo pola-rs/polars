@@ -289,6 +289,12 @@ fn gc_bin_view<'a, T: ViewType + ?Sized>(
     arr: &'a Box<dyn Array>,
     concrete_arr: &'a BinaryViewArrayGeneric<T>,
 ) -> Cow<'a, Box<dyn Array>> {
+    // An array whose views all hold their bytes inline has no buffer to collect, and `gc` hands
+    // such an array straight back -- while asking what the valid elements read walks every view.
+    if concrete_arr.data_buffers().is_empty() {
+        return Cow::Borrowed(arr);
+    }
+
     let bytes_len = concrete_arr.total_bytes_len();
     let buffer_len = concrete_arr.total_buffer_len();
     let extra_len = buffer_len.saturating_sub(bytes_len);

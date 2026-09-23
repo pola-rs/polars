@@ -23,6 +23,21 @@ fn clamp_max<T: PartialOrd>(input: T, max: T) -> T {
     if input > max { max } else { input }
 }
 
+/// Do `op` over a single row and repeat its answer, when every operand repeats one element.
+fn repeated_operands<F>(operands: &[&Series], op: F) -> PolarsResult<Option<Series>>
+where
+    F: FnOnce(&[Series]) -> PolarsResult<Series>,
+{
+    let length = operands[0].len();
+    let repeats = |s: &Series| s.len() == 1 || s.repeats_one_element();
+    if !operands[0].repeats_one_element() || !operands[1..].iter().copied().all(repeats) {
+        return Ok(None);
+    }
+
+    let heads = operands.iter().map(|s| s.head(Some(1))).collect::<Vec<_>>();
+    Ok(Some(op(&heads)?.new_from_index(0, length)))
+}
+
 /// Set values outside the given boundaries to the boundary value.
 pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
     polars_ensure!(
@@ -46,6 +61,10 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
             argument = name,
             argument_idx = i
         );
+    }
+
+    if let Some(out) = repeated_operands(&[s, min, max], |h| clip(&h[0], &h[1], &h[2]))? {
+        return Ok(out);
     }
 
     let original_type = s.dtype();
@@ -87,6 +106,10 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
         max.len()
     );
 
+    if let Some(out) = repeated_operands(&[s, max], |h| clip_max(&h[0], &h[1]))? {
+        return Ok(out);
+    }
+
     let original_type = s.dtype();
     let max = max.strict_cast(s.dtype())?;
 
@@ -121,6 +144,10 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
         min.len()
     );
 
+    if let Some(out) = repeated_operands(&[s, min], |h| clip_min(&h[0], &h[1]))? {
+        return Ok(out);
+    }
+
     let original_type = s.dtype();
     let min = min.strict_cast(s.dtype())?;
 
@@ -151,14 +178,19 @@ where
     T: PolarsNumericType,
     T::Native: PartialOrd,
 {
-    match (min.len(), max.len()) {
-        (1, 1) => match (min.get(0), max.get(0)) {
+    let repeated = |b: &ChunkedArray<T>| {
+        (b.len() == 1 || b.len() == ca.len())
+            .then(|| b.scalar_value())
+            .flatten()
+    };
+    match (repeated(min), repeated(max)) {
+        (Some(min), Some(max)) => match (min, max) {
             (Some(min), Some(max)) => clip_unary(ca, |v| clamp(v, min, max)),
             (Some(min), None) => clip_unary(ca, |v| clamp_min(v, min)),
             (None, Some(max)) => clip_unary(ca, |v| clamp_max(v, max)),
             (None, None) => ca.clone(),
         },
-        (1, _) => match min.get(0) {
+        (Some(min), None) => match min {
             Some(min) => binary_elementwise(ca, max, |opt_s, opt_max| match (opt_s, opt_max) {
                 (Some(s), Some(max)) => Some(clamp(s, min, max)),
                 (Some(s), None) => Some(clamp_min(s, min)),
@@ -170,7 +202,7 @@ where
                 (None, _) => None,
             }),
         },
-        (_, 1) => match max.get(0) {
+        (None, Some(max)) => match max {
             Some(max) => binary_elementwise(ca, min, |opt_s, opt_min| match (opt_s, opt_min) {
                 (Some(s), Some(min)) => Some(clamp(s, min, max)),
                 (Some(s), None) => Some(clamp_max(s, max)),
@@ -182,7 +214,7 @@ where
                 (None, _) => None,
             }),
         },
-        _ => clip_ternary(ca, min, max),
+        (None, None) => clip_ternary(ca, min, max),
     }
 }
 
@@ -196,12 +228,13 @@ where
     T::Native: PartialOrd,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
-    match bound.len() {
-        1 => match bound.get(0) {
-            Some(bound) => clip_unary(ca, |v| op(v, bound)),
-            None => ca.clone(),
-        },
-        _ => binary_elementwise(ca, bound, |opt_s, opt_bound| match (opt_s, opt_bound) {
+    let repeated = (bound.len() == 1 || bound.len() == ca.len())
+        .then(|| bound.scalar_value())
+        .flatten();
+    match repeated {
+        Some(Some(bound)) => clip_unary(ca, |v| op(v, bound)),
+        Some(None) => ca.clone(),
+        None => binary_elementwise(ca, bound, |opt_s, opt_bound| match (opt_s, opt_bound) {
             (Some(s), Some(bound)) => Some(op(s, bound)),
             (Some(s), None) => Some(s),
             (None, _) => None,

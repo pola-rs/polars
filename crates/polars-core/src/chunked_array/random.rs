@@ -84,6 +84,11 @@ impl Series {
         if n == 0 {
             return Ok(self.clear());
         }
+
+        if self.repeats_one_element() {
+            return Ok(self.new_from_index(0, n));
+        }
+
         let len = self.len();
 
         match with_replacement {
@@ -115,6 +120,10 @@ impl Series {
     }
 
     pub fn shuffle(&self, seed: Option<u64>) -> Self {
+        if self.repeats_one_element() {
+            return self.clone();
+        }
+
         let len = self.len();
         let n = len;
         let idx = create_rand_index_no_replacement(n, len, seed, Some(true));

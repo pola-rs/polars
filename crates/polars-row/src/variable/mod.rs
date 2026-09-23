@@ -1,3 +1,6 @@
+use polars_array::PlBitmapRef;
+use polars_arrow::bitmap::Bitmap;
+
 pub mod binary;
 pub mod no_order;
 pub mod utf8;
@@ -35,5 +38,24 @@ pub(crate) fn find_byte(block: [u8; BLOCK_SIZE], needle: u8) -> usize {
         } else {
             BLOCK_SIZE
         }
+    }
+}
+
+/// The mask of a chunk as the bitmap a walk over its bits needs: `Some(None)` where there is
+/// nothing null, `Some(Some(bits))` where it holds one bit per element.
+///
+/// `None` says the mask stands for every element at once rather than holding a bit for each, which
+/// the walks below have no answer for; a caller that gets it reads the chunk element by element.
+#[inline]
+pub(crate) fn flat_validity(validity: Option<PlBitmapRef<'_>>) -> Option<Option<&Bitmap>> {
+    match validity {
+        None => Some(None),
+        Some(validity) => match validity.scalar_value() {
+            Some(true) => Some(None),
+            Some(false) => None,
+            None => Some(Some(
+                validity.flat_bitmap().expect("a mask is flat or scalar"),
+            )),
+        },
     }
 }

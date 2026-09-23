@@ -11,9 +11,8 @@
 
 use std::mem::MaybeUninit;
 
-use polars_arrow::array::BooleanArray;
+use polars_array::{PlBitmap, PlBooleanArray};
 use polars_arrow::bitmap::Bitmap;
-use polars_arrow::datatypes::ArrowDataType;
 
 use crate::row::RowEncodingOptions;
 
@@ -38,7 +37,7 @@ pub(crate) unsafe fn encode_bool<I: Iterator<Item = Option<bool>>>(
     }
 }
 
-pub(crate) unsafe fn decode_bool(rows: &mut [&[u8]], opt: RowEncodingOptions) -> BooleanArray {
+pub(crate) unsafe fn decode_bool(rows: &mut [&[u8]], opt: RowEncodingOptions) -> PlBooleanArray {
     let mut has_nulls = false;
     let null_sentinel = opt.null_sentinel();
     let true_sentinel = opt.bool_true_sentinel();
@@ -52,7 +51,7 @@ pub(crate) unsafe fn decode_bool(rows: &mut [&[u8]], opt: RowEncodingOptions) ->
     if !has_nulls {
         rows.iter_mut()
             .for_each(|row| *row = row.get_unchecked(1..));
-        return BooleanArray::new(ArrowDataType::Boolean, values, None);
+        return PlBooleanArray::new(values, rows.len(), None);
     }
 
     let validity = Bitmap::from_trusted_len_iter_unchecked(rows.iter_mut().map(|row| {
@@ -60,5 +59,5 @@ pub(crate) unsafe fn decode_bool(rows: &mut [&[u8]], opt: RowEncodingOptions) ->
         *row = row.get_unchecked(1..);
         v
     }));
-    BooleanArray::new(ArrowDataType::Boolean, values, Some(validity))
+    PlBooleanArray::new(values, rows.len(), Some(PlBitmap::from_bitmap(validity)))
 }

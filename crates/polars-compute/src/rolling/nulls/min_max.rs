@@ -8,23 +8,25 @@ pub type MaxWindow<'a, T> = MinMaxWindow<'a, T, MaxPropagateNan>;
 use super::*;
 
 pub fn rolling_min<T>(
-    arr: &PrimitiveArray<T>,
+    arr: &PlPrimitiveArray<T>,
     window_size: usize,
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
     _params: Option<RollingFnParams>,
-) -> ArrayRef
+) -> Box<dyn PlArray>
 where
     T: NativeType + IsFloat,
 {
+    let arr = arr.to_flat();
+
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
     }
     if center {
         rolling_apply_agg_window::<MinMaxWindow<T, MinPropagateNan>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
+            arr.as_slice(),
+            arr.validity().unwrap(),
             window_size,
             min_periods,
             det_offsets_center,
@@ -32,8 +34,8 @@ where
         )
     } else {
         rolling_apply_agg_window::<MinMaxWindow<T, MinPropagateNan>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
+            arr.as_slice(),
+            arr.validity().unwrap(),
             window_size,
             min_periods,
             det_offsets,
@@ -43,23 +45,25 @@ where
 }
 
 pub fn rolling_max<T>(
-    arr: &PrimitiveArray<T>,
+    arr: &PlPrimitiveArray<T>,
     window_size: usize,
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
     _params: Option<RollingFnParams>,
-) -> ArrayRef
+) -> Box<dyn PlArray>
 where
     T: NativeType + std::iter::Sum + Zero + AddAssign + Copy + PartialOrd + Bounded + IsFloat,
 {
+    let arr = arr.to_flat();
+
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
     }
     if center {
         rolling_apply_agg_window::<MinMaxWindow<T, MaxPropagateNan>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
+            arr.as_slice(),
+            arr.validity().unwrap(),
             window_size,
             min_periods,
             det_offsets_center,
@@ -67,8 +71,8 @@ where
         )
     } else {
         rolling_apply_agg_window::<MinMaxWindow<T, MaxPropagateNan>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
+            arr.as_slice(),
+            arr.validity().unwrap(),
             window_size,
             min_periods,
             det_offsets,

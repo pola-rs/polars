@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use polars_arrow::array::BooleanArray;
 use polars_arrow::array::builder::ShareStrategy;
 use polars_arrow::bitmap::{BitmapBuilder, MutableBitmap};
 use polars_async::executor;
@@ -803,9 +802,9 @@ impl ProbeState {
                         params.is_anti,
                         &mut builder,
                     );
-                    let mut arr = BooleanArray::from(builder.freeze());
+                    let mut arr = PlBooleanArray::from(builder.freeze());
                     if !params.nulls_equal {
-                        arr.set_validity(hash_keys.validity().cloned());
+                        arr.set_validity(hash_keys.validity());
                     }
                     let s = BooleanChunked::with_chunk(df[0].name().clone(), arr).into_series();
                     DataFrame::new_unchecked(s.len(), vec![Column::from(s)])

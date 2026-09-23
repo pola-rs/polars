@@ -8,7 +8,6 @@ use polars_arrow::datatypes::{
     DTYPE_ENUM_VALUES_NEW, Field, IntegerType, IntervalUnit, TimeUnit,
 };
 use polars_arrow::types::{days_ms, i256};
-use polars_compute::cast::CastOptionsImpl;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -624,12 +623,7 @@ pub fn page_iter_to_array(
                 let array = array
                     .into_iter()
                     .map(|array| {
-                        polars_compute::cast::cast(
-                            array.as_ref(),
-                            &dtype,
-                            CastOptionsImpl::default(),
-                        )
-                        .unwrap()
+                        polars_compute::cast::cast_to_dictionary(array.as_ref(), &dtype).unwrap()
                     })
                     .collect();
 

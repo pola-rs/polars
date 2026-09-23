@@ -1,7 +1,10 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use polars_array::{
+    PlArray, PlBinaryArray, PlBitmap, PlFixedSizeListArray, PlListArray, PlNullArray,
+    PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
+};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::datatypes::ArrowDataType;
-use polars_arrow::offset::OffsetsBuffer;
 use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_dtype::categorical::CatNative;
@@ -19,21 +22,18 @@ use crate::variable::{binary, no_order, utf8};
 /// This will not do any bound checks. Caller must ensure the `rows` are valid
 /// encodings.
 pub unsafe fn decode_rows_from_binary<'a>(
-    arr: &'a BinaryArray<i64>,
+    arr: &'a PlBinaryArray,
     opts: &[RowEncodingOptions],
     dicts: &[Option<RowEncodingContext>],
     dtypes: &[ArrowDataType],
     rows: &mut Vec<&'a [u8]>,
-) -> Vec<ArrayRef> {
+) -> Vec<Box<dyn PlArray>> {
     assert_eq!(arr.null_count(), 0);
     rows.clear();
-    let values = arr.values().as_slice();
-    let offsets = arr.offsets();
-    rows.extend(
-        offsets[..offsets.len() - 1]
-            .iter()
-            .map(|&start| values.get_unchecked(start as usize..)),
-    );
+    // Upstream hands each decoder a slice that runs to the end of the buffer rather than to the
+    // end of its row, off the offsets; a `PlBinaryArray` does not lend out its bytes, and the
+    // decoders only ever read forward, so the exact rows do just as well.
+    rows.extend(arr.values_iter());
     decode_rows(rows, opts, dicts, dtypes)
 }
 
@@ -50,7 +50,7 @@ pub unsafe fn decode_rows(
     opts: &[RowEncodingOptions],
     dicts: &[Option<RowEncodingContext>],
     dtypes: &[ArrowDataType],
-) -> Vec<ArrayRef> {
+) -> Vec<Box<dyn PlArray>> {
     assert_eq!(opts.len(), dtypes.len());
     assert_eq!(dicts.len(), dtypes.len());
 
@@ -215,7 +215,7 @@ unsafe fn decode_cat<T: NativeType + FixedLengthEncoding + CatNative>(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
     ctx: &RowEncodingCategoricalContext,
-) -> PrimitiveArray<T> {
+) -> PlPrimitiveArray<T> {
     if ctx.is_enum || !opt.is_ordered() {
         numeric::decode_primitive::<T>(rows, opt)
     } else {
@@ -228,14 +228,14 @@ unsafe fn decode(
     opt: RowEncodingOptions,
     dict: Option<&RowEncodingContext>,
     dtype: &ArrowDataType,
-) -> ArrayRef {
+) -> Box<dyn PlArray> {
     use ArrowDataType as D;
 
     if let Some(RowEncodingContext::Categorical(ctx)) = dict {
         match dtype {
-            D::UInt8 => return decode_cat::<u8>(rows, opt, ctx).to_boxed(),
-            D::UInt16 => return decode_cat::<u16>(rows, opt, ctx).to_boxed(),
-            D::UInt32 => return decode_cat::<u32>(rows, opt, ctx).to_boxed(),
+            D::UInt8 => return Box::new(decode_cat::<u8>(rows, opt, ctx)),
+            D::UInt16 => return Box::new(decode_cat::<u16>(rows, opt, ctx)),
+            D::UInt32 => return Box::new(decode_cat::<u32>(rows, opt, ctx)),
             D::FixedSizeList(..) | D::List(_) | D::LargeList(_) => {
                 // Nested type, handled below.
             },
@@ -244,21 +244,22 @@ unsafe fn decode(
     }
 
     match dtype {
-        D::Null => NullArray::new(D::Null, rows.len()).to_boxed(),
-        D::Boolean => boolean::decode_bool(rows, opt).to_boxed(),
+        D::Null => Box::new(PlNullArray::new(rows.len())),
+        D::Boolean => Box::new(boolean::decode_bool(rows, opt)),
         D::Binary | D::LargeBinary | D::BinaryView | D::Utf8 | D::LargeUtf8 | D::Utf8View
             if opt.contains(RowEncodingOptions::NO_ORDER) =>
         {
             let array = no_order::decode_variable_no_order(rows, opt);
 
             if matches!(dtype, D::Utf8 | D::LargeUtf8 | D::Utf8View) {
-                unsafe { array.to_utf8view_unchecked() }.to_boxed()
+                // SAFETY: the bytes came out of a row encoding of valid UTF-8.
+                Box::new(unsafe { PlUtf8ViewArray::from_binview_unchecked(array) })
             } else {
-                array.to_boxed()
+                Box::new(array)
             }
         },
-        D::Binary | D::LargeBinary | D::BinaryView => binary::decode_binview(rows, opt).to_boxed(),
-        D::Utf8 | D::LargeUtf8 | D::Utf8View => decode_str(rows, opt).boxed(),
+        D::Binary | D::LargeBinary | D::BinaryView => Box::new(binary::decode_binview(rows, opt)),
+        D::Utf8 | D::LargeUtf8 | D::Utf8View => Box::new(decode_str(rows, opt)),
 
         D::Struct(fields) => {
             let validity = decode_validity(rows, opt);
@@ -277,7 +278,11 @@ unsafe fn decode(
                     .collect(),
                 _ => unreachable!(),
             };
-            StructArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
+            Box::new(PlStructArray::new(
+                values,
+                rows.len(),
+                validity.map(PlBitmap::from_bitmap),
+            ))
         },
         D::FixedSizeList(fsl_field, width) => {
             let validity = decode_validity(rows, opt);
@@ -295,7 +300,12 @@ unsafe fn decode(
 
             let values = decode(&mut nested_rows, opt.into_nested(), dict, fsl_field.dtype());
 
-            FixedSizeListArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
+            Box::new(PlFixedSizeListArray::new(
+                values,
+                *width,
+                rows.len(),
+                validity.map(PlBitmap::from_bitmap),
+            ))
         },
         D::List(list_field) | D::LargeList(list_field) => {
             let mut validity = BitmapBuilder::new();
@@ -303,7 +313,7 @@ unsafe fn decode(
             // @TODO: we could consider making this into a scratchpad
             let num_rows = rows.len();
             let mut nested_rows = Vec::new();
-            let mut offsets = Vec::with_capacity(rows.len() + 1);
+            let mut offsets = Vec::<u64>::with_capacity(rows.len() + 1);
             offsets.push(0);
 
             let list_null_sentinel = opt.list_null_sentinel();
@@ -324,7 +334,7 @@ unsafe fn decode(
                     *row = &row[len..];
                 }
 
-                offsets.push(nested_rows.len() as i64);
+                offsets.push(nested_rows.len() as u64);
 
                 // @TODO: Might be better to make this a 2-loop system.
                 if row[0] == list_null_sentinel {
@@ -354,13 +364,15 @@ unsafe fn decode(
                 list_field.dtype(),
             );
 
-            ListArray::<i64>::new(
-                dtype.clone(),
-                unsafe { OffsetsBuffer::new_unchecked(Buffer::from(offsets)) },
-                values,
-                validity,
-            )
-            .to_boxed()
+            // SAFETY: the offsets are pushed in order and end at the number of values decoded.
+            Box::new(unsafe {
+                PlListArray::new_unchecked(
+                    values,
+                    Buffer::from(offsets),
+                    num_rows,
+                    validity.map(PlBitmap::from_bitmap),
+                )
+            })
         },
 
         dt => {
@@ -368,7 +380,7 @@ unsafe fn decode(
                 if let Some(dict) = dict {
                     return match dict {
                         RowEncodingContext::Decimal(precision) => {
-                            decimal::decode(rows, opt, *precision).to_boxed()
+                            Box::new(decimal::decode(rows, opt, *precision))
                         },
                         _ => unreachable!(),
                     };
@@ -376,7 +388,7 @@ unsafe fn decode(
             }
 
             with_match_arrow_primitive_type!(dt, |$T| {
-                numeric::decode_primitive::<$T>(rows, opt).to_boxed()
+                Box::new(numeric::decode_primitive::<$T>(rows, opt)) as Box<dyn PlArray>
             })
         },
     }

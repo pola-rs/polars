@@ -3,10 +3,8 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_arrow::array::*;
+use polars_array::bitmap::combine_validities_and;
 use polars_arrow::bitmap::Bitmap;
-use polars_arrow::compute::concatenate::concatenate_unchecked;
-use polars_arrow::compute::utils::combine_validities_and;
 use polars_compute::filter::filter_with_bitmap;
 use polars_utils::broadcast::BroadcastLength;
 
@@ -20,6 +18,7 @@ pub mod cast;
 pub mod collect;
 pub mod comparison;
 pub mod flags;
+pub mod flat;
 pub mod float;
 pub mod iterator;
 #[cfg(feature = "ndarray")]
@@ -31,9 +30,7 @@ pub(crate) mod array;
 mod binary;
 mod binary_offset;
 mod bitwise;
-#[cfg(feature = "object")]
-mod drop;
-mod from;
+pub mod from;
 mod from_iterator;
 pub mod from_iterator_par;
 pub(crate) mod list;
@@ -60,7 +57,8 @@ use self::flags::{StatisticsFlags, StatisticsFlagsIM};
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, first_null, last_non_null};
 
-pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&ArrayRef) -> usize>;
+pub type ChunkLenIter<'a> =
+    std::iter::Map<std::slice::Iter<'a, PlArrayRef>, fn(&PlArrayRef) -> usize>;
 
 /// # ChunkedArray
 ///
@@ -138,7 +136,7 @@ pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&A
 /// [`List`]: crate::datatypes::DataType::List
 pub struct ChunkedArray<T: PolarsDataType> {
     pub(crate) field: Arc<Field>,
-    pub(crate) chunks: Vec<ArrayRef>,
+    pub(crate) chunks: Vec<PlArrayRef>,
 
     pub(crate) flags: StatisticsFlagsIM,
 
@@ -184,7 +182,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     ///
     /// If you want to explicitly the `length` and `null_count`, look at
     /// [`ChunkedArray::new_with_dims`]
-    fn new_with_compute_len(field: Arc<Field>, chunks: Vec<ArrayRef>) -> Self {
+    fn new_with_compute_len(field: Arc<Field>, chunks: Vec<PlArrayRef>) -> Self {
         unsafe {
             let mut chunked_arr = Self::new_with_dims(field, chunks, 0, 0);
             chunked_arr.compute_len();
@@ -197,7 +195,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// The length and null_count must be correct.
     pub unsafe fn new_with_dims(
         field: Arc<Field>,
-        chunks: Vec<ArrayRef>,
+        chunks: Vec<PlArrayRef>,
         length: usize,
         null_count: usize,
     ) -> Self {
@@ -309,7 +307,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
             Some(out)
         } else {
-            first_null(self.chunks().iter().map(|arr| arr.as_ref()))
+            first_null(self.chunks().iter().map(|arr| &**arr))
         }
     }
 
@@ -344,7 +342,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
             Some(out)
         } else {
-            first_non_null(self.chunks().iter().map(|arr| arr.as_ref()))
+            first_non_null(self.chunks().iter().map(|arr| &**arr))
         }
     }
 
@@ -379,7 +377,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
             Some(out)
         } else {
-            last_non_null(self.chunks().iter().map(|arr| arr.as_ref()), self.len())
+            last_non_null(self.chunks().iter().map(|arr| &**arr), self.len())
         }
     }
 
@@ -388,12 +386,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             self.clone()
         } else {
             let chunks = self
-                .downcast_iter()
+                .chunks()
+                .iter()
                 .map(|arr| {
                     if arr.null_count() == 0 {
                         arr.to_boxed()
                     } else {
-                        filter_with_bitmap(arr, arr.validity().unwrap())
+                        filter_with_bitmap(&**arr, arr.validity().unwrap())
                     }
                 })
                 .collect();
@@ -413,8 +412,8 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     #[allow(clippy::type_complexity)]
     pub fn iter_validities(
         &self,
-    ) -> impl ExactSizeIterator<Item = Option<&Bitmap>> + DoubleEndedIterator {
-        fn to_validity(arr: &ArrayRef) -> Option<&Bitmap> {
+    ) -> impl ExactSizeIterator<Item = Option<PlBitmapRef<'_>>> + DoubleEndedIterator {
+        fn to_validity(arr: &PlArrayRef) -> Option<PlBitmapRef<'_>> {
             arr.validity()
         }
         self.chunks.iter().map(to_validity)
@@ -428,16 +427,14 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Shrink the capacity of this array to fit its length.
     pub fn shrink_to_fit(&mut self) {
-        self.chunks = vec![concatenate_unchecked(self.chunks.as_slice()).unwrap()];
+        self.chunks = vec![crate::chunked_array::ops::chunkops::concatenate_chunks(
+            &self.chunks,
+        )];
     }
 
     pub fn clear(&self) -> Self {
         // SAFETY: we keep the correct dtype
-        let mut ca = unsafe {
-            self.copy_with_chunks(vec![new_empty_array(
-                self.chunks.first().unwrap().dtype().clone(),
-            )])
-        };
+        let mut ca = unsafe { self.copy_with_chunks(vec![self.chunks[0].sliced(0, 0)]) };
 
         use StatisticsFlags as F;
         ca.retain_flags_from(self, F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST);
@@ -479,7 +476,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// A reference to the chunks
     #[inline]
-    pub fn chunks(&self) -> &Vec<ArrayRef> {
+    pub fn chunks(&self) -> &Vec<PlArrayRef> {
         &self.chunks
     }
 
@@ -489,7 +486,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// The caller must ensure to not change the [`DataType`] or `length` of any of the chunks.
     /// And the `null_count` remains correct.
     #[inline]
-    pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    pub unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
         &mut self.chunks
     }
 
@@ -497,7 +494,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     ///
     /// # Safety
     /// The caller must ensure the dtypes of the chunks are correct
-    unsafe fn copy_with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
+    unsafe fn copy_with_chunks(&self, chunks: Vec<PlArrayRef>) -> Self {
         Self::new_with_compute_len(self.field.clone(), chunks)
     }
 
@@ -597,6 +594,68 @@ where
         }
     }
 
+    /// The single element this column repeats, if it stands for one.
+    #[inline]
+    pub fn scalar_value(&self) -> Option<Option<T::Physical<'_>>> {
+        if self.len() == 1 {
+            // SAFETY: the column has an element 0.
+            return Some(unsafe { self.get_unchecked(0) });
+        }
+
+        match self.chunks.as_slice() {
+            // SAFETY: the column has a chunk 0.
+            [_] => StaticArray::scalar_value(unsafe { self.downcast_get_unchecked(0) }),
+            _ => None,
+        }
+    }
+
+    /// Whether every element of this column reads one and the same element.
+    pub fn repeats_one_element(&self) -> bool {
+        if self.len() <= 1 {
+            return false;
+        }
+
+        match self.chunks.as_slice() {
+            [chunk] => chunk.is_scalar(),
+            chunks
+                if !matches!(self.dtype(), DataType::Unknown(_))
+                    && !self.dtype().is_object()
+                    && chunks
+                        .iter()
+                        .all(|chunk| chunk.is_empty() || chunk.is_scalar()) =>
+            {
+                unsafe {
+                    // SAFETY: the chunks and the dtype are this column's own.
+                    Series::from_chunks_and_dtype_unchecked(
+                        self.name().clone(),
+                        self.chunks.clone(),
+                        self.dtype(),
+                    )
+                }
+                .repeats_one_element()
+            },
+            _ => false,
+        }
+    }
+
+    /// This column narrowed to the single element it repeats, where it stands for one.
+    pub fn settled_to_one_element(&self) -> Option<Self> {
+        (self.len() > 1 && self.scalar_value().is_some()).then(|| self.slice(0, 1))
+    }
+
+    /// The single value every element of this column holds, disregarding which of them are null.
+    #[inline]
+    pub fn scalar_value_ignore_validity(&self) -> Option<T::Physical<'_>>
+    where
+        T: PolarsNumericType,
+    {
+        let [_] = self.chunks.as_slice() else {
+            return None;
+        };
+        // SAFETY: the column was just seen to hold exactly one chunk.
+        unsafe { self.downcast_get_unchecked(0) }.scalar_value_ignore_validity()
+    }
+
     /// # Panics
     /// Panics if the [`ChunkedArray`] is empty.
     #[inline]
@@ -616,7 +675,7 @@ where
         unsafe { arr.get_unchecked(arr.len() - 1) }
     }
 
-    pub fn set_validity(&mut self, validity: Option<Bitmap>) {
+    pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
         assert!(
             !self.dtype().is_struct(),
             "set_outer_validity should be used for struct types"
@@ -626,15 +685,14 @@ where
         }
         let mut i = 0;
         for chunk in unsafe { self.chunks_mut() } {
-            *chunk =
-                chunk.with_validity(validity.as_ref().map(|v| v.clone().sliced(i, chunk.len())));
+            *chunk = chunk.with_validity(validity.as_ref().map(|v| v.sliced(i, chunk.len())));
             i += chunk.len();
         }
         self.null_count = validity.map(|v| v.unset_bits()).unwrap_or(0);
         self.set_fast_explode_list(false);
     }
 
-    pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
+    pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_validity(validity);
         self
     }
@@ -683,7 +741,7 @@ where
     ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]>,
 {
     /// Deposit values into nulls with a certain validity mask.
-    pub fn deposit(&self, validity: &Bitmap) -> Self {
+    pub fn deposit(&self, validity: &PlBitmap) -> Self {
         let set_bits = validity.set_bits();
 
         assert_eq!(self.len(), set_bits);
@@ -693,10 +751,12 @@ where
         }
 
         if set_bits == 0 {
-            return Self::full_null_like(self, validity.len());
+            return Self::new_full_null(self.dtype(), validity.len())
+                .with_name(self.name().clone());
         }
 
-        let mut null_mask = validity.clone();
+        let flat = validity.flat_bitmap().expect("the bits are not repeated");
+        let mut null_mask = flat.clone();
 
         let mut gather_idxs = Vec::with_capacity(validity.len());
         let leading_nulls = null_mask.take_leading_zeros();
@@ -710,8 +770,8 @@ where
 
         let mut ca = unsafe { ChunkTakeUnchecked::take_unchecked(self, &gather_idxs) };
         ca.set_validity(combine_validities_and(
-            Some(validity),
-            ca.rechunk_validity().as_ref(),
+            Some(validity.as_ref()),
+            ca.rechunk_validity().as_ref().map(PlBitmap::as_ref),
         ));
         ca
     }
@@ -735,13 +795,12 @@ impl ListChunked {
                 continue;
             }
 
+            let lengths = (0..arr.len()).map(|i| unsafe { arr.value_length_unchecked(i) });
             if match arr.validity() {
-                None => arr.offsets().lengths().any(|l| l == 0),
-                Some(validity) => arr
-                    .offsets()
-                    .lengths()
+                None => lengths.into_iter().any(|l| l == 0),
+                Some(validity) => lengths
                     .enumerate()
-                    .any(|(i, l)| l == 0 && unsafe { validity.get_bit_unchecked(i) }),
+                    .any(|(i, l)| l == 0 && unsafe { validity.get_unchecked(i) }),
             } {
                 return true;
             }
@@ -756,7 +815,8 @@ impl ListChunked {
                 continue;
             }
 
-            if *arr.offsets().first() != 0 || *arr.offsets().last() != arr.values().len() as i64 {
+            let covered = arr.value_range(0).start..arr.value_range(arr.len() - 1).end;
+            if covered.start != 0 || covered.end != arr.values().len() {
                 return true;
             }
 
@@ -767,9 +827,13 @@ impl ListChunked {
                 continue;
             }
 
+            let Some(validity) = validity.flat_bitmap() else {
+                continue;
+            };
+
             // @Performance: false_idx_iter
             for i in (!validity).true_idx_iter() {
-                if arr.offsets().length_at(i) > 0 {
+                if arr.value_length(i) > 0 {
                     return true;
                 }
             }
@@ -796,22 +860,15 @@ impl ArrayChunked {
         name: PlSmallStr,
         inner_dtype: &DataType,
         width: usize,
-        chunks: Vec<ArrayRef>,
+        chunks: Vec<PlArrayRef>,
         length: usize,
     ) -> Self {
         let dtype = DataType::Array(Box::new(inner_dtype.clone()), width);
-        let arrow_dtype = inner_dtype
-            .to_physical()
-            .to_arrow(CompatLevel::newest())
-            .to_fixed_size_list(width, true);
         let field = Arc::new(Field::new(name, dtype));
         if width == 0 {
-            use polars_arrow::array::builder::{ArrayBuilder, make_builder};
-            let values = make_builder(&inner_dtype.to_arrow(CompatLevel::newest())).freeze();
-            return ArrayChunked::new_with_compute_len(
-                field,
-                vec![FixedSizeListArray::new(arrow_dtype, length, values, None).into_boxed()],
-            );
+            let values = new_empty_chunk(inner_dtype);
+            let arr = PlFixedSizeListArray::new(values, width, length, None);
+            return ArrayChunked::new_with_compute_len(field, vec![Box::new(arr)]);
         }
         let mut total_len = 0;
         let chunks = chunks
@@ -820,8 +877,12 @@ impl ArrayChunked {
                 debug_assert_eq!(chunk.len() % width, 0);
                 let chunk_len = chunk.len() / width;
                 total_len += chunk_len;
-                FixedSizeListArray::new(arrow_dtype.clone(), chunk_len, chunk.clone(), None)
-                    .into_boxed()
+                Box::new(PlFixedSizeListArray::new(
+                    chunk.clone(),
+                    width,
+                    chunk_len,
+                    None,
+                )) as PlArrayRef
             })
             .collect();
         debug_assert_eq!(total_len, length);
@@ -834,28 +895,21 @@ impl ArrayChunked {
     /// This will always zero copy the values into the ListChunked.
     pub fn to_list(&self) -> ListChunked {
         let inner_dtype = self.inner_dtype();
+        let width = self.width();
         let chunks = self
             .downcast_iter()
             .map(|chunk| {
-                use polars_arrow::offset::OffsetsBuffer;
-
-                let inner_dtype = chunk.dtype().inner_dtype().unwrap();
-                let dtype = inner_dtype.clone().to_large_list(true);
-
                 let offsets = (0..=chunk.len())
-                    .map(|i| (i * self.width()) as i64)
-                    .collect::<Vec<i64>>();
+                    .map(|i| (i * width) as u64)
+                    .collect::<Vec<u64>>();
+                let values = chunk.to_flat().into_owned().into_array().into_inner().0;
 
-                // SAFETY: We created our offsets in ascending manner.
-                let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
-
-                ListArray::<i64>::new(
-                    dtype,
-                    offsets,
-                    chunk.values().clone(),
-                    chunk.validity().cloned(),
-                )
-                .into_boxed()
+                Box::new(PlListArray::new(
+                    values,
+                    offsets.into(),
+                    chunk.len(),
+                    chunk.validity().map(PlBitmap::from),
+                )) as PlArrayRef
             })
             .collect();
 
@@ -939,7 +993,8 @@ where
 {
     fn as_single_ptr(&mut self) -> PolarsResult<usize> {
         self.rechunk_mut();
-        let a = self.data_views().next().unwrap();
+        self.flatten_mut();
+        let a = self.as_flat().unwrap().chunks_flat_values().next().unwrap();
         let ptr = a.as_ptr();
         Ok(ptr as usize)
     }
@@ -987,45 +1042,15 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    /// Returns the values of the array as a contiguous slice.
-    pub fn cont_slice(&self) -> PolarsResult<&[T::Native]> {
-        polars_ensure!(
-            self.chunks.len() == 1 && self.chunks[0].null_count() == 0,
-            ComputeError: "chunked array is not contiguous"
-        );
-        Ok(self.downcast_iter().next().map(|arr| arr.values()).unwrap())
-    }
-
-    /// Returns the values of the array as a contiguous mutable slice.
-    pub(crate) fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]> {
-        if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
-            // SAFETY, we will not swap the PrimitiveArray.
-            let arr = unsafe { self.downcast_iter_mut().next().unwrap() };
-            arr.get_mut_values()
-        } else {
-            None
-        }
-    }
-
-    /// Get slices of the underlying arrow data.
-    /// NOTE: null values should be taken into account by the user of these slices as they are handled
-    /// separately
-    pub fn data_views(&self) -> impl DoubleEndedIterator<Item = &[T::Native]> {
-        self.downcast_iter().map(|arr| arr.values().as_slice())
-    }
-
     #[allow(clippy::wrong_self_convention)]
     pub fn into_no_null_iter(
         &self,
     ) -> impl '_ + Send + Sync + ExactSizeIterator<Item = T::Native> + DoubleEndedIterator + TrustedLen
     {
-        // .copied was significantly slower in benchmark, next call did not inline?
-        #[allow(clippy::map_clone)]
         // we know the iterators len
         unsafe {
-            self.data_views()
-                .flatten()
-                .map(|v| *v)
+            self.downcast_iter()
+                .flat_map(|arr| arr.values_iter())
                 .trust_my_length(self.len())
         }
     }
@@ -1053,33 +1078,70 @@ impl<T: PolarsDataType> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
 
 impl ValueSize for ListChunked {
     fn get_values_size(&self) -> usize {
-        self.chunks
-            .iter()
-            .fold(0usize, |acc, arr| acc + arr.get_values_size())
+        self.downcast_iter()
+            .fold(0usize, |acc, arr| acc + arr.values().len())
     }
 }
 
 #[cfg(feature = "dtype-array")]
 impl ValueSize for ArrayChunked {
     fn get_values_size(&self) -> usize {
-        self.chunks
-            .iter()
-            .fold(0usize, |acc, arr| acc + arr.get_values_size())
+        self.downcast_iter()
+            .fold(0usize, |acc, arr| acc + arr.len() * arr.width())
     }
 }
 impl ValueSize for StringChunked {
     fn get_values_size(&self) -> usize {
-        self.chunks
-            .iter()
-            .fold(0usize, |acc, arr| acc + arr.get_values_size())
+        self.downcast_iter()
+            .fold(0usize, |acc, arr| acc + arr.total_bytes_len())
     }
 }
 
 impl ValueSize for BinaryOffsetChunked {
     fn get_values_size(&self) -> usize {
-        self.chunks
-            .iter()
-            .fold(0usize, |acc, arr| acc + arr.get_values_size())
+        self.downcast_iter()
+            .fold(0usize, |acc, arr| acc + arr.values().len())
+    }
+}
+
+/// An empty chunk laid out the way `dtype` describes.
+pub fn new_empty_chunk(dtype: &DataType) -> PlArrayRef {
+    let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
+    polars_array::arrow::import::from_arrow(&*new_empty_array(arrow_dtype))
+}
+
+/// A chunk of `length` nulls, laid out the way `dtype` describes.
+pub fn new_full_null_chunk(dtype: &DataType, length: usize) -> PlArrayRef {
+    match dtype {
+        DataType::List(inner) => {
+            Box::new(PlListArray::new_full_null(new_empty_chunk(inner), length))
+        },
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(inner, width) => {
+            let values = new_full_null_chunk(inner, *width);
+            Box::new(PlFixedSizeListArray::new_full_null(values, length))
+        },
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(fields) => {
+            let fields = fields
+                .iter()
+                .map(|field| new_full_null_chunk(field.dtype(), length))
+                .collect();
+            Box::new(PlStructArray::new_full_null(fields, length))
+        },
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(_, _) => new_full_null_chunk(&dtype.map_storage_dtype().unwrap(), length),
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(_, storage) => new_full_null_chunk(storage, length),
+        #[cfg(feature = "object")]
+        DataType::Object(_) => {
+            let mut builder =
+                crate::chunked_array::object::registry::get_object_builder(PlSmallStr::EMPTY, 0)
+                    .as_array_builder();
+            builder.extend_nulls(length);
+            builder.freeze_reset()
+        },
+        _ => polars_array::builder::new_full_null(dtype.to_pl_array_type(), length),
     }
 }
 
@@ -1106,8 +1168,8 @@ pub(crate) fn align_inner_chunks(
     let chunks = unsafe { values.chunks_mut() };
     let mut arr = chunks.pop().unwrap();
     chunks.extend(chunk_lens.into_iter().map(|len| {
-        let chunk;
-        (chunk, arr) = arr.split_at_boxed(len);
+        let chunk = arr.sliced(0, len);
+        arr = arr.sliced(len, arr.len() - len);
         chunk
     }));
     assert!(arr.is_empty());
@@ -1116,30 +1178,27 @@ pub(crate) fn align_inner_chunks(
 
 pub(crate) fn to_primitive<T: PolarsNumericType>(
     values: Vec<T::Native>,
-    validity: Option<Bitmap>,
-) -> PrimitiveArray<T::Native> {
-    PrimitiveArray::new(
-        T::get_static_dtype().to_arrow(CompatLevel::newest()),
-        values.into(),
-        validity,
-    )
+    validity: Option<PlBitmap>,
+) -> PlPrimitiveArray<T::Native> {
+    let length = values.len();
+    PlPrimitiveArray::new(values.into(), length, validity)
 }
 
 pub(crate) fn to_array<T: PolarsNumericType>(
     values: Vec<T::Native>,
-    validity: Option<Bitmap>,
-) -> ArrayRef {
+    validity: Option<PlBitmap>,
+) -> PlArrayRef {
     Box::new(to_primitive::<T>(values, validity))
 }
 
 impl<T: PolarsDataType> Default for ChunkedArray<T> {
     fn default() -> Self {
         let dtype = T::get_static_dtype();
-        let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
+        let chunk = new_empty_chunk(&dtype);
         ChunkedArray {
             field: Arc::new(Field::new(PlSmallStr::EMPTY, dtype)),
             // Invariant: always has 1 chunk.
-            chunks: vec![new_empty_array(arrow_dtype)],
+            chunks: vec![chunk],
             flags: StatisticsFlagsIM::empty(),
 
             _pd: Default::default(),
@@ -1344,13 +1403,13 @@ pub(crate) mod test {
         let before = arr
             .chunks()
             .iter()
-            .map(|arr| polars_arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
+            .map(|arr| polars_compute::size::estimated_bytes_size(&**arr))
             .sum::<usize>();
         arr.shrink_to_fit();
         let after = arr
             .chunks()
             .iter()
-            .map(|arr| polars_arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
+            .map(|arr| polars_compute::size::estimated_bytes_size(&**arr))
             .sum::<usize>();
         assert!(before > after);
     }

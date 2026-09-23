@@ -11,7 +11,7 @@ use crate::io::ipc::IpcField;
 use crate::io::ipc::read::{Dictionaries, IpcBuffer, Node, OutOfSpecKind};
 use crate::offset::Offset;
 use crate::types::NativeType;
-use crate::{match_integer_type, with_match_primitive_type_full};
+use crate::{match_integer_type, with_match_primitive_type};
 
 fn get_buffer_bounds(buffers: &mut VecDeque<IpcBuffer>) -> PolarsResult<(usize, usize)> {
     let buffer = buffers.pop_front().ok_or_else(
@@ -533,7 +533,7 @@ fn get_array<T: AsRef<[u8]> + Send + Sync + 'static>(
     match dtype.to_physical_type() {
         Null => mmap_null(data, &node, block_offset, buffers),
         Boolean => mmap_boolean(data, &node, block_offset, buffers),
-        Primitive(p) => with_match_primitive_type_full!(p, |$T| {
+        Primitive(p) => with_match_primitive_type!(p, |$T| {
             mmap_primitive::<$T, _>(data, &node, block_offset, buffers)
         }),
         Utf8 | Binary => mmap_binary::<i32, _>(data, &node, block_offset, buffers),

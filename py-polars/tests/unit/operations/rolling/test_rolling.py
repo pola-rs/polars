@@ -2576,3 +2576,21 @@ def test_min_periods_removed() -> None:
 
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         pl.rolling_corr("a", "b", window_size=2, min_periods=1)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("side", ["left", "right", "both"])
+def test_rolling_corr_over_a_repeated_null_column(side: str) -> None:
+    n = 5
+    nulls = pl.select(pl.repeat(None, n, dtype=pl.Float64).alias("x")).to_series()
+    flat_nulls = pl.Series("x", [None] * n, dtype=pl.Float64)
+    values = pl.Series("y", [1.0, 2.0, 3.0, 4.0, 5.0])
+
+    def answer(x: pl.Series) -> list[float | None]:
+        left = x if side in ("left", "both") else values
+        right = x if side in ("right", "both") else values
+        df = pl.DataFrame([left.rename("a"), right.rename("b")])
+        out = df.select(pl.rolling_corr(pl.col("a"), pl.col("b"), window_size=3))
+        return out.to_series().to_list()
+
+    assert answer(nulls) == [None] * n
+    assert answer(nulls) == answer(flat_nulls)

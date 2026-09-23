@@ -4,7 +4,7 @@ mod count;
 mod dispersion;
 mod get;
 mod min_max;
-mod namespace;
+pub(crate) mod namespace;
 #[cfg(feature = "list_sets")]
 mod sets;
 mod sum_mean;

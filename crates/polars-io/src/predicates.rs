@@ -1,7 +1,9 @@
 use std::fmt;
 
+use polars_array::PlBitmap;
+use polars_array::bitmap::combine_validities_and;
 use polars_arrow::array::Array;
-use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
@@ -106,9 +108,12 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
 
         bm.reserve(true_mask.len());
         for chunk in true_mask.downcast_iter() {
-            match chunk.validity() {
-                None => bm.extend_from_bitmap(chunk.values()),
-                Some(v) => bm.extend_from_bitmap(&(chunk.values() & v)),
+            let bits = combine_validities_and(Some(chunk.values()), chunk.validity())
+                .expect("the values mask is always there");
+
+            match bits.scalar_value() {
+                Some(bit) => bm.extend_constant(bits.len(), bit),
+                None => bm.extend_from_bitmap(&bits.as_ref().to_flat()),
             }
         }
     }
@@ -138,11 +143,13 @@ fn predicate_values_to_series(
     // Polars stores the values of some Arrow types scaled, e.g. Arrow seconds as
     // milliseconds, so the predicate series cannot be constructed zero-copy.
     if DataType::arrow_value_scale(source_arrow_dtype) != 1 {
-        let values = polars_compute::cast::cast(
-            values,
-            source_arrow_dtype,
-            polars_compute::cast::CastOptionsImpl::default(),
-        )?;
+        let mut values = values.to_boxed();
+        assert_eq!(
+            values.dtype().to_physical_type(),
+            source_arrow_dtype.to_physical_type(),
+            "the statistics of a {source_arrow_dtype:?} column cannot be read as one",
+        );
+        *values.dtype_mut() = source_arrow_dtype.clone();
         Series::try_from((name, values))
     } else {
         Series::from_chunk_and_dtype(name, values.to_boxed(), dtype)
@@ -265,9 +272,11 @@ pub trait SkipBatchPredicate: Send + Sync {
         // * Each column is length = 1
         // * We have an IndexSet, so each column name is unique
         let df = unsafe { DataFrame::new_unchecked(1, columns) };
-        Ok(self.evaluate_with_stat_df(&df)?.get_bit(0))
+        Ok(self.evaluate_with_stat_df(&df)?.get(0))
     }
-    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap>;
+
+    /// One bit per row of `df`, saying whether that batch can be skipped.
+    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<PlBitmap>;
 }
 
 /// The conjuncts of a row predicate that read one column, conjoined.
@@ -321,7 +330,7 @@ impl SkipBatchPredicate for PhysicalExprWithConstCols<Arc<dyn SkipBatchPredicate
         self.child.schema()
     }
 
-    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap> {
+    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<PlBitmap> {
         let mut df = df.clone();
         for (name, scalar) in self.constants.iter() {
             df.with_column(Column::new_scalar(

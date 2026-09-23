@@ -4,9 +4,9 @@ use polars_arrow::array::{
 };
 use polars_arrow::bitmap::Bitmap;
 
-use super::{IfThenElseKernel, if_then_else_extend};
+use super::{IfThenElseArrowKernel, if_then_else_extend};
 
-impl IfThenElseKernel for FixedSizeListArray {
+impl IfThenElseArrowKernel for FixedSizeListArray {
     type Scalar<'a> = Box<dyn Array>;
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {

@@ -320,6 +320,28 @@ def test_ndjson_sliced_list_serialization() -> None:
     assert f.getvalue() == b'{"col1":2,"col2":[6,7,8]}\n'
 
 
+@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
+def test_json_sliced_nested_categorical_serialization(dtype: pl.DataType) -> None:
+    values = [["a", "b"], ["c"], [], ["a"], ["b", "c"]]
+    full = pl.Series("x", [["a", "b"], ["a", "b"], *values], dtype=pl.List(dtype))
+    sliced = full.slice(2, len(values))
+
+    assert sliced.to_list() == values
+    for frame in (pl.DataFrame({"x": sliced}), pl.DataFrame({"x": full}).slice(2)):
+        f = io.BytesIO()
+        frame.write_ndjson(f)
+        assert (
+            f.getvalue().decode()
+            == '{"x":["a","b"]}\n{"x":["c"]}\n{"x":[]}\n{"x":["a"]}\n{"x":["b","c"]}\n'
+        )
+
+    nested = pl.DataFrame({"x": pl.struct(inner=sliced, eager=True)})
+    f = io.BytesIO()
+    nested.write_ndjson(f)
+    f.seek(0)
+    assert pl.read_ndjson(f)["x"].struct.field("inner").to_list() == values
+
+
 def test_json_deserialize_9687() -> None:
     response = {
         "volume": [0.0, 0.0, 0.0],

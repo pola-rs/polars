@@ -10,7 +10,7 @@ use crate::array::null::NullArrayBuilder;
 use crate::array::struct_::StructArrayBuilder;
 use crate::array::{Array, PrimitiveArrayBuilder};
 use crate::datatypes::{ArrowDataType, PhysicalType};
-use crate::with_match_primitive_type_full;
+use crate::with_match_primitive_type;
 
 /// Used for arrays which can share buffers with input arrays to appends,
 /// gathers, etc.
@@ -63,6 +63,10 @@ pub trait StaticArrayBuilder: Send {
         repeats: usize,
         share: ShareStrategy,
     ) {
+        if length == 1 {
+            return self.subslice_extend_each_repeated(other, start, 1, repeats, share);
+        }
+
         self.reserve(length * repeats);
         for _ in 0..repeats {
             self.subslice_extend(other, start, length, share)
@@ -342,7 +346,7 @@ pub fn make_builder(dtype: &ArrowDataType) -> Box<dyn ArrayBuilder> {
     match dtype.to_physical_type() {
         Null => Box::new(NullArrayBuilder::new(dtype.clone())),
         Boolean => Box::new(BooleanArrayBuilder::new(dtype.clone())),
-        Primitive(prim_t) => with_match_primitive_type_full!(prim_t, |$T| {
+        Primitive(prim_t) => with_match_primitive_type!(prim_t, |$T| {
             Box::new(PrimitiveArrayBuilder::<$T>::new(dtype.clone()))
         }),
         LargeBinary => Box::new(BinaryArrayBuilder::<i64>::new(dtype.clone())),

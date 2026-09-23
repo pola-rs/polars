@@ -2,9 +2,9 @@ use polars_arrow::array::builder::{ShareStrategy, StaticArrayBuilder, make_build
 use polars_arrow::array::{Array, ArrayCollectIterExt, ListArray, ListArrayBuilder};
 use polars_arrow::bitmap::Bitmap;
 
-use super::{IfThenElseKernel, if_then_else_extend};
+use super::{IfThenElseArrowKernel, if_then_else_extend};
 
-impl IfThenElseKernel for ListArray<i64> {
+impl IfThenElseArrowKernel for ListArray<i64> {
     type Scalar<'a> = Box<dyn Array>;
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {

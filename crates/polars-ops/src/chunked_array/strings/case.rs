@@ -38,16 +38,33 @@ fn convert_while_ascii(b: &[u8], convert: fn(&u8) -> u8, out: &mut Vec<u8>) {
             // Mark these bytes as initialised.
             i += N;
         }
+
+        while i < b.len() {
+            // SAFETY: `i` is in bounds of `b`, as just checked.
+            let byte = *b.get_unchecked(i);
+            if !byte.is_ascii() {
+                break;
+            }
+
+            // SAFETY: the reservation above left room for every byte of `b`, and the conversion
+            // of an ASCII byte is a byte like any other: the bytes written stay valid UTF-8.
+            out.spare_capacity_mut()
+                .get_unchecked_mut(i)
+                .write(convert(&byte));
+            i += 1;
+        }
+
         out.set_len(i);
     }
 }
 
-fn to_lowercase_helper(s: &str, buf: &mut Vec<u8>) {
-    convert_while_ascii(s.as_bytes(), u8::to_ascii_lowercase, buf);
+fn to_lowercase_helper(source: &str, buf: &mut Vec<u8>) {
+    convert_while_ascii(source.as_bytes(), u8::to_ascii_lowercase, buf);
 
     // SAFETY: we know this is a valid char boundary since
     // out.len() is only progressed if ASCII bytes are found.
-    let rest = unsafe { s.get_unchecked(buf.len()..) };
+    let converted = buf.len();
+    let rest = unsafe { source.get_unchecked(converted..) };
 
     // SAFETY: We have written only valid ASCII to our vec.
     let mut s = unsafe { String::from_utf8_unchecked(std::mem::take(buf)) };
@@ -59,9 +76,16 @@ fn to_lowercase_helper(s: &str, buf: &mut Vec<u8>) {
             // in `SpecialCasing.txt`,
             // so hard-code it rather than have a generic "condition" mechanism.
             // See https://github.com/rust-lang/rust/issues/26035
-            map_uppercase_sigma(rest, i, &mut s)
+            //
+            // The context is read out of the whole string rather than out of what is left of it:
+            // the bytes the ASCII pass above took are part of the word this sigma may end, and
+            // dropping them made `"a".repeat(16) + "Σ"` lowercase to σ where `str::to_lowercase`
+            // gives ς.
+            map_uppercase_sigma(source, converted + i, &mut s)
         } else {
-            s.extend(c.to_lowercase());
+            for lower in c.to_lowercase() {
+                s.push(lower);
+            }
         }
     }
 
@@ -114,7 +138,9 @@ pub(super) fn to_uppercase<'a>(ca: &'a StringChunked) -> StringChunked {
         let mut s = unsafe { String::from_utf8_unchecked(std::mem::take(&mut buf)) };
 
         for c in rest.chars() {
-            s.extend(c.to_uppercase());
+            for upper in c.to_uppercase() {
+                s.push(upper);
+            }
         }
 
         // Put buf back for next iteration.
@@ -146,7 +172,9 @@ pub(super) fn to_titlecase<'a>(ca: &'a StringChunked) -> StringChunked {
         let mut next_is_upper = true;
         for c in lowercased.chars() {
             if next_is_upper {
-                s.extend(c.to_uppercase());
+                for upper in c.to_uppercase() {
+                    s.push(upper);
+                }
             } else {
                 s.push(c);
             }

@@ -1,4 +1,4 @@
-use polars_arrow::bitmap::Bitmap;
+use polars_array::bitmap::combine_validities_and;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_plan::prelude::*;
@@ -124,12 +124,13 @@ impl PhysicalExpr for TernaryExpr {
             mask.rechunk_mut();
             let arr = mask.downcast_as_array();
             match arr.validity() {
-                Some(validity) => arr.values() & validity,
-                None => arr.values().clone(),
+                Some(validity) => combine_validities_and(Some(arr.values()), Some(validity))
+                    .expect("the values mask is always there"),
+                None => PlBitmap::from(arr.values()),
             }
         });
 
-        let masked_df = |names: &[PlSmallStr], mask: &Bitmap| -> PolarsResult<DataFrame> {
+        let masked_df = |names: &[PlSmallStr], mask: &PlBitmap| -> PolarsResult<DataFrame> {
             let columns = names
                 .iter()
                 .map(|c| df.column(c).unwrap().mask(mask))
@@ -147,7 +148,8 @@ impl PhysicalExpr for TernaryExpr {
             if self.falsy_mask_columns.is_empty() || true_count == 0 {
                 return self.falsy.evaluate(df, &state);
             }
-            let mask_df = masked_df(&self.falsy_mask_columns, &!mask_bitmap.as_ref().unwrap())?;
+            let inverted = mask_bitmap.as_ref().unwrap().not();
+            let mask_df = masked_df(&self.falsy_mask_columns, &inverted)?;
             self.falsy.evaluate(&mask_df, &state)
         };
 
@@ -373,12 +375,12 @@ impl PhysicalExpr for TernaryExpr {
                 // @scalar-opt
                 // @partition-opt
                 let values = out.as_materialized_series().array_ref(0);
-                let offsets = ac_target.get_values().list().unwrap().offsets()?;
+                let target = ac_target.get_values().list().unwrap().rechunk();
+                let offsets = target.downcast_as_array().to_flat().offsets().clone();
                 let inner_type = out.dtype();
-                let dtype = LargeListArray::default_datatype(values.dtype().clone());
 
                 // SAFETY: offsets are correct.
-                let out = LargeListArray::new(dtype, offsets, values.clone(), None);
+                let out = PlListArray::from_offsets(values.clone(), offsets);
 
                 let mut out = ListChunked::with_chunk(truthy.name().clone(), out);
                 unsafe { out.to_logical(inner_type.clone()) };

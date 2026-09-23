@@ -517,6 +517,7 @@ impl BitmapBuilder {
 /// A wrapper for BitmapBuilder that does not allocate until the first false is
 /// pushed. Less efficient if you know there are false values because it must
 /// check if it has allocated for each push.
+#[derive(Clone)]
 pub enum OptBitmapBuilder {
     AllTrue { bit_len: usize, bit_cap: usize },
     MayHaveFalse(BitmapBuilder),
@@ -552,6 +553,22 @@ impl OptBitmapBuilder {
                 }
             },
             Self::MayHaveFalse(inner) => inner.extend_constant(length, value),
+        }
+    }
+
+    /// Appends a single bit.
+    ///
+    /// A builder driven an element at a time reaches this once per element, so what it costs per
+    /// call is the whole cost of the mask.  `extend_constant(1, value)` would place the bit with
+    /// the arithmetic a run of bits needs, and keep the capacity a later `reserve` would want;
+    /// neither is worth a store per element, and `get_builder` reads the length back anyway.
+    #[inline(always)]
+    pub fn push(&mut self, value: bool) {
+        match self {
+            Self::AllTrue { bit_len, .. } if value => *bit_len += 1,
+            Self::MayHaveFalse(inner) => inner.push(value),
+            // The first false is what turns this into a bitmap of its own.
+            _ => self.get_builder().push(false),
         }
     }
 
@@ -594,6 +611,25 @@ impl OptBitmapBuilder {
             None => {
                 self.extend_constant(length * repeats, true);
             },
+        }
+    }
+
+    /// Appends the `length` bits starting at `start` `repeats` times over.
+    pub fn subslice_extend_repeated_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        start: usize,
+        length: usize,
+        repeats: usize,
+    ) {
+        match bitmap {
+            Some(bm) => {
+                let builder = self.get_builder();
+                for _ in 0..repeats {
+                    builder.subslice_extend_from_bitmap(bm, start, length);
+                }
+            },
+            None => self.extend_constant(length * repeats, true),
         }
     }
 
@@ -641,7 +677,9 @@ impl OptBitmapBuilder {
     fn get_builder(&mut self) -> &mut BitmapBuilder {
         match self {
             Self::AllTrue { bit_len, bit_cap } => {
-                let mut builder = BitmapBuilder::with_capacity(*bit_cap);
+                // `push` leaves `bit_cap` behind rather than pay to keep it up per bit, so the
+                // bits already counted are the floor on what this needs room for.
+                let mut builder = BitmapBuilder::with_capacity(usize::max(*bit_cap, *bit_len));
                 builder.extend_constant(*bit_len, true);
                 *self = Self::MayHaveFalse(builder);
                 let Self::MayHaveFalse(inner) = self else {

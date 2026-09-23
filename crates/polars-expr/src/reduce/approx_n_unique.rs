@@ -92,9 +92,30 @@ where
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        for val in ca.iter() {
-            let hash = self.hasher.tot_hash_one(val);
-            v.insert(hash);
+        for arr in ca.downcast_iter() {
+            if arr.is_empty() {
+                continue;
+            }
+
+            // A chunk that repeats one value holds that value and, under a mask that does not
+            // repeat, a null: two elements at most, however long the chunk is.
+            if let Some(value) = arr.scalar_value_ignore_validity() {
+                let null_count = arr.null_count();
+                if null_count < arr.len() {
+                    v.insert(self.hasher.tot_hash_one(Some(value)));
+                }
+                if null_count > 0 {
+                    v.insert(
+                        self.hasher
+                            .tot_hash_one(None::<<Self::Dtype as PolarsDataType>::Physical<'_>>),
+                    );
+                }
+                continue;
+            }
+
+            for val in arr.iter() {
+                v.insert(self.hasher.tot_hash_one(val));
+            }
         }
     }
 

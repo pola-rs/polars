@@ -55,7 +55,6 @@ pub fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
     assert_eq!(values.len(), mask.len());
     let mask_bits_set = mask.set_bits();
 
-    // Fast path: values is all-0s or all-1s.
     if let Some(num_values_bits) = values.lazy_set_bits() {
         if num_values_bits == 0 || num_values_bits == values.len() {
             return Bitmap::new_with_value(num_values_bits == values.len(), mask_bits_set);

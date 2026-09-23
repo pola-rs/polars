@@ -1,6 +1,7 @@
 //! Implementations of upstream traits for [`ChunkedArray<T>`]
 use std::borrow::{Borrow, Cow};
 
+use polars_array::PlBinaryViewArrayBuilder;
 #[cfg(feature = "object")]
 use polars_arrow::bitmap::BitmapBuilder;
 
@@ -42,7 +43,7 @@ where
 impl FromIterator<Option<bool>> for ChunkedArray<BooleanType> {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
-        BooleanArray::from_iter(iter).into()
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, PlBooleanArray::arr_from_iter(iter))
     }
 }
 
@@ -68,8 +69,11 @@ where
 {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let arr = MutableBinaryViewArray::from_iterator(iter.into_iter()).freeze();
-        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
+        let mut builder = PlUtf8ViewArrayBuilder::new();
+        for v in iter {
+            builder.push(v.as_ref().map(Ptr::as_ref));
+        }
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, builder.freeze())
     }
 }
 
@@ -94,8 +98,11 @@ where
 {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let arr = MutableBinaryViewArray::from_values_iter(iter.into_iter()).freeze();
-        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
+        let mut builder = PlUtf8ViewArrayBuilder::new();
+        for v in iter {
+            builder.push_value(v.as_ref());
+        }
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, builder.freeze())
     }
 }
 
@@ -106,8 +113,11 @@ where
 {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let arr = MutableBinaryViewArray::from_iter(iter).freeze();
-        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
+        let mut builder = PlBinaryViewArrayBuilder::new();
+        for v in iter {
+            builder.push(v.as_ref().map(Ptr::as_ref));
+        }
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, builder.freeze())
     }
 }
 
@@ -117,8 +127,11 @@ where
 {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let arr = MutableBinaryViewArray::from_values_iter(iter.into_iter()).freeze();
-        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
+        let mut builder = PlBinaryViewArrayBuilder::new();
+        for v in iter {
+            builder.push_value(v.as_ref());
+        }
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, builder.freeze())
     }
 }
 
@@ -251,7 +264,8 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             .collect();
 
         let arr = Box::new(
-            ObjectArray::from(values).with_validity(null_mask_builder.into_opt_validity()),
+            ObjectArray::from(values)
+                .with_validity(null_mask_builder.into_opt_validity().map(PlBitmap::from)),
         );
         ChunkedArray::new_with_compute_len(
             Arc::new(Field::new(PlSmallStr::EMPTY, get_object_type::<T>())),

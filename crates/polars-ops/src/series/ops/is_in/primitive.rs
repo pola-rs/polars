@@ -121,11 +121,19 @@ where
     T::Native: IsInNative,
 {
     pub(super) fn new(ca: &ChunkedArray<T>) -> Self {
-        let keys: Vec<_> = ca
-            .downcast_iter()
-            .flat_map(|arr| arr.non_null_values_iter())
-            .map(IsInNative::to_key)
-            .collect();
+        let mut keys: Vec<<T::Native as IsInNative>::Key> = Vec::new();
+        for arr in ca.downcast_iter() {
+            if arr.flat_values().is_some() {
+                keys.extend(arr.iter().flatten().map(IsInNative::to_key));
+            } else if arr.null_count() < arr.len() {
+                // A chunk that repeats one value holds one key, whatever its length: a haystack
+                // is a set, so the repeats add nothing to it.
+                let value = arr
+                    .scalar_value_ignore_validity()
+                    .expect("values are flat or scalar");
+                keys.push(IsInNative::to_key(value));
+            }
+        }
 
         if keys.len() <= SMALL_MAX {
             return Self::Small(keys);
@@ -181,7 +189,19 @@ where
     ) -> BooleanChunked {
         let chunks = ca.downcast_iter().map(|arr| {
             let mut out = BitmapBuilder::with_capacity(arr.len());
-            self.probe_values(arr.values().as_slice(), &mut out);
+            match arr.flat_values() {
+                Some(values) => self.probe_values(values.as_slice(), &mut out),
+                // Every element of the chunk reads the one value: probe it once.
+                None if !arr.is_empty() => {
+                    let value = arr
+                        .scalar_value_ignore_validity()
+                        .expect("values are flat or scalar");
+                    let mut one = BitmapBuilder::with_capacity(1);
+                    self.probe_values(&[value], &mut one);
+                    out.extend_constant(arr.len(), one.freeze().get(0).unwrap_or(false));
+                },
+                None => {},
+            }
             finish_chunk(out.freeze(), arr.validity(), nulls_equal, has_null)
         });
         BooleanChunked::from_chunk_iter(ca.name().clone(), chunks)

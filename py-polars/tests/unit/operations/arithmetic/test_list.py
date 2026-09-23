@@ -1101,3 +1101,214 @@ def test_list_boolean_arithmetic_23146() -> None:
     df = pl.DataFrame({"a": [[True, False]], "b": [[128, 128]]})
     result = df.select(pl.col("a") / pl.col("b"))
     assert result.schema == {"a": pl.List(pl.Float64)}
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.List(pl.Int64),
+        pl.Array(pl.Int64, 3),
+        pl.List(pl.Float64),
+        pl.Array(pl.Float64, 3),
+    ],
+)
+@pytest.mark.parametrize(
+    "op",
+    [operator.add, operator.sub, operator.mul, operator.truediv, operator.mod],
+)
+def test_arithmetic_over_a_masked_chunk_that_repeats_one_element(
+    dtype: PolarsDataType, op: Callable[[Any, Any], Any]
+) -> None:
+    element = [3, 0, -5] if dtype.inner == pl.Int64 else [1.5, 0.0, -2.5]  # type: ignore[union-attr]
+    mask = [True, False, True, True]
+
+    repeated = pl.select(
+        pl.when(pl.Series("m", mask))
+        .then(pl.repeat(pl.lit(element, dtype=dtype), len(mask)))
+        .alias("a")
+    ).to_series()
+    flat = pl.Series("a", [element if m else None for m in mask], dtype=dtype)
+    assert repeated.to_list() == flat.to_list()
+
+    for other in (pl.lit(2), pl.lit(0), pl.col("a")):
+        assert_series_equal(
+            repeated.to_frame().select(op(pl.col("a"), other)).to_series(),
+            flat.to_frame().select(op(pl.col("a"), other)).to_series(),
+        )
+        assert_series_equal(
+            repeated.to_frame().select(op(other, pl.col("a"))).to_series(),
+            flat.to_frame().select(op(other, pl.col("a"))).to_series(),
+        )
+
+    varying = pl.Series("b", [element] * len(mask), dtype=dtype)
+    other_mask = pl.Series("b", [element, element, None, element], dtype=dtype)
+    for b in (varying, other_mask):
+        assert_series_equal(
+            pl.DataFrame({"a": repeated, "b": b})
+            .select(op(pl.col("a"), pl.col("b")))
+            .to_series(),
+            pl.DataFrame({"a": flat, "b": b})
+            .select(op(pl.col("a"), pl.col("b")))
+            .to_series(),
+        )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.List(pl.Float64), pl.Array(pl.Float64, 3), pl.List(pl.Int64)],
+)
+@pytest.mark.parametrize("op", [operator.truediv, operator.floordiv, operator.mod])
+def test_dividing_a_nested_column_by_one_that_repeats_a_value(
+    dtype: PolarsDataType, op: Callable[[Any, Any], Any]
+) -> None:
+    divisor = 49
+    element = [divisor, divisor * 2, divisor * 3]
+    a = pl.Series("a", [element] * 4, dtype=dtype)
+    inner = dtype.inner  # type: ignore[union-attr]
+
+    repeated = pl.select(
+        pl.repeat(pl.lit(divisor, dtype=inner), a.len()).alias("b")
+    ).to_series()
+    flat = pl.Series("b", [divisor] * a.len(), dtype=inner)
+
+    assert_series_equal(
+        pl.DataFrame([a, repeated]).select(op(pl.col("a"), pl.col("b"))).to_series(),
+        pl.DataFrame([a, flat]).select(op(pl.col("a"), pl.col("b"))).to_series(),
+    )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.List(pl.Int64),
+        pl.Array(pl.Int64, 3),
+        pl.List(pl.Float64),
+        pl.Array(pl.Float64, 3),
+    ],
+)
+@pytest.mark.parametrize(
+    "op",
+    [operator.add, operator.sub, operator.mul, operator.truediv, operator.mod],
+)
+def test_arithmetic_over_a_chunk_that_repeats_one_element(
+    dtype: PolarsDataType, op: Callable[[Any, Any], Any]
+) -> None:
+    element = [3, 0, -5] if dtype.inner == pl.Int64 else [1.5, 0.0, -2.5]  # type: ignore[union-attr]
+    height = 4
+
+    repeated = pl.select(
+        pl.repeat(pl.lit(element, dtype=dtype), height).alias("a")
+    ).to_series()
+    flat = pl.Series("a", [element] * height, dtype=dtype)
+    assert repeated.to_list() == flat.to_list()
+
+    for other in (pl.lit(2), pl.lit(0), pl.col("a")):
+        assert_series_equal(
+            repeated.to_frame().select(op(pl.col("a"), other)).to_series(),
+            flat.to_frame().select(op(pl.col("a"), other)).to_series(),
+        )
+        assert_series_equal(
+            repeated.to_frame().select(op(other, pl.col("a"))).to_series(),
+            flat.to_frame().select(op(other, pl.col("a"))).to_series(),
+        )
+
+    varying = pl.Series("b", [element] * height, dtype=dtype)
+    assert_series_equal(
+        pl.DataFrame({"a": repeated, "b": varying})
+        .select(op(pl.col("a"), pl.col("b")))
+        .to_series(),
+        pl.DataFrame({"a": flat, "b": varying})
+        .select(op(pl.col("a"), pl.col("b")))
+        .to_series(),
+    )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.List(pl.Int64),
+        pl.Array(pl.Int64, 3),
+        pl.List(pl.Float64),
+        pl.Array(pl.Float64, 3),
+    ],
+)
+@pytest.mark.parametrize(
+    "op",
+    [operator.add, operator.sub, operator.mul, operator.truediv, operator.mod],
+)
+def test_arithmetic_where_one_side_repeats_and_the_other_varies(
+    dtype: PolarsDataType, op: Callable[[Any, Any], Any]
+) -> None:
+    if dtype.inner == pl.Int64:  # type: ignore[union-attr]
+        element: Any = [3, 0, -5]
+        rows: list[Any] = [[1, 2, 3], None, [0, 0, 0], [None, 5, 6]]
+    else:
+        element = [1.5, 0.0, -2.5]
+        rows = [[1.5, 2.0, 3.25], None, [0.0, 0.0, 0.0], [None, 5.5, 6.0]]
+
+    height = len(rows)
+    repeated = pl.select(
+        pl.repeat(pl.lit(element, dtype=dtype), height).alias("a")
+    ).to_series()
+    flat = pl.Series("a", [element] * height, dtype=dtype)
+    varying = pl.Series("b", rows, dtype=dtype)
+    assert repeated.to_list() == flat.to_list()
+
+    for left, right in (("a", "b"), ("b", "a")):
+        assert_series_equal(
+            pl.DataFrame({"a": repeated, "b": varying})
+            .select(op(pl.col(left), pl.col(right)))
+            .to_series(),
+            pl.DataFrame({"a": flat, "b": varying})
+            .select(op(pl.col(left), pl.col(right)))
+            .to_series(),
+        )
+
+
+def test_arithmetic_between_a_repeated_and_a_varying_side_checks_widths() -> None:
+    repeated = pl.select(
+        pl.repeat(pl.lit([3], dtype=pl.List(pl.Int64)), 4).alias("a")
+    ).to_series()
+    varying = pl.Series("b", [[1, 2, 3]] * 4, dtype=pl.List(pl.Int64))
+
+    for left, right in (("a", "b"), ("b", "a")):
+        with pytest.raises(ShapeError, match="list lengths differed"):
+            pl.DataFrame({"a": repeated, "b": varying}).select(
+                pl.col(left) + pl.col(right)
+            )
+
+
+@pytest.mark.parametrize(
+    "op",
+    [operator.add, operator.sub, operator.mul, operator.truediv, operator.mod],
+)
+def test_arithmetic_between_empty_lists_and_a_primitive_column(
+    op: Callable[[Any, Any], Any],
+) -> None:
+    height = 4
+    repeated = pl.select(
+        pl.repeat(pl.lit([], dtype=pl.List(pl.Int64)), height).alias("a")
+    ).to_series()
+    flat = pl.Series("a", [[]] * height, dtype=pl.List(pl.Int64))
+    primitive = pl.Series("b", range(height), dtype=pl.Int64)
+
+    for left, right in (("a", "b"), ("b", "a")):
+        assert_series_equal(
+            pl.DataFrame({"a": repeated, "b": primitive})
+            .select(op(pl.col(left), pl.col(right)))
+            .to_series(),
+            pl.DataFrame({"a": flat, "b": primitive})
+            .select(op(pl.col(left), pl.col(right)))
+            .to_series(),
+        )
+
+
+def test_arithmetic_width_mismatch_names_the_operands_in_query_order() -> None:
+    one = pl.Series("a", [[1, 2]], dtype=pl.List(pl.Int64))
+    varying = pl.Series("b", [[1, 2, 3]] * 4, dtype=pl.List(pl.Int64))
+    frame = pl.DataFrame({"b": varying})
+
+    with pytest.raises(ShapeError, match=r"index 0: 2 != 3"):
+        frame.select(pl.lit(one) + pl.col("b"))
+    with pytest.raises(ShapeError, match=r"index 0: 3 != 2"):
+        frame.select(pl.col("b") + pl.lit(one))

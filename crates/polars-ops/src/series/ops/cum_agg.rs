@@ -1,9 +1,9 @@
 use std::ops::{AddAssign, Mul};
 
-use arity::unary_elementwise_values;
+use arity::unary_elementwise_values_mut;
 use num_traits::{AsPrimitive, Bounded, One, Zero};
-use polars_arrow::array::{Array, BooleanArray};
-use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{CustomIterTools, NoNull};
@@ -52,6 +52,23 @@ where
     Some(*state)
 }
 
+/// Runs `scan` over every value of `arr` in turn, appending what it answers to `out`.
+fn scan_chunk<N, F>(arr: &PlPrimitiveArray<N>, scan: &mut F, out: &mut Vec<N>)
+where
+    N: NativeType,
+    F: FnMut(N) -> N,
+{
+    match arr.flat_values() {
+        Some(values) => out.extend(values.iter().copied().map(&mut *scan)),
+        None => {
+            let value = arr
+                .scalar_value_ignore_validity()
+                .expect("a chunk is flat or scalar");
+            out.extend(std::iter::repeat_n(value, arr.len()).map(&mut *scan))
+        },
+    }
+}
+
 fn cum_scan_numeric<T, S, F>(
     ca: &ChunkedArray<T>,
     reverse: bool,
@@ -64,6 +81,40 @@ where
     F: Fn(&mut S, Option<T::Native>) -> Option<T::Native>,
 {
     let mut state = init;
+
+    if !ca.has_nulls() {
+        let mut scan = |v: T::Native| update(&mut state, Some(v)).unwrap();
+
+        if !reverse {
+            let mut values: Vec<T::Native> = Vec::with_capacity(ca.len());
+            for arr in ca.downcast_iter() {
+                scan_chunk(arr, &mut scan, &mut values);
+            }
+            return ChunkedArray::from_vec(ca.name().clone(), values);
+        }
+
+        if let [chunk] = ca.chunks().as_slice() {
+            let arr: &PlPrimitiveArray<T::Native> = chunk.as_any().downcast_ref().unwrap();
+            let out: NoNull<ChunkedArray<T>> = match arr.flat_values() {
+                Some(values) => values
+                    .iter()
+                    .copied()
+                    .rev()
+                    .map(&mut scan)
+                    .collect_reversed(),
+                None => {
+                    let value = arr
+                        .scalar_value_ignore_validity()
+                        .expect("a chunk is flat or scalar");
+                    std::iter::repeat_n(value, arr.len())
+                        .map(&mut scan)
+                        .collect_reversed()
+                },
+            };
+            return out.into_inner().with_name(ca.name().clone());
+        }
+    }
+
     let out: ChunkedArray<T> = match reverse {
         false => ca.iter().map(|v| update(&mut state, v)).collect_trusted(),
         true => ca
@@ -73,6 +124,25 @@ where
             .collect_reversed(),
     };
     out.with_name(ca.name().clone())
+}
+
+/// The running max or min of a chunk that repeats one element is that chunk again.
+fn cum_extremum_of_repeated_element<T>(
+    ca: &ChunkedArray<T>,
+    init: Option<T::Native>,
+) -> Option<ChunkedArray<T>>
+where
+    T: PolarsNumericType,
+{
+    if init.is_some() {
+        return None;
+    }
+    let [chunk] = ca.chunks().as_slice() else {
+        return None;
+    };
+    let arr: &PlPrimitiveArray<T::Native> = chunk.as_any().downcast_ref().unwrap();
+    arr.scalar_value_ignore_validity()?;
+    Some(ca.clone())
 }
 
 fn cum_max_numeric<T>(
@@ -85,6 +155,10 @@ where
     T::Native: MinMax + Bounded,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
+    if let Some(out) = cum_extremum_of_repeated_element(ca, init) {
+        return out;
+    }
+
     let init = init.unwrap_or(if T::Native::is_float() {
         T::Native::nan_value()
     } else {
@@ -103,12 +177,26 @@ where
     T::Native: MinMax + Bounded,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
+    if let Some(out) = cum_extremum_of_repeated_element(ca, init) {
+        return out;
+    }
+
     let init = init.unwrap_or(if T::Native::is_float() {
         T::Native::nan_value()
     } else {
         Bounded::max_value()
     });
     cum_scan_numeric(ca, reverse, init, det_min)
+}
+
+/// A chunk that repeats one bit runs its max or min over that bit alone.
+fn cum_extremum_of_repeated_bit(ca: &BooleanChunked) -> Option<BooleanChunked> {
+    let [chunk] = ca.chunks().as_slice() else {
+        return None;
+    };
+    let arr: &PlBooleanArray = chunk.as_any().downcast_ref().unwrap();
+    arr.scalar_value_ignore_validity()?;
+    Some(ca.clone())
 }
 
 fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> BooleanChunked {
@@ -122,12 +210,17 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
                 ca.name().clone(),
                 ca.downcast_iter()
                     .map(|arr| {
-                        arr.with_values(Bitmap::new_with_value(true, arr.len()))
-                            .to_boxed()
+                        PlBooleanArray::new_scalar(true, arr.len())
+                            .with_validity(arr.validity().map(PlBitmap::from))
+                            .into_boxed()
                     })
                     .collect(),
             )
         };
+    }
+
+    if let Some(out) = cum_extremum_of_repeated_bit(ca) {
+        return out;
     }
 
     let mut out;
@@ -149,8 +242,10 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
         out.extend_constant(ca.len() - 1 - last_true_idx, false);
     }
 
-    let arr: BooleanArray = out.freeze().into();
-    BooleanChunked::with_chunk_like(ca, arr.with_validity(ca.rechunk_validity()))
+    let values = out.freeze();
+    let length = values.len();
+    let arr = PlBooleanArray::new(values, length, ca.rechunk_validity());
+    BooleanChunked::with_chunk_like(ca, arr)
 }
 
 fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> BooleanChunked {
@@ -164,12 +259,17 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
                 ca.name().clone(),
                 ca.downcast_iter()
                     .map(|arr| {
-                        arr.with_values(Bitmap::new_with_value(false, arr.len()))
-                            .to_boxed()
+                        PlBooleanArray::new_scalar(false, arr.len())
+                            .with_validity(arr.validity().map(PlBitmap::from))
+                            .into_boxed()
                     })
                     .collect(),
             )
         };
+    }
+
+    if let Some(out) = cum_extremum_of_repeated_bit(ca) {
+        return out;
     }
 
     let mut out;
@@ -191,8 +291,10 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
         out.extend_constant(ca.len() - 1 - last_false_idx, true);
     }
 
-    let arr: BooleanArray = out.freeze().into();
-    BooleanChunked::with_chunk_like(ca, arr.with_validity(ca.rechunk_validity()))
+    let values = out.freeze();
+    let length = values.len();
+    let arr = PlBooleanArray::new(values, length, ca.rechunk_validity());
+    BooleanChunked::with_chunk_like(ca, arr)
 }
 
 fn cum_sum_numeric<T>(
@@ -438,7 +540,7 @@ pub fn cum_count_with_init(s: &Series, reverse: bool, init: IdxSize) -> PolarsRe
         let out: IdxCa = if reverse {
             let mut count = init + (s.len() - s.null_count()) as IdxSize;
             let mut prev = false;
-            unary_elementwise_values(&ca, |v: bool| {
+            unary_elementwise_values_mut(&ca, |v: bool| {
                 if prev {
                     count -= 1;
                 }
@@ -447,7 +549,7 @@ pub fn cum_count_with_init(s: &Series, reverse: bool, init: IdxSize) -> PolarsRe
             })
         } else {
             let mut count = init;
-            unary_elementwise_values(&ca, |v: bool| {
+            unary_elementwise_values_mut(&ca, |v: bool| {
                 if v {
                     count += 1;
                 }

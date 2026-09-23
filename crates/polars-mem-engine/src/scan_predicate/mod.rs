@@ -6,9 +6,8 @@ use core::fmt;
 use std::sync::Arc;
 
 pub use functions::{create_scan_predicate, initialize_scan_predicate};
-use polars_arrow::bitmap::Bitmap;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{PlIndexMap, PlIndexSet};
+use polars_core::prelude::{PlBitmap, PlIndexMap, PlIndexSet};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::prelude::{PhysicalExpr, phys_expr_to_io_expr};
@@ -143,9 +142,9 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
         &self.schema
     }
 
-    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap> {
+    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<PlBitmap> {
         if df.height() == 0 {
-            return Ok(Bitmap::new());
+            return Ok(PlBitmap::new_empty());
         }
         let array = self
             .skip_batch_predicate
@@ -153,19 +152,16 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
         let array = array.bool()?.rechunk();
         let array = array.downcast_as_array();
 
-        let array = if let Some(validity) = array.validity() {
-            array.values() & validity
-        } else {
-            array.values().clone()
-        };
+        let mask = array.true_and_valid();
 
         // @NOTE: Certain predicates like `1 == 1` will only output 1 value. We need to broadcast
-        // the result back to the dataframe length.
-        if array.len() == 1 && df.height() != 0 {
-            return Ok(Bitmap::new_with_value(array.get_bit(0), df.height()));
+        // the result back to the dataframe length — which the mask does by keeping the one bit it
+        // holds rather than writing it out per row.
+        if mask.len() == 1 {
+            return Ok(PlBitmap::new_scalar(mask.get(0), df.height()));
         }
 
-        assert_eq!(array.len(), df.height());
-        Ok(array)
+        assert_eq!(mask.len(), df.height());
+        Ok(mask)
     }
 }

@@ -154,6 +154,18 @@ pub fn cut(
     } else {
         compute_cut_labels(&breaks, left_closed)?
     };
+
+    if s.repeats_one_element() {
+        let one = map_enum_cats(
+            &s.head(Some(1)),
+            &cut_labels,
+            &breaks,
+            left_closed,
+            include_breaks,
+        )?;
+        return Ok(one.new_from_index(0, s.len()));
+    }
+
     map_enum_cats(s, &cut_labels, &breaks, left_closed, include_breaks)
 }
 
@@ -218,6 +230,17 @@ pub fn qcut(
     } else {
         compute_cut_labels(&qbreaks, left_closed)?
     };
+
+    if s.repeats_one_element() {
+        let one = map_categorical_cats(
+            &s.head(Some(1)),
+            &cut_labels,
+            &qbreaks,
+            left_closed,
+            include_breaks,
+        )?;
+        return Ok(one.new_from_index(0, s.len()));
+    }
 
     map_categorical_cats(&s, &cut_labels, &qbreaks, left_closed, include_breaks)
 }

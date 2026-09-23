@@ -11,15 +11,13 @@
 /// After the sentinel value (and possible length), the data is then given.
 use std::mem::MaybeUninit;
 
-use polars_arrow::array::builder::StaticArrayBuilder;
-use polars_arrow::array::{
-    Array, BinaryViewArray, BinaryViewArrayBuilder, BinaryViewArrayGeneric, View, ViewType,
-};
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBitmap};
+use polars_arrow::array::View;
 use polars_arrow::bitmap::BitmapBuilder;
-use polars_arrow::datatypes::ArrowDataType;
 use polars_buffer::Buffer;
 
-use super::BLOCK_SIZE;
+use super::{BLOCK_SIZE, flat_validity};
 use crate::row::RowEncodingOptions;
 
 #[inline(always)]
@@ -131,18 +129,56 @@ unsafe fn encode_view(dst: *mut u8, view: &View, buffers: &[Buffer<u8>]) -> usiz
     }
 }
 
-pub unsafe fn encode_view_no_order<T: ViewType + ?Sized>(
+/// Writes one row per element of `array`, reading its views rather than its elements.
+///
+/// The walk wants one mask bit per element; a chunk whose mask stands for every element of it
+/// goes through [`encode_variable_no_order`] instead. Views that repeat are resolved once and
+/// written into every row they stand for.
+pub unsafe fn encode_binview_no_order(
     buffer: &mut [MaybeUninit<u8>],
-    array: &BinaryViewArrayGeneric<T>,
+    array: &PlBinaryViewArray,
     opt: RowEncodingOptions,
     offsets: &mut [usize],
 ) {
     debug_assert!(opt.contains(RowEncodingOptions::NO_ORDER));
-    let views = array.views().as_slice();
+
+    let Some(validity) = flat_validity(array.validity()) else {
+        return encode_variable_no_order(buffer, array.iter(), opt, offsets);
+    };
+
     let buffers = array.data_buffers().as_slice();
     let out = buffer.as_mut_ptr() as *mut u8;
 
-    match array.validity() {
+    let Some(views) = array.flat_views() else {
+        // Every row reads the same view: resolve it once, rather than asking the array for an
+        // element at a time and resolving it again on each.
+        let Some(view) = array.scalar_views() else {
+            return;
+        };
+
+        match validity {
+            None => {
+                for offset in offsets.iter_mut() {
+                    *offset += encode_view(out.add(*offset), &view, buffers);
+                }
+            },
+            Some(validity) => {
+                for (offset, is_valid) in offsets.iter_mut().zip(validity.iter()) {
+                    if is_valid {
+                        *offset += encode_view(out.add(*offset), &view, buffers);
+                    } else {
+                        *out.add(*offset) = 0xFF;
+                        *offset += 1;
+                    }
+                }
+            },
+        }
+        return;
+    };
+
+    let views = views.as_slice();
+
+    match validity {
         None => {
             for (offset, view) in offsets.iter_mut().zip(views) {
                 *offset += encode_view(out.add(*offset), view, buffers);
@@ -194,7 +230,7 @@ pub unsafe fn encode_variable_no_order<'a, I: Iterator<Item = Option<&'a [u8]>>>
 /// # Safety
 /// `row` must start with a null sentinel or an encoded value.
 #[inline(always)]
-unsafe fn decode_one(row: &mut &[u8], builder: &mut BinaryViewArrayBuilder) -> bool {
+unsafe fn decode_one(row: &mut &[u8], builder: &mut PlBinaryViewArrayBuilder) -> bool {
     let sentinel = *row.get_unchecked(0);
     if sentinel == 0xFF {
         *row = row.get_unchecked(1..);
@@ -225,12 +261,11 @@ unsafe fn decode_one(row: &mut &[u8], builder: &mut BinaryViewArrayBuilder) -> b
 pub unsafe fn decode_variable_no_order(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
-) -> BinaryViewArray {
+) -> PlBinaryViewArray {
     debug_assert!(opt.contains(RowEncodingOptions::NO_ORDER));
 
     let num_rows = rows.len();
-    let mut builder = BinaryViewArrayBuilder::new(ArrowDataType::BinaryView);
-    builder.reserve(num_rows);
+    let mut builder = PlBinaryViewArrayBuilder::with_capacity(num_rows);
     let mut validity = BitmapBuilder::new();
 
     for row in rows.iter_mut() {
@@ -253,5 +288,5 @@ pub unsafe fn decode_variable_no_order(
         }
     }
 
-    builder.freeze_with_validity(validity.into_opt_validity())
+    builder.freeze_with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap))
 }

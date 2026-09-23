@@ -486,6 +486,45 @@ def test_series_gather_null_on_oob() -> None:
     assert result.to_list() == [1, 2, None]
 
 
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        (5, pl.Int64),
+        (2.5, pl.Float64),
+        (True, pl.Boolean),
+        ("abcdef", pl.String),
+        (b"abcdef", pl.Binary),
+        ([1, 2], pl.List(pl.Int64)),
+        ({"x": 1}, pl.Struct({"x": pl.Int64})),
+    ],
+)
+def test_gather_values_that_repeat_under_a_mask(
+    value: object, dtype: pl.DataType
+) -> None:
+    n = 1000
+    masked = pl.select(
+        pl.when(pl.int_range(0, n) % 3 != 0)
+        .then(pl.repeat(pl.lit(value, dtype=dtype), n))
+        .alias("a")
+    ).to_series()
+    written = pl.Series("a", masked.to_list(), dtype=dtype)
+
+    for idx in (
+        pl.Series(range(n), dtype=pl.get_index_type()),
+        pl.Series(list(range(n))[::-1], dtype=pl.get_index_type()),
+        pl.Series(range(0, n, 7), dtype=pl.get_index_type()),
+        pl.Series([0] * n, dtype=pl.get_index_type()),
+        pl.Series([None if i % 2 else 1 for i in range(n)], dtype=pl.get_index_type()),
+    ):
+        assert_series_equal(masked.gather(idx), written.gather(idx))
+
+    if not dtype.is_nested():
+        idx = pl.Series(range(0, n, 7), dtype=pl.get_index_type())
+        assert (
+            masked.gather(idx).estimated_size() < written.gather(idx).estimated_size()
+        )
+
+
 @pytest.mark.parametrize("value", [1, 1.5, "a", True])
 @pytest.mark.parametrize("nulls_last", [False, True])
 def test_gather_scalar_with_interleaved_nulls(

@@ -1,8 +1,7 @@
 use num_traits::{Bounded, ToPrimitive, Zero};
-use polars_arrow::array::Array;
+use polars_array::bitmap::combine_validities_and;
+use polars_array::{PlBitmap, PlPrimitiveArray};
 use polars_arrow::bitmap::BitmapBuilder;
-use polars_arrow::compute::utils::combine_validities_and;
-use polars_arrow::datatypes::IdxArr;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::prelude::{ChunkedArray, IdxCa, IdxSize, PolarsIntegerType, Series};
 use polars_core::with_match_physical_integer_polars_type;
@@ -35,7 +34,7 @@ where
     if unsigned {
         let len_u64 = target_len as u64;
         for arr in ca.downcast_iter() {
-            for v in arr.values().iter() {
+            for v in arr.values_iter() {
                 // SAFETY: we reserved.
                 unsafe {
                     if let Some(v_u64) = v.to_u64() {
@@ -51,7 +50,7 @@ where
     } else {
         let len_i64 = target_len as i64;
         for arr in ca.downcast_iter() {
-            for v in arr.values().iter() {
+            for v in arr.values_iter() {
                 // SAFETY: we reserved.
                 unsafe {
                     if let Some(v_i64) = v.to_i64() {
@@ -68,10 +67,13 @@ where
         }
     }
 
-    let idx_arr = IdxArr::from_vec(out);
-    let in_bounds_valid = in_bounds.into_opt_validity();
+    let idx_arr = PlPrimitiveArray::from_vec(out);
+    let in_bounds_valid = in_bounds.into_opt_validity().map(PlBitmap::from_bitmap);
     let ca_valid = ca.rechunk_validity();
-    let valid = combine_validities_and(in_bounds_valid.as_ref(), ca_valid.as_ref());
+    let valid = combine_validities_and(
+        in_bounds_valid.as_ref().map(PlBitmap::as_ref),
+        ca_valid.as_ref().map(PlBitmap::as_ref),
+    );
     let out = idx_arr.with_validity(valid);
 
     if !null_on_oob && out.null_count() != ca.null_count() {
@@ -80,7 +82,10 @@ where
         );
     }
 
-    Ok(out.into())
+    Ok(IdxCa::with_chunk(
+        polars_utils::pl_str::PlSmallStr::EMPTY,
+        out,
+    ))
 }
 
 /// Convert arbitrary integer Series into IdxCa, using `target_len` as logical length.

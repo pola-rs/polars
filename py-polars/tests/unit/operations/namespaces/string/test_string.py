@@ -2477,3 +2477,69 @@ def test_str_concat_removed() -> None:
         AttributeRemovedError, match=re.escape("use `str.join` instead")
     ):
         s.to_frame().select(pl.all().str.concat())  # type: ignore[attr-defined]
+
+
+def test_json_decode_repeated_chunk() -> None:
+    n = 4
+    for s in (
+        pl.repeat('{"a":1,"b":"z"}', n, dtype=pl.String, eager=True),
+        pl.Series(['{"a":1,"b":"z"}'] * n, dtype=pl.String),
+    ):
+        assert s.str.json_decode().to_list() == [{"a": 1, "b": "z"}] * n
+        assert s.str.json_decode(pl.Struct({"a": pl.Int64})).to_list() == [{"a": 1}] * n
+
+    assert (
+        pl.repeat(None, n, dtype=pl.String, eager=True)
+        .str.json_decode(pl.Struct({"a": pl.Int64}))
+        .to_list()
+        == [None] * n
+    )
+
+    with pytest.raises(ComputeError, match="error deserializing JSON"):
+        pl.repeat("{not json", n, dtype=pl.String, eager=True).str.json_decode(
+            pl.Struct({"a": pl.Int64})
+        )
+
+
+def test_str_split_by_column_repeated_chunks() -> None:
+    n = 4
+    rep = pl.DataFrame(
+        {
+            "x": pl.repeat("a,b,c", n, dtype=pl.String, eager=True),
+            "y": pl.repeat(",", n, dtype=pl.String, eager=True),
+        }
+    )
+    flat = pl.DataFrame({"x": ["a,b,c"] * n, "y": [","] * n})
+    for df in (rep, flat):
+        assert (
+            df.select(pl.col("x").str.split(pl.col("y"))).to_series().to_list()
+            == [["a", "b", "c"]] * n
+        )
+        assert (
+            df.select(pl.col("x").str.split(pl.col("y"), inclusive=True))
+            .to_series()
+            .to_list()
+            == [["a,", "b,", "c"]] * n
+        )
+
+    empty = pl.DataFrame(
+        {
+            "x": pl.repeat("ab", n, dtype=pl.String, eager=True),
+            "y": pl.repeat("", n, dtype=pl.String, eager=True),
+        }
+    )
+    assert (
+        empty.select(pl.col("x").str.split(pl.col("y"))).to_series().to_list()
+        == [["a", "b"]] * n
+    )
+    for null_col in ("x", "y"):
+        df = pl.DataFrame(
+            {
+                "x": pl.repeat("a,b", n, dtype=pl.String, eager=True),
+                "y": pl.repeat(",", n, dtype=pl.String, eager=True),
+            }
+        ).with_columns(pl.repeat(None, n, dtype=pl.String, eager=True).alias(null_col))
+        assert (
+            df.select(pl.col("x").str.split(pl.col("y"))).to_series().to_list()
+            == [None] * n
+        )

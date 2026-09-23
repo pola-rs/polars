@@ -10,6 +10,30 @@ use crate::interop::arrow::to_py::series_to_stream;
 use crate::prelude::*;
 use crate::utils::EnterPolarsExt;
 
+/// The elements of a Series as a Python list.
+fn elements_to_pylist<'py, T>(py: Python<'py>, ca: &ChunkedArray<T>) -> PyResult<Bound<'py, PyList>>
+where
+    T: PolarsDataType,
+    for<'a> Option<T::Physical<'a>>: IntoPyObject<'py>,
+{
+    match ca.chunks().len() {
+        1 => PyList::new(py, ca.downcast_iter().next().unwrap().iter()),
+        _ => PyList::new(py, collect_elements(ca)),
+    }
+}
+
+/// The elements of a Series, collected a chunk at a time.
+fn collect_elements<T>(ca: &ChunkedArray<T>) -> Vec<Option<T::Physical<'_>>>
+where
+    T: PolarsDataType,
+{
+    let mut elements = Vec::with_capacity(ca.len());
+    for arr in ca.downcast_iter() {
+        arr.iter().for_each(|element| elements.push(element));
+    }
+    elements
+}
+
 #[pymethods]
 impl PySeries {
     /// Convert this Series to a Python list.
@@ -20,42 +44,42 @@ impl PySeries {
         fn to_list_recursive<'py>(py: Python<'py>, series: &Series) -> PyResult<Bound<'py, PyAny>> {
             let pylist = match series.dtype() {
                 DataType::Boolean => {
-                    PyList::new(py, series.bool().map_err(PyPolarsErr::from)?.iter())?
+                    elements_to_pylist(py, series.bool().map_err(PyPolarsErr::from)?)?
                 },
-                DataType::UInt8 => PyList::new(py, series.u8().map_err(PyPolarsErr::from)?.iter())?,
+                DataType::UInt8 => elements_to_pylist(py, series.u8().map_err(PyPolarsErr::from)?)?,
                 DataType::UInt16 => {
-                    PyList::new(py, series.u16().map_err(PyPolarsErr::from)?.iter())?
+                    elements_to_pylist(py, series.u16().map_err(PyPolarsErr::from)?)?
                 },
                 DataType::UInt32 => {
-                    PyList::new(py, series.u32().map_err(PyPolarsErr::from)?.iter())?
+                    elements_to_pylist(py, series.u32().map_err(PyPolarsErr::from)?)?
                 },
                 DataType::UInt64 => {
-                    PyList::new(py, series.u64().map_err(PyPolarsErr::from)?.iter())?
+                    elements_to_pylist(py, series.u64().map_err(PyPolarsErr::from)?)?
                 },
                 DataType::UInt128 => {
-                    PyList::new(py, series.u128().map_err(PyPolarsErr::from)?.iter())?
+                    elements_to_pylist(py, series.u128().map_err(PyPolarsErr::from)?)?
                 },
-                DataType::Int8 => PyList::new(py, series.i8().map_err(PyPolarsErr::from)?.iter())?,
+                DataType::Int8 => elements_to_pylist(py, series.i8().map_err(PyPolarsErr::from)?)?,
                 DataType::Int16 => {
-                    PyList::new(py, series.i16().map_err(PyPolarsErr::from)?.iter())?
+                    elements_to_pylist(py, series.i16().map_err(PyPolarsErr::from)?)?
                 },
                 DataType::Int32 => {
-                    PyList::new(py, series.i32().map_err(PyPolarsErr::from)?.iter())?
+                    elements_to_pylist(py, series.i32().map_err(PyPolarsErr::from)?)?
                 },
                 DataType::Int64 => {
-                    PyList::new(py, series.i64().map_err(PyPolarsErr::from)?.iter())?
+                    elements_to_pylist(py, series.i64().map_err(PyPolarsErr::from)?)?
                 },
                 DataType::Int128 => {
-                    PyList::new(py, series.i128().map_err(PyPolarsErr::from)?.iter())?
+                    elements_to_pylist(py, series.i128().map_err(PyPolarsErr::from)?)?
                 },
                 DataType::Float16 => {
-                    PyList::new(py, series.f16().map_err(PyPolarsErr::from)?.iter())?
+                    elements_to_pylist(py, series.f16().map_err(PyPolarsErr::from)?)?
                 },
                 DataType::Float32 => {
-                    PyList::new(py, series.f32().map_err(PyPolarsErr::from)?.iter())?
+                    elements_to_pylist(py, series.f32().map_err(PyPolarsErr::from)?)?
                 },
                 DataType::Float64 => {
-                    PyList::new(py, series.f64().map_err(PyPolarsErr::from)?.iter())?
+                    elements_to_pylist(py, series.f64().map_err(PyPolarsErr::from)?)?
                 },
                 DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                     with_match_categorical_physical_type!(series.dtype().cat_physical().unwrap(), |$C| {

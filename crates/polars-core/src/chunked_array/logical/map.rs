@@ -1,10 +1,9 @@
 use std::borrow::Cow;
 
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
-use polars_arrow::offset::{Offsets, OffsetsBuffer};
+use polars_buffer::Buffer;
 use polars_compute::filter::filter_with_bitmap;
 use polars_compute::gather::take_unchecked;
-use polars_compute::rebuild_list::rebuild_list_shallow;
 
 use crate::chunked_array::align_inner_chunks;
 use crate::chunked_array::cast::CastOptions;
@@ -242,9 +241,20 @@ impl MapChunked {
             .downcast_iter()
             .map(|arr| {
                 let values = live_entry_field_chunk(arr, i);
-                let dtype = LargeListArray::default_datatype(values.dtype().clone());
-                LargeListArray::new(dtype, live_offsets(arr), values, arr.validity().cloned())
-                    .boxed()
+                if arr
+                    .validity()
+                    .is_none_or(|validity| validity.unset_bits() == 0)
+                {
+                    return rebuild_entries(arr, values).into_boxed();
+                }
+
+                let validity = arr.validity().map(PlBitmap::from);
+                // SAFETY: the offsets count the entries kept for every row in turn, laid end to
+                // end, so they are non-decreasing, start at zero and end at the entry count.
+                unsafe {
+                    PlListArray::new_unchecked(values, live_offsets(arr), arr.len(), validity)
+                }
+                .into_boxed()
             })
             .collect();
 
@@ -322,12 +332,12 @@ impl MapChunked {
     ///
     /// A null row's entries are unconstrained, so revealing them as they stand could expose a
     /// null entry or key. Rows that stay null keep their entries where they were.
-    pub(crate) fn with_row_validity(&self, validity: Option<Bitmap>) -> Self {
+    pub(crate) fn with_row_validity(&self, validity: Option<PlBitmap>) -> Self {
         let revives_rows = match self.storage.rechunk_validity() {
             None => false,
             Some(old) => match &validity {
                 None => old.unset_bits() > 0,
-                Some(new) => polars_arrow::bitmap::and_not(new, &old).set_bits() > 0,
+                Some(new) => new.and(&old.not()).set_bits() > 0,
             },
         };
         let storage = if revives_rows {
@@ -479,61 +489,106 @@ pub(crate) fn pack_map_entries(keys: &Series, values: &Series) -> Series {
     .into_series()
 }
 
-/// Slice the entries child to its list offsets in O(1), without recursion.
-fn windowed_entries_array(arr: &LargeListArray) -> ArrayRef {
-    let offsets = arr.offsets();
-    let first = *offsets.first() as usize;
-    let len = offsets.range() as usize;
-    let values = arr.values();
-    if first == 0 && len == values.len() {
-        values.clone()
-    } else {
-        values.sliced(first, len)
+/// The range of the entries child the rows of `arr` cover between them.
+fn covered_entries(arr: &PlListArray) -> std::ops::Range<usize> {
+    match arr.scalar_offsets() {
+        Some(range) => range,
+        None => {
+            let offsets = arr.flat_offsets().expect("offsets are flat or scalar");
+            offsets[0] as usize..offsets[offsets.len() - 1] as usize
+        },
     }
 }
 
-/// Mask the windowed entries by row validity; `None` if no null row spans an entry.
-///
-/// Scans validity runs once, allocating only once a null row is found to span entries.
-fn live_entry_mask(arr: &LargeListArray) -> Option<Bitmap> {
-    let validity = arr.validity().filter(|v| v.unset_bits() > 0)?;
-    let offsets = arr.offsets();
-    let first = *offsets.first() as usize;
-    let n_entries = offsets.range() as usize;
+/// Slice the entries child to its list offsets in O(1), without recursion.
+fn windowed_entries_array(arr: &PlListArray) -> PlArrayRef {
+    let covered = covered_entries(arr);
+    let values = arr.values();
+    if covered.start == 0 && covered.len() == values.len() {
+        values.to_boxed()
+    } else {
+        values.sliced(covered.start, covered.len())
+    }
+}
 
-    let mut mask: Option<BitmapBuilder> = None;
-    let mut runs = validity.iter();
-    let mut row = 0;
-    while runs.num_remaining() > 0 {
-        row += runs.take_leading_ones();
-        let end = row + runs.take_leading_zeros();
-        let (start, stop) = (offsets[row] as usize, offsets[end] as usize);
-        if stop > start {
-            // Fill the live run before this null-row window in bulk.
-            let mask = mask.get_or_insert_with(|| BitmapBuilder::with_capacity(n_entries));
-            mask.extend_constant(start - first - mask.len(), true);
-            mask.extend_constant(stop - start, false);
-        }
-        row = end;
+/// Mask windowed entries by row validity; `None` if all belong to live rows.
+///
+/// The rows are read as the windows they tile the entries with, which is what flat offsets hold.
+fn live_entry_mask(arr: &Flat<PlListArray>) -> Option<Bitmap> {
+    let arr = arr.as_array();
+    let validity = arr.validity().filter(|v| v.unset_bits() > 0)?;
+
+    let validity = validity.to_flat();
+    let null_rows = !&*validity;
+    // SAFETY: the mask holds one bit per row, so every index it names is in bounds.
+    if null_rows
+        .true_idx_iter()
+        .all(|i| unsafe { arr.value_range_unchecked(i) }.is_empty())
+    {
+        return None;
     }
 
-    let mut mask = mask?;
+    let covered = covered_entries(arr);
+    let (first, n_entries) = (covered.start, covered.len());
+    let mut mask = BitmapBuilder::with_capacity(n_entries);
+    for i in null_rows.true_idx_iter() {
+        // SAFETY: the mask holds one bit per row, so every index it names is in bounds.
+        let range = unsafe { arr.value_range_unchecked(i) };
+        mask.extend_constant(range.start - first - mask.len(), true);
+        mask.extend_constant(range.len(), false);
+    }
     mask.extend_constant(n_entries - mask.len(), true);
+
     Some(mask.freeze())
+}
+
+/// Rebuilds `arr` around `values`, the entries its rows cover, rebased onto them.
+fn rebuild_entries(arr: &PlListArray, values: PlArrayRef) -> PlListArray {
+    let covered = covered_entries(arr);
+    assert_eq!(
+        values.len(),
+        covered.len(),
+        "replacement entries must cover exactly the offsets of the rows"
+    );
+
+    let validity = arr.validity().map(PlBitmap::from);
+    let offsets_are_flat = arr.offsets_are_flat();
+    let (_, offsets, length, _) = arr.clone().into_inner();
+
+    let start = covered.start as u64;
+    let offsets = Buffer::from(
+        offsets
+            .iter()
+            .map(|offset| offset - start)
+            .collect::<Vec<_>>(),
+    );
+
+    // SAFETY: the offsets are as many as they were, so still flat or scalar for `length`, and
+    // shifting them all by the same start leaves them non-decreasing within the entries.
+    unsafe {
+        if offsets_are_flat {
+            PlListArray::new_unchecked(values, offsets, length, validity)
+        } else {
+            PlListArray::new_broadcast_unchecked(values, offsets, length, validity)
+        }
+    }
 }
 
 /// One chunk's entries of the field at `i`, restricted to the entries of live rows.
 ///
 /// Leaves the other field alone, so flattening keys never materializes values.
-fn live_entry_field_chunk(arr: &LargeListArray, i: usize) -> ArrayRef {
+fn live_entry_field_chunk(arr: &PlListArray, i: usize) -> PlArrayRef {
+    let flat = arr.to_flat();
+    let arr = flat.as_array();
+
     let entries = windowed_entries_array(arr);
     let entries = entries
         .as_any()
-        .downcast_ref::<StructArray>()
+        .downcast_ref::<PlStructArray>()
         .expect("map entries are a struct");
-    let field = entries.values()[i].clone();
-    match live_entry_mask(arr) {
-        Some(mask) => filter_with_bitmap(field.as_ref(), &mask),
+    let field = entries.fields()[i].clone();
+    match live_entry_mask(&flat) {
+        Some(mask) => filter_with_bitmap(&*field, PlBitmapRef::new(&mask, mask.len())),
         None => field,
     }
 }
@@ -541,43 +596,43 @@ fn live_entry_field_chunk(arr: &LargeListArray, i: usize) -> ArrayRef {
 /// Zero-based row offsets over the live entries of `arr`, with null rows emptied.
 ///
 /// Matches what flattening the entries of live rows produces, so the two can be recombined.
-fn live_offsets(arr: &LargeListArray) -> OffsetsBuffer<i64> {
-    let offsets = arr.offsets();
-    let has_null_rows = arr.validity().is_some_and(|v| v.unset_bits() > 0);
-    if !has_null_rows && *offsets.first() == 0 {
-        return offsets.clone();
+fn live_offsets(arr: &PlListArray) -> Buffer<u64> {
+    let mut offsets = Vec::with_capacity(arr.len() + 1);
+    let mut kept = 0u64;
+    offsets.push(kept);
+    for length in live_lengths(arr) {
+        kept += length as u64;
+        offsets.push(kept);
     }
-
-    Offsets::try_from_lengths(live_lengths(arr))
-        .expect("live lengths sum to at most the entry count")
-        .into()
+    offsets.into()
 }
 
 /// Entries each row of one chunk owns, in row order, with null rows emptied.
-fn live_lengths(arr: &LargeListArray) -> impl Iterator<Item = usize> + '_ {
+fn live_lengths(arr: &PlListArray) -> impl Iterator<Item = usize> + '_ {
     let validity = arr.validity().filter(|v| v.unset_bits() > 0);
-    arr.offsets()
-        .lengths()
-        .enumerate()
-        .map(move |(row, len)| match validity {
-            Some(validity) if !validity.get_bit(row) => 0,
-            _ => len,
-        })
+    (0..arr.len()).map(move |row| match validity {
+        Some(validity) if !validity.get(row) => 0,
+        // SAFETY: the row is in bounds of the chunk it is counted over.
+        _ => unsafe { arr.value_range_unchecked(row) }.len(),
+    })
 }
 
 /// Filter out entries under null rows and rebuild offsets; `None` if unchanged.
-pub(crate) fn compact_null_rows_chunk(arr: &LargeListArray) -> Option<LargeListArray> {
+pub(crate) fn compact_null_rows_chunk(arr: &PlListArray) -> Option<PlListArray> {
+    let flat = arr.to_flat();
+    let arr = &*flat;
+
     let mask = live_entry_mask(arr)?;
+    let arr = arr.as_array();
     let entries = windowed_entries_array(arr);
-    let entries = filter_with_bitmap(entries.as_ref(), &mask);
+    let entries = filter_with_bitmap(&*entries, PlBitmapRef::new(&mask, mask.len()));
     let validity = arr.validity().expect("a masked chunk has null rows");
 
-    Some(LargeListArray::new(
-        arr.dtype().clone(),
-        live_offsets(arr),
-        entries,
-        Some(validity.clone()),
-    ))
+    // SAFETY: the offsets count the entries kept for every row in turn, laid end to end, so they
+    // are non-decreasing, start at zero and end at however many entries were kept.
+    Some(unsafe {
+        PlListArray::new_unchecked(entries, live_offsets(arr), arr.len(), Some(validity.into()))
+    })
 }
 
 /// Drop entries under null rows; `None` if unchanged.
@@ -589,16 +644,16 @@ pub(crate) fn compact_null_map_rows(storage: &ListChunked) -> Option<ListChunked
     }
 
     // Allocate only after the first changed chunk.
-    let mut new_chunks: Option<Vec<ArrayRef>> = None;
+    let mut new_chunks: Option<Vec<PlArrayRef>> = None;
 
     for (i, chunk) in storage.downcast_iter().enumerate() {
         match compact_null_rows_chunk(chunk) {
             Some(dropped) => new_chunks
                 .get_or_insert_with(|| storage.chunks()[..i].to_vec())
-                .push(dropped.boxed()),
+                .push(dropped.into_boxed()),
             None => {
                 if let Some(new_chunks) = new_chunks.as_mut() {
-                    new_chunks.push(chunk.clone().boxed());
+                    new_chunks.push(chunk.clone().into_boxed());
                 }
             },
         }
@@ -659,17 +714,14 @@ pub(crate) fn try_apply_map_entries(
     // Align chunks by offset-window length, not full child length.
     let window_lens = storage
         .downcast_iter()
-        .map(|arr| arr.offsets().range() as usize);
+        .map(|arr| covered_entries(arr).len());
     let packed = align_inner_chunks(window_lens, &packed);
     let entries_dtype = packed.dtype().clone();
 
     let chunks = storage
         .downcast_iter()
         .zip(packed.into_chunks())
-        .map(|(arr, values)| {
-            let dtype = LargeListArray::default_datatype(values.dtype().clone());
-            rebuild_list_shallow(arr, dtype, values).boxed()
-        })
+        .map(|(arr, values)| rebuild_entries(arr, values).into_boxed())
         .collect();
 
     // SAFETY: the list dtype is derived from the packed entries.
@@ -699,37 +751,39 @@ pub(crate) fn ensure_live_entries_non_null(storage: &ListChunked) -> PolarsResul
         let entries = arr.values();
         let entries = entries
             .as_any()
-            .downcast_ref::<StructArray>()
+            .downcast_ref::<PlStructArray>()
             .expect("map entries are a struct");
-        let [key_arr, _] = entries.values() else {
+        let [key_arr, _] = entries.fields() else {
             unreachable!("map entries must have two arrays")
         };
 
-        // Nothing can be null anywhere, so the windows need not be walked at all.
-        let entry_nulls = entries.validity().filter(|v| v.unset_bits() > 0);
-        let key_nulls = key_arr.validity().filter(|v| v.unset_bits() > 0);
+        let entry_nulls = entries
+            .validity()
+            .filter(|v| v.unset_bits() > 0)
+            .map(|v| v.to_flat().into_owned());
+        let key_nulls = key_arr
+            .validity()
+            .filter(|v| v.unset_bits() > 0)
+            .map(|v| v.to_flat().into_owned());
         if entry_nulls.is_none() && key_nulls.is_none() {
             continue;
         }
+        let (entry_nulls, key_nulls) = (entry_nulls.as_ref(), key_nulls.as_ref());
 
-        let offsets = arr.offsets();
+        let flat = arr.to_flat();
+        let arr = flat.as_array();
+
+        let covered = covered_entries(arr);
         let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) else {
-            ensure_window_non_null(
-                entry_nulls,
-                key_nulls,
-                *offsets.first() as usize,
-                offsets.range() as usize,
-            )?;
+            ensure_window_non_null(entry_nulls, key_nulls, covered.start, covered.len())?;
             continue;
         };
 
-        let mut runs = validity.iter();
-        let mut row = 0;
-        while runs.num_remaining() > 0 {
-            let end = row + runs.take_leading_ones();
-            let start = offsets[row] as usize;
-            ensure_window_non_null(entry_nulls, key_nulls, start, offsets[end] as usize - start)?;
-            row = end + runs.take_leading_zeros();
+        let validity = validity.to_flat();
+        for row in validity.true_idx_iter() {
+            // SAFETY: the mask holds one bit per row, so every index it names is in bounds.
+            let window = unsafe { arr.value_range_unchecked(row) };
+            ensure_window_non_null(entry_nulls, key_nulls, window.start, window.len())?;
         }
     }
 
@@ -775,7 +829,7 @@ pub(crate) fn canonicalize_map_storage(storage: &Series) -> PolarsResult<Option<
     ensure_live_entries_non_null(list_ca)?;
 
     // Allocate only after the first changed chunk.
-    let mut new_chunks: Option<Vec<ArrayRef>> = None;
+    let mut new_chunks: Option<Vec<PlArrayRef>> = None;
 
     for (i, chunk) in list_ca.downcast_iter().enumerate() {
         match canonicalize_list_chunk(chunk, key_field.dtype())? {
@@ -784,7 +838,7 @@ pub(crate) fn canonicalize_map_storage(storage: &Series) -> PolarsResult<Option<
                 .push(canonicalized),
             None => {
                 if let Some(new_chunks) = new_chunks.as_mut() {
-                    new_chunks.push(chunk.clone().boxed());
+                    new_chunks.push(chunk.clone().into_boxed());
                 }
             },
         }
@@ -796,9 +850,9 @@ pub(crate) fn canonicalize_map_storage(storage: &Series) -> PolarsResult<Option<
 }
 
 struct CanonicalMapIndices {
-    first_keys: IdxArr,
-    last_values: IdxArr,
-    offsets: OffsetsBuffer<i64>,
+    first_keys: PlPrimitiveArray<IdxSize>,
+    last_values: PlPrimitiveArray<IdxSize>,
+    offsets: Buffer<u64>,
 }
 
 /// Build take indices that deduplicate keys within each row; `None` if unchanged.
@@ -807,42 +861,41 @@ struct CanonicalMapIndices {
 /// duplicates: two hidden keys can encode identically without anyone being able to see it.
 /// A gather visits the windows of live rows only, so it also drops every hidden entry.
 fn canonical_map_indices(
-    arr: &LargeListArray,
-    keys: &BinaryArray<i64>,
+    arr: &Flat<PlListArray>,
+    keys: &PlBinaryArray,
 ) -> Option<CanonicalMapIndices> {
-    let offsets = arr.offsets();
+    let arr = arr.as_array();
     let row_validity = arr.validity().filter(|v| v.unset_bits() > 0);
+    let window = |row: usize| unsafe { arr.value_range_unchecked(row) };
 
     let mut seen = PlHashSet::new();
     let has_duplicates = (0..arr.len()).any(|row| {
-        if row_validity.is_some_and(|v| !v.get_bit(row)) {
+        if row_validity.is_some_and(|v| !v.get(row)) {
             return false;
         }
-        let (start, end) = offsets.start_end(row);
         seen.clear();
-        (start..end).any(|i| !seen.insert(unsafe { keys.value_unchecked(i) }))
+        window(row).any(|i| !seen.insert(unsafe { keys.value_unchecked(i) }))
     });
     if !has_duplicates {
         return None;
     }
 
-    let capacity = offsets.range() as usize;
+    let capacity = covered_entries(arr).len();
     let mut key_idx = Vec::with_capacity(capacity);
     let mut value_idx = Vec::with_capacity(capacity);
-    let mut new_offsets = Vec::with_capacity(offsets.len());
-    new_offsets.push(0i64);
+    let mut new_offsets = Vec::with_capacity(arr.len() + 1);
+    new_offsets.push(0u64);
 
     let mut slots = PlHashMap::new();
     for row in 0..arr.len() {
         // A null row owns nothing an observer can reach, so its whole window is dropped.
-        if row_validity.is_some_and(|v| !v.get_bit(row)) {
-            new_offsets.push(key_idx.len() as i64);
+        if row_validity.is_some_and(|v| !v.get(row)) {
+            new_offsets.push(key_idx.len() as u64);
             continue;
         }
-        let (start, end) = offsets.start_end(row);
 
         slots.clear();
-        for i in start..end {
+        for i in window(row) {
             let key = unsafe { keys.value_unchecked(i) };
             if let Some(&slot) = slots.get(key) {
                 value_idx[slot] = i as IdxSize;
@@ -852,22 +905,22 @@ fn canonical_map_indices(
                 value_idx.push(i as IdxSize);
             }
         }
-        new_offsets.push(key_idx.len() as i64);
+        new_offsets.push(key_idx.len() as u64);
     }
 
     Some(CanonicalMapIndices {
-        first_keys: IdxArr::from_vec(key_idx),
-        last_values: IdxArr::from_vec(value_idx),
-        offsets: unsafe { OffsetsBuffer::new_unchecked(new_offsets.into()) },
+        first_keys: PlPrimitiveArray::from_vec(key_idx),
+        last_values: PlPrimitiveArray::from_vec(value_idx),
+        offsets: new_offsets.into(),
     })
 }
 
 fn gather_entries(
-    arr: &LargeListArray,
-    entries: &StructArray,
+    arr: &PlListArray,
+    entries: &PlStructArray,
     indices: CanonicalMapIndices,
-) -> ArrayRef {
-    let [key_arr, value_arr] = entries.values() else {
+) -> PlArrayRef {
+    let [key_arr, value_arr] = entries.fields() else {
         unreachable!("map entries must have two arrays")
     };
     let CanonicalMapIndices {
@@ -876,34 +929,42 @@ fn gather_entries(
         offsets,
     } = indices;
 
-    let new_entries = StructArray::new(
-        entries.dtype().clone(),
-        first_keys.len(),
-        vec![
-            unsafe { take_unchecked(key_arr.as_ref(), &first_keys) },
-            unsafe { take_unchecked(value_arr.as_ref(), &last_values) },
-        ],
-        // Only valid entries are gathered.
-        None,
-    );
+    let length = first_keys.len();
+    // SAFETY: both fields are gathered at one index per kept entry, so they are `length` long.
+    let new_entries = unsafe {
+        PlStructArray::new_unchecked(
+            vec![
+                take_unchecked(&**key_arr, &first_keys),
+                take_unchecked(&**value_arr, &last_values),
+            ],
+            length,
+            None,
+        )
+    };
 
-    LargeListArray::new(
-        arr.dtype().clone(),
-        offsets,
-        new_entries.boxed(),
-        arr.validity().cloned(),
-    )
-    .boxed()
+    // SAFETY: the offsets were built by counting the entries kept for every row in turn, so they
+    // cover the gathered entries, laid end to end.
+    unsafe { PlListArray::new_unchecked(new_entries.into_boxed(), offsets, arr.len(), None) }
+        .with_validity(arr.validity().map(PlBitmap::from))
+        .into_boxed()
 }
 
 /// Returns `None` if no live row has duplicate keys.
 fn canonicalize_list_chunk(
-    arr: &LargeListArray,
+    arr: &PlListArray,
     key_dtype: &DataType,
-) -> PolarsResult<Option<ArrayRef>> {
-    let entries = arr.values();
-    let entries = entries.as_any().downcast_ref::<StructArray>().unwrap();
-    let [key_arr, _] = entries.values() else {
+) -> PolarsResult<Option<PlArrayRef>> {
+    let flat = arr.to_flat();
+    let arr = flat.as_array();
+
+    let entries = arr
+        .values()
+        .as_any()
+        .downcast_ref::<PlStructArray>()
+        .unwrap();
+    let entries = entries.to_flat();
+    let entries = entries.as_array();
+    let [key_arr, _] = entries.fields() else {
         unreachable!("map entries must have two arrays")
     };
 
@@ -914,7 +975,7 @@ fn canonicalize_list_chunk(
     let encoded = encode_rows_unordered(&[keys.into_column()])?;
     let encoded = encoded.downcast_iter().next().unwrap();
 
-    let Some(indices) = canonical_map_indices(arr, encoded) else {
+    let Some(indices) = canonical_map_indices(&flat, encoded) else {
         return Ok(None);
     };
     Ok(Some(gather_entries(arr, entries, indices)))
@@ -925,7 +986,6 @@ fn canonicalize_list_chunk(
 mod test {
     use polars_arrow::array::PrimitiveArray;
     use polars_arrow::bitmap::Bitmap;
-    use polars_arrow::offset::OffsetsBuffer;
 
     use super::*;
     use crate::frame::column::Column;
@@ -947,16 +1007,18 @@ mod test {
     fn storage(entries: &Series, offsets: &[i64], row_validity: Option<&[bool]>) -> Series {
         let entries = entries.rechunk();
         let values = entries.chunks()[0].clone();
-        let arr = LargeListArray::new(
-            LargeListArray::default_datatype(values.dtype().clone()),
-            unsafe { OffsetsBuffer::new_unchecked(offsets.to_vec().into()) },
+        let length = offsets.len() - 1;
+        let offsets: Vec<u64> = offsets.iter().map(|offset| *offset as u64).collect();
+        let arr = PlListArray::new(
             values,
-            row_validity.map(Bitmap::from),
+            offsets.into(),
+            length,
+            row_validity.map(|v| PlBitmap::from_bitmap(Bitmap::from(v))),
         );
         unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::from_static("m"),
-                vec![arr.boxed()],
+                vec![arr.into_boxed()],
                 &DataType::List(Box::new(entries.dtype().clone())),
             )
         }
@@ -965,12 +1027,9 @@ mod test {
     fn list_offsets(storage: &Series) -> Vec<i64> {
         let ca = storage.list().unwrap();
         assert_eq!(ca.chunks().len(), 1);
-        ca.downcast_iter()
-            .next()
-            .unwrap()
-            .offsets()
-            .as_slice()
-            .to_vec()
+        let arr = ca.downcast_iter().next().unwrap().clone();
+        let (_, offsets, _, _) = arr.into_inner();
+        offsets.iter().map(|offset| *offset as i64).collect()
     }
 
     /// Whole-child length, including any entries left outside the offsets by slicing.
@@ -1114,7 +1173,9 @@ mod test {
     #[test]
     fn with_validity_hides_the_entries_of_nulled_rows() {
         let map = three_row_map().into_series();
-        let nulled = map.with_validity(Some(Bitmap::from([false, true, false])));
+        let nulled = map.with_validity(Some(PlBitmap::from_bitmap(Bitmap::from([
+            false, true, false,
+        ]))));
         let nulled = nulled.map().unwrap();
 
         // Nulling rows in place leaves the offsets alone, as it does for a list.
@@ -1135,7 +1196,9 @@ mod test {
     #[test]
     fn with_values_counts_only_live_entries() {
         let map = three_row_map().into_series();
-        let nulled = map.with_validity(Some(Bitmap::from([false, true, false])));
+        let nulled = map.with_validity(Some(PlBitmap::from_bitmap(Bitmap::from([
+            false, true, false,
+        ]))));
         let nulled = nulled.map().unwrap();
 
         // Nulling rows 0 and 2 hid their entries; only row 1's `c` is reachable.
@@ -1200,8 +1263,8 @@ mod test {
         // Null propagation nulls the entry and key of a null row; both stay hidden.
         let keys = str_keys(&[None, Some("b")]);
         let values = i64_values(&[None, Some(2)]);
-        let entries =
-            pack_map_entries(&keys, &values).with_validity(Some(Bitmap::from([false, true])));
+        let entries = pack_map_entries(&keys, &values)
+            .with_validity(Some(PlBitmap::from_bitmap(Bitmap::from([false, true]))));
         let dtype = map_dtype(DataType::String, DataType::Int64);
 
         let nulled = storage(&entries, &[0, 1, 2], Some(&[false, true]));
@@ -1219,8 +1282,8 @@ mod test {
     fn map_with_nulled_entries_under_a_null_row() -> MapChunked {
         let keys = str_keys(&[None, Some("b")]);
         let values = i64_values(&[None, Some(2)]);
-        let entries =
-            pack_map_entries(&keys, &values).with_validity(Some(Bitmap::from([false, true])));
+        let entries = pack_map_entries(&keys, &values)
+            .with_validity(Some(PlBitmap::from_bitmap(Bitmap::from([false, true]))));
         let storage = storage(&entries, &[0, 1, 2], Some(&[false, true]));
         let dtype = map_dtype(DataType::String, DataType::Int64);
         unsafe { storage.from_physical_unchecked(&dtype) }
@@ -1261,7 +1324,7 @@ mod test {
         let offsets = list_offsets(map.storage());
         let nulled = map
             .into_series()
-            .with_validity(Some(Bitmap::from([false, false])));
+            .with_validity(Some(PlBitmap::from_bitmap(Bitmap::from([false, false]))));
         let nulled = nulled.map().unwrap();
 
         assert_eq!(nulled.storage().null_count(), 2);
@@ -1403,7 +1466,9 @@ mod test {
     #[test]
     fn deposit_pads_with_null_rows() {
         let map = three_row_map().into_series();
-        let deposited = map.deposit(&Bitmap::from([true, false, true, false, true]));
+        let deposited = map.deposit(&PlBitmap::from_bitmap(Bitmap::from([
+            true, false, true, false, true,
+        ])));
         let deposited = deposited.map().unwrap();
 
         assert_eq!(deposited.len(), 5);

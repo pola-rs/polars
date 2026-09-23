@@ -1,6 +1,7 @@
 use std::hash::Hash;
 
 use num_traits::Zero;
+use polars_array::arrow::bridge::chunk_from_arrow;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
@@ -37,7 +38,7 @@ fn materialize_nullable(idx: Option<IdxSize>) -> NullableIdxSize {
 
 fn asof_in_group<'a, T, A, F>(
     left_val: T::Physical<'a>,
-    right_val_arr: &'a T::Array,
+    right_val_arr: &Elements<'a, T>,
     right_grp_idxs: &[IdxSize],
     group_states: &mut PlHashMap<IdxSize, A>,
     filter: F,
@@ -59,7 +60,7 @@ where
             |i| {
                 // SAFETY: the group indices are valid, and next() only calls with
                 // i < right_grp_idxs.len().
-                right_val_arr.get_unchecked(*right_grp_idxs.get_unchecked(i as usize) as usize)
+                right_val_arr.get(*right_grp_idxs.get_unchecked(i as usize) as usize)
             },
             right_grp_idxs.len() as IdxSize,
         )?;
@@ -67,7 +68,7 @@ where
         // SAFETY: r_grp_idx is valid, as is r_idx (which must be non-null) if
         // we get here.
         let r_idx = *right_grp_idxs.get_unchecked(r_grp_idx as usize);
-        let right_val = right_val_arr.value_unchecked(r_idx as usize);
+        let right_val = right_val_arr.value(r_idx as usize);
         filter(left_val, right_val).then_some(r_idx)
     }
 }
@@ -116,6 +117,8 @@ where
         let offset = offsets[part_idx];
         let mut results = Vec::with_capacity(by_left.len());
         let mut group_states: PlHashMap<IdxSize, A> = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
+        let left_val_arr = Elements::<T>::of(left_val_arr);
+        let right_val_arr = Elements::<T>::of(right_val_arr);
 
         assert_eq!(by_left.chunks().len(), 1);
         let by_left_chunk = by_left.downcast_iter().next().unwrap();
@@ -124,9 +127,10 @@ where
                 results.push(NullableIdxSize::null());
                 continue;
             };
-            let by_left_k = Some(*by_left_k).to_total_ord();
+            let by_left_k = Some(by_left_k).to_total_ord();
             let idx_left = (rel_idx_left + offset) as IdxSize;
-            let Some(left_val) = left_val_arr.get(idx_left as usize) else {
+            // SAFETY: the left rows are the chunk's own, so every index into it is in bounds.
+            let Some(left_val) = (unsafe { left_val_arr.get(idx_left as usize) }) else {
                 results.push(NullableIdxSize::null());
                 continue;
             };
@@ -140,7 +144,7 @@ where
             };
             let id = asof_in_group::<T, A, &F>(
                 left_val,
-                right_val_arr,
+                &right_val_arr,
                 right_grp_idxs.as_slice(),
                 &mut group_states,
                 &filter,
@@ -183,10 +187,13 @@ where
         let offset = offsets[part_idx];
         let mut results = Vec::with_capacity(by_left.len());
         let mut group_states: PlHashMap<_, A> = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
+        let left_val_arr = Elements::<T>::of(left_val_arr);
+        let right_val_arr = Elements::<T>::of(right_val_arr);
 
         for (rel_idx_left, by_left_k) in by_left.iter().enumerate() {
             let idx_left = (rel_idx_left + offset) as IdxSize;
-            let Some(left_val) = left_val_arr.get(idx_left as usize) else {
+            // SAFETY: the left rows are the chunk's own, so every index into it is in bounds.
+            let Some(left_val) = (unsafe { left_val_arr.get(idx_left as usize) }) else {
                 results.push(NullableIdxSize::null());
                 continue;
             };
@@ -200,7 +207,7 @@ where
             };
             let id = asof_in_group::<T, A, &F>(
                 left_val,
-                right_val_arr,
+                &right_val_arr,
                 right_grp_idxs.as_slice(),
                 &mut group_states,
                 &filter,
@@ -583,7 +590,10 @@ pub trait AsofJoinBy: IntoDf {
 
         // SAFETY: join tuples are in bounds.
         let right_df = unsafe {
-            proj_other_df.take_unchecked(&IdxCa::with_chunk(PlSmallStr::EMPTY, right_join_tuples))
+            proj_other_df.take_unchecked(&IdxCa::with_chunk(
+                PlSmallStr::EMPTY,
+                chunk_from_arrow(&right_join_tuples),
+            ))
         };
 
         _finish_join(left, right_df, suffix)

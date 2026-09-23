@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use num_traits::{Num, NumCast};
-use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_error::{PolarsContext, PolarsResult};
@@ -663,6 +663,20 @@ impl Column {
         }
     }
 
+    /// Whether every element of this column is the same one.
+    pub fn reads_as_one_element(&self) -> bool {
+        if self.is_empty() {
+            return false;
+        }
+
+        match self {
+            Self::Scalar(_) => true,
+            Self::Series(series) => {
+                series.null_count() == series.len() || series.repeats_one_element()
+            },
+        }
+    }
+
     pub fn first_non_null(&self) -> Option<usize> {
         match self {
             Self::Series(s) => crate::utils::first_non_null(s.chunks().iter().map(|a| a.as_ref())),
@@ -799,7 +813,8 @@ impl Column {
 
                 // Use dtype-aware validity updates so Struct fields see the nulls.
                 let s = scalar_col.take_materialized_series().rechunk();
-                s.with_validity(validity.into_opt_validity()).into_column()
+                s.with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap))
+                    .into_column()
             },
         }
     }
@@ -1167,7 +1182,8 @@ impl Column {
 
             let mut prev_idx = end - start;
             for chunk in arg_unique.downcast_iter() {
-                for &idx in chunk.values().as_slice().iter().rev() {
+                let chunk = chunk.to_flat();
+                for &idx in chunk.as_slice().iter().rev() {
                     values.extend(start + idx..start + prev_idx);
                     prev_idx = idx;
                 }
@@ -1312,7 +1328,7 @@ impl Column {
         self.as_materialized_series().shift(periods).into()
     }
 
-    pub fn with_validity(&self, validity: Option<Bitmap>) -> Column {
+    pub fn with_validity(&self, validity: Option<PlBitmap>) -> Column {
         match self {
             Column::Series(s) => Column::from(s.with_validity(validity)),
             Column::Scalar(s) => match validity {
@@ -1322,15 +1338,11 @@ impl Column {
         }
     }
 
-    pub fn mask(&self, validity: &Bitmap) -> Column {
-        if validity.len() == 1 {
-            if validity.get_bit(0) {
-                self.clone()
-            } else {
-                Self::full_null(self.name().clone(), self.len(), self.dtype())
-            }
-        } else {
-            Column::from(self.as_materialized_series().mask(validity))
+    pub fn mask(&self, validity: &PlBitmap) -> Column {
+        match validity.scalar_value() {
+            Some(true) => self.clone(),
+            Some(false) => Self::full_null(self.name().clone(), self.len(), self.dtype()),
+            None => Column::from(self.as_materialized_series().mask(validity)),
         }
     }
 
@@ -1904,13 +1916,13 @@ impl Column {
             .map(Column::from)
     }
 
-    pub fn deposit(&self, validity: &Bitmap) -> Column {
+    pub fn deposit(&self, validity: &PlBitmap) -> Column {
         self.as_materialized_series()
             .deposit(validity)
             .into_column()
     }
 
-    pub fn rechunk_validity(&self) -> Option<Bitmap> {
+    pub fn rechunk_validity(&self) -> Option<PlBitmap> {
         // @scalar-opt
         self.as_materialized_series().rechunk_validity()
     }

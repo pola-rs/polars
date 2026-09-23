@@ -62,22 +62,14 @@ impl SeriesWrap<DecimalChunked> {
                 let s = unsafe {
                     Series::from_chunks_and_dtype_unchecked(
                         PlSmallStr::EMPTY,
-                        vec![arr.values().clone()],
+                        vec![arr.values().to_boxed()],
                         dtype,
                     )
                 }
                 .into_decimal(precision, scale)
                 .unwrap();
                 let new_values = s.array_ref(0).clone();
-                let dtype = DataType::Int128;
-                let arrow_dtype =
-                    ListArray::<i64>::default_datatype(dtype.to_arrow(CompatLevel::newest()));
-                let new_arr = ListArray::<i64>::new(
-                    arrow_dtype,
-                    arr.offsets().clone(),
-                    new_values,
-                    arr.validity().cloned(),
-                );
+                let new_arr = crate::chunked_array::list::list_with_values(arr, new_values);
                 unsafe {
                     ListChunked::from_chunks_and_dtype_unchecked(
                         agg_s.name().clone(),
@@ -235,10 +227,10 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.name()
     }
 
-    fn chunks(&self) -> &Vec<ArrayRef> {
+    fn chunks(&self) -> &Vec<PlArrayRef> {
         self.0.physical().chunks()
     }
-    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
         self.0.physical_mut().chunks_mut()
     }
 
@@ -326,7 +318,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .into_series()
     }
 
-    fn deposit(&self, validity: &Bitmap) -> Series {
+    fn deposit(&self, validity: &PlBitmap) -> Series {
         self.0
             .physical()
             .deposit(validity)
@@ -344,7 +336,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .into_series()
     }
 
-    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+    fn with_validity(&self, validity: Option<PlBitmap>) -> Series {
         self.0
             .physical()
             .clone()
@@ -442,15 +434,30 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         };
         let scale = *scale;
         let prec = DEC128_MAX_PREC;
-        let sum = self
-            .0
-            .physical()
-            .iter()
-            .flatten()
-            .try_fold(0i128, |acc, v| {
+        let mut sum = 0i128;
+        for arr in self.0.physical().downcast_iter() {
+            let count = arr.len() - arr.null_count();
+            if count == 0 {
+                continue;
+            }
+
+            // A chunk that repeats one value adds it `count` times, and every partial sum along
+            // the way lies between the total before the chunk and the total after it — so one
+            // multiply answers for all of them. If it overflows, the walk below says where.
+            if let Some(value) = arr.scalar_value_ignore_validity()
+                && let Some(total) = value
+                    .checked_mul(count as i128)
+                    .and_then(|chunk| dec128_add(sum, chunk, prec))
+            {
+                sum = total;
+                continue;
+            }
+
+            sum = arr.iter().flatten().try_fold(sum, |acc, v| {
                 dec128_add(acc, v, prec)
                     .ok_or_else(|| polars_err!(ComputeError: "overflow in decimal addition in sum"))
             })?;
+        }
         let av = AnyValue::Decimal(sum, prec, scale);
         Ok(Scalar::new(DataType::Decimal(prec, scale), av))
     }

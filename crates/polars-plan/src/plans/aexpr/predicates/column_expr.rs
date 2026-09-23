@@ -1,6 +1,6 @@
 //! This module creates predicates splits predicates into partial per-column predicates.
 
-use polars_core::datatypes::DataType;
+use polars_core::datatypes::{DataType, DataTypeValueExt};
 use polars_core::prelude::AnyValue;
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
@@ -382,6 +382,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "is_between")]
     fn column_predicate_is_between() -> PolarsResult<()> {
         let col_name = "testcol";
         // ClosedInterval, expected min, expected max:

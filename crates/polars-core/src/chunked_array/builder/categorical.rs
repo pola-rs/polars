@@ -74,7 +74,7 @@ impl<T: PolarsCategoricalType> CategoricalChunkedBuilder<T> {
             let phys = ChunkedArray::from_vec_validity(
                 self.name,
                 self.cats,
-                self.validity.into_opt_validity(),
+                self.validity.into_opt_validity().map(PlBitmap::from_bitmap),
             );
             CategoricalChunked::from_cats_and_dtype_unchecked(phys, self.dtype)
         }

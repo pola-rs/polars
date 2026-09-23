@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-use polars_arrow::array::BooleanArray;
+use polars_array::bitmap::combine_validities_and;
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
 use polars_core::{with_match_categorical_physical_type, with_match_physical_numeric_polars_type};
@@ -43,22 +43,33 @@ fn probe_words<V: Copy>(values: &[V], out: &mut BitmapBuilder, f: impl Fn(V) -> 
 /// Combines the membership of the values with the validity of the needles.
 fn finish_chunk(
     values: Bitmap,
-    validity: Option<&Bitmap>,
+    validity: Option<PlBitmapRef<'_>>,
     nulls_equal: bool,
     has_null: bool,
-) -> BooleanArray {
-    match validity {
-        None => BooleanArray::new(ArrowDataType::Boolean, values, None),
-        Some(validity) if nulls_equal => {
-            let values = if has_null {
+) -> PlBooleanArray {
+    let length = values.len();
+    let Some(validity) = validity else {
+        return PlBooleanArray::new(values, length, None);
+    };
+    if !nulls_equal {
+        return PlBooleanArray::new(values, length, Some(PlBitmap::from(validity)));
+    }
+
+    // A null needle is in the haystack exactly when the haystack holds a null. A mask of one bit
+    // says that of every element at once, so it needs no walk of its own.
+    let values = match validity.scalar_value() {
+        Some(true) => values,
+        Some(false) => Bitmap::new_with_value(has_null, length),
+        None => {
+            let validity = validity.flat_bitmap().expect("a mask is scalar or flat");
+            if has_null {
                 polars_arrow::bitmap::or_not(&values, validity)
             } else {
                 polars_arrow::bitmap::and(&values, validity)
-            };
-            BooleanArray::new(ArrowDataType::Boolean, values, None)
+            }
         },
-        Some(validity) => BooleanArray::new(ArrowDataType::Boolean, values, Some(validity.clone())),
-    }
+    };
+    PlBooleanArray::new(values, length, None)
 }
 
 enum Lookup {
@@ -137,14 +148,14 @@ impl IsInHaystack {
                 let ca = flat.str().unwrap().as_binary();
                 Lookup::Binary(BinaryLookup::new(
                     ca.downcast_iter()
-                        .flat_map(|arr| arr.non_null_values_iter()),
+                        .flat_map(|arr| arr.iter().flatten()),
                 ))
             },
             DataType::Binary => {
                 let ca = flat.binary().map_err(|_| mismatch())?;
                 Lookup::Binary(BinaryLookup::new(
                     ca.downcast_iter()
-                        .flat_map(|arr| arr.non_null_values_iter()),
+                        .flat_map(|arr| arr.iter().flatten()),
                 ))
             },
             DataType::Boolean => {
@@ -210,6 +221,18 @@ impl IsInHaystack {
         let name = needle.name().clone();
         let has_null = self.has_null;
 
+        // A needle that reads one element throughout is probed once: what the haystack answers
+        // for that element is what it answers for every element it stands for. `is_in` itself
+        // does this in `repeat_one_answer`, but a constant haystack is prepared once and probed
+        // here without going through it.
+        if needle.len() > 1 && needle.repeats_one_element() {
+            let one = self.probe(&needle.slice(0, 1), nulls_equal)?;
+            return Ok(match one.get(0) {
+                Some(value) => BooleanChunked::full(name, value, needle.len()),
+                None => BooleanChunked::full_null(name, needle.len()),
+            });
+        }
+
         let out = match &self.lookup {
             Lookup::OuterNull => BooleanChunked::full_null(name, needle.len()),
             Lookup::NullNeedle => {
@@ -243,10 +266,19 @@ impl IsInHaystack {
             } => {
                 let ca = needle.bool().unwrap();
                 let chunks = ca.downcast_iter().map(|arr| {
+                    // The values of a chunk that repeats one element are one bit wide, so read
+                    // them out over the elements they stand for before answering off them.
+                    let own_values = || match arr.values().flat_bitmap() {
+                        Some(values) => values.clone(),
+                        None => Bitmap::new_with_value(
+                            arr.values().scalar_value().unwrap_or(false),
+                            arr.len(),
+                        ),
+                    };
                     let values = match (has_true, has_false) {
                         (true, true) => Bitmap::new_with_value(true, arr.len()),
-                        (true, false) => arr.values().clone(),
-                        (false, true) => !arr.values(),
+                        (true, false) => own_values(),
+                        (false, true) => !&own_values(),
                         (false, false) => Bitmap::new_with_value(false, arr.len()),
                     };
                     finish_chunk(values, arr.validity(), nulls_equal, has_null)
@@ -312,9 +344,34 @@ where
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
     debug_assert_ne!(other.len(), 1);
-    let offsets = other.offsets()?;
+    let rechunked = other.rechunk();
+    let other = &rechunked;
+    let chunk = other.downcast_as_array();
+    let scalar_range = chunk.scalar_offsets();
+    let flat_offsets = chunk.flat_offsets().cloned();
+    let element_range = |element: usize| -> (usize, usize) {
+        match &scalar_range {
+            Some(range) => (range.start, range.len()),
+            None => {
+                let offsets = flat_offsets
+                    .as_ref()
+                    .expect("offsets that are not scalar are flat");
+                // SAFETY: the flat offsets hold one start per element plus the end of the last,
+                // and `element` is an element of the chunk they belong to.
+                let (start, end) = unsafe {
+                    (
+                        *offsets.get_unchecked(element),
+                        *offsets.get_unchecked(element + 1),
+                    )
+                };
+                (start as usize, (end - start) as usize)
+            },
+        }
+    };
+
     let inner = other.get_inner();
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();
+    let inner = inner.downcast_as_array();
     let validity = other.rechunk_validity();
 
     let mut ca: BooleanChunked = if ca_in.len() == 1 {
@@ -323,48 +380,71 @@ where
         match value {
             None if !nulls_equal => BooleanChunked::full_null(PlSmallStr::EMPTY, other.len()),
             value => {
+                if let Some(range) = scalar_range.clone() {
+                    let mut is_in = false;
+                    for i in range {
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(i) }.to_total_ord();
+                    }
+
+                    let result =
+                        PlBooleanArray::new_scalar(is_in, other.len()).with_validity(validity);
+                    return Ok(BooleanChunked::from_chunk_iter(
+                        ca_in.name().clone(),
+                        [result],
+                    ));
+                }
+
                 let mut builder = BitmapBuilder::with_capacity(other.len());
 
-                for (start, length) in offsets.offset_and_length_iter() {
+                for element in 0..other.len() {
+                    let (start, length) = element_range(element);
                     let mut is_in = false;
                     for i in 0..length {
-                        is_in |= value.to_total_ord() == inner.get(start + i).to_total_ord();
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(start + i) }.to_total_ord();
                     }
                     builder.push(is_in);
                 }
 
                 let values = builder.freeze();
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                let length = values.len();
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             },
         }
     } else {
-        assert_eq!(ca_in.len(), offsets.len_proxy());
+        assert_eq!(ca_in.len(), other.len());
         {
             if nulls_equal {
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
 
-                for (value, (start, length)) in ca_in.iter().zip(offsets.offset_and_length_iter()) {
+                for (element, value) in ca_in.iter().enumerate() {
+                    let (start, length) = element_range(element);
                     let mut is_in = false;
                     for i in 0..length {
-                        is_in |= value.to_total_ord() == inner.get(start + i).to_total_ord();
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(start + i) }.to_total_ord();
                     }
                     builder.push(is_in);
                 }
 
                 let values = builder.freeze();
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                let length = values.len();
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             } else {
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
 
-                for (value, (start, length)) in ca_in.iter().zip(offsets.offset_and_length_iter()) {
+                for (element, value) in ca_in.iter().enumerate() {
                     let mut is_in = false;
                     if value.is_some() {
+                        let (start, length) = element_range(element);
                         for i in 0..length {
-                            is_in |= value.to_total_ord() == inner.get(start + i).to_total_ord();
+                            is_in |= value.to_total_ord()
+                                == unsafe { inner.get_unchecked(start + i) }.to_total_ord();
                         }
                     }
                     builder.push(is_in);
@@ -372,13 +452,14 @@ where
 
                 let values = builder.freeze();
 
-                let validity = match (validity, ca_in.rechunk_validity()) {
-                    (None, None) => None,
-                    (Some(v), None) | (None, Some(v)) => Some(v),
-                    (Some(l), Some(r)) => Some(polars_arrow::bitmap::and(&l, &r)),
-                };
+                let ca_validity = ca_in.rechunk_validity();
+                let validity = combine_validities_and(
+                    validity.as_ref().map(PlBitmap::as_ref),
+                    ca_validity.as_ref().map(PlBitmap::as_ref),
+                );
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                let length = values.len();
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             }
         }
@@ -400,8 +481,27 @@ where
 {
     debug_assert_ne!(other.len(), 1);
     let width = other.width();
-    let inner = other.get_inner();
+    let rechunked = other.rechunk();
+    let chunk = rechunked.downcast_as_array();
+    let values_are_scalar = chunk.values_are_scalar();
+    let start = |element: usize| {
+        if values_are_scalar {
+            0
+        } else {
+            element * width
+        }
+    };
+    // SAFETY: the values of the chunk hold the array's inner dtype, which is what they are read
+    // back as here.
+    let inner = unsafe {
+        Series::from_chunks_and_dtype_unchecked(
+            PlSmallStr::EMPTY,
+            vec![chunk.values().to_boxed()],
+            rechunked.inner_dtype(),
+        )
+    };
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();
+    let inner = inner.downcast_as_array();
     let validity = other.rechunk_validity();
 
     let mut ca: BooleanChunked = if ca_in.len() == 1 {
@@ -410,19 +510,36 @@ where
         match value {
             None if !nulls_equal => BooleanChunked::full_null(PlSmallStr::EMPTY, other.len()),
             value => {
+                if values_are_scalar {
+                    let mut is_in = false;
+                    for j in 0..width {
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(j) }.to_total_ord();
+                    }
+
+                    let result =
+                        PlBooleanArray::new_scalar(is_in, other.len()).with_validity(validity);
+                    return Ok(BooleanChunked::from_chunk_iter(
+                        ca_in.name().clone(),
+                        [result],
+                    ));
+                }
+
                 let mut builder = BitmapBuilder::with_capacity(other.len());
 
                 for i in 0..other.len() {
                     let mut is_in = false;
                     for j in 0..width {
-                        is_in |= value.to_total_ord() == inner.get(i * width + j).to_total_ord();
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(i * width + j) }.to_total_ord();
                     }
                     builder.push(is_in);
                 }
 
                 let values = builder.freeze();
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                let length = values.len();
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             },
         }
@@ -434,15 +551,18 @@ where
 
                 for (i, value) in ca_in.iter().enumerate() {
                     let mut is_in = false;
+                    let start = start(i);
                     for j in 0..width {
-                        is_in |= value.to_total_ord() == inner.get(i * width + j).to_total_ord();
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(start + j) }.to_total_ord();
                     }
                     builder.push(is_in);
                 }
 
                 let values = builder.freeze();
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                let length = values.len();
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             } else {
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
@@ -450,9 +570,10 @@ where
                 for (i, value) in ca_in.iter().enumerate() {
                     let mut is_in = false;
                     if value.is_some() {
+                        let start = start(i);
                         for j in 0..width {
-                            is_in |=
-                                value.to_total_ord() == inner.get(i * width + j).to_total_ord();
+                            is_in |= value.to_total_ord()
+                                == unsafe { inner.get_unchecked(start + j) }.to_total_ord();
                         }
                     }
                     builder.push(is_in);
@@ -460,13 +581,14 @@ where
 
                 let values = builder.freeze();
 
-                let validity = match (validity, ca_in.rechunk_validity()) {
-                    (None, None) => None,
-                    (Some(v), None) | (None, Some(v)) => Some(v),
-                    (Some(l), Some(r)) => Some(polars_arrow::bitmap::and(&l, &r)),
-                };
+                let ca_validity = ca_in.rechunk_validity();
+                let validity = combine_validities_and(
+                    validity.as_ref().map(PlBitmap::as_ref),
+                    ca_validity.as_ref().map(PlBitmap::as_ref),
+                );
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                let length = values.len();
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             }
         }
@@ -701,17 +823,43 @@ fn is_in_row_encoded(
 
     let mut validity = other.rechunk_validity();
     if !nulls_equal {
-        validity = match (validity, s.rechunk_validity()) {
-            (None, None) => None,
-            (Some(v), None) | (None, Some(v)) => Some(v),
-            (Some(l), Some(r)) => Some(polars_arrow::bitmap::and(&l, &r)),
-        };
+        let s_validity = s.rechunk_validity();
+        validity = combine_validities_and(
+            validity.as_ref().map(PlBitmap::as_ref),
+            s_validity.as_ref().map(PlBitmap::as_ref),
+        );
     }
 
     assert_eq!(mask.null_count(), 0);
     mask.with_validities(&[validity]);
 
     Ok(mask)
+}
+
+/// The answer of the one pair of elements both sides read, repeated over the whole column.
+fn repeat_one_answer(
+    needle: &Series,
+    haystack: &Series,
+    nulls_equal: bool,
+) -> Option<PolarsResult<BooleanChunked>> {
+    let length = usize::max(needle.len(), haystack.len());
+    if length < 2 {
+        return None;
+    }
+
+    let reads_one = |s: &Series| s.len() == 1 || s.repeats_one_element();
+    if !reads_one(needle) || !reads_one(haystack) {
+        return None;
+    }
+
+    let one = |s: &Series| s.slice(0, 1);
+    Some(is_in(&one(needle), &one(haystack), nulls_equal).map(|out| {
+        let name = out.name().clone();
+        match out.get(0) {
+            Some(value) => BooleanChunked::full(name, value, length),
+            None => BooleanChunked::full_null(name, length),
+        }
+    }))
 }
 
 pub fn is_in(
@@ -738,6 +886,10 @@ pub fn is_in(
         needle.dtype(),
         haystack.dtype()
     );
+
+    if let Some(out) = repeat_one_answer(needle, haystack, nulls_equal) {
+        return out;
+    }
 
     if haystack.len() == 1 {
         return IsInHaystack::new(haystack, needle.dtype())?.probe(needle, nulls_equal);

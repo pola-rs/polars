@@ -7,6 +7,11 @@ use super::ListNameSpaceImpl;
 use crate::series::convert_and_bound_idx_ca;
 
 pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> PolarsResult<Column> {
+    let settled = (index.len() == ca.len())
+        .then(|| index.settled_to_one_element())
+        .flatten();
+    let index = settled.as_ref().unwrap_or(index);
+
     match index.len() {
         1 => {
             let index = index.get(0);
@@ -23,16 +28,19 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
         len if len == ca.len() => {
             let tmp = ca.rechunk();
             let arr = tmp.downcast_as_array();
-            let offsets = arr.offsets().as_slice();
+
+            let range_of = |i: usize| {
+                // SAFETY: `i` indexes the elements of `arr`, which `index` is as long as.
+                let range = unsafe { arr.value_range_unchecked(i) };
+                (range.start as i64, range.end as i64)
+            };
             let take_by = if ca.null_count() == 0 {
                 index
                     .iter()
                     .enumerate()
                     .map(|(i, opt_idx)| match opt_idx {
                         Some(idx) => {
-                            let (start, end) = unsafe {
-                                (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
-                            };
+                            let (start, end) = range_of(i);
                             let offset = if idx >= 0 { start + idx } else { end + idx };
                             if offset >= end || offset < start || start == end {
                                 if null_on_oob {
@@ -50,13 +58,11 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
             } else {
                 index
                     .iter()
-                    .zip(arr.validity().unwrap())
+                    .zip(arr.validity().unwrap().iter())
                     .enumerate()
                     .map(|(i, (opt_idx, valid))| match (valid, opt_idx) {
                         (true, Some(idx)) => {
-                            let (start, end) = unsafe {
-                                (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
-                            };
+                            let (start, end) = range_of(i);
                             let offset = if idx >= 0 { start + idx } else { end + idx };
                             if offset >= end || offset < start || start == end {
                                 if null_on_oob {
@@ -72,7 +78,13 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
                     })
                     .collect::<Result<IdxCa, _>>()?
             };
-            let s = Series::try_from((ca.name().clone(), arr.values().clone())).unwrap();
+            let s = unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    ca.name().clone(),
+                    vec![arr.values().to_boxed()],
+                    &ca.inner_dtype().to_physical(),
+                )
+            };
             unsafe {
                 s.take_unchecked(&take_by)
                     .from_physical_unchecked(ca.inner_dtype())
@@ -82,7 +94,13 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
         _ if ca.len() == 1 => {
             if let Some(list) = ca.get(0) {
                 let idx = convert_and_bound_idx_ca(index, list.len(), null_on_oob)?;
-                let s = Series::try_from((ca.name().clone(), vec![list])).unwrap();
+                let s = unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        ca.name().clone(),
+                        vec![list],
+                        &ca.inner_dtype().to_physical(),
+                    )
+                };
                 unsafe {
                     s.take_unchecked(&idx)
                         .from_physical_unchecked(ca.inner_dtype())

@@ -1,8 +1,9 @@
-use polars_arrow::array::Array;
+use polars_array::{PlArray, StaticArray};
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMaxPolicy};
 
 use crate::chunked_array::ChunkedArray;
+use crate::chunked_array::flat::FlatNumericChunkedArray;
 use crate::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
@@ -14,16 +15,42 @@ use crate::datatypes::{
 use crate::datatypes::{CategoricalChunked, PolarsCategoricalType};
 use crate::series::IsSorted;
 
+/// The index of the element no other one is `better` than.
+///
+/// `better` decides ties, and so which of several equal extremes the index names: it is what
+/// tells [`arg_min_opt_iter`] to keep the first of them and [`arg_max_opt_iter`] the last, as
+/// [`Iterator::min_by`] and [`Iterator::max_by`] do.
+fn arg_extreme_opt_iter<T, I, F>(iter: I, better: F) -> Option<usize>
+where
+    I: IntoIterator<Item = Option<T>>,
+    F: Fn(&T, &T) -> bool,
+{
+    // The index belongs outside the fold rather than in the accumulator it carries; see
+    // [`arg_extreme_physical_generic`] for what carrying it costs.
+    let mut best: Option<(usize, T)> = None;
+    let mut next_idx = 0;
+
+    iter.into_iter().for_each(|value| {
+        let idx = next_idx;
+        next_idx += 1;
+
+        if let Some(value) = value {
+            match &best {
+                Some((_, best_value)) if !better(&value, best_value) => {},
+                _ => best = Some((idx, value)),
+            }
+        }
+    });
+
+    best.map(|(idx, _)| idx)
+}
+
 pub fn arg_min_opt_iter<T, I>(iter: I) -> Option<usize>
 where
     I: IntoIterator<Item = Option<T>>,
     T: Ord,
 {
-    iter.into_iter()
-        .enumerate()
-        .flat_map(|(idx, val)| Some((idx, val?)))
-        .min_by(|x, y| Ord::cmp(&x.1, &y.1))
-        .map(|x| x.0)
+    arg_extreme_opt_iter(iter, |value, best| value < best)
 }
 
 pub fn arg_max_opt_iter<T, I>(iter: I) -> Option<usize>
@@ -31,11 +58,7 @@ where
     I: IntoIterator<Item = Option<T>>,
     T: Ord,
 {
-    iter.into_iter()
-        .enumerate()
-        .flat_map(|(idx, val)| Some((idx, val?)))
-        .max_by(|x, y| Ord::cmp(&x.1, &y.1))
-        .map(|x| x.0)
+    arg_extreme_opt_iter(iter, |value, best| value >= best)
 }
 
 pub fn arg_min_numeric<T>(ca: &ChunkedArray<T>) -> Option<usize>
@@ -45,7 +68,7 @@ where
 {
     if ca.null_count() == ca.len() {
         None
-    } else if let Ok(vals) = ca.cont_slice() {
+    } else if let Some(vals) = ca.as_flat().and_then(|ca| ca.cont_slice().ok()) {
         arg_min_numeric_slice(vals, ca.is_sorted_flag())
     } else {
         arg_min_numeric_chunked(ca)
@@ -61,7 +84,7 @@ where
         None
     } else if T::get_static_dtype().is_float() && !matches!(ca.is_sorted_flag(), IsSorted::Not) {
         arg_max_float_sorted(ca)
-    } else if let Ok(vals) = ca.cont_slice() {
+    } else if let Some(vals) = ca.as_flat().and_then(|ca| ca.cont_slice().ok()) {
         arg_max_numeric_slice(vals, ca.is_sorted_flag())
     } else {
         arg_max_numeric_chunked(ca)
@@ -87,6 +110,9 @@ pub fn arg_min_cat<T: PolarsCategoricalType>(ca: &CategoricalChunked<T>) -> Opti
     if ca.null_count() == ca.len() {
         return None;
     }
+    if ca.physical().scalar_value_ignore_validity().is_some() {
+        return ca.physical().first_non_null();
+    }
     arg_min_opt_iter(ca.iter_str())
 }
 
@@ -94,6 +120,9 @@ pub fn arg_min_cat<T: PolarsCategoricalType>(ca: &CategoricalChunked<T>) -> Opti
 pub fn arg_max_cat<T: PolarsCategoricalType>(ca: &CategoricalChunked<T>) -> Option<usize> {
     if ca.null_count() == ca.len() {
         return None;
+    }
+    if ca.physical().scalar_value_ignore_validity().is_some() {
+        return ca.physical().last_non_null();
     }
     arg_max_opt_iter(ca.iter_str())
 }
@@ -130,6 +159,54 @@ pub fn arg_max_binary_offset(ca: &BinaryOffsetChunked) -> Option<usize> {
     arg_max_physical_generic(ca)
 }
 
+/// The index of the element no other one is `better` than, walking a chunk at a time.
+///
+/// `better` decides ties, and so which of several equal extremes the index names: `min` keeps
+/// the first of them and `max` the last, as [`Iterator::min_by`] and [`Iterator::max_by`] do.
+fn arg_extreme_physical_generic<'a, T, F>(ca: &'a ChunkedArray<T>, better: F) -> Option<usize>
+where
+    T: PolarsDataType,
+    F: Fn(&T::Physical<'a>, &T::Physical<'a>) -> bool,
+{
+    // Threading the index through the fold as part of its accumulator is what
+    // `.enumerate().flat_map(..).max_by(..)` does, and it makes the accumulator wide enough to
+    // spill: the comparison then reads the best value back out of memory on every element it
+    // keeps.  Holding the best outside the walk leaves the fold nothing to carry, so the whole
+    // chain stays in registers -- and `for_each` still folds, so the chunk's representation is
+    // hoisted out of the loop the way [`Iterator::fold`] hoists it.
+    let mut best: Option<(usize, T::Physical<'a>)> = None;
+    let mut offset = 0;
+
+    for arr in ca.downcast_iter() {
+        let mut i = 0;
+        arr.iter().for_each(|value| {
+            let idx = offset + i;
+            i += 1;
+
+            if let Some(value) = value {
+                match &best {
+                    Some((_, best_value)) if !better(&value, best_value) => {},
+                    _ => best = Some((idx, value)),
+                }
+            }
+        });
+        offset += arr.len();
+    }
+
+    best.map(|(idx, _)| idx)
+}
+
+/// Whether every element of `ca` reads one and the same value, whatever its mask says.
+fn values_repeat<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
+    let [_] = ca.chunks().as_slice() else {
+        return false;
+    };
+    // SAFETY: the column was just seen to hold exactly one chunk.
+    unsafe { ca.downcast_get_unchecked(0) }
+        .scalar_value_ignore_validity()
+        .is_some()
+}
+
 fn arg_min_physical_generic<T>(ca: &ChunkedArray<T>) -> Option<usize>
 where
     T: PolarsDataType,
@@ -141,7 +218,10 @@ where
     match ca.is_sorted_flag() {
         IsSorted::Ascending => ca.first_non_null(),
         IsSorted::Descending => ca.last_non_null(),
-        IsSorted::Not => arg_min_opt_iter(ca.iter()),
+        // A later element that merely ties is not smaller, so the first minimum wins -- and
+        // where every element reads one value they all tie, so that rule alone names the answer.
+        IsSorted::Not if values_repeat(ca) => ca.first_non_null(),
+        IsSorted::Not => arg_extreme_physical_generic(ca, |value, best| value < best),
     }
 }
 
@@ -156,7 +236,10 @@ where
     match ca.is_sorted_flag() {
         IsSorted::Ascending => ca.last_non_null(),
         IsSorted::Descending => ca.first_non_null(),
-        IsSorted::Not => arg_max_opt_iter(ca.iter()),
+        // A later element that ties is taken, so the last maximum wins -- and where every
+        // element reads one value they all tie, so that rule alone names the answer.
+        IsSorted::Not if values_repeat(ca) => ca.last_non_null(),
+        IsSorted::Not => arg_extreme_physical_generic(ca, |value, best| value >= best),
     }
 }
 
@@ -169,6 +252,10 @@ where
         IsSorted::Ascending => ca.first_non_null(),
         IsSorted::Descending => ca.last_non_null(),
         IsSorted::Not => {
+            if ca.scalar_value_ignore_validity().is_some() {
+                return ca.first_non_null();
+            }
+
             let mut chunk_start_offset = 0;
             let mut min_idx: Option<usize> = None;
             let mut min_val: Option<T::Native> = None;
@@ -181,7 +268,7 @@ where
                 let chunk_min: Option<(usize, T::Native)> = if arr.null_count() > 0 {
                     arr.into_iter()
                         .enumerate()
-                        .flat_map(|(idx, val)| Some((idx, *(val?))))
+                        .flat_map(|(idx, val)| Some((idx, val?)))
                         .reduce(|acc, (idx, val)| {
                             if MinIgnoreNan::is_better(&val, &acc.1) {
                                 (idx, val)
@@ -191,8 +278,9 @@ where
                         })
                 } else {
                     // When no nulls & array not empty => we can use fast argmin.
-                    let min_idx: usize = arr.values().as_slice().argmin();
-                    Some((min_idx, arr.value(min_idx)))
+                    let values = arr.to_flat_values();
+                    let min_idx: usize = values.as_slice().argmin();
+                    Some((min_idx, values[min_idx]))
                 };
 
                 if let Some((chunk_min_idx, chunk_min_val)) = chunk_min {
@@ -219,6 +307,10 @@ where
         IsSorted::Ascending => ca.last_non_null(),
         IsSorted::Descending => ca.first_non_null(),
         IsSorted::Not => {
+            if ca.scalar_value_ignore_validity().is_some() {
+                return ca.first_non_null();
+            }
+
             let mut chunk_start_offset = 0;
             let mut max_idx: Option<usize> = None;
             let mut max_val: Option<T::Native> = None;
@@ -231,7 +323,7 @@ where
                 let chunk_max: Option<(usize, T::Native)> = if arr.null_count() > 0 {
                     arr.into_iter()
                         .enumerate()
-                        .flat_map(|(idx, val)| Some((idx, *(val?))))
+                        .flat_map(|(idx, val)| Some((idx, val?)))
                         .reduce(|acc, (idx, val)| {
                             if MaxIgnoreNan::is_better(&val, &acc.1) {
                                 (idx, val)
@@ -241,8 +333,9 @@ where
                         })
                 } else {
                     // When no nulls & array not empty => we can use fast argmax.
-                    let max_idx: usize = arr.values().as_slice().argmax();
-                    Some((max_idx, arr.value(max_idx)))
+                    let values = arr.to_flat_values();
+                    let max_idx: usize = values.as_slice().argmax();
+                    Some((max_idx, values[max_idx]))
                 };
 
                 if let Some((chunk_max_idx, chunk_max_val)) = chunk_max {

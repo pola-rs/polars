@@ -177,10 +177,7 @@ where
     <Option<T::Native> as ToTotalOrd>::TotalOrdItem:
         Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
 {
-    let keys = arrays
-        .iter()
-        .map(|arr| arr.iter().map(|v| v.copied()))
-        .collect();
+    let keys = arrays.iter().map(|arr| arr.iter()).collect();
     build_tables(keys, nulls_equal)
 }
 

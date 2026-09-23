@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use polars_arrow::compute::utils::combine_validities_and_many;
+use polars_array::bitmap::combine_validities_and_many;
 use polars_row::{RowEncodingContext, RowEncodingOptions, RowsEncoded, convert_columns};
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
@@ -11,7 +11,7 @@ use crate::utils::_split_offsets;
 
 fn encode_rows_vertical_par(
     by: &[Column],
-    encode: impl Fn(&[Column]) -> PolarsResult<BinaryArray<i64>> + Sync,
+    encode: impl Fn(&[Column]) -> PolarsResult<PlBinaryArray> + Sync,
 ) -> PolarsResult<BinaryOffsetChunked> {
     let n_threads = RAYON.current_num_threads();
     let len = by[0].len();
@@ -65,12 +65,12 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
                     .chunks()
                     .to_vec()
                     .into_iter()
-                    .map(|arr| arr.validity().cloned())
+                    .map(|arr| arr.validity().map(PlBitmap::from))
             })
             .collect::<Vec<_>>();
 
         let validity = combine_validities_and_many(&validities);
-        Ok(rows.into_array().with_validity_typed(validity))
+        Ok(rows.into_array().with_validity(validity))
     })
 }
 
@@ -196,7 +196,7 @@ pub fn _get_rows_encoded_unordered(by: &[Column]) -> PolarsResult<RowsEncoded> {
             .map_or(Cow::Borrowed(by), Cow::Owned);
         let by = by.propagate_nulls().map_or(by, Cow::Owned);
         let by = by.as_materialized_series();
-        let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
+        let arr = by.to_physical_repr().rechunk().chunks()[0].clone();
         let opt = RowEncodingOptions::new_unsorted();
         let ctxt = get_row_encoding_context(by.dtype());
 
@@ -231,7 +231,7 @@ pub fn _get_rows_encoded(
             .map_or(Cow::Borrowed(by), Cow::Owned);
         let by = by.propagate_nulls().map_or(by, Cow::Owned);
         let by = by.as_materialized_series();
-        let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
+        let arr = by.to_physical_repr().rechunk().chunks()[0].clone();
         let opt = RowEncodingOptions::new_sorted(*desc, *null_last);
         let ctxt = get_row_encoding_context(by.dtype());
 
@@ -249,15 +249,7 @@ pub fn _get_rows_encoded_ca(
     nulls_last: &[bool],
     broadcast_nulls: bool,
 ) -> PolarsResult<BinaryOffsetChunked> {
-    let mut rows_arr = _get_rows_encoded(by, descending, nulls_last)?.into_array();
-    if broadcast_nulls {
-        let validities = by
-            .iter()
-            .map(|c| c.as_materialized_series().rechunk_validity())
-            .collect_vec();
-        let combined = combine_validities_and_many(&validities);
-        rows_arr.set_validity(combined);
-    }
+    let rows_arr = _get_rows_encoded_arr(by, descending, nulls_last, broadcast_nulls)?;
     Ok(BinaryOffsetChunked::with_chunk(name, rows_arr))
 }
 
@@ -266,7 +258,7 @@ pub fn _get_rows_encoded_arr(
     descending: &[bool],
     nulls_last: &[bool],
     broadcast_nulls: bool,
-) -> PolarsResult<BinaryArray<i64>> {
+) -> PolarsResult<PlBinaryArray> {
     let mut rows_arr = _get_rows_encoded(by, descending, nulls_last)?.into_array();
     if broadcast_nulls {
         let validities = by
@@ -303,13 +295,6 @@ pub fn row_encoding_decode(
         })
         .collect::<(Vec<_>, Vec<_>)>();
 
-    let struct_arrow_dtype = ArrowDataType::Struct(
-        fields
-            .iter()
-            .map(|v| v.to_physical().to_arrow(CompatLevel::newest()))
-            .collect(),
-    );
-
     let mut rows = Vec::new();
     let chunks = ca
         .downcast_iter()
@@ -319,13 +304,7 @@ pub fn row_encoding_decode(
             };
             assert_eq!(decoded_arrays.len(), fields.len());
 
-            StructArray::new(
-                struct_arrow_dtype.clone(),
-                array.len(),
-                decoded_arrays,
-                None,
-            )
-            .to_boxed()
+            Box::new(PlStructArray::new(decoded_arrays, array.len(), None)) as PlArrayRef
         })
         .collect::<Vec<_>>();
 

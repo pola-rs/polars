@@ -1,8 +1,8 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
-use polars_arrow::compute::utils::combine_validities_and;
+use polars_array::bitmap::combine_validities_and;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_compute::rolling::QuantileMethod;
 
 use crate::chunked_array::cast::CastOptions;
@@ -233,13 +233,13 @@ pub trait SeriesTrait:
     }
 
     /// Underlying chunks.
-    fn chunks(&self) -> &Vec<ArrayRef>;
+    fn chunks(&self) -> &Vec<PlArrayRef>;
 
     /// Underlying chunks.
     ///
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
-    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef>;
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef>;
 
     /// Number of chunks in this Series
     fn n_chunks(&self) -> usize {
@@ -320,9 +320,9 @@ pub trait SeriesTrait:
     fn rechunk(&self) -> Series;
 
     /// Returns the validity of this series as a single bitmap.
-    fn rechunk_validity(&self) -> Option<Bitmap> {
+    fn rechunk_validity(&self) -> Option<PlBitmap> {
         if self.chunks().len() == 1 {
-            return self.chunks()[0].validity().cloned();
+            return self.chunks()[0].validity().map(PlBitmap::from);
         }
 
         if !self.has_nulls() || self.is_empty() {
@@ -331,34 +331,38 @@ pub trait SeriesTrait:
 
         let mut bm = BitmapBuilder::with_capacity(self.len());
         for arr in self.chunks() {
-            if let Some(v) = arr.validity() {
-                bm.extend_from_bitmap(v);
-            } else {
-                bm.extend_constant(arr.len(), true);
+            match arr.validity() {
+                Some(v) => match v.scalar_value() {
+                    Some(value) => bm.extend_constant(v.len(), value),
+                    None => bm.extend_from_bitmap(v.flat_bitmap().unwrap()),
+                },
+                None => bm.extend_constant(arr.len(), true),
             }
         }
-        bm.into_opt_validity()
+        bm.into_opt_validity().map(PlBitmap::from_bitmap)
     }
 
     /// Sets the validity mask of this Series to the given bitmap.
-    fn with_validity(&self, validity: Option<Bitmap>) -> Series;
+    fn with_validity(&self, validity: Option<PlBitmap>) -> Series;
 
     /// Applies the given mask to this Series, returning a new Series. If a
     /// validity bit is true nothing changes, if it is false the corresponding
     /// element becomes null.
-    fn mask(&self, validity: &Bitmap) -> Series {
-        if validity.len() == 1 {
-            if validity.get_bit(0) {
+    fn mask(&self, validity: &PlBitmap) -> Series {
+        if let Some(bit) = validity.scalar_value() {
+            return if bit {
                 Series(self.clone_inner())
             } else {
                 Series::full_null(self._field().name().clone(), self.len(), self._dtype())
-            }
-        } else if self.len() == 1 && validity.len() != 1 {
+            };
+        }
+
+        if self.len() == 1 {
             self.new_from_index(0, validity.len()).mask(validity)
         } else {
             self.with_validity(combine_validities_and(
-                self.rechunk_validity().as_ref(),
-                Some(validity),
+                self.rechunk_validity().as_ref().map(PlBitmap::as_ref),
+                Some(validity.as_ref()),
             ))
         }
     }
@@ -429,7 +433,7 @@ pub trait SeriesTrait:
         None
     }
 
-    fn deposit(&self, validity: &Bitmap) -> Series;
+    fn deposit(&self, validity: &PlBitmap) -> Series;
 
     /// Find the indices of elements where the null masks are different recursively.
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>);
@@ -666,6 +670,12 @@ pub trait SeriesTrait:
     /// Get the value at this index as a downcastable Any trait ref.
     fn get_object(&self, _index: usize) -> Option<&dyn PolarsObjectSafe> {
         invalid_operation_panic!(get_object, self)
+    }
+
+    #[cfg(feature = "object")]
+    /// The values of this object column, packed into the array that carries them out to Arrow.
+    fn object_values_to_arrow(&self) -> ArrayRef {
+        invalid_operation_panic!(object_values_to_arrow, self)
     }
 
     #[cfg(feature = "object")]

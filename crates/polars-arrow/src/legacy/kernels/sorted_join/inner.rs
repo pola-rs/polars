@@ -1,10 +1,6 @@
 use super::*;
 
-pub fn join<T: PartialOrd + Copy + Debug>(
-    left: &[T],
-    right: &[T],
-    left_offset: IdxSize,
-) -> InnerJoinIds {
+pub fn join<T: SortedJoinKey>(left: &[T], right: &[T], left_offset: IdxSize) -> InnerJoinIds {
     if left.is_empty() || right.is_empty() {
         return (vec![], vec![]);
     }
@@ -19,13 +15,13 @@ pub fn join<T: PartialOrd + Copy + Debug>(
     // left: [-1, 0, 1, 2],
     // right: [1, 2, 3]
     let first_right = right[0];
-    let mut left_idx = left.partition_point(|v| v < &first_right) as IdxSize;
+    let mut left_idx = left.partition_point(|v| v.tot_lt(&first_right)) as IdxSize;
 
     #[allow(clippy::explicit_counter_loop)]
     for &val_l in &left[left_idx as usize..] {
         while let Some(&val_r) = right.get(right_idx as usize) {
             // matching join key
-            if val_l == val_r {
+            if val_l.tot_eq(&val_r) {
                 out_lhs.push(left_idx + left_offset);
                 out_rhs.push(right_idx);
                 let current_idx = right_idx;
@@ -39,7 +35,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                             right_idx = current_idx;
                             break;
                         },
-                        Some(&val_r) if val_l == val_r => {
+                        Some(&val_r) if val_l.tot_eq(&val_r) => {
                             out_lhs.push(left_idx + left_offset);
                             out_rhs.push(right_idx);
                         },
@@ -53,7 +49,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
             }
 
             // right is larger than left.
-            if val_r > val_l {
+            if val_r.tot_gt(&val_l) {
                 break;
             }
             // continue looping the right side

@@ -48,7 +48,7 @@ pub trait NativeType:
     /// Type denoting its representation as aligned bytes.
     ///
     /// This is `[u8; N]` where `N = size_of::<Self>` and has alignment `align_of::<Self>`.
-    type AlignedBytes: AlignedBytes<Unaligned = Self::Bytes> + From<Self> + Into<Self>;
+    type AlignedBytes: AlignedBytes<Unaligned = Self::Bytes> + From<Self> + Into<Self> + Send + Sync;
 
     /// To bytes in little endian
     fn to_le_bytes(&self) -> Self::Bytes;

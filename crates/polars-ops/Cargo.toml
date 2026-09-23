@@ -9,7 +9,7 @@ repository = { workspace = true }
 description = "More operations on Polars data structures"
 
 [dependencies]
-polars-arrow = { workspace = true }
+polars-array = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by", "zip_with"] }
@@ -21,6 +21,7 @@ polars-utils = { workspace = true }
 
 aho-corasick = { workspace = true, optional = true }
 argminmax = { workspace = true }
+polars-arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }

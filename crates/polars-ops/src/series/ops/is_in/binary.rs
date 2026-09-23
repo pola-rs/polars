@@ -2,7 +2,8 @@ use std::hash::BuildHasher;
 
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry as TableEntry;
-use polars_arrow::array::{Array, BinaryArray, View};
+use polars_array::PlBinaryArray;
+use polars_arrow::array::View;
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::*;
 use polars_utils::IdxSize;
@@ -134,8 +135,8 @@ impl BinaryLookup {
     ) -> BooleanChunked {
         let chunks = ca.downcast_iter().map(|arr| {
             let mut out = BitmapBuilder::with_capacity(arr.len());
-            let buffers = arr.data_buffers();
-            out.extend_trusted_len_iter(arr.views().iter().map(|&view| {
+            let buffers = arr.data_buffers().as_slice();
+            let probe_view = |view: View| {
                 let bytes = if view.is_inline() {
                     &[][..]
                 } else {
@@ -143,7 +144,18 @@ impl BinaryLookup {
                     unsafe { view.get_external_slice_unchecked(buffers) }
                 };
                 self.contains(view, bytes)
-            }));
+            };
+            match arr.flat_views() {
+                Some(views) => {
+                    out.extend_trusted_len_iter(views.iter().map(|&view| probe_view(view)))
+                },
+                // Every element of the chunk reads the one view: probe it once.
+                None => {
+                    if let Some(view) = arr.scalar_views() {
+                        out.extend_constant(arr.len(), probe_view(view));
+                    }
+                },
+            }
             finish_chunk(out.freeze(), arr.validity(), nulls_equal, has_null)
         });
         BooleanChunked::from_chunk_iter(ca.name().clone(), chunks)
@@ -152,13 +164,13 @@ impl BinaryLookup {
 
 /// Row encoded nested values, kept as one array and indexed by row.
 pub(super) struct RowEncodedLookup {
-    rows: BinaryArray<i64>,
+    rows: PlBinaryArray,
     table: HashTable<IdxSize>,
     hasher: PlRandomState,
 }
 
 impl RowEncodedLookup {
-    pub(super) fn new(rows: BinaryArray<i64>) -> Self {
+    pub(super) fn new(rows: PlBinaryArray) -> Self {
         let hasher = PlRandomState::default();
         let mut table = HashTable::with_capacity(rows.len());
         for (idx, bytes) in rows.values_iter().enumerate() {

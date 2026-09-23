@@ -1,7 +1,9 @@
 use std::cmp;
 use std::fmt::Write;
+use std::ops::ControlFlow;
 
 use num_traits::ToPrimitive;
+use polars_arrow::bitmap::iterator::TrueIdxIter;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -80,6 +82,56 @@ where
     Ok((bins, uniform))
 }
 
+/// Calls `count` with every value of `ca` its mask does not call null, and stops where it says to.
+///
+/// A histogram reads the values it counts and nothing else, so where the column is laid out flat
+/// the mask names which of them to read: building an `Option` for every element instead costs
+/// about half the walk again on a column that carries one.
+#[inline]
+fn count_values<T, F>(ca: &ChunkedArray<T>, mut count: F)
+where
+    T: PolarsNumericType,
+    F: FnMut(T::Native) -> ControlFlow<()>,
+{
+    macro_rules! count_all {
+        ($values:expr) => {
+            for value in $values {
+                if count(value).is_break() {
+                    return;
+                }
+            }
+        };
+    }
+
+    for chunk in ca.downcast_iter() {
+        match (chunk.as_slice(), chunk.validity()) {
+            (Some(values), None) => count_all!(values.iter().copied()),
+            (Some(values), Some(validity)) => match validity.flat_bitmap() {
+                Some(validity) => {
+                    for i in TrueIdxIter::new(values.len(), Some(validity)) {
+                        // SAFETY: the mask covers the values, so every index it names is one.
+                        if count(unsafe { *values.get_unchecked(i) }).is_break() {
+                            return;
+                        }
+                    }
+                },
+                // A mask of one slot calls every element null or none of them.
+                None if validity.scalar_value() == Some(true) => {
+                    count_all!(values.iter().copied())
+                },
+                None => (),
+            },
+            // A chunk that repeats one value holds that value as many times as it is long, so
+            // read it once and count it that many times rather than resolve it per element.
+            _ => match chunk.scalar_value() {
+                Some(Some(value)) => count_all!(std::iter::repeat_n(value, chunk.len())),
+                Some(None) => (),
+                None => count_all!(chunk.iter().flatten()),
+            },
+        }
+    }
+}
+
 // O(n) implementation when buckets are fixed-size.
 // We deposit items directly into their buckets.
 fn uniform_hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>) -> Vec<IdxSize>
@@ -94,26 +146,25 @@ where
     let scale = num_bins as f64 / (max_break - min_break);
     let max_idx = num_bins - 1;
 
-    for chunk in ca.downcast_iter() {
-        for item in chunk.non_null_values_iter() {
-            let item = item.to_f64().unwrap();
-            if item > min_break && item <= max_break {
-                // idx > (num_bins - 1) may happen due to floating point representation imprecision
-                let mut idx = cmp::min((scale * (item - min_break)) as usize, max_idx);
+    count_values(ca, |item| {
+        let item = item.to_f64().unwrap();
+        if item > min_break && item <= max_break {
+            // idx > (num_bins - 1) may happen due to floating point representation imprecision
+            let mut idx = cmp::min((scale * (item - min_break)) as usize, max_idx);
 
-                // Adjust for float imprecision providing idx > 1 ULP of the breaks
-                if item <= breaks[idx] {
-                    idx -= 1;
-                } else if item > breaks[idx + 1] {
-                    idx += 1;
-                }
-
-                count[idx] += 1;
-            } else if item == min_break {
-                count[0] += 1;
+            // Adjust for float imprecision providing idx > 1 ULP of the breaks
+            if item <= breaks[idx] {
+                idx -= 1;
+            } else if item > breaks[idx + 1] {
+                idx += 1;
             }
+
+            count[idx] += 1;
+        } else if item == min_break {
+            count[0] += 1;
         }
-    }
+        ControlFlow::Continue(())
+    });
     count
 }
 
@@ -130,21 +181,20 @@ where
     let mut sorted = ca.sort(false);
     sorted.rechunk_mut();
     let mut current_count: IdxSize = 0;
-    let chunk = sorted.downcast_as_array();
     let mut count: Vec<IdxSize> = Vec::with_capacity(num_bins);
 
-    'item: for item in chunk.non_null_values_iter() {
+    count_values(&sorted, |item| {
         let item = item.to_f64().unwrap();
 
         // Cycle through items until we hit the first bucket.
         if item.is_nan() || item < min_break {
-            continue;
+            return ControlFlow::Continue(());
         }
 
         while item > upper_bound {
             if item > max_break {
                 // No more items will fit in any buckets
-                break 'item;
+                return ControlFlow::Break(());
             }
 
             // Finished with prior bucket; push, reset, and move to next.
@@ -155,7 +205,8 @@ where
 
         // Item is in bound.
         current_count += 1;
-    }
+        ControlFlow::Continue(())
+    });
     count.push(current_count);
     count.resize(num_bins, 0); // If we left early, fill remainder with 0.
     count
@@ -242,14 +293,14 @@ pub fn hist_series(
     let mut bins_arg = None;
 
     let owned_bins;
+    let flat_bins;
     if let Some(bins) = bins {
         polars_ensure!(bins.null_count() == 0, InvalidOperation: "nulls not supported in 'bins' argument");
         let bins = bins.cast(&DataType::Float64)?;
         let bins_s = bins.rechunk();
         owned_bins = bins_s;
-        let bins = owned_bins.f64().unwrap();
-        let bins = bins.cont_slice().unwrap();
-        bins_arg = Some(bins);
+        flat_bins = owned_bins.f64().unwrap().to_cont_slice()?;
+        bins_arg = Some(flat_bins.as_slice());
     };
     polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "'hist' is only supported for numeric data");
 

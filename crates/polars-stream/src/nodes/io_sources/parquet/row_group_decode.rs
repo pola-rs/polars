@@ -866,11 +866,7 @@ impl RowGroupDecoder {
 fn evaluate_mask(predicate: &dyn PhysicalIoExpr, df: &DataFrame) -> PolarsResult<Bitmap> {
     let mut mask = predicate.evaluate_io(df)?.bool().unwrap().clone();
     mask.rechunk_mut();
-    let arr = mask.downcast_as_array();
-    Ok(match arr.validity() {
-        None => arr.values().clone(),
-        Some(validity) => arr.values() & validity,
-    })
+    Ok(mask.downcast_as_array().true_and_valid().into_bitmap())
 }
 
 /// `mask` narrowed by `m`, both over the same rows.

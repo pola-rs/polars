@@ -1,5 +1,6 @@
 use std::hash::Hash;
 
+use polars_arrow::bitmap::utils::SlicesIterator;
 use polars_core::prelude::*;
 use polars_core::series::{BitRepr, IsSorted};
 use polars_core::with_match_physical_float_polars_type;
@@ -8,6 +9,9 @@ use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 pub static RLE_VALUE_COLUMN_NAME: &str = "value";
 pub static RLE_LENGTH_COLUMN_NAME: &str = "len";
+
+/// The average run a mask must hold for [`rle_lengths`] to read its runs off the bits.
+const SHORTEST_WORTHWHILE_MASK_RUN: usize = 2;
 
 /// Get the run-lengths of values.
 pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
@@ -25,7 +29,36 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
         return Ok(());
     }
 
-    let s = s.as_materialized_series().to_physical_repr();
+    let s = s.as_materialized_series();
+
+    if s.repeats_one_element() {
+        lengths.push(s.len() as IdxSize);
+        return Ok(());
+    }
+
+    if let [chunk] = s.chunks().as_slice()
+        && let Some(validity) = chunk.validity()
+        && chunk.without_validity().is_scalar()
+    {
+        let (bits, length) = validity.into_inner();
+
+        if (bits.num_edges() + 1) * SHORTEST_WORTHWHILE_MASK_RUN <= length {
+            let mut opened = 0;
+            for (start, run) in SlicesIterator::new(bits) {
+                if start > opened {
+                    lengths.push((start - opened) as IdxSize);
+                }
+                lengths.push(run as IdxSize);
+                opened = start + run;
+            }
+            if opened < length {
+                lengths.push((length - opened) as IdxSize);
+            }
+            return Ok(());
+        }
+    }
+
+    let s = s.to_physical_repr();
     match s.dtype() {
         DataType::Boolean => {
             let ca: &BooleanChunked = s.as_ref().as_ref().as_ref();
@@ -78,7 +111,16 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
 
     assert!(!s_neq.has_nulls());
     for arr in s_neq.downcast_iter() {
-        let mut values = arr.values().clone();
+        if let Some(differs) = arr.values().scalar_value() {
+            if differs {
+                lengths.resize(lengths.len() + arr.len(), 1);
+            } else {
+                *lengths.last_mut().unwrap() += arr.len() as IdxSize;
+            }
+            continue;
+        }
+
+        let mut values = arr.values().to_flat().into_owned();
         while !values.is_empty() {
             // @NOTE: This `as IdxSize` is safe because it is less than or equal to the a ChunkedArray
             // length.
@@ -106,38 +148,40 @@ where
 
     unsafe {
         lengths.reserve(ca.len());
+        let out = lengths.as_mut_ptr();
 
-        if ca.has_nulls() {
-            let mut prev = ca.get_unchecked(0).map(|v| v.to_total_ord());
-            let mut out_idx = 0;
-            let mut run_len = 0;
-            for arr in ca.downcast_iter() {
-                for val in arr.iter() {
-                    let val = val.map(|v| v.to_total_ord());
-                    let diff = val != prev;
-                    run_len = 1 + select_unpredictable(diff, 0, run_len);
-                    out_idx += diff as usize;
-                    lengths.as_mut_ptr().add(out_idx).write(run_len);
-                    prev = val;
-                }
-            }
-            lengths.set_len(out_idx + 1);
+        let out_idx = if ca.has_nulls() {
+            let prev = ca.get_unchecked(0).map(|v| v.to_total_ord());
+            ca.downcast_iter()
+                .fold((prev, 0usize, 0), |acc, arr| {
+                    arr.iter().fold(acc, |(prev, out_idx, run_len), val| {
+                        let val = val.map(|v| v.to_total_ord());
+                        let diff = val != prev;
+                        let run_len = 1 + select_unpredictable(diff, 0, run_len);
+                        let out_idx = out_idx + diff as usize;
+                        out.add(out_idx).write(run_len);
+                        (val, out_idx, run_len)
+                    })
+                })
+                .1
         } else {
-            let mut prev = ca.value_unchecked(0).to_total_ord();
-            let mut out_idx = 0;
-            let mut run_len = 0;
-            for arr in ca.downcast_iter() {
-                for val in arr.values_iter() {
-                    let val = val.to_total_ord();
-                    let diff = val != prev;
-                    run_len = 1 + select_unpredictable(diff, 0, run_len);
-                    out_idx += diff as usize;
-                    lengths.as_mut_ptr().add(out_idx).write(run_len);
-                    prev = val;
-                }
-            }
-            lengths.set_len(out_idx + 1);
-        }
+            let prev = ca.value_unchecked(0).to_total_ord();
+            ca.downcast_iter()
+                .fold((prev, 0usize, 0), |acc, arr| {
+                    arr.values_iter()
+                        .fold(acc, |(prev, out_idx, run_len), val| {
+                            let val = val.to_total_ord();
+                            let diff = val != prev;
+                            let run_len = 1 + select_unpredictable(diff, 0, run_len);
+                            let out_idx = out_idx + diff as usize;
+                            out.add(out_idx).write(run_len);
+                            (val, out_idx, run_len)
+                        })
+                })
+                .1
+        };
+
+        lengths.set_len(out_idx + 1);
     }
 }
 
@@ -171,10 +215,18 @@ pub fn rle_id(s: &Column) -> PolarsResult<Column> {
         return Ok(Column::new_empty(s.name().clone(), &IDX_DTYPE));
     }
 
+    if s.as_scalar_column().is_some() || s.as_materialized_series().repeats_one_element() {
+        return Ok(IdxCa::full(s.name().clone(), 0, s.len()).into_column());
+    }
+
     let (s1, s2) = (s.slice(0, s.len() - 1), s.slice(1, s.len()));
     let s_neq = s1
         .as_materialized_series()
         .not_equal_missing(s2.as_materialized_series())?;
+
+    if let Some(Some(false)) = s_neq.scalar_value() {
+        return Ok(IdxCa::full(s.name().clone(), 0, s.len()).into_column());
+    }
 
     let mut out = Vec::<IdxSize>::with_capacity(s.len());
     let mut last = 0;

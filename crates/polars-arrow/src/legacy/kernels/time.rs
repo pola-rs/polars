@@ -11,6 +11,7 @@ use polars_error::{PolarsError, polars_bail};
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
+#[derive(Copy, Clone)]
 pub enum Ambiguous {
     Earliest,
     Latest,

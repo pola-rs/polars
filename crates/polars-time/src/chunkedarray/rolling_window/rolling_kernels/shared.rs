@@ -3,7 +3,7 @@
 use bytemuck::allocation::zeroed_vec;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
-use polars_arrow::array::{ArrayRef, PrimitiveArray};
+use polars_array::PlPrimitiveArray;
 use polars_arrow::bitmap::MutableBitmap;
 use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::types::NativeType;
@@ -86,7 +86,7 @@ pub(crate) fn rolling_apply_agg<T, Out, Agg>(
     tu: TimeUnit,
     tz: Option<&TimeZone>,
     sorting_indices: Option<&[IdxSize]>,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<PlArrayRef>
 where
     T: NativeType,
     Out: NativeType,
@@ -111,7 +111,7 @@ fn rolling_apply_agg_window_sorted<Agg, O, T, Out>(
     agg_window: &mut Agg,
     offsets: O,
     min_periods: usize,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<PlArrayRef>
 where
     Agg: RollingAggWindow<T, Out>,
     O: Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen,
@@ -140,7 +140,7 @@ where
                 }
             })
         })
-        .collect::<PolarsResult<PrimitiveArray<Out>>>()?;
+        .collect::<PolarsResult<PlPrimitiveArray<Out>>>()?;
 
     Ok(Box::new(out))
 }
@@ -151,7 +151,7 @@ fn rolling_apply_agg_window<Agg, O, T, Out>(
     offsets: O,
     min_periods: usize,
     sorting_indices: &[IdxSize],
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<PlArrayRef>
 where
     Agg: RollingAggWindow<T, Out>,
     O: Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen,
@@ -201,7 +201,7 @@ where
         Ok::<(), PolarsError>(())
     })?;
 
-    let out = PrimitiveArray::<Out>::from_vec(out).with_validity(validity.map(|x| x.into()));
+    let out = PlPrimitiveArray::<Out>::from_vec(out).with_validity(validity.map(|x| x.into()));
 
     Ok(Box::new(out))
 }

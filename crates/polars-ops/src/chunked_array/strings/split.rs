@@ -1,6 +1,8 @@
-use polars_arrow::array::ValueSize;
 #[cfg(feature = "dtype-struct")]
-use polars_arrow::array::{MutableArray, MutableUtf8Array};
+use polars_array::PlUtf8ViewArrayBuilder;
+#[cfg(feature = "dtype-struct")]
+use polars_array::builder::StaticArrayBuilder;
+use polars_arrow::array::ValueSize;
 use polars_core::chunked_array::ops::arity::binary_elementwise_for_each;
 use polars_core::prelude::*;
 use polars_utils::regex_cache::compile_regex;
@@ -68,13 +70,39 @@ where
 {
     use polars_utils::format_pl_smallstr;
 
+    let repeated = by.len() == 1 && ca.len() > 1 && ca.scalar_value().is_some();
+    let builder_len = if repeated { 1 } else { ca.len() };
+
     let mut arrs = (0..n)
-        .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
+        .map(|_| PlUtf8ViewArrayBuilder::with_capacity(builder_len))
         .collect::<Vec<_>>();
 
     if by.len() == 1 {
         if let Some(by) = by.get(0) {
-            if by.is_empty() {
+            if repeated {
+                match ca.scalar_value().unwrap() {
+                    Some(s) => {
+                        let mut arr_iter = arrs.iter_mut();
+                        if by.is_empty() {
+                            splitn_chars(s, n, keep_remainder)
+                                .zip(&mut arr_iter)
+                                .for_each(|(splitted, arr)| arr.push_value(splitted));
+                        } else {
+                            op(s, by)
+                                .zip(&mut arr_iter)
+                                .for_each(|(splitted, arr)| arr.push_value(splitted));
+                        }
+                        for arr in arr_iter {
+                            arr.push_null()
+                        }
+                    },
+                    None => {
+                        for arr in &mut arrs {
+                            arr.push_null()
+                        }
+                    },
+                }
+            } else if by.is_empty() {
                 ca.for_each(|opt_s| match opt_s {
                     None => {
                         for arr in &mut arrs {
@@ -85,7 +113,7 @@ where
                         let mut arr_iter = arrs.iter_mut();
                         splitn_chars(s, n, keep_remainder)
                             .zip(&mut arr_iter)
-                            .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                            .for_each(|(splitted, arr)| arr.push_value(splitted));
                         // fill the remaining with null
                         for arr in arr_iter {
                             arr.push_null()
@@ -103,7 +131,7 @@ where
                         let mut arr_iter = arrs.iter_mut();
                         op(s, by)
                             .zip(&mut arr_iter)
-                            .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                            .for_each(|(splitted, arr)| arr.push_value(splitted));
                         // fill the remaining with null
                         for arr in arr_iter {
                             arr.push_null()
@@ -123,11 +151,11 @@ where
                 if by.is_empty() {
                     splitn_chars(s, n, keep_remainder)
                         .zip(&mut arr_iter)
-                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                        .for_each(|(splitted, arr)| arr.push_value(splitted));
                 } else {
                     op(s, by)
                         .zip(&mut arr_iter)
-                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                        .for_each(|(splitted, arr)| arr.push_value(splitted));
                 };
                 // fill the remaining with null
                 for arr in arr_iter {
@@ -145,8 +173,8 @@ where
     let fields = arrs
         .into_iter()
         .enumerate()
-        .map(|(i, mut arr)| {
-            Series::try_from((format_pl_smallstr!("field_{i}"), arr.as_box())).unwrap()
+        .map(|(i, arr)| {
+            StringChunked::with_chunk(format_pl_smallstr!("field_{i}"), arr.freeze()).into_series()
         })
         .collect::<Vec<_>>();
 
@@ -164,6 +192,19 @@ where
 {
     Ok(match (ca.len(), by.len()) {
         (a, b) if a == b => {
+            if a > 1
+                && let Some(scalar) = ca.scalar_value()
+                && let Some(scalar_by) = by.scalar_value()
+            {
+                let mut builder = ListStringChunkedBuilder::new(ca.name().clone(), 1, 0);
+                match (scalar, scalar_by) {
+                    (Some(s), Some("")) => builder.append_values_iter(split_chars(s)),
+                    (Some(s), Some(by)) => builder.append_values_iter(op(s, by)),
+                    _ => builder.append_null(),
+                }
+                return Ok(builder.finish().new_from_index(0, a));
+            }
+
             let mut builder =
                 ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
 
@@ -199,6 +240,18 @@ where
         },
         (_, 1) => {
             if let Some(by) = by.get(0) {
+                if ca.len() > 1
+                    && let Some(scalar) = ca.scalar_value()
+                {
+                    let mut builder = ListStringChunkedBuilder::new(ca.name().clone(), 1, 0);
+                    match scalar {
+                        Some(s) if by.is_empty() => builder.append_values_iter(split_chars(s)),
+                        Some(s) => builder.append_values_iter(op(s, by)),
+                        None => builder.append_null(),
+                    }
+                    return Ok(builder.finish().new_from_index(0, ca.len()));
+                }
+
                 let mut builder = ListStringChunkedBuilder::new(
                     ca.name().clone(),
                     ca.len(),

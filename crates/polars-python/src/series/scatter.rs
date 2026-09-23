@@ -1,5 +1,4 @@
 use polars::prelude::*;
-use polars_arrow::array::Array;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::prelude::*;
 
@@ -71,14 +70,14 @@ fn scatter(s: Series, idx: &Series, values: &Series) -> Result<Series, (Series, 
         Err(err) => return Err((s, err)),
     };
     let idx = idx.rechunk();
-    let idx = idx.downcast_as_array();
     if idx.has_nulls() {
         return Err((
             s,
             PolarsError::ComputeError("index values should not be null".into()),
         ));
     }
-    let idx = idx.values().as_slice();
+    let idx = idx.downcast_as_array().to_flat_values();
+    let idx = idx.as_slice();
 
     let mut values = match values.to_physical_repr().cast(&s.dtype().to_physical()) {
         Ok(values) => values,

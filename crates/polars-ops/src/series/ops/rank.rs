@@ -1,29 +1,44 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use polars_arrow::array::BooleanArray;
-use polars_arrow::compute::concatenate::concatenate_validities;
+use polars_array::concatenate::concatenate_validities;
 use polars_core::prelude::*;
 use polars_defs::expr::{RankMethod, RankOptions};
 use rand::prelude::*;
 
 use crate::prelude::SeriesSealed;
 
-unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &BooleanArray, mut flush_ties: F) {
+/// Walks the sorted indices, closing a tie group wherever `opens_group` says one opens.
+unsafe fn rank_walk<G, F>(idxs: &IdxCa, opens_group: G, mut flush_ties: F)
+where
+    G: Fn(usize) -> bool,
+    F: FnMut(&mut [IdxSize]),
+{
     let mut ties_indices = Vec::with_capacity(128);
     let mut idx_it = idxs.downcast_iter().flat_map(|arr| arr.values_iter());
     let Some(first_idx) = idx_it.next() else {
         return;
     };
-    ties_indices.push(*first_idx);
+    ties_indices.push(first_idx);
 
     for (eq_idx, idx) in idx_it.enumerate() {
-        if neq.value_unchecked(eq_idx) {
+        if opens_group(eq_idx) {
             flush_ties(&mut ties_indices);
             ties_indices.clear()
         }
 
-        ties_indices.push(*idx);
+        ties_indices.push(idx);
     }
     flush_ties(&mut ties_indices);
+}
+
+unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &PlBooleanArray, flush_ties: F) {
+    let neq = neq.values();
+    match neq.flat_bitmap() {
+        Some(bits) => rank_walk(idxs, |i| bits.get_bit_unchecked(i), flush_ties),
+        None => {
+            let bit = neq.scalar_value().expect("a bitmap is flat or scalar");
+            rank_walk(idxs, |_| bit, flush_ties)
+        },
+    }
 }
 
 fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> Series {
@@ -61,6 +76,52 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         };
     }
 
+    if s.repeats_one_element() && null_count == 0 {
+        use RankMethod::*;
+        let name = s.name().clone();
+        let out = match method {
+            Average => {
+                Some(Float64Chunked::full(name, (1.0 + len as f64) / 2.0, len).into_series())
+            },
+            Min | Dense => Some(IdxCa::full(name, 1, len).into_series()),
+            Max => Some(IdxCa::full(name, len as IdxSize, len).into_series()),
+            Ordinal => None,
+            #[cfg(feature = "random")]
+            Random => None,
+        };
+
+        if let Some(out) = out {
+            return out;
+        }
+    }
+
+    use RankMethod::*;
+
+    if null_count > 0 && s.repeats_one_value() && matches!(method, Average | Min | Dense | Max) {
+        let name = s.name().clone();
+        let valid = (len - null_count) as IdxSize;
+        let chunks = s.chunks().iter().map(|chunk| &**chunk).collect::<Vec<_>>();
+        let validity = concatenate_validities(&chunks);
+        return match method {
+            Average => Float64Chunked::with_chunk(
+                name,
+                PlPrimitiveArray::new_scalar((1.0 + valid as f64) / 2.0, len)
+                    .with_validity(validity),
+            )
+            .into_series(),
+            Min | Dense => IdxCa::with_chunk(
+                name,
+                PlPrimitiveArray::new_scalar(1 as IdxSize, len).with_validity(validity),
+            )
+            .into_series(),
+            _ => IdxCa::with_chunk(
+                name,
+                PlPrimitiveArray::new_scalar(valid, len).with_validity(validity),
+            )
+            .into_series(),
+        };
+    }
+
     let sort_idx_ca = s
         .arg_sort(SortOptions {
             descending,
@@ -69,15 +130,15 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         })
         .slice(0, len - null_count);
 
-    let validity = concatenate_validities(s.chunks());
+    let chunks = s.chunks().iter().map(|chunk| &**chunk).collect::<Vec<_>>();
+    let validity = concatenate_validities(&chunks);
 
-    use RankMethod::*;
     if let Ordinal = method {
         let mut out = vec![0 as IdxSize; s.len()];
         let mut rank = 0;
         for arr in sort_idx_ca.downcast_iter() {
             for i in arr.values_iter() {
-                out[*i as usize] = rank + 1;
+                out[i as usize] = rank + 1;
                 rank += 1;
             }
         }

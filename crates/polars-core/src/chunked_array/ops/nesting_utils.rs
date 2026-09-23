@@ -1,4 +1,4 @@
-use polars_arrow::array::{Array, IntoBoxedArray};
+use polars_array::{PlArray, StaticArray};
 use polars_compute::find_validity_mismatch::find_validity_mismatch;
 use polars_utils::IdxSize;
 
@@ -116,7 +116,7 @@ impl ChunkNestingUtils for ListChunked {
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            find_validity_mismatch(l, r.as_ref(), idxs);
+            find_validity_mismatch(l, &**r, idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
             }
@@ -219,7 +219,7 @@ impl ChunkNestingUtils for super::ArrayChunked {
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            find_validity_mismatch(l, r.as_ref(), idxs);
+            find_validity_mismatch(l, &**r, idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
             }
@@ -325,7 +325,7 @@ impl ChunkNestingUtils for super::StructChunked {
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            find_validity_mismatch(l, r.as_ref(), idxs);
+            find_validity_mismatch(l, &**r, idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
             }
@@ -375,7 +375,7 @@ impl<T: PolarsDataType<IsNested = FalseT>> ChunkNestingUtils for ChunkedArray<T>
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            find_validity_mismatch(l, r.as_ref(), idxs);
+            find_validity_mismatch(l, &**r, idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
             }
@@ -403,7 +403,13 @@ impl ChunkNestingUtils for NullChunked {
 
         match other.rechunk_validity() {
             None => idxs.extend(0..self.len() as IdxSize),
-            Some(v) => idxs.extend(v.true_idx_iter().map(|v| v as IdxSize)),
+            Some(v) => match v.scalar_value() {
+                Some(true) => idxs.extend(0..v.len() as IdxSize),
+                Some(false) => {},
+                None => {
+                    idxs.extend((v.flat_bitmap().unwrap().true_idx_iter()).map(|v| v as IdxSize))
+                },
+            },
         }
     }
 }

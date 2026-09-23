@@ -543,3 +543,37 @@ pub(crate) fn predicate_non_null_column_outputs(
         }
     }
 }
+
+/// Whether the top-level node answers the same thing every time it is asked the same question.
+fn is_deterministic_top_level(ae: &AExpr) -> bool {
+    match ae {
+        AExpr::AnonymousFunction { .. } => false,
+
+        #[cfg(feature = "random")]
+        AExpr::Function {
+            function: IRFunctionExpr::Random { seed, .. },
+            ..
+        } => seed.is_some(),
+
+        #[cfg(feature = "ffi_plugin")]
+        AExpr::Function {
+            function: IRFunctionExpr::FfiPlugin { .. },
+            ..
+        } => false,
+
+        _ => true,
+    }
+}
+
+fn is_deterministic(stack: &mut UnitVec<Node>, ae: &AExpr, _expr_arena: &Arena<AExpr>) -> bool {
+    if !is_deterministic_top_level(ae) {
+        return false;
+    }
+    ae.children_rev(stack);
+    true
+}
+
+/// Whether the whole expression rooted at `node` answers the same question the same way.
+pub fn is_deterministic_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    property_rec(node, expr_arena, is_deterministic)
+}

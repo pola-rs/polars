@@ -1,5 +1,6 @@
 //! Contains operators to filter arrays such as [`filter`].
 mod boolean;
+mod pl_array;
 mod primitive;
 mod scalar;
 
@@ -7,27 +8,17 @@ mod scalar;
 mod avx512;
 
 pub use boolean::filter_boolean_kernel;
+pub use pl_array::{filter, filter_with_bitmap};
 use polars_arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
 use polars_arrow::array::{
     Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray, new_empty_array,
 };
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::bitmap::utils::SlicesIterator;
-use polars_arrow::with_match_primitive_type_full;
+use polars_arrow::with_match_primitive_type;
 
-pub fn filter(array: &dyn Array, mask: &BooleanArray) -> Box<dyn Array> {
-    assert_eq!(array.len(), mask.len());
-
-    // Treat null mask values as false.
-    if let Some(validities) = mask.validity() {
-        let combined_mask = mask.values() & validities;
-        filter_with_bitmap(array, &combined_mask)
-    } else {
-        filter_with_bitmap(array, mask.values())
-    }
-}
-
-pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
+/// Keeps the elements of `array` at which `mask` is set.
+pub fn filter_arrow_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
     // Many filters involve filtering values in a subsection of the array. When we trim the leading
     // and trailing filtered items, we can close in on those items and not have to perform and
     // thinking about those. The overhead for when there are no leading or trailing filtered values
@@ -53,7 +44,7 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
 
     use polars_arrow::datatypes::PhysicalType::*;
     match array.dtype().to_physical_type() {
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let array: &PrimitiveArray<$T> = array.as_any().downcast_ref().unwrap();
             let (values, validity) = primitive::filter_values_and_validity::<$T>(array.values(), array.validity(), mask);
             Box::new(PrimitiveArray::from_vec(values).with_validity(validity))

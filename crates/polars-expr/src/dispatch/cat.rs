@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_core::chunked_array::from::import_arrow_chunks;
 use polars_core::datatypes::DataType;
 use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::prelude::*;
@@ -32,8 +33,12 @@ pub fn function_expr_to_udf(func: IRCategoricalFunction) -> SpecialEq<Arc<dyn Co
 // For global, this is the global indexes.
 fn _get_cat_phys_map(col: &Column) -> (StringChunked, Series) {
     let mapping = col.dtype().cat_mapping().unwrap();
-    let cats =
-        unsafe { StringChunked::from_chunks(col.name().clone(), vec![mapping.to_arrow(true)]) };
+    let cats = unsafe {
+        StringChunked::from_chunks(
+            col.name().clone(),
+            import_arrow_chunks(vec![mapping.to_arrow(true)]),
+        )
+    };
     let mut phys = col.to_physical_repr();
     if phys.dtype() != &IDX_DTYPE {
         phys = phys.cast(&IDX_DTYPE).unwrap();
@@ -42,18 +47,40 @@ fn _get_cat_phys_map(col: &Column) -> (StringChunked, Series) {
     (cats, phys)
 }
 
+/// Spread one answer per category back over the column that indexes them.
+fn spread_over_cats<T>(result: &ChunkedArray<T>, idx: &IdxCa) -> ChunkedArray<T>
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: ChunkExpandAtIndex<T> + ChunkTakeUnchecked<IdxCa>,
+{
+    if !idx.is_empty()
+        && let Some(one) = idx.scalar_value_ignore_validity()
+        && (one as usize) < result.len()
+        && result.get(one as usize).is_some()
+    {
+        return result
+            .new_from_index(one as usize, idx.len())
+            .with_validity(idx.rechunk_validity());
+    }
+
+    // SAFETY: a cat id indexes its own column's mapping, which is what `result` holds one
+    // answer per entry of.
+    unsafe { result.take_unchecked(idx) }
+}
+
 /// Fast path: apply a string function to the categories of a categorical column and broadcast the
 /// result back to the array.
 fn apply_to_cats<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
 where
     F: FnMut(StringChunked) -> ChunkedArray<T>,
     T: PolarsPhysicalType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
+    T::Array:
+        for<'a> ArrayFromIter<T::Physical<'a>> + for<'a> ArrayFromIter<Option<T::Physical<'a>>>,
+    ChunkedArray<T>: ChunkExpandAtIndex<T> + ChunkTakeUnchecked<IdxCa>,
 {
     let (categories, phys) = _get_cat_phys_map(c);
     let result = op(categories);
-    // SAFETY: physical idx array is valid.
-    let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
-    Ok(out.into_column())
+    Ok(spread_over_cats(&result, phys.idx().unwrap()).into_column())
 }
 
 #[cfg(feature = "strings")]
@@ -88,9 +115,7 @@ fn slice(c: &Column, offset: i64, length: Option<usize>) -> PolarsResult<Column>
             polars_ops::prelude::update_view(view, start, end, val)
         })
     };
-    // SAFETY: physical idx array is valid.
-    let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
-    Ok(out.into_column())
+    Ok(spread_over_cats(&result, phys.idx().unwrap()).into_column())
 }
 
 fn cat_to(s: &Column, dtype: &DataType, strict: bool) -> PolarsResult<Column> {

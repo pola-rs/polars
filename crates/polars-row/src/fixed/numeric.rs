@@ -2,7 +2,7 @@
 use std::fmt::Debug;
 use std::mem::MaybeUninit;
 
-use polars_arrow::array::{Array, PrimitiveArray};
+use polars_array::{PlBitmap, PlPrimitiveArray};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
@@ -195,22 +195,37 @@ impl FixedLengthEncoding for f64 {
     }
 }
 
+/// Writes one row per element of `arr`.
 pub unsafe fn encode<T: NativeType + FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
-    arr: &PrimitiveArray<T>,
+    arr: &PlPrimitiveArray<T>,
     opt: RowEncodingOptions,
     offsets: &mut [usize],
 ) {
-    if arr.null_count() == 0 {
-        encode_slice(buffer, arr.values().as_slice(), opt, offsets)
-    } else {
-        encode_slice_with_validity(
+    if arr.null_count() != 0 {
+        // The walk below reads a word of the mask against a run of the values, so it wants one
+        // slot per element on both axes; anything else is read an element at a time.
+        return match (
+            arr.flat_values(),
+            arr.validity().and_then(|v| v.flat_bitmap()),
+        ) {
+            (Some(values), Some(validity)) => {
+                encode_slice_with_validity(buffer, values.as_slice(), validity, opt, offsets)
+            },
+            _ => encode_iter(buffer, arr.iter(), opt, offsets),
+        };
+    }
+
+    match arr.scalar_value_ignore_validity() {
+        Some(value) => encode_repeated(buffer, value, opt, offsets),
+        None => encode_slice(
             buffer,
-            arr.values().as_slice(),
-            arr.validity().unwrap(),
+            arr.flat_values()
+                .expect("the values are not repeated")
+                .as_slice(),
             opt,
             offsets,
-        )
+        ),
     }
 }
 
@@ -252,6 +267,22 @@ pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
     let out = buffer.as_mut_ptr();
     for (offset, value) in row_starts.iter_mut().zip(input) {
         write_value::<T>(out.add(*offset), 1, encode_value(*value, descending));
+        *offset += T::ENCODED_LEN;
+    }
+}
+
+/// [`encode_slice`] for one value that every row holds.
+pub(crate) unsafe fn encode_repeated<T: FixedLengthEncoding>(
+    buffer: &mut [MaybeUninit<u8>],
+    value: T,
+    opt: RowEncodingOptions,
+    row_starts: &mut [usize],
+) {
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
+    let encoded = encode_value(value, descending);
+    let out = buffer.as_mut_ptr();
+    for offset in row_starts.iter_mut() {
+        write_value::<T>(out.add(*offset), 1, encoded);
         *offset += T::ENCODED_LEN;
     }
 }
@@ -330,7 +361,7 @@ unsafe fn decode_value<T: FixedLengthEncoding>(
 pub(crate) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
-) -> PrimitiveArray<T> {
+) -> PlPrimitiveArray<T> {
     let descending = opt.contains(RowEncodingOptions::DESCENDING);
     let null_sentinel = opt.null_sentinel();
     let num_rows = rows.len();
@@ -362,5 +393,5 @@ pub(crate) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
     } else {
         None
     };
-    PrimitiveArray::new(T::PRIMITIVE.into(), values.into(), validity)
+    PlPrimitiveArray::new(values.into(), num_rows, validity.map(PlBitmap::from_bitmap))
 }

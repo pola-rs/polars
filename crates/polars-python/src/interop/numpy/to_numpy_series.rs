@@ -3,6 +3,7 @@ use num_traits::{Float, NumCast};
 use numpy::npyffi::flags;
 use numpy::{Element, PyArray1};
 use polars::prelude::*;
+use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -10,7 +11,7 @@ use pyo3::prelude::*;
 use super::to_numpy_df::df_to_numpy;
 use super::utils::{
     create_borrowed_np_array, dtype_supports_view, polars_dtype_to_np_temporal_dtype,
-    reshape_numpy_array, series_contains_null,
+    reshape_numpy_array, series_contains_null, series_is_flat,
 };
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::conversion::{ObjectValue, Wrap};
@@ -34,7 +35,7 @@ impl PySeries {
     /// which may be any value. The caller is responsible for handling nulls
     /// appropriately.
     fn to_numpy_view(&self, py: Python) -> Option<Py<PyAny>> {
-        let (view, _) = try_series_to_numpy_view(py, &self.series.read(), true, false)?;
+        let (view, _) = try_series_to_numpy_view(py, &self.series.read(), true, true)?;
         Some(view)
     }
 }
@@ -77,7 +78,7 @@ fn try_series_to_numpy_view(
     py: Python<'_>,
     s: &Series,
     allow_nulls: bool,
-    allow_rechunk: bool,
+    allow_copy: bool,
 ) -> Option<(Py<PyAny>, bool)> {
     if !dtype_supports_view(s.dtype()) {
         return None;
@@ -85,18 +86,18 @@ fn try_series_to_numpy_view(
     if !allow_nulls && series_contains_null(s) {
         return None;
     }
-    let (s_owned, writable_flag) = handle_chunks(py, s, allow_rechunk)?;
+    let (s_owned, writable_flag) = handle_chunks(py, s, allow_copy)?;
     let array = series_to_numpy_view_recursive(py, s_owned, writable_flag);
     Some((array, writable_flag))
 }
 
-/// Rechunk the Series if required.
+/// Rechunk and lay out the Series flat if required.
 ///
-/// NumPy arrays are always contiguous, so we may have to rechunk before creating a view.
-/// If we do so, we can flag the resulting array as writable.
-fn handle_chunks(py: Python<'_>, s: &Series, allow_rechunk: bool) -> Option<(Series, bool)> {
-    let is_chunked = s.n_chunks() > 1;
-    match (is_chunked, allow_rechunk) {
+/// NumPy arrays are always contiguous and need one slot per element, so we may have to rechunk or
+/// write out a scalar chunk before creating a view. If we do so, we can flag it as writable.
+fn handle_chunks(py: Python<'_>, s: &Series, allow_copy: bool) -> Option<(Series, bool)> {
+    let needs_copy = s.n_chunks() > 1 || !series_is_flat(s);
+    match (needs_copy, allow_copy) {
         (true, false) => None,
         (true, true) => Some((py.detach(|| s.rechunk()), true)),
         (false, _) => Some((s.clone(), false)),
@@ -117,18 +118,20 @@ fn series_to_numpy_view_recursive(py: Python<'_>, s: Series, writable: bool) -> 
 }
 
 /// Create a NumPy view of a numeric Series.
-fn numeric_series_to_numpy_view(py: Python<'_>, s: Series, writable: bool) -> Py<PyAny> {
+fn numeric_series_to_numpy_view(py: Python<'_>, mut s: Series, writable: bool) -> Py<PyAny> {
     let dims = [s.len()].into_dimension();
-    with_match_physical_numpy_polars_type!(s.dtype(), |$T| {
+    let dtype = s.dtype().clone();
+    with_match_physical_numpy_polars_type!(&dtype, |$T| {
         let np_dtype = <$T as PolarsNumericType>::Native::get_dtype(py);
-        let ca: &ChunkedArray<$T> = s.unpack::<$T>().unwrap();
         let flags = if writable {
             flags::NPY_ARRAY_FARRAY
         } else {
             flags::NPY_ARRAY_FARRAY_RO
         };
 
-        let slice = ca.data_views().next().unwrap();
+        let ca: &mut ChunkedArray<$T> = s._get_inner_mut().as_mut();
+        ca.flatten_mut();
+        let slice = ca.as_flat().unwrap().chunks_flat_values().next().unwrap();
 
         unsafe {
             create_borrowed_np_array::<_>(
@@ -146,16 +149,17 @@ fn numeric_series_to_numpy_view(py: Python<'_>, s: Series, writable: bool) -> Py
 /// Create a NumPy view of a Datetime or Duration Series.
 fn temporal_series_to_numpy_view(py: Python<'_>, s: Series, writable: bool) -> Py<PyAny> {
     let np_dtype = polars_dtype_to_np_temporal_dtype(py, s.dtype());
-
-    let phys = s.to_physical_repr();
-    let ca = phys.i64().unwrap();
-    let slice = ca.data_views().next().unwrap();
     let dims = [s.len()].into_dimension();
     let flags = if writable {
         flags::NPY_ARRAY_FARRAY
     } else {
         flags::NPY_ARRAY_FARRAY_RO
     };
+
+    let mut phys = s.to_physical_repr().into_owned();
+    let ca: &mut Int64Chunked = phys._get_inner_mut().as_mut();
+    ca.flatten_mut();
+    let slice = ca.as_flat().unwrap().chunks_flat_values().next().unwrap();
 
     unsafe {
         create_borrowed_np_array::<_>(
@@ -164,7 +168,7 @@ fn temporal_series_to_numpy_view(py: Python<'_>, s: Series, writable: bool) -> P
             dims,
             flags,
             slice.as_ptr() as _,
-            PySeries::from(s).into_py_any(py).unwrap(), // Keep the Series memory alive.,
+            PySeries::from(phys).into_py_any(py).unwrap(), // Keep the Series memory alive.,
         )
     }
 }
@@ -301,6 +305,32 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> PyRe
     })
 }
 
+/// Collects `f` over the values of a Series with no nulls, one chunk at a time.
+fn collect_values<T, U, F>(ca: &ChunkedArray<T>, f: F) -> Vec<U>
+where
+    T: PolarsDataType,
+    F: for<'a> Fn(<T as PolarsDataType>::Physical<'a>) -> U,
+{
+    let mut values = Vec::with_capacity(ca.len());
+    for arr in ca.downcast_iter() {
+        values.extend_trusted_len(arr.values_iter().map(&f));
+    }
+    values
+}
+
+/// Collects `f` over the elements of a Series, nulls included, one chunk at a time.
+fn collect_opt_values<T, U, F>(ca: &ChunkedArray<T>, f: F) -> Vec<U>
+where
+    T: PolarsDataType,
+    F: for<'a> Fn(Option<<T as PolarsDataType>::Physical<'a>>) -> U,
+{
+    let mut values = Vec::with_capacity(ca.len());
+    for arr in ca.downcast_iter() {
+        values.extend_trusted_len(arr.iter().map(&f));
+    }
+    values
+}
+
 /// Convert numeric types to f32 or f64 with NaN representing a null value.
 fn numeric_series_to_numpy<T, U>(py: Python<'_>, s: &Series) -> Py<PyAny>
 where
@@ -310,8 +340,8 @@ where
 {
     let ca: &ChunkedArray<T> = s.as_ref().as_ref();
     if s.null_count() == 0 {
-        let values = ca.into_no_null_iter();
-        PyArray1::<T::Native>::from_iter(py, values)
+        let values = collect_values(ca, |v| v);
+        PyArray1::<T::Native>::from_vec(py, values)
             .into_py_any(py)
             .unwrap()
     } else {
@@ -319,8 +349,8 @@ where
             Some(v) => NumCast::from(v).unwrap(),
             None => U::nan(),
         };
-        let values = ca.iter().map(mapper);
-        PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+        let values: Vec<U> = collect_opt_values(ca, mapper);
+        PyArray1::from_vec(py, values).into_py_any(py).unwrap()
     }
 }
 
@@ -328,13 +358,13 @@ where
 fn boolean_series_to_numpy(py: Python<'_>, s: &Series) -> Py<PyAny> {
     let ca = s.bool().unwrap();
     if s.null_count() == 0 {
-        let values = ca.no_null_iter();
-        PyArray1::<bool>::from_iter(py, values)
+        let values = collect_values(ca, |v| v);
+        PyArray1::<bool>::from_vec(py, values)
             .into_py_any(py)
             .unwrap()
     } else {
-        let values = ca.iter().map(|opt_v| opt_v.into_py_any(py).unwrap());
-        PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+        let values = collect_opt_values(ca, |opt_v| opt_v.into_py_any(py).unwrap());
+        PyArray1::from_vec(py, values).into_py_any(py).unwrap()
     }
 }
 
@@ -346,21 +376,19 @@ fn date_series_to_numpy(py: Python<'_>, s: &Series) -> Py<PyAny> {
     let ca = s_phys.i32().unwrap();
 
     if s.null_count() == 0 {
-        let mapper = |v: i32| (v as i64).into();
-        let values = ca.into_no_null_iter().map(mapper);
-        PyArray1::<Datetime<units::Days>>::from_iter(py, values)
+        let values = collect_values(ca, |v: i32| Datetime::<units::Days>::from(v as i64));
+        PyArray1::<Datetime<units::Days>>::from_vec(py, values)
             .into_py_any(py)
             .unwrap()
     } else {
         let mapper = |opt_v: Option<i32>| {
-            match opt_v {
+            Datetime::<units::Days>::from(match opt_v {
                 Some(v) => v as i64,
                 None => i64::MIN,
-            }
-            .into()
+            })
         };
-        let values = ca.iter().map(mapper);
-        PyArray1::<Datetime<units::Days>>::from_iter(py, values)
+        let values = collect_opt_values(ca, mapper);
+        PyArray1::<Datetime<units::Days>>::from_vec(py, values)
             .into_py_any(py)
             .unwrap()
     }
@@ -373,10 +401,8 @@ where
 {
     let s_phys = s.to_physical_repr();
     let ca = s_phys.i64().unwrap();
-    let values = ca.iter().map(|v| v.unwrap_or(i64::MIN).into());
-    PyArray1::<T>::from_iter(py, values)
-        .into_py_any(py)
-        .unwrap()
+    let values = collect_opt_values(ca, |v| T::from(v.unwrap_or(i64::MIN)));
+    PyArray1::<T>::from_vec(py, values).into_py_any(py).unwrap()
 }
 fn list_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> PyResult<Py<PyAny>> {
     let ca = s.list().unwrap();

@@ -1,9 +1,9 @@
-use num_traits::Zero;
 /// Functionality shared between list and array arithmetic implementations.
-use polars_arrow::array::{Array, PrimitiveArray};
-use polars_arrow::compute::utils::combine_validities_and;
+use num_traits::Zero;
+use polars_array::PlPrimitiveArray;
+use polars_array::bitmap::combine_validities_and;
 use polars_compute::arithmetic::ArithmeticKernel;
-use polars_compute::comparisons::TotalEqKernel;
+use polars_compute::comparisons::PlTotalEqKernel;
 use polars_error::PolarsResult;
 use polars_utils::float::IsFloat;
 
@@ -22,6 +22,11 @@ pub(super) enum NumericOp {
 }
 
 impl NumericOp {
+    /// Whether the one value a right operand stands for is divided by.
+    pub(super) fn divides(&self) -> bool {
+        matches!(self, Self::Div | Self::Rem | Self::FloorDiv)
+    }
+
     pub(super) fn name(&self) -> &'static str {
         match self {
             Self::Add => "add",
@@ -57,11 +62,12 @@ impl NumericOp {
     /// the denominator is 0.
     pub(super) fn prepare_numeric_op_side_validities<T: PolarsNumericType>(
         &self,
-        lhs: &mut PrimitiveArray<T::Native>,
-        rhs: &mut PrimitiveArray<T::Native>,
+        lhs: &mut PlPrimitiveArray<T::Native>,
+        rhs: &mut PlPrimitiveArray<T::Native>,
         swapped: bool,
     ) where
-        PrimitiveArray<T::Native>: polars_compute::comparisons::TotalEqKernel<Scalar = T::Native>,
+        PlPrimitiveArray<T::Native>:
+            polars_compute::comparisons::PlTotalEqKernel<Scalar = T::Native>,
         T::Native: Zero + IsFloat,
     {
         if !T::Native::is_float() {
@@ -69,8 +75,11 @@ impl NumericOp {
                 Self::Div | Self::Rem | Self::FloorDiv => {
                     let target = if swapped { lhs } else { rhs };
                     let ne_0 = target.tot_ne_kernel_broadcast(&T::Native::zero());
-                    let validity = combine_validities_and(target.validity(), Some(&ne_0));
-                    target.set_validity(validity);
+                    if ne_0.as_ref().unset_bits() > 0 {
+                        let validity =
+                            combine_validities_and(target.validity(), Some(ne_0.as_ref()));
+                        target.set_validity(validity);
+                    }
                 },
                 _ => {},
             }
@@ -81,7 +90,7 @@ impl NumericOp {
     /// Panics if:
     /// * lhs.len() != rhs.len()
     /// * dtype is not numeric.
-    pub(super) fn apply_series(&self, lhs: &Series, rhs: &Series) -> Box<dyn Array> {
+    pub(super) fn apply_series(&self, lhs: &Series, rhs: &Series) -> PlArrayRef {
         assert_eq!(lhs.len(), rhs.len());
         debug_assert_eq!(lhs.dtype(), rhs.dtype());
 
@@ -92,18 +101,18 @@ impl NumericOp {
             let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
             let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
 
-            let lhs = lhs.downcast_get(0).unwrap();
-            let rhs = rhs.downcast_get(0).unwrap();
+            let lhs = lhs.downcast_get(0).unwrap().clone();
+            let rhs = rhs.downcast_get(0).unwrap().clone();
 
-            Box::new(self.apply_arithmetic_kernel::<$T>(lhs.clone(), rhs.clone()))
+            self.apply_arithmetic_kernel::<$T>(lhs, rhs).into_boxed()
         })
     }
 
-    fn apply_arithmetic_kernel<T: PolarsNumericType>(
+    pub(super) fn apply_arithmetic_kernel<T: PolarsNumericType>(
         &self,
-        lhs: PrimitiveArray<T::Native>,
-        rhs: PrimitiveArray<T::Native>,
-    ) -> PrimitiveArray<T::Native> {
+        lhs: PlPrimitiveArray<T::Native>,
+        rhs: PlPrimitiveArray<T::Native>,
+    ) -> PlPrimitiveArray<T::Native> {
         match self {
             Self::Add => ArithmeticKernel::wrapping_add(lhs, rhs),
             Self::Sub => ArithmeticKernel::wrapping_sub(lhs, rhs),
@@ -119,10 +128,10 @@ impl NumericOp {
     /// a scalar.
     pub(super) fn apply_array_to_scalar<T: PolarsNumericType>(
         &self,
-        arr_lhs: PrimitiveArray<T::Native>,
+        arr_lhs: PlPrimitiveArray<T::Native>,
         r: T::Native,
         swapped: bool,
-    ) -> PrimitiveArray<T::Native> {
+    ) -> PlPrimitiveArray<T::Native> {
         match self {
             Self::Add => ArithmeticKernel::wrapping_add_scalar(arr_lhs, r),
             Self::Sub => {
@@ -212,4 +221,113 @@ pub(super) enum Broadcast {
     Right,
     #[allow(clippy::enum_variant_names)]
     NoBroadcast,
+}
+
+/// The mask of `s` where every one of its elements reads the same one value, `None` where they
+fn repeated_element_mask(s: &Series) -> Option<Option<PlBitmap>> {
+    let [chunk] = s.chunks().as_slice() else {
+        return None;
+    };
+    if s.len() <= 1 {
+        return None;
+    }
+
+    // Dropping the mask to ask about the values alone is a clone of the chunk's buffers; a chunk
+    // with no mask is its own values, so it answers the question in place.
+    let values_repeat = match chunk.validity() {
+        None => chunk.is_scalar(),
+        Some(_) => chunk.without_validity().is_scalar(),
+    };
+    if !values_repeat {
+        return None;
+    }
+
+    match chunk.validity() {
+        None => Some(None),
+        Some(validity) if validity.unset_bits() == s.len() => None,
+        Some(validity) => Some(Some(PlBitmap::from(validity))),
+    }
+}
+
+/// `s` with every chunk of its lists laid out one range of values per element.
+pub(super) fn flatten_list_chunks(s: Series) -> Series {
+    let Ok(ca) = s.list() else {
+        return s;
+    };
+    if ca.is_flat() {
+        return s;
+    }
+
+    let mut ca = ca.clone();
+    ca.flatten_mut();
+    ca.into_series()
+}
+
+/// A side that repeats one element, read as the one element it is.
+pub(super) fn read_repeated_side_as_one_element(
+    op: &NumericOp,
+    lhs: &Series,
+    rhs: &Series,
+) -> Option<(Series, Series)> {
+    if lhs.len() != rhs.len() {
+        return None;
+    }
+
+    let one = |s: &Series| s.slice(0, 1);
+    match (lhs.repeats_one_element(), rhs.repeats_one_element()) {
+        (true, false) => Some((one(lhs), rhs.clone())),
+        (false, true) if op.divides() && !rhs.dtype().is_nested() => None,
+        (false, true) => Some((lhs.clone(), one(rhs))),
+        _ => None,
+    }
+}
+
+/// The answer of the one pair of elements both sides repeat, repeated in turn.
+pub(super) fn repeat_one_answer(
+    lhs: &Series,
+    rhs: &Series,
+    op: impl FnOnce(&Series, &Series) -> PolarsResult<Series>,
+) -> Option<PolarsResult<Series>> {
+    let length = match (lhs.len(), rhs.len()) {
+        (left, right) if left == right => left,
+        (1, right) => right,
+        (left, 1) => left,
+        _ => return None,
+    };
+
+    if length < 3 {
+        return None;
+    }
+
+    let reads_one = |s: &Series| {
+        if s.len() == 1 {
+            return Some(None);
+        }
+        repeated_element_mask(s)
+    };
+    let (lhs_mask, rhs_mask) = (reads_one(lhs)?, reads_one(rhs)?);
+
+    let unmasked = |s: &Series, mask: &Option<PlBitmap>| match mask {
+        None => s.clone(),
+        Some(_) => s.with_validity(None),
+    };
+    let lhs = unmasked(lhs, &lhs_mask);
+    let rhs = unmasked(rhs, &rhs_mask);
+
+    let rows = |s: &Series| s.slice(0, s.len().min(2));
+    let out = op(&rows(&lhs), &rows(&rhs));
+    let mask = combine_validities_and(
+        lhs_mask.as_ref().map(PlBitmap::as_ref),
+        rhs_mask.as_ref().map(PlBitmap::as_ref),
+    );
+    Some(out.and_then(|out| {
+        let one = out.slice(0, 1);
+        let answered_null = one.null_count() == 1;
+        let out = one.broadcast_owned_to(length)?;
+        Ok(match mask {
+            None => out,
+            Some(_) if answered_null => out,
+            Some(mask) => out.with_validity(Some(mask)),
+        })
+    }))
 }

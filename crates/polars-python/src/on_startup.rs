@@ -5,7 +5,6 @@ use std::sync::OnceLock;
 use polars::chunked_array::object::ObjectArray;
 use polars::prelude::file_provider::FileProviderReturn;
 use polars::prelude::*;
-use polars_arrow::array::Array;
 use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
 use polars_core::chunked_array::object::{registry, set_polars_allow_extension};
@@ -198,7 +197,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
             });
             Box::new(object) as Box<dyn Any>
         });
-        fn object_array_getter(arr: &dyn Array, idx: usize) -> Option<AnyValue<'_>> {
+        fn object_array_getter(arr: &dyn PlArray, idx: usize) -> Option<AnyValue<'_>> {
             let arr = arr
                 .as_any()
                 .downcast_ref::<ObjectArray<ObjectValue>>()

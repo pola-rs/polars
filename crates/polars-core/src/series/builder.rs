@@ -1,15 +1,16 @@
-use polars_arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
+use polars_array::builder::{PlArrayBuilder, ShareStrategy, builder_like};
 use polars_utils::IdxSize;
 
+use crate::chunked_array::new_empty_chunk;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
 use crate::utils::Container;
 
-/// A type-erased wrapper around ArrayBuilder.
+/// A type-erased wrapper around PlArrayBuilder.
 pub struct SeriesBuilder {
     dtype: DataType,
-    builder: Box<dyn ArrayBuilder>,
+    builder: Box<dyn PlArrayBuilder>,
 }
 
 impl SeriesBuilder {
@@ -21,7 +22,7 @@ impl SeriesBuilder {
             return Self { dtype, builder };
         }
 
-        let builder = make_builder(&dtype.to_physical().to_arrow(CompatLevel::newest()));
+        let builder = builder_like(&*new_empty_chunk(&dtype));
         Self { dtype, builder }
     }
 

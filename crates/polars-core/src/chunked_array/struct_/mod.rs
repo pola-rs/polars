@@ -3,16 +3,13 @@ mod frame;
 use std::borrow::Cow;
 use std::fmt::Write;
 
-use polars_arrow::array::StructArray;
-use polars_arrow::bitmap::Bitmap;
-use polars_arrow::compute::utils::combine_validities_and;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::ChunkedArray;
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::ops::row_encode::{_get_rows_encoded_arr, _get_rows_encoded_ca};
+use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca;
 use crate::prelude::*;
 use crate::series::Series;
 use crate::utils::Container;
@@ -26,8 +23,7 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
 ) -> StructChunked {
     if fields.len() == 0 {
         let dtype = DataType::Struct(Vec::new());
-        let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
-        let chunks = vec![StructArray::new(arrow_dtype, length, Vec::new(), None).boxed()];
+        let chunks = vec![PlStructArray::new(Vec::new(), length, None).into_boxed()];
 
         // SAFETY: We construct each chunk above to have the `Struct` data type.
         return unsafe { StructChunked::from_chunks_and_dtype(name, chunks, dtype) };
@@ -41,7 +37,6 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
 
     let n_chunks = fields.clone().next().unwrap().n_chunks();
     let dtype = DataType::Struct(fields.clone().map(|s| s.field().into_owned()).collect());
-    let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
 
     let chunks = (0..n_chunks)
         .map(|c_i| {
@@ -55,7 +50,7 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
                 return None;
             }
 
-            Some(StructArray::new(arrow_dtype.clone(), chunk_length, fields, None).boxed())
+            Some(PlStructArray::new(fields, chunk_length, None).into_boxed())
         })
         .collect::<Option<Vec<_>>>();
 
@@ -214,7 +209,7 @@ impl StructChunked {
         self.struct_fields().iter().enumerate().map(|(i, field)| {
             let field_chunks = self
                 .downcast_iter()
-                .map(|chunk| chunk.values()[i].clone())
+                .map(|chunk| chunk.fields()[i].clone())
                 .collect::<Vec<_>>();
 
             // SAFETY: correct type.
@@ -379,7 +374,7 @@ impl StructChunked {
         {
             // SAFETY: only null_count adjusted, recalculated afterwards.
             for (new, this) in unsafe { self.downcast_iter_mut() }.zip(other.downcast_iter()) {
-                new.set_validity(this.validity().cloned())
+                new.set_validity(this.validity().map(PlBitmap::from))
             }
         } else {
             let mut other_validity = other.rechunk_validity().unwrap();
@@ -392,11 +387,6 @@ impl StructChunked {
         }
         self.compute_len();
         self
-    }
-
-    pub fn get_row_encoded_array(&self, options: SortOptions) -> PolarsResult<BinaryArray<i64>> {
-        let c = self.clone().into_column();
-        _get_rows_encoded_arr(&[c], &[options.descending], &[options.nulls_last], false)
     }
 
     pub fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {
@@ -443,7 +433,7 @@ impl StructChunked {
         // We keep length and dtypes the same.
         unsafe {
             for (a, b) in self.downcast_iter_mut().zip(other.downcast_iter()) {
-                let new = combine_validities_and(a.validity(), b.validity());
+                let new = polars_array::bitmap::combine_validities_and(a.validity(), b.validity());
                 a.set_validity(new)
             }
         }
@@ -471,17 +461,28 @@ impl StructChunked {
             .find(|s| s.name().as_str() == name)
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{name}"))
     }
-    pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {
-        assert_eq!(self.chunks().len(), 1);
+    /// Replaces the outer validity mask, which may repeat a single bit.
+    pub(crate) fn set_outer_validity(&mut self, validity: Option<PlBitmap>) {
+        debug_assert!(validity.as_ref().is_none_or(|v| v.len() == self.len()));
+
         unsafe {
-            let arr = self.chunks_mut().iter_mut().next().unwrap();
-            *arr = arr.with_validity(validity);
+            let mut offset = 0;
+            for arr in self.chunks_mut().iter_mut() {
+                let length = arr.len();
+                let chunk_validity = validity
+                    .as_ref()
+                    .map(|validity| validity.sliced(offset, length));
+
+                *arr = arr.with_validity(chunk_validity);
+                offset += length;
+            }
         }
         self.compute_len();
         self.propagate_nulls_mut();
     }
 
-    pub fn with_outer_validity(mut self, validity: Option<Bitmap>) -> Self {
+    /// As [`Self::set_outer_validity`], by value.
+    pub fn with_outer_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_outer_validity(validity);
         self
     }
