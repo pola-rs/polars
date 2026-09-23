@@ -4684,6 +4684,73 @@ def test_read_parquet_legacy_nested_maps_27159(io_files_path: Path) -> None:
     assert_frame_equal(pl.scan_parquet(path).collect(), expected)
 
 
+def test_read_parquet_legacy_list_of_lists_29133(io_files_path: Path) -> None:
+    # From apache/parquet-testing:
+    # `a (LIST) { repeated group array (LIST) { repeated int32 array } }`, where the
+    # repeated group holding a repeated field is the element.
+    path = io_files_path / "old_list_structure.parquet"
+
+    expected = pl.DataFrame(
+        {"a": [[[1, 2], [3, 4]]]},
+        schema={"a": pl.List(pl.List(pl.Int32))},
+    )
+
+    assert_frame_equal(pl.read_parquet(path), expected)
+    assert_frame_equal(pl.scan_parquet(path).collect(), expected)
+
+
+def test_read_parquet_repeated_group_without_list_annotation_29133(
+    io_files_path: Path,
+) -> None:
+    # From apache/parquet-testing: `phoneNumbers { repeated group phone {...} }`, a
+    # repeated group that is a list without being annotated as one. The original file
+    # declares 0 rows in its footer, and its only row group 6; the footer's count is
+    # patched to 6.
+    path = io_files_path / "repeated_no_annotation.parquet"
+
+    phone = pl.Struct({"number": pl.Int64, "kind": pl.String})
+    expected = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6],
+            "phoneNumbers": [
+                None,
+                None,
+                {"phone": []},
+                {"phone": [{"number": 5555555555, "kind": None}]},
+                {"phone": [{"number": 1111111111, "kind": "home"}]},
+                {
+                    "phone": [
+                        {"number": 1111111111, "kind": "home"},
+                        {"number": 2222222222, "kind": None},
+                        {"number": 3333333333, "kind": "mobile"},
+                    ]
+                },
+            ],
+        },
+        schema={"id": pl.Int32, "phoneNumbers": pl.Struct({"phone": pl.List(phone)})},
+    )
+
+    assert_frame_equal(pl.read_parquet(path), expected)
+    assert_frame_equal(pl.scan_parquet(path).collect(), expected)
+
+
+def test_read_parquet_legacy_hive_list_29133(io_files_path: Path) -> None:
+    # A 3-level list whose levels are not named `list`/`element`, as written by hive
+    # and avro: `my_list (LIST) { repeated group bagg { optional int64 arr_elm } }`.
+    # Made by writing `[[1, None, 3], None, [], [4]]` with
+    # `pq.write_table(..., store_schema=False)` and renaming `list` -> `bagg` and
+    # `element` -> `arr_elm` in the footer bytes.
+    path = io_files_path / "legacy_hive_list.parquet"
+
+    expected = pl.DataFrame(
+        {"my_list": [[1, None, 3], None, [], [4]]},
+        schema={"my_list": pl.List(pl.Int64)},
+    )
+
+    assert_frame_equal(pl.read_parquet(path), expected)
+    assert_frame_equal(pl.scan_parquet(path).collect(), expected)
+
+
 def test_read_parquet_concatenated_gzip_members_28787(io_files_path: Path) -> None:
     path = io_files_path / "concatenated_gzip_members.parquet"
 

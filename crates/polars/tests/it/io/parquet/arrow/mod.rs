@@ -875,6 +875,45 @@ fn list_int_nullable() -> PolarsResult<()> {
     assert_array_roundtrip(true, array.into_box(), None)
 }
 
+/// The decoder derives its levels from the arrow type it is handed. When that type does not match
+/// the file, the levels are refused instead of being decoded into the wrong values.
+#[test]
+fn list_nesting_mismatch_is_refused() -> PolarsResult<()> {
+    let mut array = MutableListArray::<i64, _>::new_with_field(
+        MutablePrimitiveArray::<i64>::new(),
+        "item".into(),
+        true,
+    );
+    array
+        .try_extend(vec![Some(vec![Some(1), None, Some(3)]), None, Some(vec![])])
+        .unwrap();
+    let array = array.into_box();
+    let field = Field::new("a1".into(), array.dtype().clone(), true);
+    let schema = ArrowSchema::from_iter([field]);
+    let chunk = RecordBatchT::try_new(array.len(), Arc::new(schema.clone()), vec![array])?;
+    let data = integration_write(&schema, &[chunk])?;
+
+    let mismatched = ArrowSchema::from_iter([Field::new(
+        "a1".into(),
+        ArrowDataType::LargeList(Box::new(Field::new(
+            "item".into(),
+            ArrowDataType::Int64,
+            false,
+        ))),
+        true,
+    )]);
+    let metadata = p_read::read_metadata(&mut Cursor::new(&data))?;
+    let err = FileReader::new(Cursor::new(&data), metadata.row_groups, mismatched, None)
+        .collect::<PolarsResult<Vec<_>>>()
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("nesting mismatch"),
+        "unexpected error: {err}"
+    );
+
+    Ok(())
+}
+
 #[test]
 fn limit_list() -> PolarsResult<()> {
     test_list_array_required_required(Some(2))

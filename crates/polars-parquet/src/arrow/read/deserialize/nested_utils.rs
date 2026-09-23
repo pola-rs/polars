@@ -4,7 +4,7 @@ use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 use super::utils::PageDecoder;
 use super::{Filter, utils};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
-use crate::parquet::error::ParquetResult;
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, split_buffer};
 use crate::parquet::read::levels::get_bit_width;
 use crate::read::deserialize::utils::Decoded;
@@ -625,9 +625,30 @@ impl<D: utils::Decoder> PageDecoder<D> {
         let mut top_level_filter = top_level_filter.iter();
 
         let mut chunks = Vec::new();
+        let mut is_first_page = true;
         while let Some(page) = self.iter.next() {
             let page = page?;
             let page = page.decompress(&mut self.iter)?;
+
+            // All levels below are derived from the arrow type that the schema inference produced,
+            // not from the parquet schema. If the two disagree, the levels in the file mean
+            // something else than what we are about to decode them as.
+            if is_first_page {
+                is_first_page = false;
+
+                let max_def_level = def_levels.last().copied().unwrap_or(0);
+                let max_rep_level = rep_levels.last().copied().unwrap_or(0);
+                if i64::from(max_def_level) != i64::from(page.descriptor.max_def_level)
+                    || i64::from(max_rep_level) != i64::from(page.descriptor.max_rep_level)
+                {
+                    return Err(ParquetError::oos(format!(
+                        "Parquet nesting mismatch: the inferred nesting does not match the file's \
+                         definition/repetition levels (inferred {max_def_level}/{max_rep_level}, \
+                         file {}/{})",
+                        page.descriptor.max_def_level, page.descriptor.max_rep_level,
+                    )));
+                }
+            }
 
             let (mut def_iter, mut rep_iter) = level_iters(&page)?;
 
