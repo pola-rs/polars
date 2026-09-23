@@ -55,9 +55,9 @@ pub(super) fn push_through_outer_joins(
     root
 }
 
-type Rule = fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> Node;
+pub(super) type Rule = fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> Node;
 
-fn run_pass(
+pub(super) fn run_pass(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,

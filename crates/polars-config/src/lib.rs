@@ -104,6 +104,15 @@ const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
 const JOIN_RUNTIME_FILTERS: &str = "POLARS_JOIN_RUNTIME_FILTERS";
 const DEFAULT_JOIN_RUNTIME_FILTERS: bool = true;
 
+/// Whether a group by over a join may aggregate the right side before the join.
+const EAGER_AGGREGATION: &str = "POLARS_EAGER_AGGREGATION";
+const DEFAULT_EAGER_AGGREGATION: bool = true;
+
+/// Apply eager aggregation wherever it is correct, even where it is not expected to pay off.
+/// For tests.
+const EAGER_AGGREGATION_SKIP_GATE: &str = "POLARS_EAGER_AGGREGATION_SKIP_GATE";
+const DEFAULT_EAGER_AGGREGATION_SKIP_GATE: bool = false;
+
 /// Allows pruning of strict hconcat inputs in projection pushdown. This can reduce data loading
 /// but may discard shape errors.
 const PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS: &str =
@@ -191,6 +200,8 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_LOG_METRICS,
     JOIN_SAMPLE_LIMIT,
     JOIN_RUNTIME_FILTERS,
+    EAGER_AGGREGATION,
+    EAGER_AGGREGATION_SKIP_GATE,
     PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
     DNS_LOG_THRESHOLD_MS,
     NUMA_AWARE,
@@ -232,6 +243,8 @@ pub struct Config {
     ooc_log_metrics: AtomicBool,
     join_sample_limit: AtomicU64,
     join_runtime_filters: AtomicBool,
+    eager_aggregation: AtomicBool,
+    eager_aggregation_skip_gate: AtomicBool,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
     dns_log_threshold_ms: AtomicU64,
     numa_aware: AtomicBool,
@@ -289,6 +302,8 @@ impl Config {
             ooc_log_metrics: AtomicBool::new(false),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
             join_runtime_filters: AtomicBool::new(DEFAULT_JOIN_RUNTIME_FILTERS),
+            eager_aggregation: AtomicBool::new(DEFAULT_EAGER_AGGREGATION),
+            eager_aggregation_skip_gate: AtomicBool::new(DEFAULT_EAGER_AGGREGATION_SKIP_GATE),
             projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
                 DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
             ),
@@ -478,6 +493,16 @@ impl Config {
             JOIN_RUNTIME_FILTERS => self.join_runtime_filters.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_JOIN_RUNTIME_FILTERS),
+                Ordering::Relaxed,
+            ),
+            EAGER_AGGREGATION => self.eager_aggregation.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_EAGER_AGGREGATION),
+                Ordering::Relaxed,
+            ),
+            EAGER_AGGREGATION_SKIP_GATE => self.eager_aggregation_skip_gate.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_EAGER_AGGREGATION_SKIP_GATE),
                 Ordering::Relaxed,
             ),
             PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS => {
@@ -700,6 +725,14 @@ impl Config {
     #[inline(always)]
     pub fn join_runtime_filters(&self) -> bool {
         self.join_runtime_filters.load(Ordering::Relaxed)
+    }
+
+    pub fn eager_aggregation(&self) -> bool {
+        self.eager_aggregation.load(Ordering::Relaxed)
+    }
+
+    pub fn eager_aggregation_skip_gate(&self) -> bool {
+        self.eager_aggregation_skip_gate.load(Ordering::Relaxed)
     }
 
     #[inline(always)]

@@ -6,6 +6,7 @@ use crate::plans::optimizer::projection_pushdown::projection_pushdown;
 use crate::prelude::*;
 
 mod delay_rechunk;
+mod eager_aggregation;
 
 mod cluster_with_columns;
 mod collapse_and_project;
@@ -284,6 +285,17 @@ pub fn optimize(
         let ir = slice_pushdown_opt.optimize(root, ir_arena, expr_arena)?;
 
         ir_arena.replace(root, ir);
+    }
+
+    // Needs the final join order and the pushed-down projections, and must come before
+    // build sides and runtime filters are chosen for the joins it changes.
+    if opt_flags.contains(OptFlags::ROW_ESTIMATE)
+        && opt_flags.streaming()
+        && !opt_flags.contains(OptFlags::GPU)
+        && polars_config::config().eager_aggregation()
+        && get_or_init_members!().has_joins_or_unions
+    {
+        root = eager_aggregation::push_group_by_below_joins(root, ir_arena, expr_arena);
     }
 
     // Needs the final join order and the pushed-down projections.
