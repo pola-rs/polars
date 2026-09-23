@@ -113,6 +113,50 @@ impl Window {
     ) -> PolarsResult<BoundsIter<'a>> {
         BoundsIter::new(*self, closed_window, boundary, tu, tz, start_by)
     }
+
+    /// The start of the first window for data whose first value is `t0`, as placed by
+    /// `start_by`, `every` and `offset`.
+    pub fn first_window_start(
+        &self,
+        t0: i64,
+        closed_window: ClosedWindow,
+        tu: TimeUnit,
+        tz: Option<&Tz>,
+        start_by: StartBy,
+    ) -> PolarsResult<i64> {
+        match start_by {
+            StartBy::DataPoint => Ok(t0),
+            StartBy::WindowBound => Ok(self.get_earliest_bounds(tu, t0, closed_window, tz)?.start),
+            _ => {
+                // Find the beginning of the week in the time zone, then place the window
+                // start on the requested weekday plus `offset`.
+                let dt = tu.timestamp_to_datetime(t0);
+                let (week_start, tz) = match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => (
+                        tz.from_utc_datetime(&dt).beginning_of_week().naive_utc(),
+                        Some(tz),
+                    ),
+                    _ => (dt.and_utc().beginning_of_week().naive_utc(), None),
+                };
+                let start = tu.datetime_to_timestamp(week_start);
+                let start = Duration::parse(&format!("{}d", start_by.weekday().unwrap()))
+                    .add(tu, start, tz)?;
+                let start = self.offset.add(tu, start, tz)?;
+                // Make sure the first datapoint has a chance to be included.
+                let bounds = ensure_t_in_or_in_front_of_window(
+                    self.every,
+                    t0,
+                    tu,
+                    self.period,
+                    start,
+                    closed_window,
+                    tz,
+                )?;
+                Ok(bounds.start)
+            },
+        }
+    }
 }
 
 pub struct BoundsIter<'a> {
@@ -133,73 +177,12 @@ impl<'a> BoundsIter<'a> {
         tz: Option<&'a Tz>,
         start_by: StartBy,
     ) -> PolarsResult<Self> {
-        let bi = match start_by {
-            StartBy::DataPoint => {
-                let mut boundary = boundary;
-                boundary.stop = window.period.add(tu, boundary.start, tz)?;
-                boundary
-            },
-            StartBy::WindowBound => {
-                window.get_earliest_bounds(tu, boundary.start, closed_window, tz)?
-            },
-            _ => {
-                // find beginning of the week.
-                let dt = tu.timestamp_to_datetime(boundary.start);
-                match tz {
-                    #[cfg(feature = "timezones")]
-                    Some(tz) => {
-                        let dt = tz.from_utc_datetime(&dt);
-                        let dt = dt.beginning_of_week();
-                        let dt = dt.naive_utc();
-                        let start = tu.datetime_to_timestamp(dt);
-                        // adjust start of the week based on given day of the week
-                        let start = Duration::parse(&format!("{}d", start_by.weekday().unwrap()))
-                            .add(tu, start, Some(tz))?;
-                        // apply the 'offset'
-                        let start = window.offset.add(tu, start, Some(tz))?;
-                        // make sure the first datapoint has a chance to be included
-                        // and compute the end of the window defined by the 'period'
-                        ensure_t_in_or_in_front_of_window(
-                            window.every,
-                            boundary.start,
-                            tu,
-                            window.period,
-                            start,
-                            closed_window,
-                            Some(tz),
-                        )?
-                    },
-                    _ => {
-                        let tz = chrono::Utc;
-                        let dt = dt.and_local_timezone(tz).unwrap();
-                        let dt = dt.beginning_of_week();
-                        let dt = dt.naive_utc();
-                        let start = tu.datetime_to_timestamp(dt);
-                        // adjust start of the week based on given day of the week
-                        let start = Duration::parse(&format!("{}d", start_by.weekday().unwrap()))
-                            .add(tu, start, None)
-                            .unwrap();
-                        // apply the 'offset'
-                        let start = window.offset.add(tu, start, None).unwrap();
-                        // make sure the first datapoint has a chance to be included
-                        // and compute the end of the window defined by the 'period'
-                        ensure_t_in_or_in_front_of_window(
-                            window.every,
-                            boundary.start,
-                            tu,
-                            window.period,
-                            start,
-                            closed_window,
-                            None,
-                        )?
-                    },
-                }
-            },
-        };
+        let start = window.first_window_start(boundary.start, closed_window, tu, tz, start_by)?;
+        let stop = window.period.add(tu, start, tz)?;
         Ok(Self {
             window,
             boundary,
-            bi,
+            bi: Bounds::new(start, stop),
             tu,
             tz,
         })
