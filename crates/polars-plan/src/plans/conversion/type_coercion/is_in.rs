@@ -4,31 +4,22 @@ use super::*;
 
 #[derive(Debug)]
 pub(super) enum IsInTypeCoercionResult {
-    SuperType(DataType, DataType),
-    SelfCast {
-        dtype: DataType,
-        strict: bool,
-    },
-    OtherCast {
-        dtype: DataType,
-        strict: bool,
-    },
+    /// Cast the needle to `dtype`, which is exact for every value.
+    SelfCast { dtype: DataType },
+    /// Only for a container whose elements are all null, so the cast is always valid.
+    OtherCast { dtype: DataType },
+    #[cfg(feature = "is_in")]
     Implode,
     /// Cast the needle to `dtype` as it is evaluated; a needle the cast cannot represent exactly
     /// matches nothing.
-    GuardedSelfCast {
-        dtype: DataType,
-    },
+    GuardedSelfCast { dtype: DataType },
 }
 
-/// Cast the needle onto the element dtype, guarding the cast unless it is always exact.
-fn needle_to_element(needle: &DataType, element: &DataType) -> IsInTypeCoercionResult {
-    if needle.is_primitive_numeric()
-        && get_numeric_upcast_supertype_lossless(needle, element).as_ref() == Some(element)
-    {
+/// Cast a numeric needle onto the element dtype, guarding the cast unless it always is exact.
+fn numeric_needle_cast(needle: &DataType, element: &DataType) -> IsInTypeCoercionResult {
+    if get_numeric_upcast_supertype_lossless(needle, element).as_ref() == Some(element) {
         IsInTypeCoercionResult::SelfCast {
             dtype: element.clone(),
-            strict: false,
         }
     } else {
         IsInTypeCoercionResult::GuardedSelfCast {
@@ -104,15 +95,23 @@ impl MembershipForm {
         (self == Self::IsIn) as usize
     }
 
+    #[cfg(feature = "is_in")]
     pub(super) fn is_contains(self) -> bool {
         self == Self::Contains
     }
 }
 
+/// Which kind of container a membership function searches.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Container {
+    /// A List or Array, searched by the `is_in` kernel.
+    Sequence,
+    /// A Map, searched by its keys.
+    #[cfg(feature = "dtype-map")]
+    Map,
+}
+
 /// Resolve Map lookup coercion without changing stored keys.
-///
-/// Cast only the needle. A cast that is exact, or that yields null for a key no Map can hold,
-/// is fine. A cast that could round the needle onto a different key is not.
 #[cfg(feature = "dtype-map")]
 pub(super) fn resolve_map_key(
     input: &[ExprIR],
@@ -134,95 +133,18 @@ pub(super) fn resolve_map_key(
         // Output field resolution rejects non-Map inputs.
         return Ok(None);
     };
-
-    if let Some(result) = resolve_temporal_map_key(&needle, key, op)? {
-        return Ok(Some(result));
-    }
-
-    Ok(Some(
-        match resolve_is_in(
-            input,
-            expr_arena,
-            input_schema,
-            MembershipForm::Contains,
-            op,
-            Some(key.as_ref()),
-        )? {
-            None => return Ok(None),
-            // The needle alone moves, so a strict cast still raises as it would for `is_in`.
-            Some(
-                result @ (IsInTypeCoercionResult::SelfCast { .. }
-                | IsInTypeCoercionResult::GuardedSelfCast { .. }),
-            ) => result,
-            // Only the needle has to widen to reach the stored key type.
-            Some(IsInTypeCoercionResult::SuperType(supertype, _)) if supertype == **key => {
-                IsInTypeCoercionResult::SelfCast {
-                    dtype: supertype,
-                    strict: false,
-                }
-            },
-            Some(
-                IsInTypeCoercionResult::SuperType(_, _) | IsInTypeCoercionResult::OtherCast { .. },
-            ) => {
-                polars_bail!(
-                InvalidOperation:
-                "'{op}' cannot look up a `{needle}` key in a Map with `{key}` keys\n\
-                Hint: cast the key to `{key}` first.",
-                )
-            },
-            Some(IsInTypeCoercionResult::Implode) => {
-                unreachable!("a key lookup resolves as a `contains`")
-            },
-        },
-    ))
-}
-
-/// Cast the needle to the Map's temporal unit, guarding against overflow and rounding.
-#[cfg(feature = "dtype-map")]
-fn resolve_temporal_map_key(
-    needle: &DataType,
-    key: &DataType,
-    op: &'static str,
-) -> PolarsResult<Option<IsInTypeCoercionResult>> {
-    let (needle_unit, key_unit, target) = match (needle, key) {
-        (DataType::Datetime(needle_unit, needle_tz), DataType::Datetime(key_unit, key_tz)) => {
-            // Comparing across zones is a `SchemaMismatch` in the kernel. Name it here instead.
-            polars_ensure!(
-                needle_tz == key_tz,
-                InvalidOperation:
-                "'{op}' cannot look up a `{needle}` key in a Map with `{key}` keys, as the time \
-                zones differ\nHint: convert the key to `{key}` first.",
-            );
-            (
-                needle_unit,
-                key_unit,
-                DataType::Datetime(*key_unit, key_tz.clone()),
-            )
-        },
-        (DataType::Duration(needle_unit), DataType::Duration(key_unit)) => {
-            (needle_unit, key_unit, DataType::Duration(*key_unit))
-        },
-        _ => return Ok(None),
-    };
-    if needle_unit == key_unit {
-        return Ok(None);
-    }
-    Ok(Some(IsInTypeCoercionResult::GuardedSelfCast {
-        dtype: target,
-    }))
+    let needle = needle.materialize_unknown(false)?;
+    resolve_needle(&needle, key, Container::Map, op, &map)
 }
 
 /// Resolve the cast that makes a membership function's operands comparable.
-///
-/// `element_dtype` names the container's elements for containers that have no
-/// [`DataType::inner_dtype`], such as a Map searched by its keys.
+#[cfg(feature = "is_in")]
 pub(super) fn resolve_is_in(
     input: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     input_schema: &Schema,
     form: MembershipForm,
     op: &'static str,
-    element_dtype: Option<&DataType>,
 ) -> PolarsResult<Option<IsInTypeCoercionResult>> {
     let (_, type_left) = unpack!(get_aexpr_and_type(
         expr_arena,
@@ -250,108 +172,172 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         return Ok(Some(IsInTypeCoercionResult::Implode));
     }
 
-    let wrap_other = |resolved_inner_type: DataType| match &type_other {
-        DataType::List(_) => DataType::List(Box::new(resolved_inner_type)),
-        #[cfg(feature = "dtype-array")]
-        DataType::Array(_, width) => DataType::Array(Box::new(resolved_inner_type), *width),
-        // A Map lookup reaches this through the lossless upcast of its key.
-        #[cfg(feature = "dtype-map")]
-        DataType::Map(_, value) => DataType::Map(Box::new(resolved_inner_type), value.clone()),
-        _ => unreachable!(),
-    };
-
-    let type_left_materialized = type_left.clone().materialize_unknown(false)?;
-    let Some(type_other_inner) = element_dtype.or_else(|| type_other.inner_dtype()) else {
+    let type_left_materialized = type_left.materialize_unknown(false)?;
+    let Some(type_other_inner) = type_other.inner_dtype() else {
         polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left_materialized:?} values in {type_other:?} data.\n\
         Hint: container dtype ({type_other:?}) must be nested{}", map_hint(form, &type_other, None));
     };
 
-    let casted_inner_expr = match (&type_left_materialized, type_other_inner) {
-        // Types are equal, do nothing
-        (dtml, dto) if dtml == dto => return Ok(None),
+    resolve_needle(
+        &type_left_materialized,
+        type_other_inner,
+        Container::Sequence,
+        op,
+        &type_other,
+    )
+    .map_err(
+        |err| match map_hint(form, &type_other, Some(type_other_inner)) {
+            "" => err,
+            hint => err.wrap_msg(|msg| format!("{msg}{hint}")),
+        },
+    )
+}
 
-        // All-null can represent anything (and/or empty list), so cast to target dtype
-        (DataType::Null, _) => IsInTypeCoercionResult::SelfCast {
-            dtype: type_other_inner.clone(),
-            strict: false,
-        },
-        (_, DataType::Null) => IsInTypeCoercionResult::OtherCast {
-            dtype: wrap_other(type_left_materialized),
-            strict: false,
-        },
+/// Choose the cast for a needle compared against elements of dtype `element`.
+///
+/// Only the needle is cast, so answering never depends on elements other than those compared.
+/// Whether a pair is allowed depends on the dtypes alone.
+fn resolve_needle(
+    needle: &DataType,
+    element: &DataType,
+    container: Container,
+    op: &'static str,
+    container_dtype: &DataType,
+) -> PolarsResult<Option<IsInTypeCoercionResult>> {
+    use IsInTypeCoercionResult as R;
 
-        #[cfg(feature = "dtype-categorical")]
-        (DataType::Enum(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
-            dtype: wrap_other(type_left_materialized),
-            strict: true,
-        },
-        #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::Enum(_, _)) => IsInTypeCoercionResult::SelfCast {
-            dtype: type_other_inner.clone(),
-            strict: true,
-        },
-        #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::Categorical(_, _)) => IsInTypeCoercionResult::SelfCast {
-            dtype: type_other_inner.clone(),
-            strict: false,
-        },
-        #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
-            dtype: wrap_other(type_left_materialized),
-            strict: false,
-        },
-
-        // An integer cast is exact or out of range, and the guard makes out of range a miss.
-        (dtml, dto) if dtml.is_integer() && dto.is_integer() => needle_to_element(dtml, dto),
-
-        #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
-            polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left_materialized:?} values in {type_other:?} data")
-        },
-        // A unit cast can overflow or round, so it is guarded.
-        (DataType::Datetime(needle_unit, needle_tz), DataType::Datetime(other_unit, _)) => {
-            // Equal units but unequal dtypes means the time zones differ; the kernel compares
-            // the physical values, so instants match across zones.
-            if needle_unit == other_unit {
-                return Ok(None);
-            }
-            IsInTypeCoercionResult::GuardedSelfCast {
-                dtype: DataType::Datetime(*other_unit, needle_tz.clone()),
-            }
-        },
-        (DataType::Duration(_), DataType::Duration(other_unit)) => {
-            IsInTypeCoercionResult::GuardedSelfCast {
-                dtype: DataType::Duration(*other_unit),
-            }
-        },
-
-        // Don't attempt to cast between obviously mismatched types. Only allow
-        // to cast to a supertype if the cast is lossless.
-        (dtml, dto) => {
-            if (dtml.is_primitive_numeric() && dto.is_primitive_numeric()) || dtml.is_null() {
-                if let Some(super_type) = get_numeric_upcast_supertype_lossless(dtml, dto) {
-                    return Ok(Some(IsInTypeCoercionResult::SuperType(
-                        super_type.clone(),
-                        wrap_other(super_type),
-                    )));
-                } else {
-                    // We disabled lossless coercion of the operands in 2.0.
-                    let lossy_supertype = try_get_supertype(dtml, dto)?;
-                    polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left_materialized:?} values in {type_other:?} data.\n\
-                        Hint: Before version 2.0, Polars would perform this check by lossily coercing the operands to {lossy_supertype:?}. \
-                        However, since Polars 2.0, for '{op}' it is required to explicitly cast (one of) the operands to a compatible type.")
-                }
-            }
-            polars_bail!(
-                InvalidOperation: "'{op}' cannot check for {type_left_materialized:?} values in {type_other:?} data{}",
-                map_hint(form, &type_other, Some(dto)),
-            )
-        },
+    let fail = |hint: &str| -> PolarsError {
+        match container {
+            Container::Sequence => polars_err!(
+                InvalidOperation: "'{op}' cannot check for {needle:?} values in {container_dtype:?} data{hint}",
+            ),
+            #[cfg(feature = "dtype-map")]
+            Container::Map => polars_err!(
+                InvalidOperation: "'{op}' cannot look up a {needle:?} key in a Map with {element:?} keys{hint}",
+            ),
+        }
     };
-    Ok(Some(casted_inner_expr))
+    let self_cast = |dtype: &DataType| R::SelfCast {
+        dtype: dtype.clone(),
+    };
+
+    let result = match (needle, element) {
+        (n, e) if n == e => return Ok(None),
+
+        // A null needle can take any element dtype; it is absent from a Map.
+        (DataType::Null, e) => self_cast(e),
+        // Elements that can only be null take the needle's dtype without looking at the data.
+        (n, e) if container == Container::Sequence && is_null_shape_of(e, n) => R::OtherCast {
+            dtype: with_inner(container_dtype, n.clone()),
+        },
+
+        (n, e) if (n.is_integer() && e.is_integer()) || (n.is_float() && e.is_float()) => {
+            numeric_needle_cast(n, e)
+        },
+        (n, e) if n.is_primitive_numeric() && e.is_primitive_numeric() => {
+            return Err(match container {
+                Container::Sequence => {
+                    // We disabled lossy coercion of the operands in 2.0.
+                    let lossy_supertype = try_get_supertype(n, e)?;
+                    fail(&format!(
+                        ".\nHint: Before version 2.0, Polars would perform this check by lossily \
+                        coercing the operands to {lossy_supertype:?}. However, since Polars 2.0, \
+                        for '{op}' it is required to explicitly cast (one of) the operands to a \
+                        compatible type."
+                    ))
+                },
+                #[cfg(feature = "dtype-map")]
+                Container::Map => fail(&format!("\nHint: cast the key to {e:?} first.")),
+            });
+        },
+
+        // The kernel compares decimals of any precision and scale exactly.
+        #[cfg(feature = "dtype-decimal")]
+        (DataType::Decimal(_, _), DataType::Decimal(_, _)) => match container {
+            Container::Sequence => return Ok(None),
+            #[cfg(feature = "dtype-map")]
+            Container::Map => R::GuardedSelfCast {
+                dtype: element.clone(),
+            },
+        },
+
+        (DataType::Datetime(needle_unit, needle_tz), DataType::Datetime(unit, tz)) => {
+            if needle_tz.is_some() != tz.is_some() {
+                return Err(fail(
+                    ", as one is time-zone-aware and the other is not\n\
+                    Hint: use `dt.replace_time_zone` to give both sides a time zone, or neither.",
+                ));
+            }
+            // Instants compare across zones. The kernel compares physical values, and a Map key
+            // must match the stored dtype exactly; the cast keeps the instant either way.
+            let dtype = match container {
+                Container::Sequence if needle_unit == unit => return Ok(None),
+                Container::Sequence => DataType::Datetime(*unit, needle_tz.clone()),
+                #[cfg(feature = "dtype-map")]
+                Container::Map => element.clone(),
+            };
+            if needle_unit == unit {
+                self_cast(&dtype)
+            } else {
+                R::GuardedSelfCast { dtype }
+            }
+        },
+        (DataType::Duration(_), DataType::Duration(_)) => R::GuardedSelfCast {
+            dtype: element.clone(),
+        },
+
+        // The kernel looks strings up by category, so an unknown label is absent.
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::String, DataType::Enum(_, _) | DataType::Categorical(_, _))
+        | (DataType::Enum(_, _) | DataType::Categorical(_, _), DataType::String) => match container
+        {
+            Container::Sequence => return Ok(None),
+            #[cfg(feature = "dtype-map")]
+            Container::Map if element.is_string() => self_cast(element),
+            // An unknown label becomes a null key, which no Map holds.
+            #[cfg(feature = "dtype-map")]
+            Container::Map => R::GuardedSelfCast {
+                dtype: element.clone(),
+            },
+        },
+
+        _ => return Err(fail("")),
+    };
+    Ok(Some(result))
+}
+
+/// Whether `element` can only hold nulls where `needle` holds values, e.g. `List(Null)` for a
+/// `List(Int64)` needle.
+fn is_null_shape_of(element: &DataType, needle: &DataType) -> bool {
+    match (element, needle) {
+        (DataType::Null, _) => true,
+        (DataType::List(e), DataType::List(n)) => is_null_shape_of(e, n),
+        #[cfg(feature = "dtype-array")]
+        (DataType::Array(e, ew), DataType::Array(n, nw)) => ew == nw && is_null_shape_of(e, n),
+        #[cfg(feature = "dtype-struct")]
+        (DataType::Struct(ef), DataType::Struct(nf)) => {
+            ef.len() == nf.len()
+                && ef
+                    .iter()
+                    .zip(nf)
+                    .all(|(e, n)| e.name() == n.name() && is_null_shape_of(e.dtype(), n.dtype()))
+        },
+        _ => false,
+    }
+}
+
+/// `container` with its elements replaced by `inner`.
+fn with_inner(container: &DataType, inner: DataType) -> DataType {
+    match container {
+        DataType::List(_) => DataType::List(Box::new(inner)),
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(_, width) => DataType::Array(Box::new(inner), *width),
+        _ => unreachable!("a List or Array container"),
+    }
 }
 
 /// Point an `is_in` on a Map at the Map namespace.
+#[cfg(feature = "is_in")]
 fn map_hint(
     form: MembershipForm,
     container: &DataType,

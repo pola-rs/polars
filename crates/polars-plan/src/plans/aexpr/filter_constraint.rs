@@ -79,12 +79,27 @@ enum Nullability {
 // Whether the comparisons in `node` order their column the way they order the
 // literals it is compared against. A categorical or an enum orders by its
 // categories instead, so nothing here may reason about its bounds. A column that
-// is not in `schema` is treated the same way.
+// is not in `schema` is treated the same way. So is an `is_in` whose haystack has
+// another dtype than its column, such as strings searched for an enum.
 fn compares_in_literal_order(node: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> bool {
     expr_arena.iter(node).all(|(_, ae)| match ae {
         AExpr::Column(name) => schema
             .get(name)
             .is_some_and(|dtype| !dtype.contains_categoricals() && !dtype.contains_enums()),
+        #[cfg(feature = "is_in")]
+        AExpr::Function {
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
+            input,
+            ..
+        } => match (
+            expr_arena.get(input[0].node()),
+            expr_arena.get(input[1].node()),
+        ) {
+            (AExpr::Column(name), AExpr::Literal(lv)) => schema
+                .get(name)
+                .is_some_and(|dtype| lv.get_datatype().inner_dtype() == Some(dtype)),
+            _ => true,
+        },
         _ => true,
     })
 }
