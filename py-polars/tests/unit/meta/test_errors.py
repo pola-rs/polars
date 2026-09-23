@@ -558,7 +558,8 @@ def test_empty_inputs_error() -> None:
                 time_unit="ns",
                 eager=True,
             ),
-            None,
+            # The needle is cast to the values' unit.
+            [False, None, False],
         ),
         ("d", [time(10, 30)], None),
         ("e", [datetime(1999, 12, 31, 10, 30)], None),

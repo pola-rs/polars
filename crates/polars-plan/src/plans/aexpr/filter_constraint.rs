@@ -759,9 +759,11 @@ fn classify_into_constraints(
                 },
                 // Record the haystack as an allowed-set for contradiction detection
                 // only; keep the `is_in` node (we don't rewrite it, its null handling
-                // is subtle).
+                // is subtle). A guarded needle cast compares other values than the column's.
                 #[cfg(feature = "is_in")]
-                IRBooleanFunction::IsIn { .. } => {
+                IRBooleanFunction::IsIn {
+                    needle_cast: None, ..
+                } => {
                     if let Some(col_name) = as_column(expr_arena.get(input[0].node())) {
                         if let Some(values) = as_value_set(expr_arena.get(input[1].node())) {
                             let allowed = values.into_iter().collect();
@@ -944,7 +946,10 @@ fn classify_negation(
         #[cfg(feature = "is_in")]
         AExpr::Function {
             input,
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
+            function:
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                    needle_cast: None, ..
+                }),
             ..
         } => {
             if let (Some(col_name), Some(values)) = (
