@@ -1382,6 +1382,9 @@ where
                     if no_nulls {
                         return finish_slice(&values[first..first + len]);
                     }
+                    if len == 1 {
+                        return arr.get(first).map(|v| finish(v.to_mean_acc(), 1));
+                    }
                     let group = arr.clone().sliced(first, len);
                     let count = len - group.null_count();
                     (count != 0).then(|| finish(T::Native::sum_arr(&group), count))

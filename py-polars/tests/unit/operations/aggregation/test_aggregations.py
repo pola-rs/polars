@@ -213,13 +213,15 @@ def test_int_mean_grouped_matches_reference_29373() -> None:
 
 
 @pytest.mark.parametrize("with_nulls", [False, True])
-def test_int_mean_sorted_groups_29373(with_nulls: bool) -> None:
+# About 75 rows per group, or mostly single-row groups.
+@pytest.mark.parametrize("n_groups", [40, 3_000])
+def test_int_mean_sorted_groups_29373(with_nulls: bool, n_groups: int) -> None:
     rng = np.random.default_rng(3)
     n = 3_000
     values: list[int | None] = [int(v) for v in rng.integers(2**62, 2**63 - 1, size=n)]
     if with_nulls:
         values[::7] = [None] * len(values[::7])
-    groups = sorted(rng.integers(0, 40, size=n).tolist())
+    groups = sorted(rng.integers(0, n_groups, size=n).tolist())
     df = pl.DataFrame({"g": groups, "a": values}).with_columns(pl.col("g").set_sorted())
     out = df.group_by("g", maintain_order=True).agg(pl.col("a").mean())
     expected = {}
@@ -227,7 +229,7 @@ def test_int_mean_sorted_groups_29373(with_nulls: bool) -> None:
         window = [
             v for k, v in zip(groups, values, strict=True) if k == g and v is not None
         ]
-        expected[g] = float(sum(window)) / len(window)
+        expected[g] = float(sum(window)) / len(window) if window else None
     assert dict(zip(out["g"], out["a"], strict=True)) == expected
 
 
