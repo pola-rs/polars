@@ -137,16 +137,11 @@ def test_int_mean_exact_hand_picked_29373() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64],
-)
-def test_int_mean_extremes_with_nulls_29373(dtype: pl.DataType) -> None:
-    info = np.iinfo(str(dtype).lower())
+def _extremes_with_nulls(dtype: pl.DataType, n: int) -> pl.Series:
+    lo, hi = pl.select(dtype.min().alias("lo"), dtype.max().alias("hi")).row(0)  # type: ignore[attr-defined]
     rng = np.random.default_rng(2)
-    n = 1_000
-    choices = [int(info.min), int(info.max), int(info.min) + 1, int(info.max) - 1, 0]
-    s = pl.Series(
+    choices = [lo, hi, lo + 1, hi - 1, 0]
+    return pl.Series(
         [
             choices[i] if valid else None
             for i, valid in zip(
@@ -155,12 +150,46 @@ def test_int_mean_extremes_with_nulls_29373(dtype: pl.DataType) -> None:
         ],
         dtype=dtype,
     )
+
+
+INTEGER_DTYPES_29373 = [
+    pl.Int8,
+    pl.Int16,
+    pl.Int32,
+    pl.Int64,
+    pl.Int128,
+    pl.UInt8,
+    pl.UInt16,
+    pl.UInt32,
+    pl.UInt64,
+    pl.UInt128,
+]
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES_29373)
+def test_int_mean_extremes_with_nulls_29373(dtype: pl.DataType) -> None:
+    n = 1_000
+    s = _extremes_with_nulls(dtype, n)
     # Offsets that are not a multiple of the validity word size.
     for offset, length in [(0, n), (3, 77), (37, 900), (1, 31)]:
         window = [v for v in s.slice(offset, length).to_list() if v is not None]
         expected = float(sum(window)) / len(window)
-        assert s.slice(offset, length).mean() == expected
-        assert s.slice(offset, length).drop_nulls().mean() == expected
+        for window_s in (s.slice(offset, length), s.slice(offset, length).drop_nulls()):
+            assert window_s.mean() == expected
+            assert window_s.implode().list.mean().item() == expected
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES_29373)
+def test_int_mean_grouped_extremes_29373(dtype: pl.DataType) -> None:
+    s = _extremes_with_nulls(dtype, 3_000)
+    groups = np.random.default_rng(4).integers(0, 20, size=len(s))
+    df = pl.DataFrame({"g": groups, "a": s})
+    # Random groups gather their values; without nulls through a separate kernel.
+    for frame in (df, df.drop_nulls()):
+        values = frame.group_by("g").agg(pl.col("a").drop_nulls())
+        expected = {g: float(sum(v)) / len(v) for g, v in values.iter_rows()}
+        out = frame.group_by("g").agg(pl.col("a").mean())
+        assert dict(zip(out["g"], out["a"], strict=True)) == expected
 
 
 def test_int_mean_chunk_layout_independent_29373() -> None:

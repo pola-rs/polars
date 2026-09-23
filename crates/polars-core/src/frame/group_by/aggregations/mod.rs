@@ -1340,10 +1340,10 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize).map(|v| finish(v.to_mean_acc(), 1))
                     } else if no_nulls {
-                        let sum = take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
-                            .fold(Default::default(), |a: <T::Native as MeanSum>::Acc, b| {
-                                a.wrapping_add(&b.to_mean_acc())
-                            });
+                        let sum = T::Native::sum_iter(take_agg_no_null_primitive_iter_unchecked(
+                            arr,
+                            idx2usize(idx),
+                        ));
                         Some(finish(sum, idx.len()))
                     } else {
                         take_agg_primitive_iter_unchecked_count_nulls(

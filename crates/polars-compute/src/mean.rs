@@ -7,7 +7,7 @@ use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 
 use crate::float_sum::{FloatSum, sum_arr_as_f64};
-use crate::sum::{WrappingAdd, wrapping_sum_arr_upcast};
+use crate::sum::WrappingAdd;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IntMeanRounding {
@@ -142,6 +142,11 @@ pub trait MeanSum: NativeType {
     fn to_mean_acc(self) -> Self::Acc;
 
     fn sum_slice(vals: &[Self]) -> Self::Acc;
+    fn sum_iter(vals: impl Iterator<Item = Self>) -> Self::Acc {
+        vals.fold(Self::Acc::default(), |a, v| {
+            a.wrapping_add(&v.to_mean_acc())
+        })
+    }
     fn sum_arr(arr: &PrimitiveArray<Self>) -> Self::Acc;
 
     /// `sum_slice(vals).into_f64() / len`, `None` if `vals` is empty.
@@ -150,22 +155,106 @@ pub trait MeanSum: NativeType {
     }
 }
 
-/// An integer of at most 64 bits, split as `hi * 2^SHIFT + lo` so that `hi` and `lo` can be
-/// summed exactly in 64-bit lanes over [`SPLIT_BLOCK`] values, which vectorizes.
+/// An integer split into 64-bit lanes of at most 32 significant bits each, so that the lanes
+/// can be summed exactly over [`SPLIT_BLOCK`] values, which vectorizes.
 trait SplitInt: Copy {
-    const SHIFT: u32;
-    fn split(self) -> (i64, u64);
+    type Lanes: Copy + Default;
+    type Acc: MeanAcc + Add<Output = Self::Acc> + Zero;
+
+    /// Adds `self` to `lanes` if `keep` is all ones, nothing if it is zero.
+    fn add_to(self, lanes: Self::Lanes, keep: u64) -> Self::Lanes;
+    fn combine(lanes: Self::Lanes) -> Self::Acc;
+}
+
+/// Up to this many values, both lanes of an at most 64-bit split sum are exact in an `f64`.
+const SPLIT_F64_LEN: usize = 1 << 21;
+
+trait SplitF64: SplitInt {
+    /// `combine(lanes) as f64` for the lanes of at most [`SPLIT_F64_LEN`] values.
+    fn lanes_to_f64(lanes: Self::Lanes) -> f64;
 }
 
 macro_rules! impl_split_int {
     (narrow; $($t:ty),*) => {
         $(
             impl SplitInt for $t {
-                const SHIFT: u32 = 0;
+                type Lanes = (i64, u64);
+                type Acc = i128;
 
                 #[inline(always)]
-                fn split(self) -> (i64, u64) {
-                    (self as i64, 0)
+                fn add_to(self, (hi, lo): (i64, u64), keep: u64) -> (i64, u64) {
+                    (hi.wrapping_add(self as i64 & keep as i64), lo)
+                }
+
+                #[inline(always)]
+                fn combine((hi, _): (i64, u64)) -> i128 {
+                    hi as i128
+                }
+            }
+
+            impl SplitF64 for $t {
+                #[inline(always)]
+                fn lanes_to_f64((hi, _): (i64, u64)) -> f64 {
+                    hi as f64
+                }
+            }
+        )*
+    };
+    (wide; $($t:ty),*) => {
+        $(
+            impl SplitInt for $t {
+                /// `hi * 2^32 + lo`.
+                type Lanes = (i64, u64);
+                type Acc = i128;
+
+                #[inline(always)]
+                fn add_to(self, (hi, lo): (i64, u64), keep: u64) -> (i64, u64) {
+                    let h = (self >> 32) as i64;
+                    let l = self as u64 & 0xFFFF_FFFF;
+                    (hi.wrapping_add(h & keep as i64), lo.wrapping_add(l & keep))
+                }
+
+                #[inline(always)]
+                fn combine((hi, lo): (i64, u64)) -> i128 {
+                    ((hi as i128) << 32) + lo as i128
+                }
+            }
+
+            impl SplitF64 for $t {
+                /// Scaling by a power of two is exact, so the only rounding is in the addition.
+                #[inline(always)]
+                fn lanes_to_f64((hi, lo): (i64, u64)) -> f64 {
+                    hi as f64 * 4294967296.0 + lo as f64
+                }
+            }
+        )*
+    };
+    (x128; $($t:ty),*) => {
+        $(
+            impl SplitInt for $t {
+                /// Limbs of 32 bits, most significant first.
+                type Lanes = (i64, u64, u64, u64);
+                type Acc = I256Acc;
+
+                #[inline(always)]
+                fn add_to(self, (a, b, c, d): Self::Lanes, keep: u64) -> Self::Lanes {
+                    let w = (self >> 96) as i64;
+                    let x = (self >> 64) as u64 & 0xFFFF_FFFF;
+                    let y = (self >> 32) as u64 & 0xFFFF_FFFF;
+                    let z = self as u64 & 0xFFFF_FFFF;
+                    (
+                        a.wrapping_add(w & keep as i64),
+                        b.wrapping_add(x & keep),
+                        c.wrapping_add(y & keep),
+                        d.wrapping_add(z & keep),
+                    )
+                }
+
+                #[inline(always)]
+                fn combine((a, b, c, d): Self::Lanes) -> I256Acc {
+                    let hi = ethnum::I256::from(((a as i128) << 32) + b as i128);
+                    let lo = ethnum::I256::from(((c as i128) << 32) + d as i128);
+                    I256Acc((hi << 64) + lo)
                 }
             }
         )*
@@ -173,111 +262,90 @@ macro_rules! impl_split_int {
 }
 
 impl_split_int!(narrow; u8, u16, u32, i8, i16, i32);
+impl_split_int!(wide; u64, i64);
+impl_split_int!(x128; u128, i128);
 
-impl SplitInt for i64 {
-    const SHIFT: u32 = 32;
-
-    #[inline(always)]
-    fn split(self) -> (i64, u64) {
-        (self >> 32, (self as u64) & 0xFFFF_FFFF)
-    }
-}
-
-impl SplitInt for u64 {
-    const SHIFT: u32 = 32;
-
-    #[inline(always)]
-    fn split(self) -> (i64, u64) {
-        ((self >> 32) as i64, self & 0xFFFF_FFFF)
-    }
-}
-
-/// Both halves are below 2^32 in magnitude, so their block sums stay below 2^56.
+/// Every lane is below 2^32 in magnitude, so its block sum stays below 2^56.
 const SPLIT_BLOCK: usize = 1 << 24;
 
 #[inline(always)]
-fn combine_split<T: SplitInt>(hi: i64, lo: u64) -> i128 {
-    ((hi as i128) << T::SHIFT) + lo as i128
+fn split_lanes<T: SplitInt>(vals: impl Iterator<Item = T>) -> T::Lanes {
+    vals.fold(T::Lanes::default(), |lanes, v| v.add_to(lanes, u64::MAX))
 }
 
-#[inline(always)]
-fn split_sum_block<T: SplitInt>(block: &[T]) -> i128 {
-    let (hi, lo) = block.iter().fold((0i64, 0u64), |(hi, lo), v| {
-        let (h, l) = v.split();
-        (hi.wrapping_add(h), lo.wrapping_add(l))
-    });
-    combine_split::<T>(hi, lo)
-}
-
-fn split_sum<T: SplitInt>(vals: &[T]) -> i128 {
+fn split_sum<T: SplitInt>(vals: &[T]) -> T::Acc {
     if vals.len() <= SPLIT_BLOCK {
-        return split_sum_block(vals);
+        return T::combine(split_lanes(vals.iter().copied()));
     }
-    vals.chunks(SPLIT_BLOCK).map(split_sum_block).sum()
+    vals.chunks(SPLIT_BLOCK)
+        .map(|block| T::combine(split_lanes(block.iter().copied())))
+        .fold(T::Acc::zero(), Add::add)
 }
 
-/// Up to this many values, both split sums are exact in an `f64`.
-const SPLIT_F64_LEN: usize = 1 << 21;
+fn split_sum_iter<T: SplitInt>(mut vals: impl Iterator<Item = T>) -> T::Acc {
+    let mut acc = T::Acc::zero();
+    loop {
+        let mut n = 0;
+        let lanes = vals
+            .by_ref()
+            .take(SPLIT_BLOCK)
+            .fold(T::Lanes::default(), |lanes, v| {
+                n += 1;
+                v.add_to(lanes, u64::MAX)
+            });
+        acc = acc + T::combine(lanes);
+        if n < SPLIT_BLOCK {
+            return acc;
+        }
+    }
+}
 
-/// `split_sum(vals) as f64` for at most [`SPLIT_F64_LEN`] values.
-///
-/// Scaling by a power of two is exact, so the only rounding is in the final addition.
-#[inline(always)]
-fn split_sum_f64<T: SplitInt>(vals: &[T]) -> f64 {
+fn split_sum_f64<T: SplitF64>(vals: &[T]) -> f64 {
     debug_assert!(vals.len() <= SPLIT_F64_LEN);
-    let (hi, lo) = vals.iter().fold((0i64, 0u64), |(hi, lo), v| {
-        let (h, l) = v.split();
-        (hi.wrapping_add(h), lo.wrapping_add(l))
-    });
-    hi as f64 * (1u64 << T::SHIFT) as f64 + lo as f64
+    T::lanes_to_f64(split_lanes(vals.iter().copied()))
 }
 
-fn split_sum_masked<T: SplitInt>(vals: &[T], mask: BitMask<'_>) -> i128 {
+fn split_sum_masked<T: SplitInt>(vals: &[T], mask: BitMask<'_>) -> T::Acc {
     assert!(vals.len() == mask.len());
     vals.chunks(SPLIT_BLOCK)
         .enumerate()
         .map(|(b, block)| {
             let offset = b * SPLIT_BLOCK;
-            let (mut hi, mut lo) = (0i64, 0u64);
+            let mut lanes = T::Lanes::default();
             let (words, rest) = block.as_chunks::<32>();
             for (i, word) in words.iter().enumerate() {
                 let bits = mask.get_u32(offset + i * 32);
                 for (j, v) in word.iter().enumerate() {
                     // All ones if valid, zero otherwise, to stay branch-free.
-                    let keep = (((bits >> j) & 1) as i64).wrapping_neg();
-                    let (h, l) = v.split();
-                    hi = hi.wrapping_add(h & keep);
-                    lo = lo.wrapping_add(l & keep as u64);
+                    let keep = ((bits >> j) & 1) as u64;
+                    lanes = v.add_to(lanes, keep.wrapping_neg());
                 }
             }
             let rest_offset = offset + words.len() * 32;
             for (j, v) in rest.iter().enumerate() {
-                if mask.get(rest_offset + j) {
-                    let (h, l) = v.split();
-                    hi = hi.wrapping_add(h);
-                    lo = lo.wrapping_add(l);
-                }
+                let keep = mask.get(rest_offset + j) as u64;
+                lanes = v.add_to(lanes, keep.wrapping_neg());
             }
-            combine_split::<T>(hi, lo)
+            T::combine(lanes)
         })
-        .sum()
+        .fold(T::Acc::zero(), Add::add)
 }
 
 macro_rules! impl_split_mean_sum {
-    ($($t:ty),*) => {
+    ($acc:ty; $($t:tt),*) => {
         $(
             impl MeanSum for $t {
-                type Acc = i128;
+                type Acc = $acc;
 
-                fn to_mean_acc(self) -> i128 {
+                fn to_mean_acc(self) -> Self::Acc {
                     self.into()
                 }
 
-                fn sum_slice(vals: &[Self]) -> i128 {
+                fn sum_slice(vals: &[Self]) -> Self::Acc {
                     split_sum(vals)
                 }
 
-                fn sum_arr(arr: &PrimitiveArray<Self>) -> i128 {
+                fn sum_arr(arr: &PrimitiveArray<Self>) -> Self::Acc {
                     match arr.validity().filter(|_| arr.null_count() > 0) {
                         Some(validity) => {
                             split_sum_masked(arr.values(), BitMask::from_bitmap(validity))
@@ -286,45 +354,32 @@ macro_rules! impl_split_mean_sum {
                     }
                 }
 
-                fn mean_slice(vals: &[Self]) -> Option<f64> {
-                    let sum = match vals.len() {
-                        0 => return None,
-                        n if n <= SPLIT_F64_LEN => split_sum_f64(vals),
-                        _ => i128_to_f64(split_sum(vals)),
-                    };
-                    Some(sum / vals.len() as f64)
-                }
+                impl_split_mean_sum!(@extra $t);
             }
         )*
     };
-}
-
-impl_split_mean_sum!(u8, u16, u32, u64, i8, i16, i32, i64);
-
-macro_rules! impl_wide_mean_sum {
-    ($($t:ty),*) => {
-        $(
-            impl MeanSum for $t {
-                type Acc = I256Acc;
-
-                fn to_mean_acc(self) -> I256Acc {
-                    self.into()
-                }
-
-                fn sum_slice(vals: &[Self]) -> I256Acc {
-                    vals.iter()
-                        .fold(I256Acc::zero(), |a, b| a.wrapping_add(&(*b).into()))
-                }
-
-                fn sum_arr(arr: &PrimitiveArray<Self>) -> I256Acc {
-                    wrapping_sum_arr_upcast::<Self, I256Acc>(arr)
-                }
-            }
-        )*
+    (@extra u128) => { impl_split_mean_sum!(@sum_iter); };
+    (@extra i128) => { impl_split_mean_sum!(@sum_iter); };
+    // Gathered 128-bit values are also cheaper to sum in lanes than in 256 bits.
+    (@sum_iter) => {
+        fn sum_iter(vals: impl Iterator<Item = Self>) -> Self::Acc {
+            split_sum_iter(vals)
+        }
+    };
+    (@extra $t:tt) => {
+        fn mean_slice(vals: &[Self]) -> Option<f64> {
+            let sum = match vals.len() {
+                0 => return None,
+                n if n <= SPLIT_F64_LEN => split_sum_f64(vals),
+                _ => i128_to_f64(split_sum(vals)),
+            };
+            Some(sum / vals.len() as f64)
+        }
     };
 }
 
-impl_wide_mean_sum!(i128, u128);
+impl_split_mean_sum!(i128; u8, u16, u32, u64, i8, i16, i32, i64);
+impl_split_mean_sum!(I256Acc; u128, i128);
 
 macro_rules! impl_float_mean_sum {
     ($($t:ty),*) => {
