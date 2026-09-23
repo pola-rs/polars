@@ -140,12 +140,9 @@ pub trait StrpTimeParser<T> {
 #[cfg(feature = "dtype-datetime")]
 impl StrpTimeParser<i64> for DatetimeInfer<Int64Type> {
     fn parse_bytes(&mut self, val: &[u8], time_unit: Option<TimeUnit>) -> Option<i64> {
-        let transform = match time_unit {
-            Some(TimeUnit::Nanoseconds) => datetime_to_timestamp_ns,
-            Some(TimeUnit::Microseconds) => datetime_to_timestamp_us,
-            Some(TimeUnit::Milliseconds) => datetime_to_timestamp_ms,
-            _ => unreachable!(), // time_unit has to be provided for datetime
-        };
+        // time_unit has to be provided for datetime
+        let time_unit = time_unit.unwrap();
+        let transform = |dt| time_unit.datetime_to_timestamp(dt);
         self.transform_bytes
             .parse(val, self.latest_fmt.as_bytes())
             .map(transform)
