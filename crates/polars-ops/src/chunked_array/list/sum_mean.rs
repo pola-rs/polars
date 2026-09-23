@@ -190,16 +190,29 @@ where
 {
     let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
     let values = values.values().as_slice();
-    let out: PrimitiveArray<f64> = offsets
+    assert!(
+        offsets
+            .last()
+            .is_none_or(|&end| end as usize <= values.len())
+    );
+    let means: Vec<f64> = offsets
         .windows(2)
         .map(|w| {
-            values
-                .get(w[0] as usize..w[1] as usize)
-                .and_then(T::mean_slice)
+            // SAFETY: list offsets are non-decreasing and the last one is in bounds.
+            let list = unsafe { values.get_unchecked(w[0] as usize..w[1] as usize) };
+            T::mean_slice(list).unwrap_or(0.0)
         })
         .collect();
-    let new_validity = combine_validities_and(out.validity(), validity);
-    out.with_validity(new_validity).to_boxed()
+    // Empty lists have no mean. Most inputs have none, so skip building a mask then.
+    let validity = if offsets.windows(2).any(|w| w[0] == w[1]) {
+        let non_empty = Bitmap::from_trusted_len_iter(offsets.windows(2).map(|w| w[0] != w[1]));
+        combine_validities_and(Some(&non_empty), validity)
+    } else {
+        validity.cloned()
+    };
+    PrimitiveArray::from_vec(means)
+        .with_validity(validity)
+        .to_boxed()
 }
 
 pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {

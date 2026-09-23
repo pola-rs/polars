@@ -367,9 +367,13 @@ macro_rules! impl_split_mean_sum {
         }
     };
     (@extra $t:tt) => {
+        // Called once per list, so it must inline across crates.
+        #[inline]
         fn mean_slice(vals: &[Self]) -> Option<f64> {
             let sum = match vals.len() {
                 0 => return None,
+                // Skips the setup of the vectorized loop, which dominates for a single value.
+                1 => <$t as SplitF64>::lanes_to_f64(vals[0].add_to(Default::default(), u64::MAX)),
                 n if n <= SPLIT_F64_LEN => split_sum_f64(vals),
                 _ => i128_to_f64(split_sum(vals)),
             };

@@ -478,6 +478,16 @@ def test_list_mean_fast_path_empty() -> None:
     assert output.to_dict(as_series=False) == {"a": [None, 2.0]}
 
 
+def test_list_mean_empty_and_null_lists() -> None:
+    s = pl.Series("a", [[5], [], [1, 2], None, [3], [], [4, 6]])
+    expected = [5.0, None, 1.5, None, 3.0, None, 5.0]
+    assert s.list.mean().to_list() == expected
+    assert s.slice(2).list.mean().to_list() == expected[2:]
+    # Masked out lists that are not empty.
+    masked = pl.select(pl.when(pl.Series([True, False])).then(pl.Series([[1], [2, 3]])))
+    assert masked.to_series().list.mean().to_list() == [1.0, None]
+
+
 def test_list_min_max_13978() -> None:
     df = pl.DataFrame(
         {
