@@ -594,9 +594,8 @@ impl<D: utils::Decoder> PageDecoder<D> {
         // Amortize the allocations.
         let (def_levels, rep_levels) = nested_state.levels();
 
-        // These levels are derived from the arrow type that the schema inference produced, not
-        // from the parquet schema. If the two disagree, the levels in the file mean something else
-        // than what we are about to decode them as.
+        // The decoder uses Arrow-derived levels. Check their maxima against
+        // the Parquet descriptor before decoding.
         let max_def_level = def_levels.last().copied().unwrap_or(0);
         let max_rep_level = rep_levels.last().copied().unwrap_or(0);
         let descriptor = self.iter.descriptor();

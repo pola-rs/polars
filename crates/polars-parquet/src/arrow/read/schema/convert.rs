@@ -377,10 +377,8 @@ fn to_map(
         )
     }
 
-    // A `value` field is optional in parquet, but an arrow `Map` always has one. The spec allows
-    // reading such a group as a set of keys, so fall through to the plain list conversion. This
-    // enters the element rules directly: the entries group is a repeated `MAP_KEY_VALUE` group,
-    // which `to_list` refuses.
+    // Read maps without values as lists of keys. Bypass LIST validation because
+    // the entries group may carry the legacy MAP_KEY_VALUE annotation.
     if kv_fields.len() == 1 {
         return list_elements(map_info, entries, options);
     }
@@ -471,11 +469,10 @@ fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> PolarsResu
     Ok(Some(arrow_field))
 }
 
-/// Converts a parquet `LIST` group to an arrow [`ArrowDataType::LargeList`].
+/// Converts a Parquet `LIST` group to [`ArrowDataType::LargeList`] using the [spec]'s
+/// backward-compatibility rules.
 ///
-/// We follow the spec (https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#lists)
-/// to the letter, including the backwards-compatibility rules. On the happy path, this is
-/// group (LIST) -> repeated group list -> element.
+/// [spec]: https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#lists
 fn to_list(
     list_info: &FieldInfo,
     fields: &[ParquetType],

@@ -876,8 +876,6 @@ fn list_int_nullable() -> PolarsResult<()> {
     assert_array_roundtrip(true, array.into_box(), None)
 }
 
-/// The decoder derives its levels from the arrow type it is handed. When that type does not match
-/// the file, the levels are refused instead of being decoded into the wrong values.
 #[test]
 fn list_nesting_mismatch_is_refused() -> PolarsResult<()> {
     let array = data(0..12i64, true);
