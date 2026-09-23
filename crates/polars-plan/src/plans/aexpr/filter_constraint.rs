@@ -23,6 +23,7 @@ use polars_utils::aliases::{InitHashMaps, PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
+use super::or_factoring::is_or;
 use super::properties::ExprPushdownGroup;
 use super::{AExpr, IRBooleanFunction, IRFunctionExpr, LiteralValue, MintermIter, Operator};
 use crate::plans::iterator::ArenaExprIter;
@@ -464,16 +465,8 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
     let mut unsat = false;
 
     for conjunct in MintermIter::new(predicate, expr_arena) {
-        // An `OR` is never modelled. Walking its subtree here would make nested
-        // `AND`/`OR` predicates quadratic to estimate.
-        let is_or = matches!(
-            expr_arena.get(conjunct),
-            AExpr::BinaryExpr {
-                op: Operator::Or | Operator::LogicalOr,
-                ..
-            }
-        );
-        if is_or || !compares_in_literal_order(conjunct, schema, expr_arena) {
+        // An `OR` is left opaque.
+        if is_or(conjunct, expr_arena) || !compares_in_literal_order(conjunct, schema, expr_arena) {
             opaque.push(conjunct);
             continue;
         }

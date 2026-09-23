@@ -223,7 +223,7 @@ pub(crate) fn or_implied_predicates(predicate: Node, expr_arena: &mut Arena<AExp
     derived
 }
 
-fn is_or(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+pub(crate) fn is_or(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     matches!(
         expr_arena.get(node),
         AExpr::BinaryExpr {

@@ -19,8 +19,7 @@ use recursive::recursive;
 use super::{Card, DEFAULT_REL_ERR, ScanColumnStats, ScanColumnStatsMap, leaf_row_count};
 use crate::plans::aexpr::filter_constraint::{ColumnBounds, and_chain_bounds};
 use crate::plans::{
-    AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, MintermIter,
-    into_column,
+    AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, into_column,
 };
 use crate::prelude::{JoinType, Operator};
 
@@ -605,38 +604,30 @@ fn predicate_selectivity(
     schema: &Schema,
     rows: f64,
 ) -> (f64, bool) {
-    // An `OR` is a single conjunct, so it skips the `AND` chain model.
-    let factors: Vec<Option<f64>> = if is_or(predicate, expr_arena) {
-        vec![conjunct_selectivity(
-            predicate, expr_arena, columns, schema, rows,
-        )]
-    } else {
-        let chain = and_chain_bounds(predicate, schema, expr_arena);
-        if chain.unsat {
-            return (0.0, true);
+    let chain = and_chain_bounds(predicate, schema, expr_arena);
+    if chain.unsat {
+        return (0.0, true);
+    }
+    let mut factors = Vec::with_capacity(chain.columns.len() + chain.other.len());
+    let mut non_null_counted = Vec::new();
+    for bounds in &chain.columns {
+        let factor = column_selectivity(bounds, columns, schema, rows);
+        if factor.is_some() {
+            non_null_counted.push(&bounds.name);
         }
-        let mut factors = Vec::with_capacity(chain.columns.len() + chain.other.len());
-        let mut non_null_counted = Vec::new();
-        for bounds in &chain.columns {
-            let factor = column_selectivity(bounds, columns, schema, rows);
-            if factor.is_some() {
-                non_null_counted.push(&bounds.name);
-            }
-            factors.push(factor);
+        factors.push(factor);
+    }
+    for &conjunct in &chain.other {
+        // The column's estimate already holds only its non-null rows.
+        if let Some((name, IRBooleanFunction::IsNotNull)) = null_check(conjunct, expr_arena)
+            && non_null_counted.contains(&name)
+        {
+            continue;
         }
-        for &conjunct in &chain.other {
-            // The column's estimate already holds only its non-null rows.
-            if let Some((name, IRBooleanFunction::IsNotNull)) = null_check(conjunct, expr_arena)
-                && non_null_counted.contains(&name)
-            {
-                continue;
-            }
-            factors.push(conjunct_selectivity(
-                conjunct, expr_arena, columns, schema, rows,
-            ));
-        }
-        factors
-    };
+        factors.push(conjunct_selectivity(
+            conjunct, expr_arena, columns, schema, rows,
+        ));
+    }
     let mut selectivity = 1.0;
     let mut known = true;
     for factor in factors {
@@ -644,16 +635,6 @@ fn predicate_selectivity(
         selectivity *= factor.unwrap_or(DEFAULT_SELECTIVITY);
     }
     (selectivity, known)
-}
-
-fn is_or(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    matches!(
-        expr_arena.get(node),
-        AExpr::BinaryExpr {
-            op: Operator::Or | Operator::LogicalOr,
-            ..
-        }
-    )
 }
 
 /// Integer range and type of `name`, when the range covers all its data and is in
