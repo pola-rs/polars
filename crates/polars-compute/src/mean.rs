@@ -133,21 +133,14 @@ pub trait MeanAcc: Copy + Default + Send + Sync + 'static + WrappingAdd {
     }
 }
 
-/// Same result as `x as f64`, which is a slow library call on common targets.
+/// `x as f64` with a fast path for values that fit an `i64`, as `x as f64` is a library call on
+/// common targets.
 #[inline]
 fn i128_to_f64(x: i128) -> f64 {
-    if let Ok(v) = i64::try_from(x) {
-        return v as f64;
+    match i64::try_from(x) {
+        Ok(v) => v as f64,
+        Err(_) => x as f64,
     }
-    let abs = x.unsigned_abs();
-    // Keep the top 64 bits and fold the discarded bits into the lowest one. That bit lies
-    // below the rounding position of an f64, so round-to-nearest-even is unaffected.
-    let shift = 64 - abs.leading_zeros();
-    let sticky = (abs & ((1u128 << shift) - 1) != 0) as u64;
-    let top = ((abs >> shift) as u64) | sticky;
-    let scale = f64::from_bits(((1023 + shift) as u64) << 52);
-    let out = top as f64 * scale;
-    if x < 0 { -out } else { out }
 }
 
 impl MeanAcc for i128 {
@@ -163,12 +156,14 @@ impl MeanAcc for i128 {
 }
 
 /// Same result as `x as f64` would be, which `ethnum::I256::as_f64` is not: it rounds the two
-/// 128-bit halves separately.
+/// 128-bit halves separately. Fixed upstream in <https://github.com/nlordell/ethnum-rs/pull/61>.
 fn i256_to_f64(x: ethnum::I256) -> f64 {
     if let Ok(v) = i128::try_from(x) {
         return i128_to_f64(v);
     }
-    // As in `i128_to_f64`; here `abs >= 2^127`, so `64 <= shift <= 192`.
+    // Keep the top 64 bits and fold the discarded bits into the lowest one. That bit lies below
+    // the rounding position of an f64, so round-to-nearest-even is unaffected. Here
+    // `abs >= 2^127`, so `64 <= shift <= 192`.
     let abs = x.unsigned_abs();
     let shift = 192 - abs.leading_zeros();
     let sticky = (abs.trailing_zeros() < shift) as u64;
