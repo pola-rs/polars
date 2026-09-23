@@ -12,7 +12,6 @@ description = "Private compute kernels for the Polars DataFrame library"
 atoi_simd = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
-ethnum = { workspace = true }
 fast-float2 = { workspace = true, optional = true }
 half = { workspace = true, optional = true, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }

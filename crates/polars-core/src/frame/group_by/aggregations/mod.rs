@@ -1317,11 +1317,20 @@ where
     T::Native: NumericNative + Ord,
 {
     /// Mean of each group, computed by applying `finish` to its exact sum and non-null count.
-    unsafe fn agg_mean_with<O, F>(&self, groups: &GroupsType, finish: F) -> Series
+    ///
+    /// Slice groups without nulls use `finish_slice` on their values instead, so that it can
+    /// shortcut short groups.
+    unsafe fn agg_mean_with<O, F, S>(
+        &self,
+        groups: &GroupsType,
+        finish: F,
+        finish_slice: S,
+    ) -> Series
     where
         T::Native: RollingMeanSum,
         O: PolarsNumericType,
         F: Fn(<T::Native as MeanSum>::Acc, usize) -> O::Native + Send + Sync + Copy,
+        S: Fn(&[T::Native]) -> Option<O::Native> + Send + Sync,
     {
         match groups {
             GroupsType::Idx(groups) => {
@@ -1372,15 +1381,22 @@ where
                             )
                         })
                         .flatten();
-                match rolling {
-                    Some(arr) => ChunkedArray::<O>::from(arr).into_series(),
-                    None => _agg_helper_slice::<O, _>(groups_slice, |[first, len]| {
-                        debug_assert!(first + len <= self.len() as IdxSize);
-                        _slice_from_offsets(self, first, len)
-                            .mean_sum_count()
-                            .map(|(sum, count)| finish(sum, count))
-                    }),
+                if let Some(arr) = rolling {
+                    return ChunkedArray::<O>::from(arr).into_series();
                 }
+                let ca = self.rechunk();
+                let arr = ca.downcast_as_array();
+                let values = arr.values().as_slice();
+                let no_nulls = arr.null_count() == 0;
+                _agg_helper_slice::<O, _>(groups_slice, |[first, len]| {
+                    let (first, len) = (first as usize, len as usize);
+                    if no_nulls {
+                        return finish_slice(&values[first..first + len]);
+                    }
+                    let group = arr.clone().sliced(first, len);
+                    let count = len - group.null_count();
+                    (count != 0).then(|| finish(T::Native::sum_arr(&group), count))
+                })
             },
         }
     }
@@ -1389,22 +1405,11 @@ where
     where
         T::Native: RollingMeanSum,
     {
-        if let GroupsType::Slice {
-            groups: groups_slice,
-            overlapping,
-            monotonic,
-        } = groups
-            && self.chunks().len() == 1
-            && !self.has_nulls()
-            && !_use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks())
-        {
-            let values = self.downcast_get(0).unwrap().values().as_slice();
-            return _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
-                debug_assert!(first + len <= self.len() as IdxSize);
-                T::Native::mean_slice(&values[first as usize..(first + len) as usize])
-            });
-        }
-        self.agg_mean_with::<Float64Type, _>(groups, |sum, count| sum.into_f64() / count as f64)
+        self.agg_mean_with::<Float64Type, _, _>(
+            groups,
+            |sum, count| sum.into_f64() / count as f64,
+            T::Native::mean_slice,
+        )
     }
 
     pub(crate) unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Series {
@@ -1538,8 +1543,9 @@ where
     where
         T::Native: RollingMeanSum,
     {
-        self.agg_mean_with::<Int64Type, _>(groups, move |sum, count| {
-            int_mean(sum, count, scale, rounding)
+        let finish = move |sum, count| int_mean(sum, count, scale, rounding);
+        self.agg_mean_with::<Int64Type, _, _>(groups, finish, |vals| {
+            (!vals.is_empty()).then(|| finish(T::Native::sum_slice(vals), vals.len()))
         })
     }
 }

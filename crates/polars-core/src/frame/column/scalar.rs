@@ -1,6 +1,7 @@
 use std::sync::OnceLock;
 
-use polars_compute::mean::{I256Acc, MeanAcc};
+use polars_arrow::types::i256;
+use polars_compute::mean::MeanAcc;
 use polars_error::PolarsResult;
 use polars_utils::broadcast::BroadcastLength;
 use polars_utils::pl_str::PlSmallStr;
@@ -123,19 +124,20 @@ impl ScalarColumn {
     pub(crate) fn repeated_int_mean(&self) -> Option<impl Fn(usize) -> Option<f64> + use<>> {
         let scale_factor = match self.dtype() {
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, scale) => 10u128.pow(*scale as u32) as f64,
+            DataType::Decimal(_, scale) => polars_compute::decimal::POW10_F64[*scale],
             dt if dt.is_integer() => 1.0,
             _ => return None,
         };
         let s = self.as_single_value_series();
         let phys = s.to_physical_repr();
-        let value: Option<I256Acc> = with_match_physical_integer_polars_type!(phys.dtype(), |$T| {
+        let value: Option<i256> = with_match_physical_integer_polars_type!(phys.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
-            (!ca.is_empty()).then(|| ca.get(0)).flatten().map(|v| I256Acc(v.into()))
+            (!ca.is_empty()).then(|| ca.get(0)).flatten().map(|v| i256(v.into()))
         });
         Some(move |n: usize| {
             let value = value?;
-            (n != 0).then(|| value.mul_count(n).into_f64() / n as f64 / scale_factor)
+            let sum = i256(value.0.wrapping_mul((n as u128).into()));
+            (n != 0).then(|| sum.into_f64() / n as f64 / scale_factor)
         })
     }
 

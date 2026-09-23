@@ -1,8 +1,7 @@
 use std::marker::PhantomData;
 
 use num_traits::AsPrimitive;
-use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY;
-use polars_compute::mean::{IntMeanRounding, MeanAcc, MeanSum, int_mean};
+use polars_compute::mean::{MeanAcc, MeanSum, int_mean};
 use polars_compute::sum::WrappingAdd;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -28,59 +27,40 @@ pub fn new_mean_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduct
     })
 }
 
+fn float_means<T, A>(values: &[(A, usize)], divisor: f64) -> Series
+where
+    T: PolarsNumericType,
+    A: MeanAcc,
+    f64: AsPrimitive<T::Native>,
+    ChunkedArray<T>: IntoSeries,
+{
+    let ca: ChunkedArray<T> = values
+        .iter()
+        .map(|&(s, c)| (c != 0).then(|| (s.into_f64() / c as f64 / divisor).as_()))
+        .collect_ca(PlSmallStr::EMPTY);
+    ca.into_series()
+}
+
 fn finish_output<A: MeanAcc>(values: Vec<(A, usize)>, dtype: &DataType) -> Series {
-    let int_means = |scale: i64, rounding: IntMeanRounding| -> Int64Chunked {
-        values
-            .iter()
-            .map(|&(s, c)| {
-                (c != 0).then(|| int_mean(s.try_into_i128().unwrap(), c, scale, rounding))
-            })
-            .collect_ca(PlSmallStr::EMPTY)
-    };
     match dtype {
         #[cfg(feature = "dtype-f16")]
-        DataType::Float16 => {
-            let ca: Float16Chunked = values
-                .into_iter()
-                .map(|(s, c)| (c != 0).then(|| (s.into_f64() / c as f64).as_()))
-                .collect_ca(PlSmallStr::EMPTY);
-            ca.into_series()
-        },
-        DataType::Float32 => {
-            let ca: Float32Chunked = values
-                .into_iter()
-                .map(|(s, c)| (c != 0).then(|| (s.into_f64() / c as f64) as f32))
-                .collect_ca(PlSmallStr::EMPTY);
-            ca.into_series()
-        },
-        dt if dt.is_primitive_numeric() => {
-            let ca: Float64Chunked = values
-                .into_iter()
-                .map(|(s, c)| (c != 0).then(|| s.into_f64() / c as f64))
-                .collect_ca(PlSmallStr::EMPTY);
-            ca.into_series()
-        },
+        DataType::Float16 => float_means::<Float16Type, _>(&values, 1.0),
+        DataType::Float32 => float_means::<Float32Type, _>(&values, 1.0),
+        dt if dt.is_primitive_numeric() => float_means::<Float64Type, _>(&values, 1.0),
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_prec, scale) => {
-            let scale_factor = 10u128.pow(*scale as u32) as f64;
-            let ca: Float64Chunked = values
-                .into_iter()
-                .map(|(s, c)| (c != 0).then(|| s.into_f64() / c as f64 / scale_factor))
-                .collect_ca(PlSmallStr::EMPTY);
-            ca.into_series()
+            float_means::<Float64Type, _>(&values, polars_compute::decimal::POW10_F64[*scale])
         },
-        #[cfg(feature = "dtype-datetime")]
-        DataType::Date => int_means(MICROSECONDS_IN_DAY, IntMeanRounding::Floor)
-            .into_datetime(TimeUnit::Microseconds, None)
-            .into_series(),
-        DataType::Datetime(_, _) | DataType::Time => int_means(1, IntMeanRounding::Floor)
-            .into_series()
-            .cast(dtype)
-            .unwrap(),
-        DataType::Duration(_) => int_means(1, IntMeanRounding::Trunc)
-            .into_series()
-            .cast(dtype)
-            .unwrap(),
+        dt if dt.is_temporal() => {
+            let (scale, rounding, out_dtype) = temporal_mean_spec(dt).unwrap();
+            let ca: Int64Chunked = values
+                .iter()
+                .map(|&(s, c)| {
+                    (c != 0).then(|| int_mean(s.try_into_i128().unwrap(), c, scale, rounding))
+                })
+                .collect_ca(PlSmallStr::EMPTY);
+            ca.into_series().cast(&out_dtype).unwrap()
+        },
         _ => unimplemented!(),
     }
 }

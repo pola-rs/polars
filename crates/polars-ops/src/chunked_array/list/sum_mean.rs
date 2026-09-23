@@ -4,9 +4,8 @@ use num_traits::{NumCast, ToPrimitive};
 use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::utils::combine_validities_and;
-use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_arrow::types::NativeType;
-use polars_compute::mean::{IntMeanRounding, MeanSum};
+use polars_compute::mean::MeanSum;
 use polars_utils::float16::pf16;
 
 use super::*;
@@ -203,7 +202,8 @@ where
             T::mean_slice(list).unwrap_or(0.0)
         })
         .collect();
-    // Empty lists have no mean. Most inputs have none, so skip building a mask then.
+    // Empty lists have no mean. Most inputs have none, so skip building a mask then. A separate
+    // pass is cheaper than tracking this in the loop above, which slows short lists down.
     let validity = if offsets.windows(2).any(|w| w[0] == w[1]) {
         let non_empty = Bitmap::from_trusted_len_iter(offsets.windows(2).map(|w| w[0] != w[1]));
         combine_validities_and(Some(&non_empty), validity)
@@ -263,19 +263,12 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
                 .with_name(ca.name().clone());
             out.into_series()
         },
-        #[cfg(feature = "dtype-datetime")]
-        DataType::Date => {
-            let out: Int64Chunked = ca
-                .apply_amortized_generic(|s| s.and_then(|s| temporal_mean_physical(s.as_ref())))
-                .with_name(ca.name().clone());
-            out.into_datetime(TimeUnit::Microseconds, None)
-                .into_series()
-        },
         dt if dt.is_temporal() => {
+            let (_, _, out_dtype) = temporal_mean_spec(dt).unwrap();
             let out: Int64Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| temporal_mean_physical(s.as_ref())))
                 .with_name(ca.name().clone());
-            out.cast(dt).unwrap()
+            out.cast(&out_dtype).unwrap()
         },
         _ => {
             let out: Float64Chunked = ca
@@ -283,19 +276,5 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
                 .with_name(ca.name().clone());
             out.into_series()
         },
-    }
-}
-
-/// Exact physical mean of a temporal series: Datetime(us) for Date, the input unit otherwise.
-pub(crate) fn temporal_mean_physical(s: &Series) -> Option<i64> {
-    let rounding = if s.dtype().is_duration() {
-        IntMeanRounding::Trunc
-    } else {
-        IntMeanRounding::Floor
-    };
-    let phys = s.to_physical_repr();
-    match s.dtype() {
-        DataType::Date => phys.i32().unwrap().int_mean(US_IN_DAY, rounding),
-        _ => phys.i64().unwrap().int_mean(1, rounding),
     }
 }

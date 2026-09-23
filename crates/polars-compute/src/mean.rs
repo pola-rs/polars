@@ -1,9 +1,6 @@
-use std::ops::Add;
-
-use num_traits::Zero;
 use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::bitmap::bitmask::BitMask;
-use polars_arrow::types::NativeType;
+use polars_arrow::types::{NativeType, i256};
 use polars_utils::float16::pf16;
 
 use crate::float_sum::{FloatSum, sum_arr_as_f64};
@@ -18,6 +15,7 @@ pub enum IntMeanRounding {
 /// Exact mean of `count > 0` integers summing to `sum`, multiplied by `scale`.
 ///
 /// With `scale == 1` the result lies between the minimum and maximum of the inputs.
+#[inline]
 pub fn int_mean(sum: i128, count: usize, scale: i64, rounding: IntMeanRounding) -> i64 {
     let num = sum * scale as i128;
     let count = count as i128;
@@ -28,57 +26,26 @@ pub fn int_mean(sum: i128, count: usize, scale: i64, rounding: IntMeanRounding) 
     mean as i64
 }
 
-/// 256-bit accumulator for exactly summing 128-bit integers.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct I256Acc(pub ethnum::I256);
-
-impl Add for I256Acc {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self {
-        Self(self.0.wrapping_add(rhs.0))
-    }
-}
-
-impl Zero for I256Acc {
-    fn zero() -> Self {
-        Self::default()
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0 == ethnum::I256::ZERO
-    }
-}
-
-impl WrappingAdd for I256Acc {
+impl WrappingAdd for i256 {
+    #[inline]
     fn wrapping_add(&self, v: &Self) -> Self {
-        *self + *v
-    }
-}
-
-impl From<i128> for I256Acc {
-    fn from(v: i128) -> Self {
-        Self(v.into())
-    }
-}
-
-impl From<u128> for I256Acc {
-    fn from(v: u128) -> Self {
-        Self(v.into())
+        i256(self.0.wrapping_add(v.0))
     }
 }
 
 pub trait MeanAcc: Copy + Default + Send + Sync + 'static + WrappingAdd {
     fn into_f64(self) -> f64;
-    /// Sum of `count` copies of `self`.
-    fn mul_count(self, count: usize) -> Self;
-    /// `None` if the accumulator is a float or does not fit in an `i128`.
-    fn try_into_i128(self) -> Option<i128>;
+
+    /// `Some` for the exact accumulator of integers of at most 64 bits.
+    #[inline]
+    fn try_into_i128(self) -> Option<i128> {
+        None
+    }
 }
 
 /// Same result as `x as f64`, which is a slow library call on common targets.
 #[inline]
-pub fn i128_to_f64(x: i128) -> f64 {
+fn i128_to_f64(x: i128) -> f64 {
     if let Ok(v) = i64::try_from(x) {
         return v as f64;
     }
@@ -94,44 +61,28 @@ pub fn i128_to_f64(x: i128) -> f64 {
 }
 
 impl MeanAcc for i128 {
+    #[inline]
     fn into_f64(self) -> f64 {
         i128_to_f64(self)
     }
 
-    fn mul_count(self, count: usize) -> Self {
-        self.wrapping_mul(count as i128)
-    }
-
+    #[inline]
     fn try_into_i128(self) -> Option<i128> {
         Some(self)
     }
 }
 
-impl MeanAcc for I256Acc {
+impl MeanAcc for i256 {
+    #[inline]
     fn into_f64(self) -> f64 {
         self.0.as_f64()
-    }
-
-    fn mul_count(self, count: usize) -> Self {
-        Self(self.0.wrapping_mul((count as u128).into()))
-    }
-
-    fn try_into_i128(self) -> Option<i128> {
-        self.0.try_into().ok()
     }
 }
 
 impl MeanAcc for f64 {
+    #[inline]
     fn into_f64(self) -> f64 {
         self
-    }
-
-    fn mul_count(self, count: usize) -> Self {
-        self * count as f64
-    }
-
-    fn try_into_i128(self) -> Option<i128> {
-        None
     }
 }
 
@@ -150,6 +101,7 @@ pub trait MeanSum: NativeType {
     fn sum_arr(arr: &PrimitiveArray<Self>) -> Self::Acc;
 
     /// `sum_slice(vals).into_f64() / len`, `None` if `vals` is empty.
+    #[inline]
     fn mean_slice(vals: &[Self]) -> Option<f64> {
         (!vals.is_empty()).then(|| Self::sum_slice(vals).into_f64() / vals.len() as f64)
     }
@@ -159,7 +111,7 @@ pub trait MeanSum: NativeType {
 /// can be summed exactly over [`SPLIT_BLOCK`] values, which vectorizes.
 trait SplitInt: Copy {
     type Lanes: Copy + Default;
-    type Acc: MeanAcc + Add<Output = Self::Acc> + Zero;
+    type Acc: MeanAcc;
 
     /// Adds `self` to `lanes` if `keep` is all ones, nothing if it is zero.
     fn add_to(self, lanes: Self::Lanes, keep: u64) -> Self::Lanes;
@@ -178,24 +130,24 @@ macro_rules! impl_split_int {
     (narrow; $($t:ty),*) => {
         $(
             impl SplitInt for $t {
-                type Lanes = (i64, u64);
+                type Lanes = i64;
                 type Acc = i128;
 
                 #[inline(always)]
-                fn add_to(self, (hi, lo): (i64, u64), keep: u64) -> (i64, u64) {
-                    (hi.wrapping_add(self as i64 & keep as i64), lo)
+                fn add_to(self, lanes: i64, keep: u64) -> i64 {
+                    lanes.wrapping_add(self as i64 & keep as i64)
                 }
 
                 #[inline(always)]
-                fn combine((hi, _): (i64, u64)) -> i128 {
-                    hi as i128
+                fn combine(lanes: i64) -> i128 {
+                    lanes as i128
                 }
             }
 
             impl SplitF64 for $t {
                 #[inline(always)]
-                fn lanes_to_f64((hi, _): (i64, u64)) -> f64 {
-                    hi as f64
+                fn lanes_to_f64(lanes: i64) -> f64 {
+                    lanes as f64
                 }
             }
         )*
@@ -234,7 +186,7 @@ macro_rules! impl_split_int {
             impl SplitInt for $t {
                 /// Limbs of 32 bits, most significant first.
                 type Lanes = (i64, u64, u64, u64);
-                type Acc = I256Acc;
+                type Acc = i256;
 
                 #[inline(always)]
                 fn add_to(self, (a, b, c, d): Self::Lanes, keep: u64) -> Self::Lanes {
@@ -251,10 +203,10 @@ macro_rules! impl_split_int {
                 }
 
                 #[inline(always)]
-                fn combine((a, b, c, d): Self::Lanes) -> I256Acc {
-                    let hi = ethnum::I256::from(((a as i128) << 32) + b as i128);
-                    let lo = ethnum::I256::from(((c as i128) << 32) + d as i128);
-                    I256Acc((hi << 64) + lo)
+                fn combine((a, b, c, d): Self::Lanes) -> i256 {
+                    let hi = i256((((a as i128) << 32) + b as i128).into());
+                    let lo = i256((((c as i128) << 32) + d as i128).into());
+                    i256((hi.0 << 64) + lo.0)
                 }
             }
         )*
@@ -279,11 +231,11 @@ fn split_sum<T: SplitInt>(vals: &[T]) -> T::Acc {
     }
     vals.chunks(SPLIT_BLOCK)
         .map(|block| T::combine(split_lanes(block.iter().copied())))
-        .fold(T::Acc::zero(), Add::add)
+        .fold(T::Acc::default(), |a, b| a.wrapping_add(&b))
 }
 
 fn split_sum_iter<T: SplitInt>(mut vals: impl Iterator<Item = T>) -> T::Acc {
-    let mut acc = T::Acc::zero();
+    let mut acc = T::Acc::default();
     loop {
         let mut n = 0;
         let lanes = vals
@@ -293,7 +245,7 @@ fn split_sum_iter<T: SplitInt>(mut vals: impl Iterator<Item = T>) -> T::Acc {
                 n += 1;
                 v.add_to(lanes, u64::MAX)
             });
-        acc = acc + T::combine(lanes);
+        acc = acc.wrapping_add(&T::combine(lanes));
         if n < SPLIT_BLOCK {
             return acc;
         }
@@ -328,24 +280,27 @@ fn split_sum_masked<T: SplitInt>(vals: &[T], mask: BitMask<'_>) -> T::Acc {
             }
             T::combine(lanes)
         })
-        .fold(T::Acc::zero(), Add::add)
+        .fold(T::Acc::default(), |a, b| a.wrapping_add(&b))
 }
 
 macro_rules! impl_split_mean_sum {
-    ($acc:ty; $($t:tt),*) => {
-        $(
+    ($acc:ty, $to_acc:expr, $extra:tt; $($t:ty),*) => {
+        $(impl_split_mean_sum!(@one $acc, $to_acc, $extra, $t);)*
+    };
+    (@one $acc:ty, $to_acc:expr, { $($extra:item)* }, $t:ty) => {
             impl MeanSum for $t {
                 type Acc = $acc;
 
-                fn to_mean_acc(self) -> Self::Acc {
-                    self.into()
+                #[inline]
+                fn to_mean_acc(self) -> $acc {
+                    $to_acc(self)
                 }
 
-                fn sum_slice(vals: &[Self]) -> Self::Acc {
+                fn sum_slice(vals: &[Self]) -> $acc {
                     split_sum(vals)
                 }
 
-                fn sum_arr(arr: &PrimitiveArray<Self>) -> Self::Acc {
+                fn sum_arr(arr: &PrimitiveArray<Self>) -> $acc {
                     match arr.validity().filter(|_| arr.null_count() > 0) {
                         Some(validity) => {
                             split_sum_masked(arr.values(), BitMask::from_bitmap(validity))
@@ -354,36 +309,32 @@ macro_rules! impl_split_mean_sum {
                     }
                 }
 
-                impl_split_mean_sum!(@extra $t);
+                $($extra)*
             }
-        )*
-    };
-    (@extra u128) => { impl_split_mean_sum!(@sum_iter); };
-    (@extra i128) => { impl_split_mean_sum!(@sum_iter); };
-    // Gathered 128-bit values are also cheaper to sum in lanes than in 256 bits.
-    (@sum_iter) => {
-        fn sum_iter(vals: impl Iterator<Item = Self>) -> Self::Acc {
-            split_sum_iter(vals)
-        }
-    };
-    (@extra $t:tt) => {
-        // Called once per list, so it must inline across crates.
-        #[inline]
-        fn mean_slice(vals: &[Self]) -> Option<f64> {
-            let sum = match vals.len() {
-                0 => return None,
-                // Skips the setup of the vectorized loop, which dominates for a single value.
-                1 => <$t as SplitF64>::lanes_to_f64(vals[0].add_to(Default::default(), u64::MAX)),
-                n if n <= SPLIT_F64_LEN => split_sum_f64(vals),
-                _ => i128_to_f64(split_sum(vals)),
-            };
-            Some(sum / vals.len() as f64)
-        }
     };
 }
 
-impl_split_mean_sum!(i128; u8, u16, u32, u64, i8, i16, i32, i64);
-impl_split_mean_sum!(I256Acc; u128, i128);
+impl_split_mean_sum!(i128, i128::from, {
+    // Called once per list, so it must inline across crates.
+    #[inline]
+    fn mean_slice(vals: &[Self]) -> Option<f64> {
+        let sum = match vals.len() {
+            0 => return None,
+            // Skips the setup of the vectorized loop, which dominates for a single value.
+            1 => Self::lanes_to_f64(vals[0].add_to(Default::default(), u64::MAX)),
+            n if n <= SPLIT_F64_LEN => split_sum_f64(vals),
+            _ => i128_to_f64(split_sum(vals)),
+        };
+        Some(sum / vals.len() as f64)
+    }
+}; u8, u16, u32, u64, i8, i16, i32, i64);
+
+impl_split_mean_sum!(i256, |v: Self| i256(v.into()), {
+    // Gathered 128-bit values are also cheaper to sum in lanes than in 256 bits.
+    fn sum_iter(vals: impl Iterator<Item = Self>) -> i256 {
+        split_sum_iter(vals)
+    }
+}; u128, i128);
 
 macro_rules! impl_float_mean_sum {
     ($($t:ty),*) => {

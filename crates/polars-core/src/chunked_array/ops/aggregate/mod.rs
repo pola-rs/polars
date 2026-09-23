@@ -271,6 +271,38 @@ where
     }
 }
 
+/// Scale onto the output unit, rounding and output dtype of the exact mean of a temporal dtype.
+pub fn temporal_mean_spec(dtype: &DataType) -> Option<(i64, IntMeanRounding, DataType)> {
+    use IntMeanRounding::*;
+    Some(match dtype {
+        DataType::Date => (
+            polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY,
+            Floor,
+            DataType::Datetime(TimeUnit::Microseconds, None),
+        ),
+        DataType::Datetime(_, _) | DataType::Time => (1, Floor, dtype.clone()),
+        DataType::Duration(_) => (1, Trunc, dtype.clone()),
+        _ => return None,
+    })
+}
+
+/// Physical value of the exact mean of a temporal series, in the output dtype of
+/// [`temporal_mean_spec`].
+pub fn temporal_mean_physical(s: &Series) -> Option<i64> {
+    let (scale, rounding, _) = temporal_mean_spec(s.dtype())?;
+    match s.dtype() {
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => s.date().unwrap().physical().int_mean(scale, rounding),
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(_, _) => s.datetime().unwrap().physical().int_mean(scale, rounding),
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(_) => s.duration().unwrap().physical().int_mean(scale, rounding),
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => s.time().unwrap().physical().int_mean(scale, rounding),
+        _ => unreachable!(),
+    }
+}
+
 /// Booleans are cast to 1 or 0.
 impl BooleanChunked {
     pub fn sum(&self) -> Option<IdxSize> {

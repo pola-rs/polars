@@ -368,41 +368,18 @@ impl Series {
             dt if dt.is_primitive_numeric() => apply_method_physical_integer!(s, agg_mean, groups),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, scale) => {
-                let scale_factor = 10u128.pow(*scale as u32) as f64;
-                s.decimal().unwrap().physical().agg_mean(groups) / scale_factor
+                s.decimal().unwrap().physical().agg_mean(groups)
+                    / polars_compute::decimal::POW10_F64[*scale]
             },
-            #[cfg(feature = "dtype-datetime")]
-            dt @ Datetime(_, _) => s
-                .datetime()
-                .unwrap()
-                .physical()
-                .agg_mean_int(groups, 1, IntMeanRounding::Floor)
-                .cast(dt)
-                .unwrap(),
-            #[cfg(feature = "dtype-duration")]
-            dt @ Duration(_) => s
-                .duration()
-                .unwrap()
-                .physical()
-                .agg_mean_int(groups, 1, IntMeanRounding::Trunc)
-                .cast(dt)
-                .unwrap(),
-            #[cfg(feature = "dtype-time")]
-            Time => s
-                .time()
-                .unwrap()
-                .physical()
-                .agg_mean_int(groups, 1, IntMeanRounding::Floor)
-                .cast(&Time)
-                .unwrap(),
-            #[cfg(feature = "dtype-date")]
-            Date => s
-                .date()
-                .unwrap()
-                .physical()
-                .agg_mean_int(groups, US_IN_DAY, IntMeanRounding::Floor)
-                .cast(&Datetime(TimeUnit::Microseconds, None))
-                .unwrap(),
+            dt if dt.is_temporal() => {
+                let (scale, rounding, out_dtype) = temporal_mean_spec(dt).unwrap();
+                let phys = s.to_physical_repr();
+                let means = match phys.dtype() {
+                    Int32 => phys.i32().unwrap().agg_mean_int(groups, scale, rounding),
+                    _ => phys.i64().unwrap().agg_mean_int(groups, scale, rounding),
+                };
+                means.cast(&out_dtype).unwrap()
+            },
             _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }
     }

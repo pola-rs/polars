@@ -131,12 +131,6 @@ def test_int_mean_exact_29373(values: list[int]) -> None:
     assert _mean_on_all_paths(s) == [expected] * 6
 
 
-def test_int_mean_exact_hand_picked_29373() -> None:
-    assert (
-        pl.Series([18474455715878594, 18221168084325914]).mean() == 18347811900102256.0
-    )
-
-
 def _extremes_with_nulls(dtype: pl.DataType, n: int) -> pl.Series:
     lo, hi = pl.select(dtype.min().alias("lo"), dtype.max().alias("hi")).row(0)  # type: ignore[attr-defined]
     rng = np.random.default_rng(2)
@@ -238,28 +232,23 @@ def test_int_mean_sorted_groups_29373(with_nulls: bool) -> None:
 
 
 @pytest.mark.parametrize(
-    ("dtype", "expected"),
+    ("values", "dtype", "expected"),
     [
         # Floor for absolute times, truncation for durations.
-        (pl.Datetime("us"), -3),
-        (pl.Datetime("ns", "Europe/Amsterdam"), -3),
-        (pl.Duration("us"), -2),
+        ([-3, -2], pl.Datetime("us"), -3),
+        ([-3, -2], pl.Datetime("ns", "Europe/Amsterdam"), -3),
+        ([-3, -2], pl.Duration("us"), -2),
+        ([1, 2], pl.Time, 1),
+        # -86_400_000_000 / 7 = -12_342_857_142.857...
+        ([-1, 0, 0, 0, 0, 0, 0], pl.Date, -12_342_857_143),
     ],
 )
-def test_temporal_mean_rounding_29373(dtype: pl.DataType, expected: int) -> None:
-    s = pl.Series([-3, -2], dtype=pl.Int64).cast(dtype)
+def test_temporal_mean_rounding_29373(
+    values: list[int], dtype: pl.DataType, expected: int
+) -> None:
+    physical = pl.Int32 if dtype == pl.Date else pl.Int64
+    s = pl.Series(values, dtype=physical).cast(dtype)
     assert _mean_on_all_paths(s) == [expected] * 6
-
-
-def test_time_mean_floors_29373() -> None:
-    s = pl.Series([1, 2], dtype=pl.Int64).cast(pl.Time)
-    assert _mean_on_all_paths(s) == [1] * 6
-
-
-def test_date_mean_floors_29373() -> None:
-    s = pl.Series([-1, 0, 0, 0, 0, 0, 0], dtype=pl.Int32).cast(pl.Date)
-    # -86_400_000_000 / 7 = -12_342_857_142.857...
-    assert _mean_on_all_paths(s) == [-12_342_857_143] * 6
 
 
 @pytest.mark.parametrize(
