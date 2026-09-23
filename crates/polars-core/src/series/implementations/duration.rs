@@ -1,3 +1,4 @@
+use polars_compute::mean::IntMeanRounding;
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
@@ -501,7 +502,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
-        let mean = self.mean().map(|v| v as i64);
+        let mean = self.0.physical().int_mean(1, IntMeanRounding::Trunc);
         let av = AnyValue::from(mean).as_duration(self.0.time_unit());
         Ok(Scalar::new(self.dtype().clone(), av))
     }

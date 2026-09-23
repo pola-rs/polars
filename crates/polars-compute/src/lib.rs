@@ -27,6 +27,7 @@ pub mod horizontal_flatten;
 #[cfg(feature = "approx_unique")]
 pub mod hyperloglogplus;
 pub mod if_then_else;
+pub mod mean;
 pub mod min_max;
 pub mod moment;
 pub mod nan;

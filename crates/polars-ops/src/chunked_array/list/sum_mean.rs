@@ -6,6 +6,7 @@ use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::utils::combine_validities_and;
 use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_arrow::types::NativeType;
+use polars_compute::mean::{IntMeanRounding, MeanAcc, MeanSum};
 use polars_utils::float16::pf16;
 
 use super::*;
@@ -183,6 +184,25 @@ where
     out.with_validity(new_validity).to_boxed()
 }
 
+fn dispatch_mean_int<T>(arr: &dyn Array, offsets: &[i64], validity: Option<&Bitmap>) -> ArrayRef
+where
+    T: MeanSum,
+{
+    let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+    let values = values.values().as_slice();
+    let out: PrimitiveArray<f64> = offsets
+        .windows(2)
+        .map(|w| {
+            values
+                .get(w[0] as usize..w[1] as usize)
+                .filter(|sl| !sl.is_empty())
+                .map(|sl| T::sum_slice(sl).into_f64() / sl.len() as f64)
+        })
+        .collect();
+    let new_validity = combine_validities_and(out.validity(), validity);
+    out.with_validity(new_validity).to_boxed()
+}
+
 pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
     use DataType::*;
     let chunks = ca
@@ -192,16 +212,16 @@ pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Se
             let values = arr.values().as_ref();
 
             match inner_type {
-                Int8 => dispatch_mean::<i8, f64>(values, offsets, arr.validity()),
-                Int16 => dispatch_mean::<i16, f64>(values, offsets, arr.validity()),
-                Int32 => dispatch_mean::<i32, f64>(values, offsets, arr.validity()),
-                Int64 => dispatch_mean::<i64, f64>(values, offsets, arr.validity()),
-                Int128 => dispatch_mean::<i128, f64>(values, offsets, arr.validity()),
-                UInt8 => dispatch_mean::<u8, f64>(values, offsets, arr.validity()),
-                UInt16 => dispatch_mean::<u16, f64>(values, offsets, arr.validity()),
-                UInt32 => dispatch_mean::<u32, f64>(values, offsets, arr.validity()),
-                UInt64 => dispatch_mean::<u64, f64>(values, offsets, arr.validity()),
-                UInt128 => dispatch_mean::<u128, f64>(values, offsets, arr.validity()),
+                Int8 => dispatch_mean_int::<i8>(values, offsets, arr.validity()),
+                Int16 => dispatch_mean_int::<i16>(values, offsets, arr.validity()),
+                Int32 => dispatch_mean_int::<i32>(values, offsets, arr.validity()),
+                Int64 => dispatch_mean_int::<i64>(values, offsets, arr.validity()),
+                Int128 => dispatch_mean_int::<i128>(values, offsets, arr.validity()),
+                UInt8 => dispatch_mean_int::<u8>(values, offsets, arr.validity()),
+                UInt16 => dispatch_mean_int::<u16>(values, offsets, arr.validity()),
+                UInt32 => dispatch_mean_int::<u32>(values, offsets, arr.validity()),
+                UInt64 => dispatch_mean_int::<u64>(values, offsets, arr.validity()),
+                UInt128 => dispatch_mean_int::<u128>(values, offsets, arr.validity()),
                 Float32 => dispatch_mean::<f32, f32>(values, offsets, arr.validity()),
                 Float64 => dispatch_mean::<f64, f64>(values, offsets, arr.validity()),
                 _ => unimplemented!(),
@@ -234,16 +254,14 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
         #[cfg(feature = "dtype-datetime")]
         DataType::Date => {
             let out: Int64Chunked = ca
-                .apply_amortized_generic(|s| {
-                    s.and_then(|s| s.as_ref().mean().map(|v| (v * (US_IN_DAY as f64)) as i64))
-                })
+                .apply_amortized_generic(|s| s.and_then(|s| temporal_mean_physical(s.as_ref())))
                 .with_name(ca.name().clone());
             out.into_datetime(TimeUnit::Microseconds, None)
                 .into_series()
         },
         dt if dt.is_temporal() => {
             let out: Int64Chunked = ca
-                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as i64)))
+                .apply_amortized_generic(|s| s.and_then(|s| temporal_mean_physical(s.as_ref())))
                 .with_name(ca.name().clone());
             out.cast(dt).unwrap()
         },
@@ -253,5 +271,19 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
                 .with_name(ca.name().clone());
             out.into_series()
         },
+    }
+}
+
+/// Exact physical mean of a temporal series: Datetime(us) for Date, the input unit otherwise.
+pub(crate) fn temporal_mean_physical(s: &Series) -> Option<i64> {
+    let rounding = if s.dtype().is_duration() {
+        IntMeanRounding::Trunc
+    } else {
+        IntMeanRounding::Floor
+    };
+    let phys = s.to_physical_repr();
+    match s.dtype() {
+        DataType::Date => phys.i32().unwrap().int_mean(US_IN_DAY, rounding),
+        _ => phys.i64().unwrap().int_mean(1, rounding),
     }
 }

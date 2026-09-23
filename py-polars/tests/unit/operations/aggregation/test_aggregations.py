@@ -73,12 +73,7 @@ def test_boolean_aggs() -> None:
 @pytest.mark.parametrize(
     ("days", "expected"),
     [
-        # The exact mean is 14:24:00, but the days mean is not representable in f64
-        # and the microsecond conversion truncates. Both engines must agree on it.
-        (
-            [20000, 20000, 20000, 20000, 20003],
-            datetime(2024, 10, 4, 14, 23, 59, 999999),
-        ),
+        ([20000, 20000, 20000, 20000, 20003], datetime(2024, 10, 4, 14, 24)),
         ([32768, 32768, 32768, 32768, 32772], datetime(2059, 9, 19, 19, 12)),
     ],
 )
@@ -91,6 +86,220 @@ def test_date_mean_engine_consistency_29357(
 
     assert df.select(pl.col("a").mean()).item() == expected
     assert df.group_by(pl.lit(1)).agg(pl.col("a").mean())["a"].item() == expected
+
+
+def _mean_on_all_paths(s: pl.Series) -> list[Any]:
+    """Physical mean of `s` via every mean kernel: scalar, grouped, streaming, list."""
+    df = s.to_frame("a")
+    lf = df.lazy()
+    mean = pl.col("a").mean().to_physical()
+    return [
+        df.select(mean).item(),
+        lf.select(mean).collect(engine="streaming").item(),
+        *(
+            lf.group_by(pl.lit(1)).agg(mean).collect(engine=engine)["a"].item()
+            for engine in ("in-memory", "streaming")
+        ),
+        df.select(pl.col("a").implode().list.mean().to_physical()).item(),
+        pl.concat([s, pl.Series([None], dtype=s.dtype)])
+        .to_frame("a")
+        .select(pl.col("a").implode().list.mean().to_physical())
+        .item(),
+    ]
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        # Exact mean 18347811900102254 rounds to ...256; summing in f64 gives ...252.
+        [18474455715878594, 18221168084325914],
+        [
+            4660691087916294570,
+            6141441687152489271,
+            6147234300482166144,
+            7504609263920080733,
+            6446116256040053746,
+        ],
+        # The sum does not fit in an i64.
+        [2**63 - 1, 2**63 - 1, -(2**63), 5],
+    ],
+)
+def test_int_mean_exact_29373(values: list[int]) -> None:
+    expected = float(sum(values)) / len(values)
+    s = pl.Series(values, dtype=pl.Int64)
+    assert s.mean() == expected
+    assert _mean_on_all_paths(s) == [expected] * 6
+
+
+def test_int_mean_exact_hand_picked_29373() -> None:
+    assert (
+        pl.Series([18474455715878594, 18221168084325914]).mean() == 18347811900102256.0
+    )
+
+
+def test_int_mean_chunk_layout_independent_29373() -> None:
+    rng = np.random.default_rng(0)
+    values = rng.integers(2**62, 2**63 - 1, size=10_000, dtype=np.int64)
+    s = pl.Series(values)
+    chunked = pl.concat([s.slice(i, 700) for i in range(0, len(s), 700)], rechunk=False)
+    assert chunked.n_chunks() > 1
+    expected = float(sum(int(v) for v in values)) / len(values)
+    assert s.mean() == expected
+    assert chunked.mean() == expected
+
+
+def test_int_mean_grouped_matches_reference_29373() -> None:
+    rng = np.random.default_rng(1)
+    values = rng.integers(2**62, 2**63 - 1, size=3_000, dtype=np.int64)
+    groups = rng.integers(0, 50, size=len(values))
+    lf = pl.LazyFrame({"g": groups, "a": values})
+    q = lf.group_by("g").agg(pl.col("a").mean()).sort("g")
+    expected = {
+        g: float(sum(int(v) for v in values[groups == g])) / int((groups == g).sum())
+        for g in np.unique(groups)
+    }
+    for engine in ("in-memory", "streaming"):
+        out = q.collect(engine=engine)
+        assert dict(zip(out["g"], out["a"], strict=True)) == expected
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected"),
+    [
+        # Floor for absolute times, truncation for durations.
+        (pl.Datetime("us"), -3),
+        (pl.Datetime("ns", "Europe/Amsterdam"), -3),
+        (pl.Duration("us"), -2),
+    ],
+)
+def test_temporal_mean_rounding_29373(dtype: pl.DataType, expected: int) -> None:
+    s = pl.Series([-3, -2], dtype=pl.Int64).cast(dtype)
+    assert _mean_on_all_paths(s) == [expected] * 6
+
+
+def test_time_mean_floors_29373() -> None:
+    s = pl.Series([1, 2], dtype=pl.Int64).cast(pl.Time)
+    assert _mean_on_all_paths(s) == [1] * 6
+
+
+def test_date_mean_floors_29373() -> None:
+    s = pl.Series([-1, 0, 0, 0, 0, 0, 0], dtype=pl.Int32).cast(pl.Date)
+    # -86_400_000_000 / 7 = -12_342_857_142.857...
+    assert _mean_on_all_paths(s) == [-12_342_857_143] * 6
+
+
+@pytest.mark.parametrize(
+    ("days", "expected"),
+    [
+        ([20000, 20000, 20000, 20000, 20003], datetime(2024, 10, 4, 14, 24)),
+        ([-20003, -20000, -20000, -20000, -20000], datetime(1915, 3, 30, 9, 36)),
+        ([32768, 32768, 32768, 32768, 32772], datetime(2059, 9, 19, 19, 12)),
+    ],
+)
+def test_date_mean_exact_29373(days: list[int], expected: datetime) -> None:
+    s = pl.Series(days, dtype=pl.Int32).cast(pl.Date)
+    assert s.mean() == expected
+    expected_us = int((expected - datetime(1970, 1, 1)) / timedelta(microseconds=1))
+    assert _mean_on_all_paths(s) == [expected_us] * 6
+
+
+def test_datetime_ns_mean_exact_29373() -> None:
+    v = 1_700_000_000_535_417_698
+    s = pl.Series([v] * 13, dtype=pl.Int64).cast(pl.Datetime("ns"))
+    assert _mean_on_all_paths(s) == [v] * 6
+
+
+def test_datetime_mean_no_saturation_29373() -> None:
+    i64_max = 2**63 - 1
+    s = pl.Series([i64_max, i64_max - 1], dtype=pl.Int64).cast(pl.Datetime("ns"))
+    assert _mean_on_all_paths(s) == [i64_max - 1] * 6
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        # A per-element f64 sum cancels to 0.
+        ([2**126, 1, -(2**126)], pl.Int128),
+        # A 128-bit accumulator would wrap.
+        ([2**127 - 1] * 3, pl.Int128),
+        ([-(2**127)] * 3, pl.Int128),
+        ([2**128 - 1] * 3, pl.UInt128),
+    ],
+)
+def test_int128_mean_exact_29373(values: list[int], dtype: pl.DataType) -> None:
+    expected = float(sum(values)) / len(values)
+    s = pl.Series(values, dtype=dtype)
+    assert s.mean() == expected
+    assert _mean_on_all_paths(s) == [expected] * 6
+
+
+def test_int_mean_edges_29373() -> None:
+    for dtype in (pl.Int64, pl.Datetime("us")):
+        assert _mean_on_all_paths(pl.Series([None, None], dtype=dtype)) == [None] * 6
+
+    v = 2**53 + 1
+    assert _mean_on_all_paths(pl.Series([v])) == [float(v)] * 6
+
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3]})
+    q = lf.group_by("g").agg(pl.col("a").filter(pl.col("a") > 2).mean()).sort("g")
+    for engine in ("in-memory", "streaming"):
+        assert q.collect(engine=engine)["a"].to_list() == [None, 3.0]
+
+
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.Datetime("ns")])
+def test_rolling_group_mean_exact_29373(dtype: pl.DataType) -> None:
+    offsets = [3591, 153, -257, None, 3608, 3708]
+    values = [None if o is None else 2**60 + o for o in offsets]
+    df = pl.DataFrame({"i": range(len(values)), "a": values}).with_columns(
+        pl.col("a").cast(dtype)
+    )
+    out = df.rolling("i", period="3i").agg(pl.col("a").mean().to_physical())
+    expected = []
+    for i in range(len(values)):
+        window = [v for v in values[max(0, i - 2) : i + 1] if v is not None]
+        total = sum(window)
+        if dtype == pl.Int64:
+            expected.append(float(total) / len(window))
+        else:
+            expected.append(total // len(window))
+    assert out["a"].to_list() == expected
+
+
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.Datetime("us")])
+@pytest.mark.parametrize("with_nulls", [False, True])
+def test_rolling_group_mean_empty_window_29373(
+    dtype: pl.DataType, with_nulls: bool
+) -> None:
+    values = [2**60 + 1, None if with_nulls else 2**60 + 3, 2**60 + 5]
+    df = pl.DataFrame({"i": [0, 1, 2], "a": values}).with_columns(
+        pl.col("a").cast(dtype)
+    )
+    out = df.rolling("i", period="2i", closed="left").agg(
+        pl.col("a").mean().to_physical()
+    )
+    window = [v for v in values[:2] if v is not None]
+    if dtype == pl.Int64:
+        expected = [None, float(values[0]), float(sum(window)) / len(window)]
+    else:
+        expected = [None, values[0], sum(window) // len(window)]
+    assert out["a"].to_list() == expected
+
+
+def test_int_mean_scalar_column_29373() -> None:
+    v = 2**53 + 1
+    expected = float(3 * v) / 3
+    assert expected != float(v)
+
+    base = pl.DataFrame({"g": [1, 1, 1]})
+    scalar = base.with_columns(pl.lit(v, dtype=pl.Int64).alias("a"))
+    materialized = base.with_columns(a=pl.Series([v] * 3))
+    for df in (scalar, materialized):
+        assert df.select(pl.col("a").mean()).item() == expected
+        assert df.group_by("g").agg(pl.col("a").mean())["a"].item() == expected
+
+    null = base.with_columns(pl.lit(None, dtype=pl.Int64).alias("a"))
+    assert null.select(pl.col("a").mean()).item() is None
+    assert null.group_by("g").agg(pl.col("a").mean())["a"].item() is None
 
 
 def test_duration_aggs() -> None:

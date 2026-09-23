@@ -406,6 +406,42 @@ def test_decimal_mean_engine_consistency() -> None:
     assert df.group_by(pl.lit(1)).agg(pl.col("a").mean())["a"].item() == 0.15
 
 
+@pytest.mark.parametrize(
+    "physical",
+    [
+        # Summing per-element f64 conversions loses the low bits.
+        [2**70, 1, -(2**70), 2**53 + 1],
+        [2**63 + 1, 2**63 + 3, 2**63 + 5],
+    ],
+)
+def test_decimal_mean_exact_29373(physical: list[int]) -> None:
+    expected = float(sum(physical)) / len(physical) / 100
+    lf = pl.LazyFrame(
+        {"a": pl.Series([D(v).scaleb(-2) for v in physical], dtype=pl.Decimal(38, 2))}
+    )
+    for engine in ("in-memory", "streaming"):
+        assert lf.select(pl.col("a").mean()).collect(engine=engine).item() == expected
+        q = lf.group_by(pl.lit(1)).agg(pl.col("a").mean())
+        assert q.collect(engine=engine)["a"].item() == expected
+
+
+def test_decimal_mean_scalar_column_29373() -> None:
+    # Physical value 2**53 + 1.
+    v = D("90071992547409.93")
+    expected = float(3 * (2**53 + 1)) / 3 / 100
+
+    base = pl.DataFrame({"g": [1, 1, 1]})
+    scalar = base.with_columns(pl.lit(v, dtype=pl.Decimal(38, 2)).alias("a"))
+    materialized = base.with_columns(a=pl.Series([v] * 3, dtype=pl.Decimal(38, 2)))
+    for df in (scalar, materialized):
+        assert df.select(pl.col("a").mean()).item() == expected
+        assert df.group_by("g").agg(pl.col("a").mean())["a"].item() == expected
+
+    null = base.with_columns(pl.lit(None, dtype=pl.Decimal(38, 2)).alias("a"))
+    assert null.select(pl.col("a").mean()).item() is None
+    assert null.group_by("g").agg(pl.col("a").mean())["a"].item() is None
+
+
 def test_decimal_cumulative_aggregations() -> None:
     df = pl.Series("a", [D("2.2"), D("1.1"), D("3.3")]).to_frame()
     result = df.select(

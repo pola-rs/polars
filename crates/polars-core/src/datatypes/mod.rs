@@ -46,6 +46,7 @@ pub use polars_arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
 use polars_arrow::types::NativeType;
 use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 use polars_compute::float_sum::FloatSum;
+use polars_compute::mean::MeanSum;
 #[cfg(feature = "dtype-categorical")]
 pub use polars_dtype::categorical::{
     CatNative, CatSize, CategoricalMapping, CategoricalPhysical, Categories, FrozenCategories,
@@ -446,6 +447,7 @@ pub trait NumericNative: TotalOrd
     + IsFloat
     + HasPrimitiveArithmeticKernel<TrueDivT = <Self::TrueDivPolarsType as PolarsNumericType>::Native>
     + FloatSum<f64>
+    + MeanSum
     + AsPrimitive<f64>
     + MinMax
     + IsNull

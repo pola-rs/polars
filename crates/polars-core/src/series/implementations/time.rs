@@ -8,6 +8,8 @@
 //! (depending on the result) cast back to the original type
 //!
 
+use polars_compute::mean::IntMeanRounding;
+
 use super::*;
 use crate::prelude::*;
 
@@ -381,7 +383,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
     }
 
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
-        let mean = self.mean().map(|v| v as i64);
+        let mean = self.0.physical().int_mean(1, IntMeanRounding::Floor);
         let av = AnyValue::from(mean).as_time();
         Ok(Scalar::new(self.dtype().clone(), av))
     }

@@ -2,6 +2,7 @@ use num_traits::FromPrimitive;
 use polars_utils::float16::pf16;
 
 use super::*;
+use crate::chunked_array::list::sum_mean::temporal_mean_physical;
 
 pub(super) fn mean_with_nulls(ca: &ArrayChunked) -> PolarsResult<Series> {
     let mut out = match ca.inner_dtype() {
@@ -20,12 +21,19 @@ pub(super) fn mean_with_nulls(ca: &ArrayChunked) -> PolarsResult<Series> {
                 .with_name(ca.name().clone());
             out.into_series()
         },
-        #[cfg(feature = "dtype-duration")]
-        DataType::Duration(tu) => {
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Date => {
             let out: Int64Chunked = ca
-                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as i64)))
+                .apply_amortized_generic(|s| s.and_then(|s| temporal_mean_physical(s.as_ref())))
                 .with_name(ca.name().clone());
-            out.into_duration(*tu).into_series()
+            out.into_datetime(TimeUnit::Microseconds, None)
+                .into_series()
+        },
+        dt if dt.is_temporal() => {
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| s.and_then(|s| temporal_mean_physical(s.as_ref())))
+                .with_name(ca.name().clone());
+            out.cast(dt)?
         },
         _ => {
             let out: Float64Chunked = ca

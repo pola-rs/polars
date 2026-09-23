@@ -14,6 +14,7 @@ use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_arrow::legacy::kernels::take_agg::*;
 use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use polars_arrow::types::NativeType;
+use polars_compute::mean::{IntMeanRounding, MeanAcc, MeanSum, int_mean};
 use polars_compute::rolling::no_nulls::{
     MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
 };
@@ -21,9 +22,10 @@ use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
 use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
     self, ArgMaxWindow, ArgMinWindow, MeanWindow, QuantileMethod, RollingFnParams,
-    RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter, rolling_argmax_by,
-    rolling_argmin_by,
+    RollingQuantileParams, RollingVarParams, SumWindow, WideSumWindow, quantile_filter,
+    rolling_argmax_by, rolling_argmin_by,
 };
+use polars_compute::sum::WrappingAdd;
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::float::IsFloat;
 #[cfg(feature = "dtype-f16")]
@@ -1231,18 +1233,102 @@ impl Float64Chunked {
     }
 }
 
+/// Exact sliding-window sums for integer means over overlapping, monotonic groups.
+pub(crate) trait RollingMeanSum: MeanSum {
+    /// Applies `finish` to the sum and non-null count of each group, or returns `None` if
+    /// there is no rolling kernel for this type.
+    fn rolling_mean<O, F>(
+        _arr: &PrimitiveArray<Self>,
+        _groups: &[[IdxSize; 2]],
+        _finish: F,
+    ) -> Option<PrimitiveArray<O>>
+    where
+        O: NativeType,
+        F: Fn(Self::Acc, usize) -> O,
+    {
+        None
+    }
+}
+
+macro_rules! impl_rolling_mean_sum {
+    ($($t:ty),*) => {
+        $(
+            impl RollingMeanSum for $t {
+                fn rolling_mean<O, F>(
+                    arr: &PrimitiveArray<Self>,
+                    groups: &[[IdxSize; 2]],
+                    finish: F,
+                ) -> Option<PrimitiveArray<O>>
+                where
+                    O: NativeType,
+                    F: Fn(i128, usize) -> O,
+                {
+                    let values = arr.values().as_slice();
+                    let bounds = |[first, len]: [IdxSize; 2]| (first as usize, (first + len) as usize);
+                    let out = match arr.validity().filter(|_| arr.null_count() > 0) {
+                        None => {
+                            let mut window =
+                                <WideSumWindow<_> as RollingAggWindowNoNulls<_, i128>>::new(
+                                    values, 0, 0, None, None,
+                                );
+                            groups
+                                .iter()
+                                .map(|g| {
+                                    let (start, end) = bounds(*g);
+                                    // SAFETY: groups are in bounds.
+                                    unsafe { RollingAggWindowNoNulls::update(&mut window, start, end) };
+                                    RollingAggWindowNoNulls::get_agg(&window, 0)
+                                        .map(|sum| finish(sum, window.count()))
+                                })
+                                .collect()
+                        },
+                        Some(validity) => {
+                            let mut window =
+                                <WideSumWindow<_> as RollingAggWindowNulls<_, i128>>::new(
+                                    values, validity, 0, 0, None, None,
+                                );
+                            groups
+                                .iter()
+                                .map(|g| {
+                                    let (start, end) = bounds(*g);
+                                    // SAFETY: groups are in bounds.
+                                    unsafe { RollingAggWindowNulls::update(&mut window, start, end) };
+                                    RollingAggWindowNulls::get_agg(&window, 0)
+                                        .map(|sum| finish(sum, window.count()))
+                                })
+                                .collect()
+                        },
+                    };
+                    Some(out)
+                }
+            }
+        )*
+    };
+}
+
+impl_rolling_mean_sum!(u8, u16, u32, u64, i8, i16, i32, i64);
+impl RollingMeanSum for i128 {}
+impl RollingMeanSum for u128 {}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsIntegerType,
     ChunkedArray<T>: ChunkAgg<T::Native> + ChunkVar,
     T::Native: NumericNative + Ord,
 {
-    pub(crate) unsafe fn agg_mean(&self, groups: &GroupsType) -> Series {
+    /// Mean of each group, computed by applying `finish` to its exact sum and non-null count.
+    unsafe fn agg_mean_with<O, F>(&self, groups: &GroupsType, finish: F) -> Series
+    where
+        T::Native: RollingMeanSum,
+        O: PolarsNumericType,
+        F: Fn(<T::Native as MeanSum>::Acc, usize) -> O::Native + Send + Sync + Copy,
+    {
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
-                let arr = ca.downcast_get(0).unwrap();
-                _agg_helper_idx::<Float64Type, _>(groups, |(first, idx)| {
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+                _agg_helper_idx::<O, _>(groups, |(first, idx)| {
                     // this can fail due to a bug in lazy code.
                     // here users can create filters in aggregations
                     // and thereby creating shorter columns than the original group tuples.
@@ -1252,32 +1338,22 @@ where
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        self.get(first as usize).map(|sum| sum.to_f64().unwrap())
+                        arr.get(first as usize).map(|v| finish(v.to_mean_acc(), 1))
+                    } else if no_nulls {
+                        let sum = take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                            .fold(Default::default(), |a: <T::Native as MeanSum>::Acc, b| {
+                                a.wrapping_add(&b.to_mean_acc())
+                            });
+                        Some(finish(sum, idx.len()))
                     } else {
-                        match (self.has_nulls(), self.chunks.len()) {
-                            (false, 1) => Some(
-                                take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
-                                    .fold(KahanSum::default(), |a, b| a + b.to_f64().unwrap())
-                                    .sum()
-                                    / idx.len() as f64,
-                            ),
-                            (_, 1) => {
-                                take_agg_primitive_iter_unchecked_count_nulls(
-                                    arr,
-                                    idx2usize(idx),
-                                    KahanSum::default(),
-                                    |a, b| a + b.to_f64().unwrap(),
-                                    idx.len() as IdxSize,
-                                )
-                            }
-                            .map(|(sum, null_count)| {
-                                sum.sum() / (idx.len() as f64 - null_count as f64)
-                            }),
-                            _ => {
-                                let take = { self.take_unchecked(idx) };
-                                take.mean()
-                            },
-                        }
+                        take_agg_primitive_iter_unchecked_count_nulls(
+                            arr,
+                            idx2usize(idx),
+                            Default::default(),
+                            |a: <T::Native as MeanSum>::Acc, b| a.wrapping_add(&b.to_mean_acc()),
+                            idx.len() as IdxSize,
+                        )
+                        .map(|(sum, null_count)| finish(sum, idx.len() - null_count as usize))
                     }
                 })
             },
@@ -1286,26 +1362,34 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let ca = self
-                        .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
-                        .unwrap();
-                    ca.agg_mean(groups)
-                } else {
-                    _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
+                let rolling =
+                    _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks())
+                        .then(|| {
+                            T::Native::rolling_mean(
+                                self.downcast_get(0).unwrap(),
+                                groups_slice,
+                                finish,
+                            )
+                        })
+                        .flatten();
+                match rolling {
+                    Some(arr) => ChunkedArray::<O>::from(arr).into_series(),
+                    None => _agg_helper_slice::<O, _>(groups_slice, |[first, len]| {
                         debug_assert!(first + len <= self.len() as IdxSize);
-                        match len {
-                            0 => None,
-                            1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
-                            _ => {
-                                let arr_group = _slice_from_offsets(self, first, len);
-                                arr_group.mean()
-                            },
-                        }
-                    })
+                        _slice_from_offsets(self, first, len)
+                            .mean_sum_count()
+                            .map(|(sum, count)| finish(sum, count))
+                    }),
                 }
             },
         }
+    }
+
+    pub(crate) unsafe fn agg_mean(&self, groups: &GroupsType) -> Series
+    where
+        T::Native: RollingMeanSum,
+    {
+        self.agg_mean_with::<Float64Type, _>(groups, |sum, count| sum.into_f64() / count as f64)
     }
 
     pub(crate) unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Series {
@@ -1420,5 +1504,27 @@ where
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
         agg_median_generic::<_, Float64Type>(self, groups)
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    ChunkedArray<T>: ChunkAgg<T::Native> + ChunkVar,
+    T::Native: NumericNative + Ord + MeanSum<Acc = i128>,
+{
+    /// Exact mean of each group multiplied by `scale`, rounded onto the integer grid.
+    pub(crate) unsafe fn agg_mean_int(
+        &self,
+        groups: &GroupsType,
+        scale: i64,
+        rounding: IntMeanRounding,
+    ) -> Series
+    where
+        T::Native: RollingMeanSum,
+    {
+        self.agg_mean_with::<Int64Type, _>(groups, move |sum, count| {
+            int_mean(sum, count, scale, rounding)
+        })
     }
 }

@@ -367,38 +367,40 @@ impl Series {
             Float64 => SeriesWrap(s.f64().unwrap().clone()).agg_mean(groups),
             dt if dt.is_primitive_numeric() => apply_method_physical_integer!(s, agg_mean, groups),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, _) => self.cast(&Float64).unwrap().agg_mean(groups),
+            Decimal(_, scale) => {
+                let scale_factor = 10u128.pow(*scale as u32) as f64;
+                s.decimal().unwrap().physical().agg_mean(groups) / scale_factor
+            },
             #[cfg(feature = "dtype-datetime")]
-            dt @ Datetime(_, _) => self
-                .to_physical_repr()
-                .agg_mean(groups)
-                .cast(&Int64)
+            dt @ Datetime(_, _) => s
+                .datetime()
                 .unwrap()
+                .physical()
+                .agg_mean_int(groups, 1, IntMeanRounding::Floor)
                 .cast(dt)
                 .unwrap(),
             #[cfg(feature = "dtype-duration")]
-            dt @ Duration(_) => self
-                .to_physical_repr()
-                .agg_mean(groups)
-                .cast(&Int64)
+            dt @ Duration(_) => s
+                .duration()
                 .unwrap()
+                .physical()
+                .agg_mean_int(groups, 1, IntMeanRounding::Trunc)
                 .cast(dt)
                 .unwrap(),
             #[cfg(feature = "dtype-time")]
-            Time => self
-                .to_physical_repr()
-                .agg_mean(groups)
-                .cast(&Int64)
+            Time => s
+                .time()
                 .unwrap()
+                .physical()
+                .agg_mean_int(groups, 1, IntMeanRounding::Floor)
                 .cast(&Time)
                 .unwrap(),
             #[cfg(feature = "dtype-date")]
-            Date => (self
-                .to_physical_repr()
-                .agg_mean(groups)
-                .cast(&Float64)
+            Date => s
+                .date()
                 .unwrap()
-                * (US_IN_DAY as f64))
+                .physical()
+                .agg_mean_int(groups, US_IN_DAY, IntMeanRounding::Floor)
                 .cast(&Datetime(TimeUnit::Microseconds, None))
                 .unwrap(),
             _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),

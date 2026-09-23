@@ -7,7 +7,7 @@ use super::*;
 pub struct SumWindow<'a, T, S> {
     slice: &'a [T],
     validity: Option<&'a Bitmap>,
-    sum: S,
+    pub(super) sum: S,
     err_add: S,
     err_sub: S,
     non_finite_count: usize, // NaN or infinity.
@@ -222,5 +222,93 @@ where
 
     fn slice_len(&self) -> usize {
         self.slice.len()
+    }
+}
+
+/// Sliding exact `i128` sum of integers; yields the accumulator rather than the input type.
+///
+/// Empty or all-null windows yield `None`.
+pub struct WideSumWindow<'a, T>(SumWindow<'a, T, i128>);
+
+impl<T> WideSumWindow<'_, T> {
+    /// Number of non-null values in the current window.
+    pub fn count(&self) -> usize {
+        self.0.end - self.0.start - self.0.null_count
+    }
+}
+
+impl<T> RollingAggWindowNoNulls<T, i128> for WideSumWindow<'_, T>
+where
+    T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
+{
+    type This<'a> = WideSumWindow<'a, T>;
+
+    fn new<'a>(
+        slice: &'a [T],
+        start: usize,
+        end: usize,
+        params: Option<RollingFnParams>,
+        window_size: Option<usize>,
+    ) -> Self::This<'a> {
+        WideSumWindow(<SumWindow<T, i128> as RollingAggWindowNoNulls<T>>::new(
+            slice,
+            start,
+            end,
+            params,
+            window_size,
+        ))
+    }
+
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe { RollingAggWindowNoNulls::update(&mut self.0, new_start, new_end) };
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<i128> {
+        (self.0.end != self.0.start).then_some(self.0.sum)
+    }
+
+    fn slice_len(&self) -> usize {
+        self.0.slice.len()
+    }
+}
+
+impl<T> RollingAggWindowNulls<T, i128> for WideSumWindow<'_, T>
+where
+    T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
+{
+    type This<'a> = WideSumWindow<'a, T>;
+
+    fn new<'a>(
+        slice: &'a [T],
+        validity: &'a Bitmap,
+        start: usize,
+        end: usize,
+        params: Option<RollingFnParams>,
+        window_size: Option<usize>,
+    ) -> Self::This<'a> {
+        WideSumWindow(<SumWindow<T, i128> as RollingAggWindowNulls<T>>::new(
+            slice,
+            validity,
+            start,
+            end,
+            params,
+            window_size,
+        ))
+    }
+
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe { RollingAggWindowNulls::update(&mut self.0, new_start, new_end) };
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<i128> {
+        (self.count() != 0).then_some(self.0.sum)
+    }
+
+    fn is_valid(&self, min_periods: usize) -> bool {
+        self.0.is_valid(min_periods)
+    }
+
+    fn slice_len(&self) -> usize {
+        self.0.slice.len()
     }
 }

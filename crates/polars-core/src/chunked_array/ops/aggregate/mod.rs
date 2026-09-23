@@ -7,6 +7,7 @@ use polars_arrow::types::NativeType;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_compute::float_sum;
+use polars_compute::mean::{IntMeanRounding, MeanAcc, MeanSum, int_mean};
 use polars_compute::min_max::MinMaxKernel;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::sum::{WrappingAdd, WrappingSum, wrapping_sum_arr, wrapping_sum_arr_upcast};
@@ -238,11 +239,35 @@ where
     }
 
     fn mean(&self) -> Option<f64> {
+        self.mean_sum_count()
+            .map(|(sum, count)| sum.into_f64() / count as f64)
+    }
+}
+
+impl<T: PolarsNumericType> ChunkedArray<T> {
+    /// Sum of the non-null values, exact for integers.
+    pub fn mean_sum(&self) -> <T::Native as MeanSum>::Acc {
+        self.downcast_iter().fold(Default::default(), |acc, arr| {
+            acc.wrapping_add(&T::Native::sum_arr(arr))
+        })
+    }
+
+    /// Sum and count of the non-null values, `None` if there are none.
+    pub fn mean_sum_count(&self) -> Option<(<T::Native as MeanSum>::Acc, usize)> {
         let count = self.len() - self.null_count();
-        if count == 0 {
-            return None;
-        }
-        Some(self._sum_as_f64() / count as f64)
+        (count != 0).then(|| (self.mean_sum(), count))
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: MeanSum<Acc = i128>,
+{
+    /// Exact mean multiplied by `scale`, rounded onto the integer grid.
+    pub fn int_mean(&self, scale: i64, rounding: IntMeanRounding) -> Option<i64> {
+        self.mean_sum_count()
+            .map(|(sum, count)| int_mean(sum, count, scale, rounding))
     }
 }
 
