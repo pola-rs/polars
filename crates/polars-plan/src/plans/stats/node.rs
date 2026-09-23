@@ -606,25 +606,37 @@ fn predicate_selectivity(
     rows: f64,
 ) -> (f64, bool) {
     // An `OR` is a single conjunct, so it skips the `AND` chain model.
-    let factors: Vec<Option<f64>> =
-        if is_or(predicate, expr_arena) {
-            vec![conjunct_selectivity(
-                predicate, expr_arena, columns, schema, rows,
-            )]
-        } else {
-            let chain = and_chain_bounds(predicate, schema, expr_arena);
-            if chain.unsat {
-                return (0.0, true);
+    let factors: Vec<Option<f64>> = if is_or(predicate, expr_arena) {
+        vec![conjunct_selectivity(
+            predicate, expr_arena, columns, schema, rows,
+        )]
+    } else {
+        let chain = and_chain_bounds(predicate, schema, expr_arena);
+        if chain.unsat {
+            return (0.0, true);
+        }
+        let mut factors = Vec::with_capacity(chain.columns.len() + chain.other.len());
+        let mut non_null_counted = Vec::new();
+        for bounds in &chain.columns {
+            let factor = column_selectivity(bounds, columns, schema, rows);
+            if factor.is_some() {
+                non_null_counted.push(&bounds.name);
             }
-            chain
-                .columns
-                .iter()
-                .map(|bounds| column_selectivity(bounds, columns, schema, rows))
-                .chain(chain.other.iter().map(|&conjunct| {
-                    conjunct_selectivity(conjunct, expr_arena, columns, schema, rows)
-                }))
-                .collect()
-        };
+            factors.push(factor);
+        }
+        for &conjunct in &chain.other {
+            // The column's estimate already holds only its non-null rows.
+            if let Some((name, IRBooleanFunction::IsNotNull)) = null_check(conjunct, expr_arena)
+                && non_null_counted.contains(&name)
+            {
+                continue;
+            }
+            factors.push(conjunct_selectivity(
+                conjunct, expr_arena, columns, schema, rows,
+            ));
+        }
+        factors
+    };
     let mut selectivity = 1.0;
     let mut known = true;
     for factor in factors {
@@ -723,18 +735,39 @@ fn conjunct_selectivity(
     schema: &Schema,
     rows: f64,
 ) -> Option<f64> {
-    let (name, function) = match expr_arena.get(conjunct) {
-        AExpr::BinaryExpr {
-            left,
-            op: Operator::Or | Operator::LogicalOr,
-            right,
-        } => {
-            let (left, left_known) =
-                predicate_selectivity(*left, expr_arena, columns, schema, rows);
-            let (right, right_known) =
-                predicate_selectivity(*right, expr_arena, columns, schema, rows);
-            return (left_known && right_known).then_some(left + right - left * right);
-        },
+    if let AExpr::BinaryExpr {
+        left,
+        op: Operator::Or | Operator::LogicalOr,
+        right,
+    } = expr_arena.get(conjunct)
+    {
+        let (left, left_known) = predicate_selectivity(*left, expr_arena, columns, schema, rows);
+        let (right, right_known) = predicate_selectivity(*right, expr_arena, columns, schema, rows);
+        return (left_known && right_known).then_some(left + right - left * right);
+    }
+    let (name, function) = null_check(conjunct, expr_arena)?;
+
+    let Some(null_fraction) = null_fraction(name, columns, rows) else {
+        // Nothing describes the column. Most frames are mostly non-null; how many rows
+        // hold a null is anyone's guess.
+        return match function {
+            IRBooleanFunction::IsNotNull => Some(1.0),
+            _ => None,
+        };
+    };
+    match function {
+        IRBooleanFunction::IsNull => Some(null_fraction),
+        IRBooleanFunction::IsNotNull => Some(1.0 - null_fraction),
+        _ => None,
+    }
+}
+
+/// The column a one-column boolean function reads, and the function.
+fn null_check(
+    conjunct: Node,
+    expr_arena: &Arena<AExpr>,
+) -> Option<(&PlSmallStr, &IRBooleanFunction)> {
+    Some(match expr_arena.get(conjunct) {
         AExpr::Function {
             input,
             function: IRFunctionExpr::Boolean(function),
@@ -759,21 +792,7 @@ fn conjunct_selectivity(
             (name, &IRBooleanFunction::IsNotNull)
         },
         _ => return None,
-    };
-
-    let Some(null_fraction) = null_fraction(name, columns, rows) else {
-        // Nothing describes the column. Most frames are mostly non-null; how many rows
-        // hold a null is anyone's guess.
-        return match function {
-            IRBooleanFunction::IsNotNull => Some(1.0),
-            _ => None,
-        };
-    };
-    match function {
-        IRBooleanFunction::IsNull => Some(null_fraction),
-        IRBooleanFunction::IsNotNull => Some(1.0 - null_fraction),
-        _ => None,
-    }
+    })
 }
 
 /// Estimate the rows produced by joining two relations of the given sizes.
@@ -1488,7 +1507,7 @@ mod tests {
     }
 
     #[test]
-    fn a_partial_or_unit_less_range_is_not_used() {
+    fn a_partial_range_is_not_used() {
         let mut expr_arena = Arena::new();
         let node = compare(&mut expr_arena, Operator::Gt, Scalar::from(999i64));
 
@@ -1510,7 +1529,12 @@ mod tests {
             &schema,
         );
         assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
 
+    #[cfg(feature = "dtype-datetime")]
+    #[test]
+    fn a_datetime_range_is_not_used() {
+        let mut expr_arena = Arena::new();
         let (stats, schema) = ranged_column(
             DataType::Datetime(polars_core::prelude::TimeUnit::Milliseconds, None),
             (0, 999),
@@ -1529,5 +1553,37 @@ mod tests {
             &schema,
         );
         assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[test]
+    fn a_not_null_check_on_a_ranged_column_counts_once() {
+        let stats = leaf(1000.0, 1000.0).with_column(
+            "a",
+            ScanColumnStats {
+                int_range: Some((0, 0)),
+                null_count: Card::Exact(900),
+                ..Default::default()
+            },
+        );
+        let schema = Schema::from_iter([(PlSmallStr::from_str("a"), DataType::Int64)]);
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let bound = compare(&mut expr_arena, Operator::GtEq, Scalar::from(0i64));
+        let a = expr_arena.add(AExpr::Column(PlSmallStr::from_str("a")));
+        let not_null = expr_arena.add(AExpr::Function {
+            input: vec![ExprIR::from_node(a, &expr_arena)],
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
+            options: crate::prelude::FunctionOptions::elementwise(),
+        });
+        let self_eq = expr_arena.add(AExpr::BinaryExpr {
+            left: a,
+            op: Operator::Eq,
+            right: a,
+        });
+        for check in [not_null, self_eq] {
+            let both = and(&mut expr_arena, bound, check);
+            let kept = apply_predicate(1000.0, 1000.0, both, &expr_arena, map, &schema);
+            assert!((kept - 100.0).abs() < 1e-9, "got {kept}");
+        }
     }
 }
