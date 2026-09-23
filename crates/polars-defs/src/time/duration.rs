@@ -792,7 +792,8 @@ impl Duration {
     /// Truncate the timestamp `t` in `tu` by the window boundary.
     ///
     /// Dispatches to the specialized `truncate_ns`, `truncate_us` and `truncate_ms`, so a
-    /// constant `tu` costs nothing and a loop-invariant one a predictable branch.
+    /// constant `tu` costs nothing and a loop-invariant one a predictable branch. The arms are
+    /// never inlined so the calendar code stays out of callers' hot loops.
     #[cfg(feature = "temporal")]
     #[inline]
     pub fn truncate(&self, tu: TimeUnit, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
@@ -804,16 +805,19 @@ impl Duration {
     }
 
     #[cfg(feature = "temporal")]
+    #[inline(never)]
     pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_inline(TimeUnit::Nanoseconds, t, tz)
     }
 
     #[cfg(feature = "temporal")]
+    #[inline(never)]
     pub fn truncate_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_inline(TimeUnit::Microseconds, t, tz)
     }
 
     #[cfg(feature = "temporal")]
+    #[inline(never)]
     pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_inline(TimeUnit::Milliseconds, t, tz)
     }
@@ -904,7 +908,8 @@ impl Duration {
     /// Add this duration to the timestamp `t` in `tu`.
     ///
     /// Dispatches to the specialized `add_ns`, `add_us` and `add_ms`, so a constant `tu`
-    /// costs nothing and a loop-invariant one a predictable branch.
+    /// costs nothing and a loop-invariant one a predictable branch. The arms are never inlined
+    /// so the calendar code stays out of callers' hot loops.
     #[cfg(feature = "temporal")]
     #[inline]
     pub fn add(&self, tu: TimeUnit, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
@@ -924,16 +929,19 @@ impl Duration {
     }
 
     #[cfg(feature = "temporal")]
+    #[inline(never)]
     pub fn add_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.add_inline(TimeUnit::Nanoseconds, t, tz)
     }
 
     #[cfg(feature = "temporal")]
+    #[inline(never)]
     pub fn add_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.add_inline(TimeUnit::Microseconds, t, tz)
     }
 
     #[cfg(feature = "temporal")]
+    #[inline(never)]
     pub fn add_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.add_inline(TimeUnit::Milliseconds, t, tz)
     }
