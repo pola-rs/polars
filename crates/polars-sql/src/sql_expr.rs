@@ -35,7 +35,9 @@ use sqlparser::tokenizer::Token;
 
 use crate::SQLContext;
 use crate::functions::SQLFunctionVisitor;
-use crate::literal_folding::{decimal_lit, parse_exact_literal, try_fold_decimal_arithmetic};
+use crate::literal_folding::{
+    decimal_lit, fold_scalar, parse_exact_literal, try_fold_decimal_arithmetic,
+};
 use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::is_correlated_subquery;
 use crate::types::{
@@ -148,6 +150,74 @@ fn parse_string_as_temporal(expr: Expr, dtype: &DataType, strict: bool) -> Optio
         },
         _ => return None,
     })
+}
+
+/// `value` parsed as a literal of temporal `dtype`, or `None` if it does not parse.
+fn temporal_literal(value: &str, dtype: &DataType) -> Option<Expr> {
+    let s = cast_literal_series(&Series::new(PlSmallStr::EMPTY, [value]), dtype).ok()?;
+    let value = s.get(0).ok()?.into_static();
+    (!value.is_null()).then(|| lit(Scalar::new(dtype.clone(), value)))
+}
+
+/// A `DATE`, `TIME` or `TIMESTAMP` literal as a value of `dtype`.
+fn typed_literal(value: &str, dtype: &DataType, sql_type: &SQLDataType) -> PolarsResult<Expr> {
+    temporal_literal(value, dtype)
+        .ok_or_else(|| polars_err!(SQLSyntax: "invalid {} literal '{}'", sql_type, value))
+}
+
+/// `date <op> timestamp` as `date <op'> day`, with `day` the timestamp's date:
+/// a Date is midnight, so a time after midnight moves `>=` and `<` past its day.
+/// `None` for other operators, and for (in)equality with a time after midnight.
+fn date_bound(
+    op: &SQLBinaryOperator,
+    timestamp: i64,
+    tu: TimeUnit,
+) -> Option<(SQLBinaryOperator, i32)> {
+    let per_day = 86_400
+        * match tu {
+            TimeUnit::Nanoseconds => 1_000_000_000,
+            TimeUnit::Microseconds => 1_000_000,
+            TimeUnit::Milliseconds => 1_000,
+        };
+    let day = i32::try_from(timestamp.div_euclid(per_day)).ok()?;
+    let midnight = timestamp.rem_euclid(per_day) == 0;
+    let op = match op {
+        SQLBinaryOperator::GtEq if !midnight => SQLBinaryOperator::Gt,
+        SQLBinaryOperator::Lt if !midnight => SQLBinaryOperator::LtEq,
+        SQLBinaryOperator::Eq | SQLBinaryOperator::NotEq if !midnight => return None,
+        SQLBinaryOperator::Gt
+        | SQLBinaryOperator::GtEq
+        | SQLBinaryOperator::Lt
+        | SQLBinaryOperator::LtEq
+        | SQLBinaryOperator::Eq
+        | SQLBinaryOperator::NotEq => op.clone(),
+        _ => return None,
+    };
+    Some((op, day))
+}
+
+/// The operator of `b <op> a` given that of `a <op> b`.
+fn flip_comparison(op: &SQLBinaryOperator) -> Option<SQLBinaryOperator> {
+    Some(match op {
+        SQLBinaryOperator::Gt => SQLBinaryOperator::Lt,
+        SQLBinaryOperator::GtEq => SQLBinaryOperator::LtEq,
+        SQLBinaryOperator::Lt => SQLBinaryOperator::Gt,
+        SQLBinaryOperator::LtEq => SQLBinaryOperator::GtEq,
+        SQLBinaryOperator::Eq | SQLBinaryOperator::NotEq => op.clone(),
+        _ => return None,
+    })
+}
+
+/// `base + offset` with `offset` as for `dt.offset_by`, computed here when `base` is a
+/// literal.
+fn offset_by(base: Expr, offset: String) -> PolarsResult<Expr> {
+    let is_literal = matches!(&base, Expr::Literal(LiteralValue::Scalar(_)));
+    let expr = base.dt().offset_by(lit(offset));
+    if is_literal {
+        fold_scalar(expr)
+    } else {
+        Ok(expr)
+    }
 }
 
 /// Extract the literal value; returns `(sql_value, optional_op)`.
@@ -438,9 +508,7 @@ impl SQLExprVisitor<'_> {
                 uses_odbc_syntax: _,
             }) => {
                 let dtype = self.resolve_typed_literal_dtype(data_type, v)?;
-                parse_string_as_temporal(lit(v.as_str()), &dtype, true).ok_or_else(
-                    || polars_err!(SQLInterface: "invalid temporal literal type {}", dtype),
-                )
+                typed_literal(v, &dtype, data_type)
             },
             SQLExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             SQLExpr::Value(ValueWithSpan { value, .. }) => self.visit_literal(value),
@@ -602,12 +670,8 @@ impl SQLExprVisitor<'_> {
                     |dt| dt.as_literal(),
                 );
                 let parsed = match left_dtype {
-                    Some(dtype @ DataType::Time) if is_iso_time(s) => {
-                        parse_string_as_temporal(right.clone(), dtype, true)
-                    },
-                    Some(dtype @ DataType::Date) if is_iso_date(s) => {
-                        parse_string_as_temporal(right.clone(), dtype, true)
-                    },
+                    Some(dtype @ DataType::Time) if is_iso_time(s) => Some((s.to_string(), dtype)),
+                    Some(dtype @ DataType::Date) if is_iso_date(s) => Some((s.to_string(), dtype)),
                     Some(dtype @ DataType::Datetime(_, _))
                         if is_iso_datetime(s) || is_iso_date(s) =>
                     {
@@ -617,11 +681,18 @@ impl SQLExprVisitor<'_> {
                         } else {
                             s.replacen(' ', "T", 1)
                         };
-                        parse_string_as_temporal(lit(s), dtype, true)
+                        Some((s, dtype))
                     },
                     _ => None,
                 };
-                parsed.unwrap_or_else(|| right.clone())
+                // A string that does not parse keeps its strict parse, which fails
+                // when the query runs.
+                parsed
+                    .and_then(|(s, dtype)| {
+                        temporal_literal(&s, dtype)
+                            .or_else(|| parse_string_as_temporal(lit(s), dtype, true))
+                    })
+                    .unwrap_or_else(|| right.clone())
             }
         } else {
             right.clone()
@@ -688,6 +759,43 @@ impl SQLExprVisitor<'_> {
         })
     }
 
+    /// A Date compared with a timestamp literal, as a comparison of Dates, so the
+    /// Date side is not cast to a timestamp per row. `None` for anything else.
+    fn compare_date_with_timestamp(
+        &self,
+        lhs: &Expr,
+        op: &SQLBinaryOperator,
+        rhs: &Expr,
+    ) -> Option<Expr> {
+        let (date, op, timestamp) = if matches!(self.expr_dtype(lhs), Some(DataType::Date)) {
+            (lhs, op.clone(), rhs)
+        } else if matches!(self.expr_dtype(rhs), Some(DataType::Date)) {
+            (rhs, flip_comparison(op)?, lhs)
+        } else {
+            return None;
+        };
+        let Expr::Literal(LiteralValue::Scalar(scalar)) = timestamp else {
+            return None;
+        };
+        let (timestamp, tu) = match scalar.value() {
+            AnyValue::Datetime(timestamp, tu, None)
+            | AnyValue::DatetimeOwned(timestamp, tu, None) => (*timestamp, *tu),
+            _ => return None,
+        };
+        let (op, day) = date_bound(&op, timestamp, tu)?;
+        let date = date.clone();
+        let day = lit(Scalar::new(DataType::Date, AnyValue::Date(day)));
+        Some(match op {
+            SQLBinaryOperator::Gt => date.gt(day),
+            SQLBinaryOperator::GtEq => date.gt_eq(day),
+            SQLBinaryOperator::Lt => date.lt(day),
+            SQLBinaryOperator::LtEq => date.lt_eq(day),
+            SQLBinaryOperator::Eq => date.eq(day),
+            SQLBinaryOperator::NotEq => date.eq(day).not(),
+            _ => unreachable!(),
+        })
+    }
+
     /// Visit a SQL binary operator.
     ///
     /// e.g. "column + 1", "column1 <= column2"
@@ -704,17 +812,11 @@ impl SQLExprVisitor<'_> {
         let (mut lhs, mut rhs) = match (left, op, right) {
             (_, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) => {
                 let duration = interval_to_duration(v, false)?;
-                return Ok(self
-                    .visit_expr(left)?
-                    .dt()
-                    .offset_by(lit(format!("-{duration}"))));
+                return offset_by(self.visit_expr(left)?, format!("-{duration}"));
             },
             (_, SQLBinaryOperator::Plus, SQLExpr::Interval(v)) => {
                 let duration = interval_to_duration(v, false)?;
-                return Ok(self
-                    .visit_expr(left)?
-                    .dt()
-                    .offset_by(lit(format!("{duration}"))));
+                return offset_by(self.visit_expr(left)?, format!("{duration}"));
             },
             (SQLExpr::Interval(v1), _, SQLExpr::Interval(v2)) => {
                 // shortcut interval comparison evaluation (-> bool)
@@ -751,6 +853,9 @@ impl SQLExprVisitor<'_> {
         if matches!(op, SQLBinaryOperator::Plus | SQLBinaryOperator::Minus)
             && let Some(expr) = self.date_day_offset(&lhs, op, &rhs)
         {
+            return Ok(expr);
+        }
+        if let Some(expr) = self.compare_date_with_timestamp(&lhs, op, &rhs) {
             return Ok(expr);
         }
 
@@ -1118,14 +1223,23 @@ impl SQLExprVisitor<'_> {
         let polars_type = map_sql_dtype_to_polars(dtype)?;
         let strict = matches!(cast_kind, CastKind::Cast | CastKind::DoubleColon);
 
-        // `CAST(<string> AS DATE/TIME/TIMESTAMP)` parses rather than casts
+        // `CAST(<string> AS DATE/TIME/TIMESTAMP)` parses rather than casts, when the
+        // query is translated for a string literal that parses
         if matches!(
             polars_type,
             DataType::Date | DataType::Time | DataType::Datetime(_, _)
         ) && self.expr_dtype(&expr) == Some(DataType::String)
-            && let Some(parsed) = parse_string_as_temporal(expr.clone(), &polars_type, strict)
         {
-            return Ok(parsed);
+            if let Expr::Literal(lv) = &expr
+                && let Some(parsed) = lv
+                    .extract_str()
+                    .and_then(|s| temporal_literal(s, &polars_type))
+            {
+                return Ok(parsed);
+            }
+            if let Some(parsed) = parse_string_as_temporal(expr.clone(), &polars_type, strict) {
+                return Ok(parsed);
+            }
         }
         Ok(if strict {
             expr.strict_cast(polars_type)
@@ -1276,11 +1390,30 @@ impl SQLExprVisitor<'_> {
 
         let low = self.convert_temporal_strings(&expr, &low);
         let high = self.convert_temporal_strings(&expr, &high);
-        Ok(if negated {
-            expr.clone().lt(low).or(expr.gt(high))
+        let (low_op, high_op) = if negated {
+            (SQLBinaryOperator::Lt, SQLBinaryOperator::Gt)
         } else {
-            expr.clone().gt_eq(low).and(expr.lt_eq(high))
-        })
+            (SQLBinaryOperator::GtEq, SQLBinaryOperator::LtEq)
+        };
+        let low = self
+            .compare_date_with_timestamp(&expr, &low_op, &low)
+            .unwrap_or_else(|| {
+                if negated {
+                    expr.clone().lt(low)
+                } else {
+                    expr.clone().gt_eq(low)
+                }
+            });
+        let high = self
+            .compare_date_with_timestamp(&expr, &high_op, &high)
+            .unwrap_or_else(|| {
+                if negated {
+                    expr.clone().gt(high)
+                } else {
+                    expr.clone().lt_eq(high)
+                }
+            });
+        Ok(if negated { low.or(high) } else { low.and(high) })
     }
 
     /// Visit a SQL `TRIM` function.
