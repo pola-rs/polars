@@ -15,5 +15,5 @@ method with an `engine` argument, or when set through
     Engine
     InMemoryEngine
     StreamingEngine
-    ~polars.lazyframe.engine_config.GPUEngine
+    ~lazyframe.engine_config.GPUEngine
     RemoteEngine
