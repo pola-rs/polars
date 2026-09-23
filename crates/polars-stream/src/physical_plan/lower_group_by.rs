@@ -539,6 +539,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Item { .. }
                 | IRAggExpr::Mean(_)
                 | IRAggExpr::Sum(_)
+                | IRAggExpr::SumCounts(_)
                 | IRAggExpr::Var(..)
                 | IRAggExpr::Std(..)
                 | IRAggExpr::Count { .. }

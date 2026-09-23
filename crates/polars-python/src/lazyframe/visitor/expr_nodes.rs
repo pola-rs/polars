@@ -1023,6 +1023,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: py.None(),
             },
+            IRAggExpr::SumCounts(_) => {
+                return Err(PyNotImplementedError::new_err("sum_counts"));
+            },
             IRAggExpr::Count {
                 input: n,
                 include_nulls,

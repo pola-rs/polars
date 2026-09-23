@@ -2103,6 +2103,7 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::LastNonNull(_)
                 | IRAggExpr::Item { .. }
                 | IRAggExpr::Sum(_)
+                | IRAggExpr::SumCounts(_)
                 | IRAggExpr::Mean(_)
                 | IRAggExpr::Var { .. }
                 | IRAggExpr::Std { .. }

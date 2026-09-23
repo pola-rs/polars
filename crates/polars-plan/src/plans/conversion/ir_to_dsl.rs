@@ -159,6 +159,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Sum(Arc::new(exp)).into()
             },
+            // Same values, but an overflow raises a different error.
+            IRAggExpr::SumCounts(expr) => node_to_expr(expr, expr_arena)
+                .cast(DataType::UInt64)
+                .sum()
+                .strict_cast(IDX_DTYPE),
             IRAggExpr::Std(expr, ddof) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Std(Arc::new(exp), ddof).into()

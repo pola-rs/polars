@@ -142,7 +142,8 @@ impl IRAggExpr {
             A::LastNonNull(_) |
             A::Mean(_) |
             A::Implode { .. } |
-            A::Sum(_)  => true,
+            A::Sum(_) |
+            A::SumCounts(_) => true,
         };
 
         is_equal

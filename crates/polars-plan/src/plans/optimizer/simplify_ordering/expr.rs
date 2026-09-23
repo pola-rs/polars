@@ -676,6 +676,7 @@ impl ExprOrderSimplifier<'_> {
                     | IRAggExpr::Mean(node)
                     | IRAggExpr::Median(node)
                     | IRAggExpr::Sum(node)
+                    | IRAggExpr::SumCounts(node)
                     | IRAggExpr::Item { input: node, .. } => {
                         let node = *node;
                         self.rec(node, RS::ALLOW_DEORDER);

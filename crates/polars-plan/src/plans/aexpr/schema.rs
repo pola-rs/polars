@@ -242,7 +242,7 @@ impl AExpr {
                         field.set_dtype(IDX_DTYPE);
                         Ok(field)
                     },
-                    Count { input, .. } => {
+                    Count { input, .. } | SumCounts(input) => {
                         let mut field = ctx.arena.get(*input).to_field_impl(ctx)?;
                         field.set_dtype(IDX_DTYPE);
                         Ok(field)
@@ -438,6 +438,7 @@ impl AExpr {
             | Agg(LastNonNull(expr))
             | Agg(Item { input: expr, .. })
             | Agg(Sum(expr))
+            | Agg(SumCounts(expr))
             | Agg(Median(expr))
             | Agg(Mean(expr))
             | Agg(Implode { input: expr, .. })

@@ -43,6 +43,10 @@ pub fn into_reduction(
     let (gr, in_node) = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {
             IRAggExpr::Sum(input) => (new_sum_reduction(get_dt(*input)?)?, *input),
+            IRAggExpr::SumCounts(input) => (
+                Box::new(IdxTypeCheckedSumReducer::new_grouped_reduction()) as Box<_>,
+                *input,
+            ),
             IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?)?, *input),
             IRAggExpr::Min {
                 propagate_nans,

@@ -592,6 +592,11 @@ impl Display for ExprIRDisplay<'_> {
                         "{}.sum()",
                         self.with_root(expr).parenthesize_if_binexpr()
                     ),
+                    SumCounts(expr) => write!(
+                        f,
+                        "{}.sum_counts()",
+                        self.with_root(expr).parenthesize_if_binexpr()
+                    ),
                     Count {
                         input,
                         include_nulls: false,

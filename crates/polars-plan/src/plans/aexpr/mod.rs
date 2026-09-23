@@ -70,6 +70,9 @@ pub enum IRAggExpr {
         maintain_order: bool,
     },
     Sum(Node),
+    /// Sum of `IdxSize` counts, added as u64 and raising the same error as `count` when the
+    /// total does not fit `IdxSize`. Only created by the optimizer.
+    SumCounts(Node),
     Count {
         input: Node,
         include_nulls: bool,
@@ -134,6 +137,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Mean(_) => GroupByMethod::Mean,
             Implode { maintain_order, .. } => GroupByMethod::Implode { maintain_order },
             Sum(_) => GroupByMethod::Sum,
+            SumCounts(_) => GroupByMethod::SumCounts,
             Count {
                 input: _,
                 include_nulls,
