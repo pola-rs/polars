@@ -25,7 +25,7 @@ use crate::plans::stats::{
 };
 use crate::plans::{
     AExpr, ExprIR, IR, IRAggExpr, IRBooleanFunction, IRBuilder, IRFunctionExpr, JoinTypeOptionsIR,
-    LiteralValue, OutputName, ProjectionOptions, ToFieldContext,
+    LiteralValue, OutputName, ToFieldContext, aexpr_to_leaf_names_iter,
 };
 use crate::prelude::{GroupbyOptions, JoinType, Operator};
 
@@ -69,9 +69,73 @@ impl Leaf {
     }
 }
 
+/// A node on the way from the group by down to the join the rewrite targets.
+enum Step {
+    /// A `SimpleProjection`, or a `Select` of plain columns.
+    Projection(Node),
+    /// An inner join above the target. The path continues into one of its inputs.
+    Join { node: Node, path_is_left: bool },
+}
+
+/// A join above the target, as the gate sees it.
+struct Ancestor {
+    /// The input the path continues into, and its keys.
+    path: Node,
+    path_keys: Vec<PlSmallStr>,
+    /// The other input, and its keys.
+    other: Node,
+    other_keys: Vec<PlSmallStr>,
+}
+
+/// Columns the group by and the joins above the target read, named as at the node the
+/// walk has reached.
+struct Names {
+    /// Group keys.
+    keys: Vec<PlSmallStr>,
+    /// Columns the aggregates read: name seen by the group by, and name here.
+    leaf_columns: Vec<(PlSmallStr, PlSmallStr)>,
+    /// Keys of the joins above.
+    ancestor_keys: Vec<PlSmallStr>,
+}
+
+impl Names {
+    fn all(&self) -> impl Iterator<Item = &PlSmallStr> {
+        self.keys
+            .iter()
+            .chain(self.leaf_columns.iter().map(|(_, name)| name))
+            .chain(self.ancestor_keys.iter())
+    }
+
+    /// Follows a `Select` of plain columns: output name -> input column.
+    fn through_select(&mut self, renamed: &PlIndexMap<PlSmallStr, PlSmallStr>) -> Option<()> {
+        let names = self
+            .keys
+            .iter_mut()
+            .chain(self.leaf_columns.iter_mut().map(|(_, name)| name))
+            .chain(self.ancestor_keys.iter_mut());
+        for name in names {
+            *name = renamed.get(name)?.clone();
+        }
+        Some(())
+    }
+}
+
+/// The join the partial aggregation goes under.
+struct Target {
+    /// L: the input the group keys come from. R: the input that is aggregated.
+    left: Node,
+    right: Node,
+    left_keys: Vec<PlSmallStr>,
+    right_keys: Vec<PlSmallStr>,
+    /// Whether R is the join's left input.
+    right_is_left: bool,
+    /// Name seen by the group by -> R column.
+    from_right: PlIndexMap<PlSmallStr, PlSmallStr>,
+}
+
 fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) -> Option<Node> {
     let IR::GroupBy {
-        input: join,
+        input,
         keys,
         aggs,
         schema: output_schema,
@@ -90,113 +154,75 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
     {
         return None;
     }
-    // Projection pushdown often leaves a selection of columns between the two, which may
-    // rename them (e.g. to a join suffix). Name seen by the group by -> join output name.
-    let (join, renamed): (Node, Option<PlIndexMap<PlSmallStr, PlSmallStr>>) = match ir_arena
-        .get(*join)
-    {
-        IR::SimpleProjection { input, columns } => (
-            *input,
-            Some(
-                columns
-                    .iter_names()
-                    .map(|name| (name.clone(), name.clone()))
-                    .collect(),
-            ),
-        ),
-        IR::Select { input, expr, .. } => (
-            *input,
-            Some(
-                expr.iter()
+
+    let mut names = Names {
+        keys: keys
+            .iter()
+            .map(|key| key.plain_column(expr_arena).cloned())
+            .collect::<Option<_>>()?,
+        leaf_columns: aggs
+            .iter()
+            .flat_map(|agg| aexpr_to_leaf_names_iter(agg.node(), expr_arena))
+            .collect::<PlIndexSet<_>>()
+            .into_iter()
+            .map(|name| (name.clone(), name.clone()))
+            .collect(),
+        ancestor_keys: Vec::new(),
+    };
+
+    // Walk down to the first join that can take the partial aggregation and passes the gate.
+    let mut steps = Vec::new();
+    let mut ancestors = Vec::new();
+    let mut current = *input;
+    let target = loop {
+        match ir_arena.get(current) {
+            IR::SimpleProjection { input, columns } => {
+                if !names.all().all(|name| columns.contains(name)) {
+                    return None;
+                }
+                steps.push(Step::Projection(current));
+                current = *input;
+            },
+            IR::Select { input, expr, .. } => {
+                let renamed = expr
+                    .iter()
                     .map(|e| match expr_arena.get(e.node()) {
                         AExpr::Column(column) => Some((e.output_name().clone(), column.clone())),
                         _ => None,
                     })
-                    .collect::<Option<_>>()?,
-            ),
-        ),
-        _ => (*join, None),
-    };
-    let join_name = |name: &PlSmallStr| match &renamed {
-        None => Some(name.clone()),
-        Some(renamed) => renamed.get(name).cloned(),
-    };
-    let IR::Join {
-        input_left: left,
-        input_right: right,
-        options: join_options,
-        ..
-    } = ir_arena.get(join)
-    else {
-        return None;
-    };
-    let (left, right) = (*left, *right);
-    let how = join_options.args.how.clone();
-    if !matches!(how, JoinType::Inner | JoinType::Left)
-        || !unconstrained(&join_options.args)
-        || join_options.args.nulls_equal
-        || !join_options.runtime_filters.is_empty()
-    {
-        return None;
-    }
-    let JoinTypeOptionsIR::Equi {
-        on,
-        fused_predicate: None,
-    } = &join_options.options
-    else {
-        return None;
-    };
-    // A computed key would be applied twice: once by the partial group by and again by the
-    // join, which keeps its key expressions.
-    let (left_keys, right_keys): (Vec<_>, Vec<_>) = on
-        .iter()
-        .map(|(l, r)| {
-            Some((
-                l.plain_column(expr_arena)?.clone(),
-                r.plain_column(expr_arena)?.clone(),
-            ))
-        })
-        .collect::<Option<Vec<_>>>()?
-        .into_iter()
-        .unzip();
-    if right_keys.is_empty() {
-        return None;
-    }
-
-    let left_schema = ir_arena.get(left).schema(ir_arena).into_owned();
-    let right_schema = ir_arena.get(right).schema(ir_arena).into_owned();
-    // Join output name -> R column, for the R columns the join keeps.
-    let right_names = join_right_output_names(&left_schema, &right_schema, join_options).ok()?;
-    let right_by_output: PlIndexMap<PlSmallStr, PlSmallStr> = right_names
-        .into_iter()
-        .zip(right_schema.iter_names())
-        .filter_map(|(output, name)| Some((output?, name.clone())))
-        .collect();
-    // Name seen by the group by -> R column.
-    let from_right: PlIndexMap<PlSmallStr, PlSmallStr> = match &renamed {
-        None => right_by_output,
-        Some(renamed) => renamed
-            .iter()
-            .filter_map(|(seen, output)| Some((seen.clone(), right_by_output.get(output)?.clone())))
-            .collect(),
-    };
-
-    // Group key -> the L column it is.
-    let mut key_columns = Vec::with_capacity(keys.len());
-    for key in keys {
-        let name = join_name(key.plain_column(expr_arena)?)?;
-        if !left_schema.contains(&name) {
-            return None;
+                    .collect::<Option<PlIndexMap<_, _>>>()?;
+                names.through_select(&renamed)?;
+                steps.push(Step::Projection(current));
+                current = *input;
+            },
+            IR::Join { .. } => {
+                if let Some(target) = target_at(current, &names, ir_arena, expr_arena) {
+                    let skip_gate = polars_config::config().eager_aggregation_skip_gate();
+                    if skip_gate || gate_passes(&target, &ancestors, ir_arena, expr_arena) {
+                        break target;
+                    }
+                }
+                let (ancestor, path_is_left) = ancestor_at(current, &names, ir_arena, expr_arena)?;
+                below_ancestor(&mut names, &ancestor, ir_arena)?;
+                steps.push(Step::Join {
+                    node: current,
+                    path_is_left,
+                });
+                current = ancestor.path;
+                ancestors.push(ancestor);
+            },
+            _ => return None,
         }
-        key_columns.push((key.output_name().clone(), name));
-    }
+    };
+    let join = current;
 
+    let right_schema = ir_arena.get(target.right).schema(ir_arena).into_owned();
     let mut leaves = Vec::new();
     for agg in aggs {
         if !collect_leaves(
             agg.node(),
             expr_arena,
-            &from_right,
+            &target.from_right,
             &right_schema,
             &mut leaves,
         ) {
@@ -210,16 +236,18 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
     // A partial count over an R key without a match has no counterpart in the original, so
     // it must not be able to fail. `count` raises above `IdxSize::MAX`, which R's row bound
     // rules out; without a bound (R is a join), counts are summed as u64 instead.
-    let wide_counts = node_stats(right, ir_arena, expr_arena)
+    let wide_counts = node_stats(target.right, ir_arena, expr_arena)
         .and_then(|stats| stats.max_rows())
         .is_none_or(|max_rows| max_rows > IdxSize::MAX as f64);
-    if !polars_config::config().eager_aggregation_skip_gate()
-        && !gate_passes(left, right, &left_keys, &right_keys, ir_arena, expr_arena)
-    {
-        return None;
-    }
 
     let (keys, aggs, output_schema) = (keys.clone(), aggs.clone(), output_schema.clone());
+    let IR::Join {
+        options: join_options,
+        ..
+    } = ir_arena.get(join)
+    else {
+        unreachable!()
+    };
     let join_options = join_options.clone();
 
     // Partial aggregates over R, one per distinct leaf.
@@ -238,6 +266,7 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
         };
         partial_of.push(index);
     }
+    let right_keys = &target.right_keys;
     let partial_aggs = partials
         .iter()
         .map(|(leaf, name)| {
@@ -248,7 +277,7 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
 
     // R rows with a null key match nothing.
     let mut not_null = None;
-    for key in &right_keys {
+    for key in right_keys {
         let column = ExprIR::from_column_name(key.clone(), expr_arena);
         let function = IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull);
         let is_not_null = expr_arena.add(AExpr::Function {
@@ -267,7 +296,7 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
     }
     let not_null = not_null?;
     let filtered_right = ir_arena.add(IR::Filter {
-        input: right,
+        input: target.right,
         predicate: ExprIR::from_node(not_null, expr_arena),
     });
     let partial_keys = right_keys
@@ -287,7 +316,7 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
 
     // Final aggregates over the join output: the same expressions with each leaf replaced
     // by the aggregate that combines its partials.
-    let is_left = matches!(how, JoinType::Left);
+    let is_left = matches!(join_options.args.how, JoinType::Left);
     let mut final_leaves = PlIndexMap::default();
     for ((node, leaf), index) in leaves.iter().zip(partial_of) {
         let partial_column = expr_arena.add(AExpr::Column(partials[index].1.clone()));
@@ -304,23 +333,75 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
         })
         .collect();
 
-    // The group by reads its keys by the names it saw before, and the partials.
-    let mut columns = Vec::with_capacity(key_columns.len() + partials.len());
-    let mut seen = PlIndexSet::default();
-    for (seen_name, column) in &key_columns {
-        if seen.insert(seen_name.clone()) {
-            let node = expr_arena.add(AExpr::Column(column.clone()));
-            columns.push(ExprIR::new(node, OutputName::Alias(seen_name.clone())));
-        }
+    // Rebuild the path bottom-up with R replaced by the partials. Projections keep the
+    // columns that still exist and pass the partials through.
+    let mut new_node = if target.right_is_left {
+        IRBuilder::new(partial, expr_arena, ir_arena).join(target.left, join_options)
+    } else {
+        IRBuilder::new(target.left, expr_arena, ir_arena).join(partial, join_options)
     }
-    for (_, name) in &partials {
-        columns.push(ExprIR::from_column_name(name.clone(), expr_arena));
+    .node();
+    let partial_names: Vec<PlSmallStr> = partials.iter().map(|(_, name)| name.clone()).collect();
+    for step in steps.iter().rev() {
+        new_node = match step {
+            Step::Projection(node) => {
+                let input_schema = ir_arena.get(new_node).schema(ir_arena).into_owned();
+                match ir_arena.get(*node).clone() {
+                    IR::SimpleProjection { columns, .. } => {
+                        let names = columns
+                            .iter_names()
+                            .filter(|name| input_schema.contains(name))
+                            .chain(partial_names.iter())
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        IRBuilder::new(new_node, expr_arena, ir_arena)
+                            .project_simple(names)
+                            .ok()?
+                            .node()
+                    },
+                    IR::Select { expr, options, .. } => {
+                        let mut exprs: Vec<ExprIR> = expr
+                            .into_iter()
+                            .filter(|e| match expr_arena.get(e.node()) {
+                                AExpr::Column(column) => input_schema.contains(column),
+                                _ => false,
+                            })
+                            .collect();
+                        exprs.extend(
+                            partial_names
+                                .iter()
+                                .map(|name| ExprIR::from_column_name(name.clone(), expr_arena)),
+                        );
+                        IRBuilder::new(new_node, expr_arena, ir_arena)
+                            .project(exprs, options)
+                            .node()
+                    },
+                    _ => unreachable!(),
+                }
+            },
+            Step::Join { node, path_is_left } => {
+                let IR::Join {
+                    input_left,
+                    input_right,
+                    options,
+                    ..
+                } = ir_arena.get(*node)
+                else {
+                    unreachable!()
+                };
+                let options = options.clone();
+                if *path_is_left {
+                    let other = *input_right;
+                    IRBuilder::new(new_node, expr_arena, ir_arena).join(other, options)
+                } else {
+                    let other = *input_left;
+                    IRBuilder::new(other, expr_arena, ir_arena).join(new_node, options)
+                }
+                .node()
+            },
+        };
     }
-    let new_join = IRBuilder::new(left, expr_arena, ir_arena)
-        .join(partial, join_options)
-        .project(columns, ProjectionOptions::default())
-        .node();
-    let new_group_by = IRBuilder::new(new_join, expr_arena, ir_arena)
+    let new_group_by = IRBuilder::new(new_node, expr_arena, ir_arena)
         .group_by(
             keys,
             final_aggs,
@@ -337,6 +418,209 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
         return None;
     }
     Some(new_group_by)
+}
+
+/// Plain-column keys of an equi join the rewrite may cross or target: no fused predicate,
+/// nulls never equal, nothing that pins it to its inputs. A computed key would be applied
+/// twice: once by the partial group by and again by the join, which keeps its key
+/// expressions.
+fn join_keys(
+    join: Node,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> Option<(Vec<PlSmallStr>, Vec<PlSmallStr>)> {
+    let IR::Join { options, .. } = ir_arena.get(join) else {
+        return None;
+    };
+    if !unconstrained(&options.args)
+        || options.args.nulls_equal
+        || !options.runtime_filters.is_empty()
+    {
+        return None;
+    }
+    let JoinTypeOptionsIR::Equi {
+        on,
+        fused_predicate: None,
+    } = &options.options
+    else {
+        return None;
+    };
+    let (left_keys, right_keys): (Vec<_>, Vec<_>) = on
+        .iter()
+        .map(|(l, r)| {
+            Some((
+                l.plain_column(expr_arena)?.clone(),
+                r.plain_column(expr_arena)?.clone(),
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .unzip();
+    (!right_keys.is_empty()).then_some((left_keys, right_keys))
+}
+
+fn shares_a_name(a: &Schema, b: &Schema) -> bool {
+    a.iter_names().any(|name| b.contains(name))
+}
+
+/// The target at `join`, if the partial aggregation can go under it: every aggregated
+/// column comes from one input R, and everything else read above comes from the other. A
+/// join key of R may only be read by the join itself.
+fn target_at(
+    join: Node,
+    names: &Names,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> Option<Target> {
+    let (left_keys, right_keys) = join_keys(join, ir_arena, expr_arena)?;
+    let IR::Join {
+        input_left,
+        input_right,
+        options,
+        ..
+    } = ir_arena.get(join)
+    else {
+        return None;
+    };
+    let how = &options.args.how;
+    let left_schema = ir_arena.get(*input_left).schema(ir_arena);
+    let right_schema = ir_arena.get(*input_right).schema(ir_arena);
+    // A join above that filters on a key of this join could have pruned R before.
+    let on_a_key = |name: &PlSmallStr| left_keys.contains(name) || right_keys.contains(name);
+    if names.ancestor_keys.iter().any(on_a_key) {
+        return None;
+    }
+
+    // R on the right. The join may suffix R's names; L's names stay as they are.
+    if matches!(how, JoinType::Inner | JoinType::Left) {
+        let output_names = join_right_output_names(&left_schema, &right_schema, options).ok()?;
+        let right_by_output: PlIndexMap<PlSmallStr, PlSmallStr> = output_names
+            .into_iter()
+            .zip(right_schema.iter_names())
+            .filter_map(|(output, name)| Some((output?, name.clone())))
+            .collect();
+        let from_right = names
+            .leaf_columns
+            .iter()
+            .map(|(seen, name)| Some((seen.clone(), right_by_output.get(name)?.clone())))
+            .collect::<Option<PlIndexMap<_, _>>>();
+        let from_left = |name: &PlSmallStr| left_schema.contains(name);
+        if let Some(from_right) = from_right
+            && names.keys.iter().all(from_left)
+            && names.ancestor_keys.iter().all(from_left)
+        {
+            return Some(Target {
+                left: *input_left,
+                right: *input_right,
+                left_keys,
+                right_keys,
+                right_is_left: false,
+                from_right,
+            });
+        }
+    }
+
+    // R on the left of an inner join. With a shared name the join would suffix L's names.
+    if matches!(how, JoinType::Inner) && !shares_a_name(&left_schema, &right_schema) {
+        let from_right = names
+            .leaf_columns
+            .iter()
+            .map(|(seen, name)| {
+                left_schema
+                    .contains(name)
+                    .then(|| (seen.clone(), name.clone()))
+            })
+            .collect::<Option<PlIndexMap<_, _>>>()?;
+        let from_left = |name: &PlSmallStr| right_schema.contains(name);
+        if names.keys.iter().all(from_left) && names.ancestor_keys.iter().all(from_left) {
+            return Some(Target {
+                left: *input_right,
+                right: *input_left,
+                left_keys: right_keys,
+                right_keys: left_keys,
+                right_is_left: true,
+                from_right,
+            });
+        }
+    }
+    None
+}
+
+/// `join` as a join above the target: an inner join whose aggregated columns all come from
+/// one input, which is where the path continues.
+fn ancestor_at(
+    join: Node,
+    names: &Names,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> Option<(Ancestor, bool)> {
+    let (left_keys, right_keys) = join_keys(join, ir_arena, expr_arena)?;
+    let IR::Join {
+        input_left,
+        input_right,
+        options,
+        ..
+    } = ir_arena.get(join)
+    else {
+        return None;
+    };
+    // Only aggregated columns say which input the path continues into; `len()` reads none.
+    if !matches!(options.args.how, JoinType::Inner) || names.leaf_columns.is_empty() {
+        return None;
+    }
+    let left_schema = ir_arena.get(*input_left).schema(ir_arena);
+    let right_schema = ir_arena.get(*input_right).schema(ir_arena);
+    // Without shared names the join renames nothing, so names pass through unchanged.
+    if shares_a_name(&left_schema, &right_schema) {
+        return None;
+    }
+    let all_in = |schema: &Schema| {
+        names
+            .leaf_columns
+            .iter()
+            .all(|(_, name)| schema.contains(name))
+    };
+    let (path_is_left, ancestor) = if all_in(&left_schema) {
+        (
+            true,
+            Ancestor {
+                path: *input_left,
+                path_keys: left_keys,
+                other: *input_right,
+                other_keys: right_keys,
+            },
+        )
+    } else if all_in(&right_schema) {
+        (
+            false,
+            Ancestor {
+                path: *input_right,
+                path_keys: right_keys,
+                other: *input_left,
+                other_keys: left_keys,
+            },
+        )
+    } else {
+        return None;
+    };
+    Some((ancestor, path_is_left))
+}
+
+/// Names below an ancestor join: what its other input provides is read above the target,
+/// not from it.
+fn below_ancestor(names: &mut Names, ancestor: &Ancestor, ir_arena: &Arena<IR>) -> Option<()> {
+    let path_schema = ir_arena.get(ancestor.path).schema(ir_arena);
+    let other_schema = ir_arena.get(ancestor.other).schema(ir_arena);
+    for list in [&mut names.keys, &mut names.ancestor_keys] {
+        list.retain(|name| !other_schema.contains(name));
+        if !list.iter().all(|name| path_schema.contains(name)) {
+            return None;
+        }
+    }
+    names
+        .ancestor_keys
+        .extend(ancestor.path_keys.iter().cloned());
+    Some(())
 }
 
 /// Fire only if at least this share of R's non-null rows is expected to find a match.
@@ -363,7 +647,8 @@ struct SideStats {
 }
 
 impl SideStats {
-    fn new(stats: &NodeStats, keys: &[PlSmallStr]) -> Option<Self> {
+    /// `null_shares` holds the share of nulls in each key.
+    fn new(stats: &NodeStats, keys: &[PlSmallStr], null_shares: &[f64]) -> Option<Self> {
         let unfiltered = stats.unfiltered.max(1.0);
         let ndv = match keys {
             [key] => stats.key_distinct_estimate(key)?,
@@ -376,16 +661,7 @@ impl SideStats {
             ),
         }
         .max(1.0);
-        let not_null = keys
-            .iter()
-            .map(|key| {
-                let nulls = stats
-                    .column(key)
-                    .and_then(|c| c.null_count.confident(0.0))
-                    .unwrap_or(0);
-                1.0 - (nulls as f64 / unfiltered).clamp(0.0, 1.0)
-            })
-            .product::<f64>();
+        let not_null = null_shares.iter().map(|share| 1.0 - share).product::<f64>();
         let range = match keys {
             [key] => stats.column(key).and_then(|c| c.int_range),
             _ => None,
@@ -410,9 +686,11 @@ impl SideStats {
     }
 
     /// Chance that a key keeps at least one row after the filters, taking the filter as
-    /// independent of the key.
+    /// independent of the key. A side that is a join can drop keys without a filter, so
+    /// this is also capped by its rows: it holds no more keys than rows.
     fn key_survival(&self) -> f64 {
-        1.0 - (1.0 - self.kept()).powf(self.rows_per_key())
+        let independent = 1.0 - (1.0 - self.kept()).powf(self.rows_per_key());
+        independent.min(self.rows / self.ndv)
     }
 }
 
@@ -433,38 +711,112 @@ fn key_overlap(left: &SideStats, right: &SideStats) -> f64 {
     overlap.clamp(0.0, 1.0)
 }
 
+/// The node below `node` whose own column `name` is, through joins and projections.
+fn key_origin(
+    mut node: Node,
+    name: &PlSmallStr,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> (Node, PlSmallStr) {
+    let mut name = name.clone();
+    loop {
+        node = match ir_arena.get(node) {
+            IR::Join {
+                input_left,
+                input_right,
+                ..
+            } => {
+                let in_left = ir_arena.get(*input_left).schema(ir_arena).contains(&name);
+                let in_right = ir_arena.get(*input_right).schema(ir_arena).contains(&name);
+                match (in_left, in_right) {
+                    (true, false) => *input_left,
+                    (false, true) => *input_right,
+                    _ => break,
+                }
+            },
+            IR::SimpleProjection { input, .. } => *input,
+            IR::Select { input, expr, .. } => {
+                let column = expr.iter().find_map(|e| match expr_arena.get(e.node()) {
+                    AExpr::Column(column) if e.output_name() == &name => Some(column.clone()),
+                    _ => None,
+                });
+                match column {
+                    Some(column) => {
+                        name = column;
+                        *input
+                    },
+                    None => break,
+                }
+            },
+            _ => break,
+        };
+    }
+    (node, name)
+}
+
 /// Whether the rewrite is expected to pay off.
 fn gate_passes(
-    left: Node,
-    right: Node,
-    left_keys: &[PlSmallStr],
-    right_keys: &[PlSmallStr],
+    target: &Target,
+    ancestors: &[Ancestor],
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
     let mut cache = StatsCache::new();
-    let mut side = |node, keys| {
+    let mut side = |node, keys: &[PlSmallStr]| {
         let stats = node_stats_with_cache(node, ir_arena, expr_arena, &mut cache)?;
-        SideStats::new(&stats, keys)
+        // A column's statistics still describe the input it comes from, not a join's
+        // output, so its nulls are counted against that input's rows.
+        let null_shares = keys
+            .iter()
+            .map(|key| {
+                let (origin, name) = key_origin(node, key, ir_arena, expr_arena);
+                let origin = node_stats_with_cache(origin, ir_arena, expr_arena, &mut cache)?;
+                let nulls = origin
+                    .column(&name)
+                    .and_then(|c| c.null_count.confident(0.0))
+                    .unwrap_or(0);
+                Some((nulls as f64 / origin.unfiltered.max(1.0)).clamp(0.0, 1.0))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        SideStats::new(&stats, keys, &null_shares)
     };
-    let (Some(left), Some(right)) = (side(left, left_keys), side(right, right_keys)) else {
+    let (Some(left), Some(right)) = (
+        side(target.left, &target.left_keys),
+        side(target.right, &target.right_keys),
+    ) else {
         if polars_config::config().verbose() {
             eprintln!("eager aggregation: no key statistics: skipped");
         }
         return false;
     };
+    // Share of the path's rows each join above keeps: the matched share, pointed at the
+    // path. Not output over input rows, which counts duplicate matches.
+    let mut keeps = Vec::with_capacity(ancestors.len());
+    for ancestor in ancestors {
+        let (Some(path), Some(other)) = (
+            side(ancestor.path, &ancestor.path_keys),
+            side(ancestor.other, &ancestor.other_keys),
+        ) else {
+            if polars_config::config().verbose() {
+                eprintln!("eager aggregation: no key statistics above the join: skipped");
+            }
+            return false;
+        };
+        keeps.push(key_overlap(&other, &path) * other.key_survival() * (1.0 - path.null_share));
+    }
 
     let matched_share = key_overlap(&left, &right) * left.key_survival();
+    let path_share = matched_share * keeps.iter().product::<f64>();
     let right_rows = right.rows * (1.0 - right.null_share);
     let right_keys_left = right.ndv * right.key_survival();
     let rows_per_key = right_rows / right_keys_left.max(1.0);
-    let passes = matched_share >= MIN_MATCHED_SHARE
+    let passes = path_share >= MIN_MATCHED_SHARE
         && rows_per_key >= MIN_ROWS_PER_KEY
         && right_rows >= MIN_RIGHT_ROWS;
     if polars_config::config().verbose() {
         eprintln!(
-            "eager aggregation: matched share {matched_share:.3}, rows per key {rows_per_key:.2}, \
-             right rows {right_rows:.0}: {}",
+            "eager aggregation: matched share {matched_share:.3}, kept above {keeps:.3?}, \
+             rows per key {rows_per_key:.2}, right rows {right_rows:.0}: {}",
             if passes { "fires" } else { "skipped" }
         );
     }

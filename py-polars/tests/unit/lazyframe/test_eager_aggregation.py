@@ -41,15 +41,20 @@ def _right() -> pl.LazyFrame:
 
 
 def _plans(
-    lf: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, *, skip_gate: bool = True
+    lf: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    *,
+    skip_gate: bool = True,
+    optimizations: pl.QueryOptFlags | None = None,
 ) -> tuple[str, str]:
+    optimizations = optimizations or pl.QueryOptFlags()
     plmonkeypatch.setenv(
         "POLARS_EAGER_AGGREGATION_SKIP_GATE", "1" if skip_gate else "0"
     )
     plmonkeypatch.setenv("POLARS_EAGER_AGGREGATION", "1")
-    on = lf.explain(engine="streaming")
+    on = lf.explain(engine="streaming", optimizations=optimizations)
     plmonkeypatch.setenv("POLARS_EAGER_AGGREGATION", "0")
-    off = lf.explain(engine="streaming")
+    off = lf.explain(engine="streaming", optimizations=optimizations)
     plmonkeypatch.setenv("POLARS_EAGER_AGGREGATION", "1")
     return on, off
 
@@ -59,23 +64,31 @@ def _fired(on: str, off: str) -> bool:
 
 
 def _collect_both(
-    lf: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch
+    lf: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    optimizations: pl.QueryOptFlags | None = None,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
+    optimizations = optimizations or pl.QueryOptFlags()
     plmonkeypatch.setenv("POLARS_EAGER_AGGREGATION_SKIP_GATE", "1")
     plmonkeypatch.setenv("POLARS_EAGER_AGGREGATION", "1")
-    on = lf.collect(engine="streaming")
+    on = lf.collect(engine="streaming", optimizations=optimizations)
     plmonkeypatch.setenv("POLARS_EAGER_AGGREGATION", "0")
-    off = lf.collect(engine="streaming")
+    off = lf.collect(engine="streaming", optimizations=optimizations)
     plmonkeypatch.setenv("POLARS_EAGER_AGGREGATION", "1")
     return on, off
 
 
 def _assert_rewrite(
-    lf: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, *, fires: bool, sort_by: Any
+    lf: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    *,
+    fires: bool,
+    sort_by: Any,
+    optimizations: pl.QueryOptFlags | None = None,
 ) -> None:
-    on, off = _plans(lf, plmonkeypatch)
+    on, off = _plans(lf, plmonkeypatch, optimizations=optimizations)
     assert _fired(on, off) == fires, on
-    result, expected = _collect_both(lf, plmonkeypatch)
+    result, expected = _collect_both(lf, plmonkeypatch, optimizations)
     assert_frame_equal(result.sort(sort_by), expected.sort(sort_by), rel_tol=1e-9)
 
 
@@ -273,7 +286,7 @@ def test_eager_aggregation_equal_leaves_share_a_partial(
     )
     _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by="g")
     on, _ = _plans(lf, plmonkeypatch)
-    partial = next(line for line in on.splitlines() if "BY [col(\"k\")]" in line)
+    partial = next(line for line in on.splitlines() if 'BY [col("k")]' in line)
     assert partial.count(".sum()") == 1, partial
     assert partial.count(".count()") == 1, partial
 
@@ -389,8 +402,12 @@ def _scan(tmp_path: Path, name: str, df: pl.DataFrame) -> pl.LazyFrame:
     return pl.scan_parquet(path)
 
 
-def _gate_fires(lf: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch) -> bool:
-    on, off = _plans(lf, plmonkeypatch, skip_gate=False)
+def _gate_fires(
+    lf: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    optimizations: pl.QueryOptFlags | None = None,
+) -> bool:
+    on, off = _plans(lf, plmonkeypatch, skip_gate=False, optimizations=optimizations)
     return _fired(on, off)
 
 
@@ -470,3 +487,267 @@ def test_eager_aggregation_gate(plmonkeypatch: PlMonkeyPatch, tmp_path: Path) ->
     right = _scan(tmp_path, "sel_r", right_frame(rng.integers(0, 100_000, 1_000_000)))
     lf = _count_by_group(left.filter(pl.col("y") * 3 != 7), right, "inner")
     assert not _gate_fires(lf, plmonkeypatch)
+
+
+# Frames without shared column names, like SQL tables: `fact` is aggregated, `cust`
+# holds the group keys, and `nation` sits above them.
+def _fact() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            # Customer 4 does not exist, and one key is null.
+            "f_ck": [1, 1, 1, 2, 2, 3, 4, None],
+            "f_price": [1.0, 2.0, None, 4.0, 5.0, 6.0, 7.0, 8.0],
+            "f_disc": [0.1, 0.2, 0.3, None, 0.5, 0.6, 0.7, 0.8],
+            "f_qty": [1, 2, 3, 4, None, 6, 7, 8],
+            "f_dk": [10, 10, 20, 20, 30, 30, 10, 20],
+        }
+    )
+
+
+def _cust() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            # Customer 5 has no rows in `fact`.
+            "c_ck": [1, 2, 3, 5],
+            "c_name": ["a", "b", "c", "e"],
+            "c_nk": [0, 0, 1, 1],
+        }
+    )
+
+
+def _nation() -> pl.LazyFrame:
+    return pl.LazyFrame({"n_nk": [0, 1], "n_name": ["x", "y"]})
+
+
+def _revenue() -> list[pl.Expr]:
+    e = pl.col("f_price") * (1 - pl.col("f_disc"))
+    return [
+        pl.when(e.count() > 0).then(e.sum()).otherwise(None).alias("revenue"),
+        pl.col("f_qty").max().alias("q"),
+        pl.len().alias("n"),
+    ]
+
+
+def _join(
+    left: pl.LazyFrame, right: pl.LazyFrame, left_on: str, right_on: str, **kwargs: Any
+) -> pl.LazyFrame:
+    return left.join(
+        right, left_on=left_on, right_on=right_on, coalesce=False, **kwargs
+    )
+
+
+@pytest.mark.parametrize("fact_is_left", [True, False])
+def test_eager_aggregation_right_side_either_input(
+    fact_is_left: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    if fact_is_left:
+        joined = _join(_fact(), _cust(), "f_ck", "c_ck")
+    else:
+        joined = _join(_cust(), _fact(), "c_ck", "f_ck")
+    lf = joined.group_by("c_ck", "c_name").agg(_revenue())
+    _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by="c_ck")
+
+
+def test_eager_aggregation_right_side_left_input_rejected(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # A left join keeps the aggregated side's unmatched rows.
+    lf = (
+        _join(_fact(), _cust(), "f_ck", "c_ck", how="left")
+        .group_by("c_ck", "c_name")
+        .agg(pl.col("f_qty").sum())
+    )
+    _assert_rewrite(lf, plmonkeypatch, fires=False, sort_by="c_ck")
+
+    # A name both sides use, and read from both, is suffixed on the other side.
+    fact = _fact().with_columns(c_nk=pl.col("f_qty"))
+    lf = (
+        _join(fact, _cust(), "f_ck", "c_ck")
+        .group_by("c_ck", "c_nk_right")
+        .agg(pl.col("c_nk").sum())
+    )
+    _assert_rewrite(lf, plmonkeypatch, fires=False, sort_by="c_ck")
+
+
+# Join ordering may move a join from above the target into its other input.
+_KEEP_JOIN_ORDER = pl.QueryOptFlags(join_order=False)
+
+
+def _stacked(**kwargs: Any) -> pl.LazyFrame:
+    return _join(
+        _join(_fact(), _cust(), "f_ck", "c_ck"), _nation(), "c_nk", "n_nk", **kwargs
+    )
+
+
+def test_eager_aggregation_stacked_joins(plmonkeypatch: PlMonkeyPatch) -> None:
+    # A group key from the join above, as in TPC-H Q10.
+    lf = _stacked().group_by("c_ck", "c_name", "n_name").agg(_revenue())
+    _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by="c_ck")
+    on, _ = _plans(lf, plmonkeypatch)
+    # The partial aggregation goes under the customer join, not the nation join.
+    partial = next(line for line in on.splitlines() if 'BY [col("f_ck")]' in line)
+    assert "sum()" in partial
+
+    # Three levels: a region above the nation.
+    region = pl.LazyFrame({"r_nk": [0, 1], "r_name": ["p", "q"]})
+    lf = (
+        _join(_stacked(), region, "n_nk", "r_nk")
+        .group_by("r_name", "c_name")
+        .agg(_revenue())
+    )
+    _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by="c_name")
+
+    # The same in SQL.
+    ctx = pl.SQLContext(fact=_fact(), cust=_cust(), nation=_nation())
+    lf = ctx.execute(
+        """
+        SELECT c_ck, c_name, n_name,
+               SUM(f_price * (1 - f_disc)) AS revenue, COUNT(*) AS n
+        FROM fact, cust, nation
+        WHERE f_ck = c_ck AND c_nk = n_nk
+        GROUP BY c_ck, c_name, n_name
+        """
+    )
+    _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by="c_ck")
+
+
+def test_eager_aggregation_stacked_joins_rejected(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    group = ["c_ck", "c_name", "n_name"]
+    agg = pl.col("f_qty").sum()
+
+    # An upper left join.
+    lf = _stacked(how="left").group_by(group).agg(agg)
+    _assert_rewrite(lf, plmonkeypatch, fires=False, sort_by="c_ck")
+
+    # An upper join keyed on an aggregated-side column that is not the target's key.
+    dim = pl.LazyFrame({"d_dk": [10, 20, 30], "d_name": ["u", "v", "w"]})
+    lf = (
+        _join(_join(_fact(), _cust(), "f_ck", "c_ck"), dim, "f_dk", "d_dk")
+        .group_by("c_ck", "d_name")
+        .agg(agg)
+    )
+    _assert_rewrite(lf, plmonkeypatch, fires=False, sort_by=["c_ck", "d_name"])
+
+    # An upper join with an extra condition.
+    lf = (
+        _join(_fact(), _cust(), "f_ck", "c_ck")
+        .join_where(
+            _nation(),
+            pl.col("c_nk") == pl.col("n_nk"),
+            pl.col("c_name") != pl.col("n_name"),
+        )
+        .group_by(group)
+        .agg(agg)
+    )
+    _assert_rewrite(
+        lf, plmonkeypatch, fires=False, sort_by="c_ck", optimizations=_KEEP_JOIN_ORDER
+    )
+
+    # Upper joins keyed on the target's key, through either of its names.
+    for key in ["c_ck", "f_ck"]:
+        above = pl.LazyFrame({"a_ck": [1, 2, 3], "a_name": ["i", "j", "k"]})
+        lf = (
+            _join(_join(_fact(), _cust(), "f_ck", "c_ck"), above, key, "a_ck")
+            .group_by("c_name", "a_name")
+            .agg(agg)
+        )
+        _assert_rewrite(
+            lf,
+            plmonkeypatch,
+            fires=False,
+            sort_by="c_name",
+            optimizations=_KEEP_JOIN_ORDER,
+        )
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"validate": "1:1"},
+        {"validate": "1:m"},
+        {"validate": "m:1"},
+        {"maintain_order": "left"},
+    ],
+)
+def test_eager_aggregation_constrained_upper_join(
+    kwargs: dict[str, Any], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Duplicate nation keys make `validate` fail, in the original and after the rewrite.
+    nation = pl.LazyFrame({"n_nk": [0, 0, 1], "n_name": ["x", "x2", "y"]})
+    lf = (
+        _join(_join(_fact(), _cust(), "f_ck", "c_ck"), nation, "c_nk", "n_nk", **kwargs)
+        .group_by("c_ck", "n_name")
+        .agg(pl.col("f_qty").sum())
+    )
+    on, off = _plans(lf, plmonkeypatch)
+    assert not _fired(on, off), on
+    if "validate" in kwargs and kwargs["validate"] != "1:m":
+        plmonkeypatch.setenv("POLARS_EAGER_AGGREGATION", "1")
+        with pytest.raises(pl.exceptions.ComputeError):
+            lf.collect(engine="streaming")
+
+
+def test_eager_aggregation_sliced_upper_join(plmonkeypatch: PlMonkeyPatch) -> None:
+    # Which rows the slice keeps is not fixed, so only the plan is compared.
+    lf = _stacked().head(3).group_by("c_ck", "n_name").agg(pl.col("f_qty").sum())
+    on, off = _plans(lf, plmonkeypatch)
+    assert not _fired(on, off), on
+
+
+def test_eager_aggregation_gate_above_the_target(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    rng = np.random.default_rng(1)
+    n_cust = 100_000
+    fact = _scan(
+        tmp_path,
+        "fact",
+        pl.DataFrame(
+            {
+                "f_ck": rng.integers(0, n_cust, 1_000_000),
+                "f_qty": rng.integers(0, 100, 1_000_000),
+            }
+        ),
+    )
+
+    def cust(nation_keys: Any) -> pl.LazyFrame:
+        df = pl.DataFrame({"c_ck": np.arange(n_cust), "c_nk": nation_keys})
+        return _scan(tmp_path, f"cust_{rng.integers(1 << 30)}", df)
+
+    def query(cust: pl.LazyFrame, nation: pl.LazyFrame) -> pl.LazyFrame:
+        return (
+            _join(_join(fact, cust, "f_ck", "c_ck"), nation, "c_nk", "n_nk")
+            .group_by("c_ck", "n_name")
+            .agg(pl.col("f_qty").sum())
+        )
+
+    def nation(keys: Any) -> pl.LazyFrame:
+        df = pl.DataFrame({"n_nk": keys, "n_name": [str(k) for k in keys]})
+        return _scan(tmp_path, f"nation_{rng.integers(1 << 30)}", df)
+
+    all_nations = cust(np.arange(n_cust) % 25)
+    # The nation join keeps every customer.
+    assert _gate_fires(
+        query(all_nations, nation(np.arange(25))), plmonkeypatch, _KEEP_JOIN_ORDER
+    )
+    # It keeps one nation of 25.
+    one_nation = nation(np.arange(25)).filter(pl.col("n_name") == "3")
+    assert not _gate_fires(
+        query(all_nations, one_nation), plmonkeypatch, _KEEP_JOIN_ORDER
+    )
+    # One matching customer, repeated many times above: the join above is as large as
+    # its input but keeps 1 % of the customers.
+    dup_nation = nation(np.zeros(100, dtype=np.int64))
+    one_in_100 = cust(np.where(np.arange(n_cust) % 100 == 0, 0, 1_000))
+    assert not _gate_fires(
+        query(one_in_100, dup_nation), plmonkeypatch, _KEEP_JOIN_ORDER
+    )
+    # Most customers have no nation key.
+    mostly_null = cust(
+        pl.Series(np.arange(n_cust) % 25).scatter(range(5_000, n_cust), None)
+    )
+    assert not _gate_fires(
+        query(mostly_null, nation(np.arange(25))), plmonkeypatch, _KEEP_JOIN_ORDER
+    )
