@@ -15,7 +15,6 @@ polars-arrow = { workspace = true }
 polars-core = { workspace = true }
 
 
-# FIXME: this crate should not have features.
 [features]
 dsl_rewrite = []
 

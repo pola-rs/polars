@@ -39,9 +39,6 @@ pub enum DslRewriteSource {
     },
 }
 
-// FIXME: feature flag dsl_rewrite should be behind 'serde'.
-// 'ffi_plugin' should be behiind dsl_rewrite.
-
 impl DslRewriteSource {
     pub fn rewrite(&self, inputs: &[Field], input_schema: &Schema) -> PolarsResult<Expr> {
         match self {

@@ -110,7 +110,47 @@ out = df.with_columns(
 ```
 
 See the full example in [example/derive_expression]:
-https://github.com/pola-rs/pyo3-polars/tree/main/example/derive_expression
+<https://github.com/pola-rs/pyo3-polars/tree/main/example/derive_expression>
+
+### Rewrites
+
+With the `dsl_rewrite` feature, a plugin can also decide _during query planning_ what an expression
+becomes, based on the resolved input types (including extension type metadata). The function
+returns a Polars expression, in which `rewrite_input(i)` refers to the `i`-th argument. That
+expression can use native Polars expressions, so the optimizer keeps working on it, as well as
+functions of the plugin (via `context: RewriteContext`).
+
+```rust
+use polars::prelude::*;
+use pyo3_polars::rewrite::*;
+
+#[derive(Deserialize)]
+struct ToUnitKwargs {
+    unit: String,
+}
+
+/// Convert a length column to another unit; the current unit is stored in the extension metadata.
+#[polars_rewrite]
+fn to_unit(inputs: &[Field], kwargs: ToUnitKwargs) -> PolarsResult<Expr> {
+    let from = inputs[0].extension_metadata().unwrap_or_default();
+    let factor = meters_per_unit(&from)? / meters_per_unit(&kwargs.unit)?;
+    Ok((rewrite_input(0).ext().storage() * lit(factor))
+        .ext()
+        .to(length(&kwargs.unit)))
+}
+```
+
+```python
+def to_unit(expr: IntoExprColumn, unit: str) -> pl.Expr:
+    return register_plugin_rewrite(
+        plugin_path=LIB, function_name="to_unit", args=[expr], kwargs={"unit": unit}
+    )
+```
+
+Polars does not check the data type of the returned expression, so pin it with `.ext().to(..)` or
+`.cast(..)` where it matters and test it in the plugin's test suite, e.g.
+`assert lf.select(to_unit("a", "mm")).collect_schema() == {"a": length("mm")}`.
+See the [user guide](https://docs.pola.rs/user-guide/plugins/expr_plugins/) for the current limitations.
 
 ## 2. PyO3 extensions for Polars
 
@@ -125,7 +165,7 @@ beyond that the latest definitions should work for the latest version of Polars.
 
 This will output:
 
-```
+```text
 shape: (2, 2)
 ┌───────────┬───────────────┐
 │ list_a    ┆ list_b        │
