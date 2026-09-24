@@ -524,11 +524,12 @@ impl SampleState {
                     Some(JoinBuildSide::PreferRight) if params.runtime_filters.is_empty() => false,
                     Some(JoinBuildSide::ForceLeft | JoinBuildSide::ForceRight) => unreachable!(),
                     _ => {
-                        // Estimate cardinality and choose smaller, minimizing expected memory usage.
+                        // The side repeating its keys more is likely the bigger one, so
+                        // choose the smaller side, minimizing expected memory usage.
                         let (lc, rc) = estimate_cardinalities()?;
                         let ls = estimate_size_per_row(&self.left);
                         let rs = estimate_size_per_row(&self.right);
-                        lc * ls < rc * rs
+                        ls * rc < rs * lc
                     },
                 }
             },

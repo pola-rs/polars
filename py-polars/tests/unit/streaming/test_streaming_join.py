@@ -847,3 +847,24 @@ def test_streaming_join_unmatched_build_order_coalesce_29362(
     expected = q.collect(engine="in-memory")
     assert expected["row"].to_list() == list(range(9))
     assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+@pytest.mark.parametrize("swap", [False, True])
+def test_streaming_join_builds_side_repeating_keys_less(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str], swap: bool
+) -> None:
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+
+    # Both sides fill the sample. Each key repeats four times on the fact side,
+    # so it holds four times the rows and the dimension is built.
+    fact = pl.LazyFrame({"k": [i // 4 for i in range(4000)], "v": range(4000)})
+    dim = pl.LazyFrame({"k": range(1000), "d": range(1000)})
+    left, right = (dim, fact) if swap else (fact, dim)
+    q = left.join(right, on="k")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    assert f"build side chosen: {'left' if swap else 'right'}" in err
+    assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
