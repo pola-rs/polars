@@ -13,9 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Lint Markdown and TOML
-        uses: dprint/check@v2.3
+        uses: dprint/check@v2.5
       - name: Spell Check with Typos
-        uses: crate-ci/typos@v1.48.0
+        uses: crate-ci/typos@v1.50.2
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Check for FIXME comments

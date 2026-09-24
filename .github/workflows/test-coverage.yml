@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Free some disk space (remove unused packages)
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@v2.0.0
         with:
           # Instrumented builds link near the runner's memory ceiling, so keep swap.
           swap-storage: false
@@ -99,13 +99,13 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Free some disk space (remove unused packages)
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@v2.0.0
         with:
           # Instrumented builds link near the runner's memory ceiling, so keep swap.
           swap-storage: false
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           check-latest: true
