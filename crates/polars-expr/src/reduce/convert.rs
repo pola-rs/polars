@@ -44,14 +44,18 @@ pub fn into_reduction(
         AExpr::Agg(agg) => match agg {
             IRAggExpr::Sum(input) => (new_sum_reduction(get_dt(*input)?)?, *input),
             IRAggExpr::SumCounts(input) => {
-                let dtype = get_dt(*input)?;
-                // `IdxSize` counts can't overflow the u64 sum; u64 partial counts can.
-                let reduction: Box<dyn GroupedReduction> =
-                    if dtype == DataType::IDX_DTYPE && dtype != DataType::UInt64 {
+                // u64 partial counts are added saturating; `IdxSize` counts cannot overflow
+                // the u64 sum.
+                let reduction: Box<dyn GroupedReduction> = match get_dt(*input)? {
+                    DataType::UInt64 => Box::new(CountSumReducer::new_grouped_reduction()),
+                    dtype if dtype == DataType::IDX_DTYPE => {
                         Box::new(IdxTypeCheckedSumReducer::new_grouped_reduction())
-                    } else {
-                        CountSumReducer::new_grouped_reduction(dtype)?
-                    };
+                    },
+                    dtype => polars_bail!(
+                        InvalidOperation: "sum of counts expects {} or u64 input, got {}",
+                        DataType::IDX_DTYPE, dtype
+                    ),
+                };
                 (reduction, *input)
             },
             IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?)?, *input),

@@ -20,11 +20,9 @@ use polars_utils::pl_str::unique_column_name;
 
 use super::join_utils::unconstrained;
 use crate::plans::schema::join_right_output_names;
-use crate::plans::stats::{
-    NodeStats, StatsCache, composite_key_domain, node_stats, node_stats_with_cache,
-};
+use crate::plans::stats::{NodeStats, StatsCache, composite_key_domain, node_stats_with_cache};
 use crate::plans::{
-    AExpr, ExprIR, IR, IRAggExpr, IRBooleanFunction, IRBuilder, IRFunctionExpr, JoinTypeOptionsIR,
+    AExpr, AExprBuilder, ExprIR, IR, IRAggExpr, IRBuilder, IRFunctionExpr, JoinTypeOptionsIR,
     LiteralValue, OutputName, ToFieldContext, aexpr_to_leaf_names_iter,
 };
 use crate::prelude::{GroupbyOptions, JoinType, Operator};
@@ -75,6 +73,14 @@ enum Step {
     Projection(Node),
     /// An inner join above the target. The path continues into one of its inputs.
     Join { node: Node, path_is_left: bool },
+}
+
+impl Step {
+    fn node(&self) -> Node {
+        match self {
+            Step::Projection(node) | Step::Join { node, .. } => *node,
+        }
+    }
 }
 
 /// A join above the target, as the gate sees it.
@@ -155,66 +161,8 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
         return None;
     }
 
-    let mut names = Names {
-        keys: keys
-            .iter()
-            .map(|key| key.plain_column(expr_arena).cloned())
-            .collect::<Option<_>>()?,
-        leaf_columns: aggs
-            .iter()
-            .flat_map(|agg| aexpr_to_leaf_names_iter(agg.node(), expr_arena))
-            .collect::<PlIndexSet<_>>()
-            .into_iter()
-            .map(|name| (name.clone(), name.clone()))
-            .collect(),
-        ancestor_keys: Vec::new(),
-    };
-
-    // Walk down to the first join that can take the partial aggregation and passes the gate.
-    let mut steps = Vec::new();
-    let mut ancestors = Vec::new();
-    let mut current = *input;
-    let target = loop {
-        match ir_arena.get(current) {
-            IR::SimpleProjection { input, columns } => {
-                if !names.all().all(|name| columns.contains(name)) {
-                    return None;
-                }
-                steps.push(Step::Projection(current));
-                current = *input;
-            },
-            IR::Select { input, expr, .. } => {
-                let renamed = expr
-                    .iter()
-                    .map(|e| match expr_arena.get(e.node()) {
-                        AExpr::Column(column) => Some((e.output_name().clone(), column.clone())),
-                        _ => None,
-                    })
-                    .collect::<Option<PlIndexMap<_, _>>>()?;
-                names.through_select(&renamed)?;
-                steps.push(Step::Projection(current));
-                current = *input;
-            },
-            IR::Join { .. } => {
-                if let Some(target) = target_at(current, &names, ir_arena, expr_arena) {
-                    let skip_gate = polars_config::config().eager_aggregation_skip_gate();
-                    if skip_gate || gate_passes(&target, &ancestors, ir_arena, expr_arena) {
-                        break target;
-                    }
-                }
-                let (ancestor, path_is_left) = ancestor_at(current, &names, ir_arena, expr_arena)?;
-                below_ancestor(&mut names, &ancestor, ir_arena)?;
-                steps.push(Step::Join {
-                    node: current,
-                    path_is_left,
-                });
-                current = ancestor.path;
-                ancestors.push(ancestor);
-            },
-            _ => return None,
-        }
-    };
-    let join = current;
+    let mut cache = StatsCache::new();
+    let (target, join, steps) = find_target(*input, keys, aggs, ir_arena, expr_arena, &mut cache)?;
 
     let right_schema = ir_arena.get(target.right).schema(ir_arena).into_owned();
     let mut leaves = Vec::new();
@@ -236,7 +184,7 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
     // A partial count over an R key without a match has no counterpart in the original, so
     // it must not be able to fail. `count` raises above `IdxSize::MAX`, which R's row bound
     // rules out; without a bound (R is a join), counts are summed as u64 instead.
-    let wide_counts = node_stats(target.right, ir_arena, expr_arena)
+    let wide_counts = node_stats_with_cache(target.right, ir_arena, expr_arena, &mut cache)
         .and_then(|stats| stats.max_rows())
         .is_none_or(|max_rows| max_rows > IdxSize::MAX as f64);
 
@@ -266,53 +214,7 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
         };
         partial_of.push(index);
     }
-    let right_keys = &target.right_keys;
-    let partial_aggs = partials
-        .iter()
-        .map(|(leaf, name)| {
-            let node = partial_agg(leaf, &right_keys[0], wide_counts, expr_arena);
-            ExprIR::new(node, OutputName::Alias(name.clone()))
-        })
-        .collect();
-
-    // R rows with a null key match nothing.
-    let mut not_null = None;
-    for key in right_keys {
-        let column = ExprIR::from_column_name(key.clone(), expr_arena);
-        let function = IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull);
-        let is_not_null = expr_arena.add(AExpr::Function {
-            input: vec![column],
-            options: function.function_options(),
-            function,
-        });
-        not_null = Some(match not_null {
-            None => is_not_null,
-            Some(left) => expr_arena.add(AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right: is_not_null,
-            }),
-        });
-    }
-    let not_null = not_null?;
-    let filtered_right = ir_arena.add(IR::Filter {
-        input: target.right,
-        predicate: ExprIR::from_node(not_null, expr_arena),
-    });
-    let partial_keys = right_keys
-        .iter()
-        .map(|key| ExprIR::from_column_name(key.clone(), expr_arena))
-        .collect();
-    let partial = IRBuilder::new(filtered_right, expr_arena, ir_arena)
-        .group_by(
-            partial_keys,
-            partial_aggs,
-            None,
-            false,
-            Arc::new(GroupbyOptions::default()),
-        )
-        .ok()?
-        .node();
+    let partial = partial_group_by(&target, &partials, wide_counts, ir_arena, expr_arena)?;
 
     // Final aggregates over the join output: the same expressions with each leaf replaced
     // by the aggregate that combines its partials.
@@ -333,75 +235,15 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
         })
         .collect();
 
-    // Rebuild the path bottom-up with R replaced by the partials. Projections keep the
-    // columns that still exist and pass the partials through.
-    let mut new_node = if target.right_is_left {
+    let new_join = if target.right_is_left {
         IRBuilder::new(partial, expr_arena, ir_arena).join(target.left, join_options)
     } else {
         IRBuilder::new(target.left, expr_arena, ir_arena).join(partial, join_options)
     }
     .node();
-    let partial_names: Vec<PlSmallStr> = partials.iter().map(|(_, name)| name.clone()).collect();
-    for step in steps.iter().rev() {
-        new_node = match step {
-            Step::Projection(node) => {
-                let input_schema = ir_arena.get(new_node).schema(ir_arena).into_owned();
-                match ir_arena.get(*node).clone() {
-                    IR::SimpleProjection { columns, .. } => {
-                        let names = columns
-                            .iter_names()
-                            .filter(|name| input_schema.contains(name))
-                            .chain(partial_names.iter())
-                            .cloned()
-                            .collect::<Vec<_>>();
-                        IRBuilder::new(new_node, expr_arena, ir_arena)
-                            .project_simple(names)
-                            .ok()?
-                            .node()
-                    },
-                    IR::Select { expr, options, .. } => {
-                        let mut exprs: Vec<ExprIR> = expr
-                            .into_iter()
-                            .filter(|e| match expr_arena.get(e.node()) {
-                                AExpr::Column(column) => input_schema.contains(column),
-                                _ => false,
-                            })
-                            .collect();
-                        exprs.extend(
-                            partial_names
-                                .iter()
-                                .map(|name| ExprIR::from_column_name(name.clone(), expr_arena)),
-                        );
-                        IRBuilder::new(new_node, expr_arena, ir_arena)
-                            .project(exprs, options)
-                            .node()
-                    },
-                    _ => unreachable!(),
-                }
-            },
-            Step::Join { node, path_is_left } => {
-                let IR::Join {
-                    input_left,
-                    input_right,
-                    options,
-                    ..
-                } = ir_arena.get(*node)
-                else {
-                    unreachable!()
-                };
-                let options = options.clone();
-                if *path_is_left {
-                    let other = *input_right;
-                    IRBuilder::new(new_node, expr_arena, ir_arena).join(other, options)
-                } else {
-                    let other = *input_left;
-                    IRBuilder::new(other, expr_arena, ir_arena).join(new_node, options)
-                }
-                .node()
-            },
-        };
-    }
-    let new_group_by = IRBuilder::new(new_node, expr_arena, ir_arena)
+    let partial_names: Vec<PlSmallStr> = partials.into_iter().map(|(_, name)| name).collect();
+    let new_input = rebuild_path(&steps, new_join, &partial_names, ir_arena, expr_arena)?;
+    let new_group_by = IRBuilder::new(new_input, expr_arena, ir_arena)
         .group_by(
             keys,
             final_aggs,
@@ -418,6 +260,197 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
         return None;
     }
     Some(new_group_by)
+}
+
+/// Walks down from the group by's input to the first join that can take the partial
+/// aggregation and passes the gate. Returns it, the join node, and the nodes above it.
+fn find_target(
+    input: Node,
+    keys: &[ExprIR],
+    aggs: &[ExprIR],
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+    cache: &mut StatsCache,
+) -> Option<(Target, Node, Vec<Step>)> {
+    let mut names = Names {
+        keys: keys
+            .iter()
+            .map(|key| key.plain_column(expr_arena).cloned())
+            .collect::<Option<_>>()?,
+        leaf_columns: aggs
+            .iter()
+            .flat_map(|agg| aexpr_to_leaf_names_iter(agg.node(), expr_arena))
+            .collect::<PlIndexSet<_>>()
+            .into_iter()
+            .map(|name| (name.clone(), name.clone()))
+            .collect(),
+        ancestor_keys: Vec::new(),
+    };
+    let mut steps = Vec::new();
+    let mut ancestors = Vec::new();
+    let mut current = input;
+    loop {
+        match ir_arena.get(current) {
+            IR::SimpleProjection { input, columns } => {
+                if !names.all().all(|name| columns.contains(name)) {
+                    return None;
+                }
+                steps.push(Step::Projection(current));
+                current = *input;
+            },
+            IR::Select { input, expr, .. } => {
+                let renamed = expr
+                    .iter()
+                    .map(|e| match expr_arena.get(e.node()) {
+                        AExpr::Column(column) => Some((e.output_name().clone(), column.clone())),
+                        _ => None,
+                    })
+                    .collect::<Option<PlIndexMap<_, _>>>()?;
+                names.through_select(&renamed)?;
+                steps.push(Step::Projection(current));
+                current = *input;
+            },
+            IR::Join { .. } => {
+                if let Some(target) = target_at(current, &names, ir_arena, expr_arena) {
+                    let skip_gate = polars_config::config().eager_aggregation_skip_gate();
+                    if skip_gate || gate_passes(&target, &ancestors, ir_arena, expr_arena, cache) {
+                        return Some((target, current, steps));
+                    }
+                }
+                let (ancestor, path_is_left) = ancestor_at(current, &names, ir_arena, expr_arena)?;
+                below_ancestor(&mut names, &ancestor, ir_arena)?;
+                steps.push(Step::Join {
+                    node: current,
+                    path_is_left,
+                });
+                current = ancestor.path;
+                ancestors.push(ancestor);
+            },
+            _ => return None,
+        }
+    }
+}
+
+/// `GroupBy(Filter(R, keys not null), R's join keys, partials)`. R rows with a null key match
+/// nothing.
+fn partial_group_by(
+    target: &Target,
+    partials: &[(Leaf, PlSmallStr)],
+    wide_counts: bool,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<Node> {
+    let right_keys = &target.right_keys;
+    let partial_aggs = partials
+        .iter()
+        .map(|(leaf, name)| {
+            let node = partial_agg(leaf, &right_keys[0], wide_counts, expr_arena);
+            ExprIR::new(node, OutputName::Alias(name.clone()))
+        })
+        .collect();
+
+    let mut not_null = None;
+    for key in right_keys {
+        let is_not_null = AExprBuilder::col(key.clone(), expr_arena)
+            .is_not_null(expr_arena)
+            .node();
+        not_null = Some(match not_null {
+            None => is_not_null,
+            Some(left) => expr_arena.add(AExpr::BinaryExpr {
+                left,
+                op: Operator::And,
+                right: is_not_null,
+            }),
+        });
+    }
+    let filtered_right = ir_arena.add(IR::Filter {
+        input: target.right,
+        predicate: ExprIR::from_node(not_null?, expr_arena),
+    });
+    let partial_keys = right_keys
+        .iter()
+        .map(|key| ExprIR::from_column_name(key.clone(), expr_arena))
+        .collect();
+    let partial = IRBuilder::new(filtered_right, expr_arena, ir_arena)
+        .group_by(
+            partial_keys,
+            partial_aggs,
+            None,
+            false,
+            Arc::new(GroupbyOptions::default()),
+        )
+        .ok()?
+        .node();
+    Some(partial)
+}
+
+/// Rebuilds the nodes above the target join bottom-up over `new_join`. Projections keep the
+/// columns that still exist and pass the partials through.
+fn rebuild_path(
+    steps: &[Step],
+    new_join: Node,
+    partial_names: &[PlSmallStr],
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<Node> {
+    let mut new_node = new_join;
+    for step in steps.iter().rev() {
+        let input_schema = ir_arena.get(new_node).schema(ir_arena).into_owned();
+        new_node = match (step, ir_arena.get(step.node())) {
+            (Step::Projection(_), IR::SimpleProjection { columns, .. }) => {
+                let names: Vec<_> = columns
+                    .iter_names()
+                    .filter(|name| input_schema.contains(name))
+                    .chain(partial_names)
+                    .cloned()
+                    .collect();
+                IRBuilder::new(new_node, expr_arena, ir_arena)
+                    .project_simple(names)
+                    .ok()?
+                    .node()
+            },
+            (Step::Projection(_), IR::Select { expr, options, .. }) => {
+                let options = *options;
+                let mut exprs: Vec<ExprIR> = expr
+                    .iter()
+                    .filter(|e| match expr_arena.get(e.node()) {
+                        AExpr::Column(column) => input_schema.contains(column),
+                        _ => false,
+                    })
+                    .cloned()
+                    .collect();
+                exprs.extend(
+                    partial_names
+                        .iter()
+                        .map(|name| ExprIR::from_column_name(name.clone(), expr_arena)),
+                );
+                IRBuilder::new(new_node, expr_arena, ir_arena)
+                    .project(exprs, options)
+                    .node()
+            },
+            (
+                Step::Join { path_is_left, .. },
+                IR::Join {
+                    input_left,
+                    input_right,
+                    options,
+                    ..
+                },
+            ) => {
+                let options = options.clone();
+                if *path_is_left {
+                    let other = *input_right;
+                    IRBuilder::new(new_node, expr_arena, ir_arena).join(other, options)
+                } else {
+                    let other = *input_left;
+                    IRBuilder::new(other, expr_arena, ir_arena).join(new_node, options)
+                }
+                .node()
+            },
+            _ => unreachable!(),
+        };
+    }
+    Some(new_node)
 }
 
 /// Plain-column keys of an equi join the rewrite may cross or target: no fused predicate,
@@ -724,14 +757,31 @@ fn key_origin(
             IR::Join {
                 input_left,
                 input_right,
+                options,
                 ..
             } => {
-                let in_left = ir_arena.get(*input_left).schema(ir_arena).contains(&name);
-                let in_right = ir_arena.get(*input_right).schema(ir_arena).contains(&name);
-                match (in_left, in_right) {
-                    (true, false) => *input_left,
-                    (false, true) => *input_right,
-                    _ => break,
+                // A join keeps the left names and may suffix the right ones.
+                let left_schema = ir_arena.get(*input_left).schema(ir_arena);
+                if left_schema.contains(&name) {
+                    *input_left
+                } else {
+                    let right_schema = ir_arena.get(*input_right).schema(ir_arena);
+                    let Ok(output_names) =
+                        join_right_output_names(&left_schema, &right_schema, options)
+                    else {
+                        break;
+                    };
+                    let column = output_names
+                        .into_iter()
+                        .zip(right_schema.iter_names())
+                        .find_map(|(output, column)| (output? == name).then(|| column.clone()));
+                    match column {
+                        Some(column) => {
+                            name = column;
+                            *input_right
+                        },
+                        None => break,
+                    }
                 }
             },
             IR::SimpleProjection { input, .. } => *input,
@@ -760,17 +810,17 @@ fn gate_passes(
     ancestors: &[Ancestor],
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
+    cache: &mut StatsCache,
 ) -> bool {
-    let mut cache = StatsCache::new();
     let mut side = |node, keys: &[PlSmallStr]| {
-        let stats = node_stats_with_cache(node, ir_arena, expr_arena, &mut cache)?;
+        let stats = node_stats_with_cache(node, ir_arena, expr_arena, cache)?;
         // A column's statistics still describe the input it comes from, not a join's
         // output, so its nulls are counted against that input's rows.
         let null_shares = keys
             .iter()
             .map(|key| {
                 let (origin, name) = key_origin(node, key, ir_arena, expr_arena);
-                let origin = node_stats_with_cache(origin, ir_arena, expr_arena, &mut cache)?;
+                let origin = node_stats_with_cache(origin, ir_arena, expr_arena, cache)?;
                 let nulls = origin
                     .column(&name)
                     .and_then(|c| c.null_count.confident(0.0))
@@ -1028,17 +1078,10 @@ fn partial_agg(
 
 /// `input.is_not_null().cast(UInt64)`: one for each value that `count` counts.
 fn count_as_u64(input: Node, expr_arena: &mut Arena<AExpr>) -> Node {
-    let function = IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull);
-    let is_not_null = expr_arena.add(AExpr::Function {
-        input: vec![ExprIR::from_node(input, expr_arena)],
-        options: function.function_options(),
-        function,
-    });
-    expr_arena.add(AExpr::Cast {
-        expr: is_not_null,
-        dtype: DataType::UInt64,
-        options: CastOptions::Strict,
-    })
+    AExprBuilder::new_from_node(input)
+        .is_not_null(expr_arena)
+        .cast(DataType::UInt64, expr_arena)
+        .node()
 }
 
 fn final_agg(

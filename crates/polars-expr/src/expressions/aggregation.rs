@@ -17,27 +17,47 @@ use crate::expressions::{AggState, AggregationContext, PhysicalExpr};
 use crate::reduce::GroupedReduction;
 use crate::reduce::sum::count_to_idx;
 
-/// Sums the counts in `c` per group, saturating like `CountSumReducer`, with the same error
-/// `count` raises when a total does not fit `IdxSize`.
+/// Sums the counts in `c` per group, with the same error `count` raises when a total does not
+/// fit `IdxSize`.
 fn sum_counts_per_group(c: &Column, groups: &GroupsType) -> PolarsResult<Column> {
-    let c = c.cast(&DataType::UInt64)?;
-    let ca = c.u64()?.rechunk();
-    let arr = ca.downcast_as_array();
-    let sum = |rows: &mut dyn Iterator<Item = usize>| {
-        count_to_idx(rows.fold(0u64, |acc, i| acc.saturating_add(arr.get(i).unwrap_or(0))))
+    let wide = c.cast(&DataType::UInt64)?;
+    let sums = if c.dtype() == &DataType::UInt64 {
+        // u64 partial counts can overflow the sum, so they are added saturating, like
+        // `CountSumReducer` does.
+        let ca = wide.u64()?.rechunk();
+        let arr = ca.downcast_as_array();
+        let values = arr.values().as_slice();
+        let has_nulls = ca.null_count() > 0;
+        let sum = |rows: &mut dyn Iterator<Item = usize>| {
+            rows.fold(0u64, |acc, i| {
+                let value = if has_nulls {
+                    arr.get(i).unwrap_or(0)
+                } else {
+                    values[i]
+                };
+                acc.saturating_add(value)
+            })
+        };
+        let sums: Vec<u64> = match groups {
+            GroupsType::Idx(idx) => idx
+                .all()
+                .iter()
+                .map(|g| sum(&mut g.iter().map(|&i| i as usize)))
+                .collect(),
+            GroupsType::Slice { groups, .. } => groups
+                .iter()
+                .map(|&[start, len]| sum(&mut (start as usize..(start + len) as usize)))
+                .collect(),
+        };
+        UInt64Chunked::from_vec(c.name().clone(), sums).into_column()
+    } else {
+        // SAFETY: the groups index into `c`.
+        unsafe { wide.agg_sum(groups) }
     };
-    let sums = match groups {
-        GroupsType::Idx(idx) => idx
-            .all()
-            .iter()
-            .map(|g| sum(&mut g.iter().map(|&i| i as usize)))
-            .collect::<PolarsResult<Vec<_>>>()?,
-        GroupsType::Slice { groups, .. } => groups
-            .iter()
-            .map(|&[start, len]| sum(&mut (start as usize..(start + len) as usize)))
-            .collect::<PolarsResult<Vec<_>>>()?,
-    };
-    Ok(IdxCa::from_vec(c.name().clone(), sums).into_column())
+    if let Some(max) = sums.u64()?.max() {
+        count_to_idx(max)?;
+    }
+    sums.cast(&IDX_DTYPE)
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -281,12 +281,8 @@ impl Reducer for IdxTypeCheckedSumReducer {
 pub struct CountSumReducer;
 
 impl CountSumReducer {
-    pub fn new_grouped_reduction(in_dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
-        polars_ensure!(
-            in_dtype == DataType::UInt64,
-            InvalidOperation: "sum of counts expects u64 input, got {}", in_dtype
-        );
-        Ok(Box::new(VecGroupedReduction::new(in_dtype, Self)))
+    pub fn new_grouped_reduction() -> VecGroupedReduction<Self> {
+        VecGroupedReduction::new(DataType::UInt64, Self)
     }
 }
 
