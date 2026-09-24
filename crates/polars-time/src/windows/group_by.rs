@@ -185,7 +185,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
     start_offset: usize,
     upper_bound: Option<usize>,
 ) -> PolarsResult<impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_> {
-    debug_assert!(offset.duration_ns() == period.duration_ns());
+    debug_assert_eq!(offset, -period);
     debug_assert!(offset.negative);
 
     let upper_bound = upper_bound.unwrap_or(time.len());
@@ -555,7 +555,7 @@ pub fn group_by_values(
     // we have a (partial) lookbehind window
     if offset.negative && !offset.is_zero() {
         // lookbehind
-        if offset.duration_ns() == period.duration_ns() {
+        if offset == -period {
             // t is right at the end of the window
             // ------t---
             // [------]

@@ -217,6 +217,34 @@ def test_rolling_negative_offset(
     assert_frame_equal(result, expected)
 
 
+def test_rolling_offset_period_structural_equality_29199() -> None:
+    def rolling_counts(
+        ts: list[datetime], period: str, offset: str, time_zone: str | None = None
+    ) -> tuple[list[int], list[int]]:
+        lf = pl.LazyFrame({"t": ts})
+        if time_zone is not None:
+            lf = lf.with_columns(pl.col("t").dt.replace_time_zone(time_zone))
+        lf = lf.rolling(index_column="t", period=period, offset=offset).agg(pl.len())
+        return lf.collect()["len"].to_list(), lf.collect(engine="streaming")[
+            "len"
+        ].to_list()
+
+    in_memory, streaming = rolling_counts(
+        [datetime(2024, 3, 1), datetime(2024, 3, 31), datetime(2024, 4, 1)],
+        "28d",
+        "-1mo",
+    )
+    assert in_memory == streaming == [0, 1, 0]
+
+    in_memory, streaming = rolling_counts(
+        [datetime(2024, 3, 31), datetime(2024, 4, 1), datetime(2024, 4, 1, 1)],
+        "24h",
+        "-1d",
+        "Europe/Amsterdam",
+    )
+    assert in_memory == streaming == [1, 2, 2]
+
+
 def test_rolling_skew() -> None:
     s = pl.Series([1, 2, 3, 3, 2, 10, 8])
     assert s.rolling_skew(window_size=4, bias=True).to_list() == pytest.approx(
