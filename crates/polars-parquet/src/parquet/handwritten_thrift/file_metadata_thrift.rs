@@ -88,12 +88,15 @@ pub(crate) fn decode_file_metadata(footer: Buffer<u8>) -> ParquetResult<CompactF
     read_file_metadata(&mut prot, origin_ptr, &footer)
 }
 
-/// Decode the `FileCryptoMetaData` that precedes the encrypted footer in
-/// files with an encrypted footer.
-#[allow(dead_code)] // TODO: Remove once decryption is implemented.
-pub(crate) fn decode_file_crypto_metadata(buf: &[u8]) -> ParquetResult<FileCryptoMetaData> {
+/// Decode the `FileCryptoMetaData` that precedes the footer in files with
+/// an encrypted footer. Also returns the number of bytes consumed.
+pub(crate) fn decode_file_crypto_metadata(
+    buf: &[u8],
+) -> ParquetResult<(FileCryptoMetaData, usize)> {
     let mut prot = ThriftSliceInputProtocol::new(buf);
-    read_file_crypto_metadata(&mut prot)
+    let crypto_metadata = read_file_crypto_metadata(&mut prot)?;
+    let consumed = buf.len() - prot.as_slice().len();
+    Ok((crypto_metadata, consumed))
 }
 
 /// Decode just `FileMetaData.num_rows` (field 3) for the `RowCounts`
@@ -730,10 +733,7 @@ mod tests {
     }
 
     fn read_encrypted_test_file(name: &str) -> Vec<u8> {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../py-polars/tests/unit/io/files/parquet-encryption")
-            .join(name);
-        std::fs::read(path).unwrap()
+        std::fs::read(crate::parquet::encryption::test_file_path(name)).unwrap()
     }
 
     /// Get the footer bytes of a file, excluding the trailing length and magic.
@@ -749,7 +749,11 @@ mod tests {
         assert_eq!(&file[file.len() - 4..], b"PARE");
 
         // An encrypted footer is preceded by the plaintext FileCryptoMetaData.
-        let crypto_metadata = decode_file_crypto_metadata(footer_bytes(&file)).unwrap();
+        let footer = footer_bytes(&file);
+        let (crypto_metadata, consumed) = decode_file_crypto_metadata(footer).unwrap();
+        // The encrypted footer follows, starting with its 4 byte length.
+        let encrypted_len = u32::from_le_bytes(footer[consumed..consumed + 4].try_into().unwrap());
+        assert_eq!(consumed + 4 + encrypted_len as usize, footer.len());
 
         let EncryptionAlgorithm::AESGCMV1(algorithm) = crypto_metadata.encryption_algorithm else {
             panic!("expected AES_GCM_V1");

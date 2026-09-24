@@ -209,6 +209,7 @@ impl<'de> Deserialize<'de> for FileMetadata {
             schema_descr,
             column_orders,
             footer_buf,
+            decryptor: None,
         })
     }
 }

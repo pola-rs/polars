@@ -131,10 +131,8 @@ pub(crate) struct CompactFileMetaData {
     pub created_by: Option<String>,
     pub column_orders: Option<Vec<ColumnOrderTag>>,
     /// Only set for encrypted files with a plaintext footer.
-    #[allow(dead_code)] // TODO: Remove once decryption is implemented.
     pub encryption_algorithm: Option<EncryptionAlgorithm>,
     /// Only set for encrypted files with a plaintext footer.
-    #[allow(dead_code)] // TODO: Remove once decryption is implemented.
     pub footer_signing_key_metadata: Option<Vec<u8>>,
     /// The footer buffer the [`CompactStatistics`] `ByteRange`s point into.
     /// `from_compact` stores it on [`super::FileMetadata::footer_buf`] so

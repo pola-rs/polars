@@ -2,12 +2,12 @@ use std::borrow::Cow;
 use std::io::Read;
 use std::sync::Arc;
 
-use polars_parquet_format::ColumnCryptoMetaData;
+use polars_parquet_format::{ColumnCryptoMetaData, EncryptionAlgorithm};
 use polars_utils::aliases::PlHashMap;
 
-use super::ciphers::{BlockDecryptor, RingGcmBlockDecryptor, TAG_LEN};
+use super::ciphers::{BlockDecryptor, NONCE_LEN, RingGcmBlockDecryptor, TAG_LEN};
 use super::modules::{ModuleType, create_footer_aad, create_module_aad};
-use crate::parquet::error::ParquetResult;
+use crate::parquet::error::{ParquetError, ParquetResult};
 
 /// Trait for retrieving an encryption key using the key's metadata
 ///
@@ -566,11 +566,9 @@ impl FileDecryptor {
     ) -> ParquetResult<Self> {
         let file_aad = [aad_prefix.as_slice(), aad_file_unique.as_slice()].concat();
         let footer_key = decryption_properties.footer_key(footer_key_metadata)?;
-        let footer_decryptor = RingGcmBlockDecryptor::new(&footer_key).map_err(|e| {
-            encryption_err!(
-                "Invalid footer key. {}",
-                e.to_string().replace("Parquet error: ", "")
-            )
+        let footer_decryptor = RingGcmBlockDecryptor::new(&footer_key).map_err(|e| match e {
+            ParquetError::Encryption(message) => encryption_err!("Invalid footer key. {message}"),
+            e => e,
         })?;
 
         Ok(Self {
@@ -578,6 +576,52 @@ impl FileDecryptor {
             decryption_properties: Arc::clone(decryption_properties),
             file_aad,
         })
+    }
+
+    /// Create a [`FileDecryptor`] from the encryption algorithm stored in the file, which is
+    /// in the `FileCryptoMetaData` for files with an encrypted footer, or the `FileMetaData`
+    /// for files with a plaintext footer.
+    pub(crate) fn from_encryption_algorithm(
+        decryption_properties: &Arc<FileDecryptionProperties>,
+        encryption_algorithm: EncryptionAlgorithm,
+        footer_key_metadata: Option<&[u8]>,
+    ) -> ParquetResult<Self> {
+        match encryption_algorithm {
+            EncryptionAlgorithm::AESGCMV1(algorithm) => {
+                let aad_file_unique = algorithm
+                    .aad_file_unique
+                    .ok_or_else(|| encryption_err!("AAD unique file identifier is not set"))?;
+                let aad_prefix = match decryption_properties.aad_prefix() {
+                    Some(aad_prefix) => aad_prefix.clone(),
+                    None if algorithm.supply_aad_prefix.unwrap_or(false) => {
+                        return Err(encryption_err!(
+                            "Parquet file was encrypted with an AAD prefix that is not stored in the file, \
+                            but no AAD prefix was provided in the file decryption properties"
+                        ));
+                    },
+                    None => algorithm.aad_prefix.unwrap_or_default(),
+                };
+                Self::new(
+                    decryption_properties,
+                    footer_key_metadata,
+                    aad_file_unique,
+                    aad_prefix,
+                )
+            },
+            EncryptionAlgorithm::AESGCMCTRV1(_) => Err(ParquetError::not_supported(
+                "The AES_GCM_CTR_V1 encryption algorithm is not yet supported",
+            )),
+        }
+    }
+
+    /// Decrypt an encrypted footer, returning the plaintext `FileMetaData` bytes.
+    pub(crate) fn decrypt_footer(&self, encrypted_footer: &[u8]) -> ParquetResult<Vec<u8>> {
+        let aad = create_footer_aad(self.file_aad())?;
+        self.footer_decryptor
+            .decrypt(encrypted_footer, &aad)
+            .map_err(|_| {
+                encryption_err!("Provided footer key and AAD were unable to decrypt parquet footer")
+            })
     }
 
     pub(crate) fn get_footer_decryptor(&self) -> ParquetResult<Arc<dyn BlockDecryptor>> {
@@ -590,6 +634,12 @@ impl FileDecryptor {
         plaintext_footer: &[u8],
     ) -> ParquetResult<()> {
         // Plaintext footer format is: [plaintext metadata, nonce, authentication tag]
+        if plaintext_footer.len() < NONCE_LEN + TAG_LEN {
+            return Err(encryption_err!(
+                "Signed plaintext footer is too short: {} bytes",
+                plaintext_footer.len()
+            ));
+        }
         let tag = &plaintext_footer[plaintext_footer.len() - TAG_LEN..];
         let aad = create_footer_aad(self.file_aad())?;
         let footer_decryptor = self.get_footer_decryptor()?;

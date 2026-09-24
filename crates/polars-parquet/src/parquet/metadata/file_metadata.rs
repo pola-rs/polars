@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use polars_buffer::Buffer;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
@@ -5,6 +7,7 @@ use super::RowGroupMetadata;
 use super::column_order::{ColumnOrder, ColumnOrderTag};
 use super::compact::{CompactColumnChunk, CompactFileMetaData, CompactRowGroup};
 use super::schema_descriptor::SchemaDescriptor;
+use crate::parquet::encryption::decrypt::FileDecryptor;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::get_sort_order;
 use crate::parquet::schema::types::ParquetType;
@@ -56,6 +59,10 @@ pub struct FileMetadata {
     /// this buffer; pass `&self.footer_buf` to
     /// [`super::ColumnChunkMetadata::statistics`] to materialise them.
     pub footer_buf: Buffer<u8>,
+    /// Decryptor to use for files encrypted with Parquet modular encryption
+    ///
+    /// Not serialized, so is always `None` after deserializing.
+    pub(crate) decryptor: Option<Arc<FileDecryptor>>,
 }
 
 impl FileMetadata {
@@ -183,6 +190,7 @@ impl FileMetadata {
             schema_descr: pruned_schema,
             column_orders,
             footer_buf: self.footer_buf.clone(),
+            decryptor: self.decryptor.clone(),
         })
     }
 
@@ -195,6 +203,15 @@ impl FileMetadata {
     /// [`crate::parquet::read::deserialize_metadata`] which combines the
     /// hand-written decoder with this constructor.
     pub(crate) fn from_compact(compact: CompactFileMetaData) -> ParquetResult<Self> {
+        Self::from_compact_with_decryptor(compact, None)
+    }
+
+    /// As [`Self::from_compact`], but for an encrypted file that requires a
+    /// [`FileDecryptor`] to decrypt column data.
+    pub(crate) fn from_compact_with_decryptor(
+        compact: CompactFileMetaData,
+        decryptor: Option<Arc<FileDecryptor>>,
+    ) -> ParquetResult<Self> {
         let CompactFileMetaData {
             version,
             schema,
@@ -203,6 +220,7 @@ impl FileMetadata {
             key_value_metadata,
             created_by,
             column_orders,
+            // Only needed to create the decryptor.
             encryption_algorithm: _,
             footer_signing_key_metadata: _,
             footer_buf,
@@ -232,6 +250,7 @@ impl FileMetadata {
             schema_descr,
             column_orders,
             footer_buf,
+            decryptor,
         })
     }
 }
@@ -380,6 +399,7 @@ mod tests {
             column_orders: orders.and_then(|o| parse_column_orders(o, &schema_descr)),
             schema_descr,
             footer_buf,
+            decryptor: None,
         }
     }
 

@@ -45,6 +45,12 @@ impl RingGcmBlockDecryptor {
 
 impl BlockDecryptor for RingGcmBlockDecryptor {
     fn decrypt(&self, length_and_ciphertext: &[u8], aad: &[u8]) -> ParquetResult<Vec<u8>> {
+        if length_and_ciphertext.len() < SIZE_LEN + NONCE_LEN + TAG_LEN {
+            return Err(encryption_err!(
+                "Encrypted buffer is too short: got {} bytes",
+                length_and_ciphertext.len()
+            ));
+        }
         let mut result = Vec::with_capacity(length_and_ciphertext.len() - SIZE_LEN - NONCE_LEN);
         result.extend_from_slice(&length_and_ciphertext[SIZE_LEN + NONCE_LEN..]);
 
