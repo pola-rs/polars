@@ -48,7 +48,11 @@ def test_semi_anti_join() -> None:
     }
 
     # lazy
-    result = df_a.lazy().join(df_b.lazy(), on="key", how="anti").collect()
+    result = (
+        df_a.lazy()
+        .join(df_b.lazy(), on="key", how="anti", maintain_order="left")
+        .collect()
+    )
     expected_values = {"key": [1, 2], "payload": ["f", "i"]}
     assert result.to_dict(as_series=False) == expected_values
 
