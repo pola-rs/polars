@@ -14,6 +14,38 @@ fn exp<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Float64Chunked {
     ca.cast_and_apply_in_place(|v: f64| v.exp())
 }
 
+fn erf_f64(v: f64) -> f64 {
+    #[cfg(feature = "nightly")]
+    {
+        v.erf()
+    }
+    #[cfg(not(feature = "nightly"))]
+    {
+        let _ = v;
+        unimplemented!("'erf' requires the 'nightly' feature")
+    }
+}
+
+fn erfc_f64(v: f64) -> f64 {
+    #[cfg(feature = "nightly")]
+    {
+        v.erfc()
+    }
+    #[cfg(not(feature = "nightly"))]
+    {
+        let _ = v;
+        unimplemented!("'erfc' requires the 'nightly' feature")
+    }
+}
+
+fn erf<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Float64Chunked {
+    ca.cast_and_apply_in_place(erf_f64)
+}
+
+fn erfc<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Float64Chunked {
+    ca.cast_and_apply_in_place(erfc_f64)
+}
+
 pub trait LogSeries: SeriesSealed {
     /// Compute the logarithm to a given base
     fn log(&self, base: &Series) -> PolarsResult<Series> {
@@ -91,6 +123,76 @@ pub trait LogSeries: SeriesSealed {
             Float32 => Ok(s.f32().unwrap().apply_values(|v| v.exp()).into_series()),
             Float64 => Ok(s.f64().unwrap().apply_values(|v| v.exp()).into_series()),
             _ => s.cast(&DataType::Float64).unwrap().exp(),
+        }
+    }
+
+    /// Compute the error function of all elements in the input array.
+    fn erf(&self) -> PolarsResult<Series> {
+        let s = self.as_series();
+        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'erf'");
+        if s.dtype().is_decimal() {
+            return s.cast(&DataType::Float64).unwrap().erf();
+        }
+
+        let s = s.to_physical_repr();
+        let s = s.as_ref();
+
+        use DataType::*;
+        match s.dtype() {
+            dt if dt.is_integer() => {
+                with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    Ok(erf(ca).into_series())
+                })
+            },
+            #[cfg(feature = "dtype-f16")]
+            Float16 => Ok(s
+                .f16()
+                .unwrap()
+                .apply_values(|v| erf_f64(v.into()).into())
+                .into_series()),
+            Float32 => Ok(s
+                .f32()
+                .unwrap()
+                .apply_values(|v| erf_f64(v as f64) as f32)
+                .into_series()),
+            Float64 => Ok(s.f64().unwrap().apply_values(erf_f64).into_series()),
+            _ => s.cast(&DataType::Float64).unwrap().erf(),
+        }
+    }
+
+    /// Compute the complementary error function of all elements in the input array.
+    fn erfc(&self) -> PolarsResult<Series> {
+        let s = self.as_series();
+        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'erfc'");
+        if s.dtype().is_decimal() {
+            return s.cast(&DataType::Float64).unwrap().erfc();
+        }
+
+        let s = s.to_physical_repr();
+        let s = s.as_ref();
+
+        use DataType::*;
+        match s.dtype() {
+            dt if dt.is_integer() => {
+                with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    Ok(erfc(ca).into_series())
+                })
+            },
+            #[cfg(feature = "dtype-f16")]
+            Float16 => Ok(s
+                .f16()
+                .unwrap()
+                .apply_values(|v| erfc_f64(v.into()).into())
+                .into_series()),
+            Float32 => Ok(s
+                .f32()
+                .unwrap()
+                .apply_values(|v| erfc_f64(v as f64) as f32)
+                .into_series()),
+            Float64 => Ok(s.f64().unwrap().apply_values(erfc_f64).into_series()),
+            _ => s.cast(&DataType::Float64).unwrap().erfc(),
         }
     }
 

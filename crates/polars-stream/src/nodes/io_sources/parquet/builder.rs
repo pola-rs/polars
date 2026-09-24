@@ -5,7 +5,7 @@ use polars_async::primitives::wait_group::WaitGroup;
 use polars_buffer::Buffer;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
-use polars_io::cloud::concurrency::get_request_budget;
+use polars_io::cloud::concurrency::get_inflight_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
 use polars_io::utils::byte_source::{self, DynByteSourceBuilder, FileReadContext};
@@ -81,7 +81,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                 execution_state
                     .num_pipelines
                     .saturating_mul(2)
-                    .max(get_request_budget() as usize)
+                    .max(get_inflight_request_budget() as usize)
                     .clamp(16, 2048),
             )
             .max(1);
