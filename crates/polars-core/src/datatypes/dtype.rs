@@ -1,13 +1,14 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use arrow::datatypes::{
+use polars_arrow::datatypes::{
     DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, MAINTAIN_PL_TYPE,
     Metadata, PL_KEY,
 };
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
+use polars_utils::total_ord::TotalOrdWrap;
 #[cfg(any(feature = "serde-lazy", feature = "serde"))]
 use serde::{Deserialize, Serialize};
 pub use temporal::time_zone::TimeZone;
@@ -67,7 +68,9 @@ impl IntoMetadata for Metadata {
 pub enum UnknownKind {
     // Hold the value to determine the concrete size.
     Int(i128),
-    Float,
+    // Hold the value to determine the decimal scale. NaN means the value is
+    // not known.
+    Float(TotalOrdWrap<f64>),
     // Can be Categorical or String
     Str,
     #[default]
@@ -78,7 +81,7 @@ impl UnknownKind {
     pub fn materialize(&self) -> Option<DataType> {
         let dtype = match self {
             UnknownKind::Int(v) => materialize_dyn_int(*v).dtype(),
-            UnknownKind::Float => DataType::Float64,
+            UnknownKind::Float(_) => DataType::Float64,
             UnknownKind::Str => DataType::String,
             UnknownKind::Any => return None,
         };
@@ -190,6 +193,7 @@ impl PartialEq for DataType {
                 },
                 (Unknown(l), Unknown(r)) => match (l, r) {
                     (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
+                    (UnknownKind::Float(_), UnknownKind::Float(_)) => true,
                     _ => l == r,
                 },
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
@@ -608,6 +612,21 @@ impl DataType {
         self.is_primitive_numeric() || self.is_bool() || self.is_null()
     }
 
+    /// Whether `arr.dot` has a kernel for this inner dtype.
+    pub fn is_supported_array_dot_input(&self) -> bool {
+        use DataType::*;
+        match self {
+            Int8 | Int16 | Int32 | Int64 => true,
+            #[cfg(feature = "dtype-i128")]
+            Int128 => true,
+            UInt8 | UInt16 | UInt32 | UInt64 => true,
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => true,
+            Float32 | Float64 => true,
+            _ => false,
+        }
+    }
+
     /// Check if this [`DataType`] is a logical type
     pub fn is_logical(&self) -> bool {
         self != &self.to_physical()
@@ -904,7 +923,7 @@ impl DataType {
             DataType::Float16
                 | DataType::Float32
                 | DataType::Float64
-                | DataType::Unknown(UnknownKind::Float)
+                | DataType::Unknown(UnknownKind::Float(_))
         )
     }
 
@@ -1345,7 +1364,7 @@ impl DataType {
             },
             #[cfg(feature = "dtype-extension")]
             Extension(typ, inner) => Ok(ArrowDataType::Extension(Box::new(
-                arrow::datatypes::ExtensionType {
+                polars_arrow::datatypes::ExtensionType {
                     name: typ.name().into(),
                     inner: inner.try_to_arrow(compat_level)?,
                     metadata: typ.serialize_metadata().map(|m| m.into()),
@@ -1354,7 +1373,7 @@ impl DataType {
             Unknown(kind) => {
                 let dt = match kind {
                     UnknownKind::Any => ArrowDataType::Unknown,
-                    UnknownKind::Float => ArrowDataType::Float64,
+                    UnknownKind::Float(_) => ArrowDataType::Float64,
                     UnknownKind::Str => ArrowDataType::Utf8View,
                     UnknownKind::Int(v) => {
                         return materialize_dyn_int(*v).dtype().try_to_arrow(compat_level);
@@ -1570,7 +1589,7 @@ impl Display for DataType {
             DataType::Unknown(kind) => match kind {
                 UnknownKind::Any => "unknown",
                 UnknownKind::Int(_) => "dyn int",
-                UnknownKind::Float => "dyn float",
+                UnknownKind::Float(_) => "dyn float",
                 UnknownKind::Str => "dyn str",
             },
         };

@@ -27,6 +27,7 @@ pub struct IcebergSinkState {
     pub compression_level: Option<i32>,
     pub row_group_size: Option<usize>,
     pub maintain_order: bool,
+    pub sort_order_id: Option<i32>,
 
     pub sink_uuid_str: String,
 

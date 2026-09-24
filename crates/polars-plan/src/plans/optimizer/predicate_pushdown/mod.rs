@@ -6,6 +6,7 @@ mod keys;
 pub(super) mod utils;
 
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
+pub(crate) use dynamic::{new_batch_only_dynamic_pred, new_dynamic_pred};
 use polars_buffer::Buffer;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
@@ -15,7 +16,6 @@ pub(crate) use utils::combine_predicates;
 use utils::*;
 
 use super::*;
-use crate::plans::optimizer::predicate_pushdown::dynamic::new_dynamic_pred;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::utils::{check_input_node, has_aexpr};
@@ -34,10 +34,17 @@ pub struct PredicatePushDown {
     pub(super) hive_rewrite_active: bool,
     // Rewrite hive partitioned join.
     pub(super) partition_hive: bool,
+    // Functions supplied by the caller, e.g. the hive partition key frame join.
+    pub(super) hooks: ExecutionHooks,
 }
 
 impl PredicatePushDown {
-    pub fn new(maintain_errors: bool, streaming: bool, partition_hive: bool) -> Self {
+    pub fn new(
+        maintain_errors: bool,
+        streaming: bool,
+        partition_hive: bool,
+        hooks: ExecutionHooks,
+    ) -> Self {
         Self {
             caches_pass_allowance: 0,
             nodes_scratch: ScratchUnitVec::default(),
@@ -46,6 +53,7 @@ impl PredicatePushDown {
             maintain_errors,
             hive_rewrite_active: false,
             partition_hive,
+            hooks,
         }
     }
 }

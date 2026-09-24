@@ -1,6 +1,6 @@
-use arrow::array::{Array, DictionaryArray, DictionaryKey};
-use arrow::datatypes::ArrowDataType;
-use arrow::match_integer_type;
+use polars_arrow::array::{Array, DictionaryArray, DictionaryKey};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::match_integer_type;
 use polars_error::{PolarsResult, polars_bail};
 
 use super::{CastOptionsImpl, cast, primitive_to_primitive};

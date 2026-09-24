@@ -1,12 +1,12 @@
-use arrow::array::PrimitiveArray;
 use chrono::format::ParseErrorKind;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
-use polars_core::prelude::*;
+use polars_arrow::array::PrimitiveArray;
 
 use super::patterns::{self, Pattern};
+use super::strptime::StrpTimeState;
 #[cfg(feature = "dtype-date")]
-use crate::chunkedarray::date::naive_date_to_date;
-use crate::prelude::string::strptime::StrpTimeState;
+use crate::chunked_array::temporal::date::naive_date_to_date;
+use crate::prelude::*;
 
 polars_utils::regex_cache::cached_regex! {
     static DATETIME_DMY_RE = r#"(?x)
@@ -140,12 +140,9 @@ pub trait StrpTimeParser<T> {
 #[cfg(feature = "dtype-datetime")]
 impl StrpTimeParser<i64> for DatetimeInfer<Int64Type> {
     fn parse_bytes(&mut self, val: &[u8], time_unit: Option<TimeUnit>) -> Option<i64> {
-        let transform = match time_unit {
-            Some(TimeUnit::Nanoseconds) => datetime_to_timestamp_ns,
-            Some(TimeUnit::Microseconds) => datetime_to_timestamp_us,
-            Some(TimeUnit::Milliseconds) => datetime_to_timestamp_ms,
-            _ => unreachable!(), // time_unit has to be provided for datetime
-        };
+        // time_unit has to be provided for datetime
+        let time_unit = time_unit.unwrap();
+        let transform = |dt| time_unit.datetime_to_timestamp(dt);
         self.transform_bytes
             .parse(val, self.latest_fmt.as_bytes())
             .map(transform)
@@ -446,7 +443,7 @@ pub fn to_datetime_with_inferred_tz(
     }?;
 
     if strict && ca.null_count() != out.null_count() {
-        polars_core::utils::handle_casting_failures(
+        crate::utils::handle_casting_failures(
             &ca.clone().into_series(),
             &out.clone().into_series(),
         )?;
@@ -516,7 +513,7 @@ pub fn coerce_string_to_datetime(
             ca.set_time_unit(tu);
             match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => polars_ops::prelude::replace_time_zone(
+                Some(tz) => crate::chunked_array::temporal::replace_time_zone::replace_time_zone(
                     &ca,
                     Some(tz),
                     ambiguous,

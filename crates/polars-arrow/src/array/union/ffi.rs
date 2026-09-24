@@ -36,8 +36,10 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for UnionArray {
         let dtype = array.dtype().clone();
         let fields = Self::get_fields(&dtype);
 
-        let mut types = unsafe { array.buffer::<i8>(0) }?;
-        let offsets = if Self::is_sparse(&dtype) {
+        let is_sparse = Self::is_sparse(&dtype);
+
+        let types = unsafe { array.buffer::<i8>(0) }?;
+        let offsets = if is_sparse {
             None
         } else {
             Some(unsafe { array.buffer::<i32>(1) }?)
@@ -47,14 +49,15 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for UnionArray {
         let offset = array.array().offset();
         let fields = (0..fields.len())
             .map(|index| {
-                let child = array.child(index)?;
-                ffi::try_from(child)
+                let child = ffi::try_from(array.child(index)?)?;
+                // The array offset applies to sparse children; dense ones use `offsets`.
+                Ok(if is_sparse && offset > 0 {
+                    child.sliced(offset, length)
+                } else {
+                    child
+                })
             })
             .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?;
-
-        if offset > 0 {
-            types.slice_in_place(offset..offset + length);
-        };
 
         Self::try_new(dtype, types, fields, offsets)
     }

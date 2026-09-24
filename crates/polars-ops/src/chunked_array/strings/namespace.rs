@@ -1,19 +1,20 @@
-use arrow::array::ValueSize;
-use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
 #[cfg(feature = "string_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "string_to_integer")]
 use num_traits::Num;
+use polars_arrow::array::ValueSize;
+use polars_arrow::legacy::kernels::string::*;
 use polars_core::prelude::arity::*;
+#[cfg(feature = "string_normalize")]
+use polars_defs::expr::UnicodeForm;
 use polars_utils::regex_cache::{compile_regex, with_regex_cache};
 
+use super::literal_chain::LiteralChain;
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
-#[cfg(feature = "string_normalize")]
-use crate::prelude::strings::normalize::UnicodeForm;
 
 // We need this to infer the right lifetimes for the match closure.
 #[inline(always)]
@@ -334,6 +335,11 @@ pub trait StringNameSpaceImpl: AsString {
     /// ```
     fn contains(&self, pat: &str, strict: bool) -> PolarsResult<BooleanChunked> {
         let ca = self.as_string();
+        if let Some(chain) = LiteralChain::cached(pat) {
+            return Ok(unary_elementwise_values(ca, |s| {
+                chain.is_match(s.as_bytes())
+            }));
+        }
         let res_reg = polars_utils::regex_cache::compile_regex(pat);
         let opt_reg = if strict { Some(res_reg?) } else { res_reg.ok() };
         let out: BooleanChunked = if let Some(reg) = opt_reg {

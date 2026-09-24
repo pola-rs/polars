@@ -1,6 +1,6 @@
-use arrow::array::{PrimitiveArray, Splitable};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::types::{AlignedBytes, NativeType, PrimitiveType};
+use polars_arrow::array::{PrimitiveArray, Splitable};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::types::{AlignedBytes, NativeType, PrimitiveType};
 use polars_utils::vec::with_cast_mut_vec;
 
 use super::DecoderFunction;
@@ -494,7 +494,7 @@ fn decode_masked_optional<B: AlignedBytes>(
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::proptest::bitmap;
+    use polars_arrow::bitmap::proptest::bitmap;
     use proptest::collection::size_range;
     use proptest::prelude::*;
 
@@ -528,7 +528,8 @@ mod tests {
             }
         }
 
-        let mut result = Vec::<arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
+        let mut result =
+            Vec::<polars_arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
         decode_masked_required(
             ArrayChunks::new(bytemuck::cast_slice(values.as_slice())).unwrap(),
             mask.clone(),
@@ -541,7 +542,8 @@ mod tests {
     }
 
     fn _test_decode_masked_optional(validity: &Bitmap, values: &Vec<u32>, mask: &Bitmap) {
-        let mut result = Vec::<arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
+        let mut result =
+            Vec::<polars_arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
         decode_masked_optional(
             ArrayChunks::new(bytemuck::cast_slice(values.as_slice())).unwrap(),
             validity.clone(),

@@ -12,9 +12,9 @@ mod struct_;
 mod union;
 mod utf8;
 
-use arrow::array::{Array, PrimitiveArray, clone, new_empty_array, new_null_array};
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::{ArrowDataType, ExtensionType, Field, UnionMode};
+use polars_arrow::array::{Array, PrimitiveArray, clone, new_empty_array, new_null_array};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::{ArrowDataType, ExtensionType, Field, UnionMode};
 use union::union_type;
 
 #[test]

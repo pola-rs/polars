@@ -5,9 +5,8 @@
 // https://github.com/influxdata/flux/blob/1e9bfd49f21c0e679b42acf6fc515ce05c6dec2b/values/time.go#L40
 
 pub(crate) mod bounds;
-pub(crate) mod calendar;
-pub(crate) mod duration;
 pub(crate) mod group_by;
+pub mod index_space;
 #[cfg(test)]
 mod test;
 pub(crate) mod window;

@@ -294,8 +294,8 @@ fn candidate(join: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Opt
 
     // A schema that cannot be built (a suffix collision, say) means no rewrite, not
     // an error.
-    let inner_schema = det_join_schema(&a_schema, &c_schema, inner_options, expr_arena).ok()?;
-    let outer_schema = det_join_schema(&inner_schema, &b_schema, outer_options, expr_arena).ok()?;
+    let inner_schema = det_join_schema(&a_schema, &c_schema, inner_options).ok()?;
+    let outer_schema = det_join_schema(&inner_schema, &b_schema, outer_options).ok()?;
     if !same_columns(&outer_schema, output_schema) {
         return None;
     }
@@ -550,8 +550,7 @@ fn pushdown_candidate(
     {
         (a, b, true, keys)
     } else {
-        let b_output_names =
-            join_right_output_names(&a_schema, &b_schema, &inner_options, expr_arena).ok()?;
+        let b_output_names = join_right_output_names(&a_schema, &b_schema, &inner_options).ok()?;
         let b_column = |name: &PlSmallStr| -> Option<PlSmallStr> {
             b_schema
                 .iter_names()
@@ -623,9 +622,11 @@ impl PushdownCandidate {
 
 /// Whether the semi join narrows its side to fewer rows than the inner join emits.
 ///
-/// A semi join is priced at the bound on its right side's rows, and stays put
-/// without one: an estimate of that side that is too low would push down a join that
-/// keeps most rows. An anti join's estimate errs the other way.
+/// A semi join that probes no more rows pushed than it does now costs nothing extra
+/// whatever its right side keeps. Otherwise it is priced at the bound on its right
+/// side's rows, and stays put without one: an estimate of that side that is too low
+/// would push down a join that keeps most rows. An anti join's estimate errs the
+/// other way.
 #[cfg(feature = "semi_anti_join")]
 fn pushdown_pays(
     candidate: &PushdownCandidate,
@@ -642,11 +643,20 @@ fn pushdown_pays(
     };
     let mut after = after.filtered;
     if matches!(candidate.side_options.args.how, JoinType::Semi) {
+        let side = node_stats_with_cache(candidate.side, ir_arena, expr_arena, stats);
+        let semi_input = match candidate.chain.first() {
+            Some(&top) => node_stats_with_cache(top, ir_arena, expr_arena, stats),
+            None => Some(before.clone()),
+        };
+        if let (Some(side), Some(semi_input)) = (&side, semi_input)
+            && side.filtered <= semi_input.filtered
+        {
+            return true;
+        }
         let Some(bound) = right.max_rows() else {
             return false;
         };
         if bound > right.filtered {
-            let side = node_stats_with_cache(candidate.side, ir_arena, expr_arena, stats);
             let side_rows = side.map_or(f64::INFINITY, |side| side.filtered);
             after = (after * bound / right.filtered).min(side_rows);
         }

@@ -33,13 +33,15 @@
 use std::fmt::LowerExp;
 use std::io::Write;
 
-use arrow::array::{Array, BooleanArray, Float16Array, NullArray, PrimitiveArray, Utf8ViewArray};
-use arrow::legacy::time_zone::Tz;
-use arrow::types::NativeType;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
 use memchr::{memchr_iter, memchr3};
 use num_traits::NumCast;
+use polars_arrow::array::{
+    Array, BooleanArray, Float16Array, NullArray, PrimitiveArray, Utf8ViewArray,
+};
+use polars_arrow::legacy::time_zone::Tz;
+use polars_arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_utils::float16::pf16;
 
@@ -330,7 +332,7 @@ fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Ser
 
 #[cfg(feature = "dtype-decimal")]
 fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serializer<'_> {
-    let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
+    let trim_zeros = polars_arrow::compute::decimal::get_trim_decimal_zeros();
 
     let mut fmt_buf = polars_compute::decimal::DecimalFmtBuffer::new();
     let f = move |&item, buf: &mut Vec<u8>, options: &SerializeOptions| {
@@ -783,7 +785,7 @@ pub(super) fn serializer_for<'a>(
             "NaiveDate",
             array,
             chrono::NaiveDate::MAX,
-            arrow::temporal_conversions::date32_to_date,
+            polars_arrow::temporal_conversions::date32_to_date,
             |date, items| date.format_with_items(items),
             options,
         )?,
@@ -793,7 +795,7 @@ pub(super) fn serializer_for<'a>(
             "NaiveTime",
             array,
             chrono::NaiveTime::MIN,
-            arrow::temporal_conversions::time64ns_to_time,
+            polars_arrow::temporal_conversions::time64ns_to_time,
             |time, items| time.format_with_items(items),
             options,
         )?,
@@ -828,37 +830,28 @@ pub(super) fn serializer_for<'a>(
 
             let array = array.as_any().downcast_ref().unwrap();
 
-            macro_rules! time_unit_serializer {
-                ($convert:ident) => {
-                    match _time_zone {
-                        #[cfg(feature = "timezones")]
-                        Some(time_zone) => {
-                            let callback = move |item, buf: &mut Vec<u8>| {
-                                let item = arrow::temporal_conversions::$convert(item);
-                                let item = time_zone.from_utc_datetime(&item);
-                                // We checked the format is valid above.
-                                let _ = write!(buf, "{}", item.format_with_items(format.iter()));
-                            };
-                            date_and_time_final_serializer(array, callback, options)
-                        },
-                        #[cfg(not(feature = "timezones"))]
-                        Some(_) => panic!("activate 'timezones' feature"),
-                        None => {
-                            let callback = move |item, buf: &mut Vec<u8>| {
-                                let item = arrow::temporal_conversions::$convert(item);
-                                // We checked the format is valid above.
-                                let _ = write!(buf, "{}", item.format_with_items(format.iter()));
-                            };
-                            date_and_time_final_serializer(array, callback, options)
-                        },
-                    }
-                };
-            }
-
-            match time_unit {
-                TimeUnit::Nanoseconds => time_unit_serializer!(timestamp_ns_to_datetime),
-                TimeUnit::Microseconds => time_unit_serializer!(timestamp_us_to_datetime),
-                TimeUnit::Milliseconds => time_unit_serializer!(timestamp_ms_to_datetime),
+            let time_unit = *time_unit;
+            match _time_zone {
+                #[cfg(feature = "timezones")]
+                Some(time_zone) => {
+                    let callback = move |item, buf: &mut Vec<u8>| {
+                        let item = time_unit.timestamp_to_datetime(item);
+                        let item = time_zone.from_utc_datetime(&item);
+                        // We checked the format is valid above.
+                        let _ = write!(buf, "{}", item.format_with_items(format.iter()));
+                    };
+                    date_and_time_final_serializer(array, callback, options)
+                },
+                #[cfg(not(feature = "timezones"))]
+                Some(_) => panic!("activate 'timezones' feature"),
+                None => {
+                    let callback = move |item, buf: &mut Vec<u8>| {
+                        let item = time_unit.timestamp_to_datetime(item);
+                        // We checked the format is valid above.
+                        let _ = write!(buf, "{}", item.format_with_items(format.iter()));
+                    };
+                    date_and_time_final_serializer(array, callback, options)
+                },
             }
         },
         DataType::String => string_serializer(
@@ -904,7 +897,7 @@ pub(super) fn serializer_for<'a>(
 
 #[cfg(test)]
 mod test {
-    use arrow::array::NullArray;
+    use polars_arrow::array::NullArray;
     use polars_core::prelude::ArrowDataType;
 
     use super::string_serializer;

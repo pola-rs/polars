@@ -1,5 +1,8 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::dynamic_boundary_dtype;
+
 use super::*;
 
 pub struct IRBuilder<'a> {
@@ -291,8 +294,9 @@ impl<'a> IRBuilder<'a> {
                 let name = &options.index_column;
                 let dtype = current_schema.get(name).unwrap();
                 if options.include_boundaries {
-                    schema.with_column("_lower_boundary".into(), dtype.clone());
-                    schema.with_column("_upper_boundary".into(), dtype.clone());
+                    let bound_dtype = dynamic_boundary_dtype(dtype);
+                    schema.with_column("_lower_boundary".into(), bound_dtype.clone());
+                    schema.with_column("_upper_boundary".into(), bound_dtype);
                 }
                 schema.with_column(name.clone(), dtype.clone());
             }
@@ -329,9 +333,7 @@ impl<'a> IRBuilder<'a> {
     pub fn join(self, other: Node, options: Arc<JoinOptionsIR>) -> Self {
         let schema_left = self.schema();
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);
-
-        let schema =
-            det_join_schema(&schema_left, &schema_right, &options, self.expr_arena).unwrap();
+        let schema = det_join_schema(&schema_left, &schema_right, &options).unwrap();
 
         let lp = IR::Join {
             input_left: self.root,

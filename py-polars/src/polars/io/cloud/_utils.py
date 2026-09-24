@@ -15,6 +15,12 @@ POLARS_STORAGE_CONFIG_KEYS: Final[frozenset[str]] = frozenset(
         "retry_init_backoff_ms",
         "retry_max_backoff_ms",
         "retry_base_multiplier",
+        "rate_read_init",
+        "rate_read_floor",
+        "rate_read_ceiling",
+        "rate_write_init",
+        "rate_write_floor",
+        "rate_write_ceiling",
     ]
 )
 

@@ -3,9 +3,9 @@ mod frame;
 use std::borrow::Cow;
 use std::fmt::Write;
 
-use arrow::array::StructArray;
-use arrow::bitmap::Bitmap;
-use arrow::compute::utils::combine_validities_and;
+use polars_arrow::array::StructArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::itertools::Itertools;

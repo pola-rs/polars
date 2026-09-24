@@ -240,6 +240,7 @@ def test_name_collision_with_the_null_extended_side_is_left_alone() -> None:
     )
 
 
+@pytest.mark.slow
 def test_expanding_inner_join_is_left_alone() -> None:
     fact, returns, _ = frames()
     wide = pl.LazyFrame({"w_key": [i % 50 for i in range(5000)], "w_v": range(5000)})
@@ -481,6 +482,53 @@ def test_semi_join_that_keeps_more_than_the_inner_join_stays(
         dim.filter(pl.col("d_flag")), left_on="f_dim", right_on="d_key"
     ).join(wanted, left_on="f_id", right_on="w", how="semi")
     assert all_joins(lf.explain(optimizations=ON)) == ["SEMI JOIN:", "INNER JOIN:"]
+    assert_same_result(lf)
+
+
+def qualifying_keys(fact: pl.LazyFrame, at_least: float) -> pl.LazyFrame:
+    """A `HAVING` shape: the estimator only knows its rows are at most the fact's."""
+    return (
+        fact.group_by("f_dim")
+        .agg(pl.col("f_val").sum().alias("total"))
+        .filter(pl.col("total") >= at_least)
+        .select("f_dim")
+    )
+
+
+@pytest.mark.parametrize("at_least", [10_000.0, 0.0])
+def test_semi_join_probing_no_more_rows_moves_below_inner_join(
+    tmp_path: Path, at_least: float
+) -> None:
+    fact, dim = scanned_frames(tmp_path)
+    # The inner join keeps every fact row, so the semi join probes the same rows on
+    # the fact alone, however many groups qualify.
+    lf = fact.join(dim, left_on="f_dim", right_on="d_key").join(
+        qualifying_keys(fact, at_least), on="f_dim", how="semi"
+    )
+    assert all_joins(lf.explain(optimizations=OFF))[:2] == [
+        "SEMI JOIN:",
+        "INNER JOIN:",
+    ]
+    assert all_joins(lf.explain(optimizations=ON))[:2] == [
+        "INNER JOIN:",
+        "SEMI JOIN:",
+    ]
+    assert_same_result(lf)
+
+
+def test_semi_join_above_a_selective_filter_stays(tmp_path: Path) -> None:
+    fact, dim = scanned_frames(tmp_path)
+    # The filter reads both sides, so it stays on the inner join. Pushed, the semi
+    # join would probe more rows than reach it now.
+    lf = (
+        fact.join(dim, left_on="f_dim", right_on="d_key")
+        .filter(pl.col("f_val") + pl.col("d_flag").cast(pl.Float64) < 100)
+        .join(qualifying_keys(fact, 10_000.0), on="f_dim", how="semi")
+    )
+    assert all_joins(lf.explain(optimizations=ON))[:2] == [
+        "SEMI JOIN:",
+        "INNER JOIN:",
+    ]
     assert_same_result(lf)
 
 

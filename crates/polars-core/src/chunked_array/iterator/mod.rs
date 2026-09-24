@@ -1,4 +1,4 @@
-use arrow::array::*;
+use polars_arrow::array::*;
 
 use crate::prelude::*;
 

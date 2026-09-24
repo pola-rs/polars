@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
-use arrow::array::{DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::vec::with_cast_mut_vec;
 
@@ -132,7 +132,7 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
     fn extend_decoded(
         &self,
         decoded: &mut Self::DecodedState,
-        additional: &dyn arrow::array::Array,
+        additional: &dyn polars_arrow::array::Array,
         is_optional: bool,
     ) -> ParquetResult<()> {
         let additional = additional

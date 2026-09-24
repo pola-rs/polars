@@ -1,10 +1,10 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::fmt::Debug;
 
-use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
-use arrow::bitmap::BitmapBuilder;
-use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::Entry;
+use polars_arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use polars_buffer::Buffer;
 use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;

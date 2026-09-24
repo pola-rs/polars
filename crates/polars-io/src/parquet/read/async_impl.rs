@@ -1,7 +1,7 @@
 //! Read parquet files in parallel from the Object Store without a third party crate.
 
-use arrow::datatypes::ArrowSchemaRef;
 use object_store::path::Path as ObjectPath;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_parquet::parquet::error::ParquetError;

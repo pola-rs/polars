@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
+use polars_defs::time::duration::Duration;
 use polars_lazy::prelude::*;
 use polars_sql::*;
-use polars_time::Duration;
 
 fn create_sample_df() -> DataFrame {
     let a = Column::new(

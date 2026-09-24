@@ -63,6 +63,19 @@ def test_filter_clause_misc_aggfuncs(
     )
 
 
+def test_filter_clause_approx_quantile(lf: pl.LazyFrame) -> None:
+    # not compared against a reference backend: other engines use a different sketch
+    assert_sql_matches(
+        frames=lf,
+        query="""
+            SELECT grp, APPROX_QUANTILE(x, 0.5) FILTER (WHERE y > 20) AS v
+            FROM self GROUP BY grp ORDER BY grp
+        """,
+        compare_with=None,
+        expected={"grp": ["a", "b"], "v": [3, 6]},
+    )
+
+
 @pytest.mark.parametrize(
     ("agg", "value"),
     [

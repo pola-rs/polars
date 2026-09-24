@@ -1,9 +1,12 @@
+use polars_core::frame::DataFrame;
+use polars_core::prelude::{Column, IdxSize};
 use polars_core::runtime::ASYNC;
+use polars_error::{PolarsResult, feature_gated, polars_err};
 use polars_io::cloud::CloudOptions;
+use polars_plan::dsl::{FileScanIR, ScanSourceRef, ScanSources};
+use polars_utils::pl_str::PlSmallStr;
 
-use super::*;
-
-pub fn count_rows(
+pub(super) fn count_rows(
     sources: &ScanSources,
     scan_type: &FileScanIR,
     alias: Option<PlSmallStr>,
@@ -19,7 +22,7 @@ pub fn count_rows(
         let count: IdxSize = count.try_into().map_err(
             |_| polars_err!(ComputeError: "count of {} exceeded maximum row size", count),
         )?;
-        let column_name = alias.unwrap_or(PlSmallStr::from_static(crate::constants::LEN));
+        let column_name = alias.unwrap_or(PlSmallStr::from_static(polars_plan::constants::LEN));
 
         Ok(unsafe { DataFrame::new_unchecked(1, vec![Column::new(column_name, [count])]) })
     })

@@ -1,6 +1,8 @@
 mod builder;
 mod canonical;
 mod determinism;
+mod dyn_fold;
+pub(crate) use dyn_fold::{fold_dyn_binary, fold_dyn_negate, try_fold_dyn};
 mod equality;
 mod evaluate;
 pub(crate) mod filter_constraint;
@@ -11,6 +13,7 @@ pub(crate) mod or_factoring;
 pub mod predicates;
 mod scalar;
 mod schema;
+pub(crate) use schema::widen_decimal;
 mod traverse;
 
 use std::hash::{Hash, Hasher};
@@ -26,7 +29,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
-pub use scalar::{is_known_length_ae, is_length_preserving_ae, is_scalar_ae};
+pub use scalar::{is_known_length_ae, is_length_preserving_ae, is_scalar_ae, is_single_literal_ae};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 pub mod projection_height;

@@ -14,8 +14,8 @@
 use std::collections::LinkedList;
 use std::sync::Mutex;
 
-use arrow::bitmap::Bitmap;
-use arrow::pushable::{NoOption, Pushable};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::pushable::{NoOption, Pushable};
 use rayon::prelude::*;
 
 use super::from_iterator::PolarsAsRef;

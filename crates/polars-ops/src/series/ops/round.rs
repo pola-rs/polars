@@ -1,24 +1,10 @@
 use num_traits::AsPrimitive;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_defs::expr::RoundMode;
 use polars_utils::float16::pf16;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
 
 use crate::series::ops::SeriesSealed;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[strum(serialize_all = "snake_case")]
-#[derive(Default)]
-pub enum RoundMode {
-    #[default]
-    HalfToEven,
-    HalfAwayFromZero,
-    ToZero,
-}
 
 /// Apply the given rounding operation across f16/f32/f64 types.
 fn apply_float_rounding(

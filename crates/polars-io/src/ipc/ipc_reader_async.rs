@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use arrow::io::ipc::read::{FileMetadata, OutOfSpecKind, get_row_count};
 use object_store::ObjectMeta;
 use object_store::path::Path;
+use polars_arrow::io::ipc::read::{FileMetadata, OutOfSpecKind, get_row_count};
 use polars_core::datatypes::IDX_DTYPE;
 use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
@@ -130,7 +130,7 @@ impl IpcReaderAsync {
             )
             .await?;
 
-        arrow::io::ipc::read::deserialize_footer(
+        polars_arrow::io::ipc::read::deserialize_footer(
             footer.as_ref(),
             footer_size.try_into().map_err(to_compute_err)?,
         )

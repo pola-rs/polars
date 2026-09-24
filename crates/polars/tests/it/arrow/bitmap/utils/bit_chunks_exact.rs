@@ -1,4 +1,4 @@
-use arrow::bitmap::utils::BitChunksExact;
+use polars_arrow::bitmap::utils::BitChunksExact;
 
 #[test]
 fn basics() {

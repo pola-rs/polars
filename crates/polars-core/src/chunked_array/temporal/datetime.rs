@@ -1,8 +1,5 @@
 use std::fmt::Write;
 
-use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as TimeZoneTrait;
 
@@ -12,16 +9,15 @@ use crate::prelude::*;
 
 impl DatetimeChunked {
     pub fn as_datetime_iter(&self) -> impl TrustedLen<Item = Option<NaiveDateTime>> + '_ {
-        let func = match self.time_unit() {
-            TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
-            TimeUnit::Microseconds => timestamp_us_to_datetime,
-            TimeUnit::Milliseconds => timestamp_ms_to_datetime,
-        };
+        let tu = self.time_unit();
         // we know the iterators len
         unsafe {
             self.physical()
                 .downcast_iter()
-                .flat_map(move |iter| iter.into_iter().map(move |opt_v| opt_v.copied().map(func)))
+                .flat_map(move |iter| {
+                    iter.into_iter()
+                        .map(move |opt_v| opt_v.map(|v| tu.timestamp_to_datetime(*v)))
+                })
                 .trust_my_length(self.len())
         }
     }
@@ -50,11 +46,7 @@ impl DatetimeChunked {
     /// Convert from Datetime into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
-        let conversion_f = match self.time_unit() {
-            TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
-            TimeUnit::Microseconds => timestamp_us_to_datetime,
-            TimeUnit::Milliseconds => timestamp_ms_to_datetime,
-        };
+        let tu = self.time_unit();
         let format = get_strftime_format(format, self.dtype())?;
         let mut ca: StringChunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
@@ -62,7 +54,7 @@ impl DatetimeChunked {
                 let parsed_time_zone = time_zone.parse::<Tz>().expect("already validated");
                 let datefmt_f = |ndt| parsed_time_zone.from_utc_datetime(&ndt).format(&format);
                 self.physical().try_apply_into_string_amortized(|val, buf| {
-                    let ndt = conversion_f(val);
+                    let ndt = tu.timestamp_to_datetime(val);
                     write!(buf, "{}", datefmt_f(ndt))
                     }
                 ).map_err(
@@ -72,7 +64,7 @@ impl DatetimeChunked {
             _ => {
                 let datefmt_f = |ndt: NaiveDateTime| ndt.format(&format);
                 self.physical().try_apply_into_string_amortized(|val, buf| {
-                    let ndt = conversion_f(val);
+                    let ndt = tu.timestamp_to_datetime(val);
                     write!(buf, "{}", datefmt_f(ndt))
                     }
                 ).map_err(
@@ -98,12 +90,10 @@ impl DatetimeChunked {
         v: I,
         tu: TimeUnit,
     ) -> Self {
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        };
-        let vals = v.into_iter().map(func).collect::<Vec<_>>();
+        let vals = v
+            .into_iter()
+            .map(|dt| tu.datetime_to_timestamp(dt))
+            .collect::<Vec<_>>();
         Int64Chunked::from_vec(name, vals).into_datetime(tu, None)
     }
 
@@ -112,12 +102,9 @@ impl DatetimeChunked {
         v: I,
         tu: TimeUnit,
     ) -> Self {
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        };
-        let vals = v.into_iter().map(|opt_nd| opt_nd.map(func));
+        let vals = v
+            .into_iter()
+            .map(|opt_nd| opt_nd.map(|dt| tu.datetime_to_timestamp(dt)));
         Int64Chunked::from_iter_options(name, vals).into_datetime(tu, None)
     }
 
