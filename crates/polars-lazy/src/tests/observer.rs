@@ -23,6 +23,17 @@ struct Snapshot {
     any_done: bool,
     custom: Vec<(String, Option<i64>)>,
 }
+
+impl Snapshot {
+    fn reading(&self, key: &str) -> Option<i64> {
+        self.custom
+            .iter()
+            .find(|(k, _)| k == key)
+            .unwrap_or_else(|| panic!("no `{key}` in {:?}", self.custom))
+            .1
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum Event {
     Started,
@@ -183,7 +194,7 @@ mod tests {
 
     #[test]
     fn observer_snapshot_carries_a_nodes_custom_metrics() {
-        let lf = load_df().lazy().filter(col("a").gt(lit(2)));
+        let lf = load_df().lazy().group_by([col("b")]).agg([col("a").sum()]);
         let (res, events) = run_observed_on(lf, true, Engine::Streaming);
         assert!(res.is_ok());
 
@@ -195,17 +206,17 @@ mod tests {
             })
             .expect("no Snapshot event");
 
-        let reading = |key: &str| {
-            snapshot
-                .custom
-                .iter()
-                .find(|(k, _)| k == key)
-                .unwrap_or_else(|| panic!("no `{key}` in {:?}", snapshot.custom))
-                .1
-        };
+        // `b` holds "a", "b" and "c".
+        assert_eq!(snapshot.reading("group_by.actual_groups"), Some(3));
 
-        // 5 rows in, `a > 2` keeps 3.
-        assert_eq!(reading("filter.rows_dropped"), Some(2));
+        // The sketch is approximate, and its hashing is randomly seeded.
+        let estimated = snapshot
+            .reading("group_by.estimated_groups")
+            .expect("estimated on combine");
+        assert!(
+            estimated.abs_diff(3) <= 1,
+            "estimated {estimated} groups for 3"
+        );
     }
 
     #[test]

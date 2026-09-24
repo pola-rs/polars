@@ -236,16 +236,16 @@ fn to_graph_rec<'a>(
         } => {
             let input_schema = input.output_schema(ctx.phys_sm);
             let phys_predicate_expr = create_stream_expr(predicate, ctx, input_schema)?;
-            let projection = projection.as_ref().map(|(x, _)| {
-                x.iter()
-                    .map(|name| input_schema.index_of(name).unwrap())
-                    .collect()
-            });
             let input_key = to_graph_rec(input.node, ctx)?;
-            ctx.add_node_with_metrics(
-                |registry| {
-                    nodes::filter::FilterNode::new(phys_predicate_expr, projection, registry)
-                },
+            ctx.graph.add_node(
+                nodes::filter::FilterNode::new(
+                    phys_predicate_expr,
+                    projection.as_ref().map(|(x, _)| {
+                        x.iter()
+                            .map(|name| input_schema.index_of(name).unwrap())
+                            .collect()
+                    }),
+                ),
                 [(input_key, input.port)],
             )
         },
@@ -1088,20 +1088,25 @@ fn to_graph_rec<'a>(
             assert!(key_schema_per_input.iter().all(|s| **s == *key_schema));
 
             let grouper = new_hash_grouper(key_schema.clone());
-            ctx.graph.add_node(
-                nodes::group_by::GroupByNode::new(
-                    key_schema,
-                    key_selectors_per_input,
-                    reductions_per_input,
-                    grouper,
-                    grouped_reduction_cols,
-                    payload_per_input,
-                    grouped_reductions,
-                    node.output_schema(0).clone(),
-                    PlRandomState::default(),
-                    ctx.num_pipelines,
-                    has_order_sensitive_agg,
-                ),
+            let output_schema = node.output_schema(0).clone();
+            let num_pipelines = ctx.num_pipelines;
+            ctx.add_node_with_metrics(
+                |registry| {
+                    nodes::group_by::GroupByNode::new(
+                        key_schema,
+                        key_selectors_per_input,
+                        reductions_per_input,
+                        grouper,
+                        grouped_reduction_cols,
+                        payload_per_input,
+                        grouped_reductions,
+                        output_schema,
+                        PlRandomState::default(),
+                        num_pipelines,
+                        has_order_sensitive_agg,
+                        registry,
+                    )
+                },
                 key_ports,
             )
         },
