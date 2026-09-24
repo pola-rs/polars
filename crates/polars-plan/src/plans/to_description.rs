@@ -128,6 +128,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 period,
                 offset,
                 closed_window,
+                placement: _,
             }) = &options.rolling
             {
                 IrPropsDescription::RollingGroupBy {

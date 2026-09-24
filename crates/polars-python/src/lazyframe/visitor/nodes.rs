@@ -710,9 +710,13 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 .dynamic
                 .as_ref()
                 .is_some_and(|dynamic| dynamic.placement.is_some())
+                || options
+                    .rolling
+                    .as_ref()
+                    .is_some_and(|rolling| rolling.placement.is_some())
             {
                 return Err(PyNotImplementedError::new_err(
-                    "Not expecting to see a dynamic window placement in a user query",
+                    "Not expecting to see a window placement in a user query",
                 ));
             }
             GroupBy {

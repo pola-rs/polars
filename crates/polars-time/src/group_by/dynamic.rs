@@ -28,6 +28,8 @@ pub const LB_NAME: &str = "_lower_boundary";
 pub const UB_NAME: &str = "_upper_boundary";
 
 pub trait PolarsTemporalGroupby {
+    /// Returns the index values of the rows that get a window and one group per such row.
+    /// `options.placement` is only supported without `group_by`.
     fn rolling(
         &self,
         group_by: Option<GroupsSlice>,
@@ -310,10 +312,15 @@ impl Wrap<&DataFrame> {
         tz: Option<Tz>,
     ) -> PolarsResult<(Column, GroupPositions)> {
         let mut dt = dt.rechunk();
+        let placement = options.placement;
+        polars_ensure!(
+            group_by.is_none() || placement.is_none(),
+            InvalidOperation: "a rolling window placement is not supported together with group_by keys"
+        );
 
-        let groups = if let Some(groups) = group_by {
-            let dt = dt.datetime().unwrap();
-            let vals = dt.physical().downcast_iter().next().unwrap();
+        if let Some(groups) = group_by {
+            let dt_ca = dt.datetime().unwrap();
+            let vals = dt_ca.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
 
             let iter = groups.into_par_iter().map(|[start, len]| {
@@ -330,6 +337,7 @@ impl Wrap<&DataFrame> {
                     options.closed_window,
                     tu,
                     tz,
+                    0..values.len(),
                 )?;
 
                 PolarsResult::Ok(
@@ -341,27 +349,34 @@ impl Wrap<&DataFrame> {
             });
 
             let groups = RAYON.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
-            PolarsResult::Ok(RAYON.install(|| flatten_par(&groups)))
+            let groups = RAYON.install(|| flatten_par(&groups));
+            let groups = GroupsType::new_slice(groups, true, true);
+            Ok((dt, groups.into_sliceable()))
         } else {
             // a requirement for the index
             // so we can set this such that downstream code has this info
             dt.set_sorted_flag(IsSorted::Ascending);
-            let dt = dt.datetime().unwrap();
-            let vals = dt.physical().downcast_iter().next().unwrap();
+            let dt_ca = dt.datetime().unwrap();
+            let vals = dt_ca.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            group_by_values(
+            // `ts` is ascending, so the rows a placement owns are one contiguous range.
+            let rows = match placement {
+                None => 0..ts.len(),
+                Some(placement) => placement.owned_range.row_range(ts),
+            };
+            let groups = group_by_values(
                 options.period,
                 options.offset,
                 ts,
                 options.closed_window,
                 tu,
                 tz,
-            )
-        }?;
-
-        let groups = GroupsType::new_slice(groups, true, true);
-
-        Ok((dt, groups.into_sliceable()))
+                rows.clone(),
+            )?;
+            let groups = GroupsType::new_slice(groups, true, true);
+            let dt = dt.slice(rows.start as i64, rows.len());
+            Ok((dt, groups.into_sliceable()))
+        }
     }
 }
 
@@ -415,6 +430,7 @@ mod test {
                         period: Duration::parse("2d"),
                         offset: Duration::parse("-2d"),
                         closed_window: ClosedWindow::Right,
+                        placement: None,
                     },
                 )
                 .unwrap();
@@ -462,6 +478,7 @@ mod test {
                     period: Duration::parse("2d"),
                     offset: Duration::parse("-2d"),
                     closed_window: ClosedWindow::Right,
+                    placement: None,
                 },
             )
             .unwrap();
