@@ -11,7 +11,9 @@ use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::ipc::IpcScanOptions;
 use polars_plan::dsl::ScanSource;
 
-use super::super::shared::pipeline_budget::PipelineBudget;
+use super::super::shared::pipeline_budget::{
+    PipelineBudget, prefetch_kbytes_limit_from_env_or_default,
+};
 use super::{DynByteSourceBuilder, IpcFileReader};
 #[cfg(feature = "ipc")]
 use crate::metrics::IOMetrics;
@@ -68,21 +70,10 @@ impl FileReaderBuilder for IpcReaderBuilder {
             )
             .max(1);
 
-        let prefetch_kbytes_limit = std::env::var("POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET")
-            .map(|x| {
-                x.parse::<NonZeroUsize>()
-                    .unwrap_or_else(|_| {
-                        panic!("invalid value for POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET: {x}")
-                    })
-                    .get()
-            })
-            .unwrap_or({
-                // Similar to Parquet.
-                let target_chunk_size_kb = FetchConfig::random_access().chunk_size.div_ceil(1024);
-                4 * execution_state.num_pipelines * target_chunk_size_kb
-            })
-            // Avoid deadlock.
-            .max(polars_io::cloud::concurrency_config::get_download_chunk_size().div_ceil(1024));
+        let prefetch_kbytes_limit = prefetch_kbytes_limit_from_env_or_default(
+            "POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET",
+            execution_state.num_pipelines,
+        );
 
         if config::verbose() {
             eprintln!(
