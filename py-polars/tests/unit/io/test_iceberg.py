@@ -75,7 +75,11 @@ from polars.io.iceberg._dataset import (
     IcebergTableWrap,
     _NativeIcebergScanData,
 )
-from polars.io.iceberg._sink import IcebergSinkState, PlIcebergPathProviderConfig
+from polars.io.iceberg._sink import (
+    _SINK_UUID_PROPERTY,
+    IcebergSinkState,
+    PlIcebergPathProviderConfig,
+)
 from polars.io.iceberg._utils import (
     _convert_predicate,
     _new_pyiceberg_scan,
@@ -1928,6 +1932,26 @@ def _sink_uncommitted(
     return state, sinked_files
 
 
+# A re-execution of the same sink invocation, as polars-cloud does when a
+# committing worker dies. Pickling drops the loaded table.
+def _twin(state: IcebergSinkState) -> IcebergSinkState:
+    twin: IcebergSinkState = pickle.loads(pickle.dumps(state))
+    assert twin.table_.get() is None
+    return twin
+
+
+def _tagged_snapshots(
+    tbl: pyiceberg.table.Table, state: IcebergSinkState
+) -> list[Snapshot]:
+    tbl.refresh()
+    return [
+        s
+        for s in tbl.snapshots()
+        if s.summary is not None
+        and s.summary.get(_SINK_UUID_PROPERTY) == state.sink_uuid_str
+    ]
+
+
 # The current snapshot, with its manifest list and manifests still on disk.
 def _landed_snapshot(tbl: pyiceberg.table.Table) -> Snapshot:
     tbl.refresh()
@@ -1959,6 +1983,95 @@ def _count_commit_table(
 
 
 @pytest.mark.write_disk
+def test_sink_iceberg_commit_twin_from_stale_handle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Without retries, pyiceberg never reaches its refresh, so only the recovery
+    # at the catalog call can find the twin.
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+        properties={"commit.retry.num-retries": "0"},
+    )
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
+    twin = _twin(state)
+    twin.table()
+    state.commit(sinked_files)
+    landed = _landed_snapshot(tbl)
+
+    calls = _count_commit_table(monkeypatch, twin.table().catalog)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    result = twin.commit(sinked_files)
+
+    assert calls.call_count == 1
+    assert (
+        "IcebergSinkState[commit]: already committed, skipping"
+        in capfd.readouterr().err
+    )
+    assert _landed_snapshot(tbl) == landed
+    assert _tagged_snapshots(tbl, state) == [landed]
+    assert _rows(tbl) == [42]
+    assert result.item() == tbl.metadata_location
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_commit_twin_lands_during_retry_backoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
+    twin = _twin(state)
+    twin_catalog = twin.table().catalog
+
+    commit_table = twin_catalog.commit_table
+    calls = 0
+
+    def commit_table_after_foreign_append(*args: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            _foreign_append(tbl, [7])
+        return commit_table(*args)
+
+    monkeypatch.setattr(twin_catalog, "commit_table", commit_table_after_foreign_append)
+
+    sleep = pyiceberg.table.time.sleep
+    slept = False
+
+    def sleep_while_original_commits(seconds: float) -> None:
+        nonlocal slept
+        if not slept:
+            slept = True
+            state.commit(sinked_files)
+        sleep(0)
+
+    monkeypatch.setattr(pyiceberg.table.time, "sleep", sleep_while_original_commits)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    twin.commit(sinked_files)
+
+    # Only the foreign append fails the first commit, so the twin is found by the
+    # check after pyiceberg's retry refresh, without a second commit attempt.
+    assert slept
+    assert calls == 1
+    assert (
+        "IcebergSinkState[commit]: already committed, skipping"
+        in capfd.readouterr().err
+    )
+    assert _tagged_snapshots(tbl, state) == [_landed_snapshot(tbl)]
+    assert _rows(tbl) == [7, 42]
+
+
+@pytest.mark.write_disk
 def test_sink_iceberg_commit_updates_caller_table(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1973,6 +2086,15 @@ def test_sink_iceberg_commit_updates_caller_table(
     current = catalog.load_table(tbl.name()).metadata_location
     assert tbl.metadata_location == current
     assert result.item() == current
+
+    # An "already committed" skip also updates it.
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
+    _twin(state).commit(sinked_files)
+    result = state.commit(sinked_files)
+    current = catalog.load_table(tbl.name()).metadata_location
+    assert tbl.metadata_location == current
+    assert result.item() == current
+    assert _rows(tbl) == [42, 42]
 
 
 @pytest.mark.parametrize(
@@ -2059,6 +2181,125 @@ def test_sink_iceberg_commit_unverifiable_outcome_keeps_files(
 
 
 @pytest.mark.write_disk
+def test_sink_iceberg_commit_twin_in_recreated_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
+    original_uuid = tbl.metadata.table_uuid
+    original_metadata_location = tbl.metadata_location
+    catalog.drop_table(tbl.name())
+    catalog.create_table(tbl.name(), tbl.schema())
+    _twin(state).commit(sinked_files)
+
+    with pytest.raises(ValueError, match="Table UUID does not match"):
+        state.commit(sinked_files)
+
+    assert tbl.metadata.table_uuid == original_uuid
+    assert tbl.metadata_location == original_metadata_location
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_commit_sequential_replay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
+    state.commit(sinked_files)
+    landed = _landed_snapshot(tbl)
+
+    twin = _twin(state)
+    calls = _count_commit_table(monkeypatch, twin.table().catalog)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    twin.commit(sinked_files)
+
+    assert calls.call_count == 0
+    assert (
+        "IcebergSinkState[commit]: already committed, skipping"
+        in capfd.readouterr().err
+    )
+    assert _landed_snapshot(tbl) == landed
+    assert _tagged_snapshots(tbl, state) == [landed]
+    assert _rows(tbl) == [42]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_commit_empty_overwrite_replay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    pl.LazyFrame({"a": [1]}).sink_iceberg(tbl, mode="append")
+    state, sinked_files = _sink_uncommitted(
+        monkeypatch,
+        tbl,
+        pl.LazyFrame({"a": []}, schema={"a": pl.Int64}),
+        mode="overwrite",
+    )
+    state.commit(sinked_files)
+    assert _rows(tbl) == []
+    _foreign_append(tbl, [7])
+
+    _twin(state).commit(sinked_files)
+
+    assert _rows(tbl) == [7]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_commit_replay_after_expired_middle_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
+    state.commit(sinked_files)
+    _foreign_append(tbl, [1])
+    tbl.refresh()
+    middle = tbl.current_snapshot()
+    assert middle is not None
+    _foreign_append(tbl, [2])
+    tbl.refresh()
+    tbl.maintenance.expire_snapshots().by_id(middle.snapshot_id).commit()
+    assert tbl.snapshot_by_id(middle.snapshot_id) is None
+
+    _twin(state).commit(sinked_files)
+
+    assert len(_tagged_snapshots(tbl, state)) == 1
+    assert _rows(tbl) == [1, 2, 42]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_commit_replay_after_rollback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    pl.LazyFrame({"a": [1]}).sink_iceberg(tbl, mode="append")
+    parent = tbl.current_snapshot()
+    assert parent is not None
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
+    state.commit(sinked_files)
+    tbl.manage_snapshots().rollback_to_snapshot(parent.snapshot_id).commit()
+    assert _rows(tbl) == [1]
+
+    _twin(state).commit(sinked_files)
+
+    assert len(_tagged_snapshots(tbl, state)) == 1
+    assert _rows(tbl) == [1]
+
+
+@pytest.mark.write_disk
 def test_sink_iceberg_commit_retries_after_concurrent_foreign_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2075,6 +2316,21 @@ def test_sink_iceberg_commit_retries_after_concurrent_foreign_write(
 
     assert calls.call_count == 2
     assert _rows(tbl) == [7, 42]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_rerun_appends_again(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    lf = pl.LazyFrame({"a": [42]})
+    lf.sink_iceberg(tbl, mode="append")
+    lf.sink_iceberg(tbl, mode="append")
+
+    assert _rows(tbl) == [42, 42]
+    uuids = {s.summary.get(_SINK_UUID_PROPERTY) for s in tbl.snapshots()}  # type: ignore[union-attr]
+    assert len(uuids) == 2
+    assert None not in uuids
 
 
 @pytest.mark.parametrize(
