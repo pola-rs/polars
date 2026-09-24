@@ -1,0 +1,48 @@
+name: Lint Nix
+
+on:
+  pull_request:
+    paths:
+      - flake.lock
+      - flake.nix
+      - rust-toolchain.toml
+      - .github/workflows/lint-nix.yml
+  push:
+    branches:
+      - main
+      - "1.x"
+    paths:
+      - flake.lock
+      - flake.nix
+      - rust-toolchain.toml
+      - .github/workflows/lint-nix.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Run nix flake check
+        run: |
+          if nix flake check --all-systems --no-update-lock-file; then
+            exit 0
+          fi
+
+          nix flake update
+
+          if nix flake check --all-systems --no-update-lock-file; then
+            echo "::error::flake.lock is out of date. Run 'nix flake update', apply the diff below with 'git apply', or edit flake.lock by hand."
+            git diff -- flake.lock
+            exit 1
+          fi
+
+          echo "::error::The flake does not evaluate with an updated flake.lock. If rust-overlay has not synced the nightly yet, re-run this job after 02:00 UTC."
+          exit 1
