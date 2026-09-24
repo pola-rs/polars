@@ -249,7 +249,7 @@ impl NodeMetricsRegistry {
     }
 
     /// Registers a UpDownCounter that combines by summing
-    pub fn new_counter(&self, key: &'static str, unit: MetricUnit) -> Metric<kind::UpDownCounter> {
+    pub fn new_counter(&self, key: &'static str, unit: MetricUnit) -> Metric<kind::Sum> {
         self.register_custom_metric(key, unit)
     }
 
@@ -479,7 +479,7 @@ pub mod kind {
 
     /// Combines by summing
     #[derive(Default, Clone, Copy)]
-    pub struct UpDownCounter;
+    pub struct Sum;
 
     /// Combines by taking the highest value
     #[derive(Default, Clone, Copy)]
@@ -489,7 +489,7 @@ pub mod kind {
     #[derive(Default, Clone, Copy)]
     pub struct Gauge;
 
-    impl MetricKind for UpDownCounter {
+    impl MetricKind for Sum {
         const AGG: AggMode = AggMode::Sum;
     }
 
@@ -520,7 +520,7 @@ impl<K: MetricKind> Metric<K> {
 pub struct MetricReporter<K: MetricKind>(Option<Arc<Cell>>, K);
 
 /// Represents an UpDownCounter
-impl MetricReporter<kind::UpDownCounter> {
+impl MetricReporter<kind::Sum> {
     #[inline]
     pub fn add(&self, delta: i64) {
         if let Some(cell) = &self.0 {
@@ -577,7 +577,7 @@ mod tests {
     const HELD_IDX: usize = 2;
 
     struct Metrics {
-        rows: Metric<kind::UpDownCounter>,
+        rows: Metric<kind::Sum>,
         peak: Metric<kind::Max>,
         held: Metric<kind::Gauge>,
     }

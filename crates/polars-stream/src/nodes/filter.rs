@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use polars_buffer::Buffer;
 use polars_mem_engine::column_to_mask;
 

@@ -223,21 +223,9 @@ struct GroupBySinkState {
     random_state: PlRandomState,
     partitioner: HashPartitioner,
     has_order_sensitive_agg: bool,
-    metrics: GroupByMetrics,
-}
 
-struct GroupByMetrics {
-    estimated_groups: Metric<kind::UpDownCounter>,
-    actual_groups: Metric<kind::UpDownCounter>,
-}
-
-impl GroupByMetrics {
-    fn register(registry: &NodeMetricsRegistry) -> Self {
-        Self {
-            estimated_groups: registry.new_counter("group_by.estimated_groups", MetricUnit::Unit),
-            actual_groups: registry.new_counter("group_by.actual_groups", MetricUnit::Unit),
-        }
-    }
+    estimated_groups: Metric<kind::Sum>,
+    actual_groups: Metric<kind::Sum>,
 }
 
 impl GroupBySinkState {
@@ -430,8 +418,8 @@ impl GroupBySinkState {
         let grouped_reductions_template = &self.grouped_reductions;
         let grouped_reduction_cols = &self.grouped_reduction_cols;
 
-        let estimated_groups_metric = &self.metrics.estimated_groups.reporter();
-        let actual_groups_metric = &self.metrics.actual_groups.reporter();
+        let estimated_groups_metric = &self.estimated_groups.reporter();
+        let actual_groups_metric = &self.actual_groups.reporter();
 
         executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
@@ -721,7 +709,10 @@ impl GroupByNode {
                 locals,
                 partitioner,
                 has_order_sensitive_agg,
-                metrics: GroupByMetrics::register(&metrics_registry),
+                estimated_groups: metrics_registry
+                    .new_counter("group_by.estimated_groups", MetricUnit::Unit),
+                actual_groups: metrics_registry
+                    .new_counter("group_by.actual_groups", MetricUnit::Unit),
             }),
             key_schema,
             num_inputs,
