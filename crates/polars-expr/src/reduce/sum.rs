@@ -274,17 +274,17 @@ impl Reducer for IdxTypeCheckedSumReducer {
     }
 }
 
-/// Adds counts as u64 for `SumCounts`. The inputs may be u64 partial counts, so the adds
-/// saturate instead of wrapping to a small count that looks valid. Raises on `finish()`
-/// when a total doesn't fit into `IdxSize`, or has saturated.
+/// Adds u64 partial counts for `SumCounts`. The adds saturate instead of wrapping to a small
+/// count that looks valid. Raises on `finish()` when a total doesn't fit into `IdxSize`, or
+/// has saturated.
 #[derive(Clone, Default)]
 pub struct CountSumReducer;
 
 impl CountSumReducer {
     pub fn new_grouped_reduction(in_dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
         polars_ensure!(
-            in_dtype == DataType::IDX_DTYPE || in_dtype == DataType::UInt64,
-            InvalidOperation: "sum of counts expects {} or u64 input, got {}", DataType::IDX_DTYPE, in_dtype
+            in_dtype == DataType::UInt64,
+            InvalidOperation: "sum of counts expects u64 input, got {}", in_dtype
         );
         Ok(Box::new(VecGroupedReduction::new(in_dtype, Self)))
     }
@@ -299,14 +299,6 @@ impl Reducer for CountSumReducer {
         0
     }
 
-    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
-        if s.dtype() == &DataType::UInt64 {
-            Cow::Borrowed(s)
-        } else {
-            Cow::Owned(s.cast(&DataType::UInt64).unwrap())
-        }
-    }
-
     #[inline(always)]
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
         *a = a.saturating_add(*b);
@@ -319,9 +311,12 @@ impl Reducer for CountSumReducer {
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
         for arr in ca.downcast_iter() {
-            *v = arr
-                .iter()
-                .fold(*v, |acc, x| acc.saturating_add(x.copied().unwrap_or(0)));
+            *v = if arr.has_nulls() {
+                arr.iter()
+                    .fold(*v, |acc, x| acc.saturating_add(x.copied().unwrap_or(0)))
+            } else {
+                arr.values_iter().fold(*v, |acc, x| acc.saturating_add(*x))
+            };
         }
     }
 

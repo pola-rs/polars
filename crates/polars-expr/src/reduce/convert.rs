@@ -44,7 +44,15 @@ pub fn into_reduction(
         AExpr::Agg(agg) => match agg {
             IRAggExpr::Sum(input) => (new_sum_reduction(get_dt(*input)?)?, *input),
             IRAggExpr::SumCounts(input) => {
-                (CountSumReducer::new_grouped_reduction(get_dt(*input)?)?, *input)
+                let dtype = get_dt(*input)?;
+                // `IdxSize` counts can't overflow the u64 sum; u64 partial counts can.
+                let reduction: Box<dyn GroupedReduction> =
+                    if dtype == DataType::IDX_DTYPE && dtype != DataType::UInt64 {
+                        Box::new(IdxTypeCheckedSumReducer::new_grouped_reduction())
+                    } else {
+                        CountSumReducer::new_grouped_reduction(dtype)?
+                    };
+                (reduction, *input)
             },
             IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?)?, *input),
             IRAggExpr::Min {

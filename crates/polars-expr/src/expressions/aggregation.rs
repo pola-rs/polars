@@ -24,9 +24,7 @@ fn sum_counts_per_group(c: &Column, groups: &GroupsType) -> PolarsResult<Column>
     let ca = c.u64()?.rechunk();
     let arr = ca.downcast_as_array();
     let sum = |rows: &mut dyn Iterator<Item = usize>| {
-        count_to_idx(rows.fold(0u64, |acc, i| {
-            acc.saturating_add(arr.get(i).unwrap_or(0))
-        }))
+        count_to_idx(rows.fold(0u64, |acc, i| acc.saturating_add(arr.get(i).unwrap_or(0))))
     };
     let sums = match groups {
         GroupsType::Idx(idx) => idx
@@ -817,7 +815,9 @@ mod test {
         let node = arena.add(AExpr::Agg(IRAggExpr::SumCounts(column)));
         let (mut reduction, _) = into_reduction(node, &mut arena, df.schema(), false).unwrap();
         reduction.resize(1);
-        reduction.update_group(&[df.column("p").unwrap()], 0, 0).unwrap();
+        reduction
+            .update_group(&[df.column("p").unwrap()], 0, 0)
+            .unwrap();
         reduction
     }
 
