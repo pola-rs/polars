@@ -2153,6 +2153,15 @@ class PySelector:
     def all() -> PySelector: ...
     def hash(self) -> int: ...
 
+class PyFileDecryptionProperties:
+    def __init__(
+        self,
+        footer_key: bytes,
+        column_keys: list[tuple[str, bytes]],
+        aad_prefix: bytes | None,
+        verify_footer_signature: bool,
+    ) -> None: ...
+
 class PyOptFlags:
     def __init__(self) -> None: ...
     @staticmethod

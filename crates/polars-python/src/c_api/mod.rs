@@ -31,6 +31,8 @@ use crate::expr::PyExpr;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
 use crate::io::arrow_c_stream::PyArrowCStreamReader;
+#[cfg(feature = "parquet")]
+use crate::io::parquet_encryption::PyFileDecryptionProperties;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
 use crate::lazyframe::{PyLazyFrame, PyOptFlags};
@@ -289,6 +291,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(functions::read_parquet_metadata))
         .unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_class::<PyFileDecryptionProperties>().unwrap();
     #[cfg(all(feature = "parquet", feature = "json"))]
     m.add_wrapped(wrap_pyfunction!(
         functions::_bench_parquet_metadata_bincode_size

@@ -45,6 +45,7 @@ if TYPE_CHECKING:
         StorageOptionsDict,
     )
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.parquet.decryption import ParquetDecryptionProperties
     from polars.io.scan_options import ScanCastOptions
 
 
@@ -104,6 +105,7 @@ def read_parquet(
     memory_map: bool = True,
     include_file_paths: str | None = None,
     missing_columns: Literal["insert", "raise"] = "raise",
+    decryption_properties: ParquetDecryptionProperties | None = None,
     _expand_paths: bool = True,
 ) -> DataFrame:
     """
@@ -208,6 +210,13 @@ def read_parquet(
 
         * `insert`: Inserts the missing columns using NULLs as the row values.
         * `raise`: Raises an error.
+    decryption_properties
+        Properties for decrypting Parquet files encrypted with Parquet modular
+        encryption. See :class:`ParquetDecryptionProperties`.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Returns
     -------
@@ -238,6 +247,11 @@ def read_parquet(
         msg = "the `hive_schema` parameter of `read_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
+    if decryption_properties is not None:
+        msg = "the `decryption_properties` parameter of `read_parquet` is considered unstable."
+        issue_unstable_warning(msg)
+        # TODO: Pass decryption properties to the Parquet reader.
+
     # Dispatch to pyarrow if requested
     if use_pyarrow:
         if n_rows is not None:
@@ -248,6 +262,11 @@ def read_parquet(
             raise ValueError(msg)
         if schema is not None:
             msg = "`schema` cannot be used with `use_pyarrow=True`"
+            raise ValueError(msg)
+        if decryption_properties is not None:
+            msg = (
+                "Parquet decryption properties cannot be used when use_pyarrow is True"
+            )
             raise ValueError(msg)
         if hive_schema is not None:
             msg = (

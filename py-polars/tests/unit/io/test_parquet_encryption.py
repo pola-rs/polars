@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -57,7 +58,42 @@ def test_read_uniform_encryption(io_files_path: Path) -> None:
     path = io_files_path / "parquet-encryption" / "uniform_encryption.parquet.encrypted"
     expected = expected_data()
 
-    # TODO: Pass decryption properties with FOOTER_KEY once supported.
-    df = pl.read_parquet(path, schema=expected.schema)
+    decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
+    df = pl.read_parquet(
+        path, schema=expected.schema, decryption_properties=decryption_properties
+    )
 
     assert_frame_equal(df, expected)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"footer_key": "0123456789012345"}, "footer_key must be bytes, got 'str'"),
+        (
+            {"footer_key": FOOTER_KEY, "column_keys": {"x": "1234567890123450"}},
+            "key for column 'x' must be bytes, got 'str'",
+        ),
+        (
+            {"footer_key": FOOTER_KEY, "aad_prefix": "prefix"},
+            "aad_prefix must be bytes, got 'str'",
+        ),
+    ],
+)
+def test_decryption_properties_keys_must_be_bytes(
+    kwargs: dict[str, Any], match: str
+) -> None:
+    with pytest.raises(TypeError, match=match):
+        pl.ParquetDecryptionProperties(**kwargs)
+
+
+def test_decryption_properties_with_pyarrow(io_files_path: Path) -> None:
+    path = io_files_path / "parquet-encryption" / "uniform_encryption.parquet.encrypted"
+    decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
+    with pytest.raises(
+        ValueError,
+        match="Parquet decryption properties cannot be used when use_pyarrow is True",
+    ):
+        pl.read_parquet(
+            path, use_pyarrow=True, decryption_properties=decryption_properties
+        )
