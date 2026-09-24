@@ -106,10 +106,10 @@ impl ComputeNode for MultiScan {
                 .initialize(state.clone(), self.metrics_registry.is_some());
 
             if let Initialized { io_metrics, .. } = &self.state {
-                io_metrics.as_ref().map(|io_metrics| {
+                if let Some(io_metrics) = io_metrics.as_ref() {
                     self.metrics_registry
                         .register_io_metrics(io_metrics.clone())
-                });
+                }
             }
 
             self.state.refresh(verbose).await?;

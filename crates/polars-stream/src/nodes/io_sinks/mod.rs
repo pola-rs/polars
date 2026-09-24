@@ -139,10 +139,10 @@ impl ComputeNode for IOSinkNode {
                 unreachable!()
             };
 
-            io_metrics.as_ref().map(|io_metrics| {
+            if let Some(io_metrics) = io_metrics.as_ref() {
                 self.metrics_registry
                     .register_io_metrics(io_metrics.clone())
-            });
+            }
 
             if phase_channel_tx.send(phase_morsel_rx).await.is_err() {
                 let IOSinkNodeState::Initialized {
