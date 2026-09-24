@@ -98,6 +98,17 @@ AGGS = {
     .then(pl.col("x").sum())
     .otherwise(None)
     .alias("s"),
+    "sum_arithmetic": (pl.col("f") * (1 - pl.col("x"))).sum(),
+    "sum_divide": (pl.col("x") / pl.col("f")).sum(),
+    "sum_plus_literal": (pl.col("x") + 1).sum(),
+    "count_arithmetic": (pl.col("x") + pl.col("f")).count(),
+    "min_arithmetic": (pl.col("x") - 1).min(),
+    "max_arithmetic": (pl.col("f") * 2).max(),
+    "non_strict_cast": (pl.col("x").cast(pl.Float32, strict=False) * 2).sum(),
+    "sql_sum_guard_arithmetic": pl.when((pl.col("f") * (1 - pl.col("x"))).count() > 0)
+    .then((pl.col("f") * (1 - pl.col("x"))).sum())
+    .otherwise(None)
+    .alias("s"),
 }
 
 
@@ -202,7 +213,15 @@ NOT_SPLIT = {
     "is_null": pl.col("x").is_null().sum(),
     "literal": pl.lit(1).sum(),
     "head": pl.col("x").head(1).sum(),
-    "computed_input": (pl.col("x") + 1).sum(),
+    "fill_null_in_arithmetic": (pl.col("x").fill_null(0) * pl.col("f")).sum(),
+    "boolean": ((pl.col("x") > 1) | (pl.col("f") > 1)).sum(),
+    "boolean_cast": (pl.col("x") > 1).cast(pl.Int64).sum(),
+    "floor_divide": (pl.col("x") // 2).sum(),
+    "modulo": (pl.col("x") % 2).sum(),
+    "strict_cast_in_arithmetic": (pl.col("x").cast(pl.Float64) * 2).sum(),
+    "literals_only": (pl.lit(2) * pl.lit(3)).sum(),
+    "decimal_literal": (pl.col("x") * pl.lit(Decimal("1.5"))).sum(),
+    "function_in_arithmetic": (pl.col("x").abs() * 2).sum(),
     "strict_cast": pl.col("x").cast(pl.Int8, strict=True).sum(),
     "first": pl.col("x").first(),
     "count_with_nulls": pl.col("x").count() + pl.col("x").null_count(),
@@ -240,6 +259,43 @@ def test_eager_aggregation_decimal_sum_does_not_split(
         assert not _fired(on, off), on
         result, _ = _collect_both(lf, plmonkeypatch)
         assert result["x"].to_list() == [Decimal(1)]
+
+
+def test_eager_aggregation_equal_leaves_share_a_partial(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    e = pl.col("f") * (1 - pl.col("x"))
+    lf = (
+        _left()
+        .join(_right(), on="k")
+        .group_by("g")
+        .agg(e.sum().alias("a"), (e.sum() * 2).alias("b"), e.count().alias("c"))
+    )
+    _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by="g")
+    on, _ = _plans(lf, plmonkeypatch)
+    partial = next(line for line in on.splitlines() if "BY [col(\"k\")]" in line)
+    assert partial.count(".sum()") == 1, partial
+    assert partial.count(".count()") == 1, partial
+
+
+def test_eager_aggregation_decimal_arithmetic_does_not_split(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # Key 2 has no match, and dividing its Decimal values raises. The original never
+    # divides that row, so it must still return a result.
+    left = pl.LazyFrame({"k": [1], "g": ["a"]})
+    dec = pl.Decimal(10, 2)
+    right = pl.LazyFrame(
+        {
+            "k": [1, 2],
+            "a": pl.Series([Decimal("2"), Decimal("1")], dtype=dec),
+            "b": pl.Series([Decimal("1"), Decimal("0")], dtype=dec),
+        }
+    )
+    agg = (pl.col("a") / pl.col("b")).cast(pl.Float64, strict=False).sum()
+    lf = left.join(right, on="k").group_by("g").agg(agg)
+    _assert_rewrite(lf, plmonkeypatch, fires=False, sort_by="g")
+    assert lf.collect(engine="streaming")["a"].to_list() == [2.0]
 
 
 def test_eager_aggregation_rejected_shapes(plmonkeypatch: PlMonkeyPatch) -> None:

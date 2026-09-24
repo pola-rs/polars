@@ -5,11 +5,11 @@
 //! aggregate splits into a partial one per join key and a final one that combines them.
 //! Each L row then meets one pre-aggregated row per key instead of every R row of that key.
 //!
-//! Only `count`, `len`, `sum`, `min` and `max` of plain R columns split here. A left join
-//! gives an unmatched L row nulls for R's columns; the split is only right if the aggregate
-//! sees those nulls as they are, which is why the aggregate input must be a plain column.
-//! The partial aggregates also run on R rows the join would have dropped, so they must not
-//! be able to fail where the original did not.
+//! Only `count`, `len`, `sum`, `min` and `max` of R columns, or of plain arithmetic over them,
+//! split here. A left join gives an unmatched L row nulls for R's columns; the split is only
+//! right if the aggregate sees those nulls as nulls, which is why the input may not turn a
+//! null into a value. The partial aggregates also run on R rows the join would have dropped,
+//! so they must not be able to fail where the original did not.
 
 use std::sync::Arc;
 
@@ -25,7 +25,7 @@ use crate::plans::stats::{
 };
 use crate::plans::{
     AExpr, ExprIR, IR, IRAggExpr, IRBooleanFunction, IRBuilder, IRFunctionExpr, JoinTypeOptionsIR,
-    LiteralValue, OutputName, ProjectionOptions,
+    LiteralValue, OutputName, ProjectionOptions, ToFieldContext,
 };
 use crate::prelude::{GroupbyOptions, JoinType, Operator};
 
@@ -49,11 +49,24 @@ enum LeafKind {
     Max { propagate_nans: bool },
 }
 
-/// One aggregate the rewrite splits, and the R column it reads (none for `len`).
-#[derive(Clone, PartialEq, Eq, Hash)]
+/// One aggregate the rewrite splits, and its input in R's column names (none for `len`).
+#[derive(Clone, Copy)]
 struct Leaf {
     kind: LeafKind,
-    column: Option<PlSmallStr>,
+    input: Option<Node>,
+}
+
+impl Leaf {
+    fn is_equal_to(&self, other: &Leaf, expr_arena: &Arena<AExpr>) -> bool {
+        self.kind == other.kind
+            && match (self.input, other.input) {
+                (None, None) => true,
+                (Some(a), Some(b)) => expr_arena
+                    .get(a)
+                    .is_expr_equal_to(expr_arena.get(b), expr_arena),
+                _ => false,
+            }
+    }
 }
 
 fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) -> Option<Node> {
@@ -210,13 +223,22 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
     let join_options = join_options.clone();
 
     // Partial aggregates over R, one per distinct leaf.
-    let mut partial_names: PlIndexMap<Leaf, PlSmallStr> = PlIndexMap::default();
+    let mut partials: Vec<(Leaf, PlSmallStr)> = Vec::new();
+    let mut partial_of = Vec::with_capacity(leaves.len());
     for (_, leaf) in &leaves {
-        if !partial_names.contains_key(leaf) {
-            partial_names.insert(leaf.clone(), unique_column_name());
-        }
+        let index = match partials
+            .iter()
+            .position(|(seen, _)| seen.is_equal_to(leaf, expr_arena))
+        {
+            Some(index) => index,
+            None => {
+                partials.push((*leaf, unique_column_name()));
+                partials.len() - 1
+            },
+        };
+        partial_of.push(index);
     }
-    let partial_aggs = partial_names
+    let partial_aggs = partials
         .iter()
         .map(|(leaf, name)| {
             let node = partial_agg(leaf, &right_keys[0], wide_counts, expr_arena);
@@ -267,8 +289,8 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
     // by the aggregate that combines its partials.
     let is_left = matches!(how, JoinType::Left);
     let mut final_leaves = PlIndexMap::default();
-    for (node, leaf) in &leaves {
-        let partial_column = expr_arena.add(AExpr::Column(partial_names[leaf].clone()));
+    for ((node, leaf), index) in leaves.iter().zip(partial_of) {
+        let partial_column = expr_arena.add(AExpr::Column(partials[index].1.clone()));
         final_leaves.insert(
             *node,
             final_agg(leaf, partial_column, is_left, wide_counts, expr_arena),
@@ -283,7 +305,7 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
         .collect();
 
     // The group by reads its keys by the names it saw before, and the partials.
-    let mut columns = Vec::with_capacity(key_columns.len() + partial_names.len());
+    let mut columns = Vec::with_capacity(key_columns.len() + partials.len());
     let mut seen = PlIndexSet::default();
     for (seen_name, column) in &key_columns {
         if seen.insert(seen_name.clone()) {
@@ -291,7 +313,7 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
             columns.push(ExprIR::new(node, OutputName::Alias(seen_name.clone())));
         }
     }
-    for name in partial_names.values() {
+    for (_, name) in &partials {
         columns.push(ExprIR::from_column_name(name.clone(), expr_arena));
     }
     let new_join = IRBuilder::new(left, expr_arena, ir_arena)
@@ -453,23 +475,13 @@ fn gate_passes(
 /// elementwise operations, and records each aggregate.
 fn collect_leaves(
     node: Node,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
     from_right: &PlIndexMap<PlSmallStr, PlSmallStr>,
     right_schema: &Schema,
     leaves: &mut Vec<(Node, Leaf)>,
 ) -> bool {
-    let right_column = |input: Node, allowed: fn(&DataType) -> bool| {
-        let AExpr::Column(name) = expr_arena.get(input) else {
-            return None;
-        };
-        let column = from_right.get(name)?;
-        allowed(right_schema.get(column)?).then(|| column.clone())
-    };
     let leaf = match expr_arena.get(node) {
-        AExpr::Len => Some(Leaf {
-            kind: LeafKind::Len,
-            column: None,
-        }),
+        AExpr::Len => Some((LeafKind::Len, None)),
         AExpr::Agg(agg) => {
             let (kind, input, allowed): (_, _, fn(&DataType) -> bool) = match agg {
                 IRAggExpr::Count {
@@ -499,18 +511,21 @@ fn collect_leaves(
                 ),
                 _ => return false,
             };
-            let Some(column) = right_column(input, allowed) else {
-                return false;
-            };
-            Some(Leaf {
-                kind,
-                column: Some(column),
-            })
+            Some((kind, Some((input, allowed))))
         },
         _ => None,
     };
-    if let Some(leaf) = leaf {
-        leaves.push((node, leaf));
+    if let Some((kind, input)) = leaf {
+        let input = match input {
+            None => None,
+            Some((input, allowed)) => {
+                match right_input(input, expr_arena, from_right, right_schema, allowed) {
+                    Some(input) => Some(input),
+                    None => return false,
+                }
+            },
+        };
+        leaves.push((node, Leaf { kind, input }));
         return true;
     }
 
@@ -530,6 +545,84 @@ fn collect_leaves(
     inputs
         .into_iter()
         .all(|input| collect_leaves(input, expr_arena, from_right, right_schema, leaves))
+}
+
+/// The input of an aggregate, in R's column names: a plain R column with an `allowed` dtype,
+/// or arithmetic over R columns (see `arithmetic_input`).
+fn right_input(
+    input: Node,
+    expr_arena: &mut Arena<AExpr>,
+    from_right: &PlIndexMap<PlSmallStr, PlSmallStr>,
+    right_schema: &Schema,
+    allowed: fn(&DataType) -> bool,
+) -> Option<Node> {
+    if let AExpr::Column(name) = expr_arena.get(input) {
+        let column = from_right.get(name)?.clone();
+        allowed(right_schema.get(&column)?).then_some(())?;
+        return Some(expr_arena.add(AExpr::Column(column)));
+    }
+
+    let mut has_column = false;
+    let input = arithmetic_input(input, expr_arena, from_right, &mut has_column)?;
+    if !has_column {
+        return None;
+    }
+    // Every node must be a primitive integer or float, including the input of a cast:
+    // arithmetic on other types can raise (e.g. a Decimal division by zero).
+    let ctx = ToFieldContext::new(expr_arena, right_schema);
+    let mut stack = vec![input];
+    while let Some(node) = stack.pop() {
+        let ae = expr_arena.get(node);
+        let dtype = ae.to_dtype(&ctx).ok()?.materialize_unknown(true).ok()?;
+        if !(dtype.is_integer() || dtype.is_float()) {
+            return None;
+        }
+        ae.inputs(&mut stack);
+    }
+    let dtype = expr_arena.get(input).to_dtype(&ctx).ok()?;
+    allowed(&dtype).then_some(input)
+}
+
+/// A copy of `node` in R's column names, if it uses only R columns, scalar literals, `+`,
+/// `-`, `*`, `/` and non-strict casts. These give null for a null input and cannot raise
+/// on integers and floats, so running them on R rows the join would drop, or on a left
+/// join's null-padded row, changes nothing.
+fn arithmetic_input(
+    node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    from_right: &PlIndexMap<PlSmallStr, PlSmallStr>,
+    has_column: &mut bool,
+) -> Option<Node> {
+    let ae = match expr_arena.get(node).clone() {
+        AExpr::Column(name) => {
+            *has_column = true;
+            AExpr::Column(from_right.get(&name)?.clone())
+        },
+        AExpr::Literal(value) => return value.is_scalar().then_some(node),
+        AExpr::BinaryExpr { left, op, right }
+            if matches!(
+                op,
+                Operator::Plus | Operator::Minus | Operator::Multiply | Operator::TrueDivide
+            ) =>
+        {
+            AExpr::BinaryExpr {
+                left: arithmetic_input(left, expr_arena, from_right, has_column)?,
+                op,
+                right: arithmetic_input(right, expr_arena, from_right, has_column)?,
+            }
+        },
+        AExpr::Cast {
+            expr,
+            dtype,
+            options: CastOptions::NonStrict,
+        } => AExpr::Cast {
+            expr: arithmetic_input(expr, expr_arena, from_right, has_column)?,
+            dtype,
+            options: CastOptions::NonStrict,
+        },
+        _ => return None,
+    };
+    Some(expr_arena.add(ae))
 }
 
 /// Integer sums wrap the same way in any grouping; a decimal sum raises on overflow.
@@ -552,7 +645,7 @@ fn partial_agg(
     wide_counts: bool,
     expr_arena: &mut Arena<AExpr>,
 ) -> Node {
-    let mut column = || expr_arena.add(AExpr::Column(leaf.column.clone().unwrap()));
+    let leaf_input = || leaf.input.unwrap();
     let agg = match leaf.kind {
         LeafKind::Len if !wide_counts => return expr_arena.add(AExpr::Len),
         // R's keys are not null under the partial group by, so this counts its rows.
@@ -561,20 +654,20 @@ fn partial_agg(
             IRAggExpr::Sum(count_as_u64(key, expr_arena))
         },
         LeafKind::Count if !wide_counts => IRAggExpr::Count {
-            input: column(),
+            input: leaf_input(),
             include_nulls: false,
         },
         LeafKind::Count => {
-            let input = column();
+            let input = leaf_input();
             IRAggExpr::Sum(count_as_u64(input, expr_arena))
         },
-        LeafKind::Sum => IRAggExpr::Sum(column()),
+        LeafKind::Sum => IRAggExpr::Sum(leaf_input()),
         LeafKind::Min { propagate_nans } => IRAggExpr::Min {
-            input: column(),
+            input: leaf_input(),
             propagate_nans,
         },
         LeafKind::Max { propagate_nans } => IRAggExpr::Max {
-            input: column(),
+            input: leaf_input(),
             propagate_nans,
         },
     };
