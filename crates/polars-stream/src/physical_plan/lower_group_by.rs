@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions};
+use polars_core::prelude::{
+    ExplodeOptions, Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions,
+};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
@@ -1274,6 +1276,59 @@ pub fn try_build_sorted_group_by(
     }
 
     Ok(Some(input))
+}
+
+/// Lowers `function.over(partition_by)` as a sorted group-by followed by an explode.
+///
+/// The caller must ensure `partition_by` is sorted and `function` is length-preserving, which
+/// makes the exploded output row-aligned with `input`.
+pub fn try_build_sorted_over(
+    input: PhysStream,
+    partition_by: &[ExprIR],
+    function: ExprIR,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext<'_>,
+) -> PolarsResult<Option<PhysStream>> {
+    let input_schema = input.output_schema(phys_sm).clone();
+    let out_name = function.output_name().clone();
+    let mut output_schema = partition_by
+        .iter()
+        .map(|k| k.field(&input_schema, expr_arena))
+        .collect::<PolarsResult<Schema>>()?;
+    let out_dtype = function.dtype(&input_schema, expr_arena)?.clone();
+    output_schema.insert(out_name.clone(), out_dtype.implode());
+
+    let Some(grouped) = try_build_sorted_group_by(
+        input,
+        partition_by,
+        &[function],
+        Arc::new(output_schema),
+        false,
+        Arc::new(GroupbyOptionsIR::default()),
+        None,
+        expr_arena,
+        phys_sm,
+        expr_cache,
+        ctx,
+        true,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    // Same options as the in-memory window explode.
+    let exploded = AExprBuilder::col(out_name.clone(), expr_arena)
+        .explode(
+            expr_arena,
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
+        .expr_ir(out_name);
+    build_select_stream(grouped, &[exploded], expr_arena, phys_sm, expr_cache, ctx).map(Some)
 }
 
 #[allow(clippy::too_many_arguments)]

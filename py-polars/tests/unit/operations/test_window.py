@@ -1103,3 +1103,114 @@ def test_window_order_by_multiple_keys_scalar(key: pl.Expr) -> None:
         .height
         == 0
     )
+
+
+@pytest.mark.parametrize("mapping_strategy", ["group_to_rows", "explode"])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").cum_sum(),
+        pl.col("x").rank(),
+        pl.col("x").shift(1),
+        pl.col("x").diff(),
+    ],
+)
+def test_over_sorted_keys_streaming(
+    expr: pl.Expr, mapping_strategy: WindowMappingStrategy
+) -> None:
+    df = pl.DataFrame(
+        {"g": [1, 1, 1, 2, 2, 3, 3, 3, 3], "x": [1, 2, 3, 4, 5, 6, 7, 8, 9]}
+    )
+    q = (
+        df.set_sorted("g")
+        .lazy()
+        .select("g", expr.over("g", mapping_strategy=mapping_strategy).alias("y"))
+    )
+
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "sorted-group-by" in dot
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize(
+    "lf",
+    [
+        # Explicit sort.
+        pl.LazyFrame({"g": [2, 1, 2, 1, 3], "x": [1, 2, 3, 4, 5]}).sort(
+            "g", maintain_order=True
+        ),
+        # Sortedness hint.
+        pl.LazyFrame({"g": [1, 1, 2, 2, 3], "x": [1, 2, 3, 4, 5]}).set_sorted("g"),
+        # Descending keys.
+        pl.LazyFrame({"g": [2, 1, 2, 1, 3], "x": [1, 2, 3, 4, 5]}).sort(
+            "g", descending=True, maintain_order=True
+        ),
+        # Null keys first and last.
+        pl.LazyFrame({"g": [None, None, 1, 1, 2], "x": [1, 2, 3, 4, 5]}).set_sorted(
+            "g"
+        ),
+        pl.LazyFrame({"g": [1, 1, 2, None, None], "x": [1, 2, 3, 4, 5]}).sort(
+            "g", nulls_last=True, maintain_order=True
+        ),
+        # Empty input.
+        pl.LazyFrame(
+            {"g": [], "x": []}, schema={"g": pl.Int64, "x": pl.Int64}
+        ).set_sorted("g"),
+    ],
+)
+def test_over_sorted_keys_streaming_sources(lf: pl.LazyFrame) -> None:
+    q = lf.with_columns(y=pl.col("x").cum_sum().over("g"))
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "sorted-group-by" in dot
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+def test_over_sorted_keys_streaming_multiple_keys() -> None:
+    lf = pl.LazyFrame(
+        {"g1": [2, 1, 1, 2, 1, 2], "g2": ["b", "a", "b", "a", "a", "b"], "x": range(6)}
+    ).sort("g1", "g2", maintain_order=True)
+
+    q = lf.select("g1", "g2", pl.col("x").cum_sum().over("g1", "g2"))
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "sorted-group-by" in dot
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+    # Keys in a different order than the sort are not known to be sorted.
+    q = lf.select("g1", "g2", pl.col("x").cum_sum().over("g2", "g1"))
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "sorted-group-by" not in dot
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        # Handled by the hash group-by + join lowering.
+        pl.LazyFrame({"g": [1, 1, 2], "x": [1, 2, 3]})
+        .set_sorted("g")
+        .select(pl.col("x").sum().over("g")),
+        pl.LazyFrame({"g": [1, 1, 2], "x": [1, 2, 3]})
+        .set_sorted("g")
+        .select((pl.col("x") - pl.col("x").mean()).over("g")),
+        # Not length-preserving (scalar aggregation).
+        pl.LazyFrame({"g": [1, 1, 2], "x": [1, 2, 3]})
+        .set_sorted("g")
+        .select(pl.col("x").sum().over("g", mapping_strategy="explode")),
+        # Unsorted keys.
+        pl.LazyFrame({"g": [2, 1, 2], "x": [1, 2, 3]}).select(
+            pl.col("x").cum_sum().over("g")
+        ),
+        # Order by.
+        pl.LazyFrame({"g": [1, 1, 2], "x": [2, 1, 3]})
+        .set_sorted("g")
+        .select(pl.col("x").cum_sum().over("g", order_by="x")),
+        # Not length-preserving.
+        pl.LazyFrame({"g": [1, 1, 1, 2], "x": [1, 2, 3, 4]})
+        .set_sorted("g")
+        .select(pl.col("x").head(2).over("g", mapping_strategy="explode")),
+    ],
+)
+def test_over_sorted_keys_streaming_not_applicable(q: pl.LazyFrame) -> None:
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "sorted-group-by" not in dot
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
