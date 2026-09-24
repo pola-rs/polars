@@ -821,7 +821,7 @@ def _membership(
     return container.arr.contains(needle, **kwargs)
 
 
-_RUST_DTYPE = {
+_RUST_DTYPE: dict[PolarsDataType, str] = {
     pl.Int8: "i8",
     pl.Int64: "i64",
     pl.UInt64: "u64",
