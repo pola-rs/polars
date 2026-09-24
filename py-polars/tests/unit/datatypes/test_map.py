@@ -2392,7 +2392,7 @@ def test_map_get_unknown_label_is_absent(
     # No key can hold a label outside the categories, so it is absent, not an error.
     df = pl.DataFrame(
         {
-            "m": map_with_keys(key_dtype, ["a", "b"]).gather([0, 0, None]),
+            "m": map_with_keys(key_dtype, ["a", "b"]).gather(pl.Series([0, 0, None])),
             "k": ["b", "z", "a"],
         },
     )
@@ -2456,7 +2456,7 @@ def test_map_get_decimal_key_of_another_scale(needle: Decimal, found: bool) -> N
     s = map_with_keys(pl.Decimal(3, 1), [Decimal("1.5"), Decimal("10.0")])
     df = pl.DataFrame(
         {
-            "m": s.gather([0, None]),
+            "m": s.gather(pl.Series([0, None])),
             "k": pl.Series([needle] * 2, dtype=pl.Decimal(3, 2)),
         }
     )
