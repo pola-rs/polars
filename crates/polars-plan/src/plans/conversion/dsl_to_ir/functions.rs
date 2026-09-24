@@ -1000,6 +1000,8 @@ pub(super) fn convert_functions(
         F::Unique(v) => I::Unique(v),
         #[cfg(feature = "round_series")]
         F::Round { decimals, mode } => I::Round { decimals, mode },
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { op, scale } => I::DecimalArith { op, scale },
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => I::RoundSF { digits },
         #[cfg(feature = "round_series")]

@@ -343,6 +343,13 @@ impl IRFunctionExpr {
             }),
             #[cfg(feature = "round_series")]
             Truncate { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "dtype-decimal")]
+            DecimalArith { op, scale } => mapper
+                .ensure_satisfies(
+                    |_, dtype| dtype.is_decimal() || dtype.is_integer(),
+                    op.name(),
+                )?
+                .with_dtype(DataType::Decimal(DEC128_MAX_PREC, *scale)),
             #[cfg(feature = "fused")]
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr { .. } => mapper.map_to_supertype(),

@@ -1017,6 +1017,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Unique(v) => F::Unique(v),
         #[cfg(feature = "round_series")]
         IF::Round { decimals, mode } => F::Round { decimals, mode },
+        #[cfg(feature = "dtype-decimal")]
+        IF::DecimalArith { op, scale } => F::DecimalArith { op, scale },
         #[cfg(feature = "round_series")]
         IF::RoundSF { digits } => F::RoundSF { digits },
         #[cfg(feature = "round_series")]
