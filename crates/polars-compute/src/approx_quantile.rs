@@ -304,6 +304,15 @@ pub mod kll {
         weight: u64,
     }
 
+    impl<T> Default for Sampler<T> {
+        fn default() -> Self {
+            Self {
+                item: None,
+                weight: 0,
+            }
+        }
+    }
+
     impl<T> Sampler<T> {
         /// Absorb `item` of weight `item_weight` into the sample.
         ///
@@ -397,10 +406,7 @@ pub mod kll {
                 rng: rand::make_rng(),
                 scratch: Vec::default(),
                 sampler_level: 0,
-                sampler: Sampler {
-                    item: None,
-                    weight: 0,
-                },
+                sampler: Sampler::default(),
             };
             KLLSketch(state)
         }
@@ -483,14 +489,13 @@ pub mod kll {
 
         /// The lowest level whose compactor is larger than [`SAMPLER_CUTOFF`].
         fn recompute_sampler_level(&mut self) {
-            let sampler_level = (0..self.levels.len())
+            self.sampler_level = (0..self.levels.len())
                 .filter(|level| {
                     compactor_threshold(self.k, self.levels.len() - 1 - level) <= SAMPLER_CUTOFF
                 })
                 .count();
             // Make sure there is space for the sampler output to go.
-            let max_sampler_level = self.levels.len().saturating_sub(2);
-            self.sampler_level = usize::min(sampler_level, max_sampler_level);
+            debug_assert!(self.sampler_level < self.levels.len() - 1);
         }
 
         /// Move every item below `sampler_level` into the sampler.
@@ -526,7 +531,7 @@ pub mod kll {
             for item in promoted.drain(..) {
                 self.update_compactors(item);
             }
-            let _ = mem::replace(&mut self.scratch, promoted);
+            self.scratch = promoted;
         }
 
         fn recompute_total_capacity(&mut self) {
@@ -557,6 +562,7 @@ pub mod kll {
             let next_start = next_level.offset;
             let next_end = next_start + next_level.size;
             debug_assert!(self.scratch.is_empty());
+            self.scratch.clear();
             let buf = &mut self.scratch;
 
             // If there is an odd number of items in this compactor, stash the "straggler" to add it back later
@@ -1103,6 +1109,7 @@ pub mod req {
                 let (left, right) = self.items[next.clone()].split_at(next_split);
                 let (left, right) = (left.iter().cloned(), right.iter().cloned());
                 debug_assert!(self.scratch.is_empty());
+                self.scratch.clear();
                 match self.is_hra {
                     false => merge_sorted(&mut self.scratch, left, right, cmp_desc::<false, T>),
                     true => merge_sorted(&mut self.scratch, left, right, cmp_desc::<true, T>),
@@ -1184,6 +1191,7 @@ fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
 ) -> Vec<u64> {
     let num_items: usize = levels.iter().map(|level| level.len()).sum();
     debug_assert!(out.is_empty());
+    out.clear();
     out.reserve_exact(num_items);
     let mut cum_weights = Vec::with_capacity(num_items);
     let mut cursors: Vec<usize> = vec![0; levels.len()];
