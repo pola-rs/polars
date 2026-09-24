@@ -34,7 +34,7 @@ use polars_utils::unique_id::UniqueId;
 use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
 
 use super::lower_expr::build_hstack_stream;
-use super::{PhysNode, PhysNodeKind, PhysPlanBuilder, PhysStream};
+use super::{PhysNode, PhysNodeKind, PhysSmBuilder, PhysStream};
 use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
@@ -52,7 +52,7 @@ pub fn build_slice_stream(
     input: PhysStream,
     offset: i64,
     length: usize,
-    phys_sm: &mut PhysPlanBuilder,
+    phys_sm: &mut PhysSmBuilder,
 ) -> PhysStream {
     if offset >= 0 {
         let offset = offset as usize;
@@ -81,7 +81,7 @@ pub fn build_filter_stream(
     input: PhysStream,
     predicate: ExprIR,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut PhysPlanBuilder,
+    phys_sm: &mut PhysSmBuilder,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
@@ -137,7 +137,7 @@ pub fn build_row_idx_stream(
     input: PhysStream,
     name: PlSmallStr,
     offset: Option<IdxSize>,
-    phys_sm: &mut PhysPlanBuilder,
+    phys_sm: &mut PhysSmBuilder,
 ) -> PhysStream {
     let input_schema = input.output_schema(phys_sm);
     let mut output_schema = (**input_schema).clone();
@@ -171,7 +171,7 @@ pub fn lower_ir(
     node: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut PhysPlanBuilder,
+    phys_sm: &mut PhysSmBuilder,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
     cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
@@ -212,7 +212,7 @@ fn lower_ir_inner(
     node: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut PhysPlanBuilder,
+    phys_sm: &mut PhysSmBuilder,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
     cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
@@ -1948,7 +1948,7 @@ fn append_sorted_key_column(
     keys_sorted: Option<&Vec<AExprSorted>>,
     broadcast_nulls: Option<bool>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut PhysPlanBuilder,
+    phys_sm: &mut PhysSmBuilder,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>, Option<PlSmallStr>)> {
@@ -1999,7 +1999,7 @@ fn lower_subtree_to_inmem_engine(
     ir_node_output_schema: Arc<Schema>,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut PhysPlanBuilder,
+    phys_sm: &mut PhysSmBuilder,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
     let mem_engine_executor = create_physical_plan(

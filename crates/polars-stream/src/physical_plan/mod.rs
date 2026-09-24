@@ -40,7 +40,7 @@ mod lower_ir;
 mod to_description;
 mod to_graph;
 
-pub use builder::PhysPlanBuilder;
+pub use builder::PhysSmBuilder;
 pub use fmt::{NodeStyle, visualize_plan};
 use polars_defs::time::duration::Duration;
 use polars_defs::time::group_by::ClosedWindow;
@@ -80,7 +80,7 @@ impl PhysNodeKey {
 pub struct PhysNode {
     output_schemas: UnitVec<Arc<Schema>>,
     kind: PhysNodeKind,
-    /// The IR node whose lowering created this node. Set by `PhysPlanBuilder::insert`; always
+    /// The IR node whose lowering created this node. Set by `PhysSmBuilder::insert`; always
     /// `Some` once `build_physical_plan` has returned.
     ir_node: Option<Node>,
 }
@@ -840,7 +840,7 @@ fn _visit_nodes_impl(
     }
 }
 
-fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysPlanBuilder) {
+fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysSmBuilder) {
     let mut refcount: PlIndexMap<_, usize> = PlIndexMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(*i).or_insert(0) += 1;
@@ -874,7 +874,7 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysPlanBuilder) {
     });
 }
 
-fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysPlanBuilder) {
+fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysSmBuilder) {
     let mut refcount: SecondaryMap<PhysNodeKey, usize> = SecondaryMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(i.node).unwrap().or_insert(0) += 1;
@@ -983,7 +983,7 @@ pub fn build_physical_plan(
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
     let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
     let mut cache_nodes = PlHashMap::new();
-    let mut phys_sm = PhysPlanBuilder::new(
+    let mut phys_sm = PhysSmBuilder::new(
         SlotMap::with_capacity_and_key(ir_arena.len()),
         ir_arena.len(),
     );
