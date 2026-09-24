@@ -548,6 +548,28 @@ def test_eager_aggregation_right_side_either_input(
     _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by="c_ck")
 
 
+@pytest.mark.parametrize("how", ["inner", "left"])
+def test_eager_aggregation_group_by_right_join_key(
+    how: Any, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Default coalescing keeps only the left key, here R's.
+    lf = (
+        _fact()
+        .join(_cust(), left_on="f_ck", right_on="c_ck")
+        .group_by("f_ck", "c_name")
+        .agg(_revenue())
+    )
+    _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by="f_ck")
+
+    # R on the right, grouped by its retained key.
+    lf = (
+        _join(_cust(), _fact(), "c_ck", "f_ck", how=how)
+        .group_by("f_ck", "c_name")
+        .agg(_revenue())
+    )
+    _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by=["f_ck", "c_name"])
+
+
 def test_eager_aggregation_right_side_left_input_rejected(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:

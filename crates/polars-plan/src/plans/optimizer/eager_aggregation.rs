@@ -497,8 +497,8 @@ fn shares_a_name(a: &Schema, b: &Schema) -> bool {
 }
 
 /// The target at `join`, if the partial aggregation can go under it: every aggregated
-/// column comes from one input R, and everything else read above comes from the other. A
-/// join key of R may only be read by the join itself.
+/// column comes from one input R, and everything else read above comes from the other. The
+/// partial aggregation keeps R's join keys, so they may also be group keys.
 fn target_at(
     join: Node,
     names: &Names,
@@ -538,8 +538,16 @@ fn target_at(
             .map(|(seen, name)| Some((seen.clone(), right_by_output.get(name)?.clone())))
             .collect::<Option<PlIndexMap<_, _>>>();
         let from_left = |name: &PlSmallStr| left_schema.contains(name);
+        let right_join_key = |name: &PlSmallStr| {
+            right_by_output
+                .get(name)
+                .is_some_and(|column| right_keys.contains(column))
+        };
         if let Some(from_right) = from_right
-            && names.keys.iter().all(from_left)
+            && names
+                .keys
+                .iter()
+                .all(|key| from_left(key) || right_join_key(key))
             && names.ancestor_keys.iter().all(from_left)
         {
             return Some(Target {
@@ -565,7 +573,12 @@ fn target_at(
             })
             .collect::<Option<PlIndexMap<_, _>>>()?;
         let from_left = |name: &PlSmallStr| right_schema.contains(name);
-        if names.keys.iter().all(from_left) && names.ancestor_keys.iter().all(from_left) {
+        if names
+            .keys
+            .iter()
+            .all(|key| from_left(key) || left_keys.contains(key))
+            && names.ancestor_keys.iter().all(from_left)
+        {
             return Some(Target {
                 left: *input_right,
                 right: *input_left,
