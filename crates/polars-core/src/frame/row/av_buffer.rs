@@ -133,8 +133,22 @@ impl<'a> AnyValueBuffer<'a> {
                 builder.append_value(val.extract()?)
             },
             (Null(builder), AnyValue::Null) => builder.append_null(),
-            // Struct and List can be recursive so use AnyValues for that
-            (All(_, vals), v) => vals.push(v.into_static()),
+            (All(dt, vals), v) => {
+                let av = if dt.is_nested() && v.dtype().is_primitive() {
+                    // The builder is nested but the value is scalar. We wrap in a List.
+                    let s = Series::from_any_values_and_dtype(
+                        PlSmallStr::EMPTY,
+                        &[v],
+                        dt.inner_dtype().unwrap(),
+                        true,
+                    )
+                    .ok()?;
+                    AnyValue::List(s)
+                } else {
+                    v
+                };
+                vals.push(av.into_static());
+            },
 
             // dynamic types
             (String(builder), av) => match av {
