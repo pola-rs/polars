@@ -4,6 +4,7 @@ pub const CSE_REPLACED: &str = "__POLARS_CSER_";
 pub const POLARS_TMP_PREFIX: &str = "_POLARS_";
 pub const POLARS_ELEMENT: &str = "__PL_ELEMENT";
 pub const POLARS_STRUCTFIELDS: &str = "__PL_STRUCTFIELDS";
+pub const POLARS_REWRITE_INPUT_PREFIX: &str = "__PL_REWRITE_INPUT_";
 pub const LEN: &str = "len";
 
 const LITERAL_NAME: PlSmallStr = PlSmallStr::from_static("literal");

@@ -47,16 +47,27 @@ pub use syntactic_sugar::*;
 #[cfg(feature = "temporal")]
 pub use temporal::*;
 
-#[cfg(feature = "arg_where")]
-use crate::dsl::function_expr::FunctionExpr;
-use crate::dsl::function_expr::ListFunction;
 #[cfg(all(feature = "concat_str", feature = "strings"))]
 use crate::dsl::function_expr::StringFunction;
+use crate::dsl::function_expr::{FunctionExpr, ListFunction};
 use crate::dsl::*;
 
 /// Return the number of rows in the context.
 pub fn len() -> Expr {
     Expr::Len
+}
+
+/// Placeholder for the `i`-th input in the template returned by [`DslRewrite::rewrite`].
+pub fn rewrite_input(i: u32) -> Expr {
+    Expr::RewriteInput(i)
+}
+
+/// Call `rewrite` on `inputs`. It decides during planning what the expression becomes.
+pub fn dsl_rewrite(inputs: Vec<Expr>, rewrite: Arc<dyn DslRewrite>) -> Expr {
+    Expr::Function {
+        input: inputs,
+        function: FunctionExpr::DslRewrite(DslRewriteSource::Rust(SpecialEq::new(rewrite))),
+    }
 }
 
 /// First column in a DataFrame.

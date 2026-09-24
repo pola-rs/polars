@@ -1,3 +1,4 @@
+use super::dsl_rewrite::{RewriteInputs, convert_dsl_rewrite};
 use super::functions::convert_functions;
 use super::*;
 use crate::constants::{get_pl_element_name, get_pl_structfields_name};
@@ -56,6 +57,8 @@ pub struct ExprToIRContext<'a> {
     pub allow_unknown: bool,
     /// Check whether mentioned column names exist in the schema.
     pub check_column_names: bool,
+    /// Set if doing an expression rewrite.
+    pub rewrite_inputs: Option<RewriteInputs>,
 }
 
 impl<'a> ExprToIRContext<'a> {
@@ -66,6 +69,7 @@ impl<'a> ExprToIRContext<'a> {
             schema,
             allow_unknown: false,
             check_column_names: true,
+            rewrite_inputs: None,
         }
     }
 
@@ -90,6 +94,7 @@ impl<'a> ExprToIRContext<'a> {
             schema,
             allow_unknown: false,
             check_column_names: true,
+            rewrite_inputs: None,
         }
     }
 
@@ -148,9 +153,14 @@ pub(super) fn to_aexpr_impl(
 
     let (v, output_name) = match expr {
         Expr::Element => (AExpr::Element, PlSmallStr::EMPTY),
-        Expr::RewriteInput(i) => polars_bail!(
-            InvalidOperation: "A rewrite_input({i}) should have been rewritten, but it was not."
-        ),
+        Expr::RewriteInput(i) => {
+            let Some(inputs) = ctx.rewrite_inputs.as_mut() else {
+                polars_bail!(
+                    InvalidOperation: "A rewrite_input({i}) should have been rewritten, but it was not."
+                )
+            };
+            return inputs.get(i, ctx.arena);
+        },
         Expr::Explode { input, options } => {
             let (expr, output_name) = recurse_arc!(input)?;
             (AExpr::Explode { expr, options }, output_name)
@@ -405,6 +415,10 @@ pub(super) fn to_aexpr_impl(
                 output_name,
             )
         },
+        Expr::Function {
+            input,
+            function: FunctionExpr::DslRewrite(source),
+        } => return convert_dsl_rewrite(input, source, ctx),
         Expr::Function { input, function } => {
             return convert_functions(input, function, ctx);
         },
@@ -501,6 +515,7 @@ pub(super) fn to_aexpr_impl(
                 arena: ctx.arena,
                 allow_unknown: ctx.allow_unknown,
                 check_column_names: ctx.check_column_names,
+                rewrite_inputs: None,
             };
             let (evaluation, _) = to_aexpr_impl(owned(evaluation), &mut evaluation_ctx)?;
 
@@ -557,6 +572,7 @@ pub(super) fn to_aexpr_impl(
                     schema: &eval_schema,
                     allow_unknown: ctx.allow_unknown,
                     check_column_names: ctx.check_column_names,
+                    rewrite_inputs: None,
                 };
                 let exprir = to_expr_ir(e, &mut eval_ctx)?;
                 let field_name = exprir.output_name().clone();

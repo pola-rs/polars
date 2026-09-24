@@ -1,5 +1,6 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
 
+use super::dsl_rewrite::rewrite_input_column_name;
 use super::*;
 use crate::constants::{
     POLARS_ELEMENT, POLARS_STRUCTFIELDS, get_pl_element_name, get_pl_structfields_name,
@@ -299,6 +300,11 @@ fn expand_expression_rec(
             }
             if schema.contains(POLARS_STRUCTFIELDS) {
                 schema.to_mut().remove(POLARS_STRUCTFIELDS);
+            }
+            let mut i = 0;
+            while schema.contains(&rewrite_input_column_name(i)) {
+                schema.to_mut().remove(&rewrite_input_column_name(i));
+                i += 1;
             }
             let columns = selector.into_columns(schema.as_ref(), ignored_selector_columns)?;
             out.extend(columns.into_iter().map(Expr::Column));

@@ -1160,6 +1160,7 @@ pub(super) fn convert_functions(
             }
         },
         F::SetSortedFlag(sorted) => I::SetSortedFlag(sorted),
+        F::DslRewrite(_) => unreachable!("handled in to_aexpr_impl"),
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags,

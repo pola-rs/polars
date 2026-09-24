@@ -335,6 +335,8 @@ pub enum FunctionExpr {
         /// Pickle serialized keyword arguments.
         kwargs: Arc<[u8]>,
     },
+    /// Rewritten into another expression during DSL->IR conversion.
+    DslRewrite(DslRewriteSource),
 
     FoldHorizontal {
         callback: PlanCallback<(Series, Series), Series>,
@@ -473,6 +475,7 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
+            DslRewrite(source) => source.hash(state),
 
             FoldHorizontal {
                 callback,
@@ -917,6 +920,7 @@ impl Display for FunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
+            DslRewrite(source) => return Display::fmt(source, f),
             FoldHorizontal { .. } => "fold",
             ReduceHorizontal { .. } => "reduce",
             #[cfg(feature = "dtype-struct")]
