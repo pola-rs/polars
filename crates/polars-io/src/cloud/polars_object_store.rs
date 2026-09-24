@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use futures::{Stream, StreamExt as _, TryStreamExt as _};
 use hashbrown::hash_map::RawEntryMut;
+use object_store::client::{HttpError, HttpErrorKind};
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore, ObjectStoreExt};
 use polars_buffer::Buffer;
@@ -43,9 +44,54 @@ impl std::error::Error for PolarsObjectStoreError {
     }
 }
 
+/// The `io::ErrorKind` for an `object_store::Error`, taken from the error
+/// variant or from the innermost `io::Error` in its source chain.
+pub fn object_store_error_kind(source: &object_store::Error) -> std::io::ErrorKind {
+    use std::io::ErrorKind::*;
+
+    match source {
+        object_store::Error::NotFound { .. } => NotFound,
+        object_store::Error::PermissionDenied { .. }
+        | object_store::Error::Unauthenticated { .. } => PermissionDenied,
+        _ => io_error_kind_from_source(source),
+    }
+}
+
+/// The kind of the innermost `io::Error` in the source chain of `error`,
+/// falling back to the kind of the innermost `HttpError`, or `Other`.
+pub fn io_error_kind_from_source(error: &(dyn std::error::Error + 'static)) -> std::io::ErrorKind {
+    use std::io::ErrorKind::*;
+
+    let mut kind = Other;
+    let mut http_kind = None;
+    let mut cur = Some(error);
+    while let Some(e) = cur {
+        if let Some(io) = e.downcast_ref::<std::io::Error>()
+            && io.kind() != Other
+        {
+            kind = io.kind();
+        } else if let Some(http) = e.downcast_ref::<HttpError>() {
+            http_kind = Some(http.kind());
+        }
+        cur = e.source();
+    }
+    if kind == Other {
+        // object_store maps this in its private `From<RetryError> for io::Error`,
+        // but the kind is lost when the error is boxed into `Error::Generic`.
+        kind = match http_kind {
+            Some(HttpErrorKind::Timeout) => TimedOut,
+            Some(HttpErrorKind::Connect) => NotConnected,
+            Some(HttpErrorKind::Interrupted) => ConnectionAborted,
+            _ => Other,
+        };
+    }
+    kind
+}
+
 impl From<PolarsObjectStoreError> for std::io::Error {
     fn from(value: PolarsObjectStoreError) -> Self {
-        std::io::Error::other(value)
+        let kind = object_store_error_kind(&value.source);
+        std::io::Error::new(kind, value)
     }
 }
 
