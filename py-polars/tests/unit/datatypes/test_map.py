@@ -2307,7 +2307,7 @@ def test_map_get_casts_the_key_to_the_key_dtype(
 ) -> None:
     lf = pl.LazyFrame(
         {
-            "m": map_of(key_dtype, hit).gather([0, 0, 0, None]),
+            "m": map_of(key_dtype, hit).gather(pl.Series([0, 0, 0, None])),
             "k": pl.Series([hit, miss, None, miss], dtype=needle_dtype),
         }
     )
@@ -2338,7 +2338,9 @@ def test_map_get_casts_the_key_to_the_key_dtype(
 
 
 def test_map_get_inexact_literal_key_keeps_the_shape() -> None:
-    df = pl.DataFrame({"g": [1, 1, 2], "m": map_of(pl.Int8, 7).gather([0, None, 0])})
+    df = pl.DataFrame(
+        {"g": [1, 1, 2], "m": map_of(pl.Int8, 7).gather(pl.Series([0, None, 0]))}
+    )
     exprs = [
         pl.col("m").map.get(pl.lit(300, pl.Int64)).alias("v"),
         pl.col("m").map.contains_key(pl.lit(300, pl.Int64)).alias("has"),
