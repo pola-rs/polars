@@ -2063,6 +2063,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 #[cfg(feature = "ffi_plugin")]
                 IRFunctionExpr::FfiPlugin {
                     flags,
+                    is_deterministic: _,
                     lib,
                     symbol,
                     kwargs,

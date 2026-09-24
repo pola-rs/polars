@@ -131,11 +131,6 @@ bitflags!(
 
             /// Produces a RANGE based on its inputs.
             const RANGE = 1 << 13;
-
-            /// Produces the same output for the same inputs.
-            /// Non-determinism that negligibly affects the outcome is allowed,
-            /// e.g. floating-point reduction order non-determinism.
-            const DETERMINISTIC = 1 << 14;
         }
 );
 
@@ -179,10 +174,6 @@ impl FunctionFlags {
 
     pub fn is_range(self) -> bool {
         self.contains(Self::RANGE)
-    }
-
-    pub fn is_deterministic(self) -> bool {
-        self.contains(Self::DETERMINISTIC)
     }
 }
 

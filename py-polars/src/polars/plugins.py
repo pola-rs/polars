@@ -78,9 +78,7 @@ def register_plugin_function(
         default.
     is_deterministic
         Indicate that the function produces the same output for the same inputs,
-        allowing common subexpression and subplan elimination. Non-determinism
-        that negligibly affects the outcome, such as floating-point reduction
-        order differences, is allowed. Defaults to `True`. Set to `False` for
+        allowing common subexpression and subplan elimination. Set to `False` for
         functions with randomness, observable side effects, or results that depend
         on external state.
 

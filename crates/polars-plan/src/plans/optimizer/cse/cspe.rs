@@ -259,7 +259,7 @@ mod tests {
     use polars_core::prelude::*;
 
     use super::*;
-    use crate::plans::{ExprIR, FunctionFlags, FunctionOptions, IRFunctionExpr, OutputName};
+    use crate::plans::{ExprIR, IRFunctionExpr, OutputName};
 
     #[test]
     fn test_cspe_ffi_plugin_determinism() {
@@ -268,10 +268,6 @@ mod tests {
             let mut expr_arena = Arena::new();
             let df = Arc::new(df!("x" => [1i64, 2, 3]).unwrap());
             let schema = df.schema().clone();
-            let mut flags = FunctionOptions::default();
-            flags
-                .flags
-                .set(FunctionFlags::DETERMINISTIC, is_deterministic);
 
             // Build equivalent subplans independently to exercise structural matching.
             let inputs = (0..2)
@@ -284,9 +280,10 @@ mod tests {
                     let column = ExprIR::from_column_name("x".into(), &mut expr_arena);
                     let plugin = expr_arena.add(AExpr::Function {
                         input: vec![column],
-                        options: flags,
+                        options: Default::default(),
                         function: IRFunctionExpr::FfiPlugin {
-                            flags,
+                            flags: Default::default(),
+                            is_deterministic,
                             lib: "plugin.so".into(),
                             symbol: "test_function".into(),
                             kwargs: Arc::from([]),

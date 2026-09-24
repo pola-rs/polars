@@ -41,7 +41,6 @@ pub fn register_plugin_function(
     flags.set(FunctionFlags::LENGTH_PRESERVING, !changes_length);
     flags.set(FunctionFlags::PASS_NAME_TO_APPLY, pass_name_to_apply);
     flags.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);
-    flags.set(FunctionFlags::DETERMINISTIC, is_deterministic);
     flags.set(
         FunctionFlags::INPUT_WILDCARD_EXPANSION,
         input_wildcard_expansion,
@@ -57,6 +56,7 @@ pub fn register_plugin_function(
         input: args.to_exprs(),
         function: FunctionExpr::FfiPlugin {
             flags: options,
+            is_deterministic,
             lib: plugin_path.into(),
             symbol: function_name.into(),
             kwargs: kwargs.into(),

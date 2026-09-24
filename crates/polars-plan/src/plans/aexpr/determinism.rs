@@ -244,7 +244,9 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Random { .. } => true,
 
         #[cfg(feature = "ffi_plugin")]
-        F::FfiPlugin { flags, .. } => !flags.flags.is_deterministic(),
+        F::FfiPlugin {
+            is_deterministic, ..
+        } => !is_deterministic,
         F::FoldHorizontal { .. } | F::ReduceHorizontal { .. } => true,
         #[cfg(feature = "dtype-struct")]
         F::CumFoldHorizontal { .. } | F::CumReduceHorizontal { .. } => true,
@@ -376,12 +378,9 @@ mod tests {
     #[test]
     fn test_ffi_plugin_determinism() {
         for is_deterministic in [false, true] {
-            let mut flags = FunctionOptions::default();
-            flags
-                .flags
-                .set(FunctionFlags::DETERMINISTIC, is_deterministic);
             let function = IRFunctionExpr::FfiPlugin {
-                flags,
+                flags: FunctionOptions::default(),
+                is_deterministic,
                 lib: "plugin.so".into(),
                 symbol: "test_function".into(),
                 kwargs: Arc::from([]),

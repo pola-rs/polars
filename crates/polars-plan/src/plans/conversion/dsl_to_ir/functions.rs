@@ -1163,11 +1163,13 @@ pub(super) fn convert_functions(
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
         } => I::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,

@@ -38,8 +38,8 @@ def test_register_plugin_function_determinism(
     )
 
     serialized = json.loads(expr.meta.serialize(format="json"))
-    flags = serialized["Function"]["function"]["FfiPlugin"]["flags"]["flags"]
-    assert ("DETERMINISTIC" in flags.split(" | ")) is expected
+    plugin = serialized["Function"]["function"]["FfiPlugin"]
+    assert plugin["is_deterministic"] is expected
 
 
 @pytest.mark.write_disk

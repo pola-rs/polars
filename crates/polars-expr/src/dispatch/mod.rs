@@ -453,6 +453,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags: _,
+            is_deterministic: _,
             lib,
             symbol,
             kwargs,

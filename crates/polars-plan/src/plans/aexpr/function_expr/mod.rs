@@ -342,6 +342,7 @@ pub enum IRFunctionExpr {
     /// This will lead to calls over FFI.
     FfiPlugin {
         flags: FunctionOptions,
+        is_deterministic: bool,
         /// Shared library.
         lib: PlSmallStr,
         /// Identifier in the shared lib.
@@ -492,10 +493,12 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin {
                 flags: _,
+                is_deterministic,
                 lib,
                 symbol,
                 kwargs,
             } => {
+                is_deterministic.hash(state);
                 kwargs.hash(state);
                 lib.hash(state);
                 symbol.hash(state);
