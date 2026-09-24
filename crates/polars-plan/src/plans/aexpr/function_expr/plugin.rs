@@ -224,6 +224,82 @@ pub(super) unsafe fn plugin_field(
     }
 }
 
+#[cfg(all(feature = "dsl_rewrite", feature = "serde"))]
+use polars_ffi::dsl_rewrite::BytesExport;
+
+// FIXME: Needs a description here.
+/// *const ArrowSchema: pointer to heap Box<ArrowSchema>
+/// usize: length of the boxed slice
+/// *const u8: pointer to &[u8] (kwargs)
+/// usize: length of the u8 slice
+/// *const u8: pointer to the utf8 library path, to call kernels of the same plugin
+/// usize: length of the library path
+/// *mut BytesExport: pointer where the serialized expression is written
+#[cfg(all(feature = "dsl_rewrite", feature = "serde"))]
+type RewriteFn = unsafe extern "C" fn(
+    *const ArrowSchema,
+    usize,
+    *const u8,
+    usize,
+    *const u8,
+    usize,
+    *mut BytesExport,
+);
+
+/// Calls `_polars_plugin_rewrite_{symbol}`, which returns a serialized DSL template.
+#[cfg(all(feature = "dsl_rewrite", feature = "serde"))]
+pub(crate) unsafe fn call_plugin_dsl_rewrite(
+    fields: &[Field],
+    lib: &str,
+    symbol: &str,
+    kwargs: &[u8],
+) -> PolarsResult<Expr> {
+    let plugin = get_lib(lib)?;
+    let major = plugin.1;
+    let lib_handle = &plugin.0;
+    polars_ensure!(major == 0, ComputeError: "this Polars engine doesn't support plugin version: {}", major);
+
+    let symbol_name = format!("_polars_plugin_rewrite_{symbol}");
+    let rewrite_fn: libloading::Symbol<RewriteFn> =
+        lib_handle.get(symbol_name.as_bytes()).map_err(|_| {
+            polars_err!(ComputeError: "plugin does not export rewrite '{symbol}' (symbol '{symbol_name}' not found)")
+        })?;
+
+    // we deallocate the fields buffer
+    let ffi_fields = fields
+        .iter()
+        .map(|field| polars_arrow::ffi::export_field_to_c(&field.to_arrow(CompatLevel::newest())))
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+
+    let mut out = BytesExport::empty();
+    rewrite_fn(
+        ffi_fields.as_ptr(),
+        ffi_fields.len(),
+        kwargs.as_ptr(),
+        kwargs.len(),
+        lib.as_ptr(),
+        lib.len(),
+        &mut out,
+    );
+
+    if out.is_null() {
+        let msg = retrieve_error_msg(lib_handle);
+        check_panic(msg.as_ref())?;
+        polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
+    }
+
+    Expr::deserialize_versioned(out.as_slice()).map_err(|e| {
+        e.context(
+            format!(
+                "could not read the expression returned by the plugin; rebuild the plugin against Polars {}",
+                env!("CARGO_PKG_VERSION")
+            )
+            .into(),
+        )
+    })
+}
+
 fn check_panic(msg: &str) -> PolarsResult<()> {
     polars_ensure!(msg != "PANIC", ComputeError: "the plugin panicked\n\nThe message is suppressed. Set POLARS_VERBOSE=1 to send the panic message to stderr.");
     Ok(())

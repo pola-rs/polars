@@ -63,6 +63,25 @@ pub fn register_plugin_function(
     .into())
 }
 
+#[cfg(all(feature = "ffi_plugin", feature = "dsl_rewrite"))]
+#[pyfunction]
+pub fn register_plugin_rewrite(
+    plugin_path: &str,
+    function_name: &str,
+    args: Vec<PyExpr>,
+    kwargs: Vec<u8>,
+) -> PyExpr {
+    Expr::Function {
+        input: args.to_exprs(),
+        function: FunctionExpr::DslRewrite(DslRewriteSource::Ffi {
+            lib: plugin_path.into(),
+            symbol: function_name.into(),
+            kwargs: kwargs.into(),
+        }),
+    }
+    .into()
+}
+
 #[pyfunction]
 pub fn __register_startup_deps(warn_function: Py<PyAny>) {
     #[cfg(feature = "object")]

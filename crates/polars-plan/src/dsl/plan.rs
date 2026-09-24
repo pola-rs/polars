@@ -303,18 +303,12 @@ impl DslPlan {
         mut writer: W,
         ctx: PlanSerializationContext,
     ) -> PolarsResult<()> {
-        let le_major = DSL_VERSION.0.to_le_bytes();
-        let le_minor = DSL_VERSION.1.to_le_bytes();
-
         // @GB:
         // This is absolute horrendous but serde does not allow for state to passed along with the
         // serialization so there is no proper way to do this except replace serde.
         polars_utils::pl_serialize::USE_CLOUDPICKLE.set(ctx.use_cloudpickle);
 
-        writer.write_all(DSL_MAGIC_BYTES)?;
-        writer.write_all(&le_major)?;
-        writer.write_all(&le_minor)?;
-        writer.write_all(DSL_SCHEMA_HASH.as_bytes())?;
+        write_dsl_header(&mut writer)?;
         let serializable_plan = serializable_plan::SerializableDslPlan::from(self);
         pl_serialize::serialize_dsl(writer, &serializable_plan)
             .map_err(|e| polars_err!(ComputeError: "serialization failed\n\nerror: {e}"))
@@ -322,69 +316,7 @@ impl DslPlan {
 
     #[cfg(feature = "serde")]
     pub fn deserialize_versioned<R: Read>(mut reader: R) -> PolarsResult<Self> {
-        const MAGIC_LEN: usize = DSL_MAGIC_BYTES.len();
-        let mut version_magic = [0u8; MAGIC_LEN + 4];
-        reader
-            .read_exact(&mut version_magic)
-            .map_err(|e| polars_err!(ComputeError: "failed to read incoming DSL_VERSION: {e}"))?;
-
-        if &version_magic[..MAGIC_LEN] != DSL_MAGIC_BYTES {
-            polars_bail!(ComputeError: "dsl magic bytes not found")
-        }
-
-        let major = u16::from_le_bytes(version_magic[MAGIC_LEN..MAGIC_LEN + 2].try_into().unwrap());
-        let minor = u16::from_le_bytes(
-            version_magic[MAGIC_LEN + 2..MAGIC_LEN + 4]
-                .try_into()
-                .unwrap(),
-        );
-
-        const MAJOR: u16 = DSL_VERSION.0;
-        const MINOR: u16 = DSL_VERSION.1;
-
-        if polars_core::config::verbose() {
-            eprintln!(
-                "incoming DSL_VERSION: {major}.{minor}, deserializer DSL_VERSION: {MAJOR}.{MINOR}"
-            );
-        }
-
-        if major != MAJOR {
-            polars_bail!(ComputeError:
-                "deserialization failed\n\ngiven DSL_VERSION: {major}.{minor} is not compatible with this Polars version which uses DSL_VERSION: {MAJOR}.{MINOR}\n{}",
-                "error: can't deserialize DSL with a different major version"
-            );
-        }
-
-        if minor > MINOR {
-            polars_bail!(ComputeError:
-                "deserialization failed\n\ngiven DSL_VERSION: {major}.{minor} is not compatible with this Polars version which uses DSL_VERSION: {MAJOR}.{MINOR}\n{}",
-                "error: can't deserialize DSL with a higher minor version"
-            );
-        }
-
-        let mut schema_hash = [0_u8; SCHEMA_HASH_LEN];
-        reader.read_exact(&mut schema_hash).map_err(
-            |e| polars_err!(ComputeError: "failed to read incoming DSL_SCHEMA_HASH: {e}"),
-        )?;
-
-        let incoming_hash = SchemaHash::new(&schema_hash).ok_or_else(
-            || polars_err!(ComputeError: "failed to read incoming DSL schema hash, not a valid hex string")
-        )?;
-
-        if polars_core::config::verbose() {
-            eprintln!(
-                "incoming DSL_SCHEMA_HASH: {incoming_hash}, deserializer DSL_SCHEMA_HASH: {DSL_SCHEMA_HASH}"
-            );
-        }
-
-        if std::env::var("POLARS_SKIP_DSL_HASH_VERIFICATION").as_deref() != Ok("1")
-            && incoming_hash != DSL_SCHEMA_HASH
-        {
-            polars_bail!(ComputeError:
-                "deserialization failed\n\ngiven DSL_SCHEMA_HASH: {incoming_hash} is not compatible with this Polars version which uses DSL_SCHEMA_HASH: {DSL_SCHEMA_HASH}\n{}",
-                "error: can't deserialize DSL with incompatible schema"
-            );
-        }
+        read_dsl_header(&mut reader)?;
 
         let serializable_plan: serializable_plan::SerializableDslPlan =
             pl_serialize::deserialize_dsl(reader)
@@ -422,6 +354,101 @@ impl DslPlan {
         schema.insert("hash".into(), DSL_SCHEMA_HASH.to_string().into());
 
         schema
+    }
+}
+
+#[cfg(feature = "serde")]
+fn write_dsl_header<W: Write>(writer: &mut W) -> PolarsResult<()> {
+    writer.write_all(DSL_MAGIC_BYTES)?;
+    writer.write_all(&DSL_VERSION.0.to_le_bytes())?;
+    writer.write_all(&DSL_VERSION.1.to_le_bytes())?;
+    writer.write_all(DSL_SCHEMA_HASH.as_bytes())?;
+    Ok(())
+}
+
+/// Checks the DSL version and schema hash written by [`write_dsl_header`].
+#[cfg(feature = "serde")]
+fn read_dsl_header<R: Read>(reader: &mut R) -> PolarsResult<()> {
+    const MAGIC_LEN: usize = DSL_MAGIC_BYTES.len();
+    let mut version_magic = [0u8; MAGIC_LEN + 4];
+    reader
+        .read_exact(&mut version_magic)
+        .map_err(|e| polars_err!(ComputeError: "failed to read incoming DSL_VERSION: {e}"))?;
+
+    if &version_magic[..MAGIC_LEN] != DSL_MAGIC_BYTES {
+        polars_bail!(ComputeError: "dsl magic bytes not found")
+    }
+
+    let major = u16::from_le_bytes(version_magic[MAGIC_LEN..MAGIC_LEN + 2].try_into().unwrap());
+    let minor = u16::from_le_bytes(
+        version_magic[MAGIC_LEN + 2..MAGIC_LEN + 4]
+            .try_into()
+            .unwrap(),
+    );
+
+    const MAJOR: u16 = DSL_VERSION.0;
+    const MINOR: u16 = DSL_VERSION.1;
+
+    if polars_core::config::verbose() {
+        eprintln!(
+            "incoming DSL_VERSION: {major}.{minor}, deserializer DSL_VERSION: {MAJOR}.{MINOR}"
+        );
+    }
+
+    if major != MAJOR {
+        polars_bail!(ComputeError:
+            "deserialization failed\n\ngiven DSL_VERSION: {major}.{minor} is not compatible with this Polars version which uses DSL_VERSION: {MAJOR}.{MINOR}\n{}",
+            "error: can't deserialize DSL with a different major version"
+        );
+    }
+
+    if minor > MINOR {
+        polars_bail!(ComputeError:
+            "deserialization failed\n\ngiven DSL_VERSION: {major}.{minor} is not compatible with this Polars version which uses DSL_VERSION: {MAJOR}.{MINOR}\n{}",
+            "error: can't deserialize DSL with a higher minor version"
+        );
+    }
+
+    let mut schema_hash = [0_u8; SCHEMA_HASH_LEN];
+    reader
+        .read_exact(&mut schema_hash)
+        .map_err(|e| polars_err!(ComputeError: "failed to read incoming DSL_SCHEMA_HASH: {e}"))?;
+
+    let incoming_hash = SchemaHash::new(&schema_hash).ok_or_else(
+        || polars_err!(ComputeError: "failed to read incoming DSL schema hash, not a valid hex string")
+    )?;
+
+    if polars_core::config::verbose() {
+        eprintln!(
+            "incoming DSL_SCHEMA_HASH: {incoming_hash}, deserializer DSL_SCHEMA_HASH: {DSL_SCHEMA_HASH}"
+        );
+    }
+
+    if std::env::var("POLARS_SKIP_DSL_HASH_VERIFICATION").as_deref() != Ok("1")
+        && incoming_hash != DSL_SCHEMA_HASH
+    {
+        polars_bail!(ComputeError:
+            "deserialization failed\n\ngiven DSL_SCHEMA_HASH: {incoming_hash} is not compatible with this Polars version which uses DSL_SCHEMA_HASH: {DSL_SCHEMA_HASH}\n{}",
+            "error: can't deserialize DSL with incompatible schema"
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(all(feature = "serde", feature = "dsl_rewrite"))]
+impl Expr {
+    /// Serialize with the same version header as [`DslPlan::serialize_versioned`].
+    pub fn serialize_versioned<W: Write>(&self, mut writer: W) -> PolarsResult<()> {
+        write_dsl_header(&mut writer)?;
+        pl_serialize::serialize_dsl(writer, self)
+            .map_err(|e| polars_err!(ComputeError: "serialization failed\n\nerror: {e}"))
+    }
+
+    pub fn deserialize_versioned<R: Read>(mut reader: R) -> PolarsResult<Self> {
+        read_dsl_header(&mut reader)?;
+        pl_serialize::deserialize_dsl(reader)
+            .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))
     }
 }
 

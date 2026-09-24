@@ -1,4 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "dsl_rewrite")]
+pub mod dsl_rewrite;
 pub mod version_0;
 
 use std::mem::ManuallyDrop;

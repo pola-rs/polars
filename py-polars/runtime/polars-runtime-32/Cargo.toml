@@ -22,6 +22,7 @@ rustflags = { workspace = true }
 [features]
 # Features used in this crate
 ffi_plugin = ["polars-python/ffi_plugin"]
+dsl_rewrite = ["polars-python/dsl_rewrite"]
 csv = ["polars-python/csv"]
 polars_cloud_client = ["polars-python/polars_cloud_client"]
 polars_cloud_server = ["polars-python/polars_cloud_server"]
@@ -93,6 +94,7 @@ numa = ["polars-python/numa"]
 
 full_functionality = [
   "ffi_plugin",
+  "dsl_rewrite",
   "csv",
   "polars_cloud_client",
   "object",

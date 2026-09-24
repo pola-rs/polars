@@ -14,6 +14,7 @@ from polars.plugins import (
     _resolve_plugin_path,
     _serialize_kwargs,
     register_plugin_function,
+    register_plugin_rewrite,
 )
 from tests.conftest import PlMonkeyPatch
 
@@ -37,6 +38,26 @@ def test_register_plugin_function_invalid_plugin_path(
         match=f"error loading dynamic library: .*: {re.escape(str(plugin_path))}$",
     ):
         pl.select(expr)
+
+
+@pytest.mark.write_disk
+def test_register_plugin_rewrite_invalid_plugin_path(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    tmp_path.mkdir(exist_ok=True)
+    plugin_path = tmp_path / "lib.so"
+    plugin_path.touch()
+
+    expr = register_plugin_rewrite(
+        plugin_path=plugin_path, function_name="hello", args=pl.col("a")
+    )
+
+    with pytest.raises(
+        ComputeError,
+        match=f"error loading dynamic library: .*: {re.escape(str(plugin_path))}",
+    ):
+        pl.LazyFrame({"a": [1]}).select(expr).collect_schema()
 
 
 @pytest.mark.write_disk

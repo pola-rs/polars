@@ -1,2 +1,3 @@
 maturin>=1.13.0  # 1.12.5/1.12.6 regress macOS build times: https://github.com/PyO3/maturin/issues/3106
 polars
+pytest

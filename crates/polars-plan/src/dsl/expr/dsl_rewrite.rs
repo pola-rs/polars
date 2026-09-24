@@ -27,18 +27,41 @@ pub trait DslRewrite: Send + Sync {
 pub enum DslRewriteSource {
     /// In-process Rust implementation. Cannot be serialized.
     Rust(SpecialEq<Arc<dyn DslRewrite>>),
+    /// `_polars_plugin_rewrite_{symbol}` in a plugin library (unsafe call over FFI)
+    #[cfg(all(feature = "ffi_plugin", feature = "serde"))]
+    Ffi {
+        /// Shared library.
+        lib: PlSmallStr,
+        /// Identifier in the shared lib.
+        symbol: PlSmallStr,
+        /// Pickle serialized keyword arguments.
+        kwargs: Arc<[u8]>,
+    },
 }
+
+// FIXME: feature flag dsl_rewrite should be behind 'serde'.
+// 'ffi_plugin' should be behiind dsl_rewrite.
 
 impl DslRewriteSource {
     pub fn rewrite(&self, inputs: &[Field], input_schema: &Schema) -> PolarsResult<Expr> {
         match self {
             Self::Rust(r) => r.rewrite(inputs, input_schema),
+            #[cfg(all(feature = "ffi_plugin", feature = "serde"))]
+            Self::Ffi {
+                lib,
+                symbol,
+                kwargs,
+            } => unsafe {
+                crate::plans::plugin::call_plugin_dsl_rewrite(inputs, lib, symbol, kwargs)
+            },
         }
     }
 
     pub fn name(&self) -> PlSmallStr {
         match self {
             Self::Rust(r) => r.name(),
+            #[cfg(all(feature = "ffi_plugin", feature = "serde"))]
+            Self::Ffi { symbol, .. } => symbol.clone(),
         }
     }
 }

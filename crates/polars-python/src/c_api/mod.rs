@@ -473,6 +473,9 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "ffi_plugin")]
     m.add_wrapped(wrap_pyfunction!(functions::register_plugin_function))
         .unwrap();
+    #[cfg(all(feature = "ffi_plugin", feature = "dsl_rewrite"))]
+    m.add_wrapped(wrap_pyfunction!(functions::register_plugin_rewrite))
+        .unwrap();
 
     // Capsules
     #[cfg(feature = "allocator")]

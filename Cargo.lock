@@ -1579,6 +1579,8 @@ dependencies = [
  "num",
  "polars",
  "polars-arrow",
+ "polars-ffi",
+ "polars-plan",
  "pyo3",
  "pyo3-polars",
  "rayon",

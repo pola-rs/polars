@@ -195,6 +195,7 @@ cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
 ffi_plugin = ["polars-lazy/ffi_plugin"]
+dsl_rewrite = ["polars-lazy/dsl_rewrite"]
 cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/http"]
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
@@ -313,6 +314,7 @@ full_functionality = [
   "sql",
   "binary_encoding",
   "ffi_plugin",
+  "dsl_rewrite",
   "polars_cloud_client",
   "streaming",
 ]

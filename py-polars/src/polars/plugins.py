@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.parse import parse_into_list_of_expressions
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
     from polars import Expr
     from polars._typing import IntoExpr
 
-__all__ = ["register_plugin_function"]
+__all__ = ["register_plugin_function", "register_plugin_rewrite"]
 
 
 def register_plugin_function(
@@ -104,6 +105,74 @@ def register_plugin_function(
             cast_to_supertype=cast_to_supertype,
             pass_name_to_apply=pass_name_to_apply,
             changes_length=changes_length,
+        )
+    )
+
+
+@unstable()
+def register_plugin_rewrite(
+    *,
+    plugin_path: Path | str,
+    function_name: str,
+    args: IntoExpr | Iterable[IntoExpr],
+    kwargs: dict[str, Any] | None = None,
+    use_abs_path: bool = False,
+) -> Expr:
+    """
+    Register a rewrite expression for the plugin.
+
+    A rewrite decides during query planning what an expression becomes, based on the
+    resolved types of its inputs (including extension type metadata). It returns an
+    expression that may use native Polars expressions and plugin functions.
+
+    See the `user guide <https://docs.pola.rs/user-guide/plugins/expr_plugins>`_
+    for more information about plugins.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    plugin_path
+        Path to the plugin package. Accepts either the file path to the dynamic library
+        file or the path to the directory containing it.
+    function_name
+        The name of the Rust rewrite to register.
+    args
+        The arguments passed to this rewrite. These have to be expressions (or be
+        convertible to expressions).
+    kwargs
+        Non-expression arguments to the plugin rewrite. These must be
+        pickle serializable.
+    use_abs_path
+        If set to `True`, the path will be resolved to an absolute path.
+        The path to the dynamic library is relative to the virtual environment by
+        default.
+
+    Returns
+    -------
+    Expr
+
+    Warnings
+    --------
+    This is highly unsafe as this will call the C function loaded by
+    `plugin::function_name`.
+
+    Polars does not check the data type of the expression returned by the rewrite.
+    You must write your own tests to make sure that the data type returned
+    is actually the one you intended.
+    """
+    pyexprs = parse_into_list_of_expressions(args)
+    serialized_kwargs = _serialize_kwargs(kwargs)
+    plugin_path = _resolve_plugin_path(plugin_path, use_abs_path=use_abs_path)
+
+    return wrap_expr(
+        plr.register_plugin_rewrite(
+            plugin_path=str(plugin_path),
+            function_name=function_name,
+            args=pyexprs,
+            kwargs=serialized_kwargs,
         )
     )
 
