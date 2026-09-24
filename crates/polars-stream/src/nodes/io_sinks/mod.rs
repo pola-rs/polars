@@ -11,7 +11,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::{ComputeNode, PortState};
 use crate::execute::StreamingExecutionState;
-use crate::metrics::OptNodeMetricsRegistrator;
+use crate::metrics::NodeMetricsRegistry;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::TaskPriority;
 use crate::nodes::io_sinks::components::partitioner::Partitioner;
@@ -27,14 +27,14 @@ pub mod writers;
 pub struct IOSinkNode {
     name: PlSmallStr,
     state: IOSinkNodeState,
-    metrics_registrator: OptNodeMetricsRegistrator,
+    metrics_registry: NodeMetricsRegistry,
     verbose: bool,
 }
 
 impl IOSinkNode {
     pub fn new(
         config: impl Into<Box<IOSinkNodeConfig>>,
-        metrics_registrator: OptNodeMetricsRegistrator,
+        metrics_registry: NodeMetricsRegistry,
     ) -> Self {
         let config = config.into();
 
@@ -54,7 +54,7 @@ impl IOSinkNode {
         IOSinkNode {
             name,
             state: IOSinkNodeState::Uninitialized { config },
-            metrics_registrator,
+            metrics_registry,
             verbose,
         }
     }
@@ -76,11 +76,8 @@ impl ComputeNode for IOSinkNode {
 
         recv[0] = if recv[0] == PortState::Done {
             // Ensure initialize / writes empty file for empty output.
-            self.state.initialize(
-                &self.name,
-                execution_state,
-                self.metrics_registrator.is_some(),
-            )?;
+            self.state
+                .initialize(&self.name, execution_state, self.metrics_registry.is_some())?;
 
             match std::mem::replace(&mut self.state, IOSinkNodeState::Finished) {
                 IOSinkNodeState::Initialized {
@@ -130,11 +127,8 @@ impl ComputeNode for IOSinkNode {
         let phase_morsel_rx = recv_ports[0].take().unwrap().serial();
 
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-            self.state.initialize(
-                &self.name,
-                execution_state,
-                self.metrics_registrator.is_some(),
-            )?;
+            self.state
+                .initialize(&self.name, execution_state, self.metrics_registry.is_some())?;
 
             let IOSinkNodeState::Initialized {
                 phase_channel_tx,
@@ -145,8 +139,10 @@ impl ComputeNode for IOSinkNode {
                 unreachable!()
             };
 
-            self.metrics_registrator
-                .register_io_metrics(io_metrics.clone());
+            io_metrics.as_ref().map(|io_metrics| {
+                self.metrics_registry
+                    .register_io_metrics(io_metrics.clone())
+            });
 
             if phase_channel_tx.send(phase_morsel_rx).await.is_err() {
                 let IOSinkNodeState::Initialized {

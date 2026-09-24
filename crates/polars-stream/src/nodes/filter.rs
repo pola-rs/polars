@@ -5,31 +5,31 @@ use polars_mem_engine::column_to_mask;
 
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
-use crate::metrics::{Metric, MetricReporter, MetricUnit, OptNodeMetricsRegistrator, kind};
+use crate::metrics::{Metric, MetricReporter, MetricUnit, NodeMetricsRegistry, kind};
 
 #[derive(Default)]
 struct FilterMetrics {
-    rows_dropped: Metric<kind::Sum>,
-    morsels_received: Metric<kind::Sum>,
+    rows_dropped: Metric<kind::UpDownCounter>,
+    morsels_received: Metric<kind::UpDownCounter>,
     largest_morsel_received: Metric<kind::Max>,
-    eval_wall_ns: Metric<kind::Sum>,
+    eval_wall_ns: Metric<kind::UpDownCounter>,
 }
 
 struct FilterReporter {
-    rows_dropped: MetricReporter<kind::Sum>,
-    morsels_received: MetricReporter<kind::Sum>,
+    rows_dropped: MetricReporter<kind::UpDownCounter>,
+    morsels_received: MetricReporter<kind::UpDownCounter>,
     largest_morsel_received: MetricReporter<kind::Max>,
-    eval_wall_ns: MetricReporter<kind::Sum>,
+    eval_wall_ns: MetricReporter<kind::UpDownCounter>,
 }
 
 impl FilterMetrics {
-    fn register(registrator: &OptNodeMetricsRegistrator) -> Self {
+    fn register(registry: &NodeMetricsRegistry) -> Self {
         Self {
-            rows_dropped: registrator.new_sum("filter.rows_dropped", MetricUnit::Unit),
-            morsels_received: registrator.new_sum("filter.morsels_received", MetricUnit::Unit),
-            largest_morsel_received: registrator
+            rows_dropped: registry.new_counter("filter.rows_dropped", MetricUnit::Unit),
+            morsels_received: registry.new_counter("filter.morsels_received", MetricUnit::Unit),
+            largest_morsel_received: registry
                 .new_max("filter.largest_morsel_received", MetricUnit::Unit),
-            eval_wall_ns: registrator.new_sum("filter.eval_wall_ns", MetricUnit::DurationNs),
+            eval_wall_ns: registry.new_counter("filter.eval_wall_ns", MetricUnit::DurationNs),
         }
     }
 
@@ -53,12 +53,12 @@ impl FilterNode {
     pub fn new(
         predicate: StreamExpr,
         projection: Option<Buffer<usize>>,
-        metrics_registrator: OptNodeMetricsRegistrator,
+        metrics_registry: NodeMetricsRegistry,
     ) -> Self {
         Self {
             predicate,
             projection,
-            metrics: FilterMetrics::register(&metrics_registrator),
+            metrics: FilterMetrics::register(&metrics_registry),
         }
     }
 }

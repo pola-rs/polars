@@ -33,7 +33,7 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
-use crate::metrics::{GraphMetrics, NodeMetricsRegistrator, OptNodeMetricsRegistrator};
+use crate::metrics::{GraphMetrics, NodeMetricsRegistry};
 use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
 use crate::nodes::ComputeNode;
@@ -82,19 +82,17 @@ struct GraphConversionContext<'a> {
 impl GraphConversionContext<'_> {
     fn add_node_with_metrics<N: ComputeNode + 'static>(
         &mut self,
-        node: impl FnOnce(OptNodeMetricsRegistrator) -> N,
+        node: impl FnOnce(NodeMetricsRegistry) -> N,
         inputs: impl IntoIterator<Item = (GraphNodeKey, usize)>,
     ) -> GraphNodeKey {
-        let metrics = self.metrics.clone();
-
         self.graph.add_node_with_key(
             |graph_key| {
-                node(OptNodeMetricsRegistrator(metrics.map(|graph_metrics| {
-                    NodeMetricsRegistrator {
+                node({
+                    NodeMetricsRegistry {
                         graph_key,
-                        graph_metrics,
+                        graph_metrics: self.metrics.clone(),
                     }
-                })))
+                })
             },
             inputs,
         )
@@ -245,8 +243,8 @@ fn to_graph_rec<'a>(
             });
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.add_node_with_metrics(
-                |registrator| {
-                    nodes::filter::FilterNode::new(phys_predicate_expr, projection, registrator)
+                |registry| {
+                    nodes::filter::FilterNode::new(phys_predicate_expr, projection, registry)
                 },
                 [(input_key, input.port)],
             )
@@ -390,7 +388,7 @@ fn to_graph_rec<'a>(
             };
 
             ctx.add_node_with_metrics(
-                |registrator| IOSinkNode::new(config, registrator),
+                |registry| IOSinkNode::new(config, registry),
                 [(input_key, input.port)],
             )
         },
@@ -531,7 +529,7 @@ fn to_graph_rec<'a>(
             };
 
             ctx.add_node_with_metrics(
-                |registrator| IOSinkNode::new(config, registrator),
+                |registry| IOSinkNode::new(config, registry),
                 [(input_key, input.port)],
             )
         },
@@ -939,7 +937,7 @@ fn to_graph_rec<'a>(
             let verbose = config::verbose();
 
             ctx.add_node_with_metrics(
-                |registrator| {
+                |registry| {
                     nodes::io_sources::multi_scan::MultiScan::new(
                         Arc::new(MultiScanConfig {
                             sources,
@@ -966,7 +964,7 @@ fn to_graph_rec<'a>(
                             disable_morsel_split,
                             verbose,
                         }),
-                        registrator,
+                        registry,
                     )
                 },
                 [],
@@ -1735,7 +1733,7 @@ fn to_graph_rec<'a>(
             let verbose = config::verbose();
 
             ctx.add_node_with_metrics(
-                |registrator| {
+                |registry| {
                     nodes::io_sources::multi_scan::MultiScan::new(
                         Arc::new(MultiScanConfig {
                             sources,
@@ -1762,7 +1760,7 @@ fn to_graph_rec<'a>(
                             disable_morsel_split,
                             verbose,
                         }),
-                        registrator,
+                        registry,
                     )
                 },
                 [],

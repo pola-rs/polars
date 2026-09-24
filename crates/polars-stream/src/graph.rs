@@ -42,8 +42,7 @@ impl Graph {
         self.add_node_with_key(|_| node, inputs)
     }
 
-    /// [`add_node`], for a node that needs its own key to construct — a node
-    /// registering metrics builds its [`NodeMetricsRegistrator`] from it.
+    /// [`add_node`], for a node that needs its own key to construct
     pub fn add_node_with_key<N: ComputeNode + 'static>(
         &mut self,
         node: impl FnOnce(GraphNodeKey) -> N,
