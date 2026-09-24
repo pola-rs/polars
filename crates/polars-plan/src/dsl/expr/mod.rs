@@ -1,11 +1,13 @@
 pub mod anonymous;
 mod datatype_fn;
+mod dsl_rewrite;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 pub use anonymous::*;
 use bytes::Bytes;
 pub use datatype_fn::*;
+pub use dsl_rewrite::DslRewrite;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
@@ -69,6 +71,9 @@ pub enum Expr {
     ///
     /// Equivalent of `pl.element()`.
     Element,
+    /// index of input of a plugin rewrite.
+    /// used in the template returned by [`DslRewrite::rewrite`].
+    RewriteInput(u32),
     Alias(Arc<Expr>, PlSmallStr),
     Column(PlSmallStr),
     Selector(Selector),
@@ -328,6 +333,7 @@ impl Hash for Expr {
             },
             // already hashed by discriminant
             Expr::Element | Expr::Len => {},
+            Expr::RewriteInput(i) => i.hash(state),
             Expr::SortBy {
                 expr,
                 by,

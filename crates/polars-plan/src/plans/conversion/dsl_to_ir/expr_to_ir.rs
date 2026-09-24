@@ -148,6 +148,9 @@ pub(super) fn to_aexpr_impl(
 
     let (v, output_name) = match expr {
         Expr::Element => (AExpr::Element, PlSmallStr::EMPTY),
+        Expr::RewriteInput(i) => polars_bail!(
+            InvalidOperation: "A rewrite_input({i}) should have been rewritten, but it was not."
+        ),
         Expr::Explode { input, options } => {
             let (expr, output_name) = recurse_arc!(input)?;
             (AExpr::Explode { expr, options }, output_name)

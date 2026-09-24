@@ -11,7 +11,7 @@ macro_rules! push_expr {
     ($current_expr:expr, $c:ident, $push:ident, $push_owned:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            DataTypeFunction(_) | Column(_) | Literal(_) | Len | Element => {},
+            DataTypeFunction(_) | Column(_) | Literal(_) | Len | Element | RewriteInput(_) => {},
             #[cfg(feature = "dtype-struct")]
             Field(_) => {},
             Alias(e, _) => $push($c, e),

@@ -267,7 +267,7 @@ fn expand_expression_rec(
 ) -> PolarsResult<usize> {
     let start_len = out.len();
     match &expr {
-        Expr::Element => out.push(expr.clone()),
+        Expr::Element | Expr::RewriteInput(_) => out.push(expr.clone()),
         Expr::Alias(subexpr, name) => {
             _ = expand_single(
                 subexpr.as_ref(),

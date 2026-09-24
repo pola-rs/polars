@@ -10,6 +10,7 @@ mod observer;
 mod optimization_checks;
 #[cfg(all(feature = "strings", feature = "cse"))]
 mod pdsh;
+mod plugin_dsl_rewrite;
 mod predicate_queries;
 mod projection_queries;
 mod queries;
