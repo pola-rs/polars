@@ -48,7 +48,6 @@ jobs:
         with:
           env-vars: ImageVersion
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
 
       # Note that we specify --lib, --bins etc
       # to exclude the doc tests.
@@ -58,6 +57,7 @@ jobs:
           -p polars-arrow
           -p polars-compute
           -p polars-core
+          -p polars-defs
           -p polars-io
           -p polars-lazy
           -p polars-ops
@@ -75,6 +75,7 @@ jobs:
           -p polars-arrow
           -p polars-compute
           -p polars-core
+          -p polars-defs
           -p polars-io
           -p polars-lazy
           -p polars-ops
@@ -107,7 +108,6 @@ jobs:
         with:
           env-vars: ImageVersion
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
 
       - name: Compile integration tests
         run: cargo test --all-features -p polars --test it --no-run
@@ -132,7 +132,6 @@ jobs:
         with:
           env-vars: ImageVersion
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
 
       - name: Install cargo hack
         uses: taiki-e/install-action@v2
@@ -161,7 +160,6 @@ jobs:
         with:
           env-vars: ImageVersion
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
 
       - name: Build DSL schema check
         run: cargo build --all-features

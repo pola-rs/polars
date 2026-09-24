@@ -48,6 +48,7 @@ from polars._utils.convert import (
     time_to_int,
     timedelta_to_int,
 )
+from polars._utils.deprecation import deprecated
 from polars._utils.expired import (
     RemovedParameter,
     RenamedParameter,
@@ -1902,6 +1903,44 @@ class Series(metaclass=_Meta):
         ]
         """
 
+    def erf(self) -> Series:
+        """
+        Compute the error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 0, 1])
+        >>> s.erf()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            -0.842701
+            0.0
+            0.842701
+        ]
+        """
+
+    def erfc(self) -> Series:
+        """
+        Compute the complementary error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 0, 1])
+        >>> s.erfc()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.842701
+            1.0
+            0.157299
+        ]
+        """
+
     def drop_nulls(self) -> Series:
         """
         Drop all null values.
@@ -2434,7 +2473,7 @@ class Series(metaclass=_Meta):
         """
         return wrap_df(self._s.to_dummies(separator, drop_first, drop_nulls))
 
-    @unstable()
+    @deprecated("`cut` is deprecated; use `bin_intervals` instead")
     def cut(
         self,
         breaks: Sequence[float],
@@ -2446,9 +2485,10 @@ class Series(metaclass=_Meta):
         """
         Bin continuous values into discrete categories.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        .. deprecated:: 2.0.0
+            Use :meth:`bin_intervals` instead. It requires `labels` (pass
+            `labels=False` for the integer bin index), and takes
+            `right_closed=True` to keep `cut`'s right-closed bins.
 
         Parameters
         ----------
@@ -2472,7 +2512,9 @@ class Series(metaclass=_Meta):
 
         See Also
         --------
-        qcut
+        bin_intervals
+        bin_quantiles
+        bin_ranks
 
         Examples
         --------
@@ -2508,7 +2550,7 @@ class Series(metaclass=_Meta):
         └─────┴────────────┴────────────┘
         """
 
-    @unstable()
+    @deprecated("`qcut` is deprecated; use `bin_quantiles` or `bin_ranks` instead")
     def qcut(
         self,
         quantiles: Sequence[float] | int,
@@ -2521,9 +2563,12 @@ class Series(metaclass=_Meta):
         """
         Bin continuous values into discrete categories based on their quantiles.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        .. deprecated:: 2.0.0
+            Use :meth:`bin_quantiles`, which places the breakpoints at the
+            quantile values, or :meth:`bin_ranks`, which splits on position in
+            sorted order to give near-equal-sized bins. Both require `labels`
+            (pass `labels=False` for the integer bin index); `bin_quantiles`
+            also takes `right_closed=True` to keep `qcut`'s right-closed bins.
 
         Parameters
         ----------
@@ -2552,7 +2597,9 @@ class Series(metaclass=_Meta):
 
         See Also
         --------
-        cut
+        bin_intervals
+        bin_quantiles
+        bin_ranks
 
         Examples
         --------

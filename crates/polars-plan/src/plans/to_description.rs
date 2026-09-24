@@ -1,19 +1,20 @@
 use std::collections::VecDeque;
 
 use polars_core::prelude::SortMultipleOptions;
+use polars_defs::join::JoinType;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "python")]
 use polars_descriptions::PythonPredicateDescription;
 use polars_descriptions::{
     IrNodeDescription, IrPropsDescription, PredicateFileSkipDescription, SinkDestDescription,
     SortColumnDescription,
 };
-use polars_ops::frame::JoinType;
-#[cfg(feature = "dynamic_group_by")]
-use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 use polars_utils::aliases::{InitHashMaps, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::index::idxsize_to_u64;
 
+use crate::dsl::dsl_resolver::DslResolverTrait;
 use crate::dsl::{HConcatOptions, SinkTypeIR, UnifiedScanArgs, UnionOptions};
 use crate::plans::options::JoinTypeOptionsIR;
 use crate::plans::{AExpr, ExprIR, IR};
@@ -210,7 +211,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 },
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(asof_options) => {
-                    use polars_ops::prelude::AsOfOptions;
+                    use polars_defs::join::AsOfOptions;
 
                     let AsOfOptions {
                         strategy,
@@ -249,7 +250,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 JoinType::IEJoin => match &o.options {
                     JoinTypeOptionsIR::IEJoin {
                         ie_options:
-                            polars_ops::frame::IEJoinOptions {
+                            polars_defs::join::IEJoinOptions {
                                 operator1,
                                 operator2,
                             },
@@ -422,6 +423,8 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                     predicate,
                     validate_schema,
                     is_pure,
+                    explain_name,
+                    explain_detail,
                     ..
                 },
             ..
@@ -448,6 +451,8 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             schema_names: schema.iter_names().map(ToString::to_string).collect(),
             is_pure: *is_pure,
             validate_schema: *validate_schema,
+            explain_name: explain_name.as_ref().map(|s| s.to_string()),
+            explain_detail: explain_detail.as_ref().map(|s| s.to_string()),
         },
         IR::UnoptimizedDispatch {
             inputs, operation, ..
@@ -467,8 +472,30 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             keys: key.iter().map(|k| k.to_string()).collect(),
             maintain_order: *maintain_order,
         },
-        #[allow(unreachable_patterns)]
-        _ => IrPropsDescription::Other,
+        IR::Resolver {
+            resolver,
+            resolver_schema,
+            projection,
+            slice,
+            filters,
+            filter_drop_columns_idx,
+            resolved_dsl,
+            resolved_ir,
+        } => IrPropsDescription::Resolver {
+            name: resolver.name().ok().map(|x| x.to_string()),
+            schema_names: resolver_schema
+                .iter_names()
+                .map(ToString::to_string)
+                .collect(),
+            projection: projection
+                .as_deref()
+                .map(|cols| cols.iter().map(ToString::to_string).collect()),
+            slice: *slice,
+            filters: fmt_exprs(filters, expr_arena),
+            filter_drop_columns_idx: *filter_drop_columns_idx,
+            num_cached_resolves: resolved_dsl.lock().unwrap().len(),
+            is_resolved: resolved_ir.is_some(),
+        },
     }
 }
 

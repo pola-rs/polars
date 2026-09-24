@@ -1,7 +1,9 @@
 //! This module has entry points, [`parquet_to_arrow_schema`] and the more configurable [`parquet_to_arrow_schema_with_options`].
 use std::sync::Arc;
 
-use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, IntervalUnit, Metadata, TimeUnit};
+use polars_arrow::datatypes::{
+    ArrowDataType, ArrowSchema, Field, IntervalUnit, Metadata, TimeUnit,
+};
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -170,10 +172,10 @@ fn from_byte_array(
         (Some(PrimitiveLogicalType::String), _) => ArrowDataType::Utf8View,
         (Some(PrimitiveLogicalType::Json), _) => ArrowDataType::BinaryView,
         (Some(PrimitiveLogicalType::Bson), _) => ArrowDataType::BinaryView,
-        (Some(PrimitiveLogicalType::Enum), _) => ArrowDataType::BinaryView,
+        (Some(PrimitiveLogicalType::Enum), _) => ArrowDataType::Utf8View,
         (_, Some(PrimitiveConvertedType::Json)) => ArrowDataType::BinaryView,
         (_, Some(PrimitiveConvertedType::Bson)) => ArrowDataType::BinaryView,
-        (_, Some(PrimitiveConvertedType::Enum)) => ArrowDataType::BinaryView,
+        (_, Some(PrimitiveConvertedType::Enum)) => ArrowDataType::Utf8View,
         (_, Some(PrimitiveConvertedType::Utf8)) => ArrowDataType::Utf8View,
         (_, _) => ArrowDataType::BinaryView,
     }
@@ -238,7 +240,7 @@ fn to_primitive_type(
         ArrowDataType::LargeList(Box::new(Field::new(
             primitive_type.field_info.name.clone(),
             base_type,
-            is_nullable(&primitive_type.field_info),
+            is_optional(&primitive_type.field_info),
         )))
     } else {
         base_type
@@ -246,35 +248,33 @@ fn to_primitive_type(
 }
 
 fn non_repeated_group(
+    field_info: &FieldInfo,
     logical_type: &Option<GroupLogicalType>,
     converted_type: &Option<GroupConvertedType>,
     fields: &[ParquetType],
-    parent_name: &str,
     options: &SchemaInferenceOptions,
 ) -> PolarsResult<Option<ArrowDataType>> {
     debug_assert!(!fields.is_empty());
     match (logical_type, converted_type) {
-        (Some(GroupLogicalType::List), _) | (None, Some(GroupConvertedType::List)) => {
-            // `to_list` converts the repeated child itself instead of routing it through
-            // `to_dtype`, so it never reaches the check in `to_group_type`.
-            if let ParquetType::GroupType {
-                field_info,
-                logical_type,
-                converted_type,
-                ..
-            } = &fields[0]
-            {
-                ensure_not_repeated_map(field_info, logical_type, converted_type)?;
-            }
-
-            to_list(fields, parent_name, options)
+        _ if is_list_annotated(logical_type, converted_type) => {
+            to_list(field_info, fields, options)
         },
         (Some(GroupLogicalType::Map), _)
         | (None, Some(GroupConvertedType::Map) | Some(GroupConvertedType::MapKeyValue)) => {
-            to_map(fields, parent_name, options)
+            to_map(field_info, fields, options)
         },
         _ => to_struct(fields, options),
     }
+}
+
+fn is_list_annotated(
+    logical_type: &Option<GroupLogicalType>,
+    converted_type: &Option<GroupConvertedType>,
+) -> bool {
+    matches!(
+        (logical_type, converted_type),
+        (Some(GroupLogicalType::List), _) | (None, Some(GroupConvertedType::List))
+    )
 }
 
 fn ensure_not_repeated_map(
@@ -324,8 +324,8 @@ fn to_struct(
 /// to the letter, including the backwards-compatibility rules. On the happy path, this is
 /// group (MAP) -> repeated group key_value -> {required key, optional value}.
 fn to_map(
+    map_info: &FieldInfo,
     fields: &[ParquetType],
-    parent_name: &str,
     options: &SchemaInferenceOptions,
 ) -> PolarsResult<Option<ArrowDataType>> {
     macro_rules! invalid_map {
@@ -333,7 +333,7 @@ fn to_map(
             polars_bail!(
                 ComputeError:
                 "parquet group '{}' is annotated as MAP, but {}",
-                parent_name,
+                map_info.name,
                 format!($($arg)*),
             )
         };
@@ -377,10 +377,10 @@ fn to_map(
         )
     }
 
-    // A `value` field is optional in parquet, but an arrow `Map` always has one. The spec allows
-    // reading such a group as a set of keys, so fall through to the plain list conversion.
+    // Read maps without values as lists of keys. Bypass LIST validation because
+    // the entries group may carry the legacy MAP_KEY_VALUE annotation.
     if kv_fields.len() == 1 {
-        return to_list(fields, parent_name, options);
+        return list_elements(map_info, entries, options);
     }
 
     let Some(entries_dtype) = to_struct(kv_fields, options)? else {
@@ -403,7 +403,6 @@ fn to_group_type(
     logical_type: &Option<GroupLogicalType>,
     converted_type: &Option<GroupConvertedType>,
     fields: &[ParquetType],
-    parent_name: &str,
     options: &SchemaInferenceOptions,
 ) -> PolarsResult<Option<ArrowDataType>> {
     debug_assert!(!fields.is_empty());
@@ -416,10 +415,10 @@ fn to_group_type(
         Ok(Some(ArrowDataType::LargeList(Box::new(Field::new(
             field_info.name.clone(),
             inner,
-            is_nullable(field_info),
+            is_optional(field_info),
         )))))
     } else {
-        non_repeated_group(logical_type, converted_type, fields, parent_name, options)
+        non_repeated_group(field_info, logical_type, converted_type, fields, options)
     }
 }
 
@@ -430,6 +429,15 @@ pub(crate) fn is_nullable(field_info: &FieldInfo) -> bool {
         Repetition::Repeated => true,
         Repetition::Required => false,
     }
+}
+
+/// Whether the value this field describes can be null.
+///
+/// Unlike [`is_nullable`], which the writer uses to decide whether a level is encoded, a repeated
+/// field is not null here: it becomes a non-null list whose elements are non-null unless the
+/// element itself is optional.
+fn is_optional(field_info: &FieldInfo) -> bool {
+    field_info.repetition == Repetition::Optional
 }
 
 /// Converts parquet schema to arrow field.
@@ -454,75 +462,132 @@ fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> PolarsResu
         return Ok(None);
     };
 
-    let mut arrow_field = Field::new(
-        field_info.name.clone(),
-        dtype,
-        is_nullable(type_.get_field_info()),
-    );
+    let mut arrow_field = Field::new(field_info.name.clone(), dtype, is_optional(field_info));
 
     arrow_field.metadata = metadata;
 
     Ok(Some(arrow_field))
 }
 
-/// Converts a parquet list to arrow list.
+/// Converts a Parquet `LIST` group to [`ArrowDataType::LargeList`] using the [spec]'s
+/// backward-compatibility rules.
 ///
-/// To fully understand this algorithm, please refer to
-/// [parquet doc](https://github.com/apache/parquet-format/blob/master/LogicalTypes.md).
+/// [spec]: https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#lists
 fn to_list(
+    list_info: &FieldInfo,
     fields: &[ParquetType],
-    parent_name: &str,
     options: &SchemaInferenceOptions,
 ) -> PolarsResult<Option<ArrowDataType>> {
-    let item = fields.first().unwrap();
+    macro_rules! invalid_list {
+        ($($arg:tt)*) => {
+            polars_bail!(
+                ComputeError:
+                "parquet group '{}' is annotated as LIST, but {}",
+                list_info.name,
+                format!($($arg)*),
+            )
+        };
+    }
 
-    let item_type = match item {
-        ParquetType::PrimitiveType(primitive) => Some(to_primitive_type_inner(primitive, options)),
-        ParquetType::GroupType { fields, .. } => {
-            if fields.len() == 1 && item.name() != "array" && {
-                // item.name() != format!("{parent_name}_tuple")
-                let cmp = [parent_name, "_tuple"];
-                let len_1 = parent_name.len();
-                let len = len_1 + "_tuple".len();
+    let [repeated] = fields else {
+        invalid_list!(
+            "it has {} children instead of a single repeated field",
+            fields.len()
+        )
+    };
+    let repetition = repeated.get_field_info().repetition;
+    if repetition != Repetition::Repeated {
+        invalid_list!(
+            "its `{}` child is {:?} instead of repeated",
+            repeated.name(),
+            repetition,
+        )
+    }
+    // The repeated level is converted here instead of being routed through `to_dtype`, so it never
+    // reaches the check in `to_group_type`.
+    if let ParquetType::GroupType {
+        field_info,
+        logical_type,
+        converted_type,
+        ..
+    } = repeated
+    {
+        ensure_not_repeated_map(field_info, logical_type, converted_type)?;
+    }
 
-                item.name().len() != len || [&item.name()[..len_1], &item.name()[len_1..]] != cmp
-            } {
-                // extract the repetition field
-                let nested_item = fields.first().unwrap();
-                to_dtype(nested_item, options)?
+    list_elements(list_info, repeated, options)
+}
+
+/// Determines the element of a `LIST` group from its repeated level, by the spec's
+/// backwards-compatibility rules. The rules are ordered: the first one that matches wins.
+fn list_elements(
+    list_info: &FieldInfo,
+    repeated: &ParquetType,
+    options: &SchemaInferenceOptions,
+) -> PolarsResult<Option<ArrowDataType>> {
+    let (name, is_nullable, dtype) = match repeated {
+        // 1. "If the repeated field is not a group, then its type is the element type and
+        //    elements are required."
+        ParquetType::PrimitiveType(primitive) => (
+            primitive.field_info.name.clone(),
+            false,
+            Some(to_primitive_type_inner(primitive, options)),
+        ),
+        ParquetType::GroupType {
+            field_info,
+            logical_type,
+            converted_type,
+            fields: inner,
+        } => {
+            // A group without children has no element.
+            let Some(first) = inner.first() else {
+                return Ok(None);
+            };
+            let single_repeated_field =
+                inner.len() == 1 && first.get_field_info().repetition == Repetition::Repeated;
+
+            // 2. "If the repeated field is a group with multiple fields, then its type is the
+            //    element type and elements are required."
+            // 3. "If the repeated field is a group with one field with `repeated` repetition, then
+            //    its type is the element type and elements are required."
+            // 4. "If the repeated field is a group with one field and is named either `array` or
+            //    uses the `LIST`-annotated group's name with `_tuple` appended then the repeated
+            //    type is the element type and elements are required."
+            if single_repeated_field && is_list_annotated(logical_type, converted_type) {
+                // The element is the repeated group's own type, so it must not be wrapped in
+                // another list.
+                (
+                    field_info.name.clone(),
+                    false,
+                    to_list(field_info, inner, options)?,
+                )
+            } else if inner.len() > 1
+                || single_repeated_field
+                || field_info.name == "array"
+                || field_info.name.strip_suffix("_tuple") == Some(list_info.name.as_str())
+            {
+                (field_info.name.clone(), false, to_struct(inner, options)?)
             } else {
-                to_struct(fields, options)?
+                // 5. "Otherwise, the repeated field's type is the element type with the repeated
+                //    field's repetition." The name of the repeated group is not enforced: it is
+                //    `list` in the spec, but `bag` and `array` are common in the wild.
+                let element_info = first.get_field_info();
+                (
+                    element_info.name.clone(),
+                    is_optional(element_info),
+                    to_dtype(first, options)?,
+                )
             }
         },
     };
-    let Some(item_type) = item_type else {
+
+    let Some(dtype) = dtype else {
         return Ok(None);
     };
-
-    // Check that the name of the list child is "list", in which case we
-    // get the child nullability and name (normally "element") from the nested
-    // group type.
-    // Without this step, the child incorrectly inherits the parent's optionality
-    let (list_item_name, item_is_optional) = match item {
-        ParquetType::GroupType {
-            field_info, fields, ..
-        } if field_info.name.as_str() == "list" && fields.len() == 1 => {
-            let field = fields.first().unwrap();
-            (
-                field.get_field_info().name.clone(),
-                field.get_field_info().repetition == Repetition::Optional,
-            )
-        },
-        _ => (
-            item.get_field_info().name.clone(),
-            item.get_field_info().repetition == Repetition::Optional,
-        ),
-    };
-
     Ok(Some(ArrowDataType::LargeList(Box::new(Field::new(
-        list_item_name,
-        item_type,
-        item_is_optional,
+        name,
+        dtype,
+        is_nullable,
     )))))
 }
 
@@ -550,14 +615,7 @@ pub(crate) fn to_dtype(
             if fields.is_empty() {
                 Ok(None)
             } else {
-                to_group_type(
-                    field_info,
-                    logical_type,
-                    converted_type,
-                    fields,
-                    field_info.name.as_str(),
-                    options,
-                )
+                to_group_type(field_info, logical_type, converted_type, fields, options)
             }
         },
     }
@@ -650,244 +708,6 @@ mod tests {
         let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(fields, expected);
-        Ok(())
-    }
-
-    #[ignore]
-    #[test]
-    fn test_parquet_lists() -> PolarsResult<()> {
-        let mut arrow_fields = Vec::new();
-
-        // LIST encoding example taken from parquet-format/LogicalTypes.md
-        let message_type = "
-        message test_schema {
-          REQUIRED GROUP my_list (LIST) {
-            REPEATED GROUP list {
-              OPTIONAL BINARY element (UTF8);
-            }
-          }
-          OPTIONAL GROUP my_list (LIST) {
-            REPEATED GROUP list {
-              REQUIRED BINARY element (UTF8);
-            }
-          }
-          OPTIONAL GROUP array_of_arrays (LIST) {
-            REPEATED GROUP list {
-              REQUIRED GROUP element (LIST) {
-                REPEATED GROUP list {
-                  REQUIRED INT32 element;
-                }
-              }
-            }
-          }
-          OPTIONAL GROUP my_list (LIST) {
-            REPEATED GROUP element {
-              REQUIRED BINARY str (UTF8);
-            }
-          }
-          OPTIONAL GROUP my_list (LIST) {
-            REPEATED INT32 element;
-          }
-          OPTIONAL GROUP my_list (LIST) {
-            REPEATED GROUP element {
-              REQUIRED BINARY str (UTF8);
-              REQUIRED INT32 num;
-            }
-          }
-          OPTIONAL GROUP my_list (LIST) {
-            REPEATED GROUP array {
-              REQUIRED BINARY str (UTF8);
-            }
-
-          }
-          OPTIONAL GROUP my_list (LIST) {
-            REPEATED GROUP my_list_tuple {
-              REQUIRED BINARY str (UTF8);
-            }
-          }
-          REPEATED INT32 name;
-        }
-        ";
-
-        // // List<String> (list non-null, elements nullable)
-        // required group my_list (LIST) {
-        //   repeated group list {
-        //     optional binary element (UTF8);
-        //   }
-        // }
-        {
-            arrow_fields.push(Field::new(
-                "my_list".into(),
-                ArrowDataType::LargeList(Box::new(Field::new(
-                    "element".into(),
-                    ArrowDataType::Utf8,
-                    true,
-                ))),
-                false,
-            ));
-        }
-
-        // // List<String> (list nullable, elements non-null)
-        // optional group my_list (LIST) {
-        //   repeated group list {
-        //     required binary element (UTF8);
-        //   }
-        // }
-        {
-            arrow_fields.push(Field::new(
-                "my_list".into(),
-                ArrowDataType::LargeList(Box::new(Field::new(
-                    "element".into(),
-                    ArrowDataType::Utf8,
-                    false,
-                ))),
-                true,
-            ));
-        }
-
-        // Element types can be nested structures. For example, a list of lists:
-        //
-        // // List<List<Integer>>
-        // optional group array_of_arrays (LIST) {
-        //   repeated group list {
-        //     required group element (LIST) {
-        //       repeated group list {
-        //         required int32 element;
-        //       }
-        //     }
-        //   }
-        // }
-        {
-            let arrow_inner_list = ArrowDataType::LargeList(Box::new(Field::new(
-                "element".into(),
-                ArrowDataType::Int32,
-                false,
-            )));
-            arrow_fields.push(Field::new(
-                "array_of_arrays".into(),
-                ArrowDataType::LargeList(Box::new(Field::new(
-                    PlSmallStr::from_static("element"),
-                    arrow_inner_list,
-                    false,
-                ))),
-                true,
-            ));
-        }
-
-        // // List<String> (list nullable, elements non-null)
-        // optional group my_list (LIST) {
-        //   repeated group element {
-        //     required binary str (UTF8);
-        //   };
-        // }
-        {
-            arrow_fields.push(Field::new(
-                "my_list".into(),
-                ArrowDataType::LargeList(Box::new(Field::new(
-                    "element".into(),
-                    ArrowDataType::Utf8,
-                    false,
-                ))),
-                true,
-            ));
-        }
-
-        // // List<Integer> (nullable list, non-null elements)
-        // optional group my_list (LIST) {
-        //   repeated int32 element;
-        // }
-        {
-            arrow_fields.push(Field::new(
-                "my_list".into(),
-                ArrowDataType::LargeList(Box::new(Field::new(
-                    "element".into(),
-                    ArrowDataType::Int32,
-                    false,
-                ))),
-                true,
-            ));
-        }
-
-        // // List<Tuple<String, Integer>> (nullable list, non-null elements)
-        // optional group my_list (LIST) {
-        //   repeated group element {
-        //     required binary str (UTF8);
-        //     required int32 num;
-        //   };
-        // }
-        {
-            let arrow_struct = ArrowDataType::Struct(vec![
-                Field::new("str".into(), ArrowDataType::Utf8, false),
-                Field::new("num".into(), ArrowDataType::Int32, false),
-            ]);
-            arrow_fields.push(Field::new(
-                "my_list".into(),
-                ArrowDataType::LargeList(Box::new(Field::new(
-                    "element".into(),
-                    arrow_struct,
-                    false,
-                ))),
-                true,
-            ));
-        }
-
-        // // List<OneTuple<String>> (nullable list, non-null elements)
-        // optional group my_list (LIST) {
-        //   repeated group array {
-        //     required binary str (UTF8);
-        //   };
-        // }
-        // Special case: group is named array
-        {
-            let arrow_struct =
-                ArrowDataType::Struct(vec![Field::new("str".into(), ArrowDataType::Utf8, false)]);
-            arrow_fields.push(Field::new(
-                "my_list".into(),
-                ArrowDataType::LargeList(Box::new(Field::new("array".into(), arrow_struct, false))),
-                true,
-            ));
-        }
-
-        // // List<OneTuple<String>> (nullable list, non-null elements)
-        // optional group my_list (LIST) {
-        //   repeated group my_list_tuple {
-        //     required binary str (UTF8);
-        //   };
-        // }
-        // Special case: group named ends in _tuple
-        {
-            let arrow_struct =
-                ArrowDataType::Struct(vec![Field::new("str".into(), ArrowDataType::Utf8, false)]);
-            arrow_fields.push(Field::new(
-                "my_list".into(),
-                ArrowDataType::LargeList(Box::new(Field::new(
-                    "my_list_tuple".into(),
-                    arrow_struct,
-                    false,
-                ))),
-                true,
-            ));
-        }
-
-        // One-level encoding: Only allows required lists with required cells
-        //   repeated value_type name
-        {
-            arrow_fields.push(Field::new(
-                "name".into(),
-                ArrowDataType::LargeList(Box::new(Field::new(
-                    "name".into(),
-                    ArrowDataType::Int32,
-                    false,
-                ))),
-                false,
-            ));
-        }
-
-        let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
-        let fields = parquet_to_arrow_schema(parquet_schema.fields())?;
-        let fields = fields.iter_values().cloned().collect::<Vec<_>>();
-
-        assert_eq!(arrow_fields, fields);
         Ok(())
     }
 
@@ -1326,9 +1146,304 @@ mod tests {
     }
 
     fn infer_one(message_type: &str) -> PolarsResult<Field> {
+        Ok(infer_named(message_type, "my_map")?.unwrap())
+    }
+
+    fn infer_named(message_type: &str, name: &str) -> PolarsResult<Option<Field>> {
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
         let fields = parquet_to_arrow_schema(parquet_schema.fields())?;
-        Ok(fields.get("my_map").unwrap().clone())
+        Ok(fields.get(name).cloned())
+    }
+
+    fn utf8_field(name: &str, is_nullable: bool) -> Field {
+        Field::new(name.into(), ArrowDataType::Utf8View, is_nullable)
+    }
+
+    fn i32_field(name: &str, is_nullable: bool) -> Field {
+        Field::new(name.into(), ArrowDataType::Int32, is_nullable)
+    }
+
+    fn list_of(name: &str, dtype: ArrowDataType, is_nullable: bool) -> ArrowDataType {
+        ArrowDataType::LargeList(Box::new(Field::new(name.into(), dtype, is_nullable)))
+    }
+
+    /// Asserts that each `(expected error, message type)` fails the schema conversion.
+    fn assert_rejects(cases: &[(&str, &str)]) {
+        for (expected, message_type) in cases {
+            let parquet_schema = SchemaDescriptor::try_from_message(message_type).unwrap();
+            let err = parquet_to_arrow_schema(parquet_schema.fields())
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains(expected),
+                "expected error to contain {expected:?}, got {err:?}",
+            );
+        }
+    }
+
+    /// The `LIST` shapes that [the spec] requires us to accept, including its
+    /// backward-compatibility rules.
+    ///
+    /// [the spec]: https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#lists
+    #[test]
+    fn test_parquet_lists_backward_compat() -> PolarsResult<()> {
+        let cases = [
+            // The canonical form: `List<String>` with a nullable list and nullable elements.
+            (
+                "
+                optional group f (LIST) {
+                  repeated group list {
+                    optional binary element (STRING);
+                  }
+                }",
+                Some((list_of("element", ArrowDataType::Utf8View, true), true)),
+            ),
+            // 1. "If the repeated field is not a group, then its type is the element type and
+            //    elements are required."
+            (
+                "
+                optional group f (LIST) {
+                  repeated int32 element;
+                }",
+                Some((list_of("element", ArrowDataType::Int32, false), true)),
+            ),
+            // 2. "If the repeated field is a group with multiple fields, then its type is the
+            //    element type and elements are required."
+            (
+                "
+                optional group f (LIST) {
+                  repeated group element {
+                    required binary str (STRING);
+                    required int32 num;
+                  }
+                }",
+                Some((
+                    list_of(
+                        "element",
+                        ArrowDataType::Struct(vec![
+                            utf8_field("str", false),
+                            i32_field("num", false),
+                        ]),
+                        false,
+                    ),
+                    true,
+                )),
+            ),
+            // 3. A repeated group holding a single repeated field is the element itself. This is
+            //    the avro/thrift shape: `[[1, 2], [3, 4]]` is a list of lists, not of structs.
+            (
+                "
+                required group f (LIST) {
+                  repeated group array (LIST) {
+                    repeated int32 array;
+                  }
+                }",
+                Some((
+                    list_of(
+                        "array",
+                        list_of("array", ArrowDataType::Int32, false),
+                        false,
+                    ),
+                    false,
+                )),
+            ),
+            // 3. The same, without the inner `LIST` annotation: the element is the group, whose
+            //    own repeated field becomes a list.
+            (
+                "
+                optional group f (LIST) {
+                  repeated group inner {
+                    repeated int32 num;
+                  }
+                }",
+                Some((
+                    list_of(
+                        "inner",
+                        ArrowDataType::Struct(vec![Field::new(
+                            "num".into(),
+                            list_of("num", ArrowDataType::Int32, false),
+                            false,
+                        )]),
+                        false,
+                    ),
+                    true,
+                )),
+            ),
+            // 4. "If the repeated field is a group with one field and is named either `array` or
+            //    uses the `LIST`-annotated group's name with `_tuple` appended then the repeated
+            //    type is the element type and elements are required."
+            (
+                "
+                optional group f (LIST) {
+                  repeated group array {
+                    required binary str (STRING);
+                  }
+                }",
+                Some((
+                    list_of(
+                        "array",
+                        ArrowDataType::Struct(vec![utf8_field("str", false)]),
+                        false,
+                    ),
+                    true,
+                )),
+            ),
+            (
+                "
+                optional group f (LIST) {
+                  repeated group f_tuple {
+                    required binary str (STRING);
+                  }
+                }",
+                Some((
+                    list_of(
+                        "f_tuple",
+                        ArrowDataType::Struct(vec![utf8_field("str", false)]),
+                        false,
+                    ),
+                    true,
+                )),
+            ),
+            // 5. "Otherwise, the repeated field's type is the element type with the repeated
+            //    field's repetition." The name of the repeated group is not part of the rule: hive
+            //    and avro write `bag`, and the element name is taken from the file either way.
+            (
+                "
+                optional group f (LIST) {
+                  repeated group bag {
+                    optional binary array_element (STRING);
+                  }
+                }",
+                Some((
+                    list_of("array_element", ArrowDataType::Utf8View, true),
+                    true,
+                )),
+            ),
+            // The `_tuple` suffix is compared as a string, not as bytes: `é_tupl` has the same
+            // byte length as `f` + `_tuple`, but is not a match.
+            (
+                "
+                optional group f (LIST) {
+                  repeated group é_tupl {
+                    required int32 x;
+                  }
+                }",
+                Some((list_of("x", ArrowDataType::Int32, false), true)),
+            ),
+            // A repeated group without children holds no column, so the list is dropped like any
+            // other column-less group.
+            (
+                "
+                optional group f (LIST) {
+                  repeated group list {
+                  }
+                }",
+                None,
+            ),
+            // A repeated field that is not annotated as a `LIST` is a non-null list of non-null
+            // elements: the file has no definition level for either.
+            (
+                "
+                repeated int32 f;",
+                Some((list_of("f", ArrowDataType::Int32, false), false)),
+            ),
+            (
+                "
+                optional group f {
+                  repeated group phone {
+                    required int64 number;
+                    optional binary kind (STRING);
+                  }
+                }",
+                Some((
+                    ArrowDataType::Struct(vec![Field::new(
+                        "phone".into(),
+                        list_of(
+                            "phone",
+                            ArrowDataType::Struct(vec![
+                                Field::new("number".into(), ArrowDataType::Int64, false),
+                                utf8_field("kind", true),
+                            ]),
+                            false,
+                        ),
+                        false,
+                    )]),
+                    true,
+                )),
+            ),
+        ];
+
+        for (field, expected) in cases {
+            let message_type = format!("message test_schema {{ {field} }}");
+            let expected =
+                expected.map(|(dtype, is_nullable)| Field::new("f".into(), dtype, is_nullable));
+            assert_eq!(infer_named(&message_type, "f")?, expected, "{field}");
+        }
+        Ok(())
+    }
+
+    /// A group annotated as `LIST` that does not satisfy the spec is refused, rather than being
+    /// silently decoded with levels the file does not have.
+    #[test]
+    fn test_parquet_lists_reject_nonconforming() {
+        assert_rejects(&[
+            // "The outer-most level must be a group annotated with `LIST` that contains a single
+            // field named `list`."
+            (
+                "it has 2 children instead of a single repeated field",
+                "
+                message test_schema {
+                  optional group my_list (LIST) {
+                    repeated group list {
+                      optional int32 element;
+                    }
+                    optional int32 stray;
+                  }
+                }",
+            ),
+            // "The middle level [...] must be a repeated group with a single field named
+            // `element`."
+            (
+                "its `list` child is Optional instead of repeated",
+                "
+                message test_schema {
+                  optional group my_list (LIST) {
+                    optional group list {
+                      optional int32 element;
+                    }
+                  }
+                }",
+            ),
+            (
+                "its `list` child is Required instead of repeated",
+                "
+                message test_schema {
+                  optional group my_list (LIST) {
+                    required group list {
+                      optional int32 element;
+                    }
+                  }
+                }",
+            ),
+            // A repeated `MAP` group is rejected wherever a list conversion reaches it, including
+            // through the recursion of rule 3.
+            (
+                "parquet group 'm' is annotated as MAP, but it is repeated",
+                "
+                message test_schema {
+                  optional group a (LIST) {
+                    repeated group b (LIST) {
+                      repeated group m (MAP) {
+                        repeated group key_value {
+                          required binary key (STRING);
+                          optional int32 value;
+                        }
+                      }
+                    }
+                  }
+                }",
+            ),
+        ]);
     }
 
     /// The `MAP` shapes that [the spec] requires us to accept, including its
@@ -1337,11 +1452,6 @@ mod tests {
     /// [the spec]: https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#maps
     #[test]
     fn test_parquet_maps() -> PolarsResult<()> {
-        let str_key =
-            |name: &str, is_nullable| Field::new(name.into(), ArrowDataType::Utf8View, is_nullable);
-        let i32_value =
-            |name: &str, is_nullable| Field::new(name.into(), ArrowDataType::Int32, is_nullable);
-
         // The canonical form: `Map<String, Integer>` with a non-null map and nullable values.
         assert_eq!(
             infer_one(
@@ -1357,7 +1467,11 @@ mod tests {
             )?,
             Field::new(
                 "my_map".into(),
-                map_of("key_value", str_key("key", false), i32_value("value", true)),
+                map_of(
+                    "key_value",
+                    utf8_field("key", false),
+                    i32_field("value", true)
+                ),
                 false,
             ),
         );
@@ -1379,7 +1493,7 @@ mod tests {
             )?,
             Field::new(
                 "my_map".into(),
-                map_of("map", str_key("str", false), i32_value("num", false)),
+                map_of("map", utf8_field("str", false), i32_field("num", false)),
                 true,
             ),
         );
@@ -1400,7 +1514,7 @@ mod tests {
             )?,
             Field::new(
                 "my_map".into(),
-                map_of("map", str_key("key", false), i32_value("value", true)),
+                map_of("map", utf8_field("key", false), i32_field("value", true)),
                 true,
             ),
         );
@@ -1420,7 +1534,11 @@ mod tests {
             )?,
             Field::new(
                 "my_map".into(),
-                map_of("key_value", str_key("key", false), i32_value("value", true)),
+                map_of(
+                    "key_value",
+                    utf8_field("key", false),
+                    i32_field("value", true)
+                ),
                 true,
             ),
         );
@@ -1446,7 +1564,11 @@ mod tests {
                 "my_map".into(),
                 ArrowDataType::LargeList(Box::new(Field::new(
                     "element".into(),
-                    map_of("key_value", str_key("key", false), i32_value("value", true)),
+                    map_of(
+                        "key_value",
+                        utf8_field("key", false),
+                        i32_field("value", true)
+                    ),
                     true,
                 ))),
                 true,
@@ -1468,7 +1590,7 @@ mod tests {
             )?,
             Field::new(
                 "my_map".into(),
-                ArrowDataType::LargeList(Box::new(str_key("key_value", false))),
+                ArrowDataType::LargeList(Box::new(utf8_field("key", false))),
                 true,
             ),
         );
@@ -1488,7 +1610,7 @@ mod tests {
             )?,
             Field::new(
                 "my_map".into(),
-                ArrowDataType::LargeList(Box::new(str_key("key_value", false))),
+                ArrowDataType::LargeList(Box::new(utf8_field("key", false))),
                 true,
             ),
         );
@@ -1595,13 +1717,7 @@ mod tests {
             ),
         ];
 
-        for (expected, message_type) in cases {
-            let err = infer_one(message_type).unwrap_err().to_string();
-            assert!(
-                err.contains(expected),
-                "expected error to contain {expected:?}, got {err:?}",
-            );
-        }
+        assert_rejects(&cases);
     }
 
     #[test]

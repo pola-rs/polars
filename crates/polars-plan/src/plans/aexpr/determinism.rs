@@ -164,7 +164,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         // Ordinal) are deterministic.
         #[cfg(all(feature = "rank", feature = "random"))]
         F::Rank { options, .. } => {
-            matches!(options.method, polars_ops::series::RankMethod::Random)
+            matches!(options.method, polars_defs::expr::RankMethod::Random)
         },
         #[cfg(all(feature = "rank", not(feature = "random")))]
         F::Rank { .. } => false,
@@ -192,7 +192,9 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => false,
         #[cfg(feature = "approx_quantile")]
-        F::ApproxQuantile { .. } => true,
+        F::ApproxQuantileSketch { .. } => true,
+        #[cfg(feature = "approx_quantile")]
+        F::ApproxQuantileEstimate { .. } => false,
         F::Coalesce => false,
         #[cfg(feature = "diff")]
         F::Diff(_) => false,
@@ -205,7 +207,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "log")]
         F::Entropy { .. } => false,
         #[cfg(feature = "log")]
-        F::Log | F::Log1p | F::Exp => false,
+        F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc => false,
         F::Unique(_) => false,
         #[cfg(feature = "round_series")]
         F::Round { .. } | F::RoundSF { .. } | F::Truncate { .. } | F::Floor | F::Ceil => false,
@@ -246,7 +248,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::FoldHorizontal { .. } | F::ReduceHorizontal { .. } => true,
         #[cfg(feature = "dtype-struct")]
         F::CumFoldHorizontal { .. } | F::CumReduceHorizontal { .. } => true,
-        F::DynamicPred { .. } => true,
+        F::DynamicPred { .. } | F::DynamicSkipBatch { .. } => true,
     }
 }
 

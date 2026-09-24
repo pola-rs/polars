@@ -396,20 +396,34 @@ fn read_sorting_column(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult
     })
 }
 
-/// Decode a `ColumnOrder` union tag. Both variants wrap an empty struct, so
-/// only the union id matters: 1 = `TypeDefinedOrder`, 2 = `IEEE754TotalOrder`.
+/// Decode a `ColumnOrder` union tag. Both known variants wrap an empty struct, so
+/// only the union id matters: 1 = `TypeDefinedOrder`, 2 = `IEEE754TotalOrder`. A
+/// variant this reader does not know is skipped and tagged unsupported, as the
+/// spec asks; a union without any variant is malformed.
 fn read_column_order(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<ColumnOrderTag> {
     let mut ret: Option<ColumnOrderTag> = None;
-    read_struct_fields!(prot, |f| {
-        1 => {
-            read_empty_struct(prot)?;
-            ret.get_or_insert(ColumnOrderTag::TypeDefined);
-        },
-        2 => {
-            read_empty_struct(prot)?;
-            ret.get_or_insert(ColumnOrderTag::IEEE754TotalOrder);
-        },
-    });
+    let mut last_field_id = 0i16;
+    loop {
+        let f = prot.read_field_begin(last_field_id)?;
+        if f.field_type == FieldType::Stop {
+            break;
+        }
+        match f.id {
+            1 => {
+                read_empty_struct(prot)?;
+                ret.get_or_insert(ColumnOrderTag::TypeDefined);
+            },
+            2 => {
+                read_empty_struct(prot)?;
+                ret.get_or_insert(ColumnOrderTag::IEEE754TotalOrder);
+            },
+            _ => {
+                prot.skip(f.field_type)?;
+                ret.get_or_insert(ColumnOrderTag::Unsupported);
+            },
+        }
+        last_field_id = f.id;
+    }
     ret.ok_or_else(|| ParquetError::oos("ColumnOrder union has no variant set"))
 }
 
@@ -605,7 +619,35 @@ mod tests {
     }
 
     #[test]
+    fn column_order_unknown_variant_is_unsupported() {
+        // Field id 3 holding an empty struct, then stop.
+        assert_eq!(
+            decode_column_order(&[0x3C, 0x00, 0x00]).unwrap(),
+            ColumnOrderTag::Unsupported
+        );
+    }
+
+    #[test]
     fn column_order_no_variant_is_an_error() {
         assert!(decode_column_order(&[0x00]).is_err());
+    }
+
+    #[test]
+    fn column_order_truncated_is_an_error() {
+        assert!(decode_column_order(&[0x1C]).is_err());
+    }
+
+    #[test]
+    fn legacy_statistics_keep_only_the_null_count() {
+        // Deprecated `max` (id 1) and `min` (id 2) of four bytes each, then
+        // `null_count` (id 3) of 1.
+        let bytes = [
+            0x18, 0x04, 1, 0, 0, 0, 0x18, 0x04, 0, 0, 0, 0, 0x16, 0x02, 0x00,
+        ];
+        let mut prot = ThriftSliceInputProtocol::new(&bytes);
+        let stats = read_statistics(&mut prot, bytes.as_ptr()).unwrap();
+        assert_eq!(stats.null_count, Some(1));
+        assert!(stats.min_value.is_none());
+        assert!(stats.max_value.is_none());
     }
 }

@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::cell::Cell;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::compute::concatenate::concatenate_unchecked;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::compute::concatenate::concatenate_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
@@ -225,6 +225,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         for (arr, validity) in unsafe { self.chunks_mut().iter_mut() }.zip(validities.iter()) {
             *arr = arr.with_validity(validity.clone())
         }
+        self.compute_len();
     }
 
     /// Split the array. The chunks are reallocated the underlying data slices are zero copy.

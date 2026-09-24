@@ -1,3 +1,4 @@
+use polars_defs::time::group_by::RollingGroupOptions;
 use polars_utils::unique_column_name;
 
 use super::*;

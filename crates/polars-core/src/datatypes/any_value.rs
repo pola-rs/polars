@@ -1,8 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 
-use arrow::types::PrimitiveType;
 use num_traits::ToBytes;
+use polars_arrow::types::PrimitiveType;
 use polars_compute::cast::SerPrimitive;
 use polars_error::feature_gated;
 use polars_utils::float16::pf16;
@@ -602,14 +602,9 @@ impl<'a> AnyValue<'a> {
                 AnyValue::Duration(av.extract::<i64>()?, *tu)
             },
             #[cfg(all(feature = "dtype-duration", feature = "dtype-time"))]
-            (AnyValue::Time(v), DataType::Duration(tu)) => AnyValue::Duration(
-                match *tu {
-                    TimeUnit::Nanoseconds => *v,
-                    TimeUnit::Microseconds => *v / 1_000i64,
-                    TimeUnit::Milliseconds => *v / 1_000_000i64,
-                },
-                *tu,
-            ),
+            (AnyValue::Time(v), DataType::Duration(tu)) => {
+                AnyValue::Duration(tu.from_nsecs(*v), *tu)
+            },
             #[cfg(feature = "dtype-duration")]
             (AnyValue::Duration(v, tu), DataType::Duration(tu_r)) => AnyValue::Duration(
                 match (tu, tu_r) {

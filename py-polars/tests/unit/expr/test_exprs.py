@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from datetime import date, datetime, timedelta, timezone
 from itertools import permutations
@@ -28,6 +29,8 @@ from tests.unit.conftest import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType
 
 
@@ -249,6 +252,39 @@ def test_exp_log1p(dtype_in: PolarsDataType, dtype_out: PolarsDataType) -> None:
     expected = pl.Series("a", np.log1p(a.to_numpy())).cast(dtype_out).to_frame()
     assert_frame_equal(result.collect(), expected)
     assert result.collect_schema() == expected.schema
+
+
+@pytest.mark.parametrize(
+    ("dtype_in", "dtype_out"),
+    [
+        (pl.Boolean, pl.Float64),
+        (pl.Int32, pl.Float64),
+        (pl.Decimal(10, 2), pl.Float64),
+        (pl.Float16, pl.Float16),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+    ],
+)
+@pytest.mark.parametrize(
+    ("name", "reference"), [("erf", math.erf), ("erfc", math.erfc)]
+)
+def test_erf_erfc(
+    dtype_in: PolarsDataType,
+    dtype_out: PolarsDataType,
+    name: str,
+    reference: Callable[[float], float],
+) -> None:
+    values = [True, False] if dtype_in == pl.Boolean else [-3, -1, 0, 1, 2, None]
+    a = pl.Series("a", values, dtype=dtype_in)
+    lf = pl.LazyFrame([a])
+
+    result = lf.select(getattr(pl.col("a"), name)())
+    expected = pl.Series(
+        "a", [None if v is None else reference(float(v)) for v in values]
+    ).cast(dtype_out)
+    assert_frame_equal(result.collect(), expected.to_frame())
+    assert result.collect_schema() == expected.to_frame().schema
+    assert_series_equal(getattr(a, name)(), expected)
 
 
 @pytest.mark.parametrize(

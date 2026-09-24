@@ -45,3 +45,5 @@ for more information.
     :toctree: api/
 
     io.plugins.register_io_source
+    io.plugins.IOSourceScanFunction
+    io.plugins.IOSourceScanFunction.io_source

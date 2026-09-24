@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::prelude::Schema;
-use polars_ops::frame::JoinArgs;
+use polars_defs::join::JoinArgs;
 use polars_utils::aliases::{PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;

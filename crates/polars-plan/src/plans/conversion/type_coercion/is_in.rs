@@ -1,31 +1,190 @@
+use polars_core::utils::try_get_supertype;
+
 use super::*;
 
 #[derive(Debug)]
 pub(super) enum IsInTypeCoercionResult {
     SuperType(DataType, DataType),
-    SelfCast { dtype: DataType, strict: bool },
-    OtherCast { dtype: DataType, strict: bool },
+    SelfCast {
+        dtype: DataType,
+        strict: bool,
+    },
+    OtherCast {
+        dtype: DataType,
+        strict: bool,
+    },
     Implode,
+    /// Cast unrepresentable needles to null, treating them as missing Map keys.
+    #[cfg(feature = "dtype-map")]
+    LenientSelfCast(DataType),
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Where a membership function keeps its operands.
+///
+/// The flat operand is compared against the elements of the nested one; which input is which
+/// depends on the function.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum MembershipForm {
+    /// `flat.is_in(nested)`.
+    IsIn,
+    /// `nested.contains(flat)`, including Map key lookup.
+    Contains,
+}
+
+impl MembershipForm {
+    /// Input index of the operand compared against the container's elements.
+    pub(super) fn flat(self) -> usize {
+        (self == Self::Contains) as usize
+    }
+
+    /// Input index of the container.
+    pub(super) fn nested(self) -> usize {
+        (self == Self::IsIn) as usize
+    }
+
+    pub(super) fn is_contains(self) -> bool {
+        self == Self::Contains
+    }
+}
+
+/// Resolve Map lookup coercion without changing stored keys.
+///
+/// Cast only the needle. A cast that is exact, or that yields null for a key no Map can hold,
+/// is fine. A cast that could round the needle onto a different key is not.
+#[cfg(feature = "dtype-map")]
+pub(super) fn resolve_map_key(
+    input: &[ExprIR],
+    expr_arena: &Arena<AExpr>,
+    input_schema: &Schema,
+    op: &'static str,
+) -> PolarsResult<Option<IsInTypeCoercionResult>> {
+    let (_, needle) = unpack!(get_aexpr_and_type(
+        expr_arena,
+        input[1].node(),
+        input_schema
+    ));
+    let (_, map) = unpack!(get_aexpr_and_type(
+        expr_arena,
+        input[0].node(),
+        input_schema
+    ));
+    let DataType::Map(key, _) = &map else {
+        // Output field resolution rejects non-Map inputs.
+        return Ok(None);
+    };
+
+    if let Some(result) = resolve_temporal_map_key(&needle, key, op)? {
+        return Ok(Some(result));
+    }
+
+    // Integers do not need to share a common supertype, but casting them is always safe
+    // (we get null if the cast fails, which is not a valid key, so we treat it as absent)
+    let materialized_needle = needle.clone().materialize_unknown(false)?;
+    if materialized_needle.is_integer() && key.is_integer() && materialized_needle != **key {
+        return Ok(Some(IsInTypeCoercionResult::LenientSelfCast(
+            (**key).clone(),
+        )));
+    }
+
+    Ok(Some(
+        match resolve_is_in(
+            input,
+            expr_arena,
+            input_schema,
+            MembershipForm::Contains,
+            op,
+            Some(key.as_ref()),
+        )? {
+            None => return Ok(None),
+            // The needle alone moves, so a strict cast still raises as it would for `is_in`.
+            Some(result @ IsInTypeCoercionResult::SelfCast { .. }) => result,
+            // Only the needle has to widen to reach the stored key type.
+            Some(IsInTypeCoercionResult::SuperType(supertype, _)) if supertype == **key => {
+                IsInTypeCoercionResult::SelfCast {
+                    dtype: supertype,
+                    strict: false,
+                }
+            },
+            Some(
+                IsInTypeCoercionResult::SuperType(_, _)
+                | IsInTypeCoercionResult::OtherCast { .. }
+                | IsInTypeCoercionResult::LenientSelfCast(_),
+            ) => polars_bail!(
+                InvalidOperation:
+                "'{op}' cannot look up a `{needle}` key in a Map with `{key}` keys\n\
+                Hint: cast the key to `{key}` first.",
+            ),
+            Some(IsInTypeCoercionResult::Implode) => {
+                unreachable!("a key lookup resolves as a `contains`")
+            },
+        },
+    ))
+}
+
+/// Widen the needle to the Map's temporal unit; reject a unit that would be rounded.
+///
+/// Safe where `is_in` is not: Map keys are never null, so a needle that overflows to null
+/// simply matches nothing, which is the right answer for a value no key can hold.
+#[cfg(feature = "dtype-map")]
+fn resolve_temporal_map_key(
+    needle: &DataType,
+    key: &DataType,
+    op: &'static str,
+) -> PolarsResult<Option<IsInTypeCoercionResult>> {
+    let (needle_unit, key_unit, widened) = match (needle, key) {
+        (DataType::Datetime(needle_unit, needle_tz), DataType::Datetime(key_unit, key_tz)) => {
+            // Comparing across zones is a `SchemaMismatch` in the kernel. Name it here instead.
+            polars_ensure!(
+                needle_tz == key_tz,
+                InvalidOperation:
+                "'{op}' cannot look up a `{needle}` key in a Map with `{key}` keys, as the time \
+                zones differ\nHint: convert the key to `{key}` first.",
+            );
+            (
+                needle_unit,
+                key_unit,
+                DataType::Datetime(*key_unit, key_tz.clone()),
+            )
+        },
+        (DataType::Duration(needle_unit), DataType::Duration(key_unit)) => {
+            (needle_unit, key_unit, DataType::Duration(*key_unit))
+        },
+        _ => return Ok(None),
+    };
+    if needle_unit == key_unit {
+        return Ok(None);
+    }
+
+    // `TimeUnit` orders the finest unit first.
+    polars_ensure!(
+        key_unit < needle_unit,
+        InvalidOperation:
+        "'{op}' cannot look up a `{needle}` key in a Map with `{key}` keys, as the key would be \
+        rounded\nHint: cast the key to `{key}` first if that is intended.",
+    );
+    Ok(Some(IsInTypeCoercionResult::LenientSelfCast(widened)))
+}
+
+/// Resolve the cast that makes a membership function's operands comparable.
+///
+/// `element_dtype` names the container's elements for containers that have no
+/// [`DataType::inner_dtype`], such as a Map searched by its keys.
 pub(super) fn resolve_is_in(
     input: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     input_schema: &Schema,
-    is_contains: bool,
+    form: MembershipForm,
     op: &'static str,
-    flat_idx: usize,
-    nested_idx: usize,
+    element_dtype: Option<&DataType>,
 ) -> PolarsResult<Option<IsInTypeCoercionResult>> {
     let (_, type_left) = unpack!(get_aexpr_and_type(
         expr_arena,
-        input[flat_idx].node(),
+        input[form.flat()].node(),
         input_schema
     ));
     let (_, type_other) = unpack!(get_aexpr_and_type(
         expr_arena,
-        input[nested_idx].node(),
+        input[form.nested()].node(),
         input_schema
     ));
 
@@ -33,7 +192,7 @@ pub(super) fn resolve_is_in(
     let right_nl = type_other.nesting_level();
 
     // @HACK. This needs to happen until 3.0 because we support `pl.col.a.is_in(pl.col.a)`.
-    if !is_contains && left_nl == right_nl {
+    if !form.is_contains() && left_nl == right_nl {
         polars_warn!(
             Deprecation,
             "`is_in` with a collection of the same datatype is ambiguous and deprecated.
@@ -48,13 +207,16 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         DataType::List(_) => DataType::List(Box::new(resolved_inner_type)),
         #[cfg(feature = "dtype-array")]
         DataType::Array(_, width) => DataType::Array(Box::new(resolved_inner_type), *width),
+        // A Map lookup reaches this through the lossless upcast of its key.
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(_, value) => DataType::Map(Box::new(resolved_inner_type), value.clone()),
         _ => unreachable!(),
     };
 
     let type_left_materialized = type_left.clone().materialize_unknown(false)?;
-    let Some(type_other_inner) = type_other.inner_dtype() else {
-        polars_bail!(InvalidOperation: "'{op:?}' cannot check for {type_left:?} values in {type_other:?} data.\n\
-        Hint: container dtype ({type_other:?}) must be nested");
+    let Some(type_other_inner) = element_dtype.or_else(|| type_other.inner_dtype()) else {
+        polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left_materialized:?} values in {type_other:?} data.\n\
+        Hint: container dtype ({type_other:?}) must be nested{}", map_hint(form, &type_other, None));
     };
 
     let casted_inner_expr = match (&type_left_materialized, type_other_inner) {
@@ -93,32 +255,28 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         },
 
         #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => {
-            IsInTypeCoercionResult::OtherCast {
-                dtype: wrap_other(type_left_materialized),
-                strict: false,
-            }
-        },
-        #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
-            polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data")
+            polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left_materialized:?} values in {type_other:?} data")
         },
-        // can't check for more granular time_unit in less-granular time_unit data,
-        // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
-        (DataType::Datetime(lhs_unit, _), DataType::Datetime(rhs_unit, _)) => {
-            if lhs_unit <= rhs_unit {
+        // Matching the units would need a needle cast that can overflow to null, and a null
+        // needle matches null elements here, so an overflow would read as a hit.
+        (DataType::Datetime(needle_unit, _), DataType::Datetime(other_unit, _)) => {
+            // Equal units but unequal dtypes means the time zones differ; the kernel compares
+            // the physical values, so instants match across zones.
+            if needle_unit == other_unit {
                 return Ok(None);
-            } else {
-                polars_bail!(InvalidOperation: "'{op}' cannot check for {rhs_unit:?} precision values in {lhs_unit:?} Datetime data")
             }
+            polars_bail!(
+                InvalidOperation:
+                "'{op}' cannot check for {needle_unit} values in {other_unit} data\n\
+                Hint: cast both sides to the same time unit first.",
+            )
         },
-        (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => {
-            if lhs_unit <= rhs_unit {
-                return Ok(None);
-            } else {
-                polars_bail!(InvalidOperation: "'{op}' cannot check for {rhs_unit:?} precision values in {lhs_unit:?} Duration data")
-            }
-        },
+        (DataType::Duration(needle_unit), DataType::Duration(other_unit)) => polars_bail!(
+            InvalidOperation:
+            "'{op}' cannot check for {needle_unit} values in {other_unit} data\n\
+            Hint: cast both sides to the same time unit first.",
+        ),
 
         // Don't attempt to cast between obviously mismatched types. Only allow
         // to cast to a supertype if the cast is lossless.
@@ -132,13 +290,32 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 } else {
                     // We disabled lossless coercion of the operands in 2.0.
                     let lossy_supertype = try_get_supertype(dtml, dto)?;
-                    polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data.\n\
+                    polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left_materialized:?} values in {type_other:?} data.\n\
                         Hint: Before version 2.0, Polars would perform this check by lossily coercing the operands to {lossy_supertype:?}. \
-                        However, since Polars 2.0, for is_in() it is required to explicitly cast (one of) the operands to a compatible type.")
+                        However, since Polars 2.0, for '{op}' it is required to explicitly cast (one of) the operands to a compatible type.")
                 }
             }
-            polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data")
+            polars_bail!(
+                InvalidOperation: "'{op}' cannot check for {type_left_materialized:?} values in {type_other:?} data{}",
+                map_hint(form, &type_other, Some(dto)),
+            )
         },
     };
     Ok(Some(casted_inner_expr))
+}
+
+/// Point an `is_in` on a Map at the Map namespace.
+fn map_hint(
+    form: MembershipForm,
+    container: &DataType,
+    element: Option<&DataType>,
+) -> &'static str {
+    #[cfg(feature = "dtype-map")]
+    if !form.is_contains()
+        && (matches!(container, DataType::Map(..)) || matches!(element, Some(DataType::Map(..))))
+    {
+        return "\nHint: use `map.contains_key` to search a Map by its keys.";
+    }
+    let _ = (form, container, element);
+    ""
 }

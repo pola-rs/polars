@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::offset::{Offsets, OffsetsBuffer};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::offset::{Offsets, OffsetsBuffer};
 use polars_compute::filter::filter_with_bitmap;
 use polars_compute::gather::take_unchecked;
 use polars_compute::rebuild_list::rebuild_list_shallow;
@@ -175,10 +175,21 @@ impl MapChunked {
         self.entry_field(&MAP_VALUE_NAME)
     }
 
-    /// Flatten one entry field over live rows without filtering the other field.
-    fn entry_field(&self, name: &PlSmallStr) -> Series {
-        let storage = self.storage.list().unwrap();
-        let DataType::Struct(fields) = storage.inner_dtype() else {
+    /// Entries each row contributes to [`Self::keys`] and [`Self::values`], in row order.
+    ///
+    /// A null row contributes none, whatever its offset window retains. Reads the offsets in
+    /// place, so pairing this with a flat accessor never materializes the other field.
+    pub fn live_row_lengths(&self) -> impl Iterator<Item = usize> + '_ {
+        self.storage
+            .list()
+            .unwrap()
+            .downcast_iter()
+            .flat_map(live_lengths)
+    }
+
+    /// Position and dtype of the named entry field.
+    fn entry_field_index(&self, name: &PlSmallStr) -> (usize, DataType) {
+        let DataType::Struct(fields) = self.storage.list().unwrap().inner_dtype() else {
             unreachable!("map entries are a struct")
         };
         // Reversed fields are legal input to the `List(Struct) -> Map` cast.
@@ -186,25 +197,65 @@ impl MapChunked {
             .iter()
             .position(|field| field.name() == name)
             .expect("map entries have canonical key and value fields");
+        (i, fields[i].dtype().clone())
+    }
 
-        let chunks = storage
+    /// Flatten one entry field over live rows without filtering the other field.
+    fn entry_field(&self, name: &PlSmallStr) -> Series {
+        let (i, dtype) = self.entry_field_index(name);
+        let chunks = self
+            .storage
+            .list()
+            .unwrap()
             .downcast_iter()
-            .map(|arr| {
-                let entries = windowed_entries_array(arr);
-                let entries = entries
-                    .as_any()
-                    .downcast_ref::<StructArray>()
-                    .expect("map entries are a struct");
-                let field = entries.values()[i].clone();
-                match live_entry_mask(arr) {
-                    Some(mask) => filter_with_bitmap(field.as_ref(), &mask),
-                    None => field,
-                }
-            })
+            .map(|arr| live_entry_field_chunk(arr, i))
             .collect();
 
         // SAFETY: the chunks are one entry field, filtered to the entries of live rows.
-        unsafe { Series::from_chunks_and_dtype_unchecked(name.clone(), chunks, fields[i].dtype()) }
+        unsafe { Series::from_chunks_and_dtype_unchecked(name.clone(), chunks, &dtype) }
+    }
+
+    /// One list of keys per row: `List(key_dtype)`.
+    ///
+    /// Preserves rows, validity and entry order; null rows have empty windows.
+    pub fn key_lists(&self) -> ListChunked {
+        self.entry_field_lists(&MAP_KEY_NAME)
+    }
+
+    /// One list of values per row: `List(value_dtype)`.
+    ///
+    /// Preserves rows, validity and entry order; null rows have empty windows.
+    pub fn value_lists(&self) -> ListChunked {
+        self.entry_field_lists(&MAP_VALUE_NAME)
+    }
+
+    /// The rows of [`Self::entry_field`], with their boundaries kept.
+    ///
+    /// Reads the chunks itself rather than reusing the flat field: a `Null` field collapses
+    /// to a single chunk when it becomes a [`Series`], which would lose the row layout.
+    fn entry_field_lists(&self, name: &PlSmallStr) -> ListChunked {
+        let (i, dtype) = self.entry_field_index(name);
+        let chunks = self
+            .storage
+            .list()
+            .unwrap()
+            .downcast_iter()
+            .map(|arr| {
+                let values = live_entry_field_chunk(arr, i);
+                let dtype = LargeListArray::default_datatype(values.dtype().clone());
+                LargeListArray::new(dtype, live_offsets(arr), values, arr.validity().cloned())
+                    .boxed()
+            })
+            .collect();
+
+        // SAFETY: the chunks are the original rows over one entry field.
+        unsafe {
+            ListChunked::from_chunks_and_dtype_unchecked(
+                self.storage.name().clone(),
+                chunks,
+                DataType::List(Box::new(dtype)),
+            )
+        }
     }
 
     /// Replace live entry values.
@@ -276,7 +327,7 @@ impl MapChunked {
             None => false,
             Some(old) => match &validity {
                 None => old.unset_bits() > 0,
-                Some(new) => arrow::bitmap::and_not(new, &old).set_bits() > 0,
+                Some(new) => polars_arrow::bitmap::and_not(new, &old).set_bits() > 0,
             },
         };
         let storage = if revives_rows {
@@ -471,23 +522,59 @@ fn live_entry_mask(arr: &LargeListArray) -> Option<Bitmap> {
     Some(mask.freeze())
 }
 
+/// One chunk's entries of the field at `i`, restricted to the entries of live rows.
+///
+/// Leaves the other field alone, so flattening keys never materializes values.
+fn live_entry_field_chunk(arr: &LargeListArray, i: usize) -> ArrayRef {
+    let entries = windowed_entries_array(arr);
+    let entries = entries
+        .as_any()
+        .downcast_ref::<StructArray>()
+        .expect("map entries are a struct");
+    let field = entries.values()[i].clone();
+    match live_entry_mask(arr) {
+        Some(mask) => filter_with_bitmap(field.as_ref(), &mask),
+        None => field,
+    }
+}
+
+/// Zero-based row offsets over the live entries of `arr`, with null rows emptied.
+///
+/// Matches what flattening the entries of live rows produces, so the two can be recombined.
+fn live_offsets(arr: &LargeListArray) -> OffsetsBuffer<i64> {
+    let offsets = arr.offsets();
+    let has_null_rows = arr.validity().is_some_and(|v| v.unset_bits() > 0);
+    if !has_null_rows && *offsets.first() == 0 {
+        return offsets.clone();
+    }
+
+    Offsets::try_from_lengths(live_lengths(arr))
+        .expect("live lengths sum to at most the entry count")
+        .into()
+}
+
+/// Entries each row of one chunk owns, in row order, with null rows emptied.
+fn live_lengths(arr: &LargeListArray) -> impl Iterator<Item = usize> + '_ {
+    let validity = arr.validity().filter(|v| v.unset_bits() > 0);
+    arr.offsets()
+        .lengths()
+        .enumerate()
+        .map(move |(row, len)| match validity {
+            Some(validity) if !validity.get_bit(row) => 0,
+            _ => len,
+        })
+}
+
 /// Filter out entries under null rows and rebuild offsets; `None` if unchanged.
 pub(crate) fn compact_null_rows_chunk(arr: &LargeListArray) -> Option<LargeListArray> {
     let mask = live_entry_mask(arr)?;
     let entries = windowed_entries_array(arr);
     let entries = filter_with_bitmap(entries.as_ref(), &mask);
-
     let validity = arr.validity().expect("a masked chunk has null rows");
-    let live_lengths = validity
-        .iter()
-        .zip(arr.offsets().lengths())
-        .map(|(valid, len)| if valid { len } else { 0 });
-    let offsets = Offsets::try_from_lengths(live_lengths)
-        .expect("live lengths sum to at most the entry count");
 
     Some(LargeListArray::new(
         arr.dtype().clone(),
-        offsets.into(),
+        live_offsets(arr),
         entries,
         Some(validity.clone()),
     ))
@@ -836,9 +923,9 @@ fn canonicalize_list_chunk(
 /// Check storage invariants directly, before higher-level operations can mask them.
 #[cfg(test)]
 mod test {
-    use arrow::array::PrimitiveArray;
-    use arrow::bitmap::Bitmap;
-    use arrow::offset::OffsetsBuffer;
+    use polars_arrow::array::PrimitiveArray;
+    use polars_arrow::bitmap::Bitmap;
+    use polars_arrow::offset::OffsetsBuffer;
 
     use super::*;
     use crate::frame::column::Column;
@@ -1184,7 +1271,7 @@ mod test {
 
     /// Simulate a live Arrow row with a null entry/key; PyArrow aborts on this input.
     fn malformed_arrow_map(null_key: bool) -> ArrayRef {
-        use arrow::array::{MapArray, StructArray, Utf8ViewArray};
+        use polars_arrow::array::{MapArray, StructArray, Utf8ViewArray};
 
         let fields = vec![
             ArrowField::new(PlSmallStr::from_static("k"), ArrowDataType::Utf8View, false),
@@ -1225,7 +1312,7 @@ mod test {
 
     #[test]
     fn arrow_import_rejects_live_row_nulls_at_every_depth() {
-        use arrow::array::{ListArray, MapArray, StructArray, Utf8ViewArray};
+        use polars_arrow::array::{ListArray, MapArray, StructArray, Utf8ViewArray};
 
         let nest_in_list = |arr: ArrayRef| -> ArrayRef {
             ListArray::<i64>::new(

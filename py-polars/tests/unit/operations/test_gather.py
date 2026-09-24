@@ -484,3 +484,16 @@ def test_series_gather_null_on_oob() -> None:
 
     result = s.gather([0, 1, 10], null_on_oob=True)
     assert result.to_list() == [1, 2, None]
+
+
+@pytest.mark.parametrize("value", [1, 1.5, "a", True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_gather_scalar_with_interleaved_nulls(
+    value: int | float | str | bool, nulls_last: bool
+) -> None:
+    frame = pl.DataFrame({"x": [value]})
+    result = frame.gather(pl.Series([None, 0, None], dtype=pl.UInt32))
+    values = [value, None, None] if nulls_last else [None, None, value]
+    assert_frame_equal(
+        result.sort("x", nulls_last=nulls_last), pl.DataFrame({"x": values})
+    )

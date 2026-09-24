@@ -560,7 +560,7 @@ async fn start_reader_impl(
                 hp.df()
                     .columns()
                     .iter()
-                    .filter(|c| predicate.live_columns.contains(c.name()))
+                    .filter(|c| predicate.reads_column(c.name()))
                     .map(|c| {
                         (
                             c.name().clone(),
@@ -593,15 +593,13 @@ async fn start_reader_impl(
         {
             match &missing_columns_policy {
                 MissingColumnsPolicy::Insert => {
-                    if predicate.live_columns.contains(missing_col_name) {
+                    if predicate.reads_column(missing_col_name) {
                         external_predicate_cols.push((
                             missing_col_name.clone(),
                             default_value
                                 .cloned()
                                 .unwrap_or_else(|| Scalar::null(dtype.clone())),
                         ));
-
-                        Arc::make_mut(&mut predicate.column_predicates).is_sumwise_complete = false;
                     }
                 },
                 MissingColumnsPolicy::Raise => return Err(missing_column_err(missing_col_name)),

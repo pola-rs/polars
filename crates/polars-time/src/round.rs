@@ -1,7 +1,8 @@
-use arrow::legacy::time_zone::Tz;
-use arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+use polars_arrow::legacy::time_zone::Tz;
+use polars_arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 use polars_core::prelude::arity::broadcast_try_binary_elementwise;
 use polars_core::prelude::*;
+use polars_defs::time::duration::Duration;
 use polars_utils::cache::LruCache;
 
 use crate::prelude::*;
@@ -35,28 +36,16 @@ impl PolarsRound for DatetimeChunked {
                 {
                     // ... yes we can! Weeks, months, and time zones require extra logic.
                     // But in this simple case, it's just simple integer arithmetic.
-                    let every = match self.time_unit() {
-                        TimeUnit::Milliseconds => every_parsed.duration_ms(),
-                        TimeUnit::Microseconds => every_parsed.duration_us(),
-                        TimeUnit::Nanoseconds => every_parsed.duration_ns(),
-                    };
+                    let every = every_parsed.duration(self.time_unit());
                     return Ok(self
                         .physical()
                         .apply_values(|t| fast_round(t, every))
                         .into_datetime(self.time_unit(), time_zone.clone()));
                 } else {
                     let w = Window::new(every_parsed, every_parsed, offset);
-                    let out = match self.time_unit() {
-                        TimeUnit::Milliseconds => self
-                            .physical()
-                            .try_apply_nonnull_values_generic(|t| w.round_ms(t, tz)),
-                        TimeUnit::Microseconds => self
-                            .physical()
-                            .try_apply_nonnull_values_generic(|t| w.round_us(t, tz)),
-                        TimeUnit::Nanoseconds => self
-                            .physical()
-                            .try_apply_nonnull_values_generic(|t| w.round_ns(t, tz)),
-                    };
+                    let out = self
+                        .physical()
+                        .try_apply_nonnull_values_generic(|t| w.round(self.time_unit(), t, tz));
                     return Ok(out?.into_datetime(self.time_unit(), self.time_zone().clone()));
                 }
             } else {
@@ -75,12 +64,6 @@ impl PolarsRound for DatetimeChunked {
         // A sqrt(n) cache is not too small, not too large.
         let mut duration_cache = LruCache::with_capacity((every.len() as f64).sqrt() as usize);
 
-        let func = match self.time_unit() {
-            TimeUnit::Nanoseconds => Window::round_ns,
-            TimeUnit::Microseconds => Window::round_us,
-            TimeUnit::Milliseconds => Window::round_ms,
-        };
-
         let out = broadcast_try_binary_elementwise(
             self.physical(),
             every,
@@ -93,7 +76,7 @@ impl PolarsRound for DatetimeChunked {
                     }
 
                     let w = Window::new(every, every, offset);
-                    func(&w, timestamp, tz).map(Some)
+                    w.round(self.time_unit(), timestamp, tz).map(Some)
                 },
                 _ => Ok(None),
             },
@@ -114,10 +97,11 @@ impl PolarsRound for DateChunked {
                     }
                     let w = Window::new(every, every, offset);
                     self.physical().try_apply_nonnull_values_generic(|t| {
-                        Ok(
-                            (w.round_ms(MILLISECONDS_IN_DAY * t as i64, None)?
-                                / MILLISECONDS_IN_DAY) as i32,
-                        )
+                        Ok((w.round(
+                            TimeUnit::Milliseconds,
+                            MILLISECONDS_IN_DAY * t as i64,
+                            None,
+                        )? / MILLISECONDS_IN_DAY) as i32)
                     })
                 } else {
                     Ok(Int32Chunked::full_null(self.name().clone(), self.len()))
@@ -144,8 +128,11 @@ impl PolarsRound for DateChunked {
 
                             let w = Window::new(every, every, offset);
                             Ok(Some(
-                                (w.round_ms(MILLISECONDS_IN_DAY * t as i64, None)?
-                                    / MILLISECONDS_IN_DAY) as i32,
+                                (w.round(
+                                    TimeUnit::Milliseconds,
+                                    MILLISECONDS_IN_DAY * t as i64,
+                                    None,
+                                )? / MILLISECONDS_IN_DAY) as i32,
                             ))
                         },
                         _ => Ok(None),

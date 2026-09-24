@@ -1,4 +1,4 @@
-use arrow::io::ipc::read::OutOfSpecKind;
+use polars_arrow::io::ipc::read::OutOfSpecKind;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};

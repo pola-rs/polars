@@ -73,7 +73,7 @@ pub use name::*;
 pub use options::*;
 pub use plan::*;
 #[cfg(feature = "approx_quantile")]
-use polars_compute::approx_quantile::ApproxQuantileMethod;
+pub use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
@@ -850,15 +850,20 @@ impl Expr {
             if e.is_empty() {
                 return None;
             }
-            let e = if e.len() == 1 {
-                Arc::new(e[0].clone().into())
-            } else {
-                feature_gated!["dtype-struct", {
-                    let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
-                    Arc::new(functions::as_struct(e))
-                }]
-            };
-            Some((e, options))
+            if e.len() == 1 {
+                return Some((Arc::new(e[0].clone().into()), options));
+            }
+            // Row-encode the keys so the sort options apply to every key.
+            let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
+            let encoded = Expr::n_ary(
+                FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
+                    descending: Some(vec![options.descending]),
+                    nulls_last: Some(vec![options.nulls_last]),
+                    broadcast_nulls: None,
+                }),
+                e,
+            );
+            Some((Arc::new(encoded), SortOptions::default()))
         });
 
         Ok(Expr::Over {
@@ -1623,6 +1628,18 @@ impl Expr {
     /// Calculate the exponential of all elements in the input array.
     pub fn exp(self) -> Self {
         self.map_unary(FunctionExpr::Exp)
+    }
+
+    #[cfg(feature = "log")]
+    /// Compute the error function of all elements in the input array.
+    pub fn erf(self) -> Self {
+        self.map_unary(FunctionExpr::Erf)
+    }
+
+    #[cfg(feature = "log")]
+    /// Compute the complementary error function of all elements in the input array.
+    pub fn erfc(self) -> Self {
+        self.map_unary(FunctionExpr::Erfc)
     }
 
     #[cfg(feature = "log")]

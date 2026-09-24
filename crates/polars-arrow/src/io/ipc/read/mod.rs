@@ -35,10 +35,10 @@ pub use stream::{StreamMetadata, StreamReader, StreamState, read_stream_metadata
 /// how dictionaries are tracked in this crate
 pub type Dictionaries = PlHashMap<i64, Box<dyn Array>>;
 
-pub(crate) type Node<'a> = arrow_format::ipc::FieldNodeRef<'a>;
-pub(crate) type IpcBuffer<'a> = arrow_format::ipc::BufferRef<'a>;
-pub(crate) type Compression<'a> = arrow_format::ipc::BodyCompressionRef<'a>;
-pub(crate) type Version = arrow_format::ipc::MetadataVersion;
+pub(crate) type Node<'a> = polars_arrow_format::ipc::FieldNodeRef<'a>;
+pub(crate) type IpcBuffer<'a> = polars_arrow_format::ipc::BufferRef<'a>;
+pub(crate) type Compression<'a> = polars_arrow_format::ipc::BodyCompressionRef<'a>;
+pub(crate) type Version = polars_arrow_format::ipc::MetadataVersion;
 
 #[cfg(feature = "io_flight")]
 pub use flight::*;

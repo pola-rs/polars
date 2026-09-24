@@ -1,9 +1,6 @@
-mod count;
 mod dsl;
 mod equality;
 mod hint;
-#[cfg(feature = "python")]
-mod python_udf;
 mod schema;
 
 use std::borrow::Cow;
@@ -13,9 +10,7 @@ use std::sync::Arc;
 
 pub use dsl::*;
 pub use hint::*;
-use polars_core::error::feature_gated;
 use polars_core::prelude::*;
-use polars_core::series::IsSorted;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -227,71 +222,6 @@ impl FunctionIR {
             Unnest { columns, .. } => Cow::Borrowed(columns.as_ref()),
             Explode { columns, .. } => Cow::Borrowed(columns.as_ref()),
             _ => Cow::Borrowed(&[]),
-        }
-    }
-
-    pub fn evaluate(&self, mut df: DataFrame) -> PolarsResult<DataFrame> {
-        use FunctionIR::*;
-        match self {
-            Opaque { function, .. } => function.call_udf(df),
-            #[cfg(feature = "python")]
-            OpaquePython(OpaquePythonUdf {
-                function,
-                validate_output,
-                schema,
-                ..
-            }) => python_udf::call_python_udf(function, df, *validate_output, schema.clone()),
-            FastCount {
-                sources,
-                scan_type,
-                alias,
-                cloud_options,
-            } => {
-                debug_assert_eq!(df.shape(), (0, 0));
-                count::count_rows(
-                    sources,
-                    scan_type,
-                    alias.clone(),
-                    cloud_options.as_ref().as_ref(),
-                )
-            },
-            Rechunk => {
-                df.rechunk_mut_par();
-                Ok(df)
-            },
-            Unnest { columns, separator } => {
-                feature_gated!(
-                    "dtype-struct",
-                    df.unnest(columns.iter().cloned(), separator.as_deref())
-                )
-            },
-            Explode {
-                columns, options, ..
-            } => df.explode(columns.iter().cloned(), *options),
-            #[cfg(feature = "pivot")]
-            Unpivot { args, .. } => {
-                use polars_ops::unpivot::UnpivotDF;
-                let args = (**args).clone();
-                df.unpivot2(args)
-            },
-            RowIndex { name, offset, .. } => df.with_row_index(name.clone(), *offset),
-            Hint(hint) => {
-                let HintIR::Sorted(s) = &hint;
-                if let Some(s) = s.first() {
-                    let idx = df.try_get_column_index(&s.column)?;
-                    let col = &mut unsafe { df.columns_mut_retain_schema() }[idx];
-                    if let Some(d) = s.descending {
-                        let flag = if d {
-                            IsSorted::Descending
-                        } else {
-                            IsSorted::Ascending
-                        };
-                        col.set_sorted_flag(flag);
-                    }
-                }
-
-                Ok(df)
-            },
         }
     }
 

@@ -1,5 +1,5 @@
-use arrow::Either;
-use arrow::compute::concatenate::concatenate;
+use polars_arrow::Either;
+use polars_arrow::compute::concatenate::concatenate;
 
 use crate::prelude::append::update_sorted_flag_before_append;
 use crate::prelude::*;

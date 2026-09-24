@@ -1,16 +1,20 @@
 #[cfg(feature = "approx_quantile")]
 use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
-use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
+use polars_core::prelude::row_encode::{
+    _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_vertical_par_ordered,
+    encode_rows_vertical_par_unordered,
+};
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::series::ops::NullBehavior;
-use polars_ops::prelude::ListNameSpaceImpl;
 #[cfg(feature = "interpolate")]
-use polars_ops::series::InterpolationMethod;
+use polars_defs::expr::InterpolationMethod;
 #[cfg(feature = "rank")]
-use polars_ops::series::RankOptions;
+use polars_defs::expr::RankOptions;
+use polars_ops::prelude::ListNameSpaceImpl;
 use polars_ops::series::{ArgAgg, NullStrategy, SeriesMethods};
 #[cfg(feature = "dtype-array")]
 use polars_plan::dsl::ReshapeDimension;
@@ -23,6 +27,7 @@ use polars_plan::plans::{AExprSorted, DynamicPredWeakRef, RowEncodingVariant};
 use polars_plan::plans::{IRBinMethod, IRBinOptions};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 #[cfg(feature = "abs")]
@@ -40,45 +45,30 @@ pub(super) fn approx_n_unique(s: &Column) -> PolarsResult<Column> {
         .map(|v| Column::new_scalar(s.name().clone(), Scalar::new(IDX_DTYPE, v.into()), 1))
 }
 
+/// Summarize the input into a single-row sketch column.
 #[cfg(feature = "approx_quantile")]
-pub(super) fn approx_quantile(
-    s: &[Column],
+pub(super) fn approx_quantile_sketch(
+    s: &Column,
     method: &ApproxQuantileMethod,
     error: f64,
 ) -> PolarsResult<Column> {
+    let input = s.as_materialized_series_maintain_scalar();
+    let out = polars_ops::prelude::approx_quantile_sketch(&input, error, method)?;
+    Ok(out.into_column())
+}
+
+/// Estimate quantiles from a sketch column.
+#[cfg(feature = "approx_quantile")]
+pub(super) fn approx_quantile_estimate(
+    s: &[Column],
+    values_dtype: &DataType,
+) -> PolarsResult<Column> {
     assert_eq!(s.len(), 2);
-    let input = s[0].as_materialized_series();
-    let mut quantile = s[1].as_materialized_series();
-    polars_ensure!(!quantile.is_empty(), ComputeError:
-        "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
-        got an empty input"
-    );
-    polars_ensure!(quantile.len() == 1, ComputeError:
-        "polars does not support varying approximate quantiles yet, \
-        make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
-    );
+    let quantiles = s[1].as_materialized_series();
+    let sketch = s[0].as_materialized_series();
 
-    // A list input asks for several quantiles at once, and comes back as a list.
-    let is_list = quantile.dtype().is_list();
-    let inner_s;
-    if is_list {
-        let list = quantile.list()?;
-        inner_s = list
-            .get_as_series(0)
-            .ok_or_else(|| polars_err!(ComputeError: "`quantile` should not be null"))?;
-        quantile = &inner_s;
-    }
-
-    let out = polars_ops::prelude::approx_quantile(input, quantile, error, method)?;
-    let name = input.name().clone();
-    let sc = match is_list {
-        true => Scalar::new(
-            DataType::List(Box::new(out.dtype().clone())),
-            AnyValue::List(out),
-        ),
-        false => Scalar::new(out.dtype().clone(), out.get(0)?.into_static()),
-    };
-    Ok(sc.into_column(name))
+    let out = polars_ops::prelude::approx_quantile_estimate(sketch, quantiles, values_dtype)?;
+    Ok(out.into_column())
 }
 
 #[cfg(feature = "diff")]
@@ -136,7 +126,15 @@ pub(super) fn replace_time_zone(
     let s1 = &s[0];
     let ca = s1.datetime().unwrap();
     let s2 = &s[1].str()?;
-    Ok(polars_ops::prelude::replace_time_zone(ca, time_zone, s2, non_existent)?.into_column())
+    Ok(
+        polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone(
+            ca,
+            time_zone,
+            s2,
+            non_existent,
+        )?
+        .into_column(),
+    )
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -441,14 +439,14 @@ pub(super) fn row_hash(c: &Column, seed: u64) -> PolarsResult<Column> {
 
 #[cfg(feature = "arg_where")]
 pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Column> {
-    use polars_core::utils::arrow::bitmap::utils::SlicesIterator;
+    use polars_core::utils::polars_arrow::bitmap::utils::SlicesIterator;
 
     let predicate = s[0].bool()?;
 
     if predicate.is_empty() {
         Ok(Column::full_null(predicate.name().clone(), 0, &IDX_DTYPE))
     } else {
-        use arrow::datatypes::IdxArr;
+        use polars_arrow::datatypes::IdxArr;
         use polars_core::prelude::IdxCa;
 
         let capacity = predicate.sum().unwrap();
@@ -763,6 +761,20 @@ pub(super) fn exp(s: &Column) -> PolarsResult<Column> {
     Ok(s.as_materialized_series().exp()?.into())
 }
 
+#[cfg(feature = "log")]
+pub(super) fn erf(s: &Column) -> PolarsResult<Column> {
+    use polars_ops::series::LogSeries;
+
+    Ok(s.as_materialized_series().erf()?.into())
+}
+
+#[cfg(feature = "log")]
+pub(super) fn erfc(s: &Column) -> PolarsResult<Column> {
+    use polars_ops::series::LogSeries;
+
+    Ok(s.as_materialized_series().erfc()?.into())
+}
+
 pub(super) fn unique(s: &Column, stable: bool) -> PolarsResult<Column> {
     if stable {
         s.unique_stable()
@@ -871,8 +883,9 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
     #[cfg(all(feature = "rank", feature = "propagate_nans"))]
     fn spearman_rank_corr(s: &[Column], propagate_nans: bool) -> PolarsResult<Column> {
         use polars_core::utils::coalesce_nulls_columns;
+        use polars_defs::expr::RankMethod;
         use polars_ops::chunked_array::nan_propagating_aggregate::nan_max_s;
-        use polars_ops::series::{RankMethod, SeriesRank};
+        use polars_ops::series::SeriesRank;
         let a = &s[0];
         let b = &s[1];
 
@@ -1011,7 +1024,10 @@ pub(super) fn ewm_var(s: &Column, options: polars_ops::series::EWMOptions) -> Po
 }
 
 #[cfg(feature = "ewma_by")]
-pub(super) fn ewm_mean_by(s: &[Column], half_life: polars_time::Duration) -> PolarsResult<Column> {
+pub(super) fn ewm_mean_by(
+    s: &[Column],
+    half_life: polars_defs::time::duration::Duration,
+) -> PolarsResult<Column> {
     use polars_ops::series::SeriesMethods;
 
     let time_zone = match s[1].dtype() {
@@ -1019,7 +1035,7 @@ pub(super) fn ewm_mean_by(s: &[Column], half_life: polars_time::Duration) -> Pol
         _ => None,
     };
     polars_ensure!(!half_life.negative(), InvalidOperation: "half_life cannot be negative");
-    polars_time::prelude::ensure_is_constant_duration(half_life, time_zone, "half_life")?;
+    polars_defs::time::duration::ensure_is_constant_duration(half_life, time_zone, "half_life")?;
     // `half_life` is a constant duration so we can safely use `duration_ns()`.
     let half_life = half_life.duration_ns();
     let values = &s[0];
@@ -1037,7 +1053,10 @@ pub(super) fn ewm_mean_by(s: &[Column], half_life: polars_time::Duration) -> Pol
 }
 
 #[cfg(feature = "ewma_by")]
-pub(super) fn ewm_sum_by(s: &[Column], half_life: polars_time::Duration) -> PolarsResult<Column> {
+pub(super) fn ewm_sum_by(
+    s: &[Column],
+    half_life: polars_defs::time::duration::Duration,
+) -> PolarsResult<Column> {
     use polars_ops::series::SeriesMethods;
 
     let time_zone = match s[1].dtype() {
@@ -1045,7 +1064,7 @@ pub(super) fn ewm_sum_by(s: &[Column], half_life: polars_time::Duration) -> Pola
         _ => None,
     };
     polars_ensure!(!half_life.negative(), InvalidOperation: "half_life cannot be negative");
-    polars_time::prelude::ensure_is_constant_duration(half_life, time_zone, "half_life")?;
+    polars_defs::time::duration::ensure_is_constant_duration(half_life, time_zone, "half_life")?;
     let half_life = half_life.duration_ns();
     let values = &s[0];
     let times = &s[1];
@@ -1060,6 +1079,8 @@ pub(super) fn ewm_sum_by(s: &[Column], half_life: polars_time::Duration) -> Pola
     )
     .map(Column::from)
 }
+
+const ROW_ENCODE_PAR_MIN_ROWS: usize = 1 << 16;
 
 pub fn row_encode(
     c: &mut [Column],
@@ -1076,9 +1097,17 @@ pub fn row_encode(
         }
     }
 
-    let name = PlSmallStr::from_static("row_encoded");
+    let length = broadcast_len(c.iter())?;
+    for c in c.iter_mut() {
+        c.broadcast_in_place_to(length)?;
+    }
+
+    let parallel = length >= ROW_ENCODE_PAR_MIN_ROWS && RAYON.current_num_threads() > 1;
     match variant {
-        RowEncodingVariant::Unordered => _get_rows_encoded_ca_unordered(name, c),
+        RowEncodingVariant::Unordered if parallel => {
+            encode_rows_vertical_par_unordered(c).map(|ca| ca.rechunk().into_owned())
+        },
+        RowEncodingVariant::Unordered => _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, c),
         RowEncodingVariant::Ordered {
             descending,
             nulls_last,
@@ -1091,10 +1120,24 @@ pub fn row_encode(
             assert_eq!(c.len(), descending.len());
             assert_eq!(c.len(), nulls_last.len());
 
-            _get_rows_encoded_ca(name, c, &descending, &nulls_last, broadcast_nulls)
+            if parallel {
+                encode_rows_vertical_par_ordered(c, &descending, &nulls_last, broadcast_nulls)
+                    .map(|ca| ca.rechunk().into_owned())
+            } else {
+                _get_rows_encoded_ca(
+                    PlSmallStr::EMPTY,
+                    c,
+                    &descending,
+                    &nulls_last,
+                    broadcast_nulls,
+                )
+            }
         },
     }
-    .map(IntoColumn::into_column)
+    .map(|ca| {
+        ca.with_name(PlSmallStr::from_static("row_encoded"))
+            .into_column()
+    })
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -1183,4 +1226,8 @@ pub(super) fn bin(s: &Column, options: IRBinOptions) -> PolarsResult<Column> {
         },
     }
     .map(Column::from)
+}
+
+pub fn dynamic_skip_batch(columns: &[Column], pred: &DynamicPredWeakRef) -> PolarsResult<Column> {
+    pred.evaluate_stats(&columns[0], &columns[1], &columns[2])
 }

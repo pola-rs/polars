@@ -230,13 +230,14 @@ impl IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantile { .. } => {
-                // A list of quantiles in, a list of estimates out.
-                let quantiles_are_list = mapper.args()[1].dtype().is_list();
-                mapper.map_dtype(|dtype| match quantiles_are_list {
-                    true => DataType::List(Box::new(dtype.clone())),
-                    false => dtype.clone(),
-                })
+            ApproxQuantileSketch { .. } => mapper.with_dtype(DataType::Binary),
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantileEstimate { values_dtype } => {
+                if mapper.args()[1].dtype().is_list() {
+                    mapper.with_dtype(DataType::List(Box::new(values_dtype.clone())))
+                } else {
+                    mapper.with_dtype(values_dtype.clone())
+                }
             },
             #[cfg(feature = "hist")]
             Hist {
@@ -304,6 +305,14 @@ impl IRFunctionExpr {
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "exp")?
                 .map_to_float_dtype(),
             #[cfg(feature = "log")]
+            Erf => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "erf")?
+                .map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            Erfc => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "erfc")?
+                .map_to_float_dtype(),
+            #[cfg(feature = "log")]
             Log => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log")?
                 .log_dtype(),
@@ -330,9 +339,9 @@ impl IRFunctionExpr {
                     polars_ensure!(l.len() == breaks.len() + 1, ShapeMismatch: "provide len(breaks) + 1 labels");
                     l.clone()
                 } else {
-                    use polars_ops::series::compute_labels;
+                    use polars_core::utils::cut::compute_cut_labels;
 
-                    compute_labels(breaks, *left_closed)?
+                    compute_cut_labels(breaks, *left_closed)?
                 };
                 let enum_dtype = DataType::from_frozen_categories(FrozenCategories::new(
                     cut_labels.iter().map(|s| s.as_str()),
@@ -516,7 +525,7 @@ impl IRFunctionExpr {
             }),
             #[cfg(feature = "dtype-struct")]
             RowDecode(fields, _) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
-            DynamicPred { .. } => mapper.with_dtype(DataType::Boolean),
+            DynamicPred { .. } | DynamicSkipBatch { .. } => mapper.with_dtype(DataType::Boolean),
         }
     }
 

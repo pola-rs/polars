@@ -3326,3 +3326,31 @@ def test_group_by_agg_primitive_opt_single_chunk_28684() -> None:
     )
 
     assert [s.n_chunks() for s in out.select(pl.exclude("g"))] == [1] * (out.width - 1)
+
+
+def test_group_by_filtered_agg_missing_group_29322() -> None:
+    df = pl.DataFrame(
+        {
+            "f": [7, 7, None, 3, 7, 28, 13, 7, 7, 7],
+            "g": [5, -100, 3, 200, -2, 50, 1, 7, 9, -30],
+            "a": [1, 2, 3, None, 5, 6, 7, 8, 9, 10],
+        }
+    )
+    result = (
+        df.lazy()
+        .group_by("f")
+        .agg(
+            pl.col("g").filter(pl.col("g").is_between(-40, 13)).count().alias("v0"),
+            pl.col("a").unique().sum().alias("v1"),
+        )
+        .sort("f", nulls_last=True)
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {
+            "f": [3, 7, 13, 28, None],
+            "v0": pl.Series([0, 5, 1, 0, 1], dtype=get_index_type()),
+            "v1": [0, 35, 7, 6, 3],
+        }
+    )
+    assert_frame_equal(result, expected)

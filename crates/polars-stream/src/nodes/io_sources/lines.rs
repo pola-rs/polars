@@ -6,7 +6,7 @@ use polars_core::config;
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::metrics::IOMetrics;
-use polars_io::utils::byte_source::DynByteSourceBuilder;
+use polars_io::utils::byte_source::{self, DynByteSourceBuilder, FileReadContext};
 use polars_plan::dsl::ScanSource;
 use polars_utils::relaxed_cell::RelaxedCell;
 
@@ -22,6 +22,7 @@ pub struct LineReaderBuilder {
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
+    pub file_read_context: std::sync::OnceLock<FileReadContext>,
 }
 
 impl std::fmt::Debug for LineReaderBuilder {
@@ -29,6 +30,7 @@ impl std::fmt::Debug for LineReaderBuilder {
         f.debug_struct("LineReaderBuilder")
             .field("prefetch_limit", &self.prefetch_limit)
             .field("prefetch_semaphore", &self.prefetch_semaphore)
+            .field("file_read_context", &self.file_read_context)
             .finish()
     }
 }
@@ -87,11 +89,39 @@ impl FileReaderBuilder for LineReaderBuilder {
         let chunk_reader_builder = ChunkReaderBuilder::Lines;
         let verbose = config::verbose();
 
+        // Note: Unlike mmap, `pread` returns chunks backed by ordinary heap memory. The rows
+        // produced by `split_lines_to_rows()` point directly into those chunks, and keeping
+        // file-backed pages mapped for the lifetime of the output is more expensive than the
+        // anonymous memory that `pread` reads into.
         let byte_source_builder =
             if scan_source.is_cloud_url() || polars_config::config().force_async() {
                 DynByteSourceBuilder::ObjectStore(FetchConfig::streaming())
-            } else {
+            } else if scan_source.is_buffer() {
                 DynByteSourceBuilder::Mmap
+            } else {
+                let read_context = self.file_read_context.get_or_init(|| {
+                    let cfg = polars_config::config();
+                    let enable_o_direct = cfg.direct_io();
+                    let concurrency = cfg.file_read_concurrency().max(1) as usize;
+                    let fadv = cfg.file_posix_fadv();
+
+                    if verbose {
+                        eprintln!(
+                            "[LineReaderBuilder]: file read_context as configured: \
+                                read_concurrency: {concurrency}, \
+                                posix_fadv: {fadv}, \
+                                o_direct: {enable_o_direct}"
+                        );
+                    }
+
+                    FileReadContext {
+                        enable_o_direct,
+                        concurrency,
+                        permits: byte_source::global_read_permits(),
+                        advice: fadv,
+                    }
+                });
+                DynByteSourceBuilder::FilePread(read_context.clone())
             };
 
         // Leverage the existing NDJson code path and line counting functionality.

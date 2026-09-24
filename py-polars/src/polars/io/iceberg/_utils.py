@@ -18,6 +18,7 @@ from ast import (
     Invert,
     List,
     Name,
+    NotEq,
     UnaryOp,
 )
 from dataclasses import dataclass
@@ -172,12 +173,39 @@ def _ensure_boolean_expression(result: Any) -> Any:
 
 
 def try_convert_pyarrow_predicate(pyarrow_predicate: str) -> Any | None:
-    with contextlib.suppress(Exception):
+    try:
         expr_ast = _to_ast(pyarrow_predicate)
-        result = _convert_predicate(expr_ast)
-        return _ensure_boolean_expression(result)
+    except Exception:
+        return None
 
-    return None
+    # Polars hands us a conjunction of independently converted minterms, and
+    # PyIceberg has no equivalent for some of them (arithmetic, for one). Keep
+    # the conjuncts that do convert: dropping one only widens the filter, and
+    # the engine re-applies the full predicate after the scan.
+    converted: list[Any] = []
+
+    for conjunct in _split_conjuncts(expr_ast):
+        with contextlib.suppress(Exception):
+            converted.append(_ensure_boolean_expression(_convert_predicate(conjunct)))
+
+    if not converted:
+        return None
+
+    result = converted[0]
+
+    for expr in converted[1:]:
+        result = pyiceberg.expressions.And(result, expr)
+
+    return result
+
+
+def _split_conjuncts(a: ast.expr) -> Iterable[ast.expr]:
+    """Yield the operands of a (possibly nested) top-level `&`."""
+    if isinstance(a, BinOp) and isinstance(a.op, BitAnd):
+        yield from _split_conjuncts(a.left)
+        yield from _split_conjuncts(a.right)
+    else:
+        yield a
 
 
 def _to_ast(expr: str) -> ast.expr:
@@ -218,6 +246,9 @@ def _(a: Constant) -> Any:
 
 @_convert_predicate.register(Name)
 def _(a: Name) -> Any:
+    if a.id == "NaN":
+        msg = "NaN literal is not supported in this predicate position"
+        raise ValueError(msg)
     return a.id
 
 
@@ -279,7 +310,15 @@ def _(a: BinOp) -> Any:
 def _(a: Compare) -> Any:
     op = a.ops[0]
     lhs = _convert_predicate(a.left)[0]
-    rhs = _convert_predicate(a.comparators[0])
+    rhs_ast = a.comparators[0]
+
+    if isinstance(rhs_ast, Name) and rhs_ast.id == "NaN":
+        if isinstance(op, Eq):
+            return pyiceberg.expressions.IsNaN(lhs)  # type: ignore[misc]
+        if isinstance(op, NotEq):
+            return pyiceberg.expressions.NotNaN(lhs)  # type: ignore[misc]
+
+    rhs = _convert_predicate(rhs_ast)
 
     if isinstance(op, Gt):
         return pyiceberg.expressions.GreaterThan(lhs, rhs)  # type: ignore[misc, call-arg]

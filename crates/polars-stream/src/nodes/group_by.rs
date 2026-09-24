@@ -582,6 +582,11 @@ impl GroupBySinkState {
                         }
                     }
 
+                    // Each input only resizes its own reductions, so ensure all have the right length.
+                    for r in &mut p_reductions {
+                        r.resize(p_grouper.num_groups());
+                    }
+
                     actual_groups_metric.add(p_grouper.num_groups() as i64);
 
                     // We're done, help others out by doing drops.

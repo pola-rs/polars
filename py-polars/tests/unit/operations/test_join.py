@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import (
     ColumnNotFoundError,
     ComputeError,
@@ -23,15 +24,21 @@ from tests.unit.conftest import time_func
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import JoinStrategy, MaintainOrderJoin, PolarsDataType
+    from polars._typing import (
+        EngineType,
+        JoinStrategy,
+        MaintainOrderJoin,
+        PolarsDataType,
+    )
 
 
 def test_semi_anti_join() -> None:
     df_a = pl.DataFrame({"key": [1, 2, 3], "payload": ["f", "i", None]})
-
     df_b = pl.DataFrame({"key": [3, 4, 5, None]})
 
-    assert df_a.join(df_b, on="key", how="anti").to_dict(as_series=False) == {
+    assert df_a.join(df_b, on="key", how="anti", maintain_order="left").to_dict(
+        as_series=False
+    ) == {
         "key": [1, 2],
         "payload": ["f", "i"],
     }
@@ -52,10 +59,11 @@ def test_semi_anti_join() -> None:
     df_a = pl.DataFrame(
         {"a": [1, 2, 3, 1], "b": ["a", "b", "c", "a"], "payload": [10, 20, 30, 40]}
     )
-
     df_b = pl.DataFrame({"a": [3, 3, 4, 5], "b": ["c", "c", "d", "e"]})
 
-    assert df_a.join(df_b, on=["a", "b"], how="anti").to_dict(as_series=False) == {
+    assert df_a.join(df_b, on=["a", "b"], how="anti", maintain_order="left").to_dict(
+        as_series=False
+    ) == {
         "a": [1, 2, 1],
         "b": ["a", "b", "a"],
         "payload": [10, 20, 40],
@@ -474,7 +482,7 @@ def test_semi_join_projection_pushdown_6455() -> None:
 
     latest = df.group_by("id").agg(pl.col("timestamp").max())
     df = df.join(latest, on=["id", "timestamp"], how="semi")
-    assert df.select(["id", "value"]).collect().to_dict(as_series=False) == {
+    assert df.select(["id", "value"]).sort("id").collect().to_dict(as_series=False) == {
         "id": [1, 2],
         "value": [2, 4],
     }
@@ -496,7 +504,6 @@ def test_update() -> None:
             ],
         }
     )
-
     df2 = pl.DataFrame(
         {
             "key1": [1, 2, 3, 4],
@@ -879,28 +886,314 @@ def test_full_outer_join_coalesce_different_names_13450() -> None:
             "R2": [7, 8, 9, None],
         }
     )
-
     out = df1.join(df2, left_on="L1", right_on="L3", how="full", coalesce=True)
     assert_frame_equal(out, expected, check_row_order=False)
 
 
 # https://github.com/pola-rs/polars/issues/10663
-def test_join_on_wildcard_error() -> None:
-    df = pl.DataFrame({"x": [1]})
+def test_join_on_wildcard() -> None:
+    df1 = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
+
     with pytest.raises(
         InvalidOperationError,
+        match=r"join keys expanded.*\(left: 1, right: 2\)",
     ):
-        df.join(df2, on=pl.all())
+        df1.join(df2, on=pl.all())
+
+    df1 = pl.DataFrame({"x": [1, 2], "value": ["a", "b"]})
+    df2 = pl.DataFrame({"x": [1, 3], "value": ["a", "c"]})
+
+    assert_frame_equal(
+        df1.join(df2, on=pl.all()),
+        df1.join(df2, on=["x", "value"]),
+    )
 
 
-def test_join_on_nth_error() -> None:
+def test_join_on_nth() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
+    expected = pl.DataFrame({"x": [1], "y": [2]})
+
+    assert_frame_equal(df.join(df2, on=pl.first()), expected)
+    assert_frame_equal(df.lazy().join(df2.lazy(), on=pl.first()).collect(), expected)
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        cs.by_name("a", "b"),
+        cs.integer(),
+        cs.matches(r"^[ab]$"),
+        cs.by_index(0, 1),
+        cs.all() - cs.string(),
+        pl.col("a", "b"),
+    ],
+)
+def test_join_on_selectors(selector: pl.Expr) -> None:
+    left = pl.DataFrame(
+        {"a": [1, 1, 2], "b": [10, 20, 10], "left_value": ["l1", "l2", "l3"]}
+    )
+    right = pl.DataFrame(
+        {"a": [1, 2, 2], "b": [10, 10, 30], "right_value": ["r1", "r2", "r3"]}
+    )
+
+    assert_frame_equal(
+        left.join(right, on=selector),
+        left.join(right, on=["a", "b"]),
+        check_row_order=False,
+    )
+
+
+def test_join_on_multi_column_string_selectors() -> None:
+    left = pl.DataFrame({"a": ["x", "y"], "b": ["u", "v"], "left_value": [1, 2]})
+    right = pl.DataFrame({"x": ["x", "y"], "y": ["u", "w"], "right_value": [3, 4]})
+
+    assert_frame_equal(
+        left.join(right, left_on=cs.string(), right_on=cs.string()),
+        left.join(right, left_on=["a", "b"], right_on=["x", "y"]),
+    )
+
+
+def test_join_on_regex_string() -> None:
+    left = pl.DataFrame({"key_a": [1, 2], "key_b": [10, 20], "left_value": ["x", "y"]})
+    right = pl.DataFrame(
+        {"key_a": [1, 2], "key_b": [10, 30], "right_value": ["x", "y"]}
+    )
+
+    assert_frame_equal(
+        left.join(right, on=r"^key_.*$"),
+        left.join(right, on=["key_a", "key_b"]),
+    )
+
+    literal = pl.DataFrame({r"^key_.*$": [1, 2]})
+    assert_frame_equal(
+        literal.join(literal, on=cs.by_name(r"^key_.*$")),
+        literal,
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full", "semi", "anti"])
+def test_join_selector_keyed_variants(how: JoinStrategy) -> None:
+    left = pl.LazyFrame(
+        {"a": [1, 1, 2], "b": [10, 20, 10], "left_value": ["l1", "l2", "l3"]}
+    )
+    right = pl.LazyFrame(
+        {"a": [1, 2, 2], "b": [10, 10, 30], "right_value": ["r1", "r2", "r3"]}
+    )
+    actual = left.join(right, on=cs.by_name("a", "b"), how=how)
+    expected = left.join(right, on=["a", "b"], how=how)
+
+    assert actual.collect_schema() == expected.collect_schema()
+    for engine in ("in-memory", "streaming"):
+        assert_frame_equal(
+            actual.collect(engine=engine),
+            expected.collect(engine=engine),
+            check_row_order=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("left_on", "right_on", "expected_left_on", "expected_right_on"),
+    [
+        pytest.param(
+            [cs.by_name("a", "b").cast(pl.Int64), pl.col("c")],
+            [cs.by_name("x", "y").cast(pl.Int64), pl.col("z")],
+            [pl.col("a").cast(pl.Int64), pl.col("b").cast(pl.Int64), "c"],
+            [pl.col("x").cast(pl.Int64), pl.col("y").cast(pl.Int64), "z"],
+            id="casted-selectors-with-plain-key",
+        ),
+        pytest.param(
+            [cs.by_name("a", "b").cast(pl.Int64), pl.col("c")],
+            ["x", "y", "z"],
+            [pl.col("a").cast(pl.Int64), pl.col("b").cast(pl.Int64), "c"],
+            ["x", "y", "z"],
+            id="nested-selector-unequal-raw-counts",
+        ),
+        pytest.param(cs.by_name("a"), pl.col("x"), "a", "x", id="single-selector"),
+        pytest.param(
+            [cs.by_name("a", "b"), "c"],
+            ["x", cs.by_name("y", "z")],
+            ["a", "b", "c"],
+            ["x", "y", "z"],
+            id="mixed-selector-positions",
+        ),
+        pytest.param(
+            cs.by_name("a", "b"),
+            ["x", "y"],
+            ["a", "b"],
+            ["x", "y"],
+            id="selector-left",
+        ),
+        pytest.param(
+            ["a", "b"],
+            cs.by_name("x", "y"),
+            ["a", "b"],
+            ["x", "y"],
+            id="selector-right",
+        ),
+    ],
+)
+def test_join_selector_expansion(
+    left_on: pl.Expr | str | list[pl.Expr | str],
+    right_on: pl.Expr | str | list[pl.Expr | str],
+    expected_left_on: pl.Expr | str | list[pl.Expr | str],
+    expected_right_on: pl.Expr | str | list[pl.Expr | str],
+) -> None:
+    left = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30], "c": [100, 200, 300]})
+    right = pl.DataFrame({"x": [1, 2, 3], "y": [10, 99, 30], "z": [100, 200, 999]})
+
+    assert_frame_equal(
+        left.join(right, left_on=left_on, right_on=right_on),
+        left.join(right, left_on=expected_left_on, right_on=expected_right_on),
+        check_row_order=False,
+    )
+
+
+def test_join_selector_order_is_positional() -> None:
+    left = pl.DataFrame({"a": [1, 2], "b": [10, 20], "left_value": ["x", "y"]})
+    right = pl.DataFrame({"b": [1, 2], "a": [10, 30], "right_value": ["x", "y"]})
+
+    assert_frame_equal(
+        left.join(right, on=cs.integer()),
+        left.join(right, left_on=["a", "b"], right_on=["b", "a"]),
+    )
+    assert_frame_equal(
+        left.join(right, on=cs.by_name("a", "b")),
+        left.join(right, on=["a", "b"]),
+    )
+
+    renamed_right = pl.DataFrame(
+        {"right_value": ["x", "z"], "x": [10, 99], "y": [1, 2]}
+    )
+    assert_frame_equal(
+        left.join(
+            renamed_right,
+            left_on=["left_value", cs.by_name("b", "a")],
+            right_on=[cs.by_name("right_value", "x"), "y"],
+        ),
+        left.join(
+            renamed_right,
+            left_on=["left_value", "b", "a"],
+            right_on=["right_value", "x", "y"],
+        ),
+    )
+
+
+def test_join_selector_empty_expansion() -> None:
+    left = pl.DataFrame({"a": [1, 2]})
+    right = pl.DataFrame({"a": [1, 3]})
+
+    with pytest.raises(
+        InvalidOperationError, match="left join keys expanded to zero expressions"
+    ):
+        left.join(right, on=cs.string())
+
+    assert_frame_equal(
+        left.join(right, on=[cs.string(), "a"]),
+        left.join(right, on="a"),
+    )
+
+    with pytest.raises(ValueError, match="cross join should not pass join keys"):
+        left.join(right, on=cs.empty(), how="cross")
+
+
+@pytest.mark.parametrize(
+    ("left_on", "right_on", "side"),
+    [
+        (cs.string(), "a", "left"),
+        ("a", cs.string(), "right"),
+    ],
+)
+def test_join_selector_empty_expansion_side(
+    left_on: str | pl.Expr, right_on: str | pl.Expr, side: str
+) -> None:
+    left = pl.LazyFrame({"a": [1, 2]})
+    right = pl.LazyFrame({"a": [1, 3]})
+
     with pytest.raises(
         InvalidOperationError,
+        match=rf"{side} join keys expanded to zero expressions",
     ):
-        df.join(df2, on=pl.first())
+        left.join(right, left_on=left_on, right_on=right_on).collect_schema()
+
+
+@pytest.mark.parametrize(
+    ("left_on", "right_on"),
+    [
+        ("a", ["x", "y"]),
+        (pl.col("missing") + 1, [pl.col("x"), pl.col("y")]),
+        (pl.col("missing").cast(pl.Int64), [pl.col("x"), pl.col("y")]),
+        (pl.lit(1), [pl.lit(1), pl.lit(2)]),
+    ],
+)
+@pytest.mark.parametrize("swap", [False, True])
+def test_join_non_expanding_key_count_mismatch_errors_at_construction(
+    left_on: pl.Expr | str | list[pl.Expr | str],
+    right_on: pl.Expr | str | list[pl.Expr | str],
+    swap: bool,
+) -> None:
+    left = pl.LazyFrame({"a": [1]})
+    right = pl.LazyFrame({"x": [1], "y": [2]})
+
+    if swap:
+        left, right = right, left
+        left_on, right_on = right_on, left_on
+    left_count, right_count = (2, 1) if swap else (1, 2)
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=rf"number of columns given as join key \(left: {left_count}, right:{right_count}\)",
+    ):
+        left.join(right, left_on=left_on, right_on=right_on)
+
+
+def test_join_selector_expansion_count_mismatch() -> None:
+    left = pl.LazyFrame({"a": [1], "b": [2], "s": ["x"]})
+    right = pl.LazyFrame({"x": [1], "y": [2], "s": ["x"], "t": ["y"]})
+
+    result = left.join(
+        right,
+        left_on=[cs.integer(), cs.string()],
+        right_on=cs.integer(),
+    )
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"join keys expanded.*\(left: 3, right: 2\)",
+    ):
+        result.collect_schema()
+
+
+def test_join_overlapping_and_aliased_selectors() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2]})
+
+    with pytest.raises(InvalidOperationError, match="joining with repeated key names"):
+        df.join(df, on=[cs.by_name("a"), cs.integer()])
+
+    for selector in (cs.by_name("a").alias("key"), cs.empty().alias("key")):
+        with pytest.raises(InvalidOperationError, match="'alias' is not allowed"):
+            df.join(df, on=[selector, "b"])
+
+
+def test_join_selector_coalescing() -> None:
+    left = pl.DataFrame({"a": [1], "b": [2], "left_value": [3]})
+    right = pl.DataFrame({"a": [1], "b": [2], "right_value": [4]})
+
+    bare = left.join(right, on=cs.by_name("a", "b"), coalesce=True)
+    assert bare.columns == ["a", "b", "left_value", "right_value"]
+
+    with pytest.warns(UserWarning, match="turning off key coalescing"):
+        computed = left.join(right, on=cs.by_name("a", "b") + 0, coalesce=True)
+    assert computed.columns == [
+        "a",
+        "b",
+        "left_value",
+        "a_right",
+        "b_right",
+        "right_value",
+    ]
 
 
 def test_join_results_in_duplicate_names() -> None:
@@ -4200,7 +4493,6 @@ def test_join_i128_23688(
     rhs = rhs.collect().sort("a").lazy() if sort_right else rhs
 
     q = lhs.join(rhs, on="a", how=how, coalesce=False)  # type: ignore[arg-type]
-
     assert_frame_equal(
         q.collect().sort(pl.all()),
         expected,
@@ -4216,7 +4508,6 @@ def test_join_i128_23688(
         )
         .select(expected.columns)
     )
-
     assert_frame_equal(
         q.collect().sort(pl.all()),
         expected,
@@ -4538,3 +4829,134 @@ def test_merge_join_coalesce_right_payload_name_collision(
         q.collect(engine="in-memory"),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64])
+def test_computed_join_key_uses_own_input_schema(
+    engine: EngineType, dtype: PolarsDataType
+) -> None:
+    left = pl.LazyFrame({"a": [3, 12, 57], "k": ["left"] * 3, "j": ["x"] * 3})
+    right = pl.LazyFrame({"k": [1, 5], "j": [2, 7]}, schema={"k": dtype, "j": dtype})
+    query = left.join(
+        right, left_on="a", right_on=pl.col("k") + pl.col("j"), coalesce=False
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [3, 12],
+            "k": ["left", "left"],
+            "j": ["x", "x"],
+            "k_right": pl.Series([1, 5], dtype=dtype),
+            "j_right": pl.Series([2, 7], dtype=dtype),
+        }
+    )
+    assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("outer_how", "next_how", "key", "expected_outer"),
+    [
+        # A key that must be non-null on the outer join's nullable side tightens it.
+        ("left", "inner", "reason", "INNER"),
+        ("left", "semi", "reason", "INNER"),
+        ("left", "right", "reason", "INNER"),
+        ("full", "inner", "reason", "RIGHT"),
+        ("full", "inner", "amount", "LEFT"),
+        # The preserved side may keep NULL keys; an anti join drops nothing on its left.
+        ("left", "inner", "amount", "LEFT"),
+        ("left", "inner", "ticket", "LEFT"),
+        ("left", "anti", "reason", "LEFT"),
+    ],
+)
+def test_join_key_downgrades_outer_join_below(
+    outer_how: JoinStrategy, next_how: JoinStrategy, key: str, expected_outer: str
+) -> None:
+    sales = pl.LazyFrame({"ticket": [1, 2, 3, 4], "amount": [10, 20, 30, 40]})
+    returns = pl.LazyFrame({"ticket": [2, 4, 5], "reason": [7, None, 7]})
+    lookup = pl.LazyFrame({key: [7, 10], "desc": ["x", "y"]})
+
+    q = sales.join(returns, on="ticket", how=outer_how, coalesce=True).join(
+        lookup, on=key, how=next_how
+    )
+
+    plan = q.explain()
+    assert f"{expected_outer} JOIN:" in plan
+    if expected_outer != outer_how.upper():
+        assert f"{outer_how.upper()} JOIN:" not in plan
+    else:
+        assert "is_not_null" not in plan
+
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+def test_join_key_downgrade_follows_pushdown_through_projections() -> None:
+    sales = pl.LazyFrame({"ticket": [1, 2, 3, 4], "amount": [10, 20, 30, 40]})
+    returns = pl.LazyFrame({"ticket": [2, 4, 5], "reason": [7, None, 7]})
+    lookup = pl.LazyFrame({"reason": [7, 10], "desc": ["x", "y"]})
+    joined = sales.join(returns, on="ticket", how="left", coalesce=True)
+
+    def check(q: pl.LazyFrame, *, downgraded: bool) -> None:
+        plan = q.explain()
+        assert ("LEFT JOIN:" in plan) != downgraded
+        assert ("is_not_null" in plan) == downgraded
+        expect = q.collect(optimizations=pl.QueryOptFlags.none())
+        assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+    # The key is recomputed in between, so the predicate stays above it.
+    q = joined.with_columns(pl.col("reason").fill_null(7)).join(lookup, on="reason")
+    check(q, downgraded=False)
+
+    # A filter that blocks pushdown stops the walk as well.
+    q = joined.filter(pl.col("amount") > pl.col("amount").mean()).join(
+        lookup, on="reason"
+    )
+    check(q, downgraded=False)
+
+    # A window filter keeps itself local but lets a predicate on its partition key pass.
+    q = joined.filter(pl.col("amount") >= pl.col("amount").mean().over("reason")).join(
+        lookup, on="reason"
+    )
+    check(q, downgraded=True)
+
+    # A plain filter is passed.
+    q = joined.filter(pl.col("amount") > 15).join(lookup, on="reason")
+    check(q, downgraded=True)
+
+    # A rename is followed down.
+    q = joined.rename({"reason": "r"}).join(lookup.rename({"reason": "r"}), on="r")
+    check(q, downgraded=True)
+    assert 'FILTER col("reason").is_not_null()' in q.explain()
+
+
+def test_join_key_downgrade_ignores_the_unreachable_join_side() -> None:
+    sales = pl.LazyFrame(
+        {"ticket": [1, 2, 3], "amount": [10, 20, 30], "reason": [7, None, 7]}
+    )
+    a = pl.LazyFrame({"ticket": [2, 3], "x": [1, 2]})
+    b = pl.LazyFrame({"ticket": [2], "reason": [9]})
+    lookup = pl.LazyFrame({"reason": [7, 10], "desc": ["x", "y"]})
+
+    # The key is the left `reason`; the right input holds another `reason`.
+    returns = a.join(b, on="ticket", how="left")
+    q = sales.join(returns, on="ticket", how="left").join(lookup, on="reason")
+
+    plan = q.explain()
+    assert plan.count("LEFT JOIN:") == 2
+    assert "is_not_null" not in plan
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+def test_join_key_keeps_outer_join_when_nulls_match() -> None:
+    sales = pl.LazyFrame({"ticket": [1, 2, 3], "amount": [10, 20, 30]})
+    returns = pl.LazyFrame({"ticket": [2, 4], "reason": [7, None]})
+    reasons = pl.LazyFrame({"reason": [7, None]})
+
+    q = sales.join(returns, on="ticket", how="left", coalesce=True).join(
+        reasons, on="reason", how="inner", nulls_equal=True
+    )
+
+    assert "LEFT JOIN:" in q.explain()
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)

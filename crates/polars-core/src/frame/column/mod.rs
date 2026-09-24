@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::trusted_len::TrustMyLength;
 use num_traits::{Num, NumCast};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_error::{PolarsContext, PolarsResult};
 use polars_utils::aliases::PlSeedableRandomStateQuality;
@@ -715,10 +715,10 @@ impl Column {
                 } else {
                     let validity = indices.rechunk_validity();
                     // Use dtype-aware validity updates so Struct fields see the nulls.
-                    scalar
-                        .take_materialized_series()
-                        .with_validity(validity)
-                        .into_column()
+                    let mut out = scalar.take_materialized_series().with_validity(validity);
+                    // Gather indices can insert nulls between equal values.
+                    out.set_sorted_flag(IsSorted::Not);
+                    out.into_column()
                 }
             },
         }

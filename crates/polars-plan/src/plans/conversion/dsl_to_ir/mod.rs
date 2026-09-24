@@ -1,14 +1,16 @@
 use std::pin::Pin;
 use std::sync::LazyLock;
 
-use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::rewrite_projections;
 use futures::stream::FuturesUnordered;
 use hive::hive_partitions_from_paths;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
 use polars_core::runtime::ASYNC;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::dynamic_boundary_dtype;
 use polars_error::feature_gated;
 use polars_io::ExternalCompression;
 use polars_utils::format_pl_smallstr;
@@ -35,6 +37,7 @@ mod functions;
 mod join;
 mod scans;
 mod utils;
+pub(crate) use expr_expansion::needs_expansion;
 pub use expr_expansion::{expand_expression, is_regex_projection, prepare_projection};
 pub use expr_to_ir::{ExprToIRContext, to_expr_ir};
 use expr_to_ir::{to_expr_ir_materialized_lit, to_expr_irs};
@@ -1396,6 +1399,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         )
                     })?;
 
+                    let state = Python::attach(|py| py_sink_state.extract(py))?;
+
                     let mut plan: Box<DslPlan> = (reg.from_py.dsl_plan)(out)?.downcast().unwrap();
 
                     let DslPlan::Sink {
@@ -1711,8 +1716,9 @@ fn resolve_group_by(
             pop_keys = true;
             let dtype = input_schema.try_get(name.as_str())?;
             if options.include_boundaries {
-                output_schema.with_column("_lower_boundary".into(), dtype.clone());
-                output_schema.with_column("_upper_boundary".into(), dtype.clone());
+                let bound_dtype = dynamic_boundary_dtype(dtype);
+                output_schema.with_column("_lower_boundary".into(), bound_dtype.clone());
+                output_schema.with_column("_upper_boundary".into(), bound_dtype);
             }
             output_schema.with_column(name.clone(), dtype.clone());
         }

@@ -4,9 +4,9 @@ mod l1_l2;
 
 use std::cmp::min;
 
-use arrow::bitmap::MutableBitmap;
 use filtered_bit_array::FilteredBitArray;
 use l1_l2::*;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::chunked_array::ChunkedArray;
 use polars_core::datatypes::{IdxCa, NumericNative, PolarsNumericType};
 use polars_core::frame::DataFrame;
@@ -15,60 +15,15 @@ use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_set_partition_size, slice_slice, split};
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_defs::join::{IEJoinOptions, InequalityOperator};
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::binary_search::ExponentialSearch;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 use rayon::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::frame::_finish_join;
-
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, strum_macros::IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum InequalityOperator {
-    #[default]
-    Lt,
-    LtEq,
-    Gt,
-    GtEq,
-}
-
-impl InequalityOperator {
-    fn is_strict(&self) -> bool {
-        matches!(self, InequalityOperator::Gt | InequalityOperator::Lt)
-    }
-
-    fn flip(&self) -> InequalityOperator {
-        use InequalityOperator::*;
-        match self {
-            Lt => Gt,
-            LtEq => GtEq,
-            Gt => Lt,
-            GtEq => LtEq,
-        }
-    }
-}
-#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct IEJoinOptions {
-    pub operator1: InequalityOperator,
-    pub operator2: Option<InequalityOperator>,
-}
-
-impl IEJoinOptions {
-    /// The options such that matching with the left/right inputs swapped produces the
-    /// same pairs as matching with the original inputs and options.
-    fn flip(&self) -> IEJoinOptions {
-        IEJoinOptions {
-            operator1: self.operator1.flip(),
-            operator2: self.operator2.map(|op| op.flip()),
-        }
-    }
-}
 
 #[allow(clippy::too_many_arguments)]
 fn ie_join_impl_t<T: PolarsNumericType>(

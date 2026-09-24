@@ -4,8 +4,8 @@ use std::sync::{Arc, RwLock};
 
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
+use polars_defs::join::{JoinArgs, JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_lazy::prelude::*;
-use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::plans::visitor::{TreeWalker, VisitRecursion, Visitor};
 use polars_plan::plans::{ArenaExprIter, ExprToIRContext, is_scalar_ae, to_expr_ir};
@@ -36,11 +36,11 @@ use crate::sql_expr::{
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
-    collect_grouping_calls, expr_contains_subquery, expr_has_window_functions,
-    expr_references_any_column, expr_refers_to_table, sql_expr_cols_all_in_schema,
-    statement_registers_table,
+    collect_grouping_calls, expr_contains_scalar_subquery, expr_contains_subquery,
+    expr_has_window_functions, expr_references_any_column, expr_refers_to_table,
+    sql_expr_cols_all_in_schema, statement_registers_table,
 };
-use crate::subquery::{LowerScope, SubqueryBindings, desugar_quantified_subqueries};
+use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
 
@@ -1671,9 +1671,34 @@ impl SQLContext {
         // Shared by every pass over this frame: WHERE, the projection list and HAVING.
         let mut bindings = SubqueryBindings::new();
 
+        // A correlated scalar subquery is lowered against the frame as it stands, so
+        // the conjuncts that don't need it are applied first: the lowering can then
+        // restrict its aggregate to the rows that survive them.
+        let where_expr: Option<Cow<'_, SQLExpr>> = match where_expr {
+            Some(where_expr) if expr_contains_scalar_subquery(where_expr) => {
+                let n_grouping_calls = self.group_scope.grouping_calls.len();
+                let residual;
+                (lf, residual) = self.rewrite_subquery_conjuncts(
+                    lf,
+                    where_expr,
+                    FilterMode::KeepTrue,
+                    &schema,
+                    RewriteStage::BeforeScalarLowering,
+                )?;
+                self.reject_grouping_in_where(n_grouping_calls)?;
+                schema = self.get_frame_schema(&mut lf)?;
+                combine_conditions(
+                    residual.into_iter().cloned().collect(),
+                    SQLBinaryOperator::And,
+                )
+                .map(Cow::Owned)
+            },
+            other => other.map(Cow::Borrowed),
+        };
+
         // Lower correlated scalar subqueries in the WHERE clause before the filter is
         // parsed, leaving `[NOT] EXISTS` to `process_where`.
-        let effective_where = match where_expr {
+        let effective_where = match where_expr.as_deref() {
             Some(where_expr) => {
                 let lowered;
                 (lf, lowered) = self.lower_correlated_subqueries(
@@ -2261,18 +2286,11 @@ impl SQLContext {
             };
             // Parsing registers any `GROUPING()` call; subqueries keep their own registry.
             let n_grouping_calls = self.group_scope.grouping_calls.len();
-            let reject_grouping = |ctx: &Self| {
-                polars_ensure!(
-                    ctx.group_scope.grouping_calls.len() == n_grouping_calls,
-                    SQLSyntax: "GROUPING() is not allowed in the WHERE clause"
-                );
-                Ok(())
-            };
 
             // A condition that reads no input (eg: "WHERE 1 = 1") is accepted as any type
             // that casts to boolean; the planner folds it.
             if let Some(predicate) = self.input_independent_predicate(expr)? {
-                reject_grouping(self)?;
+                self.reject_grouping_in_where(n_grouping_calls)?;
                 let predicate = predicate.cast(DataType::Boolean);
                 return Ok(match filter_mode {
                     FilterMode::KeepTrue => lf.filter(predicate),
@@ -2284,8 +2302,13 @@ impl SQLContext {
             // to semi / anti joins; whatever remains goes through the ordinary
             // filter path below.
             let residual_exprs: Vec<&SQLExpr>;
-            (lf, residual_exprs) =
-                self.rewrite_subquery_conjuncts(lf, expr, filter_mode, &schema)?;
+            (lf, residual_exprs) = self.rewrite_subquery_conjuncts(
+                lf,
+                expr,
+                filter_mode,
+                &schema,
+                RewriteStage::AfterScalarLowering,
+            )?;
 
             // Decorrelate any `[NOT] EXISTS` left in a residual conjunct to a boolean
             // flag column, rewriting the conjunct to reference it.
@@ -2332,7 +2355,7 @@ impl SQLContext {
                 return Ok(lf);
             };
             let mut filter_expression = parsed_residual?;
-            reject_grouping(self)?;
+            self.reject_grouping_in_where(n_grouping_calls)?;
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
@@ -2350,6 +2373,15 @@ impl SQLContext {
             lf = drop_subquery_placeholders(lf, placeholders);
         }
         Ok(lf)
+    }
+
+    /// Fail if parsing since `n_grouping_calls` were registered added a `GROUPING()` call.
+    fn reject_grouping_in_where(&self, n_grouping_calls: usize) -> PolarsResult<()> {
+        polars_ensure!(
+            self.group_scope.grouping_calls.len() == n_grouping_calls,
+            SQLSyntax: "GROUPING() is not allowed in the WHERE clause"
+        );
+        Ok(())
     }
 
     /// Parse a condition that yields one value independent of any input frame (a literal or
@@ -3223,9 +3255,7 @@ impl SQLContext {
 
         for (e, group_key) in projections.iter().zip(&projection_group_key) {
             let matches_group_key = group_key.is_some();
-            // `Len` represents COUNT(*) so we treat as an aggregation here.
-            let is_non_group_key_expr =
-                !matches_group_key && requires_group_processing(e, &group_by_keys_schema);
+            let is_non_group_key_expr = !matches_group_key && splitter.requires_group_processing(e);
 
             // Note: if simple aliased expression we defer aliasing until after the group_by.
             // Use `e_inner` to track the potentially unwrapped expression for field lookup.
@@ -3393,6 +3423,9 @@ impl SQLContext {
                     } else {
                         bind_keys(projection_expr.clone())
                     }
+                } else if is_constant(projection_expr) {
+                    // Constants are not part of the aggregation; re-evaluate them.
+                    projection_expr.clone()
                 } else {
                     col(name.clone())
                 }
@@ -4177,6 +4210,28 @@ impl GroupContextSplitter<'_> {
         reduces && is_scalar_ae(ir.node(), &arena)
     }
 
+    /// Whether a SELECT projection must be processed in the group context rather
+    /// than passed through as a group key: it contains an aggregate, a window, a
+    /// function over a non-key column, or reduces to a scalar (which also covers
+    /// aggregates lowered to plain functions, such as `COVAR_POP`).
+    fn requires_group_processing(&self, expr: &Expr) -> bool {
+        has_expr(expr, |e| match e {
+            Expr::Agg(_) | Expr::Len | Expr::Over { .. } => true,
+            #[cfg(feature = "dynamic_group_by")]
+            Expr::Rolling { .. } => true,
+            Expr::AnonymousFunction { options, .. } => options.returns_scalar(),
+            Expr::Function { function: func, .. }
+                if !matches!(func, FunctionExpr::StructExpr(_)) =>
+            {
+                has_expr(
+                    e,
+                    |e| matches!(e, Expr::Column(name) if !self.keys.contains(name)),
+                )
+            },
+            _ => false,
+        }) || self.is_reduction(&strip_outer_alias(expr))
+    }
+
     /// Whether `expr` must run after aggregation: it holds a window, or combines
     /// a reduction with a grouped key.
     fn needs_post_aggregation(&self, expr: &Expr) -> bool {
@@ -4273,25 +4328,12 @@ impl GroupContextSplitter<'_> {
     }
 }
 
-/// Whether a SELECT projection must be processed in the group context rather
-/// than passed through as a group key: it contains an aggregate, a window, or a
-/// function over a non-key column. Broader than `is_reduction`, which tests
-/// for a scalar reduction boundary.
-fn requires_group_processing(expr: &Expr, group_by_keys_schema: &Schema) -> bool {
-    has_expr(expr, |e| match e {
-        Expr::Agg(_) | Expr::Len | Expr::Over { .. } => true,
-        #[cfg(feature = "dynamic_group_by")]
-        Expr::Rolling { .. } => true,
-        Expr::AnonymousFunction { options, .. } => options.returns_scalar(),
-        Expr::Function { function: func, .. } if !matches!(func, FunctionExpr::StructExpr(_)) => {
-            // A function over a non-group-key column acts as an aggregation.
-            has_expr(
-                e,
-                |e| matches!(e, Expr::Column(name) if !group_by_keys_schema.contains(name)),
-            )
-        },
-        _ => false,
-    })
+/// Whether `expr` yields one value independent of any input frame.
+fn is_constant(expr: &Expr) -> bool {
+    expr.clone()
+        .meta()
+        .is_input_independent_scalar()
+        .unwrap_or(false)
 }
 
 /// Build a unified schema from both tables; needed for multi/chained joins where suffixed

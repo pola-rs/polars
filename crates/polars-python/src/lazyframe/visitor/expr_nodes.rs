@@ -1,16 +1,15 @@
 #[cfg(feature = "iejoin")]
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
-#[cfg(feature = "approx_quantile")]
-use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::rolling::{QuantileMethod, RollingFnParams};
 use polars_core::chunked_array::ops::FillNullStrategy;
 #[cfg(feature = "string_normalize")]
-use polars_ops::chunked_array::UnicodeForm;
-use polars_ops::prelude::RankMethod;
+use polars_defs::expr::UnicodeForm;
+use polars_defs::expr::{ClosedInterval, InterpolationMethod, RankMethod};
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
-use polars_ops::series::{ClosedInterval, InterpolationMethod};
 use polars_plan::dsl::DateRangeArgs;
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
@@ -23,8 +22,6 @@ use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
 use polars_plan::prelude::{
     AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
 };
-use polars_time::prelude::RollingGroupOptions;
-use polars_time::{ClosedWindow, Duration, DynamicGroupOptions};
 use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyNotImplementedError;
@@ -1899,17 +1896,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 } => ("value_counts", sort, parallel, name.as_str(), normalize).into_py_any(py),
                 IRFunctionExpr::UniqueCounts => ("unique_counts",).into_py_any(py),
                 IRFunctionExpr::ApproxNUnique => ("approx_n_unique",).into_py_any(py),
-                #[cfg(feature = "approx_quantile")]
-                IRFunctionExpr::ApproxQuantile { method, error } => {
-                    let method = match method {
-                        ApproxQuantileMethod::Auto => "auto",
-                        ApproxQuantileMethod::KLL => "kll",
-                        ApproxQuantileMethod::ReqSketch { hra: false } => "req_lo",
-                        ApproxQuantileMethod::ReqSketch { hra: true } => "req_hi",
-                        ApproxQuantileMethod::DoubleReqSketch => "req_both",
-                    };
-                    ("approx_quantile", method, error).into_py_any(py)
-                },
                 IRFunctionExpr::Coalesce => ("coalesce",).into_py_any(py),
                 IRFunctionExpr::Diff(null_behaviour) => (
                     "diff",
@@ -1936,6 +1922,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Log => ("log",).into_py_any(py),
                 IRFunctionExpr::Log1p => ("log1p",).into_py_any(py),
                 IRFunctionExpr::Exp => ("exp",).into_py_any(py),
+                IRFunctionExpr::Erf => ("erf",).into_py_any(py),
+                IRFunctionExpr::Erfc => ("erfc",).into_py_any(py),
                 IRFunctionExpr::Unique(maintain_order) => {
                     ("unique", maintain_order).into_py_any(py)
                 },
@@ -2198,8 +2186,19 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::RowDecode(..) => {
                     return Err(PyNotImplementedError::new_err("row_decode"));
                 },
-                IRFunctionExpr::DynamicPred { pred } => {
+                #[cfg(feature = "approx_quantile")]
+                IRFunctionExpr::ApproxQuantileSketch { .. } => {
+                    return Err(PyNotImplementedError::new_err("approx_quantile_sketch"));
+                },
+                #[cfg(feature = "approx_quantile")]
+                IRFunctionExpr::ApproxQuantileEstimate { .. } => {
+                    return Err(PyNotImplementedError::new_err("approx_quantile_estimate"));
+                },
+                IRFunctionExpr::DynamicPred { pred, .. } => {
                     ("dynamic_pred", pred.id().map(|u| u.as_u128())).into_py_any(py)
+                },
+                IRFunctionExpr::DynamicSkipBatch { pred } => {
+                    ("dynamic_skip_batch", pred.id().map(|u| u.as_u128())).into_py_any(py)
                 },
             }?,
             options: py.None(),

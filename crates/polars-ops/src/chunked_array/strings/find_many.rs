@@ -1,5 +1,5 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
-use arrow::array::Utf8ViewArray;
+use polars_arrow::array::Utf8ViewArray;
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;

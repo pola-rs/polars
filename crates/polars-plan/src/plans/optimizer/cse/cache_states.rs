@@ -9,11 +9,12 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
 use crate::dsl::Expr;
+use crate::plans::aexpr::ExprPushdownGroup;
 use crate::plans::aexpr::filter_constraint::widen_over_predicates;
 use crate::plans::deep_copy::deep_copy_ir_delete_cache_id;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::visitor::AexprNode;
-use crate::plans::{AExpr, ExprIR, IR, PredicatePushDown, subplan_cost};
+use crate::plans::{AExpr, ExecutionHooks, ExprIR, IR, PredicatePushDown, subplan_cost};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 use crate::utils::aexpr_to_leaf_names_iter;
 
@@ -141,6 +142,7 @@ pub(crate) fn set_cache_states(
     streaming: bool,
     partition_hive: bool,
     row_estimate: bool,
+    hooks: ExecutionHooks,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
     let mut names_scratch = vec![];
@@ -310,12 +312,13 @@ pub(crate) fn set_cache_states(
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
         let mut pred_pd =
-            PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive);
+            PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive, hooks);
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for (cache_id, v) in cache_schema_and_children.into_iter().rev() {
             pred_pd.streaming = v.streaming;
-            let mut shared_optimized = false;
+            // The shared subplan, narrowed and optimized, once the cost check built it.
+            let mut shared_input = None;
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple distinct predicates, the caches carry different filters
             // above them (predicate pushdown was blocked by the cache nodes). Removing the caches
@@ -387,21 +390,24 @@ pub(crate) fn set_cache_states(
                 // Keeping the caches costs one evaluation of the subplan, plus a pass over the
                 // materialized rows for every reference that reads and filters them.
                 let keep_cost = if remove_caches && removal_cost.is_some() {
-                    let child = *v.children.first().unwrap();
                     // Caches block pushdown, so their children may still contain cross joins.
-                    // Range selectivity is unknown, so common bounds are applied after costing.
-                    let lp = lp_arena.take(child);
-                    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(child, lp);
-                    shared_optimized = true;
-                    subplan_cost(child, lp_arena, expr_arena)
+                    let input = narrowed_shared_subplan(
+                        &v.children,
+                        &v.parents,
+                        pushdown_maintain_errors,
+                        &mut pred_pd,
+                        lp_arena,
+                        expr_arena,
+                    )?;
+                    shared_input = Some(input);
+                    subplan_cost(input, lp_arena, expr_arena)
                         .map(|c| c.work + v.cache_nodes.len() as f64 * c.rows)
                 } else {
                     None
                 };
 
                 if let Some((removal_cost, keep_cost)) = removal_cost.zip(keep_cost) {
-                    remove_caches = removal_cost < keep_cost;
+                    remove_caches = removal_cost <= keep_cost;
                     if verbose {
                         eprintln!(
                             "cache removal estimated at {removal_cost:.3e} rows against \
@@ -433,12 +439,21 @@ pub(crate) fn set_cache_states(
             // # RUN PREDICATE PUSHDOWN
             // Run this after projection pushdown, otherwise the predicate columns will not be projected.
 
-            // - If all predicates of parent are the same we will restart predicate pushdown from the parent FILTER node.
-            // - Otherwise we will start predicate pushdown from the cache node.
-            let allow_parent_predicate_pushdown = v.predicate_union.len() == 1 && {
-                let (_pred, count) = v.predicate_union.iter().next().unwrap();
-                *count == v.children.len() as u32
-            };
+            // Restart pushdown from the parent filter if every reference has the same pushable
+            // predicate. Otherwise, optimize the cached subplan.
+            let allow_parent_predicate_pushdown = v.predicate_union.len() == 1
+                && {
+                    let (_pred, count) = v.predicate_union.iter().next().unwrap();
+                    *count == v.children.len() as u32
+                }
+                && {
+                    let parents = *v.parents.first().unwrap();
+                    let predicate = get_filter_predicate(parents, lp_arena)
+                        .expect("expected filter; this is an optimizer bug");
+                    let mut group = ExprPushdownGroup::Pushable;
+                    group.update_with_expr_rec(expr_arena.get(predicate.node()), expr_arena, None);
+                    !group.blocks_pushdown(pushdown_maintain_errors)
+                };
 
             if allow_parent_predicate_pushdown {
                 let parents = *v.parents.first().unwrap();
@@ -446,14 +461,19 @@ pub(crate) fn set_cache_states(
                     .expect("expected filter; this is an optimizer bug");
                 let start_lp = lp_arena.take(node);
 
-                let mut pred_pd =
-                    PredicatePushDown::new(pushdown_maintain_errors, v.streaming, partition_hive)
-                        .block_at_cache(1);
+                let mut pred_pd = PredicatePushDown::new(
+                    pushdown_maintain_errors,
+                    v.streaming,
+                    partition_hive,
+                    hooks,
+                )
+                .block_at_cache(1);
                 let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
                 lp_arena.replace(node, lp.clone());
 
                 let mut updated_cache_node = node;
 
+                // Pushdown moved the filter below the cache, leaving only projections above it.
                 loop {
                     match lp_arena.get(updated_cache_node) {
                         IR::Cache { .. } => break,
@@ -487,20 +507,17 @@ pub(crate) fn set_cache_states(
                     lp_arena.replace(filter_node, new_lp);
                 }
             } else {
-                let child = *v.children.first().unwrap();
-                let input = narrow_shared_subplan(
-                    &v.children,
-                    &v.parents,
-                    pushdown_maintain_errors,
-                    lp_arena,
-                    expr_arena,
-                )
-                .unwrap_or(child);
-                if input != child || !shared_optimized {
-                    let lp = lp_arena.take(input);
-                    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(input, lp);
-                }
+                let input = match shared_input {
+                    Some(input) => input,
+                    None => narrowed_shared_subplan(
+                        &v.children,
+                        &v.parents,
+                        pushdown_maintain_errors,
+                        &mut pred_pd,
+                        lp_arena,
+                        expr_arena,
+                    )?,
+                };
                 for &cache in &v.cache_nodes {
                     let IR::Cache {
                         input: cache_input, ..
@@ -550,6 +567,24 @@ fn narrow_shared_subplan(
         });
     }
     Some(node)
+}
+
+/// The shared subplan, narrowed by [`narrow_shared_subplan`] where it can be, after
+/// predicate pushdown.
+fn narrowed_shared_subplan(
+    children: &[Node],
+    parents: &[TwoParents],
+    maintain_errors: bool,
+    pred_pd: &mut PredicatePushDown,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<Node> {
+    let input = narrow_shared_subplan(children, parents, maintain_errors, lp_arena, expr_arena)
+        .unwrap_or(*children.first().unwrap());
+    let lp = lp_arena.take(input);
+    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
+    lp_arena.replace(input, lp);
+    Ok(input)
 }
 
 fn get_filter_predicate(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<&ExprIR> {

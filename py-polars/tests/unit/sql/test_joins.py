@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -2169,3 +2169,61 @@ def test_join_disjunction_over_several_relations() -> None:
     # Every relation is filtered before it is joined.
     for derived in ('col("state")', 'col("marital")', 'col("price")', 'col("profit")'):
         assert plan.rindex(derived) > plan.rindex("INNER JOIN:"), plan
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT", "RIGHT"])
+@pytest.mark.parametrize("qualified", [False, True])
+@pytest.mark.parametrize("with_key", [False, True])
+def test_join_on_input_filter(join_type: str, qualified: bool, with_key: bool) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2, 3, None], "comment": ["ok", "bad", None, "ok"]}),
+        "b": pl.DataFrame(
+            {
+                "k": [1, 1, 2, 3, 4, None],
+                "comment": ["bad", "ok", None, "bad", "ok", "ok"],
+            }
+        ),
+    }
+    side = "a" if join_type == "RIGHT" else "b"
+    if qualified:
+        column = f"{side}.comment"
+    else:
+        frames[side] = frames[side].rename({"comment": "note"})
+        column = "note"
+    condition = f"{column} NOT LIKE '%bad%'"
+    if with_key:
+        condition = f"a.k = b.k AND {condition}"
+    query = f"SELECT a.k, b.k AS bk FROM a {join_type} JOIN b ON {condition}"
+    assert_sql_matches(
+        frames, query=query, compare_with="duckdb", check_row_order=False
+    )
+    plan = pl.SQLContext(frames).execute(query).explain()
+    assert "NESTED LOOP JOIN" not in plan
+
+
+def test_join_on_preserved_input_filter() -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2, 3], "v": [1, -1, None]}),
+        "b": pl.DataFrame({"k": [1, 2, 3], "v": [-1, 1, None]}),
+    }
+    query = """
+        SELECT a.k, b.k AS bk
+        FROM a LEFT JOIN b ON a.k = b.k AND a.v > 0 AND b.v > 0
+    """
+    assert_sql_matches(
+        frames, query=query, compare_with="duckdb", check_row_order=False
+    )
+
+
+@pytest.mark.parametrize("how", ["inner", "left"])
+def test_join_on_filter_with_aggregate_key(how: Literal["inner", "left"]) -> None:
+    left = pl.LazyFrame({"k": [3]})
+    right = pl.LazyFrame({"v": [1, 2]})
+    query = f"SELECT * FROM l {how} JOIN r ON k = SUM(v) AND v < 2"
+    sql = pl.SQLContext(l=left, r=right).execute(query)
+    api = left.join_where(
+        right, pl.col("k") == pl.col("v").sum(), pl.col("v") < 2, how=how
+    )
+    expected = pl.DataFrame({"k": [3], "v": [1]})
+    for result in [sql, api]:
+        assert_frame_equal(result.collect(), expected, check_row_order=False)

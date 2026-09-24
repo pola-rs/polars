@@ -1,14 +1,16 @@
 use std::cell::LazyCell;
 use std::sync::Arc;
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 use polars_core::config;
 use polars_core::error::PolarsResult;
-use polars_core::prelude::{IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet};
+use polars_core::prelude::{
+    IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet, Scalar,
+};
 use polars_core::schema::Schema;
 use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
-use polars_io::predicates::ScanIOPredicate;
+use polars_io::predicates::{DynamicPredicateSource, RuntimeRangeHint, ScanIOPredicate};
 use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
@@ -19,7 +21,7 @@ use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::predicates::{
     aexpr_to_column_predicates, aexpr_to_skip_batch_predicate, null_count_dtype,
 };
-use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, MintermIter};
+use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, IRFunctionExpr, MintermIter};
 use polars_plan::utils::aexpr_to_leaf_names_iter;
 use polars_utils::aliases::PlIndexMapHashable;
 use polars_utils::arena::{Arena, Node};
@@ -27,7 +29,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
 use crate::scan_predicate::skip_files_mask::SkipFilesMask;
-use crate::scan_predicate::{PhysicalColumnPredicates, ScanPredicate};
+use crate::scan_predicate::{PhysicalColumnPredicate, ScanPredicate, StagedScanPredicate};
 
 pub fn create_scan_predicate(
     predicate: &ExprIR,
@@ -38,7 +40,31 @@ pub fn create_scan_predicate(
     create_skip_batch_predicate: bool,
     create_column_predicates: bool,
 ) -> PolarsResult<ScanPredicate> {
+    // Every dynamic part gives a range hint to skip batches by. The parts a scan
+    // only consults for that stay out of the row predicate and its statistics
+    // predicate.
     let mut predicate = predicate.clone();
+    let mut filters_rows = true;
+    let runtime_ranges: Vec<RuntimeRangeHint> = MintermIter::new(predicate.node(), expr_arena)
+        .filter_map(|part| runtime_range_hint(part, expr_arena))
+        .collect();
+    let (batch_only, per_row): (Vec<Node>, Vec<Node>) =
+        MintermIter::new(predicate.node(), expr_arena)
+            .partition(|&part| is_batch_only(part, expr_arena));
+    if !batch_only.is_empty() {
+        filters_rows = !per_row.is_empty();
+        let node = per_row
+            .into_iter()
+            .reduce(|left, right| {
+                expr_arena.add(AExpr::BinaryExpr {
+                    left,
+                    op: Operator::And,
+                    right,
+                })
+            })
+            .unwrap_or_else(|| expr_arena.add(AExpr::Literal(Scalar::from(true).into())));
+        predicate = ExprIR::from_node(node, expr_arena);
+    }
 
     let mut hive_predicate = None;
     let mut hive_predicate_is_full_predicate = false;
@@ -106,19 +132,23 @@ pub fn create_scan_predicate(
         }
     }
 
-    let phys_predicate = create_physical_expr(&predicate, expr_arena, schema, state)?;
+    let mut phys_predicate = create_physical_expr(&predicate, expr_arena, schema, state)?;
 
+    // The hive predicate settles whole files; nothing is left to filter rows by.
     if hive_predicate_is_full_predicate {
         hive_predicate = Some(phys_predicate.clone());
+        filters_rows = false;
+        let node = expr_arena.add(AExpr::Literal(Scalar::from(true).into()));
+        predicate = ExprIR::from_node(node, expr_arena);
+        phys_predicate = create_physical_expr(&predicate, expr_arena, schema, state)?;
     }
 
     let live_columns = Arc::new(PlIndexSet::from_iter(
         aexpr_to_leaf_names_iter(predicate.node(), expr_arena).cloned(),
     ));
-
     let mut skip_batch_predicate = None;
 
-    if create_skip_batch_predicate {
+    if create_skip_batch_predicate && filters_rows {
         if let Some(node) = aexpr_to_skip_batch_predicate(predicate.node(), expr_arena, schema) {
             let expr = ExprIR::new(node, predicate.output_name_inner().clone());
 
@@ -149,60 +179,154 @@ pub fn create_scan_predicate(
         }
     }
 
-    let column_predicates = if create_column_predicates {
-        let column_predicates = aexpr_to_column_predicates(predicate.node(), expr_arena, schema);
-        if std::env::var("POLARS_OUTPUT_COLUMN_PREDS").as_deref() == Ok("1") {
-            eprintln!("column_predicates: {{");
-            eprintln!("  [");
-            for (pred, spec) in column_predicates.predicates.values() {
-                eprintln!(
-                    "    {} ({spec:?}),",
-                    ExprIRDisplay::display_node(*pred, expr_arena)
-                );
-            }
-            eprintln!("  ],");
-            eprintln!(
-                "  is_sumwise_complete: {}",
-                column_predicates.is_sumwise_complete
-            );
-            eprintln!("}}");
-        }
-        PhysicalColumnPredicates {
-            predicates: column_predicates
-                .predicates
-                .into_iter()
-                .map(|(n, (p, s))| {
-                    PolarsResult::Ok((
-                        n,
-                        (
-                            create_physical_expr(
-                                &ExprIR::new(p, OutputName::Alias(PlSmallStr::EMPTY)),
-                                expr_arena,
-                                schema,
-                                state,
-                            )?,
-                            s,
-                        ),
-                    ))
-                })
-                .collect::<PolarsResult<PlHashMap<_, _>>>()?,
-            is_sumwise_complete: column_predicates.is_sumwise_complete,
-        }
+    let staged = if create_column_predicates && filters_rows {
+        Some(create_staged_predicate(
+            predicate.node(),
+            expr_arena,
+            schema,
+            state,
+        )?)
     } else {
-        PhysicalColumnPredicates {
-            predicates: PlHashMap::default(),
-            is_sumwise_complete: false,
-        }
+        None
     };
 
     PolarsResult::Ok(ScanPredicate {
         predicate: phys_predicate,
+        staged,
+        filters_rows,
         live_columns,
         skip_batch_predicate,
-        column_predicates,
+        runtime_ranges,
         hive_predicate,
         hive_predicate_is_full_predicate,
     })
+}
+
+fn create_staged_predicate(
+    predicate: Node,
+    expr_arena: &mut Arena<AExpr>,
+    schema: &Arc<Schema>,
+    state: &mut ExpressionConversionState,
+) -> PolarsResult<StagedScanPredicate> {
+    let column_predicates = aexpr_to_column_predicates(predicate, expr_arena, schema);
+    let rest = column_predicates.rest.into_iter().reduce(|left, right| {
+        expr_arena.add(AExpr::BinaryExpr {
+            left,
+            op: Operator::And,
+            right,
+        })
+    });
+    if std::env::var("POLARS_OUTPUT_COLUMN_PREDS").as_deref() == Ok("1") {
+        eprintln!("column_predicates: {{");
+        for p in column_predicates.predicates.values() {
+            if let Some(predicate) = p.predicate {
+                eprintln!(
+                    "  {} ({:?}),",
+                    ExprIRDisplay::display_node(predicate, expr_arena),
+                    p.specialized,
+                );
+            }
+            for &d in &p.dynamic {
+                eprintln!(
+                    "  {} (dynamic),",
+                    ExprIRDisplay::display_node(d, expr_arena)
+                );
+            }
+        }
+        eprintln!("}}");
+        if let Some(rest) = rest {
+            eprintln!(
+                "rest_predicate: {}",
+                ExprIRDisplay::display_node(rest, expr_arena)
+            );
+        }
+    }
+    Ok(StagedScanPredicate {
+        column_predicates: column_predicates
+            .predicates
+            .into_iter()
+            .map(|(name, p)| {
+                let mut physical = |node, expr_arena: &mut Arena<AExpr>| {
+                    create_physical_expr(
+                        &ExprIR::new(node, OutputName::Alias(PlSmallStr::EMPTY)),
+                        expr_arena,
+                        schema,
+                        state,
+                    )
+                };
+                let predicate = p
+                    .predicate
+                    .map(|node| physical(node, expr_arena))
+                    .transpose()?;
+                let mut dynamic = Vec::with_capacity(p.dynamic.len());
+                for node in p.dynamic {
+                    let AExpr::Function {
+                        function: IRFunctionExpr::DynamicPred { pred, .. },
+                        ..
+                    } = expr_arena.get(node)
+                    else {
+                        unreachable!()
+                    };
+                    let source: Arc<dyn DynamicPredicateSource> = Arc::new(pred.clone());
+                    dynamic.push((physical(node, expr_arena)?, source));
+                }
+                PolarsResult::Ok((
+                    name,
+                    PhysicalColumnPredicate {
+                        predicate,
+                        specialized: p.specialized,
+                        dynamic,
+                    },
+                ))
+            })
+            .collect::<PolarsResult<_>>()?,
+        rest: rest
+            .map(|rest| {
+                create_physical_expr(
+                    &ExprIR::from_node(rest, expr_arena),
+                    expr_arena,
+                    schema,
+                    state,
+                )
+            })
+            .transpose()?,
+    })
+}
+
+/// The range hint of a dynamic predicate over a scan column.
+fn runtime_range_hint(part: Node, expr_arena: &Arena<AExpr>) -> Option<RuntimeRangeHint> {
+    let AExpr::Function {
+        input,
+        function: IRFunctionExpr::DynamicPred { pred, .. },
+        ..
+    } = expr_arena.get(part)
+    else {
+        return None;
+    };
+    let AExpr::Column(column) = expr_arena.get(input[0].node()) else {
+        return None;
+    };
+    Some(RuntimeRangeHint {
+        column: column.clone(),
+        source: Arc::new(pred.clone()),
+        constant: None,
+    })
+}
+
+/// Whether the predicate part is exactly a dynamic predicate a scan may only use
+/// to skip batches. Any other shape, also one wrapping such a predicate, is
+/// evaluated per row like any predicate.
+fn is_batch_only(part: Node, expr_arena: &Arena<AExpr>) -> bool {
+    matches!(
+        expr_arena.get(part),
+        AExpr::Function {
+            function: IRFunctionExpr::DynamicPred {
+                batch_only: true,
+                ..
+            },
+            ..
+        }
+    )
 }
 
 /// # Returns
@@ -267,7 +391,8 @@ pub fn initialize_scan_predicate<'a>(
                     skip_files_mask.len(),
                 );
             }
-            return Ok((Some(skip_files_mask), None));
+            let residual = (!predicate.runtime_ranges.is_empty()).then_some(predicate);
+            return Ok((Some(skip_files_mask), residual));
         }
 
         hive_inclusion = Some(hive_inclusion_bitmap);
@@ -283,8 +408,13 @@ pub fn initialize_scan_predicate<'a>(
             );
         }
 
-        let stats_exclusion_bitmap =
-            skip_batch_predicate.evaluate_with_stat_df(&table_statistics.0)?;
+        let statistics = table_statistics.0.as_ref();
+        #[cfg(feature = "dtype-categorical")]
+        let statistics = super::table_statistics::normalize_enum_statistics(
+            statistics,
+            skip_batch_predicate.schema(),
+        )?;
+        let stats_exclusion_bitmap = skip_batch_predicate.evaluate_with_stat_df(&statistics)?;
 
         let stats_len = table_statistics.0.height();
         let mask_len = stats_exclusion_bitmap.len();
@@ -480,6 +610,7 @@ where
         table_statistics,
         row_count,
         source_sizes: _,
+        resolve_heavy_sources: _,
     } = unified_scan_args.as_mut();
 
     // Ensure these are None.

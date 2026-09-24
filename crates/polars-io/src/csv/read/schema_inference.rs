@@ -1,9 +1,17 @@
 use polars_buffer::Buffer;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_core::chunked_array::temporal::string::infer as date_infer;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_core::chunked_array::temporal::string::patterns::Pattern;
 use polars_core::prelude::*;
-#[cfg(feature = "polars-time")]
-use polars_time::chunkedarray::string::infer as date_infer;
-#[cfg(feature = "polars-time")]
-use polars_time::prelude::string::Pattern;
 use polars_utils::format_pl_smallstr;
 
 use super::splitfields::SplitFields;
@@ -332,7 +340,11 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
     let bytes = string.as_bytes();
     if bytes.len() >= 2 && *bytes.first().unwrap() == b'"' && *bytes.last().unwrap() == b'"' {
         if try_parse_dates {
-            #[cfg(feature = "polars-time")]
+            #[cfg(any(
+                feature = "dtype-date",
+                feature = "dtype-datetime",
+                feature = "dtype-time"
+            ))]
             {
                 match date_infer::infer_pattern_single(&string[1..string.len() - 1]) {
                     Some(pattern_with_offset) => match pattern_with_offset {
@@ -348,7 +360,11 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
                     None => DataType::String,
                 }
             }
-            #[cfg(not(feature = "polars-time"))]
+            #[cfg(not(any(
+                feature = "dtype-date",
+                feature = "dtype-datetime",
+                feature = "dtype-time"
+            )))]
             {
                 panic!("activate one of {{'dtype-date', 'dtype-datetime', dtype-time'}} features")
             }
@@ -377,7 +393,11 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
             }
         }
     } else if try_parse_dates {
-        #[cfg(feature = "polars-time")]
+        #[cfg(any(
+            feature = "dtype-date",
+            feature = "dtype-datetime",
+            feature = "dtype-time"
+        ))]
         {
             match date_infer::infer_pattern_single(string) {
                 Some(pattern_with_offset) => match pattern_with_offset {
@@ -393,7 +413,11 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
                 None => DataType::String,
             }
         }
-        #[cfg(not(feature = "polars-time"))]
+        #[cfg(not(any(
+            feature = "dtype-date",
+            feature = "dtype-datetime",
+            feature = "dtype-time"
+        )))]
         {
             panic!("activate one of {{'dtype-date', 'dtype-datetime', dtype-time'}} features")
         }

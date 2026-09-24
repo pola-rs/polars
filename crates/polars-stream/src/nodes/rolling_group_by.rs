@@ -1,16 +1,17 @@
 use std::sync::Arc;
 
-use chrono_tz::Tz;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, GroupsType, TimeUnit};
+use polars_core::prelude::{Column, GroupsType};
 use polars_core::schema::Schema;
-use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};
+use polars_defs::time::duration::{Duration, ensure_duration_matches_dtype};
+use polars_defs::time::group_by::ClosedWindow;
+use polars_error::{PolarsError, PolarsResult, polars_ensure};
 use polars_expr::state::ExecutionState;
 use polars_ops::series::SeriesMethods;
-use polars_time::prelude::{RollingWindower, ensure_duration_matches_dtype};
-use polars_time::{ClosedWindow, Duration};
+use polars_time::IndexSpace;
+use polars_time::prelude::RollingWindower;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -41,6 +42,7 @@ pub struct RollingGroupBy {
     slice_length: IdxSize,
 
     index_column: PlSmallStr,
+    space: IndexSpace,
     windower: RollingWindower,
     aggs: Arc<[(PlSmallStr, StreamExpr)]>,
     seq_offset: Arc<RelaxedCell<u64>>,
@@ -64,27 +66,14 @@ impl RollingGroupBy {
         ensure_duration_matches_dtype(period, key_dtype, "period")?;
         ensure_duration_matches_dtype(offset, key_dtype, "offset")?;
 
-        use DataType as DT;
-        let (tu, tz) = match key_dtype {
-            DT::Datetime(tu, tz) => (*tu, tz.clone()),
-            DT::Date => (TimeUnit::Microseconds, None),
-            DT::UInt32 | DT::UInt64 | DT::Int64 | DT::Int32 => (TimeUnit::Nanoseconds, None),
-            dt => polars_bail!(
-                ComputeError:
-                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64, UInt32, UInt64 }}, got {}",
-                dt
-            ),
-        };
+        let space = IndexSpace::rolling(key_dtype)?;
 
         let buf_df = DataFrame::empty_with_arc_schema(schema.clone());
         let buf_key_column = Column::new_empty(index_column.clone(), key_dtype);
-        let buf_index_column =
-            Column::new_empty(index_column.clone(), &DT::Datetime(tu, tz.clone()));
+        let buf_index_column = Column::new_empty(index_column.clone(), &space.window_dtype());
 
-        // @NOTE: This is a bit strange since it ignores errors, but it mirrors the in-memory
-        // engine.
-        let tz = tz.and_then(|tz| tz.parse::<Tz>().ok());
-        let windower = RollingWindower::new(period, offset, closed, tu, tz);
+        let windower =
+            RollingWindower::new(period, offset, closed, space.time_unit, space.tz().cloned());
 
         let (slice_offset, slice_length) = slice.unwrap_or((0, IdxSize::MAX));
 
@@ -97,6 +86,7 @@ impl RollingGroupBy {
             slice_offset,
             slice_length,
             index_column,
+            space,
             windower,
             aggs,
             seq_offset: Arc::default(),
@@ -351,22 +341,8 @@ impl ComputeNode for RollingGroupBy {
                         .into_static(),
                 );
                 self.buf_key_column.append(morsel_index_column)?;
-
-                use DataType as DT;
-                let morsel_index_column = match morsel_index_column.dtype() {
-                    DT::Datetime(_, _) => morsel_index_column.clone(),
-                    DT::Date => {
-                        morsel_index_column.cast(&DT::Datetime(TimeUnit::Microseconds, None))?
-                    },
-                    DT::UInt32 | DT::UInt64 | DT::Int32 => morsel_index_column
-                        .cast(&DT::Int64)?
-                        .cast(&DT::Datetime(TimeUnit::Nanoseconds, None))?,
-                    DT::Int64 => {
-                        morsel_index_column.cast(&DT::Datetime(TimeUnit::Nanoseconds, None))?
-                    },
-                    _ => unreachable!(),
-                };
-                self.buf_index_column.append(&morsel_index_column)?;
+                self.buf_index_column
+                    .append(&self.space.cast_to_space(morsel_index_column)?)?;
                 self.buf_df.vstack_mut_owned(df)?;
 
                 if let Some((windows, df, key)) = self.next_windows(false)? {

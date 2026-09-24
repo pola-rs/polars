@@ -1,13 +1,13 @@
 use std::fmt::Write;
 
-use polars_ops::frame::JoinArgs;
+use polars_defs::join::JoinArgs;
+use polars_defs::time::group_by::ClosedWindow;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::DynamicGroupOptions;
 use polars_plan::dsl::PartitionStrategyIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileWriteFormat;
-use polars_time::ClosedWindow;
-#[cfg(feature = "dynamic_group_by")]
-use polars_time::DynamicGroupOptions;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
 use polars_utils::slice_enum::Slice;
@@ -531,6 +531,7 @@ fn visualize_plan_rec(
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
         PhysNodeKind::MultiScan {
             scan_sources,
+            bytes_per_source: _,
             file_reader_builder,
             cloud_options: _,
             file_projection_builder,
@@ -650,7 +651,7 @@ fn visualize_plan_rec(
             aggs,
             slice,
         } => {
-            use polars_time::prelude::{Label, StartBy};
+            use polars_defs::time::group_by::{Label, StartBy};
 
             let DynamicGroupOptions {
                 index_column,
@@ -800,6 +801,7 @@ fn visualize_plan_rec(
             right_on,
             args,
             output_bool: _,
+            runtime_filters: _,
         } => {
             let base_label = match phys_sm[node_key].kind {
                 PhysNodeKind::MergeJoin { .. } => "merge-join",

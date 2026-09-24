@@ -1,12 +1,12 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use arrow::io::ipc::read::FileMetadata;
+use polars_arrow::io::ipc::read::FileMetadata;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "ipc")]
-use polars_io::cloud::concurrency::get_request_budget;
+use polars_io::cloud::concurrency::get_inflight_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::ipc::IpcScanOptions;
 use polars_plan::dsl::ScanSource;
@@ -63,7 +63,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
                 execution_state
                     .num_pipelines
                     .saturating_mul(2)
-                    .max(get_request_budget() as usize)
+                    .max(get_inflight_request_budget() as usize)
                     .clamp(16, 2048),
             )
             .max(1);
