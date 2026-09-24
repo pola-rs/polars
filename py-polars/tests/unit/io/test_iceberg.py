@@ -5,6 +5,7 @@ import contextlib
 import io
 import itertools
 import json
+import math
 import os
 import pickle
 import struct
@@ -108,6 +109,7 @@ if TYPE_CHECKING:
     LessThan: Any
     LessThanOrEqual: Any
     Not: Any
+    NotEqualTo: Any
     NotNaN: Any
     Or: Any
     Reference: Any
@@ -125,6 +127,7 @@ else:
         LessThan,
         LessThanOrEqual,
         Not,
+        NotEqualTo,
         NotNaN,
         Or,
         Reference,
@@ -321,6 +324,28 @@ class TestIcebergScanIO:
             (3, "3", datetime(2023, 3, 2, 22, 0)),
         ]
 
+        res = lf.filter(pl.col("id") != 2)
+        assert res.collect().rows() == [
+            (1, "1", datetime(2023, 3, 1, 18, 15)),
+            (3, "3", datetime(2023, 3, 2, 22, 0)),
+        ]
+
+    def test_scan_iceberg_noteq_null_and_nan(self, tmp_path: Path) -> None:
+        tbl, _ = new_iceberg_table(
+            tmp_path, schema=IcebergSchema(NestedField(1, "value", DoubleType()))
+        )
+        pl.DataFrame({"value": [1.0, None, float("nan")]}).write_iceberg(
+            tbl, mode="append"
+        )
+
+        [(value,)] = (
+            pl.scan_iceberg(tbl.metadata_location)
+            .filter(pl.col("value") != 1.0)
+            .collect()
+            .rows()
+        )
+        assert math.isnan(value)
+
     def test_scan_iceberg_filter_is_in_empty(self, tmp_path: Path) -> None:
         tbl, _ = new_iceberg_table(
             tmp_path,
@@ -383,6 +408,20 @@ class TestIcebergExpressions:
     def test_parse_eq(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') == '2023-08-08')")
         assert _convert_predicate(expr) == EqualTo("ts", "2023-08-08")
+
+    def test_parse_noteq(self) -> None:
+        expr = _to_ast("(pa.compute.field('ts') != '2023-08-08')")
+        assert _convert_predicate(expr) == NotEqualTo("ts", "2023-08-08")
+
+        assert try_convert_pyarrow_predicate(
+            "(pa.compute.field('ts') != '2023-08-08')"
+        ) == NotEqualTo("ts", "2023-08-08")
+
+    def test_parse_ne_missing(self) -> None:
+        expr = try_convert_pyarrow_predicate(
+            "((pa.compute.field('ts') != '2023-08-08') | (pa.compute.field('ts')).is_null())"
+        )
+        assert expr == Or(NotEqualTo("ts", "2023-08-08"), IsNull("ts"))
 
     def test_parse_lt(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') < '2023-08-08')")
