@@ -1,4 +1,4 @@
-const NUM_ENTRIES: usize = 1024;
+const NUM_ENTRIES: usize = 256;
 
 #[derive(Clone, Copy, Debug)]
 struct Entry {
