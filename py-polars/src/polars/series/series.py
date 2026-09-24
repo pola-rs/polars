@@ -1905,9 +1905,9 @@ class Series(metaclass=_Meta):
 
     def erf(self) -> Series:
         """
-        Compute the `error function`_, element-wise.
+        Compute the error function, element-wise.
 
-        .. _error function: https://en.wikipedia.org/wiki/Error_function
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
 
         Examples
         --------
@@ -1924,9 +1924,9 @@ class Series(metaclass=_Meta):
 
     def erfc(self) -> Series:
         """
-        Compute the `complementary error function`_, element-wise.
+        Compute the complementary error function, element-wise.
 
-        .. _complementary error function: https://en.wikipedia.org/wiki/Error_function
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
 
         Examples
         --------

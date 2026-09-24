@@ -964,9 +964,9 @@ class Expr(metaclass=_Meta):
 
     def erf(self) -> Expr:
         """
-        Compute the `error function`_, element-wise.
+        Compute the error function, element-wise.
 
-        .. _error function: https://en.wikipedia.org/wiki/Error_function
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
 
         .. engine-support:: in-memory, streaming, distributed
 
@@ -989,9 +989,9 @@ class Expr(metaclass=_Meta):
 
     def erfc(self) -> Expr:
         """
-        Compute the `complementary error function`_, element-wise.
+        Compute the complementary error function, element-wise.
 
-        .. _complementary error function: https://en.wikipedia.org/wiki/Error_function
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
 
         .. engine-support:: in-memory, streaming, distributed
 
