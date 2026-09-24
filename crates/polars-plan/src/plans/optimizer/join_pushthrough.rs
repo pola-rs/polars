@@ -57,6 +57,9 @@ pub(super) fn push_through_outer_joins(
 
 pub(super) type Rule = fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> Node;
 
+/// Applies `rule` to every node, inputs first. A `Filter` directly over a `Join` is taken
+/// as one pattern: `rule` runs on the filter, never on that join itself. The rules in this
+/// file rely on this; other passes that use this walk get the same behaviour.
 pub(super) fn run_pass(
     root: Node,
     ir_arena: &mut Arena<IR>,

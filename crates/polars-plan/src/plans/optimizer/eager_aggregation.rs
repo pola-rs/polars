@@ -1,6 +1,7 @@
-//! Aggregating the right side of a join by its join keys before the join.
+//! Aggregating one input of a join by its join keys before the join.
 //!
-//! `GroupBy(L ⋈ R, keys from L, aggs over R)` equals
+//! R is the input that is aggregated and L the other input; either can be the join's left
+//! or right input. `GroupBy(L ⋈ R, keys from L or R's join keys, aggs over R)` equals
 //! `GroupBy(L ⋈ GroupBy(R, R's join keys, partial aggs), keys, final aggs)` when every
 //! aggregate splits into a partial one per join key and a final one that combines them.
 //! Each L row then meets one pre-aggregated row per key instead of every R row of that key.
@@ -27,7 +28,8 @@ use crate::plans::{
 };
 use crate::prelude::{GroupbyOptions, JoinType, Operator};
 
-/// Rewrite throughout the plan, returning the new root.
+/// Rewrite throughout the plan, returning the new root. The shared walk skips joins directly
+/// under a filter, which does not matter here: only group by nodes are rewritten.
 pub(super) fn push_group_by_below_joins(
     root: Node,
     ir_arena: &mut Arena<IR>,
@@ -128,15 +130,16 @@ impl Names {
 
 /// The join the partial aggregation goes under.
 struct Target {
-    /// L: the input the group keys come from. R: the input that is aggregated.
-    left: Node,
-    right: Node,
-    left_keys: Vec<PlSmallStr>,
-    right_keys: Vec<PlSmallStr>,
+    /// R: the input that is aggregated.
+    aggregate_input: Node,
+    aggregate_keys: Vec<PlSmallStr>,
+    /// L: the input the group keys come from, apart from R's join keys.
+    other_input: Node,
+    other_keys: Vec<PlSmallStr>,
     /// Whether R is the join's left input.
-    right_is_left: bool,
+    aggregate_is_left: bool,
     /// Name seen by the group by -> R column.
-    from_right: PlIndexMap<PlSmallStr, PlSmallStr>,
+    from_aggregate: PlIndexMap<PlSmallStr, PlSmallStr>,
 }
 
 fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) -> Option<Node> {
@@ -164,14 +167,17 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
     let mut cache = StatsCache::new();
     let (target, join, steps) = find_target(*input, keys, aggs, ir_arena, expr_arena, &mut cache)?;
 
-    let right_schema = ir_arena.get(target.right).schema(ir_arena).into_owned();
+    let aggregate_schema = ir_arena
+        .get(target.aggregate_input)
+        .schema(ir_arena)
+        .into_owned();
     let mut leaves = Vec::new();
     for agg in aggs {
         if !collect_leaves(
             agg.node(),
             expr_arena,
-            &target.from_right,
-            &right_schema,
+            &target.from_aggregate,
+            &aggregate_schema,
             &mut leaves,
         ) {
             return None;
@@ -184,9 +190,10 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
     // A partial count over an R key without a match has no counterpart in the original, so
     // it must not be able to fail. `count` raises above `IdxSize::MAX`, which R's row bound
     // rules out; without a bound (R is a join), counts are summed as u64 instead.
-    let wide_counts = node_stats_with_cache(target.right, ir_arena, expr_arena, &mut cache)
-        .and_then(|stats| stats.max_rows())
-        .is_none_or(|max_rows| max_rows > IdxSize::MAX as f64);
+    let wide_counts =
+        node_stats_with_cache(target.aggregate_input, ir_arena, expr_arena, &mut cache)
+            .and_then(|stats| stats.max_rows())
+            .is_none_or(|max_rows| max_rows > IdxSize::MAX as f64);
 
     let (keys, aggs, output_schema) = (keys.clone(), aggs.clone(), output_schema.clone());
     let IR::Join {
@@ -235,10 +242,10 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
         })
         .collect();
 
-    let new_join = if target.right_is_left {
-        IRBuilder::new(partial, expr_arena, ir_arena).join(target.left, join_options)
+    let new_join = if target.aggregate_is_left {
+        IRBuilder::new(partial, expr_arena, ir_arena).join(target.other_input, join_options)
     } else {
-        IRBuilder::new(target.left, expr_arena, ir_arena).join(partial, join_options)
+        IRBuilder::new(target.other_input, expr_arena, ir_arena).join(partial, join_options)
     }
     .node();
     let partial_names: Vec<PlSmallStr> = partials.into_iter().map(|(_, name)| name).collect();
@@ -258,6 +265,9 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
     let new_schema = ir_arena.get(new_group_by).schema(ir_arena);
     if **new_schema != *output_schema {
         return None;
+    }
+    if polars_config::config().verbose() {
+        eprintln!("eager aggregation: rewrite applied");
     }
     Some(new_group_by)
 }
@@ -340,17 +350,17 @@ fn partial_group_by(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<Node> {
-    let right_keys = &target.right_keys;
+    let aggregate_keys = &target.aggregate_keys;
     let partial_aggs = partials
         .iter()
         .map(|(leaf, name)| {
-            let node = partial_agg(leaf, &right_keys[0], wide_counts, expr_arena);
+            let node = partial_agg(leaf, &aggregate_keys[0], wide_counts, expr_arena);
             ExprIR::new(node, OutputName::Alias(name.clone()))
         })
         .collect();
 
     let mut not_null = None;
-    for key in right_keys {
+    for key in aggregate_keys {
         let is_not_null = AExprBuilder::col(key.clone(), expr_arena)
             .is_not_null(expr_arena)
             .node();
@@ -364,10 +374,10 @@ fn partial_group_by(
         });
     }
     let filtered_right = ir_arena.add(IR::Filter {
-        input: target.right,
+        input: target.aggregate_input,
         predicate: ExprIR::from_node(not_null?, expr_arena),
     });
-    let partial_keys = right_keys
+    let partial_keys = aggregate_keys
         .iter()
         .map(|key| ExprIR::from_column_name(key.clone(), expr_arena))
         .collect();
@@ -551,12 +561,12 @@ fn target_at(
             && names.ancestor_keys.iter().all(from_left)
         {
             return Some(Target {
-                left: *input_left,
-                right: *input_right,
-                left_keys,
-                right_keys,
-                right_is_left: false,
-                from_right,
+                aggregate_input: *input_right,
+                aggregate_keys: right_keys,
+                other_input: *input_left,
+                other_keys: left_keys,
+                aggregate_is_left: false,
+                from_aggregate: from_right,
             });
         }
     }
@@ -580,12 +590,12 @@ fn target_at(
             && names.ancestor_keys.iter().all(from_left)
         {
             return Some(Target {
-                left: *input_right,
-                right: *input_left,
-                left_keys: right_keys,
-                right_keys: left_keys,
-                right_is_left: true,
-                from_right,
+                aggregate_input: *input_left,
+                aggregate_keys: left_keys,
+                other_input: *input_right,
+                other_keys: right_keys,
+                aggregate_is_left: true,
+                from_aggregate: from_right,
             });
         }
     }
@@ -675,8 +685,8 @@ fn below_ancestor(names: &mut Names, ancestor: &Ancestor, ir_arena: &Arena<IR>) 
 const MIN_MATCHED_SHARE: f64 = 0.75;
 /// Fire only if each partial group is expected to fold at least this many R rows.
 const MIN_ROWS_PER_KEY: f64 = 1.5;
-/// Leave small inputs alone.
-const MIN_RIGHT_ROWS: f64 = 100_000.0;
+/// Leave small aggregated inputs alone.
+const MIN_AGGREGATED_ROWS: f64 = 100_000.0;
 
 /// What the gate needs to know about one side of the join and its keys.
 struct SideStats {
@@ -843,12 +853,12 @@ fn gate_passes(
             .collect::<Option<Vec<_>>>()?;
         SideStats::new(&stats, keys, &null_shares)
     };
-    let (Some(left), Some(right)) = (
-        side(target.left, &target.left_keys),
-        side(target.right, &target.right_keys),
+    let (Some(other), Some(aggregated)) = (
+        side(target.other_input, &target.other_keys),
+        side(target.aggregate_input, &target.aggregate_keys),
     ) else {
         if polars_config::config().verbose() {
-            eprintln!("eager aggregation: no key statistics: skipped");
+            eprintln!("eager aggregation: no key statistics: gate failed");
         }
         return false;
     };
@@ -861,26 +871,26 @@ fn gate_passes(
             side(ancestor.other, &ancestor.other_keys),
         ) else {
             if polars_config::config().verbose() {
-                eprintln!("eager aggregation: no key statistics above the join: skipped");
+                eprintln!("eager aggregation: no key statistics above the join: gate failed");
             }
             return false;
         };
         keeps.push(key_overlap(&other, &path) * other.key_survival() * (1.0 - path.null_share));
     }
 
-    let matched_share = key_overlap(&left, &right) * left.key_survival();
+    let matched_share = key_overlap(&other, &aggregated) * other.key_survival();
     let path_share = matched_share * keeps.iter().product::<f64>();
-    let right_rows = right.rows * (1.0 - right.null_share);
-    let right_keys_left = right.ndv * right.key_survival();
-    let rows_per_key = right_rows / right_keys_left.max(1.0);
+    let aggregated_rows = aggregated.rows * (1.0 - aggregated.null_share);
+    let aggregated_keys_left = aggregated.ndv * aggregated.key_survival();
+    let rows_per_key = aggregated_rows / aggregated_keys_left.max(1.0);
     let passes = path_share >= MIN_MATCHED_SHARE
         && rows_per_key >= MIN_ROWS_PER_KEY
-        && right_rows >= MIN_RIGHT_ROWS;
+        && aggregated_rows >= MIN_AGGREGATED_ROWS;
     if polars_config::config().verbose() {
         eprintln!(
             "eager aggregation: matched share {matched_share:.3}, kept above {keeps:.3?}, \
-             rows per key {rows_per_key:.2}, right rows {right_rows:.0}: {}",
-            if passes { "fires" } else { "skipped" }
+             rows per key {rows_per_key:.2}, aggregated rows {aggregated_rows:.0}: {}",
+            if passes { "gate passed" } else { "gate failed" }
         );
     }
     passes
@@ -891,8 +901,8 @@ fn gate_passes(
 fn collect_leaves(
     node: Node,
     expr_arena: &mut Arena<AExpr>,
-    from_right: &PlIndexMap<PlSmallStr, PlSmallStr>,
-    right_schema: &Schema,
+    from_aggregate: &PlIndexMap<PlSmallStr, PlSmallStr>,
+    aggregate_schema: &Schema,
     leaves: &mut Vec<(Node, Leaf)>,
 ) -> bool {
     let leaf = match expr_arena.get(node) {
@@ -934,7 +944,8 @@ fn collect_leaves(
         let input = match input {
             None => None,
             Some((input, allowed)) => {
-                match right_input(input, expr_arena, from_right, right_schema, allowed) {
+                match aggregate_input(input, expr_arena, from_aggregate, aggregate_schema, allowed)
+                {
                     Some(input) => Some(input),
                     None => return false,
                 }
@@ -959,32 +970,32 @@ fn collect_leaves(
     ae.inputs(&mut inputs);
     inputs
         .into_iter()
-        .all(|input| collect_leaves(input, expr_arena, from_right, right_schema, leaves))
+        .all(|input| collect_leaves(input, expr_arena, from_aggregate, aggregate_schema, leaves))
 }
 
 /// The input of an aggregate, in R's column names: a plain R column with an `allowed` dtype,
 /// or arithmetic over R columns (see `arithmetic_input`).
-fn right_input(
+fn aggregate_input(
     input: Node,
     expr_arena: &mut Arena<AExpr>,
-    from_right: &PlIndexMap<PlSmallStr, PlSmallStr>,
-    right_schema: &Schema,
+    from_aggregate: &PlIndexMap<PlSmallStr, PlSmallStr>,
+    aggregate_schema: &Schema,
     allowed: fn(&DataType) -> bool,
 ) -> Option<Node> {
     if let AExpr::Column(name) = expr_arena.get(input) {
-        let column = from_right.get(name)?.clone();
-        allowed(right_schema.get(&column)?).then_some(())?;
+        let column = from_aggregate.get(name)?.clone();
+        allowed(aggregate_schema.get(&column)?).then_some(())?;
         return Some(expr_arena.add(AExpr::Column(column)));
     }
 
     let mut has_column = false;
-    let input = arithmetic_input(input, expr_arena, from_right, &mut has_column)?;
+    let input = arithmetic_input(input, expr_arena, from_aggregate, &mut has_column)?;
     if !has_column {
         return None;
     }
     // Every node must be a primitive integer or float, including the input of a cast:
     // arithmetic on other types can raise (e.g. a Decimal division by zero).
-    let ctx = ToFieldContext::new(expr_arena, right_schema);
+    let ctx = ToFieldContext::new(expr_arena, aggregate_schema);
     let mut stack = vec![input];
     while let Some(node) = stack.pop() {
         let ae = expr_arena.get(node);
@@ -1005,13 +1016,13 @@ fn right_input(
 fn arithmetic_input(
     node: Node,
     expr_arena: &mut Arena<AExpr>,
-    from_right: &PlIndexMap<PlSmallStr, PlSmallStr>,
+    from_aggregate: &PlIndexMap<PlSmallStr, PlSmallStr>,
     has_column: &mut bool,
 ) -> Option<Node> {
     let ae = match expr_arena.get(node).clone() {
         AExpr::Column(name) => {
             *has_column = true;
-            AExpr::Column(from_right.get(&name)?.clone())
+            AExpr::Column(from_aggregate.get(&name)?.clone())
         },
         AExpr::Literal(value) => return value.is_scalar().then_some(node),
         AExpr::BinaryExpr { left, op, right }
@@ -1021,9 +1032,9 @@ fn arithmetic_input(
             ) =>
         {
             AExpr::BinaryExpr {
-                left: arithmetic_input(left, expr_arena, from_right, has_column)?,
+                left: arithmetic_input(left, expr_arena, from_aggregate, has_column)?,
                 op,
-                right: arithmetic_input(right, expr_arena, from_right, has_column)?,
+                right: arithmetic_input(right, expr_arena, from_aggregate, has_column)?,
             }
         },
         AExpr::Cast {
@@ -1031,7 +1042,7 @@ fn arithmetic_input(
             dtype,
             options: CastOptions::NonStrict,
         } => AExpr::Cast {
-            expr: arithmetic_input(expr, expr_arena, from_right, has_column)?,
+            expr: arithmetic_input(expr, expr_arena, from_aggregate, has_column)?,
             dtype,
             options: CastOptions::NonStrict,
         },
