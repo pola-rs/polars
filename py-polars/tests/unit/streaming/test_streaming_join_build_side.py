@@ -64,6 +64,21 @@ def test_unique_side_is_built_against_a_duplicated_side(
     assert_matches_in_memory(q, out)
 
 
+@pytest.mark.parametrize("dim_left", [False, True])
+def test_somewhat_wider_unique_side_is_built(
+    dim_left: bool, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The unique side is wider than the referencing side is long, but not by
+    # enough to build the referencing side, whichever order they are in.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", SAMPLE_LIMIT)
+    d = unbounded(dim().with_columns(pl.col("d").alias(f"d{i}") for i in range(10)))
+    f = unbounded(fact().select("k"), repeats=4)
+    q = d.join(f, on="k") if dim_left else f.join(d, on="k")
+    out, side = build_side_chosen(q, plmonkeypatch, capfd)
+    assert side == ("left" if dim_left else "right")
+    assert_matches_in_memory(q, out)
+
+
 def test_wide_unique_side_is_not_built(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -72,7 +87,7 @@ def test_wide_unique_side_is_not_built(
     wide = dim(n).with_columns(
         pl.format("{}" + "x" * 200, pl.col("d")).alias(f"s{i}") for i in range(6)
     )
-    q = unbounded(fact(n), repeats=2).join(unbounded(wide), on="k")
+    q = unbounded(fact(n), repeats=3).join(unbounded(wide), on="k")
     out, side = build_side_chosen(q, plmonkeypatch, capfd)
     assert side == "left"
     assert_matches_in_memory(q, out)
@@ -111,9 +126,9 @@ def test_similar_sides_build_the_right_side(
 def test_null_keys_are_not_counted_as_keys(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # Three in four left keys are null. Counted as distinct keys, the left side
-    # would look unique and be built instead of the right side, which has each
-    # key three times.
+    # Three in four left keys are null and the others are unique, so the left
+    # side is built against the right side, which repeats each key three times.
+    # Counted as a key, the nulls would make the left side look repeated.
     plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", SAMPLE_LIMIT)
     n = 800
     left = pl.DataFrame(
@@ -121,7 +136,7 @@ def test_null_keys_are_not_counted_as_keys(
     )
     q = unbounded(left).join(unbounded(dim(n // 2), repeats=3), on="k")
     out, side = build_side_chosen(q, plmonkeypatch, capfd)
-    assert side == "right"
+    assert side == "left"
     # Half the non-null left keys are on the right, three times each.
     assert out.height == 3 * n // 8
     assert_matches_in_memory(q, out)

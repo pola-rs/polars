@@ -381,16 +381,18 @@ fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
     unsafe { DataFrame::new_unchecked(height, new_cols) }
 }
 
-/// Avoids dividing by a zero key ratio when scoring a build side.
-const MIN_KEY_RATIO: f64 = 1e-6;
-
 /// A side with at least this key ratio is taken to have unique keys, allowing
-/// for the error of the cardinality sketch.
-const UNIQUE_KEY_RATIO: f64 = 0.85;
+/// for some duplicates.
+const UNIQUE_KEY_RATIO: f64 = 0.9;
 
-/// How many times more unique a side with unique keys must be than the other
-/// side for the other side to be taken as referencing it.
-const REFERENCING_KEY_RATIO_FACTOR: f64 = 2.0;
+/// A side with at most this key ratio is taken as referencing a side with
+/// unique keys.
+const REF_KEY_RATIO: f64 = 0.55;
+
+/// Extra weight against building a side referencing a side with unique keys.
+/// Referencing sides tend to keep growing and a prefix under-counts their
+/// repeats.
+const UNIQUE_BUILD_MARGIN: f64 = 8.0;
 
 /// How much smaller the left side's score must be for it to be built.
 /// This is used to make noisy near-50/50 decisions more stable.
@@ -487,6 +489,7 @@ impl SampleState {
                             &self.left,
                             &params.left_key_selectors,
                             Some(&params.left_payload_select),
+                            true,
                             params.args.nulls_equal,
                             &params.random_state,
                             params.sample_limit,
@@ -496,6 +499,7 @@ impl SampleState {
                             &self.right,
                             &params.right_key_selectors,
                             Some(&params.right_payload_select),
+                            true,
                             params.args.nulls_equal,
                             &params.random_state,
                             params.sample_limit,
@@ -505,31 +509,29 @@ impl SampleState {
                         // Both lengths are unknown and assumed equal, unless one side has
                         // unique keys and the other repeats them. The other side is then
                         // taken to reference the unique side's keys, making it longer by
-                        // the number of times it repeats each key. A prefix under-counts
-                        // repeats, so when unsure this falls back to equal lengths.
-                        let left_references_right = right.key_ratio >= UNIQUE_KEY_RATIO
-                            && left.key_ratio * REFERENCING_KEY_RATIO_FACTOR <= right.key_ratio;
-                        let right_references_left = left.key_ratio >= UNIQUE_KEY_RATIO
-                            && right.key_ratio * REFERENCING_KEY_RATIO_FACTOR <= left.key_ratio;
-                        let (left_len, right_len) =
-                            if left_references_right || right_references_left {
-                                (
-                                    1.0 / left.key_ratio.max(MIN_KEY_RATIO),
-                                    1.0 / right.key_ratio.max(MIN_KEY_RATIO),
-                                )
-                            } else {
-                                (1.0, 1.0)
-                            };
-                        let left_score = left_len * left.all_rows_build_bytes(params.sample_limit);
-                        let right_score =
-                            right_len * right.all_rows_build_bytes(params.sample_limit);
+                        // the number of times it repeats each key, and is penalized by
+                        // `UNIQUE_BUILD_MARGIN`.
+                        let left_unique =
+                            left.min_hash_key_ratio.unwrap_or(0.0) >= UNIQUE_KEY_RATIO;
+                        let right_unique =
+                            right.min_hash_key_ratio.unwrap_or(0.0) >= UNIQUE_KEY_RATIO;
+                        let mut left_score = left.all_rows_build_bytes(params.sample_limit);
+                        let mut right_score = right.all_rows_build_bytes(params.sample_limit);
+                        if left.key_ratio <= REF_KEY_RATIO && right_unique {
+                            left_score *= UNIQUE_BUILD_MARGIN / (left.key_ratio + 1e-6);
+                        }
+                        if right.key_ratio <= REF_KEY_RATIO && left_unique {
+                            right_score *= UNIQUE_BUILD_MARGIN / (right.key_ratio + 1e-6);
+                        }
                         if config::verbose() {
                             eprintln!(
-                                "estimated build scores are: {left_score:.0} (left, key_ratio={:.4}, key_width={:.1}, row_width={:.1}) vs. {right_score:.0} (right, key_ratio={:.4}, key_width={:.1}, row_width={:.1})",
+                                "estimated build scores are: {left_score:.0} (left, key_ratio={:.4}, min_hash_key_ratio={:?}, key_width={:.1}, row_width={:.1}) vs. {right_score:.0} (right, key_ratio={:.4}, min_hash_key_ratio={:?}, key_width={:.1}, row_width={:.1})",
                                 left.key_ratio,
+                                left.min_hash_key_ratio,
                                 left.key_width,
                                 left.row_width,
                                 right.key_ratio,
+                                right.min_hash_key_ratio,
                                 right.key_width,
                                 right.row_width,
                             );

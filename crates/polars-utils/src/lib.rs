@@ -48,6 +48,7 @@ pub mod live_timer;
 pub mod macros;
 pub mod marked_usize;
 pub mod mem;
+pub mod min_hash_sketch;
 pub mod min_max;
 pub mod nulls;
 pub mod option;

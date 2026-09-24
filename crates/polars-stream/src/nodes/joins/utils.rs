@@ -12,6 +12,7 @@ use polars_ooc::{ParameterFreeSpillContext, RandomSpillContext, SpillFrame};
 use polars_utils::IdxSize;
 use polars_utils::aliases::PlRandomState;
 use polars_utils::cardinality_sketch::CardinalitySketch;
+use polars_utils::min_hash_sketch::MinHashSketch;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::range::check_range;
 
@@ -259,6 +260,10 @@ const KEY_SLOT_OVERHEAD: f64 = 16.0;
 pub struct JoinSampleStats {
     /// Distinct keys, as a fraction of the rows.
     pub key_ratio: f64,
+    /// Like `key_ratio`, but weighting each distinct key equally. Exact for
+    /// unique keys, but over-estimates when a few keys hold many rows. `None`
+    /// if not requested or there were no non-null keys.
+    pub min_hash_key_ratio: Option<f64>,
     pub key_width: f64,
     pub row_width: f64,
 }
@@ -266,10 +271,12 @@ pub struct JoinSampleStats {
 impl JoinSampleStats {
     /// With a `payload_select` a row is its selected columns and its keys,
     /// otherwise it is the whole frame.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_sample(
         morsels: &[Morsel],
         key_selectors: &[StreamExpr],
         payload_select: Option<&[Option<PlSmallStr>]>,
+        with_min_hash: bool,
         null_is_valid: bool,
         random_state: &PlRandomState,
         sample_limit: usize,
@@ -278,18 +285,31 @@ impl JoinSampleStats {
         if morsels.is_empty() || sample_limit == 0 {
             return Ok(Self {
                 key_ratio: 0.0,
+                min_hash_key_ratio: None,
                 key_width: 0.0,
                 row_width: 0.0,
             });
         }
-        let ((sketch, key_bytes, row_bytes), rows) = fold_sample(
+        let ((sketch, min_hash, key_bytes, row_bytes), rows) = fold_sample(
             morsels,
             sample_limit,
-            || (CardinalitySketch::new(), 0usize, 0usize),
-            |(mut sketch, key_bytes, row_bytes), df| {
+            || {
+                let min_hash = with_min_hash.then(MinHashSketch::new);
+                (CardinalitySketch::new(), min_hash, 0usize, 0usize)
+            },
+            |(mut sketch, mut min_hash, key_bytes, row_bytes), df| {
                 let keys = ASYNC.block_on(select_key_columns(df, key_selectors, state))?;
-                HashKeys::from_df(&keys, random_state.clone(), null_is_valid, false)
-                    .sketch_cardinality(&mut sketch);
+                let hash_keys =
+                    HashKeys::from_df(&keys, random_state.clone(), null_is_valid, false);
+                match &mut min_hash {
+                    Some(min_hash) => hash_keys.for_each_hash(|_, opt_h| {
+                        sketch.insert(opt_h.unwrap_or(0));
+                        if let Some(h) = opt_h {
+                            min_hash.insert(h);
+                        }
+                    }),
+                    None => hash_keys.sketch_cardinality(&mut sketch),
+                }
                 let row_size = match payload_select {
                     None => df.estimated_size(),
                     Some(select) => {
@@ -306,18 +326,23 @@ impl JoinSampleStats {
                 };
                 Ok((
                     sketch,
+                    min_hash,
                     key_bytes + keys.estimated_size(),
                     row_bytes + row_size,
                 ))
             },
-            |(mut a, ak, ar), (b, bk, br)| {
+            |(mut a, mut am, ak, ar), (b, bm, bk, br)| {
                 a.combine(&b);
-                (a, ak + bk, ar + br)
+                if let (Some(am), Some(bm)) = (&mut am, &bm) {
+                    am.combine(bm);
+                }
+                (a, am, ak + bk, ar + br)
             },
         )?;
         let rows = rows as f64;
         Ok(Self {
             key_ratio: (sketch.estimate() as f64 / rows).min(1.0),
+            min_hash_key_ratio: min_hash.and_then(|m| m.key_ratio()),
             key_width: key_bytes as f64 / rows,
             row_width: row_bytes as f64 / rows,
         })
