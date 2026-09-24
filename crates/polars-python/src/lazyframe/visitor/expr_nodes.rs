@@ -1922,6 +1922,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Log => ("log",).into_py_any(py),
                 IRFunctionExpr::Log1p => ("log1p",).into_py_any(py),
                 IRFunctionExpr::Exp => ("exp",).into_py_any(py),
+                IRFunctionExpr::Erf => ("erf",).into_py_any(py),
+                IRFunctionExpr::Erfc => ("erfc",).into_py_any(py),
                 IRFunctionExpr::Unique(maintain_order) => {
                     ("unique", maintain_order).into_py_any(py)
                 },

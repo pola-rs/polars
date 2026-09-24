@@ -37,6 +37,16 @@ def test_div() -> None:
     }
 
 
+def test_erf_erfc() -> None:
+    df = pl.DataFrame({"a": [-1.0, 0.0, 0.5, None]})
+    res = df.sql("SELECT ERF(a) AS erf_a, ERFC(a) AS erfc_a FROM self")
+    expected = df.select(
+        erf_a=pl.col("a").erf(),
+        erfc_a=pl.col("a").erfc(),
+    )
+    assert_frame_equal(res, expected)
+
+
 def test_modulo() -> None:
     df = pl.DataFrame(
         {
