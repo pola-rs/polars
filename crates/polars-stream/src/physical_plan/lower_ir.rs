@@ -1665,7 +1665,7 @@ pub fn lower_ir(
                 &aggs,
                 Arc::new(group_by_output_schema),
                 options.maintain_order,
-                Arc::new(GroupbyOptions::default()),
+                Arc::new(GroupbyOptionsIR::default()),
                 None,
                 expr_arena,
                 phys_sm,

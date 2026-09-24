@@ -9,7 +9,7 @@ use polars_core::prelude::{
 use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
 use polars_defs::time::duration::ensure_duration_matches_dtype;
-use polars_defs::time::group_by::{DynamicGroupOptions, Label};
+use polars_defs::time::group_by::{DynamicGroupOptionsIR, Label};
 use polars_error::{PolarsError, PolarsResult, polars_ensure};
 use polars_expr::state::ExecutionState;
 use polars_time::prelude::GroupByDynamicWindower;
@@ -53,11 +53,11 @@ pub struct DynamicGroupBy {
 impl DynamicGroupBy {
     pub fn new(
         schema: Arc<Schema>,
-        options: DynamicGroupOptions,
+        options: DynamicGroupOptionsIR,
         aggs: Arc<[(PlSmallStr, StreamExpr)]>,
         slice: Option<(IdxSize, IdxSize)>,
     ) -> PolarsResult<Self> {
-        let DynamicGroupOptions {
+        let DynamicGroupOptionsIR {
             index_column,
             every,
             period,
