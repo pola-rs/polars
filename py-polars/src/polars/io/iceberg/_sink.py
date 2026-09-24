@@ -35,9 +35,10 @@ if TYPE_CHECKING:
     from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionSpec
     from pyiceberg.schema import Schema
-    from pyiceberg.table import Transaction
+    from pyiceberg.table import CommitTableResponse, Transaction
     from pyiceberg.table.metadata import TableMetadata
     from pyiceberg.table.sorting import SortOrder
+    from pyiceberg.table.update import TableRequirement, TableUpdate
     from pyiceberg.transforms import Transform
     from pyiceberg.typedef import Record
     from pyiceberg.types import IcebergType
@@ -48,6 +49,96 @@ if TYPE_CHECKING:
 
 
 _IcebergSinkedFile = tuple[str, int, int, bytes]
+
+_SINK_UUID_PROPERTY = "polars.sink-uuid"
+
+
+class _AlreadyCommitted(Exception):
+    """A snapshot tagged with this sink's uuid already landed.
+
+    Deliberately not a `CommitFailedException` or `ValidationException`, so pyiceberg
+    does not clean up this transaction's manifests when it propagates.
+    """
+
+
+def _already_committed(metadata: TableMetadata, sink_uuid: str) -> bool:
+    return any(
+        s.summary is not None and s.summary.get(_SINK_UUID_PROPERTY) == sink_uuid
+        for s in metadata.snapshots
+    )
+
+
+class _SinkCatalog:
+    """Delegates to `catalog`, but recovers the outcome of a failed `commit_table`.
+
+    pyiceberg deletes a transaction's manifests when a commit fails, and does not
+    always check first whether the commit landed (empty overwrite producers, zero
+    retries, the final attempt). Resolving the outcome here, before pyiceberg sees
+    the failure, keeps a landed snapshot's manifests.
+    """
+
+    def __init__(
+        self, catalog: pyiceberg.catalog.Catalog, sink_uuid: str, *, verbose: bool
+    ) -> None:
+        self._catalog = catalog
+        self._sink_uuid = sink_uuid
+        self._verbose = verbose
+        self._snapshot_ids: set[int] = set()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._catalog, name)
+
+    def commit_table(
+        self,
+        table: pyiceberg.table.Table,
+        requirements: tuple[TableRequirement, ...],
+        updates: tuple[TableUpdate, ...],
+    ) -> CommitTableResponse:
+        from pyiceberg.exceptions import CommitStateUnknownException
+        from pyiceberg.table import CommitTableResponse
+        from pyiceberg.table.update import AddSnapshotUpdate
+
+        self._snapshot_ids.update(
+            u.snapshot.snapshot_id for u in updates if isinstance(u, AddSnapshotUpdate)
+        )
+
+        try:
+            return self._catalog.commit_table(table, requirements, updates)
+        except Exception as e:
+            try:
+                current = self._catalog.load_table(table.name())
+            except Exception:
+                msg = "could not verify the outcome of a failed Iceberg commit"
+                raise CommitStateUnknownException(msg) from e
+
+            metadata = current.metadata
+            if any(s.snapshot_id in self._snapshot_ids for s in metadata.snapshots):
+                if self._verbose:
+                    eprint("IcebergSinkState[commit]: recovered lost commit response")
+                return CommitTableResponse(
+                    metadata=metadata,
+                    metadata_location=current.metadata_location,  # type: ignore[call-arg]
+                )
+
+            if _already_committed(metadata, self._sink_uuid):
+                raise _AlreadyCommitted from e
+
+            raise
+
+
+def _sink_transaction(table: pyiceberg.table.Table, sink_uuid: str) -> Transaction:
+    from pyiceberg.table import Transaction
+
+    class _SinkTransaction(Transaction):
+        # pyiceberg calls this after refreshing the table for a retry, before it
+        # writes new manifests. A twin that lands after this check moves the branch
+        # ref, so the next commit fails and `_SinkCatalog` finds the twin.
+        def _rebuild_snapshot_updates(self) -> None:
+            if _already_committed(self._table.metadata, sink_uuid):
+                raise _AlreadyCommitted
+            super()._rebuild_snapshot_updates()
+
+    return _SinkTransaction(table)
 
 
 def _nested_partition_source_ids(schema: Schema, spec: PartitionSpec) -> set[int]:
@@ -722,6 +813,13 @@ class IcebergSinkState:
         )._ldf
 
     def commit(self, sinked_files: list[_IcebergSinkedFile]) -> pl.DataFrame:
+        """Commit the sinked files to the table.
+
+        A re-execution of the same sink invocation (same `sink_uuid_str`) is skipped
+        while the snapshot it tagged is retained. It commits again once that snapshot
+        has expired, or if the table is rolled back while the re-execution is in
+        flight: no catalog requirement can detect the latter.
+        """
         import polars as pl
         import polars._utils.logging
 
@@ -733,7 +831,41 @@ class IcebergSinkState:
 
         table = self.table()
 
+        if _already_committed(table.metadata, self.sink_uuid_str):
+            if verbose:
+                eprint("IcebergSinkState[commit]: already committed, skipping")
+        else:
+            self._commit(table, sinked_files, verbose=verbose)
+
+        self.commit_result_df.set(
+            pl.DataFrame(
+                {"metadata_path": table.metadata_location},
+                schema={"metadata_path": pl.String},
+                height=1,
+            )
+        )
+
+        if verbose:
+            total_elapsed = perf_counter() - function_start_instant
+            eprint(
+                f"IcebergSinkState[commit]: finished, total elapsed time: {total_elapsed:.3f}s"
+            )
+
+        return self.commit_result_df.get()  # type: ignore[return-value]
+
+    def _commit(
+        self,
+        table: pyiceberg.table.Table,
+        sinked_files: list[_IcebergSinkedFile],
+        *,
+        verbose: bool,
+    ) -> None:
+        from pyiceberg.table import Table
+
         original_metadata_location = table.metadata_location
+        snapshot_properties = self.snapshot_properties | {
+            _SINK_UUID_PROPERTY: self.sink_uuid_str
+        }
 
         if sys.platform == "win32":
             sinked_files = [
@@ -746,68 +878,68 @@ class IcebergSinkState:
                 for path, num_rows, num_bytes, parquet_metadata in sinked_files
             ]
 
-        with table.transaction() as tx:
-            if (
-                self.sort_order_id is not None
-                and tx.table_metadata.sort_order_by_id(self.sort_order_id) is None
-            ):
-                msg = f"Iceberg sort order {self.sort_order_id} is no longer available"
-                raise ValueError(msg)
-            self._update_schema(tx)
+        wrapped = Table(
+            table.name(),
+            table.metadata,
+            table.metadata_location,
+            table.io,
+            _SinkCatalog(table.catalog, self.sink_uuid_str, verbose=verbose),  # type: ignore[arg-type]
+            table.config,
+        )
 
-            if self.mode == "overwrite":
-                from pyiceberg.expressions import AlwaysTrue
+        try:
+            with _sink_transaction(wrapped, self.sink_uuid_str) as tx:
+                if (
+                    self.sort_order_id is not None
+                    and tx.table_metadata.sort_order_by_id(self.sort_order_id) is None
+                ):
+                    msg = f"Iceberg sort order {self.sort_order_id} is no longer available"
+                    raise ValueError(msg)
+                self._update_schema(tx)
 
-                tx.delete(AlwaysTrue(), snapshot_properties=self.snapshot_properties)
+                if self.mode == "overwrite":
+                    from pyiceberg.expressions import AlwaysTrue
 
+                    tx.delete(AlwaysTrue(), snapshot_properties=snapshot_properties)
+
+                if verbose:
+                    eprint("IcebergSinkState[commit]: begin add_files")
+
+                start_instant = perf_counter()
+
+                _add_files(
+                    tx,
+                    sinked_files,
+                    snapshot_properties,
+                    self.sort_order_id,
+                )
+
+                if verbose:
+                    elapsed = perf_counter() - start_instant
+                    eprint(
+                        f"IcebergSinkState[commit]: finish add_files ({elapsed:.3f}s)"
+                    )
+                    eprint("IcebergSinkState[commit]: begin transaction commit")
+
+                start_instant = perf_counter()
+        except _AlreadyCommitted:
             if verbose:
-                eprint("IcebergSinkState[commit]: begin add_files")
-
-            start_instant = perf_counter()
-
-            _add_files(
-                tx,
-                sinked_files,
-                self.snapshot_properties,
-                self.sort_order_id,
-            )
-
-            if verbose:
-                elapsed = perf_counter() - start_instant
-                eprint(f"IcebergSinkState[commit]: finish add_files ({elapsed:.3f}s)")
-                eprint("IcebergSinkState[commit]: begin transaction commit")
-
-            start_instant = perf_counter()
+                eprint("IcebergSinkState[commit]: already committed, skipping")
+            table.refresh()
+            return
 
         if verbose:
-            now = perf_counter()
-            elapsed = now - start_instant
+            elapsed = perf_counter() - start_instant
             eprint(
                 f"IcebergSinkState[commit]: finish transaction commit ({elapsed:.3f}s)"
             )
-        else:
-            now = None
 
-        new_metadata_location = table.metadata_location
+        table.metadata = wrapped.metadata
+        table.metadata_location = wrapped.metadata_location
+        table.io = wrapped.io
+        table.config = wrapped.config
 
-        assert new_metadata_location != original_metadata_location
-
-        self.commit_result_df.set(
-            pl.DataFrame(
-                {"metadata_path": new_metadata_location},
-                schema={"metadata_path": pl.String},
-                height=1,
-            )
-        )
-
-        if now is not None:
-            total_elapsed = now - function_start_instant
-
-            eprint(
-                f"IcebergSinkState[commit]: finished, total elapsed time: {total_elapsed:.3f}s"
-            )
-
-        return self.commit_result_df.get()  # type: ignore[return-value]
+        assert table.metadata_location != original_metadata_location
 
     def sink_base_path(self, *, object_storage_enabled: bool) -> str:
         from pyiceberg.table import TableProperties
