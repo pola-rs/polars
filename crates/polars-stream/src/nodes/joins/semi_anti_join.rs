@@ -23,15 +23,13 @@ use polars_utils::sparse_init_vec::SparseInitVec;
 use rayon::prelude::*;
 
 use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
+use super::utils::JoinSampleStats;
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, emit_morsel_size, fold_sample,
-    sample_sink, select_key_columns, send_frames,
+    BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, emit_morsel_size, sample_sink,
+    select_key_columns, send_frames,
 };
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
-
-/// Bytes a hash table takes per key on top of the key itself.
-const KEY_SLOT_OVERHEAD: f64 = 16.0;
 
 fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
     HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
@@ -194,67 +192,6 @@ enum SemiAntiJoinState {
     Done,
 }
 
-/// Estimated bytes per row the build of one side keeps, from its sample.
-struct RetainedBytes {
-    /// Distinct keys, as a fraction of the rows.
-    key_ratio: f64,
-    key_width: f64,
-    row_width: f64,
-}
-
-impl RetainedBytes {
-    fn from_sample(
-        morsels: &[Morsel],
-        key_selectors: &[StreamExpr],
-        null_is_valid: bool,
-        params: &SemiAntiJoinParams,
-        state: &ExecutionState,
-    ) -> PolarsResult<Self> {
-        if morsels.is_empty() || params.sample_limit == 0 {
-            return Ok(Self {
-                key_ratio: 0.0,
-                key_width: 0.0,
-                row_width: 0.0,
-            });
-        }
-        let ((sketch, key_bytes, row_bytes), rows) = fold_sample(
-            morsels,
-            params.sample_limit,
-            || (CardinalitySketch::new(), 0usize, 0usize),
-            |(mut sketch, key_bytes, row_bytes), df| {
-                let keys = ASYNC.block_on(select_key_columns(df, key_selectors, state))?;
-                hash_keys(&keys, params, null_is_valid).sketch_cardinality(&mut sketch);
-                Ok((
-                    sketch,
-                    key_bytes + keys.estimated_size(),
-                    row_bytes + df.estimated_size(),
-                ))
-            },
-            |(mut a, ak, ar), (b, bk, br)| {
-                a.combine(&b);
-                (a, ak + bk, ar + br)
-            },
-        )?;
-        let rows = rows as f64;
-        Ok(Self {
-            key_ratio: (sketch.estimate() as f64 / rows).min(1.0),
-            key_width: key_bytes as f64 / rows,
-            row_width: row_bytes as f64 / rows,
-        })
-    }
-
-    /// Bytes retained when building a table of the distinct keys of `rows` rows.
-    fn keys(&self, rows: usize) -> f64 {
-        rows as f64 * self.key_ratio * (self.key_width + KEY_SLOT_OVERHEAD)
-    }
-
-    /// Bytes retained when building the distinct keys of `rows` rows and
-    /// keeping every row.
-    fn keys_and_rows(&self, rows: usize) -> f64 {
-        self.keys(rows) + rows as f64 * (self.row_width + size_of::<IdxSize>() as f64)
-    }
-}
-
 #[derive(Default)]
 struct SampleState {
     left: Vec<Morsel>,
@@ -336,22 +273,26 @@ impl SampleState {
             (false, true) => left_saturated && prefer_left,
             (false, false) => false,
             (true, _) => {
-                let left = RetainedBytes::from_sample(
+                let left = JoinSampleStats::from_sample(
                     &self.left,
                     &params.left_key_selectors,
+                    None,
                     params.null_is_valid_when_built(true),
-                    params,
+                    &params.random_state,
+                    params.sample_limit,
                     &state.in_memory_exec_state,
                 )?;
-                let right = RetainedBytes::from_sample(
+                let right = JoinSampleStats::from_sample(
                     &self.right,
                     &params.right_key_selectors,
+                    None,
                     params.null_is_valid_when_built(false),
-                    params,
+                    &params.random_state,
+                    params.sample_limit,
                     &state.in_memory_exec_state,
                 )?;
-                let left_bytes = left.keys_and_rows(self.left_len);
-                let right_bytes = right.keys(self.right_len);
+                let left_bytes = left.all_rows_build_bytes(self.left_len);
+                let right_bytes = right.distinct_keys_build_bytes(self.right_len);
                 if config::verbose() {
                     eprintln!(
                         "estimated retained bytes are: {left_bytes:.0} (left, keys and rows) vs. {right_bytes:.0} (right, keys)"
