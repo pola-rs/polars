@@ -21,6 +21,7 @@ for more information.
     :toctree: api/
 
     plugins.register_plugin_function
+    plugins.register_plugin_rewrite
 
 
 IO plugins

@@ -23,7 +23,18 @@ def test_branch_on_extension_metadata() -> None:
         schema={"a": length("m"), "b": length("cm")},
     )
     out = df.select(to_unit("a", "cm"), to_unit("b", "m"))
-    assert_frame_equal(out, pl.DataFrame({"a": [100.0, 200.0], "b": [1.0, 2.5]}))
+    expected = pl.DataFrame(
+        {"a": [100.0, 200.0], "b": [1.0, 2.5]},
+        schema={"a": length("cm"), "b": length("m")},
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_output_dtype() -> None:
+    # Polars doesn't check the dtype a rewrite returns, so the plugin tests it.
+    lf = pl.LazyFrame({"a": [1.0]}, schema={"a": length("km")})
+    assert lf.select(to_unit("a", "mm")).collect_schema() == {"a": length("mm")}
+    assert lf.select(to_unit("a", "mm")).collect().schema == {"a": length("mm")}
 
 
 def test_struct_restructure() -> None:
@@ -51,9 +62,11 @@ def test_template_calls_plugin_kernel() -> None:
 
 
 def test_rewrite_in_rewrite_inputs() -> None:
-    df = pl.DataFrame({"a": [1.0, 2.0, 4.0]}, schema={"a": length("m")})
-    out = df.select(struct_median(to_unit("a", "cm")))
-    assert_frame_equal(out, pl.DataFrame({"a": [200.0]}))
+    # The outer rewrite sees the unit set by the inner one.
+    df = pl.DataFrame({"a": [1.0, 2.0]}, schema={"a": length("m")})
+    out = df.select(to_unit(to_unit("a", "cm"), "mm"))
+    expected = pl.DataFrame({"a": [1000.0, 2000.0]}, schema={"a": length("mm")})
+    assert_frame_equal(out, expected)
 
 
 def test_v1_limitations() -> None:
@@ -100,7 +113,8 @@ def test_serialize_roundtrip() -> None:
         to_unit("a", "m")
     )
     roundtripped = pl.LazyFrame.deserialize(io.BytesIO(lf.serialize()))
-    assert_frame_equal(roundtripped.collect(), pl.DataFrame({"a": [1000.0, 2000.0]}))
+    expected = pl.DataFrame({"a": [1000.0, 2000.0]}, schema={"a": length("m")})
+    assert_frame_equal(roundtripped.collect(), expected)
 
 
 def test_streaming_matches_in_memory() -> None:

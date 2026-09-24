@@ -11,20 +11,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 num = "0.4.3"
-polars = { workspace = true, features = ["timezones", "allow_unused"] }
+polars = { workspace = true, features = ["dtype-date", "timezones", "allow_unused"] }
 polars-arrow = { workspace = true, default-features = false }
-polars-ffi = { workspace = true, features = ["dsl_rewrite"] }
-polars-plan = { workspace = true, features = [
-  "dsl_rewrite",
-  "dtype-date",
-  "dtype-datetime",
-  "dtype-duration",
-  "dtype-extension",
-  "dtype-struct",
-  "ffi_plugin",
-  "serde",
-] }
 pyo3 = { workspace = true }
-pyo3-polars = { workspace = true, features = ["derive"] }
+pyo3-polars = { workspace = true, features = ["derive", "dsl_rewrite", "dtype-struct"] }
 rayon = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

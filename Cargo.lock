@@ -1579,8 +1579,6 @@ dependencies = [
  "num",
  "polars",
  "polars-arrow",
- "polars-ffi",
- "polars-plan",
  "pyo3",
  "pyo3-polars",
  "rayon",
@@ -4140,6 +4138,7 @@ dependencies = [
  "proc-macro2",
  "pyo3-polars",
  "quote",
+ "serde",
  "syn 2.0.119",
  "trybuild",
 ]

@@ -1,86 +1,17 @@
 //! Plugin rewrites
 //! Decide during query planning what an expression becomes,
 //! based on the input types.
-//! These are written against the raw C ABI; `#[polars_rewrite]` will generate this.
-use std::panic::UnwindSafe;
-
 use polars::prelude::*;
-use polars_arrow::ffi::{import_field_from_c, ArrowSchema};
-use polars_ffi::dsl_rewrite::BytesExport;
-use polars_plan::prelude::*;
+use pyo3_polars::export::polars_core::datatypes::extension::get_extension_type_or_generic;
+use pyo3_polars::rewrite::*;
 use serde::Deserialize;
 
-/// Shared body of the exported `_polars_plugin_rewrite_{name}` functions.
-#[allow(clippy::too_many_arguments)]
-unsafe fn export_rewrite(
-    fields: *const ArrowSchema,
-    n_fields: usize,
-    kwargs: *const u8,
-    kwargs_len: usize,
-    lib: *const u8,
-    lib_len: usize,
-    out: *mut BytesExport,
-    f: impl FnOnce(&[Field], &[u8], &str) -> PolarsResult<Expr> + UnwindSafe,
-) {
-    let panic_result = std::panic::catch_unwind(move || {
-        let fields = std::slice::from_raw_parts(fields, n_fields)
-            .iter()
-            .map(|f| Field::from(&import_field_from_c(f).unwrap()))
-            .collect::<Vec<_>>();
-        let kwargs = std::slice::from_raw_parts(kwargs, kwargs_len);
-        let lib = std::str::from_utf8(std::slice::from_raw_parts(lib, lib_len)).unwrap();
+const LENGTH: &str = "expression_lib.length";
 
-        let result = f(&fields, kwargs, lib).and_then(|expr| {
-            let mut buf = Vec::new();
-            expr.serialize_versioned(&mut buf)?;
-            Ok(buf)
-        });
-        match result {
-            Ok(buf) => *out = BytesExport::from(buf),
-            Err(err) => pyo3_polars::derive::_update_last_error(err),
-        }
-    });
-
-    if panic_result.is_err() {
-        pyo3_polars::derive::_set_panic();
-    }
-}
-
-macro_rules! rewrite {
-    ($symbol:ident, $f:expr) => {
-        #[no_mangle]
-        pub unsafe extern "C" fn $symbol(
-            fields: *const ArrowSchema,
-            n_fields: usize,
-            kwargs: *const u8,
-            kwargs_len: usize,
-            lib: *const u8,
-            lib_len: usize,
-            out: *mut BytesExport,
-        ) {
-            export_rewrite(fields, n_fields, kwargs, kwargs_len, lib, lib_len, out, $f)
-        }
-    };
-}
-
-/// Call a kernel of this plugin, like `register_plugin_function(is_elementwise=True)`.
-fn plugin_kernel(lib: &str, symbol: &str, inputs: Vec<Expr>) -> Expr {
-    let mut flags = FunctionOptions::default();
-    flags.set_elementwise();
-    Expr::Function {
-        input: inputs,
-        function: FunctionExpr::FfiPlugin {
-            flags,
-            lib: lib.into(),
-            symbol: symbol.into(),
-            kwargs: Arc::from([]),
-        },
-    }
-}
-
-#[derive(Deserialize)]
-struct ToUnitKwargs {
-    unit: String,
+/// `expression_lib.length`: lengths stored as floats, the metadata holds the unit.
+fn length(unit: &str) -> DataType {
+    let ext = get_extension_type_or_generic(LENGTH, &DataType::Float64, Some(unit));
+    DataType::Extension(ext, Box::new(DataType::Float64))
 }
 
 fn meters_per_unit(unit: &str) -> PolarsResult<f64> {
@@ -93,104 +24,108 @@ fn meters_per_unit(unit: &str) -> PolarsResult<f64> {
     })
 }
 
-// Converts an `expression_lib.length` extension column, whose metadata is its unit, to another
-// unit. The conversion factor is picked from the metadata.
-rewrite!(_polars_plugin_rewrite_to_unit, |fields, kwargs, _lib| {
-    let kwargs: ToUnitKwargs = pyo3_polars::derive::_parse_kwargs(kwargs)?;
-    let DataType::Extension(ext, _) = fields[0].dtype() else {
-        polars_bail!(InvalidOperation: "to_unit expects an 'expression_lib.length' column, got {}", fields[0].dtype());
-    };
-    polars_ensure!(ext.name() == "expression_lib.length", InvalidOperation: "to_unit expects an 'expression_lib.length' column, got {}", ext.name());
-    let from = ext.serialize_metadata().unwrap_or_default();
+#[derive(Deserialize)]
+struct ToUnitKwargs {
+    unit: String,
+}
+
+/// Converts a `length` column to another unit. The conversion factor is picked from the unit in the
+/// input's metadata.
+#[polars_rewrite]
+fn to_unit(inputs: &[Field], kwargs: ToUnitKwargs) -> PolarsResult<Expr> {
+    polars_ensure!(
+        inputs[0].extension_name().as_deref() == Some(LENGTH),
+        InvalidOperation: "to_unit expects an '{LENGTH}' column, got {}", inputs[0].dtype()
+    );
+    let from = inputs[0].extension_metadata().unwrap_or_default();
     let factor = meters_per_unit(&from)? / meters_per_unit(&kwargs.unit)?;
-    Ok(rewrite_input(0).ext().storage() * lit(factor))
-});
+    // Polars doesn't check the output type, so pin it to the new unit.
+    Ok((rewrite_input(0).ext().storage() * lit(factor))
+        .ext()
+        .to(length(&kwargs.unit)))
+}
 
-// Per-field median of a struct, restructured into a struct again; a plain median otherwise.
-rewrite!(
-    _polars_plugin_rewrite_struct_median,
-    |fields, _kwargs, _lib| {
-        Ok(match fields[0].dtype() {
-            DataType::Struct(struct_fields) => as_struct(
-                struct_fields
-                    .iter()
-                    .map(|f| rewrite_input(0).struct_().field_by_name(f.name()).median())
-                    .collect(),
-            ),
-            _ => rewrite_input(0).median(),
-        })
-    }
-);
+/// Per-field median of a struct, restructured into a struct again; a plain median otherwise.
+#[polars_rewrite]
+fn struct_median(inputs: &[Field]) -> PolarsResult<Expr> {
+    Ok(match inputs[0].dtype() {
+        DataType::Struct(fields) => as_struct(
+            fields
+                .iter()
+                .map(|f| rewrite_input(0).struct_().field_by_name(f.name()).median())
+                .collect(),
+        ),
+        _ => rewrite_input(0).median(),
+    })
+}
 
-// Calls the `is_leap_year` kernel of this plugin, casting datetimes to dates first.
-rewrite!(
-    _polars_plugin_rewrite_is_leap_year_any,
-    |fields, _kwargs, lib| {
-        let input = match fields[0].dtype() {
-            DataType::Date => rewrite_input(0),
-            DataType::Datetime(_, _) => rewrite_input(0).cast(DataType::Date),
-            dt => {
-                polars_bail!(InvalidOperation: "is_leap_year_any expects a date or datetime, got {dt}")
-            },
-        };
-        Ok(plugin_kernel(lib, "is_leap_year", vec![input]))
-    }
-);
+/// Calls the `is_leap_year` function of this plugin, casting datetimes to dates first.
+#[polars_rewrite]
+fn is_leap_year_any(inputs: &[Field], context: RewriteContext) -> PolarsResult<Expr> {
+    let input = match inputs[0].dtype() {
+        DataType::Date => rewrite_input(0),
+        DataType::Datetime(_, _) => rewrite_input(0).cast(DataType::Date),
+        dt => {
+            polars_bail!(InvalidOperation: "is_leap_year_any expects a date or datetime, got {dt}")
+        },
+    };
+    Ok(context.plugin_function("is_leap_year", vec![input], FunctionOptions::elementwise()))
+}
 
 // The rewrites below exist to test error handling.
 
-rewrite!(
-    _polars_plugin_rewrite_returns_rewrite,
-    |_fields, _kwargs, lib| {
-        let inner = DslRewriteSource::Ffi {
-            lib: lib.into(),
-            symbol: "struct_median".into(),
-            kwargs: Arc::from([]),
-        };
-        Ok(Expr::Function {
-            input: vec![rewrite_input(0)],
-            function: FunctionExpr::DslRewrite(inner),
-        })
-    }
-);
+#[polars_rewrite]
+fn returns_rewrite(_inputs: &[Field], context: RewriteContext) -> PolarsResult<Expr> {
+    let inner = DslRewriteSource::Ffi {
+        lib: context.plugin_path().into(),
+        symbol: "struct_median".into(),
+        kwargs: Arc::from([]),
+    };
+    Ok(Expr::Function {
+        input: vec![rewrite_input(0)],
+        function: FunctionExpr::DslRewrite(inner),
+    })
+}
 
-rewrite!(
-    _polars_plugin_rewrite_bad_input_index,
-    |_fields, _kwargs, _lib| { Ok(rewrite_input(5)) }
-);
+#[polars_rewrite]
+fn bad_input_index(_inputs: &[Field]) -> PolarsResult<Expr> {
+    Ok(rewrite_input(5))
+}
 
-rewrite!(
-    _polars_plugin_rewrite_input_in_eval,
-    |_fields, _kwargs, _lib| { Ok(col("l").list().eval(rewrite_input(0))) }
-);
+#[polars_rewrite]
+fn input_in_eval(_inputs: &[Field]) -> PolarsResult<Expr> {
+    Ok(col("l").list().eval(rewrite_input(0)))
+}
 
-rewrite!(
-    _polars_plugin_rewrite_multiple_outputs,
-    |_fields, _kwargs, _lib| { Ok(all().as_expr()) }
-);
+#[polars_rewrite]
+fn multiple_outputs(_inputs: &[Field]) -> PolarsResult<Expr> {
+    Ok(all().as_expr())
+}
 
-rewrite!(
-    _polars_plugin_rewrite_always_fails,
-    |_fields, _kwargs, _lib| { polars_bail!(ComputeError: "this rewrite always fails") }
-);
+#[polars_rewrite]
+fn always_fails(_inputs: &[Field]) -> PolarsResult<Expr> {
+    polars_bail!(ComputeError: "this rewrite always fails")
+}
 
-rewrite!(_polars_plugin_rewrite_panics, |_fields, _kwargs, _lib| {
+#[polars_rewrite]
+fn panics(_inputs: &[Field]) -> PolarsResult<Expr> {
     panic!("this rewrite panics")
-});
+}
 
-/// Returns bytes with a DSL header from an incompatible Polars version.
+/// Returns bytes with a DSL header from an incompatible Polars version, so it is written against
+/// the raw C ABI instead of with `#[polars_rewrite]`.
 #[no_mangle]
 pub unsafe extern "C" fn _polars_plugin_rewrite_bad_version(
-    _fields: *const ArrowSchema,
+    _fields: *const polars_arrow::ffi::ArrowSchema,
     _n_fields: usize,
     _kwargs: *const u8,
     _kwargs_len: usize,
     _lib: *const u8,
     _lib_len: usize,
-    out: *mut BytesExport,
+    out: *mut pyo3_polars::export::polars_ffi::dsl_rewrite::BytesExport,
 ) {
     let mut buf = b"DSL_VERSION".to_vec();
     buf.extend_from_slice(&u16::MAX.to_le_bytes());
     buf.extend_from_slice(&0u16.to_le_bytes());
-    *out = BytesExport::from(buf);
+    *out = buf.into();
 }

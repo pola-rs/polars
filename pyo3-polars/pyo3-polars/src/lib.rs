@@ -47,6 +47,8 @@ pub mod derive;
 pub mod error;
 #[cfg(feature = "derive")]
 pub mod export;
+#[cfg(feature = "dsl_rewrite")]
+pub mod rewrite;
 
 pub mod types;
 

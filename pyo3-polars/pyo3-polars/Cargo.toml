@@ -41,9 +41,18 @@ lazy = [
 derive = ["pyo3-polars-derive", "polars-plan/python", "polars/include-polars-plan", "serde-pickle", "serde"]
 dtype-full = ["polars/dtype-full", "dtype-decimal", "dtype-array", "dtype-struct", "dtype-categorical"]
 object = ["polars/object"]
-dtype-decimal = ["polars/dtype-decimal"]
-dtype-struct = ["polars/dtype-struct"]
-dtype-array = ["polars/dtype-array"]
-dtype-categorical = ["polars/dtype-categorical"]
+dtype-decimal = ["polars/dtype-decimal", "polars-plan?/dtype-decimal"]
+dtype-struct = ["polars/dtype-struct", "polars-plan?/dtype-struct"]
+dtype-array = ["polars/dtype-array", "polars-plan?/dtype-array"]
+dtype-categorical = ["polars/dtype-categorical", "polars-plan?/dtype-categorical"]
 dtype-extension = ["polars/dtype-extension"]
-dtype-map = ["polars/dtype-map"]
+dtype-map = ["polars/dtype-map", "polars-plan?/dtype-map"]
+# Plugin rewrites, see the `rewrite` module.
+dsl_rewrite = [
+  "derive",
+  "dtype-extension",
+  "polars-ffi/dsl_rewrite",
+  "polars-plan/dsl_rewrite",
+  "polars-plan/ffi_plugin",
+  "polars-plan/serde",
+]

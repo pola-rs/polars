@@ -27,5 +27,6 @@ syn = { version = "2", features = ["full", "extra-traits"] }
 
 [dev-dependencies]
 polars-python = { workspace = true, features = ["full"] }
-pyo3-polars = { workspace = true, features = ["derive"] }
+pyo3-polars = { workspace = true, features = ["derive", "dsl_rewrite"] }
+serde = { version = "1", features = ["derive"] }
 trybuild = { version = "1", features = ["diff"] }
