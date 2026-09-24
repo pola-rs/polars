@@ -16,6 +16,12 @@ const IS_VALID: u8 = 2;
 /// (i.e. a column -> row transposition of types known at run-time)
 pub type BoxSerializer<'a> = Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync>;
 
+fn skip_serializer_items(serializer: &mut BoxSerializer<'_>, n: usize) {
+    for _ in 0..n {
+        let _ = serializer.next();
+    }
+}
+
 fn utf8_required<O: Offset>(array: &Utf8Array<O>) -> BoxSerializer<'_> {
     Box::new(BufStreamingIterator::new(
         array.values_iter(),
@@ -102,6 +108,11 @@ fn list_required<'a, O: Offset>(array: &'a ListArray<O>, schema: &AvroSchema) ->
         .buffer()
         .windows(2)
         .map(|w| (w[1] - w[0]).to_usize() as i64);
+    let first_offset = array.offsets().first().to_usize();
+
+    // Sliced list arrays keep their original child values buffer; skip the elements
+    // before the first logical offset so we serialize the visible rows only.
+    skip_serializer_items(&mut inner, first_offset);
 
     Box::new(BufStreamingIterator::new(
         lengths,
@@ -129,6 +140,11 @@ fn list_optional<'a, O: Offset>(array: &'a ListArray<O>, schema: &AvroSchema) ->
         .windows(2)
         .map(|w| (w[1] - w[0]).to_usize() as i64);
     let lengths = ZipValidity::new_with_validity(lengths, array.validity());
+    let first_offset = array.offsets().first().to_usize();
+
+    // Sliced list arrays keep their original child values buffer; skip the elements
+    // before the first logical offset so we serialize the visible rows only.
+    skip_serializer_items(&mut inner, first_offset);
 
     Box::new(BufStreamingIterator::new(
         lengths,
