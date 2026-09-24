@@ -1,63 +1,17 @@
-# GitHub evicts caches unused for 7 days and LRU-evicts at the 10GiB cap, but a
-# runner-image rotation leaves two live generations per job (~10GiB here), so
-# superseded ones are pruned daily rather than waiting on either mechanism.
-
 name: Clear caches
 
 on:
   schedule:
-    - cron: "0 4 * * *"
+    - cron: "0 4 * * SUN"
   workflow_dispatch:
-    inputs:
-      keep:
-        description: "Generations to keep per cache prefix"
-        required: false
-        default: "1"
-      all:
-        description: "Delete every cache instead (use after changing a cache key)"
-        type: boolean
-        required: false
-        default: false
 
 jobs:
   clear-caches:
     runs-on: ubuntu-latest
-    permissions:
-      actions: write
     steps:
-      - name: Prune stale cache generations
+      - uses: actions/checkout@v7
+
+      - name: Clear all caches
+        run: gh cache delete --all
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          KEEP: ${{ inputs.keep || '1' }}
-          ALL: ${{ inputs.all }}
-        run: |
-          set -euo pipefail
-
-          if [ "$ALL" = "true" ]; then
-            gh cache delete --all --repo "$REPO" || true
-            exit 0
-          fi
-
-          # rust-cache key is "<prefix>-<job>-<os>-<arch>-<envhash>-<lockhash>"
-          gh api \
-            --paginate "repos/$REPO/actions/caches?per_page=100" \
-            --jq '.actions_caches[] | select(.key | test("^v[0-9]+-rust-")) | [.id, .created_at, .key, .size_in_bytes] | @tsv' \
-            | awk -F'\t' '{ p = $3; sub(/-[^-]*-[^-]*$/, "", p); print p "\t" $2 "\t" $1 "\t" $3 "\t" $4 }' \
-            | sort -t"$(printf '\t')" -k1,1 -k2,2r \
-            | awk -F'\t' -v keep="$KEEP" '++n[$1] > keep { print $3 "\t" $4 "\t" $5 }' \
-            > stale.tsv
-
-          if [ ! -s stale.tsv ]; then
-            echo "Nothing to prune." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          total=0
-          while IFS="$(printf '\t')" read -r id key size; do
-            echo "deleting $key ($((size / 1048576)) MiB)"
-            gh cache delete "$id" --repo "$REPO" || echo "Failed to delete: $key"
-            total=$((total + size))
-          done < stale.tsv
-
-          echo "Pruned $(wc -l < stale.tsv) cache entries, reclaimed $((total / 1048576)) MiB." >> "$GITHUB_STEP_SUMMARY"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

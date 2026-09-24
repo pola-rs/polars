@@ -9,6 +9,7 @@ on:
       - "**.rs"
       - "**.py"
       - .github/workflows/test-coverage.yml
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
