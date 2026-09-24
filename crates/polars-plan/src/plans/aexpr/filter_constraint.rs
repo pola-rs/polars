@@ -23,7 +23,6 @@ use polars_utils::aliases::{InitHashMaps, PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::or_factoring::is_or;
 use super::properties::ExprPushdownGroup;
 use super::{AExpr, IRBooleanFunction, IRFunctionExpr, LiteralValue, MintermIter, Operator};
 use crate::plans::iterator::ArenaExprIter;
@@ -466,7 +465,9 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
 
     for conjunct in MintermIter::new(predicate, expr_arena) {
         // An `OR` is left opaque.
-        if is_or(conjunct, expr_arena) || !compares_in_literal_order(conjunct, schema, expr_arena) {
+        if expr_arena.get(conjunct).is_or()
+            || !compares_in_literal_order(conjunct, schema, expr_arena)
+        {
             opaque.push(conjunct);
             continue;
         }
@@ -606,7 +607,7 @@ fn is_in_allowed_set(
     as_column(expr_arena.get(input[0].node()))
         .and_then(|name| constraints.get(&name))
         .is_some_and(|cc| cc.allowed.is_some())
-        && as_value_set(expr_arena.get(input[1].node())).is_some()
+        && value_set_series(expr_arena.get(input[1].node())).is_some()
 }
 
 #[cfg(not(feature = "is_in"))]
@@ -1096,13 +1097,25 @@ fn list_inner(av: &AnyValue) -> Option<Series> {
     }
 }
 
-// Extracts an `is_in` haystack as scalars. The haystack is one list of values,
-// wrapped either as a `Scalar` holding a `List` / `Array` (DSL `is_in([..])`) or a
-// length-1 `Series` of that one list (SQL `IN (..)`); both unwrap to the inner
-// series whose elements are the values. Bails on other shapes, an oversized
-// haystack, or a null member.
+// An `is_in` haystack as scalars.
 #[cfg(feature = "is_in")]
 fn as_value_set(ae: &AExpr) -> Option<Vec<Scalar>> {
+    let values = value_set_series(ae)?;
+    let dtype = values.dtype();
+    Some(
+        values
+            .iter()
+            .map(|av| Scalar::new(dtype.clone(), av.into_static()))
+            .collect(),
+    )
+}
+
+// An `is_in` haystack. The haystack is one list of values, wrapped either as a
+// `Scalar` holding a `List` / `Array` (DSL `is_in([..])`) or a length-1 `Series` of
+// that one list (SQL `IN (..)`); both unwrap to the inner series whose elements are
+// the values. Bails on other shapes, an oversized haystack, or a null member.
+#[cfg(feature = "is_in")]
+fn value_set_series(ae: &AExpr) -> Option<Series> {
     let AExpr::Literal(lit) = ae else {
         return None;
     };
@@ -1111,20 +1124,7 @@ fn as_value_set(ae: &AExpr) -> Option<Vec<Scalar>> {
         LiteralValue::Series(s) if s.len() == 1 => list_inner(&s.get(0).ok()?)?,
         _ => return None,
     };
-
-    if values.len() > MAX_IS_IN_VALUES {
-        return None;
-    }
-
-    let dtype = values.dtype();
-    let mut scalars = Vec::with_capacity(values.len());
-    for av in values.iter() {
-        if av.is_null() {
-            return None;
-        }
-        scalars.push(Scalar::new(dtype.clone(), av.into_static()));
-    }
-    Some(scalars)
+    (values.len() <= MAX_IS_IN_VALUES && !values.has_nulls()).then_some(values)
 }
 
 // Collects the tightest comparisons for one column as borrowed `(name, op, value)`.

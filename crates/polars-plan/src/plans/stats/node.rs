@@ -608,31 +608,30 @@ fn predicate_selectivity(
     if chain.unsat {
         return (0.0, true);
     }
-    let mut factors = Vec::with_capacity(chain.columns.len() + chain.other.len());
+    let mut selectivity = 1.0;
+    let mut known = true;
+    let mut apply = |factor: Option<f64>| {
+        known &= factor.is_some();
+        selectivity *= factor.unwrap_or(DEFAULT_SELECTIVITY);
+    };
     let mut non_null_counted = Vec::new();
     for bounds in &chain.columns {
         let factor = column_selectivity(bounds, columns, schema, rows);
         if factor.is_some() {
             non_null_counted.push(&bounds.name);
         }
-        factors.push(factor);
+        apply(factor);
     }
     for &conjunct in &chain.other {
         // The column's estimate already holds only its non-null rows.
-        if let Some((name, IRBooleanFunction::IsNotNull)) = null_check(conjunct, expr_arena)
+        if let Some((name, false)) = null_check(conjunct, expr_arena)
             && non_null_counted.contains(&name)
         {
             continue;
         }
-        factors.push(conjunct_selectivity(
+        apply(conjunct_selectivity(
             conjunct, expr_arena, columns, schema, rows,
         ));
-    }
-    let mut selectivity = 1.0;
-    let mut known = true;
-    for factor in factors {
-        known &= factor.is_some();
-        selectivity *= factor.unwrap_or(DEFAULT_SELECTIVITY);
     }
     (selectivity, known)
 }
@@ -726,38 +725,38 @@ fn conjunct_selectivity(
         let (right, right_known) = predicate_selectivity(*right, expr_arena, columns, schema, rows);
         return (left_known && right_known).then_some(left + right - left * right);
     }
-    let (name, function) = null_check(conjunct, expr_arena)?;
+    let (name, is_null) = null_check(conjunct, expr_arena)?;
 
     let Some(null_fraction) = null_fraction(name, columns, rows) else {
         // Nothing describes the column. Most frames are mostly non-null; how many rows
         // hold a null is anyone's guess.
-        return match function {
-            IRBooleanFunction::IsNotNull => Some(1.0),
-            _ => None,
-        };
+        return (!is_null).then_some(1.0);
     };
-    match function {
-        IRBooleanFunction::IsNull => Some(null_fraction),
-        IRBooleanFunction::IsNotNull => Some(1.0 - null_fraction),
-        _ => None,
-    }
+    Some(if is_null {
+        null_fraction
+    } else {
+        1.0 - null_fraction
+    })
 }
 
-/// The column a one-column boolean function reads, and the function.
-fn null_check(
-    conjunct: Node,
-    expr_arena: &Arena<AExpr>,
-) -> Option<(&PlSmallStr, &IRBooleanFunction)> {
-    Some(match expr_arena.get(conjunct) {
+/// The column an `is_null` or `is_not_null` check reads, and whether it keeps the
+/// nulls.
+fn null_check(conjunct: Node, expr_arena: &Arena<AExpr>) -> Option<(&PlSmallStr, bool)> {
+    match expr_arena.get(conjunct) {
         AExpr::Function {
             input,
             function: IRFunctionExpr::Boolean(function),
             ..
         } => {
+            let is_null = match function {
+                IRBooleanFunction::IsNull => true,
+                IRBooleanFunction::IsNotNull => false,
+                _ => return None,
+            };
             let [arg] = input.as_slice() else {
                 return None;
             };
-            (into_column(arg.node(), expr_arena)?, function)
+            Some((into_column(arg.node(), expr_arena)?, is_null))
         },
         // Pushing an equi-join key into one of its sides leaves `x == x` behind. That
         // is a null check on the key, not the arbitrary comparison it looks like.
@@ -767,13 +766,10 @@ fn null_check(
             right,
         } => {
             let name = into_column(*left, expr_arena)?;
-            if name != into_column(*right, expr_arena)? {
-                return None;
-            }
-            (name, &IRBooleanFunction::IsNotNull)
+            (name == into_column(*right, expr_arena)?).then_some((name, false))
         },
-        _ => return None,
-    })
+        _ => None,
+    }
 }
 
 /// Estimate the rows produced by joining two relations of the given sizes.
