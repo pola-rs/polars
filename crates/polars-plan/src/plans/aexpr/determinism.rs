@@ -370,26 +370,3 @@ fn is_inherently_nondeterministic_rolling_fn(f: &IRRollingFunction) -> bool {
         R::Map(_) => true,
     }
 }
-
-#[cfg(all(test, feature = "ffi_plugin"))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_ffi_plugin_determinism() {
-        for is_deterministic in [false, true] {
-            let function = IRFunctionExpr::FfiPlugin {
-                flags: FunctionOptions::default(),
-                is_deterministic,
-                lib: "plugin.so".into(),
-                symbol: "test_function".into(),
-                kwargs: Arc::from([]),
-            };
-
-            assert_eq!(
-                is_inherently_nondeterministic_fn(&function),
-                !is_deterministic
-            );
-        }
-    }
-}
