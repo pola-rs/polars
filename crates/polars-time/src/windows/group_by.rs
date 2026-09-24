@@ -1,8 +1,5 @@
 use std::collections::VecDeque;
 
-#[cfg(feature = "timezones")]
-use chrono::TimeZone as _;
-use now::DateTimeNow;
 use polars_arrow::legacy::time_zone::Tz;
 use polars_arrow::trusted_len::TrustedLen;
 use polars_core::prelude::*;
@@ -983,44 +980,13 @@ impl GroupByDynamicWindower {
     }
 
     fn start_lower_bound(&self, first: i64) -> PolarsResult<i64> {
-        let window = Window::new(self.every, self.period, self.offset);
-        match self.start_by {
-            StartBy::DataPoint => Ok(first),
-            StartBy::WindowBound => Ok(window
-                .get_earliest_bounds(self.tu, first, self.closed, self.tz.as_ref())?
-                .start),
-            _ => {
-                let tu = self.tu;
-                // find beginning of the week.
-                let dt = tu.timestamp_to_datetime(first);
-                let (week_start, tz) = match self.tz.as_ref() {
-                    #[cfg(feature = "timezones")]
-                    Some(tz) => (
-                        tz.from_utc_datetime(&dt).beginning_of_week().naive_utc(),
-                        Some(tz),
-                    ),
-                    _ => (dt.and_utc().beginning_of_week().naive_utc(), None),
-                };
-                let start = tu.datetime_to_timestamp(week_start);
-                // adjust start of the week based on given day of the week
-                let start = Duration::parse(&format!("{}d", self.start_by.weekday().unwrap()))
-                    .add(tu, start, tz)?;
-                // apply the 'offset'
-                let start = self.offset.add(tu, start, tz)?;
-                // make sure the first datapoint has a chance to be included
-                // and compute the end of the window defined by the 'period'
-                Ok(ensure_t_in_or_in_front_of_window(
-                    self.every,
-                    first,
-                    tu,
-                    self.period,
-                    start,
-                    self.closed,
-                    tz,
-                )?
-                .start)
-            },
-        }
+        Window::new(self.every, self.period, self.offset).first_window_start(
+            first,
+            self.closed,
+            self.tu,
+            self.tz.as_ref(),
+            self.start_by,
+        )
     }
 
     pub fn insert(
