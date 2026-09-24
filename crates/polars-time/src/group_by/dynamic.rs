@@ -4,7 +4,9 @@ use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_par;
 use polars_defs::time::duration::ensure_duration_matches_dtype;
-use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptions, Label, RollingGroupOptions};
+use polars_defs::time::group_by::{
+    ClosedWindow, DynamicGroupOptionsIR, Label, RollingGroupOptionsIR,
+};
 use polars_ops::series::SeriesMethods;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -12,6 +14,7 @@ use polars_utils::slice::SortedSlice;
 use rayon::prelude::*;
 
 use crate::prelude::*;
+use crate::windows::index_space::IndexSpace;
 
 #[repr(transparent)]
 struct Wrap<T>(pub T);
@@ -28,13 +31,13 @@ pub trait PolarsTemporalGroupby {
     fn rolling(
         &self,
         group_by: Option<GroupsSlice>,
-        options: &RollingGroupOptions,
+        options: &RollingGroupOptionsIR,
     ) -> PolarsResult<(Column, GroupPositions)>;
 
     fn group_by_dynamic(
         &self,
         group_by: Option<GroupsSlice>,
-        options: &DynamicGroupOptions,
+        options: &DynamicGroupOptionsIR,
     ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)>;
 }
 
@@ -42,7 +45,7 @@ impl PolarsTemporalGroupby for DataFrame {
     fn rolling(
         &self,
         group_by: Option<GroupsSlice>,
-        options: &RollingGroupOptions,
+        options: &RollingGroupOptionsIR,
     ) -> PolarsResult<(Column, GroupPositions)> {
         Wrap(self).rolling(group_by, options)
     }
@@ -50,7 +53,7 @@ impl PolarsTemporalGroupby for DataFrame {
     fn group_by_dynamic(
         &self,
         group_by: Option<GroupsSlice>,
-        options: &DynamicGroupOptions,
+        options: &DynamicGroupOptionsIR,
     ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
         Wrap(self).group_by_dynamic(group_by, options)
     }
@@ -60,7 +63,7 @@ impl Wrap<&DataFrame> {
     fn rolling(
         &self,
         group_by: Option<GroupsSlice>,
-        options: &RollingGroupOptions,
+        options: &RollingGroupOptionsIR,
     ) -> PolarsResult<(Column, GroupPositions)> {
         polars_ensure!(
                         !options.period.is_zero() && !options.period.negative,
@@ -79,62 +82,18 @@ impl Wrap<&DataFrame> {
         ensure_duration_matches_dtype(options.period, time_type, "period")?;
         ensure_duration_matches_dtype(options.offset, time_type, "offset")?;
 
-        use DataType::*;
-        let (dt, tu, tz): (Column, TimeUnit, Option<TimeZone>) = match time_type {
-            Datetime(tu, tz) => (time.clone(), *tu, tz.clone()),
-            Date => (
-                time.cast(&Datetime(TimeUnit::Microseconds, None))?,
-                TimeUnit::Microseconds,
-                None,
-            ),
-            UInt32 | UInt64 | Int32 => {
-                let time_type_dt = Datetime(TimeUnit::Nanoseconds, None);
-                let dt = time.cast(&Int64).unwrap().cast(&time_type_dt).unwrap();
-                let (out, gt) = self.impl_rolling(
-                    dt,
-                    group_by,
-                    options,
-                    TimeUnit::Nanoseconds,
-                    None,
-                    &time_type_dt,
-                )?;
-                let out = out.cast(&Int64).unwrap().cast(time_type).unwrap();
-                return Ok((out, gt));
-            },
-            Int64 => {
-                let time_type = Datetime(TimeUnit::Nanoseconds, None);
-                let dt = time.cast(&time_type).unwrap();
-                let (out, gt) = self.impl_rolling(
-                    dt,
-                    group_by,
-                    options,
-                    TimeUnit::Nanoseconds,
-                    None,
-                    &time_type,
-                )?;
-                let out = out.cast(&Int64).unwrap();
-                return Ok((out, gt));
-            },
-            dt => polars_bail!(
-                ComputeError:
-                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64, UInt32, UInt64 }}, got {}",
-                dt
-            ),
-        };
-        match tz {
-            #[cfg(feature = "timezones")]
-            Some(tz) => {
-                self.impl_rolling(dt, group_by, options, tu, tz.parse::<Tz>().ok(), time_type)
-            },
-            _ => self.impl_rolling(dt, group_by, options, tu, None, time_type),
-        }
+        let space = IndexSpace::rolling(time_type)?;
+        let dt = space.cast_to_space(&time)?;
+        let (out, gt) =
+            self.impl_rolling(dt, group_by, options, space.time_unit, space.tz().cloned())?;
+        Ok((space.cast_from_space(&out)?, gt))
     }
 
     /// Returns: time_keys, keys, groupsproxy.
     fn group_by_dynamic(
         &self,
         group_by: Option<GroupsSlice>,
-        options: &DynamicGroupOptions,
+        options: &DynamicGroupOptionsIR,
     ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
         let time = self.0.column(&options.index_column)?.rechunk();
         if group_by.is_none() {
@@ -150,69 +109,40 @@ impl Wrap<&DataFrame> {
         ensure_duration_matches_dtype(options.offset, time_type, "offset")?;
         ensure_duration_matches_dtype(options.period, time_type, "period")?;
 
-        use DataType::*;
-        let (dt, tu) = match time_type {
-            Datetime(tu, _) => (time.clone(), *tu),
-            Date => (
-                time.cast(&Datetime(TimeUnit::Microseconds, None))?,
-                TimeUnit::Microseconds,
-            ),
-            Int32 => {
-                let time_type = Datetime(TimeUnit::Nanoseconds, None);
-                let dt = time.cast(&Int64).unwrap().cast(&time_type).unwrap();
-                let (out, mut keys, gt) = self.impl_group_by_dynamic(
-                    dt,
-                    group_by,
-                    options,
-                    TimeUnit::Nanoseconds,
-                    &time_type,
-                )?;
-                let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
-                for k in &mut keys {
-                    if k.name().as_str() == UB_NAME || k.name().as_str() == LB_NAME {
-                        *k = k.cast(&Int64).unwrap().cast(&Int32).unwrap()
-                    }
-                }
-                return Ok((out, keys, gt));
-            },
-            Int64 => {
-                let time_type = Datetime(TimeUnit::Nanoseconds, None);
-                let dt = time.cast(&time_type).unwrap();
-                let (out, mut keys, gt) = self.impl_group_by_dynamic(
-                    dt,
-                    group_by,
-                    options,
-                    TimeUnit::Nanoseconds,
-                    &time_type,
-                )?;
-                let out = out.cast(&Int64).unwrap();
-                for k in &mut keys {
-                    if k.name().as_str() == UB_NAME || k.name().as_str() == LB_NAME {
-                        *k = k.cast(&Int64).unwrap()
-                    }
-                }
-                return Ok((out, keys, gt));
-            },
-            dt => polars_bail!(
-                ComputeError:
-                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64 }}, got {}",
-                dt
-            ),
-        };
-        self.impl_group_by_dynamic(dt, group_by, options, tu, time_type)
+        let space = IndexSpace::dynamic(time_type)?;
+        let dt = space.cast_to_space(&time)?;
+        let (out, mut keys, gt) =
+            self.impl_group_by_dynamic(dt, group_by, options, space.time_unit)?;
+        let out = space.cast_from_space(&out)?;
+        for k in &mut keys {
+            if k.name().as_str() == UB_NAME || k.name().as_str() == LB_NAME {
+                *k = space.cast_to_boundary(k)?;
+            }
+        }
+        Ok((out, keys, gt))
     }
 
     fn impl_group_by_dynamic(
         &self,
         mut dt: Column,
         group_by: Option<GroupsSlice>,
-        options: &DynamicGroupOptions,
+        options: &DynamicGroupOptionsIR,
         tu: TimeUnit,
-        time_type: &DataType,
     ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
         polars_ensure!(!options.every.negative, ComputeError: "'every' argument must be positive");
         if dt.is_empty() {
-            return dt.cast(time_type).map(|s| (s, vec![], Default::default()));
+            let mut bounds = vec![];
+            if options.include_boundaries {
+                bounds.push(Column::new_empty(
+                    PlSmallStr::from_static(LB_NAME),
+                    dt.dtype(),
+                ));
+                bounds.push(Column::new_empty(
+                    PlSmallStr::from_static(UB_NAME),
+                    dt.dtype(),
+                ));
+            }
+            return Ok((dt, bounds, Default::default()));
         }
 
         // A requirement for the index so we can set this such that downstream code has this info.
@@ -358,10 +288,8 @@ impl Wrap<&DataFrame> {
             bounds.push(upper.into_datetime(tu, tz.clone()).into_column());
         }
 
-        dt.into_datetime(tu, None)
-            .into_column()
-            .cast(time_type)
-            .map(|s| (s, bounds, groups.into_sliceable()))
+        let dt = dt.into_datetime(tu, tz.clone()).into_column();
+        Ok((dt, bounds, groups.into_sliceable()))
     }
 
     /// Returns: time_keys, keys, groupsproxy
@@ -369,10 +297,9 @@ impl Wrap<&DataFrame> {
         &self,
         dt: Column,
         group_by: Option<GroupsSlice>,
-        options: &RollingGroupOptions,
+        options: &RollingGroupOptionsIR,
         tu: TimeUnit,
         tz: Option<Tz>,
-        time_type: &DataType,
     ) -> PolarsResult<(Column, GroupPositions)> {
         let mut dt = dt.rechunk();
 
@@ -406,8 +333,7 @@ impl Wrap<&DataFrame> {
             });
 
             let groups = RAYON.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
-            let groups = RAYON.install(|| flatten_par(&groups));
-            PolarsResult::Ok(GroupsType::new_slice(groups, true, true))
+            PolarsResult::Ok(RAYON.install(|| flatten_par(&groups)))
         } else {
             // a requirement for the index
             // so we can set this such that downstream code has this info
@@ -415,18 +341,17 @@ impl Wrap<&DataFrame> {
             let dt = dt.datetime().unwrap();
             let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            let groups = group_by_values(
+            group_by_values(
                 options.period,
                 options.offset,
                 ts,
                 options.closed_window,
                 tu,
                 tz,
-            )?;
-            PolarsResult::Ok(GroupsType::new_slice(groups, true, true))
+            )
         }?;
 
-        let dt = dt.cast(time_type).unwrap();
+        let groups = GroupsType::new_slice(groups, true, true);
 
         Ok((dt, groups.into_sliceable()))
     }
@@ -437,7 +362,7 @@ mod test {
     use polars_compute::rolling::QuantileMethod;
     use polars_core::chunked_array::temporal::string::StringMethods;
     use polars_defs::time::duration::Duration;
-    use polars_defs::time::group_by::RollingGroupOptions;
+    use polars_defs::time::group_by::RollingGroupOptionsIR;
     use polars_ops::prelude::*;
 
     use super::*;
@@ -477,7 +402,7 @@ mod test {
             let (_, groups) = df
                 .rolling(
                     None,
-                    &RollingGroupOptions {
+                    &RollingGroupOptionsIR {
                         index_column: "dt".into(),
                         period: Duration::parse("2d"),
                         offset: Duration::parse("-2d"),
@@ -524,7 +449,7 @@ mod test {
         let (_, groups) = df
             .rolling(
                 None,
-                &RollingGroupOptions {
+                &RollingGroupOptionsIR {
                     index_column: "dt".into(),
                     period: Duration::parse("2d"),
                     offset: Duration::parse("-2d"),

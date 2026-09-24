@@ -13,6 +13,7 @@ use polars_defs::join::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
 use polars_expr::groups::{Grouper, new_hash_grouper};
 use polars_expr::hash_keys::HashKeys;
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
+use polars_plan::plans::options::RuntimeFilter;
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
@@ -21,26 +22,16 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::sparse_init_vec::SparseInitVec;
 use rayon::prelude::*;
 
+use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, emit_morsel_size, fold_sample, sample_sink, send_frames,
+    BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, emit_morsel_size, fold_sample,
+    sample_sink, select_key_columns, send_frames,
 };
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
 
 /// Bytes a hash table takes per key on top of the key itself.
 const KEY_SLOT_OVERHEAD: f64 = 16.0;
-
-async fn select_key_columns(
-    df: &DataFrame,
-    key_selectors: &[StreamExpr],
-    state: &ExecutionState,
-) -> PolarsResult<DataFrame> {
-    let mut key_columns = Vec::new();
-    for selector in key_selectors {
-        key_columns.push(selector.evaluate(df, state).await?.into_column());
-    }
-    unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns) }
-}
 
 fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
     HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
@@ -66,6 +57,9 @@ struct SemiAntiJoinParams {
     is_anti: bool,
     return_bool: bool,
     build_side: Option<JoinBuildSide>,
+    // Key filters for the scans below the planned probe side, set once from
+    // the build of the planned build side.
+    runtime_filters: RuntimeFilters,
     random_state: PlRandomState,
     sample_limit: usize,
 }
@@ -73,6 +67,19 @@ struct SemiAntiJoinParams {
 impl SemiAntiJoinParams {
     fn left_is_build(&self) -> bool {
         self.left_is_build.unwrap()
+    }
+
+    /// The side the plan asked to build from, if any.
+    fn planned_build_left(&self) -> Option<bool> {
+        build_side_left(self.build_side.as_ref())
+    }
+
+    /// Whether the build keys go to the runtime filters: the filters exist,
+    /// were not set from a sample, and describe the side being built.
+    fn publishes_runtime_filters(&self) -> bool {
+        !self.runtime_filters.is_empty()
+            && !self.runtime_filters.is_set()
+            && self.left_is_build == self.planned_build_left()
     }
 
     /// Whether the built rows that no probe row matches are the output.
@@ -100,11 +107,13 @@ pub struct SemiAntiJoinNode {
 }
 
 impl SemiAntiJoinNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         unique_key_schema: Arc<Schema>,
         output_schema: Arc<Schema>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
+        runtime_filters: Vec<RuntimeFilter>,
         args: JoinArgs,
         return_bool: bool,
         num_pipelines: usize,
@@ -132,30 +141,45 @@ impl SemiAntiJoinNode {
             }
         };
 
+        // A filter is only published for the side the plan named. The keys of
+        // both sides have the same dtypes.
+        debug_assert!(runtime_filters.is_empty() || args.build_side.is_some());
+        let params = SemiAntiJoinParams {
+            left_is_build,
+            left_key_selectors,
+            right_key_selectors,
+            output_schema,
+            random_state: PlRandomState::default(),
+            nulls_equal: args.nulls_equal,
+            return_bool,
+            is_anti,
+            build_side: args.build_side,
+            runtime_filters: RuntimeFilters::new(runtime_filters, &unique_key_schema),
+            sample_limit,
+        };
         let state = if left_is_build.is_some() {
             SemiAntiJoinState::Build(BuildState::new(
                 num_pipelines,
                 num_pipelines,
+                &params,
                 BufferedStream::default(),
             ))
         } else {
-            SemiAntiJoinState::Sample(SampleState::default())
+            // A forced side never samples, so this names a preferred one.
+            let only_side = if params.runtime_filters.is_empty() {
+                None
+            } else {
+                params.planned_build_left()
+            };
+            SemiAntiJoinState::Sample(SampleState {
+                only_side,
+                ..Default::default()
+            })
         };
 
         Ok(Self {
             state,
-            params: SemiAntiJoinParams {
-                left_is_build,
-                left_key_selectors,
-                right_key_selectors,
-                output_schema,
-                random_state: PlRandomState::default(),
-                nulls_equal: args.nulls_equal,
-                return_bool,
-                is_anti,
-                build_side: args.build_side,
-                sample_limit,
-            },
+            params,
             grouper: new_hash_grouper(unique_key_schema),
             spill_ctx: MostRecentSpillContext::new("semi-anti-join".into()),
         })
@@ -237,11 +261,20 @@ struct SampleState {
     left_len: usize,
     right: Vec<Morsel>,
     right_len: usize,
+    /// The only side being read: the preferred build side of a join with runtime
+    /// filters, until it ends or reaches the sample limit. A side that ends is
+    /// complete, so its keys are published before the other side is read.
+    only_side: Option<bool>,
 }
 
 impl SampleState {
     fn len(&self, left: bool) -> usize {
         if left { self.left_len } else { self.right_len }
+    }
+
+    /// Whether a side is being read.
+    fn is_open(&self, left: bool) -> bool {
+        self.only_side.is_none_or(|only| only == left)
     }
 
     fn try_transition_to_build(
@@ -251,6 +284,28 @@ impl SampleState {
         state: &StreamingExecutionState,
         spill_ctx: &MostRecentSpillContext,
     ) -> PolarsResult<Option<BuildState>> {
+        if let Some(left) = self.only_side {
+            let idx = if left { 0 } else { 1 };
+            let len = self.len(left);
+            if len >= params.sample_limit {
+                if config::verbose() {
+                    eprintln!("preferred build side reached the sample limit, sampling both sides");
+                }
+            } else if recv[idx] == PortState::Done {
+                if config::verbose() {
+                    eprintln!("preferred build side done with {len} rows, publishing its keys");
+                }
+                self.publish_runtime_filters(left, params, state)?;
+                // Nothing can match an empty side; the other side is never read.
+                if len == 0 {
+                    return Ok(Some(self.start_build(left, params, state, spill_ctx)?));
+                }
+            } else {
+                return Ok(None);
+            }
+            self.only_side = None;
+        }
+
         let left_saturated = self.left_len >= params.sample_limit;
         let right_saturated = self.right_len >= params.sample_limit;
         let left_done = recv[0] == PortState::Done || left_saturated;
@@ -321,6 +376,25 @@ impl SampleState {
         )?))
     }
 
+    /// Hand the keys of a completely sampled side to the runtime filters.
+    fn publish_runtime_filters(
+        &self,
+        left: bool,
+        params: &SemiAntiJoinParams,
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
+        let (morsels, key_selectors) = if left {
+            (&self.left, &params.left_key_selectors)
+        } else {
+            (&self.right, &params.right_key_selectors)
+        };
+        params.runtime_filters.publish_from_sample(
+            morsels,
+            key_selectors,
+            &state.in_memory_exec_state,
+        )
+    }
+
     /// Start building from `left_is_build`, feeding it the morsels sampled from
     /// that side; the other side's samples are probed first later.
     fn start_build(
@@ -349,6 +423,7 @@ impl SampleState {
         let mut build_state = BuildState::new(
             state.num_pipelines,
             state.num_pipelines,
+            params,
             sampled_probe_morsels,
         );
 
@@ -404,6 +479,8 @@ struct LocalBuilder {
     // let stop = key_idxs_offsets[(i + 1) * num_partitions + p];
     key_idxs_values_per_p: Vec<Vec<IdxSize>>,
     key_idxs_offsets_per_p: Vec<usize>,
+    // The key of each runtime filter seen by this builder.
+    key_filters: Vec<KeyFilterBuilder>,
 }
 
 struct BuildState {
@@ -415,6 +492,7 @@ impl BuildState {
     fn new(
         num_pipelines: usize,
         num_partitions: usize,
+        params: &SemiAntiJoinParams,
         sampled_probe_morsels: BufferedStream,
     ) -> Self {
         let local_builders = (0..num_pipelines)
@@ -424,6 +502,11 @@ impl BuildState {
                 sketch_per_p: vec![CardinalitySketch::default(); num_partitions],
                 key_idxs_values_per_p: vec![Vec::new(); num_partitions],
                 key_idxs_offsets_per_p: vec![0; num_partitions],
+                key_filters: if params.publishes_runtime_filters() {
+                    params.runtime_filters.new_builders()
+                } else {
+                    Vec::new()
+                },
             })
             .collect();
         Self {
@@ -446,16 +529,20 @@ impl BuildState {
             &params.right_key_selectors
         };
 
+        let publishes_runtime_filters = params.publishes_runtime_filters();
         while let Ok(morsel) = recv.recv().await {
             let df = morsel.df().await;
-            let hash_keys = select_keys(
-                &df,
-                key_selectors,
+            let keys = select_key_columns(&df, key_selectors, &state.in_memory_exec_state).await?;
+            if publishes_runtime_filters {
+                params
+                    .runtime_filters
+                    .extend(&keys, &mut local.key_filters)?;
+            }
+            let hash_keys = hash_keys(
+                &keys,
                 params,
                 params.null_is_valid_when_built(params.left_is_build()),
-                &state.in_memory_exec_state,
-            )
-            .await?;
+            );
 
             hash_keys.gen_idxs_per_partition(
                 &partitioner,
@@ -486,6 +573,20 @@ impl BuildState {
         self.local_builders
             .iter()
             .all(|b| b.keys.iter().all(|keys| keys.is_empty()))
+    }
+
+    /// Hand every build key to the runtime filters; filters of a side that was
+    /// not built get a predicate that skips nothing.
+    fn publish_runtime_filters(&mut self, params: &SemiAntiJoinParams) {
+        if !params.publishes_runtime_filters() {
+            params.runtime_filters.publish_nothing();
+            return;
+        }
+        let locals = self
+            .local_builders
+            .iter_mut()
+            .map(|l| std::mem::take(&mut l.key_filters));
+        params.runtime_filters.publish_merged(locals);
     }
 
     fn finalize(&mut self, params: &SemiAntiJoinParams, grouper: &dyn Grouper) -> ProbeState {
@@ -946,6 +1047,7 @@ impl ComputeNode for SemiAntiJoinNode {
         // or finish without reading the probe side when nothing can come out.
         if let SemiAntiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
+                build_state.publish_runtime_filters(&self.params);
                 if self.params.empty_build_gives_empty_output() && build_state.is_empty() {
                     self.state = SemiAntiJoinState::Done;
                 } else {
@@ -994,7 +1096,8 @@ impl ComputeNode for SemiAntiJoinNode {
                     if recv[idx] == PortState::Done {
                         continue;
                     }
-                    recv[idx] = if sample_state.len(left) < self.params.sample_limit {
+                    let open = sample_state.is_open(left);
+                    recv[idx] = if open && sample_state.len(left) < self.params.sample_limit {
                         PortState::Ready
                     } else {
                         PortState::Blocked
@@ -1071,10 +1174,11 @@ impl ComputeNode for SemiAntiJoinNode {
         match &mut self.state {
             SemiAntiJoinState::Sample(sample_state) => {
                 assert!(send_ports[0].is_none());
-                // A side without a port is done.
+                // A side without a port is done, unless it is not being read.
                 let final_len = |left: bool| {
                     let idx = if left { 0 } else { 1 };
-                    let len = if recv_ports[idx].is_none() {
+                    let known = recv_ports[idx].is_none() && sample_state.is_open(left);
+                    let len = if known {
                         sample_state.len(left)
                     } else {
                         usize::MAX

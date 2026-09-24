@@ -23,4 +23,25 @@ pub struct NodeMetricsDescription {
     pub io_total_bytes_sent: u64,
     pub total_time_ns: u64,
     pub done: bool,
+    pub custom: Vec<CustomMetricDescription>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum MetricUnit {
+    #[default]
+    #[serde(rename = "1")]
+    Unit,
+    #[serde(rename = "By")]
+    Bytes,
+    #[serde(rename = "ns")]
+    DurationNs,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CustomMetricDescription {
+    pub key: String,
+    pub unit: MetricUnit,
+    /// The value is only [`None`] when it was never set/updated.
+    pub value: Option<i64>,
 }

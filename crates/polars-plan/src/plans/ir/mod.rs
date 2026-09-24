@@ -118,7 +118,7 @@ pub enum IR {
         aggs: Vec<ExprIR>,
         schema: SchemaRef,
         maintain_order: bool,
-        options: Arc<GroupbyOptions>,
+        options: Arc<GroupbyOptionsIR>,
         apply: Option<PlanCallback<DataFrame, DataFrame>>,
     },
     Join {

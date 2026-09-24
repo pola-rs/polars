@@ -512,16 +512,29 @@ impl SQLExprVisitor<'_> {
                 SQLBinaryOperator::Eq
             };
             self.visit_binary_op(expr, &op, pattern)
+        } else if !case_insensitive
+            && pat.len() > 2
+            && pat.starts_with('%')
+            && pat.ends_with('%')
+            && !pat[1..pat.len() - 1].contains(['%', '_'])
+        {
+            // plain substring match (eg: '%foo%' with no other wildcard chars)
+            let needle = pat[1..pat.len() - 1].to_string();
+            let expr = self.visit_expr(expr)?;
+            let matches = expr.str().contains_literal(lit(needle));
+            Ok(if negated { matches.not() } else { matches })
         } else {
-            // create regex from pattern containing SQL wildcard chars ('%' => '.*', '_' => '.')
-            let mut rx = regex::escape(pat.as_str())
-                .replace('%', ".*")
-                .replace('_', ".");
-
-            rx = format!(
-                "^{}{}$",
+            // create regex from pattern containing SQL wildcard chars ('%' => '.*', '_' => '.');
+            // a leading/trailing '%' means that side is not anchored
+            let start_anchor = if pat.starts_with('%') { "" } else { "^" };
+            let end_anchor = if pat.ends_with('%') { "" } else { "$" };
+            let trimmed = pat.trim_matches('%');
+            let rx = format!(
+                "{}{}{}{}",
                 if case_insensitive { "(?is)" } else { "(?s)" },
-                rx
+                start_anchor,
+                regex::escape(trimmed).replace('%', ".*").replace('_', "."),
+                end_anchor,
             );
 
             let expr = self.visit_expr(expr)?;

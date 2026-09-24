@@ -43,11 +43,7 @@ impl PolarsTruncate for DatetimeChunked {
                 {
                     // ... yes we can! Weeks, months, and time zones require extra logic.
                     // But in this simple case, it's just simple integer arithmetic.
-                    let every = match self.time_unit() {
-                        TimeUnit::Milliseconds => every_parsed.duration_ms(),
-                        TimeUnit::Microseconds => every_parsed.duration_us(),
-                        TimeUnit::Nanoseconds => every_parsed.duration_ns(),
-                    };
+                    let every = every_parsed.duration(self.time_unit());
                     if every == 0 {
                         return Ok(self.clone());
                     }
@@ -57,17 +53,9 @@ impl PolarsTruncate for DatetimeChunked {
                         .into_datetime(self.time_unit(), time_zone.clone()));
                 } else {
                     let w = Window::new(every_parsed, every_parsed, offset);
-                    let out = match self.time_unit() {
-                        TimeUnit::Milliseconds => self
-                            .physical()
-                            .try_apply_nonnull_values_generic(|t| w.truncate_ms(t, tz)),
-                        TimeUnit::Microseconds => self
-                            .physical()
-                            .try_apply_nonnull_values_generic(|t| w.truncate_us(t, tz)),
-                        TimeUnit::Nanoseconds => self
-                            .physical()
-                            .try_apply_nonnull_values_generic(|t| w.truncate_ns(t, tz)),
-                    };
+                    let out = self
+                        .physical()
+                        .try_apply_nonnull_values_generic(|t| w.truncate(self.time_unit(), t, tz));
                     return Ok(out?.into_datetime(self.time_unit(), self.time_zone().clone()));
                 }
             } else {
@@ -78,12 +66,6 @@ impl PolarsTruncate for DatetimeChunked {
 
         // A sqrt(n) cache is not too small, not too large.
         let mut duration_cache = LruCache::with_capacity((every.len() as f64).sqrt() as usize);
-
-        let func = match self.time_unit() {
-            TimeUnit::Nanoseconds => Window::truncate_ns,
-            TimeUnit::Microseconds => Window::truncate_us,
-            TimeUnit::Milliseconds => Window::truncate_ms,
-        };
 
         let out = broadcast_try_binary_elementwise(
             self.physical(),
@@ -98,7 +80,7 @@ impl PolarsTruncate for DatetimeChunked {
                     }
 
                     let w = Window::new(every, every, offset);
-                    func(&w, timestamp, tz).map(Some)
+                    w.truncate(self.time_unit(), timestamp, tz).map(Some)
                 },
                 _ => Ok(None),
             },
@@ -126,8 +108,11 @@ impl PolarsTruncate for DateChunked {
                     }
                     let w = Window::new(every, every, offset);
                     self.physical().try_apply_nonnull_values_generic(|t| {
-                        Ok((w.truncate_ms(MILLISECONDS_IN_DAY * t as i64, None)?
-                            / MILLISECONDS_IN_DAY) as i32)
+                        Ok((w.truncate(
+                            TimeUnit::Milliseconds,
+                            MILLISECONDS_IN_DAY * t as i64,
+                            None,
+                        )? / MILLISECONDS_IN_DAY) as i32)
                     })
                 } else {
                     Ok(Int32Chunked::full_null(self.name().clone(), self.len()))
@@ -148,8 +133,11 @@ impl PolarsTruncate for DateChunked {
 
                         let w = Window::new(every, every, offset);
                         Ok(Some(
-                            (w.truncate_ms(MILLISECONDS_IN_DAY * t as i64, None)?
-                                / MILLISECONDS_IN_DAY) as i32,
+                            (w.truncate(
+                                TimeUnit::Milliseconds,
+                                MILLISECONDS_IN_DAY * t as i64,
+                                None,
+                            )? / MILLISECONDS_IN_DAY) as i32,
                         ))
                     },
                     _ => Ok(None),

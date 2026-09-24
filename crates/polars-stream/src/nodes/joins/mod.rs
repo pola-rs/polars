@@ -4,7 +4,9 @@ use crossbeam_queue::ArrayQueue;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
+use polars_core::prelude::IntoColumn;
 use polars_core::runtime::RAYON;
+use polars_defs::join::JoinBuildSide;
 use polars_error::PolarsResult;
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_utils::itertools::Itertools;
@@ -12,7 +14,9 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
 
+use crate::expression::StreamExpr;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
+use crate::nodes::ExecutionState;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, port_channel};
 
 #[cfg(feature = "asof_join")]
@@ -23,7 +27,7 @@ pub mod in_memory;
 pub mod merge_join;
 #[cfg(feature = "iejoin")]
 pub mod range_join;
-pub mod runtime_filter;
+mod runtime_filter;
 #[cfg(feature = "semi_anti_join")]
 pub mod semi_anti_join;
 mod utils;
@@ -31,6 +35,27 @@ mod utils;
 // If one side is this much bigger than the other side we'll always use the
 // smaller side as the build side without checking cardinalities.
 const LOPSIDED_SAMPLE_FACTOR: usize = 10;
+
+/// The side a plan's build side names, if any.
+fn build_side_left(side: Option<&JoinBuildSide>) -> Option<bool> {
+    match side {
+        Some(JoinBuildSide::ForceLeft | JoinBuildSide::PreferLeft) => Some(true),
+        Some(JoinBuildSide::ForceRight | JoinBuildSide::PreferRight) => Some(false),
+        None => None,
+    }
+}
+
+async fn select_key_columns(
+    df: &DataFrame,
+    key_selectors: &[StreamExpr],
+    state: &ExecutionState,
+) -> PolarsResult<DataFrame> {
+    let mut key_columns = Vec::new();
+    for selector in key_selectors {
+        key_columns.push(selector.evaluate(df, state).await?.into_column());
+    }
+    unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns) }
+}
 
 /// Buffers the morsels of one side of a join until it ends, the sample limit
 /// is reached, or the other side ended and this side has many times its rows.

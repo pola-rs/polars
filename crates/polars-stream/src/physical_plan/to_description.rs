@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use polars_core::prelude::SortMultipleOptions;
 use polars_defs::join::JoinType;
 #[cfg(feature = "dynamic_group_by")]
-use polars_defs::time::group_by::DynamicGroupOptions;
+use polars_defs::time::group_by::DynamicGroupOptionsIR;
 #[cfg(feature = "iejoin")]
 use polars_descriptions::InequalityOperatorDescription;
 #[cfg(feature = "python")]
@@ -592,6 +592,17 @@ pub fn phys_props(
             },
             vec![input_left.node, input_right.node],
         ),
+        // Note: `PhysNodeKind::AsOfJoin` is not feature-gated, but it can only be constructed
+        // from a `JoinType::AsOf`, which is.
+        #[cfg(not(feature = "asof_join"))]
+        PhysNodeKind::AsOfJoin {
+            input_left,
+            input_right,
+            ..
+        } => (
+            PhysicalPropsDescription::Other,
+            vec![input_left.node, input_right.node],
+        ),
         #[cfg(feature = "asof_join")]
         PhysNodeKind::AsOfJoin {
             input_left,
@@ -602,7 +613,6 @@ pub fn phys_props(
             ..
         } => {
             let props = match &args.how {
-                #[cfg(feature = "asof_join")]
                 JoinType::AsOf(asof_options) => {
                     use polars_defs::join::AsOfOptions;
 
@@ -776,7 +786,7 @@ pub fn phys_props(
             slice,
             ..
         } => {
-            let DynamicGroupOptions {
+            let DynamicGroupOptionsIR {
                 index_column,
                 every,
                 period,
@@ -926,8 +936,10 @@ pub fn phys_props(
         PhysNodeKind::EwmStd { input, options, .. } => {
             (ewm_props(options, "EwmStd"), vec![input.node])
         },
-        #[allow(unreachable_patterns)]
-        _ => (PhysicalPropsDescription::Other, vec![]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmSum { input, options, .. } => {
+            (ewm_props(options, "EwmSum"), vec![input.node])
+        },
     }
 }
 

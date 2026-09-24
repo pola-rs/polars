@@ -1,3 +1,4 @@
+use polars_core::datatypes::{DataType, TimeUnit};
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -95,6 +96,19 @@ impl Default for DynamicGroupOptions {
     }
 }
 
+/// The dtype of the `_lower_boundary` and `_upper_boundary` columns of a dynamic group-by on
+/// an index of `index_dtype`.
+///
+/// A `Date` index gets `Datetime` boundaries, because `every`, `period` and `offset` may be
+/// sub-day and a `Date` cannot hold the resulting window bounds.
+pub fn dynamic_boundary_dtype(index_dtype: &DataType) -> DataType {
+    if index_dtype.is_date() {
+        DataType::Datetime(TimeUnit::Microseconds, None)
+    } else {
+        index_dtype.clone()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -115,5 +129,83 @@ impl Default for RollingGroupOptions {
             offset: Duration::new(1),
             closed_window: ClosedWindow::Left,
         }
+    }
+}
+
+/// [`DynamicGroupOptions`] as the IR carries them.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct DynamicGroupOptionsIR {
+    pub index_column: PlSmallStr,
+    pub every: Duration,
+    pub period: Duration,
+    pub offset: Duration,
+    pub label: Label,
+    pub include_boundaries: bool,
+    pub closed_window: ClosedWindow,
+    pub start_by: StartBy,
+}
+
+impl From<DynamicGroupOptions> for DynamicGroupOptionsIR {
+    fn from(options: DynamicGroupOptions) -> Self {
+        let DynamicGroupOptions {
+            index_column,
+            every,
+            period,
+            offset,
+            label,
+            include_boundaries,
+            closed_window,
+            start_by,
+        } = options;
+        Self {
+            index_column,
+            every,
+            period,
+            offset,
+            label,
+            include_boundaries,
+            closed_window,
+            start_by,
+        }
+    }
+}
+
+impl Default for DynamicGroupOptionsIR {
+    fn default() -> Self {
+        DynamicGroupOptions::default().into()
+    }
+}
+
+/// [`RollingGroupOptions`] as the IR carries them.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct RollingGroupOptionsIR {
+    pub index_column: PlSmallStr,
+    pub period: Duration,
+    pub offset: Duration,
+    pub closed_window: ClosedWindow,
+}
+
+impl From<RollingGroupOptions> for RollingGroupOptionsIR {
+    fn from(options: RollingGroupOptions) -> Self {
+        let RollingGroupOptions {
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } = options;
+        Self {
+            index_column,
+            period,
+            offset,
+            closed_window,
+        }
+    }
+}
+
+impl Default for RollingGroupOptionsIR {
+    fn default() -> Self {
+        RollingGroupOptions::default().into()
     }
 }

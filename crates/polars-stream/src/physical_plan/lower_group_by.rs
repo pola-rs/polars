@@ -14,7 +14,7 @@ use polars_plan::plans::optimizer::cse::split_select::split_pre_post_select_mins
 use polars_plan::plans::{
     AExpr, CanonicalExprId, CanonicalExprMap, IR, IRAggExpr, IRFunctionExpr, write_group_by,
 };
-use polars_plan::prelude::{GroupbyOptions, *};
+use polars_plan::prelude::*;
 use polars_plan::utils::rename_columns;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -60,7 +60,7 @@ fn build_group_by_fallback(
     aggs: &[ExprIR],
     output_schema: Arc<Schema>,
     maintain_order: bool,
-    options: Arc<GroupbyOptions>,
+    options: Arc<GroupbyOptionsIR>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
@@ -452,7 +452,7 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
-            if options.is_elementwise() && !is_fake_elementwise_function(node) =>
+            if options.is_elementwise() && !is_fake_elementwise_function(node, expr_arena) =>
         {
             let node = node.clone();
             let input = input.clone();
@@ -628,7 +628,7 @@ fn try_lower_agg_input_expr(
             gb_keys.push(ExprIR::new(node, OutputName::Alias(output_name.clone())));
 
             let aggs = &[];
-            let options = Arc::new(GroupbyOptions::default());
+            let options = Arc::new(GroupbyOptionsIR::default());
             let Some(stream) = try_build_streaming_group_by(
                 stream,
                 &gb_keys,
@@ -751,7 +751,7 @@ pub fn try_build_streaming_group_by(
     keys: &[ExprIR],
     aggs: &[ExprIR],
     maintain_order: bool,
-    options: Arc<GroupbyOptions>,
+    options: Arc<GroupbyOptionsIR>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     gbl_kind: GroupByLowerKind,
     expr_arena: &mut Arena<AExpr>,
@@ -1104,7 +1104,7 @@ pub fn try_build_sorted_group_by(
     aggs: &[ExprIR],
     output_schema: Arc<Schema>,
     maintain_order: bool,
-    options: Arc<GroupbyOptions>,
+    options: Arc<GroupbyOptionsIR>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
@@ -1283,7 +1283,7 @@ pub fn build_group_by_stream(
     aggs: &[ExprIR],
     output_schema: Arc<Schema>,
     maintain_order: bool,
-    options: Arc<GroupbyOptions>,
+    options: Arc<GroupbyOptionsIR>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,

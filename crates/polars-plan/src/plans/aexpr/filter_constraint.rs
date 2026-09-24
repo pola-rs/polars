@@ -464,7 +464,10 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
     let mut unsat = false;
 
     for conjunct in MintermIter::new(predicate, expr_arena) {
-        if !compares_in_literal_order(conjunct, schema, expr_arena) {
+        // An `OR` is left opaque.
+        if expr_arena.get(conjunct).is_or()
+            || !compares_in_literal_order(conjunct, schema, expr_arena)
+        {
             opaque.push(conjunct);
             continue;
         }
@@ -526,6 +529,94 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
         dropped_equality,
         unsat,
     }
+}
+
+/// The value constraints of one column in an `AND` chain, merged over its
+/// conjuncts.
+pub(crate) struct ColumnBounds {
+    pub name: PlSmallStr,
+    /// `bool` = inclusive.
+    pub lower: Option<(Scalar, bool)>,
+    pub upper: Option<(Scalar, bool)>,
+    /// `!= value` conjuncts left after merging with the bounds.
+    pub excluded: Vec<Scalar>,
+    /// Values every `is_in` on the column allows.
+    pub allowed: Option<Vec<Scalar>>,
+}
+
+/// `predicate`'s `AND` chain split into per-column constraints and the conjuncts
+/// they do not describe.
+pub(crate) struct AndChainBounds {
+    /// The conjuncts cannot all hold.
+    pub unsat: bool,
+    pub columns: Vec<ColumnBounds>,
+    pub other: Vec<Node>,
+}
+
+pub(crate) fn and_chain_bounds(
+    predicate: Node,
+    schema: &Schema,
+    expr_arena: &Arena<AExpr>,
+) -> AndChainBounds {
+    let model = model_and_chain(predicate, schema, expr_arena);
+    let other = model
+        .opaque
+        .iter()
+        .copied()
+        .filter(|&node| !is_in_allowed_set(node, &model.constraints, expr_arena))
+        .collect();
+    let columns = model
+        .constraints
+        .into_iter()
+        .filter(|(_, cc)| {
+            cc.lower.is_some()
+                || cc.upper.is_some()
+                || !cc.excluded.is_empty()
+                || cc.allowed.is_some()
+        })
+        .map(|(name, cc)| ColumnBounds {
+            name,
+            lower: cc.lower,
+            upper: cc.upper,
+            excluded: cc.excluded.into_iter().collect(),
+            allowed: cc.allowed.map(|allowed| allowed.into_iter().collect()),
+        })
+        .collect();
+    AndChainBounds {
+        unsat: model.unsat,
+        columns,
+        other,
+    }
+}
+
+// Whether `node` is an `is_in` whose haystack went into its column's allowed set.
+#[cfg(feature = "is_in")]
+fn is_in_allowed_set(
+    node: Node,
+    constraints: &PlIndexMap<PlSmallStr, ColumnConstraints>,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    let AExpr::Function {
+        input,
+        function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
+        ..
+    } = expr_arena.get(node)
+    else {
+        return false;
+    };
+    as_column(expr_arena.get(input[0].node()))
+        .and_then(|name| constraints.get(&name))
+        .is_some_and(|cc| cc.allowed.is_some())
+        && value_set_series(expr_arena.get(input[1].node())).is_some()
+}
+
+#[cfg(not(feature = "is_in"))]
+fn is_in_allowed_set(
+    _node: Node,
+    _constraints: &PlIndexMap<PlSmallStr, ColumnConstraints>,
+    _expr_arena: &Arena<AExpr>,
+) -> bool {
+    false
 }
 
 /// Rewrites `predicate`'s `AND` chain to a tighter equivalent, or `None` if
@@ -1006,13 +1097,25 @@ fn list_inner(av: &AnyValue) -> Option<Series> {
     }
 }
 
-// Extracts an `is_in` haystack as scalars. The haystack is one list of values,
-// wrapped either as a `Scalar` holding a `List` / `Array` (DSL `is_in([..])`) or a
-// length-1 `Series` of that one list (SQL `IN (..)`); both unwrap to the inner
-// series whose elements are the values. Bails on other shapes, an oversized
-// haystack, or a null member.
+// An `is_in` haystack as scalars.
 #[cfg(feature = "is_in")]
 fn as_value_set(ae: &AExpr) -> Option<Vec<Scalar>> {
+    let values = value_set_series(ae)?;
+    let dtype = values.dtype();
+    Some(
+        values
+            .iter()
+            .map(|av| Scalar::new(dtype.clone(), av.into_static()))
+            .collect(),
+    )
+}
+
+// An `is_in` haystack. The haystack is one list of values, wrapped either as a
+// `Scalar` holding a `List` / `Array` (DSL `is_in([..])`) or a length-1 `Series` of
+// that one list (SQL `IN (..)`); both unwrap to the inner series whose elements are
+// the values. Bails on other shapes, an oversized haystack, or a null member.
+#[cfg(feature = "is_in")]
+fn value_set_series(ae: &AExpr) -> Option<Series> {
     let AExpr::Literal(lit) = ae else {
         return None;
     };
@@ -1021,20 +1124,7 @@ fn as_value_set(ae: &AExpr) -> Option<Vec<Scalar>> {
         LiteralValue::Series(s) if s.len() == 1 => list_inner(&s.get(0).ok()?)?,
         _ => return None,
     };
-
-    if values.len() > MAX_IS_IN_VALUES {
-        return None;
-    }
-
-    let dtype = values.dtype();
-    let mut scalars = Vec::with_capacity(values.len());
-    for av in values.iter() {
-        if av.is_null() {
-            return None;
-        }
-        scalars.push(Scalar::new(dtype.clone(), av.into_static()));
-    }
-    Some(scalars)
+    (values.len() <= MAX_IS_IN_VALUES && !values.has_nulls()).then_some(values)
 }
 
 // Collects the tightest comparisons for one column as borrowed `(name, op, value)`.

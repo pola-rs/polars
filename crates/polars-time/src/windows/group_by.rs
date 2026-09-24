@@ -1,13 +1,6 @@
 use std::collections::VecDeque;
 
-use chrono::NaiveDateTime;
-#[cfg(feature = "timezones")]
-use chrono::TimeZone as _;
-use now::DateTimeNow;
 use polars_arrow::legacy::time_zone::Tz;
-use polars_arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
 use polars_arrow::trusted_len::TrustedLen;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
@@ -129,13 +122,7 @@ pub fn group_by_windows(
         Bounds::new_checked(start, stop)
     };
 
-    let size = {
-        match tu {
-            TimeUnit::Nanoseconds => window.estimate_overlapping_bounds_ns(boundary),
-            TimeUnit::Microseconds => window.estimate_overlapping_bounds_us(boundary),
-            TimeUnit::Milliseconds => window.estimate_overlapping_bounds_ms(boundary),
-        }
-    };
+    let size = window.estimate_overlapping_bounds(tu, boundary);
     let size_lower = if include_lower_bound { size } else { 0 };
     let size_upper = if include_upper_bound { size } else { 0 };
     let mut lower_bound = Vec::with_capacity(size_lower);
@@ -200,16 +187,11 @@ pub(crate) fn group_by_values_iter_lookbehind(
 ) -> PolarsResult<impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_> {
     debug_assert!(offset.duration_ns() == period.duration_ns());
     debug_assert!(offset.negative);
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
 
     let upper_bound = upper_bound.unwrap_or(time.len());
     // Use binary search to find the initial start as that is behind.
     let mut start = if let Some(&t) = time.get(start_offset) {
-        let lower = add(&offset, t, tz.as_ref())?;
+        let lower = offset.add(tu, t, tz.as_ref())?;
         // We have `period == -offset`, so `t + offset + period` is equal to `t`,
         // and `upper` is trivially equal to `t` itself. Using the trivial calculation,
         // instead of `upper = lower + period`, avoids issues around
@@ -236,7 +218,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
             last = *t;
             i += start_offset;
 
-            let lower = add(&offset, *t, tz.as_ref())?;
+            let lower = offset.add(tu, *t, tz.as_ref())?;
             let upper = *t;
 
             let b = Bounds::new(lower, upper);
@@ -281,12 +263,6 @@ pub(crate) fn group_by_values_iter_window_behind_t(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_ {
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
-
     let mut start = 0;
     let mut end = start;
     let mut last = time[0];
@@ -300,8 +276,8 @@ pub(crate) fn group_by_values_iter_window_behind_t(
         }
         last = *lower;
         started = true;
-        let lower = add(&offset, *lower, tz.as_ref())?;
-        let upper = add(&period, lower, tz.as_ref())?;
+        let lower = offset.add(tu, *lower, tz.as_ref())?;
+        let upper = period.add(tu, lower, tz.as_ref())?;
 
         let b = Bounds::new(lower, upper);
         if b.is_future(time[0], closed_window) {
@@ -341,12 +317,6 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_ {
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
-
     let mut start = 0;
     let mut end = start;
     let mut last = time[0];
@@ -359,8 +329,8 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
         }
         last = *lower;
 
-        let lower = add(&offset, *lower, tz.as_ref())?;
-        let upper = add(&period, lower, tz.as_ref())?;
+        let lower = offset.add(tu, *lower, tz.as_ref())?;
+        let upper = period.add(tu, lower, tz.as_ref())?;
 
         let b = Bounds::new(lower, upper);
 
@@ -402,11 +372,6 @@ pub(crate) fn group_by_values_iter_lookahead(
 ) -> impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_ {
     let upper_bound = upper_bound.unwrap_or(time.len());
 
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
     let mut start = start_offset;
     let mut end = start;
 
@@ -422,8 +387,8 @@ pub(crate) fn group_by_values_iter_lookahead(
         started = true;
         last = *lower;
 
-        let lower = add(&offset, *lower, tz.as_ref())?;
-        let upper = add(&period, lower, tz.as_ref())?;
+        let lower = offset.add(tu, *lower, tz.as_ref())?;
+        let upper = period.add(tu, lower, tz.as_ref())?;
 
         let b = Bounds::new(lower, upper);
 
@@ -750,7 +715,7 @@ pub struct RollingWindower {
     offset: Duration,
     closed: ClosedWindow,
 
-    add: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
+    tu: TimeUnit,
     tz: Option<Tz>,
 
     start: IdxSize,
@@ -809,11 +774,7 @@ impl RollingWindower {
             offset,
             closed,
 
-            add: match tu {
-                TimeUnit::Nanoseconds => Duration::add_ns,
-                TimeUnit::Microseconds => Duration::add_us,
-                TimeUnit::Milliseconds => Duration::add_ms,
-            },
+            tu,
             tz,
 
             start: 0,
@@ -840,13 +801,13 @@ impl RollingWindower {
         let mut i = self.length;
         while i_y < time.len() {
             let t = time[i_y][i_x];
-            let window_start = (self.add)(&self.offset, t, self.tz.as_ref())?;
+            let window_start = self.offset.add(self.tu, t, self.tz.as_ref())?;
             // For datetime arithmetic, it does *NOT* hold 0 + a - a == 0. Therefore, we make sure
             // that if `offset` and `period` are inverses we keep the `t`.
             let window_end = if self.offset == -self.period {
                 t
             } else {
-                (self.add)(&self.period, window_start, self.tz.as_ref())?
+                self.period.add(self.tu, window_start, self.tz.as_ref())?
             };
 
             self.active.push_back(ActiveWindow {
@@ -939,9 +900,6 @@ pub struct GroupByDynamicWindower {
 
     start_by: StartBy,
 
-    add: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
-    // Not-to-exceed duration (upper limit).
-    nte: fn(&Duration) -> i64,
     tu: TimeUnit,
     tz: Option<Tz>,
 
@@ -979,16 +937,6 @@ impl GroupByDynamicWindower {
 
             start_by,
 
-            add: match tu {
-                TimeUnit::Nanoseconds => Duration::add_ns,
-                TimeUnit::Microseconds => Duration::add_us,
-                TimeUnit::Milliseconds => Duration::add_ms,
-            },
-            nte: match tu {
-                TimeUnit::Nanoseconds => Duration::nte_duration_ns,
-                TimeUnit::Microseconds => Duration::nte_duration_us,
-                TimeUnit::Milliseconds => Duration::nte_duration_ms,
-            },
             tu,
             tz,
 
@@ -1008,34 +956,20 @@ impl GroupByDynamicWindower {
         mut lower_bound: i64,
         target: i64,
     ) -> PolarsResult<Result<(i64, i64), i64>> {
-        let mut upper_bound = (self.add)(&self.period, lower_bound, self.tz.as_ref())?;
+        let mut upper_bound = self.period.add(self.tu, lower_bound, self.tz.as_ref())?;
         while !is_below_upper_bound(target, upper_bound, self.closed) {
             let gap = target - lower_bound;
-            let nth = match self.tu {
-                TimeUnit::Nanoseconds
-                    if gap > self.every.nte_duration_ns() + self.period.nte_duration_ns() =>
-                {
-                    ((gap - self.period.nte_duration_ns()) as usize)
-                        / (self.every.nte_duration_ns() as usize)
-                },
-                TimeUnit::Microseconds
-                    if gap > self.every.nte_duration_us() + self.period.nte_duration_us() =>
-                {
-                    ((gap - self.period.nte_duration_us()) as usize)
-                        / (self.every.nte_duration_us() as usize)
-                },
-                TimeUnit::Milliseconds
-                    if gap > self.every.nte_duration_ms() + self.period.nte_duration_ms() =>
-                {
-                    ((gap - self.period.nte_duration_ms()) as usize)
-                        / (self.every.nte_duration_ms() as usize)
-                },
-                _ => 1,
+            let every = self.every.nte_duration(self.tu);
+            let period = self.period.nte_duration(self.tu);
+            let nth = if gap > every + period {
+                ((gap - period) as usize) / (every as usize)
+            } else {
+                1
             };
 
             let nth: i64 = nth.try_into().unwrap();
-            lower_bound = (self.add)(&(self.every * nth), lower_bound, self.tz.as_ref())?;
-            upper_bound = (self.add)(&self.period, lower_bound, self.tz.as_ref())?;
+            lower_bound = (self.every * nth).add(self.tu, lower_bound, self.tz.as_ref())?;
+            upper_bound = self.period.add(self.tu, lower_bound, self.tz.as_ref())?;
         }
 
         if is_above_lower_bound(target, lower_bound, self.closed) {
@@ -1046,103 +980,13 @@ impl GroupByDynamicWindower {
     }
 
     fn start_lower_bound(&self, first: i64) -> PolarsResult<i64> {
-        match self.start_by {
-            StartBy::DataPoint => Ok(first),
-            StartBy::WindowBound => {
-                let get_earliest_bounds = match self.tu {
-                    TimeUnit::Nanoseconds => Window::get_earliest_bounds_ns,
-                    TimeUnit::Microseconds => Window::get_earliest_bounds_us,
-                    TimeUnit::Milliseconds => Window::get_earliest_bounds_ms,
-                };
-                Ok((get_earliest_bounds)(
-                    &Window::new(self.every, self.period, self.offset),
-                    first,
-                    self.closed,
-                    self.tz.as_ref(),
-                )?
-                .start)
-            },
-            _ => {
-                {
-                    #[allow(clippy::type_complexity)]
-                    let (from, to): (
-                        fn(i64) -> NaiveDateTime,
-                        fn(NaiveDateTime) -> i64,
-                    ) = match self.tu {
-                        TimeUnit::Nanoseconds => {
-                            (timestamp_ns_to_datetime, datetime_to_timestamp_ns)
-                        },
-                        TimeUnit::Microseconds => {
-                            (timestamp_us_to_datetime, datetime_to_timestamp_us)
-                        },
-                        TimeUnit::Milliseconds => {
-                            (timestamp_ms_to_datetime, datetime_to_timestamp_ms)
-                        },
-                    };
-                    // find beginning of the week.
-                    let dt = from(first);
-                    match self.tz.as_ref() {
-                        #[cfg(feature = "timezones")]
-                        Some(tz) => {
-                            let dt = tz.from_utc_datetime(&dt);
-                            let dt = dt.beginning_of_week();
-                            let dt = dt.naive_utc();
-                            let start = to(dt);
-                            // adjust start of the week based on given day of the week
-                            let start = (self.add)(
-                                &Duration::parse(&format!("{}d", self.start_by.weekday().unwrap())),
-                                start,
-                                self.tz.as_ref(),
-                            )?;
-                            // apply the 'offset'
-                            let start = (self.add)(&self.offset, start, self.tz.as_ref())?;
-                            // make sure the first datapoint has a chance to be included
-                            // and compute the end of the window defined by the 'period'
-                            Ok(ensure_t_in_or_in_front_of_window(
-                                self.every,
-                                first,
-                                self.add,
-                                self.nte,
-                                self.period,
-                                start,
-                                self.closed,
-                                self.tz.as_ref(),
-                            )?
-                            .start)
-                        },
-                        _ => {
-                            let tz = chrono::Utc;
-                            let dt = dt.and_local_timezone(tz).unwrap();
-                            let dt = dt.beginning_of_week();
-                            let dt = dt.naive_utc();
-                            let start = to(dt);
-                            // adjust start of the week based on given day of the week
-                            let start = (self.add)(
-                                &Duration::parse(&format!("{}d", self.start_by.weekday().unwrap())),
-                                start,
-                                None,
-                            )
-                            .unwrap();
-                            // apply the 'offset'
-                            let start = (self.add)(&self.offset, start, None).unwrap();
-                            // make sure the first datapoint has a chance to be included
-                            // and compute the end of the window defined by the 'period'
-                            Ok(ensure_t_in_or_in_front_of_window(
-                                self.every,
-                                first,
-                                self.add,
-                                self.nte,
-                                self.period,
-                                start,
-                                self.closed,
-                                None,
-                            )?
-                            .start)
-                        },
-                    }
-                }
-            },
-        }
+        Window::new(self.every, self.period, self.offset).first_window_start(
+            first,
+            self.closed,
+            self.tu,
+            self.tz.as_ref(),
+            self.start_by,
+        )
     }
 
     pub fn insert(
@@ -1206,7 +1050,7 @@ impl GroupByDynamicWindower {
                 match self.find_first_window_around(self.next_lower_bound, t)? {
                     Ok((lower_bound, upper_bound)) => {
                         self.next_lower_bound =
-                            (self.add)(&self.every, lower_bound, self.tz.as_ref())?;
+                            self.every.add(self.tu, lower_bound, self.tz.as_ref())?;
                         self.non_monotonic_upper_bounds |=
                             self.prev_upper_bound.is_some_and(|prev| upper_bound < prev);
                         self.prev_upper_bound = Some(upper_bound);

@@ -1,5 +1,8 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::dynamic_boundary_dtype;
+
 use super::*;
 
 pub struct IRBuilder<'a> {
@@ -276,7 +279,7 @@ impl<'a> IRBuilder<'a> {
         mut aggs: Vec<ExprIR>,
         apply: Option<PlanCallback<DataFrame, DataFrame>>,
         maintain_order: bool,
-        options: Arc<GroupbyOptions>,
+        options: Arc<GroupbyOptionsIR>,
     ) -> PolarsResult<Self> {
         let current_schema = self.schema();
         let mut schema = expr_irs_to_schema(&keys, &current_schema, self.expr_arena)?;
@@ -291,8 +294,9 @@ impl<'a> IRBuilder<'a> {
                 let name = &options.index_column;
                 let dtype = current_schema.get(name).unwrap();
                 if options.include_boundaries {
-                    schema.with_column("_lower_boundary".into(), dtype.clone());
-                    schema.with_column("_upper_boundary".into(), dtype.clone());
+                    let bound_dtype = dynamic_boundary_dtype(dtype);
+                    schema.with_column("_lower_boundary".into(), bound_dtype.clone());
+                    schema.with_column("_upper_boundary".into(), bound_dtype);
                 }
                 schema.with_column(name.clone(), dtype.clone());
             }

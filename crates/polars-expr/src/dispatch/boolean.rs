@@ -1,18 +1,28 @@
 use std::ops::{BitAnd, BitOr};
 use std::sync::Arc;
+#[cfg(feature = "is_in")]
+use std::sync::OnceLock;
 
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{BooleanChunked, Column, DataType, IntoColumn, NamedFrom};
 use polars_core::runtime::RAYON;
+#[cfg(feature = "is_in")]
+use polars_ops::prelude::IsInHaystack;
 use polars_ops::prelude::SeriesMethods;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
-use polars_plan::plans::IRBooleanFunction;
+use polars_plan::plans::{AExpr, IRBooleanFunction, is_single_literal_ae};
+use polars_plan::prelude::expr_ir::ExprIR;
+use polars_utils::arena::Arena;
 use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::TotalOrdWrap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-pub fn function_expr_to_udf(func: IRBooleanFunction) -> SpecialEq<Arc<dyn ColumnsUdf>> {
+pub fn function_expr_to_udf(
+    func: IRBooleanFunction,
+    input: &[ExprIR],
+    expr_arena: &Arena<AExpr>,
+) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRBooleanFunction::*;
     match func {
         Any { ignore_nulls } => map!(any, ignore_nulls),
@@ -35,6 +45,16 @@ pub fn function_expr_to_udf(func: IRBooleanFunction) -> SpecialEq<Arc<dyn Column
         IsDuplicated => map!(is_duplicated),
         #[cfg(feature = "is_between")]
         IsBetween { closed } => map_as_slice!(is_between, closed),
+        // A known haystack is prepared once and reused.
+        #[cfg(feature = "is_in")]
+        IsIn { nulls_equal }
+            if input
+                .get(1)
+                .is_some_and(|e| is_single_literal_ae(e.node(), expr_arena)) =>
+        {
+            let haystack = OnceLock::new();
+            wrap!(is_in_prepared, nulls_equal, &haystack)
+        },
         #[cfg(feature = "is_in")]
         IsIn { nulls_equal } => wrap!(is_in, nulls_equal),
         #[cfg(feature = "is_close")]
@@ -153,6 +173,30 @@ fn is_in(s: &mut [Column], nulls_equal: bool) -> PolarsResult<Column> {
         .into_column();
 
     // In case of scalar, broadcast back to original length
+    out.broadcast_owned_to(broadcast_len([left, other])?)
+}
+
+/// `is_in` with a constant haystack, which is prepared once and reused for every call.
+#[cfg(feature = "is_in")]
+fn is_in_prepared(
+    s: &mut [Column],
+    nulls_equal: bool,
+    haystack: &OnceLock<PolarsResult<IsInHaystack>>,
+) -> PolarsResult<Column> {
+    let left = &s[0];
+    let other = &s[1];
+    if other.len() != 1 {
+        return is_in(s, nulls_equal);
+    }
+    let haystack = haystack.get_or_init(|| {
+        let other = other.as_materialized_series_maintain_scalar();
+        IsInHaystack::new(&other, left.dtype())
+    });
+    let out = haystack
+        .as_ref()
+        .map_err(Clone::clone)?
+        .probe(left.as_materialized_series(), nulls_equal)?
+        .into_column();
     out.broadcast_owned_to(broadcast_len([left, other])?)
 }
 

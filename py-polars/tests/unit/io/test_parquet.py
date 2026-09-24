@@ -1146,6 +1146,38 @@ def test_parquet_statistics_uint64_16683() -> None:
     assert statistics.max == u64_max
 
 
+def test_parquet_enum_statistics() -> None:
+    df = pl.Series(
+        "a", ["d", "b", "d", None, None, None], dtype=pl.Enum(["z", "d", "b", "a"])
+    ).to_frame()
+    file = io.BytesIO()
+    df.write_parquet(file, row_group_size=3)
+    metadata = pq.read_metadata(file)
+
+    statistics = metadata.row_group(0).column(0).statistics
+    assert (statistics.min, statistics.max, statistics.null_count) == ("b", "d", 0)
+    statistics = metadata.row_group(1).column(0).statistics
+    assert (statistics.min, statistics.max, statistics.null_count) == (None, None, 3)
+    file.seek(0)
+    assert_frame_equal(pl.read_parquet(file), df)
+
+
+def test_parquet_enum_statistics_null_keys() -> None:
+    # Non-strict conversion leaves an out-of-range physical key beneath the null.
+    df = (
+        pl.Series("a", [0, 255], dtype=pl.UInt8)
+        .cat.to(pl.Enum(["a", "b"]), strict=False)
+        .to_frame()
+    )
+    file = io.BytesIO()
+    df.write_parquet(file)
+
+    statistics = pq.read_metadata(file).row_group(0).column(0).statistics
+    assert (statistics.min, statistics.max, statistics.null_count) == ("a", "a", 1)
+    file.seek(0)
+    assert_frame_equal(pl.read_parquet(file), df)
+
+
 def test_parquet_decimal_statistics_29347() -> None:
     # The bug needs a precision of 19 or more, so that the values are stored as a fixed
     # length byte array rather than an INT64, a chunk spanning more than one page, and a
@@ -4684,6 +4716,95 @@ def test_read_parquet_legacy_nested_maps_27159(io_files_path: Path) -> None:
     assert_frame_equal(pl.scan_parquet(path).collect(), expected)
 
 
+def test_read_parquet_legacy_list_of_lists_29133(io_files_path: Path) -> None:
+    """
+    A list of lists in parquet-avro's legacy 2-level layout.
+
+    `a (LIST) { repeated group array (LIST) { repeated int32 array } }`: the repeated
+    group holding a repeated field is itself the element.
+
+    `old_list_structure.parquet` is an unmodified copy of
+    https://github.com/apache/parquet-testing/blob/56653c437c8092f704a092d0d1d4e600124cd49f/data/old_list_structure.parquet
+    """
+    path = io_files_path / "old_list_structure.parquet"
+
+    expected = pl.DataFrame(
+        {"a": [[[1, 2], [3, 4]]]},
+        schema={"a": pl.List(pl.List(pl.Int32))},
+    )
+
+    assert_frame_equal(pl.read_parquet(path), expected)
+    assert_frame_equal(pl.scan_parquet(path).collect(), expected)
+
+
+def test_read_parquet_repeated_group_without_list_annotation_29133(
+    io_files_path: Path,
+) -> None:
+    """
+    A repeated group that is a list without being annotated as one.
+
+    `phoneNumbers { repeated group phone { required int64 number; optional binary
+    kind } }`.
+
+    `repeated_no_annotation.parquet` is a copy of
+    https://github.com/apache/parquet-testing/blob/56653c437c8092f704a092d0d1d4e600124cd49f/data/repeated_no_annotation.parquet
+    with one byte patched. Its writer (a 2018 parquet-rs build) never set the footer's
+    `FileMetaData.num_rows`, so the file declares 0 rows while its only row group has
+    6, and polars trusts the footer. The zigzag-encoded count at byte offset 428 is
+    changed from `0x00` to `0x0c` (6).
+    """
+    path = io_files_path / "repeated_no_annotation.parquet"
+
+    phone = pl.Struct({"number": pl.Int64, "kind": pl.String})
+    expected = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6],
+            "phoneNumbers": [
+                None,
+                None,
+                {"phone": []},
+                {"phone": [{"number": 5555555555, "kind": None}]},
+                {"phone": [{"number": 1111111111, "kind": "home"}]},
+                {
+                    "phone": [
+                        {"number": 1111111111, "kind": "home"},
+                        {"number": 2222222222, "kind": None},
+                        {"number": 3333333333, "kind": "mobile"},
+                    ]
+                },
+            ],
+        },
+        schema={"id": pl.Int32, "phoneNumbers": pl.Struct({"phone": pl.List(phone)})},
+    )
+
+    assert_frame_equal(pl.read_parquet(path), expected)
+    assert_frame_equal(pl.scan_parquet(path).collect(), expected)
+
+
+def test_read_parquet_legacy_hive_list_29133() -> None:
+    """
+    A 3-level list whose levels are not named `list`/`element`, as hive and avro write.
+
+    `my_list (LIST) { repeated group bagg { optional int64 arr_elm } }`. pyarrow cannot
+    write these names, so they are renamed in its footer. The renames keep the byte
+    lengths, so the data pages stay valid.
+    """
+    values = [[1, None, 3], None, [], [4]]
+    buf = io.BytesIO()
+    pq.write_table(pa.table({"my_list": values}), buf, store_schema=False)
+    data = buf.getvalue()
+    data = data.replace(b"\x04list", b"\x04bagg")
+    data = data.replace(b"\x07element", b"\x07arr_elm")
+    assert (
+        pq.ParquetFile(io.BytesIO(data)).schema.column(0).path == "my_list.bagg.arr_elm"
+    )
+
+    expected = pl.DataFrame({"my_list": values}, schema={"my_list": pl.List(pl.Int64)})
+
+    assert_frame_equal(pl.read_parquet(io.BytesIO(data)), expected)
+    assert_frame_equal(pl.scan_parquet(io.BytesIO(data)).collect(), expected)
+
+
 def test_read_parquet_concatenated_gzip_members_28787(io_files_path: Path) -> None:
     path = io_files_path / "concatenated_gzip_members.parquet"
 
@@ -5456,6 +5577,30 @@ def test_enum_table_statistics(
         .filter(predicate)
         .collect(engine=engine)
     )
+    assert_frame_equal(out, df.filter(predicate))
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.parametrize(
+    "dtype", [pl.Enum(["banana", "pear", "apple", "zebra"]), pl.Categorical()]
+)
+@pytest.mark.parametrize(
+    "operation", ["eq", "ne", "lt", "le", "gt", "ge", "eq_missing", "is_between"]
+)
+def test_scan_categorical_literal_predicate(
+    engine: EngineType, dtype: pl.DataType, operation: str
+) -> None:
+    df = pl.DataFrame({"x": ["apple", "banana", "pear", None]}, schema={"x": dtype})
+    value = pl.lit("pear", dtype=dtype)
+    if operation == "is_between":
+        predicate = pl.col("x").is_between(value, pl.lit("apple", dtype=dtype))
+    else:
+        predicate = getattr(pl.col("x"), operation)(value)
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+    out = pl.scan_parquet(f.getvalue()).filter(predicate).collect(engine=engine)
+
     assert_frame_equal(out, df.filter(predicate))
 
 

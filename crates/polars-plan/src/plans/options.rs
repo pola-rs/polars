@@ -6,13 +6,15 @@ use polars_core::utils::SuperTypeOptions;
 #[cfg(feature = "iejoin")]
 use polars_defs::join::IEJoinOptions;
 use polars_defs::join::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinType, JoinTypeOptions};
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::{DynamicGroupOptionsIR, RollingGroupOptionsIR};
 use polars_utils::bool::UnsafeBool;
 use polars_utils::itertools::Itertools;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-use crate::dsl::JoinOptions;
+use crate::dsl::{GroupbyOptions, JoinOptions};
 #[cfg(feature = "cse")]
 use crate::plans::ExpressionHasher;
 use crate::plans::ir::inputs::{Exprs, ExprsMut};
@@ -336,6 +338,53 @@ impl ProjectionOptions {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub struct GroupbyOptionsIR {
+    #[cfg(feature = "dynamic_group_by")]
+    pub dynamic: Option<DynamicGroupOptionsIR>,
+    #[cfg(feature = "dynamic_group_by")]
+    pub rolling: Option<RollingGroupOptionsIR>,
+    /// Take only a slice of the result
+    pub slice: Option<(i64, usize)>,
+}
+
+impl GroupbyOptionsIR {
+    pub fn is_rolling(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.rolling.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_dynamic(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.dynamic.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
+}
+
+impl From<GroupbyOptions> for GroupbyOptionsIR {
+    fn from(opts: GroupbyOptions) -> Self {
+        Self {
+            #[cfg(feature = "dynamic_group_by")]
+            dynamic: opts.dynamic.map(Into::into),
+            #[cfg(feature = "dynamic_group_by")]
+            rolling: opts.rolling.map(Into::into),
+            slice: opts.slice,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct JoinOptionsIR {
@@ -348,13 +397,21 @@ pub struct JoinOptionsIR {
     pub runtime_filters: Vec<RuntimeFilter>,
 }
 
-/// The range of the build-side key at `key_idx` of the join's `on`, published
-/// through `pred` for the probe side.
+/// Largest ratio of distinct build keys to distinct probe keys for which a
+/// bloom filter is published.
+pub const MAX_BUILD_PROBE_DISTINCT_RATIO: f64 = 0.3;
+
+/// The build-side key at `key_idx` of the join's `on`, published through
+/// `pred` for the probe side: its range, and a bloom filter over its values
+/// when `bloom_keys` gives the number of distinct keys to size it for.
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct RuntimeFilter {
     pub key_idx: usize,
     pub pred: DynamicPred,
+    pub bloom_keys: Option<usize>,
+    /// The probe side's distinct keys, when the plan can estimate them.
+    pub probe_distinct: Option<usize>,
 }
 
 impl JoinOptionsIR {
