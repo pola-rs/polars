@@ -14,7 +14,6 @@ description = "FFI utils for the Polars project."
 polars-arrow = { workspace = true }
 polars-core = { workspace = true }
 
-
 [features]
 dsl_rewrite = []
 

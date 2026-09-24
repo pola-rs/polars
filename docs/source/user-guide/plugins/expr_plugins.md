@@ -260,43 +260,33 @@ fn haversine(inputs: &[Series]) -> PolarsResult<Series> {
 ## Rewrites
 
 Say we want have an expression that does something different based on the exact input it receives.
-We can define our own expression, like done above:
-Although the ability to define your own functions is a powerful one,
-it should not be the first tool to always go for.
-If something can be built purely from Polars-native expressions,
-that should be preferred,
-because users then benefit from the optimizability and stability of the existing operators.
+We can define our own expression, like done above: Although the ability to define your own functions
+is a powerful one, it should not be the first tool to always go for. If something can be built
+purely from Polars-native expressions, that should be preferred, because users then benefit from the
+optimizability and stability of the existing operators.
 
-A concrete example for GeoPolars:
-a GeoArrow point is an extension type that wraps a struct.
-We want to calculate the mean of two points.
-How this should be done depends on the point's CRS (Coordinate Reference System),
-which is stored in the extension metadata.
-For one, we can simply take the median of each struct field,
-while for the other, we need to do a more complicated calculation
-(that cannot be simply expressed as a set of Polars expressions).
+A concrete example for GeoPolars: a GeoArrow point is an extension type that wraps a struct. We want
+to calculate the mean of two points. How this should be done depends on the point's CRS (Coordinate
+Reference System), which is stored in the extension metadata. For one, we can simply take the median
+of each struct field, while for the other, we need to do a more complicated calculation (that cannot
+be simply expressed as a set of Polars expressions).
 
-To be able to handle this, we need a new type of expression:
-One that expands to a different expression,
-based on the actual data that is provided.
-We can use this to expand to another (rust-native) expression,
-or to an expression we define in our plugin.
+To be able to handle this, we need a new type of expression: One that expands to a different
+expression, based on the actual data that is provided. We can use this to expand to another
+(rust-native) expression, or to an expression we define in our plugin.
 
-This is what a _rewrite_ is. It runs during query planning,
-receives the resolved input fields (including extension name and metadata),
-and returns the expression the call turns into.
-That expression can use any Polars expression as well as kernels of your plugin.
-Since the result is a normal Polars expression, the optimizer,
-streaming engine implementation, and all other goodness keeps working on it,
-rather than requiring you to re-implement it all for a new custom expression.
+This is what a _rewrite_ is. It runs during query planning, receives the resolved input fields
+(including extension name and metadata), and returns the expression the call turns into. That
+expression can use any Polars expression as well as kernels of your plugin. Since the result is a
+normal Polars expression, the optimizer, streaming engine implementation, and all other goodness
+keeps working on it, rather than requiring you to re-implement it all for a new custom expression.
 
-In the returned expression, `rewrite_input(i)` refers to the `i`-th argument of the call.
-Enable the `dsl_rewrite` feature of `pyo3-polars` and annotate the function with `#[polars_rewrite]`.
-The function receives the input fields and returns a `PolarsResult<Expr>`.
-Like `#[polars_expr]`, it can also take `kwargs`,
-and a `context: RewriteContext`, which calls functions of the same plugin.
-The `pyo3_polars::rewrite` module re-exports the Polars expression builders,
-and its `FieldExtension` trait reads the extension name and metadata of a field.
+In the returned expression, `rewrite_input(i)` refers to the `i`-th argument of the call. Enable the
+`dsl_rewrite` feature of `pyo3-polars` and annotate the function with `#[polars_rewrite]`. The
+function receives the input fields and returns a `PolarsResult<Expr>`. Like `#[polars_expr]`, it can
+also take `kwargs`, and a `context: RewriteContext`, which calls functions of the same plugin. The
+`pyo3_polars::rewrite` module re-exports the Polars expression builders, and its `FieldExtension`
+trait reads the extension name and metadata of a field.
 
 ```toml
 pyo3-polars = { version = "*", features = ["derive", "dsl_rewrite"] }
@@ -348,11 +338,10 @@ def median(expr: IntoExpr) -> pl.Expr:
     )
 ```
 
-Polars does not check the data type of the expression a rewrite returns.
-For example, it won't notice if a rewrite returns the plain storage struct
-where an extension type was intended.
-End the returned expression with `.ext().to(...)` or `.cast(...)` if you want to pin the type,
-and test the output types in your plugin's own test suite:
+Polars does not check the data type of the expression a rewrite returns. For example, it won't
+notice if a rewrite returns the plain storage struct where an extension type was intended. End the
+returned expression with `.ext().to(...)` or `.cast(...)` if you want to pin the type, and test the
+output types in your plugin's own test suite:
 
 ```python
 def test_median_dtype() -> None:
@@ -362,15 +351,12 @@ def test_median_dtype() -> None:
 
 Rewrites currently have these limitations:
 
-- The returned expression can't contain another rewrite.
-  Rewrites in the _arguments_ of a rewrite,
+- The returned expression can't contain another rewrite. Rewrites in the _arguments_ of a rewrite,
   e.g. `median(buffer(pl.col("g")))`, are fine.
-- `rewrite_input(i)` can't be used inside a nested evaluation
-  such as `list.eval` or `struct.with_fields`.
-  Using it as the subject,
-  e.g. `rewrite_input(0).list.eval(pl.element() * 2)`, is fine.
-- The returned expression must be a single expression;
-  selectors must expand to exactly one column.
+- `rewrite_input(i)` can't be used inside a nested evaluation such as `list.eval` or
+  `struct.with_fields`. Using it as the subject, e.g.
+  `rewrite_input(0).list.eval(pl.element() * 2)`, is fine.
+- The returned expression must be a single expression; selectors must expand to exactly one column.
 
 That's all you need to know to get started. Take a look at
 [this repo](https://github.com/pola-rs/pyo3-polars/tree/main/example/derive_expression) to see how

@@ -115,10 +115,10 @@ See the full example in [example/derive_expression]:
 ### Rewrites
 
 With the `dsl_rewrite` feature, a plugin can also decide _during query planning_ what an expression
-becomes, based on the resolved input types (including extension type metadata). The function
-returns a Polars expression, in which `rewrite_input(i)` refers to the `i`-th argument. That
-expression can use native Polars expressions, so the optimizer keeps working on it, as well as
-functions of the plugin (via `context: RewriteContext`).
+becomes, based on the resolved input types (including extension type metadata). The function returns
+a Polars expression, in which `rewrite_input(i)` refers to the `i`-th argument. That expression can
+use native Polars expressions, so the optimizer keeps working on it, as well as functions of the
+plugin (via `context: RewriteContext`).
 
 ```rust
 use polars::prelude::*;
@@ -149,8 +149,8 @@ def to_unit(expr: IntoExprColumn, unit: str) -> pl.Expr:
 
 Polars does not check the data type of the returned expression, so pin it with `.ext().to(..)` or
 `.cast(..)` where it matters and test it in the plugin's test suite, e.g.
-`assert lf.select(to_unit("a", "mm")).collect_schema() == {"a": length("mm")}`.
-See the [user guide](https://docs.pola.rs/user-guide/plugins/expr_plugins/) for the current limitations.
+`assert lf.select(to_unit("a", "mm")).collect_schema() == {"a": length("mm")}`. See the
+[user guide](https://docs.pola.rs/user-guide/plugins/expr_plugins/) for the current limitations.
 
 ## 2. PyO3 extensions for Polars
 
