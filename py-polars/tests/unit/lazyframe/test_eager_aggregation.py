@@ -291,6 +291,9 @@ def test_eager_aggregation_execution_paths(
     lf = _left().join(right, on="k", how="left").group_by("g").agg(aggs)
     _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by="g")
     assert "sum_counts" in _physical(lf)
+    on, _ = _plans(lf, plmonkeypatch)
+    # Without a row bound, partial counts are summed as u64 so they cannot overflow.
+    assert ("strict_cast(UInt64).sum()" in on) == right_is_join, on
 
     # An object column sends the group by to the in-memory engine.
     left = _left().with_columns(o=pl.Series([object()] * 6, dtype=pl.Object))
