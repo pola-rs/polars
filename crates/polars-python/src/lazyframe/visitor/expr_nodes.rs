@@ -7,7 +7,7 @@ use polars_core::chunked_array::ops::FillNullStrategy;
 use polars_defs::expr::UnicodeForm;
 use polars_defs::expr::{ClosedInterval, InterpolationMethod, RankMethod};
 use polars_defs::time::duration::Duration;
-use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptions, RollingGroupOptions};
+use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptionsIR, RollingGroupOptionsIR};
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
 use polars_plan::dsl::DateRangeArgs;
@@ -20,7 +20,7 @@ use polars_plan::plans::{
 #[cfg(feature = "cutqcut")]
 use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
 use polars_plan::prelude::{
-    AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
+    AExpr, GroupbyOptionsIR, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
 };
 use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
@@ -682,7 +682,7 @@ impl<'py> IntoPyObject<'py> for Wrap<ClosedWindow> {
 
 #[pyclass(name = "RollingGroupOptions", frozen)]
 pub struct PyRollingGroupOptions {
-    inner: RollingGroupOptions,
+    inner: RollingGroupOptionsIR,
 }
 
 #[pymethods]
@@ -710,7 +710,7 @@ impl PyRollingGroupOptions {
 
 #[pyclass(name = "DynamicGroupOptions", frozen)]
 pub struct PyDynamicGroupOptions {
-    inner: DynamicGroupOptions,
+    inner: DynamicGroupOptionsIR,
 }
 
 #[pymethods]
@@ -757,11 +757,11 @@ impl PyDynamicGroupOptions {
 
 #[pyclass(name = "GroupbyOptions", frozen)]
 pub struct PyGroupbyOptions {
-    inner: GroupbyOptions,
+    inner: GroupbyOptionsIR,
 }
 
 impl PyGroupbyOptions {
-    pub(crate) fn new(inner: GroupbyOptions) -> Self {
+    pub(crate) fn new(inner: GroupbyOptionsIR) -> Self {
         Self { inner }
     }
 }
