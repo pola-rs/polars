@@ -7,9 +7,9 @@ use super::{PhysNode, PhysNodeKey};
 
 /// The physical plan while it is being built from the IR.
 ///
-/// Every physical node is inserted through [`PhysPlanBuilder::insert`], which records the IR
+/// Every physical node is inserted through [`PhysSmBuilder::insert`], which records the IR
 /// node whose lowering created it. Reads and in-place edits go through `Deref` to the slotmap.
-pub struct PhysPlanBuilder {
+pub struct PhysSmBuilder {
     phys_sm: SlotMap<PhysNodeKey, PhysNode>,
     /// IR node that nodes inserted through [`Self::insert`] are attributed to. Only ever set
     /// inside [`Self::with_ir_node`], so it is `None` between lowering scopes.
@@ -20,7 +20,7 @@ pub struct PhysPlanBuilder {
     original_ir_len: usize,
 }
 
-impl PhysPlanBuilder {
+impl PhysSmBuilder {
     pub fn new(phys_sm: SlotMap<PhysNodeKey, PhysNode>, original_ir_len: usize) -> Self {
         Self {
             phys_sm,
@@ -66,7 +66,7 @@ impl PhysPlanBuilder {
     }
 }
 
-impl Deref for PhysPlanBuilder {
+impl Deref for PhysSmBuilder {
     type Target = SlotMap<PhysNodeKey, PhysNode>;
 
     fn deref(&self) -> &Self::Target {
@@ -74,7 +74,7 @@ impl Deref for PhysPlanBuilder {
     }
 }
 
-impl DerefMut for PhysPlanBuilder {
+impl DerefMut for PhysSmBuilder {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.phys_sm
     }
