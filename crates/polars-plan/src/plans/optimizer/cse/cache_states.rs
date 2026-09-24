@@ -407,7 +407,7 @@ pub(crate) fn set_cache_states(
                 };
 
                 if let Some((removal_cost, keep_cost)) = removal_cost.zip(keep_cost) {
-                    remove_caches = removal_cost < keep_cost;
+                    remove_caches = removal_cost <= keep_cost;
                     if verbose {
                         eprintln!(
                             "cache removal estimated at {removal_cost:.3e} rows against \
