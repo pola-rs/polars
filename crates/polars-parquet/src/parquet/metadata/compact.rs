@@ -17,7 +17,7 @@
 //!    on [`super::FileMetadata::footer_buf`].
 
 use polars_buffer::Buffer;
-use polars_parquet_format::{KeyValue, SchemaElement, SortingColumn};
+use polars_parquet_format::{EncryptionAlgorithm, KeyValue, SchemaElement, SortingColumn};
 
 use super::column_order::ColumnOrderTag;
 use crate::parquet::compression::Compression;
@@ -130,6 +130,12 @@ pub(crate) struct CompactFileMetaData {
     pub key_value_metadata: Option<Vec<KeyValue>>,
     pub created_by: Option<String>,
     pub column_orders: Option<Vec<ColumnOrderTag>>,
+    /// Only set for encrypted files with a plaintext footer.
+    #[allow(dead_code)] // TODO: Remove once decryption is implemented.
+    pub encryption_algorithm: Option<EncryptionAlgorithm>,
+    /// Only set for encrypted files with a plaintext footer.
+    #[allow(dead_code)] // TODO: Remove once decryption is implemented.
+    pub footer_signing_key_metadata: Option<Vec<u8>>,
     /// The footer buffer the [`CompactStatistics`] `ByteRange`s point into.
     /// `from_compact` stores it on [`super::FileMetadata::footer_buf`] so
     /// stats payloads remain resolvable for the lifetime of the metadata.

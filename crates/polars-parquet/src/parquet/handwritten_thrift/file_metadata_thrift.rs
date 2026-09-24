@@ -12,7 +12,10 @@
 //!   See <https://github.com/apache/parquet-format/blob/96edf77704b60b6f3ca2232c218c64eff6c874d3/src/main/thrift/parquet.thrift> for spec
 
 use polars_buffer::Buffer;
-use polars_parquet_format::{KeyValue, SchemaElement, SortingColumn};
+use polars_parquet_format::{
+    AesGcmCtrV1, AesGcmV1, EncryptionAlgorithm, FileCryptoMetaData, KeyValue, SchemaElement,
+    SortingColumn,
+};
 
 use super::parquet_thrift::{FieldType, ThriftCompactInputProtocol, ThriftSliceInputProtocol};
 use crate::parquet::compression::Compression;
@@ -85,6 +88,14 @@ pub(crate) fn decode_file_metadata(footer: Buffer<u8>) -> ParquetResult<CompactF
     read_file_metadata(&mut prot, origin_ptr, &footer)
 }
 
+/// Decode the `FileCryptoMetaData` that precedes the encrypted footer in
+/// files with an encrypted footer.
+#[allow(dead_code)] // TODO: Remove once decryption is implemented.
+pub(crate) fn decode_file_crypto_metadata(buf: &[u8]) -> ParquetResult<FileCryptoMetaData> {
+    let mut prot = ThriftSliceInputProtocol::new(buf);
+    read_file_crypto_metadata(&mut prot)
+}
+
 /// Decode just `FileMetaData.num_rows` (field 3) for the `RowCounts`
 /// resolve mode. Thrift field ids are ascending, so we can `break` once
 /// field 3 is read and leave the rest of the footer untouched.
@@ -113,8 +124,9 @@ fn read_file_metadata(
     let mut key_value_metadata: Option<Vec<KeyValue>> = None;
     let mut created_by: Option<String> = None;
     let mut column_orders: Option<Vec<ColumnOrderTag>> = None;
+    let mut encryption_algorithm: Option<EncryptionAlgorithm> = None;
+    let mut footer_signing_key_metadata: Option<Vec<u8>> = None;
 
-    // 8/9 (encryption): polars has no encryption support; skip via fallthrough.
     read_struct_fields!(prot, |f| {
         1 => version = Some(prot.read_i32()?),
         2 => schema = Some(read_list(prot, read_schema_element)?),
@@ -123,6 +135,8 @@ fn read_file_metadata(
         5 => key_value_metadata = Some(read_list(prot, read_key_value)?),
         6 => created_by = Some(prot.read_string()?.to_owned()),
         7 => column_orders = Some(read_list(prot, read_column_order)?),
+        8 => encryption_algorithm = Some(read_encryption_algorithm(prot)?),
+        9 => footer_signing_key_metadata = Some(prot.read_bytes_owned()?),
     });
 
     Ok(CompactFileMetaData {
@@ -133,7 +147,71 @@ fn read_file_metadata(
         key_value_metadata,
         created_by,
         column_orders,
+        encryption_algorithm,
+        footer_signing_key_metadata,
         footer_buf: footer.clone(),
+    })
+}
+
+fn read_file_crypto_metadata(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<FileCryptoMetaData> {
+    let mut encryption_algorithm: Option<EncryptionAlgorithm> = None;
+    let mut key_metadata: Option<Vec<u8>> = None;
+
+    read_struct_fields!(prot, |f| {
+        1 => encryption_algorithm = Some(read_encryption_algorithm(prot)?),
+        2 => key_metadata = Some(prot.read_bytes_owned()?),
+    });
+
+    Ok(FileCryptoMetaData {
+        encryption_algorithm: encryption_algorithm
+            .require("FileCryptoMetaData.encryption_algorithm")?,
+        key_metadata,
+    })
+}
+
+/// Decode an `EncryptionAlgorithm` union. An unknown variant is an error,
+/// as the file can't be decrypted without knowing the algorithm.
+fn read_encryption_algorithm(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<EncryptionAlgorithm> {
+    let mut ret: Option<EncryptionAlgorithm> = None;
+    read_struct_fields!(prot, |f| {
+        1 => {
+            let v = read_aes_gcm_v1(prot)?;
+            ret.get_or_insert(EncryptionAlgorithm::AESGCMV1(v));
+        },
+        2 => {
+            // AesGcmCtrV1 has the same fields as AesGcmV1.
+            let AesGcmV1 {
+                aad_prefix,
+                aad_file_unique,
+                supply_aad_prefix,
+            } = read_aes_gcm_v1(prot)?;
+            ret.get_or_insert(EncryptionAlgorithm::AESGCMCTRV1(AesGcmCtrV1 {
+                aad_prefix,
+                aad_file_unique,
+                supply_aad_prefix,
+            }));
+        },
+    });
+    ret.ok_or_else(|| ParquetError::oos("EncryptionAlgorithm union has no known variant set"))
+}
+
+fn read_aes_gcm_v1(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<AesGcmV1> {
+    let mut aad_prefix: Option<Vec<u8>> = None;
+    let mut aad_file_unique: Option<Vec<u8>> = None;
+    let mut supply_aad_prefix: Option<bool> = None;
+    read_struct_fields!(prot, |f| {
+        1 => aad_prefix = Some(prot.read_bytes_owned()?),
+        2 => aad_file_unique = Some(prot.read_bytes_owned()?),
+        3 => supply_aad_prefix = Some(f.bool_val.expect("thrift bool field")),
+    });
+    Ok(AesGcmV1 {
+        aad_prefix,
+        aad_file_unique,
+        supply_aad_prefix,
     })
 }
 
@@ -649,5 +727,58 @@ mod tests {
         assert_eq!(stats.null_count, Some(1));
         assert!(stats.min_value.is_none());
         assert!(stats.max_value.is_none());
+    }
+
+    fn read_encrypted_test_file(name: &str) -> Vec<u8> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../py-polars/tests/unit/io/files/parquet-encryption")
+            .join(name);
+        std::fs::read(path).unwrap()
+    }
+
+    /// Get the footer bytes of a file, excluding the trailing length and magic.
+    fn footer_bytes(file: &[u8]) -> &[u8] {
+        let len_start = file.len() - 8;
+        let footer_len = u32::from_le_bytes(file[len_start..len_start + 4].try_into().unwrap());
+        &file[len_start - footer_len as usize..len_start]
+    }
+
+    #[test]
+    fn file_crypto_metadata_from_encrypted_footer() {
+        let file = read_encrypted_test_file("uniform_encryption.parquet.encrypted");
+        assert_eq!(&file[file.len() - 4..], b"PARE");
+
+        // An encrypted footer is preceded by the plaintext FileCryptoMetaData.
+        let crypto_metadata = decode_file_crypto_metadata(footer_bytes(&file)).unwrap();
+
+        let EncryptionAlgorithm::AESGCMV1(algorithm) = crypto_metadata.encryption_algorithm else {
+            panic!("expected AES_GCM_V1");
+        };
+        assert_eq!(algorithm.aad_prefix, None);
+        assert_eq!(
+            algorithm.aad_file_unique.as_deref(),
+            Some(&[0xbd, 0xa5, 0x3a, 0x44, 0x42, 0xf8, 0x18, 0x32][..])
+        );
+        assert_eq!(algorithm.supply_aad_prefix, Some(false));
+        assert_eq!(crypto_metadata.key_metadata.as_deref(), Some(&b"kf"[..]));
+    }
+
+    #[test]
+    fn file_metadata_encryption_fields_from_plaintext_footer() {
+        let file = read_encrypted_test_file("encrypt_columns_plaintext_footer.parquet.encrypted");
+        assert_eq!(&file[file.len() - 4..], b"PAR1");
+
+        // The footer's trailing nonce and tag are ignored by the decoder.
+        let metadata =
+            decode_file_metadata(Buffer::from_vec(footer_bytes(&file).to_vec())).unwrap();
+
+        let Some(EncryptionAlgorithm::AESGCMV1(algorithm)) = metadata.encryption_algorithm else {
+            panic!("expected AES_GCM_V1");
+        };
+        assert_eq!(algorithm.aad_file_unique.map(|v| v.len()), Some(8));
+        assert_eq!(
+            metadata.footer_signing_key_metadata.as_deref(),
+            Some(&b"kf"[..])
+        );
     }
 }

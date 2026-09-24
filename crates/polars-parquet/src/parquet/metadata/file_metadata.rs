@@ -203,6 +203,8 @@ impl FileMetadata {
             key_value_metadata,
             created_by,
             column_orders,
+            encryption_algorithm: _,
+            footer_signing_key_metadata: _,
             footer_buf,
         } = compact;
 
