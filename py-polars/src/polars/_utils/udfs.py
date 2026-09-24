@@ -92,6 +92,7 @@ class OpNames:
     LOAD_ATTR = frozenset({"LOAD_METHOD", "LOAD_ATTR"})
     LOAD = LOAD_VALUES | LOAD_ATTR
     SIMPLIFY_SPECIALIZED: ClassVar[dict[str, str]] = {
+        "LOAD_COMMON_CONSTANT": "LOAD_CONST",
         "LOAD_FAST_BORROW": "LOAD_FAST",
         "LOAD_SMALL_INT": "LOAD_CONST",
     }
