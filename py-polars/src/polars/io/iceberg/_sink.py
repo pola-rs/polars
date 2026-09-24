@@ -35,9 +35,10 @@ if TYPE_CHECKING:
     from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionSpec
     from pyiceberg.schema import Schema
-    from pyiceberg.table import Transaction
+    from pyiceberg.table import CommitTableResponse, Transaction
     from pyiceberg.table.metadata import TableMetadata
     from pyiceberg.table.sorting import SortOrder
+    from pyiceberg.table.update import TableRequirement, TableUpdate
     from pyiceberg.transforms import Transform
     from pyiceberg.typedef import Record
     from pyiceberg.types import IcebergType
@@ -48,6 +49,73 @@ if TYPE_CHECKING:
 
 
 _IcebergSinkedFile = tuple[str, int, int, bytes]
+
+
+def _copy_table_state(src: pyiceberg.table.Table, dst: pyiceberg.table.Table) -> None:
+    # Same check as `Table.refresh`: a dropped and recreated table must not take
+    # over the caller's table.
+    if src.metadata.table_uuid != dst.metadata.table_uuid:
+        msg = (
+            "Table UUID does not match: "
+            f"current={dst.metadata.table_uuid} != refreshed={src.metadata.table_uuid}"
+        )
+        raise ValueError(msg)
+    dst.metadata = src.metadata
+    dst.metadata_location = src.metadata_location
+    dst.io = src.io
+    dst.config = src.config
+
+
+class _SinkCatalog:
+    """Delegates to `catalog`, but recovers the outcome of a failed `commit_table`.
+
+    pyiceberg deletes a transaction's manifests when a commit fails, and does not
+    always check first whether the commit landed (empty overwrite producers, zero
+    retries, the final attempt). Resolving the outcome here, before pyiceberg sees
+    the failure, keeps a landed snapshot's manifests.
+    """
+
+    def __init__(self, catalog: pyiceberg.catalog.Catalog, *, verbose: bool) -> None:
+        self._catalog = catalog
+        self._verbose = verbose
+        self._snapshot_ids: set[int] = set()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._catalog, name)
+
+    def commit_table(
+        self,
+        table: pyiceberg.table.Table,
+        requirements: tuple[TableRequirement, ...],
+        updates: tuple[TableUpdate, ...],
+    ) -> CommitTableResponse:
+        from pyiceberg.exceptions import CommitStateUnknownException
+        from pyiceberg.table import CommitTableResponse
+        from pyiceberg.table.update import AddSnapshotUpdate
+
+        self._snapshot_ids.update(
+            u.snapshot.snapshot_id for u in updates if isinstance(u, AddSnapshotUpdate)
+        )
+
+        try:
+            return self._catalog.commit_table(table, requirements, updates)
+        except Exception as e:
+            try:
+                current = self._catalog.load_table(table.name())
+            except Exception:
+                msg = "could not verify the outcome of a failed Iceberg commit"
+                raise CommitStateUnknownException(msg) from e
+
+            metadata = current.metadata
+            if any(s.snapshot_id in self._snapshot_ids for s in metadata.snapshots):
+                if self._verbose:
+                    eprint("IcebergSinkState[commit]: recovered lost commit response")
+                return CommitTableResponse(
+                    metadata=metadata,
+                    metadata_location=current.metadata_location,  # type: ignore[call-arg]
+                )
+
+            raise
 
 
 def _nested_partition_source_ids(schema: Schema, spec: PartitionSpec) -> set[int]:
@@ -733,6 +801,33 @@ class IcebergSinkState:
 
         table = self.table()
 
+        self._commit(table, sinked_files, verbose=verbose)
+
+        self.commit_result_df.set(
+            pl.DataFrame(
+                {"metadata_path": table.metadata_location},
+                schema={"metadata_path": pl.String},
+                height=1,
+            )
+        )
+
+        if verbose:
+            total_elapsed = perf_counter() - function_start_instant
+            eprint(
+                f"IcebergSinkState[commit]: finished, total elapsed time: {total_elapsed:.3f}s"
+            )
+
+        return self.commit_result_df.get()  # type: ignore[return-value]
+
+    def _commit(
+        self,
+        table: pyiceberg.table.Table,
+        sinked_files: list[_IcebergSinkedFile],
+        *,
+        verbose: bool,
+    ) -> None:
+        from pyiceberg.table import Table
+
         original_metadata_location = table.metadata_location
 
         if sys.platform == "win32":
@@ -746,7 +841,16 @@ class IcebergSinkState:
                 for path, num_rows, num_bytes, parquet_metadata in sinked_files
             ]
 
-        with table.transaction() as tx:
+        wrapped = Table(
+            table.name(),
+            table.metadata,
+            table.metadata_location,
+            table.io,
+            _SinkCatalog(table.catalog, verbose=verbose),  # type: ignore[arg-type]
+            table.config,
+        )
+
+        with wrapped.transaction() as tx:
             if (
                 self.sort_order_id is not None
                 and tx.table_metadata.sort_order_by_id(self.sort_order_id) is None
@@ -780,34 +884,14 @@ class IcebergSinkState:
             start_instant = perf_counter()
 
         if verbose:
-            now = perf_counter()
-            elapsed = now - start_instant
+            elapsed = perf_counter() - start_instant
             eprint(
                 f"IcebergSinkState[commit]: finish transaction commit ({elapsed:.3f}s)"
             )
-        else:
-            now = None
 
-        new_metadata_location = table.metadata_location
+        _copy_table_state(wrapped, table)
 
-        assert new_metadata_location != original_metadata_location
-
-        self.commit_result_df.set(
-            pl.DataFrame(
-                {"metadata_path": new_metadata_location},
-                schema={"metadata_path": pl.String},
-                height=1,
-            )
-        )
-
-        if now is not None:
-            total_elapsed = now - function_start_instant
-
-            eprint(
-                f"IcebergSinkState[commit]: finished, total elapsed time: {total_elapsed:.3f}s"
-            )
-
-        return self.commit_result_df.get()  # type: ignore[return-value]
+        assert table.metadata_location != original_metadata_location
 
     def sink_base_path(self, *, object_storage_enabled: bool) -> str:
         from pyiceberg.table import TableProperties
