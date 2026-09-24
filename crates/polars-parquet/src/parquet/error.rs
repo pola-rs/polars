@@ -31,6 +31,8 @@ pub enum ParquetError {
     InvalidParameter(String),
     /// When decoding or decompressing, the page would allocate more memory than allowed
     WouldOverAllocate,
+    /// An error related to Parquet modular encryption, e.g. an invalid key or failed decryption
+    Encryption(String),
 }
 
 impl ParquetError {
@@ -67,6 +69,9 @@ impl std::fmt::Display for ParquetError {
             },
             ParquetError::WouldOverAllocate => {
                 write!(fmt, "Operation would exceed memory use threshold")
+            },
+            ParquetError::Encryption(message) => {
+                write!(fmt, "Encryption error: {message}")
             },
         }
     }
@@ -121,6 +126,19 @@ impl From<std::array::TryFromSliceError> for ParquetError {
     fn from(e: std::array::TryFromSliceError) -> ParquetError {
         ParquetError::OutOfSpec(format!("Can't deserialize to parquet native type: {e}"))
     }
+}
+
+impl From<ring::error::Unspecified> for ParquetError {
+    fn from(e: ring::error::Unspecified) -> ParquetError {
+        ParquetError::Encryption(format!("underlying ring error: {e}"))
+    }
+}
+
+/// Create a [`ParquetError::Encryption`] from a format string.
+macro_rules! encryption_err {
+    ($($arg:tt)*) => {
+        $crate::parquet::error::ParquetError::Encryption(format!($($arg)*))
+    };
 }
 
 /// A specialized `Result` for Parquet errors.

@@ -4,6 +4,7 @@ pub mod error;
 pub mod bloom_filter;
 pub mod compression;
 pub mod encoding;
+pub mod encryption;
 pub(crate) mod handwritten_thrift;
 pub mod metadata;
 pub mod page;
