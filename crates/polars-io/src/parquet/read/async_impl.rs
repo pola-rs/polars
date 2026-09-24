@@ -6,7 +6,7 @@ use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_parquet::parquet::error::ParquetError;
 use polars_parquet::parquet::read::{deserialize_metadata, deserialize_num_rows};
-use polars_parquet::parquet::{FOOTER_SIZE, PARQUET_MAGIC};
+use polars_parquet::parquet::{ENCRYPTED_PARQUET_MAGIC, FOOTER_SIZE, PARQUET_MAGIC};
 use polars_utils::pl_path::PlRefPath;
 
 use crate::cloud::concurrency_config::FetchConfig;
@@ -115,6 +115,13 @@ async fn fetch_footer_bytes(
         let footer_byte_size = read_i32le(reader).unwrap();
         let magic = read_n(reader).unwrap();
         debug_assert!(reader.is_empty());
+        if magic == ENCRYPTED_PARQUET_MAGIC {
+            // TODO: Support encrypted Parquet files from cloud sources.
+            return Err(ParquetError::FeatureNotSupported(
+                "encrypted Parquet files from cloud sources".to_string(),
+            )
+            .into());
+        }
         if magic != PARQUET_MAGIC {
             return Err(out_of_spec("incorrect magic in parquet footer").into());
         }

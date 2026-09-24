@@ -879,6 +879,7 @@ class PyLazyFrame:
         parallel: Any,
         low_memory: bool,
         use_statistics: bool,
+        decryption_properties: PyFileDecryptionProperties | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_ipc(

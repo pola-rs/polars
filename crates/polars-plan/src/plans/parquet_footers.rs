@@ -18,8 +18,9 @@ use std::num::NonZeroU32;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config::verbose;
-use polars_core::error::{PolarsResult, feature_gated};
+use polars_core::error::{PolarsResult, feature_gated, polars_bail};
 use polars_io::parquet::metadata::FileMetadataRef;
+use polars_io::parquet::read::PlFileDecryptionProperties;
 
 use crate::dsl::MetadataPerSource;
 use crate::prelude::{ScanSourceRef, ScanSources};
@@ -145,13 +146,14 @@ pub(crate) async fn read_footers(
     sources: &ScanSources,
     indices: &[usize],
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    decryption_properties: Option<&PlFileDecryptionProperties>,
 ) -> Vec<(usize, FileMetadataRef)> {
     let mut futures = indices
         .iter()
         .map(|&i| async move {
             (
                 i,
-                read_parquet_metadata(sources.at(i), cloud_options)
+                read_parquet_metadata(sources.at(i), cloud_options, decryption_properties)
                     .await
                     .ok(),
             )
@@ -173,6 +175,7 @@ pub(crate) async fn resolve_for_splitting(
     bytes: &[u64],
     n_parts: NonZeroU32,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    decryption_properties: Option<&PlFileDecryptionProperties>,
 ) -> MetadataPerSource {
     use polars_config::ResolveMode;
 
@@ -201,7 +204,7 @@ pub(crate) async fn resolve_for_splitting(
         .collect();
 
     MetadataPerSource::new(
-        read_footers(sources, &indices, cloud_options).await,
+        read_footers(sources, &indices, cloud_options, decryption_properties).await,
         n_sources,
     )
 }
@@ -210,8 +213,10 @@ pub(crate) async fn resolve_for_splitting(
 pub(crate) async fn read_parquet_metadata(
     source: ScanSourceRef<'_>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    decryption_properties: Option<&PlFileDecryptionProperties>,
 ) -> PolarsResult<FileMetadataRef> {
     if source.is_cloud_url() {
+        check_no_cloud_decryption(decryption_properties)?;
         #[allow(unused)]
         let path = source.as_path().unwrap();
         feature_gated!("cloud", {
@@ -223,7 +228,11 @@ pub(crate) async fn read_parquet_metadata(
     } else {
         let memslice = source.to_memslice()?;
         let mut cursor = Cursor::new(memslice);
-        let md = polars_parquet::parquet::read::read_metadata(&mut cursor)?;
+        let md = polars_parquet::parquet::read::read_metadata_with_decryption(
+            &mut cursor,
+            decryption_properties.map(|p| &p.0),
+            None,
+        )?;
         Ok(std::sync::Arc::new(md))
     }
 }
@@ -232,7 +241,14 @@ pub(crate) async fn read_parquet_metadata(
 pub(crate) async fn read_parquet_num_rows(
     source: ScanSourceRef<'_>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    decryption_properties: Option<&PlFileDecryptionProperties>,
 ) -> PolarsResult<i64> {
+    if decryption_properties.is_some() {
+        // TODO: We need to decrypt the full metadata, but shouldn't need to parse all the thrift.
+        return read_parquet_metadata(source, cloud_options, decryption_properties)
+            .await
+            .map(|md| md.num_rows as i64);
+    }
     if source.is_cloud_url() {
         #[allow(unused)]
         let path = source.as_path().unwrap();
@@ -247,4 +263,15 @@ pub(crate) async fn read_parquet_num_rows(
         let mut cursor = Cursor::new(memslice);
         polars_parquet::parquet::read::read_num_rows(&mut cursor).map_err(Into::into)
     }
+}
+
+/// Error if decryption properties are provided for a cloud source.
+pub(crate) fn check_no_cloud_decryption(
+    decryption_properties: Option<&PlFileDecryptionProperties>,
+) -> PolarsResult<()> {
+    // TODO: Support encrypted Parquet files from cloud sources.
+    if decryption_properties.is_some() {
+        polars_bail!(nyi = "encrypted Parquet files from cloud sources");
+    }
+    Ok(())
 }

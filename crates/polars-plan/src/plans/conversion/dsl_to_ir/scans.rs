@@ -18,8 +18,8 @@ use super::*;
 use crate::dsl::MetadataPerSource::Unresolved;
 #[cfg(feature = "parquet")]
 use crate::plans::parquet_footers::{
-    read_footers, read_parquet_metadata, read_parquet_num_rows, resolve_for_splitting,
-    select_footer_indices,
+    check_no_cloud_decryption, read_footers, read_parquet_metadata, read_parquet_num_rows,
+    resolve_for_splitting, select_footer_indices,
 };
 
 pub(super) async fn dsl_to_ir(
@@ -289,6 +289,7 @@ pub(super) async fn parquet_file_info(
     resolve_heavy_sources: Option<NonZeroU32>,
     use_statistics: bool,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    decryption_properties: Option<&polars_io::parquet::read::PlFileDecryptionProperties>,
 ) -> PolarsResult<(FileInfo, MetadataPerSource)> {
     use futures::stream::{FuturesOrdered, FuturesUnordered, StreamExt};
     use polars_core::error::feature_gated;
@@ -303,6 +304,7 @@ pub(super) async fn parquet_file_info(
     // wave.
     let first_fut = async move {
         if first_scan_source.is_cloud_url() {
+            check_no_cloud_decryption(decryption_properties)?;
             let first_path = first_scan_source.as_path().unwrap();
             feature_gated!("cloud", {
                 let mut reader =
@@ -315,7 +317,14 @@ pub(super) async fn parquet_file_info(
             })
         } else {
             let memslice = first_scan_source.to_memslice()?;
-            let mut reader = ParquetReader::new(Cursor::new(memslice));
+            let mut cursor = Cursor::new(memslice);
+            let metadata = polars_parquet::parquet::read::read_metadata_with_decryption(
+                &mut cursor,
+                decryption_properties.map(|p| &p.0),
+                None,
+            )?;
+            let mut reader = ParquetReader::new(cursor);
+            reader.set_metadata(Arc::new(metadata));
             PolarsResult::Ok((
                 reader.schema()?,
                 reader.num_rows()?,
@@ -382,7 +391,12 @@ pub(super) async fn parquet_file_info(
                 let rest_fut = async move {
                     let mut futures = (1..n_sources)
                         .map(|i| async move {
-                            read_parquet_num_rows(sources.at(i), cloud_options).await
+                            read_parquet_num_rows(
+                                sources.at(i),
+                                cloud_options,
+                                decryption_properties,
+                            )
+                            .await
                         })
                         .collect::<FuturesUnordered<_>>();
 
@@ -418,7 +432,8 @@ pub(super) async fn parquet_file_info(
                     debug_assert!(b.iter().all(|&size| size > 0));
                 });
                 let rest_fut = async move {
-                    let pairs = read_footers(sources, sample, cloud_options).await;
+                    let pairs =
+                        read_footers(sources, sample, cloud_options, decryption_properties).await;
                     let rows = pairs
                         .iter()
                         .fold(0usize, |acc, (_, m)| acc.saturating_add(m.num_rows));
@@ -495,7 +510,13 @@ pub(super) async fn parquet_file_info(
                 // with file 0; `None` marks a file that failed to decode.
                 let rest_fut = async move {
                     let mut futures = (1..n_sources)
-                        .map(|i| read_parquet_metadata(sources.at(i), cloud_options))
+                        .map(|i| {
+                            read_parquet_metadata(
+                                sources.at(i),
+                                cloud_options,
+                                decryption_properties,
+                            )
+                        })
                         .collect::<FuturesOrdered<_>>();
                     let mut rest: Vec<Option<FileMetadataRef>> = Vec::with_capacity(n_sources - 1);
                     while let Some(file_result) = futures.next().await {
@@ -1377,6 +1398,8 @@ enum CachedSourceKey {
         resolve_heavy_sources: Option<NonZeroU32>,
         // Heavy-source selection depends on the sizes, not just the paths.
         bytes_per_source: Option<Buffer<u64>>,
+        #[cfg(feature = "parquet")]
+        decryption_properties: Option<polars_io::parquet::read::PlFileDecryptionProperties>,
     },
     CsvJson {
         paths: Buffer<PlRefPath>,
@@ -1430,7 +1453,14 @@ impl SourcesToFileInfo {
                         bytes_per_source.as_deref(),
                     ) {
                         (Some(n_parts), Some(bytes)) => {
-                            resolve_for_splitting(sources, bytes, n_parts, cloud_options).await
+                            resolve_for_splitting(
+                                sources,
+                                bytes,
+                                n_parts,
+                                cloud_options,
+                                options.decryption_properties.as_ref(),
+                            )
+                            .await
                         },
                         _ => Unresolved,
                     };
@@ -1475,6 +1505,7 @@ impl SourcesToFileInfo {
                             unified_scan_args.resolve_heavy_sources,
                             options.use_statistics,
                             cloud_options,
+                            options.decryption_properties.as_ref(),
                         )
                         .await?;
 
@@ -1745,6 +1776,7 @@ impl SourcesToFileInfo {
                     schema_overwrite: options.schema.clone(),
                     resolve_heavy_sources: unified_scan_args.resolve_heavy_sources,
                     bytes_per_source: bytes_per_source.clone(),
+                    decryption_properties: options.decryption_properties.clone(),
                 };
 
                 let guard = self.inner.read().unwrap();
@@ -1758,6 +1790,8 @@ impl SourcesToFileInfo {
                     schema_overwrite: None,
                     resolve_heavy_sources: None,
                     bytes_per_source: None,
+                    #[cfg(feature = "parquet")]
+                    decryption_properties: None,
                 };
 
                 let guard = self.inner.read().unwrap();

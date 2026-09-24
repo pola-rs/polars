@@ -97,3 +97,54 @@ def test_decryption_properties_with_pyarrow(io_files_path: Path) -> None:
         pl.read_parquet(
             path, use_pyarrow=True, decryption_properties=decryption_properties
         )
+
+
+def uniform_encryption_path(io_files_path: Path) -> Path:
+    return io_files_path / "parquet-encryption" / "uniform_encryption.parquet.encrypted"
+
+
+def test_scan_encrypted_footer_metadata(io_files_path: Path) -> None:
+    # Only requires reading the footer, not column data
+    decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
+    lf = pl.scan_parquet(
+        uniform_encryption_path(io_files_path),
+        decryption_properties=decryption_properties,
+    )
+    assert lf.collect_schema().names() == expected_data().columns
+    assert lf.select(pl.len()).collect().item() == NUM_ROWS
+
+
+def test_scan_encrypted_footer_without_decryption_properties(
+    io_files_path: Path,
+) -> None:
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="encrypted footer but decryption properties were not provided",
+    ):
+        pl.scan_parquet(uniform_encryption_path(io_files_path)).collect_schema()
+
+
+def test_scan_encrypted_footer_with_wrong_key(io_files_path: Path) -> None:
+    decryption_properties = pl.ParquetDecryptionProperties(
+        footer_key=b"1234567890123450"
+    )
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="unable to decrypt parquet footer"
+    ):
+        pl.scan_parquet(
+            uniform_encryption_path(io_files_path),
+            decryption_properties=decryption_properties,
+        ).collect_schema()
+
+
+def test_serialize_with_decryption_properties(io_files_path: Path) -> None:
+    decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
+    lf = pl.scan_parquet(
+        uniform_encryption_path(io_files_path),
+        decryption_properties=decryption_properties,
+    )
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="cannot serialize parquet decryption properties",
+    ):
+        lf.serialize()
