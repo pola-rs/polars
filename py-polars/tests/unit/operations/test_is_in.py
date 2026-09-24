@@ -849,12 +849,12 @@ def _container(op: str, rows: list[list[Any]], inner: PolarsDataType) -> pl.Seri
     return pl.Series("h", rows, dtype=pl.Array(inner, len(rows[0])))
 
 
-def _membership(op: str, needle: pl.Expr, container: pl.Expr) -> pl.Expr:
+def _membership(op: str, needle: pl.Expr, container: pl.Expr, **kwargs: Any) -> pl.Expr:
     if op.startswith("is_in"):
-        return needle.is_in(container)
+        return needle.is_in(container, **kwargs)
     if op == "list.contains":
-        return container.list.contains(needle)
-    return container.arr.contains(needle)
+        return container.list.contains(needle, **kwargs)
+    return container.arr.contains(needle, **kwargs)
 
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
@@ -878,13 +878,19 @@ def test_is_in_rejects_a_decimal_needle_in_primitive_numeric_data(
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
 @pytest.mark.parametrize("needle_dtype", [pl.Categorical, pl.Enum(["a"])])
+@pytest.mark.parametrize("nulls_equal", [False, True])
 def test_is_in_categorical_needle_in_null_data(
-    op: str, needle_dtype: PolarsDataType
+    op: str, needle_dtype: PolarsDataType, nulls_equal: bool
 ) -> None:
     df = pl.DataFrame({"h": _container(op, [[None]], pl.Null)})
 
-    out = df.select(_membership(op, pl.lit("a", needle_dtype), pl.col("h")).alias("o"))
-    assert out["o"].to_list() == [False]
+    def search(value: str | None) -> list[bool | None]:
+        needle = pl.lit(value, needle_dtype)
+        expr = _membership(op, needle, pl.col("h"), nulls_equal=nulls_equal)
+        return df.select(expr.alias("o"))["o"].to_list()
+
+    assert search("a") == [False]
+    assert search(None) == [True if nulls_equal else None]
 
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
