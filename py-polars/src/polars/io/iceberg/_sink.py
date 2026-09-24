@@ -147,7 +147,7 @@ class _SinkCatalog:
 def _sink_transaction(table: pyiceberg.table.Table, sink_uuid: str) -> Transaction:
     from pyiceberg.table import Transaction
 
-    class _SinkTransaction(Transaction):
+    class _SinkTransaction(Transaction):  # type: ignore[misc]
         # pyiceberg calls this after refreshing the table for a retry, before it
         # writes new manifests. A twin that lands after this check moves the branch
         # ref, so the next commit fails and `_SinkCatalog` finds the twin.
