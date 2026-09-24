@@ -206,6 +206,7 @@ NOT_SPLIT = {
     "strict_cast": pl.col("x").cast(pl.Int8, strict=True).sum(),
     "first": pl.col("x").first(),
     "count_with_nulls": pl.col("x").count() + pl.col("x").null_count(),
+    "count_include_nulls": pl.col("x").len(),
     "mean": pl.col("x").mean(),
     "bare_column_on_top": pl.col("x").sum() + pl.col("x"),
 }
@@ -272,20 +273,28 @@ def _physical(lf: pl.LazyFrame) -> str:
     return out
 
 
+# A right side that is a join has no bound on its rows.
+@pytest.mark.parametrize("right_is_join", [False, True])
 def test_eager_aggregation_execution_paths(
-    plmonkeypatch: PlMonkeyPatch, monkeypatch: pytest.MonkeyPatch
+    right_is_join: bool,
+    plmonkeypatch: PlMonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     aggs = [pl.col("x").count().alias("c"), pl.len().alias("n")]
     plmonkeypatch.setenv("POLARS_EAGER_AGGREGATION_SKIP_GATE", "1")
+    if right_is_join:
+        right = _right().join(pl.LazyFrame({"k": [1, 1, 2, 4]}), on="k")
+    else:
+        right = _right()
 
     # Streaming hash group by.
-    lf = _left().join(_right(), on="k", how="left").group_by("g").agg(aggs)
+    lf = _left().join(right, on="k", how="left").group_by("g").agg(aggs)
     _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by="g")
     assert "sum_counts" in _physical(lf)
 
     # An object column sends the group by to the in-memory engine.
     left = _left().with_columns(o=pl.Series([object()] * 6, dtype=pl.Object))
-    lf = left.join(_right(), on="k", how="left").group_by("g", "o").agg(aggs)
+    lf = left.join(right, on="k", how="left").group_by("g", "o").agg(aggs)
     on, off = _plans(lf, plmonkeypatch)
     assert _fired(on, off), on
     physical = _physical(lf)
@@ -300,7 +309,7 @@ def test_eager_aggregation_execution_paths(
 
     # Sorted group by.
     monkeypatch.setenv("POLARS_FORCE_SORTED_GROUP_BY", "1")
-    lf = _left().join(_right(), on="k", how="left").group_by("g").agg(aggs)
+    lf = _left().join(right, on="k", how="left").group_by("g").agg(aggs)
     physical = _physical(lf)
     assert "sorted-group-by" in physical
     assert "sum_counts" in physical
@@ -313,14 +322,6 @@ def test_eager_aggregation_right_null_keys_filtered(
     lf = _left().join(_right(), on="k", how="left").group_by("g").agg(pl.len())
     on, _ = _plans(lf, plmonkeypatch)
     assert "is_not_null" in on
-
-
-def test_eager_aggregation_row_bound_unknown(plmonkeypatch: PlMonkeyPatch) -> None:
-    # A join has no bound on its rows, so a right side that is a join has none either.
-    right = _right().join(pl.LazyFrame({"k": [1, 2, 3], "y": [1, 2, 3]}), on="k")
-    lf = _left().join(right, on="k", how="left").group_by("g").agg(pl.len())
-    on, off = _plans(lf, plmonkeypatch)
-    assert not _fired(on, off), on
 
 
 def _scan(tmp_path: Path, name: str, df: pl.DataFrame) -> pl.LazyFrame:

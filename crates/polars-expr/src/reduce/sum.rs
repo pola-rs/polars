@@ -274,6 +274,79 @@ impl Reducer for IdxTypeCheckedSumReducer {
     }
 }
 
+/// Adds counts as u64 for `SumCounts`. The inputs may be u64 partial counts, so the adds
+/// saturate instead of wrapping to a small count that looks valid. Raises on `finish()`
+/// when a total doesn't fit into `IdxSize`, or has saturated.
+#[derive(Clone, Default)]
+pub struct CountSumReducer;
+
+impl CountSumReducer {
+    pub fn new_grouped_reduction(in_dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+        polars_ensure!(
+            in_dtype == DataType::IDX_DTYPE || in_dtype == DataType::UInt64,
+            InvalidOperation: "sum of counts expects {} or u64 input, got {}", DataType::IDX_DTYPE, in_dtype
+        );
+        Ok(Box::new(VecGroupedReduction::new(in_dtype, Self)))
+    }
+}
+
+impl Reducer for CountSumReducer {
+    type Dtype = UInt64Type;
+    type Value = u64;
+
+    #[inline(always)]
+    fn init(&self) -> Self::Value {
+        0
+    }
+
+    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
+        if s.dtype() == &DataType::UInt64 {
+            Cow::Borrowed(s)
+        } else {
+            Cow::Owned(s.cast(&DataType::UInt64).unwrap())
+        }
+    }
+
+    #[inline(always)]
+    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
+        *a = a.saturating_add(*b);
+    }
+
+    #[inline(always)]
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<u64>, _seq_id: u64) {
+        *a = a.saturating_add(b.unwrap_or(0));
+    }
+
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
+        for arr in ca.downcast_iter() {
+            *v = arr
+                .iter()
+                .fold(*v, |acc, x| acc.saturating_add(x.copied().unwrap_or(0)));
+        }
+    }
+
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        _dtype: &DataType,
+    ) -> PolarsResult<Series> {
+        assert!(m.is_none());
+        let v = v
+            .into_iter()
+            .map(count_to_idx)
+            .collect::<PolarsResult<Vec<IdxSize>>>()?;
+        Ok(IdxCa::from_vec(PlSmallStr::EMPTY, v).into_series())
+    }
+}
+
+/// A count as `IdxSize`, or the error the original `count` raises when it doesn't fit.
+/// `u64::MAX` is a saturated sum, never a real count.
+pub fn count_to_idx(count: u64) -> PolarsResult<IdxSize> {
+    polars_ensure!(count != u64::MAX, ComputeError: LENGTH_LIMIT_MSG);
+    idxsize_try_from(count).map_err(|_| polars_err!(ComputeError: LENGTH_LIMIT_MSG))
+}
+
 #[derive(Clone)]
 struct BoolSumReducer;
 

@@ -24,7 +24,7 @@ use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
 use crate::reduce::min_max_by::{new_max_by_reduction, new_min_by_reduction};
 #[cfg(feature = "moment")]
 use crate::reduce::skew_kurtosis::{new_kurtosis_reduction, new_skew_reduction};
-use crate::reduce::sum::{IdxTypeCheckedSumReducer, new_sum_reduction};
+use crate::reduce::sum::{CountSumReducer, IdxTypeCheckedSumReducer, new_sum_reduction};
 use crate::reduce::var_std::new_var_std_reduction;
 
 /// Converts a node into a reduction + its associated selector expression.
@@ -43,10 +43,9 @@ pub fn into_reduction(
     let (gr, in_node) = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {
             IRAggExpr::Sum(input) => (new_sum_reduction(get_dt(*input)?)?, *input),
-            IRAggExpr::SumCounts(input) => (
-                Box::new(IdxTypeCheckedSumReducer::new_grouped_reduction()) as Box<_>,
-                *input,
-            ),
+            IRAggExpr::SumCounts(input) => {
+                (CountSumReducer::new_grouped_reduction(get_dt(*input)?)?, *input)
+            },
             IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?)?, *input),
             IRAggExpr::Min {
                 propagate_nans,

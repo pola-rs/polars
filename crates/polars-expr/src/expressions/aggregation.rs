@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use polars_core::error::constants::LENGTH_LIMIT_MSG;
 use polars_core::frame::group_by::aggregations::{_use_rolling_kernels, rolling_numeric_minmax_by};
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
@@ -16,16 +15,31 @@ use crate::expressions::AggState::AggregatedScalar;
 use crate::expressions::count::evaluate_count_on_ac;
 use crate::expressions::{AggState, AggregationContext, PhysicalExpr};
 use crate::reduce::GroupedReduction;
+use crate::reduce::sum::count_to_idx;
 
-/// Convert summed counts to `IdxSize`, with the same error `count` raises when a count does
-/// not fit.
-fn counts_to_idx(counts: Column) -> PolarsResult<Column> {
-    let fits = counts
-        .u64()?
-        .max()
-        .is_none_or(|max| IdxSize::try_from(max).is_ok());
-    polars_ensure!(fits, ComputeError: LENGTH_LIMIT_MSG);
-    counts.cast(&IDX_DTYPE)
+/// Sums the counts in `c` per group, saturating like `CountSumReducer`, with the same error
+/// `count` raises when a total does not fit `IdxSize`.
+fn sum_counts_per_group(c: &Column, groups: &GroupsType) -> PolarsResult<Column> {
+    let c = c.cast(&DataType::UInt64)?;
+    let ca = c.u64()?.rechunk();
+    let arr = ca.downcast_as_array();
+    let sum = |rows: &mut dyn Iterator<Item = usize>| {
+        count_to_idx(rows.fold(0u64, |acc, i| {
+            acc.saturating_add(arr.get(i).unwrap_or(0))
+        }))
+    };
+    let sums = match groups {
+        GroupsType::Idx(idx) => idx
+            .all()
+            .iter()
+            .map(|g| sum(&mut g.iter().map(|&i| i as usize)))
+            .collect::<PolarsResult<Vec<_>>>()?,
+        GroupsType::Slice { groups, .. } => groups
+            .iter()
+            .map(|&[start, len]| sum(&mut (start as usize..(start + len) as usize)))
+            .collect::<PolarsResult<Vec<_>>>()?,
+    };
+    Ok(IdxCa::from_vec(c.name().clone(), sums).into_column())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -158,9 +172,12 @@ impl PhysicalExpr for AggregationExpr {
                 allow_threading,
             ),
             GroupByMethod::SumCounts => {
-                let wide = s.cast(&DataType::UInt64)?;
-                let sum = wide.sum_reduce()?.into_column(s.name().clone());
-                counts_to_idx(sum)
+                let all = GroupsType::Slice {
+                    groups: vec![[0, s.len() as IdxSize]],
+                    overlapping: false,
+                    monotonic: true,
+                };
+                sum_counts_per_group(&s, &all)
             },
             GroupByMethod::Groups => unreachable!(),
             GroupByMethod::NUnique => s.n_unique().map(|count| {
@@ -274,8 +291,8 @@ impl PhysicalExpr for AggregationExpr {
                 },
                 GroupByMethod::SumCounts => {
                     let (c, groups) = ac.get_final_aggregation();
-                    let agg_c = c.cast(&DataType::UInt64)?.agg_sum(&groups);
-                    AggregatedScalar(counts_to_idx(agg_c)?.with_name(keep_name))
+                    let agg_c = sum_counts_per_group(&c, &groups)?;
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::First => {
                     let (s, groups) = ac.get_final_aggregation();
@@ -781,18 +798,71 @@ mod test {
         assert_eq!(total.idx().unwrap().get(0), Some(9));
     }
 
+    fn is_compute_error<T>(result: PolarsResult<T>) -> bool {
+        matches!(result, Err(PolarsError::ComputeError(_)))
+    }
+
+    /// Whether every way of summing `p` raises the error `count` raises on overflow.
+    fn every_path_raises(df: &DataFrame) -> bool {
+        is_compute_error(physical_by_group(df))
+            && is_compute_error(sum_counts(df).evaluate(df, &ExecutionState::new()))
+            && is_compute_error(reducer_total(df))
+    }
+
+    /// A reduction over `p` holding one group.
+    fn reduction_of(p: u64) -> Box<dyn GroupedReduction> {
+        let df = df!("p" => [p]).unwrap();
+        let mut arena = Arena::new();
+        let column = arena.add(AExpr::Column("p".into()));
+        let node = arena.add(AExpr::Agg(IRAggExpr::SumCounts(column)));
+        let (mut reduction, _) = into_reduction(node, &mut arena, df.schema(), false).unwrap();
+        reduction.resize(1);
+        reduction.update_group(&[df.column("p").unwrap()], 0, 0).unwrap();
+        reduction
+    }
+
+    #[test]
+    fn sum_counts_adds_u64_partials() {
+        let df = df!("g" => [1, 1], "p" => [3u64, 4]).unwrap();
+        let by_group = physical_by_group(&df).unwrap();
+        assert_eq!(by_group.idx().unwrap().get(0), Some(7));
+        let total = reducer_total(&df).unwrap();
+        assert_eq!(total.dtype(), &IDX_DTYPE);
+        assert_eq!(total.idx().unwrap().get(0), Some(7));
+    }
+
+    #[test]
+    fn sum_counts_of_u64_partials_raise_instead_of_wrapping() {
+        for p in [[u64::MAX, 1], [u64::MAX - 1, 2]] {
+            let df = df!("g" => [1, 1], "p" => p).unwrap();
+            assert!(every_path_raises(&df), "{p:?}");
+        }
+        #[cfg(not(feature = "bigidx"))]
+        {
+            let df = df!("g" => [1, 1], "p" => [u32::MAX as u64, 1]).unwrap();
+            assert!(every_path_raises(&df));
+        }
+    }
+
+    /// Two states that are each a valid count, and overflow only once merged.
+    #[test]
+    fn sum_counts_merge_overflow_raises() {
+        let mut cases = vec![(u64::MAX - 1, 2)];
+        #[cfg(not(feature = "bigidx"))]
+        cases.push((u32::MAX as u64, 1));
+        for (a, b) in cases {
+            assert!(reduction_of(b).finalize().is_ok());
+            let mut merged = reduction_of(a);
+            let other = reduction_of(b);
+            unsafe { merged.combine_subset(&*other, &[0], &[0]).unwrap() };
+            assert!(is_compute_error(merged.finalize()), "{a} + {b}");
+        }
+    }
+
     #[cfg(not(feature = "bigidx"))]
     #[test]
     fn sum_counts_overflow_raises_compute_error() {
         let df = df!("g" => [1, 1], "p" => [IdxSize::MAX, 1]).unwrap();
-
-        let is_compute_error = |r: PolarsResult<_>| matches!(r, Err(PolarsError::ComputeError(_)));
-        assert!(is_compute_error(physical_by_group(&df).map(|_| ())));
-        assert!(is_compute_error(
-            sum_counts(&df)
-                .evaluate(&df, &ExecutionState::new())
-                .map(|_| ())
-        ));
-        assert!(is_compute_error(reducer_total(&df).map(|_| ())));
+        assert!(every_path_raises(&df));
     }
 }

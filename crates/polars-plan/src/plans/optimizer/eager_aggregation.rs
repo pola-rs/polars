@@ -13,6 +13,7 @@
 
 use std::sync::Arc;
 
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::unique_column_name;
@@ -20,7 +21,7 @@ use polars_utils::pl_str::unique_column_name;
 use super::join_utils::unconstrained;
 use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::{
-    NodeStats, StatsCache, composite_key_domain, node_stats, node_stats_with_cache,
+    NodeStats, StatsCache, composite_key_domain, node_stats_with_cache,
 };
 use crate::plans::{
     AExpr, ExprIR, IR, IRAggExpr, IRBooleanFunction, IRBuilder, IRFunctionExpr, JoinTypeOptionsIR,
@@ -193,12 +194,6 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
         return None;
     }
 
-    // A partial count over an R key without a match has no counterpart in the original, so
-    // it must not be able to overflow.
-    let right_stats = node_stats(right, ir_arena, expr_arena)?;
-    if right_stats.max_rows()? > IdxSize::MAX as f64 {
-        return None;
-    }
     if !polars_config::config().eager_aggregation_skip_gate()
         && !gate_passes(left, right, &left_keys, &right_keys, ir_arena, expr_arena)
     {
@@ -218,7 +213,7 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
     let partial_aggs = partial_names
         .iter()
         .map(|(leaf, name)| {
-            let node = partial_agg(leaf, expr_arena);
+            let node = partial_agg(leaf, &right_keys[0], expr_arena);
             ExprIR::new(node, OutputName::Alias(name.clone()))
         })
         .collect();
@@ -541,13 +536,19 @@ fn min_max_is_supported(dtype: &DataType) -> bool {
         )
 }
 
-fn partial_agg(leaf: &Leaf, expr_arena: &mut Arena<AExpr>) -> Node {
+/// A partial count over an R key without a match has no counterpart in the original, so it
+/// must not be able to fail: counts are summed as u64, which `SumCounts` then checks.
+fn partial_agg(leaf: &Leaf, first_key: &PlSmallStr, expr_arena: &mut Arena<AExpr>) -> Node {
     let mut column = || expr_arena.add(AExpr::Column(leaf.column.clone().unwrap()));
     let agg = match leaf.kind {
-        LeafKind::Len => return expr_arena.add(AExpr::Len),
-        LeafKind::Count => IRAggExpr::Count {
-            input: column(),
-            include_nulls: false,
+        // R's keys are not null under the partial group by, so this counts its rows.
+        LeafKind::Len => {
+            let key = expr_arena.add(AExpr::Column(first_key.clone()));
+            IRAggExpr::Sum(count_as_u64(key, expr_arena))
+        },
+        LeafKind::Count => {
+            let input = column();
+            IRAggExpr::Sum(count_as_u64(input, expr_arena))
         },
         LeafKind::Sum => IRAggExpr::Sum(column()),
         LeafKind::Min { propagate_nans } => IRAggExpr::Min {
@@ -562,12 +563,27 @@ fn partial_agg(leaf: &Leaf, expr_arena: &mut Arena<AExpr>) -> Node {
     expr_arena.add(AExpr::Agg(agg))
 }
 
+/// `input.is_not_null().cast(UInt64)`: one for each value that `count` counts.
+fn count_as_u64(input: Node, expr_arena: &mut Arena<AExpr>) -> Node {
+    let function = IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull);
+    let is_not_null = expr_arena.add(AExpr::Function {
+        input: vec![ExprIR::from_node(input, expr_arena)],
+        options: function.function_options(),
+        function,
+    });
+    expr_arena.add(AExpr::Cast {
+        expr: is_not_null,
+        dtype: DataType::UInt64,
+        options: CastOptions::Strict,
+    })
+}
+
 fn final_agg(leaf: &Leaf, partial: Node, is_left: bool, expr_arena: &mut Arena<AExpr>) -> Node {
     let agg = match leaf.kind {
         LeafKind::Count => IRAggExpr::SumCounts(partial),
         // An unmatched L row in a left join is one row of the original group.
         LeafKind::Len if is_left => {
-            let one = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new_idxsize(1))));
+            let one = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(1u64))));
             let function = IRFunctionExpr::FillNull;
             let filled = expr_arena.add(AExpr::Function {
                 input: vec![
