@@ -98,6 +98,8 @@ TEST_CASES = [
     ("e", "lambda x: math.atanh(x)", 'pl.col("e").arctanh()', "self"),
     ("e", "lambda x: math.cos(x)", 'pl.col("e").cos()', None),
     ("e", "lambda x: math.degrees(x)", 'pl.col("e").degrees()', None),
+    ("e", "lambda x: math.erf(x)", 'pl.col("e").erf()', None),
+    ("e", "lambda x: math.erfc(x)", 'pl.col("e").erfc()', None),
     ("e", "lambda x: math.exp(x)", 'pl.col("e").exp()', None),
     ("e", "lambda x: math.log(x)", 'pl.col("e").log()', None),
     ("e", "lambda x: math.log10(x)", 'pl.col("e").log10()', None),

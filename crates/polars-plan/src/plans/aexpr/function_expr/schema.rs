@@ -303,6 +303,14 @@ impl IRFunctionExpr {
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "exp")?
                 .map_to_float_dtype(),
             #[cfg(feature = "log")]
+            Erf => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "erf")?
+                .map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            Erfc => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "erfc")?
+                .map_to_float_dtype(),
+            #[cfg(feature = "log")]
             Log => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log")?
                 .log_dtype(),

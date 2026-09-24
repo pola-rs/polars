@@ -761,6 +761,20 @@ pub(super) fn exp(s: &Column) -> PolarsResult<Column> {
     Ok(s.as_materialized_series().exp()?.into())
 }
 
+#[cfg(feature = "log")]
+pub(super) fn erf(s: &Column) -> PolarsResult<Column> {
+    use polars_ops::series::LogSeries;
+
+    Ok(s.as_materialized_series().erf()?.into())
+}
+
+#[cfg(feature = "log")]
+pub(super) fn erfc(s: &Column) -> PolarsResult<Column> {
+    use polars_ops::series::LogSeries;
+
+    Ok(s.as_materialized_series().erfc()?.into())
+}
+
 pub(super) fn unique(s: &Column, stable: bool) -> PolarsResult<Column> {
     if stable {
         s.unique_stable()

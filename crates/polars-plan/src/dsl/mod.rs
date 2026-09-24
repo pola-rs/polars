@@ -1631,6 +1631,18 @@ impl Expr {
     }
 
     #[cfg(feature = "log")]
+    /// Compute the error function of all elements in the input array.
+    pub fn erf(self) -> Self {
+        self.map_unary(FunctionExpr::Erf)
+    }
+
+    #[cfg(feature = "log")]
+    /// Compute the complementary error function of all elements in the input array.
+    pub fn erfc(self) -> Self {
+        self.map_unary(FunctionExpr::Erfc)
+    }
+
+    #[cfg(feature = "log")]
     /// Compute the entropy as `-sum(pk * log(pk))`.
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {

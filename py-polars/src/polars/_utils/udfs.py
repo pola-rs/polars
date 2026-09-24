@@ -131,6 +131,8 @@ _MATH_FUNCTIONS: Final[frozenset[str]] = frozenset(
         "cos",
         "cosh",
         "degrees",
+        "erf",
+        "erfc",
         "exp",
         "floor",
         "log",

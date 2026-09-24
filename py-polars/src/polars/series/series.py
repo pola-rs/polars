@@ -1903,6 +1903,44 @@ class Series(metaclass=_Meta):
         ]
         """
 
+    def erf(self) -> Series:
+        """
+        Compute the `error function`_, element-wise.
+
+        .. _error function: https://en.wikipedia.org/wiki/Error_function
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 0, 1])
+        >>> s.erf()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            -0.842701
+            0.0
+            0.842701
+        ]
+        """
+
+    def erfc(self) -> Series:
+        """
+        Compute the `complementary error function`_, element-wise.
+
+        .. _complementary error function: https://en.wikipedia.org/wiki/Error_function
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 0, 1])
+        >>> s.erfc()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.842701
+            1.0
+            0.157299
+        ]
+        """
+
     def drop_nulls(self) -> Series:
         """
         Drop all null values.

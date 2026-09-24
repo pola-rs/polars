@@ -1103,6 +1103,14 @@ impl PyExpr {
         self.inner.clone().exp().into()
     }
 
+    fn erf(&self) -> Self {
+        self.inner.clone().erf().into()
+    }
+
+    fn erfc(&self) -> Self {
+        self.inner.clone().erfc().into()
+    }
+
     fn entropy(&self, base: f64, normalize: bool) -> Self {
         self.inner.clone().entropy(base, normalize).into()
     }

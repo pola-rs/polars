@@ -278,6 +278,10 @@ pub enum IRFunctionExpr {
     Log1p,
     #[cfg(feature = "log")]
     Exp,
+    #[cfg(feature = "log")]
+    Erf,
+    #[cfg(feature = "log")]
+    Erfc,
     Unique(/* maintain_order */ bool),
     #[cfg(feature = "round_series")]
     Round {
@@ -653,6 +657,10 @@ impl Hash for IRFunctionExpr {
             Log1p => {},
             #[cfg(feature = "log")]
             Exp => {},
+            #[cfg(feature = "log")]
+            Erf => {},
+            #[cfg(feature = "log")]
+            Erfc => {},
             Unique(a) => a.hash(state),
             #[cfg(feature = "round_series")]
             Round { decimals, mode } => {
@@ -905,6 +913,10 @@ impl Display for IRFunctionExpr {
             Log1p => "log1p",
             #[cfg(feature = "log")]
             Exp => "exp",
+            #[cfg(feature = "log")]
+            Erf => "erf",
+            #[cfg(feature = "log")]
+            Erfc => "erfc",
             Unique(stable) => {
                 if *stable {
                     "unique_stable"
@@ -1240,7 +1252,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             F::InterpolateBy => FunctionOptions::length_preserving(),
             #[cfg(feature = "log")]
-            F::Log | F::Log1p | F::Exp => FunctionOptions::elementwise(),
+            F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc => FunctionOptions::elementwise(),
             #[cfg(feature = "log")]
             F::Entropy { .. } => {
                 FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
