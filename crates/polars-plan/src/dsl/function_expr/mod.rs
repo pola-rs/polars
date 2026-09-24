@@ -336,6 +336,7 @@ pub enum FunctionExpr {
         kwargs: Arc<[u8]>,
     },
     /// Rewritten into another expression during DSL->IR conversion.
+    #[cfg(feature = "dsl_rewrite")]
     DslRewrite(DslRewriteSource),
 
     FoldHorizontal {
@@ -475,6 +476,7 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
+            #[cfg(feature = "dsl_rewrite")]
             DslRewrite(source) => source.hash(state),
 
             FoldHorizontal {
@@ -920,6 +922,7 @@ impl Display for FunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
+            #[cfg(feature = "dsl_rewrite")]
             DslRewrite(source) => return Display::fmt(source, f),
             FoldHorizontal { .. } => "fold",
             ReduceHorizontal { .. } => "reduce",

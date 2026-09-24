@@ -34,6 +34,7 @@ impl fmt::Debug for Expr {
         use Expr::*;
         match self {
             Element => f.write_str("element()"),
+            #[cfg(feature = "dsl_rewrite")]
             RewriteInput(i) => write!(f, "rewrite_input({i})"),
             #[cfg(feature = "dynamic_group_by")]
             Rolling {

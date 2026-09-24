@@ -31,6 +31,7 @@ use crate::plans::conversion::dsl_to_ir::scans::SourcesToFileInfo;
 
 mod concat;
 mod datatype_fn_to_ir;
+#[cfg(feature = "dsl_rewrite")]
 mod dsl_rewrite;
 mod expr_expansion;
 mod expr_to_ir;

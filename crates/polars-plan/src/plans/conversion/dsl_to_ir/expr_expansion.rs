@@ -1,5 +1,6 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
 
+#[cfg(feature = "dsl_rewrite")]
 use super::dsl_rewrite::rewrite_input_column_name;
 use super::*;
 use crate::constants::{
@@ -268,7 +269,9 @@ fn expand_expression_rec(
 ) -> PolarsResult<usize> {
     let start_len = out.len();
     match &expr {
-        Expr::Element | Expr::RewriteInput(_) => out.push(expr.clone()),
+        Expr::Element => out.push(expr.clone()),
+        #[cfg(feature = "dsl_rewrite")]
+        Expr::RewriteInput(_) => out.push(expr.clone()),
         Expr::Alias(subexpr, name) => {
             _ = expand_single(
                 subexpr.as_ref(),
@@ -301,10 +304,13 @@ fn expand_expression_rec(
             if schema.contains(POLARS_STRUCTFIELDS) {
                 schema.to_mut().remove(POLARS_STRUCTFIELDS);
             }
-            let mut i = 0;
-            while schema.contains(&rewrite_input_column_name(i)) {
-                schema.to_mut().remove(&rewrite_input_column_name(i));
-                i += 1;
+            #[cfg(feature = "dsl_rewrite")]
+            {
+                let mut i = 0;
+                while schema.contains(&rewrite_input_column_name(i)) {
+                    schema.to_mut().remove(&rewrite_input_column_name(i));
+                    i += 1;
+                }
             }
             let columns = selector.into_columns(schema.as_ref(), ignored_selector_columns)?;
             out.extend(columns.into_iter().map(Expr::Column));

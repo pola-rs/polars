@@ -212,6 +212,7 @@ dtype-f16 = [
 
 object = ["polars-plan/object", "polars-ops/object", "polars-mem-engine/object", "polars-stream?/object"]
 ffi_plugin = ["polars-expr/ffi_plugin"]
+dsl_rewrite = ["polars-plan/dsl_rewrite"]
 find_many = ["polars-expr/find_many"]
 month_start = ["polars-expr/month_start"]
 month_end = ["polars-expr/month_end"]

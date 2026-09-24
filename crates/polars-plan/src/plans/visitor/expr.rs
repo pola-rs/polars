@@ -93,6 +93,7 @@ impl TreeWalker for Expr {
             Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
             KeepName(expr) => KeepName(am(expr, f)?),
             Element => Element,
+            #[cfg(feature = "dsl_rewrite")]
             RewriteInput(i) => RewriteInput(i),
             Len => Len,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },

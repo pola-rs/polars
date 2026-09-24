@@ -1,3 +1,4 @@
+#[cfg(feature = "dsl_rewrite")]
 use super::dsl_rewrite::{RewriteInputs, convert_dsl_rewrite};
 use super::functions::convert_functions;
 use super::*;
@@ -58,6 +59,7 @@ pub struct ExprToIRContext<'a> {
     /// Check whether mentioned column names exist in the schema.
     pub check_column_names: bool,
     /// Set if doing an expression rewrite.
+    #[cfg(feature = "dsl_rewrite")]
     pub rewrite_inputs: Option<RewriteInputs>,
 }
 
@@ -69,6 +71,7 @@ impl<'a> ExprToIRContext<'a> {
             schema,
             allow_unknown: false,
             check_column_names: true,
+            #[cfg(feature = "dsl_rewrite")]
             rewrite_inputs: None,
         }
     }
@@ -94,6 +97,7 @@ impl<'a> ExprToIRContext<'a> {
             schema,
             allow_unknown: false,
             check_column_names: true,
+            #[cfg(feature = "dsl_rewrite")]
             rewrite_inputs: None,
         }
     }
@@ -153,6 +157,7 @@ pub(super) fn to_aexpr_impl(
 
     let (v, output_name) = match expr {
         Expr::Element => (AExpr::Element, PlSmallStr::EMPTY),
+        #[cfg(feature = "dsl_rewrite")]
         Expr::RewriteInput(i) => {
             let Some(inputs) = ctx.rewrite_inputs.as_mut() else {
                 polars_bail!(
@@ -415,6 +420,7 @@ pub(super) fn to_aexpr_impl(
                 output_name,
             )
         },
+        #[cfg(feature = "dsl_rewrite")]
         Expr::Function {
             input,
             function: FunctionExpr::DslRewrite(source),
@@ -515,6 +521,7 @@ pub(super) fn to_aexpr_impl(
                 arena: ctx.arena,
                 allow_unknown: ctx.allow_unknown,
                 check_column_names: ctx.check_column_names,
+                #[cfg(feature = "dsl_rewrite")]
                 rewrite_inputs: None,
             };
             let (evaluation, _) = to_aexpr_impl(owned(evaluation), &mut evaluation_ctx)?;
@@ -572,6 +579,7 @@ pub(super) fn to_aexpr_impl(
                     schema: &eval_schema,
                     allow_unknown: ctx.allow_unknown,
                     check_column_names: ctx.check_column_names,
+                    #[cfg(feature = "dsl_rewrite")]
                     rewrite_inputs: None,
                 };
                 let exprir = to_expr_ir(e, &mut eval_ctx)?;
