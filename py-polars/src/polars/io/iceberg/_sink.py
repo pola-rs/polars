@@ -60,6 +60,24 @@ class _AlreadyCommitted(Exception):
     does not clean up this transaction's manifests when it propagates.
     """
 
+    def __init__(self, table: pyiceberg.table.Table) -> None:
+        self.table = table
+
+
+def _copy_table_state(src: pyiceberg.table.Table, dst: pyiceberg.table.Table) -> None:
+    # Same check as `Table.refresh`: a dropped and recreated table must not take
+    # over the caller's table.
+    if src.metadata.table_uuid != dst.metadata.table_uuid:
+        msg = (
+            "Table UUID does not match: "
+            f"current={dst.metadata.table_uuid} != refreshed={src.metadata.table_uuid}"
+        )
+        raise ValueError(msg)
+    dst.metadata = src.metadata
+    dst.metadata_location = src.metadata_location
+    dst.io = src.io
+    dst.config = src.config
+
 
 def _already_committed(metadata: TableMetadata, sink_uuid: str) -> bool:
     return any(
@@ -121,7 +139,7 @@ class _SinkCatalog:
                 )
 
             if _already_committed(metadata, self._sink_uuid):
-                raise _AlreadyCommitted from e
+                raise _AlreadyCommitted(current) from e
 
             raise
 
@@ -135,7 +153,7 @@ def _sink_transaction(table: pyiceberg.table.Table, sink_uuid: str) -> Transacti
         # ref, so the next commit fails and `_SinkCatalog` finds the twin.
         def _rebuild_snapshot_updates(self) -> None:
             if _already_committed(self._table.metadata, sink_uuid):
-                raise _AlreadyCommitted
+                raise _AlreadyCommitted(self._table)
             super()._rebuild_snapshot_updates()
 
     return _SinkTransaction(table)
@@ -831,11 +849,7 @@ class IcebergSinkState:
 
         table = self.table()
 
-        if _already_committed(table.metadata, self.sink_uuid_str):
-            if verbose:
-                eprint("IcebergSinkState[commit]: already committed, skipping")
-        else:
-            self._commit(table, sinked_files, verbose=verbose)
+        self._commit(table, sinked_files, verbose=verbose)
 
         self.commit_result_df.set(
             pl.DataFrame(
@@ -861,6 +875,11 @@ class IcebergSinkState:
         verbose: bool,
     ) -> None:
         from pyiceberg.table import Table
+
+        if _already_committed(table.metadata, self.sink_uuid_str):
+            if verbose:
+                eprint("IcebergSinkState[commit]: already committed, skipping")
+            return
 
         original_metadata_location = table.metadata_location
         snapshot_properties = self.snapshot_properties | {
@@ -922,10 +941,10 @@ class IcebergSinkState:
                     eprint("IcebergSinkState[commit]: begin transaction commit")
 
                 start_instant = perf_counter()
-        except _AlreadyCommitted:
+        except _AlreadyCommitted as e:
             if verbose:
                 eprint("IcebergSinkState[commit]: already committed, skipping")
-            table.refresh()
+            _copy_table_state(e.table, table)
             return
 
         if verbose:
@@ -934,10 +953,7 @@ class IcebergSinkState:
                 f"IcebergSinkState[commit]: finish transaction commit ({elapsed:.3f}s)"
             )
 
-        table.metadata = wrapped.metadata
-        table.metadata_location = wrapped.metadata_location
-        table.io = wrapped.io
-        table.config = wrapped.config
+        _copy_table_state(wrapped, table)
 
         assert table.metadata_location != original_metadata_location
 
