@@ -57,6 +57,25 @@ def test_ipc_roundtrip_stream_parametric(
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
+def test_read_ipc_stream_sequential_from_file_handle(tmp_path: Path) -> None:
+    # Multiple streams written to one handle should be readable one after another.
+    # https://github.com/pola-rs/polars/issues/20816
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "streams.arrow"
+
+    frames = [pl.DataFrame({"a": [i], "b": [f"v{i}"]}) for i in range(3)]
+    with path.open("wb") as f:
+        for df in frames:
+            df.write_ipc_stream(f)
+
+    with path.open("rb") as f:
+        for expected in frames:
+            result = pl.read_ipc_stream(f, use_pyarrow=False)
+            assert_frame_equal(result, expected)
+        # Every stream has been consumed, so the handle is left at EOF.
+        assert f.read() == b""
+
+
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 @given(
     df=dataframes(
