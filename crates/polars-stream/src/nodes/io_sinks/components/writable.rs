@@ -43,6 +43,14 @@ impl WriteTarget {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    pub fn local_raw_fd(&self) -> Option<std::os::fd::RawFd> {
+        match &self.variant {
+            WriteTargetVariant::Local(file) => Some(std::os::fd::AsRawFd::as_raw_fd(file)),
+            _ => None,
+        }
+    }
+
     pub fn as_buffered_writable(&mut self) -> Box<dyn io::Write + Send + '_> {
         let is_cloud = matches!(&self.variant, WriteTargetVariant::Cloud(_));
 
