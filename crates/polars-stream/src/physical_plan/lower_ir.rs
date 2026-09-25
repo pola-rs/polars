@@ -661,6 +661,7 @@ pub fn lower_ir(
                 predicate,
                 predicate_file_skip_applied,
                 unified_scan_args,
+                maintain_order,
             } = v.clone()
             else {
                 unreachable!();
@@ -944,6 +945,7 @@ pub fn lower_ir(
                         table_statistics: unified_scan_args.table_statistics,
                         file_schema,
                         disable_morsel_split,
+                        maintain_order,
                     };
 
                     let PhysNodeKind::MultiScan {
@@ -951,6 +953,7 @@ pub fn lower_ir(
                         row_index: row_index_to_multiscan,
                         pre_slice: pre_slice_to_multiscan,
                         predicate: predicate_to_multiscan,
+                        maintain_order: maintain_order_to_multiscan,
                         ..
                     } = &mut multi_scan_node
                     else {
@@ -965,6 +968,9 @@ pub fn lower_ir(
                     {
                         *row_index_to_multiscan = row_index_post.take();
                     }
+
+                    // The row index node below needs the scan order.
+                    *maintain_order_to_multiscan |= row_index_post.is_some();
 
                     // Projection pushdown should not have changed the row-index column position.
                     if let Some(ri) = row_index_post.as_ref() {

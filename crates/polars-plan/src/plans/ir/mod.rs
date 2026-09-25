@@ -80,6 +80,8 @@ pub enum IR {
         scan_type: Box<FileScanIR>,
         /// generic options that can be used for all file types.
         unified_scan_args: Box<UnifiedScanArgs>,
+        /// Whether the output order is observed. Cleared by the optimizer if it is not.
+        maintain_order: bool,
     },
     DataFrameScan {
         df: Arc<DataFrame>,

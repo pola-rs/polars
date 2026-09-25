@@ -588,6 +588,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             output_schema: _,
             scan_type,
             unified_scan_args,
+            maintain_order: _,
         } => {
             Scan {
                 paths: {

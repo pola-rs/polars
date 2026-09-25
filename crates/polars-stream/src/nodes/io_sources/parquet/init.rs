@@ -1,5 +1,8 @@
 use std::sync::{Arc, Mutex};
 
+use futures::future::Either;
+use futures::stream::FuturesUnordered;
+use futures::{FutureExt, StreamExt};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor;
 use polars_core::frame::DataFrame;
@@ -10,6 +13,7 @@ use polars_io::predicates::{ColumnPredicateExpr, SpecializedColumnPredicate};
 use polars_io::prelude::ParallelStrategy;
 use polars_parquet::read::PredicateFilter;
 use polars_utils::IdxSize;
+use tokio::sync::Semaphore;
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::{DynamicConjunct, PredicateColumn, RowGroupDecoder, Source};
@@ -49,6 +53,7 @@ impl ParquetReadImpl {
     pub(super) fn init_morsel_distributor(&mut self) -> AsyncTaskData {
         let verbose = self.verbose;
         let use_statistics = self.options.use_statistics;
+        let maintain_order = self.maintain_order;
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
 
@@ -223,20 +228,87 @@ impl ParquetReadImpl {
         }));
 
         // Decode loop (spawns decodes on the computational executor).
-        let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
-        let decode_task = AbortOnDropHandle(ASYNC.spawn(async move {
-            while let Some((prefetch_task, permits)) = prefetch_recv.recv().await {
-                let row_group_data = prefetch_task.await.unwrap()?;
-                let row_group_decoder = row_group_decoder.clone();
-                let decode_fut = executor::spawn(TaskPriority::High, async move {
-                    row_group_decoder.row_group_data_to_df(row_group_data).await
-                });
-                if decode_send.send((decode_fut, permits)).await.is_err() {
-                    break;
+        // Unordered decodes are bounded by their own slots, so its channel stays shallow.
+        let num_pipelines = self.config.num_pipelines;
+        let (decode_send, mut decode_recv) =
+            tokio::sync::mpsc::channel(if maintain_order { num_pipelines } else { 1 });
+        let decode_task = if maintain_order {
+            AbortOnDropHandle(ASYNC.spawn(async move {
+                while let Some((prefetch_task, permits)) = prefetch_recv.recv().await {
+                    let row_group_data = prefetch_task.await.unwrap()?;
+                    let row_group_decoder = row_group_decoder.clone();
+                    let decode_fut = executor::spawn(TaskPriority::High, async move {
+                        row_group_decoder.row_group_data_to_df(row_group_data).await
+                    });
+                    if decode_send
+                        .send((Either::Left(decode_fut), permits))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
-            }
-            PolarsResult::Ok(())
-        }));
+                PolarsResult::Ok(())
+            }))
+        } else {
+            // Decode in fetch completion order; each decode hands off its own result.
+            AbortOnDropHandle(ASYNC.spawn(async move {
+                let mut fetches = FuturesUnordered::new();
+                let mut prefetch_done = false;
+                // In-flight bound of num_pipelines + 1, matching the ordered path.
+                let decode_slots = Arc::new(Semaphore::new(num_pipelines + 1));
+                let mut decode_handles = FuturesUnordered::new();
+
+                // `closed()` is always enabled, so `select!` never sees every branch disabled.
+                while !(prefetch_done && fetches.is_empty()) {
+                    tokio::select! {
+                        biased;
+
+                        // Distributor is gone; dropping the handles cancels running decodes.
+                        _ = decode_send.closed() => return Ok(()),
+
+                        v = prefetch_recv.recv(), if !prefetch_done => match v {
+                            Some((prefetch_task, permits)) => {
+                                fetches.push(async move { (prefetch_task.await.unwrap(), permits) })
+                            },
+                            None => prefetch_done = true,
+                        },
+
+                        Some((row_group_data, permits)) = fetches.next() => {
+                            let row_group_data = row_group_data?;
+
+                            // Backpressure: blocks the prefetch drain until a slot frees.
+                            let slot = decode_slots.clone().acquire_owned().await.unwrap();
+
+                            // Keep the set bounded; panics surface on drain.
+                            while let Some(Some(())) = decode_handles.next().now_or_never() {}
+
+                            let row_group_decoder = row_group_decoder.clone();
+                            let decode_send = decode_send.clone();
+
+                            decode_handles.push(executor::AbortOnDropHandle::new(executor::spawn(
+                                TaskPriority::High,
+                                async move {
+                                    let df = row_group_decoder
+                                        .row_group_data_to_df(row_group_data)
+                                        .await;
+
+                                    if !matches!(&df, Ok(df) if df.height() == 0) {
+                                        let fut = Either::Right(std::future::ready(df));
+                                        let _ = decode_send.send((fut, permits)).await;
+                                    }
+                                    drop(slot);
+                                },
+                            )));
+                        },
+                    }
+                }
+
+                drop(decode_send);
+                while decode_handles.next().await.is_some() {}
+                PolarsResult::Ok(())
+            }))
+        };
 
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.

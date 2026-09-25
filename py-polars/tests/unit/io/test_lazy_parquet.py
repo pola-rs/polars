@@ -1950,3 +1950,119 @@ def test_sink_parquet_lazy_and_collect() -> None:
     f.seek(0)
 
     assert_frame_equal(pl.scan_parquet(f).collect(), df)
+
+
+@pytest.mark.parametrize(
+    ("query", "maintain_order", "check_row_order"),
+    [
+        (lambda lf: lf, True, True),
+        (lambda lf: lf.head(3), True, True),
+        (lambda lf: lf.select(pl.col("a").diff().abs().sum()), True, True),
+        (lambda lf: lf.select(pl.col("a").sum()), False, True),
+        (lambda lf: lf.sort("a"), False, True),
+        (lambda lf: lf.group_by("b").agg(pl.col("a").sum()), False, False),
+        (lambda lf: lf.head(3).select(pl.col("a").sum()), False, True),
+        # Row index without a predicate is currently applied post-scan, which forces
+        # order. Pushing it into the scan would be equally valid, so the flag is not
+        # asserted.
+        (lambda lf: lf.with_row_index().sort("a"), None, True),
+        (
+            lambda lf: lf.with_row_index().filter(pl.col("b") == 1).sort("a"),
+            False,
+            True,
+        ),
+        (lambda lf: lf.with_row_index().select(pl.col("index").max()), None, True),
+    ],
+)
+def test_scan_parquet_maintain_order_only_if_observed(
+    query: Callable[[pl.LazyFrame], pl.LazyFrame],
+    maintain_order: bool | None,
+    check_row_order: bool,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    f = io.BytesIO()
+    pl.DataFrame({"a": range(10), "b": [0, 1] * 5}).write_parquet(f, row_group_size=2)
+    f.seek(0)
+
+    q = query(pl.scan_parquet(f))
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        q.collect(engine="streaming")
+        capture = capfd.readouterr().err
+
+    if maintain_order is not None:
+        reader_lines = [
+            x
+            for x in capture.splitlines()
+            if x.startswith("[ParquetFileReader]") and "maintain_order:" in x
+        ]
+        assert reader_lines
+        assert all(
+            f"maintain_order: {str(maintain_order).lower()}" in x for x in reader_lines
+        )
+
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(
+            engine="streaming",
+            optimizations=pl.QueryOptFlags(check_order_observe=False),
+        ),
+        check_row_order=check_row_order,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize("n_files", [1, 3])
+def test_scan_parquet_unordered_row_groups(n_files: int, tmp_path: Path) -> None:
+    n = 100_000
+    a = pl.Series("a", range(n))
+    df = pl.DataFrame(
+        {
+            "a": a,
+            "b": a % 7,
+            "c": pl.select(pl.when(a % 3 == 0).then(a).otherwise(None)).to_series(),
+            "d": pl.select(pl.concat_list([a, a % 5])).to_series(),
+        }
+    )
+
+    for i in range(n_files):
+        start, end = n * i // n_files, n * (i + 1) // n_files
+        df.slice(start, end - start).write_parquet(
+            tmp_path / f"{i}.parquet", row_group_size=1_000
+        )
+
+    lf = pl.scan_parquet(tmp_path / "*.parquet")
+
+    def collect(q: pl.LazyFrame) -> pl.DataFrame:
+        return q.collect(engine="streaming")
+
+    assert_frame_equal(collect(lf.sort("a")), df)
+    assert_frame_equal(
+        collect(lf.with_row_index(offset=5).sort("index")),
+        df.with_row_index(offset=5),
+    )
+    assert_frame_equal(
+        collect(lf.with_row_index().filter(pl.col("b") == 3).sort("a")),
+        df.with_row_index().filter(pl.col("b") == 3),
+    )
+    assert_frame_equal(
+        collect(lf.slice(12_345, 54_321).select(pl.col("a").sum(), pl.len())),
+        df.slice(12_345, 54_321).select(pl.col("a").sum(), pl.len()),
+    )
+    assert_frame_equal(
+        collect(lf.group_by("b").agg(pl.col("a").sum()).sort("b")),
+        df.group_by("b").agg(pl.col("a").sum()).sort("b"),
+    )
+    assert_frame_equal(
+        collect(lf.filter(pl.col("b") == 3).select(pl.col("a").sum(), pl.len())),
+        df.filter(pl.col("b") == 3).select(pl.col("a").sum(), pl.len()),
+    )
+    # Most row groups decode to empty frames.
+    assert_frame_equal(
+        collect(lf.filter(pl.col("a") % 5_000 == 1).sort("a")),
+        df.filter(pl.col("a") % 5_000 == 1),
+    )

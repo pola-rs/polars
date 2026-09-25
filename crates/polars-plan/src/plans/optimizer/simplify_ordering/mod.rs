@@ -77,6 +77,20 @@ pub fn simplify_and_fetch_orderings(
 
     cache_updater.update_cache_nodes(ir_arena);
 
+    // Scans whose output order is not observed may read out of order.
+    for (key, edges) in ir_node_to_edges_map.iter() {
+        if let Some(node) = key.node()
+            && let IR::Scan { maintain_order, .. } = ir_arena.get_mut(node)
+            && !edges.out_edges.is_empty()
+            && edges
+                .out_edges
+                .iter()
+                .all(|k| all_edges_map.get(*k).unwrap().is_unordered())
+        {
+            *maintain_order = false;
+        }
+    }
+
     (ir_node_to_edges_map, all_edges_map)
 }
 
