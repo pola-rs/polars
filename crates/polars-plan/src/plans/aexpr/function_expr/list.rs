@@ -121,7 +121,15 @@ impl IRListFunction {
             Sort(_) => mapper.ensure_is_list()?.with_same_dtype(),
             Length => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_sets")]
-            SetOperation(_) => mapper.ensure_is_list()?.with_same_dtype(),
+            SetOperation(_) => {
+                let mapper = mapper.ensure_is_list()?;
+                // Fall back to the LHS dtype on mismatched nesting (e.g. `List(List(_))` vs
+                // `List(_)`) so the executor's own validation raises its `InvalidOperationError`
+                // instead of a `SchemaError` surfacing here during schema resolution.
+                mapper
+                    .map_to_list_supertype()
+                    .or_else(|_| mapper.with_same_dtype())
+            },
             Join(_) => mapper.try_map_dtype(|dtype| {
                 let DataType::List(inner_dtype) = dtype else {
                     polars_bail!(
