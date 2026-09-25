@@ -25,8 +25,16 @@ pub(crate) enum IsInHaystack {
 }
 
 #[cfg(feature = "is_in")]
-pub(crate) fn needle_isin_haystack(lv: &LiteralValue, nulls_equal: bool) -> Option<IsInHaystack> {
-    if !lv.get_datatype().is_list() {
+pub(crate) fn needle_isin_haystack(
+    lv: &LiteralValue,
+    needle_dtype: &DataType,
+    nulls_equal: bool,
+) -> Option<IsInHaystack> {
+    let DataType::List(inner) = lv.get_datatype() else {
+        return None;
+    };
+    // `is_in` compares some dtypes natively that pyarrow would coerce by its own rules.
+    if *inner != *needle_dtype && !inner.is_null() {
         return None;
     }
 
@@ -241,7 +249,8 @@ pub fn predicate_to_pa(
                 return None;
             };
 
-            match needle_isin_haystack(lv, *nulls_equal)? {
+            let needle_dtype = input[0].dtype(schema, expr_arena).ok()?;
+            match needle_isin_haystack(lv, needle_dtype, *nulls_equal)? {
                 IsInHaystack::Empty => Some("pa.compute.scalar(False)".to_string()),
                 IsInHaystack::Series(s) => {
                     let values = series_to_pyarrow_list(&s)?;
@@ -631,7 +640,8 @@ pub fn aexpr_to_pyarrow<'py>(
             let AExpr::Literal(lv) = expr_arena.get(rhs_node) else {
                 return None;
             };
-            let values_list = match needle_isin_haystack(lv, *nulls_equal)? {
+            let needle_dtype = input[0].dtype(schema, expr_arena).ok()?;
+            let values_list = match needle_isin_haystack(lv, needle_dtype, *nulls_equal)? {
                 IsInHaystack::Empty => return pc.call_method1("scalar", (false,)).ok(),
                 IsInHaystack::Series(s) => series_to_py_list(py, &s)?,
             };

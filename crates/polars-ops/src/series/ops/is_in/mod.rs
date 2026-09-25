@@ -575,9 +575,14 @@ where
         (DataType::Enum(_, mapping) | DataType::Categorical(_, mapping), DataType::String) => {
             (&|s: Series| {
                 let ca = s.str()?;
+                // A string without a category must not read as a null element, so it maps to
+                // an id no category has: the physical type always leaves its maximum unused.
+                let absent = <T::Native as num_traits::Bounded>::max_value();
                 let ca: ChunkedArray<T::PolarsPhysical> = ca
                     .iter()
-                    .map(|opt_s| opt_s.and_then(|s| mapping.get_cat(s).map(T::Native::from_cat)))
+                    .map(|opt_s| {
+                        opt_s.map(|s| mapping.get_cat(s).map_or(absent, T::Native::from_cat))
+                    })
                     .collect_ca(PlSmallStr::EMPTY);
                 Ok(ca.into_series())
             }) as _

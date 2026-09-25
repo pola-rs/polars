@@ -99,15 +99,14 @@ impl IRBooleanFunction {
                 )
                 .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_ALL_INPUTS),
             #[cfg(feature = "is_in")]
-            B::IsIn { nulls_equal, .. } => FunctionOptions::elementwise()
-                .with_casting_rules(CastingRules::FirstArgLossless)
-                .with_flags(|f| {
-                    if !*nulls_equal {
-                        f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT
-                    } else {
-                        f
-                    }
-                }),
+            // Type coercion resolves `is_in` itself; see `coerce_is_in`.
+            B::IsIn { nulls_equal, .. } => FunctionOptions::elementwise().with_flags(|f| {
+                if !*nulls_equal {
+                    f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT
+                } else {
+                    f
+                }
+            }),
             #[cfg(feature = "is_close")]
             B::IsClose { .. } => FunctionOptions::elementwise()
                 .with_supertyping(
