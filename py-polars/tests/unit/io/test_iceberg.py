@@ -42,7 +42,7 @@ from pyiceberg.partitioning import (
     YearTransform,
 )
 from pyiceberg.schema import Schema as IcebergSchema
-from pyiceberg.table import StaticTable
+from pyiceberg.table import DataScan, StaticTable
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.types import (
     BinaryType,
@@ -517,6 +517,27 @@ def test_convert_nan_predicate(
     predicate: str, expected_factory: Callable[[], Any]
 ) -> None:
     assert try_convert_pyarrow_predicate(predicate) == expected_factory()
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_starts_with_prunes_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "s", StringType()))
+    )
+    for value in ["apple", "banana", "cherry"]:  # One data file per value.
+        pl.DataFrame({"s": [value]}).write_iceberg(tbl, mode="append")
+
+    planned: list[Any] = []
+    plan_files = DataScan.plan_files
+    monkeypatch.setattr(
+        DataScan, "plan_files", lambda s: planned.extend(plan_files(s)) or planned
+    )
+
+    out = pl.scan_iceberg(tbl).filter(pl.col("s").str.starts_with("b")).collect()
+    assert out["s"].to_list() == ["banana"]
+    assert len(planned) == 1
 
 
 @dataclass(kw_only=True)

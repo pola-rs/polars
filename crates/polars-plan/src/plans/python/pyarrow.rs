@@ -272,6 +272,19 @@ pub fn predicate_to_pa(
                 ))
             }
         },
+        #[cfg(feature = "strings")]
+        AExpr::Function {
+            function: IRFunctionExpr::StringExpr(IRStringFunction::StartsWith),
+            input,
+            ..
+        } => {
+            let col = predicate_to_pa(input.first()?.node(), expr_arena, schema)?;
+            let AExpr::Literal(lv) = expr_arena.get(input.get(1)?.node()) else {
+                return None;
+            };
+            let prefix = sanitize(lv.extract_str()?)?;
+            Some(format!("pa.compute.starts_with({col}, pattern='{prefix}')"))
+        },
         AExpr::Function {
             function, input, ..
         } => {
