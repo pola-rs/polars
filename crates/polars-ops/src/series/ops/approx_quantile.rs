@@ -32,7 +32,7 @@ where
     let build = |items: &[T]| {
         let mut sketch = Sketch::new(method, error);
         for item in items {
-            sketch.update_owned(item.clone());
+            sketch.update(item);
         }
         sketch
     };

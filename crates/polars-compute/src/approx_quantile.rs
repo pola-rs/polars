@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 use std::str::FromStr;
-use std::{fmt, mem};
+use std::{fmt, mem, slice};
 
 pub use kll::KLLSketch;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};
@@ -22,9 +22,9 @@ const FAILURE_PROBABILITY: f64 = 1.0 - 0.9973;
 pub const MIN_ERROR: f64 = 1.0 / (1u64 << 32) as f64;
 
 /// Looseness of the formal KLL error bound (estimated by measuring).
-const KLL_BOUND_LOOSENESS: f64 = 4.0;
+const KLL_BOUND_LOOSENESS: f64 = 5.9;
 /// Looseness of the formal REQ error bound (estimated by measuring).
-const REQ_BOUND_LOOSENESS: f64 = 20.0;
+const REQ_BOUND_LOOSENESS: f64 = 37.0;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -225,26 +225,63 @@ pub mod kll {
     /// KLL calls this `c`.
     const CAPACITY_DECAY: f64 = 2.0 / 3.0;
 
+    /// Require compactors to be at least this size.
     const MIN_COMPACTOR_SIZE: usize = 2;
+
+    /// Compactors at or below this capacity are replaced by [`Sampler`].
+    const SAMPLER_CUTOFF: usize = 8;
 
     /// Smallest `k` guaranteeing rank error <= `error * n` w.p. >= 1 - `delta` for a
     /// *single* query value, with `delta` = `FAILURE_PROBABILITY`.
-    ///
-    /// Randomized compaction makes the rank error a zero-mean sum of ±2^h steps, one
-    /// per compaction at level `h`. Bounding the compactions per level and summing
-    /// the variance over `h < H` gives `std <= (n/k) sqrt(1/(2c-1) + 2/3)`, for
-    /// `c > 1/2`. Each step is bounded and mean zero given the levels below it, so
-    /// Azuma-Hoeffding turns that into a sub-Gaussian tail with the same proxy,
-    /// giving `k = z sqrt(1/(2c-1) + 2/3) / error` for `z = sqrt(2 ln(2/delta))`.
-    ///
-    /// The bound is computed for the worst case where compactions happen eagerly.
-    /// Therefore, the bound is somewhat loose with respect to the implementation.
+    #[inline(never)]
     fn compute_k(error: f64) -> usize {
         assert!((MIN_ERROR..1.0).contains(&error), "invalid error: {error}");
 
-        let z = f64::sqrt(2.0 * f64::ln(2.0 / FAILURE_PROBABILITY)); // sub-Gaussian tail factor for prob. 1 - delta
-        let spread = f64::sqrt(1.0 / (2.0 * CAPACITY_DECAY - 1.0) + 2.0 / 3.0); // std bound in units of n/k
-        f64::max(MIN_COMPACTOR_SIZE as f64, f64::ceil(z * spread / error)) as usize
+        // `Σ_{d >= 1} r^d` for `r < 1`.
+        let geometric_tail = |r| r / (1.0 - r);
+
+        // Hoeffding's tail `2 exp(-t² / 2Σw²)` (KLL Lemma 1) at `t = εn`, solved for `Σw²`.
+        let z = f64::sqrt(2.0 * f64::ln(2.0 / FAILURE_PROBABILITY));
+
+        // Compute k from the total variance (`Σw²`) and multiply by the "error spread" (`•/error`)
+        let k_from_total_variance = |var: f64| z * f64::sqrt(var) / error;
+
+        // `Σw²` of the compactors in units of (n/k)²:
+        //   * Where c is the CAPACITY_DECAY.
+        //   * Where h is the height of a compactor (counting from 0).
+        //   * Let d(h) := H - 1 - h (the depth of a compactor).
+        //   * c^d is the size of a compactor at depth d.
+        //   * 2^h is the number of items that get inserted into the compactor).
+        //   * Each compactor leads to at most `y_h := n / (k * c^d(h) * 2^h)` "weight shifts".
+        //   * So each compactor weight-shifts y_(h+1) / y_h times the one below it:
+        //     == (n/(k * c^d(h+1) * 2^(h+1))) / (n/(k * c^d(h) * 2^h))
+        //     == (c^d(h) / c^d(h+1)) * (2^h / 2^(h+1))
+        //     == c^(H - 1 - h - H + 1 + (h+1)) * 2^(h - h + 1)
+        //     == 2*c
+        //  * So the the total number of all weight shifts is equal to:
+        //    (1/(2c) + 1/(2c)^2 + 1/(2c)^3 + ...)
+        //  * We know that the creation of level H-1 consumed k items of weight 2^(H-2).
+        //    The sum of the weights of those items denote that at least that many
+        //    items were ingested in total, i.e., `k * 2^(H-2) ≤ n.`
+        //    Rewrite ⇒ n/k ≥ 2^(H-2) ⇒ 2^(H-1) ≤ 2*(n/k).
+        //  * Finish: Total variance (in terms of n/k) is 2 * ((1/(2c) + 1/(2c)^2 + ...).
+        let compactor_var = 2.0 * geometric_tail(1.0 / (2.0 * CAPACITY_DECAY));
+
+        // `Σw²` of the sampler in units of (n/k)²:
+        //   * `feed` conserves weight, so at most `n / 2^h` emissions happen at height `h`,
+        //     each a step of size `2^h` (KLL Lemma 2). Summed, that is at most `n * 2^L`.
+        //   * Level L-1 sits at depth D = H - L and was replaced, so `k * c^D ≤ CUTOFF`.
+        //     Hence `2^D ≥ (k / CUTOFF)^α` where `α = ln 2 / ln(1/c)` (KLL Theorem. 2).
+        //   * Recall `n/k ≥ 2^(H-2)` ⇒ `2^H ≤ 4 * n/k`.
+        //   * Compute the full variance:
+        //       n * 2^L = n * 2^H / 2^D ≤ (4 * n²/k) / (k / CUTOFF)^α
+        //               = (n²/k²) * 4 * k * (CUTOFF / k)^α
+        let alpha = f64::ln(2.0) / f64::ln(1.0 / CAPACITY_DECAY);
+        let sampler_var = |k: f64| 4.0 * k * f64::powf(SAMPLER_CUTOFF as f64 / k, alpha);
+
+        let k = k_from_total_variance(compactor_var);
+        let k = k_from_total_variance(compactor_var + sampler_var(k));
+        usize::max(MIN_COMPACTOR_SIZE, k.ceil() as usize)
     }
 
     #[derive(Debug, Clone, Copy, Default)]
@@ -255,6 +292,66 @@ pub mod kll {
         mid_pair: bool,
         /// Parity promoted by the previous compaction, see `compact_level`.
         coin: bool,
+    }
+
+    /// Stand-in for the run of [`SAMPLER_CUTOFF`]-sized compactors at the bottom
+    /// of the chain, which is a uniform sampler in distribution.
+    #[derive(Debug, Clone)]
+    struct Sampler<T> {
+        /// The retained item. `Some` whenever `weight` is nonzero.
+        item: Option<T>,
+        /// Weight `item` stands for, below the weight at which it is promoted.
+        weight: u64,
+    }
+
+    impl<T> Default for Sampler<T> {
+        fn default() -> Self {
+            Self {
+                item: None,
+                weight: 0,
+            }
+        }
+    }
+
+    impl<T> Sampler<T> {
+        /// Absorb `item` of weight `item_weight` into the sample.
+        ///
+        /// Once per window of `promote_weight` size, return a uniformly sampled
+        /// item from the window.
+        #[inline]
+        fn feed(
+            &mut self,
+            item_weight: u64,
+            promote_weight: u64,
+            rng: &mut SmallRng,
+            to_owned_item: impl FnOnce() -> T,
+        ) -> Option<T> {
+            debug_assert!(0 < item_weight && item_weight < promote_weight);
+            debug_assert_eq!(self.weight == 0, self.item.is_none());
+
+            let total_weight = self.weight + item_weight;
+            if total_weight < promote_weight {
+                // Probabilistically replace the internal value.
+                if rng.random_range(0..total_weight) < item_weight {
+                    self.item = Some(to_owned_item());
+                }
+                self.weight = total_weight;
+                None
+            } else {
+                // Weight overflow: randomly emit either of the two compactor values.
+                let carry = total_weight - promote_weight;
+                let emit_internal_value =
+                    rng.random_range(0..promote_weight - carry) < self.weight - carry;
+                let held = self.item.take();
+                self.weight = carry;
+                let (emitted, kept) = match emit_internal_value {
+                    true => (held, (carry > 0).then(to_owned_item)),
+                    false => (Some(to_owned_item()), held.filter(|_| carry > 0)),
+                };
+                self.item = kept;
+                emitted
+            }
+        }
     }
 
     #[derive(Debug)]
@@ -271,6 +368,8 @@ pub mod kll {
         consumed_items: u64,
         /// Maximum number of items before we compact.
         total_capacity: usize,
+        sampler: Sampler<T>,
+        sampler_level: usize,
         rng: SmallRng,
         scratch: Vec<T>,
     }
@@ -283,6 +382,8 @@ pub mod kll {
                 k: self.k,
                 consumed_items: self.consumed_items,
                 total_capacity: self.total_capacity,
+                sampler: self.sampler.clone(),
+                sampler_level: self.sampler_level,
                 rng: rand::make_rng(),
                 scratch: Vec::new(),
             }
@@ -304,17 +405,14 @@ pub mod kll {
                 total_capacity: k,
                 rng: rand::make_rng(),
                 scratch: Vec::default(),
+                sampler_level: 0,
+                sampler: Sampler::default(),
             };
             KLLSketch(state)
         }
 
         #[inline]
-        pub fn update(&mut self, item: &T) {
-            self.update_owned(item.clone());
-        }
-
-        #[inline]
-        pub fn update_owned(&mut self, item: T) {
+        pub fn update<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item: &Q) {
             self.0.update(item);
         }
 
@@ -330,13 +428,34 @@ pub mod kll {
 
     impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
         #[inline]
-        pub fn update(&mut self, item: T) {
+        pub fn update<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item: &Q) {
+            self.consumed_items += 1;
             if self.items.len() >= self.total_capacity {
                 self.compact(true);
             }
+            let level = self.sampler_level;
+            let sampled = if self.sampler_is_activated() {
+                let Self { sampler, rng, .. } = self;
+                sampler.feed(1, 1 << level, rng, || item.to_owned())
+            } else {
+                Some(item.to_owned())
+            };
+            if let Some(item) = sampled {
+                self.update_compactors(item);
+            }
+        }
+
+        fn sampler_is_activated(&self) -> bool {
+            self.sampler_level > 0
+        }
+
+        fn update_compactors(&mut self, item: T) {
             self.items.push(item);
-            self.levels[0].size += 1;
-            self.consumed_items += 1;
+            self.levels[self.sampler_level].size += 1;
+            for empty_compactor in self.levels[..self.sampler_level].iter_mut() {
+                debug_assert_eq!(empty_compactor.size, 0, "compactor should be empty");
+                empty_compactor.offset = self.items.len();
+            }
         }
 
         /// Compact all of the compactors from base to top.
@@ -363,11 +482,60 @@ pub mod kll {
 
         fn add_new_compactor(&mut self) {
             self.levels.push(Level::default());
+            self.recompute_sampler_level();
+            self.flush_to_sampler();
             self.recompute_total_capacity();
         }
 
+        /// The lowest level whose compactor is larger than [`SAMPLER_CUTOFF`].
+        fn recompute_sampler_level(&mut self) {
+            self.sampler_level = (0..self.levels.len())
+                .filter(|level| {
+                    compactor_threshold(self.k, self.levels.len() - 1 - level) <= SAMPLER_CUTOFF
+                })
+                .count();
+            // Make sure there is space for the sampler output to go.
+            debug_assert!(self.sampler_level < self.levels.len() - 1);
+        }
+
+        /// Move every item below `sampler_level` into the sampler.
+        fn flush_to_sampler(&mut self) {
+            let sampler_level = self.sampler_level;
+            if sampler_level == 0 {
+                return;
+            }
+            let base_compactor = self.levels[sampler_level];
+            let start = base_compactor.offset + base_compactor.size;
+            let promote_weight = 1u64 << sampler_level;
+
+            debug_assert!(self.scratch.is_empty());
+            let mut promoted = mem::take(&mut self.scratch);
+
+            let mut drain = self.items.drain(start..);
+            for level in (0..sampler_level).rev() {
+                let compactor = &mut self.levels[level];
+                for item in drain.by_ref().take(compactor.size) {
+                    promoted.extend(self.sampler.feed(
+                        1u64 << level,
+                        promote_weight,
+                        &mut self.rng,
+                        || item,
+                    ));
+                }
+                compactor.offset = start;
+                compactor.size = 0;
+            }
+            debug_assert_eq!(drain.len(), 0);
+            drop(drain);
+
+            for item in promoted.drain(..) {
+                self.update_compactors(item);
+            }
+            self.scratch = promoted;
+        }
+
         fn recompute_total_capacity(&mut self) {
-            self.total_capacity = (0..self.levels.len())
+            self.total_capacity = (0..self.levels.len() - self.sampler_level)
                 .map(|depth| compactor_threshold(self.k, depth))
                 .sum::<usize>()
                 .next_multiple_of(2);
@@ -393,6 +561,7 @@ pub mod kll {
             let old_compact_end = compact_end;
             let next_start = next_level.offset;
             let next_end = next_start + next_level.size;
+            debug_assert!(self.scratch.is_empty());
             self.scratch.clear();
             let buf = &mut self.scratch;
 
@@ -409,7 +578,7 @@ pub mod kll {
             }
 
             // The base compactor is not sorted yet
-            if level == 0 {
+            if level <= self.sampler_level {
                 self.items[compact_start..compact_end].sort_unstable_by(TotalOrd::tot_cmp);
             }
 
@@ -426,6 +595,7 @@ pub mod kll {
             merge_sorted(buf, next_level_items, compacted_items, TotalOrd::tot_cmp);
             self.items[next_start..next_start + buf.len()].clone_from_slice(buf);
             next_level.size = buf.len();
+            buf.clear();
 
             // Add back the straggler
             compact_level.offset = next_level.offset + next_level.size;
@@ -464,6 +634,7 @@ pub mod kll {
             while self.levels.len() < other.levels.len() {
                 self.add_new_compactor();
             }
+            debug_assert!(self.sampler_level >= other.sampler_level);
 
             let mut items = Vec::with_capacity(self.items.len() + other.items.len());
             let items1 = mem::take(&mut self.items);
@@ -475,7 +646,7 @@ pub mod kll {
                 let l2 = other.levels.get(level).copied().unwrap_or_default();
                 let comp1 = &items1[l1.offset..l1.offset + l1.size];
                 let comp2 = &items2[l2.offset..l2.offset + l2.size];
-                if level == 0 {
+                if level == self.sampler_level {
                     items.extend_from_slice(comp1);
                     items.extend_from_slice(comp2);
                 } else {
@@ -495,6 +666,16 @@ pub mod kll {
             self.items = items;
 
             self.consumed_items += other.consumed_items;
+            // Absorb the low-weight compactors into our sampler.
+            self.flush_to_sampler();
+            if let Some(item) = other.sampler.item.as_ref() {
+                let level = self.sampler_level;
+                let Self { sampler, rng, .. } = self;
+                let promoted = sampler.feed(other.sampler.weight, 1 << level, rng, || item.clone());
+                if let Some(item) = promoted {
+                    self.update_compactors(item);
+                }
+            }
             self.compact(false);
         }
 
@@ -504,26 +685,43 @@ pub mod kll {
                 levels,
                 consumed_items,
                 mut scratch,
+                sampler_level,
+                sampler,
                 ..
             } = self;
 
             // Base level is not yet sorted
-            let base = levels[0];
+            let base = levels[sampler_level];
             items[base.offset..base.offset + base.size].sort_unstable_by(TotalOrd::tot_cmp);
 
             // With a single compactor every item has weight 1.
             if levels.len() == 1 {
+                debug_assert_eq!(sampler.weight, 0);
                 return FinalizedSketch::new(items.into_boxed_slice(), None);
             }
 
             // Merge all sorted levels
-            let level_items: Vec<&[T]> = levels
+            let mut level_items: Vec<&[T]> = levels
                 .iter()
                 .map(|level| &items[level.offset..level.offset + level.size])
                 .collect();
-            let cum_weights = finalize_merge_levels(&level_items, &mut scratch);
+            let num_levels = levels.len();
+            if let Some(item) = &sampler.item {
+                level_items.push(slice::from_ref(item));
+            }
+            let level_to_weight = |level| {
+                if level == num_levels {
+                    sampler.weight
+                } else {
+                    1u64 << level
+                }
+            };
+            let cum_weights = finalize_merge_levels(&level_items, level_to_weight, &mut scratch);
 
-            debug_assert_eq!(scratch.len(), items.len());
+            debug_assert_eq!(
+                scratch.len(),
+                items.len() + usize::from(sampler.item.is_some())
+            );
             debug_assert_eq!(cum_weights.last().unwrap_or(&0), &consumed_items);
 
             FinalizedSketch::new(
@@ -677,12 +875,7 @@ pub mod req {
         }
 
         #[inline]
-        pub fn update(&mut self, item: &T) {
-            self.update_owned(item.clone());
-        }
-
-        #[inline]
-        pub fn update_owned(&mut self, item: T) {
+        pub fn update<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item: &Q) {
             self.0.update(item);
         }
 
@@ -716,9 +909,9 @@ pub mod req {
         }
 
         #[inline]
-        pub fn update_owned(&mut self, item: T) {
-            self.lra.update(&item);
-            self.hra.update_owned(item);
+        pub fn update<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item: &Q) {
+            self.lra.update(item);
+            self.hra.update(item);
         }
 
         pub fn merge(&mut self, other: &Self) {
@@ -734,9 +927,9 @@ pub mod req {
 
     impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
         #[inline]
-        pub fn update(&mut self, item: T) {
+        pub fn update<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item: &Q) {
             self.compact_if_needed(0);
-            self.items.push(item);
+            self.items.push(item.to_owned());
             self.levels[0].size += 1;
             self.consumed_items += 1;
         }
@@ -915,12 +1108,14 @@ pub mod req {
                 let next = next_start..next_start + next_end;
                 let (left, right) = self.items[next.clone()].split_at(next_split);
                 let (left, right) = (left.iter().cloned(), right.iter().cloned());
+                debug_assert!(self.scratch.is_empty());
                 self.scratch.clear();
                 match self.is_hra {
                     false => merge_sorted(&mut self.scratch, left, right, cmp_desc::<false, T>),
                     true => merge_sorted(&mut self.scratch, left, right, cmp_desc::<true, T>),
                 }
                 self.items[next].clone_from_slice(&self.scratch);
+                self.scratch.clear();
             }
             self.levels[level + 1].size = next_end;
             self.levels[level].offset += promote_count / 2;
@@ -973,7 +1168,7 @@ pub mod req {
                 .iter()
                 .map(|level| &items[level.offset..level.offset + level.size])
                 .collect();
-            let cum_weights = finalize_merge_levels(&level_items, &mut scratch);
+            let cum_weights = finalize_merge_levels(&level_items, |level| 1 << level, &mut scratch);
 
             debug_assert_eq!(scratch.len(), items.len());
             debug_assert_eq!(cum_weights.last().unwrap_or(&0), &consumed_items);
@@ -987,12 +1182,15 @@ pub mod req {
 }
 
 /// H-way merge-sort of the per-level sorted runs into a single sorted run, and
-/// the inclusive cumulative weight of every merged item.
+/// the inclusive cumulative weight of every merged item, weighing the items of
+/// `levels[i]` by `weight(i)`.
 fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
     levels: &[&[T]],
+    weight: impl Fn(usize) -> u64,
     out: &mut Vec<T>,
 ) -> Vec<u64> {
     let num_items: usize = levels.iter().map(|level| level.len()).sum();
+    debug_assert!(out.is_empty());
     out.clear();
     out.reserve_exact(num_items);
     let mut cum_weights = Vec::with_capacity(num_items);
@@ -1007,8 +1205,7 @@ fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
         .filter(|i| !is_done(*i, &cursors))
         .min_by(|i1, i2| TotalOrd::tot_cmp(next_value(*i1, &cursors), next_value(*i2, &cursors)))
     {
-        let weight = 1u64 << level_idx;
-        let cum_weight = cum_weights.last().unwrap_or(&0) + weight;
+        let cum_weight = cum_weights.last().unwrap_or(&0) + weight(level_idx);
         out.push(next_value(level_idx, &cursors).clone());
         cum_weights.push(cum_weight);
         cursors[level_idx] += 1;
@@ -1072,11 +1269,11 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
     }
 
     #[inline]
-    pub fn update_owned(&mut self, item: T) {
+    pub fn update<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item: &Q) {
         match self {
-            Sketch::Kll(s) => s.update_owned(item),
-            Sketch::Req(s) => s.update_owned(item),
-            Sketch::DoubleReq(s) => s.update_owned(item),
+            Sketch::Kll(s) => s.update(item),
+            Sketch::Req(s) => s.update(item),
+            Sketch::DoubleReq(s) => s.update(item),
         }
     }
 
