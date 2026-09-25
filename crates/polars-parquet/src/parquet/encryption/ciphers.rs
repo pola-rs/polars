@@ -204,4 +204,36 @@ mod tests {
 
         assert_eq!(plaintext, decrypted.as_slice());
     }
+
+    #[test]
+    fn test_decrypt_module() {
+        use std::sync::Arc;
+
+        use crate::parquet::encryption::decrypt::decrypt_module;
+
+        let key = [0u8; 16];
+        let mut encryptor = RingGcmBlockEncryptor::new(&key).unwrap();
+        let decryptor: Arc<dyn BlockDecryptor> =
+            Arc::new(RingGcmBlockDecryptor::new(&key).unwrap());
+
+        let plaintext = b"hello, world!";
+        let aad = b"some aad";
+        let module = encryptor.encrypt(plaintext, aad).unwrap();
+
+        // Bytes following the module are ignored.
+        let mut input = module.clone();
+        input.extend_from_slice(b"next module");
+        let (decrypted, module_len) = decrypt_module(&decryptor, &input, aad).unwrap();
+        assert_eq!(plaintext, decrypted.as_slice());
+        assert_eq!(module_len, module.len());
+
+        // Truncated input errors rather than panicking.
+        assert!(decrypt_module(&decryptor, &module[..module.len() - 1], aad).is_err());
+        assert!(decrypt_module(&decryptor, &module[..2], aad).is_err());
+
+        // A length prefix larger than the input errors rather than allocating.
+        let mut huge_len = module.clone();
+        huge_len[..SIZE_LEN].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(decrypt_module(&decryptor, &huge_len, aad).is_err());
+    }
 }

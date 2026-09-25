@@ -63,12 +63,14 @@ pub fn to_deserializer(
             // Advise fetching the data for the column chunk
             prefetch_l2(&chunk);
 
-            let pages = PageReader::new(Cursor::new(chunk), column_meta, vec![], usize::MAX);
-            (
+            let pages = PageReader::new(Cursor::new(chunk), column_meta, vec![], usize::MAX)?;
+            PolarsResult::Ok((
                 BasicDecompressor::new(pages, vec![]),
                 &column_meta.descriptor().descriptor.primitive_type,
-            )
+            ))
         })
+        .collect::<PolarsResult<Vec<_>>>()?
+        .into_iter()
         .unzip();
 
     column_iter_to_arrays(columns, types, field, filter)

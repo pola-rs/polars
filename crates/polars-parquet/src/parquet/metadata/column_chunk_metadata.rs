@@ -3,6 +3,7 @@ use polars_parquet_format::Statistics as ParquetStatistics;
 use super::column_descriptor::{ColumnDescriptor, ColumnDescriptorRef};
 use super::compact::{CompactColumnChunk, CompactColumnMetaData, CompactStatistics};
 use crate::parquet::compression::Compression;
+use crate::parquet::encryption::decrypt::{ColumnChunkDecryption, CryptoContext};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::schema::types::PhysicalType;
 use crate::parquet::statistics::Statistics;
@@ -23,6 +24,8 @@ use crate::parquet::statistics::Statistics;
 pub struct ColumnChunkMetadata {
     column_chunk: CompactColumnChunk,
     column_descr: ColumnDescriptorRef,
+    /// Set for encrypted columns if the file was read with decryption properties.
+    decryption: Option<Box<ColumnChunkDecryption>>,
 }
 
 // Represents common operations for a column chunk.
@@ -190,11 +193,38 @@ impl ColumnChunkMetadata {
     pub(crate) fn from_compact(
         column_descr: ColumnDescriptorRef,
         column_chunk: CompactColumnChunk,
+        decryption: Option<Box<ColumnChunkDecryption>>,
     ) -> Self {
         Self {
             column_chunk,
             column_descr,
+            decryption,
         }
+    }
+
+    /// Whether this column chunk is encrypted with Parquet modular encryption.
+    pub fn is_encrypted(&self) -> bool {
+        self.column_chunk.crypto_metadata.is_some()
+    }
+
+    /// The context needed to decrypt this column chunk's pages, or `None` if it isn't encrypted.
+    pub(crate) fn crypto_context(&self) -> ParquetResult<Option<CryptoContext>> {
+        let Some(crypto_metadata) = self.column_chunk.crypto_metadata.as_deref() else {
+            return Ok(None);
+        };
+        let Some(decryption) = &self.decryption else {
+            return Err(encryption_err!(
+                "Column '{}' is encrypted but decryption properties were not provided",
+                self.descriptor().path_in_schema.join(".")
+            ));
+        };
+        CryptoContext::for_column(
+            &decryption.file_decryptor,
+            crypto_metadata,
+            decryption.row_group_idx,
+            decryption.column_ordinal,
+        )
+        .map(Some)
     }
 }
 

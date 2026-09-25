@@ -191,7 +191,7 @@ impl<'de> Deserialize<'de> for FileMetadata {
         let row_groups: Vec<RowGroupMetadata> = row_groups_compact
             .into_iter()
             .map(|rg| {
-                let md = RowGroupMetadata::from_compact(&schema_descr, rg)
+                let md = RowGroupMetadata::from_compact(&schema_descr, rg, None)
                     .map_err(serde::de::Error::custom)?;
                 max_row_group_height = max_row_group_height.max(md.num_rows());
                 Ok(md)
@@ -271,6 +271,8 @@ fn chunk_from_wire(c: ChunkWire, footer: &mut Vec<u8>) -> CompactColumnChunk {
         offset_index_length: None,
         column_index_offset: None,
         column_index_length: None,
+        // TODO: Support encrypted files.
+        crypto_metadata: None,
     }
 }
 

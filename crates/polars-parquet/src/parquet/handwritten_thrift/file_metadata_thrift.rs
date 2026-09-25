@@ -13,8 +13,8 @@
 
 use polars_buffer::Buffer;
 use polars_parquet_format::{
-    AesGcmCtrV1, AesGcmV1, EncryptionAlgorithm, FileCryptoMetaData, KeyValue, SchemaElement,
-    SortingColumn,
+    AesGcmCtrV1, AesGcmV1, ColumnCryptoMetaData, EncryptionAlgorithm, EncryptionWithColumnKey,
+    EncryptionWithFooterKey, FileCryptoMetaData, KeyValue, SchemaElement, SortingColumn,
 };
 
 use super::parquet_thrift::{FieldType, ThriftCompactInputProtocol, ThriftSliceInputProtocol};
@@ -299,7 +299,7 @@ fn read_row_group(
 
 /// Decode a `ColumnChunk` into a [`CompactColumnChunk`].
 ///
-/// Skip-decode: `file_path`, `file_offset`, encryption fields.
+/// Skip-decode: `file_path`, `file_offset`, `encrypted_column_metadata`.
 fn read_column_chunk(
     prot: &mut ThriftSliceInputProtocol<'_>,
     origin_ptr: *const u8,
@@ -309,10 +309,11 @@ fn read_column_chunk(
     let mut offset_index_length: Option<i32> = None;
     let mut column_index_offset: Option<i64> = None;
     let mut column_index_length: Option<i32> = None;
+    let mut crypto_metadata: Option<Box<ColumnCryptoMetaData>> = None;
 
     // Inlined skips at ids 1/2 (file_path, file_offset): no in-tree consumer,
     // hot path runs once per column chunk × 200k chunks on wide fixtures.
-    // 8/9 (encryption_algorithm, encrypted_column_metadata): rare; fall through.
+    // 9 (encrypted_column_metadata): not yet supported; fall through.
     read_struct_fields!(prot, |f| {
         1 => prot.skip_binary()?,
         2 => prot.skip_vlq()?,
@@ -321,6 +322,7 @@ fn read_column_chunk(
         5 => offset_index_length = Some(prot.read_i32()?),
         6 => column_index_offset = Some(prot.read_i64()?),
         7 => column_index_length = Some(prot.read_i32()?),
+        8 => crypto_metadata = Some(Box::new(read_column_crypto_metadata(prot)?)),
     });
 
     Ok(CompactColumnChunk {
@@ -329,6 +331,43 @@ fn read_column_chunk(
         offset_index_length,
         column_index_offset,
         column_index_length,
+        crypto_metadata,
+    })
+}
+
+/// Decode a `ColumnCryptoMetaData` union. An unknown variant is an error, as the
+/// column can't be decrypted without knowing which key to use.
+fn read_column_crypto_metadata(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<ColumnCryptoMetaData> {
+    let mut ret: Option<ColumnCryptoMetaData> = None;
+    read_struct_fields!(prot, |f| {
+        1 => {
+            read_empty_struct(prot)?;
+            ret.get_or_insert(ColumnCryptoMetaData::ENCRYPTIONWITHFOOTERKEY(
+                EncryptionWithFooterKey {},
+            ));
+        },
+        2 => {
+            let v = read_encryption_with_column_key(prot)?;
+            ret.get_or_insert(ColumnCryptoMetaData::ENCRYPTIONWITHCOLUMNKEY(v));
+        },
+    });
+    ret.ok_or_else(|| ParquetError::oos("ColumnCryptoMetaData union has no known variant set"))
+}
+
+fn read_encryption_with_column_key(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<EncryptionWithColumnKey> {
+    let mut path_in_schema: Option<Vec<String>> = None;
+    let mut key_metadata: Option<Vec<u8>> = None;
+    read_struct_fields!(prot, |f| {
+        1 => path_in_schema = Some(read_list(prot, |p| Ok(p.read_string()?.to_owned()))?),
+        2 => key_metadata = Some(prot.read_bytes_owned()?),
+    });
+    Ok(EncryptionWithColumnKey {
+        path_in_schema: path_in_schema.require("EncryptionWithColumnKey.path_in_schema")?,
+        key_metadata,
     })
 }
 

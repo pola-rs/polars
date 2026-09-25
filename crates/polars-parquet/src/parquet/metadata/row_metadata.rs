@@ -11,6 +11,7 @@ use super::column_chunk_metadata::{ColumnChunkMetadata, column_metadata_byte_ran
 use super::column_descriptor::ColumnDescriptorRef;
 use super::compact::CompactRowGroup;
 use super::schema_descriptor::SchemaDescriptor;
+use crate::parquet::encryption::decrypt::{ColumnChunkDecryption, FileDecryptor};
 use crate::parquet::error::{ParquetError, ParquetResult};
 
 type ColumnLookup = PlHashMap<PlSmallStr, UnitVec<usize>>;
@@ -107,9 +108,13 @@ impl RowGroupMetadata {
 
     /// Build a `RowGroupMetadata` from a [`CompactRowGroup`], joining each
     /// chunk to its descriptor in the schema.
+    ///
+    /// For encrypted files, `decryption` holds the file decryptor and the index of this row
+    /// group within the file, which are needed to decrypt encrypted column chunks.
     pub(crate) fn from_compact(
         schema_descr: &SchemaDescriptor,
         rg: CompactRowGroup,
+        decryption: Option<(&Arc<FileDecryptor>, usize)>,
     ) -> ParquetResult<RowGroupMetadata> {
         if schema_descr.columns().len() != rg.columns.len() {
             return Err(ParquetError::oos(format!(
@@ -139,9 +144,19 @@ impl RowGroupMetadata {
             .into_iter()
             .enumerate()
             .map(|(i, column_chunk)| {
+                let chunk_decryption = decryption
+                    .filter(|_| column_chunk.crypto_metadata.is_some())
+                    .map(|(file_decryptor, row_group_idx)| {
+                        Box::new(ColumnChunkDecryption {
+                            file_decryptor: Arc::clone(file_decryptor),
+                            row_group_idx,
+                            column_ordinal: i,
+                        })
+                    });
                 let column = ColumnChunkMetadata::from_compact(
                     ColumnDescriptorRef::new(Arc::clone(&column_descrs), i),
                     column_chunk,
+                    chunk_decryption,
                 );
                 add_column(&mut column_lookup, i, &column);
                 let byte_range = column.byte_range();

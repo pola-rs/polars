@@ -16,7 +16,16 @@ if TYPE_CHECKING:
 # the Arrow C++ encryption tests (see cpp/src/parquet/encryption/test_encryption_util.cc
 # in the apache/arrow repository for details).
 FOOTER_KEY = b"0123456789012345"
+COLUMN_KEYS = {
+    "double_field": b"1234567890123450",
+    "float_field": b"1234567890123451",
+}
 NUM_ROWS = 50
+
+# TODO: Polars misreads bare repeated primitive fields such as `int64_field`
+# (a `repeated int64` without a LIST annotation), independent of encryption,
+# so this column is excluded when checking data.
+UNSUPPORTED_COLUMNS = ["int64_field"]
 
 JULIAN_DAY_OF_EPOCH = 2_440_588
 MICROS_PER_DAY = 86_400 * 1_000_000
@@ -63,7 +72,46 @@ def test_read_uniform_encryption(io_files_path: Path) -> None:
         path, schema=expected.schema, decryption_properties=decryption_properties
     )
 
-    assert_frame_equal(df, expected)
+    assert_frame_equal(df.drop(UNSUPPORTED_COLUMNS), expected.drop(UNSUPPORTED_COLUMNS))
+
+
+def test_read_plaintext_footer_with_column_keys(io_files_path: Path) -> None:
+    path = (
+        io_files_path
+        / "parquet-encryption"
+        / "encrypt_columns_plaintext_footer.parquet.encrypted"
+    )
+    expected = expected_data()
+
+    decryption_properties = pl.ParquetDecryptionProperties(
+        footer_key=FOOTER_KEY, column_keys=COLUMN_KEYS
+    )
+    df = pl.read_parquet(
+        path, schema=expected.schema, decryption_properties=decryption_properties
+    )
+
+    assert_frame_equal(df.drop(UNSUPPORTED_COLUMNS), expected.drop(UNSUPPORTED_COLUMNS))
+
+
+def test_read_plaintext_footer_without_decryption_properties(
+    io_files_path: Path,
+) -> None:
+    path = (
+        io_files_path
+        / "parquet-encryption"
+        / "encrypt_columns_plaintext_footer.parquet.encrypted"
+    )
+    plaintext_columns = ["boolean_field", "int32_field", "ba_field"]
+
+    # Columns that aren't encrypted can be read without decryption properties
+    df = pl.read_parquet(path, columns=plaintext_columns)
+    assert_frame_equal(df, expected_data().select(plaintext_columns))
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="Column 'double_field' is encrypted but decryption properties were not provided",
+    ):
+        pl.read_parquet(path, columns=["double_field"])
 
 
 @pytest.mark.parametrize(

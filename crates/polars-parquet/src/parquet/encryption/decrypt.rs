@@ -1,11 +1,10 @@
 use std::borrow::Cow;
-use std::io::Read;
 use std::sync::Arc;
 
 use polars_parquet_format::{ColumnCryptoMetaData, EncryptionAlgorithm};
 use polars_utils::aliases::PlHashMap;
 
-use super::ciphers::{BlockDecryptor, NONCE_LEN, RingGcmBlockDecryptor, TAG_LEN};
+use super::ciphers::{BlockDecryptor, NONCE_LEN, RingGcmBlockDecryptor, SIZE_LEN, TAG_LEN};
 use super::modules::{ModuleType, create_footer_aad, create_module_aad};
 use crate::parquet::error::{ParquetError, ParquetResult};
 
@@ -86,18 +85,36 @@ pub trait KeyRetriever: Send + Sync {
     fn retrieve_key(&self, key_metadata: &[u8]) -> ParquetResult<Vec<u8>>;
 }
 
-pub(crate) fn read_and_decrypt<T: Read>(
+/// Decrypt the length-prefixed encrypted module at the start of `input`.
+///
+/// Returns the plaintext and the number of bytes read from `input`.
+pub(crate) fn decrypt_module(
     decryptor: &Arc<dyn BlockDecryptor>,
-    input: &mut T,
+    input: &[u8],
     aad: &[u8],
-) -> ParquetResult<Vec<u8>> {
-    let mut len_bytes = [0; 4];
-    input.read_exact(&mut len_bytes)?;
-    let ciphertext_len = u32::from_le_bytes(len_bytes) as usize;
-    let mut ciphertext = vec![0; 4 + ciphertext_len];
-    input.read_exact(&mut ciphertext[4..])?;
+) -> ParquetResult<(Vec<u8>, usize)> {
+    let len_bytes = input.get(..SIZE_LEN).ok_or_else(|| {
+        ParquetError::oos("Not enough bytes to read the length of an encrypted module")
+    })?;
+    let ciphertext_len = u32::from_le_bytes(len_bytes.try_into().unwrap()) as usize;
+    let module_len = SIZE_LEN + ciphertext_len;
+    let module = input.get(..module_len).ok_or_else(|| {
+        ParquetError::oos(format!(
+            "Encrypted module length ({module_len}) exceeds the available bytes ({})",
+            input.len()
+        ))
+    })?;
 
-    decryptor.decrypt(&ciphertext, aad.as_ref())
+    Ok((decryptor.decrypt(module, aad)?, module_len))
+}
+
+/// The context needed to decrypt an encrypted column chunk
+#[derive(Debug)]
+pub(crate) struct ColumnChunkDecryption {
+    pub(crate) file_decryptor: Arc<FileDecryptor>,
+    pub(crate) row_group_idx: usize,
+    /// The position of the column in the Parquet schema leaves
+    pub(crate) column_ordinal: usize,
 }
 
 // CryptoContext is a data structure that holds the context required to

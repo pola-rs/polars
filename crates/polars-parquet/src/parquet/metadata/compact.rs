@@ -17,7 +17,9 @@
 //!    on [`super::FileMetadata::footer_buf`].
 
 use polars_buffer::Buffer;
-use polars_parquet_format::{EncryptionAlgorithm, KeyValue, SchemaElement, SortingColumn};
+use polars_parquet_format::{
+    ColumnCryptoMetaData, EncryptionAlgorithm, KeyValue, SchemaElement, SortingColumn,
+};
 
 use super::column_order::ColumnOrderTag;
 use crate::parquet::compression::Compression;
@@ -85,12 +87,12 @@ pub(crate) struct CompactColumnMetaData {
 
 /// Compact replacement for `polars_parquet_format::ColumnChunk`.
 ///
-/// Drops `file_path`, `file_offset`, encryption fields. None have read-path
-/// consumers in this build (the write path constructs format-crate types).
+/// Drops `file_path`, `file_offset` and `encrypted_column_metadata`. None have
+/// read-path consumers in this build (the write path constructs format-crate types).
 ///
-/// `meta_data` is non-`Option` because polars has no encryption support: a
-/// chunk without unencrypted metadata is unrepresentable here. The decoder
-/// rejects such chunks at footer-decode time with `"ColumnChunk.meta_data
+/// `meta_data` is non-`Option` because polars doesn't yet support decrypting
+/// column metadata: a chunk without unencrypted metadata is unrepresentable here.
+/// The decoder rejects such chunks at footer-decode time with `"ColumnChunk.meta_data
 /// missing"`, so by the time a `CompactColumnChunk` exists the field is
 /// guaranteed present.
 #[derive(Debug, Clone)]
@@ -100,6 +102,8 @@ pub(crate) struct CompactColumnChunk {
     pub offset_index_length: Option<i32>,
     pub column_index_offset: Option<i64>,
     pub column_index_length: Option<i32>,
+    /// Set for encrypted columns. Boxed as it's rarely present.
+    pub crypto_metadata: Option<Box<ColumnCryptoMetaData>>,
 }
 
 /// Compact replacement for `polars_parquet_format::RowGroup`.

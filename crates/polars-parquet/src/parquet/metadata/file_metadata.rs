@@ -98,6 +98,9 @@ impl FileMetadata {
     /// `key_value_metadata` are also dropped (not needed by the read hot
     /// path); `column_orders` is kept for the remaining leaves.
     ///
+    /// Metadata for encrypted files is returned unpruned, as decrypting column
+    /// chunks relies on each column's position in the full file schema.
+    ///
     /// Returns `Err` only when [`RowGroupMetadata::from_compact`] rejects
     /// the rebuilt row group (chunks-vs-leaves desync). Callers can fall
     /// back to unpruned metadata; the unpruned form is always valid.
@@ -110,6 +113,10 @@ impl FileMetadata {
         keep_top_level_names: &[polars_utils::pl_str::PlSmallStr],
         predicate_top_level_names: &[polars_utils::pl_str::PlSmallStr],
     ) -> ParquetResult<Self> {
+        if self.decryptor.is_some() {
+            return Ok(self.clone());
+        }
+
         // Column name → keep-stats flag. Names not in the map are pruned
         // entirely. O(1) lookup per chunk keeps this scalable to
         // wide-column workloads (10k+ columns × many row groups).
@@ -174,7 +181,7 @@ impl FileMetadata {
                     sorting_columns: rg.sorting_columns().map(|sc| sc.to_vec()),
                 };
 
-                let md = RowGroupMetadata::from_compact(&pruned_schema, compact_rg)?;
+                let md = RowGroupMetadata::from_compact(&pruned_schema, compact_rg, None)?;
                 max_row_group_height = max_row_group_height.max(md.num_rows());
                 Ok(md)
             })
@@ -231,8 +238,10 @@ impl FileMetadata {
         let mut max_row_group_height = 0;
         let row_groups = row_groups
             .into_iter()
-            .map(|rg| {
-                let md = RowGroupMetadata::from_compact(&schema_descr, rg)?;
+            .enumerate()
+            .map(|(row_group_idx, rg)| {
+                let decryption = decryptor.as_ref().map(|d| (d, row_group_idx));
+                let md = RowGroupMetadata::from_compact(&schema_descr, rg, decryption)?;
                 max_row_group_height = max_row_group_height.max(md.num_rows());
                 Ok(md)
             })
@@ -354,6 +363,7 @@ mod tests {
             offset_index_length: None,
             column_index_offset: None,
             column_index_length: None,
+            crypto_metadata: None,
         }
     }
 
@@ -388,7 +398,7 @@ mod tests {
             num_rows: 3,
             sorting_columns: None,
         };
-        let row_groups = vec![RowGroupMetadata::from_compact(&schema_descr, rg).unwrap()];
+        let row_groups = vec![RowGroupMetadata::from_compact(&schema_descr, rg, None).unwrap()];
         FileMetadata {
             version: 2,
             num_rows: 3,
