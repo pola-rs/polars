@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 @pytest.mark.parametrize(
@@ -44,6 +47,173 @@ def test_array_agg(sort_order: str | None, limit: int | None, expected: Any) -> 
     ).collect()
 
     assert res.rows() == expected
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_array_agg_scalar_input(engine: EngineType) -> None:
+    df = pl.LazyFrame(
+        {
+            "group": ["a", "a", "b"],
+            "order": [2, 1, 0],
+            "keep": [True, False, False],
+        }
+    )
+    result = df.sql(
+        """
+        SELECT
+          group,
+          ARRAY_AGG(1) AS plain,
+          ARRAY_AGG(CAST(NULL AS INTEGER)) AS nulls,
+          ARRAY_AGG(1 + 2 ORDER BY order) AS composed,
+          ARRAY_AGG(DISTINCT 1) AS distinct_values,
+          ARRAY_AGG(1 ORDER BY order LIMIT 1) AS limited,
+          ARRAY_AGG(1) FILTER (WHERE keep) AS filtered,
+          ARRAY_AGG(1) FILTER (WHERE TRUE) AS scalar_filter,
+          ARRAY_AGG([1, 2]) AS lists,
+          ARRAY_AGG(([1, 2])) AS parenthesized_lists,
+          ARRAY_AGG(CAST(([1, 2]) AS SMALLINT[])) AS cast_lists,
+          ARRAY_AGG(DISTINCT 1 ORDER BY (1)) FILTER (WHERE keep) AS distinct_filtered,
+          ARRAY_AGG([[1, 2], [3, 4]]) AS nested_lists
+        FROM self
+        GROUP BY group
+        ORDER BY group
+        """
+    ).collect(engine=engine)
+    expected = pl.DataFrame(
+        {
+            "group": ["a", "b"],
+            "plain": [[1, 1], [1]],
+            "nulls": [[None, None], [None]],
+            "composed": [[3, 3], [3]],
+            "distinct_values": [[1], [1]],
+            "limited": [[1], [1]],
+            "filtered": [[1], []],
+            "scalar_filter": [[1, 1], [1]],
+            "lists": [[[1, 2], [1, 2]], [[1, 2]]],
+            "parenthesized_lists": [[[1, 2], [1, 2]], [[1, 2]]],
+            "cast_lists": [[[1, 2], [1, 2]], [[1, 2]]],
+            "distinct_filtered": [[1], []],
+            "nested_lists": [
+                [[[1, 2], [3, 4]], [[1, 2], [3, 4]]],
+                [[[1, 2], [3, 4]]],
+            ],
+        },
+        schema={
+            "group": pl.String,
+            "plain": pl.List(pl.Int32),
+            "nulls": pl.List(pl.Int32),
+            "composed": pl.List(pl.Int32),
+            "distinct_values": pl.List(pl.Int32),
+            "limited": pl.List(pl.Int32),
+            "filtered": pl.List(pl.Int32),
+            "scalar_filter": pl.List(pl.Int32),
+            "lists": pl.List(pl.List(pl.Int64)),
+            "parenthesized_lists": pl.List(pl.List(pl.Int64)),
+            "cast_lists": pl.List(pl.List(pl.Int16)),
+            "distinct_filtered": pl.List(pl.Int32),
+            "nested_lists": pl.List(pl.List(pl.List(pl.Int64))),
+        },
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_array_agg_dtype_dependent_expression() -> None:
+    result = pl.LazyFrame({"values": [[1, 2], [3, 4]]}).sql(
+        "SELECT ARRAY_AGG(ARRAY_REVERSE(values)) AS reversed FROM self"
+    )
+    expected = pl.LazyFrame(
+        {"reversed": [[[2, 1], [4, 3]]]},
+        schema={"reversed": pl.List(pl.List(pl.Int64))},
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("rows", [0, 3])
+def test_array_agg_scalar_input_global(rows: int, engine: EngineType) -> None:
+    df = pl.LazyFrame({"value": range(rows)})
+    result = df.sql(
+        """
+        SELECT
+          ARRAY_AGG(1) AS plain,
+          ARRAY_AGG(1 ORDER BY 1) AS ordered,
+          ARRAY_AGG([1, 2] ORDER BY [1, 2]) AS ordered_lists,
+          ARRAY_AGG(CAST([1, 2] AS SMALLINT[]) ORDER BY CAST([1, 2] AS BIGINT[])) AS cast_lists,
+          ARRAY_AGG(DISTINCT 1 ORDER BY (1)) AS distinct_values,
+          ARRAY_AGG(1) FILTER (WHERE TRUE) AS filtered
+        FROM self
+        """
+    ).collect(engine=engine)
+    expected = pl.DataFrame(
+        {
+            "plain": [[1] * rows],
+            "ordered": [[1] * rows],
+            "ordered_lists": [[[1, 2]] * rows],
+            "cast_lists": [[[1, 2]] * rows],
+            "distinct_values": [[1] if rows else []],
+            "filtered": [[1] * rows],
+        },
+        schema={
+            "plain": pl.List(pl.Int32),
+            "ordered": pl.List(pl.Int32),
+            "ordered_lists": pl.List(pl.List(pl.Int64)),
+            "cast_lists": pl.List(pl.List(pl.Int16)),
+            "distinct_values": pl.List(pl.Int32),
+            "filtered": pl.List(pl.Int32),
+        },
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "ARRAY_AGG(x ORDER BY CAST('bad' AS INTEGER), x)",
+        "ARRAY_AGG(CAST(['bad'] AS INTEGER[]))",
+    ],
+)
+def test_array_agg_scalar_cast_error(engine: EngineType, expression: str) -> None:
+    df = pl.LazyFrame({"x": [2, 1]})
+    with pytest.raises(InvalidOperationError, match=r"conversion from .* failed"):
+        df.sql(f"SELECT {expression} FROM self").collect(engine=engine)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("grouped", [False, True])
+def test_array_agg_mixed_order_by(engine: EngineType, grouped: bool) -> None:
+    df = pl.LazyFrame(
+        {"g": [0, 0, 0, 0], "x": [3, None, 1, 2], "keep": [True, True, False, True]}
+    )
+    group_by = " GROUP BY g" if grouped else ""
+    result = df.sql(
+        "SELECT ARRAY_AGG(x ORDER BY 1 ASC, x DESC NULLS LAST, [1, 2] ASC) "
+        f"FILTER (WHERE keep) AS values FROM self{group_by}"
+    ).collect(engine=engine)
+    expected = pl.DataFrame(
+        {"values": [[3, 2, None]]}, schema={"values": pl.List(pl.Int64)}
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_array_agg_scalar_input_window(engine: EngineType) -> None:
+    df = pl.LazyFrame({"id": [0, 1, 2], "group": ["a", "a", "b"]})
+    result = df.sql(
+        """
+        SELECT id, ARRAY_AGG(1) OVER (PARTITION BY group) AS values
+        FROM self
+        ORDER BY id
+        """
+    ).collect(engine=engine)
+    expected = pl.DataFrame(
+        {
+            "id": [0, 1, 2],
+            "values": [[1, 1], [1, 1], [1]],
+        },
+        schema={"id": pl.Int64, "values": pl.List(pl.Int32)},
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_array_literals() -> None:
