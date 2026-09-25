@@ -109,40 +109,48 @@ pub fn dynamic_boundary_dtype(index_dtype: &DataType) -> DataType {
     }
 }
 
-/// A closed range `first..=last` of index values in the physical `i64` space of the index
+/// A half-open range `start..end` of index values in the physical `i64` space of the index
 /// column: `Datetime` in its own time unit, `Date` as microseconds, integers as themselves.
 ///
-/// `i64::MIN` and `i64::MAX` stand for the unbounded ends.
+/// `(i64::MIN, None)` stands for an unbounded range.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IndexRange {
-    pub first: i64,
-    pub last: i64,
+    start: i64,
+    end: Option<i64>,
 }
 
 impl IndexRange {
     pub const ALL: Self = Self {
-        first: i64::MIN,
-        last: i64::MAX,
+        start: i64::MIN,
+        end: None,
     };
 
-    /// The range `first..=last`.
-    pub const fn new(first: i64, last: i64) -> Self {
-        Self { first, last }
+    /// The range `start..end`.
+    pub const fn new(start: i64, end: Option<i64>) -> Self {
+        Self { start, end }
+    }
+
+    pub fn start(&self) -> i64 {
+        self.start
+    }
+
+    pub fn end(&self) -> Option<i64> {
+        self.end
     }
 
     pub fn contains(&self, t: i64) -> bool {
-        self.first <= t && t <= self.last
+        !self.is_before(t) && !self.is_past(t)
     }
 
     /// Whether `t`, and so every earlier value of an ascending index, lies before the range.
     pub fn is_before(&self, t: i64) -> bool {
-        t < self.first
+        t < self.start
     }
 
     /// Whether `t`, and so every later value of an ascending index, lies past the range.
     pub fn is_past(&self, t: i64) -> bool {
-        t > self.last
+        self.end.is_some_and(|end| t >= end)
     }
 
     /// The rows of the ascending `values` that lie in the range.

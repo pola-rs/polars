@@ -132,24 +132,32 @@ fn partitions(
         )
         .unwrap();
 
+    // Partition `i` owns the values in `firsts[i]..firsts[i + 1]`.
     let len = values.len();
     let part_len = len.div_ceil(parts);
+    let firsts: Vec<i64> = std::iter::once(i64::MIN)
+        .chain((part_len..len).step_by(part_len).map(|i| values[i]))
+        .collect();
     let mut out = vec![];
-    let mut lower = i64::MIN;
-    for start in (0..len).step_by(part_len) {
-        let own_end = (start + part_len).min(len);
-        let last_value = values[own_end - 1];
-        let upper = if own_end == len { i64::MAX } else { last_value };
-        // The forward read: every row that can be a member of a window starting at or before
-        // this partition's last value.
-        let limit = add(&options.period, last_value, tu, tz.as_ref());
-        let read_end = values.partition_point(|v| *v <= limit).max(own_end);
+    for (i, &first) in firsts.iter().enumerate() {
+        let end = firsts.get(i + 1).copied();
+        // The forward read: every row that can be a member of a window starting before `end`.
+        let read_start = values.partition_point(|v| *v < first);
+        let read_end = match end {
+            Some(end) => {
+                let limit = add(&options.period, end, tu, tz.as_ref());
+                values.partition_point(|v| *v < limit)
+            },
+            None => len,
+        };
         let placement = DynamicWindowPlacement {
             origin,
-            start_range: IndexRange::new(lower, upper),
+            start_range: IndexRange::new(first, end),
         };
-        out.push((df.slice(start as i64, read_end - start), placement));
-        lower = last_value + 1;
+        out.push((
+            df.slice(read_start as i64, read_end - read_start),
+            placement,
+        ));
     }
     out
 }
@@ -397,7 +405,7 @@ fn placement_with_slice_and_keys() {
     let options = options("4h", "6h", "0h");
     let placement = DynamicWindowPlacement {
         origin: 0,
-        start_range: IndexRange::new(8 * hour + 1, 210 * hour),
+        start_range: IndexRange::new(8 * hour + 1, Some(210 * hour)),
     };
     check_slice(
         || query(&df, "t", &options, &aggs()),

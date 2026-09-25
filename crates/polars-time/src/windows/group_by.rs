@@ -36,7 +36,7 @@ fn update_groups_and_bounds(
             if placement.start_range.is_before(bi.start) {
                 // Skip windows that start before the range. `get_stride` never overshoots,
                 // so windows close to the range are still visited one by one.
-                stride = iter.get_stride(placement.start_range.first);
+                stride = iter.get_stride(placement.start_range.start());
                 continue 'bounds;
             }
         }

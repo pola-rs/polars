@@ -1005,27 +1005,27 @@ fn test_group_by_windows_placement_range_edges() {
     }));
     assert_eq!((g, l), (all.clone(), all_lower.clone()));
 
-    // Range ends exactly on a window start, and just inside them.
+    // Range ends exactly on window starts, and just inside them.
     let (_, l, _) = run(Some(DynamicWindowPlacement {
         origin: 0,
-        start_range: IndexRange::new(8 * hour, 16 * hour),
+        start_range: IndexRange::new(8 * hour, Some(16 * hour)),
     }));
-    assert_eq!(l, vec![8 * hour, 12 * hour, 16 * hour]);
+    assert_eq!(l, vec![8 * hour, 12 * hour]);
     let (_, l, _) = run(Some(DynamicWindowPlacement {
         origin: 0,
-        start_range: IndexRange::new(8 * hour + 1, 16 * hour - 1),
+        start_range: IndexRange::new(8 * hour + 1, Some(16 * hour + 1)),
     }));
-    assert_eq!(l, vec![12 * hour]);
+    assert_eq!(l, vec![12 * hour, 16 * hour]);
 
     // A range far past the data, and the fast-forward to a range far ahead of the origin.
     let (g, _, _) = run(Some(DynamicWindowPlacement {
         origin: 0,
-        start_range: IndexRange::new(1000 * hour, i64::MAX),
+        start_range: IndexRange::new(1000 * hour, None),
     }));
     assert!(g.is_empty());
     let (g, l, _) = run(Some(DynamicWindowPlacement {
         origin: -100_000 * 4 * hour,
-        start_range: IndexRange::new(40 * hour, i64::MAX),
+        start_range: IndexRange::new(40 * hour, None),
     }));
     assert_eq!(l, vec![40 * hour, 44 * hour]);
     assert_eq!(g.as_slice(), &[[40, 4], [44, 4]]);
@@ -1033,7 +1033,7 @@ fn test_group_by_windows_placement_range_edges() {
     // An origin after the first rows drops them.
     let (g, l, _) = run(Some(DynamicWindowPlacement {
         origin: 6 * hour,
-        start_range: IndexRange::new(i64::MIN, 10 * hour),
+        start_range: IndexRange::new(i64::MIN, Some(10 * hour + 1)),
     }));
     assert_eq!(l, vec![6 * hour, 10 * hour]);
     assert_eq!(g.as_slice(), &[[6, 4], [10, 4]]);
