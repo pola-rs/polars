@@ -30,7 +30,7 @@ where
 
     let validity_words = validity
         .filter(|v| v.unset_bits() > 0)
-        .map(collect_validity_words);
+        .map(bitmap_words);
     let mut out = match validity_words.as_deref() {
         Some(validity_words) => {
             rolling_minmax_pick::<MIN, true, T, P>(values, validity_words, window_size)
@@ -65,13 +65,13 @@ where
     ))
 }
 
-fn collect_validity_words(validity: &Bitmap) -> Vec<u64> {
-    let mut chunks = validity.fast_iter_u64();
-    let mut validity_words = Vec::with_capacity(validity.len().div_ceil(64));
-    validity_words.extend(&mut chunks);
+fn bitmap_words(bitmap: &Bitmap) -> Vec<u64> {
+    let mut chunks = bitmap.fast_iter_u64();
+    let mut words = Vec::with_capacity(bitmap.len().div_ceil(64));
+    words.extend(&mut chunks);
     let (remainder, remainder_len) = chunks.remainder();
-    validity_words.extend_from_slice(&remainder[..remainder_len.div_ceil(64)]);
-    validity_words
+    words.extend_from_slice(&remainder[..remainder_len.div_ceil(64)]);
+    words
 }
 
 fn sliding_count_validity(
@@ -91,12 +91,12 @@ fn sliding_count_validity(
 
     // A set bit makes `w` output positions valid.
     if threshold == 1 {
-        return validity.dilate(w, total).sliced(shift, n);
+        return dilate(validity, w, total).sliced(shift, n);
     }
 
     // Full windows are valid only when no null reaches them.
     if threshold == w {
-        let nulls_reach = (!validity).dilate(w, total);
+        let nulls_reach = dilate(&!validity, w, total);
         let mut full = MutableBitmap::with_capacity(total);
         full.extend_constant((w - 1).min(total), false);
         full.extend_constant(n.saturating_sub(w - 1), true);
@@ -132,4 +132,98 @@ fn sliding_count_validity(
         buf.push(byte);
     }
     MutableBitmap::from_vec(buf, n).into()
+}
+
+/// Dilate set bits to the following `w.saturating_sub(1)` positions.
+///
+/// `out[i] = OR_{j=max(0, i-w+1)..=i} in[j]`, i.e. every set bit is smeared to cover a
+/// window of `w` positions ending at itself. The result is extended with unset bits to
+/// `out_len`, which must be at least `bitmap.len()`. Computed by repeated doubling: each
+/// round ORs the words with themselves shifted left by `min(covered, w - covered)`, so
+/// after a round `covered` positions are covered, turning an O(w) smear into O(log w)
+/// rounds.
+fn dilate(bitmap: &Bitmap, w: usize, out_len: usize) -> Bitmap {
+    assert!(out_len >= bitmap.len());
+    let num_words = out_len.div_ceil(64);
+    let mut words = bitmap_words(bitmap);
+    words.resize(num_words, 0);
+
+    // Double the covered range each round, in place: only pre-round values are read.
+    let mut covered = 1usize;
+    while covered < w {
+        let shift = covered.min(w - covered);
+        covered += shift;
+        let (word_shift, bit_shift) = (shift / 64, (shift % 64) as u32);
+        if word_shift == 0 {
+            let inverse_shift = 64 - bit_shift;
+            let mut previous_word = 0u64;
+            for word in &mut words {
+                let current_word = *word;
+                *word |= previous_word >> inverse_shift | current_word << bit_shift;
+                previous_word = current_word;
+            }
+        } else {
+            let previous = words.clone();
+            if bit_shift == 0 {
+                for (dst, &src) in words.iter_mut().skip(word_shift).zip(&previous) {
+                    *dst |= src;
+                }
+            } else {
+                let inverse_shift = 64 - bit_shift;
+                for (dst, src) in words
+                    .iter_mut()
+                    .skip(word_shift + 1)
+                    .zip(previous.array_windows::<2>())
+                {
+                    *dst |= src[0] >> inverse_shift | src[1] << bit_shift;
+                }
+                if word_shift < words.len() {
+                    words[word_shift] |= words[0] << bit_shift;
+                }
+            }
+        }
+    }
+
+    // No-op on little-endian targets; the buffer is read as little-endian bytes.
+    for word in &mut words {
+        *word = word.to_le();
+    }
+    Bitmap::from_u8_vec(bytemuck::cast_slice(&words).to_vec(), out_len)
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::bitmap::Bitmap;
+    use polars_arrow::bitmap::proptest::bitmap;
+    use proptest::prelude::*;
+
+    use super::dilate;
+
+    fn sliced_bitmap() -> impl Strategy<Value = Bitmap> {
+        bitmap(1..300).prop_flat_map(|b| {
+            (0..b.len(), 1..=b.len()).prop_map(move |(offset, len)| {
+                let len = len.min(b.len() - offset);
+                b.clone().sliced(offset, len)
+            })
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn test_dilate(
+            bitmap in sliced_bitmap(),
+            w in 0..300usize,
+            extra in 0..300usize,
+        ) {
+            let out_len = bitmap.len() + extra;
+            let out = dilate(&bitmap, w, out_len);
+            let expected: Bitmap = (0..out_len)
+                .map(|i| {
+                    let start = i.saturating_sub(w.saturating_sub(1));
+                    (start..=i).any(|j| j < bitmap.len() && bitmap.get_bit(j))
+                })
+                .collect();
+            prop_assert_eq!(out, expected);
+        }
+    }
 }
