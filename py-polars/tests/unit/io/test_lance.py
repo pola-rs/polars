@@ -187,9 +187,7 @@ def test_scan_lance_filter_slice_parametric(tmp_path: Path) -> None:
     slice_len = 0
 
     try:
-        # TODO: Negative offsets. Streaming engine currently gives incorrect results
-        # for negative slices after filters on multi-file scans (also for parquet).
-        for slice_offset in random.sample(range(100), 20):
+        for slice_offset in random.sample(range(-100, 100), 20):
             for slice_len in random.sample(range(100), 5):
                 q = pl.scan_lance(ds).filter(predicate).slice(slice_offset, slice_len)
                 assert_frame_equal(q.collect(), expect.slice(slice_offset, slice_len))
