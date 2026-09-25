@@ -429,7 +429,7 @@ fn build_fallback_node_with_ctx(
     };
 
     let output_schema = schema_for_select(input_stream, exprs, ctx)?;
-    let mut conv_state = ExpressionConversionState::new(false);
+    let mut conv_state = ExpressionConversionState::new(true);
     let phys_exprs = exprs
         .iter()
         .map(|expr| {
