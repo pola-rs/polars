@@ -103,6 +103,11 @@ def test_write_json_categoricals() -> None:
     assert df.write_json() == expected
 
 
+def test_write_json_sliced_list_of_categoricals() -> None:
+    s = pl.Series("l", [["a", "b"], ["c"], ["d", "e"]], dtype=pl.List(pl.Categorical))
+    assert s[1:].to_frame().write_ndjson() == '{"l":["c"]}\n{"l":["d","e"]}\n'
+
+
 def test_write_json_duration() -> None:
     df = pl.DataFrame(
         {

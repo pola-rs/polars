@@ -112,6 +112,7 @@ pub(super) fn to_json(col: &Column) -> PolarsResult<Column> {
     use polars_core::prelude::CompatLevel;
 
     let s = col.as_materialized_series();
+    s.dtype().ensure_json_map_keys()?;
     let iter = (0..s.n_chunks()).map(|i| {
         polars_json::json::write::serialize_to_utf8(&*s.to_arrow(i, CompatLevel::newest()))
     });

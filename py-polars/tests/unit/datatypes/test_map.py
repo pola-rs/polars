@@ -17,6 +17,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+    from pathlib import Path
     from typing import IO
 
     from polars._typing import PolarsDataType
@@ -1288,28 +1289,279 @@ def test_bare_map_class_selects_every_map_column() -> None:
     assert df.select(pl.col(MAP)).columns == ["m"]
 
 
+JSON_READ_PATHS = ["read_json", "read_ndjson", "scan_ndjson", "json_decode"]
+
+
+def read_json_column(
+    path: str,
+    values: list[str],
+    dtype: PolarsDataType,
+    *,
+    ignore_errors: bool = False,
+) -> pl.Series:
+    """Read one JSON text per row as column `m` of `dtype` through `path`."""
+    if path == "json_decode":
+        return pl.Series("m", values).str.json_decode(dtype).alias("m")
+
+    lines = [f'{{"m":{v}}}' for v in values]
+    if path == "read_json":
+        doc = "[" + ",".join(lines) + "]"
+        return pl.read_json(io.StringIO(doc), schema={"m": dtype})["m"]
+
+    ndjson = "\n".join(lines) + "\n"
+    if path == "read_ndjson":
+        df = pl.read_ndjson(
+            io.StringIO(ndjson), schema={"m": dtype}, ignore_errors=ignore_errors
+        )
+    else:
+        df = pl.scan_ndjson(
+            io.BytesIO(ndjson.encode()),
+            schema={"m": dtype},
+            ignore_errors=ignore_errors,
+        ).collect()
+    return df["m"]
+
+
+def json_roundtrips(df: pl.DataFrame) -> dict[str, pl.DataFrame]:
+    """Write `df` and read it back through every JSON read path."""
+    ndjson = df.write_ndjson()
+    encoded = df.select(pl.struct(pl.all()).struct.json_encode())[:, 0]
+    return {
+        "read_json": pl.read_json(io.StringIO(df.write_json()), schema=df.schema),
+        "read_ndjson": pl.read_ndjson(io.StringIO(ndjson), schema=df.schema),
+        "scan_ndjson": pl.scan_ndjson(
+            io.BytesIO(ndjson.encode()), schema=df.schema
+        ).collect(),
+        "json_decode": encoded.str.json_decode(pl.Struct(df.schema))
+        .struct.unnest()
+        .select(df.columns),
+    }
+
+
+@pytest.mark.parametrize(
+    "key_dtype",
+    [pl.String, pl.Categorical, pl.Enum(["b", 'a"\\', "é", "c"])],
+    ids=["str", "cat", "enum"],
+)
+def test_map_json_string_like_keys(key_dtype: PolarsDataType) -> None:
+    dtype = pl.Map(key_dtype, pl.Int64)
+    s = pl.Series("m", [{"b": 0, 'a"\\': 1, "é": None}, None, {}], dtype=dtype)
+    df = s.to_frame()
+
+    rows = ['{"b":0,"a\\"\\\\":1,"é":null}', "null", "{}"]
+    assert df.write_ndjson() == "".join(f'{{"m":{row}}}\n' for row in rows)
+    assert df.write_json() == "[" + ",".join(f'{{"m":{row}}}' for row in rows) + "]"
+    assert df.select(pl.struct("m").struct.json_encode())[:, 0].to_list() == [
+        f'{{"m":{row}}}' for row in rows
+    ]
+
+    for path in JSON_READ_PATHS:
+        assert_series_equal(read_json_column(path, rows, dtype), s)
+
+
+@pytest.mark.parametrize("key_dtype", [pl.String, pl.Categorical], ids=["str", "cat"])
+def test_map_json_write_sliced(key_dtype: PolarsDataType) -> None:
+    # Slicing leaves entries before the first row that the serializer must skip.
+    dtype = pl.Map(key_dtype, pl.Int64)
+    s = pl.Series("m", [{"a": 1, "b": 2}, None, {"c": 3}, {"d": 4}], dtype=dtype)
+    assert s[2:].to_frame().write_ndjson() == '{"m":{"c":3}}\n{"m":{"d":4}}\n'
+
+    lists = pl.Series("l", [[{"a": 1}], [{"b": 2}, {"c": 3}]], dtype=pl.List(dtype))
+    assert lists[1:].to_frame().write_ndjson() == '{"l":[{"b":2},{"c":3}]}\n'
+
+
+@pytest.mark.parametrize(
+    "value_dtype", [pl.Categorical, pl.Enum(["x", "y"])], ids=["cat", "enum"]
+)
+def test_map_json_categorical_values(value_dtype: PolarsDataType) -> None:
+    dtype = pl.Map(pl.String, value_dtype)
+    df = pl.Series("m", [{"a": "x", "b": None}, {"c": "y"}], dtype=dtype).to_frame()
+    assert df.write_ndjson() == '{"m":{"a":"x","b":null}}\n{"m":{"c":"y"}}\n'
+    for out in json_roundtrips(df).values():
+        assert_frame_equal(out, df)
+
+
+@pytest.mark.parametrize("path", JSON_READ_PATHS)
+def test_map_json_read_keeps_first_position_and_last_value(path: str) -> None:
+    # Above 32 members simd-json's objects are unordered, so this needs the tape.
+    members = [f'"k{i}":{i}' for i in range(40)] + ['"k5":100', '"k0":200']
+    big = "{" + ",".join(members) + "}"
+    small = '{"b":1,"a":2,"b":3}'
+
+    s = read_json_column(path, [big, small], MAP)
+
+    expected = {f"k{i}": i for i in range(40)} | {"k5": 100, "k0": 200}
+    assert [list(row.items()) for row in s.to_list()] == [
+        list(expected.items()),
+        [("b", 3), ("a", 2)],
+    ]
+
+
+def test_map_json_read_schema_overrides_keeps_order() -> None:
+    # Infer other columns while preserving Map entry order.
+    members = [f'"k{i}":{i}' for i in range(40)] + ['"k3":100']
+    obj = "{" + ",".join(members) + "}"
+    keys = [f"k{i}" for i in range(40)]
+    m = dict(zip(keys, range(40), strict=True)) | {"k3": 100}
+    expected = pl.DataFrame({"a": [1, 2], "m": pl.Series([m, None], dtype=MAP)})
+
+    doc = f'[{{"a":1,"m":{obj}}},{{"a":2,"m":null}}]'
+    ndjson = f'{{"a":1,"m":{obj}}}\n{{"a":2,"m":null}}\n'
+    for df in [
+        pl.read_json(io.StringIO(doc), schema_overrides={"m": MAP}),
+        pl.read_ndjson(io.StringIO(ndjson), schema_overrides={"m": MAP}),
+    ]:
+        assert_frame_equal(df, expected)
+        assert list(df["m"][0]) == keys
+
+
+def test_map_json_sink_ndjson(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "s": pl.Series([{"a": 1}, None, {}], dtype=MAP),
+            "c": pl.Series(
+                [{"x": "1"}, {"y": None}, None], dtype=pl.Map(pl.Categorical, pl.String)
+            ),
+            "n": pl.Series(
+                [{"a": {"p": 2}}, {"b": None}, {"c": {}}],
+                dtype=pl.Map(pl.String, pl.Map(pl.Enum(["p", "q"]), pl.Int64)),
+            ),
+        }
+    )
+    path = tmp_path / "out.ndjson"
+    df.lazy().sink_ndjson(path)
+
+    assert path.read_text() == df.write_ndjson()
+    assert path.read_text().splitlines()[0] == (
+        '{"s":{"a":1},"c":{"x":"1"},"n":{"a":{"p":2}}}'
+    )
+    assert_frame_equal(pl.read_ndjson(path, schema=df.schema), df)
+
+
+def test_map_json_nested_roundtrip() -> None:
+    df = pl.DataFrame(
+        {
+            "map_of_map": pl.Series(
+                [{"a": {"x": 2, "y": None}, "b": None}, None, {"c": {}}],
+                dtype=pl.Map(pl.String, MAP),
+            ),
+            "list": pl.Series([[{"x": 2}, None, {}], None, []], dtype=pl.List(MAP)),
+            "array": pl.Series(
+                [[{"x": 2}, None], None, [{}, {"y": 4}]], dtype=pl.Array(MAP, 2)
+            ),
+            "struct": pl.Series(
+                [{"m": {"x": 2}, "i": 1}, None, {"m": None, "i": 2}],
+                dtype=pl.Struct({"m": MAP, "i": pl.Int64}),
+            ),
+            "struct_values": pl.Series(
+                [{"a": {"i": 1, "l": [1, None]}, "b": None}, {}, None],
+                dtype=pl.Map(
+                    pl.String, pl.Struct({"i": pl.Int64, "l": pl.List(pl.Int64)})
+                ),
+            ),
+            "list_values": pl.Series(
+                [{"a": [1, 2], "b": None, "c": []}, None, {}],
+                dtype=pl.Map(pl.String, pl.List(pl.Int64)),
+            ),
+        }
+    )
+    assert df.write_ndjson().splitlines()[0] == (
+        '{"map_of_map":{"a":{"x":2,"y":null},"b":null},"list":[{"x":2},null,{}],'
+        '"array":[{"x":2},null],"struct":{"m":{"x":2},"i":1},'
+        '"struct_values":{"a":{"i":1,"l":[1,null]},"b":null},'
+        '"list_values":{"a":[1,2],"b":null,"c":[]}}'
+    )
+    for out in json_roundtrips(df).values():
+        assert_frame_equal(out, df)
+
+
+@pytest.mark.parametrize("path", JSON_READ_PATHS)
+def test_map_json_read_array_of_maps(path: str) -> None:
+    dtype = pl.Array(MAP, 2)
+    s = read_json_column(path, ['[{"a":1},{"b":2,"a":3,"b":4}]', "null"], dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == [[{"a": 1}, {"b": 4, "a": 3}], None]
+
+    with pytest.raises(ComputeError, match="width"):
+        read_json_column(path, ['[{"a":1}]'], dtype)
+
+
+@pytest.mark.parametrize("path", ["read_ndjson", "scan_ndjson"])
+def test_map_json_read_array_of_maps_wrong_width_ignore_errors(path: str) -> None:
+    dtype = pl.Array(MAP, 2)
+    rows = ['[{"a":1}]', '[{"a":1},{"b":2}]', '[{"a":1},{"b":2},{}]']
+    s = read_json_column(path, rows, dtype, ignore_errors=True)
+    assert s.to_list() == [None, [{"a": 1}, {"b": 2}], None]
+
+
+ENUM_MAP = pl.Map(pl.Enum(["a", "b"]), pl.Int64)
+
+
+@pytest.mark.parametrize("path", JSON_READ_PATHS)
+def test_map_json_read_errors(path: str) -> None:
+    with pytest.raises(
+        ComputeError,
+        match=r'JSON object key "x" is not a valid Map key of type `enum',
+    ):
+        read_json_column(path, ['{"a":1,"x":2}'], ENUM_MAP)
+
+    # A list of entries is not an object, even though it is the Map's storage.
+    for value in ['[{"key":"a","value":1}]', "1", '"a"']:
+        with pytest.raises(ComputeError, match="expected a JSON object for a Map"):
+            read_json_column(path, [value], MAP)
+
+
+@pytest.mark.parametrize("path", ["read_ndjson", "scan_ndjson"])
+def test_map_json_read_ignore_errors_nulls_the_row(path: str) -> None:
+    rows = ['{"a":1}', '{"b":2,"x":3}', '[{"key":"a","value":3}]', "7"]
+    s = read_json_column(path, rows, ENUM_MAP, ignore_errors=True)
+    assert s.to_list() == [{"a": 1}, None, None, None]
+
+
+UNSUPPORTED_KEY_MAPS = [
+    pl.Map(pl.Int64, pl.Int64),
+    pl.List(pl.Map(pl.Binary, pl.Int64)),
+    pl.Map(pl.String, pl.Map(pl.Date, pl.Int64)),
+]
+UNSUPPORTED_KEY_MSG = (
+    r"JSON Map keys must be String, Categorical or Enum.*\n\n.*map\.entries"
+)
+
+
 @pytest.mark.parametrize(
     "write",
     [
-        pytest.param(lambda df: df.write_json(), id="json"),
-        pytest.param(lambda df: df.write_ndjson(), id="ndjson"),
+        pytest.param(lambda df: df.write_json(), id="write_json"),
+        pytest.param(lambda df: df.write_ndjson(), id="write_ndjson"),
+        pytest.param(lambda df: df.lazy().sink_ndjson(io.BytesIO()), id="sink_ndjson"),
+        pytest.param(
+            lambda df: df.select(pl.struct(pl.all()).struct.json_encode()),
+            id="json_encode",
+        ),
     ],
 )
-def test_map_json_write_errors(write: Callable[[pl.DataFrame], str]) -> None:
-    df = pl.DataFrame({"m": pl.Series([{"a": 1}], dtype=MAP)})
-    with pytest.raises(ComputeError, match="cannot write 'Map' datatype to json"):
-        write(df)
+def test_map_json_write_rejects_unsupported_keys(
+    write: Callable[[pl.DataFrame], Any],
+) -> None:
+    for dtype in UNSUPPORTED_KEY_MAPS:
+        df = pl.DataFrame({"m": pl.Series([None], dtype=dtype)})
+        with pytest.raises(ComputeError, match=UNSUPPORTED_KEY_MSG):
+            write(df)
 
-    nested = pl.DataFrame({"m": pl.Series([[{"a": 1}]], dtype=pl.List(MAP))})
-    with pytest.raises(ComputeError, match="cannot write 'Map' datatype to json"):
-        write(nested)
+
+@pytest.mark.parametrize("path", JSON_READ_PATHS)
+def test_map_json_read_rejects_unsupported_keys(path: str) -> None:
+    for dtype in UNSUPPORTED_KEY_MAPS:
+        with pytest.raises(ComputeError, match=UNSUPPORTED_KEY_MSG):
+            read_json_column(path, ["null"], dtype)
 
 
-def test_map_json_read_errors() -> None:
-    with pytest.raises(ComputeError):
-        pl.read_json(io.BytesIO(b'[{"m": {"a": 1}}]'), schema={"m": MAP})
-    with pytest.raises(ComputeError):
-        pl.read_ndjson(io.BytesIO(b'{"m": {"a": 1}}\n'), schema={"m": MAP})
+def test_map_json_objects_infer_as_struct() -> None:
+    struct = pl.Struct({"a": pl.Int64})
+    doc = '[{"m":{"a":1}}]'
+    assert pl.read_json(io.StringIO(doc)).schema == {"m": struct}
+    assert pl.read_ndjson(io.StringIO('{"m":{"a":1}}\n')).schema == {"m": struct}
+    assert pl.Series(['{"a":1}']).str.json_decode().dtype == struct
 
 
 def test_map_is_first_and_last_distinct() -> None:
