@@ -451,10 +451,10 @@ def test_decimal_ratio_comparison_uses_division_scale() -> None:
     )
     assert res.schema == pl.Schema(
         {
-            "g": pl.Int64,
+            "g": pl.Int64(),
             "xy": pl.Decimal(38, 6),
             "zw": pl.Decimal(38, 6),
-            "gt": pl.Boolean,
+            "gt": pl.Boolean(),
         }
     )
     assert res.to_dict(as_series=False) == {
