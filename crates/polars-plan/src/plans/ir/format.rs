@@ -686,10 +686,15 @@ impl Display for ExprIRDisplay<'_> {
                 }
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr,
+                evaluation,
+                variant,
+            } => {
                 let expr = self.with_root(expr).parenthesize_if_binexpr();
                 let evaluation = self.with_slice(evaluation);
-                write!(f, "{expr}.struct.with_fields({evaluation})")
+                let name = variant.to_name();
+                write!(f, "{expr}.{name}({evaluation})")
             },
             Slice {
                 input,

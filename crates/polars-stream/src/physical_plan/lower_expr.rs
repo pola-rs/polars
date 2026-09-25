@@ -239,7 +239,11 @@ pub fn is_input_independent_rec(
             evaluation: _,
             variant: _,
         } => is_input_independent_rec(*expr, arena, cache),
-        AExpr::StructEval { expr, evaluation } => {
+        AExpr::StructEval {
+            expr,
+            evaluation,
+            variant: _,
+        } => {
             is_input_independent_rec(*expr, arena, cache)
                 && evaluation
                     .iter()
@@ -1704,7 +1708,26 @@ fn lower_exprs_with_ctx(
             },
             AExpr::StructEval {
                 expr: inner,
+                evaluation,
+                variant,
+            } if matches!(variant, StructEvalVariant::Select) && evaluation.is_empty() => {
+                // `struct.eval()` without any expressions produces a field-less struct with the
+                // height and the outer validity of the input. None of the unnesting below applies,
+                // and `as_struct` rejects an empty field list, so lower it as a cast instead.
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                let cast = ctx.expr_arena.add(AExpr::Cast {
+                    expr: trans_exprs[0],
+                    dtype: DataType::Struct(Vec::new()),
+                    options: CastOptions::NonStrict,
+                });
+                input_streams.insert(trans_input);
+                transformed_exprs.push(cast);
+            },
+
+            AExpr::StructEval {
+                expr: inner,
                 mut evaluation,
+                variant,
             } => {
                 // Transform (simplified):
                 //    expr.struct.with_fields(evaluation).alias(name)
@@ -1823,17 +1846,38 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext::from(&*ctx),
                 )?;
 
-                // Nest any column that belongs to the StructField namespace back into a Struct.
+                // Nest the columns that belong to the StructField namespace back into a Struct.
+                //
+                // For `with_fields` that is every column in the namespace (the unnested input
+                // fields, with the evaluated ones stacked on top); for `eval` it is only the
+                // evaluated fields, in the order they were given.
                 let mut fields_expr_irs = Vec::new();
-                let eval_schema = stream.output_schema(ctx.phys_sm).clone();
-                for (name, _) in eval_schema.iter() {
-                    if let Some(stripped_name) = name.strip_prefix(field_prefix.as_str()) {
-                        let node = ctx.expr_arena.add(AExpr::Column(name.clone()));
-                        fields_expr_irs.push(
-                            ExprIR::from_node(node, ctx.expr_arena)
-                                .with_alias(PlSmallStr::from_str(stripped_name)),
-                        );
-                    }
+                match variant {
+                    StructEvalVariant::WithFields => {
+                        let eval_schema = stream.output_schema(ctx.phys_sm).clone();
+                        for (name, _) in eval_schema.iter() {
+                            if let Some(stripped_name) = name.strip_prefix(field_prefix.as_str()) {
+                                let node = ctx.expr_arena.add(AExpr::Column(name.clone()));
+                                fields_expr_irs.push(
+                                    ExprIR::from_node(node, ctx.expr_arena)
+                                        .with_alias(PlSmallStr::from_str(stripped_name)),
+                                );
+                            }
+                        }
+                    },
+                    StructEvalVariant::Select => {
+                        for e in evaluation.iter() {
+                            let name = e.output_name();
+                            let stripped_name = name
+                                .strip_prefix(field_prefix.as_str())
+                                .expect("evaluation output name is prefixed");
+                            let node = ctx.expr_arena.add(AExpr::Column(name.clone()));
+                            fields_expr_irs.push(
+                                ExprIR::from_node(node, ctx.expr_arena)
+                                    .with_alias(PlSmallStr::from_str(stripped_name)),
+                            );
+                        }
+                    },
                 }
                 let as_struct_expr = AExprBuilder::function(
                     fields_expr_irs,

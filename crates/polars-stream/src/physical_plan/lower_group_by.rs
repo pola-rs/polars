@@ -357,10 +357,14 @@ fn try_lower_elementwise_scalar_agg_expr(
             }))
         },
 
-        AExpr::StructEval { expr, evaluation } => {
+        AExpr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => {
             // @TODO: Reflect the lowering result of `expr` into the respective
             // StructField lowering calls.
-            let (expr, evaluation) = (*expr, evaluation.clone());
+            let (expr, evaluation, variant) = (*expr, evaluation.clone(), *variant);
             let expr = lower_rec!(expr)?;
 
             let new_evaluation = evaluation
@@ -377,6 +381,7 @@ fn try_lower_elementwise_scalar_agg_expr(
             Some(expr_arena.add(AExpr::StructEval {
                 expr,
                 evaluation: new_evaluation,
+                variant,
             }))
         },
 
