@@ -601,6 +601,10 @@ def _scan(tmp_path: Path, name: str, df: pl.DataFrame) -> pl.LazyFrame:
     return pl.scan_parquet(path)
 
 
+def _left_scan(tmp_path: Path) -> pl.LazyFrame:
+    return _scan(tmp_path, "left", pl.DataFrame({"k": np.arange(1_000), "g": "a"}))
+
+
 def _gate_fires(
     lf: pl.LazyFrame,
     plmonkeypatch: PlMonkeyPatch,
@@ -826,7 +830,7 @@ def test_eager_aggregation_group_key_from_aggregated_side_either_input(
 def test_eager_aggregation_group_key_through_a_join_below(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    # TPC-DS q04: R is the fact table joined to a dimension that gives a group key.
+    # R is the fact table joined to a dimension that gives a group key.
     dim = pl.LazyFrame({"d_dk": [10, 20, 30], "d_year": [2001, 2002, None]})
     lf = (
         _join(_join(_fact(), dim, "f_dk", "d_dk"), _cust(), "f_ck", "c_ck")
@@ -897,8 +901,8 @@ def test_eager_aggregation_gate_caps_filtered_group_keys(
     capfd: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
-    # A filtered group key from a dimension joined into R, as the year in TPC-DS q04:
-    # its column statistics still cover every year.
+    # A filtered group key from a dimension joined into R: its column statistics
+    # still cover every value.
     rng = np.random.default_rng(0)
     n = 200_000
     fact = _scan(
@@ -917,7 +921,7 @@ def test_eager_aggregation_gate_caps_filtered_group_keys(
         "dim",
         pl.DataFrame({"d_dk": np.arange(3_000), "year": 1900 + np.arange(3_000) // 15}),
     )
-    left = _scan(tmp_path, "left", pl.DataFrame({"k": np.arange(1_000), "g": "a"}))
+    left = _left_scan(tmp_path)
     r = fact.join(dim.filter(restriction), left_on="dk", right_on="d_dk")
     lf = left.join(r, on="k").group_by("g", "year").agg(pl.col("x").sum())
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
@@ -930,7 +934,7 @@ def test_eager_aggregation_gate_caps_filtered_group_keys(
 def test_eager_aggregation_gate_needs_the_join_to_do_more_than_filter(
     plmonkeypatch: PlMonkeyPatch, tmp_path: Path
 ) -> None:
-    # TPC-DS q53: every group key comes from R and L has one row per key, so the join
+    # Every group key comes from R and L has one row per key, so the join
     # only filters R and there is nothing for a partial aggregation to save.
     n = 200_000
     rng = np.random.default_rng(0)
@@ -1026,7 +1030,7 @@ def test_eager_aggregation_gate_ignores_restrictions_an_outer_join_undoes(
     # in a year per row, so grouping by year leaves nothing to fold.
     n = 200_000
     rng = np.random.default_rng(0)
-    left = _scan(tmp_path, "left", pl.DataFrame({"k": np.arange(1_000), "g": "a"}))
+    left = _left_scan(tmp_path)
     fact = _scan(
         tmp_path,
         "fact",
@@ -1051,7 +1055,7 @@ def test_eager_aggregation_gate_int128_range(
     # The full Int128 range is too wide to count, so it does not cap the unique keys.
     n = 500_000
     rng = np.random.default_rng(0)
-    left = _scan(tmp_path, "left", pl.DataFrame({"k": np.arange(1_000), "g": "a"}))
+    left = _left_scan(tmp_path)
     right = _scan(
         tmp_path,
         "right",

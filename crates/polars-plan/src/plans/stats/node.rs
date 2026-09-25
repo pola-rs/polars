@@ -841,10 +841,13 @@ pub(crate) fn column_restriction(
                 let AExpr::Literal(haystack) = expr_arena.get(haystack.node()) else {
                     return None;
                 };
+                use polars_core::prelude::AnyValue;
+
+                use crate::plans::LiteralValue;
                 let values = match haystack {
-                    crate::plans::LiteralValue::Series(series) => series.len(),
-                    crate::plans::LiteralValue::Scalar(scalar) => match scalar.value() {
-                        polars_core::prelude::AnyValue::List(series) => series.len(),
+                    LiteralValue::Series(series) => series.len(),
+                    LiteralValue::Scalar(scalar) => match scalar.value() {
+                        AnyValue::List(series) => series.len(),
                         _ => return Some((column, Restriction::Other)),
                     },
                     _ => return Some((column, Restriction::Other)),

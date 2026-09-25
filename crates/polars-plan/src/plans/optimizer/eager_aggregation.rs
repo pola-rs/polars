@@ -579,7 +579,7 @@ fn target_at(
                 aggregate_keys: right_keys,
                 other_input: *input_left,
                 other_keys: left_keys,
-                other_is_read: names.keys.iter().any(from_left) || !names.ancestor_keys.is_empty(),
+                other_is_read: other_is_read(names, &left_schema),
                 aggregate_is_left: false,
                 from_aggregate: from_right,
             });
@@ -613,13 +613,18 @@ fn target_at(
                 aggregate_keys: left_keys,
                 other_input: *input_right,
                 other_keys: right_keys,
-                other_is_read: names.keys.iter().any(from_left) || !names.ancestor_keys.is_empty(),
+                other_is_read: other_is_read(names, &right_schema),
                 aggregate_is_left: true,
                 from_aggregate: from_right,
             });
         }
     }
     None
+}
+
+/// Whether a group key or a join above reads the input with `other_schema`.
+fn other_is_read(names: &Names, other_schema: &Schema) -> bool {
+    !names.ancestor_keys.is_empty() || names.keys.iter().any(|key| other_schema.contains(key))
 }
 
 /// R's join keys followed by the other group keys that are R columns.
@@ -1057,7 +1062,7 @@ impl SummedRows<'_> {
         if let Some(rows) = self.rows {
             return rows;
         }
-        let mut bounds = PlHashMap::default();
+        let mut bounds = PlIndexMap::default();
         let mut bound = |node| row_bound(node, self.ir_arena, expr_arena, self.stats, &mut bounds);
         let rows = bound(self.aggregate_input)
             .zip(bound(self.group_by_input))
@@ -1319,7 +1324,7 @@ fn row_bound(
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
     stats: &mut StatsCache,
-    bounds: &mut PlHashMap<Node, Option<f64>>,
+    bounds: &mut PlIndexMap<Node, Option<f64>>,
 ) -> Option<f64> {
     if let Some(&known) = bounds.get(&node) {
         return known;
