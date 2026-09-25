@@ -12,7 +12,13 @@ where
     T: NativeType + PartialOrd + IsFloat + Bounded,
     P: MinMaxPolicy,
 {
-    let mut out = rolling_minmax_pick::<MIN, false, T, P>(values, &[], w);
+    let mut out = if T::is_float() && first_nan_idx(values).is_some() {
+        // NaNs poison windows asymmetrically: use the stable combine so ties keep
+        // the earliest NaN payload or signed zero.
+        van_herk_kernel::<false, T, P, _>(values, &[], w, combine::<T, P>)
+    } else {
+        van_herk_kernel::<false, T, P, _>(values, &[], w, combine_plain::<MIN, T>)
+    };
     if shift > 0 {
         recenter_trailing::<false, T, P>(&mut out, values, &[], w, shift);
     }
@@ -28,40 +34,6 @@ pub(super) fn identity<T: NativeType + IsFloat + Bounded, P: MinMaxPolicy>() -> 
         (T::min_value(), T::max_value())
     };
     if P::is_better(&lo, &hi) { hi } else { lo }
-}
-
-#[inline(always)]
-pub(super) fn rolling_minmax_pick<const MIN: bool, const MASKED: bool, T, P>(
-    values: &[T],
-    validity_words: &[u64],
-    w: usize,
-) -> Vec<T>
-where
-    T: NativeType + PartialOrd + IsFloat + Bounded,
-    P: MinMaxPolicy,
-{
-    if T::is_float() && first_nan_idx(values).is_some() {
-        return van_herk_kernel::<MASKED, T, P, _>(values, validity_words, w, combine::<T, P>);
-    }
-    if MASKED {
-        return van_herk_kernel::<MASKED, T, P, _>(
-            values,
-            validity_words,
-            w,
-            combine_plain::<MIN, T>,
-        );
-    }
-    match w {
-        2 => rolling_minmax_small_w::<MIN, 2, T>(values),
-        3 => rolling_minmax_small_w::<MIN, 3, T>(values),
-        4 => rolling_minmax_small_w::<MIN, 4, T>(values),
-        5 => rolling_minmax_small_w::<MIN, 5, T>(values),
-        6 => rolling_minmax_small_w::<MIN, 6, T>(values),
-        7 => rolling_minmax_small_w::<MIN, 7, T>(values),
-        8 => rolling_minmax_small_w::<MIN, 8, T>(values),
-        9 => rolling_minmax_small_w::<MIN, 9, T>(values),
-        _ => van_herk_kernel::<MASKED, T, P, _>(values, validity_words, w, combine_plain::<MIN, T>),
-    }
 }
 
 /// Stable combine: ties keep the earlier NaN payload or signed zero.
@@ -135,33 +107,6 @@ pub(super) fn recenter_trailing<const MASKED: bool, T, P>(
     for t in n.max(shift)..(n + shift).min(w) {
         out[t - shift] = acc;
     }
-}
-
-fn rolling_minmax_small_w<const MIN: bool, const W: usize, T>(values: &[T]) -> Vec<T>
-where
-    T: NativeType + PartialOrd + IsFloat,
-{
-    let n = values.len();
-    let mut ret = Vec::with_capacity(n);
-    let out = &mut ret.spare_capacity_mut()[..n];
-    let head = (W - 1).min(n);
-    for i in 0..head {
-        let mut acc = values[0];
-        for &v in &values[1..=i] {
-            acc = combine_plain::<MIN, T>(acc, v);
-        }
-        out[i].write(acc);
-    }
-    for (k, w) in values.array_windows::<W>().enumerate() {
-        let mut acc = w[0];
-        for &v in &w[1..] {
-            acc = combine_plain::<MIN, T>(acc, v);
-        }
-        out[k + W - 1].write(acc);
-    }
-    // SAFETY: all `n` elements were written above (or `n == 0`).
-    unsafe { ret.set_len(n) };
-    ret
 }
 
 /// Shared block scan; `MASKED` avoids the measurable hot-loop cost of a generic read
