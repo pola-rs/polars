@@ -531,9 +531,13 @@ def test_scan_iceberg_starts_with_prunes_files(
 
     planned: list[Any] = []
     plan_files = DataScan.plan_files
-    monkeypatch.setattr(
-        DataScan, "plan_files", lambda s: planned.extend(plan_files(s)) or planned
-    )
+
+    def plan_files_spy(self: DataScan) -> list[Any]:
+        tasks = list(plan_files(self))
+        planned.extend(tasks)
+        return tasks
+
+    monkeypatch.setattr(DataScan, "plan_files", plan_files_spy)
 
     out = pl.scan_iceberg(tbl).filter(pl.col("s").str.starts_with("b")).collect()
     assert out["s"].to_list() == ["banana"]
