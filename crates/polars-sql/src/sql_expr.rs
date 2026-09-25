@@ -768,11 +768,11 @@ impl SQLExprVisitor<'_> {
             // ----
             // Mathematical operators
             // ----
-            SQLBinaryOperator::Divide => lhs.true_div(rhs),  // "x / y"
+            SQLBinaryOperator::Divide => sql_binary(lhs, SqlBinaryOp::Div, rhs),  // "x / y"
             SQLBinaryOperator::DuckIntegerDivide => lhs.floor_div(rhs).cast(DataType::Int64),  // "x // y"
             SQLBinaryOperator::Minus => lhs - rhs,  // "x - y"
             SQLBinaryOperator::Modulo => lhs % rhs,  // "x % y"
-            SQLBinaryOperator::Multiply => lhs * rhs,  // "x * y"
+            SQLBinaryOperator::Multiply => sql_binary(lhs, SqlBinaryOp::Mul, rhs),  // "x * y"
             SQLBinaryOperator::Plus => lhs + rhs,  // "x + y"
 
             // ----
@@ -1859,6 +1859,12 @@ pub(crate) fn resolve_compound_identifier(
         column = column.struct_().field_by_name(name);
     }
     Ok(vec![column])
+}
+
+/// `lhs <op> rhs` with SQL semantics, resolved once the operand dtypes are known
+/// (see [`SqlFunction`]).
+fn sql_binary(lhs: Expr, op: SqlBinaryOp, rhs: Expr) -> Expr {
+    lhs.map_binary(FunctionExpr::Sql(SqlFunction::Binary(op)), rhs)
 }
 
 fn parse_numeric_literal(s: &str, negate: bool) -> PolarsResult<AnyValue<'static>> {

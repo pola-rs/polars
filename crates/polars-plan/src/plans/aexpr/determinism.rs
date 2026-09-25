@@ -211,6 +211,8 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Unique(_) => false,
         #[cfg(feature = "round_series")]
         F::Round { .. } | F::RoundSF { .. } | F::Truncate { .. } | F::Floor | F::Ceil => false,
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { .. } => false,
         #[cfg(feature = "fused")]
         F::Fused(_) => false,
         F::ConcatExpr { .. } => false,

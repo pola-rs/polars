@@ -28,6 +28,7 @@ mod range;
 mod rolling;
 #[cfg(feature = "rolling_window_by")]
 mod rolling_by;
+mod sql;
 #[cfg(feature = "strings")]
 mod strings;
 #[cfg(feature = "dtype-struct")]
@@ -75,6 +76,7 @@ pub use self::range::{DateRangeArgs, RangeFunction};
 pub use self::rolling::RollingFunction;
 #[cfg(feature = "rolling_window_by")]
 pub use self::rolling_by::RollingFunctionBy;
+pub use self::sql::{SqlBinaryOp, SqlFunction};
 #[cfg(feature = "strings")]
 pub use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
@@ -82,6 +84,32 @@ pub use self::struct_::StructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::TrigonometricFunction;
 use super::*;
+
+#[cfg(feature = "dtype-decimal")]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+pub enum DecimalArithOp {
+    Mul,
+    Div,
+}
+
+#[cfg(feature = "dtype-decimal")]
+impl DecimalArithOp {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Mul => "decimal_mul",
+            Self::Div => "decimal_div",
+        }
+    }
+}
+
+#[cfg(feature = "dtype-decimal")]
+impl Display for DecimalArithOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -276,6 +304,14 @@ pub enum FunctionExpr {
         decimals: u32,
         mode: RoundMode,
     },
+    /// Decimal arithmetic producing `Decimal(38, scale)`, with the result rounded half-even.
+    #[cfg(feature = "dtype-decimal")]
+    DecimalArith {
+        op: DecimalArithOp,
+        scale: usize,
+    },
+    /// See [`SqlFunction`].
+    Sql(SqlFunction),
     #[cfg(feature = "round_series")]
     RoundSF {
         digits: i32,
@@ -642,6 +678,12 @@ impl Hash for FunctionExpr {
                 decimals.hash(state);
                 mode.hash(state);
             },
+            #[cfg(feature = "dtype-decimal")]
+            DecimalArith { op, scale } => {
+                op.hash(state);
+                scale.hash(state);
+            },
+            Sql(f) => f.hash(state),
             #[cfg(feature = "round_series")]
             FunctionExpr::RoundSF { digits } => digits.hash(state),
             #[cfg(feature = "round_series")]
@@ -895,6 +937,9 @@ impl Display for FunctionExpr {
             },
             #[cfg(feature = "round_series")]
             Round { .. } => "round",
+            #[cfg(feature = "dtype-decimal")]
+            DecimalArith { op, .. } => return Display::fmt(op, f),
+            Sql(func) => return Display::fmt(func, f),
             #[cfg(feature = "round_series")]
             RoundSF { .. } => "round_sig_figs",
             #[cfg(feature = "round_series")]

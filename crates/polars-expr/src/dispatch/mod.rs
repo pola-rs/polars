@@ -386,6 +386,8 @@ pub fn function_expr_to_udf(
         F::Unique(stable) => map!(misc::unique, stable),
         #[cfg(feature = "round_series")]
         F::Round { decimals, mode } => map!(round::round, decimals, mode),
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { op, scale } => map_as_slice!(misc::decimal_arith, op, scale),
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => map!(round::round_sig_figs, digits),
         #[cfg(feature = "round_series")]

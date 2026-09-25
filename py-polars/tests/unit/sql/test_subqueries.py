@@ -606,6 +606,13 @@ def _subquery_ctx() -> pl.SQLContext[pl.LazyFrame]:
             "SEMI JOIN",
             [2],
         ),
+        # SQL `*` is lowered once the dtypes are known, and is still elementwise.
+        (
+            "SELECT c_custkey FROM customer"
+            " WHERE c_custkey * a IN (SELECT o_custkey FROM orders)",
+            "SEMI JOIN",
+            [2],
+        ),
         # An empty scalar subquery is NULL, which nothing equals.
         (
             "SELECT c_custkey FROM customer"

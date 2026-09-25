@@ -734,6 +734,26 @@ pub fn as_list(s: &mut [Column]) -> PolarsResult<Column> {
         .map(IntoColumn::into_column)
 }
 
+#[cfg(feature = "dtype-decimal")]
+pub(super) fn decimal_arith(
+    s: &mut [Column],
+    op: polars_plan::dsl::DecimalArithOp,
+    scale: usize,
+) -> PolarsResult<Column> {
+    use polars_core::series::arithmetic::coerce_lhs_rhs_numeric_op;
+    use polars_plan::dsl::DecimalArithOp;
+
+    s[0].try_apply_broadcasting_binary_elementwise(&s[1], |lhs, rhs| {
+        let (l, r) = coerce_lhs_rhs_numeric_op(lhs, rhs)?;
+        let (l, r) = (l.decimal()?, r.decimal()?);
+        let out = match op {
+            DecimalArithOp::Mul => l.mul_with_scale(r, scale)?,
+            DecimalArithOp::Div => l.div_with_scale(r, scale)?,
+        };
+        Ok(out.into_series().with_name(lhs.name().clone()))
+    })
+}
+
 #[cfg(feature = "log")]
 pub(super) fn entropy(s: &Column, base: f64, normalize: bool) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;

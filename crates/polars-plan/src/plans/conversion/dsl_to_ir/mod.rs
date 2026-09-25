@@ -36,6 +36,7 @@ mod expr_to_ir;
 mod functions;
 mod join;
 mod scans;
+mod sql;
 mod utils;
 pub(crate) use expr_expansion::needs_expansion;
 pub use expr_expansion::{expand_expression, is_regex_projection, prepare_projection};

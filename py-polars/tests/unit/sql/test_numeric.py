@@ -319,3 +319,225 @@ def test_int_div_true_division() -> None:
             result,
             pl.DataFrame({"div": [1 / 3]}),
         )
+
+
+def test_decimal_mul_div_result_scale() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [D("0.05")],
+            "b": [D("0.05")],
+            "c": [D("0.01")],
+            "big": [D(10**35)],
+            "i": [2],
+        },
+        schema={
+            "a": pl.Decimal(15, 2),
+            "b": pl.Decimal(15, 2),
+            "c": pl.Decimal(38, 2),
+            "big": pl.Decimal(38, 2),
+            "i": pl.Int64,
+        },
+    )
+    res = df.sql(
+        """
+        SELECT
+          a * b AS mul, c * big AS mul_small_big, big * c AS mul_big_small,
+          a * i AS mul_int, a * 3 AS mul_lit,
+          big / big AS div_big, a / b AS div, a / i AS div_int, i / a AS int_div
+        FROM self
+        """
+    )
+    assert res.schema == pl.Schema(
+        {
+            "mul": pl.Decimal(38, 4),
+            "mul_small_big": pl.Decimal(38, 4),
+            "mul_big_small": pl.Decimal(38, 4),
+            "mul_int": pl.Decimal(38, 2),
+            "mul_lit": pl.Decimal(38, 2),
+            "div_big": pl.Decimal(38, 8),
+            "div": pl.Decimal(38, 8),
+            "div_int": pl.Decimal(38, 8),
+            "int_div": pl.Decimal(38, 6),
+        }
+    )
+    assert res.row(0) == (
+        D("0.0025"),
+        D(10**33),
+        D(10**33),
+        D("0.10"),
+        D("0.15"),
+        D("1.00000000"),
+        D("1.00000000"),
+        D("0.02500000"),
+        D("40.000000"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected", "dtype"),
+    [
+        # scale max(s1, min(s1 + 6, 12)); Postgres gives 2.5000000000000000, since
+        # its division scale is value-dependent
+        ("CAST(5.0 AS DECIMAL(2,1)) / 2", D("2.5000000"), pl.Decimal(38, 7)),
+        ("CAST(2.0 AS DECIMAL(2,1)) / 3", D("0.6666667"), pl.Decimal(38, 7)),
+        ("CAST(-2.0 AS DECIMAL(2,1)) / 3", D("-0.6666667"), pl.Decimal(38, 7)),
+        ("CAST(2 AS DECIMAL(5,0)) / 3", D("0.666667"), pl.Decimal(38, 6)),
+        # capped at 12
+        ("CAST(2 AS DECIMAL(10,7)) / 3", D("0.666666666667"), pl.Decimal(38, 12)),
+        # a dividend scale above 12 is kept
+        (
+            "CAST(2 AS DECIMAL(20,14)) / 3",
+            D("0.66666666666667"),
+            pl.Decimal(38, 14),
+        ),
+        # half-even: half-up would give ±0.000000000003
+        (
+            "CAST(0.000000000005 AS DECIMAL(38,12)) / 2",
+            D("0.000000000002"),
+            pl.Decimal(38, 12),
+        ),
+        (
+            "CAST(-0.000000000005 AS DECIMAL(38,12)) / 2",
+            D("-0.000000000002"),
+            pl.Decimal(38, 12),
+        ),
+        (
+            "CAST(0.000000000015 AS DECIMAL(38,12)) / 2",
+            D("0.000000000008"),
+            pl.Decimal(38, 12),
+        ),
+    ],
+)
+def test_decimal_div_scale_and_rounding(
+    expr: str, expected: D, dtype: pl.DataType
+) -> None:
+    res = pl.sql(f"SELECT {expr} AS x", eager=True)
+    assert res.schema == pl.Schema({"x": dtype})
+    assert res.item() == expected
+
+
+def test_decimal_mul_div_out_of_range() -> None:
+    df = pl.DataFrame(
+        {"a": [D("1")], "big": [D(10**33)]},
+        schema={"a": pl.Decimal(38, 20), "big": pl.Decimal(38, 0)},
+    )
+    match = "multiplication result scale 40 exceeds 38"
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
+        df.sql("SELECT a * a FROM self")
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
+        df.select(pl.sql_expr("a * a"))
+    # 10^33 at scale 6 loses leading digits
+    with pytest.raises(pl.exceptions.ComputeError, match="overflow in decimal"):
+        df.sql("SELECT big / 1 FROM self")
+
+
+def test_decimal_mul_div_float_and_int_unchanged() -> None:
+    df = pl.DataFrame(
+        {"a": [D("1.50")], "f": [2.0], "i": [3], "j": [2]},
+        schema={"a": pl.Decimal(10, 2), "f": pl.Float64, "i": pl.Int64, "j": pl.Int64},
+    )
+    res = df.sql(
+        "SELECT a * f AS af, a / f AS adf, i / j AS ij, i * j AS imj FROM self"
+    )
+    assert res.schema == pl.Schema(
+        {"af": pl.Float64, "adf": pl.Float64, "ij": pl.Float64, "imj": pl.Int64}
+    )
+    assert res.row(0) == (3.0, 0.75, 1.5, 6)
+
+
+def test_decimal_div_scale_ignores_dividend_precision() -> None:
+    # `a * 1` and `a + 0` widen the dividend to precision 38 but keep its scale,
+    # so the division scale, and the result, must not change
+    df = pl.DataFrame(
+        {"a": [D("1.00"), D("0.05")], "b": [D("3.01"), D("0.03")]},
+        schema={"a": pl.Decimal(7, 2), "b": pl.Decimal(7, 2)},
+    )
+    dividends = df.sql("SELECT a, a * 1 AS a_mul, a + 0 AS a_add FROM self")
+    assert dividends.schema == pl.Schema(
+        {"a": pl.Decimal(7, 2), "a_mul": pl.Decimal(38, 2), "a_add": pl.Decimal(38, 2)}
+    )
+    res = df.sql("SELECT a / b AS x, (a * 1) / b AS y, (a + 0) / b AS z FROM self")
+    assert res.schema == pl.Schema(dict.fromkeys("xyz", pl.Decimal(38, 8)))
+    assert res.rows() == [(D("0.33222591"),) * 3, (D("1.66666667"),) * 3]
+
+
+def test_decimal_ratio_comparison_uses_division_scale() -> None:
+    # Both ratios are 0.33 at scale 2, but 0.33333333 < 0.33557047 at scale 8.
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 2],
+            "x": [D("0.50"), D("0.50"), D("1.00")],
+            "y": [D("1.50"), D("1.50"), D("2.00")],
+            "z": [D("0.50"), D("0.50"), D("1.00")],
+            "w": [D("1.49"), D("1.49"), D("2.00")],
+        },
+        schema={
+            "g": pl.Int64,
+            "x": pl.Decimal(7, 2),
+            "y": pl.Decimal(7, 2),
+            "z": pl.Decimal(7, 2),
+            "w": pl.Decimal(7, 2),
+        },
+    )
+    res = df.sql(
+        """
+        SELECT g, SUM(x) / SUM(y) AS xy, SUM(z) / SUM(w) AS zw,
+               SUM(z) / SUM(w) > SUM(x) / SUM(y) AS gt
+        FROM self GROUP BY g ORDER BY g
+        """
+    )
+    assert res.schema == pl.Schema(
+        {
+            "g": pl.Int64(),
+            "xy": pl.Decimal(38, 8),
+            "zw": pl.Decimal(38, 8),
+            "gt": pl.Boolean(),
+        }
+    )
+    assert res.to_dict(as_series=False) == {
+        "g": [1, 2],
+        "xy": [D("0.33333333"), D("0.50000000")],
+        "zw": [D("0.33557047"), D("0.50000000")],
+        "gt": [True, False],
+    }
+
+    res = df.sql(
+        "SELECT g FROM self GROUP BY g HAVING SUM(z) / SUM(w) > SUM(x) / SUM(y)"
+    )
+    assert res["g"].to_list() == [1]
+
+    res = df.sql(
+        """
+        WITH s AS (
+          SELECT g, SUM(x) AS sx, SUM(y) AS sy, SUM(z) AS sz, SUM(w) AS sw
+          FROM self GROUP BY g
+        )
+        SELECT g FROM s WHERE sz / sw > sx / sy
+        """
+    )
+    assert res["g"].to_list() == [1]
+
+
+@pytest.mark.parametrize("expr", ["a * b", "a / b", "a / i", "i / a", "a * f", "i / i"])
+def test_decimal_mul_div_same_for_every_sql_entry_point(expr: str) -> None:
+    # the result scale depends on the operand types, which `sql_expr` only learns when
+    # the expression is planned against a frame
+    df = pl.DataFrame(
+        {"a": [D("0.05")], "b": [D("0.07")], "i": [3], "f": [2.0]},
+        schema={
+            "a": pl.Decimal(7, 2),
+            "b": pl.Decimal(7, 2),
+            "i": pl.Int64,
+            "f": pl.Float64,
+        },
+    )
+    expected = df.sql(f"SELECT {expr} AS x FROM self")
+    assert_frame_equal(df.select(pl.sql_expr(f"{expr} AS x")), expected)
+    assert_frame_equal(
+        df.lazy().select(pl.sql_expr(expr).alias("x")).collect(), expected
+    )
+    assert (
+        pl.SQLContext(t=df)
+        .execute(f"SELECT {expr} AS x FROM t", eager=True)
+        .equals(expected)
+    )
