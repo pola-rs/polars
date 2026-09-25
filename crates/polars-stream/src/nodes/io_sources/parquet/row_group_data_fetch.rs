@@ -10,6 +10,7 @@ use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, create_sorting_map};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
+use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::RowGroupMetadata;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -64,10 +65,14 @@ impl RowGroupDataFetcher {
 
             let n_bytes = match self.byte_source.as_ref() {
                 DynByteSource::Buffer(_) => 0, // in-memory, no budget needed
+                // Ignore any errors getting the byte range. If there are columns without
+                // metadata available (due to missing a decryption key) then an error will
+                // be raised later when reading them.
                 _ if !self.is_full_projection => get_row_group_byte_ranges_for_projection(
                     row_group_metadata,
                     &mut self.projection.iter().map(|x| &x.arrow_field().name),
                 )
+                .filter_map(|r| r.ok())
                 .map(|r| r.len() as u64)
                 .sum(),
                 _ => row_group_metadata
@@ -135,10 +140,13 @@ impl RowGroupDataFetcher {
                             let slice = mem_slice.0.as_ref();
 
                             if !is_full_projection {
+                                // Errors are raised when decoding rather than when prefetching.
                                 for range in get_row_group_byte_ranges_for_projection(
                                     row_group_metadata,
                                     &mut projection.iter().map(|x| &x.arrow_field().name),
-                                ) {
+                                )
+                                .filter_map(|r| r.ok())
+                                {
                                     memory_prefetch_func(unsafe { slice.get_unchecked(range) })
                                 }
                             } else {
@@ -164,7 +172,7 @@ impl RowGroupDataFetcher {
                                 row_group_metadata,
                                 &mut projection.iter().map(|x| &x.arrow_field().name),
                             )
-                            .collect::<Vec<_>>()
+                            .collect::<ParquetResult<Vec<_>>>()?
                         } else {
                             row_group_metadata
                                 .byte_ranges_iter()
@@ -186,7 +194,7 @@ impl RowGroupDataFetcher {
                                 row_group_metadata,
                                 &mut projection.iter().map(|x| &x.arrow_field().name),
                             )
-                            .collect::<Vec<_>>();
+                            .collect::<ParquetResult<Vec<_>>>()?;
 
                             let n_ranges = ranges.len();
 
@@ -262,7 +270,7 @@ impl FetchedBytes {
 fn get_row_group_byte_ranges_for_projection<'a>(
     row_group_metadata: &'a RowGroupMetadata,
     columns: &'a mut dyn Iterator<Item = &PlSmallStr>,
-) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
+) -> impl Iterator<Item = ParquetResult<std::ops::Range<usize>>> + 'a {
     columns.flat_map(|col_name| {
         row_group_metadata
             .columns_under_root_iter(col_name)
@@ -271,8 +279,8 @@ fn get_row_group_byte_ranges_for_projection<'a>(
             .into_iter()
             .flatten()
             .map(|col| {
-                let byte_range = col.byte_range();
-                byte_range.start as usize..byte_range.end as usize
+                let byte_range = col.byte_range()?;
+                Ok(byte_range.start as usize..byte_range.end as usize)
             })
     })
 }

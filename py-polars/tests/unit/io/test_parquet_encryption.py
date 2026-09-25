@@ -134,17 +134,71 @@ def test_read_encrypted_footer_without_column_keys(io_files_path: Path) -> None:
         / "encrypt_columns_and_footer.parquet.encrypted"
     )
     decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
+    expected = expected_data()
+    # Columns that aren't encrypted with a column key
+    footer_key_columns = [
+        c
+        for c in expected.columns
+        if c not in COLUMN_KEYS and c not in UNSUPPORTED_COLUMNS
+    ]
 
-    # TODO: It should be possible to read the columns that are encrypted
-    # with the footer key. At the moment Polars errors due to trying to decrypt
-    # metadata for the columns encrypted with a different key, even though we
-    # aren't reading them.
+    # Columns encrypted with the footer key can be read without the column keys
+    df = pl.read_parquet(
+        path,
+        columns=footer_key_columns,
+        schema=expected.schema,
+        decryption_properties=decryption_properties,
+    )
+    assert_frame_equal(df, expected.select(footer_key_columns))
+
+    # But columns encrypted with a column key can't be read
+    match = (
+        "Metadata for column '{}' is encrypted and could not be decrypted: "
+        "No column decryption key set for encrypted column '{}'"
+    )
     with pytest.raises(
         pl.exceptions.ComputeError,
-        match=r"Metadata for column '.*' is encrypted and could not be decrypted",
+        match=match.format("double_field", "double_field"),
     ):
         pl.read_parquet(
-            path, columns=["int32_field"], decryption_properties=decryption_properties
+            path, columns=["double_field"], decryption_properties=decryption_properties
+        )
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=match.format("double_field", "double_field"),
+    ):
+        pl.scan_parquet(path, decryption_properties=decryption_properties).filter(
+            pl.col("double_field") > 1.0
+        ).select("int32_field").collect()
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"Metadata for column '.*_field' is encrypted and could not be decrypted",
+    ):
+        pl.read_parquet(path, decryption_properties=decryption_properties)
+
+
+def test_read_encrypted_footer_with_some_column_keys(io_files_path: Path) -> None:
+    path = (
+        io_files_path
+        / "parquet-encryption"
+        / "encrypt_columns_and_footer.parquet.encrypted"
+    )
+    decryption_properties = pl.ParquetDecryptionProperties(
+        footer_key=FOOTER_KEY, column_keys={"double_field": COLUMN_KEYS["double_field"]}
+    )
+    columns = ["boolean_field", "int32_field", "double_field"]
+
+    df = pl.read_parquet(
+        path, columns=columns, decryption_properties=decryption_properties
+    )
+    assert_frame_equal(df, expected_data().select(columns))
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="Metadata for column 'float_field' is encrypted and could not be decrypted",
+    ):
+        pl.read_parquet(
+            path, columns=["float_field"], decryption_properties=decryption_properties
         )
 
 

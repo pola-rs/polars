@@ -157,15 +157,9 @@ pub(crate) fn decrypt_column_metadata(
                     ) {
                         Ok(decryptor) => decryptor,
                         // Without the column key, fall back to any plaintext metadata.
-                        Err(_) if chunk.meta_data.is_some() => continue,
-                        // TODO: Allow reading other columns when a column key is unavailable.
-                        Err(e) => {
-                            return Err(encryption_err!(
-                                "Metadata for column '{}' is encrypted and could not be decrypted: {}",
-                                column_path(),
-                                e
-                            ));
-                        },
+                        // Otherwise the chunk has no metadata, and reading it will error,
+                        // but other columns can still be read.
+                        Err(_) => continue,
                     }
                 },
             };

@@ -99,7 +99,7 @@ fn _read_single_column<'a, R>(
 where
     R: Read + Seek,
 {
-    let byte_range = meta.byte_range();
+    let byte_range = meta.byte_range()?;
     let length = byte_range.end - byte_range.start;
     reader.seek(std::io::SeekFrom::Start(byte_range.start))?;
 

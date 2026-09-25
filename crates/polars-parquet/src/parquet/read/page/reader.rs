@@ -46,14 +46,16 @@ impl PageMetaData {
     }
 }
 
-impl From<&ColumnChunkMetadata> for PageMetaData {
-    fn from(column: &ColumnChunkMetadata) -> Self {
-        Self {
-            column_start: column.byte_range().start,
-            num_values: column.num_values(),
-            compression: column.compression(),
+impl TryFrom<&ColumnChunkMetadata> for PageMetaData {
+    type Error = ParquetError;
+
+    fn try_from(column: &ColumnChunkMetadata) -> ParquetResult<Self> {
+        Ok(Self {
+            column_start: column.byte_range()?.start,
+            num_values: column.num_values()?,
+            compression: column.compression()?,
             descriptor: column.descriptor().descriptor.clone(),
-        }
+        })
     }
 }
 
@@ -110,10 +112,9 @@ impl PageReader {
         max_page_size: usize,
     ) -> ParquetResult<Self> {
         let mut page_reader =
-            Self::new_with_page_meta(reader, column.into(), scratch, max_page_size);
+            Self::new_with_page_meta(reader, column.try_into()?, scratch, max_page_size);
         page_reader.crypto_context = column.crypto_context()?;
-        page_reader.dictionary_page_expected =
-            column.compact_metadata().dictionary_page_offset.is_some();
+        page_reader.dictionary_page_expected = column.dictionary_page_offset()?.is_some();
         Ok(page_reader)
     }
 

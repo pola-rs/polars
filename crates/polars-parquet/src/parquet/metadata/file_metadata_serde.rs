@@ -19,6 +19,7 @@ use super::compact::{
 use super::schema_descriptor::SchemaDescriptor;
 use super::{ColumnChunkMetadata, ColumnOrder, FileMetadata, RowGroupMetadata};
 use crate::parquet::compression::Compression;
+use crate::parquet::error::ParquetResult;
 
 #[derive(Serialize, Deserialize)]
 struct FileMetadataWire {
@@ -97,7 +98,8 @@ impl Serialize for FileMetadata {
             .row_groups
             .iter()
             .map(|rg| rg_to_wire(rg, footer))
-            .collect();
+            .collect::<Result<_, _>>()
+            .map_err(serde::ser::Error::custom)?;
 
         let wire = FileMetadataWire {
             version: self.version,
@@ -109,24 +111,24 @@ impl Serialize for FileMetadata {
     }
 }
 
-fn rg_to_wire(rg: &RowGroupMetadata, footer: &[u8]) -> RowGroupWire {
+fn rg_to_wire(rg: &RowGroupMetadata, footer: &[u8]) -> ParquetResult<RowGroupWire> {
     let columns = rg
         .parquet_columns()
         .iter()
         .map(|c| chunk_to_wire(c, footer))
-        .collect();
+        .collect::<Result<_, _>>()?;
 
-    RowGroupWire {
+    Ok(RowGroupWire {
         num_rows: rg.num_rows() as i64,
         sorting_columns: rg
             .sorting_columns()
             .map(|sc| sc.iter().map(SortingColumnWire::from).collect()),
         columns,
-    }
+    })
 }
 
-fn chunk_to_wire(c: &ColumnChunkMetadata, footer: &[u8]) -> ChunkWire {
-    let m = c.compact_metadata();
+fn chunk_to_wire(c: &ColumnChunkMetadata, footer: &[u8]) -> ParquetResult<ChunkWire> {
+    let m = c.compact_metadata()?;
     let statistics = m.statistics.as_ref().map(|s| StatWire {
         null_count: s.null_count,
         min_value: s.min_value.map(|r| r.resolve(footer).to_vec()),
@@ -137,14 +139,14 @@ fn chunk_to_wire(c: &ColumnChunkMetadata, footer: &[u8]) -> ChunkWire {
     // Pre-resolve byte_range so wire form has just (offset, len). The
     // reader's only consumers of these fields go through `byte_range()`,
     // which already does this resolution.
-    let byte_range = c.byte_range();
-    ChunkWire {
+    let byte_range = c.byte_range()?;
+    Ok(ChunkWire {
         codec: m.codec,
         num_values: m.num_values,
         chunk_offset: byte_range.start as i64,
         chunk_size: m.total_compressed_size,
         statistics,
-    }
+    })
 }
 
 impl<'de> Deserialize<'de> for FileMetadata {

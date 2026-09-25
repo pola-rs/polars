@@ -30,7 +30,7 @@ pub fn get_page_iterator(
     scratch: Vec<u8>,
     max_page_size: usize,
 ) -> ParquetResult<PageReader> {
-    let col_start = column_chunk.byte_range().start;
+    let col_start = column_chunk.byte_range()?.start;
     reader.seek(SeekFrom::Start(col_start))?;
     PageReader::new(reader, column_chunk, scratch, max_page_size)
 }

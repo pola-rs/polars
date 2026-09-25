@@ -657,9 +657,19 @@ fn parquet_column_stats(
             };
 
             a.nested |= path.len() > 1;
+
+            // Encrypted columns may be missing metadata if their key is unavailable.
+            let (Ok(uncompressed_size), Ok(num_values)) =
+                (chunk.uncompressed_size(), chunk.num_values())
+            else {
+                a.nulls_unknown = true;
+                a.int_range_incomplete = true;
+                continue;
+            };
+
             a.uncompressed = a
                 .uncompressed
-                .saturating_add(chunk.uncompressed_size().max(0) as u64);
+                .saturating_add(uncompressed_size.max(0) as u64);
 
             let chunk_nulls = chunk.null_count().filter(|n| *n >= 0).map(|n| n as u64);
             match chunk_nulls {
@@ -668,8 +678,7 @@ fn parquet_column_stats(
             }
 
             // A distinct count may not exceed the values actually present.
-            let non_null =
-                (chunk.num_values().max(0) as u64).saturating_sub(chunk_nulls.unwrap_or(0));
+            let non_null = (num_values.max(0) as u64).saturating_sub(chunk_nulls.unwrap_or(0));
             if let Some(d) = chunk.distinct_count().filter(|d| *d >= 0)
                 && d as u64 <= non_null
             {
