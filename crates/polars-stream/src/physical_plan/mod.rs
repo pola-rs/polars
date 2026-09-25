@@ -889,19 +889,28 @@ fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey
 }
 
 fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+    // Collect first: fusing swaps nodes, which would stop the traversal from reaching the
+    // inputs of the fused filter.
+    let mut projection_keys = Vec::new();
     visit_nodes_mut(roots, phys_sm, |key, phys_sm| {
+        if let PhysNodeKind::SimpleProjection { .. } = phys_sm[key].kind() {
+            projection_keys.push(key);
+        }
+    });
+
+    for key in projection_keys {
         let PhysNodeKind::SimpleProjection { input, .. } = phys_sm[key].kind() else {
-            return;
+            continue;
         };
         let len_before_drop = input.output_schema(phys_sm).len();
         let input = input.node;
 
         let Some([simple_proj_node, input_node]) = phys_sm.get_disjoint_mut([key, input]) else {
-            return;
+            continue;
         };
 
         if input_node.output_schemas.len() != 1 {
-            return;
+            continue;
         }
 
         let PhysNodeKind::SimpleProjection { input: _, columns } = simple_proj_node.kind_mut()
@@ -913,26 +922,22 @@ fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNo
 
         // TODO: Figure out why `input_schema.try_project` fails below with e.g. "\"_POLARS_TMP_7253\" not found"
         if has_rename {
-            return;
+            continue;
         }
 
-        match input_node.kind_mut() {
-            PhysNodeKind::Filter {
-                input: _,
-                predicate: _,
-                projection: projection @ None,
-            } => *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop)),
-
-            _ => return,
-        }
+        let PhysNodeKind::Filter { projection, .. } = input_node.kind_mut() else {
+            continue;
+        };
+        let len_before_drop = projection.as_ref().map_or(len_before_drop, |(_, len)| *len);
+        *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop));
 
         let input_schema = input_node.output_schema_mut(0);
         *input_schema = Arc::new(input_schema.try_project(columns.keys()).unwrap());
 
-        if !has_rename && simple_proj_node.output_schemas.len() == 1 {
+        if simple_proj_node.output_schemas.len() == 1 {
             std::mem::swap(simple_proj_node, input_node);
         }
-    });
+    }
 }
 
 /// Sets `rechunk_input` on any `Select` node directly feeding into a `GroupBy`.
