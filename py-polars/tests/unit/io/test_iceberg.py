@@ -337,10 +337,16 @@ class TestIcebergScanIO:
             (3, "3", datetime(2023, 3, 2, 22, 0)),
         ]
 
-    def test_scan_iceberg_filter_starts_with(self, iceberg_path: str) -> None:
-        lf = pl.scan_iceberg(iceberg_path)
-        res = lf.filter(pl.col("str").str.starts_with("2"))
-        assert res.collect().rows() == [(2, "2", datetime(2023, 3, 1, 19, 25))]
+    def test_scan_iceberg_filter_starts_with(self, tmp_path: Path) -> None:
+        tbl, _ = new_iceberg_table(
+            tmp_path, schema=IcebergSchema(NestedField(1, "s", StringType()))
+        )
+        pl.DataFrame({"s": ["apple", "banana", "berry"]}).write_iceberg(
+            tbl, mode="append"
+        )
+
+        res = pl.scan_iceberg(tbl).filter(pl.col("s").str.starts_with("be"))
+        assert res.collect()["s"].to_list() == ["berry"]
 
     def test_scan_iceberg_noteq_null_and_nan(self, tmp_path: Path) -> None:
         tbl, _ = new_iceberg_table(
