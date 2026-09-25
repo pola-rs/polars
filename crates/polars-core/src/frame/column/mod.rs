@@ -825,6 +825,15 @@ impl Column {
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_mean(&self, groups: &GroupsType) -> Self {
+        if let Column::Scalar(sc) = self
+            && let Some(mean_of_len) = sc.repeated_int_mean()
+        {
+            let ca: Float64Chunked = groups
+                .iter()
+                .map(|g| mean_of_len(g.len()))
+                .collect_ca(sc.name().clone());
+            return ca.into_column();
+        }
         self.agg_with_scalar_identity(groups, |s, g| unsafe { s.agg_mean(g) })
     }
 
@@ -1646,6 +1655,9 @@ impl Column {
         match self {
             Column::Series(s) => s.mean_reduce(),
             Column::Scalar(s) => {
+                if let Some(mean_of_len) = s.repeated_int_mean() {
+                    return Ok(Scalar::new(DataType::Float64, mean_of_len(s.len()).into()));
+                }
                 // We don't really want to deal with handling the full semantics here so we just
                 // cast to a single value series. This is a tiny bit wasteful, but probably fine.
                 s.as_single_value_series().mean_reduce()

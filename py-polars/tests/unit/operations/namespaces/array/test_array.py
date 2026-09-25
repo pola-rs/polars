@@ -40,6 +40,31 @@ def test_arr_mean_median_var_std() -> None:
     assert round(s_with_null.arr.std().to_list()[0], 5) == 0.70711
 
 
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        (
+            [datetime.date(2024, 1, 1), datetime.date(2024, 1, 2)],
+            datetime.datetime(2024, 1, 1, 12),
+        ),
+        (
+            [datetime.datetime(2024, 1, 1), datetime.datetime(2024, 1, 2)],
+            datetime.datetime(2024, 1, 1, 12),
+        ),
+        (
+            [datetime.timedelta(hours=1), datetime.timedelta(hours=2)],
+            datetime.timedelta(hours=1, minutes=30),
+        ),
+        ([datetime.time(1), datetime.time(2)], datetime.time(1, 30)),
+    ],
+)
+def test_arr_mean_temporal_29373(values: list[Any], expected: Any) -> None:
+    lf = pl.LazyFrame({"a": [values]}).select(pl.col("a").list.to_array(2).arr.mean())
+    out = lf.collect()
+    assert out.schema == lf.collect_schema()
+    assert out.item() == expected
+
+
 def test_array_min_max_dtype_12123() -> None:
     df = pl.LazyFrame(
         [pl.Series("a", [[1.0, 3.0], [2.0, 5.0]]), pl.Series("b", [1.0, 2.0])],

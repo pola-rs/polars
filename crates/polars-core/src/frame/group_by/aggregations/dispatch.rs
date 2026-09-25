@@ -367,40 +367,19 @@ impl Series {
             Float64 => SeriesWrap(s.f64().unwrap().clone()).agg_mean(groups),
             dt if dt.is_primitive_numeric() => apply_method_physical_integer!(s, agg_mean, groups),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, _) => self.cast(&Float64).unwrap().agg_mean(groups),
-            #[cfg(feature = "dtype-datetime")]
-            dt @ Datetime(_, _) => self
-                .to_physical_repr()
-                .agg_mean(groups)
-                .cast(&Int64)
-                .unwrap()
-                .cast(dt)
-                .unwrap(),
-            #[cfg(feature = "dtype-duration")]
-            dt @ Duration(_) => self
-                .to_physical_repr()
-                .agg_mean(groups)
-                .cast(&Int64)
-                .unwrap()
-                .cast(dt)
-                .unwrap(),
-            #[cfg(feature = "dtype-time")]
-            Time => self
-                .to_physical_repr()
-                .agg_mean(groups)
-                .cast(&Int64)
-                .unwrap()
-                .cast(&Time)
-                .unwrap(),
-            #[cfg(feature = "dtype-date")]
-            Date => (self
-                .to_physical_repr()
-                .agg_mean(groups)
-                .cast(&Float64)
-                .unwrap()
-                * (US_IN_DAY as f64))
-                .cast(&Datetime(TimeUnit::Microseconds, None))
-                .unwrap(),
+            Decimal(_, scale) => {
+                s.decimal().unwrap().physical().agg_mean(groups)
+                    / polars_compute::decimal::POW10_F64[*scale]
+            },
+            dt if dt.is_temporal() => {
+                let (scale, rounding, out_dtype) = temporal_mean_spec(dt).unwrap();
+                let phys = s.to_physical_repr();
+                let means = match phys.dtype() {
+                    Int32 => phys.i32().unwrap().agg_mean_int(groups, scale, rounding),
+                    _ => phys.i64().unwrap().agg_mean_int(groups, scale, rounding),
+                };
+                means.cast(&out_dtype).unwrap()
+            },
             _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }
     }

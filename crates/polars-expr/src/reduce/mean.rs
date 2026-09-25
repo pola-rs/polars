@@ -1,7 +1,8 @@
 use std::marker::PhantomData;
 
-use num_traits::{AsPrimitive, Zero};
-use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY;
+use num_traits::AsPrimitive;
+use polars_compute::mean::{MeanAcc, MeanSum, int_mean};
+use polars_compute::sum::WrappingAdd;
 use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
@@ -26,54 +27,39 @@ pub fn new_mean_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduct
     })
 }
 
-fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
+fn float_means<T, A>(values: &[(A, usize)], divisor: f64) -> Series
+where
+    T: PolarsNumericType,
+    A: MeanAcc,
+    f64: AsPrimitive<T::Native>,
+    ChunkedArray<T>: IntoSeries,
+{
+    let ca: ChunkedArray<T> = values
+        .iter()
+        .map(|&(s, c)| (c != 0).then(|| (s.into_f64() / c as f64 / divisor).as_()))
+        .collect_ca(PlSmallStr::EMPTY);
+    ca.into_series()
+}
+
+fn finish_output<A: MeanAcc>(values: Vec<(A, usize)>, dtype: &DataType) -> Series {
     match dtype {
         #[cfg(feature = "dtype-f16")]
-        DataType::Float16 => {
-            let ca: Float16Chunked = values
-                .into_iter()
-                .map(|(s, c)| (c != 0).then(|| (s / c as f64).as_()))
-                .collect_ca(PlSmallStr::EMPTY);
-            ca.into_series()
-        },
-        DataType::Float32 => {
-            let ca: Float32Chunked = values
-                .into_iter()
-                .map(|(s, c)| (c != 0).then(|| (s / c as f64) as f32))
-                .collect_ca(PlSmallStr::EMPTY);
-            ca.into_series()
-        },
-        dt if dt.is_primitive_numeric() => {
-            let ca: Float64Chunked = values
-                .into_iter()
-                .map(|(s, c)| (c != 0).then(|| s / c as f64))
-                .collect_ca(PlSmallStr::EMPTY);
-            ca.into_series()
-        },
+        DataType::Float16 => float_means::<Float16Type, _>(&values, 1.0),
+        DataType::Float32 => float_means::<Float32Type, _>(&values, 1.0),
+        dt if dt.is_primitive_numeric() => float_means::<Float64Type, _>(&values, 1.0),
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_prec, scale) => {
-            let scale_factor = 10u128.pow(*scale as u32) as f64;
-            let ca: Float64Chunked = values
-                .into_iter()
-                .map(|(s, c)| (c != 0).then(|| s / c as f64 / scale_factor))
-                .collect_ca(PlSmallStr::EMPTY);
-            ca.into_series()
+            float_means::<Float64Type, _>(&values, polars_compute::decimal::POW10_F64[*scale])
         },
-        #[cfg(feature = "dtype-datetime")]
-        DataType::Date => {
-            const US_IN_DAY: f64 = MICROSECONDS_IN_DAY as f64;
+        dt if dt.is_temporal() => {
+            let (scale, rounding, out_dtype) = temporal_mean_spec(dt).unwrap();
             let ca: Int64Chunked = values
-                .into_iter()
-                .map(|(s, c)| (c != 0).then(|| (s / c as f64 * US_IN_DAY) as i64))
+                .iter()
+                .map(|&(s, c)| {
+                    (c != 0).then(|| int_mean(s.try_into_i128().unwrap(), c, scale, rounding))
+                })
                 .collect_ca(PlSmallStr::EMPTY);
-            ca.into_datetime(TimeUnit::Microseconds, None).into_series()
-        },
-        DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => {
-            let ca: Int64Chunked = values
-                .into_iter()
-                .map(|(s, c)| (c != 0).then(|| (s / c as f64) as i64))
-                .collect_ca(PlSmallStr::EMPTY);
-            ca.into_series().cast(dtype).unwrap()
+            ca.into_series().cast(&out_dtype).unwrap()
         },
         _ => unimplemented!(),
     }
@@ -92,11 +78,11 @@ where
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     type Dtype = T;
-    type Value = (f64, usize);
+    type Value = (<T::Native as MeanSum>::Acc, usize);
 
     #[inline(always)]
     fn init(&self) -> Self::Value {
-        (0.0, 0)
+        (Default::default(), 0)
     }
 
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
@@ -105,18 +91,20 @@ where
 
     #[inline(always)]
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        a.0 += b.0;
+        a.0 = a.0.wrapping_add(&b.0);
         a.1 += b.1;
     }
 
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Native>, _seq_id: u64) {
-        a.0 += b.unwrap_or(T::Native::zero()).as_();
-        a.1 += b.is_some() as usize;
+        if let Some(b) = b {
+            a.0 = a.0.wrapping_add(&b.to_mean_acc());
+            a.1 += 1;
+        }
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        v.0 += ChunkAgg::_sum_as_f64(ca);
+        v.0 = v.0.wrapping_add(&ca.mean_sum());
         v.1 += ca.len() - ca.null_count();
     }
 

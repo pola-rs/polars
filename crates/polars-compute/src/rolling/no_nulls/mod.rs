@@ -23,7 +23,7 @@ pub use sum::*;
 
 use super::*;
 
-pub trait RollingAggWindowNoNulls<T: NativeType, Out: NativeType = T> {
+pub trait RollingAggWindowNoNulls<T: NativeType, Out = T> {
     type This<'a>: RollingAggWindowNoNulls<T, Out>;
 
     fn new(

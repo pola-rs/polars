@@ -20,12 +20,12 @@ pub(super) fn mean_with_nulls(ca: &ArrayChunked) -> PolarsResult<Series> {
                 .with_name(ca.name().clone());
             out.into_series()
         },
-        #[cfg(feature = "dtype-duration")]
-        DataType::Duration(tu) => {
+        dt if dt.is_temporal() => {
+            let (_, _, out_dtype) = temporal_mean_spec(dt).unwrap();
             let out: Int64Chunked = ca
-                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as i64)))
+                .apply_amortized_generic(|s| s.and_then(|s| temporal_mean_physical(s.as_ref())))
                 .with_name(ca.name().clone());
-            out.into_duration(*tu).into_series()
+            out.cast(&out_dtype)?
         },
         _ => {
             let out: Float64Chunked = ca

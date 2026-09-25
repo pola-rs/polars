@@ -1,5 +1,7 @@
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
+use bytemuck::Zeroable;
+
 use super::no_nulls::RollingAggWindowNoNulls;
 use super::nulls::RollingAggWindowNulls;
 use super::*;
@@ -7,7 +9,7 @@ use super::*;
 pub struct SumWindow<'a, T, S> {
     slice: &'a [T],
     validity: Option<&'a Bitmap>,
-    sum: S,
+    pub(super) sum: S,
     err_add: S,
     err_sub: S,
     non_finite_count: usize, // NaN or infinity.
@@ -21,7 +23,7 @@ pub struct SumWindow<'a, T, S> {
 impl<'a, T, S> SumWindow<'a, T, S>
 where
     T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
-    S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
+    S: Copy + Zeroable + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
     fn new_impl(slice: &'a [T], validity: Option<&'a Bitmap>) -> Self {
         Self {
@@ -111,7 +113,7 @@ where
 impl<T, S> RollingAggWindowNoNulls<T> for SumWindow<'_, T, S>
 where
     T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
-    S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
+    S: Copy + Zeroable + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
     type This<'a> = SumWindow<'a, T, S>;
 
@@ -160,7 +162,7 @@ where
 impl<T, S> RollingAggWindowNulls<T> for SumWindow<'_, T, S>
 where
     T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
-    S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
+    S: Copy + Zeroable + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
     type This<'a> = SumWindow<'a, T, S>;
 
@@ -222,5 +224,96 @@ where
 
     fn slice_len(&self) -> usize {
         self.slice.len()
+    }
+}
+
+/// Sliding exact sum of integers in the wider accumulator `S`, which it yields rather than the
+/// input type.
+///
+/// Empty or all-null windows yield `None`.
+pub struct WideSumWindow<'a, T, S = i128>(SumWindow<'a, T, S>);
+
+impl<T, S> WideSumWindow<'_, T, S> {
+    /// Number of non-null values in the current window.
+    pub fn count(&self) -> usize {
+        self.0.end - self.0.start - self.0.null_count
+    }
+}
+
+impl<T, S> RollingAggWindowNoNulls<T, S> for WideSumWindow<'_, T, S>
+where
+    T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
+    S: Copy + Zeroable + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
+{
+    type This<'a> = WideSumWindow<'a, T, S>;
+
+    fn new<'a>(
+        slice: &'a [T],
+        start: usize,
+        end: usize,
+        params: Option<RollingFnParams>,
+        window_size: Option<usize>,
+    ) -> Self::This<'a> {
+        WideSumWindow(<SumWindow<T, S> as RollingAggWindowNoNulls<T>>::new(
+            slice,
+            start,
+            end,
+            params,
+            window_size,
+        ))
+    }
+
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe { RollingAggWindowNoNulls::update(&mut self.0, new_start, new_end) };
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<S> {
+        (self.0.end != self.0.start).then_some(self.0.sum)
+    }
+
+    fn slice_len(&self) -> usize {
+        self.0.slice.len()
+    }
+}
+
+impl<T, S> RollingAggWindowNulls<T, S> for WideSumWindow<'_, T, S>
+where
+    T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
+    S: Copy + Zeroable + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
+{
+    type This<'a> = WideSumWindow<'a, T, S>;
+
+    fn new<'a>(
+        slice: &'a [T],
+        validity: &'a Bitmap,
+        start: usize,
+        end: usize,
+        params: Option<RollingFnParams>,
+        window_size: Option<usize>,
+    ) -> Self::This<'a> {
+        WideSumWindow(<SumWindow<T, S> as RollingAggWindowNulls<T>>::new(
+            slice,
+            validity,
+            start,
+            end,
+            params,
+            window_size,
+        ))
+    }
+
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        unsafe { RollingAggWindowNulls::update(&mut self.0, new_start, new_end) };
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<S> {
+        (self.count() != 0).then_some(self.0.sum)
+    }
+
+    fn is_valid(&self, min_periods: usize) -> bool {
+        self.0.is_valid(min_periods)
+    }
+
+    fn slice_len(&self) -> usize {
+        self.0.slice.len()
     }
 }

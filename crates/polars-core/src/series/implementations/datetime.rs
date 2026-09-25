@@ -1,3 +1,4 @@
+use polars_compute::mean::IntMeanRounding;
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
@@ -405,7 +406,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
-        let mean = self.mean().map(|v| v as i64);
+        let mean = self.0.physical().int_mean(1, IntMeanRounding::Floor);
         let av = AnyValue::from(mean).as_datetime_owned(self.0.time_unit(), self.0.time_zone_arc());
         Ok(Scalar::new(self.dtype().clone(), av))
     }

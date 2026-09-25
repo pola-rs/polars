@@ -1,11 +1,13 @@
 use std::sync::OnceLock;
 
+use polars_compute::mean::{I256Acc, MeanAcc};
 use polars_error::PolarsResult;
 use polars_utils::broadcast::BroadcastLength;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{AnyValue, Column, DataType, IntoColumn, Scalar, Series};
 use crate::chunked_array::cast::CastOptions;
+use crate::prelude::*;
 
 /// A [`Column`] that consists of a repeated [`Scalar`]
 ///
@@ -112,6 +114,30 @@ impl ScalarColumn {
         self.materialized
             .into_inner()
             .unwrap_or_else(|| Self::_to_series(self.name, self.scalar, self.length))
+    }
+
+    /// For integer and decimal scalars, the mean of `n` copies as a function of `n`.
+    ///
+    /// This matches the mean of the materialized column, which differs from the scalar itself
+    /// when `n * value` is not representable as an `f64`.
+    pub(crate) fn repeated_int_mean(&self) -> Option<impl Fn(usize) -> Option<f64> + use<>> {
+        let scale_factor = match self.dtype() {
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, scale) => polars_compute::decimal::POW10_F64[*scale],
+            dt if dt.is_integer() => 1.0,
+            _ => return None,
+        };
+        let s = self.as_single_value_series();
+        let phys = s.to_physical_repr();
+        let value: Option<I256Acc> = with_match_physical_integer_polars_type!(phys.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
+            (!ca.is_empty()).then(|| ca.get(0)).flatten().map(|v| I256Acc(v.into()))
+        });
+        Some(move |n: usize| {
+            let value = value?;
+            let sum = I256Acc(value.0.wrapping_mul((n as u128).into()));
+            (n != 0).then(|| sum.into_f64() / n as f64 / scale_factor)
+        })
     }
 
     /// Take the [`ScalarColumn`] as a series with a single value.

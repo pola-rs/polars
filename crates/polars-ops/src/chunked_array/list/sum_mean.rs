@@ -4,8 +4,8 @@ use num_traits::{NumCast, ToPrimitive};
 use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::utils::combine_validities_and;
-use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_arrow::types::NativeType;
+use polars_compute::mean::MeanSum;
 use polars_utils::float16::pf16;
 
 use super::*;
@@ -183,6 +183,38 @@ where
     out.with_validity(new_validity).to_boxed()
 }
 
+fn dispatch_mean_int<T>(arr: &dyn Array, offsets: &[i64], validity: Option<&Bitmap>) -> ArrayRef
+where
+    T: MeanSum,
+{
+    let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+    let values = values.values().as_slice();
+    assert!(
+        offsets
+            .last()
+            .is_none_or(|&end| end as usize <= values.len())
+    );
+    let means: Vec<f64> = offsets
+        .windows(2)
+        .map(|w| {
+            // SAFETY: list offsets are non-decreasing and the last one is in bounds.
+            let list = unsafe { values.get_unchecked(w[0] as usize..w[1] as usize) };
+            T::mean_slice(list).unwrap_or(0.0)
+        })
+        .collect();
+    // Empty lists have no mean. Most inputs have none, so skip building a mask then. A separate
+    // pass is cheaper than tracking this in the loop above, which slows short lists down.
+    let validity = if offsets.windows(2).any(|w| w[0] == w[1]) {
+        let non_empty = Bitmap::from_trusted_len_iter(offsets.windows(2).map(|w| w[0] != w[1]));
+        combine_validities_and(Some(&non_empty), validity)
+    } else {
+        validity.cloned()
+    };
+    PrimitiveArray::from_vec(means)
+        .with_validity(validity)
+        .to_boxed()
+}
+
 pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
     use DataType::*;
     let chunks = ca
@@ -192,16 +224,16 @@ pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Se
             let values = arr.values().as_ref();
 
             match inner_type {
-                Int8 => dispatch_mean::<i8, f64>(values, offsets, arr.validity()),
-                Int16 => dispatch_mean::<i16, f64>(values, offsets, arr.validity()),
-                Int32 => dispatch_mean::<i32, f64>(values, offsets, arr.validity()),
-                Int64 => dispatch_mean::<i64, f64>(values, offsets, arr.validity()),
-                Int128 => dispatch_mean::<i128, f64>(values, offsets, arr.validity()),
-                UInt8 => dispatch_mean::<u8, f64>(values, offsets, arr.validity()),
-                UInt16 => dispatch_mean::<u16, f64>(values, offsets, arr.validity()),
-                UInt32 => dispatch_mean::<u32, f64>(values, offsets, arr.validity()),
-                UInt64 => dispatch_mean::<u64, f64>(values, offsets, arr.validity()),
-                UInt128 => dispatch_mean::<u128, f64>(values, offsets, arr.validity()),
+                Int8 => dispatch_mean_int::<i8>(values, offsets, arr.validity()),
+                Int16 => dispatch_mean_int::<i16>(values, offsets, arr.validity()),
+                Int32 => dispatch_mean_int::<i32>(values, offsets, arr.validity()),
+                Int64 => dispatch_mean_int::<i64>(values, offsets, arr.validity()),
+                Int128 => dispatch_mean_int::<i128>(values, offsets, arr.validity()),
+                UInt8 => dispatch_mean_int::<u8>(values, offsets, arr.validity()),
+                UInt16 => dispatch_mean_int::<u16>(values, offsets, arr.validity()),
+                UInt32 => dispatch_mean_int::<u32>(values, offsets, arr.validity()),
+                UInt64 => dispatch_mean_int::<u64>(values, offsets, arr.validity()),
+                UInt128 => dispatch_mean_int::<u128>(values, offsets, arr.validity()),
                 Float32 => dispatch_mean::<f32, f32>(values, offsets, arr.validity()),
                 Float64 => dispatch_mean::<f64, f64>(values, offsets, arr.validity()),
                 _ => unimplemented!(),
@@ -231,21 +263,12 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
                 .with_name(ca.name().clone());
             out.into_series()
         },
-        #[cfg(feature = "dtype-datetime")]
-        DataType::Date => {
-            let out: Int64Chunked = ca
-                .apply_amortized_generic(|s| {
-                    s.and_then(|s| s.as_ref().mean().map(|v| (v * (US_IN_DAY as f64)) as i64))
-                })
-                .with_name(ca.name().clone());
-            out.into_datetime(TimeUnit::Microseconds, None)
-                .into_series()
-        },
         dt if dt.is_temporal() => {
+            let (_, _, out_dtype) = temporal_mean_spec(dt).unwrap();
             let out: Int64Chunked = ca
-                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as i64)))
+                .apply_amortized_generic(|s| s.and_then(|s| temporal_mean_physical(s.as_ref())))
                 .with_name(ca.name().clone());
-            out.cast(dt).unwrap()
+            out.cast(&out_dtype).unwrap()
         },
         _ => {
             let out: Float64Chunked = ca

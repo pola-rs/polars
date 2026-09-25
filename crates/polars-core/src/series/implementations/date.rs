@@ -7,6 +7,8 @@
 //! opting for a little more run time cost. We cast to the physical type -> apply the operation and
 //! (depending on the result) cast back to the original type
 //!
+use polars_compute::mean::IntMeanRounding;
+
 use super::*;
 use crate::prelude::*;
 
@@ -411,7 +413,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
 
     #[cfg(feature = "dtype-datetime")]
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
-        let mean = self.mean().map(|v| (v * US_IN_DAY as f64) as i64);
+        let mean = self
+            .0
+            .physical()
+            .int_mean(US_IN_DAY, IntMeanRounding::Floor);
         let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
         let av = AnyValue::from(mean).as_datetime(TimeUnit::Microseconds, None);
         Ok(Scalar::new(dtype, av))

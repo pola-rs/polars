@@ -15,7 +15,7 @@ pub use sum::*;
 
 use super::*;
 
-pub trait RollingAggWindowNulls<T: NativeType, Out: NativeType = T> {
+pub trait RollingAggWindowNulls<T: NativeType, Out = T> {
     type This<'a>: RollingAggWindowNulls<T, Out>;
 
     /// # Safety
