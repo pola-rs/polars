@@ -973,6 +973,52 @@ def test_eager_aggregation_gate_needs_the_join_to_do_more_than_filter(
     )
 
 
+_NO_PREDICATE_PUSHDOWN = pl.QueryOptFlags(predicate_pushdown=False)
+
+
+def test_eager_aggregation_repeated_join_key(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    # R's key `k` meets two L keys. Without predicate pushdown the join keeps both
+    # pairs.
+    left = pl.LazyFrame(
+        {"a": [1, 1, 2, 3], "b": [1, 2, 2, 3], "g": ["p", "p", "q", "q"]}
+    )
+    right = pl.LazyFrame({"k": [1, 1, 2, 2, 3, None], "x": [1, 2, 3, 4, 5, 6]})
+    joined = left.join(right, left_on=["a", "b"], right_on=["k", "k"])
+    for keys in (["g"], ["g", "x"]):
+        lf = joined.group_by(keys).agg(pl.col("x").count().alias("c"))
+        _assert_rewrite(
+            lf,
+            plmonkeypatch,
+            fires=True,
+            sort_by=keys,
+            optimizations=_NO_PREDICATE_PUSHDOWN,
+        )
+
+    # A group key from R that is unique per row leaves nothing to fold.
+    n = 200_000
+    rng = np.random.default_rng(0)
+    left = _scan(
+        tmp_path,
+        "left",
+        pl.DataFrame({"a": np.arange(1_000), "b": np.arange(1_000), "g": "a"}),
+    )
+    right = _scan(
+        tmp_path,
+        "right",
+        pl.DataFrame({"k": rng.integers(0, 1_000, n), "row": np.arange(n)}),
+    )
+    joined = left.join(right, left_on=["a", "b"], right_on=["k", "k"])
+    agg = pl.len()
+    assert _gate_fires(
+        joined.group_by("g").agg(agg), plmonkeypatch, _NO_PREDICATE_PUSHDOWN
+    )
+    assert not _gate_fires(
+        joined.group_by("g", "row").agg(agg), plmonkeypatch, _NO_PREDICATE_PUSHDOWN
+    )
+
+
 def test_eager_aggregation_gate_ignores_restrictions_an_outer_join_undoes(
     plmonkeypatch: PlMonkeyPatch, tmp_path: Path
 ) -> None:

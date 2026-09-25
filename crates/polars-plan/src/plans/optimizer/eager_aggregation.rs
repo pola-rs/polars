@@ -137,7 +137,7 @@ struct Target {
     /// R: the input that is aggregated.
     aggregate_input: Node,
     aggregate_keys: Vec<PlSmallStr>,
-    /// R's join keys followed by the group keys that are R columns, in R's names.
+    /// R's join keys, each once, followed by the group keys that are R columns, in R's names.
     partial_keys: Vec<PlSmallStr>,
     /// L: the input the other group keys come from.
     other_input: Node,
@@ -933,6 +933,14 @@ fn gate_passes(
 ) -> bool {
     let mut side = |node, keys: &[PlSmallStr]| {
         let stats = node_stats_with_cache(node, ir_arena, expr_arena, cache)?;
+        // A column can be a key more than once; its values and nulls count once.
+        let keys: Vec<PlSmallStr> = keys
+            .iter()
+            .cloned()
+            .collect::<PlIndexSet<_>>()
+            .into_iter()
+            .collect();
+        let keys = keys.as_slice();
         // A column's statistics still describe the input it comes from, not a join's
         // output, so its nulls are counted against that input's rows.
         let null_shares = keys
@@ -975,10 +983,11 @@ fn gate_passes(
     }
 
     // Group keys that are R columns split each join key into more partial groups.
-    let extra_keys = &target.partial_keys[target.aggregate_keys.len()..];
     let stats = node_stats_with_cache(target.aggregate_input, ir_arena, expr_arena, cache);
-    let extra_groups = extra_keys
+    let extra_groups = target
+        .partial_keys
         .iter()
+        .filter(|key| !target.aggregate_keys.contains(key))
         .map(|key| {
             let estimate = stats.as_ref().and_then(|s| s.key_distinct_estimate(key));
             let filtered = filtered_value_count(target.aggregate_input, key, ir_arena, expr_arena);
