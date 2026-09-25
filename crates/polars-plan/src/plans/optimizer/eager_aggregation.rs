@@ -17,8 +17,8 @@ use std::sync::Arc;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
-use recursive::recursive;
 use polars_utils::pl_str::unique_column_name;
+use recursive::recursive;
 
 use super::join_utils::unconstrained;
 use crate::plans::schema::join_right_output_names;
@@ -136,7 +136,9 @@ struct Target {
     /// R: the input that is aggregated.
     aggregate_input: Node,
     aggregate_keys: Vec<PlSmallStr>,
-    /// L: the input the group keys come from, apart from R's join keys.
+    /// R's join keys followed by the group keys that are R columns, in R's names.
+    partial_keys: Vec<PlSmallStr>,
+    /// L: the input the other group keys come from.
     other_input: Node,
     other_keys: Vec<PlSmallStr>,
     /// Whether R is the join's left input.
@@ -349,8 +351,8 @@ fn find_target(
     }
 }
 
-/// `GroupBy(Filter(R, keys not null), R's join keys, partials)`. R rows with a null key match
-/// nothing.
+/// `GroupBy(Filter(R, join keys not null), partial keys, partials)`. R rows with a null join
+/// key match nothing; a null in another group key is a group of its own.
 fn partial_group_by(
     target: &Target,
     partials: &[(Leaf, PlSmallStr)],
@@ -385,7 +387,8 @@ fn partial_group_by(
         input: target.aggregate_input,
         predicate: ExprIR::from_node(not_null?, expr_arena),
     });
-    let partial_keys = aggregate_keys
+    let partial_keys = target
+        .partial_keys
         .iter()
         .map(|key| ExprIR::from_column_name(key.clone(), expr_arena))
         .collect();
@@ -515,8 +518,9 @@ fn shares_a_name(a: &Schema, b: &Schema) -> bool {
 }
 
 /// The target at `join`, if the partial aggregation can go under it: every aggregated
-/// column comes from one input R, and everything else read above comes from the other. The
-/// partial aggregation keeps R's join keys, so they may also be group keys.
+/// column comes from one input R, and the joins above read only the other. A group key may
+/// come from either input: the partial aggregation also groups by the group keys that are R
+/// columns, and keeps them.
 fn target_at(
     join: Node,
     names: &Names,
@@ -556,20 +560,19 @@ fn target_at(
             .map(|(seen, name)| Some((seen.clone(), right_by_output.get(name)?.clone())))
             .collect::<Option<PlIndexMap<_, _>>>();
         let from_left = |name: &PlSmallStr| left_schema.contains(name);
-        let right_join_key = |name: &PlSmallStr| {
-            right_by_output
-                .get(name)
-                .is_some_and(|column| right_keys.contains(column))
-        };
+        let right_keys_from_group_by = names
+            .keys
+            .iter()
+            .filter(|key| !from_left(key))
+            .map(|key| right_by_output.get(key).cloned())
+            .collect::<Option<Vec<_>>>();
         if let Some(from_right) = from_right
-            && names
-                .keys
-                .iter()
-                .all(|key| from_left(key) || right_join_key(key))
+            && let Some(right_group_keys) = right_keys_from_group_by
             && names.ancestor_keys.iter().all(from_left)
         {
             return Some(Target {
                 aggregate_input: *input_right,
+                partial_keys: partial_keys(&right_keys, right_group_keys),
                 aggregate_keys: right_keys,
                 other_input: *input_left,
                 other_keys: left_keys,
@@ -591,14 +594,18 @@ fn target_at(
             })
             .collect::<Option<PlIndexMap<_, _>>>()?;
         let from_left = |name: &PlSmallStr| right_schema.contains(name);
-        if names
+        let left_group_keys: Vec<_> = names
             .keys
             .iter()
-            .all(|key| from_left(key) || left_keys.contains(key))
+            .filter(|key| !from_left(key))
+            .cloned()
+            .collect();
+        if left_group_keys.iter().all(|key| left_schema.contains(key))
             && names.ancestor_keys.iter().all(from_left)
         {
             return Some(Target {
                 aggregate_input: *input_left,
+                partial_keys: partial_keys(&left_keys, left_group_keys),
                 aggregate_keys: left_keys,
                 other_input: *input_right,
                 other_keys: right_keys,
@@ -608,6 +615,13 @@ fn target_at(
         }
     }
     None
+}
+
+/// R's join keys followed by the other group keys that are R columns.
+fn partial_keys(join_keys: &[PlSmallStr], group_keys: Vec<PlSmallStr>) -> Vec<PlSmallStr> {
+    let mut keys: PlIndexSet<PlSmallStr> = join_keys.iter().cloned().collect();
+    keys.extend(group_keys);
+    keys.into_iter().collect()
 }
 
 /// `join` as a join above the target: an inner join whose aggregated columns all come from
@@ -886,11 +900,31 @@ fn gate_passes(
         keeps.push(key_overlap(&other, &path) * other.key_survival() * (1.0 - path.null_share));
     }
 
+    // Group keys that are R columns split each join key into more partial groups.
+    let extra_keys = &target.partial_keys[target.aggregate_keys.len()..];
+    let extra_groups =
+        match node_stats_with_cache(target.aggregate_input, ir_arena, expr_arena, cache) {
+            Some(stats) => extra_keys
+                .iter()
+                .map(|key| stats.key_distinct_estimate(key))
+                .product::<Option<f64>>(),
+            None => None,
+        };
+    let Some(extra_groups) = extra_groups else {
+        if polars_config::config().verbose() {
+            eprintln!("eager aggregation: no statistics for the other partial keys: gate failed");
+        }
+        return false;
+    };
+
     let matched_share = key_overlap(&other, &aggregated) * other.key_survival();
     let path_share = matched_share * keeps.iter().product::<f64>();
     let aggregated_rows = aggregated.rows * (1.0 - aggregated.null_share);
-    let aggregated_keys_left = aggregated.ndv * aggregated.key_survival();
-    let rows_per_key = aggregated_rows / aggregated_keys_left.max(1.0);
+    let partial_groups = composite_key_domain(
+        [aggregated.ndv * aggregated.key_survival(), extra_groups].into_iter(),
+        aggregated_rows,
+    );
+    let rows_per_key = aggregated_rows / partial_groups.max(1.0);
     let passes = path_share >= MIN_MATCHED_SHARE
         && rows_per_key >= MIN_ROWS_PER_KEY
         && aggregated_rows >= MIN_AGGREGATED_ROWS;
@@ -989,9 +1023,9 @@ fn collect_leaves(
                 };
                 let supported = match kind {
                     LeafKind::Count | LeafKind::Len => true,
-                    LeafKind::Sum => sum_is_infallible(&dtype, bound, || {
-                        context.summed_rows.get(expr_arena)
-                    }),
+                    LeafKind::Sum => {
+                        sum_is_infallible(&dtype, bound, || context.summed_rows.get(expr_arena))
+                    },
                     LeafKind::Min { .. } | LeafKind::Max { .. } => min_max_is_supported(&dtype),
                 };
                 if !supported {
@@ -1099,9 +1133,8 @@ fn value_bound(node: Node, expr_arena: &Arena<AExpr>, ctx: &ToFieldContext) -> O
         return None;
     }
     let scale = decimal_scale(&dtype);
-    let fits = |bound: f64| {
-        scale.is_none_or(|scale| bound * 10f64.powi(scale as i32) <= DECIMAL_LIMIT)
-    };
+    let fits =
+        |bound: f64| scale.is_none_or(|scale| bound * 10f64.powi(scale as i32) <= DECIMAL_LIMIT);
     let rounding = scale.map_or(0.0, |scale| 10f64.powi(-(scale as i32)));
     let bound = match ae {
         AExpr::Column(_) => return Some(dtype_bound(&dtype)),

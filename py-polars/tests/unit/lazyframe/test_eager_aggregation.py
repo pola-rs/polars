@@ -790,6 +790,95 @@ def test_eager_aggregation_right_side_left_input_rejected(
     _assert_rewrite(lf, plmonkeypatch, fires=False, sort_by="c_ck")
 
 
+@pytest.mark.parametrize("how", ["inner", "left"])
+def test_eager_aggregation_group_key_from_aggregated_side(
+    how: Any, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # R on the right: `x` has nulls, `v_right` is suffixed, and in a left join the
+    # unmatched left rows give null for both.
+    for keys in (["g", "x"], ["g", "v_right"], ["x"]):
+        lf = (
+            _left()
+            .join(_right(), on="k", how=how)
+            .group_by(keys)
+            .agg(
+                pl.col("f").sum().alias("s"),
+                pl.col("f").count().alias("c"),
+                pl.len(),
+                pl.col("d").min().alias("m"),
+            )
+        )
+        _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by=keys)
+
+
+@pytest.mark.parametrize("fact_is_left", [True, False])
+def test_eager_aggregation_group_key_from_aggregated_side_either_input(
+    fact_is_left: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    if fact_is_left:
+        joined = _join(_fact(), _cust(), "f_ck", "c_ck")
+    else:
+        joined = _join(_cust(), _fact(), "c_ck", "f_ck")
+    lf = joined.group_by("c_name", "f_dk").agg(_revenue())
+    _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by=["c_name", "f_dk"])
+
+
+def test_eager_aggregation_group_key_through_a_join_below(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # TPC-DS q04: R is the fact table joined to a dimension that gives a group key.
+    dim = pl.LazyFrame({"d_dk": [10, 20, 30], "d_year": [2001, 2002, None]})
+    lf = (
+        _join(_join(_fact(), dim, "f_dk", "d_dk"), _cust(), "f_ck", "c_ck")
+        .group_by("c_name", "d_year")
+        .agg(_revenue())
+    )
+    _assert_rewrite(
+        lf,
+        plmonkeypatch,
+        fires=True,
+        sort_by=["c_name", "d_year"],
+        optimizations=_KEEP_JOIN_ORDER,
+    )
+
+    # A join above keyed on a column of R that is not a group key: the partial
+    # aggregation goes under that join instead, grouped by both keys.
+    lf = (
+        _join(_join(_fact(), _cust(), "f_ck", "c_ck"), dim, "f_dk", "d_dk")
+        .group_by("c_ck", "d_year")
+        .agg(pl.col("f_qty").sum())
+    )
+    _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by=["c_ck", "d_year"])
+
+
+def test_eager_aggregation_gate_counts_partial_groups(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    rng = np.random.default_rng(0)
+    n = 200_000
+    left = _scan(
+        tmp_path, "left", pl.DataFrame({"k": np.arange(1_000), "g": np.arange(1_000) % 7})
+    )
+    right = _scan(
+        tmp_path,
+        "right",
+        pl.DataFrame(
+            {
+                "k": rng.integers(0, 1_000, n),
+                "few": rng.integers(0, 3, n),
+                "row": np.arange(n),
+                "x": rng.integers(0, 100, n),
+            }
+        ),
+    )
+    joined = left.join(right, on="k")
+    agg = pl.col("x").sum()
+    assert _gate_fires(joined.group_by("g").agg(agg), plmonkeypatch)
+    assert _gate_fires(joined.group_by("g", "few").agg(agg), plmonkeypatch)
+    # Grouping R by its row number leaves nothing to fold.
+    assert not _gate_fires(joined.group_by("g", "row").agg(agg), plmonkeypatch)
+
+
 # Join ordering may move a join from above the target into its other input.
 _KEEP_JOIN_ORDER = pl.QueryOptFlags(join_order=False)
 
@@ -842,15 +931,6 @@ def test_eager_aggregation_stacked_joins_rejected(
     lf = _stacked(how="left").group_by(group).agg(agg)
     _assert_rewrite(lf, plmonkeypatch, fires=False, sort_by="c_ck")
 
-    # An upper join keyed on an aggregated-side column that is not the target's key.
-    dim = pl.LazyFrame({"d_dk": [10, 20, 30], "d_name": ["u", "v", "w"]})
-    lf = (
-        _join(_join(_fact(), _cust(), "f_ck", "c_ck"), dim, "f_dk", "d_dk")
-        .group_by("c_ck", "d_name")
-        .agg(agg)
-    )
-    _assert_rewrite(lf, plmonkeypatch, fires=False, sort_by=["c_ck", "d_name"])
-
     # An upper join with an extra condition.
     lf = (
         _join(_fact(), _cust(), "f_ck", "c_ck")
@@ -866,7 +946,9 @@ def test_eager_aggregation_stacked_joins_rejected(
         lf, plmonkeypatch, fires=False, sort_by="c_ck", optimizations=_KEEP_JOIN_ORDER
     )
 
-    # Upper joins keyed on the target's key, through either of its names.
+    # Upper joins keyed on the lower join's key, through either of its names: the lower
+    # join cannot take the partial aggregation, so it goes under the upper join, grouped
+    # by that key and `c_name`.
     for key in ["c_ck", "f_ck"]:
         above = pl.LazyFrame({"a_ck": [1, 2, 3], "a_name": ["i", "j", "k"]})
         lf = (
@@ -877,10 +959,12 @@ def test_eager_aggregation_stacked_joins_rejected(
         _assert_rewrite(
             lf,
             plmonkeypatch,
-            fires=False,
-            sort_by="c_name",
+            fires=True,
+            sort_by=["c_name", "a_name"],
             optimizations=_KEEP_JOIN_ORDER,
         )
+        on, _ = _plans(lf, plmonkeypatch, optimizations=_KEEP_JOIN_ORDER)
+        assert f'BY [col("{key}"), col("c_name")]' in on, on
 
 
 @pytest.mark.parametrize(
