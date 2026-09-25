@@ -45,6 +45,9 @@ sysinfo = { version = "0.39", default-features = false, features = ["system"], o
 tokio = { workspace = true, optional = true, features = ["rt", "sync"] }
 uuid = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }
+
 [dev-dependencies]
 proptest = { workspace = true }
 rand = { workspace = true }

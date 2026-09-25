@@ -28,6 +28,7 @@ pub mod clmul;
 pub mod collection;
 pub mod compression;
 pub mod concat_vec;
+pub mod cpu_time;
 pub mod cpuid;
 pub mod error;
 pub mod file;

@@ -110,6 +110,7 @@ unicode-normalization = "0.1.24"
 unicode-reverse = "1.0.8"
 uuid = { version = "1.15.1", features = ["v4", "v7"] }
 version_check = "0.9.4"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 zmij = "1.0.0"
 zstd = "0.13"
