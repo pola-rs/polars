@@ -30,6 +30,7 @@ Numeric
     UInt16
     UInt32
     UInt64
+    UInt128
 
 Temporal
 ~~~~~~~~~~~

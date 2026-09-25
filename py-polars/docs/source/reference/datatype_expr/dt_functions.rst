@@ -10,4 +10,5 @@ The following functions are related to `DataTypeExpr`.
 
    dtype_of
    self_dtype
+   struct_with_fields
    DataType.to_dtype_expr
