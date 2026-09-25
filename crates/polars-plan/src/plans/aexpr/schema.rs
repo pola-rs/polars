@@ -743,6 +743,11 @@ fn get_arithmetic_field(
                 try_get_supertype(&left_field.dtype, &right_field.dtype)?,
             );
         },
+        Operator::FloorDivide | Operator::Modulus
+            if left_field.dtype.is_decimal() || right_field.dtype.is_decimal() =>
+        {
+            polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
+        },
         _ => {
             match (&left_field.dtype, &right_field.dtype) {
                 #[cfg(feature = "dtype-struct")]

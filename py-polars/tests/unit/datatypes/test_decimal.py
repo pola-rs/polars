@@ -1006,3 +1006,25 @@ def test_decimal_sum_overflow_28585(
         s.sum()
     with pytest.raises(ComputeError, match="overflow in decimal addition in sum"):
         s.to_frame().lazy().select(pl.col("d").sum()).collect(engine=engine)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("d") // 1,
+        1 // pl.col("d"),
+        pl.col("d") % 1,
+        1 % pl.col("d"),
+        pl.col("d") // pl.col("d"),
+        pl.col("d") % pl.col("d"),
+    ],
+)
+def test_decimal_floordiv_mod_unsupported(expr: pl.Expr) -> None:
+    lf = pl.LazyFrame({"d": [1]}).cast(pl.Decimal(18, 4))
+    q = lf.select(expr)
+
+    with pytest.raises(InvalidOperationError, match="not allowed on"):
+        q.collect_schema()
+
+    with pytest.raises(InvalidOperationError, match="not allowed on"):
+        q.collect()
