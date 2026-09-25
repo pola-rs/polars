@@ -604,12 +604,6 @@ pub fn dec128_rescale(x: i128, old_s: usize, new_p: usize, new_s: usize) -> Opti
     dec128_fits(r, new_p).then_some(r)
 }
 
-/// Adds two Decimal128s, assuming they have the same scale.
-#[inline]
-pub fn dec128_add(l: i128, r: i128, p: usize) -> Option<i128> {
-    l.checked_add(r).filter(|x| dec128_fits(*x, p))
-}
-
 /// A value in `(-2^255, 2^255)` in sign-magnitude form.
 #[derive(Copy, Clone)]
 struct I256 {
