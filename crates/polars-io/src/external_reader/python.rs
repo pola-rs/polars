@@ -51,6 +51,12 @@ impl PythonFileReaderBuilder {
             Ok(ret)
         })
     }
+
+    pub fn init_multi_scan_context(&self, py: Python<'_>, cx: &Py<PyDict>) -> PolarsResult<()> {
+        self.builder
+            .call_method1(py, intern!(py, "init_multi_scan_context"), (cx,))?;
+        Ok(())
+    }
 }
 
 impl<'a, 'py> FromPyObject<'a, 'py> for PythonFileReaderBuilder {

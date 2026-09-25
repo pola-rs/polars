@@ -36,8 +36,6 @@ azure-identity
 boto3
 cloudpickle
 fsspec
-pyiceberg>=0.12.0; python_version < '3.13'
-pyiceberg-core!=0.9.0  # 0.9.0 is missing a wheel
 s3fs>=2026.2.0
 # Spreadsheet
 fastexcel>=0.11.5
@@ -46,6 +44,10 @@ xlsx2csv
 xlsxwriter>=3.2.9
 # Other I/O
 deltalake>=1.6.0
+lancedb>=0.38.0
+pyiceberg>=0.12.0; python_version < '3.13'
+pyiceberg-core!=0.9.0  # 0.9.0 is missing a wheel
+pylance>=11.0.0
 # Csv
 zstandard
 # Plotting
