@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use crossbeam_channel::Sender;
 use parking_lot::Mutex;
@@ -8,13 +9,14 @@ use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::aliases::PlHashSet;
+use polars_utils::cpu_time::process_cpu_ns;
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::vec::reuse_vec;
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 use tokio::task::JoinHandle;
 
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
-use crate::metrics::GraphMetrics;
+use crate::metrics::{GraphMetrics, QueryMetrics, attribute_tasks_to_node};
 use crate::pipe::PhysicalPipe;
 
 #[derive(Clone)]
@@ -141,6 +143,42 @@ fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<Lo
     expand_ready_subgraph(graph, to_run)
 }
 
+/// Runs `f`, adding its wall time to a non-overlapping driver segment.
+fn timed<R>(
+    metrics: Option<&Mutex<GraphMetrics>>,
+    segment: impl FnOnce(&mut QueryMetrics) -> &mut u64,
+    f: impl FnOnce() -> R,
+) -> R {
+    let Some(metrics) = metrics else {
+        return f();
+    };
+
+    let start = Instant::now();
+    let out = f();
+    let elapsed_ns = start.elapsed().as_nanos() as u64;
+    *segment(metrics.lock().query_mut()) += elapsed_ns;
+    out
+}
+
+/// Awaits every task queued on `recv`, timing the wait as detached-task time.
+fn await_detached(
+    recv: &crossbeam_channel::Receiver<JoinHandle<PolarsResult<()>>>,
+    metrics: Option<&Mutex<GraphMetrics>>,
+) -> PolarsResult<()> {
+    timed(
+        metrics,
+        |q| &mut q.detached_wait_time_ns,
+        || {
+            ASYNC.block_in_place_on(async {
+                while let Ok(handle) = recv.try_recv() {
+                    handle.await.unwrap()?;
+                }
+                PolarsResult::Ok(())
+            })
+        },
+    )
+}
+
 /// Runs the given subgraph. Assumes the set of pipes is correct for the subgraph.
 fn run_subgraph(
     graph: &mut Graph,
@@ -150,6 +188,8 @@ fn run_subgraph(
     state: &StreamingExecutionState,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
 ) -> PolarsResult<()> {
+    let phase_start = Instant::now();
+
     // Construct physical pipes for the logical pipes we'll use.
     let mut physical_pipes = SecondaryMap::new();
     for pipe_key in pipes.iter().copied() {
@@ -217,20 +257,15 @@ fn run_subgraph(
             }
 
             // Spawn the tasks.
-            let pre_spawn_offset = join_handles.len();
-
-            node.compute.spawn(
-                scope,
-                &mut recv_ports[..],
-                &mut send_ports[..],
-                state,
-                &mut join_handles,
-            );
-            if let Some(lock) = metrics.as_ref() {
-                let mut m = lock.lock();
-                for handle in &join_handles[pre_spawn_offset..] {
-                    m.add_task(node_key, handle.metrics().unwrap().clone());
-                }
+            {
+                let _attribution = attribute_tasks_to_node(node_key, metrics.as_ref());
+                node.compute.spawn(
+                    scope,
+                    &mut recv_ports[..],
+                    &mut send_ports[..],
+                    state,
+                    &mut join_handles,
+                );
             }
 
             // Ensure the ports were consumed.
@@ -273,18 +308,35 @@ fn run_subgraph(
         }
 
         // Spawn tasks for all the physical pipes (no-op on most, but needed for
-        // those with distributors or linearizers).
-        for pipe in physical_pipes.values_mut() {
+        // those with distributors or linearizers), attributing work to the receiver.
+        for (pipe_key, pipe) in physical_pipes.iter_mut() {
+            let _attribution =
+                attribute_tasks_to_node(graph.pipes[pipe_key].receiver, metrics.as_ref());
             pipe.spawn(scope, &mut join_handles);
         }
 
+        // Record setup separately from the wait for phase completion.
+        if let Some(metrics) = metrics.as_deref() {
+            let setup_ns = phase_start.elapsed().as_nanos() as u64;
+            let query = &mut *metrics.lock();
+            let query = query.query_mut();
+            query.phase_setup_time_ns += setup_ns;
+            query.num_phases += 1;
+        }
+
         // Wait until all tasks are done.
-        ASYNC.block_in_place_on(async move {
-            for handle in join_handles {
-                handle.await?;
-            }
-            PolarsResult::Ok(())
-        })
+        timed(
+            metrics.as_deref(),
+            |q| &mut q.phase_wait_time_ns,
+            || {
+                ASYNC.block_in_place_on(async move {
+                    for handle in join_handles {
+                        handle.await?;
+                    }
+                    PolarsResult::Ok(())
+                })
+            },
+        )
     })?;
 
     Ok(())
@@ -304,6 +356,13 @@ pub fn execute_graph(
         subphase_tasks_send,
     };
 
+    let query_start = Instant::now();
+    // Snapshot cumulative executor counters to compute the query's delta.
+    let worker_states_at_start = metrics.as_ref().map(|m| {
+        m.lock().query_mut().num_threads = state.num_pipelines as u32;
+        executor::worker_state_times()
+    });
+
     // Ensure everything is properly connected.
     for (node_key, node) in &graph.nodes {
         for (i, input) in node.inputs.iter().enumerate() {
@@ -322,19 +381,24 @@ pub fn execute_graph(
         if polars_core::config::verbose() {
             eprintln!("polars-stream: updating graph state");
         }
-        graph.update_all_states(&state, metrics.as_deref())?;
+        // Measure process CPU over the same interval as state-update wall time.
+        let cpu_before = metrics.is_some().then(process_cpu_ns).flatten();
+        timed(
+            metrics.as_deref(),
+            |q| &mut q.state_update_time_ns,
+            || graph.update_all_states(&state, metrics.as_ref()),
+        )?;
+        if let Some(metrics) = metrics.as_deref()
+            && let Some((before, after)) = cpu_before.zip(process_cpu_ns())
+        {
+            metrics.lock().query_mut().state_update_cpu_ns += after.saturating_sub(before);
+        }
 
         if let Some(m) = metrics.as_ref() {
             m.lock().flush(&graph.pipes);
         }
 
-        ASYNC.block_in_place_on(async {
-            // TODO: track this in metrics.
-            while let Ok(handle) = subphase_tasks_recv.try_recv() {
-                handle.await.unwrap()?;
-            }
-            PolarsResult::Ok(())
-        })?;
+        await_detached(&subphase_tasks_recv, metrics.as_deref())?;
 
         // Find a subgraph to run.
         let (nodes, pipes) = find_runnable_subgraph(graph);
@@ -360,13 +424,7 @@ pub fn execute_graph(
             &state,
             metrics.clone(),
         )?;
-        ASYNC.block_in_place_on(async {
-            // TODO: track this in metrics.
-            while let Ok(handle) = subphase_tasks_recv.try_recv() {
-                handle.await.unwrap()?;
-            }
-            PolarsResult::Ok(())
-        })?;
+        await_detached(&subphase_tasks_recv, metrics.as_deref())?;
         if polars_core::config::verbose() {
             eprintln!("polars-stream: done running graph phase");
         }
@@ -378,20 +436,28 @@ pub fn execute_graph(
     }
 
     // Finalize query tasks.
-    ASYNC.block_in_place_on(async {
-        // TODO: track this in metrics.
-        while let Ok(handle) = query_tasks_recv.try_recv() {
-            handle.await.unwrap()?;
-        }
-        PolarsResult::Ok(())
-    })?;
+    await_detached(&query_tasks_recv, metrics.as_deref())?;
 
     // Extract output from in-memory nodes.
     let mut out = SparseSecondaryMap::new();
-    for (node_key, node) in graph.nodes.iter_mut() {
-        if let Some(df) = node.compute.get_output()? {
-            out.insert(node_key, df);
-        }
+    timed(
+        metrics.as_deref(),
+        |q| &mut q.output_time_ns,
+        || {
+            for (node_key, node) in graph.nodes.iter_mut() {
+                if let Some(df) = node.compute.get_output()? {
+                    out.insert(node_key, df);
+                }
+            }
+            PolarsResult::Ok(())
+        },
+    )?;
+
+    if let Some((m, at_start)) = metrics.as_ref().zip(worker_states_at_start.as_ref()) {
+        let query = &mut *m.lock();
+        let query = query.query_mut();
+        query.wall_time_ns = query_start.elapsed().as_nanos() as u64;
+        query.worker_states = executor::worker_state_times().since(at_start);
     }
 
     Ok(out)

@@ -1,6 +1,6 @@
 #![allow(unused)] // TODO: remove me
 use std::cmp::Reverse;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use parking_lot::Mutex;
 use polars_core::prelude::*;
@@ -166,6 +166,10 @@ impl StreamingQuery {
             || observe
         {
             polars_async::executor::track_task_metrics(true);
+            // CPU clock reads add per-poll overhead, so tracking is opt-in.
+            polars_async::executor::track_poll_cpu_time(
+                std::env::var("POLARS_TRACK_POLL_CPU").as_deref() == Ok("1"),
+            );
             Some(Arc::default())
         } else {
             None
@@ -202,9 +206,7 @@ impl StreamingQuery {
             metrics,
         } = self;
 
-        let query_start = Instant::now();
         let mut results = crate::execute::execute_graph(&mut graph, metrics.clone())?;
-        let query_elapsed = query_start.elapsed();
 
         // Print metrics.
         if let Some(lock) = metrics
@@ -289,6 +291,7 @@ impl StreamingQuery {
             lines.sort_by_key(|(tot, _)| Reverse(*tot));
 
             let total_query_time = Duration::from_nanos(total_query_ns);
+            let query_elapsed = Duration::from_nanos(m.query().wall_time_ns);
             eprintln!(
                 "Streaming query took {query_elapsed:.2?} ({total_query_time:.2?} CPU), detailed breakdown:"
             );

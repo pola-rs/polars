@@ -1,9 +1,10 @@
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
 
-use polars_async::executor::TaskMetrics;
+use polars_async::executor::{TaskAttribution, TaskMetrics, WorkerStateTimes};
 pub use polars_descriptions::MetricUnit;
 pub use polars_io::metrics::{IOMetrics, OptIOMetrics};
+use polars_utils::live_timer::{LiveTimer, LiveTimerSession};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
 use slotmap::{SecondaryMap, SlotMap};
@@ -18,6 +19,10 @@ pub struct NodeMetrics {
     pub total_stolen_polls: u64,
     pub total_poll_time_ns: u64,
     pub max_poll_time_ns: u64,
+    /// Wall time spent polling this node's tasks, counting concurrent polls once.
+    pub poll_occupancy_ns: u64,
+    /// Thread CPU across this node's polls, when poll CPU tracking is on.
+    pub total_poll_cpu_time_ns: u64,
 
     pub total_state_updates: u64,
     pub total_state_update_time_ns: u64,
@@ -43,14 +48,18 @@ pub struct NodeMetrics {
 }
 
 impl NodeMetrics {
-    fn add_task(&mut self, task_metrics: &TaskMetrics) {
-        self.total_polls += task_metrics.total_polls.load();
-        self.total_stolen_polls += task_metrics.total_stolen_polls.load();
-        self.total_poll_time_ns += task_metrics.total_poll_time_ns.load();
-        self.max_poll_time_ns = self
-            .max_poll_time_ns
-            .max(task_metrics.max_poll_time_ns.load());
-        self.num_running_tasks += (!task_metrics.done.load()) as u32;
+    /// Adds only new counters, since tasks can span multiple phases and flushes.
+    fn add_task(&mut self, task: &mut InProgressTask) {
+        let m = &task.metrics;
+        let now = TaskCounters::read(m);
+        let applied = std::mem::replace(&mut task.applied, now);
+
+        self.total_polls += now.polls - applied.polls;
+        self.total_stolen_polls += now.stolen_polls - applied.stolen_polls;
+        self.total_poll_time_ns += now.poll_time_ns - applied.poll_time_ns;
+        self.total_poll_cpu_time_ns += now.poll_cpu_ns - applied.poll_cpu_ns;
+        self.max_poll_time_ns = self.max_poll_time_ns.max(m.max_poll_time_ns.load());
+        self.num_running_tasks += (!m.done.load()) as u32;
     }
 
     fn add_io(&mut self, io_metrics: &IOMetrics) {
@@ -97,12 +106,119 @@ impl NodeMetrics {
     }
 }
 
+/// Query timing, with non-overlapping wall-time segments on the driver thread.
+/// CPU time and worker totals are tracked separately.
+#[derive(Default, Clone)]
+pub struct QueryMetrics {
+    /// Wall time of the whole `execute_graph` call.
+    pub wall_time_ns: u64,
+    /// Number of executor threads available to the query.
+    pub num_threads: u32,
+    /// Number of phases run.
+    pub num_phases: u64,
+
+    /// Wall spent in `update_all_states`, node updates and bookkeeping alike.
+    pub state_update_time_ns: u64,
+    /// Process CPU consumed while the driver was updating node states.
+    ///
+    /// Includes concurrent work from other tasks; cannot be attributed to a node.
+    /// Zero if the platform CPU clock is unavailable.
+    pub state_update_cpu_ns: u64,
+    /// Wall spent building physical pipes and spawning a phase's tasks.
+    pub phase_setup_time_ns: u64,
+    /// Wall spent waiting for a phase's tasks to finish.
+    pub phase_wait_time_ns: u64,
+    /// Wall spent awaiting tasks that outlive a subphase or the query.
+    pub detached_wait_time_ns: u64,
+    /// Wall spent in `get_output` collecting results from in-memory nodes.
+    pub output_time_ns: u64,
+
+    /// Executor counter deltas during this query, including any concurrent queries.
+    pub worker_states: WorkerStateTimes,
+}
+
+impl QueryMetrics {
+    /// The segments that should add up to [`Self::wall_time_ns`].
+    pub fn accounted_time_ns(&self) -> u64 {
+        self.state_update_time_ns
+            + self.phase_setup_time_ns
+            + self.phase_wait_time_ns
+            + self.detached_wait_time_ns
+            + self.output_time_ns
+    }
+
+    /// Wall time in `execute_graph` outside the measured segments.
+    pub fn unaccounted_time_ns(&self) -> u64 {
+        self.wall_time_ns.saturating_sub(self.accounted_time_ns())
+    }
+
+    /// Estimated idle thread-time during state updates, after subtracting process CPU.
+    pub fn state_update_idle_ns(&self) -> u64 {
+        (self.state_update_time_ns * self.num_threads as u64)
+            .saturating_sub(self.state_update_cpu_ns)
+    }
+
+    /// Thread-time the executor did not report as polling, overhead or parked.
+    pub fn unaccounted_thread_time_ns(&self) -> u64 {
+        self.thread_time_budget_ns()
+            .saturating_sub(self.worker_states.total_ns())
+    }
+
+    /// Total thread-time the query could have used: `num_threads * wall`.
+    pub fn thread_time_budget_ns(&self) -> u64 {
+        self.wall_time_ns * self.num_threads as u64
+    }
+}
+
+/// Cumulative task counters already folded into a node.
+#[derive(Default, Clone, Copy)]
+struct TaskCounters {
+    polls: u64,
+    stolen_polls: u64,
+    poll_time_ns: u64,
+    poll_cpu_ns: u64,
+}
+
+impl TaskCounters {
+    fn read(m: &TaskMetrics) -> Self {
+        Self {
+            polls: m.total_polls.load(),
+            stolen_polls: m.total_stolen_polls.load(),
+            poll_time_ns: m.total_poll_time_ns.load(),
+            poll_cpu_ns: m.total_poll_cpu_time_ns.load(),
+        }
+    }
+}
+
+/// A task whose metrics are still being collected.
+#[derive(Clone)]
+struct InProgressTask {
+    metrics: Arc<TaskMetrics>,
+    /// Counters already added to the node's totals.
+    applied: TaskCounters,
+    /// Retain a completed task for one extra flush: `run` marks it done before
+    /// the runner records its final poll.
+    seen_done: bool,
+}
+
+impl InProgressTask {
+    fn new(metrics: Arc<TaskMetrics>) -> Self {
+        Self {
+            metrics,
+            applied: TaskCounters::default(),
+            seen_done: false,
+        }
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct GraphMetrics {
+    query: QueryMetrics,
     node_metrics: SecondaryMap<GraphNodeKey, NodeMetrics>,
     in_progress_io_metrics: SecondaryMap<GraphNodeKey, Arc<IOMetrics>>,
     in_progress_custom_metrics: SecondaryMap<GraphNodeKey, Arc<CustomMetrics>>,
-    in_progress_task_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<TaskMetrics>>>,
+    in_progress_task_metrics: SecondaryMap<GraphNodeKey, Vec<InProgressTask>>,
+    attributions: SecondaryMap<GraphNodeKey, Arc<NodeAttribution>>,
     in_progress_pipe_metrics: SecondaryMap<LogicalPipeKey, Vec<Arc<PipeMetrics>>>,
 }
 
@@ -112,7 +228,25 @@ impl GraphMetrics {
             .entry(key)
             .unwrap()
             .or_default()
-            .push(task_metrics);
+            .push(InProgressTask::new(task_metrics));
+    }
+
+    fn node_attribution(
+        &mut self,
+        key: GraphNodeKey,
+        self_ref: &Arc<parking_lot::Mutex<GraphMetrics>>,
+    ) -> Arc<NodeAttribution> {
+        self.attributions
+            .entry(key)
+            .unwrap()
+            .or_insert_with(|| {
+                Arc::new(NodeAttribution {
+                    key,
+                    graph_metrics: Arc::downgrade(self_ref),
+                    occupancy: LiveTimer::new(),
+                })
+            })
+            .clone()
     }
 
     pub fn add_pipe(&mut self, key: LogicalPipeKey, pipe_metrics: Arc<PipeMetrics>) {
@@ -136,12 +270,24 @@ impl GraphMetrics {
     }
 
     pub fn flush(&mut self, pipes: &SlotMap<LogicalPipeKey, LogicalPipe>) {
-        for (key, in_progress_task_metrics) in self.in_progress_task_metrics.iter_mut() {
+        for (key, in_progress_tasks) in self.in_progress_task_metrics.iter_mut() {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
             this_node_metrics.num_running_tasks = 0;
-            for task_metrics in in_progress_task_metrics.drain(..) {
-                this_node_metrics.add_task(&task_metrics);
-            }
+            // Keep running tasks and allow a final flush after completion.
+            in_progress_tasks.retain_mut(|task| {
+                this_node_metrics.add_task(task);
+                let keep = !task.seen_done;
+                task.seen_done = task.metrics.done.load();
+                keep
+            });
+        }
+
+        for (key, attribution) in self.attributions.iter() {
+            self.node_metrics
+                .entry(key)
+                .unwrap()
+                .or_default()
+                .poll_occupancy_ns = attribution.occupancy.total_time_live_ns();
         }
 
         for (key, io_metrics) in self.in_progress_io_metrics.iter_mut() {
@@ -172,6 +318,14 @@ impl GraphMetrics {
         }
     }
 
+    pub fn query(&self) -> &QueryMetrics {
+        &self.query
+    }
+
+    pub fn query_mut(&mut self) -> &mut QueryMetrics {
+        &mut self.query
+    }
+
     pub fn get(&self, key: GraphNodeKey) -> Option<&NodeMetrics> {
         self.node_metrics.get(key)
     }
@@ -179,6 +333,39 @@ impl GraphMetrics {
     pub fn iter(&self) -> slotmap::secondary::Iter<'_, GraphNodeKey, NodeMetrics> {
         self.node_metrics.iter()
     }
+}
+
+/// Identifies a node within its query without keeping the query's metrics alive.
+struct NodeAttribution {
+    key: GraphNodeKey,
+    graph_metrics: Weak<parking_lot::Mutex<GraphMetrics>>,
+    /// Poll sessions update this without taking the graph lock.
+    occupancy: LiveTimer,
+}
+
+impl TaskAttribution for NodeAttribution {
+    fn task_spawned(&self, metrics: &Arc<TaskMetrics>) {
+        let Some(graph_metrics) = self.graph_metrics.upgrade() else {
+            return;
+        };
+        graph_metrics.lock().add_task(self.key, metrics.clone());
+    }
+
+    fn poll_session(&self) -> Option<LiveTimerSession> {
+        Some(self.occupancy.start_session())
+    }
+}
+
+/// Credits tasks spawned while the guard lives to `key` in `graph_metrics`.
+///
+/// Child tasks inherit the attribution, including tasks that outlive the phase.
+pub fn attribute_tasks_to_node(
+    key: GraphNodeKey,
+    graph_metrics: Option<&Arc<parking_lot::Mutex<GraphMetrics>>>,
+) -> polars_async::executor::AttributionGuard {
+    let attribution =
+        graph_metrics.map(|m| m.lock().node_attribution(key, m) as Arc<dyn TaskAttribution>);
+    polars_async::executor::scoped_task_attribution(attribution)
 }
 
 pub struct NodeMetricsRegistry {

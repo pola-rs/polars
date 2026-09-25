@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Instant;
 
 use parking_lot::Mutex;
@@ -5,7 +6,7 @@ use polars_error::PolarsResult;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use crate::execute::StreamingExecutionState;
-use crate::metrics::GraphMetrics;
+use crate::metrics::{GraphMetrics, attribute_tasks_to_node};
 use crate::nodes::ComputeNode;
 
 slotmap::new_key_type! {
@@ -87,7 +88,7 @@ impl Graph {
     pub fn update_all_states(
         &mut self,
         state: &StreamingExecutionState,
-        metrics: Option<&Mutex<GraphMetrics>>,
+        metrics: Option<&Arc<Mutex<GraphMetrics>>>,
     ) -> PolarsResult<()> {
         let mut to_update: Vec<_> = self.nodes.keys().collect();
         let mut scheduled_for_update: SecondaryMap<GraphNodeKey, ()> =
@@ -119,8 +120,12 @@ impl Graph {
                 lock.lock().start_state_update(node_key);
             }
 
-            node.compute
-                .update_state(&mut recv_state, &mut send_state, state)?;
+            {
+                // State updates can spawn tasks, e.g. equi-join partition builds.
+                let _attribution = attribute_tasks_to_node(node_key, metrics);
+                node.compute
+                    .update_state(&mut recv_state, &mut send_state, state)?;
+            }
             let elapsed = start.map(|s| s.elapsed());
             if let Some(lock) = metrics {
                 let is_done = recv_state.iter().all(|s| *s == PortState::Done)

@@ -224,19 +224,21 @@ impl ParquetReadImpl {
 
         // Decode loop (spawns decodes on the computational executor).
         let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
-        let decode_task = AbortOnDropHandle(ASYNC.spawn(async move {
-            while let Some((prefetch_task, permits)) = prefetch_recv.recv().await {
-                let row_group_data = prefetch_task.await.unwrap()?;
-                let row_group_decoder = row_group_decoder.clone();
-                let decode_fut = executor::spawn(TaskPriority::High, async move {
-                    row_group_decoder.row_group_data_to_df(row_group_data).await
-                });
-                if decode_send.send((decode_fut, permits)).await.is_err() {
-                    break;
+        // Preserve scan attribution across Tokio before spawning executor tasks.
+        let decode_task =
+            AbortOnDropHandle(ASYNC.spawn(executor::with_current_attribution(async move {
+                while let Some((prefetch_task, permits)) = prefetch_recv.recv().await {
+                    let row_group_data = prefetch_task.await.unwrap()?;
+                    let row_group_decoder = row_group_decoder.clone();
+                    let decode_fut = executor::spawn(TaskPriority::High, async move {
+                        row_group_decoder.row_group_data_to_df(row_group_data).await
+                    });
+                    if decode_send.send((decode_fut, permits)).await.is_err() {
+                        break;
+                    }
                 }
-            }
-            PolarsResult::Ok(())
-        }));
+                PolarsResult::Ok(())
+            })));
 
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
