@@ -1006,7 +1006,8 @@ fn gate_passes(
     // When nothing above reads L, the join only filters R's rows, or repeats them once per
     // L row of their key. Without repeats, the partial aggregation saves no more than the
     // probe, and costs at least as much as the group by it feeds, which has fewer keys.
-    let other_rows_per_key = other.rows_per_key();
+    let other_rows_per_key =
+        other.rows * (1.0 - other.null_share) / (other.ndv * other.key_survival()).max(1.0);
     let passes = path_share >= MIN_MATCHED_SHARE
         && rows_per_key >= MIN_ROWS_PER_KEY
         && aggregated_rows >= MIN_AGGREGATED_ROWS

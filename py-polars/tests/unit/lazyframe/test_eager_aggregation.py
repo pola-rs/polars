@@ -950,9 +950,18 @@ def test_eager_aggregation_gate_needs_the_join_to_do_more_than_filter(
     repeated = _scan(
         tmp_path, "repeated", pl.DataFrame({"k": np.repeat(keys, 3), "name": 0})
     )
+    # Two rows per key, of which the filter keeps one.
+    filtered = _scan(
+        tmp_path,
+        "filtered",
+        pl.DataFrame({"k": np.repeat(keys, 2), "keep": [1, None] * 100}),
+    ).filter(pl.col("keep").is_not_null())
     agg = pl.col("x").sum()
     assert not _gate_fires(
         unique.join(right, on="k").group_by("g").agg(agg), plmonkeypatch
+    )
+    assert not _gate_fires(
+        filtered.join(right, on="k").group_by("g").agg(agg), plmonkeypatch
     )
     # The join repeats R's rows.
     assert _gate_fires(
