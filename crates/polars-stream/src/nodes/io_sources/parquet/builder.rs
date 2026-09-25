@@ -5,13 +5,15 @@ use polars_async::primitives::wait_group::WaitGroup;
 use polars_buffer::Buffer;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
-use polars_io::cloud::concurrency::get_request_budget;
+use polars_io::cloud::concurrency::get_inflight_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
 use polars_io::utils::byte_source::{self, DynByteSourceBuilder, FileReadContext};
 use polars_plan::dsl::ScanSource;
 
-use super::super::shared::pipeline_budget::PipelineBudget;
+use super::super::shared::pipeline_budget::{
+    PipelineBudget, prefetch_kbytes_limit_from_env_or_default,
+};
 use super::{FileReader, ParquetFileReader};
 use crate::metrics::{IOMetrics, OptIOMetrics};
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
@@ -81,34 +83,15 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                 execution_state
                     .num_pipelines
                     .saturating_mul(2)
-                    .max(get_request_budget() as usize)
+                    .max(get_inflight_request_budget() as usize)
                     .clamp(16, 2048),
             )
             .max(1);
 
-        // Bound the max memory in use for the pipeline.
-        // This should be large enough to be non-blocking, but small enough to avoid
-        // excessive memory use from a run-away prefetch pipeline.
-        // "Correct" formula: (a) max effective in-flight bdp-based bytes budget + (b) decode pipeline.
-        // Since we do not know (a) at startup, we use  '3 * (b) + buffer' as a proxy for (a), where the
-        // multiplier reflects the max gain factor for in-flight control.
-        // TODO: Dynamically adapt the max memory to the observed BDP.
-        // NOTE: This does not account for the decompression multiplier, so actual memory
-        // usage can be substantially larger.
-        let prefetch_kbytes_limit = std::env::var("POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET")
-            .map(|x| {
-                x.parse::<NonZeroUsize>()
-                    .unwrap_or_else(|_| {
-                        panic!("invalid value for POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET: {x}")
-                    })
-                    .get()
-            })
-            .unwrap_or({
-                let target_chunk_size_kb = FetchConfig::random_access().chunk_size.div_ceil(1024);
-                4 * execution_state.num_pipelines * target_chunk_size_kb
-            })
-            // Avoid deadlock.
-            .max(polars_io::cloud::concurrency_config::get_download_chunk_size().div_ceil(1024));
+        let prefetch_kbytes_limit = prefetch_kbytes_limit_from_env_or_default(
+            "POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET",
+            execution_state.num_pipelines,
+        );
 
         if config::verbose() {
             eprintln!(

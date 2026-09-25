@@ -127,6 +127,10 @@ impl PageReader {
         self.total_num_values as usize
     }
 
+    pub fn descriptor(&self) -> &Descriptor {
+        &self.descriptor
+    }
+
     pub fn read_dict(&mut self) -> ParquetResult<Option<CompressedDictPage>> {
         // If there are no pages, we cannot check if the first page is a dictionary page. Just
         // return the fact there is no dictionary page.

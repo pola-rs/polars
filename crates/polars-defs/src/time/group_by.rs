@@ -109,6 +109,70 @@ pub fn dynamic_boundary_dtype(index_dtype: &DataType) -> DataType {
     }
 }
 
+/// A half-open range `start..end` of index values in the physical `i64` space of the index
+/// column: `Datetime` in its own time unit, `Date` as microseconds, integers as themselves.
+///
+/// `(i64::MIN, None)` stands for an unbounded range.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct IndexRange {
+    start: i64,
+    end: Option<i64>,
+}
+
+impl IndexRange {
+    pub const ALL: Self = Self {
+        start: i64::MIN,
+        end: None,
+    };
+
+    /// The range `start..end`.
+    pub const fn new(start: i64, end: Option<i64>) -> Self {
+        Self { start, end }
+    }
+
+    pub fn start(&self) -> i64 {
+        self.start
+    }
+
+    pub fn end(&self) -> Option<i64> {
+        self.end
+    }
+
+    pub fn contains(&self, t: i64) -> bool {
+        !self.is_before(t) && !self.is_past(t)
+    }
+
+    /// Whether `t`, and so every earlier value of an ascending index, lies before the range.
+    pub fn is_before(&self, t: i64) -> bool {
+        t < self.start
+    }
+
+    /// Whether `t`, and so every later value of an ascending index, lies past the range.
+    pub fn is_past(&self, t: i64) -> bool {
+        self.end.is_some_and(|end| t >= end)
+    }
+
+    /// The rows of the ascending `values` that lie in the range.
+    pub fn row_range(&self, values: &[i64]) -> std::ops::Range<usize> {
+        let start = values.partition_point(|&v| self.is_before(v));
+        let end = values.partition_point(|&v| !self.is_past(v));
+        start..end.max(start)
+    }
+}
+
+/// Where the window grid of a dynamic group-by is placed.
+///
+/// Set by a planner on the IR, never by the DSL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct DynamicWindowPlacement {
+    /// Start of the first window. `start_by` and `offset` are not used.
+    pub origin: i64,
+    /// Only windows whose start lies in this range are emitted.
+    pub start_range: IndexRange,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -129,5 +193,90 @@ impl Default for RollingGroupOptions {
             offset: Duration::new(1),
             closed_window: ClosedWindow::Left,
         }
+    }
+}
+
+/// [`DynamicGroupOptions`] as the IR carries them: the same fields plus the window placement
+/// a planner may set. The DSL never sets `placement`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct DynamicGroupOptionsIR {
+    pub index_column: PlSmallStr,
+    pub every: Duration,
+    pub period: Duration,
+    pub offset: Duration,
+    pub label: Label,
+    pub include_boundaries: bool,
+    pub closed_window: ClosedWindow,
+    pub start_by: StartBy,
+    /// Where the window grid is placed. `None` anchors on the first row.
+    ///
+    /// Only supported without group_by keys: with keys, every group anchors its own grid on its
+    /// own first row, which a single origin cannot reproduce.
+    pub placement: Option<DynamicWindowPlacement>,
+}
+
+impl From<DynamicGroupOptions> for DynamicGroupOptionsIR {
+    fn from(options: DynamicGroupOptions) -> Self {
+        let DynamicGroupOptions {
+            index_column,
+            every,
+            period,
+            offset,
+            label,
+            include_boundaries,
+            closed_window,
+            start_by,
+        } = options;
+        Self {
+            index_column,
+            every,
+            period,
+            offset,
+            label,
+            include_boundaries,
+            closed_window,
+            start_by,
+            placement: None,
+        }
+    }
+}
+
+impl Default for DynamicGroupOptionsIR {
+    fn default() -> Self {
+        DynamicGroupOptions::default().into()
+    }
+}
+
+/// [`RollingGroupOptions`] as the IR carries them.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct RollingGroupOptionsIR {
+    pub index_column: PlSmallStr,
+    pub period: Duration,
+    pub offset: Duration,
+    pub closed_window: ClosedWindow,
+}
+
+impl From<RollingGroupOptions> for RollingGroupOptionsIR {
+    fn from(options: RollingGroupOptions) -> Self {
+        let RollingGroupOptions {
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } = options;
+        Self {
+            index_column,
+            period,
+            offset,
+            closed_window,
+        }
+    }
+}
+
+impl Default for RollingGroupOptionsIR {
+    fn default() -> Self {
+        RollingGroupOptions::default().into()
     }
 }

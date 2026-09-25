@@ -685,7 +685,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     schema,
                     apply,
                     maintain_order,
-                    options,
+                    options: Arc::new(GroupbyOptionsIR::from(Arc::unwrap_or_clone(options))),
                 }
             };
 

@@ -993,6 +993,10 @@ pub(super) fn convert_functions(
         F::Log1p => I::Log1p,
         #[cfg(feature = "log")]
         F::Exp => I::Exp,
+        #[cfg(feature = "log")]
+        F::Erf => I::Erf,
+        #[cfg(feature = "log")]
+        F::Erfc => I::Erfc,
         F::Unique(v) => I::Unique(v),
         #[cfg(feature = "round_series")]
         F::Round { decimals, mode } => I::Round { decimals, mode },
@@ -1163,11 +1167,13 @@ pub(super) fn convert_functions(
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
         } => I::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,

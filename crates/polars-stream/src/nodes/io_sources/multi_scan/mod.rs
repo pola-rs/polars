@@ -18,7 +18,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
-use crate::metrics::NodeMetricsRegistrator;
+use crate::metrics::NodeMetricsRegistry;
 use crate::nodes::ComputeNode;
 use crate::nodes::io_sources::multi_scan::components::bridge::BridgeState;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
@@ -31,19 +31,19 @@ use crate::pipe::PortSender;
 pub struct MultiScan {
     name: PlSmallStr,
     state: MultiScanState,
-    metrics_registrator: Option<NodeMetricsRegistrator>,
+    metrics_registry: NodeMetricsRegistry,
     verbose: bool,
 }
 
 impl MultiScan {
-    pub fn new(config: Arc<MultiScanConfig>) -> Self {
+    pub fn new(config: Arc<MultiScanConfig>, metrics_registry: NodeMetricsRegistry) -> Self {
         let name = format_pl_smallstr!("multi-scan[{}]", config.file_reader_builder.reader_name());
         let verbose = config.verbose;
 
         MultiScan {
             name,
             state: MultiScanState::Uninitialized { config },
-            metrics_registrator: None,
+            metrics_registry,
             verbose,
         }
     }
@@ -52,10 +52,6 @@ impl MultiScan {
 impl ComputeNode for MultiScan {
     fn name(&self) -> &str {
         &self.name
-    }
-
-    fn set_phase_metrics_registrator(&mut self, metrics_registrator: NodeMetricsRegistrator) {
-        self.metrics_registrator = Some(metrics_registrator);
     }
 
     fn update_state(
@@ -107,12 +103,13 @@ impl ComputeNode for MultiScan {
             use MultiScanState::*;
 
             self.state
-                .initialize(state.clone(), self.metrics_registrator.is_some());
+                .initialize(state.clone(), self.metrics_registry.is_some());
 
-            if let Some(metrics_registrator) = &self.metrics_registrator
-                && let Initialized { io_metrics, .. } = &self.state
-            {
-                metrics_registrator.register_io_metrics(io_metrics.clone().unwrap());
+            if let Initialized { io_metrics, .. } = &self.state {
+                if let Some(io_metrics) = io_metrics.as_ref() {
+                    self.metrics_registry
+                        .register_io_metrics(io_metrics.clone())
+                }
             }
 
             self.state.refresh(verbose).await?;

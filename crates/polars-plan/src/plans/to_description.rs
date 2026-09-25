@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use polars_core::prelude::SortMultipleOptions;
 use polars_defs::join::JoinType;
 #[cfg(feature = "dynamic_group_by")]
-use polars_defs::time::group_by::{DynamicGroupOptions, RollingGroupOptions};
+use polars_defs::time::group_by::{DynamicGroupOptionsIR, RollingGroupOptionsIR};
 #[cfg(feature = "python")]
 use polars_descriptions::PythonPredicateDescription;
 use polars_descriptions::{
@@ -99,7 +99,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             let aggs = fmt_exprs(aggs, expr_arena);
 
             #[cfg(feature = "dynamic_group_by")]
-            if let Some(DynamicGroupOptions {
+            if let Some(DynamicGroupOptionsIR {
                 index_column,
                 every,
                 period,
@@ -108,6 +108,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 include_boundaries,
                 closed_window,
                 start_by,
+                placement: _,
             }) = &options.dynamic
             {
                 IrPropsDescription::DynamicGroupBy {
@@ -122,7 +123,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                     group_by: keys,
                     start_by: format!("{:?}", start_by),
                 }
-            } else if let Some(RollingGroupOptions {
+            } else if let Some(RollingGroupOptionsIR {
                 index_column,
                 period,
                 offset,

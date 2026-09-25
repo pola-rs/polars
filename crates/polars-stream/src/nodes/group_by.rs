@@ -21,6 +21,7 @@ use tokio::sync::mpsc::{Receiver, channel};
 
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
+use crate::metrics::{Metric, MetricUnit, NodeMetricsRegistry, kind};
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
@@ -222,6 +223,9 @@ struct GroupBySinkState {
     random_state: PlRandomState,
     partitioner: HashPartitioner,
     has_order_sensitive_agg: bool,
+
+    estimated_groups: Metric<kind::Sum>,
+    actual_groups: Metric<kind::Sum>,
 }
 
 impl GroupBySinkState {
@@ -414,6 +418,9 @@ impl GroupBySinkState {
         let grouped_reductions_template = &self.grouped_reductions;
         let grouped_reduction_cols = &self.grouped_reduction_cols;
 
+        let estimated_groups_metric = &self.estimated_groups.reporter();
+        let actual_groups_metric = &self.actual_groups.reporter();
+
         executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
@@ -438,8 +445,11 @@ impl GroupBySinkState {
                         sketch.combine(&l.sketch_per_p[p]);
                     }
 
+                    let sketch_estimate = sketch.estimate();
+                    estimated_groups_metric.add(sketch_estimate as i64);
+
                     // Allocate grouper and reductions.
-                    let est_num_groups = sketch.estimate() * 5 / 4;
+                    let est_num_groups = sketch_estimate * 5 / 4;
                     let mut p_grouper = grouper_template.new_empty();
                     let mut p_reductions = grouped_reductions_template
                         .iter()
@@ -565,6 +575,8 @@ impl GroupBySinkState {
                         r.resize(p_grouper.num_groups());
                     }
 
+                    actual_groups_metric.add(p_grouper.num_groups() as i64);
+
                     // We're done, help others out by doing drops.
                     drop(drop_q_send); // So we don't deadlock trying to receive from ourselves.
                     while let Ok(to_drop) = drop_q_recv.recv().await {
@@ -665,6 +677,7 @@ impl GroupByNode {
         random_state: PlRandomState,
         num_pipelines: usize,
         has_order_sensitive_agg: bool,
+        metrics_registry: NodeMetricsRegistry,
     ) -> Self {
         let hot_table_size = std::env::var("POLARS_HOT_TABLE_SIZE")
             .map(|sz| sz.parse::<usize>().unwrap())
@@ -696,6 +709,10 @@ impl GroupByNode {
                 locals,
                 partitioner,
                 has_order_sensitive_agg,
+                estimated_groups: metrics_registry
+                    .new_counter("group_by.estimated_groups", MetricUnit::Unit),
+                actual_groups: metrics_registry
+                    .new_counter("group_by.actual_groups", MetricUnit::Unit),
             }),
             key_schema,
             num_inputs,

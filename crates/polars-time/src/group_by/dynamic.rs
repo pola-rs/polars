@@ -4,7 +4,9 @@ use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_par;
 use polars_defs::time::duration::ensure_duration_matches_dtype;
-use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptions, Label, RollingGroupOptions};
+use polars_defs::time::group_by::{
+    ClosedWindow, DynamicGroupOptionsIR, Label, RollingGroupOptionsIR,
+};
 use polars_ops::series::SeriesMethods;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -29,13 +31,14 @@ pub trait PolarsTemporalGroupby {
     fn rolling(
         &self,
         group_by: Option<GroupsSlice>,
-        options: &RollingGroupOptions,
+        options: &RollingGroupOptionsIR,
     ) -> PolarsResult<(Column, GroupPositions)>;
 
+    /// Returns: time_keys, keys, groupsproxy.
     fn group_by_dynamic(
         &self,
         group_by: Option<GroupsSlice>,
-        options: &DynamicGroupOptions,
+        options: &DynamicGroupOptionsIR,
     ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)>;
 }
 
@@ -43,7 +46,7 @@ impl PolarsTemporalGroupby for DataFrame {
     fn rolling(
         &self,
         group_by: Option<GroupsSlice>,
-        options: &RollingGroupOptions,
+        options: &RollingGroupOptionsIR,
     ) -> PolarsResult<(Column, GroupPositions)> {
         Wrap(self).rolling(group_by, options)
     }
@@ -51,7 +54,7 @@ impl PolarsTemporalGroupby for DataFrame {
     fn group_by_dynamic(
         &self,
         group_by: Option<GroupsSlice>,
-        options: &DynamicGroupOptions,
+        options: &DynamicGroupOptionsIR,
     ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
         Wrap(self).group_by_dynamic(group_by, options)
     }
@@ -61,7 +64,7 @@ impl Wrap<&DataFrame> {
     fn rolling(
         &self,
         group_by: Option<GroupsSlice>,
-        options: &RollingGroupOptions,
+        options: &RollingGroupOptionsIR,
     ) -> PolarsResult<(Column, GroupPositions)> {
         polars_ensure!(
                         !options.period.is_zero() && !options.period.negative,
@@ -91,7 +94,7 @@ impl Wrap<&DataFrame> {
     fn group_by_dynamic(
         &self,
         group_by: Option<GroupsSlice>,
-        options: &DynamicGroupOptions,
+        options: &DynamicGroupOptionsIR,
     ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
         let time = self.0.column(&options.index_column)?.rechunk();
         if group_by.is_none() {
@@ -124,10 +127,15 @@ impl Wrap<&DataFrame> {
         &self,
         mut dt: Column,
         group_by: Option<GroupsSlice>,
-        options: &DynamicGroupOptions,
+        options: &DynamicGroupOptionsIR,
         tu: TimeUnit,
     ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
+        let placement = options.placement;
         polars_ensure!(!options.every.negative, ComputeError: "'every' argument must be positive");
+        polars_ensure!(
+            group_by.is_none() || placement.is_none(),
+            InvalidOperation: "a dynamic window placement is not supported together with group_by keys"
+        );
         if dt.is_empty() {
             let mut bounds = vec![];
             if options.include_boundaries {
@@ -204,6 +212,7 @@ impl Wrap<&DataFrame> {
                     include_lower_bound,
                     include_upper_bound,
                     options.start_by,
+                    placement,
                 )?;
 
                 PolarsResult::Ok((
@@ -245,6 +254,7 @@ impl Wrap<&DataFrame> {
                 include_lower_bound,
                 include_upper_bound,
                 options.start_by,
+                placement,
             )?;
             update_bounds(lower, upper);
             let monotonic = slice_groups_are_monotonic(&groups);
@@ -295,7 +305,7 @@ impl Wrap<&DataFrame> {
         &self,
         dt: Column,
         group_by: Option<GroupsSlice>,
-        options: &RollingGroupOptions,
+        options: &RollingGroupOptionsIR,
         tu: TimeUnit,
         tz: Option<Tz>,
     ) -> PolarsResult<(Column, GroupPositions)> {
@@ -360,7 +370,7 @@ mod test {
     use polars_compute::rolling::QuantileMethod;
     use polars_core::chunked_array::temporal::string::StringMethods;
     use polars_defs::time::duration::Duration;
-    use polars_defs::time::group_by::RollingGroupOptions;
+    use polars_defs::time::group_by::RollingGroupOptionsIR;
     use polars_ops::prelude::*;
 
     use super::*;
@@ -400,7 +410,7 @@ mod test {
             let (_, groups) = df
                 .rolling(
                     None,
-                    &RollingGroupOptions {
+                    &RollingGroupOptionsIR {
                         index_column: "dt".into(),
                         period: Duration::parse("2d"),
                         offset: Duration::parse("-2d"),
@@ -447,7 +457,7 @@ mod test {
         let (_, groups) = df
             .rolling(
                 None,
-                &RollingGroupOptions {
+                &RollingGroupOptionsIR {
                     index_column: "dt".into(),
                     period: Duration::parse("2d"),
                     offset: Duration::parse("-2d"),

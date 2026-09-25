@@ -1,6 +1,6 @@
 use polars_arrow::array::PrimitiveArray;
 use polars_defs::time::duration::Duration;
-use polars_defs::time::group_by::{ClosedWindow, RollingGroupOptions};
+use polars_defs::time::group_by::{ClosedWindow, RollingGroupOptionsIR};
 use polars_time::prelude::RollingWindower;
 use polars_time::{IndexSpace, PolarsTemporalGroupby};
 use polars_utils::UnitVec;
@@ -28,7 +28,7 @@ pub(crate) struct RollingExpr {
 impl PhysicalExpr for RollingExpr {
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let groups = if let Some(index_column_name) = self.index_column.as_column() {
-            let options = RollingGroupOptions {
+            let options = RollingGroupOptionsIR {
                 index_column: index_column_name.clone(),
                 period: self.period,
                 offset: self.offset,
@@ -53,7 +53,7 @@ impl PhysicalExpr for RollingExpr {
             }
         } else {
             let index_column_name = PlSmallStr::from_static("__PL_INDEX_COL");
-            let options = RollingGroupOptions {
+            let options = RollingGroupOptionsIR {
                 index_column: index_column_name.clone(),
                 period: self.period,
                 offset: self.offset,

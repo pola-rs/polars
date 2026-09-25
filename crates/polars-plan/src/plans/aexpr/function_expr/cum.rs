@@ -22,7 +22,7 @@ pub(super) mod dtypes {
                 Float64 => Float64,
                 Unknown(kind) => match kind {
                     UnknownKind::Int(v) => cum_sum(&materialize_dyn_int(*v).dtype()),
-                    UnknownKind::Float(_) => Float64,
+                    UnknownKind::Float => Float64,
                     _ => dt.clone(),
                 },
                 _ => Int64,

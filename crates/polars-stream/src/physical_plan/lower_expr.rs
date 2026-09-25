@@ -429,7 +429,7 @@ fn build_fallback_node_with_ctx(
     };
 
     let output_schema = schema_for_select(input_stream, exprs, ctx)?;
-    let mut conv_state = ExpressionConversionState::new(false);
+    let mut conv_state = ExpressionConversionState::new(true);
     let phys_exprs = exprs
         .iter()
         .map(|expr| {
@@ -796,7 +796,7 @@ fn lower_exprs_with_ctx(
                         &[],
                         group_by_output_schema,
                         maintain_order,
-                        Arc::new(GroupbyOptions::default()),
+                        Arc::new(GroupbyOptionsIR::default()),
                         None,
                         ctx.expr_arena,
                         ctx.phys_sm,
@@ -2129,7 +2129,7 @@ fn lower_exprs_with_ctx(
                         &[],
                         group_by_output_schema,
                         false,
-                        Arc::new(GroupbyOptions::default()),
+                        Arc::new(GroupbyOptionsIR::default()),
                         None,
                         ctx.expr_arena,
                         ctx.phys_sm,
@@ -2608,7 +2608,7 @@ fn lower_exprs_with_ctx(
                     &key_ir,
                     &[function_ir],
                     false,
-                    Arc::new(GroupbyOptions::default()),
+                    Arc::new(GroupbyOptionsIR::default()),
                     None,
                     GroupByLowerKind::Over,
                     ctx.expr_arena,
