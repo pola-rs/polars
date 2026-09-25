@@ -1,17 +1,16 @@
 use polars_utils::min_max::MinMaxPolicy;
 
-use super::super::van_herk::{combine, combine_plain, recenter_trailing, van_herk_kernel};
+use super::super::van_herk::{recenter_trailing, rolling_minmax_centered, van_herk_kernel};
 use super::*;
-use crate::nan::first_nan_idx;
 
-pub(super) fn rolling_minmax_van_herk_nulls<const MIN: bool, T, P>(
+pub(super) fn rolling_minmax_van_herk_nulls<T, P>(
     arr: &PrimitiveArray<T>,
     window_size: usize,
     min_periods: usize,
     center: bool,
 ) -> ArrayRef
 where
-    T: NativeType + PartialOrd + IsFloat + Bounded,
+    T: NativeType + IsFloat + Bounded,
     P: MinMaxPolicy,
 {
     let values = arr.values().as_slice();
@@ -31,20 +30,8 @@ where
 
     let validity_words = validity.filter(|v| v.unset_bits() > 0).map(bitmap_words);
     let mut out = match validity_words.as_deref() {
-        // NaNs poison windows asymmetrically: use the stable combine so ties keep
-        // the earliest NaN payload or signed zero.
-        Some(validity_words) if T::is_float() && first_nan_idx(values).is_some() => {
-            van_herk_kernel::<true, T, P, _>(values, validity_words, window_size, combine::<T, P>)
-        },
-        Some(validity_words) => van_herk_kernel::<true, T, P, _>(
-            values,
-            validity_words,
-            window_size,
-            combine_plain::<MIN, T>,
-        ),
-        None => {
-            super::super::van_herk::rolling_minmax_centered::<MIN, T, P>(values, window_size, shift)
-        },
+        Some(validity_words) => van_herk_kernel::<true, T, P>(values, validity_words, window_size),
+        None => rolling_minmax_centered::<T, P>(values, window_size, shift),
     };
     if shift > 0
         && let Some(validity_words) = validity_words.as_deref()

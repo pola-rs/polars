@@ -1,24 +1,13 @@
 use polars_utils::min_max::MinMaxPolicy;
 
 use super::*;
-use crate::nan::first_nan_idx;
 
-pub(super) fn rolling_minmax_centered<const MIN: bool, T, P>(
-    values: &[T],
-    w: usize,
-    shift: usize,
-) -> Vec<T>
+pub(super) fn rolling_minmax_centered<T, P>(values: &[T], w: usize, shift: usize) -> Vec<T>
 where
-    T: NativeType + PartialOrd + IsFloat + Bounded,
+    T: NativeType + IsFloat + Bounded,
     P: MinMaxPolicy,
 {
-    let mut out = if T::is_float() && first_nan_idx(values).is_some() {
-        // NaNs poison windows asymmetrically: use the stable combine so ties keep
-        // the earliest NaN payload or signed zero.
-        van_herk_kernel::<false, T, P, _>(values, &[], w, combine::<T, P>)
-    } else {
-        van_herk_kernel::<false, T, P, _>(values, &[], w, combine_plain::<MIN, T>)
-    };
+    let mut out = van_herk_kernel::<false, T, P>(values, &[], w);
     if shift > 0 {
         recenter_trailing::<false, T, P>(&mut out, values, &[], w, shift);
     }
@@ -27,7 +16,7 @@ where
 
 /// Fold identity, including infinities for floating-point inputs.
 #[inline]
-pub(super) fn identity<T: NativeType + IsFloat + Bounded, P: MinMaxPolicy>() -> T {
+fn identity<T: NativeType + IsFloat + Bounded, P: MinMaxPolicy>() -> T {
     let (lo, hi) = if T::is_float() {
         (T::neg_inf_value(), T::pos_inf_value())
     } else {
@@ -38,7 +27,7 @@ pub(super) fn identity<T: NativeType + IsFloat + Bounded, P: MinMaxPolicy>() -> 
 
 /// Stable combine: ties keep the earlier NaN payload or signed zero.
 #[inline(always)]
-pub(super) fn combine<T: NativeType, P: MinMaxPolicy>(earlier: T, later: T) -> T {
+fn combine<T: NativeType, P: MinMaxPolicy>(earlier: T, later: T) -> T {
     if P::is_better(&later, &earlier) {
         later
     } else {
@@ -46,21 +35,7 @@ pub(super) fn combine<T: NativeType, P: MinMaxPolicy>(earlier: T, later: T) -> T
     }
 }
 
-#[inline(always)]
-pub(super) fn combine_plain<const MIN: bool, T: NativeType + PartialOrd + IsFloat>(
-    earlier: T,
-    later: T,
-) -> T {
-    let better = if MIN {
-        later < earlier
-    } else {
-        later > earlier
-    };
-    if better { later } else { earlier }
-}
-
 /// Recenter trailing output with a backward suffix scan.
-/// `MASKED` avoids the measurable hot-loop cost of a generic read closure.
 pub(super) fn recenter_trailing<const MASKED: bool, T, P>(
     out: &mut [T],
     values: &[T],
@@ -68,7 +43,7 @@ pub(super) fn recenter_trailing<const MASKED: bool, T, P>(
     w: usize,
     shift: usize,
 ) where
-    T: NativeType + PartialOrd + IsFloat + Bounded,
+    T: NativeType + IsFloat + Bounded,
     P: MinMaxPolicy,
 {
     let n = values.len();
@@ -109,18 +84,16 @@ pub(super) fn recenter_trailing<const MASKED: bool, T, P>(
     }
 }
 
-/// Shared block scan; `MASKED` avoids the measurable hot-loop cost of a generic read
-/// closure and is eliminated from the direct-read specialization.
-pub(super) fn van_herk_kernel<const MASKED: bool, T, P, F>(
+/// Shared block scan; the `MASKED` constant specializes the null checks away for
+/// non-null input.
+pub(super) fn van_herk_kernel<const MASKED: bool, T, P>(
     values: &[T],
     validity_words: &[u64],
     w: usize,
-    combine_el: F,
 ) -> Vec<T>
 where
     T: NativeType + IsFloat + Bounded,
     P: MinMaxPolicy,
-    F: Fn(T, T) -> T,
 {
     let id = identity::<T, P>();
     let n = values.len();
@@ -141,7 +114,7 @@ where
     if w >= n {
         let mut acc = id;
         for (i, o) in out.iter_mut().enumerate() {
-            acc = combine_el(acc, get(i));
+            acc = combine::<T, P>(acc, get(i));
             o.write(acc);
         }
     } else {
@@ -159,14 +132,14 @@ where
             for j in 0..w - 1 {
                 let vf = get(base + j);
                 let vb = get(base + w - 1 - j);
-                prefix = combine_el(prefix, vf);
+                prefix = combine::<T, P>(prefix, vf);
                 // Right-to-left keeps the leftmost tie or NaN.
-                suffix = combine_el(vb, suffix);
-                out_block[j].write(combine_el(b_old[j + 1], prefix));
+                suffix = combine::<T, P>(vb, suffix);
+                out_block[j].write(combine::<T, P>(b_old[j + 1], prefix));
                 b_new[w - 1 - j] = suffix;
             }
-            prefix = combine_el(prefix, get(base + w - 1));
-            suffix = combine_el(get(base), suffix);
+            prefix = combine::<T, P>(prefix, get(base + w - 1));
+            suffix = combine::<T, P>(get(base), suffix);
             out_block[w - 1].write(prefix);
             b_new[0] = suffix;
             std::mem::swap(&mut b_old, &mut b_new);
@@ -177,8 +150,8 @@ where
             let out_rest = &mut out[base..];
             let mut acc = id;
             for (i, (o, b)) in out_rest.iter_mut().zip(&b_old[1..]).enumerate() {
-                acc = combine_el(acc, get(base + i));
-                o.write(combine_el(*b, acc));
+                acc = combine::<T, P>(acc, get(base + i));
+                o.write(combine::<T, P>(*b, acc));
             }
         }
     }

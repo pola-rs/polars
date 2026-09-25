@@ -21,7 +21,7 @@ where
 }
 
 macro_rules! rolling_minmax_func {
-    ($rolling_m:ident, $policy:ident, $is_min:literal) => {
+    ($rolling_m:ident, $policy:ident) => {
         pub fn $rolling_m<T>(
             values: &[T],
             window_size: usize,
@@ -31,24 +31,21 @@ macro_rules! rolling_minmax_func {
             _params: Option<RollingFnParams>,
         ) -> PolarsResult<ArrayRef>
         where
-            T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T> + Num,
+            T: NativeType + IsFloat + Bounded + NumCast + Mul<Output = T> + Num,
         {
-            let offset_fn = match center {
-                true => det_offsets_center,
-                false => det_offsets,
-            };
             match weights {
-                None => rolling_minmax_van_herk::<$is_min, T, $policy>(
-                    values,
-                    window_size,
-                    min_periods,
-                    center,
-                ),
+                None => {
+                    rolling_minmax_van_herk::<T, $policy>(values, window_size, min_periods, center)
+                },
                 Some(weights) => {
                     assert!(
                         T::is_float(),
                         "implementation error, should only be reachable by float types"
                     );
+                    let offset_fn = match center {
+                        true => det_offsets_center,
+                        false => det_offsets,
+                    };
                     let weights = weights
                         .iter()
                         .map(|v| NumCast::from(*v).unwrap())
@@ -68,17 +65,17 @@ macro_rules! rolling_minmax_func {
     };
 }
 
-rolling_minmax_func!(rolling_min, MinPropagateNan, true);
-rolling_minmax_func!(rolling_max, MaxPropagateNan, false);
+rolling_minmax_func!(rolling_min, MinPropagateNan);
+rolling_minmax_func!(rolling_max, MaxPropagateNan);
 
-fn rolling_minmax_van_herk<const MIN: bool, T, P>(
+fn rolling_minmax_van_herk<T, P>(
     values: &[T],
     window_size: usize,
     min_periods: usize,
     center: bool,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType + PartialOrd + IsFloat + Bounded,
+    T: NativeType + IsFloat + Bounded,
     P: MinMaxPolicy,
 {
     let n = values.len();
@@ -91,7 +88,7 @@ where
     } else {
         0
     };
-    let out = van_herk::rolling_minmax_centered::<MIN, T, P>(values, window_size, shift);
+    let out = van_herk::rolling_minmax_centered::<T, P>(values, window_size, shift);
 
     let offset_fn = match center {
         true => det_offsets_center,
