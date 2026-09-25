@@ -707,6 +707,141 @@ fn column_selectivity(
     Some(kept.max(0) as f64 / (max - min + 1) as f64 * non_null)
 }
 
+/// What a conjunct that compares one column with literals keeps of it.
+#[derive(Clone, Copy)]
+pub(crate) enum Restriction {
+    /// The integers in an inclusive range; `None` leaves that end open.
+    Range(Option<i128>, Option<i128>),
+    /// At most this many values.
+    Values(usize),
+    /// Neither: a comparison with a literal that is not an integer.
+    Other,
+}
+
+/// The column `conjunct` restricts and how, if it compares that one column with literals:
+/// `==`, `<`, `<=`, `>`, `>=`, `is_between`, `is_in`, or an `OR` of these on the column.
+#[recursive]
+pub(crate) fn column_restriction(
+    conjunct: Node,
+    expr_arena: &Arena<AExpr>,
+) -> Option<(&PlSmallStr, Restriction)> {
+    let literal = |node: Node| match expr_arena.get(node) {
+        AExpr::Literal(value) if value.is_scalar() => Some(value),
+        _ => None,
+    };
+    let integer = |node: Node| {
+        let value = literal(node)?.to_any_value()?;
+        if value.is_integer() {
+            value.extract::<i128>()
+        } else {
+            None
+        }
+    };
+    match expr_arena.get(conjunct) {
+        AExpr::BinaryExpr {
+            left,
+            op: Operator::Or,
+            right,
+        } => {
+            let (column, left) = column_restriction(*left, expr_arena)?;
+            let (other, right) = column_restriction(*right, expr_arena)?;
+            if column != other {
+                return None;
+            }
+            let restriction = match (left, right) {
+                (Restriction::Values(a), Restriction::Values(b)) => Restriction::Values(a + b),
+                _ => Restriction::Other,
+            };
+            Some((column, restriction))
+        },
+        AExpr::BinaryExpr { left, op, right } => {
+            let (column, op, value) = match (
+                into_column(*left, expr_arena),
+                into_column(*right, expr_arena),
+            ) {
+                (Some(column), None) => (column, *op, *right),
+                (None, Some(column)) => {
+                    let swapped = match op {
+                        Operator::Lt => Operator::Gt,
+                        Operator::LtEq => Operator::GtEq,
+                        Operator::Gt => Operator::Lt,
+                        Operator::GtEq => Operator::LtEq,
+                        op => *op,
+                    };
+                    (column, swapped, *left)
+                },
+                _ => return None,
+            };
+            literal(value)?;
+            let restriction = match (op, integer(value)) {
+                (Operator::Eq, _) => Restriction::Values(1),
+                (Operator::GtEq, Some(v)) => Restriction::Range(Some(v), None),
+                (Operator::Gt, Some(v)) => Restriction::Range(Some(v + 1), None),
+                (Operator::LtEq, Some(v)) => Restriction::Range(None, Some(v)),
+                (Operator::Lt, Some(v)) => Restriction::Range(None, Some(v - 1)),
+                (Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq, None) => {
+                    Restriction::Other
+                },
+                _ => return None,
+            };
+            Some((column, restriction))
+        },
+        AExpr::Function {
+            input,
+            function: IRFunctionExpr::Boolean(function),
+            ..
+        } => match function {
+            #[cfg(feature = "is_between")]
+            IRBooleanFunction::IsBetween { closed } => {
+                let [column, lower, upper] = input.as_slice() else {
+                    return None;
+                };
+                let column = into_column(column.node(), expr_arena)?;
+                literal(lower.node())?;
+                literal(upper.node())?;
+                let restriction = match (integer(lower.node()), integer(upper.node())) {
+                    (Some(lower), Some(upper)) => {
+                        use polars_defs::expr::ClosedInterval;
+                        let (lower_closed, upper_closed) = match closed {
+                            ClosedInterval::Both => (true, true),
+                            ClosedInterval::Left => (true, false),
+                            ClosedInterval::Right => (false, true),
+                            ClosedInterval::None => (false, false),
+                        };
+                        Restriction::Range(
+                            Some(if lower_closed { lower } else { lower + 1 }),
+                            Some(if upper_closed { upper } else { upper - 1 }),
+                        )
+                    },
+                    _ => Restriction::Other,
+                };
+                Some((column, restriction))
+            },
+            #[cfg(feature = "is_in")]
+            IRBooleanFunction::IsIn { .. } => {
+                let [column, haystack] = input.as_slice() else {
+                    return None;
+                };
+                let column = into_column(column.node(), expr_arena)?;
+                let AExpr::Literal(haystack) = expr_arena.get(haystack.node()) else {
+                    return None;
+                };
+                let values = match haystack {
+                    crate::plans::LiteralValue::Series(series) => series.len(),
+                    crate::plans::LiteralValue::Scalar(scalar) => match scalar.value() {
+                        polars_core::prelude::AnyValue::List(series) => series.len(),
+                        _ => return Some((column, Restriction::Other)),
+                    },
+                    _ => return Some((column, Restriction::Other)),
+                };
+                Some((column, Restriction::Values(values)))
+            },
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Fraction of rows one conjunct keeps, or `None` when nothing describes it.
 fn conjunct_selectivity(
     conjunct: Node,
@@ -1621,5 +1756,50 @@ mod tests {
             let kept = apply_predicate(1000.0, 1000.0, both, &expr_arena, map, &schema);
             assert_eq!(kept, MIN_CARDINALITY);
         }
+    }
+
+    #[test]
+    fn column_restriction_of_an_or() {
+        use crate::plans::{LiteralValue, Operator};
+
+        let mut expr_arena = Arena::new();
+        let mut compare = |column: &str, op: Operator, value: i32| {
+            let left = expr_arena.add(AExpr::Column(PlSmallStr::from_str(column)));
+            let right = expr_arena.add(AExpr::Literal(LiteralValue::from(
+                polars_core::scalar::Scalar::from(value),
+            )));
+            expr_arena.add(AExpr::BinaryExpr { left, op, right })
+        };
+        let lower = compare("y", Operator::GtEq, 2001);
+        let upper = compare("y", Operator::LtEq, 2002);
+        let is_2001 = compare("y", Operator::Eq, 2001);
+        let is_2002 = compare("y", Operator::Eq, 2002);
+        let mut and = |left, right| {
+            expr_arena.add(AExpr::BinaryExpr {
+                left,
+                op: Operator::And,
+                right,
+            })
+        };
+        let range = and(lower, upper);
+        let either = expr_arena.add(AExpr::BinaryExpr {
+            left: is_2001,
+            op: Operator::Or,
+            right: is_2002,
+        });
+        let range_and_either = expr_arena.add(AExpr::BinaryExpr {
+            left: range,
+            op: Operator::And,
+            right: either,
+        });
+
+        // An `AND` is not one restriction; an `OR` of values on one column is.
+        let (column, restriction) = column_restriction(range_and_either, &expr_arena)
+            .map_or((None, None), |(c, r)| (Some(c.clone()), Some(r)));
+        assert!(column.is_none() && restriction.is_none());
+        let Some((column, Restriction::Values(2))) = column_restriction(either, &expr_arena) else {
+            panic!("expected two values of y");
+        };
+        assert_eq!(column.as_str(), "y");
     }
 }
