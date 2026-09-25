@@ -589,15 +589,23 @@ pub(super) fn sign(s: &Column) -> PolarsResult<Column> {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
             Ok(sign_impl(ca))
         }),
-        DataType::Decimal(_, scale) => {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, scale) => {
+            use polars_compute::decimal::{DEC128_MAX_PREC, dec128_sign};
             use polars_core::prelude::ChunkApply;
 
+            let precision = (*precision).max(scale + 1).min(DEC128_MAX_PREC);
             let ca = s.decimal()?;
+            // At scale 38 only 0 is representable.
+            polars_ensure!(
+                *scale < DEC128_MAX_PREC || ca.physical().iter().all(|x| x.is_none_or(|x| x == 0)),
+                ComputeError: "sign of a nonzero Decimal({precision}, {scale}) value doesn't fit its type"
+            );
             let out = ca
                 .physical()
-                .apply_values(|x| polars_compute::decimal::dec128_sign(x, *scale))
+                .apply_values(|x| dec128_sign(x, *scale))
                 .into_column();
-            unsafe { out.from_physical_unchecked(dtype) }
+            unsafe { out.from_physical_unchecked(&DataType::Decimal(precision, *scale)) }
         },
         _ => polars_bail!(opq = sign, dtype),
     }

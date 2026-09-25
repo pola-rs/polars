@@ -998,11 +998,13 @@ pub fn cast(
         #[cfg(all(feature = "dtype-decimal", feature = "dtype-i128"))]
         (Decimal(_, _), Int128) => decimal_to_integer_dyn::<i128>(array),
         #[cfg(all(feature = "dtype-decimal", feature = "dtype-f16"))]
-        (Decimal(_, _), Float16) => decimal_to_float_dyn::<pf16>(array),
+        (Decimal(_, _), Float16) => decimal_to_float_dyn(array, |x, s| {
+            pf16::from(crate::decimal::dec128_to_f64(x, s))
+        }),
         #[cfg(feature = "dtype-decimal")]
-        (Decimal(_, _), Float32) => decimal_to_float_dyn::<f32>(array),
+        (Decimal(_, _), Float32) => decimal_to_float_dyn(array, crate::decimal::dec128_to_f32),
         #[cfg(feature = "dtype-decimal")]
-        (Decimal(_, _), Float64) => decimal_to_float_dyn::<f64>(array),
+        (Decimal(_, _), Float64) => decimal_to_float_dyn(array, crate::decimal::dec128_to_f64),
         #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), Decimal(to_p, to_s)) => decimal_to_decimal_dyn(array, *to_p, *to_s),
         // end numeric casts

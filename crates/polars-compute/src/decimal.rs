@@ -536,11 +536,44 @@ pub fn i128_to_dec128(x: i128, p: usize, s: usize) -> Option<i128> {
     dec128_fits(r, p).then_some(r)
 }
 
-/// Converts a Decimal128 with the given scale to a f64.
+/// Converts a Decimal128 with the given scale to the nearest f64.
 #[inline]
 pub fn dec128_to_f64(x: i128, s: usize) -> f64 {
-    // TODO: correctly rounded result. This rounds multiple times.
-    x as f64 / POW10_F64[s]
+    // With an exact numerator and denominator, the one division rounds correctly.
+    if s == 0 || (x.unsigned_abs() <= 1 << 53 && s <= 22) {
+        return x as f64 / POW10_F64[s];
+    }
+    parse_dec128(x, s)
+}
+
+/// Converts a Decimal128 with the given scale to the nearest f32.
+#[inline]
+pub fn dec128_to_f32(x: i128, s: usize) -> f32 {
+    if s == 0 {
+        return x as f32;
+    }
+    // Rounding the nearest f64 again is correct unless it is exactly halfway
+    // between two normal f32s: the true value then lies on the same side.
+    let q = dec128_to_f64(x, s);
+    if q.to_bits() & 0x1FFF_FFFF != 0x1000_0000 && q.abs() >= f32::MIN_POSITIVE as f64 {
+        return q as f32;
+    }
+    parse_dec128(x, s)
+}
+
+/// Rounds `x * 10^-s` once, through the correctly rounded float parser.
+#[cold]
+fn parse_dec128<F: std::str::FromStr>(x: i128, s: usize) -> F
+where
+    F::Err: std::fmt::Debug,
+{
+    use std::io::Write;
+
+    let mut buf = [0u8; 48];
+    let mut w = &mut buf[..];
+    write!(w, "{x}e-{s}").unwrap();
+    let len = 48 - w.len();
+    std::str::from_utf8(&buf[..len]).unwrap().parse().unwrap()
 }
 
 /// Converts a f64 to a Decimal128 with the given precision and scale, returning
@@ -986,6 +1019,43 @@ mod test {
 
     fn dec128_to_bigdecimal(x: i128, s: usize) -> BigDecimal {
         BigDecimal::from_bigint(BigInt::from(x), s as i64)
+    }
+
+    #[test]
+    fn test_dec128_to_float_is_correctly_rounded() {
+        let mut r = SmallRng::seed_from_u64(42);
+        let mut base: Vec<i128> = vec![0, 1, 9_728_340_843_400_927, (1 << 53) + 1, (1 << 24) + 1];
+        base.extend((0..39).map(|e| POW10_I128[e] - 1));
+        base.extend((0..64).map(|_| r.random::<u32>() as i128));
+        base.extend((0..64).map(|_| r.random::<u64>() as i128));
+        base.extend(
+            (0..64).map(|_| (r.random::<u128>() % POW10_I128[DEC128_MAX_PREC] as u128) as i128),
+        );
+        base.extend(base.clone().into_iter().map(|x| -x));
+        for &x in &base {
+            for s in 0..=DEC128_MAX_PREC {
+                let spelled = format!("{x}e-{s}");
+                assert_eq!(
+                    dec128_to_f64(x, s),
+                    spelled.parse::<f64>().unwrap(),
+                    "{spelled}"
+                );
+                assert_eq!(
+                    dec128_to_f32(x, s),
+                    spelled.parse::<f32>().unwrap(),
+                    "{spelled}"
+                );
+            }
+        }
+        // Dividing the rounded mantissa by 10^16 is one ULP off here.
+        assert_eq!(dec128_to_f64(9_728_340_843_400_927, 16), 0.9728340843400927);
+        // 1 + 2^-24 is halfway between two f32s and rounds to even. Just above it,
+        // the nearest f64 is that halfway point, so rounding it again is wrong.
+        assert_eq!(dec128_to_f32(1_000_000_059_604_644_775_390_625, 24), 1.0);
+        assert_eq!(
+            dec128_to_f32(1_000_000_059_604_644_775_390_625_000_001, 30),
+            1.0 + f32::EPSILON
+        );
     }
 
     static INTERESTING_SCALE_PREC: [usize; 13] = [0, 1, 2, 3, 5, 8, 11, 16, 21, 27, 32, 37, 38];
