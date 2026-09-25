@@ -142,6 +142,8 @@ struct Target {
     /// L: the input the other group keys come from.
     other_input: Node,
     other_keys: Vec<PlSmallStr>,
+    /// Whether a group key or a join above reads a column of L.
+    other_is_read: bool,
     /// Whether R is the join's left input.
     aggregate_is_left: bool,
     /// Name seen by the group by -> R column.
@@ -577,6 +579,7 @@ fn target_at(
                 aggregate_keys: right_keys,
                 other_input: *input_left,
                 other_keys: left_keys,
+                other_is_read: names.keys.iter().any(from_left) || !names.ancestor_keys.is_empty(),
                 aggregate_is_left: false,
                 from_aggregate: from_right,
             });
@@ -610,6 +613,7 @@ fn target_at(
                 aggregate_keys: left_keys,
                 other_input: *input_right,
                 other_keys: right_keys,
+                other_is_read: names.keys.iter().any(from_left) || !names.ancestor_keys.is_empty(),
                 aggregate_is_left: true,
                 from_aggregate: from_right,
             });
@@ -999,14 +1003,21 @@ fn gate_passes(
         aggregated_rows,
     );
     let rows_per_key = aggregated_rows / partial_groups.max(1.0);
+    // When nothing above reads L, the join only filters R's rows, or repeats them once per
+    // L row of their key. Without repeats, the partial aggregation saves no more than the
+    // probe, and costs at least as much as the group by it feeds, which has fewer keys.
+    let other_rows_per_key = other.rows_per_key();
     let passes = path_share >= MIN_MATCHED_SHARE
         && rows_per_key >= MIN_ROWS_PER_KEY
-        && aggregated_rows >= MIN_AGGREGATED_ROWS;
+        && aggregated_rows >= MIN_AGGREGATED_ROWS
+        && (target.other_is_read || other_rows_per_key >= MIN_ROWS_PER_KEY);
     if polars_config::config().verbose() {
         eprintln!(
             "eager aggregation: matched share {matched_share:.3}, kept above {keeps:.3?}, \
              groups per join key {extra_groups:.1}, rows per key {rows_per_key:.2}, \
-             aggregated rows {aggregated_rows:.0}: {}",
+             aggregated rows {aggregated_rows:.0}, other side read {}, \
+             other rows per key {other_rows_per_key:.2}: {}",
+            target.other_is_read,
             if passes { "gate passed" } else { "gate failed" }
         );
     }

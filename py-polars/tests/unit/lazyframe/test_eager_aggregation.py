@@ -389,8 +389,8 @@ def _only_key_1_matches(right: pl.LazyFrame, agg: pl.Expr) -> pl.LazyFrame:
 def test_eager_aggregation_decimal_sum_join_multiplicity(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    # R's 98 rows alone keep the sum small enough, but each R row meets 48 L rows. Summed
-    # per key first, the final sum would overflow; the original sums to 0.
+    # R's 98 rows alone keep the sum small enough, but each R row meets 48 L rows.
+    # Summed per key first, the final sum would overflow; the original sums to 0.
     dec = pl.Decimal(35, 0)
     big = Decimal("9e34")
     right = pl.LazyFrame(
@@ -474,9 +474,7 @@ def test_eager_aggregation_raising_cast_does_not_split(
     assert not _fired(on, off), on
 
 
-def _fires_for(
-    right: pl.LazyFrame, agg: pl.Expr, plmonkeypatch: PlMonkeyPatch
-) -> bool:
+def _fires_for(right: pl.LazyFrame, agg: pl.Expr, plmonkeypatch: PlMonkeyPatch) -> bool:
     lf = _left().join(right, on="k").group_by("g").agg(agg)
     return _fired(*_plans(lf, plmonkeypatch))
 
@@ -497,7 +495,9 @@ def test_eager_aggregation_decimal_sum_needs_a_row_bound(
         .select(pl.int_range(0, 100).alias("k"), pl.col("a"), pl.col("x"))
         .with_columns(pl.col("k") % 5)
     )
-    applied = right.group_by("k").map_groups(lambda df: df, schema=right.collect_schema())
+    applied = right.group_by("k").map_groups(
+        lambda df: df, schema=right.collect_schema()
+    )
     dynamic = (
         right.drop_nulls("k")
         .sort("k")
@@ -857,7 +857,9 @@ def test_eager_aggregation_gate_counts_partial_groups(
     rng = np.random.default_rng(0)
     n = 200_000
     left = _scan(
-        tmp_path, "left", pl.DataFrame({"k": np.arange(1_000), "g": np.arange(1_000) % 7})
+        tmp_path,
+        "left",
+        pl.DataFrame({"k": np.arange(1_000), "g": np.arange(1_000) % 7}),
     )
     right = _scan(
         tmp_path,
@@ -923,6 +925,43 @@ def test_eager_aggregation_gate_caps_filtered_group_keys(
     _plans(lf, plmonkeypatch, skip_gate=False, optimizations=_KEEP_JOIN_ORDER)
     err = capfd.readouterr().err
     assert f"groups per join key {groups}.0" in err, err
+
+
+def test_eager_aggregation_gate_needs_the_join_to_do_more_than_filter(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    # TPC-DS q53: every group key comes from R and L has one row per key, so the join
+    # only filters R and there is nothing for a partial aggregation to save.
+    n = 200_000
+    rng = np.random.default_rng(0)
+    right = _scan(
+        tmp_path,
+        "right",
+        pl.DataFrame(
+            {
+                "k": rng.integers(0, 100, n),
+                "g": rng.integers(0, 50, n),
+                "x": rng.integers(0, 100, n),
+            }
+        ),
+    )
+    keys = np.arange(100)
+    unique = _scan(tmp_path, "unique", pl.DataFrame({"k": keys, "name": keys % 7}))
+    repeated = _scan(
+        tmp_path, "repeated", pl.DataFrame({"k": np.repeat(keys, 3), "name": 0})
+    )
+    agg = pl.col("x").sum()
+    assert not _gate_fires(
+        unique.join(right, on="k").group_by("g").agg(agg), plmonkeypatch
+    )
+    # The join repeats R's rows.
+    assert _gate_fires(
+        repeated.join(right, on="k").group_by("g").agg(agg), plmonkeypatch
+    )
+    # A group key from L.
+    assert _gate_fires(
+        unique.join(right, on="k").group_by("g", "name").agg(agg), plmonkeypatch
+    )
 
 
 def test_eager_aggregation_gate_ignores_restrictions_an_outer_join_undoes(
@@ -994,7 +1033,8 @@ def test_eager_aggregation_int128_boundary_restrictions(
         {"k": [1, 2], "u": pl.Series([0, 1], dtype=pl.Int128), "x": [1, 2]}
     ).filter(restriction)
     lf = _left().join(right, on="k").group_by("g", "u").agg(pl.col("x").sum())
-    on, off = _plans(lf, plmonkeypatch, skip_gate=False)
+    # Planning with the gate on reads the restriction.
+    _plans(lf, plmonkeypatch, skip_gate=False)
     result, expected = _collect_both(lf, plmonkeypatch)
     assert_frame_equal(result.sort("g", "u"), expected.sort("g", "u"))
 
