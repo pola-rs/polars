@@ -7,6 +7,7 @@ import dis
 import inspect
 import re
 import sys
+import types
 import warnings
 from bisect import bisect_left
 from collections import defaultdict
@@ -103,7 +104,8 @@ class OpNames:
         }
     )
     LOAD_VALUES = frozenset(("LOAD_CONST", "LOAD_DEREF", "LOAD_FAST", "LOAD_GLOBAL"))
-    LOAD_ATTR = frozenset({"LOAD_METHOD", "LOAD_ATTR"})
+    LOAD_METHOD = frozenset({"LOAD_METHOD"})
+    LOAD_ATTR = frozenset({"LOAD_ATTR"}) | LOAD_METHOD
     LOAD = LOAD_VALUES | LOAD_ATTR
     SIMPLIFY_SPECIALIZED: ClassVar[dict[str, str]] = {
         "LOAD_COMMON_CONSTANT": "LOAD_CONST",
@@ -428,8 +430,22 @@ class BytecodeParser:
     @staticmethod
     def _get_param_name(function: Callable[[Any], Any]) -> str | None:
         """Return single function parameter name."""
+        if type(function) is types.FunctionType:
+            if (
+                not hasattr(function, "__signature__")
+                and not hasattr(function, "__wrapped__")
+                and not hasattr(function, "__text_signature__")
+            ):
+                code = function.__code__
+                n_params = (
+                    code.co_argcount
+                    + code.co_kwonlyargcount
+                    + bool(code.co_flags & inspect.CO_VARARGS)  # +1 for *args
+                    + bool(code.co_flags & inspect.CO_VARKEYWORDS)  # +1 for **kwargs
+                )
+                return code.co_varnames[0] if n_params == 1 else None
+
         try:
-            # note: we do not parse/handle functions with > 1 params
             sig = signature(function)
         except ValueError:
             return None
@@ -885,6 +901,13 @@ class InstructionTranslator:
         raise NotImplementedError(msg)
 
 
+# The first opcodes of the patterns matched by each rewrite rule...
+_START_METHOD_REWRITE = OpNames.LOAD_ATTR if _MIN_PY312 else OpNames.LOAD_METHOD
+_START_FUNCTION_REWRITE = frozenset(("LOAD_GLOBAL", "LOAD_DEREF"))
+_START_BUILTIN_REWRITE = frozenset(("LOAD_GLOBAL",))
+_START_ATTR_REWRITE = frozenset(("LOAD_FAST",))
+
+
 class RewrittenInstructions:
     """
     Standalone class that applies Instruction rewrite/filtering rules.
@@ -986,34 +1009,40 @@ class RewrittenInstructions:
         """
         Apply rewrite rules, potentially injecting synthetic operations.
 
-        Rules operate on the instruction stream and can examine/modify
-        it as needed, pushing updates into "updated_instructions" and
-        returning True/False to indicate if any changes were made.
+        Dispatch rewrite rules by first opcode. Rules operate on the instruction stream
+        and can examine/modify it as needed, pushing updates into "updated_instructions"
+        and returning True/False to indicate if any changes were made.
         """
         self._instructions = instructions
         updated_instructions: list[Instruction] = []
+        n = len(instructions)
         idx = 0
-        while idx < len(self._instructions):
-            inst, increment = self._instructions[idx], 1
-            if inst.opname not in OpNames.LOAD or not any(
-                (increment := map_rewrite(idx, updated_instructions))
-                for map_rewrite in (
-                    # add any other rewrite methods here
-                    self._rewrite_functions,
-                    self._rewrite_methods,
-                    self._rewrite_builtins,
-                    self._rewrite_attrs,
-                )
-            ):
+
+        while idx < n:
+            inst = instructions[idx]
+            opname = inst.opname
+            increment = 0
+            if opname in _START_FUNCTION_REWRITE:
+                increment = self._rewrite_functions(idx, updated_instructions)
+                if not increment and opname in _START_BUILTIN_REWRITE:
+                    increment = self._rewrite_builtins(idx, updated_instructions)
+            elif opname in _START_METHOD_REWRITE:
+                increment = self._rewrite_methods(idx, updated_instructions)
+            elif opname in _START_ATTR_REWRITE:
+                increment = self._rewrite_attrs(idx, updated_instructions)
+
+            if increment:
+                idx += increment
+            else:
                 updated_instructions.append(inst)
-            idx += increment or 1
+                idx += 1
         return updated_instructions
 
     def _rewrite_attrs(self, idx: int, updated_instructions: list[Instruction]) -> int:
         """Replace python attribute lookup with synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=[{"LOAD_FAST"}, {"LOAD_ATTR"}],
+            opnames=[_START_ATTR_REWRITE, {"LOAD_ATTR"}],
             argvals=[None, _PYTHON_ATTRS_MAP],
             is_attr=True,
         ):
@@ -1032,7 +1061,7 @@ class RewrittenInstructions:
         """Replace builtin function calls with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=[{"LOAD_GLOBAL"}, {"LOAD_FAST", "LOAD_CONST"}, OpNames.CALL],
+            opnames=[_START_BUILTIN_REWRITE, {"LOAD_FAST", "LOAD_CONST"}, OpNames.CALL],
             argvals=[_PYTHON_BUILTINS],
         ):
             inst1, inst2 = matching_instructions[:2]
@@ -1063,7 +1092,7 @@ class RewrittenInstructions:
 
                 opnames: list[AbstractSet[str]] = (
                     [
-                        {"LOAD_GLOBAL", "LOAD_DEREF"},
+                        _START_FUNCTION_REWRITE,
                         *function_kind["argument_1_opname"],
                         *function_kind["argument_1_unary_opname"],
                         *function_kind["argument_2_opname"],
@@ -1071,7 +1100,7 @@ class RewrittenInstructions:
                     ]
                     if check_globals
                     else [
-                        {"LOAD_GLOBAL", "LOAD_DEREF"},
+                        _START_FUNCTION_REWRITE,
                         *function_kind["module_opname"],
                         *function_kind["attribute_opname"],
                         *function_kind["argument_1_opname"],
@@ -1157,19 +1186,18 @@ class RewrittenInstructions:
         self, idx: int, updated_instructions: list[Instruction]
     ) -> int:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
-        LOAD_METHOD = OpNames.LOAD_ATTR if _MIN_PY312 else {"LOAD_METHOD"}
         if matching_instructions := (
             # method call with one arg, eg: "s.endswith('!')"
             self._matches(
                 idx,
-                opnames=[LOAD_METHOD, {"LOAD_CONST"}, OpNames.CALL],
+                opnames=[_START_METHOD_REWRITE, {"LOAD_CONST"}, OpNames.CALL],
                 argvals=[_PYTHON_METHODS_MAP],
             )
             or
             # method call with no arg, eg: "s.lower()"
             self._matches(
                 idx,
-                opnames=[LOAD_METHOD, OpNames.CALL],
+                opnames=[_START_METHOD_REWRITE, OpNames.CALL],
                 argvals=[_PYTHON_METHODS_MAP],
             )
         ):
@@ -1197,7 +1225,7 @@ class RewrittenInstructions:
             self._matches(
                 idx,
                 opnames=[
-                    LOAD_METHOD,
+                    _START_METHOD_REWRITE,
                     {"LOAD_CONST"},
                     {"LOAD_CONST"},
                     {"LOAD_CONST"},
@@ -1209,7 +1237,12 @@ class RewrittenInstructions:
             # method call with two args, eg: "s.replace('!','?')"
             self._matches(
                 idx,
-                opnames=[LOAD_METHOD, {"LOAD_CONST"}, {"LOAD_CONST"}, OpNames.CALL],
+                opnames=[
+                    _START_METHOD_REWRITE,
+                    {"LOAD_CONST"},
+                    {"LOAD_CONST"},
+                    OpNames.CALL,
+                ],
                 argvals=[_PYTHON_METHODS_MAP],
             )
         ):
