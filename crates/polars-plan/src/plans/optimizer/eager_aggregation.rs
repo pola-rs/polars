@@ -23,11 +23,12 @@ use recursive::recursive;
 use super::join_utils::unconstrained;
 use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::{
-    NodeStats, StatsCache, composite_key_domain, keeps_height, node_stats_with_cache,
+    NodeStats, Restriction, StatsCache, column_restriction, composite_key_domain, keeps_height,
+    node_stats_with_cache,
 };
 use crate::plans::{
     AExpr, AExprBuilder, ExprIR, IR, IRAggExpr, IRBuilder, IRFunctionExpr, JoinTypeOptionsIR,
-    LiteralValue, OutputName, ToFieldContext, aexpr_to_leaf_names_iter,
+    LiteralValue, MintermIter, OutputName, ToFieldContext, aexpr_to_leaf_names_iter,
 };
 use crate::prelude::{GroupbyOptions, JoinType, Operator};
 
@@ -849,6 +850,56 @@ fn key_origin(
     (node, name)
 }
 
+/// A cap on the distinct values of column `name` of `node`, from the restrictions on it in
+/// the filters and scan predicates it comes through. Column statistics do not narrow
+/// under a filter, so `y >= 2001 AND y <= 2002` is read here.
+fn filtered_value_count(
+    node: Node,
+    name: &PlSmallStr,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> Option<f64> {
+    let (mut origin, mut column) = key_origin(node, name, ir_arena, expr_arena);
+    let (mut lower, mut upper, mut values) = (None::<i128>, None::<i128>, None::<usize>);
+    loop {
+        let (predicate, input) = match ir_arena.get(origin) {
+            IR::Filter { input, predicate } => (predicate.node(), Some(*input)),
+            IR::Scan {
+                predicate: Some(predicate),
+                ..
+            } => (predicate.node(), None),
+            _ => break,
+        };
+        for conjunct in MintermIter::new(predicate, expr_arena) {
+            match column_restriction(conjunct, expr_arena) {
+                Some((restricted, Restriction::Range(low, high))) if *restricted == column => {
+                    lower = lower.max(low);
+                    upper = match (upper, high) {
+                        (Some(a), Some(b)) => Some(a.min(b)),
+                        (a, b) => a.or(b),
+                    };
+                },
+                Some((restricted, Restriction::Values(count))) if *restricted == column => {
+                    values = Some(values.map_or(count, |v| v.min(count)));
+                },
+                _ => {},
+            }
+        }
+        let Some(input) = input else {
+            break;
+        };
+        (origin, column) = key_origin(input, &column, ir_arena, expr_arena);
+    }
+    let width = lower
+        .zip(upper)
+        .map(|(low, high)| (high - low + 1).max(0) as f64);
+    let values = values.map(|count| count as f64);
+    match (width, values) {
+        (Some(width), Some(values)) => Some(width.min(values)),
+        (width, values) => width.or(values),
+    }
+}
+
 /// Whether the rewrite is expected to pay off.
 fn gate_passes(
     target: &Target,
@@ -902,14 +953,18 @@ fn gate_passes(
 
     // Group keys that are R columns split each join key into more partial groups.
     let extra_keys = &target.partial_keys[target.aggregate_keys.len()..];
-    let extra_groups =
-        match node_stats_with_cache(target.aggregate_input, ir_arena, expr_arena, cache) {
-            Some(stats) => extra_keys
-                .iter()
-                .map(|key| stats.key_distinct_estimate(key))
-                .product::<Option<f64>>(),
-            None => None,
-        };
+    let stats = node_stats_with_cache(target.aggregate_input, ir_arena, expr_arena, cache);
+    let extra_groups = extra_keys
+        .iter()
+        .map(|key| {
+            let estimate = stats.as_ref().and_then(|s| s.key_distinct_estimate(key));
+            let filtered = filtered_value_count(target.aggregate_input, key, ir_arena, expr_arena);
+            match (estimate, filtered) {
+                (Some(estimate), Some(filtered)) => Some(estimate.min(filtered)),
+                (estimate, filtered) => estimate.or(filtered),
+            }
+        })
+        .product::<Option<f64>>();
     let Some(extra_groups) = extra_groups else {
         if polars_config::config().verbose() {
             eprintln!("eager aggregation: no statistics for the other partial keys: gate failed");
@@ -931,7 +986,8 @@ fn gate_passes(
     if polars_config::config().verbose() {
         eprintln!(
             "eager aggregation: matched share {matched_share:.3}, kept above {keeps:.3?}, \
-             rows per key {rows_per_key:.2}, aggregated rows {aggregated_rows:.0}: {}",
+             groups per join key {extra_groups:.1}, rows per key {rows_per_key:.2}, \
+             aggregated rows {aggregated_rows:.0}: {}",
             if passes { "gate passed" } else { "gate failed" }
         );
     }

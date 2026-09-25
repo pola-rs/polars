@@ -879,6 +879,52 @@ def test_eager_aggregation_gate_counts_partial_groups(
     assert not _gate_fires(joined.group_by("g", "row").agg(agg), plmonkeypatch)
 
 
+@pytest.mark.parametrize(
+    ("restriction", "groups"),
+    [
+        ((pl.col("year") >= 2001) & (pl.col("year") <= 2002), 2),
+        (pl.col("year").is_between(2001, 2003, closed="left"), 2),
+        ((pl.col("year") == 2001) | (pl.col("year") == 2005), 2),
+        (pl.col("year").is_in([2001, 2002, 2003]), 3),
+    ],
+)
+def test_eager_aggregation_gate_caps_filtered_group_keys(
+    restriction: pl.Expr,
+    groups: int,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # A filtered group key from a dimension joined into R, as the year in TPC-DS q04:
+    # its column statistics still cover every year.
+    rng = np.random.default_rng(0)
+    n = 200_000
+    fact = _scan(
+        tmp_path,
+        "fact",
+        pl.DataFrame(
+            {
+                "k": rng.integers(0, 1_000, n),
+                "dk": rng.integers(0, 3_000, n),
+                "x": rng.integers(0, 100, n),
+            }
+        ),
+    )
+    dim = _scan(
+        tmp_path,
+        "dim",
+        pl.DataFrame({"d_dk": np.arange(3_000), "year": 1900 + np.arange(3_000) // 15}),
+    )
+    left = _scan(tmp_path, "left", pl.DataFrame({"k": np.arange(1_000), "g": "a"}))
+    r = fact.join(dim.filter(restriction), left_on="dk", right_on="d_dk")
+    lf = left.join(r, on="k").group_by("g", "year").agg(pl.col("x").sum())
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    _plans(lf, plmonkeypatch, skip_gate=False, optimizations=_KEEP_JOIN_ORDER)
+    err = capfd.readouterr().err
+    assert f"groups per join key {groups}.0" in err, err
+
+
 # Join ordering may move a join from above the target into its other input.
 _KEEP_JOIN_ORDER = pl.QueryOptFlags(join_order=False)
 
