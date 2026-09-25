@@ -1047,6 +1047,7 @@ fn aggregate_input(
 }
 
 /// A copy of `node` in R's column names, if every column it reads is an R column.
+#[recursive]
 fn renamed_to_aggregate(
     node: Node,
     expr_arena: &mut Arena<AExpr>,
