@@ -740,35 +740,17 @@ pub(super) fn decimal_arith(
     op: polars_plan::dsl::DecimalArithOp,
     scale: usize,
 ) -> PolarsResult<Column> {
+    use polars_core::series::arithmetic::coerce_lhs_rhs_numeric_op;
     use polars_plan::dsl::DecimalArithOp;
 
-    let len = s[0].len().max(s[1].len());
-    let to_decimal = |c: &Column| {
-        let s = c.as_materialized_series_maintain_scalar();
-        if s.dtype().is_integer() {
-            s.strict_cast(&DataType::Decimal(
-                polars_compute::decimal::DEC128_MAX_PREC,
-                0,
-            ))
-        } else {
-            Ok(s)
-        }
-    };
-    let lhs = to_decimal(&s[0])?;
-    let rhs = to_decimal(&s[1])?;
-    let (l, r) = (lhs.decimal()?, rhs.decimal()?);
-    let out = match op {
-        DecimalArithOp::Mul => l.mul_with_scale(r, scale)?,
-        DecimalArithOp::Div => l.div_with_scale(r, scale)?,
-    };
-    let out = out
-        .into_series()
-        .with_name(s[0].name().clone())
-        .into_column();
-    Ok(if out.len() == len {
-        out
-    } else {
-        out.new_from_index(0, len)
+    s[0].try_apply_broadcasting_binary_elementwise(&s[1], |lhs, rhs| {
+        let (l, r) = coerce_lhs_rhs_numeric_op(lhs, rhs)?;
+        let (l, r) = (l.decimal()?, r.decimal()?);
+        let out = match op {
+            DecimalArithOp::Mul => l.mul_with_scale(r, scale)?,
+            DecimalArithOp::Div => l.div_with_scale(r, scale)?,
+        };
+        Ok(out.into_series().with_name(lhs.name().clone()))
     })
 }
 

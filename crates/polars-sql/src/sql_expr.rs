@@ -1862,9 +1862,9 @@ pub(crate) fn resolve_compound_identifier(
 }
 
 /// `lhs <op> rhs` with SQL semantics, resolved once the operand dtypes are known
-/// (see [`SqlBinaryOp`]).
+/// (see [`SqlFunction`]).
 fn sql_binary(lhs: Expr, op: SqlBinaryOp, rhs: Expr) -> Expr {
-    lhs.map_binary(FunctionExpr::SqlBinary(op), rhs)
+    lhs.map_binary(FunctionExpr::Sql(SqlFunction::Binary(op)), rhs)
 }
 
 fn parse_numeric_literal(s: &str, negate: bool) -> PolarsResult<AnyValue<'static>> {

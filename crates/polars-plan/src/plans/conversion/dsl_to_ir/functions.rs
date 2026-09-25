@@ -1002,20 +1002,12 @@ pub(super) fn convert_functions(
         F::Round { decimals, mode } => I::Round { decimals, mode },
         #[cfg(feature = "dtype-decimal")]
         F::DecimalArith { op, scale } => I::DecimalArith { op, scale },
-        F::SqlBinary(op) => match sql_decimal_arith(op, &e, ctx)? {
-            Some(function) => function,
-            None => {
-                let operator = match op {
-                    SqlBinaryOp::Mul => Operator::Multiply,
-                    SqlBinaryOp::Div => Operator::TrueDivide,
-                };
-                let node = ctx.arena.add(AExpr::BinaryExpr {
-                    left: e[0].node(),
-                    op: operator,
-                    right: e[1].node(),
-                });
-                return Ok((node, e[0].output_name().clone()));
-            },
+        F::Sql(function) => {
+            let output_name = e[0].output_name().clone();
+            return Ok((
+                super::sql::lower_sql_function(function, e, ctx)?,
+                output_name,
+            ));
         },
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => I::RoundSF { digits },
@@ -1377,51 +1369,4 @@ pub(super) fn convert_functions(
         options,
     };
     Ok((ctx.arena.add(ae_function), output_name))
-}
-
-/// SQL `*` and `/` of exact numerics (decimal or integer, at least one decimal): `*` keeps
-/// scale `s1 + s2` as the SQL standard requires, and `/` uses scale `max(s1, s2, 6)`,
-/// instead of the `max(s1, s2)` of the expression API. `None` for ordinary arithmetic.
-fn sql_decimal_arith(
-    op: SqlBinaryOp,
-    e: &[ExprIR],
-    ctx: &mut ExprToIRContext,
-) -> PolarsResult<Option<IRFunctionExpr>> {
-    #[cfg(feature = "dtype-decimal")]
-    {
-        let exact_scale = |dt: &DataType| match dt {
-            DataType::Decimal(_, s) => Some((*s, true)),
-            dt if dt.is_integer() || matches!(dt, DataType::Unknown(UnknownKind::Int(_))) => {
-                Some((0, false))
-            },
-            _ => None,
-        };
-        let left = exact_scale(e[0].dtype(ctx.schema, ctx.arena)?);
-        let right = exact_scale(e[1].dtype(ctx.schema, ctx.arena)?);
-        let (Some((s1, dec1)), Some((s2, dec2))) = (left, right) else {
-            return Ok(None);
-        };
-        if !(dec1 || dec2) {
-            return Ok(None);
-        }
-        let max_prec = polars_compute::decimal::DEC128_MAX_PREC;
-        let (op, scale) = match op {
-            SqlBinaryOp::Mul => {
-                let scale = s1 + s2;
-                polars_ensure!(
-                    scale <= max_prec,
-                    InvalidOperation: "numeric value out of range: multiplication result scale {} exceeds {}",
-                    scale, max_prec
-                );
-                (DecimalArithOp::Mul, scale)
-            },
-            SqlBinaryOp::Div => (DecimalArithOp::Div, s1.max(s2).max(6)),
-        };
-        Ok(Some(IRFunctionExpr::DecimalArith { op, scale }))
-    }
-    #[cfg(not(feature = "dtype-decimal"))]
-    {
-        let _ = (op, e, ctx);
-        Ok(None)
-    }
 }
