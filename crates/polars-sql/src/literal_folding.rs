@@ -29,7 +29,7 @@ fn precision_of(mantissa: i128, scale: usize) -> usize {
 }
 
 /// Parse an `<exact numeric literal>` spelling without rounding; `None` if it isn't one,
-/// or it needs more than 38 digits (it is then read as an approximate literal).
+/// or it needs more than 38 digits (the caller then raises).
 pub(crate) fn parse_exact_literal(s: &str) -> Option<ExactLiteral> {
     let (int_part, frac_part) = s.split_once('.').unwrap_or((s, ""));
     if int_part.is_empty() && frac_part.is_empty()

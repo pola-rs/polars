@@ -1963,7 +1963,7 @@ pub(crate) fn decimal_literal(expr: &Expr) -> Option<(i128, usize, usize)> {
 }
 
 pub(crate) fn decimal_literal_to_f64(expr: &Expr) -> Option<f64> {
-    decimal_literal(expr).map(|(v, _, s)| format!("{v}e-{s}").parse().unwrap())
+    decimal_literal(expr).map(|(v, _, s)| polars_compute::decimal::dec128_to_f64(v, s))
 }
 
 /// A decimal literal as a dynamic float literal.

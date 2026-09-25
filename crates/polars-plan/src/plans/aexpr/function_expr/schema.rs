@@ -350,8 +350,8 @@ impl IRFunctionExpr {
                     op.name(),
                 )?
                 .with_dtype(DataType::Decimal(DEC128_MAX_PREC, *scale)),
-            // Decimals (with integers at scale 0) keep the larger scale; other numerics
-            // their supertype.
+            // With a decimal, the remainder keeps the larger scale (integers are scale 0)
+            // and the quotient is an integer; other numerics keep their supertype.
             TruncArith(op) => {
                 let args = mapper.args();
                 match (args[0].dtype(), args[1].dtype()) {

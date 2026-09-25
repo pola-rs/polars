@@ -740,15 +740,22 @@ pub(super) fn trunc_arith(
     s: &mut [Column],
     op: polars_plan::dsl::TruncArithOp,
 ) -> PolarsResult<Column> {
+    s[0].try_apply_broadcasting_binary_elementwise(&s[1], |lhs, rhs| {
+        trunc_arith_series(lhs, rhs, op).map(|out| out.with_name(lhs.name().clone()))
+    })
+}
+
+fn trunc_arith_series(
+    lhs: &Series,
+    rhs: &Series,
+    op: polars_plan::dsl::TruncArithOp,
+) -> PolarsResult<Series> {
     use polars_plan::dsl::TruncArithOp;
 
-    let len = s[0].len().max(s[1].len());
-    let lhs = s[0].as_materialized_series_maintain_scalar();
-    let rhs = s[1].as_materialized_series_maintain_scalar();
-    let out = if lhs.dtype().is_decimal() || rhs.dtype().is_decimal() {
+    Ok(if lhs.dtype().is_decimal() || rhs.dtype().is_decimal() {
         #[cfg(feature = "dtype-decimal")]
         {
-            let (l, r) = polars_core::series::arithmetic::coerce_lhs_rhs_numeric_op(&lhs, &rhs)?;
+            let (l, r) = polars_core::series::arithmetic::coerce_lhs_rhs_numeric_op(lhs, rhs)?;
             let (l, r) = (l.decimal()?, r.decimal()?);
             match op {
                 TruncArithOp::Rem => l.rem_with(r, false)?,
@@ -783,12 +790,6 @@ pub(super) fn trunc_arith(
             },
             dt => polars_bail!(InvalidOperation: "{} is not supported for {}", op.name(), dt),
         }
-    };
-    let out = out.with_name(s[0].name().clone()).into_column();
-    Ok(if out.len() == len {
-        out
-    } else {
-        out.new_from_index(0, len)
     })
 }
 
