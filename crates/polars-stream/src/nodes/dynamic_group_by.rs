@@ -66,6 +66,7 @@ impl DynamicGroupBy {
             include_boundaries,
             closed_window,
             start_by,
+            placement,
         } = options;
 
         polars_ensure!(!every.negative(), ComputeError: "'every' argument must be positive");
@@ -90,6 +91,7 @@ impl DynamicGroupBy {
             space.tz().cloned(),
             include_boundaries || matches!(label, Label::Left),
             include_boundaries || matches!(label, Label::Right),
+            placement,
         );
 
         let (slice_offset, slice_length) = slice.unwrap_or((0, IdxSize::MAX));
@@ -282,7 +284,7 @@ impl ComputeNode for DynamicGroupBy {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
-        if self.slice_length == 0 {
+        if self.slice_length == 0 || self.windower.is_done() {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
             std::mem::take(&mut self.buf_df);
@@ -416,6 +418,7 @@ impl ComputeNode for DynamicGroupBy {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = recv.recv().await
                 && self.slice_length > 0
+                && !self.windower.is_done()
             {
                 let (sf, seq, source_token, wait_token) = morsel.into_inner();
                 let df = sf.into_df().await;

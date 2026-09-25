@@ -34,6 +34,7 @@ pub trait PolarsTemporalGroupby {
         options: &RollingGroupOptionsIR,
     ) -> PolarsResult<(Column, GroupPositions)>;
 
+    /// Returns: time_keys, keys, groupsproxy.
     fn group_by_dynamic(
         &self,
         group_by: Option<GroupsSlice>,
@@ -129,7 +130,12 @@ impl Wrap<&DataFrame> {
         options: &DynamicGroupOptionsIR,
         tu: TimeUnit,
     ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
+        let placement = options.placement;
         polars_ensure!(!options.every.negative, ComputeError: "'every' argument must be positive");
+        polars_ensure!(
+            group_by.is_none() || placement.is_none(),
+            InvalidOperation: "a dynamic window placement is not supported together with group_by keys"
+        );
         if dt.is_empty() {
             let mut bounds = vec![];
             if options.include_boundaries {
@@ -206,6 +212,7 @@ impl Wrap<&DataFrame> {
                     include_lower_bound,
                     include_upper_bound,
                     options.start_by,
+                    placement,
                 )?;
 
                 PolarsResult::Ok((
@@ -247,6 +254,7 @@ impl Wrap<&DataFrame> {
                 include_lower_bound,
                 include_upper_bound,
                 options.start_by,
+                placement,
             )?;
             update_bounds(lower, upper);
             let monotonic = slice_groups_are_monotonic(&groups);

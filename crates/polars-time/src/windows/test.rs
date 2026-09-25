@@ -122,6 +122,7 @@ fn test_groups_large_interval() {
         false,
         false,
         Default::default(),
+        None,
     )
     .unwrap();
     assert_eq!(groups.len(), 4);
@@ -138,6 +139,7 @@ fn test_groups_large_interval() {
         false,
         false,
         Default::default(),
+        None,
     )
     .unwrap();
     assert_eq!(groups.len(), 3);
@@ -151,6 +153,7 @@ fn test_groups_large_interval() {
         false,
         false,
         Default::default(),
+        None,
     )
     .unwrap();
     assert_eq!(groups.len(), 3);
@@ -231,6 +234,7 @@ fn test_boundaries() {
         true,
         true,
         Default::default(),
+        None,
     )
     .unwrap();
 
@@ -334,6 +338,7 @@ fn test_boundaries() {
         false,
         false,
         Default::default(),
+        None,
     )
     .unwrap();
     assert_eq!(groups[0], [0, 2]); // 00:00:00 -> 00:30:00
@@ -350,6 +355,7 @@ fn test_boundaries() {
         false,
         false,
         Default::default(),
+        None,
     )
     .unwrap();
     assert_eq!(groups[0], [0, 1]); // (2021-12-15 23:30, 2021-12-16 00:00]
@@ -367,6 +373,7 @@ fn test_boundaries() {
         false,
         false,
         Default::default(),
+        None,
     )
     .unwrap();
     assert_eq!(groups[0], [1, 1]); // 00:00:00 -> 00:30:00
@@ -425,6 +432,7 @@ fn test_boundaries_2() {
         true,
         true,
         Default::default(),
+        None,
     )
     .unwrap();
 
@@ -554,6 +562,7 @@ fn test_boundaries_ms() {
         true,
         true,
         Default::default(),
+        None,
     )
     .unwrap();
 
@@ -657,6 +666,7 @@ fn test_boundaries_ms() {
         false,
         false,
         Default::default(),
+        None,
     )
     .unwrap();
     assert_eq!(groups[0], [0, 2]); // 00:00:00 -> 00:30:00
@@ -673,6 +683,7 @@ fn test_boundaries_ms() {
         false,
         false,
         Default::default(),
+        None,
     )
     .unwrap();
     assert_eq!(groups[0], [0, 1]); // (2021-12-15 23:30, 2021-12-16 00:00]
@@ -690,6 +701,7 @@ fn test_boundaries_ms() {
         false,
         false,
         Default::default(),
+        None,
     )
     .unwrap();
     assert_eq!(groups[0], [1, 1]); // 00:00:00 -> 00:30:00
@@ -854,6 +866,7 @@ fn test_end_membership() {
         false,
         false,
         Default::default(),
+        None,
     )
     .unwrap();
     assert_eq!(groups[0], [0, 1]);
@@ -879,6 +892,7 @@ fn test_group_by_windows_membership_2791() {
         false,
         false,
         Default::default(),
+        None,
     )
     .unwrap();
     assert_eq!(groups[0], [0, 2]);
@@ -903,6 +917,7 @@ fn test_group_by_windows_duplicates_2931() {
         false,
         false,
         Default::default(),
+        None,
     )
     .unwrap();
     assert_eq!(groups, [[0, 1], [1, 2], [3, 2]]);
@@ -940,7 +955,86 @@ fn test_group_by_windows_offsets_3776() {
         false,
         false,
         Default::default(),
+        None,
     )
     .unwrap();
     assert_eq!(groups, [[0, 1], [1, 1], [2, 1]]);
+}
+
+#[test]
+fn test_group_by_windows_placement_range_edges() {
+    use polars_defs::time::group_by::{DynamicWindowPlacement, IndexRange, StartBy};
+
+    let hour = 3_600_000_000_000i64;
+    let ts: Vec<i64> = (0..48).map(|i| i * hour).collect();
+    let w = Window::new(
+        Duration::parse("4h"),
+        Duration::parse("4h"),
+        Duration::from_nsecs(0),
+    );
+    let tu = TimeUnit::Nanoseconds;
+    let closed = ClosedWindow::Left;
+    let run = |placement| {
+        group_by_windows(
+            w,
+            &ts,
+            closed,
+            tu,
+            &None,
+            true,
+            false,
+            StartBy::WindowBound,
+            placement,
+        )
+        .unwrap()
+    };
+    let (all, all_lower, _) = run(None);
+    assert_eq!(all.len(), 12);
+
+    // An unbounded range with the natural origin is the unplaced result.
+    let (g, l, _) = run(Some(DynamicWindowPlacement {
+        origin: 0,
+        start_range: IndexRange::ALL,
+    }));
+    assert_eq!((g, l), (all.clone(), all_lower.clone()));
+
+    // An origin on the same grid, far before the data, gives the same windows.
+    let (g, l, _) = run(Some(DynamicWindowPlacement {
+        origin: -1000 * 4 * hour,
+        start_range: IndexRange::ALL,
+    }));
+    assert_eq!((g, l), (all.clone(), all_lower.clone()));
+
+    // Range ends exactly on window starts, and just inside them.
+    let (_, l, _) = run(Some(DynamicWindowPlacement {
+        origin: 0,
+        start_range: IndexRange::new(8 * hour, Some(16 * hour)),
+    }));
+    assert_eq!(l, vec![8 * hour, 12 * hour]);
+    let (_, l, _) = run(Some(DynamicWindowPlacement {
+        origin: 0,
+        start_range: IndexRange::new(8 * hour + 1, Some(16 * hour + 1)),
+    }));
+    assert_eq!(l, vec![12 * hour, 16 * hour]);
+
+    // A range far past the data, and the fast-forward to a range far ahead of the origin.
+    let (g, _, _) = run(Some(DynamicWindowPlacement {
+        origin: 0,
+        start_range: IndexRange::new(1000 * hour, None),
+    }));
+    assert!(g.is_empty());
+    let (g, l, _) = run(Some(DynamicWindowPlacement {
+        origin: -100_000 * 4 * hour,
+        start_range: IndexRange::new(40 * hour, None),
+    }));
+    assert_eq!(l, vec![40 * hour, 44 * hour]);
+    assert_eq!(g.as_slice(), &[[40, 4], [44, 4]]);
+
+    // An origin after the first rows drops them.
+    let (g, l, _) = run(Some(DynamicWindowPlacement {
+        origin: 6 * hour,
+        start_range: IndexRange::new(i64::MIN, Some(10 * hour + 1)),
+    }));
+    assert_eq!(l, vec![6 * hour, 10 * hour]);
+    assert_eq!(g.as_slice(), &[[6, 4], [10, 4]]);
 }

@@ -662,6 +662,7 @@ fn visualize_plan_rec(
                 include_boundaries,
                 closed_window,
                 start_by,
+                placement,
             } = options;
             let mut s = String::new();
             let f = &mut s;
@@ -691,6 +692,10 @@ fn visualize_plan_rec(
                     <&'static str>::from(closed_window)
                 )
                 .unwrap();
+            }
+            if let Some(placement) = placement {
+                write!(f, "origin: {}\\n", placement.origin).unwrap();
+                write!(f, "start_range: {:?}\\n", placement.start_range).unwrap();
             }
             if let Some((offset, length)) = slice {
                 write!(f, "slice: {offset}, {length}\\n").unwrap();
