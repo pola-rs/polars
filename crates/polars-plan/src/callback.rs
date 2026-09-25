@@ -300,3 +300,18 @@ impl<Args: PlanCallbackArgs, Out: PlanCallbackOut> PlanCallback<Args, Out> {
         Self::Rust(SpecialEq::new(Arc::new(f) as _))
     }
 }
+
+impl<Args, Out> PlanCallback<Args, Out> {
+    /// Hash a function pointer:
+    pub fn hash_location<H: std::hash::Hasher>(&self, state: &mut H) {
+        use std::hash::Hash;
+
+        match self {
+            #[cfg(feature = "python")]
+            // Hash the Python object rather than the `Arc`, as equality also compares the
+            // Python objects.
+            Self::Python(f) => f.as_ptr().hash(state),
+            Self::Rust(f) => Arc::as_ptr(f).cast::<()>().hash(state),
+        }
+    }
+}

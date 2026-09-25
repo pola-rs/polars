@@ -1246,22 +1246,32 @@ class Expr(metaclass=_Meta):
 
         Examples
         --------
-        >>> def to_float_if_necessary(expr: pl.Expr, dtype: pl.DataType) -> pl.Expr:
-        ...     return expr if dtype.is_float() else expr.cast(pl.Float64)
+        Cast integer and string columns to float,
+        but leave the other columns as-is.
+
+        >>> def to_float_if_possible(expr: pl.Expr, dtype: pl.DataType) -> pl.Expr:
+        ...     if dtype.is_integer() or dtype == pl.String:
+        ...         return expr.cast(pl.Float64)
+        ...     return expr
         >>> df = pl.DataFrame(
-        ...     {"a": [1.0, 2.0], "b": ["1.0", "2.5"], "c": [2.0, 3.0]},
-        ...     schema={"a": pl.Float64, "b": pl.String, "c": pl.Float32},
+        ...     {"a": [1, 2], "b": ["1.0", "2.5"], "c": [2.0, 3.0], "d": [[1], [2, 3]]},
+        ...     schema={
+        ...         "a": pl.Int64,
+        ...         "b": pl.String,
+        ...         "c": pl.Float32,
+        ...         "d": pl.List(pl.Int64),
+        ...     },
         ... )
-        >>> df.select(pl.all().pipe_with_dtype(to_float_if_necessary))
-        shape: (2, 3)
-        ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
-        │ --- ┆ --- ┆ --- │
-        │ f64 ┆ f64 ┆ f32 │
-        ╞═════╪═════╪═════╡
-        │ 1.0 ┆ 1.0 ┆ 2.0 │
-        │ 2.0 ┆ 2.5 ┆ 3.0 │
-        └─────┴─────┴─────┘
+        >>> df.select(pl.all().pipe_with_dtype(to_float_if_possible))
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ c   ┆ d         │
+        │ --- ┆ --- ┆ --- ┆ ---       │
+        │ f64 ┆ f64 ┆ f32 ┆ list[i64] │
+        ╞═════╪═════╪═════╪═══════════╡
+        │ 1.0 ┆ 1.0 ┆ 2.0 ┆ [1]       │
+        │ 2.0 ┆ 2.5 ┆ 3.0 ┆ [2, 3]    │
+        └─────┴─────┴─────┴───────────┘
         """
 
         def wrapper(exprs_and_dtypes: Any) -> PyExpr:
