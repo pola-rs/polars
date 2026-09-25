@@ -10,7 +10,6 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use std::ops::Div;
 
-use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::chunked_array::temporal::string::StringMethods;
 use polars_core::prelude::*;
 use polars_defs::time::duration::Duration;
@@ -652,44 +651,6 @@ impl SQLExprVisitor<'_> {
         expr.to_field(schema).ok().map(|fld| fld.dtype)
     }
 
-    /// Exact `*` and `/` when both sides are exact numerics and at least one is a decimal:
-    /// the result scale is `s1 + s2` for `*` (SQL standard) and `max(s1, s2, 6)` for `/`,
-    /// instead of the `max(s1, s2)` of the expression API.
-    fn decimal_arith(
-        &self,
-        lhs: &Expr,
-        op: DecimalArithOp,
-        rhs: &Expr,
-    ) -> PolarsResult<Option<Expr>> {
-        let exact_scale = |e: &Expr| match self.expr_dtype(e)? {
-            DataType::Decimal(_, s) => Some((s, true)),
-            dt if dt.is_integer() => Some((0, false)),
-            _ => None,
-        };
-        let (Some((s1, dec1)), Some((s2, dec2))) = (exact_scale(lhs), exact_scale(rhs)) else {
-            return Ok(None);
-        };
-        if !(dec1 || dec2) {
-            return Ok(None);
-        }
-        let scale = match op {
-            DecimalArithOp::Mul => {
-                let scale = s1 + s2;
-                polars_ensure!(
-                    scale <= DEC128_MAX_PREC,
-                    SQLInterface: "numeric value out of range: multiplication result scale {} exceeds {}",
-                    scale, DEC128_MAX_PREC
-                );
-                scale
-            },
-            DecimalArithOp::Div => s1.max(s2).max(6),
-        };
-        Ok(Some(lhs.clone().map_binary(
-            FunctionExpr::DecimalArith { op, scale },
-            rhs.clone(),
-        )))
-    }
-
     /// `date + n` / `date - n` shift the date by a whole number of days.
     fn date_day_offset(&self, lhs: &Expr, op: &SQLBinaryOperator, rhs: &Expr) -> Option<Expr> {
         let subtract = matches!(op, SQLBinaryOperator::Minus);
@@ -779,17 +740,6 @@ impl SQLExprVisitor<'_> {
             return Ok(expr);
         }
 
-        let decimal_op = match op {
-            SQLBinaryOperator::Multiply => Some(DecimalArithOp::Mul),
-            SQLBinaryOperator::Divide => Some(DecimalArithOp::Div),
-            _ => None,
-        };
-        if let Some(decimal_op) = decimal_op
-            && let Some(expr) = self.decimal_arith(&lhs, decimal_op, &rhs)?
-        {
-            return Ok(expr);
-        }
-
         Ok(match op {
             // ----
             // Bitwise operators
@@ -818,11 +768,11 @@ impl SQLExprVisitor<'_> {
             // ----
             // Mathematical operators
             // ----
-            SQLBinaryOperator::Divide => lhs.true_div(rhs),  // "x / y"
+            SQLBinaryOperator::Divide => sql_binary(lhs, SqlBinaryOp::Div, rhs),  // "x / y"
             SQLBinaryOperator::DuckIntegerDivide => lhs.floor_div(rhs).cast(DataType::Int64),  // "x // y"
             SQLBinaryOperator::Minus => lhs - rhs,  // "x - y"
             SQLBinaryOperator::Modulo => lhs % rhs,  // "x % y"
-            SQLBinaryOperator::Multiply => lhs * rhs,  // "x * y"
+            SQLBinaryOperator::Multiply => sql_binary(lhs, SqlBinaryOp::Mul, rhs),  // "x * y"
             SQLBinaryOperator::Plus => lhs + rhs,  // "x + y"
 
             // ----
@@ -1909,6 +1859,12 @@ pub(crate) fn resolve_compound_identifier(
         column = column.struct_().field_by_name(name);
     }
     Ok(vec![column])
+}
+
+/// `lhs <op> rhs` with SQL semantics, resolved once the operand dtypes are known
+/// (see [`SqlBinaryOp`]).
+fn sql_binary(lhs: Expr, op: SqlBinaryOp, rhs: Expr) -> Expr {
+    lhs.map_binary(FunctionExpr::SqlBinary(op), rhs)
 }
 
 fn parse_numeric_literal(s: &str, negate: bool) -> PolarsResult<AnyValue<'static>> {

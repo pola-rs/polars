@@ -109,6 +109,25 @@ impl Display for DecimalArithOp {
     }
 }
 
+/// A binary operator with SQL semantics, lowered to an ordinary expression once the
+/// operand dtypes are known.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+pub enum SqlBinaryOp {
+    Mul,
+    Div,
+}
+
+impl SqlBinaryOp {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Mul => "sql_mul",
+            Self::Div => "sql_div",
+        }
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug)]
@@ -308,6 +327,8 @@ pub enum FunctionExpr {
         op: DecimalArithOp,
         scale: usize,
     },
+    /// See [`SqlBinaryOp`].
+    SqlBinary(SqlBinaryOp),
     #[cfg(feature = "round_series")]
     RoundSF {
         digits: i32,
@@ -679,6 +700,7 @@ impl Hash for FunctionExpr {
                 op.hash(state);
                 scale.hash(state);
             },
+            SqlBinary(op) => op.hash(state),
             #[cfg(feature = "round_series")]
             FunctionExpr::RoundSF { digits } => digits.hash(state),
             #[cfg(feature = "round_series")]
@@ -934,6 +956,7 @@ impl Display for FunctionExpr {
             Round { .. } => "round",
             #[cfg(feature = "dtype-decimal")]
             DecimalArith { op, .. } => return Display::fmt(op, f),
+            SqlBinary(op) => op.name(),
             #[cfg(feature = "round_series")]
             RoundSF { .. } => "round_sig_figs",
             #[cfg(feature = "round_series")]

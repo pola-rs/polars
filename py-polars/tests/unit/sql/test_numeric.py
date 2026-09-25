@@ -401,10 +401,11 @@ def test_decimal_mul_div_out_of_range() -> None:
         {"a": [D("1")], "big": [D(10**33)]},
         schema={"a": pl.Decimal(38, 20), "big": pl.Decimal(38, 0)},
     )
-    with pytest.raises(
-        SQLInterfaceError, match="multiplication result scale 40 exceeds 38"
-    ):
+    match = "multiplication result scale 40 exceeds 38"
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
         df.sql("SELECT a * a FROM self")
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
+        df.select(pl.sql_expr("a * a"))
     # 10^33 at scale 6 loses leading digits
     with pytest.raises(pl.exceptions.ComputeError, match="overflow in decimal"):
         df.sql("SELECT big / 1 FROM self")
@@ -479,3 +480,28 @@ def test_decimal_ratio_comparison_uses_division_scale() -> None:
         """
     )
     assert res["g"].to_list() == [1]
+
+
+@pytest.mark.parametrize("expr", ["a * b", "a / b", "a / i", "i / a", "a * f", "i / i"])
+def test_decimal_mul_div_same_for_every_sql_entry_point(expr: str) -> None:
+    # the result scale depends on the operand types, which `sql_expr` only learns when
+    # the expression is planned against a frame
+    df = pl.DataFrame(
+        {"a": [D("0.05")], "b": [D("0.07")], "i": [3], "f": [2.0]},
+        schema={
+            "a": pl.Decimal(7, 2),
+            "b": pl.Decimal(7, 2),
+            "i": pl.Int64,
+            "f": pl.Float64,
+        },
+    )
+    expected = df.sql(f"SELECT {expr} AS x FROM self")
+    assert_frame_equal(df.select(pl.sql_expr(f"{expr} AS x")), expected)
+    assert_frame_equal(
+        df.lazy().select(pl.sql_expr(expr).alias("x")).collect(), expected
+    )
+    assert (
+        pl.SQLContext(t=df)
+        .execute(f"SELECT {expr} AS x FROM t", eager=True)
+        .equals(expected)
+    )
