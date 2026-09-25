@@ -1023,8 +1023,12 @@ fn aggregate_input(
         input
     };
     let ctx = ToFieldContext::new(expr_arena, aggregate_schema);
-    let bound = value_bound(input, expr_arena, &ctx)?;
     let dtype = expr_arena.get(input).to_dtype(&ctx).ok()?;
+    // A plain column of any dtype cannot raise.
+    let bound = match expr_arena.get(input) {
+        AExpr::Column(_) => dtype_bound(&dtype),
+        _ => value_bound(input, expr_arena, &ctx)?,
+    };
     allowed(&dtype, bound, summed_rows).then_some(input)
 }
 
@@ -1032,16 +1036,26 @@ fn aggregate_input(
 /// inside the 38 digits Decimal holds, so the f64 rounding of the bounds cannot matter.
 const DECIMAL_LIMIT: f64 = 1e37;
 
-/// The largest absolute value `node` can take, if evaluating it cannot raise.
+/// The largest absolute value `node` can take, if it is integer, float or Decimal
+/// arithmetic that cannot raise.
 ///
 /// Integer and float arithmetic never raises. Decimal arithmetic raises on overflow and on
-/// division by zero, so each Decimal operation must stay below `DECIMAL_LIMIT` and may only
-/// divide by a nonzero literal. A Decimal multiply, divide or cast rounds to its scale,
-/// which can add up to one unit of it.
+/// division by zero, so each Decimal operation, and each input it converts to its dtype,
+/// must stay below `DECIMAL_LIMIT`, and it may only divide by a nonzero literal. A Decimal
+/// multiply, divide or cast rounds to its scale, which can add up to one unit of it. A
+/// non-strict cast gives null for a value its dtype cannot hold, except from float to
+/// Decimal, which can raise.
 fn value_bound(node: Node, expr_arena: &Arena<AExpr>, ctx: &ToFieldContext) -> Option<f64> {
     let ae = expr_arena.get(node);
     let dtype = ae.to_dtype(ctx).ok()?.materialize_unknown(true).ok()?;
-    let rounding = decimal_scale(&dtype).map_or(0.0, |scale| 10f64.powi(-(scale as i32)));
+    if !(dtype.is_integer() || dtype.is_float() || dtype.is_decimal()) {
+        return None;
+    }
+    let scale = decimal_scale(&dtype);
+    let fits = |bound: f64| {
+        scale.is_none_or(|scale| bound * 10f64.powi(scale as i32) <= DECIMAL_LIMIT)
+    };
+    let rounding = scale.map_or(0.0, |scale| 10f64.powi(-(scale as i32)));
     let bound = match ae {
         AExpr::Column(_) => return Some(dtype_bound(&dtype)),
         AExpr::Literal(value) => {
@@ -1050,10 +1064,13 @@ fn value_bound(node: Node, expr_arena: &Arena<AExpr>, ctx: &ToFieldContext) -> O
         AExpr::BinaryExpr { left, op, right } => {
             let left_bound = value_bound(*left, expr_arena, ctx)?;
             let right_bound = value_bound(*right, expr_arena, ctx)?;
+            if !(fits(left_bound) && fits(right_bound)) {
+                return None;
+            }
             match op {
                 Operator::Plus | Operator::Minus => left_bound + right_bound,
                 Operator::Multiply => left_bound * right_bound + rounding,
-                Operator::TrueDivide if decimal_scale(&dtype).is_some() => {
+                Operator::TrueDivide if scale.is_some() => {
                     let AExpr::Literal(divisor) = expr_arena.get(*right) else {
                         return None;
                     };
@@ -1067,16 +1084,18 @@ fn value_bound(node: Node, expr_arena: &Arena<AExpr>, ctx: &ToFieldContext) -> O
                 _ => return None,
             }
         },
-        // A non-strict cast gives null for a value its dtype cannot hold.
         AExpr::Cast { expr, .. } => {
+            let input_dtype = expr_arena.get(*expr).to_dtype(ctx).ok()?;
+            if scale.is_some() && input_dtype.is_float() {
+                return None;
+            }
             (value_bound(*expr, expr_arena, ctx)? + rounding).min(dtype_bound(&dtype))
         },
         _ => return None,
     };
-    match decimal_scale(&dtype) {
-        Some(scale) => (bound * 10f64.powi(scale as i32) <= DECIMAL_LIMIT).then_some(bound),
-        None if dtype.is_integer() || dtype.is_float() => Some(dtype_bound(&dtype)),
-        None => None,
+    match scale {
+        Some(_) => fits(bound).then_some(bound),
+        None => Some(dtype_bound(&dtype)),
     }
 }
 
@@ -1134,12 +1153,15 @@ fn row_bound(
             let (left, right) = (bound(*input_left)?, bound(*input_right)?);
             match options.args.how {
                 JoinType::Inner | JoinType::Cross => Some(left * right),
+                #[cfg(feature = "iejoin")]
+                JoinType::IEJoin | JoinType::Range => Some(left * right),
                 JoinType::Left => Some(left * right.max(1.0)),
                 JoinType::Right => Some(left.max(1.0) * right),
                 JoinType::Full => Some((left + 1.0) * (right + 1.0)),
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Semi | JoinType::Anti => Some(left),
-                _ => None,
+                #[cfg(feature = "asof_join")]
+                JoinType::AsOf(_) => Some(left),
             }
         },
         IR::Filter { input, .. }

@@ -447,6 +447,27 @@ def test_eager_aggregation_decimal_large_intermediate(
     assert result["s"].to_list() == [Decimal(10)]
 
 
+@pytest.mark.parametrize(
+    ("values", "agg"),
+    [
+        # A non-strict float to Decimal cast still raises when the value has too many
+        # digits.
+        ([1.0, 1e6], pl.col("x").cast(pl.Decimal(7, 2), strict=False).sum()),
+        # These casts are not supported and raise.
+        ([[1], [2]], pl.col("x").cast(pl.Int64, strict=False).sum()),
+        ([b"1", b"2"], pl.col("x").cast(pl.Int64, strict=False).sum()),
+    ],
+    ids=["float_to_decimal", "list_to_int", "binary_to_int"],
+)
+def test_eager_aggregation_raising_cast_does_not_split(
+    values: list[Any], agg: pl.Expr, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    right = pl.LazyFrame({"k": [1, 2], "x": values})
+    lf = _only_key_1_matches(right, agg)
+    on, off = _plans(lf, plmonkeypatch)
+    assert not _fired(on, off), on
+
+
 def _fires_for(
     right: pl.LazyFrame, agg: pl.Expr, plmonkeypatch: PlMonkeyPatch
 ) -> bool:
