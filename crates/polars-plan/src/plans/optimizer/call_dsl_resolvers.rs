@@ -44,7 +44,7 @@ pub(super) fn call_dsl_resolvers(
 
     #[cfg(feature = "python")]
     let py_lazyframe_resolve_threadpool: LazyCell<Arc<PyThreadPool>> =
-        LazyCell::new(|| Arc::new(PyThreadPool::new()));
+        LazyCell::new(|| Arc::new(PyThreadPool::new_scan_resolve_thread_pool()));
 
     let expr_arena_ref = &*expr_arena;
 

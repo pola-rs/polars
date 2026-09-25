@@ -552,7 +552,7 @@ async fn start_reader_impl(
         let mut external_predicate_cols = Vec::with_capacity(
             hive_parts.as_ref().map_or(0, |x| x.df().width())
                 + extra_ops_post.include_file_paths.is_some() as usize
-                + projection_to_reader.num_missing_columns().unwrap(),
+                + projection_to_reader.num_missing_columns().unwrap_or(0),
         );
 
         if let Some(hp) = &hive_parts {
@@ -560,7 +560,7 @@ async fn start_reader_impl(
                 hp.df()
                     .columns()
                     .iter()
-                    .filter(|c| predicate.reads_column(c.name()))
+                    .filter(|c| predicate.scan_io_predicate.reads_column(c.name()))
                     .map(|c| {
                         (
                             c.name().clone(),
@@ -593,7 +593,7 @@ async fn start_reader_impl(
         {
             match &missing_columns_policy {
                 MissingColumnsPolicy::Insert => {
-                    if predicate.reads_column(missing_col_name) {
+                    if predicate.scan_io_predicate.reads_column(missing_col_name) {
                         external_predicate_cols.push((
                             missing_col_name.clone(),
                             default_value
@@ -606,7 +606,9 @@ async fn start_reader_impl(
             }
         }
 
-        predicate.set_external_constant_columns(external_predicate_cols);
+        predicate
+            .scan_io_predicate
+            .set_external_constant_columns(external_predicate_cols);
     }
 
     let begin_read_args = BeginReadArgs {

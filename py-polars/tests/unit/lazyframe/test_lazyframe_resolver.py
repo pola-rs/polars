@@ -75,7 +75,8 @@ class InMemoryLazyFrameResolver(LazyFrameResolver):  # noqa: D101
 
         return lf
 
-    def cse_eq(self, other: InMemoryLazyFrameResolver) -> bool:
+    def cse_eq(self, other: object) -> bool:
+        assert isinstance(other, InMemoryLazyFrameResolver)
         return self.cse_eq_f(self, other)
 
 

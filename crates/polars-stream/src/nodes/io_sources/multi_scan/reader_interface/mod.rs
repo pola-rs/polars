@@ -12,11 +12,11 @@ use polars_async::primitives::oneshot_channel;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
-use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
+use crate::nodes::io_sources::multi_scan::components::predicate::Predicate;
 pub use crate::nodes::io_sources::multi_scan::components::projection::Projection;
 
 /// Interface to read a single file
@@ -31,8 +31,6 @@ pub trait FileReader: Send + Sync {
     /// the order in which the files are read.
     ///
     /// This can be used e.g. to synchronize data fetches such that they happen in order.
-    ///
-    /// This is not guaranteed to always to be called.
     fn prepare_read(&mut self) -> PolarsResult<()> {
         Ok(())
     }
@@ -139,7 +137,7 @@ pub struct BeginReadArgs {
 
     pub row_index: Option<RowIndex>,
     pub pre_slice: Option<Slice>,
-    pub predicate: Option<ScanIOPredicate>,
+    pub predicate: Option<Predicate>,
 
     /// User-configured policy for when datatypes do not match.
     ///

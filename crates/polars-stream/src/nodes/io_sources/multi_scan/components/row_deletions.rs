@@ -168,7 +168,7 @@ impl DeletionFilesProvider {
                             .enumerate()
                             .map(|(deletion_file_idx, path)| {
                                 let source = ScanSource::Path(path.clone());
-                                let mut reader = reader_builder.build_file_reader(
+                                let reader = reader_builder.build_file_reader(
                                     source,
                                     cloud_options.clone(),
                                     deletion_file_idx,
@@ -187,6 +187,7 @@ impl DeletionFilesProvider {
                                 AbortOnDropHandle::new(executor::spawn(
                                     TaskPriority::Low,
                                     async move {
+                                        let mut reader = reader?;
                                         reader.initialize().await?;
                                         PolarsResult::Ok(reader)
                                     },
@@ -204,34 +205,34 @@ impl DeletionFilesProvider {
                         // should be fine as the size of the data should not be too big.
 
                         Box::pin(async move {
-                            let handles = file_readers
-                                .into_iter()
-                                .map(|init_fut| {
-                                    use crate::nodes::io_sources::multi_scan::components::projection::Projection;
+                            let mut handles = Vec::with_capacity(file_readers.len());
 
-                                    let begin_read_args = BeginReadArgs {
-                                        projection: Projection::Plain(projected_schema.clone()),
-                                        row_index: None,
-                                        pre_slice: None,
-                                        predicate: None,
-                                        cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
-                                        extra_columns_policy: ExtraColumnsPolicy::Raise,
-                                        missing_columns_policy: MissingColumnsPolicy::Raise,
-                                        num_pipelines,
-                                        disable_morsel_split: false,
-                                        last_morsel_pipelines: 1,
-                                        callbacks: FileReaderCallbacks {
-                                            file_schema_tx: None,
-                                            n_rows_in_file_tx: None,
-                                            row_position_on_end_tx: None,
-                                        },
+                            for init_fut in file_readers {
+                                let mut reader = init_fut.await?;
+
+                                use crate::nodes::io_sources::multi_scan::components::projection::Projection;
+
+                                let begin_read_args = BeginReadArgs {
+                                    projection: Projection::Plain(projected_schema.clone()),
+                                    row_index: None,
+                                    pre_slice: None,
+                                    predicate: None,
+                                    cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
+                                    extra_columns_policy: ExtraColumnsPolicy::Raise,
+                                    missing_columns_policy: MissingColumnsPolicy::Raise,
+                                    num_pipelines,
+                                    disable_morsel_split: false,
+                                    last_morsel_pipelines: 1,
+                                    callbacks: FileReaderCallbacks {
+                                        file_schema_tx: None,
+                                        n_rows_in_file_tx: None,
+                                        row_position_on_end_tx: None,
+                                    },
                                 };
 
-                                AbortOnDropHandle::new(executor::spawn(
+                                handles.push(AbortOnDropHandle::new(executor::spawn(
                                     TaskPriority::Low,
                                     async move {
-                                        let mut reader = init_fut.await?;
-
                                         let (mut rx, handle) =
                                             reader.begin_read(begin_read_args)?;
 
@@ -268,9 +269,8 @@ impl DeletionFilesProvider {
 
                                         PolarsResult::Ok((positions_col, max_idx))
                                     },
-                                ))
-                            })
-                            .collect::<Vec<_>>();
+                                )))
+                            }
 
                             let mut position_columns = Vec::with_capacity(handles.len());
                             let mut filter_mask_len: usize = 0;
@@ -624,6 +624,10 @@ impl ExternalFilterMask {
             Self::Iceberg { mask } => mask.len(),
             Self::DeltaDeletionVector { mask } => mask.len(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
