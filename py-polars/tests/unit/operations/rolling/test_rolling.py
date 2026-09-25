@@ -1993,6 +1993,28 @@ def test_rolling_weighted_median_all_zero_weights_in_centered_window_29170() -> 
     assert_series_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    "op",
+    [
+        "rolling_max",
+        "rolling_mean",
+        "rolling_median",
+        "rolling_min",
+        "rolling_std",
+        "rolling_sum",
+        "rolling_var",
+    ],
+)
+def test_rolling_negative_weights_29249(op: str) -> None:
+    s = pl.Series("a", [1.0, 2.0, 3.0, 4.0])
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="Weights for rolling windows need to be positive",
+    ):
+        getattr(s, op)(window_size=3, min_samples=1, weights=[5.0, 1.0, -1.0])
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("with_nulls", [True, False])
 def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
