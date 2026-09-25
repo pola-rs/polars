@@ -42,12 +42,12 @@ impl InternalCloudWriter {
             let path_ref = &self.path;
             let multipart = PlMultipartUpload::new(
                 self.store
-                    .exec_with_rebuild_retry_on_err(|s| async move {
+                    .exec_with_rebuild_retry_on_err(path_ref, |s| async move {
                         s.put_multipart_opts(path_ref, object_store::PutMultipartOptions::default())
                             .await
                     })
                     .await?,
-                self.store.error_context(),
+                self.store.error_context().with_path(self.path.clone()),
             );
 
             let (error_capture, error_handle) = ErrorCapture::new();

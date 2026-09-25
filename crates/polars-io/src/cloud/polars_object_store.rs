@@ -24,17 +24,23 @@ use crate::pl_async::{
 
 #[derive(Debug)]
 pub struct PolarsObjectStoreError {
+    /// The URI the store is rooted at, e.g. `s3://bucket`.
     pub base_url: PlRefPath,
+    /// The object the failing operation addressed, relative to the store.
+    pub path: Option<Path>,
     pub source: object_store::Error,
 }
 
 impl Display for PolarsObjectStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "object-store error: {} (path: {})",
-            self.source, self.base_url
-        )
+        write!(f, "object-store error: {} (path: ", self.source)?;
+
+        let base_url = &self.base_url;
+
+        match &self.path {
+            Some(path) if !path.as_ref().is_empty() => write!(f, "{base_url}/{path})"),
+            _ => write!(f, "{base_url})"),
+        }
     }
 }
 
@@ -111,8 +117,10 @@ mod inner {
     use std::sync::Arc;
 
     use object_store::ObjectStore;
+    use object_store::path::Path;
     use polars_core::config;
     use polars_error::{PolarsError, PolarsResult};
+    use polars_utils::pl_path::PlRefPath;
     use polars_utils::relaxed_cell::RelaxedCell;
 
     use crate::cloud::concurrency::{ConcurrencyController, ControllerConfig};
@@ -123,6 +131,7 @@ mod inner {
     struct Inner {
         store: tokio::sync::RwLock<Arc<dyn ObjectStore>>,
         builder: PolarsObjectStoreBuilder,
+        base_url: PlRefPath,
         rebuilt: RelaxedCell<bool>,
         suffix_range_supported: RelaxedCell<bool>,
     }
@@ -142,6 +151,7 @@ mod inner {
         pub(crate) fn new_from_inner(
             store: Arc<dyn ObjectStore>,
             builder: PolarsObjectStoreBuilder,
+            base_url: PlRefPath,
         ) -> Self {
             let initial_store = store.clone();
             // Azure accepts only `bytes=start-` and `bytes=start-end`, so never attempt a
@@ -151,6 +161,7 @@ mod inner {
                 inner: Arc::new(Inner {
                     store: tokio::sync::RwLock::new(store),
                     builder,
+                    base_url,
                     rebuilt: RelaxedCell::from(false),
                     suffix_range_supported,
                 }),
@@ -215,6 +226,7 @@ mod inner {
 
         pub async fn exec_with_rebuild_retry_on_err<'s, 'f, Fn, Fut, O>(
             &'s self,
+            path: &Path,
             mut func: Fn,
         ) -> PolarsResult<O>
         where
@@ -237,13 +249,20 @@ mod inner {
                 );
             }
 
-            let store = self
-                .rebuild_inner(&store)
-                .await
-                .map_err(|e| e.wrap_msg(|e| format!("{e}; original error: {orig_err}")))?;
+            let store = self.rebuild_inner(&store).await.map_err(|e| {
+                let orig_err = self
+                    .error_context()
+                    .with_path(path.clone())
+                    .attach_err_info(orig_err);
+                e.wrap_msg(|e| format!("{e}; original error: {orig_err}"))
+            })?;
 
             func(Cow::Owned(store)).await.map_err(|e| {
-                let e: PolarsError = self.error_context().attach_err_info(e).into();
+                let e: PolarsError = self
+                    .error_context()
+                    .with_path(path.clone())
+                    .attach_err_info(e)
+                    .into();
 
                 if self.inner.builder.is_azure()
                     && std::env::var("POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY").as_deref()
@@ -273,26 +292,36 @@ and use the storage account keys from Azure CLI to authenticate"
         }
 
         pub fn error_context(&self) -> ObjectStoreErrorContext {
-            ObjectStoreErrorContext::new(self.inner.builder.path().clone())
+            ObjectStoreErrorContext::new(self.inner.base_url.clone())
         }
     }
 }
 
 #[derive(Clone)]
 pub struct ObjectStoreErrorContext {
-    path: PlRefPath,
+    base_url: PlRefPath,
+    path: Option<Path>,
 }
 
 impl ObjectStoreErrorContext {
-    pub fn new(path: PlRefPath) -> Self {
-        Self { path }
+    pub fn new(base_url: PlRefPath) -> Self {
+        Self {
+            base_url,
+            path: None,
+        }
+    }
+
+    pub fn with_path(mut self, path: Path) -> Self {
+        self.path = Some(path);
+        self
     }
 
     pub fn attach_err_info(self, err: object_store::Error) -> PolarsObjectStoreError {
-        let ObjectStoreErrorContext { path } = self;
+        let ObjectStoreErrorContext { base_url, path } = self;
 
         PolarsObjectStoreError {
-            base_url: path,
+            base_url,
+            path,
             source: err,
         }
     }
@@ -344,7 +373,7 @@ impl PolarsObjectStore {
                     .io_metrics()
                     .record_io_read(
                         bytes_req,
-                        self.exec_with_rebuild_retry_on_err(|s| async move {
+                        self.exec_with_rebuild_retry_on_err(path, |s| async move {
                             let t0 = Instant::now();
                             let response = s
                                 .get_opts(
@@ -422,7 +451,7 @@ impl PolarsObjectStore {
                     .io_metrics()
                     .record_io_read(
                         range.len() as u64,
-                        self.exec_with_rebuild_retry_on_err(|s| async move {
+                        self.exec_with_rebuild_retry_on_err(path, |s| async move {
                             s.get_range(path, range.start as u64..range.end as u64)
                                 .await
                         }),
@@ -643,7 +672,7 @@ impl PolarsObjectStore {
         let io_session = metrics.start_io_session();
 
         let out = self
-            .exec_with_rebuild_retry_on_err(|s| async move {
+            .exec_with_rebuild_retry_on_err(path, |s| async move {
                 let t0 = Instant::now();
                 let response = s
                     .get_opts(
@@ -705,7 +734,7 @@ impl PolarsObjectStore {
         path: &Path,
         controller: Option<&ConcurrencyController>,
     ) -> PolarsResult<ObjectMeta> {
-        self.exec_with_rebuild_retry_on_err(|s| {
+        self.exec_with_rebuild_retry_on_err(path, |s| {
             async move {
                 let t0 = Instant::now();
                 let head_result = self.io_metrics().record_io_read(0, s.head(path)).await;

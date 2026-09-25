@@ -115,7 +115,10 @@ fn err_missing_feature(
 }
 
 /// Get the key of a url for object store registration.
-fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> PolarsResult<Vec<u8>> {
+fn base_url_and_creds_to_key(
+    base_url: &PlPath,
+    options: Option<&CloudOptions>,
+) -> PolarsResult<Vec<u8>> {
     // We include credentials as they can expire, so users will send new credentials for the same url.
 
     #[cfg(feature = "cloud")]
@@ -154,14 +157,14 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Polar
         .transpose()?;
 
     let cache_key = CacheKey {
-        url_base: format_pl_smallstr!("{}", &path.as_str()[..path.authority_end_position()]),
+        url_base: format_pl_smallstr!("{}", base_url.as_str()),
         cloud_options,
     };
 
     verbose_print_sensitive(|| {
         format!(
-            "object store cache key for path at '{}': {:?}",
-            path, cache_key
+            "object store cache key for store at '{}': {:?}",
+            base_url, cache_key
         )
     });
 
@@ -223,8 +226,10 @@ pub(crate) struct PolarsObjectStoreBuilder {
 }
 
 impl PolarsObjectStoreBuilder {
-    pub(super) fn path(&self) -> &PlRefPath {
-        &self.path
+    /// Scheme and authority of `path`, e.g. `s3://bucket`. Empty for paths without a
+    /// scheme.
+    fn authority(&self) -> PlRefPath {
+        self.path.sliced(0..self.path.authority_end_position())
     }
 
     pub(crate) fn rate_limit_signal(&self) -> Option<PacingBudget> {
@@ -336,7 +341,8 @@ impl PolarsObjectStoreBuilder {
             },
             CloudType::Hf => panic!("impl error: unresolved hf:// path"),
             CloudType::Ext(scheme) => {
-                let prefix = &self.path.as_str()[..self.path.authority_end_position()];
+                let authority = self.authority();
+                let prefix = authority.as_str();
 
                 verbose_print_sensitive(|| {
                     format!(
@@ -369,11 +375,18 @@ impl PolarsObjectStoreBuilder {
 
     /// Note: Use `build_impl` for a non-caching version.
     pub(super) async fn build(self) -> PolarsResult<PolarsObjectStore> {
-        let opt_cache_key = match self.cloud_type {
+        // `base_url` is the URI `build_impl` roots the store at, which object paths are
+        // reported relative to. A store rooted at its authority serves every object
+        // under it, which is what makes it shareable between paths.
+        let (base_url, opt_cache_key) = match self.cloud_type {
             CloudType::Aws | CloudType::Gcp | CloudType::Azure => {
-                Some(path_and_creds_to_key(&self.path, self.options.as_ref())?)
+                let base_url = self.authority();
+                let key = base_url_and_creds_to_key(&base_url, self.options.as_ref())?;
+
+                (base_url, Some(key))
             },
-            CloudType::File | CloudType::Http | CloudType::Hf => None,
+            CloudType::File => (self.authority(), None),
+            CloudType::Http | CloudType::Hf => (self.path.clone(), None),
             CloudType::Ext(scheme) => {
                 let registry = EXT_OBJECT_STORE_BUILDER_REGISTRY.read().unwrap();
                 let builder = registry.get(scheme).ok_or_else(|| {
@@ -386,12 +399,13 @@ impl PolarsObjectStoreBuilder {
                     )
                 })?;
 
+                let base_url = self.authority();
                 let key = match builder.stable_cache_key(&self.path, self.options.as_ref()) {
                     Some(key) => key,
-                    None => path_and_creds_to_key(&self.path, self.options.as_ref())?,
+                    None => base_url_and_creds_to_key(&base_url, self.options.as_ref())?,
                 };
 
-                Some(key)
+                (base_url, Some(key))
             },
         };
 
@@ -416,7 +430,7 @@ impl PolarsObjectStoreBuilder {
         };
 
         let store = self.build_impl(false).await?;
-        let store = PolarsObjectStore::new_from_inner(store, self);
+        let store = PolarsObjectStore::new_from_inner(store, self, base_url);
 
         if let Some(mut cache) = opt_cache_write_guard {
             // Clear the cache if we surpass a certain amount of buckets.
