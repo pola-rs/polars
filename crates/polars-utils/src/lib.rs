@@ -91,6 +91,8 @@ pub mod python_function;
 pub mod python_interns;
 #[cfg(feature = "python")]
 pub mod python_thread_pool;
+#[cfg(feature = "serde")]
+pub mod serde_float;
 #[cfg(feature = "sysinfo")]
 pub mod sys;
 
