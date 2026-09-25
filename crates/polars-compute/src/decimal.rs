@@ -722,7 +722,6 @@ fn i128_to_dec128_scaled(x: i128, s: usize, s_out: usize) -> Option<i128> {
     dec128_fits(r, DEC128_MAX_PREC).then_some(r)
 }
 
-#[inline]
 fn dec128_add_sub_scaled(
     l: i128,
     sl: usize,
@@ -778,6 +777,11 @@ fn dec128_add_sub_scaled(
 /// s_out rounded to nearest even, or None if it doesn't fit a Decimal128.
 #[inline]
 pub fn dec128_add_scaled(l: i128, sl: usize, r: i128, sr: usize, s_out: usize) -> Option<i128> {
+    if sl == sr && sr == s_out {
+        return l
+            .checked_add(r)
+            .filter(|x| dec128_fits(*x, DEC128_MAX_PREC));
+    }
     dec128_add_sub_scaled(l, sl, r, sr, s_out, false)
 }
 
@@ -786,6 +790,11 @@ pub fn dec128_add_scaled(l: i128, sl: usize, r: i128, sr: usize, s_out: usize) -
 /// a Decimal128.
 #[inline]
 pub fn dec128_sub_scaled(l: i128, sl: usize, r: i128, sr: usize, s_out: usize) -> Option<i128> {
+    if sl == sr && sr == s_out {
+        return l
+            .checked_sub(r)
+            .filter(|x| dec128_fits(*x, DEC128_MAX_PREC));
+    }
     dec128_add_sub_scaled(l, sl, r, sr, s_out, true)
 }
 
