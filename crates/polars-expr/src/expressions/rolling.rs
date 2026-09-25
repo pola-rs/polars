@@ -33,6 +33,7 @@ impl PhysicalExpr for RollingExpr {
                 period: self.period,
                 offset: self.offset,
                 closed_window: self.closed_window,
+                placement: None,
             };
             let groups_key = format!("{options:?}");
             let groups = {
@@ -58,6 +59,7 @@ impl PhysicalExpr for RollingExpr {
                 period: self.period,
                 offset: self.offset,
                 closed_window: self.closed_window,
+                placement: None,
             };
 
             let index_column = self.index_column.evaluate(df, state)?;

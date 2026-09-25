@@ -738,6 +738,7 @@ fn test_rolling_lookback() {
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
         None,
+        0..dates.len(),
     )
     .unwrap();
     assert_eq!(dates.len(), groups.len());
@@ -759,6 +760,7 @@ fn test_rolling_lookback() {
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
         None,
+        0..dates.len(),
     )
     .unwrap();
     assert_eq!(dates.len(), groups.len());
@@ -780,6 +782,7 @@ fn test_rolling_lookback() {
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
         None,
+        0..dates.len(),
     )
     .unwrap();
     assert_eq!(dates.len(), groups.len());
@@ -822,7 +825,10 @@ fn test_rolling_lookback() {
             closed_window,
             tu,
             None,
+            0,
+            None,
         )
+        .unwrap()
         .collect::<PolarsResult<Vec<_>>>()
         .unwrap();
         assert_eq!(g0, g1);

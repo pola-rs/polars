@@ -173,6 +173,17 @@ pub struct DynamicWindowPlacement {
     pub start_range: IndexRange,
 }
 
+/// Which rows of a rolling group-by produce an output row.
+///
+/// Set by a planner on the IR, never by the DSL. Rows outside the range still take part in
+/// the windows of the rows inside it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct RollingWindowPlacement {
+    /// Only rows whose index value lies in this range get a window.
+    pub owned_range: IndexRange,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -248,7 +259,8 @@ impl Default for DynamicGroupOptionsIR {
     }
 }
 
-/// [`RollingGroupOptions`] as the IR carries them.
+/// [`RollingGroupOptions`] as the IR carries them: the same fields plus the window placement
+/// a planner may set. The DSL never sets `placement`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RollingGroupOptionsIR {
@@ -256,6 +268,10 @@ pub struct RollingGroupOptionsIR {
     pub period: Duration,
     pub offset: Duration,
     pub closed_window: ClosedWindow,
+    /// Which rows get a window. `None` gives every row one.
+    ///
+    /// Only supported without group_by keys.
+    pub placement: Option<RollingWindowPlacement>,
 }
 
 impl From<RollingGroupOptions> for RollingGroupOptionsIR {
@@ -271,6 +287,7 @@ impl From<RollingGroupOptions> for RollingGroupOptionsIR {
             period,
             offset,
             closed_window,
+            placement: None,
         }
     }
 }

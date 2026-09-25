@@ -1147,6 +1147,7 @@ fn to_graph_rec<'a>(
             period,
             offset,
             closed,
+            placement,
             slice,
             aggs,
         } => {
@@ -1168,6 +1169,7 @@ fn to_graph_rec<'a>(
                     *period,
                     *offset,
                     *closed,
+                    *placement,
                     *slice,
                     aggs,
                 )?,

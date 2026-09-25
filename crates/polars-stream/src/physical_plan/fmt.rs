@@ -716,6 +716,7 @@ fn visualize_plan_rec(
             period,
             offset,
             closed,
+            placement,
             slice,
             aggs,
         } => {
@@ -725,6 +726,9 @@ fn visualize_plan_rec(
             write!(f, "index column: {index_column}\\n").unwrap();
             write!(f, "period: {period}, offset: {offset}\\n").unwrap();
             write!(f, "closed: {}\\n", <&'static str>::from(*closed)).unwrap();
+            if let Some(placement) = placement {
+                write!(f, "owned_range: {:?}\\n", placement.owned_range).unwrap();
+            }
             if let Some((offset, length)) = slice {
                 write!(f, "slice: {offset}, {length}\\n").unwrap();
             }

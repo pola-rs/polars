@@ -1,13 +1,15 @@
-//! A dynamic group-by whose window grid is placed on the IR, the way a distributed planner
-//! does per partition.
+//! A dynamic or rolling group-by whose windows are placed on the IR, the way a distributed
+//! planner does per partition.
 
 use polars_arrow::legacy::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_defs::time::duration::Duration;
 use polars_defs::time::group_by::{
-    ClosedWindow, DynamicGroupOptions, DynamicWindowPlacement, IndexRange, Label, StartBy,
+    ClosedWindow, DynamicGroupOptions, DynamicWindowPlacement, IndexRange, Label,
+    RollingGroupOptions, RollingWindowPlacement, StartBy,
 };
 use polars_plan::plans::IR;
+use polars_plan::plans::options::GroupbyOptionsIR;
 use polars_time::Window;
 use polars_utils::arena::Node;
 
@@ -22,6 +24,27 @@ fn collect_placed(
     placement: Option<DynamicWindowPlacement>,
     engine: Engine,
 ) -> PolarsResult<DataFrame> {
+    collect_with_options(lf, engine, |options| {
+        options.dynamic.as_mut().unwrap().placement = placement
+    })
+}
+
+/// Runs `lf` on `engine` with `placement` written into its single rolling `IR::GroupBy` node.
+fn collect_rolling_placed(
+    lf: LazyFrame,
+    placement: Option<RollingWindowPlacement>,
+    engine: Engine,
+) -> PolarsResult<DataFrame> {
+    collect_with_options(lf, engine, |options| {
+        options.rolling.as_mut().unwrap().placement = placement
+    })
+}
+
+fn collect_with_options(
+    lf: LazyFrame,
+    engine: Engine,
+    patch: impl Fn(&mut GroupbyOptionsIR),
+) -> PolarsResult<DataFrame> {
     let lf = match engine {
         Engine::Streaming => lf.with_streaming(true),
         _ => lf,
@@ -30,7 +53,7 @@ fn collect_placed(
     let mut group_by_nodes = 0;
     for i in 0..plan.lp_arena.len() {
         if let IR::GroupBy { options, .. } = plan.lp_arena.get_mut(Node(i)) {
-            Arc::make_mut(options).dynamic.as_mut().unwrap().placement = placement;
+            patch(Arc::make_mut(options));
             group_by_nodes += 1;
         }
     }
@@ -425,4 +448,155 @@ fn placement_with_slice_and_keys() {
         .group_by_dynamic(col("t"), [col("k")], options.clone())
         .agg(aggs());
     assert!(collect_placed(lf, Some(placement), Engine::InMemory).is_err());
+
+    let options = rolling_options("4h", "-4h", ClosedWindow::Right);
+    let placement = RollingWindowPlacement {
+        owned_range: IndexRange::new(8 * hour + 1, Some(210 * hour)),
+    };
+    check_slice(
+        || rolling_query(&df, "t", &options, &aggs()),
+        |lf, engine| collect_rolling_placed(lf, Some(placement), engine),
+    );
+    let lf = df
+        .clone()
+        .lazy()
+        .rolling(col("t"), [col("k")], options.clone())
+        .agg(aggs());
+    assert!(collect_rolling_placed(lf, Some(placement), Engine::InMemory).is_err());
+}
+
+fn rolling_query(
+    df: &DataFrame,
+    index: &str,
+    options: &RollingGroupOptions,
+    aggs: &[Expr],
+) -> LazyFrame {
+    source(df)
+        .rolling(col(index), [] as [Expr; 0], options.clone())
+        .agg(aggs)
+}
+
+fn rolling_options(period: &str, offset: &str, closed_window: ClosedWindow) -> RollingGroupOptions {
+    RollingGroupOptions {
+        index_column: "".into(),
+        period: Duration::parse(period),
+        offset: Duration::parse(offset),
+        closed_window,
+    }
+}
+
+/// The placements and inputs a planner would hand `parts` consecutive partitions of `df` for a
+/// rolling group-by: a partition owns the rows with values in `first..end` and reads every
+/// row that can fall in one of their windows.
+fn rolling_partitions(
+    df: &DataFrame,
+    index: &str,
+    options: &RollingGroupOptions,
+    parts: usize,
+) -> Vec<(DataFrame, RollingWindowPlacement)> {
+    let (values, tu, tz) = physical_index(df, index);
+    let tz = tz.map(|tz| tz.to_chrono().unwrap());
+    let len = values.len();
+    let part_len = len.div_ceil(parts);
+    let firsts: Vec<i64> = std::iter::once(i64::MIN)
+        .chain((part_len..len).step_by(part_len).map(|i| values[i]))
+        .collect();
+    let mut out = vec![];
+    for (i, &first) in firsts.iter().enumerate() {
+        let end = firsts.get(i + 1).copied();
+        let owned = IndexRange::new(first, end).row_range(&values);
+        let (first_row, last_row) = (values[owned.start], values[owned.end - 1]);
+        let lo = add(&options.offset, first_row, tu, tz.as_ref()).min(first_row);
+        let hi = add(
+            &options.period,
+            add(&options.offset, last_row, tu, tz.as_ref()),
+            tu,
+            tz.as_ref(),
+        )
+        .max(last_row);
+        let read_start = values.partition_point(|v| *v < lo);
+        let read_end = values.partition_point(|v| *v <= hi);
+        let placement = RollingWindowPlacement {
+            owned_range: IndexRange::new(first, end),
+        };
+        out.push((
+            df.slice(read_start as i64, read_end - read_start),
+            placement,
+        ));
+    }
+    out
+}
+
+fn check_rolling_partition_invariant(
+    df: &DataFrame,
+    index: &str,
+    options: RollingGroupOptions,
+    aggs: &[Expr],
+) {
+    let expected = rolling_query(df, index, &options, aggs).collect().unwrap();
+    for parts in [1, 2, 5] {
+        for engine in ENGINES {
+            let mut got: Option<DataFrame> = None;
+            for (input, placement) in rolling_partitions(df, index, &options, parts) {
+                let part = collect_rolling_placed(
+                    rolling_query(&input, index, &options, aggs),
+                    Some(placement),
+                    engine,
+                )
+                .unwrap();
+                got = Some(match got {
+                    None => part,
+                    Some(acc) => acc.vstack(&part).unwrap(),
+                });
+            }
+            let got = got.unwrap();
+            assert!(
+                got.equals_missing(&expected),
+                "{engine:?}, {parts} parts, {options:?}\n{got}\n{expected}"
+            );
+        }
+    }
+}
+
+#[test]
+fn rolling_partition_invariant() {
+    let hour = 3_600_000_000i64;
+    let df = datetime_frame(hourly_with_gaps(hour), TimeUnit::Microseconds, None);
+    for (period, offset) in [
+        ("3h", "-3h"),
+        ("5h", "0h"),
+        ("4h", "-7h"),
+        ("2h", "3h"),
+        ("1d", "-12h"),
+    ] {
+        for closed_window in [
+            ClosedWindow::Left,
+            ClosedWindow::Right,
+            ClosedWindow::Both,
+            ClosedWindow::None,
+        ] {
+            let options = rolling_options(period, offset, closed_window);
+            check_rolling_partition_invariant(&df, "t", options, &aggs());
+        }
+    }
+
+    // Amsterdam ends daylight saving on 2024-10-27 01:00 UTC.
+    let start = 1_729_900_800_000_000i64;
+    let values: Vec<i64> = (0..96).map(|i| start + i * hour / 2).collect();
+    let df = datetime_frame(values, TimeUnit::Microseconds, Some("Europe/Amsterdam"));
+    for (period, offset) in [("2h", "-2h"), ("1d", "-1d"), ("1d", "-12h")] {
+        let options = rolling_options(period, offset, ClosedWindow::Right);
+        check_rolling_partition_invariant(&df, "t", options, &aggs());
+    }
+
+    let ints: Vec<i64> = (0..50)
+        .chain((200..260).step_by(2))
+        .chain([260; 5])
+        .collect();
+    let x: Vec<i64> = (0..ints.len() as i64).collect();
+    let df = df!("t" => ints, "x" => x).unwrap();
+    for (period, offset) in [("5i", "-5i"), ("3i", "0i"), ("4i", "-2i")] {
+        let options = rolling_options(period, offset, ClosedWindow::Both);
+        check_rolling_partition_invariant(&df, "t", options, &aggs());
+    }
 }

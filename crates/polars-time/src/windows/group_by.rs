@@ -279,6 +279,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
 // window is completely behind t and t itself is not a member
 // ---------------t---
 //  [---]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn group_by_values_iter_window_behind_t(
     period: Duration,
     offset: Duration,
@@ -286,12 +287,15 @@ pub(crate) fn group_by_values_iter_window_behind_t(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
-) -> impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_ {
-    let mut start = 0;
+    start_offset: usize,
+    upper_bound: Option<usize>,
+) -> PolarsResult<impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_> {
+    let upper_bound = upper_bound.unwrap_or(time.len());
+    let mut start = first_member_row(period, offset, time, closed_window, tu, tz, start_offset)?;
     let mut end = start;
-    let mut last = time[0];
+    let mut last = time[start_offset];
     let mut started = false;
-    time.iter().map(move |lower| {
+    Ok(time[start_offset..upper_bound].iter().map(move |lower| {
         // Fast path for duplicates.
         if *lower == last && started {
             let len = end - start;
@@ -327,12 +331,13 @@ pub(crate) fn group_by_values_iter_window_behind_t(
 
             Ok((offset, len as IdxSize))
         }
-    })
+    }))
 }
 
 // window is with -1 periods of t
 // ----t---
 //  [---]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn group_by_values_iter_partial_lookbehind(
     period: Duration,
     offset: Duration,
@@ -340,11 +345,15 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
-) -> impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_ {
-    let mut start = 0;
+    start_offset: usize,
+    upper_bound: Option<usize>,
+) -> PolarsResult<impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_> {
+    let upper_bound = upper_bound.unwrap_or(time.len());
+    let mut start = first_member_row(period, offset, time, closed_window, tu, tz, start_offset)?;
     let mut end = start;
-    let mut last = time[0];
-    time.iter().enumerate().map(move |(i, lower)| {
+    let mut last = time[start_offset];
+    let rows = &time[start_offset..upper_bound];
+    Ok(rows.iter().enumerate().map(move |(i, lower)| {
         // Fast path for duplicates.
         if *lower == last && i > 0 {
             let len = end - start;
@@ -352,6 +361,7 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
             return Ok((offset, len as IdxSize));
         }
         last = *lower;
+        let i = i + start_offset;
 
         let lower = offset.add(tu, *lower, tz.as_ref())?;
         let upper = period.add(tu, lower, tz.as_ref())?;
@@ -377,7 +387,24 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
         let offset = start as IdxSize;
 
         Ok((offset, len as IdxSize))
-    })
+    }))
+}
+
+/// The first row of `time[..start_offset]` that can be a member of the window of row
+/// `start_offset`, so a window search need not walk the rows before it.
+fn first_member_row(
+    period: Duration,
+    offset: Duration,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    tu: TimeUnit,
+    tz: Option<Tz>,
+    start_offset: usize,
+) -> PolarsResult<usize> {
+    let lower = offset.add(tu, time[start_offset], tz.as_ref())?;
+    let upper = period.add(tu, lower, tz.as_ref())?;
+    let b = Bounds::new(lower, upper);
+    Ok(time[..start_offset].partition_point(|&t| !b.is_member_entry(t, closed_window)))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -557,6 +584,9 @@ pub(crate) fn group_by_values_iter_lookahead_collected(
 ///     - timestamp (lower bound)
 ///     - timestamp + period (upper bound)
 /// where timestamps are the individual values in the array `time`
+///
+/// Only the rows in `rows` get a window; the windows still index into the whole of `time`.
+/// `rows` must not start or end inside a run of equal values.
 pub fn group_by_values(
     period: Duration,
     offset: Duration,
@@ -564,14 +594,26 @@ pub fn group_by_values(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
+    rows: std::ops::Range<usize>,
 ) -> PolarsResult<GroupsSlice> {
-    if time.is_empty() {
+    if rows.is_empty() {
         return Ok(GroupsSlice::from(vec![]));
     }
+    assert!(rows.start == 0 || time[rows.start - 1] < time[rows.start]);
+    assert!(rows.end == time.len() || time[rows.end - 1] < time[rows.end]);
+    let (start_offset, upper_bound) = (rows.start, rows.end);
 
+    // The threads split the whole of `time` and each takes the part of its split inside `rows`,
+    // so the windows do not depend on `rows`.
     let mut thread_offsets = _split_offsets(time.len(), RAYON.current_num_threads());
     // there are duplicates in the splits, so we opt for a single partition
     prune_splits_on_duplicates(time, &mut thread_offsets);
+    thread_offsets.retain_mut(|(offset, len)| {
+        let start = (*offset).max(start_offset);
+        let end = (*offset + *len).min(upper_bound);
+        (*offset, *len) = (start, end.saturating_sub(start));
+        *len > 0
+    });
 
     // If we start from within parallel work we will do this single threaded.
     let run_parallel = !RAYON.current_thread_has_pending_tasks().unwrap_or(false);
@@ -591,8 +633,8 @@ pub fn group_by_values(
                     closed_window,
                     tu,
                     tz,
-                    0,
-                    None,
+                    start_offset,
+                    Some(upper_bound),
                 )?;
                 return Ok(GroupsSlice::from(vecs));
             }
@@ -625,8 +667,16 @@ pub fn group_by_values(
             // window is completely behind t and t itself is not a member
             // ---------------t---
             //  [---]
-            let iter =
-                group_by_values_iter_window_behind_t(period, offset, time, closed_window, tu, tz);
+            let iter = group_by_values_iter_window_behind_t(
+                period,
+                offset,
+                time,
+                closed_window,
+                tu,
+                tz,
+                start_offset,
+                Some(upper_bound),
+            )?;
             iter.map(|result| result.map(|(offset, len)| [offset, len]))
                 .collect::<PolarsResult<_>>()
         }
@@ -644,7 +694,9 @@ pub fn group_by_values(
                 closed_window,
                 tu,
                 tz,
-            );
+                start_offset,
+                Some(upper_bound),
+            )?;
             iter.map(|result| result.map(|(offset, len)| [offset, len]))
                 .collect::<PolarsResult<_>>()
         }
@@ -664,8 +716,8 @@ pub fn group_by_values(
                 closed_window,
                 tu,
                 tz,
-                0,
-                None,
+                start_offset,
+                Some(upper_bound),
             )?;
             return Ok(GroupsSlice::from(vecs));
         }
@@ -700,8 +752,8 @@ pub fn group_by_values(
                 closed_window,
                 tu,
                 tz,
-                0,
-                None,
+                start_offset,
+                Some(upper_bound),
             )?;
             return Ok(GroupsSlice::from(vecs));
         }

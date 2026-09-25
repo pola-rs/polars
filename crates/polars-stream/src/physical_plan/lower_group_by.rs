@@ -1317,6 +1317,7 @@ pub fn build_group_by_stream(
                         period: rolling_options.period,
                         offset: rolling_options.offset,
                         closed: rolling_options.closed_window,
+                        placement: rolling_options.placement,
                         slice: options
                             .slice
                             .filter(|(o, _)| *o >= 0)
