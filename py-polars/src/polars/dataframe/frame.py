@@ -4292,13 +4292,13 @@ class DataFrame:
 
             if pyarrow_options is None:
                 pyarrow_options = {}
-            pyarrow_options["compression"] = (
-                None if compression == "uncompressed" else compression
-            )
-            pyarrow_options["compression_level"] = compression_level
-            pyarrow_options["write_statistics"] = statistics
-            pyarrow_options["row_group_size"] = row_group_size
-            pyarrow_options["data_page_size"] = data_page_size
+            pyarrow_options.setdefault("compression", compression)
+            if pyarrow_options["compression"] == "uncompressed":
+                pyarrow_options["compression"] = None
+            pyarrow_options.setdefault("compression_level", compression_level)
+            pyarrow_options.setdefault("write_statistics", statistics)
+            pyarrow_options.setdefault("row_group_size", row_group_size)
+            pyarrow_options.setdefault("data_page_size", data_page_size)
 
             if pyarrow_options.get("partition_cols"):
                 pa.parquet.write_to_dataset(
