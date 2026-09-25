@@ -773,12 +773,17 @@ pub(crate) fn column_restriction(
                 _ => return None,
             };
             literal(value)?;
+            let range = |low: Option<i128>, high: Option<i128>| Restriction::Range(low, high);
             let restriction = match (op, integer(value)) {
                 (Operator::Eq, _) => Restriction::Values(1),
-                (Operator::GtEq, Some(v)) => Restriction::Range(Some(v), None),
-                (Operator::Gt, Some(v)) => Restriction::Range(Some(v + 1), None),
-                (Operator::LtEq, Some(v)) => Restriction::Range(None, Some(v)),
-                (Operator::Lt, Some(v)) => Restriction::Range(None, Some(v - 1)),
+                (Operator::GtEq, Some(v)) => range(Some(v), None),
+                (Operator::Gt, Some(v)) => v
+                    .checked_add(1)
+                    .map_or(Restriction::Other, |v| range(Some(v), None)),
+                (Operator::LtEq, Some(v)) => range(None, Some(v)),
+                (Operator::Lt, Some(v)) => v
+                    .checked_sub(1)
+                    .map_or(Restriction::Other, |v| range(None, Some(v))),
                 (Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq, None) => {
                     Restriction::Other
                 },
@@ -808,10 +813,20 @@ pub(crate) fn column_restriction(
                             ClosedInterval::Right => (false, true),
                             ClosedInterval::None => (false, false),
                         };
-                        Restriction::Range(
-                            Some(if lower_closed { lower } else { lower + 1 }),
-                            Some(if upper_closed { upper } else { upper - 1 }),
-                        )
+                        let low = if lower_closed {
+                            Some(lower)
+                        } else {
+                            lower.checked_add(1)
+                        };
+                        let high = if upper_closed {
+                            Some(upper)
+                        } else {
+                            upper.checked_sub(1)
+                        };
+                        match (low, high) {
+                            (Some(low), Some(high)) => Restriction::Range(Some(low), Some(high)),
+                            _ => Restriction::Other,
+                        }
                     },
                     _ => Restriction::Other,
                 };
@@ -1801,5 +1816,23 @@ mod tests {
             panic!("expected two values of y");
         };
         assert_eq!(column.as_str(), "y");
+    }
+
+    #[test]
+    fn restriction_endpoints_do_not_overflow() {
+        use crate::plans::{LiteralValue, Operator};
+
+        let mut expr_arena = Arena::new();
+        for (op, value) in [(Operator::Gt, i128::MAX), (Operator::Lt, i128::MIN)] {
+            let left = expr_arena.add(AExpr::Column(PlSmallStr::from_str("u")));
+            let right = expr_arena.add(AExpr::Literal(LiteralValue::from(
+                polars_core::scalar::Scalar::from(value),
+            )));
+            let compare = expr_arena.add(AExpr::BinaryExpr { left, op, right });
+            assert!(matches!(
+                column_restriction(compare, &expr_arena),
+                Some((_, Restriction::Other))
+            ));
+        }
     }
 }

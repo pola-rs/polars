@@ -790,10 +790,13 @@ fn key_overlap(left: &SideStats, right: &SideStats) -> f64 {
     overlap.clamp(0.0, 1.0)
 }
 
-/// The node below `node` whose own column `name` is, through joins and projections.
+/// The node below `node` whose own column `name` is, through joins and projections. With
+/// `values_kept`, it stops at a join that can give the column values its input does not
+/// hold: filled in by the other input, or a null for a row without a match.
 fn key_origin(
     mut node: Node,
     name: &PlSmallStr,
+    values_kept: bool,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> (Node, PlSmallStr) {
@@ -808,7 +811,17 @@ fn key_origin(
             } => {
                 // A join keeps the left names and may suffix the right ones.
                 let left_schema = ir_arena.get(*input_left).schema(ir_arena);
-                if left_schema.contains(&name) {
+                let from_left = left_schema.contains(&name);
+                let keeps_values = match options.args.how {
+                    JoinType::Inner | JoinType::Cross => true,
+                    JoinType::Left => from_left,
+                    JoinType::Right => !from_left,
+                    _ => false,
+                };
+                if values_kept && !keeps_values {
+                    break;
+                }
+                if from_left {
                     *input_left
                 } else {
                     let right_schema = ir_arena.get(*input_right).schema(ir_arena);
@@ -859,7 +872,7 @@ fn filtered_value_count(
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> Option<f64> {
-    let (mut origin, mut column) = key_origin(node, name, ir_arena, expr_arena);
+    let (mut origin, mut column) = key_origin(node, name, true, ir_arena, expr_arena);
     let (mut lower, mut upper, mut values) = (None::<i128>, None::<i128>, None::<usize>);
     loop {
         let (predicate, input) = match ir_arena.get(origin) {
@@ -888,11 +901,17 @@ fn filtered_value_count(
         let Some(input) = input else {
             break;
         };
-        (origin, column) = key_origin(input, &column, ir_arena, expr_arena);
+        (origin, column) = key_origin(input, &column, true, ir_arena, expr_arena);
     }
-    let width = lower
-        .zip(upper)
-        .map(|(low, high)| (high - low + 1).max(0) as f64);
+    // A range too wide to count leaves the cap unknown.
+    let width = match (lower, upper) {
+        (Some(low), Some(high)) if high < low => Some(0.0),
+        (Some(low), Some(high)) => high
+            .checked_sub(low)
+            .and_then(|width| width.checked_add(1))
+            .map(|width| width as f64),
+        _ => None,
+    };
     let values = values.map(|count| count as f64);
     match (width, values) {
         (Some(width), Some(values)) => Some(width.min(values)),
@@ -915,7 +934,7 @@ fn gate_passes(
         let null_shares = keys
             .iter()
             .map(|key| {
-                let (origin, name) = key_origin(node, key, ir_arena, expr_arena);
+                let (origin, name) = key_origin(node, key, false, ir_arena, expr_arena);
                 let origin = node_stats_with_cache(origin, ir_arena, expr_arena, cache)?;
                 let nulls = origin
                     .column(&name)

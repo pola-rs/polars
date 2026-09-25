@@ -925,6 +925,80 @@ def test_eager_aggregation_gate_caps_filtered_group_keys(
     assert f"groups per join key {groups}.0" in err, err
 
 
+def test_eager_aggregation_gate_ignores_restrictions_an_outer_join_undoes(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    # Only the left input of the full join is restricted to year 0; the right one fills
+    # in a year per row, so grouping by year leaves nothing to fold.
+    n = 200_000
+    rng = np.random.default_rng(0)
+    left = _scan(tmp_path, "left", pl.DataFrame({"k": np.arange(1_000), "g": "a"}))
+    fact = _scan(
+        tmp_path,
+        "fact",
+        pl.DataFrame(
+            {"k": rng.integers(0, 1_000, n), "year": np.arange(n), "x": np.ones(n)}
+        ),
+    )
+    zero = _scan(tmp_path, "zero", pl.DataFrame({"year": np.arange(n)}))
+    r = zero.filter(pl.col("year") == 0).join(
+        fact, on="year", how="full", coalesce=True
+    )
+    lf = left.join(r, on="k").group_by("g", "year").agg(pl.col("x").sum())
+    assert not _gate_fires(lf, plmonkeypatch, _KEEP_JOIN_ORDER)
+
+
+I128_MIN, I128_MAX = -(2**127), 2**127 - 1
+
+
+def test_eager_aggregation_gate_int128_range(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    # The full Int128 range is too wide to count, so it does not cap the unique keys.
+    n = 500_000
+    rng = np.random.default_rng(0)
+    left = _scan(tmp_path, "left", pl.DataFrame({"k": np.arange(1_000), "g": "a"}))
+    right = _scan(
+        tmp_path,
+        "right",
+        pl.DataFrame(
+            {
+                "k": rng.integers(0, 1_000, n),
+                "u": pl.Series(np.arange(n), dtype=pl.Int128),
+                "x": np.ones(n),
+            }
+        ),
+    )
+    lo, hi = pl.lit(I128_MIN, dtype=pl.Int128), pl.lit(I128_MAX, dtype=pl.Int128)
+    r = right.filter((pl.col("u") >= lo) & (pl.col("u") <= hi))
+    lf = left.join(r, on="k").group_by("g", "u").agg(pl.col("x").sum())
+    assert not _gate_fires(lf, plmonkeypatch)
+
+
+@pytest.mark.parametrize(
+    "restriction",
+    [
+        pl.col("u") > pl.lit(I128_MAX, dtype=pl.Int128),
+        pl.col("u") < pl.lit(I128_MIN, dtype=pl.Int128),
+        pl.col("u").is_between(
+            pl.lit(I128_MIN, dtype=pl.Int128),
+            pl.lit(I128_MAX, dtype=pl.Int128),
+            closed="none",
+        ),
+    ],
+)
+def test_eager_aggregation_int128_boundary_restrictions(
+    restriction: pl.Expr, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    right = pl.LazyFrame(
+        {"k": [1, 2], "u": pl.Series([0, 1], dtype=pl.Int128), "x": [1, 2]}
+    ).filter(restriction)
+    lf = _left().join(right, on="k").group_by("g", "u").agg(pl.col("x").sum())
+    on, off = _plans(lf, plmonkeypatch, skip_gate=False)
+    result, expected = _collect_both(lf, plmonkeypatch)
+    assert_frame_equal(result.sort("g", "u"), expected.sort("g", "u"))
+
+
 # Join ordering may move a join from above the target into its other input.
 _KEEP_JOIN_ORDER = pl.QueryOptFlags(join_order=False)
 
