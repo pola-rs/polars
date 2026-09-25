@@ -28,9 +28,11 @@ fn lower_binary(op: SqlBinaryOp, e: Vec<ExprIR>, ctx: &mut ExprToIRContext) -> P
     }))
 }
 
-/// SQL `*` and `/` of exact numerics (decimal or integer, at least one decimal): `*` keeps
-/// scale `s1 + s2` as the SQL standard requires, and `/` uses scale `max(s1, s2, 6)`,
-/// instead of the `max(s1, s2)` of the expression API. `None` for ordinary arithmetic.
+/// SQL `*` and `/` of exact numerics (decimal or integer, at least one decimal), instead of
+/// the `max(s1, s2)` scale of the expression API. `*` keeps scale `s1 + s2` as the SQL standard
+/// requires. `/` uses Snowflake's scale `max(s1, min(s1 + 6, 12))`, which depends only on the
+/// scales, since Polars widens most decimal results to precision 38. `None` for ordinary
+/// arithmetic.
 fn decimal_arith(
     op: SqlBinaryOp,
     e: &[ExprIR],
@@ -64,7 +66,7 @@ fn decimal_arith(
                 );
                 (DecimalArithOp::Mul, scale)
             },
-            SqlBinaryOp::Div => (DecimalArithOp::Div, s1.max(s2).max(6)),
+            SqlBinaryOp::Div => (DecimalArithOp::Div, s1.max((s1 + 6).min(12))),
         };
         Ok(Some(IRFunctionExpr::DecimalArith { op, scale }))
     }

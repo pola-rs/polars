@@ -1058,10 +1058,10 @@ def test_decimal_mixed_scale_ops_no_lossy_cast() -> None:
         "SELECT a + b AS add, a - b AS sub, a * b AS mul, a / b AS div, "
         "a > b AS gt, a = b AS eq FROM self"
     )
-    # SQL `*` keeps the scale sum, `/` uses at least scale 6.
+    # SQL `*` keeps the scale sum, `/` adds 6 digits to the dividend scale.
     sql_expected = expected.with_columns(
         mul=pl.lit(D("33299.99667"), pl.Decimal(38, 5)),
-        div=pl.lit(D("300300.270270"), pl.Decimal(38, 6)),
+        div=pl.lit(D("300300.27027027"), pl.Decimal(38, 8)),
     )
     assert_frame_equal(sql, sql_expected)
 

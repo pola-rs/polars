@@ -354,9 +354,9 @@ def test_decimal_mul_div_result_scale() -> None:
             "mul_big_small": pl.Decimal(38, 4),
             "mul_int": pl.Decimal(38, 2),
             "mul_lit": pl.Decimal(38, 2),
-            "div_big": pl.Decimal(38, 6),
-            "div": pl.Decimal(38, 6),
-            "div_int": pl.Decimal(38, 6),
+            "div_big": pl.Decimal(38, 8),
+            "div": pl.Decimal(38, 8),
+            "div_int": pl.Decimal(38, 8),
             "int_div": pl.Decimal(38, 6),
         }
     )
@@ -366,9 +366,9 @@ def test_decimal_mul_div_result_scale() -> None:
         D(10**33),
         D("0.10"),
         D("0.15"),
-        D("1.000000"),
-        D("1.000000"),
-        D("0.025000"),
+        D("1.00000000"),
+        D("1.00000000"),
+        D("0.02500000"),
         D("40.000000"),
     )
 
@@ -376,16 +376,36 @@ def test_decimal_mul_div_result_scale() -> None:
 @pytest.mark.parametrize(
     ("expr", "expected", "dtype"),
     [
-        # Postgres gives 2.5000000000000000: its division scale is value-dependent
-        ("CAST(5.0 AS DECIMAL(2,1)) / 2", D("2.500000"), pl.Decimal(38, 6)),
-        ("CAST(2.0 AS DECIMAL(2,1)) / 3", D("0.666667"), pl.Decimal(38, 6)),
-        ("CAST(-2.0 AS DECIMAL(2,1)) / 3", D("-0.666667"), pl.Decimal(38, 6)),
-        # half-even: half-up would give ±0.000003
-        ("CAST(0.000005 AS DECIMAL(7,6)) / 2", D("0.000002"), pl.Decimal(38, 6)),
-        ("CAST(-0.000005 AS DECIMAL(7,6)) / 2", D("-0.000002"), pl.Decimal(38, 6)),
-        ("CAST(0.000015 AS DECIMAL(7,6)) / 2", D("0.000008"), pl.Decimal(38, 6)),
-        # a dividend scale above 6 is kept
-        ("CAST(0.00000001 AS DECIMAL(9,8)) / 3", D("0.00000000"), pl.Decimal(38, 8)),
+        # scale max(s1, min(s1 + 6, 12)); Postgres gives 2.5000000000000000, since
+        # its division scale is value-dependent
+        ("CAST(5.0 AS DECIMAL(2,1)) / 2", D("2.5000000"), pl.Decimal(38, 7)),
+        ("CAST(2.0 AS DECIMAL(2,1)) / 3", D("0.6666667"), pl.Decimal(38, 7)),
+        ("CAST(-2.0 AS DECIMAL(2,1)) / 3", D("-0.6666667"), pl.Decimal(38, 7)),
+        ("CAST(2 AS DECIMAL(5,0)) / 3", D("0.666667"), pl.Decimal(38, 6)),
+        # capped at 12
+        ("CAST(2 AS DECIMAL(10,7)) / 3", D("0.666666666667"), pl.Decimal(38, 12)),
+        # a dividend scale above 12 is kept
+        (
+            "CAST(2 AS DECIMAL(20,14)) / 3",
+            D("0.66666666666667"),
+            pl.Decimal(38, 14),
+        ),
+        # half-even: half-up would give ±0.000000000003
+        (
+            "CAST(0.000000000005 AS DECIMAL(38,12)) / 2",
+            D("0.000000000002"),
+            pl.Decimal(38, 12),
+        ),
+        (
+            "CAST(-0.000000000005 AS DECIMAL(38,12)) / 2",
+            D("-0.000000000002"),
+            pl.Decimal(38, 12),
+        ),
+        (
+            "CAST(0.000000000015 AS DECIMAL(38,12)) / 2",
+            D("0.000000000008"),
+            pl.Decimal(38, 12),
+        ),
     ],
 )
 def test_decimal_div_scale_and_rounding(
@@ -425,8 +445,24 @@ def test_decimal_mul_div_float_and_int_unchanged() -> None:
     assert res.row(0) == (3.0, 0.75, 1.5, 6)
 
 
+def test_decimal_div_scale_ignores_dividend_precision() -> None:
+    # `a * 1` and `a + 0` widen the dividend to precision 38 but keep its scale,
+    # so the division scale, and the result, must not change
+    df = pl.DataFrame(
+        {"a": [D("1.00"), D("0.05")], "b": [D("3.01"), D("0.03")]},
+        schema={"a": pl.Decimal(7, 2), "b": pl.Decimal(7, 2)},
+    )
+    dividends = df.sql("SELECT a, a * 1 AS a_mul, a + 0 AS a_add FROM self")
+    assert dividends.schema == pl.Schema(
+        {"a": pl.Decimal(7, 2), "a_mul": pl.Decimal(38, 2), "a_add": pl.Decimal(38, 2)}
+    )
+    res = df.sql("SELECT a / b AS x, (a * 1) / b AS y, (a + 0) / b AS z FROM self")
+    assert res.schema == pl.Schema(dict.fromkeys("xyz", pl.Decimal(38, 8)))
+    assert res.rows() == [(D("0.33222591"),) * 3, (D("1.66666667"),) * 3]
+
+
 def test_decimal_ratio_comparison_uses_division_scale() -> None:
-    # Both ratios are 0.33 at scale 2, but 0.333333 < 0.335570 at scale 6.
+    # Both ratios are 0.33 at scale 2, but 0.33333333 < 0.33557047 at scale 8.
     df = pl.DataFrame(
         {
             "g": [1, 1, 2],
@@ -453,15 +489,15 @@ def test_decimal_ratio_comparison_uses_division_scale() -> None:
     assert res.schema == pl.Schema(
         {
             "g": pl.Int64(),
-            "xy": pl.Decimal(38, 6),
-            "zw": pl.Decimal(38, 6),
+            "xy": pl.Decimal(38, 8),
+            "zw": pl.Decimal(38, 8),
             "gt": pl.Boolean(),
         }
     )
     assert res.to_dict(as_series=False) == {
         "g": [1, 2],
-        "xy": [D("0.333333"), D("0.500000")],
-        "zw": [D("0.335570"), D("0.500000")],
+        "xy": [D("0.33333333"), D("0.50000000")],
+        "zw": [D("0.33557047"), D("0.50000000")],
         "gt": [True, False],
     }
 
