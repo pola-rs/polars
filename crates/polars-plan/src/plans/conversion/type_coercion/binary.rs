@@ -607,6 +607,20 @@ pub(super) fn coerce_comparison_literal(
         return None;
     }
 
+    #[cfg(feature = "dtype-decimal")]
+    if dtype_lhs.is_integer()
+        && let AnyValue::Decimal(mantissa, _, scale) = *lit_rhs.value()
+    {
+        return coerce_int_cmp_decimal_literal(
+            ae_node_left,
+            dtype_lhs,
+            cmp_op,
+            mantissa,
+            scale,
+            expr_arena,
+        );
+    }
+
     if !matching_and_supported_dtype_class(dtype_lhs, lit_rhs.dtype()) {
         return None;
     }
@@ -847,9 +861,85 @@ pub(super) fn coerce_comparison_literal(
         }
     };
 
-    // Set all non-null rows to either true / false.
-    // when(left.is_not_null()).then(nonnull_rows_value)
+    Some(nonnull_rows_rewrite(
+        nonnull_rows_value,
+        ae_node_left,
+        expr_arena,
+    ))
+}
 
+/// Rewrite an integer column compared to a decimal literal into a comparison with an integer
+/// literal. The literal is rounded in the direction that keeps the result the same, e.g.
+/// `x < 1.5` becomes `x < 2` and `x > 1.5` becomes `x > 1`.
+#[cfg(feature = "dtype-decimal")]
+fn coerce_int_cmp_decimal_literal(
+    ae_node_left: Node,
+    dtype_lhs: &DataType,
+    cmp_op: Operator,
+    mantissa: i128,
+    scale: usize,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<CmpLiteralRhsRewrite> {
+    use CmpLiteralRhsRewrite::*;
+
+    let divisor = 10i128.checked_pow(scale as u32)?;
+    let floor = mantissa.div_euclid(divisor);
+    let is_whole = mantissa.rem_euclid(divisor) == 0;
+    let ceil = floor + i128::from(!is_whole);
+
+    let rounded = match cmp_op {
+        Operator::Lt | Operator::GtEq => Some(ceil),
+        Operator::LtEq | Operator::Gt => Some(floor),
+        Operator::Eq | Operator::NotEq | Operator::EqValidity | Operator::NotEqValidity => {
+            is_whole.then_some(floor)
+        },
+        _ => return None,
+    };
+
+    if let Some(rounded) = rounded {
+        let rounded_lit = Scalar::new(DataType::Int128, AnyValue::Int128(rounded))
+            .cast_with_options(dtype_lhs, CastOptions::NonStrict)
+            .ok()?;
+        if !rounded_lit.is_null() {
+            return Some(ReplaceLit(rounded_lit));
+        }
+    }
+
+    // No value of the column type equals the literal, or the literal is out of range. Zero is
+    // always in range, so the sign tells on which side it is.
+    let below_min = rounded.is_some_and(|r| r < 0);
+    let nonnull_rows_value = match cmp_op {
+        Operator::Eq => false,
+        Operator::NotEq => true,
+        Operator::Lt | Operator::LtEq => !below_min,
+        Operator::Gt | Operator::GtEq => below_min,
+        Operator::EqValidity => {
+            return Some(NewAExpr {
+                aexpr: repeat_opt_bool_ae(Some(false), ae_node_left, expr_arena),
+                output_constraint: Some(BoolValueAlways::FalseOrNull),
+            });
+        },
+        Operator::NotEqValidity => {
+            return Some(NewAExpr {
+                aexpr: repeat_opt_bool_ae(Some(true), ae_node_left, expr_arena),
+                output_constraint: Some(BoolValueAlways::True),
+            });
+        },
+        _ => unreachable!(),
+    };
+    Some(nonnull_rows_rewrite(
+        nonnull_rows_value,
+        ae_node_left,
+        expr_arena,
+    ))
+}
+
+/// `when(left.is_not_null()).then(nonnull_rows_value)`: all non-null rows get the same value.
+fn nonnull_rows_rewrite(
+    nonnull_rows_value: bool,
+    ae_node_left: Node,
+    expr_arena: &mut Arena<AExpr>,
+) -> CmpLiteralRhsRewrite {
     let left_not_null = {
         let function = IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull);
         let options = function.function_options();
@@ -860,7 +950,7 @@ pub(super) fn coerce_comparison_literal(
         })
     };
 
-    Some(NewAExpr {
+    CmpLiteralRhsRewrite::NewAExpr {
         aexpr: AExpr::Ternary {
             predicate: left_not_null,
             truthy: expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
@@ -877,7 +967,7 @@ pub(super) fn coerce_comparison_literal(
         } else {
             BoolValueAlways::FalseOrNull
         }),
-    })
+    }
 }
 
 fn repeat_opt_bool_ae(value: Option<bool>, len_of: Node, expr_arena: &mut Arena<AExpr>) -> AExpr {

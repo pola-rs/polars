@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from contextlib import nullcontext
 from datetime import datetime, timedelta
+from decimal import Decimal as D
 from itertools import combinations
 from typing import TYPE_CHECKING, Any
 
@@ -16,8 +17,10 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager as ContextManager
+    from pathlib import Path
 
     from polars._typing import PolarsDataType, TimeUnit
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_comparison_order_null_broadcasting() -> None:
@@ -1312,3 +1315,61 @@ def test_is_between_rejects_datetime_string_28253(dtype: pl.DataType) -> None:
         match="cannot compare 'date/datetime/time' to a string value",
     ):
         q.explain()
+
+
+@pytest.mark.parametrize("dtype", sorted(INTEGER_DTYPES, key=lambda v: str(v)))
+@pytest.mark.parametrize(
+    "value",
+    [
+        "1.50",
+        "-1.50",
+        "2.00",
+        "0.99",
+        "-0.01",
+        "127.50",
+        "128.00",
+        "-128.50",
+        "255.99",
+        "256.00",
+        "100000000000000000000",
+        "-100000000000000000000",
+    ],
+)
+def test_comparison_int_decimal_literal_matches_nonliteral(
+    dtype: PolarsDataType, value: str
+) -> None:
+    lit = pl.lit(D(value))
+    values = [-129, -128, -2, -1, 0, 1, 2, 127, 128, 255, 256, None]
+    df = pl.DataFrame({"l": pl.Series(values, dtype=dtype, strict=False)})
+
+    def query(lf: pl.LazyFrame, r: pl.Expr) -> pl.LazyFrame:
+        l = pl.col("l")  # noqa: E741
+        return lf.select(
+            ne=l != r, lt=l < r, lteq=l <= r, eq=l == r, gteq=l >= r, gt=l > r,
+            rne=r != l, rlt=r < l, rlteq=r <= l, req=r == l, rgteq=r >= l, rgt=r > l,
+            eq_missing=l.eq_missing(r),
+            ne_missing=l.ne_missing(r),
+            between=l.is_between(r, D("200.25")),
+            between_open=l.is_between(D("-3.5"), r, closed="none"),
+        )  # fmt: skip
+
+    lf = df.lazy()
+    out = query(lf, lit)
+    expected = query(lf.with_columns(r=lit), pl.col("r"))
+
+    assert "cast" not in out.select("lt", "eq", "gt").explain()
+    assert_frame_equal(out.collect(), expected.collect())
+
+
+def test_comparison_int_decimal_literal_prunes_row_groups(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "a.parquet"
+    pl.DataFrame({"x": range(1000)}).write_parquet(path, row_group_size=100)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    ctx = pl.SQLContext(t=pl.scan_parquet(path))
+    out = ctx.execute("SELECT x FROM t WHERE x > 849.5 AND x <= 900.75").collect()
+
+    assert out["x"].to_list() == list(range(850, 901))
+    assert "reading 2 / 10 row groups" in capfd.readouterr().err
