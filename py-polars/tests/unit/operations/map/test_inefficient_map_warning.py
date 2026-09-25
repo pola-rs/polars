@@ -25,8 +25,6 @@ MY_CONSTANT = 3
 MY_DICT = {0: "a", 1: "b", 2: "c", 3: "d", 4: "e"}
 MY_LIST = [1, 2, 3]
 MY_STRING = "ABcd"
-MY_SUBSTRING = "cd"
-MY_COLLECTION = [2, 3, 4]
 
 # column_name, function, expected_suggestion
 TEST_CASES = [
@@ -72,15 +70,10 @@ TEST_CASES = [
         None,
     ),
     ("a", "lambda x: x in (2, 3, 4)", 'pl.col("a").is_in((2, 3, 4))', None),
+    ("a", "lambda x: x in {1, 3}", 'pl.col("a").is_in(frozenset({1, 3}))', None),
     ("a", "lambda x: x not in (2, 3, 4)", '~pl.col("a").is_in((2, 3, 4))', None),
-    ("a", "lambda x: x in MY_COLLECTION", 'pl.col("a").is_in(MY_COLLECTION)', None),
+    ("a", "lambda x: x in MY_LIST", 'pl.col("a").is_in(MY_LIST)', None),
     ("a", "lambda x: x in MY_DICT", 'pl.col("a").is_in(MY_DICT)', None),
-    (
-        "a",
-        "lambda x: (x + 1) in (1, 2, 3)",
-        '((pl.col("a") + 1).is_in((1, 2, 3)))',
-        None,
-    ),
     (
         "a",
         "lambda x: x in (1, 2, 3, 4, 3) and x % 2 == 0 and x > 0",
@@ -93,43 +86,44 @@ TEST_CASES = [
     (
         "b",
         "lambda x: x in MY_STRING",
-        'pl.lit(MY_STRING).str.contains(pl.col("b"), literal=True)',
+        'pl.lit(MY_STRING).str.contains(pl.col("b"), literal=True).alias("b")',
         None,
     ),
     (
         "b",
-        "lambda x: MY_SUBSTRING in x",
-        'pl.col("b").str.contains(pl.lit(MY_SUBSTRING), literal=True)',
+        'lambda x: x not in "it\'s"',
+        '~pl.lit("it\'s").str.contains(pl.col("b"), literal=True).alias("b")',
         None,
     ),
     (
         "b",
-        'lambda x: "A" in x',
-        "pl.col(\"b\").str.contains(pl.lit('A'), literal=True)",
+        'lambda x: x in ("pl.col(" + MY_STRING)',
+        'pl.lit((\'pl.col(\' + MY_STRING)).str.contains(pl.col("b"), literal=True).alias("b")',
+        None,
+    ),
+    ("b", 'lambda x: "A" in x', "pl.col(\"b\").str.contains('A', literal=True)", None),
+    (
+        "b",
+        'lambda x: "z" in (x + "z")',
+        "(pl.col(\"b\") + 'z').str.contains('z', literal=True)",
         None,
     ),
     (
         "b",
-        "lambda x: x not in MY_STRING",
-        '~pl.lit(MY_STRING).str.contains(pl.col("b"), literal=True)',
+        'lambda x: "A" in x.replace("e", "A")',
+        "pl.col(\"b\").str.replace_all('e','A',literal=True).str.contains('A', literal=True)",
         None,
     ),
     (
         "b",
-        'lambda x: "test" in x',
-        "pl.col(\"b\").str.contains(pl.lit('test'), literal=True)",
+        'lambda x: "0" in x.zfill(3)',
+        "pl.col(\"b\").str.zfill(3).str.contains('0', literal=True)",
         None,
     ),
     (
-        "b",
-        'lambda x: x not in "hello"',
-        "~pl.lit('hello').str.contains(pl.col(\"b\"), literal=True)",
-        None,
-    ),
-    (
-        "b",
-        'lambda x: x in "it\'s"',
-        'pl.lit("it\'s").str.contains(pl.col("b"), literal=True)',
+        "a",
+        'lambda x: "2" in str(x)',
+        "pl.col(\"a\").cast(pl.String).str.contains('2', literal=True)",
         None,
     ),
     # ---------------------------------------------
@@ -366,6 +360,11 @@ NOOP_TEST_CASES = [
     "lambda x: x[0] + 1",
     "lambda x: MY_LIST[x]",
     "lambda x: MY_DICT[1]",
+    'lambda x: x in b"abc"',
+    "lambda x: 2 in x",
+    'lambda x: b"a" in x',
+    "lambda x: MY_CONSTANT in x",
+    "lambda x: MY_LIST in x",
     'lambda x: "first" if x == 1 else "not first"',
     'lambda x: np.sign(x, casting="unsafe")',
 ]
@@ -375,8 +374,6 @@ EVAL_ENVIRONMENT = {
     "MY_DICT": MY_DICT,
     "MY_LIST": MY_LIST,
     "MY_STRING": MY_STRING,
-    "MY_SUBSTRING": MY_SUBSTRING,
-    "MY_COLLECTION": MY_COLLECTION,
     "cosh": cosh,
     "datetime": datetime,
     "dt": dt,
@@ -670,27 +667,157 @@ def test_partial_functions_13523() -> None:
     _ = df["a"].map_elements(partial(plus, amount=1))
 
 
-@pytest.mark.filterwarnings(
-    "ignore:.*:polars.exceptions.PolarsInefficientMapWarning",
-    "ignore:.*:polars.exceptions.MapWithoutReturnDtypeWarning",
-)
 @pytest.mark.parametrize(
     "pattern", [".", "^", "$", "[0]", "a|b", "a+", "a?", "*", "(", ")", "["]
 )
 def test_string_containment_regex_metacharacters_17182(pattern: str) -> None:
     df = pl.DataFrame({"b": [f"x{pattern}y", "xyz", pattern, "hello"]})
+    func = lambda x: pattern in x  # noqa: E731
 
-    result_lambda = df.select(
-        pl.col("b").map_elements(
-            lambda x: pattern in x,
-            return_dtype=pl.Boolean,
-        )
+    with pytest.warns(PolarsInefficientMapWarning, match='if "b" is a List column'):
+        expected = df.select(pl.col("b").map_elements(func, return_dtype=pl.Boolean))
+
+    suggested = BytecodeParser(func, map_target="expr").to_expression("b")
+    assert suggested == 'pl.col("b").str.contains(pattern, literal=True)'
+    assert_frame_equal(
+        df.select(eval(suggested, {"pl": pl, "pattern": pattern})), expected
     )
 
-    func = lambda x: pattern in x  # noqa: E731
-    parser = BytecodeParser(func, map_target="expr")
-    suggested = parser.to_expression("b")
-    assert suggested is not None
 
-    result_suggested = df.select(eval(suggested, {"pl": pl, "pattern": pattern}))
-    assert_frame_equal(result_lambda, result_suggested)
+def test_list_column_note_omitted_for_regex_contains() -> None:
+    df = pl.DataFrame({"b": ["abc", "xyz", "pqr"]})
+    func = lambda x: x.startswith(("ab", "xy"))  # noqa: E731
+
+    with pytest.warns(PolarsInefficientMapWarning) as warnings:
+        df.select(pl.col("b").map_elements(func, return_dtype=pl.Boolean))
+
+    message = str(warnings[0].message)
+    assert """pl.col("b").str.contains(r'^(ab|xy)')""" in message
+    assert "List column" not in message
+
+
+@pytest.mark.filterwarnings("ignore:.*:polars.exceptions.PolarsInefficientMapWarning")
+@pytest.mark.parametrize("negated", [False, True])
+def test_string_containment_suggestion_output_name(negated: bool) -> None:
+    func = (lambda x: x not in "abc") if negated else (lambda x: x in "abc")
+    parser = BytecodeParser(func, map_target="expr")
+    for col in ("text", "other", ""):
+        suggested = parser.to_expression(col)
+        assert suggested is not None
+        assert suggested.endswith(f'.alias("{col}")')
+        replacement = eval(suggested, {"pl": pl})
+        df = pl.DataFrame({col: ["a", "z", None]})
+        for method in (df.select, df.with_columns):
+            assert_frame_equal(
+                method(replacement),
+                method(pl.col(col).map_elements(func, return_dtype=pl.Boolean)),
+            )
+
+    # pl.col("") also refers to the list element inside list.eval
+    df = pl.DataFrame({"l": [["a", "z"], ["c"]]})
+    assert_frame_equal(
+        df.select(pl.col("l").list.eval(replacement)),
+        df.select(
+            pl.col("l").list.eval(
+                pl.element().map_elements(func, return_dtype=pl.Boolean)
+            )
+        ),
+    )
+
+
+@pytest.mark.parametrize("negated", [False, True])
+def test_string_containment_suggestion_series_dtype(negated: bool) -> None:
+    func = (lambda x: "a" not in x) if negated else (lambda x: "a" in x)
+    for data, dtype, expected in (
+        (["ab", "c", None], pl.String, "s.str.contains('a', literal=True)"),
+        ([["a", "b"], ["c"], None], pl.List(pl.String), "s.list.contains('a')"),
+        (["ab", "c", None], pl.Categorical, None),
+    ):
+        s = pl.Series("text", data, dtype=dtype)
+        if expected is None:
+            s.map_elements(func, return_dtype=pl.Boolean)  # (no warning)
+            continue
+        expected = f"~{expected}" if negated else expected
+        with pytest.warns(
+            PolarsInefficientMapWarning, match=re.escape(f"+ {expected}")
+        ):
+            result = s.map_elements(func, return_dtype=pl.Boolean)
+        assert_series_equal(result, eval(expected, {"pl": pl, "s": s}))
+
+
+def test_string_containment_series_alias_matches_warning() -> None:
+    s = "a"
+    suggested = "pl.Series(srs.name, [s]).str.contains(srs, literal=True)"
+    for srs in (pl.Series("text", ["a", "z", None]), pl.Series("text", [], pl.String)):
+        with pytest.warns(PolarsInefficientMapWarning) as caught:
+            result = srs.map_elements(lambda x: x in s, return_dtype=pl.Boolean)
+        assert "- srs.map_elements" in str(caught[0].message)
+        assert f"+ {suggested}" in str(caught[0].message)
+        assert_series_equal(result, eval(suggested, {"pl": pl, "s": s, "srs": srs}))
+
+
+def test_containment_suggestion_rechecks_captured_values() -> None:
+    values: Any = "abc"
+    MY_STRING = ["a", "z"]  # shadows the module-level string
+
+    def func(x: Any) -> bool:
+        return x in values
+
+    with pytest.warns(PolarsInefficientMapWarning, match=r"str\.contains"):
+        pl.col("text").map_elements(func, return_dtype=pl.Boolean)
+    values = ["a", "z"]
+    with pytest.warns(PolarsInefficientMapWarning, match=r"is_in"):
+        pl.col("text").map_elements(func, return_dtype=pl.Boolean)
+
+    values = iter(["a", "z"])
+    assert _BYTECODE_PARSER_CACHE_[(func, "expr")].to_expression("text") is None
+
+    parser = BytecodeParser(lambda x: values in x, map_target="expr")
+    values = "a"
+    assert parser.to_expression("text") == (
+        'pl.col("text").str.contains(values, literal=True)'
+    )
+    values = 2
+    assert parser.to_expression("text") is None
+
+    parser = BytecodeParser(lambda x: x in MY_STRING, map_target="expr")
+    assert parser.to_expression("text") == 'pl.col("text").is_in(MY_STRING)'
+
+
+@pytest.mark.filterwarnings("ignore:.*:polars.exceptions.PolarsInefficientMapWarning")
+@pytest.mark.parametrize(
+    ("make_values", "data", "supported"),
+    [
+        (lambda: np.array([1, 3]), [1, 2, 3], True),
+        (lambda: pl.Series([1, 3]), [1, 2, 3], True),
+        (lambda: range(1, 3), [1, 2, 3], True),
+        (lambda: [b"a", b"b"], [b"a", b"z"], True),
+        (lambda: b"abc", [b"a", b"z"], False),
+        (lambda: bytearray(b"abc"), [b"a", b"z"], False),
+        (lambda: np.array([[1, 2]]), [1, 2, 3], False),
+        (lambda: pl.DataFrame({"x": [1, 2]}), [1, 2, 3], False),
+        (
+            lambda: pytest.importorskip("pandas").Series([1, 2], index=[3, 4]),
+            [1, 2, 3],
+            False,
+        ),
+    ],
+)
+def test_containment_suggestion_captured_haystack(
+    make_values: Callable[[], Any], data: list[Any], supported: bool
+) -> None:
+    values = make_values()
+
+    def func(x: Any) -> bool:
+        return x in values
+
+    suggested = BytecodeParser(func, map_target="expr").to_expression("x")
+    if not supported:
+        assert suggested is None
+    else:
+        assert suggested == 'pl.col("x").is_in(values)'
+        df = pl.DataFrame({"x": data})
+        assert_frame_equal(
+            df.select(eval(suggested, {"pl": pl, "values": values})),
+            df.select(pl.col("x").map_elements(func, return_dtype=pl.Boolean)),
+        )

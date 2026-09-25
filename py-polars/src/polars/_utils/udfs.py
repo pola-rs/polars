@@ -10,7 +10,9 @@ import sys
 import warnings
 from bisect import bisect_left
 from collections import defaultdict
+from collections.abc import Collection
 from dis import get_instructions
+from enum import Enum, auto
 from inspect import signature
 from itertools import count, zip_longest
 from pathlib import Path
@@ -24,8 +26,11 @@ from typing import (
     TypedDict,
 )
 
+from polars._dependencies import _check_for_pandas
 from polars._utils.cache import LRUCache
 from polars._utils.various import NO_DEFAULT, re_escape
+from polars.dataframe.frame import DataFrame
+from polars.datatypes import List, String
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, MutableMapping
@@ -33,6 +38,7 @@ if TYPE_CHECKING:
     from dis import Instruction
     from typing import TypeAlias
 
+    from polars._typing import PolarsDataType
     from polars._utils.various import NoDefault
 
 
@@ -42,6 +48,14 @@ class StackValue(NamedTuple):
     left_operand: str
     right_operand: str
     from_module: str | None = None
+
+
+class ContainmentKind(Enum):
+    """Type of operand for `in` and `not in` operators."""
+
+    COLLECTION = auto()
+    STRING = auto()
+    COLUMN = auto()
 
 
 MapTarget: TypeAlias = Literal["expr", "frame", "series"]
@@ -507,7 +521,9 @@ class BytecodeParser:
         """The rewritten bytecode instructions from the function we are parsing."""
         return list(self._rewritten_instructions)
 
-    def to_expression(self, col: str) -> str | None:
+    def to_expression(
+        self, col: str, dtype: PolarsDataType | None = None
+    ) -> str | None:
         """Translate postfix bytecode instructions to polars expression/string."""
         if self._col_expression is not NO_DEFAULT and self._col_expression is not None:
             col_name, expr = self._col_expression
@@ -545,6 +561,7 @@ class BytecodeParser:
                         caller_variables=self._caller_variables,
                         map_target=self._map_target,
                         function=self._function,
+                        dtype=dtype,
                     ).to_expression(
                         col=col,
                         param_name=self._param_name,
@@ -570,28 +587,31 @@ class BytecodeParser:
             if self._map_target == "series":
                 if (target_name := self._map_target_name) is None:
                     target_name = _get_target_name(col, polars_expr, self._map_target)
+                    self._map_target_name = target_name
                 polars_expr = polars_expr.replace(f'pl.col("{col}")', target_name)
 
-            self._col_expression = (col, polars_expr)
+            # ('in' translation depends on the operand values/dtype at call time)
+            if all(i.opname != "CONTAINS_OP" for i in self._rewritten_instructions):
+                self._col_expression = (col, polars_expr)
             return polars_expr
 
     def warn(
         self,
         col: str,
         *,
+        dtype: PolarsDataType | None = None,
         suggestion_override: str | None = None,
         udf_override: str | None = None,
     ) -> None:
         """Generate warning that suggests an equivalent native polars expression."""
-        # Import these here so that udfs can be imported without polars installed.
-
+        # import these here so UDFs can be imported without polars installed.
         from polars._utils.various import (
             in_terminal_that_supports_colour,
         )
         from polars._warnings import find_stacklevel
         from polars.exceptions import PolarsInefficientMapWarning
 
-        suggested_expression = suggestion_override or self.to_expression(col)
+        suggested_expression = suggestion_override or self.to_expression(col, dtype)
 
         if suggested_expression is not None:
             if (target_name := self._map_target_name) is None:
@@ -602,11 +622,16 @@ class BytecodeParser:
             if func_name == "<lambda>":
                 func_name = f"lambda {self._param_name}: ..."
 
-            addendum = (
-                'Note: in list.eval context, pl.col("") should be written as pl.element()'
-                if 'pl.col("")' in suggested_expression
-                else ""
-            )
+            if 'pl.col("")' in suggested_expression:
+                addendum = 'Note: in list.eval context, pl.col("") should be written as pl.element()'
+            elif (
+                f'pl.col("{col}").str.contains(' in suggested_expression
+                and "literal=True" in suggested_expression
+            ):
+                addendum = f'Note: if "{col}" is a List column, use .list.contains instead of .str.contains'
+            else:
+                addendum = ""
+
             apitype, clsname = (
                 ("expressions", "Expr")
                 if self._map_target == "expr"
@@ -644,10 +669,59 @@ class InstructionTranslator:
         caller_variables: dict[str, Any] | None,
         function: Callable[[Any], Any],
         map_target: MapTarget,
+        dtype: PolarsDataType | None = None,
     ) -> None:
+        self._constants: dict[str, Any] = {}
         self._stack = self._to_intermediate_stack(instructions, map_target)
         self._caller_variables = caller_variables
         self._function = function
+        self._map_target = map_target
+        self._dtype = dtype
+
+    def _get_function_variable(self, name: str) -> Any:
+        """Resolve a name from the function's lexical scope."""
+        code = getattr(self._function, "__code__", None)
+        closure = getattr(self._function, "__closure__", None)
+        if code is not None and closure is not None and name in code.co_freevars:
+            try:
+                return closure[code.co_freevars.index(name)].cell_contents
+            except ValueError:  # empty cell
+                return NO_DEFAULT
+        return getattr(self._function, "__globals__", {}).get(name, NO_DEFAULT)
+
+    def _containment_kind(
+        self, operand: StackEntry, param_name: str
+    ) -> ContainmentKind | None:
+        """Classify an `in` operand without evaluating user code."""
+        if isinstance(operand, StackValue):
+            left = self._containment_kind(operand.left_operand, param_name)
+            right = (
+                self._containment_kind(operand.right_operand, param_name)
+                if operand.operator_arity == 2
+                else None
+            )
+            if ContainmentKind.COLUMN in (left, right):
+                return ContainmentKind.COLUMN
+            return left if operand.operator == "+" and left is right else None
+
+        if operand == param_name:
+            return ContainmentKind.COLUMN
+        if operand in self._constants:
+            value = self._constants[operand]
+        elif operand.isidentifier():
+            value = self._get_function_variable(operand)
+        else:
+            return None
+
+        if isinstance(value, str):
+            return ContainmentKind.STRING
+        if isinstance(value, Collection) and not isinstance(value, (bytes, bytearray)):
+            # (pandas and frame membership tests labels, not values)
+            if getattr(value, "ndim", 1) == 1 and not (
+                _check_for_pandas(value) or isinstance(value, DataFrame)
+            ):
+                return ContainmentKind.COLLECTION
+        return None
 
     def to_expression(self, col: str, param_name: str, depth: int) -> str:
         """Convert intermediate stack to polars expression string."""
@@ -715,34 +789,38 @@ class InstructionTranslator:
                     return f"{e1}.is_{not_}null()"
                 elif op in ("in", "not in"):
                     not_ = "" if op == "in" else "~"
-                    is_collection = e2.startswith(("(", "[", "{", "frozenset("))
-                    if not is_collection and not e2.startswith(
-                        ("pl.col(", "'", '"')  # col ref, or string literal
-                    ):
-                        # bare variable: resolve its runtime type
-                        if not self._caller_variables:
-                            self._caller_variables = _get_all_caller_variables()
-                        var_value = self._caller_variables.get(e2)
-                        if isinstance(var_value, (list, tuple, set, frozenset, dict)):
-                            is_collection = True
-                        elif not isinstance(var_value, str):
-                            msg = "cannot determine operand type for 'in'"
-                            raise NotImplementedError(msg)
-
-                    if is_collection:
+                    kind = self._containment_kind(value.right_operand, param_name)
+                    if kind is ContainmentKind.COLLECTION:
                         return (
                             f"{not_}({e1}.is_in({e2}))"
                             if " " in e1
                             else f"{not_}{e1}.is_in({e2})"
                         )
+                    needle = self._containment_kind(value.left_operand, param_name)
+                    if kind is None or needle in (None, ContainmentKind.COLLECTION):
+                        msg = "cannot determine operand types for 'in'"
+                        raise NotImplementedError(msg)
 
-                    # string containment: x in s -> s contains x
-                    if e2.startswith("pl.col("):
-                        needle = e1 if e1.startswith("pl.col(") else f"pl.lit({e1})"
+                    suffix = ""
+                    if kind is ContainmentKind.COLUMN:
+                        if (
+                            self._dtype is not None
+                            and value.right_operand == param_name
+                        ):
+                            if self._dtype == List:
+                                return f"{not_}{e2}.list.contains({e1})"
+                            if self._dtype != String:
+                                msg = (
+                                    f"'in' is not a substring search for {self._dtype}"
+                                )
+                                raise NotImplementedError(msg)
+
                         haystack = e2
+                    elif self._map_target == "series":
+                        haystack = f'pl.Series(pl.col("{col}").name, [{e2}])'
                     else:
-                        needle, haystack = e1, f"pl.lit({e2})"
-                    return f"{not_}{haystack}.str.contains({needle}, literal=True)"
+                        haystack, suffix = f"pl.lit({e2})", f'.alias("{col}")'
+                    return f"{not_}{haystack}.str.contains({e1}, literal=True){suffix}"
                 elif op == "replace_strict":
                     if not self._caller_variables:
                         self._caller_variables = _get_all_caller_variables()
@@ -774,6 +852,8 @@ class InstructionTranslator:
         if map_target in ("expr", "series"):
             stack: list[StackEntry] = []
             for inst in instructions:
+                if inst.opname == "LOAD_CONST":
+                    self._constants[inst.argrepr] = inst.argval
                 stack.append(
                     inst.argrepr
                     if inst.opname in OpNames.LOAD
@@ -1243,7 +1323,10 @@ def _raw_function_meta(function: Callable[[Any], Any]) -> tuple[str, str]:
 
 
 def warn_on_inefficient_map(
-    function: Callable[[Any], Any], columns: list[str], map_target: MapTarget
+    function: Callable[[Any], Any],
+    columns: list[str],
+    map_target: MapTarget,
+    dtype: PolarsDataType | None = None,
 ) -> None:
     """
     Generate `PolarsInefficientMapWarning` on poor usage of a `map` function.
@@ -1257,6 +1340,8 @@ def warn_on_inefficient_map(
         will be a list of length 1, containing the expression's root name.
     map_target
         The target of the `map` call. One of `"expr"`, `"frame"`, or `"series"`.
+    dtype
+        The dtype of the original object, if known (eg: for a `Series`).
     """
     if map_target == "frame":
         msg = "TODO: 'frame' map-function parsing"
@@ -1274,7 +1359,7 @@ def warn_on_inefficient_map(
         _BYTECODE_PARSER_CACHE_[key] = parser
 
     if parser.can_attempt_rewrite():
-        parser.warn(col)
+        parser.warn(col, dtype=dtype)
     else:
         # handle bare numpy/json functions
         module, suggestion = _raw_function_meta(function)
