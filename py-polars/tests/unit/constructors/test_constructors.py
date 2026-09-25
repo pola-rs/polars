@@ -1779,6 +1779,29 @@ def test_pycapsule_interface(df: pl.DataFrame) -> None:
     assert df.equals(round_trip_df)
 
 
+def test_pycapsule_interface_extension_dictionary() -> None:
+    class DictionaryExtensionType(pa.ExtensionType):  # type: ignore[misc]
+        def __init__(self) -> None:
+            super().__init__(pa.dictionary(pa.int32(), pa.string()), "test.dictionary")
+
+        def __arrow_ext_serialize__(self) -> bytes:
+            return b""
+
+        @classmethod
+        def __arrow_ext_deserialize__(
+            cls, storage_type: pa.DataType, serialized: bytes
+        ) -> Any:
+            return cls()
+
+    extension_type = DictionaryExtensionType()
+    storage = pa.array(["a", "b", "a"]).dictionary_encode()
+    extension_array = pa.ExtensionArray.from_storage(extension_type, storage)
+
+    result = pl.Series(PyCapsuleArrayHolder(extension_array))
+
+    assert result.to_list() == ["a", "b", "a"]
+
+
 @pytest.mark.parametrize(
     "tz",
     [
