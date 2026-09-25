@@ -690,11 +690,14 @@ def test_is_in_decimal(nulls_equal: bool) -> None:
         pl.col("a").is_in([D("0.0"), D("0.1"), None], nulls_equal=nulls_equal)
     )["a"].to_list() == [True, False, missing_value]
 
-    for haystack in ([0.0, 0.1], [1, 0, 2]):
-        with pytest.raises(InvalidOperationError, match="cannot check for Decimal"):
-            pl.DataFrame({"a": [D("0.0")]}).select(
-                pl.col("a").is_in(haystack, nulls_equal=nulls_equal)
-            )
+    with pytest.raises(InvalidOperationError, match="cannot check for Decimal"):
+        pl.DataFrame({"a": [D("0.0")]}).select(
+            pl.col("a").is_in([0.0, 0.1], nulls_equal=nulls_equal)
+        )
+    # integers are exact decimals at scale 0
+    assert pl.DataFrame({"a": [D("0.0"), D("0.5")]}).select(
+        pl.col("a").is_in([1, 0, 2], nulls_equal=nulls_equal)
+    )["a"].to_list() == [True, False]
 
 
 def test_is_in_collection() -> None:
@@ -863,8 +866,6 @@ def _membership(op: str, needle: pl.Expr, container: pl.Expr, **kwargs: Any) -> 
     [
         # Casting the elements to the needle's scale would round `1.005` onto `1.00`.
         pytest.param(pl.Float64, 1.005, id="float"),
-        # Casting the elements to the needle's precision would overflow on this value.
-        pytest.param(pl.Int64, 2**62, id="int"),
     ],
 )
 def test_is_in_rejects_a_decimal_needle_in_primitive_numeric_data(
@@ -874,6 +875,19 @@ def test_is_in_rejects_a_decimal_needle_in_primitive_numeric_data(
 
     with pytest.raises(InvalidOperationError, match="cannot check for Decimal"):
         df.select(_membership(op, pl.lit(D("1.00"), pl.Decimal(10, 2)), pl.col("h")))
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+def test_is_in_decimal_needle_in_integer_data(op: str) -> None:
+    # integers are exact decimals at scale 0, so 2**62 neither overflows nor matches
+    df = pl.DataFrame({"h": _container(op, [[2**62, 1]], pl.Int64)})
+
+    def search(value: str) -> list[bool | None]:
+        needle = pl.lit(D(value), pl.Decimal(10, 2))
+        return df.select(_membership(op, needle, pl.col("h")).alias("o"))["o"].to_list()
+
+    assert search("1.00") == [True]
+    assert search("1.50") == [False]
 
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)

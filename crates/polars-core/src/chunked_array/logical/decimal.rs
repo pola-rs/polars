@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use polars_arrow::bitmap::Bitmap;
 use polars_compute::decimal::{
-    DEC128_MAX_PREC, dec128_fits, dec128_mul, dec128_rescale, dec128_verify_prec_scale,
+    DEC128_MAX_PREC, dec128_fits, dec128_mul_scaled, dec128_rescale, dec128_verify_prec_scale,
     i128_to_dec128,
 };
 
@@ -199,7 +199,7 @@ impl DecimalChunked {
         let mut prod = i128_to_dec128(1, prec, scale).unwrap();
         for arr in self.phys.downcast_iter() {
             for v in arr.non_null_values_iter() {
-                if let Some(p) = dec128_mul(prod, v, prec, scale) {
+                if let Some(p) = dec128_mul_scaled(prod, scale, v, scale, scale) {
                     prod = p;
                 } else {
                     return Scalar::null(DataType::Decimal(prec, scale));

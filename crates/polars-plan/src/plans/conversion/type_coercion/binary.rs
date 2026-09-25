@@ -266,6 +266,62 @@ pub(super) fn coerced_binop_dtype(
     Ok(Some(st))
 }
 
+/// Decimal operands of arithmetic and comparisons are not cast to a common type: the
+/// kernels handle mixed scales, and a common type may not hold both operands. Integers
+/// are cast to `Decimal(38, 0)`, which only 128-bit integers can overflow.
+#[cfg(feature = "dtype-decimal")]
+fn process_decimal_binary(
+    expr_arena: &mut Arena<AExpr>,
+    node_left: Node,
+    type_left: &DataType,
+    op: Operator,
+    node_right: Node,
+    type_right: &DataType,
+) -> Option<Option<AExpr>> {
+    let supported_op = op.is_comparison()
+        || matches!(
+            op,
+            Operator::Plus
+                | Operator::Minus
+                | Operator::Multiply
+                | Operator::TrueDivide
+                | Operator::RustDivide
+                | Operator::FloorDivide
+                | Operator::Modulus
+        );
+    let is_int =
+        |dt: &DataType| dt.is_integer() || matches!(dt, DataType::Unknown(UnknownKind::Int(_)));
+    if !supported_op
+        || !((type_left.is_decimal() && (type_right.is_decimal() || is_int(type_right)))
+            || (is_int(type_left) && type_right.is_decimal()))
+    {
+        return None;
+    }
+
+    let mut to_decimal = |node: Node, dtype: &DataType| {
+        if dtype.is_decimal() {
+            node
+        } else {
+            let options = if matches!(dtype, DataType::Int128 | DataType::UInt128) {
+                CastOptions::Strict
+            } else {
+                CastOptions::NonStrict
+            };
+            expr_arena.add(AExpr::Cast {
+                expr: node,
+                dtype: DataType::Decimal(polars_compute::decimal::DEC128_MAX_PREC, 0),
+                options,
+            })
+        }
+    };
+    let left = to_decimal(node_left, type_left);
+    let right = to_decimal(node_right, type_right);
+    if left == node_left && right == node_right {
+        return Some(None);
+    }
+    Some(Some(AExpr::BinaryExpr { left, op, right }))
+}
+
 pub(super) fn process_binary(
     expr_arena: &mut Arena<AExpr>,
     input_schema: &Schema,
@@ -388,6 +444,18 @@ pub(super) fn process_binary(
     }
 
     unpack!(early_escape(&type_left, &type_right));
+
+    #[cfg(feature = "dtype-decimal")]
+    if let Some(ae) = process_decimal_binary(
+        expr_arena,
+        node_left,
+        &type_left,
+        op,
+        node_right,
+        &type_right,
+    ) {
+        return Ok(ae);
+    }
 
     #[cfg(feature = "dtype-struct")]
     if op.is_arithmetic()

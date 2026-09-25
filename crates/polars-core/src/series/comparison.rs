@@ -4,6 +4,8 @@ use polars_error::feature_gated;
 
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
+#[cfg(feature = "dtype-decimal")]
+use crate::series::arithmetic::decimal_op_operands;
 use crate::series::nulls::replace_non_null;
 
 macro_rules! impl_eq_compare {
@@ -77,6 +79,13 @@ macro_rules! impl_eq_compare {
             },
             _ => (),
         };
+
+        #[cfg(feature = "dtype-decimal")]
+        if let Some((l, r)) = decimal_cmp_operands(lhs, rhs)? {
+            let mut out = l.$method(&r);
+            out.rename(lhs.name().clone());
+            return Ok(out);
+        }
 
         let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs)
             .map_err(|_| polars_err!(
@@ -200,6 +209,13 @@ macro_rules! impl_ineq_compare {
             _ => (),
         };
 
+        #[cfg(feature = "dtype-decimal")]
+        if let Some((l, r)) = decimal_cmp_operands(lhs, rhs)? {
+            let mut out = l.$method(&r);
+            out.rename(lhs.name().clone());
+            return Ok(out);
+        }
+
         let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs).map_err(|_|
             polars_err!(
                 SchemaMismatch: "could not evaluate '{}' comparison between series '{}' of dtype: {:?} and series '{}' of dtype: {:?}",
@@ -240,6 +256,32 @@ macro_rules! impl_ineq_compare {
         out.rename(lhs.name().clone());
         PolarsResult::Ok(out)
     }};
+}
+
+/// Returns the physical values of decimal operands aligned to the larger scale.
+#[cfg(feature = "dtype-decimal")]
+fn decimal_cmp_operands(
+    lhs: &Series,
+    rhs: &Series,
+) -> PolarsResult<Option<(Int128Chunked, Int128Chunked)>> {
+    use polars_compute::decimal::dec128_upscale_saturating;
+
+    let Some(operands) = decimal_op_operands(lhs, rhs) else {
+        return Ok(None);
+    };
+    let (lhs, rhs) = operands?;
+    let (lhs, rhs) = (lhs.decimal()?, rhs.decimal()?);
+    let scale = lhs.scale().max(rhs.scale());
+    let upscale = |ca: &DecimalChunked| {
+        let e = scale - ca.scale();
+        if e == 0 {
+            ca.physical().clone()
+        } else {
+            ca.physical()
+                .apply_values(|v| dec128_upscale_saturating(v, e))
+        }
+    };
+    Ok(Some((upscale(lhs), upscale(rhs))))
 }
 
 fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {

@@ -737,8 +737,15 @@ impl OptimizationRule for TypeCoercionRule {
                         _ => {},
                     }
 
+                    // A decimal supertype may not hold every value, raise instead of
+                    // producing nulls.
+                    let literal_options = if super_type.leaf_dtype().is_decimal() {
+                        CastOptions::Strict
+                    } else {
+                        CastOptions::NonStrict
+                    };
                     for (e, dtype) in input.iter_mut().zip(dtypes) {
-                        cast_expr_ir(e, &dtype, &super_type, expr_arena, CastOptions::NonStrict)?;
+                        cast_expr_ir(e, &dtype, &super_type, expr_arena, literal_options)?;
                     }
                 }
 

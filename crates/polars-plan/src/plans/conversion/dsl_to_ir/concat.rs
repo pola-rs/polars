@@ -88,10 +88,14 @@ pub(super) fn convert_st_union(
 
             let to_cast = input_schema.iter().zip(schema.iter_values()).flat_map(
                 |((left_name, left_type), st)| {
-                    if left_type != st {
-                        Some(col(left_name.clone()).cast(st.clone()))
-                    } else {
+                    if left_type == st {
                         None
+                    } else if st.leaf_dtype().is_decimal() {
+                        // A decimal supertype may not hold every value, raise instead of
+                        // producing nulls.
+                        Some(col(left_name.clone()).strict_cast(st.clone()))
+                    } else {
+                        Some(col(left_name.clone()).cast(st.clone()))
                     }
                 },
             );
