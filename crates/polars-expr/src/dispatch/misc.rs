@@ -734,6 +734,116 @@ pub fn as_list(s: &mut [Column]) -> PolarsResult<Column> {
         .map(IntoColumn::into_column)
 }
 
+/// The truncated remainder or quotient. Decimals (with integers) use the exact decimal
+/// kernels; other operands have been cast to one numeric type.
+pub(super) fn trunc_arith(
+    s: &mut [Column],
+    op: polars_plan::dsl::TruncArithOp,
+) -> PolarsResult<Column> {
+    use polars_plan::dsl::TruncArithOp;
+
+    let len = s[0].len().max(s[1].len());
+    let lhs = s[0].as_materialized_series_maintain_scalar();
+    let rhs = s[1].as_materialized_series_maintain_scalar();
+    let out = if lhs.dtype().is_decimal() || rhs.dtype().is_decimal() {
+        #[cfg(feature = "dtype-decimal")]
+        {
+            let (l, r) = polars_core::series::arithmetic::coerce_lhs_rhs_numeric_op(&lhs, &rhs)?;
+            let (l, r) = (l.decimal()?, r.decimal()?);
+            match op {
+                TruncArithOp::Rem => l.rem_with(r, false)?,
+                TruncArithOp::IntDiv => l.int_div_with_scale(r, 0, false)?,
+            }
+            .into_series()
+        }
+        #[cfg(not(feature = "dtype-decimal"))]
+        unreachable!()
+    } else {
+        polars_ensure!(
+            lhs.dtype() == rhs.dtype(),
+            ComputeError: "{} expects operands of one type, got {} and {}",
+            op.name(), lhs.dtype(), rhs.dtype()
+        );
+        match lhs.dtype() {
+            DataType::Float32 => float_trunc_arith(lhs.f32()?, rhs.f32()?, op).into_series(),
+            DataType::Float64 => float_trunc_arith(lhs.f64()?, rhs.f64()?, op).into_series(),
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                let (l, r) = (lhs.cast(&DataType::Float32)?, rhs.cast(&DataType::Float32)?);
+                float_trunc_arith(l.f32()?, r.f32()?, op)
+                    .into_series()
+                    .cast(&DataType::Float16)?
+            },
+            dt if dt.is_integer() => {
+                polars_core::with_match_physical_integer_polars_type!(dt, |$T| {
+                    let a: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                    let b: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                    int_trunc_arith(a, b, op)?.into_series()
+                })
+            },
+            dt => polars_bail!(InvalidOperation: "{} is not supported for {}", op.name(), dt),
+        }
+    };
+    let out = out.with_name(s[0].name().clone()).into_column();
+    Ok(if out.len() == len {
+        out
+    } else {
+        out.new_from_index(0, len)
+    })
+}
+
+fn float_trunc_arith<T>(
+    a: &ChunkedArray<T>,
+    b: &ChunkedArray<T>,
+    op: polars_plan::dsl::TruncArithOp,
+) -> ChunkedArray<T>
+where
+    T: PolarsFloatType,
+    T::Native: num_traits::Float,
+{
+    use num_traits::Float;
+    use polars_core::prelude::arity::broadcast_binary_elementwise_values;
+    use polars_plan::dsl::TruncArithOp;
+
+    // `%` on floats is `fmod`: exact, with the dividend's sign.
+    match op {
+        TruncArithOp::Rem => broadcast_binary_elementwise_values(a, b, |x, y| x % y),
+        TruncArithOp::IntDiv => broadcast_binary_elementwise_values(a, b, |x, y| (x / y).trunc()),
+    }
+}
+
+fn int_trunc_arith<T>(
+    a: &ChunkedArray<T>,
+    b: &ChunkedArray<T>,
+    op: polars_plan::dsl::TruncArithOp,
+) -> PolarsResult<ChunkedArray<T>>
+where
+    T: PolarsIntegerType,
+    T::Native: num_traits::CheckedRem + num_traits::CheckedDiv + num_traits::Zero,
+{
+    use num_traits::{CheckedDiv, CheckedRem, Zero};
+    use polars_core::prelude::arity::broadcast_try_binary_elementwise;
+    use polars_plan::dsl::TruncArithOp;
+
+    broadcast_try_binary_elementwise(a, b, |x, y| {
+        let (Some(x), Some(y)) = (x, y) else {
+            return Ok(None);
+        };
+        // Division by zero is null, as for the integer `/` and `%`.
+        if y.is_zero() {
+            return Ok(None);
+        }
+        match op {
+            // Only MIN % -1 overflows, and its remainder is 0.
+            TruncArithOp::Rem => Ok(Some(x.checked_rem(&y).unwrap_or_else(T::Native::zero))),
+            TruncArithOp::IntDiv => x
+                .checked_div(&y)
+                .map(Some)
+                .ok_or_else(|| polars_err!(ComputeError: "overflow in integer division")),
+        }
+    })
+}
+
 #[cfg(feature = "dtype-decimal")]
 pub(super) fn decimal_arith(
     s: &mut [Column],

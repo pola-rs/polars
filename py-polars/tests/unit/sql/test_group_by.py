@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal as D
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -123,9 +124,10 @@ def test_group_by_all() -> None:
         {
             "sum_b": [9, 6, 6],
             "sum_c": [231, 165, 66],
-            "sum_bc_over_2": [120.0, 85.5, 36.0],
+            "sum_bc_over_2": [D("120.000000"), D("85.500000"), D("36.000000")],
             "grp": ["xx", "yy", "zz"],
-        }
+        },
+        schema_overrides={"sum_bc_over_2": pl.Decimal(38, 6)},
     )
     assert_frame_equal(expected, res.sort(by="grp"))
 
@@ -1152,7 +1154,7 @@ def test_group_by_unaliased_constant(grouped: pl.DataFrame) -> None:
     ("constant", "value", "dtype"),
     [
         ("2", 2, pl.Int32),
-        ("2.5", 2.5, pl.Float64),
+        ("2.5", D("2.5"), pl.Decimal(2, 1)),
         ("TRUE", True, pl.Boolean),
         ("'x'", "x", pl.String),
         ("NULL", None, pl.Null),

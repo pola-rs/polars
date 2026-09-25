@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::ops::{ControlFlow, Deref};
 use std::sync::{Arc, RwLock};
 
-use polars_core::frame::row::Row;
 use polars_core::prelude::*;
 use polars_defs::join::{JoinArgs, JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_lazy::prelude::*;
@@ -32,7 +31,7 @@ use crate::grouping_sets::{
 };
 use crate::sql_expr::{
     convert_int_literal_for_string, order_by_sort_options, parse_sql_array, parse_sql_expr,
-    resolve_compound_identifier, to_sql_interface_err,
+    resolve_compound_identifier, series_from_literals, to_sql_interface_err,
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
@@ -904,8 +903,8 @@ impl SQLContext {
         &mut self,
         values: impl Iterator<Item = &'a Vec<SQLExpr>>,
     ) -> PolarsResult<LazyFrame> {
-        let frame_rows: Vec<Row> = values.map(|row| {
-            let row_data: Result<Vec<_>, _> = row.iter().map(|expr| {
+        let frame_rows: Vec<Vec<AnyValue>> = values.map(|row| {
+            row.iter().map(|expr| {
                 let expr = parse_sql_expr(expr, self, None)?;
                 match expr {
                     Expr::Literal(value) => {
@@ -915,11 +914,22 @@ impl SQLContext {
                     },
                     _ => polars_bail!(SQLInterface: "VALUES clause expects literals; found {}", expr),
                 }
-            }).collect();
-            row_data.map(Row::new)
-        }).collect::<Result<_, _>>()?;
+            }).collect()
+        }).collect::<PolarsResult<_>>()?;
 
-        Ok(DataFrame::from_rows(frame_rows.as_ref())?.lazy())
+        // Each column takes the supertype of all its rows, not the first row's type.
+        let width = frame_rows.first().map_or(0, Vec::len);
+        polars_ensure!(
+            frame_rows.iter().all(|row| row.len() == width),
+            SQLSyntax: "VALUES rows must all have the same number of values"
+        );
+        let columns = (0..width)
+            .map(|i| {
+                let values: Vec<AnyValue> = frame_rows.iter().map(|row| row[i].clone()).collect();
+                series_from_literals(format_pl_smallstr!("column_{i}"), &values).map(Column::from)
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        Ok(DataFrame::new_infer_height(columns)?.lazy())
     }
 
     // EXPLAIN SELECT * FROM DF

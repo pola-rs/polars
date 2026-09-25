@@ -1931,6 +1931,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     ("round", decimals, Into::<&str>::into(mode)).into_py_any(py)
                 },
                 IRFunctionExpr::DecimalArith { op, scale } => (op.name(), scale).into_py_any(py),
+                IRFunctionExpr::TruncArith(op) => (op.name(),).into_py_any(py),
                 IRFunctionExpr::RoundSF { digits } => ("round_sig_figs", digits).into_py_any(py),
                 IRFunctionExpr::Truncate { decimals } => ("truncate", decimals).into_py_any(py),
                 IRFunctionExpr::Floor => ("floor",).into_py_any(py),

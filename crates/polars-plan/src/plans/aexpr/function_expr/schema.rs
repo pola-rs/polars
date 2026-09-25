@@ -350,6 +350,26 @@ impl IRFunctionExpr {
                     op.name(),
                 )?
                 .with_dtype(DataType::Decimal(DEC128_MAX_PREC, *scale)),
+            // Decimals (with integers at scale 0) keep the larger scale; other numerics
+            // their supertype.
+            TruncArith(op) => {
+                let args = mapper.args();
+                match (args[0].dtype(), args[1].dtype()) {
+                    #[cfg(feature = "dtype-decimal")]
+                    (l, r) if l.is_decimal() || r.is_decimal() => {
+                        let scale = |dt: &DataType| match dt {
+                            DataType::Decimal(_, s) => *s,
+                            _ => 0,
+                        };
+                        let scale = match op {
+                            TruncArithOp::Rem => scale(l).max(scale(r)),
+                            TruncArithOp::IntDiv => 0,
+                        };
+                        mapper.with_dtype(DataType::Decimal(DEC128_MAX_PREC, scale))
+                    },
+                    _ => mapper.map_to_supertype(),
+                }
+            },
             #[cfg(feature = "fused")]
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr { .. } => mapper.map_to_supertype(),

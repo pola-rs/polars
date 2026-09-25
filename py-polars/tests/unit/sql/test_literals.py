@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from decimal import Decimal as D
 
 import pytest
 
@@ -395,10 +396,34 @@ def test_scientific_notation_literals(literal: str) -> None:
     )
 
 
-@pytest.mark.parametrize("literal", ["9223372036854775808", "18446744073709551615"])
 @pytest.mark.parametrize(
-    "expression", ["{literal}", "ARRAY[{literal}]", "1 IN ({literal})"]
+    ("literal", "dtype"),
+    [
+        ("9223372036854775808", pl.Decimal(19, 0)),
+        ("18446744073709551615", pl.Decimal(20, 0)),
+        ("99999999999999999999999999999999999999", pl.Decimal(38, 0)),
+    ],
 )
-def test_integer_literal_overflow(literal: str, expression: str) -> None:
-    with pytest.raises(SQLInterfaceError, match="cannot parse literal"):
-        pl.sql(f"SELECT {expression.format(literal=literal)}", eager=True)
+def test_integer_literal_beyond_i64(literal: str, dtype: pl.Decimal) -> None:
+    # an exact numeric literal that doesn't fit Int64 is an exact decimal
+    res = pl.sql(
+        f"SELECT {literal} AS v, ARRAY[{literal}] AS a, 1 IN ({literal}) AS i",
+        eager=True,
+    )
+    assert res.schema == {"v": dtype, "a": pl.List(dtype), "i": pl.Boolean()}
+    assert res.row(0) == (D(literal), [D(literal)], False)
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        "123456789012345678901234567890123456789",
+        "1.23456789012345678901234567890123456789",
+    ],
+)
+def test_exact_literal_beyond_38_digits_raises(literal: str) -> None:
+    # approximating it would make e.g. two literals differing by one compare equal
+    with pytest.raises(SQLInterfaceError, match="needs more than 38 digits"):
+        pl.sql(f"SELECT {literal} AS v", eager=True)
+    # an exponent asks for an approximate value
+    assert pl.sql("SELECT 1.5e40 AS v", eager=True).schema == {"v": pl.Float64}

@@ -111,6 +111,26 @@ impl Display for DecimalArithOp {
     }
 }
 
+/// Arithmetic on the truncated quotient, for any numeric type.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+pub enum TruncArithOp {
+    /// The remainder with the dividend's sign.
+    Rem,
+    /// The quotient rounded toward zero.
+    IntDiv,
+}
+
+impl TruncArithOp {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Rem => "trunc_rem",
+            Self::IntDiv => "trunc_int_div",
+        }
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug)]
@@ -312,6 +332,8 @@ pub enum FunctionExpr {
     },
     /// See [`SqlFunction`].
     Sql(SqlFunction),
+    /// See [`TruncArithOp`].
+    TruncArith(TruncArithOp),
     #[cfg(feature = "round_series")]
     RoundSF {
         digits: i32,
@@ -684,6 +706,7 @@ impl Hash for FunctionExpr {
                 scale.hash(state);
             },
             Sql(f) => f.hash(state),
+            TruncArith(op) => op.hash(state),
             #[cfg(feature = "round_series")]
             FunctionExpr::RoundSF { digits } => digits.hash(state),
             #[cfg(feature = "round_series")]
@@ -940,6 +963,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "dtype-decimal")]
             DecimalArith { op, .. } => return Display::fmt(op, f),
             Sql(func) => return Display::fmt(func, f),
+            TruncArith(op) => op.name(),
             #[cfg(feature = "round_series")]
             RoundSF { .. } => "round_sig_figs",
             #[cfg(feature = "round_series")]
