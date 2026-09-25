@@ -18,8 +18,8 @@ use super::*;
 use crate::dsl::MetadataPerSource::Unresolved;
 #[cfg(feature = "parquet")]
 use crate::plans::parquet_footers::{
-    check_no_cloud_decryption, read_footers, read_parquet_metadata, read_parquet_num_rows,
-    resolve_for_splitting, select_footer_indices,
+    read_footers, read_parquet_metadata, read_parquet_num_rows, resolve_for_splitting,
+    select_footer_indices,
 };
 
 pub(super) async fn dsl_to_ir(
@@ -304,11 +304,12 @@ pub(super) async fn parquet_file_info(
     // wave.
     let first_fut = async move {
         if first_scan_source.is_cloud_url() {
-            check_no_cloud_decryption(decryption_properties)?;
             let first_path = first_scan_source.as_path().unwrap();
             feature_gated!("cloud", {
                 let mut reader =
-                    ParquetObjectStore::from_uri(first_path.clone(), cloud_options, None).await?;
+                    ParquetObjectStore::from_uri(first_path.clone(), cloud_options, None)
+                        .await?
+                        .with_decryption_properties(decryption_properties.cloned());
                 PolarsResult::Ok((
                     reader.schema().await?,
                     reader.num_rows().await?,

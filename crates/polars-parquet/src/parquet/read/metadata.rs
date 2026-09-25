@@ -149,8 +149,11 @@ pub fn deserialize_file_crypto_metadata(
 /// Decode only `FileMetaData.num_rows` (thrift field 3) from `footer`.
 /// Used by Polars multi-file scans in `RowCounts` resolve mode. See
 /// [`crate::parquet::handwritten_thrift::decode_num_rows`].
+///
+/// `footer` must include the trailing metadata length and magic bytes.
+/// Errors if the footer is encrypted.
 pub fn deserialize_num_rows(footer: Buffer<u8>) -> ParquetResult<i64> {
-    decode_num_rows(footer)
+    decode_num_rows(FooterBuffer::try_new(footer)?.into_plaintext()?)
 }
 
 /// Sync variant of [`deserialize_num_rows`] that owns the reader.

@@ -18,7 +18,7 @@ use std::num::NonZeroU32;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config::verbose;
-use polars_core::error::{PolarsResult, feature_gated, polars_bail};
+use polars_core::error::{PolarsResult, feature_gated};
 use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::parquet::read::PlFileDecryptionProperties;
 
@@ -216,13 +216,13 @@ pub(crate) async fn read_parquet_metadata(
     decryption_properties: Option<&PlFileDecryptionProperties>,
 ) -> PolarsResult<FileMetadataRef> {
     if source.is_cloud_url() {
-        check_no_cloud_decryption(decryption_properties)?;
         #[allow(unused)]
         let path = source.as_path().unwrap();
         feature_gated!("cloud", {
             let mut reader =
                 polars_io::prelude::ParquetObjectStore::from_uri(path.clone(), cloud_options, None)
-                    .await?;
+                    .await?
+                    .with_decryption_properties(decryption_properties.cloned());
             reader.get_metadata().await.cloned()
         })
     } else {
@@ -263,15 +263,4 @@ pub(crate) async fn read_parquet_num_rows(
         let mut cursor = Cursor::new(memslice);
         polars_parquet::parquet::read::read_num_rows(&mut cursor).map_err(Into::into)
     }
-}
-
-/// Error if decryption properties are provided for a cloud source.
-pub(crate) fn check_no_cloud_decryption(
-    decryption_properties: Option<&PlFileDecryptionProperties>,
-) -> PolarsResult<()> {
-    // TODO: Support encrypted Parquet files from cloud sources.
-    if decryption_properties.is_some() {
-        polars_bail!(nyi = "encrypted Parquet files from cloud sources");
-    }
-    Ok(())
 }

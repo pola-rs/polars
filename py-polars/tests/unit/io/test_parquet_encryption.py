@@ -8,8 +8,10 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 # Test files are from the apache/parquet-testing repository, and were written by
@@ -26,6 +28,17 @@ NUM_ROWS = 50
 # (a `repeated int64` without a LIST annotation), independent of encryption,
 # so this column is excluded when checking data.
 UNSUPPORTED_COLUMNS = ["int64_field"]
+
+
+def local_path(path: Path) -> Path:
+    return path
+
+
+# Tests are run with local paths, and with file:// URIs, which are read in the same
+# way as files from cloud storage.
+parametrize_source = pytest.mark.parametrize(
+    "to_source", [local_path, format_file_uri], ids=["local", "file_uri"]
+)
 
 JULIAN_DAY_OF_EPOCH = 2_440_588
 MICROS_PER_DAY = 86_400 * 1_000_000
@@ -63,8 +76,11 @@ def expected_data() -> pl.DataFrame:
     )
 
 
-def test_read_uniform_encryption(io_files_path: Path) -> None:
-    path = io_files_path / "parquet-encryption" / "uniform_encryption.parquet.encrypted"
+@parametrize_source
+def test_read_uniform_encryption(
+    io_files_path: Path, to_source: Callable[[Path], Any]
+) -> None:
+    path = to_source(uniform_encryption_path(io_files_path))
     expected = expected_data()
 
     decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
@@ -86,10 +102,16 @@ def test_read_uniform_encryption(io_files_path: Path) -> None:
         ("encrypt_columns_and_footer_disable_aad_storage", b"tester"),
     ],
 )
+@parametrize_source
 def test_read_with_column_keys(
-    io_files_path: Path, file_name: str, aad_prefix: bytes | None
+    io_files_path: Path,
+    file_name: str,
+    aad_prefix: bytes | None,
+    to_source: Callable[[Path], Any],
 ) -> None:
-    path = io_files_path / "parquet-encryption" / f"{file_name}.parquet.encrypted"
+    path = to_source(
+        io_files_path / "parquet-encryption" / f"{file_name}.parquet.encrypted"
+    )
     expected = expected_data()
 
     decryption_properties = pl.ParquetDecryptionProperties(
@@ -127,8 +149,11 @@ def test_read_with_bloom_filters(io_files_path: Path) -> None:
     assert_frame_equal(df, expected)
 
 
-def test_read_encrypted_footer_without_column_keys(io_files_path: Path) -> None:
-    path = (
+@parametrize_source
+def test_read_encrypted_footer_without_column_keys(
+    io_files_path: Path, to_source: Callable[[Path], Any]
+) -> None:
+    path = to_source(
         io_files_path
         / "parquet-encryption"
         / "encrypt_columns_and_footer.parquet.encrypted"
@@ -177,8 +202,11 @@ def test_read_encrypted_footer_without_column_keys(io_files_path: Path) -> None:
         pl.read_parquet(path, decryption_properties=decryption_properties)
 
 
-def test_read_encrypted_footer_with_some_column_keys(io_files_path: Path) -> None:
-    path = (
+@parametrize_source
+def test_read_encrypted_footer_with_some_column_keys(
+    io_files_path: Path, to_source: Callable[[Path], Any]
+) -> None:
+    path = to_source(
         io_files_path
         / "parquet-encryption"
         / "encrypt_columns_and_footer.parquet.encrypted"
@@ -202,10 +230,11 @@ def test_read_encrypted_footer_with_some_column_keys(io_files_path: Path) -> Non
         )
 
 
+@parametrize_source
 def test_read_plaintext_footer_without_decryption_properties(
-    io_files_path: Path,
+    io_files_path: Path, to_source: Callable[[Path], Any]
 ) -> None:
-    path = (
+    path = to_source(
         io_files_path
         / "parquet-encryption"
         / "encrypt_columns_plaintext_footer.parquet.encrypted"
@@ -260,25 +289,52 @@ def uniform_encryption_path(io_files_path: Path) -> Path:
     return io_files_path / "parquet-encryption" / "uniform_encryption.parquet.encrypted"
 
 
-def test_scan_encrypted_footer_metadata(io_files_path: Path) -> None:
+@parametrize_source
+def test_scan_encrypted_footer_metadata(
+    io_files_path: Path, to_source: Callable[[Path], Any]
+) -> None:
     # Only requires reading the footer, not column data
     decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
     lf = pl.scan_parquet(
-        uniform_encryption_path(io_files_path),
+        to_source(uniform_encryption_path(io_files_path)),
         decryption_properties=decryption_properties,
     )
     assert lf.collect_schema().names() == expected_data().columns
     assert lf.select(pl.len()).collect().item() == NUM_ROWS
 
 
+@parametrize_source
 def test_scan_encrypted_footer_without_decryption_properties(
-    io_files_path: Path,
+    io_files_path: Path, to_source: Callable[[Path], Any]
 ) -> None:
     with pytest.raises(
         pl.exceptions.ComputeError,
         match="encrypted footer but decryption properties were not provided",
     ):
-        pl.scan_parquet(uniform_encryption_path(io_files_path)).collect_schema()
+        pl.scan_parquet(
+            to_source(uniform_encryption_path(io_files_path))
+        ).collect_schema()
+
+
+@parametrize_source
+def test_scan_multiple_encrypted_files(
+    io_files_path: Path, to_source: Callable[[Path], Any]
+) -> None:
+    source = to_source(uniform_encryption_path(io_files_path))
+    # No schema is provided, so the schema and row counts come from the footers.
+    # INT96 values overflow when read with the inferred nanosecond precision.
+    columns = [
+        c
+        for c in expected_data().columns
+        if c not in [*UNSUPPORTED_COLUMNS, "int96_field"]
+    ]
+    expected = expected_data().select(columns)
+
+    decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
+    lf = pl.scan_parquet([source, source], decryption_properties=decryption_properties)
+
+    assert lf.select(pl.len()).collect().item() == 2 * NUM_ROWS
+    assert_frame_equal(lf.select(columns).collect(), pl.concat([expected, expected]))
 
 
 def test_scan_encrypted_footer_with_wrong_key(io_files_path: Path) -> None:
