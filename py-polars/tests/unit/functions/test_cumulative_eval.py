@@ -53,6 +53,17 @@ def test_cumulative_eval_samples() -> None:
     )
 
 
+def test_cumulative_eval_named_column_reference_not_allowed() -> None:
+    # Unlike list/array eval, `cumulative_eval` does not support referring to other
+    # columns of the outer frame; only `pl.element()` is available.
+    df = pl.DataFrame({"x": [1, 2, 3, 4], "y": [10, 20, 30, 40]})
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="does not support named column references",
+    ):
+        df.select(pl.col("x").cumulative_eval(pl.element().sum() + pl.col("y").first()))
+
+
 def test_cumulative_eval_length_preserving_streaming_25293() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     q = df.lazy().with_columns(

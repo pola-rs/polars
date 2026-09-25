@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -334,4 +334,366 @@ def test_arr_eval_categorical_min_max_25906() -> None:
     assert_series_equal(
         s.arr.agg(pl.element().arg_max()),
         pl.Series("a", [0, 0], dtype=pl.get_index_type()),
+    )
+
+
+def test_arr_eval_column_reference() -> None:
+    df = pl.DataFrame(
+        {"x": [[1, 2, 3], [4, 5, 6]], "y": [10, 20]},
+        schema={"x": pl.Array(pl.Int64, 3), "y": pl.Int64},
+    )
+    result = df.select(pl.col("x").arr.eval(pl.element() + pl.col("y")))
+    expected = pl.DataFrame(
+        {"x": [[11, 12, 13], [24, 25, 26]]},
+        schema={"x": pl.Array(pl.Int64, 3)},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_arr_eval_column_reference_with_nulls() -> None:
+    s = pl.Series("x", [[1, 2, 3], None, [4, 5, 6]], pl.Array(pl.Int64, 3))
+    df = pl.DataFrame({"x": s, "y": pl.Series([10, 20, 30])})
+    result = df.select(pl.col("x").arr.eval(pl.element() + pl.col("y")))
+    expected = pl.DataFrame(
+        {"x": pl.Series("x", [[11, 12, 13], None, [34, 35, 36]], pl.Array(pl.Int64, 3))}
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_arr_agg_column_reference() -> None:
+    df = pl.DataFrame(
+        {"x": [[1, 2, 3], [4, 5, 6]], "y": [10, 20]},
+        schema={"x": pl.Array(pl.Int64, 3), "y": pl.Int64},
+    )
+    result = df.select(pl.col("x").arr.agg((pl.element() + pl.col("y")).sum()))
+    expected = pl.DataFrame({"x": [36, 75]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("f", "is_scalar"),
+    [
+        (lambda a, b: a.arr.eval(b, as_list=True), False),
+        (lambda a, b: a.arr.agg(b), True),
+    ],
+)
+def test_named_ref_broadcast(
+    f: Callable[[pl.Expr, pl.Expr], pl.Expr], is_scalar: bool
+) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 1, 1, 2],
+            "values": [2.0, 3.0, 5.0, 1.0, 4.0],
+        }
+    )
+    assert_frame_equal(
+        df.group_by("a").agg(
+            b=f(pl.lit([1], pl.Array(pl.Int8, 1)), pl.col.values * 2.0)
+        ),
+        pl.DataFrame({"a": [1, 2], "b": [[4.0, 10.0, 2.0], [6.0, 8.0]]})
+        if is_scalar
+        else pl.DataFrame(
+            {"a": [1, 2], "b": [[[4.0], [10.0], [2.0]], [[6.0], [8.0]]]},
+            schema={"a": pl.Int64, "b": pl.List(pl.List(pl.Float64))},
+        ),
+        check_row_order=False,
+    )
+
+    assert_frame_equal(
+        df.select(b=f(pl.lit([1], pl.Array(pl.Int8, 1)), pl.col.values * 2.0)),
+        pl.DataFrame({"b": [4.0, 6.0, 10.0, 2.0, 8.0]})
+        if is_scalar
+        else pl.DataFrame(
+            {"b": [[4.0], [6.0], [10.0], [2.0], [8.0]]},
+            schema={"b": pl.List(pl.Float64)},
+        ),
+    )
+
+
+def test_nested_list_eval_arr_agg_col_ref() -> None:
+    df = pl.DataFrame(
+        {
+            "lst": [[[1, 2, 3], [4, 5, 6]], [[7, 8, 9]]],
+            "values": [2, 3],
+        },
+        schema={"lst": pl.List(pl.Array(pl.Int64, 3)), "values": pl.Int64},
+    )
+    result = df.select(
+        pl.col("lst").list.eval(
+            pl.element().arr.agg(pl.element().sum() * pl.col("values"))
+        )
+    )
+    assert_frame_equal(result, pl.DataFrame({"lst": [[12, 30], [72]]}))
+
+
+def test_nested_list_eval_arr_agg_col_ref_with_nulls() -> None:
+    s = pl.Series(
+        "lst",
+        [[[1, 2, 3], None, [4, 5, 6]], None, [[7, 8, 9]]],
+        pl.List(pl.Array(pl.Int64, 3)),
+    )
+    df = pl.DataFrame({"lst": s, "values": pl.Series("values", [2, 10, 3], pl.Int64)})
+    result = df.select(
+        pl.col("lst").list.eval(
+            pl.element().arr.agg(pl.element().sum() * pl.col("values"))
+        )
+    )
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"lst": [[12, None, 30], None, [72]]},
+            schema={"lst": pl.List(pl.Int64)},
+        ),
+    )
+
+
+def test_nested_list_eval_arr_eval_col_ref() -> None:
+    df = pl.DataFrame(
+        {
+            "lst": [[[1, 2], [3, 4]], [[5, 6]]],
+            "scale": [10, 100],
+        },
+        schema={"lst": pl.List(pl.Array(pl.Int64, 2)), "scale": pl.Int64},
+    )
+    result = df.select(
+        pl.col("lst").list.eval(pl.element().arr.eval(pl.element() * pl.col("scale")))
+    )
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"lst": [[[10, 20], [30, 40]], [[500, 600]]]},
+            schema={"lst": pl.List(pl.Array(pl.Int64, 2))},
+        ),
+    )
+
+
+def test_nested_list_eval_arr_eval_col_ref_with_nulls() -> None:
+    s = pl.Series(
+        "lst",
+        [[[1, 2], None, [3, 4]], None, [[5, 6]]],
+        pl.List(pl.Array(pl.Int64, 2)),
+    )
+    df = pl.DataFrame({"lst": s, "scale": pl.Series("scale", [10, 20, 100], pl.Int64)})
+    result = df.select(
+        pl.col("lst").list.eval(pl.element().arr.eval(pl.element() * pl.col("scale")))
+    )
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"lst": [[[10, 20], None, [30, 40]], None, [[500, 600]]]},
+            schema={"lst": pl.List(pl.Array(pl.Int64, 2))},
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "f",
+    [lambda a, b: a.arr.eval(b, as_list=True), lambda a, b: a.arr.agg(b)],
+)
+def test_scalar_shift(f: Callable[[pl.Expr, pl.Expr], pl.Expr]) -> None:
+    df = pl.DataFrame(
+        {"lst": [[1, 2], [3, 4], [5, 6]], "n": [1, 0, 2]},
+        schema_overrides={"lst": pl.Array(pl.Int64, 2)},
+    )
+    df = df.select(f(pl.col.lst, pl.element().shift(pl.col.n)))
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {"lst": [[None, 1], [3, 4], [None, None]]},
+        ),
+    )
+
+    df = pl.DataFrame(
+        {"lst": [[1, 2], [3, 4], None], "n": [1, 0, 2]},
+        schema_overrides={"lst": pl.Array(pl.Int64, 2)},
+    )
+    df = df.select(f(pl.col.lst, pl.element().shift(pl.col.n)))
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {"lst": [[None, 1], [3, 4], None]},
+        ),
+    )
+
+
+def test_arr_eval_col_ref_compare_7210() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 5, 3], [4, 2, 6]], "b": [3, 3]},
+        schema={"a": pl.Array(pl.Int64, 3), "b": pl.Int64},
+    )
+    assert_frame_equal(
+        df.select(pl.col("a").arr.eval(pl.element() > pl.col("b")).alias("gt")),
+        pl.DataFrame(
+            {"gt": [[False, True, False], [True, False, True]]},
+            schema={"gt": pl.Array(pl.Boolean, 3)},
+        ),
+    )
+
+
+def test_arr_eval_len1_broadcast_nonempty() -> None:
+    df = pl.DataFrame({"y": [10, 20, 30]})
+    assert_frame_equal(
+        df.select(
+            pl.lit([1, 2, 3], dtype=pl.Array(pl.Int64, 3))
+            .arr.eval(pl.element() + pl.col("y"), as_list=True)
+            .alias("r")
+        ),
+        pl.DataFrame({"r": [[11, 12, 13], [21, 22, 23], [31, 32, 33]]}),
+    )
+
+
+def test_arr_agg_col_ref_group_by() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 2],
+            "a": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+            "y": [10, 20, 30],
+        },
+        schema={"g": pl.Int64, "a": pl.Array(pl.Int64, 3), "y": pl.Int64},
+    )
+    result = df.group_by("g", maintain_order=True).agg(
+        pl.col("a").arr.agg((pl.element() + pl.col("y")).sum()).alias("r")
+    )
+    assert_frame_equal(
+        result,
+        pl.DataFrame({"g": [1, 2], "r": [[36, 75], [114]]}),
+    )
+
+
+def test_nested_list_arr_list_agg_col_ref() -> None:
+    # Three levels mixing list.eval -> arr.eval -> list.agg, referencing an outer
+    # column at the deepest level.
+    x = pl.Series(
+        "x",
+        [[[[1, 2], [3]], [[4], [5, 6]]], [[[7], [8, 9]]]],
+        dtype=pl.List(pl.Array(pl.List(pl.Int64), 2)),
+    )
+    result = pl.DataFrame({"x": x, "s": [10, 100]}).select(
+        pl.col("x")
+        .list.eval(
+            pl.element().arr.eval(
+                pl.element().list.agg(pl.element().sum() * pl.col("s"))
+            )
+        )
+        .alias("r")
+    )
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"r": [[[30, 30], [40, 110]], [[700, 1700]]]},
+            schema={"r": pl.List(pl.Array(pl.Int64, 2))},
+        ),
+    )
+
+
+def test_nested_arr_list_eval_col_ref() -> None:
+    # Two levels with the array on the outside: arr.eval -> list.eval.
+    x = pl.Series(
+        "x",
+        [[[1, 2], [3]], [[4], [5, 6]]],
+        dtype=pl.Array(pl.List(pl.Int64), 2),
+    )
+    result = pl.DataFrame({"x": x, "s": [10, 100]}).select(
+        pl.col("x")
+        .arr.eval(pl.element().list.eval(pl.element() * pl.col("s")), as_list=True)
+        .alias("r")
+    )
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"r": [[[10, 20], [30]], [[400], [500, 600]]]},
+            schema={"r": pl.List(pl.List(pl.Int64))},
+        ),
+    )
+
+
+def test_nested_four_levels_mixed_col_ref() -> None:
+    # Four levels: list.eval -> arr.eval -> list.eval -> arr.agg.
+    x = pl.Series(
+        "x",
+        [[[[[1, 2], [3, 4]]]], [[[[5, 6]]]]],
+        dtype=pl.List(pl.Array(pl.List(pl.Array(pl.Int64, 2)), 1)),
+    )
+    result = pl.DataFrame({"x": x, "s": [10, 100]}).select(
+        pl.col("x")
+        .list.eval(
+            pl.element().arr.eval(
+                pl.element().list.eval(
+                    pl.element().arr.agg(pl.element().sum() * pl.col("s"))
+                )
+            )
+        )
+        .alias("r")
+    )
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"r": [[[[30, 70]]], [[[1100]]]]},
+            schema={"r": pl.List(pl.Array(pl.List(pl.Int64), 1))},
+        ),
+    )
+
+
+def test_nested_list_list_arr_agg_col_ref_with_nulls() -> None:
+    # list.eval -> list.eval -> arr.agg with nulls at both nesting levels.
+    x = pl.Series(
+        "x",
+        [
+            [[[1, 2], [3, 4]], None, [[5, 6]]],
+            None,
+            [[[7, 8]]],
+        ],
+        dtype=pl.List(pl.List(pl.Array(pl.Int64, 2))),
+    )
+    result = pl.DataFrame({"x": x, "s": [10, 50, 100]}).select(
+        pl.col("x")
+        .list.eval(
+            pl.element().list.eval(
+                pl.element().arr.agg((pl.element() + pl.col("s")).sum())
+            )
+        )
+        .alias("r")
+    )
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"r": [[[23, 27], None, [31]], None, [[215]]]},
+            schema={"r": pl.List(pl.List(pl.Int64))},
+        ),
+    )
+
+
+def test_nested_mixed_col_ref_group_by() -> None:
+    # Deep list/list/arr nesting with an outer column reference, inside a group_by agg.
+    x = pl.Series(
+        "x",
+        [
+            [[[1, 2], [3, 4]], [[5, 6]]],
+            [[[7, 8]]],
+            [[[9, 10], [11, 12]]],
+        ],
+        dtype=pl.List(pl.List(pl.Array(pl.Int64, 2))),
+    )
+    result = (
+        pl.DataFrame({"g": [1, 1, 2], "x": x, "s": [10, 100, 1000]})
+        .group_by("g", maintain_order=True)
+        .agg(
+            pl.col("x")
+            .list.eval(
+                pl.element().list.eval(
+                    pl.element().arr.agg((pl.element() + pl.col("s")).sum())
+                )
+            )
+            .alias("r")
+        )
+    )
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {
+                "g": [1, 2],
+                "r": [[[[23, 27], [31]], [[215]]], [[[2019, 2023]]]],
+            },
+            schema={"g": pl.Int64, "r": pl.List(pl.List(pl.List(pl.Int64)))},
+        ),
     )
