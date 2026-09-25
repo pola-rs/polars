@@ -590,15 +590,18 @@ def test_decimal_round() -> None:
     values = [D(f"{float(v) / 100.0:.02f}") for v in range(-150, 250, 1)]
     i_s = pl.Series("a", values, dtype)
 
-    floor_s = pl.Series("a", [floor(v) for v in values], dtype)
-    ceil_s = pl.Series("a", [ceil(v) for v in values], dtype)
+    # rounding widens the precision by one for the carry (9.5 -> 10.0)
+    rounded = pl.Decimal(4, 2)
+    floor_s = pl.Series("a", [floor(v) for v in values], rounded)
+    ceil_s = pl.Series("a", [ceil(v) for v in values], rounded)
 
     assert_series_equal(i_s.floor(), floor_s)
     assert_series_equal(i_s.ceil(), ceil_s)
 
     for decimals in range(10):
         got_s = i_s.round(decimals)
-        expected_s = pl.Series("a", [round(v, decimals) for v in values], dtype)
+        out_dtype = rounded if decimals < 2 else dtype
+        expected_s = pl.Series("a", [round(v, decimals) for v in values], out_dtype)
 
         assert_series_equal(got_s, expected_s)
 
@@ -1006,3 +1009,76 @@ def test_decimal_sum_overflow_28585(
         s.sum()
     with pytest.raises(ComputeError, match="overflow in decimal addition in sum"):
         s.to_frame().lazy().select(pl.col("d").sum()).collect(engine=engine)
+
+
+def test_decimal_rounding_widens_precision() -> None:
+    # rounding away from zero can carry into another integer digit: 9.5 -> 10.0
+    s = pl.Series([D("9.5"), D("-9.5"), D("0.5")], dtype=pl.Decimal(2, 1))
+    for out in (s.ceil(), s.floor(), s.round(0), s.round_sig_figs(1)):
+        assert out.dtype == pl.Decimal(3, 1)
+    assert s.ceil().to_list() == [D("10.0"), D("-9.0"), D("1.0")]
+    assert s.floor().to_list() == [D("9.0"), D("-10.0"), D("0.0")]
+    assert s.round(0).to_list() == [D("10.0"), D("-10.0"), D("0.0")]
+    assert s.round(0, mode="half_away_from_zero").to_list() == [
+        D("10.0"),
+        D("-10.0"),
+        D("1.0"),
+    ]
+    assert s.round_sig_figs(1).to_list() == [D("10.0"), D("-10.0"), D("0.5")]
+    # nothing to round: the dtype is unchanged
+    assert s.round(1).dtype == pl.Decimal(2, 1)
+    assert s.truncate(0).dtype == pl.Decimal(2, 1)
+
+    lf = pl.LazyFrame({"a": s})
+    q = lf.select(pl.col("a").ceil(), r=pl.col("a").round(0), r1=pl.col("a").round(1))
+    assert q.collect_schema() == q.collect().schema
+
+    # at precision 38 there is no digit left for the carry
+    m = pl.Series([D("9" * 37 + ".5")], dtype=pl.Decimal(38, 1))
+    with pytest.raises(pl.exceptions.ComputeError, match="overflow in decimal ceil"):
+        m.ceil()
+    # half-to-even at scale 38 doesn't overflow while comparing to the half
+    t = pl.Series([D("0." + "5" + "0" * 37)], dtype=pl.Decimal(38, 38))
+    assert t.round(0).to_list() == [D("0")]
+
+
+def test_decimal_sign_and_sums_widen_precision() -> None:
+    # 1 and 1.8 need an integer digit that Decimal(1, 1) doesn't have
+    s = pl.Series([D("0.9"), D("-0.5"), D("0.0"), None], dtype=pl.Decimal(1, 1))
+    lf = pl.LazyFrame({"a": s, "g": [1, 1, 2, 2]})
+    q = lf.select(
+        sign=pl.col("a").sign(),
+        cum_sum=pl.col("a").cum_sum().over("g"),
+        list_sum=pl.concat_list("a", "a").list.sum(),
+    )
+    out = q.collect()
+    assert q.collect_schema() == out.schema
+    assert out.schema == {
+        "sign": pl.Decimal(2, 1),
+        "cum_sum": pl.Decimal(38, 1),
+        "list_sum": pl.Decimal(38, 1),
+    }
+    assert out.to_dict(as_series=False) == {
+        "sign": [D("1.0"), D("-1.0"), D("0.0"), None],
+        "cum_sum": [D("0.9"), D("0.4"), D("0.0"), None],
+        "list_sum": [D("1.8"), D("-1.0"), D("0.0"), D("0.0")],
+    }
+    agg = lf.group_by("g", maintain_order=True).agg(pl.col("a").cum_sum())
+    assert agg.collect_schema() == agg.collect().schema
+    assert agg.collect()["a"].to_list() == [[D("0.9"), D("0.4")], [D("0.0"), None]]
+
+    # at scale 38 the sign of a nonzero value isn't representable
+    tiny = pl.Series([D("0." + "0" * 37 + "1")], dtype=pl.Decimal(38, 38))
+    with pytest.raises(pl.exceptions.ComputeError, match="sign of a nonzero"):
+        tiny.sign()
+    assert (tiny * 0).sign().to_list() == [D("0")]
+
+
+def test_decimal_to_float_is_correctly_rounded() -> None:
+    # rounding the mantissa to a float before dividing by 10^16 is one ULP off
+    x = D("0.9728340843400927")
+    s = pl.Series([x, -x], dtype=pl.Decimal(16, 16))
+    assert s.cast(pl.Float64).to_list() == [0.9728340843400927, -0.9728340843400927]
+    assert pl.select(pl.lit(x).cast(pl.Float64)).item() == 0.9728340843400927
+    big = pl.Series([D("1" * 30 + "." + "3" * 8)], dtype=pl.Decimal(38, 8))
+    assert big.cast(pl.Float64).item() == float("1" * 30 + "." + "3" * 8)

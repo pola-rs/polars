@@ -4,16 +4,6 @@ use polars_core::utils::materialize_dyn_int;
 
 use super::*;
 
-pub(super) fn function_sum_output_dtype(dtype: &DataType) -> DataType {
-    match dtype {
-        // Preserve existing function-expression schema behavior. Core reductions
-        // promote Decimal precision, while these expressions currently do not.
-        #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => dtype.clone(),
-        dtype => sum_output_dtype(dtype),
-    }
-}
-
 impl IRFunctionExpr {
     pub(crate) fn get_field(&self, fields: &[Field]) -> PolarsResult<Field> {
         use IRFunctionExpr::*;
@@ -70,7 +60,14 @@ impl IRFunctionExpr {
             #[cfg(feature = "sign")]
             Sign => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric(), "sign")?
-                .with_same_dtype(),
+                .map_dtype(|dt| match dt {
+                    // The result 1 needs an integer digit.
+                    #[cfg(feature = "dtype-decimal")]
+                    DataType::Decimal(p, s) => {
+                        DataType::Decimal((*p).max(s + 1).min(DEC128_MAX_PREC), *s)
+                    },
+                    dt => dt.clone(),
+                }),
             FillNull => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
@@ -319,10 +316,33 @@ impl IRFunctionExpr {
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log")?
                 .log_dtype(),
             Unique(_) => mapper.with_same_dtype(),
+            // Rounding a decimal away from zero can carry into one more integer digit.
             #[cfg(feature = "round_series")]
-            Round { .. } | RoundSF { .. } | Truncate { .. } | Floor | Ceil => {
-                mapper.with_same_dtype()
-            },
+            Round { decimals, mode } => mapper.map_dtype(|dt| match dt {
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(p, s)
+                    if *s > *decimals as usize && *mode != RoundMode::ToZero =>
+                {
+                    DataType::Decimal((p + 1).min(DEC128_MAX_PREC), *s)
+                },
+                dt => dt.clone(),
+            }),
+            #[cfg(feature = "round_series")]
+            RoundSF { .. } => mapper.map_dtype(|dt| match dt {
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(p, s) => DataType::Decimal((p + 1).min(DEC128_MAX_PREC), *s),
+                dt => dt.clone(),
+            }),
+            #[cfg(feature = "round_series")]
+            Floor | Ceil => mapper.map_dtype(|dt| match dt {
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(p, s) if *s > 0 => {
+                    DataType::Decimal((p + 1).min(DEC128_MAX_PREC), *s)
+                },
+                dt => dt.clone(),
+            }),
+            #[cfg(feature = "round_series")]
+            Truncate { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "fused")]
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr { .. } => mapper.map_to_supertype(),
@@ -785,7 +805,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub fn sum_dtype(&self) -> PolarsResult<Field> {
-        self.map_dtype(function_sum_output_dtype)
+        self.map_dtype(sum_output_dtype)
     }
 
     pub fn nested_sum_type(&self) -> PolarsResult<Field> {
@@ -797,7 +817,7 @@ impl<'a> FieldsMapper<'a> {
             )
         })?;
 
-        first.set_dtype(function_sum_output_dtype(&dt));
+        first.set_dtype(sum_output_dtype(&dt));
         Ok(first)
     }
 
