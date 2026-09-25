@@ -16,7 +16,6 @@ from dis import get_instructions
 from enum import Enum, auto
 from inspect import signature
 from itertools import count, zip_longest
-from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -332,33 +331,16 @@ _RE_SERIES_NAMES: Final = re.compile(r"^(s|srs\d?|series)\.")
 _RE_STRIP_BOOL: Final = re.compile(r"^bool\((.+)\)$")
 
 
-def _get_all_caller_variables() -> dict[str, Any]:
-    """Get all local and global variables from caller's frame."""
-    pkg_dir = Path(__file__).parent.parent
-
-    # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
-    frame = inspect.currentframe()
-    n = 0
-    try:
-        while frame:
-            fname = inspect.getfile(frame)
-            if fname.startswith(str(pkg_dir)):
-                frame = frame.f_back
-                n += 1
-            else:
-                break
-        variables: dict[str, Any]
-        if frame is None:
-            variables = {}
-        else:
-            variables = {**frame.f_locals, **frame.f_globals}
-    finally:
-        # https://docs.python.org/3/library/inspect.html
-        # > Though the cycle detector will catch these, destruction of the frames
-        # > (and local variables) can be made deterministic by removing the cycle
-        # > in a finally clause.
-        del frame
-    return variables
+def _get_function_variable(function: Callable[[Any], Any], name: str) -> Any:
+    """Resolve a name from the function's lexical scope (closure, then globals)."""
+    code = getattr(function, "__code__", None)
+    closure = getattr(function, "__closure__", None)
+    if code is not None and closure is not None and name in code.co_freevars:
+        try:
+            return closure[code.co_freevars.index(name)].cell_contents
+        except ValueError:  # empty cell
+            return NO_DEFAULT
+    return getattr(function, "__globals__", {}).get(name, NO_DEFAULT)
 
 
 def _get_target_name(col: str, expression: str, map_target: str) -> str:
@@ -391,7 +373,6 @@ class BytecodeParser:
 
     _map_target_name: str | None = None
     _can_attempt_rewrite: bool | None = None
-    _caller_variables: dict[str, Any] | None = None
     _col_expression: tuple[str, str] | NoDefault | None = NO_DEFAULT
 
     def __init__(self, function: Callable[[Any], Any], map_target: MapTarget) -> None:
@@ -417,7 +398,6 @@ class BytecodeParser:
         self._param_name = self._get_param_name(function)
         self._rewritten_instructions = RewrittenInstructions(
             instructions=original_instructions,
-            caller_variables=self._caller_variables,
             function=function,
         )
 
@@ -574,7 +554,6 @@ class BytecodeParser:
                 {
                     offset: InstructionTranslator(
                         instructions=ops,
-                        caller_variables=self._caller_variables,
                         map_target=self._map_target,
                         function=self._function,
                         dtype=dtype,
@@ -682,28 +661,19 @@ class InstructionTranslator:
     def __init__(
         self,
         instructions: list[Instruction],
-        caller_variables: dict[str, Any] | None,
         function: Callable[[Any], Any],
         map_target: MapTarget,
         dtype: PolarsDataType | None = None,
     ) -> None:
         self._constants: dict[str, Any] = {}
         self._stack = self._to_intermediate_stack(instructions, map_target)
-        self._caller_variables = caller_variables
         self._function = function
         self._map_target = map_target
         self._dtype = dtype
 
     def _get_function_variable(self, name: str) -> Any:
         """Resolve a name from the function's lexical scope."""
-        code = getattr(self._function, "__code__", None)
-        closure = getattr(self._function, "__closure__", None)
-        if code is not None and closure is not None and name in code.co_freevars:
-            try:
-                return closure[code.co_freevars.index(name)].cell_contents
-            except ValueError:  # empty cell
-                return NO_DEFAULT
-        return getattr(self._function, "__globals__", {}).get(name, NO_DEFAULT)
+        return _get_function_variable(self._function, name)
 
     def _containment_kind(
         self, operand: StackEntry, param_name: str
@@ -838,9 +808,7 @@ class InstructionTranslator:
                         haystack, suffix = f"pl.lit({e2})", f'.alias("{col}")'
                     return f"{not_}{haystack}.str.contains({e1}, literal=True){suffix}"
                 elif op == "replace_strict":
-                    if not self._caller_variables:
-                        self._caller_variables = _get_all_caller_variables()
-                    if not isinstance(self._caller_variables.get(e1, None), dict):
+                    if not isinstance(self._get_function_variable(e1), dict):
                         msg = "require dict mapping"
                         raise NotImplementedError(msg)
                     return f"{e2}.{op}({e1})"
@@ -936,10 +904,8 @@ class RewrittenInstructions:
         self,
         instructions: Iterator[Instruction],
         function: Callable[[Any], Any],
-        caller_variables: dict[str, Any] | None,
     ) -> None:
         self._function = function
-        self._caller_variables = caller_variables
         self._original_instructions = list(instructions)
 
         normalised_instructions = []
@@ -962,6 +928,10 @@ class RewrittenInstructions:
 
     def __getitem__(self, item: Any) -> Instruction:
         return self._rewritten_instructions[item]
+
+    def _get_function_variable(self, name: str) -> Any:
+        """Resolve a name from the function's lexical scope."""
+        return _get_function_variable(self._function, name)
 
     def _matches(
         self,
@@ -1128,12 +1098,13 @@ class RewrittenInstructions:
                         attribute_count : 3 + attribute_count
                     ]
                     if check_globals:
-                        if not self._caller_variables:
-                            self._caller_variables = _get_all_caller_variables()
-                        if (expr_name := inst1.argval) not in self._caller_variables:
+                        expr_name = inst1.argval
+                        func = self._get_function_variable(expr_name)
+                        if func is NO_DEFAULT:
                             continue
                         else:
-                            module_name = self._caller_variables[expr_name].__module__
+                            # (some callables have no module, eg: method-wrappers)
+                            module_name = getattr(func, "__module__", None)
                             if not any((module_name in m) for m in module_aliases):
                                 continue
                             expr_name = _MODULE_FUNC_TO_EXPR_NAME.get(
@@ -1314,12 +1285,13 @@ class RewrittenInstructions:
     def _is_stdlib_datetime(
         self, function_name: str, module_name: str, attribute_count: int
     ) -> bool:
-        if not self._caller_variables:
-            self._caller_variables = _get_all_caller_variables()
-        vars = self._caller_variables
         return (
-            attribute_count == 0 and vars.get(function_name) is datetime.datetime
-        ) or (attribute_count == 1 and vars.get(module_name) is datetime)
+            attribute_count == 0
+            and self._get_function_variable(function_name) is datetime.datetime
+        ) or (
+            attribute_count == 1
+            and self._get_function_variable(module_name) is datetime
+        )
 
 
 def _raw_function_meta(function: Callable[[Any], Any]) -> tuple[str, str]:

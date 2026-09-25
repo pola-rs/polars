@@ -821,3 +821,57 @@ def test_containment_suggestion_captured_haystack(
             df.select(eval(suggested, {"pl": pl, "values": values})),
             df.select(pl.col("x").map_elements(func, return_dtype=pl.Boolean)),
         )
+
+
+def _local_dict_shadowing_global_list() -> Callable[[Any], Any]:
+    MY_LIST = {1: "a"}
+    return lambda x: MY_LIST[x]
+
+
+def _local_list_shadowing_global_dict() -> Callable[[Any], Any]:
+    MY_DICT = [1, 2]
+    return lambda x: MY_DICT[x]
+
+
+@pytest.mark.parametrize(
+    ("make_udf", "expected"),
+    [
+        (_local_dict_shadowing_global_list, 'pl.col("a").replace_strict(MY_LIST)'),
+        (_local_list_shadowing_global_dict, None),
+        # resolved in the UDF's own globals, not the caller's
+        (
+            lambda: eval("lambda x: OTHER_DICT[x]", {"OTHER_DICT": {1: "a"}}),
+            'pl.col("a").replace_strict(OTHER_DICT)',
+        ),
+        (lambda: eval("lambda x: sin(x)", {"sin": math.sin}), 'pl.col("a").sin()'),
+        (
+            lambda: eval(
+                'lambda x: datetime.strptime(x, "%Y")', {"datetime": dt.datetime}
+            ),
+            'pl.col("a").str.to_datetime(format="%Y")',
+        ),
+        # not in the UDF's scope, only in the caller's
+        (lambda: eval("lambda x: MY_DICT[x]", {}), None),
+        (lambda: eval("lambda x: cosh(x)", {}), None),
+        (lambda: eval('lambda x: datetime.strptime(x, "%Y")', {}), None),
+    ],
+)
+def test_parse_resolves_names_in_udf_scope(
+    make_udf: Callable[[], Callable[[Any], Any]], expected: str | None
+) -> None:
+    parser = BytecodeParser(make_udf(), map_target="expr")
+    suggestion = parser.to_expression("a") if parser.can_attempt_rewrite() else None
+    assert suggestion == expected
+
+
+def test_parse_global_function_without_module() -> None:
+    # a valid UDF calling a global that shares a numpy function's name, but has
+    # no `__module__` (as for method-wrappers)
+    udf = eval("lambda x: exp(x)", {"exp": math.e.__rpow__})
+    assert not BytecodeParser(udf, map_target="expr").can_attempt_rewrite()
+
+    s = pl.Series("a", [1.0, 2.0])
+    assert_series_equal(
+        s.map_elements(udf, return_dtype=pl.Float64),
+        pl.Series("a", [1.0, 2.0**math.e]),
+    )
