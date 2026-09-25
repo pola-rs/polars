@@ -100,6 +100,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT DIV(col1, 2) FROM df;
     /// ```
     Div,
+    /// SQL 'erf' function.
+    /// Computes the error function of the given value.
+    /// ```sql
+    /// SELECT ERF(col1) FROM df;
+    /// ```
+    Erf,
+    /// SQL 'erfc' function.
+    /// Computes the complementary error function of the given value.
+    /// ```sql
+    /// SELECT ERFC(col1) FROM df;
+    /// ```
+    Erfc,
     /// SQL 'exp' function.
     /// Computes the exponential of the given value.
     /// ```sql
@@ -897,6 +909,8 @@ impl PolarsSQLFunctions {
             "degrees",
             "dense_rank",
             "ends_with",
+            "erf",
+            "erfc",
             "exp",
             "first",
             "first_value",
@@ -995,6 +1009,8 @@ impl PolarsSQLFunctions {
             "cbrt" => Self::Cbrt,
             "ceil" | "ceiling" => Self::Ceil,
             "div" => Self::Div,
+            "erf" => Self::Erf,
+            "erfc" => Self::Erfc,
             "exp" => Self::Exp,
             "floor" => Self::Floor,
             "ln" => Self::Ln,
@@ -1205,6 +1221,8 @@ impl SQLFunctionVisitor<'_> {
             Cbrt => self.visit_unary(Expr::cbrt),
             Ceil => self.visit_unary(Expr::ceil),
             Div => self.visit_binary(|e, d| e.floor_div(d).cast(DataType::Int64)),
+            Erf => self.visit_unary(Expr::erf),
+            Erfc => self.visit_unary(Expr::erfc),
             Exp => self.visit_unary(Expr::exp),
             Floor => self.visit_unary(Expr::floor),
             Ln => self.visit_unary(|e| log_with_base(e, std::f64::consts::E)),

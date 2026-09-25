@@ -25,7 +25,19 @@ struct Snapshot {
     rows: usize,
     total_rows_sent: u64,
     any_done: bool,
+    custom: Vec<(String, Option<i64>)>,
 }
+
+impl Snapshot {
+    fn reading(&self, key: &str) -> Option<i64> {
+        self.custom
+            .iter()
+            .find(|(k, _)| k == key)
+            .unwrap_or_else(|| panic!("no `{key}` in {:?}", self.custom))
+            .1
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum Event {
     Started,
@@ -94,6 +106,11 @@ impl Drop for CloseGuard {
                 rows: snap.len(),
                 total_rows_sent: snap.iter().map(|r| r.rows_sent).sum(),
                 any_done: snap.iter().any(|r| r.done),
+                custom: snap
+                    .iter()
+                    .flat_map(|r| r.custom.iter())
+                    .map(|metric| (metric.key.clone(), metric.value))
+                    .collect(),
             }));
         }
         self.log.lock().unwrap().push(Event::Closed);
@@ -185,6 +202,33 @@ mod tests {
         assert!(
             snapshot.any_done,
             "expected at least one node to report done"
+        );
+    }
+
+    #[test]
+    fn observer_snapshot_carries_a_nodes_custom_metrics() {
+        let lf = load_df().lazy().group_by([col("b")]).agg([col("a").sum()]);
+        let (res, events) = run_observed_on(lf, true, Engine::Streaming);
+        assert!(res.is_ok());
+
+        let snapshot = events
+            .iter()
+            .find_map(|e| match e {
+                Event::Snapshot(snapshot) => Some(snapshot),
+                _ => None,
+            })
+            .expect("no Snapshot event");
+
+        // `b` holds "a", "b" and "c".
+        assert_eq!(snapshot.reading("group_by.actual_groups"), Some(3));
+
+        // The sketch is approximate, and its hashing is randomly seeded.
+        let estimated = snapshot
+            .reading("group_by.estimated_groups")
+            .expect("estimated on combine");
+        assert!(
+            estimated.abs_diff(3) <= 1,
+            "estimated {estimated} groups for 3"
         );
     }
 

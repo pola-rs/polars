@@ -379,6 +379,10 @@ pub fn function_expr_to_udf(
         F::Log1p => map!(misc::log1p),
         #[cfg(feature = "log")]
         F::Exp => map!(misc::exp),
+        #[cfg(feature = "log")]
+        F::Erf => map!(misc::erf),
+        #[cfg(feature = "log")]
+        F::Erfc => map!(misc::erfc),
         F::Unique(stable) => map!(misc::unique, stable),
         #[cfg(feature = "round_series")]
         F::Round { decimals, mode } => map!(round::round, decimals, mode),

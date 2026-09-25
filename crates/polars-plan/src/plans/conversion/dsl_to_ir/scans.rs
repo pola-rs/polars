@@ -690,6 +690,7 @@ fn parquet_column_stats(
                 } else {
                     a.int_range
                 },
+                int_range_partial: sampled || !complete,
             };
             (name, stats)
         })

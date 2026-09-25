@@ -131,3 +131,81 @@ impl Default for RollingGroupOptions {
         }
     }
 }
+
+/// [`DynamicGroupOptions`] as the IR carries them.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct DynamicGroupOptionsIR {
+    pub index_column: PlSmallStr,
+    pub every: Duration,
+    pub period: Duration,
+    pub offset: Duration,
+    pub label: Label,
+    pub include_boundaries: bool,
+    pub closed_window: ClosedWindow,
+    pub start_by: StartBy,
+}
+
+impl From<DynamicGroupOptions> for DynamicGroupOptionsIR {
+    fn from(options: DynamicGroupOptions) -> Self {
+        let DynamicGroupOptions {
+            index_column,
+            every,
+            period,
+            offset,
+            label,
+            include_boundaries,
+            closed_window,
+            start_by,
+        } = options;
+        Self {
+            index_column,
+            every,
+            period,
+            offset,
+            label,
+            include_boundaries,
+            closed_window,
+            start_by,
+        }
+    }
+}
+
+impl Default for DynamicGroupOptionsIR {
+    fn default() -> Self {
+        DynamicGroupOptions::default().into()
+    }
+}
+
+/// [`RollingGroupOptions`] as the IR carries them.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct RollingGroupOptionsIR {
+    pub index_column: PlSmallStr,
+    pub period: Duration,
+    pub offset: Duration,
+    pub closed_window: ClosedWindow,
+}
+
+impl From<RollingGroupOptions> for RollingGroupOptionsIR {
+    fn from(options: RollingGroupOptions) -> Self {
+        let RollingGroupOptions {
+            index_column,
+            period,
+            offset,
+            closed_window,
+        } = options;
+        Self {
+            index_column,
+            period,
+            offset,
+            closed_window,
+        }
+    }
+}
+
+impl Default for RollingGroupOptionsIR {
+    fn default() -> Self {
+        RollingGroupOptions::default().into()
+    }
+}

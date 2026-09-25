@@ -1,3 +1,5 @@
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::utils::materialize_dyn_int;
 
 use super::*;
@@ -162,7 +164,7 @@ impl IRFunctionExpr {
                     #[cfg(feature = "dtype-i128")]
                     T::Int128 => T::Int128,
                     #[cfg(feature = "dtype-decimal")]
-                    dt @ T::Decimal(_, _) => widen_decimal(dt.clone()),
+                    T::Decimal(_p, s) => T::Decimal(DEC128_MAX_PREC, *s),
                     _ => T::Int64,
                 }
             }),
@@ -275,7 +277,7 @@ impl IRFunctionExpr {
                 DataType::UInt16 => DataType::Int32,
                 DataType::UInt8 => DataType::Int16,
                 #[cfg(feature = "dtype-decimal")]
-                dt @ DataType::Decimal(_, _) => widen_decimal(dt.clone()),
+                DataType::Decimal(_, scale) => DataType::Decimal(DEC128_MAX_PREC, *scale),
                 dt => dt.clone(),
             }),
             #[cfg(feature = "pct_change")]
@@ -293,7 +295,9 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             InterpolateBy => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "log")]
-            Entropy { .. } => mapper.map_to_float_dtype(),
+            Entropy { .. } => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "entropy")?
+                .map_to_float_dtype(),
             #[cfg(feature = "log")]
             Log1p => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log1p")?
@@ -301,6 +305,14 @@ impl IRFunctionExpr {
             #[cfg(feature = "log")]
             Exp => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "exp")?
+                .map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            Erf => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "erf")?
+                .map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            Erfc => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "erfc")?
                 .map_to_float_dtype(),
             #[cfg(feature = "log")]
             Log => mapper
@@ -899,7 +911,7 @@ pub(crate) fn args_to_supertype<D: AsRef<DataType>>(dtypes: &[D]) -> PolarsResul
         _ => {
             if let DataType::Unknown(kind) = st {
                 match kind {
-                    UnknownKind::Float(_) => st = DataType::Float64,
+                    UnknownKind::Float => st = DataType::Float64,
                     UnknownKind::Int(v) => {
                         st = materialize_dyn_int(v).dtype();
                     },

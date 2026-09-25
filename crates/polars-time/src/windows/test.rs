@@ -173,7 +173,7 @@ fn test_offset() {
     );
 
     let b = w
-        .get_earliest_bounds_ns(t, ClosedWindow::Left, None)
+        .get_earliest_bounds(TimeUnit::Nanoseconds, t, ClosedWindow::Left, None)
         .unwrap();
     let start = NaiveDate::from_ymd_opt(2020, 1, 1)
         .unwrap()
@@ -217,7 +217,7 @@ fn test_boundaries() {
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00
     let b = w
-        .get_earliest_bounds_ns(ts[0], ClosedWindow::Both, None)
+        .get_earliest_bounds(TimeUnit::Nanoseconds, ts[0], ClosedWindow::Both, None)
         .unwrap();
     assert_eq!(b.start, start.and_utc().timestamp_nanos_opt().unwrap());
 
@@ -408,7 +408,7 @@ fn test_boundaries_2() {
     // earliest bound is first datapoint: 2021-12-16 00:00:00 + 30m offset: 2021-12-16 00:30:00
     // We then shift back by `every` (2h): 2021-12-15 22:30:00
     let b = w
-        .get_earliest_bounds_ns(ts[0], ClosedWindow::Both, None)
+        .get_earliest_bounds(TimeUnit::Nanoseconds, ts[0], ClosedWindow::Both, None)
         .unwrap();
 
     assert_eq!(
@@ -540,7 +540,7 @@ fn test_boundaries_ms() {
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00
     let b = w
-        .get_earliest_bounds_ms(ts[0], ClosedWindow::Both, None)
+        .get_earliest_bounds(TimeUnit::Milliseconds, ts[0], ClosedWindow::Both, None)
         .unwrap();
     assert_eq!(b.start, start.and_utc().timestamp_millis());
 

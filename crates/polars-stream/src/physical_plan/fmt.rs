@@ -3,7 +3,7 @@ use std::fmt::Write;
 use polars_defs::join::JoinArgs;
 use polars_defs::time::group_by::ClosedWindow;
 #[cfg(feature = "dynamic_group_by")]
-use polars_defs::time::group_by::DynamicGroupOptions;
+use polars_defs::time::group_by::DynamicGroupOptionsIR;
 use polars_plan::dsl::PartitionStrategyIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
@@ -653,7 +653,7 @@ fn visualize_plan_rec(
         } => {
             use polars_defs::time::group_by::{Label, StartBy};
 
-            let DynamicGroupOptions {
+            let DynamicGroupOptionsIR {
                 index_column,
                 every,
                 period,

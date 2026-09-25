@@ -279,7 +279,7 @@ impl<'a> IRBuilder<'a> {
         mut aggs: Vec<ExprIR>,
         apply: Option<PlanCallback<DataFrame, DataFrame>>,
         maintain_order: bool,
-        options: Arc<GroupbyOptions>,
+        options: Arc<GroupbyOptionsIR>,
     ) -> PolarsResult<Self> {
         let current_schema = self.schema();
         let mut schema = expr_irs_to_schema(&keys, &current_schema, self.expr_arena)?;

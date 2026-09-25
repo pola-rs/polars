@@ -5,6 +5,7 @@ import contextlib
 import io
 import itertools
 import json
+import math
 import os
 import pickle
 import struct
@@ -108,6 +109,7 @@ if TYPE_CHECKING:
     LessThan: Any
     LessThanOrEqual: Any
     Not: Any
+    NotEqualTo: Any
     NotNaN: Any
     Or: Any
     Reference: Any
@@ -125,6 +127,7 @@ else:
         LessThan,
         LessThanOrEqual,
         Not,
+        NotEqualTo,
         NotNaN,
         Or,
         Reference,
@@ -202,7 +205,7 @@ def new_iceberg_table(
 ) -> tuple[pyiceberg.table.Table, SqlCatalog]:
     catalog = SqlCatalog(
         "default",
-        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}?mode=memory&cache=shared",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
         warehouse=format_file_uri_iceberg(tmp_path),
     )
     namespace = uuid.uuid4().bytes.hex()
@@ -321,6 +324,28 @@ class TestIcebergScanIO:
             (3, "3", datetime(2023, 3, 2, 22, 0)),
         ]
 
+        res = lf.filter(pl.col("id") != 2)
+        assert res.collect().rows() == [
+            (1, "1", datetime(2023, 3, 1, 18, 15)),
+            (3, "3", datetime(2023, 3, 2, 22, 0)),
+        ]
+
+    def test_scan_iceberg_noteq_null_and_nan(self, tmp_path: Path) -> None:
+        tbl, _ = new_iceberg_table(
+            tmp_path, schema=IcebergSchema(NestedField(1, "value", DoubleType()))
+        )
+        pl.DataFrame({"value": [1.0, None, float("nan")]}).write_iceberg(
+            tbl, mode="append"
+        )
+
+        [(value,)] = (
+            pl.scan_iceberg(tbl.metadata_location)
+            .filter(pl.col("value") != 1.0)
+            .collect()
+            .rows()
+        )
+        assert math.isnan(value)
+
     def test_scan_iceberg_filter_is_in_empty(self, tmp_path: Path) -> None:
         tbl, _ = new_iceberg_table(
             tmp_path,
@@ -383,6 +408,20 @@ class TestIcebergExpressions:
     def test_parse_eq(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') == '2023-08-08')")
         assert _convert_predicate(expr) == EqualTo("ts", "2023-08-08")
+
+    def test_parse_noteq(self) -> None:
+        expr = _to_ast("(pa.compute.field('ts') != '2023-08-08')")
+        assert _convert_predicate(expr) == NotEqualTo("ts", "2023-08-08")
+
+        assert try_convert_pyarrow_predicate(
+            "(pa.compute.field('ts') != '2023-08-08')"
+        ) == NotEqualTo("ts", "2023-08-08")
+
+    def test_parse_ne_missing(self) -> None:
+        expr = try_convert_pyarrow_predicate(
+            "((pa.compute.field('ts') != '2023-08-08') | (pa.compute.field('ts')).is_null())"
+        )
+        assert expr == Or(NotEqualTo("ts", "2023-08-08"), IsNull("ts"))
 
     def test_parse_lt(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') < '2023-08-08')")
@@ -4142,6 +4181,35 @@ def test_scan_iceberg_negative_decimal_statistics_29449(tmp_path: Path) -> None:
                 "profit_max": pl.Series([D("12.50")], dtype=dtype),
             }
         ),
+    )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        pl.col("x") == D("-5.00"),
+        pl.col("x") < 0,
+        pl.col("x") <= D("-5.00"),
+    ],
+)
+def test_scan_iceberg_equal_negative_decimal_29462(
+    tmp_path: Path, predicate: pl.Expr
+) -> None:
+    values = [D("-5.00")] * 3
+    dtype = pl.Decimal(precision=5, scale=2)
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "x", DecimalType(5, 2), required=False)),
+    )
+    tbl.append(pa.table({"x": pa.array(values, pa.decimal128(5, 2))}))
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native")  # type: ignore[arg-type]
+        .filter(predicate)
+        .collect(),
+        pl.DataFrame({"x": pl.Series(values, dtype=dtype)}),
     )
 
 

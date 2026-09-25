@@ -962,6 +962,56 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.exp())
 
+    def erf(self) -> Expr:
+        """
+        Compute the error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
+        >>> df.select(pl.col("a").erf())
+        shape: (3, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ f64       │
+        ╞═══════════╡
+        │ -0.842701 │
+        │ 0.0       │
+        │ 0.842701  │
+        └───────────┘
+        """
+        return wrap_expr(self._pyexpr.erf())
+
+    def erfc(self) -> Expr:
+        """
+        Compute the complementary error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
+        >>> df.select(pl.col("a").erfc())
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.842701 │
+        │ 1.0      │
+        │ 0.157299 │
+        └──────────┘
+        """
+        return wrap_expr(self._pyexpr.erfc())
+
     def alias(self, name: str_) -> Expr:
         """
         Rename the expression.

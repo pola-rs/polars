@@ -2,7 +2,6 @@
 use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::series::arithmetic::NumericListOp;
 use polars_utils::format_pl_smallstr;
-use polars_utils::total_ord::TotalOrdWrap;
 use recursive::recursive;
 
 use super::*;
@@ -42,30 +41,8 @@ impl AExpr {
     ///
     /// This is taken as `&mut bool` as for some expressions this is determined by the upper node
     /// (e.g. `alias`, `cast`).
-    pub fn to_field_impl(&self, ctx: &ToFieldContext) -> PolarsResult<Field> {
-        let mut field = self.to_field_inner(ctx)?;
-
-        // The value is only known for a literal or an expression that folds to one.
-        if let DataType::Unknown(kind @ (UnknownKind::Float(_) | UnknownKind::Int(_))) =
-            &field.dtype
-            && !matches!(self, AExpr::Literal(_))
-        {
-            let dtype = match try_fold_dyn(self, ctx.arena) {
-                Some(v) => LiteralValue::Dyn(v).get_datatype(),
-                None => match kind {
-                    UnknownKind::Float(_) => {
-                        DataType::Unknown(UnknownKind::Float(TotalOrdWrap(f64::NAN)))
-                    },
-                    _ => return Ok(field),
-                },
-            };
-            field.set_dtype(dtype);
-        }
-        Ok(field)
-    }
-
     #[recursive]
-    fn to_field_inner(&self, ctx: &ToFieldContext) -> PolarsResult<Field> {
+    pub fn to_field_impl(&self, ctx: &ToFieldContext) -> PolarsResult<Field> {
         use AExpr::*;
         use DataType::*;
         match self {
@@ -220,7 +197,7 @@ impl AExpr {
                             Boolean => Some(IDX_DTYPE),
                             UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
                             #[cfg(feature = "dtype-decimal")]
-                            dt @ Decimal(_, _) => Some(widen_decimal(dt.clone())),
+                            Decimal(_, scale) => Some(Decimal(DEC128_MAX_PREC, *scale)),
                             _ => None,
                         };
                         if let Some(dt) = dt {
@@ -677,6 +654,14 @@ fn get_arithmetic_field(
                         other_dtype.leaf_dtype(),
                     )?)
                 },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_integer() => {
+                    Decimal(DEC128_MAX_PREC, *scale)
+                },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+                    Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
+                },
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
@@ -734,6 +719,14 @@ fn get_arithmetic_field(
                         other_dtype.leaf_dtype(),
                     )?)
                 },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_integer() => {
+                    Decimal(DEC128_MAX_PREC, *scale)
+                },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+                    Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
+                },
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
@@ -790,6 +783,18 @@ fn get_arithmetic_field(
                         polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                     },
                 },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_integer() => {
+                    let dtype = Decimal(DEC128_MAX_PREC, *scale);
+                    left_field.set_dtype(dtype);
+                    return Ok(left_field);
+                },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+                    let dtype = Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right));
+                    left_field.set_dtype(dtype);
+                    return Ok(left_field);
+                },
                 (l @ List(a), r @ List(b))
                     if ![a, b]
                         .into_iter()
@@ -843,17 +848,8 @@ fn get_arithmetic_field(
         },
     };
 
-    left_field.set_dtype(widen_decimal(super_type));
+    left_field.set_dtype(super_type);
     Ok(left_field)
-}
-
-/// Decimal arithmetic always outputs the maximum precision.
-pub(crate) fn widen_decimal(dtype: DataType) -> DataType {
-    match dtype {
-        #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, scale) => DataType::Decimal(DEC128_MAX_PREC, scale),
-        dt => dt,
-    }
 }
 
 fn get_truediv_field(left: Node, right: Node, ctx: &ToFieldContext) -> PolarsResult<Field> {
@@ -948,10 +944,16 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             InvalidOperation: "division with 'String' datatypes is not allowed"
         ),
         #[cfg(feature = "dtype-decimal")]
-        (Decimal(_, _), dtype) | (dtype, Decimal(_, _))
-            if dtype.is_decimal() || dtype.is_primitive_numeric() =>
-        {
-            widen_decimal(try_get_supertype(left_dtype, right_dtype)?)
+        (Decimal(_, scale_left), Decimal(_, scale_right)) => {
+            Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
+        },
+        #[cfg(feature = "dtype-decimal")]
+        (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_primitive_numeric() => {
+            if dtype.is_float() {
+                Float64
+            } else {
+                Decimal(DEC128_MAX_PREC, *scale)
+            }
         },
         #[cfg(all(feature = "dtype-u8", feature = "dtype-f16"))]
         (UInt8 | Int8, Float16) => Float16,
