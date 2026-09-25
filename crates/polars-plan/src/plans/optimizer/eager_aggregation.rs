@@ -21,7 +21,9 @@ use polars_utils::pl_str::unique_column_name;
 
 use super::join_utils::unconstrained;
 use crate::plans::schema::join_right_output_names;
-use crate::plans::stats::{NodeStats, StatsCache, composite_key_domain, node_stats_with_cache};
+use crate::plans::stats::{
+    NodeStats, StatsCache, composite_key_domain, keeps_height, node_stats_with_cache,
+};
 use crate::plans::{
     AExpr, AExprBuilder, ExprIR, IR, IRAggExpr, IRBuilder, IRFunctionExpr, JoinTypeOptionsIR,
     LiteralValue, OutputName, ToFieldContext, aexpr_to_leaf_names_iter,
@@ -171,6 +173,10 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
         .get(target.aggregate_input)
         .schema(ir_arena)
         .into_owned();
+    // Partial sums add up R's rows, final sums the rows of the group by's input.
+    let summed_rows = row_bound(target.aggregate_input, ir_arena, expr_arena, &mut cache)
+        .zip(row_bound(*input, ir_arena, expr_arena, &mut cache))
+        .map(|(aggregated, grouped)| aggregated.max(grouped));
     let mut leaves = Vec::new();
     for agg in aggs {
         if !collect_leaves(
@@ -178,6 +184,7 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
             expr_arena,
             &target.from_aggregate,
             &aggregate_schema,
+            summed_rows,
             &mut leaves,
         ) {
             return None;
@@ -903,16 +910,17 @@ fn collect_leaves(
     expr_arena: &mut Arena<AExpr>,
     from_aggregate: &PlIndexMap<PlSmallStr, PlSmallStr>,
     aggregate_schema: &Schema,
+    summed_rows: Option<f64>,
     leaves: &mut Vec<(Node, Leaf)>,
 ) -> bool {
     let leaf = match expr_arena.get(node) {
         AExpr::Len => Some((LeafKind::Len, None)),
         AExpr::Agg(agg) => {
-            let (kind, input, allowed): (_, _, fn(&DataType) -> bool) = match agg {
+            let (kind, input, allowed): (_, _, Allowed) = match agg {
                 IRAggExpr::Count {
                     input,
                     include_nulls: false,
-                } => (LeafKind::Count, *input, |_| true),
+                } => (LeafKind::Count, *input, |_, _, _| true),
                 IRAggExpr::Sum(input) => (LeafKind::Sum, *input, sum_is_infallible),
                 IRAggExpr::Min {
                     input,
@@ -944,8 +952,14 @@ fn collect_leaves(
         let input = match input {
             None => None,
             Some((input, allowed)) => {
-                match aggregate_input(input, expr_arena, from_aggregate, aggregate_schema, allowed)
-                {
+                match aggregate_input(
+                    input,
+                    expr_arena,
+                    from_aggregate,
+                    aggregate_schema,
+                    allowed,
+                    summed_rows,
+                ) {
                     Some(input) => Some(input),
                     None => return false,
                 }
@@ -970,43 +984,182 @@ fn collect_leaves(
     ae.inputs(&mut inputs);
     inputs
         .into_iter()
-        .all(|input| collect_leaves(input, expr_arena, from_aggregate, aggregate_schema, leaves))
+        .all(|input| {
+            collect_leaves(
+                input,
+                expr_arena,
+                from_aggregate,
+                aggregate_schema,
+                summed_rows,
+                leaves,
+            )
+        })
 }
 
-/// The input of an aggregate, in R's column names: a plain R column with an `allowed` dtype,
-/// or arithmetic over R columns (see `arithmetic_input`).
+/// Whether an aggregate accepts an input of this dtype, given a bound on its absolute
+/// values and on the rows summed.
+type Allowed = fn(&DataType, f64, Option<f64>) -> bool;
+
+/// The input of an aggregate, in R's column names: a plain R column or arithmetic over R
+/// columns (see `arithmetic_input`) that cannot raise, and whose dtype and value bound
+/// the aggregate accepts.
 fn aggregate_input(
     input: Node,
     expr_arena: &mut Arena<AExpr>,
     from_aggregate: &PlIndexMap<PlSmallStr, PlSmallStr>,
     aggregate_schema: &Schema,
-    allowed: fn(&DataType) -> bool,
+    allowed: Allowed,
+    summed_rows: Option<f64>,
 ) -> Option<Node> {
-    if let AExpr::Column(name) = expr_arena.get(input) {
+    let input = if let AExpr::Column(name) = expr_arena.get(input) {
         let column = from_aggregate.get(name)?.clone();
-        allowed(aggregate_schema.get(&column)?).then_some(())?;
-        return Some(expr_arena.add(AExpr::Column(column)));
-    }
-
-    let mut has_column = false;
-    let input = arithmetic_input(input, expr_arena, from_aggregate, &mut has_column)?;
-    if !has_column {
-        return None;
-    }
-    // Every node must be a primitive integer or float, including the input of a cast:
-    // arithmetic on other types can raise (e.g. a Decimal division by zero).
-    let ctx = ToFieldContext::new(expr_arena, aggregate_schema);
-    let mut stack = vec![input];
-    while let Some(node) = stack.pop() {
-        let ae = expr_arena.get(node);
-        let dtype = ae.to_dtype(&ctx).ok()?.materialize_unknown(true).ok()?;
-        if !(dtype.is_integer() || dtype.is_float()) {
+        expr_arena.add(AExpr::Column(column))
+    } else {
+        let mut has_column = false;
+        let input = arithmetic_input(input, expr_arena, from_aggregate, &mut has_column)?;
+        if !has_column {
             return None;
         }
-        ae.inputs(&mut stack);
-    }
+        input
+    };
+    let ctx = ToFieldContext::new(expr_arena, aggregate_schema);
+    let bound = value_bound(input, expr_arena, &ctx)?;
     let dtype = expr_arena.get(input).to_dtype(&ctx).ok()?;
-    allowed(&dtype).then_some(input)
+    allowed(&dtype, bound, summed_rows).then_some(input)
+}
+
+/// Decimal values, their operations and sums must stay below this. It is a factor of ten
+/// inside the 38 digits Decimal holds, so the f64 rounding of the bounds cannot matter.
+const DECIMAL_LIMIT: f64 = 1e37;
+
+/// The largest absolute value `node` can take, if evaluating it cannot raise.
+///
+/// Integer and float arithmetic never raises. Decimal arithmetic raises on overflow and on
+/// division by zero, so each Decimal operation must stay below `DECIMAL_LIMIT` and may only
+/// divide by a nonzero literal. A Decimal multiply, divide or cast rounds to its scale,
+/// which can add up to one unit of it.
+fn value_bound(node: Node, expr_arena: &Arena<AExpr>, ctx: &ToFieldContext) -> Option<f64> {
+    let ae = expr_arena.get(node);
+    let dtype = ae.to_dtype(ctx).ok()?.materialize_unknown(true).ok()?;
+    let rounding = decimal_scale(&dtype).map_or(0.0, |scale| 10f64.powi(-(scale as i32)));
+    let bound = match ae {
+        AExpr::Column(_) => return Some(dtype_bound(&dtype)),
+        AExpr::Literal(value) => {
+            return Some(literal_bound(value).unwrap_or_else(|| dtype_bound(&dtype)));
+        },
+        AExpr::BinaryExpr { left, op, right } => {
+            let left_bound = value_bound(*left, expr_arena, ctx)?;
+            let right_bound = value_bound(*right, expr_arena, ctx)?;
+            match op {
+                Operator::Plus | Operator::Minus => left_bound + right_bound,
+                Operator::Multiply => left_bound * right_bound + rounding,
+                Operator::TrueDivide if decimal_scale(&dtype).is_some() => {
+                    let AExpr::Literal(divisor) = expr_arena.get(*right) else {
+                        return None;
+                    };
+                    let divisor = literal_bound(divisor)?;
+                    if divisor == 0.0 {
+                        return None;
+                    }
+                    left_bound / divisor + rounding
+                },
+                Operator::TrueDivide => f64::INFINITY,
+                _ => return None,
+            }
+        },
+        // A non-strict cast gives null for a value its dtype cannot hold.
+        AExpr::Cast { expr, .. } => {
+            (value_bound(*expr, expr_arena, ctx)? + rounding).min(dtype_bound(&dtype))
+        },
+        _ => return None,
+    };
+    match decimal_scale(&dtype) {
+        Some(scale) => (bound * 10f64.powi(scale as i32) <= DECIMAL_LIMIT).then_some(bound),
+        None if dtype.is_integer() || dtype.is_float() => Some(dtype_bound(&dtype)),
+        None => None,
+    }
+}
+
+fn decimal_scale(dtype: &DataType) -> Option<usize> {
+    match dtype {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, scale) => Some(*scale),
+        _ => None,
+    }
+}
+
+/// The largest absolute value a column of `dtype` can hold, infinite where there is none.
+fn dtype_bound(dtype: &DataType) -> f64 {
+    match dtype {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, scale) => 10f64.powi(*precision as i32 - *scale as i32),
+        dt if dt.is_integer() => dt
+            .max()
+            .ok()
+            .and_then(|max| max.value().extract::<f64>())
+            .map_or(f64::INFINITY, |max| max + 1.0),
+        _ => f64::INFINITY,
+    }
+}
+
+fn literal_bound(value: &LiteralValue) -> Option<f64> {
+    if !value.is_scalar() {
+        return None;
+    }
+    let value = value.to_any_value()?.extract::<f64>()?;
+    value.is_finite().then_some(value.abs())
+}
+
+/// A bound on the rows `node` emits, or `None` without one. A join has no tight bound, but
+/// each of its rows pairs rows of its inputs, which is enough to bound a Decimal sum.
+fn row_bound(
+    node: Node,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+    cache: &mut StatsCache,
+) -> Option<f64> {
+    if let Some(max_rows) =
+        node_stats_with_cache(node, ir_arena, expr_arena, cache).and_then(|s| s.max_rows())
+    {
+        return Some(max_rows);
+    }
+    let mut bound = |node| row_bound(node, ir_arena, expr_arena, cache);
+    match ir_arena.get(node) {
+        IR::Join {
+            input_left,
+            input_right,
+            options,
+            ..
+        } => {
+            let (left, right) = (bound(*input_left)?, bound(*input_right)?);
+            match options.args.how {
+                JoinType::Inner | JoinType::Cross => Some(left * right),
+                JoinType::Left => Some(left * right.max(1.0)),
+                JoinType::Right => Some(left.max(1.0) * right),
+                JoinType::Full => Some((left + 1.0) * (right + 1.0)),
+                #[cfg(feature = "semi_anti_join")]
+                JoinType::Semi | JoinType::Anti => Some(left),
+                _ => None,
+            }
+        },
+        IR::Filter { input, .. }
+        | IR::SimpleProjection { input, .. }
+        | IR::HStack { input, .. }
+        | IR::Cache { input, .. } => bound(*input),
+        IR::Slice { input, len, .. } => Some(bound(*input)?.min(*len as f64)),
+        // Scalars broadcast to the input's height, or give one row.
+        IR::Select { input, expr, .. } if expr.iter().all(|e| keeps_height(e, expr_arena)) => {
+            Some(bound(*input)?.max(1.0))
+        },
+        IR::GroupBy {
+            input,
+            apply: None,
+            options,
+            ..
+        } if !options.is_rolling() && !options.is_dynamic() => Some(bound(*input)?.max(1.0)),
+        IR::Union { inputs, .. } => inputs.iter().map(|input| bound(*input)).sum(),
+        _ => None,
+    }
 }
 
 /// A copy of `node` in R's column names, if it uses only R columns, scalar literals, `+`,
@@ -1051,13 +1204,19 @@ fn arithmetic_input(
     Some(expr_arena.add(ae))
 }
 
-/// Integer sums wrap the same way in any grouping; a decimal sum raises on overflow.
-fn sum_is_infallible(dtype: &DataType) -> bool {
-    dtype.is_integer() || dtype.is_float()
+/// Integer sums wrap the same way in any grouping. A Decimal sum raises on overflow, so the
+/// sum over every row it may add up must stay below `DECIMAL_LIMIT`.
+fn sum_is_infallible(dtype: &DataType, bound: f64, summed_rows: Option<f64>) -> bool {
+    match decimal_scale(dtype) {
+        Some(scale) => summed_rows
+            .is_some_and(|rows| bound * 10f64.powi(scale as i32) * rows <= DECIMAL_LIMIT),
+        None => dtype.is_integer() || dtype.is_float(),
+    }
 }
 
-fn min_max_is_supported(dtype: &DataType) -> bool {
+fn min_max_is_supported(dtype: &DataType, _bound: f64, _summed_rows: Option<f64>) -> bool {
     dtype.is_primitive_numeric()
+        || dtype.is_decimal()
         || matches!(
             dtype,
             DataType::Date | DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time

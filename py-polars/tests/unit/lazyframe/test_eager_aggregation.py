@@ -233,7 +233,6 @@ NOT_SPLIT = {
     "modulo": (pl.col("x") % 2).sum(),
     "strict_cast_in_arithmetic": (pl.col("x").cast(pl.Float64) * 2).sum(),
     "literals_only": (pl.lit(2) * pl.lit(3)).sum(),
-    "decimal_literal": (pl.col("x") * pl.lit(Decimal("1.5"))).sum(),
     "function_in_arithmetic": (pl.col("x").abs() * 2).sum(),
     "strict_cast": pl.col("x").cast(pl.Int8, strict=True).sum(),
     "first": pl.col("x").first(),
@@ -309,6 +308,179 @@ def test_eager_aggregation_decimal_arithmetic_does_not_split(
     lf = left.join(right, on="k").group_by("g").agg(agg)
     _assert_rewrite(lf, plmonkeypatch, fires=False, sort_by="g")
     assert lf.collect(engine="streaming")["a"].to_list() == [2.0]
+
+
+def _decimal_right() -> pl.LazyFrame:
+    dec = pl.Decimal(7, 2)
+    values = [Decimal("1.25"), None, Decimal("-3.10"), Decimal("4.00")]
+    return pl.LazyFrame(
+        {
+            "k": [1, 1, 1, 2, 2, 3, 4, None],
+            "a": pl.Series(values * 2, dtype=dec),
+            "b": pl.Series(values[::-1] * 2, dtype=dec),
+            "w": pl.Series(values * 2, dtype=pl.Decimal(38, 2)),
+            "x": [1, None, 3, 4, 5, None, 7, 8],
+        }
+    )
+
+
+_DECIMAL_Q04 = ((pl.col("a") - pl.col("b") - pl.col("a")) + pl.col("b")) / pl.lit(
+    Decimal("2.00")
+)
+DECIMAL_AGGS = {
+    "sum": pl.col("a").sum(),
+    "q04_arithmetic": _DECIMAL_Q04.sum(),
+    "multiply": (pl.col("a") * pl.col("b")).sum(),
+    "int_mixed": (pl.col("a") * pl.col("x") + 1).sum(),
+    "int_times_literal": (pl.col("x") * pl.lit(Decimal("1.5"))).sum(),
+    "cast": pl.col("a").cast(pl.Decimal(38, 1), strict=False).sum(),
+    "min": pl.col("a").min(),
+    "max": (pl.col("a") - pl.col("b")).max(),
+    "count": (pl.col("a") * 2).count(),
+    "sql_sum_guard": pl.when(_DECIMAL_Q04.count() > 0)
+    .then(_DECIMAL_Q04.sum())
+    .otherwise(None)
+    .alias("s"),
+}
+
+
+@pytest.mark.parametrize("how", ["inner", "left"])
+@pytest.mark.parametrize("agg", DECIMAL_AGGS.values(), ids=DECIMAL_AGGS.keys())
+def test_eager_aggregation_decimal_splits(
+    how: Any, agg: pl.Expr, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # In a left join, group "c" only has an unmatched row: a bare sum gives 0 there and
+    # the guarded sum null, with the pass on as with it off.
+    lf = _left().join(_decimal_right(), on="k", how=how).group_by("g").agg(agg)
+    _assert_rewrite(lf, plmonkeypatch, fires=True, sort_by="g")
+
+
+DECIMAL_REJECTED = {
+    # The values are small, but a Decimal(38, 2) column can hold ones that overflow.
+    "wide_multiply": (pl.col("w") * pl.col("w")).sum(),
+    "divide_by_column": (pl.col("a") / pl.col("b")).sum(),
+    "divide_by_zero": (pl.col("a") / pl.lit(Decimal("0.00"))).sum(),
+    "float_mixed": (pl.col("a") * pl.lit(0.5, dtype=pl.Float64))
+    .cast(pl.Decimal(38, 2), strict=False)
+    .sum(),
+}
+
+
+@pytest.mark.parametrize("agg", DECIMAL_REJECTED.values(), ids=DECIMAL_REJECTED.keys())
+def test_eager_aggregation_decimal_does_not_split(
+    agg: pl.Expr, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    lf = _left().join(_decimal_right(), on="k").group_by("g").agg(agg)
+    on, off = _plans(lf, plmonkeypatch)
+    assert not _fired(on, off), on
+
+
+def _only_key_1_matches(right: pl.LazyFrame, agg: pl.Expr) -> pl.LazyFrame:
+    left = pl.LazyFrame({"k": [1], "g": ["a"]})
+    return left.join(right, on="k").group_by("g").agg(agg.alias("s"))
+
+
+def test_eager_aggregation_decimal_sum_join_multiplicity(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # R's 98 rows alone keep the sum small enough, but each R row meets 48 L rows. Summed
+    # per key first, the final sum would overflow; the original sums to 0.
+    dec = pl.Decimal(35, 0)
+    big = Decimal("9e34")
+    right = pl.LazyFrame(
+        {
+            "k": [1, 2] * 49,
+            "x": pl.Series([big, -big] * 49, dtype=dec),
+        }
+    )
+    left = pl.LazyFrame({"k": [1, 2] * 48, "g": ["a"] * 96})
+    lf = left.join(right, on="k").group_by("g").agg(pl.col("x").sum())
+    on, off = _plans(lf, plmonkeypatch)
+    assert not _fired(on, off), on
+    result, _ = _collect_both(lf, plmonkeypatch)
+    assert result["x"].to_list() == [Decimal(0)]
+
+
+def test_eager_aggregation_decimal_chained_rounding(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # At scale 1, 0.1 * 0.6 rounds back to 0.1, so key 2's value does not shrink and
+    # overflows at the end. The original never evaluates key 2.
+    right = pl.LazyFrame(
+        {
+            "k": [1, 2],
+            "x": pl.Series([Decimal("0.0"), Decimal("0.1")], dtype=pl.Decimal(2, 1)),
+        }
+    )
+    e = pl.col("x")
+    for _ in range(20):
+        e = e * pl.lit(Decimal("0.6"))
+    e = e * pl.lit(Decimal("1e35"), dtype=pl.Decimal(38, 0)) * 20_000
+    lf = _only_key_1_matches(right, e.sum())
+    on, off = _plans(lf, plmonkeypatch)
+    assert not _fired(on, off), on
+    result, _ = _collect_both(lf, plmonkeypatch)
+    assert result["s"].to_list() == [Decimal("0.0")]
+
+
+def test_eager_aggregation_decimal_large_intermediate(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # The literals add up to 10**38 - 5, which fits, but key 2's 9 on top does not. In
+    # f64 the sum rounds to just below 10**38.
+    right = pl.LazyFrame(
+        {
+            "k": [1, 2],
+            "x": pl.Series([Decimal(0), Decimal(9)], dtype=pl.Decimal(1, 0)),
+        }
+    )
+    dec = pl.Decimal(38, 0)
+    quarter = 25 * 10**36
+    e = pl.col("x")
+    for value in (quarter, quarter, quarter, quarter - 5):
+        e = e + pl.lit(Decimal(value), dtype=dec)
+    e = e / pl.lit(Decimal(10**37), dtype=dec)
+    lf = _only_key_1_matches(right, e.sum())
+    on, off = _plans(lf, plmonkeypatch)
+    assert not _fired(on, off), on
+    result, _ = _collect_both(lf, plmonkeypatch)
+    assert result["s"].to_list() == [Decimal(10)]
+
+
+def _fires_for(
+    right: pl.LazyFrame, agg: pl.Expr, plmonkeypatch: PlMonkeyPatch
+) -> bool:
+    lf = _left().join(right, on="k").group_by("g").agg(agg)
+    return _fired(*_plans(lf, plmonkeypatch))
+
+
+def test_eager_aggregation_decimal_sum_needs_a_row_bound(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # Without a bound on R's rows, a Decimal sum does not split; an integer sum does, so
+    # the missing bound is what blocks the rewrite.
+    dec_sum, int_sum = pl.col("a").sum(), pl.col("x").sum()
+    right = _decimal_right()
+    assert _fires_for(right, dec_sum, plmonkeypatch)
+
+    unknown = right.map_batches(lambda df: df)
+    # One row expanded to 100 by the select.
+    expanded = (
+        right.head(1)
+        .select(pl.int_range(0, 100).alias("k"), pl.col("a"), pl.col("x"))
+        .with_columns(pl.col("k") % 5)
+    )
+    applied = right.group_by("k").map_groups(lambda df: df, schema=right.collect_schema())
+    dynamic = (
+        right.drop_nulls("k")
+        .sort("k")
+        .with_columns(t=pl.int_range(pl.len()))
+        .group_by_dynamic("t", every="2i")
+        .agg(pl.col("k").first(), pl.col("a").sum(), pl.col("x").sum())
+    )
+    for shape in (unknown, expanded, applied, dynamic):
+        assert not _fires_for(shape, dec_sum, plmonkeypatch)
+        assert _fires_for(shape, int_sum, plmonkeypatch)
 
 
 def test_eager_aggregation_rejected_shapes(plmonkeypatch: PlMonkeyPatch) -> None:

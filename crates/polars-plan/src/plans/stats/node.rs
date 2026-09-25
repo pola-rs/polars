@@ -502,7 +502,7 @@ fn shadowed_columns(
 ///
 /// Anything else — an explode, a range, a slice — sets the height from something
 /// other than the input, and is not modelled.
-fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
+pub(crate) fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
     expr.is_length_preserving(expr_arena) || expr.is_scalar(expr_arena)
 }
 
