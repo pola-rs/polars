@@ -1009,6 +1009,7 @@ pub(super) fn convert_functions(
                 output_name,
             ));
         },
+        F::TruncArith(op) => I::TruncArith(op),
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => I::RoundSF { digits },
         #[cfg(feature = "round_series")]

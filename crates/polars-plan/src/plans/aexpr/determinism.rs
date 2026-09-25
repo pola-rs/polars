@@ -213,6 +213,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Round { .. } | F::RoundSF { .. } | F::Truncate { .. } | F::Floor | F::Ceil => false,
         #[cfg(feature = "dtype-decimal")]
         F::DecimalArith { .. } => false,
+        F::TruncArith(_) => false,
         #[cfg(feature = "fused")]
         F::Fused(_) => false,
         F::ConcatExpr { .. } => false,
