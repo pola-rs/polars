@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
     import lance
     import pyarrow as pa
+    import pyarrow.compute as pc
 
     import polars as pl
     from polars._typing import SchemaDict
@@ -45,16 +46,23 @@ class LanceReaderBuilder(FileReaderBuilder):
         *,
         dataset: lance.LanceDataset,
         projected_schema: SchemaDict,
+        filter: pc.Expression | None = None,
     ) -> None:
         self.dataset = dataset
         self.projected_schema = projected_schema
+        self.filter = filter
 
     def explain_properties(self) -> dict[str, str]:
-        return {
+        properties = {
             "name": f"{LanceReaderBuilder.__module__}.LanceReaderBuilder",
             "dataset_location": self.dataset.uri,
             "dataset_version": f"{self.dataset.version}",
         }
+
+        if self.filter is not None:
+            properties["filter"] = str(self.filter)
+
+        return properties
 
     def reader_capabilities(self) -> ReaderCapabilities:
         return ReaderCapabilities(row_index=True, pre_slice=True)
@@ -72,6 +80,7 @@ class LanceReaderBuilder(FileReaderBuilder):
             dataset=self.dataset,
             fragment_ids=fragment_ids,
             projected_schema=self.projected_schema,
+            filter=self.filter,
             multi_scan_context=multi_scan_context,
         )
 
@@ -83,16 +92,21 @@ class LanceFragmentReader(FileReader):
         dataset: lance.LanceDataset,
         fragment_ids: Sequence[int],
         projected_schema: SchemaDict,
+        filter: pc.Expression | None,
         multi_scan_context: dict[Any, Any],
     ) -> None:
         self.dataset = dataset
         self.fragment_ids = fragment_ids
         self.fragments_cached = None
         self.projected_schema = projected_schema
+        # Applied before row_index / pre_slice, i.e. this reader represents the
+        # filtered fragment.
+        self.filter = filter
         self.multi_scan_context = multi_scan_context
         self.prev_reader_start_event = None
         self.this_reader_start_event = threading.Event()
-        self.n_rows_in_file_cached = None
+        self.n_rows_in_file_cached: int | None = None
+        self.n_physical_rows_cached: int | None = None
         self.consumed_rows_queue: queue.Queue[int] | None = None
         self.this_reader_inflight_rows = 0
 
@@ -149,7 +163,13 @@ class LanceFragmentReader(FileReader):
         if self.prev_reader_start_event is not None:
             self.prev_reader_start_event.wait()
 
-        n_rows_this_reader = self.n_rows_in_file()
+        # Row count used for backpressure. Avoids an additional filtered scan to
+        # count rows if the filtered count is not already known.
+        n_rows_this_reader = (
+            self.n_rows_in_file_cached
+            if self.n_rows_in_file_cached is not None
+            else self.n_physical_rows()
+        )
 
         with CX_LOCK:
             if CX_THREADPOOL_KEY not in self.multi_scan_context:
@@ -191,10 +211,11 @@ class LanceFragmentReader(FileReader):
 
         self.this_reader_start_event.set()
 
-        # Future note: Lance operation order is filter->limit.
+        # Lance operation order is filter->limit.
         batches_iter = self.dataset.scanner(
             fragments=self.get_fragments(),
             columns=columns,  # type: ignore[arg-type]
+            filter=self.filter,
             limit=slice_limit,
             batch_readahead=num_pipelines,
         ).to_batches()
@@ -243,11 +264,25 @@ class LanceFragmentReader(FileReader):
         limit: int | None = None,  # noqa: ARG002
     ) -> int:
         if self.n_rows_in_file_cached is None:
-            self.n_rows_in_file_cached = self.dataset.scanner(  # type: ignore[assignment]
+            self.n_rows_in_file_cached = (
+                self.n_physical_rows()
+                if self.filter is None
+                else self.dataset.scanner(
+                    fragments=self.get_fragments(),
+                    filter=self.filter,
+                ).count_rows()  # type: ignore[no-untyped-call]
+            )
+
+        return self.n_rows_in_file_cached
+
+    def n_physical_rows(self) -> int:
+        """Number of rows in the fragments before filtering."""
+        if self.n_physical_rows_cached is None:
+            self.n_physical_rows_cached = self.dataset.scanner(
                 fragments=self.get_fragments()
             ).count_rows()  # type: ignore[no-untyped-call]
 
-        return self.n_rows_in_file_cached  # type: ignore[return-value]
+        return self.n_physical_rows_cached
 
     def get_fragments(self) -> list[lance.LanceFragment]:
         if self.fragments_cached is None:
