@@ -30,7 +30,7 @@ use crate::plans::{
     AExpr, AExprBuilder, ExprIR, IR, IRAggExpr, IRBuilder, IRFunctionExpr, JoinTypeOptionsIR,
     LiteralValue, MintermIter, OutputName, ToFieldContext, aexpr_to_leaf_names_iter,
 };
-use crate::prelude::{GroupbyOptions, JoinType, Operator};
+use crate::prelude::{GroupbyOptionsIR, JoinType, Operator};
 
 /// Rewrite throughout the plan, returning the new root. The shared walk skips joins directly
 /// under a filter, which does not matter here: only group by nodes are rewritten.
@@ -269,7 +269,7 @@ fn try_push(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>)
             final_aggs,
             None,
             false,
-            Arc::new(GroupbyOptions::default()),
+            Arc::new(GroupbyOptionsIR::default()),
         )
         .ok()?
         .node();
@@ -401,7 +401,7 @@ fn partial_group_by(
             partial_aggs,
             None,
             false,
-            Arc::new(GroupbyOptions::default()),
+            Arc::new(GroupbyOptionsIR::default()),
         )
         .ok()?
         .node();
