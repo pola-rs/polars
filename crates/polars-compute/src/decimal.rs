@@ -695,6 +695,370 @@ pub fn dec128_div(l: i128, r: i128, p: usize, s: usize) -> Option<i128> {
     }
 }
 
+/// A value in `(-2^255, 2^255)` in sign-magnitude form.
+#[derive(Copy, Clone)]
+struct I256 {
+    neg: bool,
+    mag: U256,
+}
+
+impl U256 {
+    #[inline(always)]
+    fn from_u128(x: u128) -> Self {
+        Self::from_lo_hi(x, 0)
+    }
+
+    #[inline(always)]
+    fn lo_hi(self) -> (u128, u128) {
+        (
+            u128_from_lo_hi(self.0[0], self.0[1]),
+            u128_from_lo_hi(self.0[2], self.0[3]),
+        )
+    }
+
+    #[inline(always)]
+    fn to_u128(self) -> Option<u128> {
+        let (lo, hi) = self.lo_hi();
+        (hi == 0).then_some(lo)
+    }
+
+    /// Assumes the sum doesn't overflow.
+    #[inline(always)]
+    fn add(self, other: Self) -> Self {
+        let (a_lo, a_hi) = self.lo_hi();
+        let (b_lo, b_hi) = other.lo_hi();
+        let (lo, carry) = a_lo.overflowing_add(b_lo);
+        Self::from_lo_hi(lo, a_hi + b_hi + carry as u128)
+    }
+
+    /// Assumes self >= other.
+    #[inline(always)]
+    fn sub(self, other: Self) -> Self {
+        let (a_lo, a_hi) = self.lo_hi();
+        let (b_lo, b_hi) = other.lo_hi();
+        let (lo, borrow) = a_lo.overflowing_sub(b_lo);
+        Self::from_lo_hi(lo, a_hi - b_hi - borrow as u128)
+    }
+}
+
+/// Returns x * 10^e, with e <= DEC128_MAX_PREC.
+#[inline]
+fn u256_mul_pow10(x: u128, e: usize) -> U256 {
+    let (lo, hi) = widening_mul_128(x, POW10_I128[e] as u128);
+    U256::from_lo_hi(lo, hi)
+}
+
+/// Returns x / d and x % d for d != 0.
+fn divrem_256_by_128(x: U256, d: u128) -> (U256, u128) {
+    let (lo, hi) = x.lo_hi();
+    let (q_lo, r) = divrem_256_128(lo, hi % d, d).unwrap();
+    (U256::from_lo_hi(q_lo, hi / d), r)
+}
+
+/// Returns round(x / 10^e), with e <= 2 * DEC128_MAX_PREC, rounding to nearest
+/// even. x is assumed to be < 2^255. Returns None if the result doesn't fit in
+/// a u128.
+fn div_255_pow10_wide(x: U256, e: usize) -> Option<u128> {
+    if e <= DEC128_MAX_PREC {
+        return div_255_pow10(x, e);
+    }
+
+    let (q, r) = divrem_256_by_128(x, POW10_I128[DEC128_MAX_PREC] as u128);
+    let d = POW10_I128[e - DEC128_MAX_PREC] as u128;
+    let (q, rq) = divrem_256_by_128(q, d);
+    let mut q = q.to_u128()?;
+    let half = d / 2;
+    if rq > half || (rq == half && (r != 0 || q % 2 == 1)) {
+        q += 1;
+    }
+    Some(q)
+}
+
+#[inline]
+fn signed_dec128(neg: bool, mag: u128) -> Option<i128> {
+    if mag >= POW10_I128[DEC128_MAX_PREC] as u128 {
+        return None;
+    }
+    Some(if neg { -(mag as i128) } else { mag as i128 })
+}
+
+/// Rescales x from scale s (<= 2 * DEC128_MAX_PREC) to s_out, rounding to
+/// nearest even, returning None if the result doesn't fit a Decimal128.
+fn i256_to_dec128(x: I256, s: usize, s_out: usize) -> Option<i128> {
+    let mag = if s_out <= s {
+        div_255_pow10_wide(x.mag, s - s_out)?
+    } else {
+        x.mag
+            .to_u128()?
+            .checked_mul(POW10_I128[s_out - s] as u128)?
+    };
+    signed_dec128(x.neg, mag)
+}
+
+/// Rescales x from scale s to s_out, rounding to nearest even, returning None
+/// if the result doesn't fit a Decimal128.
+#[inline]
+fn i128_to_dec128_scaled(x: i128, s: usize, s_out: usize) -> Option<i128> {
+    let r = if s_out < s {
+        div_128_pow10(x, s - s_out)
+    } else {
+        x.checked_mul(POW10_I128[s_out - s])?
+    };
+    dec128_fits(r, DEC128_MAX_PREC).then_some(r)
+}
+
+#[inline]
+fn dec128_add_sub_scaled(
+    l: i128,
+    sl: usize,
+    r: i128,
+    sr: usize,
+    s_out: usize,
+    sub: bool,
+) -> Option<i128> {
+    let s = sl.max(sr);
+    if let (Some(la), Some(ra)) = (
+        l.checked_mul(POW10_I128[s - sl]),
+        r.checked_mul(POW10_I128[s - sr]),
+    ) {
+        let res = if sub {
+            la.checked_sub(ra)
+        } else {
+            la.checked_add(ra)
+        };
+        if let Some(res) = res {
+            return i128_to_dec128_scaled(res, s, s_out);
+        }
+    }
+
+    // An aligned operand overflows i128, the result may still fit.
+    let a = I256 {
+        neg: l < 0,
+        mag: u256_mul_pow10(l.unsigned_abs(), s - sl),
+    };
+    let b = I256 {
+        neg: (r < 0) ^ sub,
+        mag: u256_mul_pow10(r.unsigned_abs(), s - sr),
+    };
+    let res = if a.neg == b.neg {
+        I256 {
+            neg: a.neg,
+            mag: a.mag.add(b.mag),
+        }
+    } else if a.mag >= b.mag {
+        I256 {
+            neg: a.neg,
+            mag: a.mag.sub(b.mag),
+        }
+    } else {
+        I256 {
+            neg: b.neg,
+            mag: b.mag.sub(a.mag),
+        }
+    };
+    i256_to_dec128(res, s, s_out)
+}
+
+/// Adds Decimal128s l (scale sl) and r (scale sr), returning the sum at scale
+/// s_out rounded to nearest even, or None if it doesn't fit a Decimal128.
+#[inline]
+pub fn dec128_add_scaled(l: i128, sl: usize, r: i128, sr: usize, s_out: usize) -> Option<i128> {
+    dec128_add_sub_scaled(l, sl, r, sr, s_out, false)
+}
+
+/// Subtracts Decimal128s l (scale sl) and r (scale sr), returning the
+/// difference at scale s_out rounded to nearest even, or None if it doesn't fit
+/// a Decimal128.
+#[inline]
+pub fn dec128_sub_scaled(l: i128, sl: usize, r: i128, sr: usize, s_out: usize) -> Option<i128> {
+    dec128_add_sub_scaled(l, sl, r, sr, s_out, true)
+}
+
+/// Multiplies Decimal128s l (scale sl) and r (scale sr), returning the product
+/// at scale s_out rounded to nearest even, or None if it doesn't fit a
+/// Decimal128.
+#[inline]
+pub fn dec128_mul_scaled(l: i128, sl: usize, r: i128, sr: usize, s_out: usize) -> Option<i128> {
+    let s = sl + sr;
+    if let (Ok(a), Ok(b)) = (i64::try_from(l), i64::try_from(r))
+        && s <= s_out + DEC128_MAX_PREC
+    {
+        return i128_to_dec128_scaled(a as i128 * b as i128, s, s_out);
+    }
+
+    let (lo, hi) = widening_mul_128(l.unsigned_abs(), r.unsigned_abs());
+    let prod = I256 {
+        neg: (l < 0) ^ (r < 0),
+        mag: U256::from_lo_hi(lo, hi),
+    };
+    i256_to_dec128(prod, s, s_out)
+}
+
+/// Divides Decimal128s l (scale sl) and r (scale sr), returning the quotient at
+/// scale s_out rounded to nearest even, or None if r is zero or the quotient
+/// doesn't fit a Decimal128.
+#[inline]
+pub fn dec128_div_scaled(l: i128, sl: usize, r: i128, sr: usize, s_out: usize) -> Option<i128> {
+    if r == 0 {
+        return None;
+    }
+
+    // Computes round(l * 10^k / r) with k = s_out + sr - sl.
+    let lu = l.unsigned_abs();
+    let ru = r.unsigned_abs();
+    if s_out + sr >= sl && s_out + sr - sl <= 18 && lu < 1 << 63 {
+        // Fast path: l * 10^k < 2^63 * 10^18 < 2^123, so adding r / 2 < 2^127 can't
+        // overflow a u128.
+        let z = lu * POW10_I128[s_out + sr - sl] as u128 + ru / 2;
+        let (mut q, rem) = match (u64::try_from(z), u64::try_from(ru)) {
+            // A native 64-bit division is much cheaper than a 128-bit one.
+            (Ok(z), Ok(d)) => ((z / d) as u128, (z % d) as u128),
+            _ => (z / ru, z % ru),
+        };
+        if ru.is_multiple_of(2) && rem == 0 && !q.is_multiple_of(2) {
+            q -= 1;
+        }
+        return signed_dec128((l < 0) ^ (r < 0), q);
+    }
+    if s_out + sr >= sl && s_out + sr - sl <= DEC128_MAX_PREC {
+        // l * 10^k < 2^255 fits the (lo, hi) pair, and so does adding r / 2.
+        let (lo, hi) = widening_mul_128(lu, POW10_I128[s_out + sr - sl] as u128);
+        let (lo, carry) = lo.overflowing_add(ru / 2);
+        let hi = hi + carry as u128;
+        let (mut q, rem) = if hi == 0 {
+            (lo / ru, lo % ru)
+        } else {
+            // hi >= r means the quotient is at least 2^128, which doesn't fit.
+            divrem_256_128(lo, hi, ru)?
+        };
+        if ru.is_multiple_of(2) && rem == 0 && !q.is_multiple_of(2) {
+            q -= 1;
+        }
+        return signed_dec128((l < 0) ^ (r < 0), q);
+    }
+    dec128_div_scaled_wide(l, sl, r, sr, s_out)
+}
+
+/// [`dec128_div_scaled`] for a dividend shift above 38 or below 0.
+#[cold]
+fn dec128_div_scaled_wide(l: i128, sl: usize, r: i128, sr: usize, s_out: usize) -> Option<i128> {
+    let lu = l.unsigned_abs();
+    let ru = r.unsigned_abs();
+    let (n, d) = if s_out + sr >= sl {
+        let k = s_out + sr - sl;
+        let n = if k <= DEC128_MAX_PREC {
+            u256_mul_pow10(lu, k)
+        } else {
+            let t = u256_mul_pow10(lu, DEC128_MAX_PREC);
+            let m = U256::from_u128(POW10_I128[k - DEC128_MAX_PREC] as u128);
+            let (lo, hi) = widening_mul_256(t, m);
+            // If n >= 2^255 then n / r > 2^128, which doesn't fit.
+            if hi != U256([0; 4]) || lo.0[3] >> 63 != 0 {
+                return None;
+            }
+            lo
+        };
+        (n, ru)
+    } else {
+        let (d, d_hi) = widening_mul_128(ru, POW10_I128[sl - sr - s_out] as u128);
+        if d_hi != 0 {
+            // |l| < 2^127 <= d / 2, so the quotient rounds to zero.
+            return Some(0);
+        }
+        (U256::from_u128(lu), d)
+    };
+
+    let z = n.add(U256::from_u128(d / 2));
+    let (lo, hi) = z.lo_hi();
+    // hi >= d means the quotient is at least 2^128, which doesn't fit.
+    let (mut q, rem) = divrem_256_128(lo, hi, d)?;
+    if d % 2 == 0 && rem == 0 && q % 2 == 1 {
+        q -= 1;
+    }
+    signed_dec128((l < 0) ^ (r < 0), q)
+}
+
+/// The integer quotient q and remainder of l (scale sl) by r (scale sr), with
+/// l = q * r + rem and the remainder at scale max(sl, sr). Truncating gives the
+/// remainder the sign of l, flooring the sign of r. Returns None if r is zero.
+fn dec128_divrem(l: i128, sl: usize, r: i128, sr: usize, floor: bool) -> Option<(I256, I256)> {
+    if r == 0 {
+        return None;
+    }
+    let s = sl.max(sr);
+    let lm = u256_mul_pow10(l.unsigned_abs(), s - sl);
+    let rm = u256_mul_pow10(r.unsigned_abs(), s - sr);
+    let zero = U256::from_u128(0);
+    let (q, rem) = match rm.to_u128() {
+        Some(d) => {
+            let (q, rem) = divrem_256_by_128(lm, d);
+            (q, U256::from_u128(rem))
+        },
+        // Only an operand below scale s can exceed a u128 when aligned, so here
+        // |l| < 10^38 < |r|.
+        None => (zero, lm),
+    };
+    let neg = (l < 0) != (r < 0);
+    if floor && neg && rem != zero {
+        let q = I256 {
+            neg: true,
+            mag: q.add(U256::from_u128(1)),
+        };
+        let rem = I256 {
+            neg: r < 0,
+            mag: rm.sub(rem),
+        };
+        return Some((q, rem));
+    }
+    Some((
+        I256 { neg, mag: q },
+        I256 {
+            neg: l < 0,
+            mag: rem,
+        },
+    ))
+}
+
+/// Returns the remainder of Decimal128s l (scale sl) and r (scale sr) at scale
+/// s_out, rounded to nearest even: with the sign of r if `floor`, else with the
+/// sign of l. Returns None if r is zero or the result doesn't fit a Decimal128.
+pub fn dec128_rem_scaled(
+    l: i128,
+    sl: usize,
+    r: i128,
+    sr: usize,
+    s_out: usize,
+    floor: bool,
+) -> Option<i128> {
+    let (_, rem) = dec128_divrem(l, sl, r, sr, floor)?;
+    i256_to_dec128(rem, sl.max(sr), s_out)
+}
+
+/// Returns the integer quotient of Decimal128s l (scale sl) and r (scale sr),
+/// rounded down if `floor`, else toward zero, as a Decimal128 at scale s_out.
+/// Returns None if r is zero or the result doesn't fit a Decimal128.
+pub fn dec128_int_div_scaled(
+    l: i128,
+    sl: usize,
+    r: i128,
+    sr: usize,
+    s_out: usize,
+    floor: bool,
+) -> Option<i128> {
+    let (q, _) = dec128_divrem(l, sl, r, sr, floor)?;
+    i256_to_dec128(q, 0, s_out)
+}
+
+/// Returns x * 10^e, saturating at the i128 bounds, with e <= DEC128_MAX_PREC.
+///
+/// Rescaling one side of a Decimal128 comparison with this preserves the
+/// result: a saturated value compares like the true value against any
+/// Decimal128.
+#[inline]
+pub fn dec128_upscale_saturating(x: i128, e: usize) -> i128 {
+    x.saturating_mul(POW10_I128[e])
+}
+
 /// Checks if two Decimal128s are equal in value.
 #[inline]
 pub fn dec128_eq(mut lv: i128, ls: usize, mut rv: i128, rs: usize) -> bool {
@@ -1021,6 +1385,179 @@ mod test {
         BigDecimal::from_bigint(BigInt::from(x), s as i64)
     }
 
+    fn round_half_even_div(n: &BigInt, d: &BigInt) -> BigInt {
+        let neg = n.is_negative() ^ d.is_negative();
+        let (n, d) = (n.abs(), d.abs());
+        let mut q = &n / &d;
+        let twice_rem = (&n % &d) * 2;
+        if twice_rem > d || (twice_rem == d && (&q % 2u8) == BigInt::from(1u8)) {
+            q += 1u8;
+        }
+        if neg { -q } else { q }
+    }
+
+    fn pow10_big(e: usize) -> BigInt {
+        BigInt::from(10u8).pow(e as u32)
+    }
+
+    fn big_to_dec128(x: BigInt) -> Option<i128> {
+        (x.abs() < BigInt::from(POW10_I128[DEC128_MAX_PREC])).then(|| x.try_into().unwrap())
+    }
+
+    fn add_oracle(l: i128, sl: usize, r: i128, sr: usize, s_out: usize, sub: bool) -> Option<i128> {
+        let r = if sub {
+            -BigInt::from(r)
+        } else {
+            BigInt::from(r)
+        };
+        let sum = dec128_to_bigdecimal(l, sl) + BigDecimal::from_bigint(r, sr as i64);
+        bigdecimal_to_dec128(&sum, DEC128_MAX_PREC, s_out)
+    }
+
+    fn mul_oracle(l: i128, sl: usize, r: i128, sr: usize, s_out: usize) -> Option<i128> {
+        let prod = dec128_to_bigdecimal(l, sl) * dec128_to_bigdecimal(r, sr);
+        bigdecimal_to_dec128(&prod, DEC128_MAX_PREC, s_out)
+    }
+
+    fn div_oracle(l: i128, sl: usize, r: i128, sr: usize, s_out: usize) -> Option<i128> {
+        if r == 0 {
+            return None;
+        }
+        let n = BigInt::from(l) * pow10_big(s_out + sr);
+        let d = BigInt::from(r) * pow10_big(sl);
+        big_to_dec128(round_half_even_div(&n, &d))
+    }
+
+    /// The integer quotient and remainder of l / r at the common scale, truncating or
+    /// flooring the quotient.
+    fn divrem_oracle(
+        l: i128,
+        sl: usize,
+        r: i128,
+        sr: usize,
+        floor: bool,
+    ) -> Option<(BigInt, BigInt, usize)> {
+        if r == 0 {
+            return None;
+        }
+        let s = sl.max(sr);
+        let a = BigInt::from(l) * pow10_big(s - sl);
+        let b = BigInt::from(r) * pow10_big(s - sr);
+        // BigInt division truncates toward zero.
+        let mut q = &a / &b;
+        let mut m = &a - &q * &b;
+        if floor && m != BigInt::from(0) && m.is_negative() != b.is_negative() {
+            q -= 1u8;
+            m += &b;
+        }
+        Some((q, m, s))
+    }
+
+    fn rem_oracle(
+        l: i128,
+        sl: usize,
+        r: i128,
+        sr: usize,
+        s_out: usize,
+        floor: bool,
+    ) -> Option<i128> {
+        let (_, m, s) = divrem_oracle(l, sl, r, sr, floor)?;
+        bigdecimal_to_dec128(
+            &BigDecimal::from_bigint(m, s as i64),
+            DEC128_MAX_PREC,
+            s_out,
+        )
+    }
+
+    fn int_div_oracle(
+        l: i128,
+        sl: usize,
+        r: i128,
+        sr: usize,
+        s_out: usize,
+        floor: bool,
+    ) -> Option<i128> {
+        let (q, _, _) = divrem_oracle(l, sl, r, sr, floor)?;
+        big_to_dec128(q * pow10_big(s_out))
+    }
+
+    fn check_all_scaled(l: i128, sl: usize, r: i128, sr: usize, s_out: usize) {
+        let ctx = format!("l={l}, sl={sl}, r={r}, sr={sr}, s_out={s_out}");
+        for floor in [false, true] {
+            assert_eq!(
+                dec128_rem_scaled(l, sl, r, sr, s_out, floor),
+                rem_oracle(l, sl, r, sr, s_out, floor),
+                "rem floor={floor} {ctx}"
+            );
+            assert_eq!(
+                dec128_int_div_scaled(l, sl, r, sr, s_out, floor),
+                int_div_oracle(l, sl, r, sr, s_out, floor),
+                "int_div floor={floor} {ctx}"
+            );
+        }
+        assert_eq!(
+            dec128_add_scaled(l, sl, r, sr, s_out),
+            add_oracle(l, sl, r, sr, s_out, false),
+            "add {ctx}"
+        );
+        assert_eq!(
+            dec128_sub_scaled(l, sl, r, sr, s_out),
+            add_oracle(l, sl, r, sr, s_out, true),
+            "sub {ctx}"
+        );
+        assert_eq!(
+            dec128_mul_scaled(l, sl, r, sr, s_out),
+            mul_oracle(l, sl, r, sr, s_out),
+            "mul {ctx}"
+        );
+        assert_eq!(
+            dec128_div_scaled(l, sl, r, sr, s_out),
+            div_oracle(l, sl, r, sr, s_out),
+            "div {ctx}"
+        );
+        let expected_cmp = dec128_to_bigdecimal(l, sl).cmp(&dec128_to_bigdecimal(r, sr));
+        assert_eq!(dec128_cmp(l, sl, r, sr), expected_cmp, "cmp {ctx}");
+        assert_eq!(
+            dec128_eq(l, sl, r, sr),
+            expected_cmp == Ordering::Equal,
+            "eq {ctx}"
+        );
+        let (ul, ur) = if sl < sr {
+            (dec128_upscale_saturating(l, sr - sl), r)
+        } else {
+            (l, dec128_upscale_saturating(r, sl - sr))
+        };
+        assert_eq!(ul.cmp(&ur), expected_cmp, "upscale cmp {ctx}");
+    }
+
+    static SCALED_GRID: [usize; 6] = [0, 1, 6, 18, 37, 38];
+
+    #[test]
+    fn test_scaled_arith_against_bigdecimal() {
+        let max = POW10_I128[DEC128_MAX_PREC] - 1;
+        let mut r = SmallRng::seed_from_u64(42);
+        let mut base: Vec<i128> = vec![0, 1, 2, 5, 9, max, max - 1];
+        base.extend((0..39).map(|e| POW10_I128[e]));
+        base.extend((0..39).map(|e| POW10_I128[e] / 2));
+        base.extend((0..127).map(|e| 1i128 << e).filter(|x| *x <= max));
+        base.extend((0..16).map(|_| r.random::<u32>() as i128));
+        base.extend((0..16).map(|_| r.random::<u64>() as i128));
+        base.extend((0..16).map(|_| (r.random::<u128>() % (max as u128 + 1)) as i128));
+        base.extend(base.clone().into_iter().map(|x| -x));
+
+        for &sl in &SCALED_GRID {
+            for &sr in &SCALED_GRID {
+                for &s_out in &SCALED_GRID {
+                    for _ in 0..200 {
+                        let l = *base.choose(&mut r).unwrap();
+                        let rv = *base.choose(&mut r).unwrap();
+                        check_all_scaled(l, sl, rv, sr, s_out);
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_dec128_to_float_is_correctly_rounded() {
         let mut r = SmallRng::seed_from_u64(42);
@@ -1056,6 +1593,152 @@ mod test {
             dec128_to_f32(1_000_000_059_604_644_775_390_625_000_001, 30),
             1.0 + f32::EPSILON
         );
+    }
+
+    #[test]
+    fn test_scaled_arith_targeted() {
+        let max = POW10_I128[DEC128_MAX_PREC] - 1;
+        let p38 = POW10_I128[DEC128_MAX_PREC];
+
+        // Signed half-even ties at scale 6: ±0.0000025 -> ±0.000002, ±0.0000035 -> ±0.000004.
+        for sign in [1, -1] {
+            assert_eq!(dec128_mul_scaled(sign * 25, 6, 1, 1, 6), Some(sign * 2));
+            assert_eq!(dec128_mul_scaled(sign * 35, 6, 1, 1, 6), Some(sign * 4));
+            assert_eq!(dec128_div_scaled(sign * 5, 6, 2, 0, 6), Some(sign * 2));
+            assert_eq!(dec128_div_scaled(sign * 7, 6, 2, 0, 6), Some(sign * 4));
+            // Ties that only exist in the 256-bit product, e.g. 0.5 * 10^37 * 10^-37.
+            assert_eq!(
+                dec128_mul_scaled(sign * 5 * POW10_I128[37], 38, POW10_I128[37], 37, 0),
+                Some(0)
+            );
+            assert_eq!(
+                dec128_mul_scaled(sign * 15 * POW10_I128[36], 38, POW10_I128[37], 36, 0),
+                Some(sign * 2)
+            );
+            assert_eq!(
+                dec128_mul_scaled(sign * 25 * POW10_I128[36], 38, POW10_I128[37], 36, 0),
+                Some(sign * 2)
+            );
+        }
+
+        // Extreme scales, including a negative and a > 38 division exponent k.
+        assert_eq!(dec128_mul_scaled(max, 0, 1, 38, 38), Some(max));
+        assert_eq!(dec128_mul_scaled(max, 0, 1, 38, 0), Some(1));
+        assert_eq!(dec128_mul_scaled(max, 0, 1, 37, 38), None);
+        assert_eq!(dec128_mul_scaled(7, 0, 3, 38, 38), Some(21));
+        assert_eq!(dec128_mul_scaled(7, 1, 3, 1, 38), Some(21 * POW10_I128[36]));
+        assert_eq!(dec128_div_scaled(1, 38, 3, 0, 38), Some(0));
+        assert_eq!(dec128_div_scaled(max, 38, 1, 38, 0), Some(max));
+        assert_eq!(dec128_div_scaled(5 * POW10_I128[37], 38, 1, 0, 0), Some(0));
+        assert_eq!(dec128_div_scaled(15 * POW10_I128[36], 37, 1, 0, 0), Some(2));
+        assert_eq!(dec128_div_scaled(1, 38, max, 0, 0), Some(0));
+        assert_eq!(dec128_div_scaled(3, 0, 1, 38, 0), None);
+        assert_eq!(
+            dec128_div_scaled(1, 0, 3, 38, 0),
+            Some(POW10_I128[37] * 10 / 3)
+        );
+        assert_eq!(dec128_div_scaled(1, 0, max, 38, 38), None);
+
+        // Remainder and integer quotient: truncating follows the dividend's sign,
+        // flooring the divisor's.
+        let (rem, idiv) = (dec128_rem_scaled, dec128_int_div_scaled);
+        assert_eq!(rem(-75, 1, 2, 0, 1, false), Some(-15));
+        assert_eq!(rem(-75, 1, 2, 0, 1, true), Some(5));
+        assert_eq!(rem(75, 1, -2, 0, 1, false), Some(15));
+        assert_eq!(rem(75, 1, -2, 0, 1, true), Some(-5));
+        assert_eq!(rem(-80, 1, 2, 0, 1, true), Some(0));
+        assert_eq!(idiv(-75, 1, 2, 0, 0, false), Some(-3));
+        assert_eq!(idiv(-75, 1, 2, 0, 0, true), Some(-4));
+        assert_eq!(idiv(75, 1, -2, 0, 0, true), Some(-4));
+        assert_eq!(idiv(7, 0, 2, 0, 2, true), Some(300));
+        // Aligning 10^37 to scale 1 exceeds 38 digits: 10^37 % 0.3 = 0.1.
+        assert_eq!(rem(POW10_I128[37], 0, 3, 1, 1, false), Some(1));
+        assert_eq!(idiv(POW10_I128[37], 0, 3, 1, 0, false), Some(p38 / 3));
+        // 10^37 aligned to scale 38 exceeds a u128: 10^-38 % 10^37 = 10^-38.
+        assert_eq!(rem(1, 38, POW10_I128[37], 0, 38, false), Some(1));
+        assert_eq!(rem(-1, 38, POW10_I128[37], 0, 38, false), Some(-1));
+        assert_eq!(idiv(-1, 38, POW10_I128[37], 0, 0, false), Some(0));
+        assert_eq!(idiv(-1, 38, POW10_I128[37], 0, 0, true), Some(-1));
+        // Flooring it would need 75 digits.
+        assert_eq!(rem(-1, 38, POW10_I128[37], 0, 38, true), None);
+        assert_eq!(idiv(max, 0, 1, 38, 0, true), None);
+        assert_eq!(rem(max, 0, -max, 0, 0, true), Some(0));
+        // |i128::MIN + 1| = 2^127 - 1, which is 1 mod 3.
+        assert_eq!(rem(i128::MIN + 1, 0, 3, 0, 0, false), Some(-1));
+        assert_eq!(rem(1, 0, 0, 0, 0, false), None);
+        assert_eq!(idiv(1, 0, 0, 3, 0, true), None);
+
+        // Results at the precision boundary.
+        assert_eq!(dec128_add_scaled(max - 1, 0, 1, 0, 0), Some(max));
+        assert_eq!(dec128_add_scaled(max, 0, 1, 0, 0), None);
+        assert_eq!(dec128_sub_scaled(-max + 1, 0, 1, 0, 0), Some(-max));
+        assert_eq!(dec128_sub_scaled(-max, 0, 1, 0, 0), None);
+        assert_eq!(dec128_mul_scaled(max, 0, -1, 0, 0), Some(-max));
+        assert_eq!(dec128_mul_scaled(p38 / 2, 0, 2, 0, 0), None);
+        assert_eq!(dec128_div_scaled(max, 0, 1, 0, 0), Some(max));
+        assert_eq!(dec128_div_scaled(-max, 0, 1, 0, 0), Some(-max));
+
+        // i128::MIN-adjacent operands.
+        for x in [i128::MIN, i128::MIN + 1, i128::MAX] {
+            assert_eq!(dec128_add_scaled(x, 0, 0, 0, 0), None);
+            assert_eq!(
+                dec128_mul_scaled(x, 0, 1, 38, 0),
+                mul_oracle(x, 0, 1, 38, 0)
+            );
+            assert_eq!(
+                dec128_div_scaled(x, 38, 2, 0, 0),
+                div_oracle(x, 38, 2, 0, 0)
+            );
+            assert_eq!(dec128_div_scaled(1, 0, x, 0, 6), div_oracle(1, 0, x, 0, 6));
+            assert_eq!(dec128_sub_scaled(x, 0, x, 0, 0), Some(0));
+        }
+
+        // 10^35 / 0.001 = 10^38 doesn't fit at scale 3, 0.001 / 10^35 rounds to 0.
+        assert_eq!(dec128_div_scaled(POW10_I128[37], 2, 1, 3, 3), None);
+        assert_eq!(dec128_div_scaled(1, 3, POW10_I128[37], 2, 3), Some(0));
+        // l * 10^k beyond 2^255.
+        assert_eq!(dec128_div_scaled(max, 0, 1, 38, 38), None);
+        assert_eq!(dec128_div_scaled(-max, 0, max, 38, 38), None);
+        // Division by zero.
+        assert_eq!(dec128_div_scaled(1, 2, 0, 3, 3), None);
+        assert_eq!(dec128_div_scaled(0, 0, 0, 0, 0), None);
+
+        // Cancellation: aligning 10^37 to scale 1 exceeds 38 digits, the result fits.
+        let a = POW10_I128[37];
+        let b = POW10_I128[38] - 1; // 9999...9.9 at scale 1
+        assert_eq!(dec128_sub_scaled(a, 0, b, 1, 1), Some(1));
+        assert_eq!(dec128_add_scaled(-a, 0, b, 1, 1), Some(-1));
+        // Aligning 10^19 to scale 20 overflows i128, the result fits at scale 0.
+        let y = 5 * POW10_I128[37];
+        assert_eq!(
+            dec128_sub_scaled(POW10_I128[19], 0, y, 20, 0),
+            Some(95 * POW10_I128[17])
+        );
+        assert_eq!(
+            dec128_add_scaled(y, 20, -POW10_I128[19], 0, 0),
+            Some(-95 * POW10_I128[17])
+        );
+        assert_eq!(dec128_sub_scaled(POW10_I128[19], 0, y, 20, 20), None);
+        let x = POW10_I128[20];
+        assert_eq!(
+            dec128_sub_scaled(x, 0, x * POW10_I128[18] - 1, 18, 18),
+            Some(1)
+        );
+        assert_eq!(
+            dec128_sub_scaled(x, 0, -(x * POW10_I128[18] - 1), 18, 18),
+            None
+        );
+        assert_eq!(dec128_add_scaled(max, 0, -max, 0, 38), Some(0));
+
+        // Comparisons at the 10^38 boundary and across scales.
+        assert!(dec128_eq(10, 1, 100, 2));
+        assert_eq!(dec128_cmp(max, 0, 1, 38), Ordering::Greater);
+        assert_eq!(dec128_cmp(-max, 0, 1, 38), Ordering::Less);
+        assert_eq!(dec128_cmp(max, 38, max, 0), Ordering::Less);
+        assert_eq!(dec128_upscale_saturating(max, 38), i128::MAX);
+        assert_eq!(dec128_upscale_saturating(-max, 38), i128::MIN);
+        assert!(dec128_upscale_saturating(max, 1) > max);
+        assert_eq!(dec128_upscale_saturating(10, 1), 100);
     }
 
     static INTERESTING_SCALE_PREC: [usize; 13] = [0, 1, 2, 3, 5, 8, 11, 16, 21, 27, 32, 37, 38];

@@ -209,6 +209,10 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
         let rhs = rhs.decimal()?;
         ((&self.0) / rhs).map(|ca| ca.into_series())
     }
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+        let rhs = rhs.decimal()?;
+        self.0.rem_with(rhs, true).map(|ca| ca.into_series())
+    }
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         self.0.physical().group_tuples(multithreaded, sorted)

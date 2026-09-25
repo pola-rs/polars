@@ -254,6 +254,23 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             strict: false,
         },
 
+        // The kernel compares decimals of any precision and scale exactly.
+        #[cfg(feature = "dtype-decimal")]
+        (DataType::Decimal(_, _), DataType::Decimal(_, _)) => return Ok(None),
+        // Integers are exact decimals at scale 0; only 128-bit values can fail the cast.
+        #[cfg(feature = "dtype-decimal")]
+        (dt, DataType::Decimal(_, _)) if dt.is_integer() => IsInTypeCoercionResult::SelfCast {
+            dtype: DataType::Decimal(polars_compute::decimal::DEC128_MAX_PREC, 0),
+            strict: true,
+        },
+        #[cfg(feature = "dtype-decimal")]
+        (DataType::Decimal(_, _), dt) if dt.is_integer() => IsInTypeCoercionResult::OtherCast {
+            dtype: wrap_other(DataType::Decimal(
+                polars_compute::decimal::DEC128_MAX_PREC,
+                0,
+            )),
+            strict: true,
+        },
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
             polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left_materialized:?} values in {type_other:?} data")
