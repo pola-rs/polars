@@ -318,13 +318,19 @@ def _decimal_right() -> pl.LazyFrame:
             "k": [1, 1, 1, 2, 2, 3, 4, None],
             "a": pl.Series(values * 2, dtype=dec),
             "b": pl.Series(values[::-1] * 2, dtype=dec),
+            "c": pl.Series(
+                [Decimal(v) for v in ("0.50", "7.75", "-2.00", "9.99")] * 2, dtype=dec
+            ),
+            "d": pl.Series(
+                [Decimal(v) for v in ("10.01", "-0.25", "3.33", "6.40")] * 2, dtype=dec
+            ),
             "w": pl.Series(values * 2, dtype=pl.Decimal(38, 2)),
             "x": [1, None, 3, 4, 5, None, 7, 8],
         }
     )
 
 
-_DECIMAL_Q04 = ((pl.col("a") - pl.col("b") - pl.col("a")) + pl.col("b")) / pl.lit(
+_DECIMAL_Q04 = ((pl.col("a") - pl.col("b") - pl.col("c")) + pl.col("d")) / pl.lit(
     Decimal("2.00")
 )
 DECIMAL_AGGS = {
