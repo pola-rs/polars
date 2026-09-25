@@ -38,6 +38,9 @@ pub enum IRBooleanFunction {
     #[cfg(feature = "is_in")]
     IsIn {
         nulls_equal: bool,
+        /// Set by type coercion: cast the needle to this dtype when evaluating, and treat a
+        /// needle the cast cannot represent exactly as absent.
+        needle_cast: Option<DataType>,
     },
     #[cfg(feature = "is_close")]
     IsClose {
@@ -96,7 +99,7 @@ impl IRBooleanFunction {
                 )
                 .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_ALL_INPUTS),
             #[cfg(feature = "is_in")]
-            B::IsIn { nulls_equal } => FunctionOptions::elementwise()
+            B::IsIn { nulls_equal, .. } => FunctionOptions::elementwise()
                 .with_casting_rules(CastingRules::FirstArgLossless)
                 .with_flags(|f| {
                     if !*nulls_equal {
@@ -163,7 +166,16 @@ impl Display for IRBooleanFunction {
             AllHorizontal => "all_horizontal",
             Not => "not",
         };
-        write!(f, "{s}")
+        write!(f, "{s}")?;
+        #[cfg(feature = "is_in")]
+        if let IsIn {
+            needle_cast: Some(dtype),
+            ..
+        } = self
+        {
+            write!(f, "[needle: {dtype}]")?;
+        }
+        Ok(())
     }
 }
 
