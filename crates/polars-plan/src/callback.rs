@@ -244,7 +244,9 @@ mod _python {
         (polars_core::series::Series, series, series),
         (polars_core::frame::DataFrame, df, df),
         (crate::dsl::DslPlan, dsl_plan, dsl_plan),
-        (polars_core::schema::Schema, schema, schema)
+        (polars_core::schema::Schema, schema, schema),
+        (crate::dsl::Expr, expr, expr),
+        (polars_core::datatypes::DataType, dtype, dtype)
     }
 
     impl<T: super::PlanCallbackArgs + Clone> super::PlanCallbackArgs for Arc<T> {

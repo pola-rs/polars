@@ -116,6 +116,7 @@ if TYPE_CHECKING:
         WindowMappingStrategy,
     )
     from polars._utils.various import NoDefault
+    from polars.datatypes import DataType
 
     if sys.version_info >= (3, 11):
         from typing import Concatenate, ParamSpec
@@ -1210,6 +1211,66 @@ class Expr(metaclass=_Meta):
         └──────┴──────┘
         '''
         return function(self, *args, **kwargs)
+
+    @unstable()
+    def pipe_with_dtype(
+        self,
+        function: Callable[[Expr, DataType], IntoExpr],
+    ) -> Expr:
+        """
+        Converts to another expression by calling `function`.
+
+        Runs during the plan stage (unlike `pipe_with_schema`),
+        which means that the dytype of this expression is known.
+        This allows choosing a different expression depending on the dtype of the input,
+        including the metadata of extension types. This also means that any
+        exceptions raised by `function` will only be emitted during the plan stage.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed at any
+            point without it being considered a breaking change.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        function
+            Callable; will receive the expression as the first parameter and its
+            resolved dtype as the second parameter. The returned expression takes the
+            place of this expression, including its output name.
+
+        See Also
+        --------
+        pipe
+        LazyFrame.pipe_with_schema
+
+        Examples
+        --------
+        >>> def to_float_if_necessary(expr: pl.Expr, dtype: pl.DataType) -> pl.Expr:
+        ...     return expr if dtype.is_float() else expr.cast(pl.Float64)
+        >>> df = pl.DataFrame(
+        ...     {"a": [1.0, 2.0], "b": ["1.0", "2.5"], "c": [2.0, 3.0]},
+        ...     schema={"a": pl.Float64, "b": pl.String, "c": pl.Float32},
+        ... )
+        >>> df.select(pl.all().pipe_with_dtype(to_float_if_necessary))
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ f64 ┆ f64 ┆ f32 │
+        ╞═════╪═════╪═════╡
+        │ 1.0 ┆ 1.0 ┆ 2.0 │
+        │ 2.0 ┆ 2.5 ┆ 3.0 │
+        └─────┴─────┴─────┘
+        """
+
+        def wrapper(exprs_and_dtypes: Any) -> PyExpr:
+            # Inputs are passed as lists to support multiple inputs, but this
+            # method only has one.
+            exprs, dtypes = exprs_and_dtypes
+            return parse_into_expression(function(wrap_expr(exprs[0]), dtypes[0]))
+
+        return wrap_expr(self._pyexpr.pipe_with_dtype(wrapper))
 
     def not_(self) -> Expr:
         """

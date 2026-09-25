@@ -293,6 +293,10 @@ impl fmt::Debug for Expr {
                     "{expr:?}.replace(\"{pattern}\", \"{value}\", literal=true)"
                 ),
             },
+            PipeWithDtype { input, .. } => match input.as_slice() {
+                [input] => write!(f, "{input:?}.pipe_with_dtype()"),
+                input => write!(f, "pipe_with_dtypes({input:?})"),
+            },
             Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]
             Field(names) => write!(f, "pl.field({names:?})"),

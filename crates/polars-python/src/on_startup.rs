@@ -23,6 +23,7 @@ use pyo3::types::PyCFunction;
 
 use crate::Wrap;
 use crate::dataframe::PyDataFrame;
+use crate::expr::PyExpr;
 use crate::lazyframe::PyLazyFrame;
 use crate::map::lazy::call_lambda_with_series;
 use crate::prelude::ObjectValue;
@@ -241,6 +242,12 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
                         Ok(Box::new(py_f.extract::<Wrap<polars_core::schema::Schema>>(py)?.0) as _)
                     })
                 }),
+                expr: Arc::new(|py_f| {
+                    Python::attach(|py| Ok(Box::new(py_f.extract::<PyExpr>(py)?.inner) as _))
+                }),
+                dtype: Arc::new(|py_f| {
+                    Python::attach(|py| Ok(Box::new(py_f.extract::<Wrap<DataType>>(py)?.0) as _))
+                }),
             },
             to_py: polars_utils::python_convert_registry::ToPythonConvertRegistry {
                 df: Arc::new(|df| {
@@ -275,6 +282,16 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
                                 .clone(),
                         )
                         .into_py_any(py)
+                    })
+                }),
+                expr: Arc::new(|expr| {
+                    Python::attach(|py| {
+                        PyExpr::from(expr.downcast_ref::<Expr>().unwrap().clone()).into_py_any(py)
+                    })
+                }),
+                dtype: Arc::new(|dtype| {
+                    Python::attach(|py| {
+                        (&Wrap(dtype.downcast_ref::<DataType>().unwrap().clone())).into_py_any(py)
                     })
                 }),
             },

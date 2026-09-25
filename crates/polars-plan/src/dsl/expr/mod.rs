@@ -183,6 +183,13 @@ pub enum Expr {
         function: RenameAliasFn,
         expr: Arc<Expr>,
     },
+    /// Call `callback` with the inputs and their resolved dtypes,
+    /// and replace this node with the expression it returns.
+    /// Resolved during expression expansion.
+    PipeWithDtype {
+        input: Vec<Expr>,
+        callback: PlanCallback<(Vec<Expr>, Vec<DataType>), Expr>,
+    },
     /// Not a real expression. This is meant
     /// as catch-all for IR expressions that
     /// are not supported by DSL.
@@ -411,6 +418,7 @@ impl Hash for Expr {
                 input.hash(state);
                 evaluation.hash(state);
             },
+            Expr::PipeWithDtype { input, callback: _ } => input.hash(state),
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
             Expr::Field(names) => names.hash(state),
