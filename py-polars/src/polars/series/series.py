@@ -6375,7 +6375,12 @@ class Series(metaclass=_Meta):
             pl_return_dtype = parse_into_dtype(return_dtype)
 
         if not _disable_inefficient_map_warning:
-            warn_on_inefficient_map(function, columns=[self.name], map_target="series")
+            warn_on_inefficient_map(
+                function,
+                columns=[self.name],
+                map_target="series",
+                dtype=self.dtype,
+            )
 
         return self._from_pyseries(
             self._s.map_elements(
