@@ -418,7 +418,7 @@ impl Hash for Expr {
                 input.hash(state);
                 evaluation.hash(state);
             },
-            Expr::PipeWithDtype { input, callback: _ } => input.hash(state),
+            Expr::PipeWithDtype { input: _, callback } => callback.hash_location(state),
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
             Expr::Field(names) => names.hash(state),

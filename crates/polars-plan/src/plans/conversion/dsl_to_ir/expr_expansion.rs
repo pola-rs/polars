@@ -919,12 +919,12 @@ fn expand_expression_rec(
             )?
         },
         Expr::PipeWithDtype { input, callback } => {
-            let start_length = out.len();
+            let mut pipes = Vec::with_capacity(1);
             expand_expression_by_combination(
                 input,
                 ignored_selector_columns,
                 schema,
-                out,
+                &mut pipes,
                 opt_flags,
                 |e| Expr::PipeWithDtype {
                     input: e.to_vec(),
@@ -934,7 +934,6 @@ fn expand_expression_rec(
 
             // Now that inputs are expanded, dtypes can be resolved.
             // Use these to call callbacks.
-            let pipes = out.drain(start_length..).collect::<Vec<_>>();
             for pipe in pipes {
                 let Expr::PipeWithDtype { input, callback } = pipe else {
                     unreachable!()
