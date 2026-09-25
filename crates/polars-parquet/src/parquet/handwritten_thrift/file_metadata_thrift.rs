@@ -21,8 +21,8 @@ use super::parquet_thrift::{FieldType, ThriftCompactInputProtocol, ThriftSliceIn
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{
-    ByteRange, ColumnOrderTag, CompactColumnChunk, CompactColumnMetaData, CompactFileMetaData,
-    CompactRowGroup, CompactStatistics,
+    ByteRange, ColumnOrderTag, CompactColumnChunk, CompactColumnCrypto, CompactColumnMetaData,
+    CompactFileMetaData, CompactRowGroup, CompactStatistics,
 };
 
 trait RequireField<T> {
@@ -299,7 +299,8 @@ fn read_row_group(
 
 /// Decode a `ColumnChunk` into a [`CompactColumnChunk`].
 ///
-/// Skip-decode: `file_path`, `file_offset`, `encrypted_column_metadata`.
+/// Skip-decode: `file_path`, `file_offset`. `encrypted_column_metadata` is recorded
+/// as a [`ByteRange`] into the footer, and decrypted once a decryptor is available.
 fn read_column_chunk(
     prot: &mut ThriftSliceInputProtocol<'_>,
     origin_ptr: *const u8,
@@ -309,11 +310,11 @@ fn read_column_chunk(
     let mut offset_index_length: Option<i32> = None;
     let mut column_index_offset: Option<i64> = None;
     let mut column_index_length: Option<i32> = None;
-    let mut crypto_metadata: Option<Box<ColumnCryptoMetaData>> = None;
+    let mut crypto_metadata: Option<ColumnCryptoMetaData> = None;
+    let mut encrypted_column_metadata: Option<ByteRange> = None;
 
     // Inlined skips at ids 1/2 (file_path, file_offset): no in-tree consumer,
     // hot path runs once per column chunk × 200k chunks on wide fixtures.
-    // 9 (encrypted_column_metadata): not yet supported; fall through.
     read_struct_fields!(prot, |f| {
         1 => prot.skip_binary()?,
         2 => prot.skip_vlq()?,
@@ -322,17 +323,49 @@ fn read_column_chunk(
         5 => offset_index_length = Some(prot.read_i32()?),
         6 => column_index_offset = Some(prot.read_i64()?),
         7 => column_index_length = Some(prot.read_i32()?),
-        8 => crypto_metadata = Some(Box::new(read_column_crypto_metadata(prot)?)),
+        8 => crypto_metadata = Some(read_column_crypto_metadata(prot)?),
+        9 => {
+            let len = prot.read_vlq()? as u32;
+            let offset = prot.offset_from(origin_ptr);
+            prot.skip_bytes(len as usize)?;
+            encrypted_column_metadata = Some(ByteRange { offset, len });
+        },
     });
 
+    // Encrypted column metadata without crypto metadata is out of spec, and is ignored.
+    let crypto = crypto_metadata.map(|crypto_metadata| {
+        Box::new(CompactColumnCrypto {
+            crypto_metadata,
+            encrypted_column_metadata,
+        })
+    });
+
+    // Columns encrypted with a column key may only have encrypted metadata.
+    let has_encrypted_metadata = crypto
+        .as_ref()
+        .is_some_and(|c| c.encrypted_column_metadata.is_some());
+    if meta_data.is_none() && !has_encrypted_metadata {
+        return Err(ParquetError::oos("ColumnChunk.meta_data missing"));
+    }
+
     Ok(CompactColumnChunk {
-        meta_data: meta_data.require("ColumnChunk.meta_data")?,
+        meta_data,
         offset_index_offset,
         offset_index_length,
         column_index_offset,
         column_index_length,
-        crypto_metadata,
+        crypto,
     })
+}
+
+/// Decode a `ColumnMetaData` that starts at `start` within `buf`, such as decrypted
+/// column metadata. Statistics are recorded as [`ByteRange`]s into `buf`.
+pub(crate) fn decode_column_meta_data(
+    buf: &[u8],
+    start: usize,
+) -> ParquetResult<CompactColumnMetaData> {
+    let mut prot = ThriftSliceInputProtocol::new(&buf[start..]);
+    read_column_meta_data(&mut prot, buf.as_ptr())
 }
 
 /// Decode a `ColumnCryptoMetaData` union. An unknown variant is an error, as the

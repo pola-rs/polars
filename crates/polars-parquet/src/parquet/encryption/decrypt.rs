@@ -1,12 +1,15 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_parquet_format::{ColumnCryptoMetaData, EncryptionAlgorithm};
 use polars_utils::aliases::PlHashMap;
 
 use super::ciphers::{BlockDecryptor, NONCE_LEN, RingGcmBlockDecryptor, SIZE_LEN, TAG_LEN};
 use super::modules::{ModuleType, create_footer_aad, create_module_aad};
 use crate::parquet::error::{ParquetError, ParquetResult};
+use crate::parquet::handwritten_thrift::decode_column_meta_data;
+use crate::parquet::metadata::{CompactRowGroup, SchemaDescriptor};
 
 /// Trait for retrieving an encryption key using the key's metadata
 ///
@@ -106,6 +109,106 @@ pub(crate) fn decrypt_module(
     })?;
 
     Ok((decryptor.decrypt(module, aad)?, module_len))
+}
+
+/// Decrypt the encrypted column metadata of encrypted column chunks.
+///
+/// Column chunks encrypted with a column key may only have their metadata stored encrypted
+/// (for files with an encrypted footer), or have stripped plaintext metadata without
+/// statistics (for files with a plaintext footer). Decrypted metadata replaces any plaintext
+/// metadata.
+///
+/// Statistics in decrypted metadata are stored as ranges into a new footer buffer, made up of
+/// `footer_buf` followed by the decrypted metadata. This buffer is returned if any column
+/// metadata was decrypted, and must replace `footer_buf`.
+pub(crate) fn decrypt_column_metadata(
+    row_groups: &mut [CompactRowGroup],
+    footer_buf: &Buffer<u8>,
+    schema_descr: &SchemaDescriptor,
+    file_decryptor: &FileDecryptor,
+) -> ParquetResult<Option<Buffer<u8>>> {
+    // First decrypt all column metadata, recording where each will be in the new footer buffer.
+    let mut decrypted = Vec::new();
+    let mut offset = footer_buf.len();
+    for (row_group_idx, row_group) in row_groups.iter().enumerate() {
+        for (column_ordinal, chunk) in row_group.columns.iter().enumerate() {
+            let Some(crypto) = chunk.crypto.as_deref() else {
+                continue;
+            };
+            let Some(encrypted_range) = crypto.encrypted_column_metadata else {
+                continue;
+            };
+            let column_path = || {
+                schema_descr
+                    .columns()
+                    .get(column_ordinal)
+                    .map(|c| c.path_in_schema.join("."))
+                    .unwrap_or_default()
+            };
+
+            let decryptor = match &crypto.crypto_metadata {
+                ColumnCryptoMetaData::ENCRYPTIONWITHFOOTERKEY(_) => {
+                    file_decryptor.get_footer_decryptor()?
+                },
+                ColumnCryptoMetaData::ENCRYPTIONWITHCOLUMNKEY(column_key) => {
+                    match file_decryptor.get_column_metadata_decryptor(
+                        &column_key.path_in_schema.join("."),
+                        column_key.key_metadata.as_deref(),
+                    ) {
+                        Ok(decryptor) => decryptor,
+                        // Without the column key, fall back to any plaintext metadata.
+                        Err(_) if chunk.meta_data.is_some() => continue,
+                        // TODO: Allow reading other columns when a column key is unavailable.
+                        Err(e) => {
+                            return Err(encryption_err!(
+                                "Metadata for column '{}' is encrypted and could not be decrypted: {}",
+                                column_path(),
+                                e
+                            ));
+                        },
+                    }
+                },
+            };
+
+            let aad = create_module_aad(
+                file_decryptor.file_aad(),
+                ModuleType::ColumnMetaData,
+                row_group_idx,
+                column_ordinal,
+                None,
+            )?;
+            let (plaintext, _) = decrypt_module(
+                &decryptor,
+                encrypted_range.resolve(footer_buf),
+                &aad,
+            )
+            .map_err(|_| {
+                encryption_err!(
+                    "Unable to decrypt metadata for column '{}', the column key may be wrong",
+                    column_path()
+                )
+            })?;
+            let len = plaintext.len();
+            decrypted.push((row_group_idx, column_ordinal, offset, plaintext));
+            offset += len;
+        }
+    }
+
+    if decrypted.is_empty() {
+        return Ok(None);
+    }
+
+    // Then decode the metadata from the new footer buffer, so statistics ranges point into it.
+    let mut combined = Vec::with_capacity(offset);
+    combined.extend_from_slice(footer_buf);
+    for (.., plaintext) in &decrypted {
+        combined.extend_from_slice(plaintext);
+    }
+    for (row_group_idx, column_ordinal, offset, _) in decrypted {
+        let meta_data = decode_column_meta_data(&combined, offset)?;
+        row_groups[row_group_idx].columns[column_ordinal].meta_data = Some(meta_data);
+    }
+    Ok(Some(Buffer::from_vec(combined)))
 }
 
 /// The context needed to decrypt an encrypted column chunk

@@ -30,15 +30,18 @@ pub struct ColumnChunkMetadata {
 
 // Represents common operations for a column chunk.
 impl ColumnChunkMetadata {
-    /// The compact column metadata for this chunk. Always present;
-    /// encrypted columns are rejected at footer-decode time.
+    /// The compact column metadata for this chunk. Always present, as
+    /// [`super::RowGroupMetadata::from_compact`] rejects chunks without it.
     ///
     /// Crate-internal: callers outside `polars-parquet` should use the
     /// typed accessors below (`compression()`, `num_values()`, etc.)
     /// rather than reaching into the compact representation directly.
     #[inline]
     pub(crate) fn compact_metadata(&self) -> &CompactColumnMetaData {
-        &self.column_chunk.meta_data
+        self.column_chunk
+            .meta_data
+            .as_ref()
+            .expect("column chunk metadata not set")
     }
 
     /// The full `CompactColumnChunk` wrapper. Used by the prune pass
@@ -204,12 +207,12 @@ impl ColumnChunkMetadata {
 
     /// Whether this column chunk is encrypted with Parquet modular encryption.
     pub fn is_encrypted(&self) -> bool {
-        self.column_chunk.crypto_metadata.is_some()
+        self.column_chunk.crypto.is_some()
     }
 
     /// The context needed to decrypt this column chunk's pages, or `None` if it isn't encrypted.
     pub(crate) fn crypto_context(&self) -> ParquetResult<Option<CryptoContext>> {
-        let Some(crypto_metadata) = self.column_chunk.crypto_metadata.as_deref() else {
+        let Some(crypto) = self.column_chunk.crypto.as_deref() else {
             return Ok(None);
         };
         let Some(decryption) = &self.decryption else {
@@ -220,7 +223,7 @@ impl ColumnChunkMetadata {
         };
         CryptoContext::for_column(
             &decryption.file_decryptor,
-            crypto_metadata,
+            &crypto.crypto_metadata,
             decryption.row_group_idx,
             decryption.column_ordinal,
         )

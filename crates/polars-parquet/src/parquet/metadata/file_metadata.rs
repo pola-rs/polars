@@ -7,7 +7,7 @@ use super::RowGroupMetadata;
 use super::column_order::{ColumnOrder, ColumnOrderTag};
 use super::compact::{CompactColumnChunk, CompactFileMetaData, CompactRowGroup};
 use super::schema_descriptor::SchemaDescriptor;
-use crate::parquet::encryption::decrypt::FileDecryptor;
+use crate::parquet::encryption::decrypt::{FileDecryptor, decrypt_column_metadata};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::get_sort_order;
 use crate::parquet::schema::types::ParquetType;
@@ -167,8 +167,8 @@ impl FileMetadata {
                     .filter_map(|c| {
                         let keep_stats = *keep.get(c.descriptor().path_in_schema[0].as_str())?;
                         let mut chunk = c.compact_column_chunk().clone();
-                        if !keep_stats {
-                            chunk.meta_data.statistics = None;
+                        if !keep_stats && let Some(meta_data) = &mut chunk.meta_data {
+                            meta_data.statistics = None;
                         }
                         Some(chunk)
                     })
@@ -223,17 +223,26 @@ impl FileMetadata {
             version,
             schema,
             num_rows,
-            row_groups,
+            mut row_groups,
             key_value_metadata,
             created_by,
             column_orders,
             // Only needed to create the decryptor.
             encryption_algorithm: _,
             footer_signing_key_metadata: _,
-            footer_buf,
+            mut footer_buf,
         } = compact;
 
         let schema_descr = SchemaDescriptor::try_from_thrift(&schema)?;
+
+        if let Some(decryptor) = &decryptor
+            && let Some(buf) =
+                decrypt_column_metadata(&mut row_groups, &footer_buf, &schema_descr, decryptor)?
+        {
+            // Replace footer buffer with one that has had decrypted column metadata appended.
+            // All referenced byte ranges point into this new buffer.
+            footer_buf = buf;
+        }
 
         let mut max_row_group_height = 0;
         let row_groups = row_groups
@@ -347,7 +356,7 @@ mod tests {
 
     fn chunk(statistics: Option<CompactStatistics>) -> CompactColumnChunk {
         CompactColumnChunk {
-            meta_data: CompactColumnMetaData {
+            meta_data: Some(CompactColumnMetaData {
                 codec: Compression::Uncompressed,
                 num_values: 3,
                 total_uncompressed_size: 0,
@@ -358,12 +367,12 @@ mod tests {
                 statistics,
                 bloom_filter_offset: None,
                 bloom_filter_length: None,
-            },
+            }),
             offset_index_offset: None,
             offset_index_length: None,
             column_index_offset: None,
             column_index_length: None,
-            crypto_metadata: None,
+            crypto: None,
         }
     }
 

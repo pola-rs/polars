@@ -15,5 +15,5 @@ mod file_metadata_thrift;
 mod parquet_thrift;
 
 pub(crate) use file_metadata_thrift::{
-    decode_file_crypto_metadata, decode_file_metadata, decode_num_rows,
+    decode_column_meta_data, decode_file_crypto_metadata, decode_file_metadata, decode_num_rows,
 };

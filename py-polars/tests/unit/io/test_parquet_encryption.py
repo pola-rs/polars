@@ -75,22 +75,77 @@ def test_read_uniform_encryption(io_files_path: Path) -> None:
     assert_frame_equal(df.drop(UNSUPPORTED_COLUMNS), expected.drop(UNSUPPORTED_COLUMNS))
 
 
-def test_read_plaintext_footer_with_column_keys(io_files_path: Path) -> None:
-    path = (
-        io_files_path
-        / "parquet-encryption"
-        / "encrypt_columns_plaintext_footer.parquet.encrypted"
-    )
+@pytest.mark.parametrize(
+    ("file_name", "aad_prefix"),
+    [
+        ("encrypt_columns_plaintext_footer", None),
+        ("encrypt_columns_and_footer", None),
+        # The AAD prefix is stored in the file
+        ("encrypt_columns_and_footer_aad", None),
+        # The AAD prefix isn't stored in the file, so must be provided
+        ("encrypt_columns_and_footer_disable_aad_storage", b"tester"),
+    ],
+)
+def test_read_with_column_keys(
+    io_files_path: Path, file_name: str, aad_prefix: bytes | None
+) -> None:
+    path = io_files_path / "parquet-encryption" / f"{file_name}.parquet.encrypted"
     expected = expected_data()
 
     decryption_properties = pl.ParquetDecryptionProperties(
-        footer_key=FOOTER_KEY, column_keys=COLUMN_KEYS
+        footer_key=FOOTER_KEY, column_keys=COLUMN_KEYS, aad_prefix=aad_prefix
     )
     df = pl.read_parquet(
         path, schema=expected.schema, decryption_properties=decryption_properties
     )
 
     assert_frame_equal(df.drop(UNSUPPORTED_COLUMNS), expected.drop(UNSUPPORTED_COLUMNS))
+
+
+def test_read_with_bloom_filters(io_files_path: Path) -> None:
+    # This file has a different schema and data to the other test files
+    path = (
+        io_files_path
+        / "parquet-encryption"
+        / "encrypt_columns_and_footer_bloom_filter.parquet.encrypted"
+    )
+    n = 2000
+    expected = pl.DataFrame(
+        {
+            "double_field": pl.Series(np.arange(n) + 0.5),
+            "float_field": pl.Series(np.arange(n, dtype=np.float32) + np.float32(0.25)),
+            "int32_field": pl.Series(np.arange(n, dtype=np.int32)),
+            "name": pl.Series([f"name_{i}" for i in range(n)]),
+        }
+    )
+
+    decryption_properties = pl.ParquetDecryptionProperties(
+        footer_key=FOOTER_KEY, column_keys=COLUMN_KEYS
+    )
+    df = pl.read_parquet(path, decryption_properties=decryption_properties)
+
+    assert_frame_equal(df, expected)
+
+
+def test_read_encrypted_footer_without_column_keys(io_files_path: Path) -> None:
+    path = (
+        io_files_path
+        / "parquet-encryption"
+        / "encrypt_columns_and_footer.parquet.encrypted"
+    )
+    decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
+
+    # TODO: It should be possible to read the columns that are encrypted
+    # with the footer key. At the moment Polars errors due to trying to decrypt
+    # metadata for the columns encrypted with a different key, even though we
+    # aren't reading them.
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"Metadata for column '.*' is encrypted and could not be decrypted",
+    ):
+        pl.read_parquet(
+            path, columns=["int32_field"], decryption_properties=decryption_properties
+        )
 
 
 def test_read_plaintext_footer_without_decryption_properties(

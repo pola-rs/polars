@@ -453,4 +453,123 @@ mod tests {
         let result = deserialize_metadata_with_decryption(footer, None);
         assert!(matches!(result, Err(ParquetError::OutOfSpec(_))));
     }
+
+    /// Read the metadata of a test file with the given decryption properties.
+    fn read_test_file_metadata(
+        name: &str,
+        decryption_properties: Option<&Arc<FileDecryptionProperties>>,
+    ) -> ParquetResult<FileMetadata> {
+        read_metadata_with_decryption(&mut open_test_file(name), decryption_properties, None)
+    }
+
+    /// The (min, max) statistics of a DOUBLE column in the first row group, if present.
+    fn double_column_bounds(metadata: &FileMetadata, name: &str) -> Option<(f64, f64)> {
+        let column = metadata.row_groups[0]
+            .parquet_columns()
+            .iter()
+            .find(|c| c.descriptor().path_in_schema[0] == name)
+            .unwrap();
+        assert_eq!(column.num_values(), metadata.num_rows as i64);
+        let bounds = column.raw_bounds(&metadata.footer_buf)?;
+        let decode = |v: &[u8]| f64::from_le_bytes(v.try_into().unwrap());
+        Some((decode(bounds.min?), decode(bounds.max?)))
+    }
+
+    #[test]
+    fn read_encrypted_column_metadata() {
+        for name in [
+            "encrypt_columns_and_footer.parquet.encrypted",
+            "encrypt_columns_and_footer_aad.parquet.encrypted",
+        ] {
+            let metadata =
+                read_test_file_metadata(name, Some(&column_key_properties(FOOTER_KEY))).unwrap();
+            check_metadata(&metadata);
+            // Statistics are read from the decrypted column metadata.
+            assert_eq!(
+                double_column_bounds(&metadata, "double_field"),
+                Some((0.0, 49.0 * 1.1111111))
+            );
+        }
+    }
+
+    #[test]
+    fn read_encrypted_column_metadata_with_bloom_filters() {
+        // This file has a different schema and data to the other test files.
+        let metadata = read_test_file_metadata(
+            "encrypt_columns_and_footer_bloom_filter.parquet.encrypted",
+            Some(&column_key_properties(FOOTER_KEY)),
+        )
+        .unwrap();
+        assert_eq!(metadata.num_rows, 2000);
+        assert_eq!(
+            double_column_bounds(&metadata, "double_field"),
+            Some((0.5, 1999.5))
+        );
+    }
+
+    #[test]
+    fn read_encrypted_column_metadata_with_aad_prefix() {
+        let name = "encrypt_columns_and_footer_disable_aad_storage.parquet.encrypted";
+        let without_prefix =
+            read_test_file_metadata(name, Some(&column_key_properties(FOOTER_KEY)));
+        assert!(matches!(without_prefix, Err(ParquetError::Encryption(_))));
+
+        let decryption_properties = FileDecryptionProperties::builder(FOOTER_KEY.to_vec())
+            .with_column_key("double_field", COLUMN_KEY_1.to_vec())
+            .with_column_key("float_field", COLUMN_KEY_2.to_vec())
+            .with_aad_prefix(b"tester".to_vec())
+            .build()
+            .unwrap();
+        let metadata = read_test_file_metadata(name, Some(&decryption_properties)).unwrap();
+        check_metadata(&metadata);
+    }
+
+    #[test]
+    fn read_encrypted_column_metadata_without_column_key() {
+        let result = read_test_file_metadata(
+            "encrypt_columns_and_footer.parquet.encrypted",
+            Some(&footer_key_properties(FOOTER_KEY)),
+        );
+        let Err(ParquetError::Encryption(message)) = result else {
+            panic!("expected an encryption error, got {result:?}");
+        };
+        assert!(
+            message.contains("Metadata for column 'float_field' is encrypted"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn read_encrypted_column_metadata_with_wrong_column_key() {
+        let decryption_properties = FileDecryptionProperties::builder(FOOTER_KEY.to_vec())
+            .with_column_key("double_field", COLUMN_KEY_2.to_vec())
+            .with_column_key("float_field", COLUMN_KEY_1.to_vec())
+            .build()
+            .unwrap();
+        let result = read_test_file_metadata(
+            "encrypt_columns_and_footer.parquet.encrypted",
+            Some(&decryption_properties),
+        );
+        let Err(ParquetError::Encryption(message)) = result else {
+            panic!("expected an encryption error, got {result:?}");
+        };
+        assert!(message.contains("Unable to decrypt metadata"), "{message}");
+    }
+
+    #[test]
+    fn read_plaintext_footer_column_metadata() {
+        let name = "encrypt_columns_plaintext_footer.parquet.encrypted";
+
+        // Without keys, encrypted columns only have stripped metadata without statistics.
+        let metadata = read_test_file_metadata(name, None).unwrap();
+        assert_eq!(double_column_bounds(&metadata, "double_field"), None);
+
+        // With keys, the full column metadata is decrypted.
+        let metadata =
+            read_test_file_metadata(name, Some(&column_key_properties(FOOTER_KEY))).unwrap();
+        assert_eq!(
+            double_column_bounds(&metadata, "double_field"),
+            Some((0.0, 49.0 * 1.1111111))
+        );
+    }
 }

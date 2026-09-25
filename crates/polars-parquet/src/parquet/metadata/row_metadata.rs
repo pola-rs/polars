@@ -123,12 +123,17 @@ impl RowGroupMetadata {
                 schema_descr.columns().len()
             )));
         }
+        if rg.columns.iter().any(|c| c.meta_data.is_none()) {
+            // TODO: Handle when some columns cannot be decrypted
+            // (when a user only has access to a subset of columns for example)
+            return Err(ParquetError::oos("ColumnChunk.meta_data missing"));
+        }
         let total_byte_size = rg.total_byte_size.try_into()?;
         let num_rows = rg.num_rows.try_into()?;
 
         let mut column_lookup = ColumnLookup::with_capacity(rg.columns.len());
-        let mut full_byte_range = match rg.columns.first() {
-            Some(first) => column_metadata_byte_range_compact(&first.meta_data),
+        let mut full_byte_range = match rg.columns.first().and_then(|c| c.meta_data.as_ref()) {
+            Some(first) => column_metadata_byte_range_compact(first),
             None => 0..0,
         };
 
@@ -144,15 +149,15 @@ impl RowGroupMetadata {
             .into_iter()
             .enumerate()
             .map(|(i, column_chunk)| {
-                let chunk_decryption = decryption
-                    .filter(|_| column_chunk.crypto_metadata.is_some())
-                    .map(|(file_decryptor, row_group_idx)| {
+                let chunk_decryption = decryption.filter(|_| column_chunk.crypto.is_some()).map(
+                    |(file_decryptor, row_group_idx)| {
                         Box::new(ColumnChunkDecryption {
                             file_decryptor: Arc::clone(file_decryptor),
                             row_group_idx,
                             column_ordinal: i,
                         })
-                    });
+                    },
+                );
                 let column = ColumnChunkMetadata::from_compact(
                     ColumnDescriptorRef::new(Arc::clone(&column_descrs), i),
                     column_chunk,

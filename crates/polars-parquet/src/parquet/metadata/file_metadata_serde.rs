@@ -266,13 +266,13 @@ fn chunk_from_wire(c: ChunkWire, footer: &mut Vec<u8>) -> CompactColumnChunk {
     };
 
     CompactColumnChunk {
-        meta_data,
+        meta_data: Some(meta_data),
         offset_index_offset: None,
         offset_index_length: None,
         column_index_offset: None,
         column_index_length: None,
         // TODO: Support encrypted files.
-        crypto_metadata: None,
+        crypto: None,
     }
 }
 
