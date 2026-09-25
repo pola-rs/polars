@@ -465,6 +465,7 @@ pub fn function_expr_to_udf(
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags: _,
+            is_deterministic: _,
             lib,
             symbol,
             kwargs,

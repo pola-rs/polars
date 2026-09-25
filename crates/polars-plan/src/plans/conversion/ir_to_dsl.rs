@@ -1135,11 +1135,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "ffi_plugin")]
         IF::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
         } => F::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,

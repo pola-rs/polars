@@ -433,6 +433,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin {
                 flags: _,
+                is_deterministic: _,
                 lib,
                 symbol,
                 kwargs,
