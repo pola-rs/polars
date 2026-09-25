@@ -81,6 +81,14 @@ Iceberg
    DataFrame.write_iceberg
    LazyFrame.sink_iceberg
 
+Lance
+~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   scan_lance
+
+
 JSON
 ~~~~
 .. autosummary::
