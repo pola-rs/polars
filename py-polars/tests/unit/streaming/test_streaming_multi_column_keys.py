@@ -124,6 +124,20 @@ def test_unique_multi_column_keys(keys: list[str]) -> None:
     )
 
 
+def test_unique_keeps_keys_with_colliding_hashes() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [1, 1, 2],
+            "b": pl.Series([None, 0x9E3779B97F4A7C15, 1], dtype=pl.UInt64),
+            "payload": [0, 1, 2],
+        }
+    )
+    assert_engines_equal(
+        lf.unique(subset=["a", "b"], keep="first", maintain_order=True),
+        check_row_order=True,
+    )
+
+
 def test_group_by_list_key_is_not_a_key_row() -> None:
     lf = pl.LazyFrame(
         {"a": [[1], [1], [2], None], "b": [1, 1, 1, 2], "v": [1, 2, 3, 4]}

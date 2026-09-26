@@ -24,6 +24,7 @@ use polars_utils::total_ord::{canonical_f32, canonical_f64};
 use crate::hash_keys::{for_each_hash_prehashed, for_each_hash_subset_prehashed};
 
 const BASE_KEY_BUFFER_CAPACITY: usize = 1024;
+const MAX_KEY_BUFFER_CAPACITY: usize = 1 << 30;
 const HASH_MULTIPLE: u64 = 0x5851f42d4c957f2d;
 const NULL_WORD: u64 = 0x9e3779b97f4a7c15;
 const MAX_KEY_COLUMNS: usize = 64;
@@ -626,10 +627,10 @@ fn push_long_bytes(buffers: &mut Vec<Vec<u8>>, bytes: &[u8]) -> (u32, u32) {
         .last()
         .is_none_or(|buf| buf.len() + bytes.len() > buf.capacity())
     {
-        let ideal_next_cap = BASE_KEY_BUFFER_CAPACITY
-            .checked_shl(buffers.len() as u32)
-            .unwrap();
-        buffers.push(Vec::with_capacity(ideal_next_cap.max(bytes.len())));
+        let next_cap = buffers.last().map_or(BASE_KEY_BUFFER_CAPACITY, |buf| {
+            (2 * buf.capacity()).min(MAX_KEY_BUFFER_CAPACITY)
+        });
+        buffers.push(Vec::with_capacity(next_cap.max(bytes.len())));
     }
     let buffer_idx = (buffers.len() - 1) as u32;
     let buffer = buffers.last_mut().unwrap();
@@ -759,6 +760,7 @@ struct KeyColumn {
 impl KeyColumn {
     fn new(column: &Column, col: &ColLayout) -> Self {
         let s = column.as_materialized_series().to_physical_repr().rechunk();
+        assert_eq!(s.dtype(), &col.physical);
         let validity = s.chunks()[0]
             .validity()
             .filter(|v| v.unset_bits() > 0)
@@ -879,10 +881,10 @@ impl KeyColumn {
 #[derive(Clone, Debug)]
 enum KeyData {
     Columns(Vec<KeyColumn>),
-    /// Rows whose long views all point into `bytes`.
+    /// Rows whose long views all point into `buffers`.
     Rows {
         rows: Buffer<u64>,
-        bytes: Buffer<u8>,
+        buffers: Arc<[Vec<u8>]>,
     },
 }
 
@@ -890,7 +892,7 @@ enum KeyData {
 /// rows of the layout.
 #[derive(Clone, Debug)]
 pub struct KeyRowKeys {
-    pub layout: Arc<KeyRowLayout>,
+    layout: Arc<KeyRowLayout>,
     pub hashes: UInt64Array,
     /// Keys with a null, when nulls are not keys.
     pub validity: Option<Bitmap>,
@@ -904,12 +906,15 @@ impl KeyRowKeys {
         random_state: &PlRandomState,
         null_is_valid: bool,
     ) -> Self {
+        assert_eq!(columns.len(), layout.cols.len());
+        let len = columns[0].len();
+        assert!(columns.iter().all(|c| c.len() == len));
         let cols: Vec<KeyColumn> = columns
             .iter()
             .zip(&layout.cols)
             .map(|(column, col)| KeyColumn::new(column, col))
             .collect();
-        let mut hashes = vec![random_state.hash_one(HASH_MULTIPLE); columns[0].len()];
+        let mut hashes = vec![random_state.hash_one(HASH_MULTIPLE); len];
         for col in &cols {
             col.hash_into(&mut hashes, random_state);
         }
@@ -932,7 +937,7 @@ impl KeyRowKeys {
         layout: Arc<KeyRowLayout>,
         hashes: Vec<u64>,
         rows: Vec<u64>,
-        bytes: Vec<u8>,
+        buffers: Vec<Vec<u8>>,
     ) -> Self {
         Self {
             layout,
@@ -940,7 +945,7 @@ impl KeyRowKeys {
             validity: None,
             data: KeyData::Rows {
                 rows: Buffer::from(rows),
-                bytes: Buffer::from(bytes),
+                buffers: buffers.into(),
             },
         }
     }
@@ -982,12 +987,12 @@ impl KeyRowKeys {
     ) -> bool {
         match &self.data {
             KeyData::Columns(cols) => self.layout.eq_columns(cols, i, row, stored_long),
-            KeyData::Rows { rows, bytes } => {
+            KeyData::Rows { rows, buffers } => {
                 let stride = self.layout.stride;
                 self.layout.rows_eq(
                     rows.get_unchecked(i * stride..(i + 1) * stride),
                     row,
-                    |a, b| bytes_eq(long_slice(bytes, a), stored_long(b)),
+                    |a, b| bytes_eq(a.get_external_slice_unchecked(buffers), stored_long(b)),
                 )
             },
         }
@@ -1067,11 +1072,14 @@ impl KeyRowKeys {
     ) {
         match &self.data {
             KeyData::Columns(cols) => self.layout.write_columns(cols, i, row, store_long),
-            KeyData::Rows { rows, bytes } => {
+            KeyData::Rows { rows, buffers } => {
                 let stride = self.layout.stride;
                 row.copy_from_slice(rows.get_unchecked(i * stride..(i + 1) * stride));
-                self.layout
-                    .repoint_long_views(row, |view| long_slice(bytes, view), store_long);
+                self.layout.repoint_long_views(
+                    row,
+                    |view| view.get_external_slice_unchecked(buffers),
+                    store_long,
+                );
             },
         }
     }
@@ -1084,7 +1092,7 @@ impl KeyRowKeys {
             KeyData::Columns(cols) => {
                 KeyData::Columns(cols.iter().map(|c| c.gather_unchecked(idxs)).collect())
             },
-            KeyData::Rows { rows, bytes } => {
+            KeyData::Rows { rows, buffers } => {
                 let stride = self.layout.stride;
                 let mut out = Vec::with_capacity(idxs.len() * stride);
                 for i in idxs {
@@ -1093,7 +1101,7 @@ impl KeyRowKeys {
                 }
                 KeyData::Rows {
                     rows: Buffer::from(out),
-                    bytes: bytes.clone(),
+                    buffers: buffers.clone(),
                 }
             },
         };
@@ -1119,6 +1127,7 @@ struct VerifyBatch {
     entries: Vec<IdxSize>,
     rows: Vec<*const u64>,
     ok: Vec<bool>,
+    new_pos: Vec<usize>,
     new_idxs: Vec<IdxSize>,
     new_entries: Vec<IdxSize>,
     new_rows: Vec<*mut u64>,
@@ -1133,6 +1142,7 @@ impl Default for VerifyBatch {
             entries: Vec::with_capacity(n),
             rows: Vec::with_capacity(n),
             ok: Vec::with_capacity(n),
+            new_pos: Vec::with_capacity(n),
             new_idxs: Vec::with_capacity(n),
             new_entries: Vec::with_capacity(n),
             new_rows: Vec::with_capacity(n),
@@ -1145,12 +1155,14 @@ impl VerifyBatch {
         self.pos.clear();
         self.idxs.clear();
         self.entries.clear();
+        self.new_pos.clear();
         self.new_idxs.clear();
         self.new_entries.clear();
     }
 
     #[inline(always)]
-    fn push_new(&mut self, i: IdxSize, entry: IdxSize) {
+    fn push_new(&mut self, pos: usize, i: IdxSize, entry: IdxSize) {
+        self.new_pos.push(pos);
         self.new_idxs.push(i);
         self.new_entries.push(entry);
     }
@@ -1416,7 +1428,7 @@ impl<V> KeyRowIndexMap<V> {
     }
 
     /// Pushes the index of each key `idxs[r]` of `keys` to `out`, inserting missing
-    /// keys with `value(r)`.
+    /// keys with `value(r)`. New keys get indices in the order they first occur.
     ///
     /// # Safety
     /// The indices must be in-bounds, and `keys` must have the layout of the keys in
@@ -1437,6 +1449,10 @@ impl<V> KeyRowIndexMap<V> {
         let mut batch = VerifyBatch::default();
         for (c, chunk) in idxs.chunks(VERIFY_BATCH_SIZE).enumerate() {
             let (start, chunk_start) = (out.len(), c * VERIFY_BATCH_SIZE);
+            let first_new = self.len();
+            let mut next = first_new;
+            let num_buffers = self.buffers.len();
+            let last_buffer_len = self.buffers.last().map_or(0, Vec::len);
             batch.clear();
             for (r, i) in chunk.iter().enumerate() {
                 let hash = keys.hashes.value_unchecked(*i as usize);
@@ -1457,22 +1473,41 @@ impl<V> KeyRowIndexMap<V> {
                         batch.push(r, *i, j);
                     },
                     TEntry::Vacant(v) => {
-                        let idx = self.values.len() as IdxSize;
-                        v.insert(idx);
+                        v.insert(next);
                         self.entries.push(hash);
                         self.entries.resize(self.entries.len() + entry_words - 1, 0);
-                        self.values.push(value(chunk_start + r));
-                        out.push(idx);
-                        batch.push_new(*i, idx);
+                        out.push(next);
+                        batch.push_new(r, *i, next);
+                        next += 1;
                     },
                 }
             }
             batch.write_new(keys, &mut self.entries, entry_words, &mut self.buffers);
             batch.verify(keys, &self.entries, entry_words, &self.buffers);
-            for (r, i) in batch.mismatches() {
-                *out.get_unchecked_mut(start + r) = self
-                    .get_or_insert_with(keys, i as usize, || value(chunk_start + r))
-                    .0;
+            if !batch.ok.contains(&false) {
+                self.values
+                    .extend(batch.new_pos.iter().map(|r| value(chunk_start + r)));
+                continue;
+            }
+
+            for j in first_new..next {
+                let hash = *self.entries.get_unchecked(j as usize * entry_words);
+                self.table
+                    .find_entry(hash.wrapping_mul(seed), |k| *k == j)
+                    .unwrap()
+                    .remove();
+            }
+            self.entries.truncate(first_new as usize * entry_words);
+            self.buffers.truncate(num_buffers);
+            if let Some(buffer) = self.buffers.last_mut() {
+                buffer.truncate(last_buffer_len);
+            }
+            out.truncate(start);
+            for (r, i) in chunk.iter().enumerate() {
+                out.push(
+                    self.get_or_insert_with(keys, *i as usize, || value(chunk_start + r))
+                        .0,
+                );
             }
         }
     }
@@ -1644,12 +1679,12 @@ impl HotKeyRows {
     }
 }
 
-/// Collects key rows, re-pointing their long views into one shared buffer.
+/// Collects key rows, re-pointing their long views into shared buffers.
 #[derive(Default)]
 pub struct KeyRowCollector {
     hashes: Vec<u64>,
     rows: Vec<u64>,
-    bytes: Vec<u8>,
+    buffers: Vec<Vec<u8>>,
 }
 
 impl KeyRowCollector {
@@ -1663,11 +1698,11 @@ impl KeyRowCollector {
         self.hashes.push(hash);
         let start = self.rows.len();
         self.rows.extend_from_slice(row);
-        let bytes = &mut self.bytes;
+        let buffers = &mut self.buffers;
         layout.repoint_long_views(
             &mut self.rows[start..],
             |view| long_slice(long, view),
-            |b| (0, append_long_bytes(bytes, b)),
+            |b| push_long_bytes(buffers, b),
         );
     }
 
@@ -1676,7 +1711,7 @@ impl KeyRowCollector {
             layout,
             std::mem::take(&mut self.hashes),
             std::mem::take(&mut self.rows),
-            std::mem::take(&mut self.bytes),
+            std::mem::take(&mut self.buffers),
         )
     }
 }
@@ -1741,7 +1776,7 @@ mod tests {
             assert_eq!(ka.hashes.value(3), kb.hashes.value(0));
             assert_eq!(ka.hashes.value(1), kb.hashes.value(3));
         }
-        let out = map.keys_frame(&a.schema());
+        let out = map.keys_frame(a.schema());
         assert!(out.equals_missing(&a));
 
         // The same keys as rows, as a hot grouper hands them over.
@@ -1763,7 +1798,7 @@ mod tests {
             let found: Vec<Option<IdxSize>> = (0..4).map(|i| map.get_index_of(&kb, i)).collect();
             assert_eq!(found, [Some(3), Some(0), None, Some(1)]);
         }
-        assert!(map.keys_frame(&a.schema()).equals_missing(&a));
+        assert!(map.keys_frame(a.schema()).equals_missing(&a));
     }
 
     #[test]
@@ -1800,6 +1835,34 @@ mod tests {
         }
         assert_eq!(groups, [0, 1, 2, 1]);
         assert_eq!(found, [2, 1, 0, 2, 1, 0]);
+    }
+
+    #[test]
+    fn colliding_new_keys_get_indices_in_order() {
+        let df = df!("a" => [1i64, 2, 3, 2], "b" => [1i64, 2, 3, 2]).unwrap();
+        let mut ks = keys(&df, true, &PlRandomState::default());
+        ks.hashes = PrimitiveArray::from_vec(vec![42, 42, 7, 42]);
+        let mut map = KeyRowIndexMap::<IdxSize>::new();
+        let mut groups = Vec::new();
+        unsafe {
+            map.get_or_insert_batch(&ks, &[0], |r| r as IdxSize, &mut groups);
+            map.get_or_insert_batch(&ks, &[1, 2, 3], |r| r as IdxSize, &mut groups);
+        }
+        assert_eq!(groups, [0, 1, 2, 1]);
+        let values: Vec<IdxSize> = (0..3).map(|g| *map.get_value(g).unwrap()).collect();
+        assert_eq!(values, [0, 0, 1]);
+        assert!(map.keys_frame(df.schema()).equals(&df.slice(0, 3)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn columns_of_unequal_length_are_rejected() {
+        let columns = [
+            Column::new("a".into(), [1i64, 2]),
+            Column::new("b".into(), [1i64]),
+        ];
+        let layout = KeyRowLayout::new(columns.iter().map(|c| c.dtype())).unwrap();
+        KeyRowKeys::from_columns(&columns, Arc::new(layout), &PlRandomState::default(), true);
     }
 
     #[test]
