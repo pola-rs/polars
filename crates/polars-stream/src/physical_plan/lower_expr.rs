@@ -31,7 +31,7 @@ use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_group_by::{
-    GroupByLowerKind, build_group_by_stream, try_build_streaming_group_by,
+    GroupByLowerKind, build_group_by_stream, try_build_sorted_over, try_build_streaming_group_by,
 };
 use crate::physical_plan::lower_ir::{build_filter_stream_with_ctx, build_row_idx_stream};
 
@@ -56,6 +56,7 @@ impl ExprCache {
 pub(crate) struct LowerExprContext<'a> {
     pub(crate) prepare_visualization: bool,
     pub(crate) sortedness: &'a IRPlanSorted,
+    pub(crate) sorted_input: Option<(PhysStream, &'a IRSorted)>,
     pub(crate) expr_arena: &'a mut Arena<AExpr>,
     pub(crate) phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
     pub(crate) cache: &'a mut ExprCache,
@@ -68,6 +69,7 @@ impl<'a> From<LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
         Self {
             prepare_visualization: value.prepare_visualization,
             sortedness: value.sortedness,
+            sorted_input: value.sorted_input,
         }
     }
 }
@@ -76,6 +78,7 @@ impl<'a> From<&LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
         Self {
             prepare_visualization: value.prepare_visualization,
             sortedness: value.sortedness,
+            sorted_input: value.sorted_input,
         }
     }
 }
@@ -388,6 +391,43 @@ fn is_length_preserving_ctx(expr_key: ExprNodeKey, ctx: &mut LowerExprContext) -
     .unwrap();
 
     matches!(height, ExprProjectionHeight::Column)
+}
+
+/// Lowers `function.over(partition_by)` to a sorted group-by followed by an explode if the keys
+/// are known to be sorted on `input` and `function` is length-preserving.
+fn try_build_sorted_over_with_ctx(
+    input: PhysStream,
+    function: Node,
+    partition_by: &[Node],
+    out_name: PlSmallStr,
+    ctx: &mut LowerExprContext,
+) -> PolarsResult<Option<PhysStream>> {
+    let Some((sorted_stream, input_sorted)) = ctx.sorted_input else {
+        return Ok(None);
+    };
+    if sorted_stream != input || !is_length_preserving_ctx(function, ctx) {
+        return Ok(None);
+    }
+
+    let key_ir = partition_by
+        .iter()
+        .map(|n| AExprBuilder::new_from_node(*n).expr_ir(unique_column_name()))
+        .collect_vec();
+    let input_schema = input.output_schema(ctx.phys_sm);
+    if are_keys_sorted_any(Some(input_sorted), &key_ir, ctx.expr_arena, input_schema).is_none() {
+        return Ok(None);
+    }
+
+    let function_ir = AExprBuilder::new_from_node(function).expr_ir(out_name);
+    try_build_sorted_over(
+        input,
+        &key_ir,
+        function_ir,
+        ctx.expr_arena,
+        ctx.phys_sm,
+        ctx.cache,
+        StreamingLowerIRContext::from(&*ctx),
+    )
 }
 
 fn build_fallback_node_with_ctx(
@@ -857,6 +897,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                         sortedness: ctx.sortedness,
+                        sorted_input: None,
                     },
                     false,
                 )?;
@@ -921,6 +962,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                         sortedness: ctx.sortedness,
+                        sorted_input: None,
                     },
                     false,
                 )?;
@@ -2619,10 +2661,40 @@ fn lower_exprs_with_ctx(
                 )? {
                     input_streams.insert(gb);
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                } else if let Some(stream) = try_build_sorted_over_with_ctx(
+                    input,
+                    function,
+                    &partition_by,
+                    out_name.clone(),
+                    ctx,
+                )? {
+                    input_streams.insert(stream);
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 } else {
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 }
+            },
+
+            AExpr::Over {
+                function,
+                partition_by,
+                order_by: None,
+                mapping: WindowMapping::Explode,
+            } => {
+                let out_name = unique_column_name();
+                if let Some(stream) = try_build_sorted_over_with_ctx(
+                    input,
+                    function,
+                    &partition_by,
+                    out_name.clone(),
+                    ctx,
+                )? {
+                    input_streams.insert(stream);
+                } else {
+                    fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
+                }
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
             // Generic fallback for column-based functions/UDFs.
@@ -2831,6 +2903,7 @@ pub fn lower_exprs(
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
+        sorted_input: ctx.sorted_input,
         node_scratch: &mut Default::default(),
         ae_height_scratch: &mut Default::default(),
     };
@@ -2861,6 +2934,7 @@ pub fn build_select_stream(
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
+        sorted_input: ctx.sorted_input,
         node_scratch: &mut Default::default(),
         ae_height_scratch: &mut Default::default(),
     };
@@ -2882,6 +2956,7 @@ pub fn build_hstack_stream(
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
+        sorted_input: ctx.sorted_input,
         node_scratch: &mut Default::default(),
         ae_height_scratch: &mut Default::default(),
     };

@@ -90,6 +90,7 @@ pub fn visualize_physical_plan(
     let ctx = StreamingLowerIRContext {
         prepare_visualization: true,
         sortedness: &sortedness,
+        sorted_input: None,
     };
     let root_phys_node =
         crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, &mut phys_sm, ctx)?;
@@ -147,6 +148,7 @@ impl StreamingQuery {
         let ctx = StreamingLowerIRContext {
             prepare_visualization: cfg_prepare_visualization_data(),
             sortedness: &sortedness,
+            sorted_input: None,
         };
         let root_phys_node = crate::physical_plan::build_physical_plan(
             node,

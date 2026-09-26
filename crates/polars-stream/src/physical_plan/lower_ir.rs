@@ -92,6 +92,7 @@ pub fn build_filter_stream(
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
+        sorted_input: None,
         node_scratch: &mut Default::default(),
         ae_height_scratch: &mut Default::default(),
     };
@@ -158,6 +159,9 @@ pub fn build_row_idx_stream(
 pub struct StreamingLowerIRContext<'a> {
     pub prepare_visualization: bool,
     pub sortedness: &'a IRPlanSorted,
+    /// The lowered input stream of the current `Select`/`HStack` and what is known about its
+    /// order. Used to query the sortedness of expressions evaluated directly on that stream.
+    pub sorted_input: Option<(PhysStream, &'a IRSorted)>,
 }
 
 #[recursive::recursive]
@@ -228,7 +232,12 @@ pub fn lower_ir(
                 disable_morsel_split.get_or_insert(true);
             }
 
+            let input_sorted = ctx.sortedness.get(*input);
             let phys_input = lower_ir!(*input)?;
+            let ctx = StreamingLowerIRContext {
+                sorted_input: input_sorted.map(|s| (phys_input, s)),
+                ..ctx
+            };
             return build_select_stream(
                 phys_input, &selectors, expr_arena, phys_sm, expr_cache, ctx,
             );
@@ -236,7 +245,12 @@ pub fn lower_ir(
 
         IR::HStack { input, exprs, .. } => {
             let exprs = exprs.to_vec();
+            let input_sorted = ctx.sortedness.get(*input);
             let phys_input = lower_ir!(*input)?;
+            let ctx = StreamingLowerIRContext {
+                sorted_input: input_sorted.map(|s| (phys_input, s)),
+                ..ctx
+            };
             return build_hstack_stream(phys_input, &exprs, expr_arena, phys_sm, expr_cache, ctx);
         },
 
