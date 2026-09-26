@@ -5,6 +5,7 @@ use ring::rand::{SecureRandom, SystemRandom};
 
 use crate::parquet::error::ParquetResult;
 
+#[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
 const RIGHT_TWELVE: u128 = 0x0000_0000_ffff_ffff_ffff_ffff_ffff_ffff;
 pub(crate) const NONCE_LEN: usize = 12;
 pub(crate) const TAG_LEN: usize = 16;
@@ -79,10 +80,12 @@ impl BlockDecryptor for RingGcmBlockDecryptor {
     }
 }
 
+#[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
 pub(crate) trait BlockEncryptor: Debug + Send + Sync {
     fn encrypt(&mut self, plaintext: &[u8], aad: &[u8]) -> ParquetResult<Vec<u8>>;
 }
 
+#[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
 #[derive(Debug, Clone)]
 struct CounterNonce {
     start: u128,
@@ -123,6 +126,7 @@ impl NonceSequence for CounterNonce {
     }
 }
 
+#[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
 #[derive(Debug, Clone)]
 pub(crate) struct RingGcmBlockEncryptor {
     key: LessSafeKey,
