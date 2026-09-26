@@ -22,12 +22,9 @@ pub(super) fn process_group_by(
     #[cfg(not(feature = "dynamic_group_by"))]
     let no_push = false;
 
-    let elementwise_keys = keys
-        .iter()
-        .all(|key| is_elementwise_rec(key.node(), expr_arena));
-
     // Don't pushdown predicates on these cases.
-    if apply.is_some() || no_push || options.slice.is_some() || !elementwise_keys {
+    if apply.is_some() || no_push || options.slice.is_some() || !all_elementwise(&keys, expr_arena)
+    {
         let lp = GroupBy {
             input,
             keys,
