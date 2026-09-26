@@ -1972,6 +1972,41 @@ def test_sink_parquet_lazy_and_collect() -> None:
             True,
         ),
         (lambda lf: lf.with_row_index().select(pl.col("index").max()), None, True),
+        # Sortedness hints assert an order on the scan output, so the scan must
+        # keep it for the sorted fast paths downstream.
+        (
+            lambda lf: (
+                lf.with_columns(pl.col("a").set_sorted()).group_by("a").agg(pl.len())
+            ),
+            True,
+            False,
+        ),
+        # Pins the sorted fast path of unique; not necessarily the fastest choice for
+        # remote sources.
+        (
+            lambda lf: lf.select(pl.col("a").set_sorted()).unique(maintain_order=False),
+            True,
+            False,
+        ),
+        (lambda lf: lf.set_sorted("a").group_by("a").agg(pl.len()), True, False),
+        (
+            lambda lf: lf.select(pl.col("a").set_sorted()).join(
+                lf.select(pl.col("a").set_sorted(), pl.col("b")),
+                on="a",
+                maintain_order="none",
+            ),
+            True,
+            False,
+        ),
+        (
+            lambda lf: lf.join_asof(
+                lf.select(pl.col("a").set_sorted(), pl.col("b")),
+                left_on=pl.col("a").set_sorted(),
+                right_on=pl.col("a").set_sorted(),
+            ).select(pl.len()),
+            True,
+            True,
+        ),
     ],
 )
 def test_scan_parquet_maintain_order_only_if_observed(
@@ -2066,3 +2101,56 @@ def test_scan_parquet_unordered_row_groups(n_files: int, tmp_path: Path) -> None
         collect(lf.filter(pl.col("a") % 5_000 == 1).sort("a")),
         df.filter(pl.col("a") % 5_000 == 1),
     )
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_scan_parquet_set_sorted_expr_keeps_order(tmp_path: Path) -> None:
+    n_groups = 4_000
+    n = n_groups * 500
+    n_row_groups = 64
+    a = pl.Series("a", range(n)) // 500
+
+    # Data intentionally skewed so that row groups arrive out of order on decode.
+    skewed_payload = pl.select(
+        pl.when(pl.int_range(n) < n // n_row_groups)
+        .then(pl.int_range(n).cast(pl.String).repeat_by(60).list.join(""))
+        .otherwise(pl.lit(""))
+        .alias("s")
+    ).to_series()
+    df = pl.DataFrame({"a": a, "s": skewed_payload})
+    df.write_parquet(tmp_path / "sorted.parquet", row_group_size=n // n_row_groups)
+
+    lf = pl.scan_parquet(tmp_path / "sorted.parquet")
+
+    q_group_by = (
+        lf.with_columns(pl.col("a").set_sorted()).group_by("a").agg(pl.len()).sort("a")
+    )
+    expected_group_by = df.group_by("a").agg(pl.len()).sort("a")
+
+    right = df.group_by("a").agg(pl.len().alias("n")).sort("a")
+    right.write_parquet(tmp_path / "right.parquet", row_group_size=n_groups // 8)
+    q_join = (
+        lf.select(pl.col("a").set_sorted())
+        .join(
+            pl.scan_parquet(tmp_path / "right.parquet").select(
+                pl.col("a").set_sorted(), pl.col("n")
+            ),
+            on="a",
+            maintain_order="none",
+        )
+        .group_by("a")
+        .agg(pl.len(), pl.col("n").first())
+        .sort("a")
+    )
+    expected_join = right.select("a", pl.col("n").alias("len"), "n")
+
+    # Verify fast-path
+    def physical_plan(q: pl.LazyFrame) -> str:
+        return q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert "sorted-group-by" in physical_plan(q_group_by)
+    assert "merge-join" in physical_plan(q_join)
+
+    assert_frame_equal(q_group_by.collect(engine="streaming"), expected_group_by)
+    assert_frame_equal(q_join.collect(engine="streaming"), expected_join)
