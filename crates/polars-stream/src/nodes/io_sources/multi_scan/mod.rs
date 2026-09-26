@@ -36,8 +36,12 @@ pub struct MultiScan {
 }
 
 impl MultiScan {
-    pub fn new(config: Arc<MultiScanConfig>, metrics_registry: NodeMetricsRegistry) -> Self {
-        let name = format_pl_smallstr!("multi-scan[{}]", config.file_reader_builder.reader_name());
+    pub fn new(
+        config: Arc<MultiScanConfig>,
+        metrics_registry: NodeMetricsRegistry,
+        reader_name: PlSmallStr,
+    ) -> Self {
+        let name = format_pl_smallstr!("multi-scan[{}]", reader_name);
         let verbose = config.verbose;
 
         MultiScan {
@@ -103,7 +107,7 @@ impl ComputeNode for MultiScan {
             use MultiScanState::*;
 
             self.state
-                .initialize(state.clone(), self.metrics_registry.is_some());
+                .initialize(state.clone(), self.metrics_registry.is_some())?;
 
             if let Initialized { io_metrics, .. } = &self.state {
                 if let Some(io_metrics) = io_metrics.as_ref() {
@@ -178,11 +182,15 @@ enum MultiScanState {
 
 impl MultiScanState {
     /// Initialize state if not yet initialized.
-    fn initialize(&mut self, execution_state: StreamingExecutionState, track_io_metrics: bool) {
+    fn initialize(
+        &mut self,
+        execution_state: StreamingExecutionState,
+        track_io_metrics: bool,
+    ) -> PolarsResult<()> {
         use MultiScanState::*;
 
         if !matches!(self, Self::Uninitialized { .. }) {
-            return;
+            return Ok(());
         }
 
         let Uninitialized { config } = std::mem::replace(self, Finished) else {
@@ -218,7 +226,7 @@ impl MultiScanState {
             task_handle,
             phase_channel_tx,
             bridge_state,
-        } = initialize_multi_scan_pipeline(config, execution_state, io_metrics.clone());
+        } = initialize_multi_scan_pipeline(config, execution_state, io_metrics.clone())?;
 
         let wait_group = WaitGroup::default();
 
@@ -229,6 +237,8 @@ impl MultiScanState {
             task_handle,
             io_metrics,
         };
+
+        Ok(())
     }
 
     /// Refresh the state. This checks the bridge state if `self` is initialized and updates accordingly.

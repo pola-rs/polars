@@ -3,7 +3,7 @@ use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyAnyMethods as _, PyDict};
 use pyo3::{Bound, IntoPyObject, Py, PyAny, PyResult, Python};
 
-#[derive(IntoPyObject)]
+#[derive(IntoPyObject, Debug)]
 pub struct PyThreadPool(
     /// polars._utils.threading.PyThreadPool
     Py<PyAny>,
@@ -20,43 +20,51 @@ impl<'py> IntoPyObject<'py> for &'py PyThreadPool {
 }
 
 impl PyThreadPool {
-    pub fn new() -> Self {
-        use std::num::NonZeroUsize;
-
-        Python::attach(|py| {
-            let num_threads =
-                std::env::var("POLARS_PYTHON_SCAN_RESOLVE_THREADS").map_or(128, |x| {
-                    x.parse::<NonZeroUsize>()
-                        .unwrap_or_else(|_| {
-                            panic!("invalid value for POLARS_PYTHON_SCAN_RESOLVE_THREADS: {x}")
-                        })
-                        .get()
-                });
-
-            if polars_config::config().verbose() {
-                eprintln!("python scan_resolve_threadpool threads: {num_threads}")
-            }
-
-            return Self(
+    pub fn new(num_threads: usize) -> Self {
+        return Python::attach(|py| {
+            Self(
                 py_scan_resolve_threadpool_cls(py)
                     .bind(py)
                     .call1((num_threads,))
                     .map(|x| x.unbind())
                     .unwrap(),
-            );
+            )
+        });
 
-            fn py_scan_resolve_threadpool_cls(py: Python<'_>) -> &'static Py<PyAny> {
-                static CLS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+        fn py_scan_resolve_threadpool_cls(py: Python<'_>) -> &'static Py<PyAny> {
+            static CLS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-                CLS.get_or_init(py, || {
-                    py.import("polars._utils.threading")
-                        .unwrap()
-                        .getattr("PyThreadPool")
-                        .unwrap()
-                        .unbind()
-                })
-            }
-        })
+            CLS.get_or_init(py, || {
+                py.import("polars._utils.threading")
+                    .unwrap()
+                    .getattr("PyThreadPool")
+                    .unwrap()
+                    .unbind()
+            })
+        }
+    }
+
+    pub fn new_unbounded() -> Self {
+        Self::new(usize::MAX)
+    }
+
+    pub fn new_scan_resolve_thread_pool() -> Self {
+        use std::num::NonZeroUsize;
+
+        let num_threads: usize =
+            std::env::var("POLARS_PYTHON_SCAN_RESOLVE_THREADS").map_or(128, |x| {
+                x.parse::<NonZeroUsize>()
+                    .unwrap_or_else(|_| {
+                        panic!("invalid value for POLARS_PYTHON_SCAN_RESOLVE_THREADS: {x}")
+                    })
+                    .get()
+            });
+
+        if polars_config::config().verbose() {
+            eprintln!("python scan_resolve_threadpool threads: {num_threads}")
+        }
+
+        Self::new(num_threads)
     }
 
     pub fn spawn_call<'a>(
@@ -77,11 +85,5 @@ impl PyThreadPool {
         })
         .call1(py, (function, self))?
         .call(py, args, kwargs)
-    }
-}
-
-impl Default for PyThreadPool {
-    fn default() -> Self {
-        Self::new()
     }
 }
