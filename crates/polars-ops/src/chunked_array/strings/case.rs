@@ -131,30 +131,30 @@ pub(super) fn to_uppercase<'a>(ca: &'a StringChunked) -> StringChunked {
 pub(super) fn to_titlecase<'a>(ca: &'a StringChunked) -> StringChunked {
     // Amortize allocation.
     let mut buf = Vec::new();
-
-    // Temporary scratch space.
-    // We have a double copy as we first convert to lowercase and then copy to `buf`.
-    let mut scratch = Vec::new();
     let f = |s: &'a str| -> &'a str {
-        to_lowercase_helper(s, &mut scratch);
-        let lowercased = unsafe { std::str::from_utf8_unchecked(&scratch) };
-
-        // SAFETY: the buffer is clear, empty string is valid UTF-8.
+        // Titlecase per Unicode: the first alphabetic character of each word
+        // takes its titlecase mapping, the rest of the word is lowercased.
+        // Casing the original characters directly (no whole-string pre-lowercase)
+        // matches `str::title`; lowercasing first would expand characters like
+        // İ (U+0130) into `i` + U+0307 and turn ß into `ss` before any casing
+        // decision, corrupting both words and boundaries.
         buf.clear();
-        let mut s = unsafe { String::from_utf8_unchecked(std::mem::take(&mut buf)) };
+        let mut out = unsafe { String::from_utf8_unchecked(std::mem::take(&mut buf)) };
 
         let mut next_is_upper = true;
-        for c in lowercased.chars() {
-            if next_is_upper {
-                s.extend(c.to_uppercase());
+        for c in s.chars() {
+            if !c.is_alphabetic() {
+                out.push(c);
+            } else if next_is_upper {
+                out.extend(c.to_titlecase());
             } else {
-                s.push(c);
+                out.extend(c.to_lowercase());
             }
             next_is_upper = !c.is_alphabetic();
         }
 
         // Put buf back for next iteration.
-        buf = s.into_bytes();
+        buf = out.into_bytes();
 
         // SAFETY: apply_mut will copy value from buf before next iteration.
         let slice = unsafe { std::str::from_utf8_unchecked(&buf) };
