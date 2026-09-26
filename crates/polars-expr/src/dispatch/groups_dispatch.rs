@@ -916,3 +916,93 @@ pub fn backward_fill_null<'a>(
         arg_backward_fill!(iter, validity, length),
     )
 }
+
+#[cfg(feature = "range")]
+fn one_value_per_group(
+    ac: &mut AggregationContext<'_>,
+    num_groups: usize,
+) -> PolarsResult<(Column, Option<polars_core::prelude::IdxCa>)> {
+    use polars_core::prelude::{ChunkExplode, ExplodeOptions};
+    use polars_ops::prelude::ListNameSpaceImpl;
+
+    Ok(match ac.agg_state() {
+        AggState::AggregatedScalar(c) => (c.clone(), None),
+        AggState::LiteralScalar(c) => (c.new_from_index(0, num_groups), None),
+        AggState::NotAggregated(_) | AggState::AggregatedList(_) => {
+            let lists = ac.aggregated();
+            let lists = lists.list()?;
+            let values = lists.explode(ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            })?;
+            (values.into_column(), Some(lists.lst_lengths()))
+        },
+    })
+}
+
+#[cfg(feature = "range")]
+pub fn int_range<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+    step: i64,
+) -> PolarsResult<AggregationContext<'a>> {
+    use polars_core::prelude::{
+        ChunkedArray, IdxCa, ListBuilderTrait, ListPrimitiveChunkedBuilder,
+    };
+    use polars_core::with_match_physical_integer_polars_type;
+
+    assert_eq!(inputs.len(), 2);
+
+    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    let mut end_ac = inputs[1].evaluate_on_groups(df, groups, state)?;
+    let (start, start_lengths) = one_value_per_group(&mut ac, groups.len())?;
+    let (end, end_lengths) = one_value_per_group(&mut end_ac, groups.len())?;
+
+    let ensure_one_value = |lengths: &Option<IdxCa>, i: usize, name: &str| {
+        match lengths.as_ref().map(|l| l.get(i)) {
+            None | Some(Some(1)) => Ok(()),
+            Some(Some(n)) => polars_bail!(
+                ComputeError: "`{name}` must contain exactly one value, got {n} values"
+            ),
+            Some(None) => polars_bail!(ComputeError: "invalid null input for `int_range`"),
+        }
+    };
+
+    let dtype = start.dtype().clone();
+    let out = with_match_physical_integer_polars_type!(dtype, |$T| {
+        let start: &ChunkedArray<$T> =
+            start.as_materialized_series().as_any().downcast_ref().unwrap();
+        let end: &ChunkedArray<$T> =
+            end.as_materialized_series().as_any().downcast_ref().unwrap();
+        let mut builder = ListPrimitiveChunkedBuilder::<$T>::new(
+            start.name().clone(),
+            groups.len(),
+            df.height(),
+            dtype.clone(),
+        );
+        for (i, (s, e)) in start.iter().zip(end.iter()).enumerate() {
+            ensure_one_value(&start_lengths, i, "start")?;
+            ensure_one_value(&end_lengths, i, "end")?;
+            let (Some(s), Some(e)) = (s, e) else {
+                polars_bail!(ComputeError: "invalid null input for `int_range`");
+            };
+            match step {
+                0 => polars_bail!(InvalidOperation: "step must not be zero"),
+                1 => builder.append_values_iter(s..e),
+                2.. => builder.append_values_iter((s..e).step_by(step as usize)),
+                _ => builder.append_values_iter(
+                    (e..s)
+                        .step_by(step.unsigned_abs() as usize)
+                        .map(|x| s - (x - e)),
+                ),
+            }
+        }
+        builder.finish().into_column()
+    });
+
+    ac.with_update_groups(UpdateGroups::WithSeriesLen);
+    ac.with_values_and_args(out, true, None, false, false)?;
+    Ok(ac)
+}

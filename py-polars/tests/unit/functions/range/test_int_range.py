@@ -339,3 +339,30 @@ def test_int_range_len_count() -> None:
         q.collect().to_series(),
         pl.Series("r", [0, 1, 2, 3], pl.get_index_type()),
     )
+
+
+def test_int_range_on_groups() -> None:
+    df = pl.DataFrame(
+        {"g": [1, 1, 2, 2, 2], "o": [2, 1, 3, 1, 2], "a": [3, 0, 5, 4, 1]}
+    )
+
+    result = df.select(
+        pl.int_range(pl.len()).over("g").alias("r"),
+        pl.int_range(pl.len()).over("g", order_by="o").alias("r_ordered"),
+    )
+    expected = pl.DataFrame({"r": [0, 1, 0, 1, 2], "r_ordered": [1, 0, 2, 0, 1]})
+    assert_frame_equal(result, expected)
+
+    result = df.group_by("g", maintain_order=True).agg(
+        up=pl.int_range(pl.col("a").min(), pl.col("a").max(), 2),
+        down=pl.int_range(pl.col("a").max(), pl.col("a").min(), -2),
+    )
+    expected = pl.DataFrame(
+        {"g": [1, 2], "up": [[0, 2], [1, 3]], "down": [[3, 1], [5, 3]]}
+    )
+    assert_frame_equal(result, expected)
+
+    with pytest.raises(ComputeError, match="invalid null input for `int_range`"):
+        df.group_by("g").agg(
+            pl.int_range(pl.col("a").filter(pl.col("a") > 4).first(), 10)
+        )

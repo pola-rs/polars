@@ -5,6 +5,8 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, GroupPositions};
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
+#[cfg(feature = "range")]
+use polars_plan::plans::IRRangeFunction;
 use polars_plan::plans::{AExpr, IRBooleanFunction, IRFunctionExpr, IRPowFunction};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_utils::IdxSize;
@@ -644,6 +646,10 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
         },
 
         F::Unique(stable) => wrap_groups!(groups_dispatch::unique, (*stable, v: bool)),
+        #[cfg(feature = "range")]
+        F::Range(IRRangeFunction::IntRange { step, .. }) => {
+            wrap_groups!(groups_dispatch::int_range, (*step, v: i64))
+        },
         F::FillNullWithStrategy(polars_core::prelude::FillNullStrategy::Forward(limit)) => {
             wrap_groups!(groups_dispatch::forward_fill_null, (*limit, v: Option<IdxSize>))
         },
