@@ -53,17 +53,31 @@ def tiny(*keys: Any, key: str = "k") -> pl.LazyFrame:
     return lf.filter(pl.col("e") >= 0)
 
 
-def row_groups_read(
+def reader_log(
     q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
-) -> tuple[pl.DataFrame, str | None]:
-    """Collect on the streaming engine and report what the reader logged."""
+) -> tuple[pl.DataFrame, str]:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
     out = q.collect(engine="streaming")
-    err = capfd.readouterr().err
+    return out, capfd.readouterr().err
+
+
+def row_groups_read_per_scan(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> tuple[pl.DataFrame, list[str]]:
+    """Collect on the streaming engine and report what each reader logged."""
+    out, err = reader_log(q, plmonkeypatch, capfd)
     lines = [line for line in err.splitlines() if "Predicate pushdown: reading" in line]
-    assert len(lines) <= 1, err
-    return out, lines[0].split("reading ")[1] if lines else None
+    return out, sorted(line.split("reading ")[1] for line in lines)
+
+
+def row_groups_read(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> tuple[pl.DataFrame, str | None]:
+    """Collect on the streaming engine and report what its one reader logged."""
+    out, groups = row_groups_read_per_scan(q, plmonkeypatch, capfd)
+    assert len(groups) <= 1, groups
+    return out, groups[0] if groups else None
 
 
 def assert_matches_in_memory(q: pl.LazyFrame, out: pl.DataFrame) -> None:
@@ -198,6 +212,106 @@ def test_shared_scan_is_not_filtered(fact: pl.LazyFrame) -> None:
     assert "CACHE" in plan
     assert "dynamic_predicate" not in plan
     out = q.collect(engine="streaming")
+    assert_matches_in_memory(q, out)
+
+
+def fact_part(
+    tmp_path: Path, name: str, keys: Any, key: str = "k", **write_options: Any
+) -> pl.LazyFrame:
+    df = pl.DataFrame({key: keys, "v": range(len(keys))})
+    path = tmp_path / f"{name}.parquet"
+    df.write_parquet(path, row_group_size=ROWS_PER_GROUP, **write_options)
+    return pl.scan_parquet(path)
+
+
+def sorted_part(tmp_path: Path, name: str, offset: int, key: str = "k") -> pl.LazyFrame:
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    return fact_part(
+        tmp_path, name, range(offset, offset + n), key=key, statistics="full"
+    )
+
+
+def test_filter_reaches_every_scan_under_a_union(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    a = sorted_part(tmp_path, "a", 0)
+    # The second input stores the key under another name.
+    b = sorted_part(tmp_path, "b", 500, key="key").select(pl.col("key").alias("k"), "v")
+    q = pl.concat([a, b]).join(tiny(520, 540), on="k")
+    plan = q.explain(engine="streaming")
+    assert 'col("k").dynamic_predicate()' in plan
+    assert 'col("key").dynamic_predicate()' in plan
+
+    out, groups = row_groups_read_per_scan(q, plmonkeypatch, capfd)
+    assert groups == ["1 / 10 row groups", "1 / 10 row groups"]
+    assert out.get_column("k").sort().to_list() == [520, 520, 540, 540]
+    assert_matches_in_memory(q, out)
+
+
+def test_union_branch_without_a_parquet_scan_is_left_alone(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    a = sorted_part(tmp_path, "a", 0)
+    b = pl.LazyFrame({"k": [240, 5000], "v": [1, 2]})
+    q = pl.concat([a, b]).join(tiny(220, 240), on="k")
+    assert q.explain(engine="streaming").count("dynamic_predicate") == 1
+
+    out, groups = row_groups_read_per_scan(q, plmonkeypatch, capfd)
+    assert groups == ["1 / 10 row groups"]
+    assert out.height == 3
+    assert_matches_in_memory(q, out)
+
+
+def test_slice_on_a_union_is_a_barrier(tmp_path: Path) -> None:
+    a = sorted_part(tmp_path, "a", 0)
+    b = sorted_part(tmp_path, "b", 1000)
+    q = pl.concat([a, b]).head(1500).join(dim(*range(0, 1000, 20)), on="k")
+    assert "dynamic_predicate" not in q.explain(engine="streaming")
+    out = q.collect(engine="streaming")
+    assert_matches_in_memory(q, out)
+
+
+def union_bloom_log(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> tuple[pl.DataFrame, list[str], str]:
+    """The plan's bloom choice per scan, and the reader log."""
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    choices = sorted(re.findall(r"distinct probe keys, bloom: (\w+)", err))
+    return out, choices, err
+
+
+def test_union_scans_choose_per_row_filtering_each(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Five build keys are few against the thousand keys of the first input but
+    # not against the ten of the second: only the first probes the bloom filter.
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    wide = fact_part(tmp_path, "wide", pl.Series(range(n)).shuffle(seed=1))
+    narrow = fact_part(tmp_path, "narrow", [i % 10 for i in range(n)])
+    q = pl.concat([wide, narrow]).join(tiny(0, 1, 2, 3, 4), on="k")
+    out, choices, err = union_bloom_log(q, plmonkeypatch, capfd)
+    assert choices == ["false", "true"]
+    assert "bloom of" in err
+    assert "dropping bloom filter" not in err
+    assert out.height == 5 + 500
+    assert_matches_in_memory(q, out)
+
+
+def test_union_scan_with_unknown_distinct_keys_keeps_the_bloom(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Without statistics the second input's distinct keys are unknown, so no
+    # count of build keys can rule the bloom filter out for it.
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    keys = pl.Series(range(n)).shuffle(seed=1)
+    known = fact_part(tmp_path, "known", keys)
+    unknown = fact_part(tmp_path, "unknown", keys, statistics=False)
+    q = pl.concat([known, unknown]).join(tiny(220, 240), on="k")
+    out, choices, err = union_bloom_log(q, plmonkeypatch, capfd)
+    assert "None distinct probe keys, bloom: true" in err
+    assert choices == ["true", "true"]
+    assert "dropping bloom filter" not in err
+    assert out.height == 4
     assert_matches_in_memory(q, out)
 
 
@@ -941,15 +1055,6 @@ def test_a_key_that_may_change_gets_no_range(fact: pl.LazyFrame) -> None:
     out = q.collect(engine="streaming")
     assert out.height == 2
     assert set(out.get_column("k").to_list()) <= {220, 720}
-
-
-def reader_log(
-    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
-) -> tuple[pl.DataFrame, str]:
-    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
-    capfd.readouterr()
-    out = q.collect(engine="streaming")
-    return out, capfd.readouterr().err
 
 
 def test_scan_without_statistics_is_not_eligible(tmp_path: Path) -> None:

@@ -247,6 +247,54 @@ def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
     )
 
 
+def test_no_predicate_pushdown_with_non_elementwise_keys_29456() -> None:
+    df = pl.DataFrame({"flag": [1, 1, 0, 0, 1, 0]}).lazy()
+    out = (
+        df.group_by(
+            after="flag",
+            before=pl.col("flag").shift(1),
+            maintain_order=True,
+        )
+        .len()
+        .filter(pl.col("after") == 0)
+    )
+
+    assert out.explain(
+        optimizations=pl.QueryOptFlags(predicate_pushdown=True)
+    ).startswith("FILTER")
+
+    assert_frame_equal(
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True)),
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+    )
+
+
+def test_no_predicate_pushdown_with_non_elementwise_predicate_29456() -> None:
+    df = pl.DataFrame({"x": [0, 1, 1, 0]}).lazy()
+    out = df.group_by("x", maintain_order=True).len().filter(pl.col("x").shift(1) == 0)
+
+    assert out.explain(
+        optimizations=pl.QueryOptFlags(predicate_pushdown=True)
+    ).startswith("FILTER")
+
+    assert_frame_equal(
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True)),
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+    )
+
+    df2 = pl.DataFrame({"x": [1, 1, 1]}).lazy()
+    out2 = df.group_by("x", maintain_order=True).len().filter(pl.len() == 3)
+
+    assert out2.explain(
+        optimizations=pl.QueryOptFlags(predicate_pushdown=True)
+    ).startswith("FILTER")
+
+    assert_frame_equal(
+        out2.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True)),
+        out2.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+    )
+
+
 @pytest.mark.parametrize(
     "predicate",
     [
