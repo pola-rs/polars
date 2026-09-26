@@ -591,6 +591,21 @@ pub(super) fn to_aexpr_impl(
             let name = function.call(&name)?;
             return Ok((expr, name));
         },
+        // Normally resolved during expression expansion,
+        // but some paths (e.g. `Expr::to_field`) convert without expanding.
+        Expr::PipeWithDtype { input, callback } => {
+            let mut dtypes = Vec::with_capacity(input.len());
+            for e in input.iter() {
+                let (node, _) = recurse!(e.clone())?;
+                let dtype = ctx
+                    .arena
+                    .get(node)
+                    .to_dtype(&ctx.to_field_ctx())
+                    .context("'pipe_with_dtype' failed to resolve its input dtype")?;
+                dtypes.push(dtype);
+            }
+            return recurse!(callback.call((input, dtypes))?);
+        },
         #[cfg(feature = "dtype-struct")]
         Expr::Field(name) => {
             assert_eq!(

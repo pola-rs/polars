@@ -95,6 +95,9 @@ impl TreeWalker for Expr {
             Element => Element,
             Len => Len,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
+            PipeWithDtype { input, callback } => {
+                PipeWithDtype { input: input.into_iter().map(f).collect::<Result<_, _>>()?, callback }
+            },
             Display { inputs,  fmt_str } => {
                 Display { inputs: inputs.into_iter().map(f).collect::<Result<_, _>>()?, fmt_str }
             },

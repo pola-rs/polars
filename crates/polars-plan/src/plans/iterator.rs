@@ -114,6 +114,7 @@ macro_rules! push_expr {
             },
             KeepName(e) => $push($c, e),
             RenameAlias { expr, .. } => $push($c, expr),
+            PipeWithDtype { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
             SubPlan { .. } => {},
             // pass
             Selector(_) => {},
