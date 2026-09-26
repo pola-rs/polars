@@ -150,6 +150,7 @@ def test_constant_where_condition(condition: str, keeps_rows: bool) -> None:
         ("2 IN (1, 2)", True),
         ("ARRAY_LENGTH(ARRAY[1, 2])", True),
         ("ARRAY_CONTAINS(ARRAY[1, 2], 3)", False),
+        ("ARRAY_CONTAINS(ARRAY_REVERSE(ARRAY[1, 2]), 1)", True),
     ],
 )
 @pytest.mark.parametrize("empty", [False, True])
@@ -199,6 +200,37 @@ def test_constant_where_condition_is_planned_not_executed() -> None:
     assert "FILTER" not in plan
     plan = ctx.execute("SELECT a FROM tbl WHERE 1 = 0").explain()
     assert "FILTER" not in plan
+
+
+def test_input_independent_list_eval_in_list_uses_or_chain() -> None:
+    df = pl.LazyFrame({"a": [1, 2, 3]})
+    with pl.SQLContext(df=df, eager=False) as ctx:
+        lf = ctx.execute(
+            """
+            SELECT a FROM df
+            WHERE ARRAY_LENGTH(ARRAY_REVERSE(ARRAY[1, 2])) IN (1, 2)
+            """
+        )
+        plan = lf.explain(optimized=False)
+        assert "is_in" not in plan, plan
+        assert " | " in plan, plan
+
+        result = lf.collect()
+    assert result["a"].to_list() == [1, 2, 3]
+
+
+def test_input_independent_list_eval_preserves_errors() -> None:
+    df = pl.LazyFrame({"a": [1, 2, 3]})
+    result = df.sql(
+        """
+        SELECT a FROM self
+        WHERE ARRAY_CONTAINS(
+            CAST(ARRAY_REVERSE(ARRAY['bad']) AS INTEGER[]), 1
+        )
+        """
+    )
+    with pytest.raises(InvalidOperationError, match=r"conversion from .* failed"):
+        result.collect()
 
 
 @pytest.mark.parametrize(

@@ -203,22 +203,59 @@ pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, is_elementwise)
 }
 
-/// Whether `node` yields one scalar value that does not depend on any input frame: a scalar
-/// literal, or elementwise operations (binary, cast, ternary, elementwise function) over such
-/// values. Columns, the frame length, aggregations, windows, nested evaluations and user
-/// functions are excluded.
-pub fn is_input_independent_scalar_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum InputIndependentContext {
+    OuterExpression,
+    ListElementExpression,
+}
+
+fn is_input_independent_node(
+    stack: &mut UnitVec<Node>,
+    ae: &AExpr,
+    context: InputIndependentContext,
+) -> bool {
+    let independent = match ae {
+        AExpr::Literal(lv) => lv.is_scalar(),
+        AExpr::BinaryExpr { .. } | AExpr::Cast { .. } | AExpr::Ternary { .. } => true,
+        AExpr::Element => context == InputIndependentContext::ListElementExpression,
+        AExpr::Function { options, .. } => match context {
+            InputIndependentContext::OuterExpression => options.is_elementwise(),
+            // Admit order-aware transforms without widening this to length-changing operations.
+            InputIndependentContext::ListElementExpression => options.is_length_preserving(),
+        },
+        _ => false,
+    };
+    if independent {
+        ae.inputs_rev(stack);
+    }
+    independent
+}
+
+fn is_input_independent_list_eval_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, |stack, ae, _| {
-        let independent = match ae {
-            AExpr::Literal(lv) => lv.is_scalar(),
-            AExpr::BinaryExpr { .. } | AExpr::Cast { .. } | AExpr::Ternary { .. } => true,
-            AExpr::Function { options, .. } => options.is_elementwise(),
-            _ => false,
-        };
-        if independent {
-            ae.inputs_rev(stack);
-        }
-        independent
+        is_input_independent_node(stack, ae, InputIndependentContext::ListElementExpression)
+    })
+}
+
+/// Whether `node` yields one scalar value that does not depend on any input frame: a scalar
+/// literal, elementwise operations over such values, or eligible `list.eval` over a scalar List.
+/// Columns, frame length, aggregations, windows, other nested evaluations and user functions are
+/// excluded.
+pub fn is_input_independent_scalar_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    property_rec(node, expr_arena, |stack, ae, expr_arena| match ae {
+        AExpr::Eval {
+            expr,
+            evaluation,
+            variant: EvalVariant::List,
+        } => {
+            if is_input_independent_list_eval_rec(*evaluation, expr_arena) {
+                stack.push(*expr);
+                true
+            } else {
+                false
+            }
+        },
+        _ => is_input_independent_node(stack, ae, InputIndependentContext::OuterExpression),
     })
 }
 
