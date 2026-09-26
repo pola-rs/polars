@@ -717,3 +717,39 @@ def test_list_agg_nulls_panic_26237() -> None:
             }
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (
+            pl.lit([1], dtype=pl.List(pl.Int64)).list.eval(pl.element() * 2),
+            pl.Series([[2], [2]], dtype=pl.List(pl.Int64)),
+        ),
+        (
+            pl.lit([3, 1, 2], dtype=pl.List(pl.Int64)).list.eval(pl.element().sort()),
+            pl.Series([[1, 2, 3], [1, 2, 3]], dtype=pl.List(pl.Int64)),
+        ),
+        (
+            pl.lit([3, 1, 2], dtype=pl.List(pl.Int64)).list.agg(pl.element().sum()),
+            pl.Series([6, 6], dtype=pl.Int64),
+        ),
+        (
+            pl.lit([1, 2], dtype=pl.Array(pl.Int64, 2)).arr.eval(pl.element() * 2),
+            pl.Series([[2, 4], [2, 4]], dtype=pl.Array(pl.Int64, 2)),
+        ),
+        (
+            pl.lit([1, 2], dtype=pl.Array(pl.Int64, 2)).arr.agg(pl.element().sum()),
+            pl.Series([3, 3], dtype=pl.Int64),
+        ),
+    ],
+)
+def test_eval_on_literal_in_group_by_29554(expr: pl.Expr, expected: pl.Series) -> None:
+    df = pl.DataFrame({"l": [[1, 2, 3, 4], [5, 6], None, [7]], "g": [1, 1, 2, 2]})
+
+    out = df.group_by("g", maintain_order=True).agg(r=expr)
+    assert_series_equal(out.get_column("r"), expected.alias("r"))
+
+    out = df.select(r=expr.over("g"))
+    expected_over = expected.gather([0, 0, 1, 1]).alias("r")
+    assert_series_equal(out.get_column("r"), expected_over)
