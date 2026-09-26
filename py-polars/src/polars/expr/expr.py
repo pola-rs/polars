@@ -1718,6 +1718,46 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.cum_sum(reverse))
 
+    def cum_n_unique(self, *, reverse: bool = False) -> Expr:
+        """
+        Return the cumulative number of distinct values.
+
+        Null is counted as a distinct value.
+
+        Parameters
+        ----------
+        reverse
+            If True, accumulate from the last element to the first.
+            The output retains the original row order. Defaults to False.
+
+        Returns
+        -------
+        Expr
+            An expression with the index data type returned by
+            :func:`polars.get_index_type`.
+
+        See Also
+        --------
+        n_unique : Count the number of distinct values.
+        is_first_distinct : Identify the first occurrence of each distinct value.
+        is_last_distinct : Identify the last occurrence of each distinct value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": ["a", "b", "a", "c", "b"]})
+        >>> df.select(pl.col("x").cum_n_unique()).to_series().to_list()
+        [1, 2, 2, 3, 3]
+        >>> df.select(pl.col("x").cum_n_unique(reverse=True)).to_series().to_list()
+        [3, 3, 3, 2, 1]
+
+        Null is counted once, just like any other distinct value.
+
+        >>> df = pl.DataFrame({"x": [None, 1, None, 2]})
+        >>> df.select(pl.col("x").cum_n_unique()).to_series().to_list()
+        [1, 2, 2, 3]
+        """
+        return wrap_expr(self._pyexpr.cum_n_unique(reverse))
+
     def cum_prod(self, *, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative product computed at every element.
