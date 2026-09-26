@@ -201,6 +201,65 @@ def test_shared_scan_is_not_filtered(fact: pl.LazyFrame) -> None:
     assert_matches_in_memory(q, out)
 
 
+def fact_part(tmp_path: Path, name: str, offset: int) -> pl.LazyFrame:
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    df = pl.DataFrame({"k": range(offset, offset + n), "v": range(n)})
+    path = tmp_path / f"{name}.parquet"
+    df.write_parquet(path, row_group_size=ROWS_PER_GROUP, statistics="full")
+    return pl.scan_parquet(path)
+
+
+def row_groups_read_per_scan(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> tuple[pl.DataFrame, list[str]]:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    lines = [line for line in err.splitlines() if "Predicate pushdown: reading" in line]
+    return out, sorted(line.split("reading ")[1] for line in lines)
+
+
+def test_filter_reaches_every_scan_under_a_union(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    a = fact_part(tmp_path, "a", 0)
+    # The second input reaches its scan through renames.
+    b = fact_part(tmp_path, "b", 500).select(pl.col("k").alias("key"), "v")
+    union = pl.concat([a, b.rename({"key": "k"})])
+    q = union.join(tiny(520, 540), on="k")
+    plan = q.explain(engine="streaming")
+    assert plan.count("dynamic_predicate") == 2
+
+    out, groups = row_groups_read_per_scan(q, plmonkeypatch, capfd)
+    assert groups == ["1 / 10 row groups", "1 / 10 row groups"]
+    assert out.get_column("k").sort().to_list() == [520, 520, 540, 540]
+    assert_matches_in_memory(q, out)
+
+
+def test_union_branch_without_a_parquet_scan_is_left_alone(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    a = fact_part(tmp_path, "a", 0)
+    b = pl.LazyFrame({"k": [240, 5000], "v": [1, 2]})
+    q = pl.concat([a, b]).join(tiny(220, 240), on="k")
+    assert q.explain(engine="streaming").count("dynamic_predicate") == 1
+
+    out, groups = row_groups_read_per_scan(q, plmonkeypatch, capfd)
+    assert groups == ["1 / 10 row groups"]
+    assert out.height == 3
+    assert_matches_in_memory(q, out)
+
+
+def test_slice_on_a_union_is_a_barrier(tmp_path: Path) -> None:
+    a = fact_part(tmp_path, "a", 0)
+    b = fact_part(tmp_path, "b", 1000)
+    q = pl.concat([a, b]).head(1500).join(dim(*range(0, 1000, 20)), on="k")
+    assert "dynamic_predicate" not in q.explain(engine="streaming")
+    out = q.collect(engine="streaming")
+    assert_matches_in_memory(q, out)
+
+
 def test_slice_on_an_intermediate_join_is_a_barrier(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
