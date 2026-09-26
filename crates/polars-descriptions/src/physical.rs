@@ -7,6 +7,9 @@ use crate::{PredicateFileSkipDescription, PythonPredicateDescription, SortColumn
 pub struct PhysicalNodeDescription {
     pub id: u64,
     pub input_ids: Vec<u64>,
+    /// `id` of the [`IrNodeDescription`](crate::IrNodeDescription) whose lowering created this
+    /// node. Absent in payloads from producers that predate this field.
+    pub ir_node_id: Option<usize>,
     pub properties: PhysicalPropsDescription,
 }
 

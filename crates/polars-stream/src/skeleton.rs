@@ -84,15 +84,14 @@ pub fn visualize_physical_plan(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<String> {
-    let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
     let sortedness = IRPlanSorted::resolve(node, ir_arena, expr_arena);
 
     let ctx = StreamingLowerIRContext {
         prepare_visualization: true,
         sortedness: &sortedness,
     };
-    let root_phys_node =
-        crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, &mut phys_sm, ctx)?;
+    let (root_phys_node, phys_sm) =
+        crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, ctx)?;
 
     let out = crate::physical_plan::visualize_plan(root_phys_node, &phys_sm, expr_arena);
 
@@ -142,19 +141,13 @@ impl StreamingQuery {
             let visualization = plan.display_dot().to_string();
             std::fs::write(visual_path, visualization).unwrap();
         }
-        let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
         let sortedness = IRPlanSorted::resolve(node, ir_arena, expr_arena);
         let ctx = StreamingLowerIRContext {
             prepare_visualization: cfg_prepare_visualization_data(),
             sortedness: &sortedness,
         };
-        let root_phys_node = crate::physical_plan::build_physical_plan(
-            node,
-            ir_arena,
-            expr_arena,
-            &mut phys_sm,
-            ctx,
-        )?;
+        let (root_phys_node, phys_sm) =
+            crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, ctx)?;
         if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_PHYSICAL_PLAN") {
             let visualization =
                 crate::physical_plan::visualize_plan(root_phys_node, &phys_sm, expr_arena);

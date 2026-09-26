@@ -31,6 +31,7 @@ use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::options::{JoinTypeOptionsIR, RuntimeFilter};
 use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
 
+mod builder;
 mod fmt;
 mod io;
 mod lower_expr;
@@ -39,6 +40,7 @@ mod lower_ir;
 mod to_description;
 mod to_graph;
 
+pub use builder::PhysSmBuilder;
 pub use fmt::{NodeStyle, visualize_plan};
 use polars_defs::time::duration::Duration;
 #[cfg(feature = "dynamic_group_by")]
@@ -78,6 +80,9 @@ impl PhysNodeKey {
 pub struct PhysNode {
     output_schemas: UnitVec<Arc<Schema>>,
     kind: PhysNodeKind,
+    /// The IR node whose lowering created this node. Set by `PhysSmBuilder::insert`; always
+    /// `Some` once `build_physical_plan` has returned.
+    ir_node: Option<Node>,
 }
 
 impl PhysNode {
@@ -85,6 +90,7 @@ impl PhysNode {
         Self {
             output_schemas: unitvec![output_schema],
             kind,
+            ir_node: None,
         }
     }
 
@@ -92,7 +98,12 @@ impl PhysNode {
         Self {
             output_schemas,
             kind,
+            ir_node: None,
         }
+    }
+
+    pub fn ir_node(&self) -> Option<Node> {
+        self.ir_node
     }
 
     pub fn output_schema(&self, port_idx: usize) -> &Arc<Schema> {
@@ -832,7 +843,7 @@ fn _visit_nodes_impl(
     }
 }
 
-fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysSmBuilder) {
     let mut refcount: PlIndexMap<_, usize> = PlIndexMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(*i).or_insert(0) += 1;
@@ -843,10 +854,17 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
         .filter(|(_stream, refcount)| *refcount > 1)
         .map(|(stream, refcount)| {
             let input_schema = Arc::clone(stream.output_schema(phys_sm));
-            let multiplexer_node = phys_sm.insert(PhysNode::new_multi_output(
-                (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
-                PhysNodeKind::Multiplexer { input: stream },
-            ));
+            // A multiplexer only fans out the stream it wraps, so it belongs to the same IR
+            // node as that stream's producer.
+            let ir_node = phys_sm[stream.node]
+                .ir_node()
+                .expect("lowered physical nodes are attributed to an IR node");
+            let multiplexer_node = phys_sm.with_ir_node(ir_node, |phys_sm| {
+                phys_sm.insert(PhysNode::new_multi_output(
+                    (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
+                    PhysNodeKind::Multiplexer { input: stream },
+                ))
+            });
             (stream, PhysStream::first(multiplexer_node))
         })
         .collect();
@@ -859,7 +877,7 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
     });
 }
 
-fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysSmBuilder) {
     let mut refcount: SecondaryMap<PhysNodeKey, usize> = SecondaryMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(i.node).unwrap().or_insert(0) += 1;
@@ -877,6 +895,8 @@ fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey
     let mut replacements: SecondaryMap<PhysNodeKey, Vec<PhysStream>> = split_map
         .into_iter()
         .map(|(k, n)| {
+            // The clones are the same source split per consumer; `insert` keeps the IR node
+            // they already carry.
             let repls = (0..refcount[k]).map(|_| PhysStream::first(phys_sm.insert(n.clone())));
             (k, repls.collect())
         })
@@ -960,33 +980,45 @@ fn rechunk_group_by_inputs(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNo
     });
 }
 
+/// Lowers the IR rooted at `root` into a physical plan and returns the root physical node
+/// together with the slotmap holding the plan.
 pub fn build_physical_plan(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     ctx: StreamingLowerIRContext<'_>,
-) -> PolarsResult<PhysNodeKey> {
+) -> PolarsResult<(PhysNodeKey, SlotMap<PhysNodeKey, PhysNode>)> {
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
     let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
     let mut cache_nodes = PlHashMap::new();
+    let mut phys_sm = PhysSmBuilder::new(
+        SlotMap::with_capacity_and_key(ir_arena.len()),
+        ir_arena.len(),
+    );
     let phys_root = lower_ir::lower_ir(
         root,
         ir_arena,
         expr_arena,
-        phys_sm,
+        &mut phys_sm,
         &mut schema_cache,
         &mut expr_cache,
         &mut cache_nodes,
         ctx,
         None,
     )?;
-    insert_multiplexers(vec![phys_root.node], phys_sm);
-    split_multiplexers(vec![phys_root.node], phys_sm);
-    fuse_drops(vec![phys_root.node], phys_sm);
+    insert_multiplexers(vec![phys_root.node], &mut phys_sm);
+    split_multiplexers(vec![phys_root.node], &mut phys_sm);
+    fuse_drops(vec![phys_root.node], &mut phys_sm);
 
     // TODO: remove this after fusing pre-select into group-by node.
-    rechunk_group_by_inputs(vec![phys_root.node], phys_sm);
+    rechunk_group_by_inputs(vec![phys_root.node], &mut phys_sm);
 
-    Ok(phys_root.node)
+    debug_assert!(
+        phys_sm.values().all(|n| n
+            .ir_node()
+            .is_some_and(|ir| phys_sm.is_original_ir_node(ir))),
+        "every physical node must be attributed to an IR node of the original plan"
+    );
+
+    Ok((phys_root.node, phys_sm.into_inner()))
 }

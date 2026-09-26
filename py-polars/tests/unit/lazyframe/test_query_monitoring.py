@@ -7,7 +7,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -376,6 +376,115 @@ def test_metrics_handle_snapshot() -> None:
     assert expected_keys <= set(rows[0].keys())
     assert any(r["done"] for r in rows)
     assert sum(r["rows_sent"] for r in rows) > 0
+
+
+def _observe_streaming(run: Callable[[], object]) -> MagicMock:
+    """Run `run` with the fake cloud observer installed and return the observer."""
+    module, observer = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        pl.Config.enable_monitoring()
+        run()
+    return observer
+
+
+def _planned_payloads(
+    observer: MagicMock,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Decode the IR and physical payloads handed to `on_query_planned`."""
+    msgpack = pytest.importorskip("msgpack")
+    _, _, ir_bytes, phys_bytes = observer.on_query_planned.call_args.args
+    ir = msgpack.unpackb(ir_bytes, raw=False)
+    phys = msgpack.unpackb(phys_bytes, raw=False)
+    return ir, phys
+
+
+def test_physical_nodes_attributed_to_ir_nodes() -> None:
+    """Every physical node carries the id of an IR node from the IR payload."""
+    observer = _observe_streaming(lambda: _sample_lf().collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    ir_ids = {node["id"] for node in ir}
+    assert len(phys) > 0
+    assert all(node["ir_node_id"] is not None for node in phys)
+    assert all(node["ir_node_id"] in ir_ids for node in phys)
+
+
+def test_ir_node_lowers_to_many_physical_nodes() -> None:
+    """A filter with a non-elementwise predicate is one IR node, many physical."""
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).filter(pl.col("a") > pl.col("a").mean())
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    (filter_id,) = [n["id"] for n in ir if n["properties"]["type"] == "Filter"]
+    assert sum(n["ir_node_id"] == filter_id for n in phys) > 1
+
+
+def test_temporary_ir_node_inherits_attribution() -> None:
+    """`collect_all` wraps bare inputs in memory sinks that lowering invents.
+
+    Those sink IR nodes are never in the IR payload, so their physical sink is
+    attributed to the `SinkMultiple` node whose lowering created them.
+    """
+    observer = _observe_streaming(
+        lambda: pl.collect_all([_sample_lf()], engine="streaming")
+    )
+    ir, phys = _planned_payloads(observer)
+
+    (sink_multiple_id,) = [
+        n["id"] for n in ir if n["properties"]["type"] == "SinkMultiple"
+    ]
+    (memory_sink,) = [n for n in phys if n["properties"]["type"] == "InMemorySink"]
+    assert memory_sink["ir_node_id"] == sink_multiple_id
+
+
+def test_multiplexer_inherits_input_attribution() -> None:
+    """A multiplexer inserted after lowering takes its input's IR node."""
+    lf = (
+        pl.LazyFrame({"a": [1, 2, 3, 4, 5]})
+        .with_columns(b=pl.col("a") * 2)
+        .filter(pl.col("b") > pl.col("b").mean())
+    )
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    _, phys = _planned_payloads(observer)
+
+    by_id = {n["id"]: n for n in phys}
+    multiplexers = [n for n in phys if n["properties"]["type"] == "Multiplexer"]
+    assert len(multiplexers) > 0
+    for multiplexer in multiplexers:
+        (input_id,) = multiplexer["input_ids"]
+        assert multiplexer["ir_node_id"] == by_id[input_id]["ir_node_id"]
+
+
+def test_split_source_clones_keep_source_attribution() -> None:
+    """Fanning an in-memory source out twice clones it per consumer.
+
+    The clones replace the multiplexer, and each keeps the `DataFrameScan` IR
+    node of the source it copies.
+    """
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).filter(pl.col("a") > pl.col("a").mean())
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    (scan_id,) = [n["id"] for n in ir if n["properties"]["type"] == "DataFrameScan"]
+    sources = [n for n in phys if n["properties"]["type"] == "InMemorySource"]
+    assert len(sources) > 1
+    assert all(n["ir_node_id"] == scan_id for n in sources)
+
+
+def test_fused_drop_keeps_filter_attribution() -> None:
+    """A projection fused into the filter below it leaves a node owned by the filter."""
+    lf = (
+        pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+        .filter(pl.col("b") > 4)
+        .select("a")
+    )
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    (filter_id,) = [n["id"] for n in ir if n["properties"]["type"] == "Filter"]
+    (phys_filter,) = [n for n in phys if n["properties"]["type"] == "Filter"]
+    assert phys_filter["ir_node_id"] == filter_id
+    assert not [n for n in phys if n["properties"]["type"] == "SimpleProjection"]
 
 
 def test_on_query_failed_called() -> None:
