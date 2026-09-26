@@ -69,13 +69,18 @@ pub(super) fn update_groups_sort_by(
     groups: &GroupsType,
     sort_by_s: &Series,
     options: &SortOptions,
+    pool_is_free: bool,
 ) -> PolarsResult<GroupsType> {
     // Will trigger a gather for every group, so rechunk before.
     let sort_by_s = sort_by_s.rechunk();
+    // Too few groups to fill the pool on their own.
+    let multithreaded = pool_is_free && groups.len() < RAYON.current_num_threads();
     let groups = RAYON.install(|| {
         groups
             .par_iter()
-            .map(|indicator| sort_by_groups_single_by(indicator, &sort_by_s, options))
+            .map(|indicator| {
+                sort_by_groups_single_by(indicator, &sort_by_s, options, multithreaded)
+            })
             .collect::<PolarsResult<_>>()
     })?;
 
@@ -86,12 +91,12 @@ fn sort_by_groups_single_by(
     indicator: GroupsIndicator,
     sort_by_s: &Series,
     options: &SortOptions,
+    multithreaded: bool,
 ) -> PolarsResult<(IdxSize, IdxVec)> {
     let options = SortOptions {
         descending: options.descending,
         nulls_last: options.nulls_last,
-        // We are already in par iter.
-        multithreaded: false,
+        multithreaded,
         ..Default::default()
     };
     let new_idx = match indicator {
@@ -351,6 +356,7 @@ impl PhysicalExpr for SortByExpr {
                             nulls_last: nulls_last[0],
                             ..Default::default()
                         },
+                        false,
                     )
                 },
             );
