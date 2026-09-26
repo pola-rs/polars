@@ -158,7 +158,7 @@ pub(super) fn to_titlecase<'a>(ca: &'a StringChunked) -> StringChunked {
 
         // SAFETY: apply_mut will copy value from buf before next iteration.
         let slice = unsafe { std::str::from_utf8_unchecked(&buf) };
-        unsafe { std::mem::transmute::<&'a str, &'a str>(slice) }
+        unsafe { std::mem::transmute::<&str, &'a str>(slice) }
     };
     ca.apply_mut(f)
 }
