@@ -1,7 +1,6 @@
 use polars_core::series::arithmetic::NumericListOp;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::matches_any_order;
-use polars_utils::total_ord::TotalOrdWrap;
 
 use super::*;
 
@@ -267,23 +266,60 @@ pub(super) fn coerced_binop_dtype(
     Ok(Some(st))
 }
 
-fn dyn_int_to_dyn_float(
-    is_literal: bool,
-    node: Node,
-    v: i128,
+/// Decimal operands of arithmetic and comparisons are not cast to a common type: the
+/// kernels handle mixed scales, and a common type may not hold both operands. Integers
+/// are cast to `Decimal(38, 0)`, which only 128-bit integers can overflow.
+#[cfg(feature = "dtype-decimal")]
+fn process_decimal_binary(
     expr_arena: &mut Arena<AExpr>,
-) -> Node {
-    if is_literal {
-        expr_arena.add(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(
-            v as f64,
-        ))))
-    } else {
-        expr_arena.add(AExpr::Cast {
-            expr: node,
-            dtype: DataType::Unknown(UnknownKind::Float(TotalOrdWrap(f64::NAN))),
-            options: CastOptions::NonStrict,
-        })
+    node_left: Node,
+    type_left: &DataType,
+    op: Operator,
+    node_right: Node,
+    type_right: &DataType,
+) -> Option<Option<AExpr>> {
+    let supported_op = op.is_comparison()
+        || matches!(
+            op,
+            Operator::Plus
+                | Operator::Minus
+                | Operator::Multiply
+                | Operator::TrueDivide
+                | Operator::RustDivide
+                | Operator::FloorDivide
+                | Operator::Modulus
+        );
+    let is_int =
+        |dt: &DataType| dt.is_integer() || matches!(dt, DataType::Unknown(UnknownKind::Int(_)));
+    if !supported_op
+        || !((type_left.is_decimal() && (type_right.is_decimal() || is_int(type_right)))
+            || (is_int(type_left) && type_right.is_decimal()))
+    {
+        return None;
     }
+
+    let mut to_decimal = |node: Node, dtype: &DataType| {
+        if dtype.is_decimal() {
+            node
+        } else {
+            let options = if matches!(dtype, DataType::Int128 | DataType::UInt128) {
+                CastOptions::Strict
+            } else {
+                CastOptions::NonStrict
+            };
+            expr_arena.add(AExpr::Cast {
+                expr: node,
+                dtype: DataType::Decimal(polars_compute::decimal::DEC128_MAX_PREC, 0),
+                options,
+            })
+        }
+    };
+    let left = to_decimal(node_left, type_left);
+    let right = to_decimal(node_right, type_right);
+    if left == node_left && right == node_right {
+        return Some(None);
+    }
+    Some(Some(AExpr::BinaryExpr { left, op, right }))
 }
 
 pub(super) fn process_binary(
@@ -304,7 +340,7 @@ pub(super) fn process_binary(
         (Unknown(UnknownKind::Any), Unknown(UnknownKind::Any)) => return Ok(None),
         (
             Unknown(UnknownKind::Any),
-            Unknown(UnknownKind::Int(_) | UnknownKind::Float(_) | UnknownKind::Str),
+            Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
         ) => {
             let right = unpack!(materialize(right));
             let right = expr_arena.add(right);
@@ -316,7 +352,7 @@ pub(super) fn process_binary(
             }));
         },
         (
-            Unknown(UnknownKind::Int(_) | UnknownKind::Float(_) | UnknownKind::Str),
+            Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
             Unknown(UnknownKind::Any),
         ) => {
             let left = unpack!(materialize(left));
@@ -328,18 +364,24 @@ pub(super) fn process_binary(
                 right: node_right,
             }));
         },
-        (Unknown(UnknownKind::Int(v)), Unknown(UnknownKind::Float(_))) => {
-            let is_literal = matches!(left, AExpr::Literal(LiteralValue::Dyn(_)));
-            let left = dyn_int_to_dyn_float(is_literal, node_left, *v, expr_arena);
+        (Unknown(UnknownKind::Int(_)), Unknown(UnknownKind::Float)) => {
+            let left = expr_arena.add(AExpr::Cast {
+                expr: node_left,
+                dtype: Unknown(UnknownKind::Float),
+                options: CastOptions::NonStrict,
+            });
             return Ok(Some(AExpr::BinaryExpr {
                 left,
                 op,
                 right: node_right,
             }));
         },
-        (Unknown(UnknownKind::Float(_)), Unknown(UnknownKind::Int(v))) => {
-            let is_literal = matches!(right, AExpr::Literal(LiteralValue::Dyn(_)));
-            let right = dyn_int_to_dyn_float(is_literal, node_right, *v, expr_arena);
+        (Unknown(UnknownKind::Float), Unknown(UnknownKind::Int(_))) => {
+            let right = expr_arena.add(AExpr::Cast {
+                expr: node_right,
+                dtype: Unknown(UnknownKind::Float),
+                options: CastOptions::NonStrict,
+            });
             return Ok(Some(AExpr::BinaryExpr {
                 left: node_left,
                 op,
@@ -402,6 +444,18 @@ pub(super) fn process_binary(
     }
 
     unpack!(early_escape(&type_left, &type_right));
+
+    #[cfg(feature = "dtype-decimal")]
+    if let Some(ae) = process_decimal_binary(
+        expr_arena,
+        node_left,
+        &type_left,
+        op,
+        node_right,
+        &type_right,
+    ) {
+        return Ok(ae);
+    }
 
     #[cfg(feature = "dtype-struct")]
     if op.is_arithmetic()

@@ -1903,6 +1903,44 @@ class Series(metaclass=_Meta):
         ]
         """
 
+    def erf(self) -> Series:
+        """
+        Compute the error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 0, 1])
+        >>> s.erf()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            -0.842701
+            0.0
+            0.842701
+        ]
+        """
+
+    def erfc(self) -> Series:
+        """
+        Compute the complementary error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 0, 1])
+        >>> s.erfc()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.842701
+            1.0
+            0.157299
+        ]
+        """
+
     def drop_nulls(self) -> Series:
         """
         Drop all null values.
@@ -6337,7 +6375,12 @@ class Series(metaclass=_Meta):
             pl_return_dtype = parse_into_dtype(return_dtype)
 
         if not _disable_inefficient_map_warning:
-            warn_on_inefficient_map(function, columns=[self.name], map_target="series")
+            warn_on_inefficient_map(
+                function,
+                columns=[self.name],
+                map_target="series",
+                dtype=self.dtype,
+            )
 
         return self._from_pyseries(
             self._s.map_elements(

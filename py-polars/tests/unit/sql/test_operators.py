@@ -38,7 +38,8 @@ def test_div() -> None:
         pl.DataFrame(
             [
                 [-0.0995024875621891, 2.85714285714286, 12.0, None, -15.92356687898089],
-                [-1, 2, 12, None, -16],
+                # rounds toward zero, as DIV does in Postgres
+                [0, 2, 12, None, -15],
                 [-1.0, 1.0, 1.0, None, -1.0],
             ],
             schema=["a_div_b", "a_floordiv_b", "b_sign"],

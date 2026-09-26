@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as D
 from math import inf, nan
@@ -399,7 +400,7 @@ def test_build_side_of_several_morsels(
     pl.DataFrame(
         {"k": [300, 301, 302, 303, 304, 660, 661, 662, 663, 664]}
     ).write_parquet(path, row_group_size=1)
-    q = fact.join(pl.scan_parquet(path).filter(pl.col("k") > 0), on="k")
+    q = fact.join(pl.scan_parquet(path).filter((pl.col("k") * 2) > 0), on="k")
     assert "dynamic_predicate" in q.explain(engine="streaming")
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
@@ -1337,6 +1338,36 @@ def test_bloom_never_matches_null_keys(
     q = pl.scan_parquet(path).join(build, on="k")
     err = bloom_run(q, plmonkeypatch, capfd, [221])
     assert "bloom of" in err
+
+
+def test_bloom_is_sized_from_the_build_keys_seen(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    n = 1_000_000
+    keys = pl.Series("k", range(n)).shuffle(seed=5)
+    path = tmp_path / "large.parquet"
+    pl.DataFrame({"k": keys, "v": keys}).write_parquet(
+        path, row_group_size=n // 10, statistics="full"
+    )
+    # Conjuncts the plan cannot estimate, so it expects far fewer build keys than
+    # the 200k that arrive: more than a bloom filter of the planned size holds,
+    # yet few enough of the probe keys to be worth probing.
+    build = pl.LazyFrame({"k": range(0, n, 5), "a": range(0, n, 5)}).filter(
+        (pl.col("a") >= 0) & (pl.col("k") < n)
+    )
+    q = pl.scan_parquet(path).join(build, on="k")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    planned = re.search(r"runtime filter on k: (\d+) distinct build keys", err)
+    assert planned is not None
+    assert int(planned.group(1)) <= 20_000
+    assert "dropping bloom filter" not in err
+    # Larger than the planned (smallest) bloom filter; the exact size depends on
+    # the distinct count estimate.
+    published = re.search(r"bloom: Some\(bloom of (\d+) bytes\)", err)
+    assert published is not None
+    assert int(published.group(1)) > 64 * 1024
+    assert out.height == n // 5
+    assert_matches_in_memory(q, out)
 
 
 @pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt16, pl.String, pl.Date])

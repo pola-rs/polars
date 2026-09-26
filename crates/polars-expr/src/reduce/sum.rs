@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use num_traits::Zero;
 use polars_arrow::array::PrimitiveArray;
 #[cfg(feature = "dtype-decimal")]
-use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add};
+use polars_compute::decimal::dec128_add_scaled;
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 use polars_core::prelude::sum_output_dtype;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -121,6 +121,13 @@ const DECIMAL_SUM_OVERFLOW: i128 = i128::MIN;
 #[derive(Clone)]
 struct DecimalSumReducer;
 
+/// Adds two mantissas of the same scale; the scale itself doesn't affect the sum.
+#[cfg(feature = "dtype-decimal")]
+#[inline(always)]
+fn add(a: i128, b: i128) -> Option<i128> {
+    dec128_add_scaled(a, 0, b, 0, 0)
+}
+
 #[cfg(feature = "dtype-decimal")]
 impl Reducer for DecimalSumReducer {
     type Dtype = Int128Type;
@@ -140,14 +147,14 @@ impl Reducer for DecimalSumReducer {
         *a = if *a == DECIMAL_SUM_OVERFLOW || *b == DECIMAL_SUM_OVERFLOW {
             DECIMAL_SUM_OVERFLOW
         } else {
-            dec128_add(*a, *b, DEC128_MAX_PREC).unwrap_or(DECIMAL_SUM_OVERFLOW)
+            add(*a, *b).unwrap_or(DECIMAL_SUM_OVERFLOW)
         };
     }
 
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<i128>, _seq_id: u64) {
         if *a != DECIMAL_SUM_OVERFLOW {
-            *a = dec128_add(*a, b.unwrap_or(0), DEC128_MAX_PREC).unwrap_or(DECIMAL_SUM_OVERFLOW);
+            *a = add(*a, b.unwrap_or(0)).unwrap_or(DECIMAL_SUM_OVERFLOW);
         }
     }
 
@@ -156,7 +163,7 @@ impl Reducer for DecimalSumReducer {
             *v = ca
                 .iter()
                 .flatten()
-                .try_fold(*v, |acc, x| dec128_add(acc, x, DEC128_MAX_PREC))
+                .try_fold(*v, add)
                 .unwrap_or(DECIMAL_SUM_OVERFLOW);
         }
     }

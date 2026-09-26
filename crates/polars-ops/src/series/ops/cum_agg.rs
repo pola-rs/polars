@@ -228,12 +228,13 @@ fn cum_sum_decimal(
     reverse: bool,
     init: Option<i128>,
 ) -> PolarsResult<Int128Chunked> {
-    use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add};
+    use polars_compute::decimal::dec128_add_scaled;
 
     let mut value = init.unwrap_or(0);
     let update = |opt_v| {
         if let Some(v) = opt_v {
-            value = dec128_add(value, v, DEC128_MAX_PREC).ok_or_else(
+            // Same scale, so the mantissas add directly.
+            value = dec128_add_scaled(value, 0, v, 0, 0).ok_or_else(
                 || polars_err!(ComputeError: "overflow in decimal addition in cum_sum"),
             )?;
             Ok(Some(value))

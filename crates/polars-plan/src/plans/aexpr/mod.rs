@@ -1,8 +1,6 @@
 mod builder;
 mod canonical;
 mod determinism;
-mod dyn_fold;
-pub(crate) use dyn_fold::{fold_dyn_binary, fold_dyn_negate, try_fold_dyn};
 mod equality;
 mod evaluate;
 pub(crate) mod filter_constraint;
@@ -13,7 +11,6 @@ pub(crate) mod or_factoring;
 pub mod predicates;
 mod scalar;
 mod schema;
-pub(crate) use schema::widen_decimal;
 mod traverse;
 
 use std::hash::{Hash, Hasher};
@@ -289,6 +286,9 @@ impl AExpr {
                 },
                 #[cfg(feature = "replace")]
                 IRFunctionExpr::ReplaceStrict { .. } => true,
+                #[cfg(feature = "dtype-decimal")]
+                IRFunctionExpr::DecimalArith { .. } => true,
+                IRFunctionExpr::TruncArith(_) => true,
                 #[cfg(all(feature = "strings", feature = "temporal"))]
                 IRFunctionExpr::StringExpr(f) => match f {
                     IRStringFunction::Strptime(_, strptime_options) => {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import operator
 import re
+import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
@@ -33,6 +34,7 @@ from polars.exceptions import (
     PolarsInefficientMapWarning,
     ShapeError,
 )
+from polars.series.utils import _is_empty_method
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
@@ -42,6 +44,46 @@ if TYPE_CHECKING:
 
     from polars._typing import EpochTimeUnit, PolarsDataType, TimeUnit
     from tests.conftest import PlMonkeyPatch
+
+
+def test_empty_method_detection() -> None:
+    # note: correct "empty method" detection is crucial for Series -> Expr dispatch
+
+    def documented_stub() -> None:
+        """Empty, has docstring."""
+
+    def returns_docstring() -> str:
+        """Non-empty, has docstring."""
+        return "miscellaneous"
+
+    def returns_none() -> None:
+        return None
+
+    def returns_true() -> bool:
+        return True
+
+    def returns_false() -> bool:
+        return False
+
+    def returns_zero() -> int:
+        return 0
+
+    def returns_empty_string() -> str:
+        return ""
+
+    assert _is_empty_method(documented_stub)  # type: ignore[arg-type]
+
+    for method in (
+        returns_docstring,
+        returns_true,
+        returns_false,
+        returns_zero,
+        returns_empty_string,
+    ):
+        assert not _is_empty_method(method)  # type: ignore[arg-type]
+
+    # note: in -OO mode, an explicit None return is indistinguishable from an empty stub
+    assert _is_empty_method(returns_none) is (sys.flags.optimize == 2)  # type: ignore[arg-type]
 
 
 def test_cum_agg() -> None:

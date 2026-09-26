@@ -1,9 +1,7 @@
-use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
 use now::DateTimeNow;
 use polars_arrow::legacy::time_zone::Tz;
-use polars_arrow::temporal_conversions::*;
 use polars_core::prelude::*;
 use polars_defs::time::duration::Duration;
 use polars_defs::time::group_by::{ClosedWindow, StartBy};
@@ -23,19 +21,17 @@ use crate::prelude::*;
 /// in the window `[2020-01-01 06:00, 2020-01-03 06:00)`. To give the earliest datapoint
 /// a chance of being included, we then shift the window back by `every` to
 /// `[2019-12-31 06:00, 2020-01-02 06:00)`.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn ensure_t_in_or_in_front_of_window(
     mut every: Duration,
     t: i64,
-    offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
-    nte_duration_fn: fn(&Duration) -> i64,
+    tu: TimeUnit,
     period: Duration,
     mut start: i64,
     closed_window: ClosedWindow,
     tz: Option<&Tz>,
 ) -> PolarsResult<Bounds> {
     every.negative = !every.negative;
-    let mut stop = offset_fn(&period, start, tz)?;
+    let mut stop = period.add(tu, start, tz)?;
 
     while Bounds::new(start, stop).is_past(t, closed_window) {
         let mut gap = start - t;
@@ -45,12 +41,12 @@ pub(crate) fn ensure_t_in_or_in_front_of_window(
         debug_assert!(gap >= 1);
 
         // Ceil division
-        let stride = (gap + nte_duration_fn(&every) - 1) / nte_duration_fn(&every);
+        let stride = (gap + every.nte_duration(tu) - 1) / every.nte_duration(tu);
         debug_assert!(stride >= 1);
         let stride = std::cmp::max(stride, 1);
 
-        start = offset_fn(&(every * stride), start, tz)?;
-        stop = offset_fn(&period, start, tz)?;
+        start = (every * stride).add(tu, start, tz)?;
+        stop = period.add(tu, start, tz)?;
     }
     Ok(Bounds::new_checked(start, stop))
 }
@@ -76,117 +72,35 @@ impl Window {
         }
     }
 
-    /// Truncate the given ns timestamp by the window boundary.
-    pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        self.every.truncate_ns(t, tz)
+    /// Truncate the given timestamp in `tu` by the window boundary.
+    pub fn truncate(&self, tu: TimeUnit, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+        self.every.truncate(tu, t, tz)
     }
 
-    /// Truncate the given us timestamp by the window boundary.
-    pub fn truncate_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        self.every.truncate_us(t, tz)
-    }
-
-    /// Truncate the given ms timestamp by the window boundary.
-    pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        self.every.truncate_ms(t, tz)
-    }
-
-    /// Round the given ns timestamp by the window boundary.
-    pub fn round_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        let t = t + self.every.duration_ns() / 2_i64;
-        self.truncate_ns(t, tz)
-    }
-
-    /// Round the given us timestamp by the window boundary.
-    pub fn round_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        let t = t + self.every.duration_ns()
-            / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Microsecond) as i64);
-        self.truncate_us(t, tz)
-    }
-
-    /// Round the given ms timestamp by the window boundary.
-    pub fn round_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        let t = t + self.every.duration_ns()
-            / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Millisecond) as i64);
-        self.truncate_ms(t, tz)
+    /// Round the given timestamp in `tu` by the window boundary.
+    pub fn round(&self, tu: TimeUnit, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+        let t = t + self.every.duration(tu) / 2;
+        self.truncate(tu, t, tz)
     }
 
     /// returns the bounds for the earliest window bounds
     /// that contains the given time t.  For underlapping windows that
     /// do not contain time t, the window directly after time t will be returned.
-    pub fn get_earliest_bounds_ns(
+    pub fn get_earliest_bounds(
         &self,
+        tu: TimeUnit,
         t: i64,
         closed_window: ClosedWindow,
         tz: Option<&Tz>,
     ) -> PolarsResult<Bounds> {
-        let start = self.truncate_ns(t, tz)?;
-        let start = self.offset.add_ns(start, tz)?;
-        ensure_t_in_or_in_front_of_window(
-            self.every,
-            t,
-            Duration::add_ns,
-            Duration::nte_duration_ns,
-            self.period,
-            start,
-            closed_window,
-            tz,
-        )
+        let start = self.truncate(tu, t, tz)?;
+        let start = self.offset.add(tu, start, tz)?;
+        ensure_t_in_or_in_front_of_window(self.every, t, tu, self.period, start, closed_window, tz)
     }
 
-    pub fn get_earliest_bounds_us(
-        &self,
-        t: i64,
-        closed_window: ClosedWindow,
-        tz: Option<&Tz>,
-    ) -> PolarsResult<Bounds> {
-        let start = self.truncate_us(t, tz)?;
-        let start = self.offset.add_us(start, tz)?;
-        ensure_t_in_or_in_front_of_window(
-            self.every,
-            t,
-            Duration::add_us,
-            Duration::nte_duration_us,
-            self.period,
-            start,
-            closed_window,
-            tz,
-        )
-    }
-
-    pub fn get_earliest_bounds_ms(
-        &self,
-        t: i64,
-        closed_window: ClosedWindow,
-        tz: Option<&Tz>,
-    ) -> PolarsResult<Bounds> {
-        let start = self.truncate_ms(t, tz)?;
-        let start = self.offset.add_ms(start, tz)?;
-        ensure_t_in_or_in_front_of_window(
-            self.every,
-            t,
-            Duration::add_ms,
-            Duration::nte_duration_ms,
-            self.period,
-            start,
-            closed_window,
-            tz,
-        )
-    }
-
-    pub(crate) fn estimate_overlapping_bounds_ns(&self, boundary: Bounds) -> usize {
-        (boundary.duration() / self.every.duration_ns()
-            + self.period.duration_ns() / self.every.duration_ns()) as usize
-    }
-
-    pub(crate) fn estimate_overlapping_bounds_us(&self, boundary: Bounds) -> usize {
-        (boundary.duration() / self.every.duration_us()
-            + self.period.duration_us() / self.every.duration_us()) as usize
-    }
-
-    pub(crate) fn estimate_overlapping_bounds_ms(&self, boundary: Bounds) -> usize {
-        (boundary.duration() / self.every.duration_ms()
-            + self.period.duration_ms() / self.every.duration_ms()) as usize
+    pub(crate) fn estimate_overlapping_bounds(&self, tu: TimeUnit, boundary: Bounds) -> usize {
+        (boundary.duration() / self.every.duration(tu)
+            + self.period.duration(tu) / self.every.duration(tu)) as usize
     }
 
     pub fn get_overlapping_bounds_iter<'a>(
@@ -196,8 +110,53 @@ impl Window {
         tu: TimeUnit,
         tz: Option<&'a Tz>,
         start_by: StartBy,
+        origin: Option<i64>,
     ) -> PolarsResult<BoundsIter<'a>> {
-        BoundsIter::new(*self, closed_window, boundary, tu, tz, start_by)
+        BoundsIter::new(*self, closed_window, boundary, tu, tz, start_by, origin)
+    }
+
+    /// The start of the first window for data whose first value is `t0`, as placed by
+    /// `start_by`, `every` and `offset`.
+    pub fn first_window_start(
+        &self,
+        t0: i64,
+        closed_window: ClosedWindow,
+        tu: TimeUnit,
+        tz: Option<&Tz>,
+        start_by: StartBy,
+    ) -> PolarsResult<i64> {
+        match start_by {
+            StartBy::DataPoint => Ok(t0),
+            StartBy::WindowBound => Ok(self.get_earliest_bounds(tu, t0, closed_window, tz)?.start),
+            _ => {
+                // Find the beginning of the week in the time zone, then place the window
+                // start on the requested weekday plus `offset`.
+                let dt = tu.timestamp_to_datetime(t0);
+                let (week_start, tz) = match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => (
+                        tz.from_utc_datetime(&dt).beginning_of_week().naive_utc(),
+                        Some(tz),
+                    ),
+                    _ => (dt.and_utc().beginning_of_week().naive_utc(), None),
+                };
+                let start = tu.datetime_to_timestamp(week_start);
+                let start = Duration::parse(&format!("{}d", start_by.weekday().unwrap()))
+                    .add(tu, start, tz)?;
+                let start = self.offset.add(tu, start, tz)?;
+                // Make sure the first datapoint has a chance to be included.
+                let bounds = ensure_t_in_or_in_front_of_window(
+                    self.every,
+                    t0,
+                    tu,
+                    self.period,
+                    start,
+                    closed_window,
+                    tz,
+                )?;
+                Ok(bounds.start)
+            },
+        }
     }
 }
 
@@ -218,123 +177,17 @@ impl<'a> BoundsIter<'a> {
         tu: TimeUnit,
         tz: Option<&'a Tz>,
         start_by: StartBy,
+        origin: Option<i64>,
     ) -> PolarsResult<Self> {
-        let bi = match start_by {
-            StartBy::DataPoint => {
-                let mut boundary = boundary;
-                let offset_fn = match tu {
-                    TimeUnit::Nanoseconds => Duration::add_ns,
-                    TimeUnit::Microseconds => Duration::add_us,
-                    TimeUnit::Milliseconds => Duration::add_ms,
-                };
-                boundary.stop = offset_fn(&window.period, boundary.start, tz)?;
-                boundary
-            },
-            StartBy::WindowBound => match tu {
-                TimeUnit::Nanoseconds => {
-                    window.get_earliest_bounds_ns(boundary.start, closed_window, tz)?
-                },
-                TimeUnit::Microseconds => {
-                    window.get_earliest_bounds_us(boundary.start, closed_window, tz)?
-                },
-                TimeUnit::Milliseconds => {
-                    window.get_earliest_bounds_ms(boundary.start, closed_window, tz)?
-                },
-            },
-            _ => {
-                {
-                    #[allow(clippy::type_complexity)]
-                    let (from, to, offset_fn, nte_duration_fn): (
-                        fn(i64) -> NaiveDateTime,
-                        fn(NaiveDateTime) -> i64,
-                        fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
-                        fn(&Duration) -> i64,
-                    ) = match tu {
-                        TimeUnit::Nanoseconds => (
-                            timestamp_ns_to_datetime,
-                            datetime_to_timestamp_ns,
-                            Duration::add_ns,
-                            Duration::nte_duration_ns,
-                        ),
-                        TimeUnit::Microseconds => (
-                            timestamp_us_to_datetime,
-                            datetime_to_timestamp_us,
-                            Duration::add_us,
-                            Duration::nte_duration_us,
-                        ),
-                        TimeUnit::Milliseconds => (
-                            timestamp_ms_to_datetime,
-                            datetime_to_timestamp_ms,
-                            Duration::add_ms,
-                            Duration::nte_duration_ms,
-                        ),
-                    };
-                    // find beginning of the week.
-                    let dt = from(boundary.start);
-                    match tz {
-                        #[cfg(feature = "timezones")]
-                        Some(tz) => {
-                            let dt = tz.from_utc_datetime(&dt);
-                            let dt = dt.beginning_of_week();
-                            let dt = dt.naive_utc();
-                            let start = to(dt);
-                            // adjust start of the week based on given day of the week
-                            let start = offset_fn(
-                                &Duration::parse(&format!("{}d", start_by.weekday().unwrap())),
-                                start,
-                                Some(tz),
-                            )?;
-                            // apply the 'offset'
-                            let start = offset_fn(&window.offset, start, Some(tz))?;
-                            // make sure the first datapoint has a chance to be included
-                            // and compute the end of the window defined by the 'period'
-                            ensure_t_in_or_in_front_of_window(
-                                window.every,
-                                boundary.start,
-                                offset_fn,
-                                nte_duration_fn,
-                                window.period,
-                                start,
-                                closed_window,
-                                Some(tz),
-                            )?
-                        },
-                        _ => {
-                            let tz = chrono::Utc;
-                            let dt = dt.and_local_timezone(tz).unwrap();
-                            let dt = dt.beginning_of_week();
-                            let dt = dt.naive_utc();
-                            let start = to(dt);
-                            // adjust start of the week based on given day of the week
-                            let start = offset_fn(
-                                &Duration::parse(&format!("{}d", start_by.weekday().unwrap())),
-                                start,
-                                None,
-                            )
-                            .unwrap();
-                            // apply the 'offset'
-                            let start = offset_fn(&window.offset, start, None).unwrap();
-                            // make sure the first datapoint has a chance to be included
-                            // and compute the end of the window defined by the 'period'
-                            ensure_t_in_or_in_front_of_window(
-                                window.every,
-                                boundary.start,
-                                offset_fn,
-                                nte_duration_fn,
-                                window.period,
-                                start,
-                                closed_window,
-                                None,
-                            )?
-                        },
-                    }
-                }
-            },
+        let start = match origin {
+            Some(origin) => origin,
+            None => window.first_window_start(boundary.start, closed_window, tu, tz, start_by)?,
         };
+        let stop = window.period.add(tu, start, tz)?;
         Ok(Self {
             window,
             boundary,
-            bi,
+            bi: Bounds::new(start, stop),
             tu,
             tz,
         })
@@ -347,22 +200,18 @@ impl Iterator for BoundsIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.bi.start < self.boundary.stop {
             let out = self.bi;
-            match self.tu {
-                // TODO: find some way to propagate error instead of unwrapping?
-                // Issue is that `next` needs to return `Option`.
-                TimeUnit::Nanoseconds => {
-                    self.bi.start = self.window.every.add_ns(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.period.add_ns(self.bi.start, self.tz).unwrap();
-                },
-                TimeUnit::Microseconds => {
-                    self.bi.start = self.window.every.add_us(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.period.add_us(self.bi.start, self.tz).unwrap();
-                },
-                TimeUnit::Milliseconds => {
-                    self.bi.start = self.window.every.add_ms(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.period.add_ms(self.bi.start, self.tz).unwrap();
-                },
-            }
+            // TODO: find some way to propagate error instead of unwrapping?
+            // Issue is that `next` needs to return `Option`.
+            self.bi.start = self
+                .window
+                .every
+                .add(self.tu, self.bi.start, self.tz)
+                .unwrap();
+            self.bi.stop = self
+                .window
+                .period
+                .add(self.tu, self.bi.start, self.tz)
+                .unwrap();
             Some(out)
         } else {
             None
@@ -372,26 +221,14 @@ impl Iterator for BoundsIter<'_> {
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         let n: i64 = n.try_into().unwrap();
         if self.bi.start < self.boundary.stop {
-            match self.tu {
-                TimeUnit::Nanoseconds => {
-                    self.bi.start = (self.window.every * n)
-                        .add_ns(self.bi.start, self.tz)
-                        .unwrap();
-                    self.bi.stop = (self.window.period).add_ns(self.bi.start, self.tz).unwrap();
-                },
-                TimeUnit::Microseconds => {
-                    self.bi.start = (self.window.every * n)
-                        .add_us(self.bi.start, self.tz)
-                        .unwrap();
-                    self.bi.stop = (self.window.period).add_us(self.bi.start, self.tz).unwrap();
-                },
-                TimeUnit::Milliseconds => {
-                    self.bi.start = (self.window.every * n)
-                        .add_ms(self.bi.start, self.tz)
-                        .unwrap();
-                    self.bi.stop = (self.window.period).add_ms(self.bi.start, self.tz).unwrap();
-                },
-            }
+            self.bi.start = (self.window.every * n)
+                .add(self.tu, self.bi.start, self.tz)
+                .unwrap();
+            self.bi.stop = self
+                .window
+                .period
+                .add(self.tu, self.bi.start, self.tz)
+                .unwrap();
             self.next()
         } else {
             None
@@ -408,31 +245,10 @@ impl<'a> BoundsIter<'a> {
         let mut stride = 0;
         if self.bi.start < self.boundary.stop && target > self.bi.start {
             let gap = target - self.bi.start;
-            match self.tu {
-                TimeUnit::Nanoseconds => {
-                    if gap
-                        > self.window.every.nte_duration_ns() + self.window.period.nte_duration_ns()
-                    {
-                        stride = ((gap - self.window.period.nte_duration_ns()) as usize)
-                            / (self.window.every.nte_duration_ns() as usize);
-                    }
-                },
-                TimeUnit::Microseconds => {
-                    if gap
-                        > self.window.every.nte_duration_us() + self.window.period.nte_duration_us()
-                    {
-                        stride = ((gap - self.window.period.nte_duration_us()) as usize)
-                            / (self.window.every.nte_duration_us() as usize);
-                    }
-                },
-                TimeUnit::Milliseconds => {
-                    if gap
-                        > self.window.every.nte_duration_ms() + self.window.period.nte_duration_ms()
-                    {
-                        stride = ((gap - self.window.period.nte_duration_ms()) as usize)
-                            / (self.window.every.nte_duration_ms() as usize);
-                    }
-                },
+            let every = self.window.every.nte_duration(self.tu);
+            let period = self.window.period.nte_duration(self.tu);
+            if gap > every + period {
+                stride = ((gap - period) as usize) / (every as usize);
             }
         }
         stride

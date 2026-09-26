@@ -278,12 +278,22 @@ pub enum IRFunctionExpr {
     Log1p,
     #[cfg(feature = "log")]
     Exp,
+    #[cfg(feature = "log")]
+    Erf,
+    #[cfg(feature = "log")]
+    Erfc,
     Unique(/* maintain_order */ bool),
     #[cfg(feature = "round_series")]
     Round {
         decimals: u32,
         mode: RoundMode,
     },
+    #[cfg(feature = "dtype-decimal")]
+    DecimalArith {
+        op: DecimalArithOp,
+        scale: usize,
+    },
+    TruncArith(TruncArithOp),
     #[cfg(feature = "round_series")]
     RoundSF {
         digits: i32,
@@ -342,6 +352,7 @@ pub enum IRFunctionExpr {
     /// This will lead to calls over FFI.
     FfiPlugin {
         flags: FunctionOptions,
+        is_deterministic: bool,
         /// Shared library.
         lib: PlSmallStr,
         /// Identifier in the shared lib.
@@ -492,10 +503,12 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin {
                 flags: _,
+                is_deterministic,
                 lib,
                 symbol,
                 kwargs,
             } => {
+                is_deterministic.hash(state);
                 kwargs.hash(state);
                 lib.hash(state);
                 symbol.hash(state);
@@ -653,12 +666,22 @@ impl Hash for IRFunctionExpr {
             Log1p => {},
             #[cfg(feature = "log")]
             Exp => {},
+            #[cfg(feature = "log")]
+            Erf => {},
+            #[cfg(feature = "log")]
+            Erfc => {},
             Unique(a) => a.hash(state),
             #[cfg(feature = "round_series")]
             Round { decimals, mode } => {
                 decimals.hash(state);
                 mode.hash(state);
             },
+            #[cfg(feature = "dtype-decimal")]
+            DecimalArith { op, scale } => {
+                op.hash(state);
+                scale.hash(state);
+            },
+            TruncArith(op) => op.hash(state),
             #[cfg(feature = "round_series")]
             IRFunctionExpr::RoundSF { digits } => digits.hash(state),
             #[cfg(feature = "round_series")]
@@ -905,6 +928,10 @@ impl Display for IRFunctionExpr {
             Log1p => "log1p",
             #[cfg(feature = "log")]
             Exp => "exp",
+            #[cfg(feature = "log")]
+            Erf => "erf",
+            #[cfg(feature = "log")]
+            Erfc => "erfc",
             Unique(stable) => {
                 if *stable {
                     "unique_stable"
@@ -914,6 +941,9 @@ impl Display for IRFunctionExpr {
             },
             #[cfg(feature = "round_series")]
             Round { .. } => "round",
+            #[cfg(feature = "dtype-decimal")]
+            DecimalArith { op, .. } => return Display::fmt(op, f),
+            TruncArith(op) => op.name(),
             #[cfg(feature = "round_series")]
             RoundSF { .. } => "round_sig_figs",
             #[cfg(feature = "round_series")]
@@ -1240,7 +1270,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             F::InterpolateBy => FunctionOptions::length_preserving(),
             #[cfg(feature = "log")]
-            F::Log | F::Log1p | F::Exp => FunctionOptions::elementwise(),
+            F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc => FunctionOptions::elementwise(),
             #[cfg(feature = "log")]
             F::Entropy { .. } => {
                 FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
@@ -1258,6 +1288,9 @@ impl IRFunctionExpr {
             F::Round { .. } | F::RoundSF { .. } | F::Truncate { .. } | F::Floor | F::Ceil => {
                 FunctionOptions::elementwise()
             },
+            #[cfg(feature = "dtype-decimal")]
+            F::DecimalArith { .. } => FunctionOptions::elementwise(),
+            F::TruncArith(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "fused")]
             F::Fused(_) => FunctionOptions::elementwise(),
             F::ConcatExpr { .. } => FunctionOptions::groupwise()

@@ -1105,6 +1105,20 @@ def test_contains() -> None:
         )
 
 
+def test_contains_dotall_literal_chain() -> None:
+    s = pl.Series(["", "ab", "a\nb", "ba", "aXbXc", None])
+    for pattern in [
+        "(?s)a.*b",
+        "(?s)^.*a.*b.*$",
+        "(?s)^a.*b$",
+        "a.*b",
+        "(?s)a.*b.*c",
+    ]:
+        rx = re.compile(pattern)
+        expected = [None if v is None else rx.search(v) is not None for v in s]
+        assert s.str.contains(pattern).to_list() == expected
+
+
 def test_contains_expr() -> None:
     df = pl.DataFrame(
         {

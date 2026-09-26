@@ -41,9 +41,9 @@ mod to_graph;
 
 pub use fmt::{NodeStyle, visualize_plan};
 use polars_defs::time::duration::Duration;
-use polars_defs::time::group_by::ClosedWindow;
 #[cfg(feature = "dynamic_group_by")]
-use polars_defs::time::group_by::DynamicGroupOptions;
+use polars_defs::time::group_by::DynamicGroupOptionsIR;
+use polars_defs::time::group_by::{ClosedWindow, RollingWindowPlacement};
 use polars_plan::prelude::PlanCallback;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -441,7 +441,7 @@ pub enum PhysNodeKind {
     #[cfg(feature = "dynamic_group_by")]
     DynamicGroupBy {
         input: PhysStream,
-        options: DynamicGroupOptions,
+        options: DynamicGroupOptionsIR,
         aggs: Vec<ExprIR>,
         slice: Option<(IdxSize, IdxSize)>,
     },
@@ -453,6 +453,7 @@ pub enum PhysNodeKind {
         period: Duration,
         offset: Duration,
         closed: ClosedWindow,
+        placement: Option<RollingWindowPlacement>,
         slice: Option<(IdxSize, IdxSize)>,
         aggs: Vec<ExprIR>,
     },

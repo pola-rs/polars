@@ -326,6 +326,8 @@ def _(a: Compare) -> Any:
         return pyiceberg.expressions.GreaterThanOrEqual(lhs, rhs)  # type: ignore[misc, call-arg]
     if isinstance(op, Eq):
         return pyiceberg.expressions.EqualTo(lhs, rhs)  # type: ignore[misc, call-arg]
+    if isinstance(op, NotEq):
+        return pyiceberg.expressions.NotEqualTo(lhs, rhs)  # type: ignore[misc, call-arg]
     if isinstance(op, Lt):
         return pyiceberg.expressions.LessThan(lhs, rhs)  # type: ignore[misc, call-arg]
     if isinstance(op, LtE):

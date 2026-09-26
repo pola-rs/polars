@@ -36,7 +36,6 @@ use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
 
 use super::*;
-use crate::plans::aexpr::try_fold_dyn;
 
 pub struct TypeCoercionRule {}
 
@@ -120,14 +119,6 @@ impl OptimizationRule for TypeCoercionRule {
         ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
-
-        // Fold literal arithmetic before coercing.
-        if !matches!(expr, AExpr::Literal(_))
-            && let Some(v) = try_fold_dyn(expr, expr_arena)
-        {
-            return Ok(Some(AExpr::Literal(LiteralValue::Dyn(v))));
-        }
-
         let out = match *expr {
             ref ae @ AExpr::Cast { .. } => {
                 let AExpr::Cast {
@@ -739,15 +730,22 @@ impl OptimizationRule for TypeCoercionRule {
                     }
 
                     match super_type {
-                        DataType::Unknown(UnknownKind::Float(_)) => super_type = DataType::Float64,
+                        DataType::Unknown(UnknownKind::Float) => super_type = DataType::Float64,
                         DataType::Unknown(UnknownKind::Int(v)) => {
                             super_type = materialize_dyn_int(v).dtype()
                         },
                         _ => {},
                     }
 
+                    // A decimal supertype may not hold every value, raise instead of
+                    // producing nulls.
+                    let literal_options = if super_type.leaf_dtype().is_decimal() {
+                        CastOptions::Strict
+                    } else {
+                        CastOptions::NonStrict
+                    };
                     for (e, dtype) in input.iter_mut().zip(dtypes) {
-                        cast_expr_ir(e, &dtype, &super_type, expr_arena, CastOptions::NonStrict)?;
+                        cast_expr_ir(e, &dtype, &super_type, expr_arena, literal_options)?;
                     }
                 }
 
@@ -1418,7 +1416,7 @@ fn try_inline_literal_cast(
             .try_materialize_to_dtype(dtype, options)?
             .into(),
         lv if lv.is_null() => match dtype {
-            DataType::Unknown(UnknownKind::Float(_) | UnknownKind::Int(_) | UnknownKind::Str) => {
+            DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
                 LiteralValue::untyped_null()
             },
             _ => return Ok(None),
@@ -1677,7 +1675,7 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
         // When casting unknown float to Float32 we can't tell if the value will
         // fit, so can't do anything. When casting to Float64 we can assume
         // it'll work since presumably it's no larger than a f64 in practice.
-        (DataType::Float64, DataType::Unknown(UnknownKind::Float(_))) => true,
+        (DataType::Float64, DataType::Unknown(UnknownKind::Float)) => true,
         // Handles both String and UnknownKind::Str:
         (DataType::String, from) => from.is_string(),
         (to, from) if to.is_primitive_numeric() && from.is_primitive_numeric() => {

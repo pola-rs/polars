@@ -4,6 +4,7 @@ use super::PageReader;
 use crate::parquet::CowBuffer;
 use crate::parquet::compression::{self, Compression, DecompressionContext};
 use crate::parquet::error::{ParquetError, ParquetResult};
+use crate::parquet::metadata::Descriptor;
 use crate::parquet::page::{
     CompressedDataPage, CompressedPage, DataPage, DataPageHeader, DictPage, Page,
 };
@@ -177,6 +178,10 @@ impl BasicDecompressor {
     /// - Unnested column: equal to the number of non-null rows.
     pub fn total_num_values(&self) -> usize {
         self.reader.total_num_values()
+    }
+
+    pub fn descriptor(&self) -> &Descriptor {
+        self.reader.descriptor()
     }
 
     /// Returns its internal buffer, consuming itself.

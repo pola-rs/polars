@@ -11,7 +11,7 @@ pub(super) fn process_group_by(
     schema: SchemaRef,
     maintain_order: bool,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
-    options: Arc<GroupbyOptions>,
+    options: Arc<GroupbyOptionsIR>,
     acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
     use IR::*;

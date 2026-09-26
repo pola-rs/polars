@@ -705,19 +705,34 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             apply,
             maintain_order,
             options,
-        } => GroupBy {
-            input: input.0,
-            keys: keys.iter().map(|e| e.into()).collect(),
-            aggs: aggs.iter().map(|e| e.into()).collect(),
-            apply: apply.as_ref().map_or(Ok(()), |_| {
-                Err(PyNotImplementedError::new_err(format!(
-                    "apply inside GroupBy {plan:?}"
-                )))
-            })?,
-            maintain_order: *maintain_order,
-            options: PyGroupbyOptions::new(options.as_ref().clone()).into_py_any(py)?,
-        }
-        .into_py_any(py),
+        } => {
+            if options
+                .dynamic
+                .as_ref()
+                .is_some_and(|dynamic| dynamic.placement.is_some())
+                || options
+                    .rolling
+                    .as_ref()
+                    .is_some_and(|rolling| rolling.placement.is_some())
+            {
+                return Err(PyNotImplementedError::new_err(
+                    "Not expecting to see a window placement in a user query",
+                ));
+            }
+            GroupBy {
+                input: input.0,
+                keys: keys.iter().map(|e| e.into()).collect(),
+                aggs: aggs.iter().map(|e| e.into()).collect(),
+                apply: apply.as_ref().map_or(Ok(()), |_| {
+                    Err(PyNotImplementedError::new_err(format!(
+                        "apply inside GroupBy {plan:?}"
+                    )))
+                })?,
+                maintain_order: *maintain_order,
+                options: PyGroupbyOptions::new(options.as_ref().clone()).into_py_any(py)?,
+            }
+            .into_py_any(py)
+        },
         IR::Join {
             input_left,
             input_right,

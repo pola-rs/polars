@@ -7,10 +7,13 @@ import dis
 import inspect
 import re
 import sys
+import types
 import warnings
 from bisect import bisect_left
 from collections import defaultdict
+from collections.abc import Collection
 from dis import get_instructions
+from enum import Enum, auto
 from inspect import signature
 from itertools import count, zip_longest
 from pathlib import Path
@@ -24,8 +27,11 @@ from typing import (
     TypedDict,
 )
 
+from polars._dependencies import _check_for_pandas
 from polars._utils.cache import LRUCache
 from polars._utils.various import NO_DEFAULT, re_escape
+from polars.dataframe.frame import DataFrame
+from polars.datatypes import List, String
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, MutableMapping
@@ -33,6 +39,7 @@ if TYPE_CHECKING:
     from dis import Instruction
     from typing import TypeAlias
 
+    from polars._typing import PolarsDataType
     from polars._utils.various import NoDefault
 
 
@@ -42,6 +49,14 @@ class StackValue(NamedTuple):
     left_operand: str
     right_operand: str
     from_module: str | None = None
+
+
+class ContainmentKind(Enum):
+    """Type of operand for `in` and `not in` operators."""
+
+    COLLECTION = auto()
+    STRING = auto()
+    COLUMN = auto()
 
 
 MapTarget: TypeAlias = Literal["expr", "frame", "series"]
@@ -89,9 +104,11 @@ class OpNames:
         }
     )
     LOAD_VALUES = frozenset(("LOAD_CONST", "LOAD_DEREF", "LOAD_FAST", "LOAD_GLOBAL"))
-    LOAD_ATTR = frozenset({"LOAD_METHOD", "LOAD_ATTR"})
+    LOAD_METHOD = frozenset({"LOAD_METHOD"})
+    LOAD_ATTR = frozenset({"LOAD_ATTR"}) | LOAD_METHOD
     LOAD = LOAD_VALUES | LOAD_ATTR
     SIMPLIFY_SPECIALIZED: ClassVar[dict[str, str]] = {
+        "LOAD_COMMON_CONSTANT": "LOAD_CONST",
         "LOAD_FAST_BORROW": "LOAD_FAST",
         "LOAD_SMALL_INT": "LOAD_CONST",
     }
@@ -130,6 +147,8 @@ _MATH_FUNCTIONS: Final[frozenset[str]] = frozenset(
         "cos",
         "cosh",
         "degrees",
+        "erf",
+        "erfc",
         "exp",
         "floor",
         "log",
@@ -411,8 +430,22 @@ class BytecodeParser:
     @staticmethod
     def _get_param_name(function: Callable[[Any], Any]) -> str | None:
         """Return single function parameter name."""
+        if type(function) is types.FunctionType:
+            if (
+                not hasattr(function, "__signature__")
+                and not hasattr(function, "__wrapped__")
+                and not hasattr(function, "__text_signature__")
+            ):
+                code = function.__code__
+                n_params = (
+                    code.co_argcount
+                    + code.co_kwonlyargcount
+                    + bool(code.co_flags & inspect.CO_VARARGS)  # +1 for *args
+                    + bool(code.co_flags & inspect.CO_VARKEYWORDS)  # +1 for **kwargs
+                )
+                return code.co_varnames[0] if n_params == 1 else None
+
         try:
-            # note: we do not parse/handle functions with > 1 params
             sig = signature(function)
         except ValueError:
             return None
@@ -504,7 +537,9 @@ class BytecodeParser:
         """The rewritten bytecode instructions from the function we are parsing."""
         return list(self._rewritten_instructions)
 
-    def to_expression(self, col: str) -> str | None:
+    def to_expression(
+        self, col: str, dtype: PolarsDataType | None = None
+    ) -> str | None:
         """Translate postfix bytecode instructions to polars expression/string."""
         if self._col_expression is not NO_DEFAULT and self._col_expression is not None:
             col_name, expr = self._col_expression
@@ -542,6 +577,7 @@ class BytecodeParser:
                         caller_variables=self._caller_variables,
                         map_target=self._map_target,
                         function=self._function,
+                        dtype=dtype,
                     ).to_expression(
                         col=col,
                         param_name=self._param_name,
@@ -567,28 +603,31 @@ class BytecodeParser:
             if self._map_target == "series":
                 if (target_name := self._map_target_name) is None:
                     target_name = _get_target_name(col, polars_expr, self._map_target)
+                    self._map_target_name = target_name
                 polars_expr = polars_expr.replace(f'pl.col("{col}")', target_name)
 
-            self._col_expression = (col, polars_expr)
+            # ('in' translation depends on the operand values/dtype at call time)
+            if all(i.opname != "CONTAINS_OP" for i in self._rewritten_instructions):
+                self._col_expression = (col, polars_expr)
             return polars_expr
 
     def warn(
         self,
         col: str,
         *,
+        dtype: PolarsDataType | None = None,
         suggestion_override: str | None = None,
         udf_override: str | None = None,
     ) -> None:
         """Generate warning that suggests an equivalent native polars expression."""
-        # Import these here so that udfs can be imported without polars installed.
-
+        # import these here so UDFs can be imported without polars installed.
         from polars._utils.various import (
             in_terminal_that_supports_colour,
         )
         from polars._warnings import find_stacklevel
         from polars.exceptions import PolarsInefficientMapWarning
 
-        suggested_expression = suggestion_override or self.to_expression(col)
+        suggested_expression = suggestion_override or self.to_expression(col, dtype)
 
         if suggested_expression is not None:
             if (target_name := self._map_target_name) is None:
@@ -599,11 +638,16 @@ class BytecodeParser:
             if func_name == "<lambda>":
                 func_name = f"lambda {self._param_name}: ..."
 
-            addendum = (
-                'Note: in list.eval context, pl.col("") should be written as pl.element()'
-                if 'pl.col("")' in suggested_expression
-                else ""
-            )
+            if 'pl.col("")' in suggested_expression:
+                addendum = 'Note: in list.eval context, pl.col("") should be written as pl.element()'
+            elif (
+                f'pl.col("{col}").str.contains(' in suggested_expression
+                and "literal=True" in suggested_expression
+            ):
+                addendum = f'Note: if "{col}" is a List column, use .list.contains instead of .str.contains'
+            else:
+                addendum = ""
+
             apitype, clsname = (
                 ("expressions", "Expr")
                 if self._map_target == "expr"
@@ -641,10 +685,59 @@ class InstructionTranslator:
         caller_variables: dict[str, Any] | None,
         function: Callable[[Any], Any],
         map_target: MapTarget,
+        dtype: PolarsDataType | None = None,
     ) -> None:
+        self._constants: dict[str, Any] = {}
         self._stack = self._to_intermediate_stack(instructions, map_target)
         self._caller_variables = caller_variables
         self._function = function
+        self._map_target = map_target
+        self._dtype = dtype
+
+    def _get_function_variable(self, name: str) -> Any:
+        """Resolve a name from the function's lexical scope."""
+        code = getattr(self._function, "__code__", None)
+        closure = getattr(self._function, "__closure__", None)
+        if code is not None and closure is not None and name in code.co_freevars:
+            try:
+                return closure[code.co_freevars.index(name)].cell_contents
+            except ValueError:  # empty cell
+                return NO_DEFAULT
+        return getattr(self._function, "__globals__", {}).get(name, NO_DEFAULT)
+
+    def _containment_kind(
+        self, operand: StackEntry, param_name: str
+    ) -> ContainmentKind | None:
+        """Classify an `in` operand without evaluating user code."""
+        if isinstance(operand, StackValue):
+            left = self._containment_kind(operand.left_operand, param_name)
+            right = (
+                self._containment_kind(operand.right_operand, param_name)
+                if operand.operator_arity == 2
+                else None
+            )
+            if ContainmentKind.COLUMN in (left, right):
+                return ContainmentKind.COLUMN
+            return left if operand.operator == "+" and left is right else None
+
+        if operand == param_name:
+            return ContainmentKind.COLUMN
+        if operand in self._constants:
+            value = self._constants[operand]
+        elif operand.isidentifier():
+            value = self._get_function_variable(operand)
+        else:
+            return None
+
+        if isinstance(value, str):
+            return ContainmentKind.STRING
+        if isinstance(value, Collection) and not isinstance(value, (bytes, bytearray)):
+            # (pandas and frame membership tests labels, not values)
+            if getattr(value, "ndim", 1) == 1 and not (
+                _check_for_pandas(value) or isinstance(value, DataFrame)
+            ):
+                return ContainmentKind.COLLECTION
+        return None
 
     def to_expression(self, col: str, param_name: str, depth: int) -> str:
         """Convert intermediate stack to polars expression string."""
@@ -712,11 +805,38 @@ class InstructionTranslator:
                     return f"{e1}.is_{not_}null()"
                 elif op in ("in", "not in"):
                     not_ = "" if op == "in" else "~"
-                    return (
-                        f"{not_}({e1}.is_in({e2}))"
-                        if " " in e1
-                        else f"{not_}{e1}.is_in({e2})"
-                    )
+                    kind = self._containment_kind(value.right_operand, param_name)
+                    if kind is ContainmentKind.COLLECTION:
+                        return (
+                            f"{not_}({e1}.is_in({e2}))"
+                            if " " in e1
+                            else f"{not_}{e1}.is_in({e2})"
+                        )
+                    needle = self._containment_kind(value.left_operand, param_name)
+                    if kind is None or needle in (None, ContainmentKind.COLLECTION):
+                        msg = "cannot determine operand types for 'in'"
+                        raise NotImplementedError(msg)
+
+                    suffix = ""
+                    if kind is ContainmentKind.COLUMN:
+                        if (
+                            self._dtype is not None
+                            and value.right_operand == param_name
+                        ):
+                            if self._dtype == List:
+                                return f"{not_}{e2}.list.contains({e1})"
+                            if self._dtype != String:
+                                msg = (
+                                    f"'in' is not a substring search for {self._dtype}"
+                                )
+                                raise NotImplementedError(msg)
+
+                        haystack = e2
+                    elif self._map_target == "series":
+                        haystack = f'pl.Series(pl.col("{col}").name, [{e2}])'
+                    else:
+                        haystack, suffix = f"pl.lit({e2})", f'.alias("{col}")'
+                    return f"{not_}{haystack}.str.contains({e1}, literal=True){suffix}"
                 elif op == "replace_strict":
                     if not self._caller_variables:
                         self._caller_variables = _get_all_caller_variables()
@@ -748,6 +868,8 @@ class InstructionTranslator:
         if map_target in ("expr", "series"):
             stack: list[StackEntry] = []
             for inst in instructions:
+                if inst.opname == "LOAD_CONST":
+                    self._constants[inst.argrepr] = inst.argval
                 stack.append(
                     inst.argrepr
                     if inst.opname in OpNames.LOAD
@@ -777,6 +899,13 @@ class InstructionTranslator:
         # TODO: dataframe.map... ?
         msg = f"TODO: {map_target!r} map target not yet supported."
         raise NotImplementedError(msg)
+
+
+# The first opcodes of the patterns matched by each rewrite rule...
+_START_METHOD_REWRITE = OpNames.LOAD_ATTR if _MIN_PY312 else OpNames.LOAD_METHOD
+_START_FUNCTION_REWRITE = frozenset(("LOAD_GLOBAL", "LOAD_DEREF"))
+_START_BUILTIN_REWRITE = frozenset(("LOAD_GLOBAL",))
+_START_ATTR_REWRITE = frozenset(("LOAD_FAST",))
 
 
 class RewrittenInstructions:
@@ -880,34 +1009,40 @@ class RewrittenInstructions:
         """
         Apply rewrite rules, potentially injecting synthetic operations.
 
-        Rules operate on the instruction stream and can examine/modify
-        it as needed, pushing updates into "updated_instructions" and
-        returning True/False to indicate if any changes were made.
+        Dispatch rewrite rules by first opcode. Rules operate on the instruction stream
+        and can examine/modify it as needed, pushing updates into "updated_instructions"
+        and returning True/False to indicate if any changes were made.
         """
         self._instructions = instructions
         updated_instructions: list[Instruction] = []
+        n = len(instructions)
         idx = 0
-        while idx < len(self._instructions):
-            inst, increment = self._instructions[idx], 1
-            if inst.opname not in OpNames.LOAD or not any(
-                (increment := map_rewrite(idx, updated_instructions))
-                for map_rewrite in (
-                    # add any other rewrite methods here
-                    self._rewrite_functions,
-                    self._rewrite_methods,
-                    self._rewrite_builtins,
-                    self._rewrite_attrs,
-                )
-            ):
+
+        while idx < n:
+            inst = instructions[idx]
+            opname = inst.opname
+            increment = 0
+            if opname in _START_FUNCTION_REWRITE:
+                increment = self._rewrite_functions(idx, updated_instructions)
+                if not increment and opname in _START_BUILTIN_REWRITE:
+                    increment = self._rewrite_builtins(idx, updated_instructions)
+            elif opname in _START_METHOD_REWRITE:
+                increment = self._rewrite_methods(idx, updated_instructions)
+            elif opname in _START_ATTR_REWRITE:
+                increment = self._rewrite_attrs(idx, updated_instructions)
+
+            if increment:
+                idx += increment
+            else:
                 updated_instructions.append(inst)
-            idx += increment or 1
+                idx += 1
         return updated_instructions
 
     def _rewrite_attrs(self, idx: int, updated_instructions: list[Instruction]) -> int:
         """Replace python attribute lookup with synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=[{"LOAD_FAST"}, {"LOAD_ATTR"}],
+            opnames=[_START_ATTR_REWRITE, {"LOAD_ATTR"}],
             argvals=[None, _PYTHON_ATTRS_MAP],
             is_attr=True,
         ):
@@ -926,7 +1061,7 @@ class RewrittenInstructions:
         """Replace builtin function calls with a synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=[{"LOAD_GLOBAL"}, {"LOAD_FAST", "LOAD_CONST"}, OpNames.CALL],
+            opnames=[_START_BUILTIN_REWRITE, {"LOAD_FAST", "LOAD_CONST"}, OpNames.CALL],
             argvals=[_PYTHON_BUILTINS],
         ):
             inst1, inst2 = matching_instructions[:2]
@@ -957,7 +1092,7 @@ class RewrittenInstructions:
 
                 opnames: list[AbstractSet[str]] = (
                     [
-                        {"LOAD_GLOBAL", "LOAD_DEREF"},
+                        _START_FUNCTION_REWRITE,
                         *function_kind["argument_1_opname"],
                         *function_kind["argument_1_unary_opname"],
                         *function_kind["argument_2_opname"],
@@ -965,7 +1100,7 @@ class RewrittenInstructions:
                     ]
                     if check_globals
                     else [
-                        {"LOAD_GLOBAL", "LOAD_DEREF"},
+                        _START_FUNCTION_REWRITE,
                         *function_kind["module_opname"],
                         *function_kind["attribute_opname"],
                         *function_kind["argument_1_opname"],
@@ -1051,19 +1186,18 @@ class RewrittenInstructions:
         self, idx: int, updated_instructions: list[Instruction]
     ) -> int:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
-        LOAD_METHOD = OpNames.LOAD_ATTR if _MIN_PY312 else {"LOAD_METHOD"}
         if matching_instructions := (
             # method call with one arg, eg: "s.endswith('!')"
             self._matches(
                 idx,
-                opnames=[LOAD_METHOD, {"LOAD_CONST"}, OpNames.CALL],
+                opnames=[_START_METHOD_REWRITE, {"LOAD_CONST"}, OpNames.CALL],
                 argvals=[_PYTHON_METHODS_MAP],
             )
             or
             # method call with no arg, eg: "s.lower()"
             self._matches(
                 idx,
-                opnames=[LOAD_METHOD, OpNames.CALL],
+                opnames=[_START_METHOD_REWRITE, OpNames.CALL],
                 argvals=[_PYTHON_METHODS_MAP],
             )
         ):
@@ -1091,7 +1225,7 @@ class RewrittenInstructions:
             self._matches(
                 idx,
                 opnames=[
-                    LOAD_METHOD,
+                    _START_METHOD_REWRITE,
                     {"LOAD_CONST"},
                     {"LOAD_CONST"},
                     {"LOAD_CONST"},
@@ -1103,7 +1237,12 @@ class RewrittenInstructions:
             # method call with two args, eg: "s.replace('!','?')"
             self._matches(
                 idx,
-                opnames=[LOAD_METHOD, {"LOAD_CONST"}, {"LOAD_CONST"}, OpNames.CALL],
+                opnames=[
+                    _START_METHOD_REWRITE,
+                    {"LOAD_CONST"},
+                    {"LOAD_CONST"},
+                    OpNames.CALL,
+                ],
                 argvals=[_PYTHON_METHODS_MAP],
             )
         ):
@@ -1217,7 +1356,10 @@ def _raw_function_meta(function: Callable[[Any], Any]) -> tuple[str, str]:
 
 
 def warn_on_inefficient_map(
-    function: Callable[[Any], Any], columns: list[str], map_target: MapTarget
+    function: Callable[[Any], Any],
+    columns: list[str],
+    map_target: MapTarget,
+    dtype: PolarsDataType | None = None,
 ) -> None:
     """
     Generate `PolarsInefficientMapWarning` on poor usage of a `map` function.
@@ -1231,6 +1373,8 @@ def warn_on_inefficient_map(
         will be a list of length 1, containing the expression's root name.
     map_target
         The target of the `map` call. One of `"expr"`, `"frame"`, or `"series"`.
+    dtype
+        The dtype of the original object, if known (eg: for a `Series`).
     """
     if map_target == "frame":
         msg = "TODO: 'frame' map-function parsing"
@@ -1248,7 +1392,7 @@ def warn_on_inefficient_map(
         _BYTECODE_PARSER_CACHE_[key] = parser
 
     if parser.can_attempt_rewrite():
-        parser.warn(col)
+        parser.warn(col, dtype=dtype)
     else:
         # handle bare numpy/json functions
         module, suggestion = _raw_function_meta(function)
