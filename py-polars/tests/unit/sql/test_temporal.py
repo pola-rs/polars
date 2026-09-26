@@ -520,6 +520,19 @@ def test_date_compared_with_timestamp_literal(op: str, timestamp: str) -> None:
         )
 
 
+def test_date_compared_with_timestamp_literal_keeps_output_name() -> None:
+    df = pl.DataFrame({"d": [date(2019, 12, 31), date(2020, 1, 2)]})
+    for query, name in (
+        ("SELECT TIMESTAMP '2020-01-01' < d FROM self ORDER BY literal", "literal"),
+        ("SELECT d < TIMESTAMP '2020-01-01' FROM self ORDER BY d", "d"),
+        (
+            "SELECT TIMESTAMP '2020-01-01' BETWEEN d AND d FROM self ORDER BY literal",
+            "literal",
+        ),
+    ):
+        assert df.sql(query).columns == [name]
+
+
 @pytest.mark.parametrize("negated", ["", "NOT"])
 def test_date_between_timestamp_literals(negated: str) -> None:
     df = pl.DataFrame(

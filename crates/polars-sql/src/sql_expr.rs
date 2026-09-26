@@ -16,6 +16,7 @@ use polars_core::prelude::*;
 use polars_core::utils::any_values_to_supertype;
 use polars_defs::time::duration::Duration;
 use polars_lazy::prelude::*;
+use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::functions::{DurationArgs, duration};
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::{has_expr, typed_lit};
@@ -760,17 +761,19 @@ impl SQLExprVisitor<'_> {
     }
 
     /// A Date compared with a timestamp literal, as a comparison of Dates, so the
-    /// Date side is not cast to a timestamp per row. `None` for anything else.
+    /// Date side is not cast to a timestamp per row. It keeps the output name of the
+    /// original comparison. `None` for anything else.
     fn compare_date_with_timestamp(
         &self,
         lhs: &Expr,
         op: &SQLBinaryOperator,
         rhs: &Expr,
     ) -> Option<Expr> {
-        let (date, op, timestamp) = if matches!(self.expr_dtype(lhs), Some(DataType::Date)) {
-            (lhs, op.clone(), rhs)
+        let (date, op, timestamp, flipped) = if matches!(self.expr_dtype(lhs), Some(DataType::Date))
+        {
+            (lhs, op.clone(), rhs, false)
         } else if matches!(self.expr_dtype(rhs), Some(DataType::Date)) {
-            (rhs, flip_comparison(op)?, lhs)
+            (rhs, flip_comparison(op)?, lhs, true)
         } else {
             return None;
         };
@@ -785,7 +788,7 @@ impl SQLExprVisitor<'_> {
         let (op, day) = date_bound(&op, timestamp, tu)?;
         let date = date.clone();
         let day = lit(Scalar::new(DataType::Date, AnyValue::Date(day)));
-        Some(match op {
+        let cmp = match op {
             SQLBinaryOperator::Gt => date.gt(day),
             SQLBinaryOperator::GtEq => date.gt_eq(day),
             SQLBinaryOperator::Lt => date.lt(day),
@@ -793,6 +796,11 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::Eq => date.eq(day),
             SQLBinaryOperator::NotEq => date.eq(day).not(),
             _ => unreachable!(),
+        };
+        Some(if flipped {
+            cmp.alias(get_literal_name())
+        } else {
+            cmp
         })
     }
 
