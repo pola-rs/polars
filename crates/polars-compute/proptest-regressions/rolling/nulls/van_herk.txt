@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 7a5e21dd7d39a38a52339e0f29509ff9a9102da8690e2e730a082d5893abb71b # shrinks to bitmap = Bitmap { len: 1, offset: 0, bytes: [0b_______0] }, w = 0, extra = 0
