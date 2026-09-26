@@ -1,6 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "nightly", allow(internal_features))]
-#![cfg_attr(feature = "nightly", feature(float_erf))]
+#![cfg_attr(feature = "nightly", feature(float_erf, titlecase))]
 #![cfg_attr(
     feature = "allow_unused",
     allow(unused, dead_code, irrefutable_let_patterns)
