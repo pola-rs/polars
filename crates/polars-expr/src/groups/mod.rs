@@ -89,7 +89,7 @@ pub trait Grouper: Any + Send + Sync {
 }
 
 pub fn new_hash_grouper(key_schema: Arc<Schema>) -> Box<dyn Grouper> {
-    if KeyRowLayout::supports(&key_schema) {
+    if KeyRowLayout::new(key_schema.iter_values()).is_some() {
         Box::new(key_rows::KeyRowHashGrouper::new())
     } else if key_schema.len() > 1 {
         Box::new(row_encoded::RowEncodedHashGrouper::new())

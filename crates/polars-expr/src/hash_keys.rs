@@ -116,7 +116,6 @@ impl HashKeys {
         force_row_encoding: bool,
     ) -> Self {
         if !force_row_encoding
-            && df.width() > 1
             && let Some(layout) = KeyRowLayout::new(df.columns().iter().map(|c| c.dtype()))
         {
             return Self::KeyRows(KeyRowKeys::from_columns(

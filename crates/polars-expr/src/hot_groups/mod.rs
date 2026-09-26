@@ -47,8 +47,7 @@ pub trait HotGrouper: Any + Send + Sync {
 }
 
 pub fn new_hash_hot_grouper(key_schema: Arc<Schema>, num_groups: usize) -> Box<dyn HotGrouper> {
-    if KeyRowLayout::supports(&key_schema) {
-        let layout = KeyRowLayout::new(key_schema.iter_values()).unwrap();
+    if let Some(layout) = KeyRowLayout::new(key_schema.iter_values()) {
         Box::new(key_rows::KeyRowHashHotGrouper::new(
             Arc::new(layout),
             num_groups,

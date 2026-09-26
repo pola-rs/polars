@@ -72,7 +72,7 @@ pub trait IdxTable: Any + Send + Sync {
 }
 
 pub fn new_idx_table(key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
-    if KeyRowLayout::supports(&key_schema) {
+    if KeyRowLayout::new(key_schema.iter_values()).is_some() {
         Box::new(key_rows::KeyRowIdxTable::new())
     } else if key_schema.len() > 1 {
         Box::new(row_encoded::RowEncodedIdxTable::new())

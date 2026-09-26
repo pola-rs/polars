@@ -2,9 +2,7 @@ use polars_utils::vec::PushUnchecked;
 
 use super::*;
 use crate::hot_groups::fixed_index_table::FixedIndexTable;
-use crate::key_rows::{HotKeyRows, KeyRowCollector, KeyRowLayout};
-
-const VERIFY_BATCH_SIZE: usize = 256;
+use crate::key_rows::{HotKeyRows, KeyRowCollector, KeyRowLayout, VERIFY_BATCH_SIZE};
 
 pub struct KeyRowHashHotGrouper {
     layout: Arc<KeyRowLayout>,
@@ -60,13 +58,14 @@ impl HotGrouper for KeyRowHashHotGrouper {
                 .is_none_or(|v| v.get_bit_unchecked(i))
         };
         let mut found = Vec::with_capacity(VERIFY_BATCH_SIZE);
-        let (mut cand_idxs, mut cand_ks) = (Vec::new(), Vec::new());
-        let (mut rows, mut ok, mut replaced_ks) = (Vec::new(), Vec::new(), Vec::new());
+        let mut cand_idxs = Vec::with_capacity(VERIFY_BATCH_SIZE);
+        let mut cand_ks = Vec::with_capacity(VERIFY_BATCH_SIZE);
+        let mut rows = Vec::with_capacity(VERIFY_BATCH_SIZE);
+        let mut ok = Vec::with_capacity(VERIFY_BATCH_SIZE);
+        let mut replaced_ks = Vec::new();
         for start in (0..keys.len()).step_by(VERIFY_BATCH_SIZE) {
             let end = keys.len().min(start + VERIFY_BATCH_SIZE);
 
-            // Find the hot key of each key by its hash alone, then verify the
-            // candidates together.
             found.clear();
             cand_idxs.clear();
             cand_ks.clear();

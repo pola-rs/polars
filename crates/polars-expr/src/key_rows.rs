@@ -1,8 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 //! Multi-column keys stored as rows of `u64` words, with a stride fixed by the key
 //! schema. Fixed-width values are stored by value and strings as their views; only
-//! strings too long to inline compare their bytes. Incoming keys stay columns: they
-//! are hashed column by column and compared against the stored rows directly.
+//! strings too long to inline compare their bytes.
 use std::cmp::Reverse;
 use std::hash::BuildHasher;
 use std::sync::Arc;
@@ -29,7 +28,7 @@ const HASH_MULTIPLE: u64 = 0x5851f42d4c957f2d;
 const NULL_WORD: u64 = 0x9e3779b97f4a7c15;
 const MAX_KEY_COLUMNS: usize = 64;
 const MAX_VIEW_COLUMNS: usize = 2;
-const VERIFY_BATCH_SIZE: usize = 256;
+pub(crate) const VERIFY_BATCH_SIZE: usize = 256;
 
 #[inline(always)]
 fn fold(h: u64, w: u64) -> u64 {
@@ -47,12 +46,12 @@ enum ColKind {
 struct ColLayout {
     kind: ColKind,
     physical: DataType,
-    width: usize,
     /// Byte offset within the row.
     offset: usize,
 }
 
-fn key_col(dtype: &DataType) -> Option<ColLayout> {
+/// The layout of a key column of this dtype, with its width in the row.
+fn key_col(dtype: &DataType) -> Option<(ColLayout, usize)> {
     let physical = dtype.to_physical();
     let (kind, width) = match &physical {
         DataType::Boolean => (ColKind::Bool, 1),
@@ -64,19 +63,20 @@ fn key_col(dtype: &DataType) -> Option<ColLayout> {
         DataType::Int128 | DataType::UInt128 => (ColKind::Fixed, 16),
         _ => return None,
     };
-    Some(ColLayout {
-        kind,
-        physical,
+    Some((
+        ColLayout {
+            kind,
+            physical,
+            offset: 0,
+        },
         width,
-        offset: 0,
-    })
+    ))
 }
 
 #[derive(Debug)]
 pub struct KeyRowLayout {
     cols: Vec<ColLayout>,
-    /// Byte offset of the null bits, one per column. They are kept even where nulls
-    /// are not keys, so that both sides of a join always share one layout.
+    /// Byte offset of the null bits, one per column.
     null_offset: usize,
     null_width: usize,
     stride: usize,
@@ -87,21 +87,25 @@ pub struct KeyRowLayout {
 }
 
 impl KeyRowLayout {
+    /// The layout of keys of these dtypes, or `None` when they are not stored as key
+    /// rows.
     pub fn new<'a>(dtypes: impl IntoIterator<Item = &'a DataType>) -> Option<Self> {
-        let mut cols = dtypes
+        let (mut cols, widths): (Vec<ColLayout>, Vec<usize>) = dtypes
             .into_iter()
             .map(key_col)
-            .collect::<Option<Vec<_>>>()?;
+            .collect::<Option<Vec<_>>>()?
+            .into_iter()
+            .unzip();
         let num_views = cols.iter().filter(|c| c.kind == ColKind::View).count();
-        if cols.len() > MAX_KEY_COLUMNS || num_views > MAX_VIEW_COLUMNS {
+        if !(2..=MAX_KEY_COLUMNS).contains(&cols.len()) || num_views > MAX_VIEW_COLUMNS {
             return None;
         }
 
         let null_width = cols.len().div_ceil(8).next_power_of_two();
-        let mut fields: Vec<(usize, Option<usize>)> = cols
-            .iter()
+        let mut fields: Vec<(usize, Option<usize>)> = widths
+            .into_iter()
             .enumerate()
-            .map(|(i, c)| (c.width, Some(i)))
+            .map(|(i, width)| (width, Some(i)))
             .chain([(null_width, None)])
             .collect();
         fields.sort_by_key(|(width, _)| Reverse(*width));
@@ -132,11 +136,6 @@ impl KeyRowLayout {
             view_words,
             plain_words,
         })
-    }
-
-    /// Whether keys of this schema are stored as key rows.
-    pub fn supports(schema: &Schema) -> bool {
-        schema.len() > 1 && Self::new(schema.iter_values()).is_some()
     }
 
     fn has_views(&self) -> bool {
@@ -639,10 +638,10 @@ fn push_long_bytes(buffers: &mut Vec<Vec<u8>>, bytes: &[u8]) -> (u32, u32) {
     (buffer_idx, offset)
 }
 
-fn append_long_bytes(buffer: &mut Vec<u8>, bytes: &[u8]) -> (u32, u32) {
+fn append_long_bytes(buffer: &mut Vec<u8>, bytes: &[u8]) -> u32 {
     let offset = buffer.len() as u32;
     buffer.extend_from_slice(bytes);
-    (0, offset)
+    offset
 }
 
 /// The values of a key column, with floats canonicalized and every other type
@@ -946,12 +945,8 @@ impl KeyRowKeys {
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.hashes.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.hashes.len() == 0
     }
 
     pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
@@ -1118,7 +1113,6 @@ impl KeyRowKeys {
 }
 
 /// Candidates found by hash, to be verified together.
-#[derive(Default)]
 struct VerifyBatch {
     pos: Vec<usize>,
     idxs: Vec<IdxSize>,
@@ -1128,6 +1122,22 @@ struct VerifyBatch {
     new_idxs: Vec<IdxSize>,
     new_entries: Vec<IdxSize>,
     new_rows: Vec<*mut u64>,
+}
+
+impl Default for VerifyBatch {
+    fn default() -> Self {
+        let n = VERIFY_BATCH_SIZE;
+        Self {
+            pos: Vec::with_capacity(n),
+            idxs: Vec::with_capacity(n),
+            entries: Vec::with_capacity(n),
+            rows: Vec::with_capacity(n),
+            ok: Vec::with_capacity(n),
+            new_idxs: Vec::with_capacity(n),
+            new_entries: Vec::with_capacity(n),
+            new_rows: Vec::with_capacity(n),
+        }
+    }
 }
 
 impl VerifyBatch {
@@ -1210,13 +1220,12 @@ impl VerifyBatch {
 /// An IndexMap from key rows to values. It owns copies of the bytes of long views.
 pub struct KeyRowIndexMap<V> {
     table: HashTable<IdxSize>,
-    /// Per key its hash followed by its row, so a probe touches one place.
+    /// Per key its hash followed by its row.
     entries: Vec<u64>,
     values: Vec<V>,
     buffers: Vec<Vec<u8>>,
     layout: Option<Arc<KeyRowLayout>>,
-    // Internal random seed used to keep hash iteration order decorrelated.
-    // We simply store a random odd number and multiply the canonical hash by it.
+    /// A random odd number that hashes are multiplied by before they are probed.
     seed: u64,
 }
 
@@ -1253,12 +1262,8 @@ impl<V> KeyRowIndexMap<V> {
         self.values.reserve(additional);
     }
 
-    pub fn len(&self) -> IdxSize {
+    pub(crate) fn len(&self) -> IdxSize {
         self.values.len() as IdxSize
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
     }
 
     /// Gets the index by insertion order of key `i` of `keys`.
@@ -1370,8 +1375,6 @@ impl<V> KeyRowIndexMap<V> {
     /// Pushes the index of each key `idxs[r]` of `keys` to `out`, or `IdxSize::MAX`
     /// when the key is absent or null.
     ///
-    /// Keys are looked up by hash, and the candidates then verified column by column.
-    ///
     /// # Safety
     /// The indices must be in-bounds, and `keys` must have the layout of the keys in
     /// this map.
@@ -1413,7 +1416,7 @@ impl<V> KeyRowIndexMap<V> {
     }
 
     /// Pushes the index of each key `idxs[r]` of `keys` to `out`, inserting missing
-    /// keys with `value(r)`. Keys are verified as in `get_indices_of`.
+    /// keys with `value(r)`.
     ///
     /// # Safety
     /// The indices must be in-bounds, and `keys` must have the layout of the keys in
@@ -1531,12 +1534,8 @@ impl HotKeyRows {
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.hashes.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.hashes.is_empty()
     }
 
     /// # Safety
@@ -1618,7 +1617,7 @@ impl HotKeyRows {
         let row = self.rows.get_unchecked_mut(k * stride..(k + 1) * stride);
         if self.layout.has_views() {
             let long = self.long.get_unchecked_mut(k);
-            keys.write_row(i, row, |bytes| (k as u32, append_long_bytes(long, bytes).1));
+            keys.write_row(i, row, |bytes| (k as u32, append_long_bytes(long, bytes)));
         } else {
             keys.write_row(i, row, |_| unreachable!());
         }
@@ -1654,12 +1653,8 @@ pub struct KeyRowCollector {
 }
 
 impl KeyRowCollector {
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.hashes.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.hashes.is_empty()
     }
 
     /// # Safety
@@ -1672,7 +1667,7 @@ impl KeyRowCollector {
         layout.repoint_long_views(
             &mut self.rows[start..],
             |view| long_slice(long, view),
-            |b| append_long_bytes(bytes, b),
+            |b| (0, append_long_bytes(bytes, b)),
         );
     }
 
