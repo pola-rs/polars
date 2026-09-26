@@ -16,7 +16,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager as ContextManager
 
-    from polars._typing import PolarsDataType
+    from polars._typing import PolarsDataType, TimeUnit
 
 
 def test_comparison_order_null_broadcasting() -> None:
@@ -611,6 +611,45 @@ def test_comparison_literal_behavior_matches_nonliteral_behavior(
     elif lmin < rmin:
         test(pl.lit(rmin - 1, dtype=dtype_lhs), pl.col("r"))
         test(pl.lit(None, dtype=dtype_lhs), pl.col("r"))
+
+
+@pytest.mark.parametrize(
+    ("col_unit", "lit_unit"), [("ns", "us"), ("ns", "ms"), ("us", "ms")]
+)
+@pytest.mark.parametrize("temporal", [pl.Datetime, pl.Duration])
+def test_comparison_with_lower_precision_literal_matches_column(
+    col_unit: TimeUnit, lit_unit: TimeUnit, temporal: Any
+) -> None:
+    unit_ns = {"ns": 1, "us": 1_000, "ms": 1_000_000}
+    per_lit_unit = unit_ns[lit_unit] // unit_ns[col_unit]
+    base = 1_767_225_600_000_000_000 // unit_ns[col_unit]
+    values = [base - 1, base, base + 1, base + per_lit_unit - 1, base + per_lit_unit]
+    df = pl.DataFrame({"c": pl.Series(values).cast(temporal(col_unit))})
+    lit_value = pl.Series([base // per_lit_unit]).cast(temporal(lit_unit)).item()
+    lit = pl.lit(lit_value, dtype=temporal(lit_unit))
+
+    def comparisons(l: pl.Expr, r: pl.Expr) -> dict[str, pl.Expr]:  # noqa: E741
+        return {
+            "eq": l == r,
+            "ne": l != r,
+            "lt": l < r,
+            "lteq": l <= r,
+            "gt": l > r,
+            "gteq": l >= r,
+            "eq_missing": l.eq_missing(r),
+            "ne_missing": l.ne_missing(r),
+        }
+
+    lf = df.lazy()
+    as_column = lf.with_columns(r=lit)
+    c, r = pl.col("c"), pl.col("r")
+    for with_lit, with_col in (
+        (comparisons(c, lit), comparisons(c, r)),
+        (comparisons(lit, c), comparisons(r, c)),
+    ):
+        assert_frame_equal(
+            lf.select(**with_lit).collect(), as_column.select(**with_col).collect()
+        )
 
 
 def test_comparison_literal_downcast_flooring_datetime_ns() -> None:
