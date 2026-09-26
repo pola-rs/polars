@@ -47,13 +47,15 @@ pub fn initialize_multi_scan_pipeline(
             {:?}, \
             n_readers_pre_init: {}, \
             max_concurrent_scans: {}, \
-            disable_morsel_split: {}",
+            disable_morsel_split: {}, \
+            maintain_order: {}",
             config.sources.len(),
             config.file_reader_builder.reader_name(),
             config.reader_capabilities(),
             config.n_readers_pre_init(),
             config.max_concurrent_scans(),
             config.disable_morsel_split,
+            config.maintain_order,
         );
     }
 
@@ -448,6 +450,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 num_pipelines,
                 max_concurrent_scans,
                 disable_morsel_split,
+                maintain_order: config.maintain_order,
                 last_morsel_pipelines,
                 verbose,
             },

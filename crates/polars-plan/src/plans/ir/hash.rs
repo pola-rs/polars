@@ -89,7 +89,9 @@ impl IR {
                 output_schema: _,
                 scan_type,
                 unified_scan_args,
+                maintain_order,
             } => {
+                maintain_order.hash(state);
                 // We don't have to traverse the schema, hive partitions etc. as they are derivative
                 // from the paths.
                 scan_type.hash(state);

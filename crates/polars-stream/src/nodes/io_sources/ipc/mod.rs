@@ -211,6 +211,7 @@ impl FileReader for IpcFileReader {
             missing_columns_policy: _,
             num_pipelines,
             disable_morsel_split,
+            maintain_order: _,
             last_morsel_pipelines,
             callbacks:
                 FileReaderCallbacks {

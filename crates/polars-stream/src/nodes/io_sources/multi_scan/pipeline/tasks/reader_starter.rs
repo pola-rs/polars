@@ -421,6 +421,7 @@ async fn start_reader_impl(
         num_pipelines,
         max_concurrent_scans,
         disable_morsel_split,
+        maintain_order,
         last_morsel_pipelines,
         verbose,
     } = constant_args;
@@ -609,6 +610,12 @@ async fn start_reader_impl(
         predicate.set_external_constant_columns(external_predicate_cols);
     }
 
+    // Post-applied row index, slice and row deletions depend on the row position.
+    let maintain_order = maintain_order
+        || extra_ops_post.row_index.is_some()
+        || extra_ops_post.pre_slice.is_some()
+        || external_filter_mask.is_some();
+
     let begin_read_args = BeginReadArgs {
         projection: projection_to_reader,
         row_index,
@@ -619,6 +626,7 @@ async fn start_reader_impl(
         extra_columns_policy,
         num_pipelines,
         disable_morsel_split,
+        maintain_order,
         last_morsel_pipelines,
         callbacks,
     };

@@ -169,6 +169,7 @@ impl FileReader for NDJsonFileReader {
 
             num_pipelines,
             disable_morsel_split: _,
+            maintain_order: _,
             last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {

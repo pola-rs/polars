@@ -569,6 +569,7 @@ where
         predicate: _,
         predicate_file_skip_applied: _,
         output_schema: _,
+        maintain_order: _,
         scan_type,
         unified_scan_args,
     } = scan_ir

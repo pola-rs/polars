@@ -550,6 +550,7 @@ fn visualize_plan_rec(
             table_statistics: _,
             file_schema: _,
             disable_morsel_split: _,
+            maintain_order: _,
         } => {
             let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
             let mut f = EscapeLabel(&mut out);
