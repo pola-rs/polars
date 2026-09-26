@@ -567,7 +567,7 @@ def test_concat_horizontal_strict_cached_projection_27923(
         ],
         how="horizontal",
     )
-
+ 
     assert_frame_equal(
         q.collect(),
         pl.DataFrame(
@@ -577,3 +577,39 @@ def test_concat_horizontal_strict_cached_projection_27923(
             }
         ),
     )
+
+def test_concat_horizontal_nested_strict_pruned_input(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS", "1")
+
+    df = pl.DataFrame({"x": [0], "a": [1], "b": [2], "c": [3], "d": [4], "e": [5]})
+    lf = df.lazy()
+    inner = pl.concat(
+        [
+            lf.select(pl.col("x").alias("unused")),
+            lf.select("a"),
+            lf.select("b"),
+            lf.select("c"),
+            lf.select("d"),
+        ],
+        how="horizontal",
+    ).select("a", "b", "c", "d")
+    q = pl.concat([lf.select("x"), inner, lf.select("e")], how="horizontal_extend")
+
+    assert_frame_equal(q.collect(), df)
+    assert_frame_equal(q.select("x", "a", "b", "c", "d", "e").collect(), df)
+
+
+def test_concat_horizontal_strict_pruned_input_before_cache(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS", "1")
+
+    shared = pl.LazyFrame({"a": [1], "b": [2]}).cache()
+    unused = pl.LazyFrame({"unused": [0]})
+    # `shared` is cached and used several times in the plan
+    inner = pl.concat([unused, shared], how="horizontal").select("a")
+    q = pl.concat([inner, shared.select("b")], how="horizontal_extend")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1], "b": [2]}))
