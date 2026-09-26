@@ -17,6 +17,8 @@ use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalHash};
 use polars_utils::vec::PushUnchecked;
 
+use crate::key_rows::{KeyRowKeys, KeyRowLayout};
+
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum HashKeysVariant {
     RowEncoded,
@@ -101,6 +103,7 @@ macro_rules! downcast_single_key_ca {
 #[derive(Clone, Debug)]
 pub enum HashKeys {
     RowEncoded(RowEncodedKeys),
+    KeyRows(KeyRowKeys),
     Binview(BinviewKeys),
     Single(SingleKeys),
 }
@@ -112,6 +115,18 @@ impl HashKeys {
         null_is_valid: bool,
         force_row_encoding: bool,
     ) -> Self {
+        if !force_row_encoding
+            && df.width() > 1
+            && let Some(layout) = KeyRowLayout::new(df.columns().iter().map(|c| c.dtype()))
+        {
+            return Self::KeyRows(KeyRowKeys::from_columns(
+                df.columns(),
+                Arc::new(layout),
+                &random_state,
+                null_is_valid,
+            ));
+        }
+
         let first_col_variant = hash_keys_variant_for_dtype(df[0].dtype());
         let use_row_encoding = force_row_encoding
             || df.width() > 1
@@ -176,6 +191,7 @@ impl HashKeys {
     pub fn len(&self) -> usize {
         match self {
             HashKeys::RowEncoded(s) => s.keys.len(),
+            HashKeys::KeyRows(s) => s.len(),
             HashKeys::Single(s) => s.keys.len(),
             HashKeys::Binview(s) => s.keys.len(),
         }
@@ -188,6 +204,7 @@ impl HashKeys {
     pub fn validity(&self) -> Option<&Bitmap> {
         match self {
             HashKeys::RowEncoded(s) => s.keys.validity(),
+            HashKeys::KeyRows(s) => s.validity.as_ref(),
             HashKeys::Single(s) => s.keys.chunks()[0].validity(),
             HashKeys::Binview(s) => s.keys.validity(),
         }
@@ -195,7 +212,7 @@ impl HashKeys {
 
     pub fn null_is_valid(&self) -> bool {
         match self {
-            HashKeys::RowEncoded(_) => false,
+            HashKeys::RowEncoded(_) | HashKeys::KeyRows(_) => false,
             HashKeys::Single(s) => s.null_is_valid,
             HashKeys::Binview(s) => s.null_is_valid,
         }
@@ -208,6 +225,7 @@ impl HashKeys {
     pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
         match self {
             HashKeys::RowEncoded(s) => s.for_each_hash(f),
+            HashKeys::KeyRows(s) => s.for_each_hash(f),
             HashKeys::Single(s) => s.for_each_hash(f),
             HashKeys::Binview(s) => s.for_each_hash(f),
         }
@@ -228,6 +246,7 @@ impl HashKeys {
     ) {
         match self {
             HashKeys::RowEncoded(s) => s.for_each_hash_subset(subset, f),
+            HashKeys::KeyRows(s) => s.for_each_hash_subset(subset, f),
             HashKeys::Single(s) => s.for_each_hash_subset(subset, f),
             HashKeys::Binview(s) => s.for_each_hash_subset(subset, f),
         }
@@ -389,6 +408,7 @@ impl HashKeys {
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
         match self {
             HashKeys::RowEncoded(s) => Self::RowEncoded(s.gather_unchecked(idxs)),
+            HashKeys::KeyRows(s) => Self::KeyRows(s.gather_unchecked(idxs)),
             HashKeys::Single(s) => Self::Single(s.gather_unchecked(idxs)),
             HashKeys::Binview(s) => Self::Binview(s.gather_unchecked(idxs)),
         }
@@ -516,7 +536,7 @@ impl BinviewKeys {
     }
 }
 
-fn for_each_hash_prehashed<F: FnMut(IdxSize, Option<u64>)>(
+pub(crate) fn for_each_hash_prehashed<F: FnMut(IdxSize, Option<u64>)>(
     hashes: &[u64],
     opt_v: Option<&Bitmap>,
     mut f: F,
@@ -538,7 +558,7 @@ fn for_each_hash_prehashed<F: FnMut(IdxSize, Option<u64>)>(
 
 /// # Safety
 /// The indices must be in-bounds.
-unsafe fn for_each_hash_subset_prehashed<F: FnMut(IdxSize, Option<u64>)>(
+pub(crate) unsafe fn for_each_hash_subset_prehashed<F: FnMut(IdxSize, Option<u64>)>(
     hashes: &[u64],
     opt_v: Option<&Bitmap>,
     subset: &[IdxSize],

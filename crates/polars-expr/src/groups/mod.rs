@@ -9,8 +9,10 @@ use polars_utils::IdxSize;
 use polars_utils::hashing::HashPartitioner;
 
 use crate::hash_keys::HashKeys;
+use crate::key_rows::KeyRowLayout;
 
 mod binview;
+mod key_rows;
 mod row_encoded;
 mod single_key;
 
@@ -87,7 +89,9 @@ pub trait Grouper: Any + Send + Sync {
 }
 
 pub fn new_hash_grouper(key_schema: Arc<Schema>) -> Box<dyn Grouper> {
-    if key_schema.len() > 1 {
+    if KeyRowLayout::supports(&key_schema) {
+        Box::new(key_rows::KeyRowHashGrouper::new())
+    } else if key_schema.len() > 1 {
         Box::new(row_encoded::RowEncodedHashGrouper::new())
     } else {
         let (_name, dt) = key_schema.get_at_index(0).unwrap();

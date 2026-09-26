@@ -159,6 +159,38 @@ impl<K> FixedIndexTable<K> {
         }
     }
 
+    /// Finds the slot and index of a key with the given hash for which `eq` holds,
+    /// without marking it as accessed.
+    #[inline(always)]
+    pub fn find_key(&self, hash: u64, mut eq: impl FnMut(&K) -> bool) -> Option<(usize, IdxSize)> {
+        let tag = hash as u32;
+        let h1 = (hash >> self.shift) as usize;
+        let h2 = (hash.wrapping_mul(H2_MULT) >> self.shift) as usize;
+        for h in [h1, h2] {
+            let slot = unsafe { self.slots.get_unchecked(h) };
+            if slot.tag == tag
+                && let Some(k) = self.keys.get(slot.key_index as usize)
+                && eq(k)
+            {
+                return Some((h, slot.key_index));
+            }
+        }
+        None
+    }
+
+    /// Marks the key in `slot`, found for `hash`, as accessed.
+    ///
+    /// # Safety
+    /// `slot` must be in-bounds.
+    #[inline(always)]
+    pub unsafe fn touch(&mut self, slot: usize, hash: u64) {
+        unsafe { self.slots.get_unchecked_mut(slot).last_access_tag = hash as u32 };
+    }
+
+    pub fn num_slots(&self) -> usize {
+        self.slots.len()
+    }
+
     pub fn keys(&self) -> &[K] {
         &self.keys
     }

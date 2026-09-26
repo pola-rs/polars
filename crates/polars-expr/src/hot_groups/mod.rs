@@ -5,9 +5,11 @@ use polars_utils::IdxSize;
 
 use crate::EvictIdx;
 use crate::hash_keys::HashKeys;
+use crate::key_rows::KeyRowLayout;
 
 mod binview;
 mod fixed_index_table;
+mod key_rows;
 mod row_encoded;
 mod single_key;
 
@@ -45,7 +47,13 @@ pub trait HotGrouper: Any + Send + Sync {
 }
 
 pub fn new_hash_hot_grouper(key_schema: Arc<Schema>, num_groups: usize) -> Box<dyn HotGrouper> {
-    if key_schema.len() > 1 {
+    if KeyRowLayout::supports(&key_schema) {
+        let layout = KeyRowLayout::new(key_schema.iter_values()).unwrap();
+        Box::new(key_rows::KeyRowHashHotGrouper::new(
+            Arc::new(layout),
+            num_groups,
+        ))
+    } else if key_schema.len() > 1 {
         Box::new(row_encoded::RowEncodedHashHotGrouper::new(
             key_schema, num_groups,
         ))
