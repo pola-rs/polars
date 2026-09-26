@@ -4,8 +4,10 @@ use polars_core::prelude::*;
 use polars_utils::IdxSize;
 
 use crate::hash_keys::HashKeys;
+use crate::key_rows::KeyRowLayout;
 
 mod binview;
+mod key_rows;
 mod row_encoded;
 mod single_key;
 
@@ -70,7 +72,9 @@ pub trait IdxTable: Any + Send + Sync {
 }
 
 pub fn new_idx_table(key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
-    if key_schema.len() > 1 {
+    if KeyRowLayout::new(key_schema.iter_values()).is_some() {
+        Box::new(key_rows::KeyRowIdxTable::new())
+    } else if key_schema.len() > 1 {
         Box::new(row_encoded::RowEncodedIdxTable::new())
     } else {
         use single_key::SingleKeyIdxTable as SKIT;

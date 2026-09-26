@@ -8,6 +8,7 @@ pub mod groups;
 pub mod hash_keys;
 pub mod hot_groups;
 pub mod idx_table;
+pub mod key_rows;
 pub mod planner;
 pub mod prelude;
 pub mod reduce;
