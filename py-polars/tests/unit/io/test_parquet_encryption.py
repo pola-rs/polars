@@ -252,6 +252,42 @@ def test_read_plaintext_footer_without_decryption_properties(
         pl.read_parquet(path, columns=["double_field"])
 
 
+def test_read_tampered_plaintext_footer(io_files_path: Path) -> None:
+    path = (
+        io_files_path
+        / "parquet-encryption"
+        / "encrypt_columns_plaintext_footer.parquet.encrypted"
+    )
+    # Modify the created_by string in the footer, which keeps the footer valid
+    # Thrift but invalidates the footer signature.
+    data = path.read_bytes()
+    original = b"parquet-cpp-arrow version 19.0.0"
+    assert data.count(original) == 1
+    tampered = data.replace(original, b"parquet-cpp-arrow version 18.0.0")
+    expected = expected_data()
+
+    decryption_properties = pl.ParquetDecryptionProperties(
+        footer_key=FOOTER_KEY, column_keys=COLUMN_KEYS
+    )
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="Footer signature verification failed"
+    ):
+        pl.read_parquet(
+            tampered,
+            schema=expected.schema,
+            decryption_properties=decryption_properties,
+        )
+
+    # The file can still be read with signature verification disabled
+    decryption_properties = pl.ParquetDecryptionProperties(
+        footer_key=FOOTER_KEY, column_keys=COLUMN_KEYS, verify_footer_signature=False
+    )
+    df = pl.read_parquet(
+        tampered, schema=expected.schema, decryption_properties=decryption_properties
+    )
+    assert_frame_equal(df.drop(UNSUPPORTED_COLUMNS), expected.drop(UNSUPPORTED_COLUMNS))
+
+
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
