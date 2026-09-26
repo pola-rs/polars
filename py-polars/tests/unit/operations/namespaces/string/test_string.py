@@ -2477,3 +2477,12 @@ def test_str_concat_removed() -> None:
         AttributeRemovedError, match=re.escape("use `str.join` instead")
     ):
         s.to_frame().select(pl.all().str.concat())  # type: ignore[attr-defined]
+
+
+def test_to_titlecase_matches_python_str_title_unicode() -> None:
+    # GH #29542: the pre-lowercase pass expanded İ (U+0130) into `i` + U+0307
+    # and turned ß into `ss` before casing decisions, so results diverged from
+    # Python's str.title, pyarrow and duckdb.
+    s = pl.Series(["İstanbul", "ß foo", "ABC DEF", "a1b"])
+    assert s.str.to_titlecase().to_list() == [x.title() for x in s.to_list()]
+    assert s.str.to_titlecase().to_list() == ["İstanbul", "Ss Foo", "Abc Def", "A1B"]
