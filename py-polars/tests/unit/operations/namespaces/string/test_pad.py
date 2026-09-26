@@ -178,3 +178,10 @@ def test_str_zfill_unicode_not_respected() -> None:
 
     expected = pl.LazyFrame({"a": ["0Café", "000345", "東京", None]})
     assert_frame_equal(result, expected)
+
+
+def test_str_zfill_counts_characters_not_bytes() -> None:
+    # GH #29543: zfill used the utf-8 byte length, so multibyte strings were
+    # padded short. Python's str.zfill semantics: pad to character count.
+    s = pl.Series(["é", "あ", "𐌰", "ab"])
+    assert s.str.zfill(5).to_list() == ["0000é", "0000あ", "0000𐌰", "000ab"]
