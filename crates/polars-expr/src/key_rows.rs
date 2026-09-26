@@ -28,6 +28,7 @@ const BASE_KEY_BUFFER_CAPACITY: usize = 1024;
 const HASH_MULTIPLE: u64 = 0x5851f42d4c957f2d;
 const NULL_WORD: u64 = 0x9e3779b97f4a7c15;
 const MAX_KEY_COLUMNS: usize = 64;
+const MAX_VIEW_COLUMNS: usize = 2;
 const VERIFY_BATCH_SIZE: usize = 256;
 
 #[inline(always)]
@@ -91,7 +92,8 @@ impl KeyRowLayout {
             .into_iter()
             .map(key_col)
             .collect::<Option<Vec<_>>>()?;
-        if cols.len() > MAX_KEY_COLUMNS {
+        let num_views = cols.iter().filter(|c| c.kind == ColKind::View).count();
+        if cols.len() > MAX_KEY_COLUMNS || num_views > MAX_VIEW_COLUMNS {
             return None;
         }
 
@@ -134,8 +136,7 @@ impl KeyRowLayout {
 
     /// Whether keys of this schema are stored as key rows.
     pub fn supports(schema: &Schema) -> bool {
-        (2..=MAX_KEY_COLUMNS).contains(&schema.len())
-            && schema.iter_values().all(|dt| key_col(dt).is_some())
+        schema.len() > 1 && Self::new(schema.iter_values()).is_some()
     }
 
     fn has_views(&self) -> bool {
@@ -1713,6 +1714,9 @@ mod tests {
         let two_i64 = KeyRowLayout::new(&[DataType::Int64, DataType::Int64]).unwrap();
         assert_eq!(two_i64.stride, 3);
         assert!(KeyRowLayout::new(&[DataType::Int64, DataType::Null]).is_none());
+        assert!(
+            KeyRowLayout::new(&[DataType::String, DataType::Binary, DataType::String]).is_none()
+        );
     }
 
     #[test]

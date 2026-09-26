@@ -28,6 +28,7 @@ KEYS = [
     ["long", "long_b"],
     ["short", "i64"],
     ["i64", "i32", "date", "bool", "short", "long"],
+    ["short", "short_b", "long"],
 ]
 
 
