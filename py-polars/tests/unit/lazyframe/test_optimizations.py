@@ -1349,6 +1349,31 @@ def test_streaming_engine_fused_filter_drop() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"x": 1, "z": "Z"}))
 
 
+def test_streaming_engine_fused_filter_drop_stacked() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7], "d": [7, 8, 9]})
+    q = (
+        lf.filter(pl.col("d") > 7)
+        .select("a", "b", "c")
+        .with_columns(pl.col("a").cum_sum())
+        .filter(pl.col("c") > 6)
+        .select("a")
+    )
+
+    phys_plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert "project 1 / 2: a" in phys_plan
+    assert "project 2 / 3: a, c" in phys_plan
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 5}))
+
+    # Non-elementwise predicate.
+    q = lf.filter(pl.col("b") > pl.col("b").mean()).select("a", "c")
+
+    phys_plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert "project 2 / 4: a, c" in phys_plan
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 3, "c": 7}))
+
+
 def test_projection_pushdown_select_prune_expr_28729() -> None:
     q = (
         pl.LazyFrame({"x": [0, 1, 2]})
