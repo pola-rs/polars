@@ -235,6 +235,42 @@ where
         };
 
         let keys: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
+        if keys.chunks().len() == 1 {
+            let arr = keys.downcast_as_array();
+            if let Some(validity) = polars_arrow::array::Array::validity(arr) {
+                let iter = subset.iter().map(|i| {
+                    let i = *i as usize;
+                    (
+                        i as IdxSize,
+                        validity
+                            .get_bit_unchecked(i)
+                            .then(|| arr.value_unchecked(i)),
+                    )
+                });
+                return self.probe_dispatch(
+                    iter,
+                    table_match,
+                    probe_match,
+                    mark_matches,
+                    emit_unmatched,
+                    hash_keys.null_is_valid,
+                    limit,
+                );
+            } else {
+                let iter = subset
+                    .iter()
+                    .map(|i| (*i, Some(arr.value_unchecked(*i as usize))));
+                return self.probe_dispatch(
+                    iter,
+                    table_match,
+                    probe_match,
+                    mark_matches,
+                    emit_unmatched,
+                    false,
+                    limit,
+                );
+            }
+        }
         if keys.has_nulls() {
             let iter = subset.iter().map(|i| (*i, keys.get_unchecked(*i as usize)));
             self.probe_dispatch(
