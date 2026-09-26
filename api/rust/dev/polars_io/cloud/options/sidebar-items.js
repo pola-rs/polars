@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AmazonS3ConfigKey","AzureConfigKey","CloudConfig","CloudType","GoogleConfigKey"],"static":["USER_AGENT"],"struct":["CloudDirectionalRateLimitConfig","CloudOptions","CloudRateLimitConfig","CloudRetryConfig"]};

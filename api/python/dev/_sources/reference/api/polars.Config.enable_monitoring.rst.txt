@@ -1,0 +1,6 @@
+﻿polars.Config.enable\_monitoring
+================================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.enable_monitoring

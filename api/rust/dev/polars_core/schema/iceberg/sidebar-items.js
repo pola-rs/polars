@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["LIST_ELEMENT_DEFAULT_ID"],"enum":["IcebergColumnType"],"struct":["IcebergColumn","IcebergSchema"],"type":["IcebergSchemaRef"]};

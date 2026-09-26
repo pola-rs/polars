@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.drop\_nulls
+============================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.drop_nulls

@@ -1,0 +1,6 @@
+﻿polars.Expr.forward\_fill
+=========================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.forward_fill

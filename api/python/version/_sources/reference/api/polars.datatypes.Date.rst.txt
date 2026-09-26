@@ -1,0 +1,35 @@
+﻿polars.datatypes.Date
+=====================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Date
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Date.__init__
+      ~Date.base_type
+      ~Date.from_python
+      ~Date.is_
+      ~Date.is_decimal
+      ~Date.is_float
+      ~Date.is_integer
+      ~Date.is_nested
+      ~Date.is_numeric
+      ~Date.is_object
+      ~Date.is_signed_integer
+      ~Date.is_temporal
+      ~Date.is_unsigned_integer
+      ~Date.to_python
+   
+   
+
+   
+   
+   

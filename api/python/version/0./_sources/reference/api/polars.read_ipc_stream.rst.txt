@@ -1,0 +1,6 @@
+﻿polars.read\_ipc\_stream
+========================
+
+.. currentmodule:: polars
+
+.. autofunction:: read_ipc_stream

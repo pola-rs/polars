@@ -1,0 +1,6 @@
+﻿polars.Series.radians
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.radians

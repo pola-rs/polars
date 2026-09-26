@@ -1,0 +1,6 @@
+﻿polars.catalog.unity.TableInfo.get\_polars\_schema
+==================================================
+
+.. currentmodule:: polars.catalog.unity
+
+.. automethod:: TableInfo.get_polars_schema

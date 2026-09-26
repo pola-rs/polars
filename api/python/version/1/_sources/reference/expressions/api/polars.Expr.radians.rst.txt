@@ -1,0 +1,6 @@
+﻿polars.Expr.radians
+===================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.radians

@@ -1,0 +1,6 @@
+﻿polars.Series.degrees
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.degrees

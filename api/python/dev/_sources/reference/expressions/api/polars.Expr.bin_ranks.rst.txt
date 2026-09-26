@@ -1,0 +1,6 @@
+﻿polars.Expr.bin\_ranks
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.bin_ranks

@@ -1,0 +1,6 @@
+﻿polars.lazyframe.resolver.LazyFrameResolver.cse\_eq
+===================================================
+
+.. currentmodule:: polars.lazyframe.resolver
+
+.. automethod:: LazyFrameResolver.cse_eq

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_list_builder"],"struct":["AnonymousListBuilder","AnonymousOwnedListBuilder","ListBinaryChunkedBuilder","ListBooleanChunkedBuilder","ListNullChunkedBuilder","ListPrimitiveChunkedBuilder","ListStringChunkedBuilder"],"trait":["ListBuilderTrait"]};

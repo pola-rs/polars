@@ -1,0 +1,6 @@
+﻿polars.Expr.cat.to
+==================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.cat.to

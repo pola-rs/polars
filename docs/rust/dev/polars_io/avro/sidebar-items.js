@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AvroCompression","Compression"],"struct":["AvroReader","AvroWriter"]};

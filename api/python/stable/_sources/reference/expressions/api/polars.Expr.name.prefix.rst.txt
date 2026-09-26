@@ -1,0 +1,6 @@
+﻿polars.Expr.name.prefix
+=======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.name.prefix

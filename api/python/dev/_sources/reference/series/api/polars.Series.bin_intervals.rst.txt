@@ -1,0 +1,6 @@
+﻿polars.Series.bin\_intervals
+============================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.bin_intervals

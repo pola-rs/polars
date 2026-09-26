@@ -1,0 +1,6 @@
+﻿polars.Expr.arccos
+==================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.arccos

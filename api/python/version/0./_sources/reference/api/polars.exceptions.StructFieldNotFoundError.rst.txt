@@ -1,0 +1,6 @@
+﻿polars.exceptions.StructFieldNotFoundError
+==========================================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: StructFieldNotFoundError

@@ -1,0 +1,6 @@
+﻿polars.DataType.to\_dtype\_expr
+===============================
+
+.. currentmodule:: polars
+
+.. automethod:: DataType.to_dtype_expr

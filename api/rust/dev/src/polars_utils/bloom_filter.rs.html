@@ -1,0 +1,199 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-utils/src/bloom_filter.rs`."><title>bloom_filter.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="polars_utils" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (0dfb098f3 2026-08-31)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../../static.files/storage-41dd4d93.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1><div class="sub-heading">polars_utils/</div>bloom_filter.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Split-block bloom filter, the layout of parquet's bloom filters: 32-byte
+<a href=#2 id=2 data-nosnippet>2</a>//! blocks, and a key sets one bit in each of the eight words of one block.
+<a href=#3 id=3 data-nosnippet>3</a>//! See &lt;https://github.com/apache/parquet-format/blob/master/BloomFilter.md&gt;.
+<a href=#4 id=4 data-nosnippet>4</a>
+<a href=#5 id=5 data-nosnippet>5</a></span><span class="kw">const </span>SALT: [u32; <span class="number">8</span>] = [
+<a href=#6 id=6 data-nosnippet>6</a>    <span class="number">1203114875</span>, <span class="number">1150766481</span>, <span class="number">2284105051</span>, <span class="number">2729912477</span>, <span class="number">1884591559</span>, <span class="number">770785867</span>, <span class="number">2667333959</span>, <span class="number">1550580529</span>,
+<a href=#7 id=7 data-nosnippet>7</a>];
+<a href=#8 id=8 data-nosnippet>8</a>
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">const </span>BLOCK_BYTES: usize = <span class="number">32</span>;
+<a href=#10 id=10 data-nosnippet>10</a>
+<a href=#11 id=11 data-nosnippet>11</a><span class="doccomment">/// Always below `num_blocks`.
+<a href=#12 id=12 data-nosnippet>12</a></span><span class="attr">#[inline]
+<a href=#13 id=13 data-nosnippet>13</a></span><span class="kw">fn </span>block_index(hash: u64, num_blocks: usize) -&gt; usize {
+<a href=#14 id=14 data-nosnippet>14</a>    (((hash &gt;&gt; <span class="number">32</span>) * num_blocks <span class="kw">as </span>u64) &gt;&gt; <span class="number">32</span>) <span class="kw">as </span>usize
+<a href=#15 id=15 data-nosnippet>15</a>}
+<a href=#16 id=16 data-nosnippet>16</a>
+<a href=#17 id=17 data-nosnippet>17</a><span class="attr">#[inline]
+<a href=#18 id=18 data-nosnippet>18</a></span><span class="kw">fn </span>block_mask(hash: u64) -&gt; [u32; <span class="number">8</span>] {
+<a href=#19 id=19 data-nosnippet>19</a>    <span class="kw">let </span>key = hash <span class="kw">as </span>u32;
+<a href=#20 id=20 data-nosnippet>20</a>    std::array::from_fn(|i| <span class="number">1u32 </span>&lt;&lt; (key.wrapping_mul(SALT[i]) &gt;&gt; <span class="number">27</span>))
+<a href=#21 id=21 data-nosnippet>21</a>}
+<a href=#22 id=22 data-nosnippet>22</a>
+<a href=#23 id=23 data-nosnippet>23</a><span class="attr">#[inline]
+<a href=#24 id=24 data-nosnippet>24</a></span><span class="kw">fn </span>load_block(bytes: <span class="kw-2">&amp;</span>[u8; BLOCK_BYTES]) -&gt; [u32; <span class="number">8</span>] {
+<a href=#25 id=25 data-nosnippet>25</a>    <span class="comment">// SAFETY: the block is 8 words of 4 bytes.
+<a href=#26 id=26 data-nosnippet>26</a>    </span><span class="kw">let </span>words: [u32; <span class="number">8</span>] = <span class="kw">unsafe </span>{ std::ptr::read_unaligned(bytes.as_ptr().cast()) };
+<a href=#27 id=27 data-nosnippet>27</a>    words.map(u32::from_le)
+<a href=#28 id=28 data-nosnippet>28</a>}
+<a href=#29 id=29 data-nosnippet>29</a>
+<a href=#30 id=30 data-nosnippet>30</a><span class="attr">#[inline]
+<a href=#31 id=31 data-nosnippet>31</a></span><span class="kw">fn </span>store_block(block: [u32; <span class="number">8</span>], bytes: <span class="kw-2">&amp;mut </span>[u8; BLOCK_BYTES]) {
+<a href=#32 id=32 data-nosnippet>32</a>    <span class="comment">// SAFETY: the block is 8 words of 4 bytes.
+<a href=#33 id=33 data-nosnippet>33</a>    </span><span class="kw">unsafe </span>{ std::ptr::write_unaligned(bytes.as_mut_ptr().cast(), block.map(u32::to_le)) }
+<a href=#34 id=34 data-nosnippet>34</a>}
+<a href=#35 id=35 data-nosnippet>35</a>
+<a href=#36 id=36 data-nosnippet>36</a><span class="doccomment">/// The byte offset of the block of `hash` in `bitset`, which holds at least
+<a href=#37 id=37 data-nosnippet>37</a>/// one block.
+<a href=#38 id=38 data-nosnippet>38</a></span><span class="attr">#[inline]
+<a href=#39 id=39 data-nosnippet>39</a></span><span class="kw">fn </span>block_offset(bitset: <span class="kw-2">&amp;</span>[u8], hash: u64) -&gt; usize {
+<a href=#40 id=40 data-nosnippet>40</a>    <span class="kw">let </span>num_blocks = bitset.len() / BLOCK_BYTES;
+<a href=#41 id=41 data-nosnippet>41</a>    <span class="macro">assert!</span>(num_blocks &gt; <span class="number">0</span>);
+<a href=#42 id=42 data-nosnippet>42</a>    block_index(hash, num_blocks) * BLOCK_BYTES
+<a href=#43 id=43 data-nosnippet>43</a>}
+<a href=#44 id=44 data-nosnippet>44</a>
+<a href=#45 id=45 data-nosnippet>45</a><span class="attr">#[inline]
+<a href=#46 id=46 data-nosnippet>46</a></span><span class="kw">fn </span>block_bytes(bitset: <span class="kw-2">&amp;</span>[u8], hash: u64) -&gt; <span class="kw-2">&amp;</span>[u8; BLOCK_BYTES] {
+<a href=#47 id=47 data-nosnippet>47</a>    <span class="kw">let </span>offset = block_offset(bitset, hash);
+<a href=#48 id=48 data-nosnippet>48</a>    <span class="comment">// SAFETY: `offset + BLOCK_BYTES &lt;= bitset.len()`.
+<a href=#49 id=49 data-nosnippet>49</a>    </span><span class="kw">unsafe </span>{ <span class="kw-2">&amp;*</span>(bitset.as_ptr().add(offset) <span class="kw">as </span><span class="kw-2">*const </span>[u8; BLOCK_BYTES]) }
+<a href=#50 id=50 data-nosnippet>50</a>}
+<a href=#51 id=51 data-nosnippet>51</a>
+<a href=#52 id=52 data-nosnippet>52</a><span class="attr">#[inline]
+<a href=#53 id=53 data-nosnippet>53</a></span><span class="kw">fn </span>block_bytes_mut(bitset: <span class="kw-2">&amp;mut </span>[u8], hash: u64) -&gt; <span class="kw-2">&amp;mut </span>[u8; BLOCK_BYTES] {
+<a href=#54 id=54 data-nosnippet>54</a>    <span class="kw">let </span>offset = block_offset(bitset, hash);
+<a href=#55 id=55 data-nosnippet>55</a>    <span class="comment">// SAFETY: `offset + BLOCK_BYTES &lt;= bitset.len()`.
+<a href=#56 id=56 data-nosnippet>56</a>    </span><span class="kw">unsafe </span>{ <span class="kw-2">&amp;mut *</span>(bitset.as_mut_ptr().add(offset) <span class="kw">as </span><span class="kw-2">*mut </span>[u8; BLOCK_BYTES]) }
+<a href=#57 id=57 data-nosnippet>57</a>}
+<a href=#58 id=58 data-nosnippet>58</a>
+<a href=#59 id=59 data-nosnippet>59</a><span class="attr">#[inline]
+<a href=#60 id=60 data-nosnippet>60</a></span><span class="kw">fn </span>block_contains(block: [u32; <span class="number">8</span>], mask: [u32; <span class="number">8</span>]) -&gt; bool {
+<a href=#61 id=61 data-nosnippet>61</a>    <span class="kw">let </span><span class="kw-2">mut </span>found = <span class="bool-val">true</span>;
+<a href=#62 id=62 data-nosnippet>62</a>    <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..<span class="number">8 </span>{
+<a href=#63 id=63 data-nosnippet>63</a>        found &amp;= block[i] &amp; mask[i] != <span class="number">0</span>;
+<a href=#64 id=64 data-nosnippet>64</a>    }
+<a href=#65 id=65 data-nosnippet>65</a>    found
+<a href=#66 id=66 data-nosnippet>66</a>}
+<a href=#67 id=67 data-nosnippet>67</a>
+<a href=#68 id=68 data-nosnippet>68</a><span class="doccomment">/// Whether `hash` is in the filter held by `bitset`, at least one block.
+<a href=#69 id=69 data-nosnippet>69</a></span><span class="kw">pub fn </span>is_in_set(bitset: <span class="kw-2">&amp;</span>[u8], hash: u64) -&gt; bool {
+<a href=#70 id=70 data-nosnippet>70</a>    <span class="kw">let </span>block = load_block(block_bytes(bitset, hash));
+<a href=#71 id=71 data-nosnippet>71</a>    block_contains(block, block_mask(hash))
+<a href=#72 id=72 data-nosnippet>72</a>}
+<a href=#73 id=73 data-nosnippet>73</a>
+<a href=#74 id=74 data-nosnippet>74</a><span class="doccomment">/// Add `hash` to the filter held by `bitset`, at least one block.
+<a href=#75 id=75 data-nosnippet>75</a></span><span class="kw">pub fn </span>insert(bitset: <span class="kw-2">&amp;mut </span>[u8], hash: u64) {
+<a href=#76 id=76 data-nosnippet>76</a>    <span class="kw">let </span>bytes = block_bytes_mut(bitset, hash);
+<a href=#77 id=77 data-nosnippet>77</a>    <span class="kw">let </span><span class="kw-2">mut </span>block = load_block(bytes);
+<a href=#78 id=78 data-nosnippet>78</a>    <span class="kw">let </span>mask = block_mask(hash);
+<a href=#79 id=79 data-nosnippet>79</a>    <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..<span class="number">8 </span>{
+<a href=#80 id=80 data-nosnippet>80</a>        block[i] |= mask[i];
+<a href=#81 id=81 data-nosnippet>81</a>    }
+<a href=#82 id=82 data-nosnippet>82</a>    store_block(block, bytes);
+<a href=#83 id=83 data-nosnippet>83</a>}
+<a href=#84 id=84 data-nosnippet>84</a>
+<a href=#85 id=85 data-nosnippet>85</a><span class="doccomment">/// A split-block bloom filter over 64-bit hashes.
+<a href=#86 id=86 data-nosnippet>86</a></span><span class="attr">#[derive(Clone)]
+<a href=#87 id=87 data-nosnippet>87</a></span><span class="kw">pub struct </span>SplitBlockBloom {
+<a href=#88 id=88 data-nosnippet>88</a>    blocks: Vec&lt;[u32; <span class="number">8</span>]&gt;,
+<a href=#89 id=89 data-nosnippet>89</a>}
+<a href=#90 id=90 data-nosnippet>90</a>
+<a href=#91 id=91 data-nosnippet>91</a><span class="kw">impl </span>SplitBlockBloom {
+<a href=#92 id=92 data-nosnippet>92</a>    <span class="kw">fn </span>num_blocks_for(num_keys: usize, bits_per_key: usize) -&gt; usize {
+<a href=#93 id=93 data-nosnippet>93</a>        num_keys
+<a href=#94 id=94 data-nosnippet>94</a>            .saturating_mul(bits_per_key)
+<a href=#95 id=95 data-nosnippet>95</a>            .div_ceil(BLOCK_BYTES * <span class="number">8</span>)
+<a href=#96 id=96 data-nosnippet>96</a>            .max(<span class="number">1</span>)
+<a href=#97 id=97 data-nosnippet>97</a>            .next_power_of_two()
+<a href=#98 id=98 data-nosnippet>98</a>    }
+<a href=#99 id=99 data-nosnippet>99</a>
+<a href=#100 id=100 data-nosnippet>100</a>    <span class="doccomment">/// The bytes `with_capacity` allocates.
+<a href=#101 id=101 data-nosnippet>101</a>    </span><span class="kw">pub fn </span>size_for(num_keys: usize, bits_per_key: usize) -&gt; usize {
+<a href=#102 id=102 data-nosnippet>102</a>        <span class="self">Self</span>::num_blocks_for(num_keys, bits_per_key).saturating_mul(BLOCK_BYTES)
+<a href=#103 id=103 data-nosnippet>103</a>    }
+<a href=#104 id=104 data-nosnippet>104</a>
+<a href=#105 id=105 data-nosnippet>105</a>    <span class="doccomment">/// A filter sized for `num_keys` keys at `bits_per_key` bits each, rounded
+<a href=#106 id=106 data-nosnippet>106</a>    /// up to a power of two blocks.
+<a href=#107 id=107 data-nosnippet>107</a>    </span><span class="kw">pub fn </span>with_capacity(num_keys: usize, bits_per_key: usize) -&gt; <span class="self">Self </span>{
+<a href=#108 id=108 data-nosnippet>108</a>        <span class="self">Self </span>{
+<a href=#109 id=109 data-nosnippet>109</a>            blocks: <span class="macro">vec!</span>[[<span class="number">0</span>; <span class="number">8</span>]; <span class="self">Self</span>::num_blocks_for(num_keys, bits_per_key)],
+<a href=#110 id=110 data-nosnippet>110</a>        }
+<a href=#111 id=111 data-nosnippet>111</a>    }
+<a href=#112 id=112 data-nosnippet>112</a>
+<a href=#113 id=113 data-nosnippet>113</a>    <span class="kw">pub fn </span>size_bytes(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+<a href=#114 id=114 data-nosnippet>114</a>        <span class="self">self</span>.blocks.len() * BLOCK_BYTES
+<a href=#115 id=115 data-nosnippet>115</a>    }
+<a href=#116 id=116 data-nosnippet>116</a>
+<a href=#117 id=117 data-nosnippet>117</a>    <span class="doccomment">/// The number of bits the filter holds.
+<a href=#118 id=118 data-nosnippet>118</a>    </span><span class="kw">pub fn </span>num_bits(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+<a href=#119 id=119 data-nosnippet>119</a>        <span class="self">self</span>.size_bytes() * <span class="number">8
+<a href=#120 id=120 data-nosnippet>120</a>    </span>}
+<a href=#121 id=121 data-nosnippet>121</a>
+<a href=#122 id=122 data-nosnippet>122</a>    <span class="attr">#[inline]
+<a href=#123 id=123 data-nosnippet>123</a>    </span><span class="kw">pub fn </span>insert(<span class="kw-2">&amp;mut </span><span class="self">self</span>, hash: u64) {
+<a href=#124 id=124 data-nosnippet>124</a>        <span class="kw">let </span>b = block_index(hash, <span class="self">self</span>.blocks.len());
+<a href=#125 id=125 data-nosnippet>125</a>        <span class="comment">// SAFETY: `b` is below the number of blocks.
+<a href=#126 id=126 data-nosnippet>126</a>        </span><span class="kw">let </span>block = <span class="kw">unsafe </span>{ <span class="self">self</span>.blocks.get_unchecked_mut(b) };
+<a href=#127 id=127 data-nosnippet>127</a>        <span class="kw">let </span>mask = block_mask(hash);
+<a href=#128 id=128 data-nosnippet>128</a>        <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..<span class="number">8 </span>{
+<a href=#129 id=129 data-nosnippet>129</a>            block[i] |= mask[i];
+<a href=#130 id=130 data-nosnippet>130</a>        }
+<a href=#131 id=131 data-nosnippet>131</a>    }
+<a href=#132 id=132 data-nosnippet>132</a>
+<a href=#133 id=133 data-nosnippet>133</a>    <span class="attr">#[inline]
+<a href=#134 id=134 data-nosnippet>134</a>    </span><span class="kw">pub fn </span>contains(<span class="kw-2">&amp;</span><span class="self">self</span>, hash: u64) -&gt; bool {
+<a href=#135 id=135 data-nosnippet>135</a>        <span class="kw">let </span>b = block_index(hash, <span class="self">self</span>.blocks.len());
+<a href=#136 id=136 data-nosnippet>136</a>        <span class="comment">// SAFETY: `b` is below the number of blocks.
+<a href=#137 id=137 data-nosnippet>137</a>        </span><span class="kw">let </span>block = <span class="kw">unsafe </span>{ <span class="kw-2">*</span><span class="self">self</span>.blocks.get_unchecked(b) };
+<a href=#138 id=138 data-nosnippet>138</a>        block_contains(block, block_mask(hash))
+<a href=#139 id=139 data-nosnippet>139</a>    }
+<a href=#140 id=140 data-nosnippet>140</a>
+<a href=#141 id=141 data-nosnippet>141</a>    <span class="doccomment">/// Add every key of `other`, a filter of the same size.
+<a href=#142 id=142 data-nosnippet>142</a>    </span><span class="kw">pub fn </span>union_with(<span class="kw-2">&amp;mut </span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) {
+<a href=#143 id=143 data-nosnippet>143</a>        <span class="macro">assert_eq!</span>(<span class="self">self</span>.blocks.len(), other.blocks.len());
+<a href=#144 id=144 data-nosnippet>144</a>        <span class="kw">for </span>(a, b) <span class="kw">in </span><span class="self">self</span>.blocks.iter_mut().zip(<span class="kw-2">&amp;</span>other.blocks) {
+<a href=#145 id=145 data-nosnippet>145</a>            <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..<span class="number">8 </span>{
+<a href=#146 id=146 data-nosnippet>146</a>                a[i] |= b[i];
+<a href=#147 id=147 data-nosnippet>147</a>            }
+<a href=#148 id=148 data-nosnippet>148</a>        }
+<a href=#149 id=149 data-nosnippet>149</a>    }
+<a href=#150 id=150 data-nosnippet>150</a>}
+<a href=#151 id=151 data-nosnippet>151</a>
+<a href=#152 id=152 data-nosnippet>152</a><span class="attr">#[cfg(test)]
+<a href=#153 id=153 data-nosnippet>153</a></span><span class="kw">mod </span>tests {
+<a href=#154 id=154 data-nosnippet>154</a>    <span class="kw">use super</span>::<span class="kw-2">*</span>;
+<a href=#155 id=155 data-nosnippet>155</a>
+<a href=#156 id=156 data-nosnippet>156</a>    <span class="attr">#[test]
+<a href=#157 id=157 data-nosnippet>157</a>    </span><span class="kw">fn </span>struct_matches_bitset() {
+<a href=#158 id=158 data-nosnippet>158</a>        <span class="kw">let </span><span class="kw-2">mut </span>bloom = SplitBlockBloom::with_capacity(<span class="number">1000</span>, <span class="number">8</span>);
+<a href=#159 id=159 data-nosnippet>159</a>        <span class="kw">let </span><span class="kw-2">mut </span>bitset = <span class="macro">vec!</span>[<span class="number">0u8</span>; bloom.size_bytes()];
+<a href=#160 id=160 data-nosnippet>160</a>        <span class="kw">let </span>hashes: Vec&lt;u64&gt; = (<span class="number">0</span>..<span class="number">1000u64</span>)
+<a href=#161 id=161 data-nosnippet>161</a>            .map(|i| i.wrapping_mul(<span class="number">0x9E3779B97F4A7C15</span>))
+<a href=#162 id=162 data-nosnippet>162</a>            .collect();
+<a href=#163 id=163 data-nosnippet>163</a>        <span class="kw">for </span><span class="kw-2">&amp;</span>h <span class="kw">in </span><span class="kw-2">&amp;</span>hashes {
+<a href=#164 id=164 data-nosnippet>164</a>            bloom.insert(h);
+<a href=#165 id=165 data-nosnippet>165</a>            insert(<span class="kw-2">&amp;mut </span>bitset, h);
+<a href=#166 id=166 data-nosnippet>166</a>        }
+<a href=#167 id=167 data-nosnippet>167</a>        <span class="kw">for </span>h <span class="kw">in </span>hashes
+<a href=#168 id=168 data-nosnippet>168</a>            .iter()
+<a href=#169 id=169 data-nosnippet>169</a>            .copied()
+<a href=#170 id=170 data-nosnippet>170</a>            .chain((<span class="number">1000</span>..<span class="number">2000u64</span>).map(|i| i.wrapping_mul(<span class="number">0x9E3779B97F4A7C15</span>)))
+<a href=#171 id=171 data-nosnippet>171</a>        {
+<a href=#172 id=172 data-nosnippet>172</a>            <span class="macro">assert_eq!</span>(bloom.contains(h), is_in_set(<span class="kw-2">&amp;</span>bitset, h));
+<a href=#173 id=173 data-nosnippet>173</a>        }
+<a href=#174 id=174 data-nosnippet>174</a>        <span class="macro">assert!</span>(hashes.iter().all(|<span class="kw-2">&amp;</span>h| bloom.contains(h)));
+<a href=#175 id=175 data-nosnippet>175</a>    }
+<a href=#176 id=176 data-nosnippet>176</a>
+<a href=#177 id=177 data-nosnippet>177</a>    <span class="attr">#[test]
+<a href=#178 id=178 data-nosnippet>178</a>    #[should_panic]
+<a href=#179 id=179 data-nosnippet>179</a>    </span><span class="kw">fn </span>is_in_set_needs_a_block() {
+<a href=#180 id=180 data-nosnippet>180</a>        is_in_set(<span class="kw-2">&amp;</span>[], <span class="number">0</span>);
+<a href=#181 id=181 data-nosnippet>181</a>    }
+<a href=#182 id=182 data-nosnippet>182</a>
+<a href=#183 id=183 data-nosnippet>183</a>    <span class="attr">#[test]
+<a href=#184 id=184 data-nosnippet>184</a>    #[should_panic]
+<a href=#185 id=185 data-nosnippet>185</a>    </span><span class="kw">fn </span>insert_needs_a_block() {
+<a href=#186 id=186 data-nosnippet>186</a>        insert(<span class="kw-2">&amp;mut </span>[<span class="number">0u8</span>; <span class="number">31</span>], <span class="number">0</span>);
+<a href=#187 id=187 data-nosnippet>187</a>    }
+<a href=#188 id=188 data-nosnippet>188</a>
+<a href=#189 id=189 data-nosnippet>189</a>    <span class="attr">#[test]
+<a href=#190 id=190 data-nosnippet>190</a>    </span><span class="kw">fn </span>union() {
+<a href=#191 id=191 data-nosnippet>191</a>        <span class="kw">let </span><span class="kw-2">mut </span>a = SplitBlockBloom::with_capacity(<span class="number">100</span>, <span class="number">8</span>);
+<a href=#192 id=192 data-nosnippet>192</a>        <span class="kw">let </span><span class="kw-2">mut </span>b = a.clone();
+<a href=#193 id=193 data-nosnippet>193</a>        a.insert(<span class="number">1</span>);
+<a href=#194 id=194 data-nosnippet>194</a>        b.insert(<span class="number">2</span>);
+<a href=#195 id=195 data-nosnippet>195</a>        a.union_with(<span class="kw-2">&amp;</span>b);
+<a href=#196 id=196 data-nosnippet>196</a>        <span class="macro">assert!</span>(a.contains(<span class="number">1</span>) &amp;&amp; a.contains(<span class="number">2</span>));
+<a href=#197 id=197 data-nosnippet>197</a>    }
+<a href=#198 id=198 data-nosnippet>198</a>}
+</code></pre></div></section></main></body></html>

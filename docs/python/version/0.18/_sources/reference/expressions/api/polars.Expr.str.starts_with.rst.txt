@@ -1,0 +1,6 @@
+﻿polars.Expr.str.starts_with
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.str.starts_with
