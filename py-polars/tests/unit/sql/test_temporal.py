@@ -504,6 +504,111 @@ def test_typed_temporal_literal_comparison() -> None:
         assert_sql_matches(df, query=query, compare_with="duckdb")
 
 
+@pytest.mark.parametrize("op", ["<", "<=", ">", ">=", "=", "!=", "<>"])
+@pytest.mark.parametrize(
+    "timestamp", ["2020-01-01 00:00:00", "2020-01-01 08:30:00", "2019-12-31"]
+)
+def test_date_compared_with_timestamp_literal(op: str, timestamp: str) -> None:
+    df = pl.DataFrame(
+        {"d": [date(2019, 12, 31), date(2020, 1, 1), date(2020, 1, 2), None]}
+    )
+    for where in (f"d {op} TIMESTAMP '{timestamp}'", f"TIMESTAMP '{timestamp}' {op} d"):
+        assert_sql_matches(
+            df,
+            query=f"SELECT d FROM self WHERE {where} ORDER BY d",
+            compare_with="duckdb",
+        )
+
+
+def test_date_compared_with_timestamp_literal_keeps_output_name() -> None:
+    df = pl.DataFrame({"d": [date(2019, 12, 31), date(2020, 1, 2)]})
+    for query, name in (
+        ("SELECT TIMESTAMP '2020-01-01' < d FROM self ORDER BY literal", "literal"),
+        ("SELECT d < TIMESTAMP '2020-01-01' FROM self ORDER BY d", "d"),
+        (
+            "SELECT TIMESTAMP '2020-01-01' BETWEEN d AND d FROM self ORDER BY literal",
+            "literal",
+        ),
+    ):
+        assert df.sql(query).columns == [name]
+
+
+@pytest.mark.parametrize("negated", ["", "NOT"])
+def test_date_between_timestamp_literals(negated: str) -> None:
+    df = pl.DataFrame(
+        {
+            "d": [
+                date(2019, 12, 31),
+                date(2020, 1, 1),
+                date(2020, 1, 2),
+                date(2020, 1, 3),
+                None,
+            ]
+        }
+    )
+    assert_sql_matches(
+        df,
+        query=f"""
+            SELECT d FROM self
+            WHERE d {negated} BETWEEN TIMESTAMP '2020-01-01 12:00:00'
+                AND TIMESTAMP '2020-01-02 12:00:00'
+            ORDER BY d
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_date_filter_bounds_are_date_literals() -> None:
+    lf = pl.LazyFrame({"d": [date(1993, 12, 31), date(1994, 6, 1), date(1995, 1, 1)]})
+    for lower, upper in (
+        ("TIMESTAMP '1994-01-01'", "TIMESTAMP '1994-01-01' + INTERVAL '1' YEAR"),
+        ("TIMESTAMP '1994-01-01'", "DATE '1994-01-01' + INTERVAL '1' YEAR"),
+        ("DATE '1994-01-01'", "DATE '1995-01-01'"),
+        ("'1994-01-01'", "'1995-01-01'"),
+        ("CAST('1994-01-01' AS DATE)", "'1994-01-01'::date + INTERVAL '1' YEAR"),
+    ):
+        query = f"SELECT d FROM self WHERE d >= {lower} AND d < {upper}"
+        res = lf.sql(query)
+        plan = res.explain()
+        assert "cast" not in plan
+        assert "strptime" not in plan
+        assert "offset_by" not in plan
+        assert 'col("d") >= 1994-01-01' in plan
+        assert 'col("d") < 1995-01-01' in plan
+        assert res.collect()["d"].to_list() == [date(1994, 6, 1)]
+
+
+def test_date_compared_with_timestamp_literal_out_of_timestamp_range() -> None:
+    # A Date past the range of Datetime("us") is compared as a date, not as a
+    # timestamp it cannot be cast to.
+    far = pl.Series("d", [200_000_000, -200_000_000], dtype=pl.Int32).cast(pl.Date)
+    df = pl.DataFrame({"d": far})
+    res = df.sql("SELECT d FROM self WHERE d >= TIMESTAMP '1994-01-01'")
+    assert res["d"].to_physical().to_list() == [200_000_000]
+
+
+def test_typed_literal_interval_arithmetic() -> None:
+    df = pl.DataFrame({"a": [1]})
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              DATE '2020-01-31' + INTERVAL '1' MONTH AS d1,
+              DATE '2020-03-31' - INTERVAL '1' MONTH AS d2,
+              TIMESTAMP '2020-01-01 23:00:00' + INTERVAL '2' HOUR AS ts
+            FROM self
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_typed_literal_invalid_date() -> None:
+    with pytest.raises(SQLSyntaxError, match="invalid DATE literal '2023-02-30'"):
+        pl.LazyFrame({"a": [1]}).sql(
+            "SELECT DATE '2023-02-30' AS d FROM self"
+        ).collect()
+
+
 @pytest.mark.parametrize(
     ("literal", "expected"),
     [
