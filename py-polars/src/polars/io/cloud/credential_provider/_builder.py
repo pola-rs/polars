@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import os
 import threading
+from copy import copy
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 import polars._utils.logging
@@ -351,6 +352,24 @@ def _init_credential_provider_builder(
     storage_options: StorageOptionsDict | None,
     caller_name: str,
 ) -> CredentialProviderBuilder | None:
+    aws_storage_options: dict[str, str | None] = {}
+    for key, value in (storage_options or {}).items():
+        key = key.lower().removeprefix("aws_")
+        if key in {"region", "default_region", "virtual_hosted_style_request"}:
+            aws_storage_options[key] = value
+        elif key in {"endpoint", "endpoint_url", "endpoint_url_s3"}:
+            aws_storage_options["endpoint"] = None
+
+    def bind_aws_storage_options(
+        provider: CredentialProviderFunction,
+    ) -> CredentialProviderFunction:
+        if not aws_storage_options or not isinstance(provider, CredentialProviderAWS):
+            return provider
+
+        provider = copy(provider)
+        provider._storage_options = aws_storage_options
+        return provider
+
     def f() -> CredentialProviderBuilder | None:
         # Note: The behavior of this function should depend only on the function
         # parameters. Any environment-specific behavior should take place inside
@@ -377,7 +396,7 @@ def _init_credential_provider_builder(
             issue_unstable_warning(msg)
 
             return CredentialProviderBuilder.from_initialized_provider(
-                credential_provider
+                bind_aws_storage_options(credential_provider)
             )
 
         if DEFAULT_CREDENTIAL_PROVIDER is None:
@@ -389,10 +408,14 @@ def _init_credential_provider_builder(
         if (scheme := _get_path_scheme(first_scan_path)) is None:
             return None
 
-        def get_default_credential_provider() -> CredentialProviderBuilder | None:
+        def get_default_credential_provider(
+            *, bind_aws: bool = False
+        ) -> CredentialProviderBuilder | None:
             return (
                 CredentialProviderBuilder.from_initialized_provider(
-                    DEFAULT_CREDENTIAL_PROVIDER
+                    bind_aws_storage_options(DEFAULT_CREDENTIAL_PROVIDER)
+                    if bind_aws
+                    else DEFAULT_CREDENTIAL_PROVIDER
                 )
                 if DEFAULT_CREDENTIAL_PROVIDER != "auto"
                 else None
@@ -445,31 +468,26 @@ def _init_credential_provider_builder(
             )
 
         elif _is_aws_cloud(scheme=scheme, first_scan_path=str(first_scan_path)):
-            region = None
             profile = None
-            default_region = None
+            region = aws_storage_options.get("region")
+            default_region = aws_storage_options.get("default_region")
             unhandled_key = None
-            has_endpoint_url = False
 
             if storage_options is not None:
                 for k, v in storage_options.items():
                     k = k.lower()
 
                     # https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html
-                    if k in {"aws_region", "region"}:
-                        region = v
-                    elif k in {"aws_default_region", "default_region"}:
-                        default_region = v
-                    elif k in {"aws_profile", "profile"}:
+                    if k in {"aws_profile", "profile"}:
                         profile = v
-                    elif k in {
-                        "aws_endpoint",
-                        "aws_endpoint_url",
+                    elif k in AUTOINIT_IGNORED_KEYS or k.removeprefix("aws_") in {
+                        "region",
+                        "default_region",
                         "endpoint",
                         "endpoint_url",
+                        "endpoint_url_s3",
+                        "virtual_hosted_style_request",
                     }:
-                        has_endpoint_url = True
-                    elif k in AUTOINIT_IGNORED_KEYS:
                         continue
                     else:
                         # We assume this is some sort of access key
@@ -485,7 +503,8 @@ def _init_credential_provider_builder(
 
             if (
                 unhandled_key is None
-                and (default := get_default_credential_provider()) is not None
+                and (default := get_default_credential_provider(bind_aws=True))
+                is not None
             ):
                 return default
 
@@ -495,7 +514,7 @@ def _init_credential_provider_builder(
                     profile_name=profile,
                     region_name=region or default_region,
                     _auto_init_unhandled_key=unhandled_key,
-                    _storage_options_has_endpoint_url=has_endpoint_url,
+                    _storage_options={**aws_storage_options, "region": region},
                 )
             )
 
