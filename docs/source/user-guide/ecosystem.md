@@ -87,8 +87,8 @@ collations, complex types (arrays, structs), and more. Read about integration wi
 
 #### Great Tables
 
-With [Great Tables](https://posit-dev.github.io/great-tables/articles/intro.html) anyone can make
-wonderful-looking tables in Python. Here is a
+With [Great Tables](https://posit-dev.github.io/great-tables/user-guide/introduction.html) anyone
+can make wonderful-looking tables in Python. Here is a
 [blog post](https://posit-dev.github.io/great-tables/blog/polars-styling/) on how to use Great
 Tables with Polars.
 
