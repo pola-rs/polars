@@ -9,6 +9,7 @@
   "excludes": [
     ".venv/",
     "**/target/",
+    "zensical.toml",
     "crates/polars-plan/dsl-schema-hashes.json",
     "py-polars/.hypothesis/",
     "py-polars/.mypy_cache/",
