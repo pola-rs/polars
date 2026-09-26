@@ -559,8 +559,6 @@ def test_date_between_timestamp_literals(negated: str) -> None:
 
 
 def test_date_filter_bounds_are_date_literals() -> None:
-    # Typed literals and literal-only interval arithmetic become Date values, so the
-    # column is compared as it is stored: no per-row cast, and scan statistics apply.
     lf = pl.LazyFrame({"d": [date(1993, 12, 31), date(1994, 6, 1), date(1995, 1, 1)]})
     for lower, upper in (
         ("TIMESTAMP '1994-01-01'", "TIMESTAMP '1994-01-01' + INTERVAL '1' YEAR"),

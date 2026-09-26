@@ -5,9 +5,6 @@
 //! containing a decimal point is folded with the same kernels and result scales as
 //! decimal column arithmetic, and raises where that would. Integer-only arithmetic is
 //! left to the engine.
-//!
-//! An expression of literals only, such as `DATE '1994-01-01' + INTERVAL '1' YEAR`, is
-//! evaluated once by the engine, so it is a plain literal in the plan.
 
 use polars_compute::decimal::{
     DEC128_MAX_PREC, dec128_add_scaled, dec128_mul_scaled, dec128_sub_scaled,

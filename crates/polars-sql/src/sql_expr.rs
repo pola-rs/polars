@@ -10,6 +10,9 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use std::ops::Div;
 
+use polars_compute::cast::temporal::{
+    MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY, NANOSECONDS_IN_DAY,
+};
 use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::chunked_array::temporal::string::StringMethods;
 use polars_core::prelude::*;
@@ -174,12 +177,11 @@ fn date_bound(
     timestamp: i64,
     tu: TimeUnit,
 ) -> Option<(SQLBinaryOperator, i32)> {
-    let per_day = 86_400
-        * match tu {
-            TimeUnit::Nanoseconds => 1_000_000_000,
-            TimeUnit::Microseconds => 1_000_000,
-            TimeUnit::Milliseconds => 1_000,
-        };
+    let per_day = match tu {
+        TimeUnit::Nanoseconds => NANOSECONDS_IN_DAY,
+        TimeUnit::Microseconds => MICROSECONDS_IN_DAY,
+        TimeUnit::Milliseconds => MILLISECONDS_IN_DAY,
+    };
     let day = i32::try_from(timestamp.div_euclid(per_day)).ok()?;
     let midnight = timestamp.rem_euclid(per_day) == 0;
     let op = match op {
@@ -195,6 +197,30 @@ fn date_bound(
         _ => return None,
     };
     Some((op, day))
+}
+
+/// `lhs <op> rhs` for a comparison operator, `None` for any other.
+fn compare(lhs: Expr, op: &SQLBinaryOperator, rhs: Expr) -> Option<Expr> {
+    Some(match op {
+        SQLBinaryOperator::Gt => lhs.gt(rhs),
+        SQLBinaryOperator::GtEq => lhs.gt_eq(rhs),
+        SQLBinaryOperator::Lt => lhs.lt(rhs),
+        SQLBinaryOperator::LtEq => lhs.lt_eq(rhs),
+        SQLBinaryOperator::Eq => lhs.eq(rhs),
+        SQLBinaryOperator::NotEq => lhs.eq(rhs).not(),
+        _ => return None,
+    })
+}
+
+/// `expr`, a string, as a value of temporal `dtype`: folded when it is a literal
+/// that parses, else parsed when the query runs. `None` if `dtype` is not temporal.
+fn string_to_temporal(expr: Expr, dtype: &DataType, strict: bool) -> Option<Expr> {
+    if let Expr::Literal(lv) = &expr
+        && let Some(value) = lv.extract_str().and_then(|s| temporal_literal(s, dtype))
+    {
+        return Some(value);
+    }
+    parse_string_as_temporal(expr, dtype, strict)
 }
 
 /// The operator of `b <op> a` given that of `a <op> b`.
@@ -689,10 +715,7 @@ impl SQLExprVisitor<'_> {
                 // A string that does not parse keeps its strict parse, which fails
                 // when the query runs.
                 parsed
-                    .and_then(|(s, dtype)| {
-                        temporal_literal(&s, dtype)
-                            .or_else(|| parse_string_as_temporal(lit(s), dtype, true))
-                    })
+                    .and_then(|(s, dtype)| string_to_temporal(lit(s), dtype, true))
                     .unwrap_or_else(|| right.clone())
             }
         } else {
@@ -760,9 +783,8 @@ impl SQLExprVisitor<'_> {
         })
     }
 
-    /// A Date compared with a timestamp literal, as a comparison of Dates, so the
-    /// Date side is not cast to a timestamp per row. It keeps the output name of the
-    /// original comparison. `None` for anything else.
+    /// A Date compared with a timestamp literal, as a comparison of Dates with the
+    /// output name of the original comparison. `None` for anything else.
     fn compare_date_with_timestamp(
         &self,
         lhs: &Expr,
@@ -788,15 +810,7 @@ impl SQLExprVisitor<'_> {
         let (op, day) = date_bound(&op, timestamp, tu)?;
         let date = date.clone();
         let day = lit(Scalar::new(DataType::Date, AnyValue::Date(day)));
-        let cmp = match op {
-            SQLBinaryOperator::Gt => date.gt(day),
-            SQLBinaryOperator::GtEq => date.gt_eq(day),
-            SQLBinaryOperator::Lt => date.lt(day),
-            SQLBinaryOperator::LtEq => date.lt_eq(day),
-            SQLBinaryOperator::Eq => date.eq(day),
-            SQLBinaryOperator::NotEq => date.eq(day).not(),
-            _ => unreachable!(),
-        };
+        let cmp = compare(date.clone(), &op, day)?;
         Some(if flipped {
             cmp.alias(get_literal_name())
         } else {
@@ -863,7 +877,16 @@ impl SQLExprVisitor<'_> {
         {
             return Ok(expr);
         }
-        if let Some(expr) = self.compare_date_with_timestamp(&lhs, op, &rhs) {
+        if matches!(
+            op,
+            SQLBinaryOperator::Gt
+                | SQLBinaryOperator::GtEq
+                | SQLBinaryOperator::Lt
+                | SQLBinaryOperator::LtEq
+                | SQLBinaryOperator::Eq
+                | SQLBinaryOperator::NotEq
+        ) && let Some(expr) = self.compare_date_with_timestamp(&lhs, op, &rhs)
+        {
             return Ok(expr);
         }
 
@@ -1231,23 +1254,14 @@ impl SQLExprVisitor<'_> {
         let polars_type = map_sql_dtype_to_polars(dtype)?;
         let strict = matches!(cast_kind, CastKind::Cast | CastKind::DoubleColon);
 
-        // `CAST(<string> AS DATE/TIME/TIMESTAMP)` parses rather than casts, when the
-        // query is translated for a string literal that parses
+        // `CAST(<string> AS DATE/TIME/TIMESTAMP)` parses rather than casts
         if matches!(
             polars_type,
             DataType::Date | DataType::Time | DataType::Datetime(_, _)
         ) && self.expr_dtype(&expr) == Some(DataType::String)
+            && let Some(parsed) = string_to_temporal(expr.clone(), &polars_type, strict)
         {
-            if let Expr::Literal(lv) = &expr
-                && let Some(parsed) = lv
-                    .extract_str()
-                    .and_then(|s| temporal_literal(s, &polars_type))
-            {
-                return Ok(parsed);
-            }
-            if let Some(parsed) = parse_string_as_temporal(expr.clone(), &polars_type, strict) {
-                return Ok(parsed);
-            }
+            return Ok(parsed);
         }
         Ok(if strict {
             expr.strict_cast(polars_type)
@@ -1403,24 +1417,12 @@ impl SQLExprVisitor<'_> {
         } else {
             (SQLBinaryOperator::GtEq, SQLBinaryOperator::LtEq)
         };
-        let low = self
-            .compare_date_with_timestamp(&expr, &low_op, &low)
-            .unwrap_or_else(|| {
-                if negated {
-                    expr.clone().lt(low)
-                } else {
-                    expr.clone().gt_eq(low)
-                }
-            });
-        let high = self
-            .compare_date_with_timestamp(&expr, &high_op, &high)
-            .unwrap_or_else(|| {
-                if negated {
-                    expr.clone().gt(high)
-                } else {
-                    expr.clone().lt_eq(high)
-                }
-            });
+        let bound = |op: &SQLBinaryOperator, value: Expr| {
+            self.compare_date_with_timestamp(&expr, op, &value)
+                .or_else(|| compare(expr.clone(), op, value))
+                .unwrap()
+        };
+        let (low, high) = (bound(&low_op, low), bound(&high_op, high));
         Ok(if negated { low.or(high) } else { low.and(high) })
     }
 
