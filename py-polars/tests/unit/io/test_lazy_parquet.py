@@ -2106,32 +2106,42 @@ def test_scan_parquet_unordered_row_groups(n_files: int, tmp_path: Path) -> None
 @pytest.mark.slow
 @pytest.mark.write_disk
 def test_scan_parquet_set_sorted_expr_keeps_order(tmp_path: Path) -> None:
-    n_groups = 4_000
-    n = n_groups * 500
-    n_row_groups = 64
-    a = pl.Series("a", range(n)) // 500
+    n_groups = 500
+    group_size = 20
+    n = n_groups * group_size
+    n_row_groups = 8
+    a = pl.Series("a", range(n)) // group_size
 
     # Data intentionally skewed so that row groups arrive out of order on decode.
-    skewed_payload = pl.select(
-        pl.when(pl.int_range(n) < n // n_row_groups)
-        .then(pl.int_range(n).cast(pl.String).repeat_by(60).list.join(""))
-        .otherwise(pl.lit(""))
-        .alias("s")
-    ).to_series()
+    k = n // n_row_groups
+    skewed_payload = pl.concat(
+        [
+            pl.select(
+                pl.int_range(k).cast(pl.String).str.pad_start(300, "0")
+            ).to_series(),
+            pl.repeat("", n - k, eager=True),
+        ]
+    ).alias("s")
     df = pl.DataFrame({"a": a, "s": skewed_payload})
-    df.write_parquet(tmp_path / "sorted.parquet", row_group_size=n // n_row_groups)
+    df.write_parquet(tmp_path / "sorted.parquet", row_group_size=k)
 
     lf = pl.scan_parquet(tmp_path / "sorted.parquet")
 
+    # Read the payload so its decode cost applies.
+    s_len = pl.col("s").str.len_bytes().sum()
+
     q_group_by = (
-        lf.with_columns(pl.col("a").set_sorted()).group_by("a").agg(pl.len()).sort("a")
+        lf.with_columns(pl.col("a").set_sorted())
+        .group_by("a")
+        .agg(pl.len(), s_len)
+        .sort("a")
     )
-    expected_group_by = df.group_by("a").agg(pl.len()).sort("a")
+    expected_group_by = df.group_by("a").agg(pl.len(), s_len).sort("a")
 
     right = df.group_by("a").agg(pl.len().alias("n")).sort("a")
     right.write_parquet(tmp_path / "right.parquet", row_group_size=n_groups // 8)
     q_join = (
-        lf.select(pl.col("a").set_sorted())
+        lf.select(pl.col("a").set_sorted(), "s")
         .join(
             pl.scan_parquet(tmp_path / "right.parquet").select(
                 pl.col("a").set_sorted(), pl.col("n")
@@ -2140,10 +2150,10 @@ def test_scan_parquet_set_sorted_expr_keeps_order(tmp_path: Path) -> None:
             maintain_order="none",
         )
         .group_by("a")
-        .agg(pl.len(), pl.col("n").first())
+        .agg(pl.len(), pl.col("n").first(), s_len)
         .sort("a")
     )
-    expected_join = right.select("a", pl.col("n").alias("len"), "n")
+    expected_join = expected_group_by.join(right, on="a").select("a", "len", "n", "s")
 
     # Verify fast-path
     def physical_plan(q: pl.LazyFrame) -> str:
