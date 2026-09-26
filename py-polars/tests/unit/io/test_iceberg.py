@@ -375,7 +375,9 @@ class TestIcebergScanIO:
         )
         pl.DataFrame({"s": ["apple", "banana"]}).write_iceberg(tbl, mode="append")
 
-        res = pl.scan_iceberg(tbl).filter(pl.col("s").str.starts_with(None))
+        res = pl.scan_iceberg(tbl).filter(
+            pl.col("s").str.starts_with(pl.lit(None, dtype=pl.String))
+        )
         assert res.collect()["s"].to_list() == []
 
     def test_scan_iceberg_noteq_null_and_nan(self, tmp_path: Path) -> None:
