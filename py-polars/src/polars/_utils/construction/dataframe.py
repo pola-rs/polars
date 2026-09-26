@@ -1067,16 +1067,37 @@ def iterable_to_pydf(
     return df._df
 
 
+def _pandas_index_column_names(index: pd.Index) -> list[str]:
+    """
+    Return the column names to use for a pandas index's levels.
+
+    Follows the ``DataFrame.reset_index()`` naming convention: an unnamed
+    single index becomes ``"index"``, unnamed levels of a MultiIndex become
+    ``"level_0"``, ``"level_1"``, ..., and named levels keep their names
+    (stringified, as before).
+    """
+    names = index.names
+    if len(names) == 1 and names[0] is None:
+        return ["index"]
+    return [
+        str(name) if name is not None else f"level_{i}"
+        for i, name in enumerate(names)
+    ]
+
+
 def _check_pandas_columns(data: pd.DataFrame, *, include_index: bool) -> None:
     """Check pandas dataframe columns can be converted to polars."""
     stringified_cols: set[str] = {str(col) for col in data.columns}
-    stringified_index: set[str] = (
-        {str(idx) for idx in data.index.names} if include_index else set()
+        # only the index levels that will actually become columns are checked
+    # (a default index is dropped by the caller, so its names can't clash)
+    check_index: bool = include_index and not _pandas_has_default_index(data)
+stringified_index: set[str] = (
+        set(_pandas_index_column_names(data.index)) if check_index else set()
     )
 
     non_unique_cols: bool = len(stringified_cols) < len(data.columns)
     non_unique_indices: bool = (
-        (len(stringified_index) < len(data.index.names)) if include_index else False
+        len(stringified_index) < len(data.index.names) if check_index else False
     )
     if non_unique_cols or non_unique_indices:
         msg = (
@@ -1131,11 +1152,9 @@ def pandas_to_pydf(
     length = data.shape[0]
 
     if convert_index:
-        for idxcol in data.index.names:
-            arrow_dict[str(idxcol)] = plc.pandas_series_to_arrow(
-                # get_level_values accepts `int | str`
-                # but `index.names` returns `Hashable`
-                data.index.get_level_values(idxcol),  # type: ignore[arg-type, unused-ignore]
+        for level, name in enumerate(_pandas_index_column_names(data.index)):
+            arrow_dict[name] = plc.pandas_series_to_arrow(
+                data.index.get_level_values(level),
                 nan_to_null=nan_to_null,
                 length=length,
             )
