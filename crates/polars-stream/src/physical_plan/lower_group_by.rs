@@ -38,7 +38,8 @@ pub enum GroupByLowerKind {
     Over,
 }
 
-/// The schema a `PhysNodeKind::GroupBy` input has after evaluating its fused agg inputs.
+/// The schema a `PhysNodeKind::GroupBy` input has after evaluating its fused agg inputs,
+/// in order, each of which may refer to those before it.
 pub fn augmented_group_by_input_schema(
     input_schema: &Arc<Schema>,
     fused: &[ExprIR],
@@ -47,9 +48,11 @@ pub fn augmented_group_by_input_schema(
     if fused.is_empty() {
         return Ok(input_schema.clone());
     }
-    let fused_schema = compute_output_schema(input_schema, fused, expr_arena)?;
     let mut schema = Schema::clone(input_schema);
-    schema.merge(Arc::unwrap_or_clone(fused_schema));
+    for e in fused {
+        let fused_schema = compute_output_schema(&schema, std::slice::from_ref(e), expr_arena)?;
+        schema.merge(Arc::unwrap_or_clone(fused_schema));
+    }
     Ok(Arc::new(schema))
 }
 

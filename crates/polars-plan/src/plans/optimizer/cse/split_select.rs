@@ -285,13 +285,17 @@ impl Rebuilder<'_> {
 
 /// Splits `exprs` into a pre-select and a post-select.
 ///
-/// Selecting the returned pre-select on `input_schema` and then the returned post-select
-/// on that result produces exactly what selecting `exprs` on `input_schema` would, and:
+/// Selecting the returned pre-select on `input_schema` and then evaluating the returned
+/// post-select expressions on that result, in order and each seeing the outputs of those
+/// before it, produces exactly what selecting `exprs` on `input_schema` would, and:
 ///
 /// * every post-select expression is elementwise,
 /// * every expression in `must_preselect` is an output of the pre-select, under its own
 ///   output name,
-/// * the expected bytes per row of the intermediate schema is minimal.
+/// * the expected bytes per row of the intermediate schema is minimal, with ties going
+///   to materializing input columns rather than computed values,
+/// * a post-select expression refers to an earlier post-select expression it contains by
+///   its output name instead of computing it again.
 ///
 /// The post-select reproduces `exprs` only; `must_preselect` is there for callers that
 /// need those values available in the intermediate (a group-by needs its keys there, for
@@ -363,9 +367,14 @@ pub fn split_pre_post_select_minsize_elementwise(
     let src = 2 * dag.len();
     let dst = 2 * dag.len() + 1;
 
+    // The weights are scaled so that a tie in width goes to the cut that materializes the
+    // fewest computed values.
+    let scale = dag.len() as u64 + 1;
     let mut network = FlowNetwork::new(2 * dag.len() + 2);
     for (idx, dag_node) in dag.iter().enumerate() {
-        network.add_edge(avail(idx), post(idx), dag_node.weight);
+        let is_computed = !matches!(expr_arena.get(dag_node.node), AExpr::Column(_));
+        let cost = dag_node.weight * scale + (dag_node.weight > 0 && is_computed) as u64;
+        network.add_edge(avail(idx), post(idx), cost);
         if dag_node.splittable {
             for input in &dag_node.inputs {
                 network.add_edge(post(idx), avail(*input), INF);
@@ -387,10 +396,18 @@ pub fn split_pre_post_select_minsize_elementwise(
         pre_select,
     };
 
+    // Inputs precede their users in the DAG, so this rebuilds an expression before those
+    // containing it, which then refer to it by name.
+    let mut order: Vec<usize> = (0..exprs.len()).collect();
+    order.sort_by_key(|i| roots[*i]);
     let mut post_select = Vec::with_capacity(exprs.len());
-    for (expr, root) in exprs.iter().zip(&roots) {
-        let node = rebuilder.rebuild(*root, expr_arena);
+    for i in order {
+        let (expr, root) = (&exprs[i], roots[i]);
+        let node = rebuilder.rebuild(root, expr_arena);
         post_select.push(ExprIR::new(node, expr.output_name_inner().clone()));
+        if rebuilder.in_post[root] {
+            rebuilder.memo[root] = Some(expr_arena.add(AExpr::Column(expr.output_name().clone())));
+        }
     }
 
     Ok((rebuilder.pre_select, post_select))
