@@ -103,6 +103,21 @@ def test_str_zfill() -> None:
     assert df["num"].cast(str).str.zfill(5).to_list() == out
 
 
+def test_str_zfill_multibyte() -> None:
+    # https://github.com/pola-rs/polars/issues/29543
+    # zfill pads to the requested number of characters, matching Python's
+    # str.zfill, not to the number of utf-8 bytes
+    s = pl.Series(["é", "あ", "𐌰", "ab", "-é", "\u221242"])
+    assert s.str.zfill(5).to_list() == [
+        "0000é",
+        "0000あ",
+        "0000𐌰",
+        "000ab",
+        "-000é",
+        "00\u221242",
+    ]
+
+
 def test_str_zfill_expr() -> None:
     df = pl.DataFrame(
         {
@@ -171,10 +186,12 @@ def test_pad_start_unicode() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_str_zfill_unicode_not_respected() -> None:
+def test_str_zfill_unicode() -> None:
+    # zfill pads to the requested number of characters (matching Python's
+    # str.zfill), so multibyte characters count as one
     lf = pl.LazyFrame({"a": ["Café", "345", "東京", None]})
 
     result = lf.select(pl.col("a").str.zfill(6))
 
-    expected = pl.LazyFrame({"a": ["0Café", "000345", "東京", None]})
+    expected = pl.LazyFrame({"a": ["00Café", "000345", "0000東京", None]})
     assert_frame_equal(result, expected)

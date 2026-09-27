@@ -38,7 +38,9 @@ fn pad_fn<'a>(
 
 fn zfill_fn<'a>(s: Option<&'a str>, length: Option<u64>, buf: &mut String) -> Option<&'a str> {
     if let (Some(s), Some(length)) = (s, length) {
-        let s_len = s.len();
+        // Pad to `length` in characters (like `str.zfill` in Python and
+        // `pad_fn` below), not in utf-8 bytes.
+        let s_len = s.chars().count();
         let length = length as usize;
         if length <= s_len {
             return Some(s);
