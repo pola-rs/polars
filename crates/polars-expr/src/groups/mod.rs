@@ -9,8 +9,10 @@ use polars_utils::IdxSize;
 use polars_utils::hashing::HashPartitioner;
 
 use crate::hash_keys::HashKeys;
+use crate::key_rows::KeyRowLayout;
 
 mod binview;
+mod key_rows;
 mod row_encoded;
 mod single_key;
 
@@ -27,6 +29,7 @@ pub trait Grouper: Any + Send + Sync {
 
     /// Inserts the given subset of keys into this Grouper. If groups_idxs is
     /// passed it is extended such with the group index of keys[subset[i]].
+    /// New groups get consecutive indices in the order they first occur.
     ///
     /// # Safety
     /// The subset indexes must be in-bounds.
@@ -45,7 +48,7 @@ pub trait Grouper: Any + Send + Sync {
     /// invert is true it instead returns the keys not found in the groupers.
     /// A null key whose nulls are not valid is never found.
     /// # Safety
-    /// All groupers must have the same schema.
+    /// All groupers must have the same schema, the schema of `keys`.
     unsafe fn probe_partitioned_groupers(
         &self,
         groupers: &[Box<dyn Grouper>],
@@ -59,7 +62,7 @@ pub trait Grouper: Any + Send + Sync {
     /// it returns true if it isn't found. A null key whose nulls are not
     /// valid is never found.
     /// # Safety
-    /// All groupers must have the same schema.
+    /// All groupers must have the same schema, the schema of `keys`.
     unsafe fn contains_key_partitioned_groupers(
         &self,
         groupers: &[Box<dyn Grouper>],
@@ -73,8 +76,8 @@ pub trait Grouper: Any + Send + Sync {
     /// that group's partition. A null key whose nulls are not valid marks
     /// nothing.
     /// # Safety
-    /// All groupers must have the same schema, and marks[p] must have a bit
-    /// for every group of groupers[p].
+    /// All groupers must have the same schema, the schema of `keys`, and marks[p]
+    /// must have a bit for every group of groupers[p].
     unsafe fn mark_groups_partitioned_groupers(
         &self,
         groupers: &[Box<dyn Grouper>],
@@ -87,7 +90,9 @@ pub trait Grouper: Any + Send + Sync {
 }
 
 pub fn new_hash_grouper(key_schema: Arc<Schema>) -> Box<dyn Grouper> {
-    if key_schema.len() > 1 {
+    if let Some(layout) = KeyRowLayout::new(key_schema.iter_values()) {
+        Box::new(key_rows::KeyRowHashGrouper::new(Arc::new(layout)))
+    } else if key_schema.len() > 1 {
         Box::new(row_encoded::RowEncodedHashGrouper::new())
     } else {
         let (_name, dt) = key_schema.get_at_index(0).unwrap();
