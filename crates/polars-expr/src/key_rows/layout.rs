@@ -443,6 +443,11 @@ impl KeyRowLayout {
         num_rows: usize,
         buffers: &Buffer<Buffer<u8>>,
     ) -> DataFrame {
+        assert_eq!(
+            schema.len(),
+            self.cols.len(),
+            "schema does not match the key schema of this table"
+        );
         assert!(skip + self.stride_words <= entry_words && num_rows * entry_words <= entries.len());
         if num_rows == 0 {
             return DataFrame::empty_with_schema(schema);
@@ -458,6 +463,10 @@ impl KeyRowLayout {
             .zip(&self.cols)
             .enumerate()
             .map(|(c, ((name, dtype), col))| unsafe {
+                assert!(
+                    dtype.to_physical() == col.physical,
+                    "schema does not match the key schema of this table"
+                );
                 let validity = (any_nulls >> c & 1 != 0)
                     .then(|| Bitmap::from_trusted_len_iter(nulls.iter().map(|m| m >> c & 1 == 0)));
                 let offset = col.offset;

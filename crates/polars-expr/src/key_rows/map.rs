@@ -333,7 +333,7 @@ impl<V> KeyRowIndexMap<V> {
         key_idxs: &[IdxSize],
         out: &mut Vec<IdxSize>,
     ) {
-        debug_assert!(keys.has_layout(&self.layout));
+        keys.assert_layout(&self.layout);
         let entry_words = self.entry_words();
         let mut batch = LookupBatch::default();
         for chunk in key_idxs.chunks(VERIFY_BATCH_SIZE) {
@@ -376,7 +376,7 @@ impl<V> KeyRowIndexMap<V> {
         mut value: impl FnMut(usize) -> V,
         out: &mut Vec<IdxSize>,
     ) {
-        debug_assert!(keys.has_layout(&self.layout));
+        keys.assert_layout(&self.layout);
         let entry_words = self.entry_words();
         let seed = self.seed;
         let mut batch = LookupBatch::default();

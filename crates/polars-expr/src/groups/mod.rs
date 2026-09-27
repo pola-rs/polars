@@ -48,7 +48,7 @@ pub trait Grouper: Any + Send + Sync {
     /// invert is true it instead returns the keys not found in the groupers.
     /// A null key whose nulls are not valid is never found.
     /// # Safety
-    /// All groupers must have the same schema.
+    /// All groupers must have the same schema, the schema of `keys`.
     unsafe fn probe_partitioned_groupers(
         &self,
         groupers: &[Box<dyn Grouper>],
@@ -62,7 +62,7 @@ pub trait Grouper: Any + Send + Sync {
     /// it returns true if it isn't found. A null key whose nulls are not
     /// valid is never found.
     /// # Safety
-    /// All groupers must have the same schema.
+    /// All groupers must have the same schema, the schema of `keys`.
     unsafe fn contains_key_partitioned_groupers(
         &self,
         groupers: &[Box<dyn Grouper>],
@@ -76,8 +76,8 @@ pub trait Grouper: Any + Send + Sync {
     /// that group's partition. A null key whose nulls are not valid marks
     /// nothing.
     /// # Safety
-    /// All groupers must have the same schema, and marks[p] must have a bit
-    /// for every group of groupers[p].
+    /// All groupers must have the same schema, the schema of `keys`, and marks[p]
+    /// must have a bit for every group of groupers[p].
     unsafe fn mark_groups_partitioned_groupers(
         &self,
         groupers: &[Box<dyn Grouper>],

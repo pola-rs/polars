@@ -15,6 +15,19 @@ impl KeyRowHashGrouper {
         }
     }
 
+    /// In debug builds, panics unless `keys` have the layout of every grouper.
+    ///
+    /// # Safety
+    /// All groupers must be a KeyRowHashGrouper.
+    unsafe fn debug_assert_layouts(groupers: &[Box<dyn Grouper>], keys: &KeyRowKeys) {
+        if cfg!(debug_assertions) {
+            for g in groupers {
+                let grouper = unsafe { &*(&**g as *const dyn Grouper as *const KeyRowHashGrouper) };
+                keys.assert_layout(grouper.idx_map.layout());
+            }
+        }
+    }
+
     /// # Safety
     /// All groupers must be a KeyRowHashGrouper, and `i` in-bounds.
     #[inline(always)]
@@ -81,7 +94,7 @@ impl Grouper for KeyRowHashGrouper {
     }
 
     /// # Safety
-    /// All groupers must be a KeyRowHashGrouper.
+    /// All groupers must be a KeyRowHashGrouper for the key schema of `keys`.
     unsafe fn probe_partitioned_groupers(
         &self,
         groupers: &[Box<dyn Grouper>],
@@ -94,6 +107,7 @@ impl Grouper for KeyRowHashGrouper {
             unreachable!()
         };
         assert!(partitioner.num_partitions() == groupers.len());
+        unsafe { Self::debug_assert_layouts(groupers, keys) };
 
         unsafe {
             keys.for_each_hash(|idx, opt_hash| {
@@ -109,7 +123,7 @@ impl Grouper for KeyRowHashGrouper {
     }
 
     /// # Safety
-    /// All groupers must be a KeyRowHashGrouper.
+    /// All groupers must be a KeyRowHashGrouper for the key schema of `keys`.
     unsafe fn contains_key_partitioned_groupers(
         &self,
         groupers: &[Box<dyn Grouper>],
@@ -122,6 +136,7 @@ impl Grouper for KeyRowHashGrouper {
             unreachable!()
         };
         assert!(partitioner.num_partitions() == groupers.len());
+        unsafe { Self::debug_assert_layouts(groupers, keys) };
 
         unsafe {
             keys.for_each_hash(|idx, opt_hash| {
@@ -135,7 +150,7 @@ impl Grouper for KeyRowHashGrouper {
     }
 
     /// # Safety
-    /// All groupers must be a KeyRowHashGrouper.
+    /// All groupers must be a KeyRowHashGrouper for the key schema of `keys`.
     unsafe fn mark_groups_partitioned_groupers(
         &self,
         groupers: &[Box<dyn Grouper>],
@@ -147,6 +162,7 @@ impl Grouper for KeyRowHashGrouper {
             unreachable!()
         };
         assert!(partitioner.num_partitions() == groupers.len());
+        unsafe { Self::debug_assert_layouts(groupers, keys) };
         assert!(marks.len() == groupers.len());
 
         unsafe {

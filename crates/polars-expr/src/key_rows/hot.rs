@@ -131,7 +131,7 @@ impl HotKeyRows {
     /// Adds hot key `k` to `collector`.
     ///
     /// # Safety
-    /// `k` must be in-bounds.
+    /// `k` must be in-bounds, and `collector` must have the layout of these keys.
     pub(crate) unsafe fn collect(&self, k: IdxSize, collector: &mut KeyRowCollector) {
         debug_assert!(Arc::ptr_eq(&self.layout, &collector.layout));
         let (k, stride_words) = (k as usize, self.layout.stride_words);

@@ -278,8 +278,12 @@ impl KeyRowKeys {
         self.hashes.len()
     }
 
-    pub(crate) fn has_layout(&self, layout: &Arc<KeyRowLayout>) -> bool {
-        Arc::ptr_eq(&self.layout, layout) || *self.layout == **layout
+    /// Panics unless these keys have `layout`.
+    pub(crate) fn assert_layout(&self, layout: &Arc<KeyRowLayout>) {
+        assert!(
+            Arc::ptr_eq(&self.layout, layout) || *self.layout == **layout,
+            "keys do not match the key schema of this table"
+        );
     }
 
     pub(crate) fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {

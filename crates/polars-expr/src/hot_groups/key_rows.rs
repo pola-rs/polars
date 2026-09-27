@@ -46,7 +46,7 @@ impl HotGrouper for KeyRowHashHotGrouper {
         let HashKeys::KeyRows(keys) = keys else {
             unreachable!()
         };
-        debug_assert!(keys.has_layout(&self.layout));
+        keys.assert_layout(&self.layout);
 
         hot_idxs.reserve(keys.len());
         hot_group_idxs.reserve(keys.len());
