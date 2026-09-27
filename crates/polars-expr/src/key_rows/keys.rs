@@ -17,6 +17,7 @@ use super::layout::{ColLayout, KeyRowLayout, bytes_eq};
 use crate::hash_keys::{for_each_hash_prehashed, for_each_hash_subset_prehashed};
 
 const HASH_MULTIPLE: u64 = 0x5851f42d4c957f2d;
+const VIEW_MULTIPLE: u64 = 0xd6e8feb86659fd93;
 const NULL_WORD: u64 = 0x9e3779b97f4a7c15;
 
 #[inline(always)]
@@ -150,31 +151,41 @@ impl KeyColumn {
                     fold(h, b.get_bit_unchecked(i) as u64)
                 }),
                 ColValues::W1(v) => {
+                    let v = v.as_slice();
                     fold_each(hashes, validity, |h, i| fold(h, *v.get_unchecked(i) as u64))
                 },
                 ColValues::W2(v) => {
+                    let v = v.as_slice();
                     fold_each(hashes, validity, |h, i| fold(h, *v.get_unchecked(i) as u64))
                 },
                 ColValues::W4(v) => {
+                    let v = v.as_slice();
                     fold_each(hashes, validity, |h, i| fold(h, *v.get_unchecked(i) as u64))
                 },
                 ColValues::W8(v) => {
+                    let v = v.as_slice();
                     fold_each(hashes, validity, |h, i| fold(h, *v.get_unchecked(i)))
                 },
-                ColValues::W16(v) => fold_each(hashes, validity, |h, i| {
-                    let x = *v.get_unchecked(i);
-                    fold(fold(h, x as u64), (x >> 64) as u64)
-                }),
-                ColValues::View(views, buffers) => fold_each(hashes, validity, |h, i| {
-                    let view = *views.get_unchecked(i);
-                    let bits = view.as_u128();
-                    let hi = if view.length <= View::MAX_INLINE_SIZE {
-                        (bits >> 64) as u64
-                    } else {
-                        random_state.hash_one(view.get_external_slice_unchecked(buffers))
-                    };
-                    fold(fold(h, bits as u64), hi)
-                }),
+                ColValues::W16(v) => {
+                    let v = v.as_slice();
+                    fold_each(hashes, validity, |h, i| {
+                        let x = *v.get_unchecked(i);
+                        fold(fold(h, x as u64), (x >> 64) as u64)
+                    })
+                },
+                ColValues::View(views, buffers) => {
+                    let views = views.as_slice();
+                    fold_each(hashes, validity, |h, i| {
+                        let view = *views.get_unchecked(i);
+                        let bits = view.as_u128();
+                        let hi = if view.length <= View::MAX_INLINE_SIZE {
+                            (bits >> 64) as u64
+                        } else {
+                            random_state.hash_one(view.get_external_slice_unchecked(buffers))
+                        };
+                        folded_multiply(h ^ bits as u64, hi ^ VIEW_MULTIPLE)
+                    })
+                },
             }
         }
     }
@@ -338,7 +349,7 @@ impl KeyRowKeys {
     /// layout.
     pub(super) unsafe fn verify<'a>(
         &self,
-        key_idxs: &[IdxSize],
+        key_idxs: impl Iterator<Item = usize> + Clone,
         rows: &[*const u64],
         ok: &mut [bool],
         stored_long: impl Fn(View) -> &'a [u8],
@@ -352,7 +363,7 @@ impl KeyRowKeys {
                 let stride_words = self.layout.stride_words;
                 for ((ok, i), row) in ok.iter_mut().zip(key_idxs).zip(rows) {
                     *ok &= self.eq_stored(
-                        *i as usize,
+                        i,
                         std::slice::from_raw_parts(*row, stride_words),
                         &stored_long,
                     );

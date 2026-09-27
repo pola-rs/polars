@@ -117,7 +117,7 @@ impl LookupBatch {
         self.cand_ok.clear();
         self.cand_ok.resize(self.cand_key_idxs.len(), true);
         keys.verify(
-            &self.cand_key_idxs,
+            self.cand_key_idxs.iter().map(|i| *i as usize),
             &self.cand_rows,
             &mut self.cand_ok,
             |view| view.get_external_slice_unchecked(buffers),

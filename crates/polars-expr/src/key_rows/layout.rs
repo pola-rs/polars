@@ -279,7 +279,7 @@ impl KeyRowLayout {
     pub(super) unsafe fn verify_columns<'a>(
         &self,
         cols: &[KeyColumn],
-        key_idxs: &[IdxSize],
+        key_idxs: impl Iterator<Item = usize> + Clone,
         rows: &[*const u64],
         ok: &mut [bool],
         stored_long: impl Fn(View) -> &'a [u8],
@@ -289,11 +289,11 @@ impl KeyRowLayout {
                 *ok &= self.read_nulls(row.cast()) == 0;
             }
         } else {
-            for ((ok, i), row) in ok.iter_mut().zip(key_idxs).zip(rows) {
+            for ((ok, i), row) in ok.iter_mut().zip(key_idxs.clone()).zip(rows) {
                 let mut nulls = 0;
                 for (c, col) in cols.iter().enumerate() {
                     if let Some(v) = &col.validity {
-                        nulls |= (!v.get_bit_unchecked(*i as usize) as u64) << c;
+                        nulls |= (!v.get_bit_unchecked(i) as u64) << c;
                     }
                 }
                 *ok &= self.read_nulls(row.cast()) == nulls;
@@ -304,26 +304,26 @@ impl KeyRowLayout {
             let off = col.offset;
             let validity = col.validity.as_ref();
             match &col.values {
-                ColValues::Bool(b) => verify_col(key_idxs, rows, ok, validity, |i, p| {
+                ColValues::Bool(b) => verify_col(key_idxs.clone(), rows, ok, validity, |i, p| {
                     b.get_bit_unchecked(i) as u8 == *p.add(off)
                 }),
-                ColValues::W1(v) => verify_col(key_idxs, rows, ok, validity, |i, p| {
+                ColValues::W1(v) => verify_col(key_idxs.clone(), rows, ok, validity, |i, p| {
                     *v.get_unchecked(i) == *p.add(off)
                 }),
-                ColValues::W2(v) => verify_col(key_idxs, rows, ok, validity, |i, p| {
+                ColValues::W2(v) => verify_col(key_idxs.clone(), rows, ok, validity, |i, p| {
                     *v.get_unchecked(i) == p.add(off).cast::<u16>().read_unaligned()
                 }),
-                ColValues::W4(v) => verify_col(key_idxs, rows, ok, validity, |i, p| {
+                ColValues::W4(v) => verify_col(key_idxs.clone(), rows, ok, validity, |i, p| {
                     *v.get_unchecked(i) == p.add(off).cast::<u32>().read_unaligned()
                 }),
-                ColValues::W8(v) => verify_col(key_idxs, rows, ok, validity, |i, p| {
+                ColValues::W8(v) => verify_col(key_idxs.clone(), rows, ok, validity, |i, p| {
                     *v.get_unchecked(i) == p.add(off).cast::<u64>().read_unaligned()
                 }),
-                ColValues::W16(v) => verify_col(key_idxs, rows, ok, validity, |i, p| {
+                ColValues::W16(v) => verify_col(key_idxs.clone(), rows, ok, validity, |i, p| {
                     *v.get_unchecked(i) == p.add(off).cast::<u128>().read_unaligned()
                 }),
                 ColValues::View(views, buffers) => {
-                    verify_col(key_idxs, rows, ok, validity, |i, p| {
+                    verify_col(key_idxs.clone(), rows, ok, validity, |i, p| {
                         let b = p.add(off).cast::<u128>().read_unaligned();
                         view_eq(*views.get_unchecked(i), b, buffers, &stored_long)
                     })
@@ -625,7 +625,7 @@ unsafe fn read_fixed<T: NativeType>(
 /// The indices must be in-bounds for `validity`.
 #[inline(always)]
 unsafe fn verify_col(
-    key_idxs: &[IdxSize],
+    key_idxs: impl Iterator<Item = usize>,
     rows: &[*const u64],
     ok: &mut [bool],
     validity: Option<&Bitmap>,
@@ -634,13 +634,13 @@ unsafe fn verify_col(
     match validity {
         None => {
             for ((ok, i), row) in ok.iter_mut().zip(key_idxs).zip(rows) {
-                *ok &= eq(*i as usize, row.cast());
+                *ok &= eq(i, row.cast());
             }
         },
         Some(v) => {
             for ((ok, i), row) in ok.iter_mut().zip(key_idxs).zip(rows) {
-                if v.get_bit_unchecked(*i as usize) {
-                    *ok &= eq(*i as usize, row.cast());
+                if v.get_bit_unchecked(i) {
+                    *ok &= eq(i, row.cast());
                 }
             }
         },

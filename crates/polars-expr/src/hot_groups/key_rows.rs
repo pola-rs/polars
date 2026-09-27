@@ -58,60 +58,71 @@ impl HotGrouper for KeyRowHashHotGrouper {
                 .as_ref()
                 .is_none_or(|v| v.get_bit_unchecked(i))
         };
-        let mut found = Vec::with_capacity(VERIFY_BATCH_SIZE);
-        let mut cand_key_idxs = Vec::with_capacity(VERIFY_BATCH_SIZE);
-        let mut cand_hot_keys = Vec::with_capacity(VERIFY_BATCH_SIZE);
+        let mut slots = [0 as IdxSize; VERIFY_BATCH_SIZE];
+        let mut hot_keys = [0 as IdxSize; VERIFY_BATCH_SIZE];
+        let mut ok = [false; VERIFY_BATCH_SIZE];
         let mut rows = Vec::with_capacity(VERIFY_BATCH_SIZE);
-        let mut ok = Vec::with_capacity(VERIFY_BATCH_SIZE);
         let mut replaced_ks = Vec::new();
         for start in (0..keys.len()).step_by(VERIFY_BATCH_SIZE) {
-            let end = keys.len().min(start + VERIFY_BATCH_SIZE);
+            let n = VERIFY_BATCH_SIZE.min(keys.len() - start);
+            let batch_hashes = &hashes[start..start + n];
+            let (slots, hot_keys, ok) = (&mut slots[..n], &mut hot_keys[..n], &mut ok[..n]);
 
-            found.clear();
-            cand_key_idxs.clear();
-            cand_hot_keys.clear();
-            for (i, h) in (start..end).zip(&hashes[start..end]) {
-                let h = *h;
-                let f = is_valid(i)
-                    .then(|| {
-                        self.table
-                            .find_key(h, |k| unsafe { self.keys.hash(*k) } == h)
-                    })
-                    .flatten();
-                if let Some((_, k)) = f {
-                    cand_key_idxs.push(i as IdxSize);
-                    cand_hot_keys.push(k);
-                }
-                found.push(f);
+            // Find the candidate hot key of each key by its tag, hot key 0 standing in
+            // for keys without one.
+            let num_keys = self.table.len() as IdxSize;
+            let mut num_found = 0;
+            for (((h, slot), k), ok) in batch_hashes
+                .iter()
+                .zip(slots.iter_mut())
+                .zip(hot_keys.iter_mut())
+                .zip(ok.iter_mut())
+            {
+                let (found_slot, found_k) = self.table.find_tag(*h);
+                let found = found_k < num_keys;
+                *slot = found_slot as IdxSize;
+                *k = if found { found_k } else { 0 };
+                *ok = found;
+                num_found += found as usize;
             }
-            ok.clear();
-            ok.resize(cand_key_idxs.len(), true);
-            unsafe {
-                self.keys
-                    .verify(keys, &cand_key_idxs, &cand_hot_keys, &mut rows, &mut ok)
-            };
+            if let Some(validity) = &keys.validity {
+                for (r, ok) in ok.iter_mut().enumerate() {
+                    *ok &= unsafe { validity.get_bit_unchecked(start + r) };
+                }
+            }
+            if num_found > 0 {
+                unsafe { self.keys.verify(keys, start, hot_keys, &mut rows, ok) };
+            }
 
-            let mut c = 0;
+            if num_found == n && ok.iter().all(|ok| *ok) {
+                for (slot, h) in slots.iter().zip(batch_hashes) {
+                    unsafe { self.table.touch(*slot as usize, *h) };
+                }
+                hot_idxs.extend(start as IdxSize..(start + n) as IdxSize);
+                hot_group_idxs.extend(hot_keys.iter().map(|k| EvictIdx::new(*k, false)));
+                continue;
+            }
+
             // SAFETY: `insert_key` calls at most one of its closures at a time and none of
             // them outlives that call, so the accesses through `hot` never overlap.
             // `self.table` is a separate field.
             let hot: *mut HotKeyRows = &mut self.keys;
             let evicted = &mut self.evicted;
             let replaced = &mut self.replaced;
-            for (i, f) in (start..end).zip(&found) {
-                if !is_valid(i) {
-                    continue;
-                }
-                let h = hashes[i];
+            for (r, h) in batch_hashes.iter().enumerate() {
+                let i = start + r;
+                let h = *h;
                 unsafe {
-                    if let Some((slot, k)) = *f {
-                        c += 1;
-                        if ok[c - 1] && !replaced[k as usize] {
-                            self.table.touch(slot, h);
+                    if ok[r] {
+                        let k = hot_keys[r];
+                        if replaced_ks.is_empty() || !replaced[k as usize] {
+                            self.table.touch(slots[r] as usize, h);
                             hot_idxs.push_unchecked(i as IdxSize);
                             hot_group_idxs.push_unchecked(EvictIdx::new(k, false));
                             continue;
                         }
+                    } else if !is_valid(i) {
+                        continue;
                     }
 
                     let opt_g = self.table.insert_key(

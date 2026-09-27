@@ -35,13 +35,6 @@ impl HotKeyRows {
         self.hashes.len()
     }
 
-    /// # Safety
-    /// `k` must be in-bounds.
-    #[inline(always)]
-    pub(crate) unsafe fn hash(&self, k: IdxSize) -> u64 {
-        *self.hashes.get_unchecked(k as usize)
-    }
-
     /// Whether hot key `k` is key `i` of `keys`.
     ///
     /// # Safety
@@ -55,8 +48,8 @@ impl HotKeyRows {
         keys.eq_stored(i, row, |view| view.get_external_slice_unchecked(&self.long))
     }
 
-    /// Clears `ok[r]` when key `key_idxs[r]` of `keys` is not hot key
-    /// `hot_key_idxs[r]`. `rows` is scratch space.
+    /// Clears `ok[r]` when key `start + r` of `keys` is not hot key `hot_key_idxs[r]`.
+    /// `rows` is scratch space.
     ///
     /// # Safety
     /// The indices must be in-bounds, and `keys` must have the layout of these keys.
@@ -64,7 +57,7 @@ impl HotKeyRows {
     pub(crate) unsafe fn verify(
         &self,
         keys: &KeyRowKeys,
-        key_idxs: &[IdxSize],
+        start: usize,
         hot_key_idxs: &[IdxSize],
         rows: &mut Vec<*const u64>,
         ok: &mut [bool],
@@ -76,7 +69,7 @@ impl HotKeyRows {
                 .iter()
                 .map(|k| self.rows.as_ptr().add(*k as usize * stride_words)),
         );
-        keys.verify(key_idxs, rows, ok, |view| {
+        keys.verify(start..start + hot_key_idxs.len(), rows, ok, |view| {
             view.get_external_slice_unchecked(&self.long)
         });
     }

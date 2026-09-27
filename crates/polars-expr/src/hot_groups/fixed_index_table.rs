@@ -159,23 +159,20 @@ impl<K> FixedIndexTable<K> {
         }
     }
 
-    /// Finds the slot and index of a key with the given hash for which `eq` holds,
-    /// without marking it as accessed.
+    /// Returns the slot of the given hash whose tag matches it, preferring the first
+    /// slot, and the key index in that slot, without marking it as accessed. The key
+    /// index is not below `len()` when no slot matches.
     #[inline(always)]
-    pub fn find_key(&self, hash: u64, mut eq: impl FnMut(&K) -> bool) -> Option<(usize, IdxSize)> {
+    pub fn find_tag(&self, hash: u64) -> (usize, IdxSize) {
         let tag = hash as u32;
         let h1 = (hash >> self.shift) as usize;
         let h2 = (hash.wrapping_mul(H2_MULT) >> self.shift) as usize;
-        for h in [h1, h2] {
-            let slot = unsafe { self.slots.get_unchecked(h) };
-            if slot.tag == tag
-                && let Some(k) = self.keys.get(slot.key_index as usize)
-                && eq(k)
-            {
-                return Some((h, slot.key_index));
-            }
+        unsafe {
+            let h = select_unpredictable(self.slots.get_unchecked(h1).tag == tag, h1, h2);
+            let slot = self.slots.get_unchecked(h);
+            let k = select_unpredictable(slot.tag == tag, slot.key_index, IdxSize::MAX);
+            (h, k)
         }
-        None
     }
 
     /// Marks the key in `slot`, found for `hash`, as accessed.
