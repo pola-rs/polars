@@ -5,16 +5,16 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
+use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
-use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::optimizer::cse::split_select::split_pre_post_select_minsize_elementwise;
 use polars_plan::plans::{
     AExpr, CanonicalExprId, CanonicalExprMap, IR, IRAggExpr, IRFunctionExpr, write_group_by,
 };
-use polars_plan::prelude::{GroupbyOptions, *};
+use polars_plan::prelude::*;
 use polars_plan::utils::rename_columns;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -60,7 +60,7 @@ fn build_group_by_fallback(
     aggs: &[ExprIR],
     output_schema: Arc<Schema>,
     maintain_order: bool,
-    options: Arc<GroupbyOptions>,
+    options: Arc<GroupbyOptionsIR>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
@@ -230,7 +230,6 @@ fn replace_elementwise_components(
 #[allow(clippy::too_many_arguments)]
 fn try_lower_elementwise_scalar_agg_expr(
     expr: Node,
-    input_schema: &Schema,
     gbl_kind: GroupByLowerKind,
     canonical_exprs: &mut CanonicalExprMap,
     expr_cache: &mut ExprCache,
@@ -246,7 +245,6 @@ fn try_lower_elementwise_scalar_agg_expr(
         ($input:expr) => {
             try_lower_elementwise_scalar_agg_expr(
                 $input,
-                input_schema,
                 gbl_kind,
                 canonical_exprs,
                 expr_cache,
@@ -413,6 +411,12 @@ fn try_lower_elementwise_scalar_agg_expr(
             ..
         } => Some(replace_agg_uniq!(expr)),
 
+        #[cfg(feature = "approx_quantile")]
+        AExpr::Function {
+            function: IRFunctionExpr::ApproxQuantileSketch { .. },
+            ..
+        } => Some(replace_agg_uniq!(expr)),
+
         AExpr::Function {
             function:
                 IRFunctionExpr::Boolean(
@@ -448,7 +452,7 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
-            if options.is_elementwise() && !is_fake_elementwise_function(node) =>
+            if options.is_elementwise() && !is_fake_elementwise_function(node, expr_arena) =>
         {
             let node = node.clone();
             let input = input.clone();
@@ -485,11 +489,7 @@ fn try_lower_elementwise_scalar_agg_expr(
             //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
             //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
             let (base, normalize) = (*base, *normalize);
-            let input_dtype = inner_exprs[0].dtype(input_schema, expr_arena).ok()?.clone();
-            let mut x = AExprBuilder::new_from_node(inner_exprs[0].node());
-            if input_dtype.is_duration() {
-                x = x.to_physical(expr_arena);
-            }
+            let x = AExprBuilder::new_from_node(inner_exprs[0].node());
             let base = AExprBuilder::lit_scalar(Scalar::from(base), expr_arena);
             let log_x = AExprBuilder::function(
                 vec![x.expr_ir_unnamed(), base.expr_ir_unnamed()],
@@ -628,7 +628,7 @@ fn try_lower_agg_input_expr(
             gb_keys.push(ExprIR::new(node, OutputName::Alias(output_name.clone())));
 
             let aggs = &[];
-            let options = Arc::new(GroupbyOptions::default());
+            let options = Arc::new(GroupbyOptionsIR::default());
             let Some(stream) = try_build_streaming_group_by(
                 stream,
                 &gb_keys,
@@ -751,7 +751,7 @@ pub fn try_build_streaming_group_by(
     keys: &[ExprIR],
     aggs: &[ExprIR],
     maintain_order: bool,
-    options: Arc<GroupbyOptions>,
+    options: Arc<GroupbyOptionsIR>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     gbl_kind: GroupByLowerKind,
     expr_arena: &mut Arena<AExpr>,
@@ -830,7 +830,6 @@ pub fn try_build_streaming_group_by(
     // Maps elementwise input expression ids to column expression.
     let mut uniq_elementwise_exprs = PlIndexMap::new();
 
-    let input_schema = input.output_schema(phys_sm).clone();
     // Elementwise inputs hoisted out of an aggregation input that is resolved by its own
     // sub-stream derived from the pre-select, which reads them from there as columns.
     let mut substream_input_ids = PlIndexSet::new();
@@ -838,7 +837,6 @@ pub fn try_build_streaming_group_by(
     for agg in aggs {
         let Some(trans_node) = try_lower_elementwise_scalar_agg_expr(
             agg.node(),
-            input_schema.as_ref(),
             gbl_kind,
             &mut canonical_exprs,
             expr_cache,
@@ -1076,6 +1074,7 @@ pub fn try_build_streaming_group_by(
                 right_on: trans_keys,
                 args,
                 fused_predicate: None,
+                runtime_filters: Vec::new(),
             },
         ));
         post_select_input = PhysStream::first(join_key);
@@ -1105,7 +1104,7 @@ pub fn try_build_sorted_group_by(
     aggs: &[ExprIR],
     output_schema: Arc<Schema>,
     maintain_order: bool,
-    options: Arc<GroupbyOptions>,
+    options: Arc<GroupbyOptionsIR>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
@@ -1284,7 +1283,7 @@ pub fn build_group_by_stream(
     aggs: &[ExprIR],
     output_schema: Arc<Schema>,
     maintain_order: bool,
-    options: Arc<GroupbyOptions>,
+    options: Arc<GroupbyOptionsIR>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
@@ -1318,6 +1317,7 @@ pub fn build_group_by_stream(
                         period: rolling_options.period,
                         offset: rolling_options.offset,
                         closed: rolling_options.closed_window,
+                        placement: rolling_options.placement,
                         slice: options
                             .slice
                             .filter(|(o, _)| *o >= 0)

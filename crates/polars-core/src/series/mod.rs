@@ -34,10 +34,10 @@ use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-use arrow::compute::aggregate::estimated_bytes_size;
 pub use from::*;
 pub use iterator::SeriesIter;
 use num_traits::NumCast;
+use polars_arrow::compute::aggregate::estimated_bytes_size;
 use polars_error::feature_gated;
 use polars_utils::broadcast::BroadcastLength;
 use polars_utils::float::IsFloat;
@@ -1225,7 +1225,7 @@ mod test {
                     ArrowDataType::Int32,
                     true,
                 ))),
-                unsafe { arrow::offset::Offsets::new_unchecked(vec![0, 1]) }.into(),
+                unsafe { polars_arrow::offset::Offsets::new_unchecked(vec![0, 1]) }.into(),
                 PrimitiveArray::new(ArrowDataType::Int32, vec![1i32].into(), None).to_boxed(),
                 None,
             )],

@@ -1,5 +1,5 @@
-use arrow_format::ipc::KeyValue;
-use arrow_format::ipc::planus::Builder;
+use polars_arrow_format::ipc::KeyValue;
+use polars_arrow_format::ipc::planus::Builder;
 
 use super::super::IpcField;
 use crate::datatypes::{
@@ -7,7 +7,7 @@ use crate::datatypes::{
 };
 use crate::io::ipc::endianness::is_native_little_endian;
 
-/// Converts a [ArrowSchema] and [IpcField]s to a flatbuffers-encoded [arrow_format::ipc::Message].
+/// Converts a [ArrowSchema] and [IpcField]s to a flatbuffers-encoded [polars_arrow_format::ipc::Message].
 pub fn schema_to_bytes(
     schema: &ArrowSchema,
     ipc_fields: &[IpcField],
@@ -15,9 +15,11 @@ pub fn schema_to_bytes(
 ) -> Vec<u8> {
     let schema = serialize_schema(schema, ipc_fields, custom_metadata);
 
-    let message = arrow_format::ipc::Message {
-        version: arrow_format::ipc::MetadataVersion::V5,
-        header: Some(arrow_format::ipc::MessageHeader::Schema(Box::new(schema))),
+    let message = polars_arrow_format::ipc::Message {
+        version: polars_arrow_format::ipc::MetadataVersion::V5,
+        header: Some(polars_arrow_format::ipc::MessageHeader::Schema(Box::new(
+            schema,
+        ))),
         body_length: 0,
         custom_metadata: None,
     };
@@ -30,11 +32,11 @@ pub fn serialize_schema(
     schema: &ArrowSchema,
     ipc_fields: &[IpcField],
     custom_schema_metadata: Option<&Metadata>,
-) -> arrow_format::ipc::Schema {
+) -> polars_arrow_format::ipc::Schema {
     let endianness = if is_native_little_endian() {
-        arrow_format::ipc::Endianness::Little
+        polars_arrow_format::ipc::Endianness::Little
     } else {
-        arrow_format::ipc::Endianness::Big
+        polars_arrow_format::ipc::Endianness::Big
     };
 
     let fields = schema
@@ -68,7 +70,7 @@ pub fn serialize_schema(
         }
     }
 
-    arrow_format::ipc::Schema {
+    polars_arrow_format::ipc::Schema {
         endianness,
         fields: Some(fields),
         custom_metadata: (!custom_metadata.is_empty()).then_some(custom_metadata),
@@ -76,14 +78,17 @@ pub fn serialize_schema(
     }
 }
 
-pub fn key_value(key: impl Into<String>, val: impl Into<String>) -> arrow_format::ipc::KeyValue {
-    arrow_format::ipc::KeyValue {
+pub fn key_value(
+    key: impl Into<String>,
+    val: impl Into<String>,
+) -> polars_arrow_format::ipc::KeyValue {
+    polars_arrow_format::ipc::KeyValue {
         key: Some(key.into()),
         value: Some(val.into()),
     }
 }
 
-fn write_metadata(metadata: &Metadata, kv_vec: &mut Vec<arrow_format::ipc::KeyValue>) {
+fn write_metadata(metadata: &Metadata, kv_vec: &mut Vec<polars_arrow_format::ipc::KeyValue>) {
     for (k, v) in metadata {
         if k.as_str() != "ARROW:extension:name" && k.as_str() != "ARROW:extension:metadata" {
             kv_vec.push(key_value(k.clone().into_string(), v.clone().into_string()));
@@ -94,7 +99,7 @@ fn write_metadata(metadata: &Metadata, kv_vec: &mut Vec<arrow_format::ipc::KeyVa
 fn write_extension(
     name: &str,
     metadata: Option<&str>,
-    kv_vec: &mut Vec<arrow_format::ipc::KeyValue>,
+    kv_vec: &mut Vec<polars_arrow_format::ipc::KeyValue>,
 ) {
     if let Some(metadata) = metadata {
         kv_vec.push(key_value("ARROW:extension:metadata".to_string(), metadata));
@@ -104,7 +109,10 @@ fn write_extension(
 }
 
 /// Create an IPC Field from an Arrow Field
-pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_format::ipc::Field {
+pub(crate) fn serialize_field(
+    field: &Field,
+    ipc_field: &IpcField,
+) -> polars_arrow_format::ipc::Field {
     // custom metadata.
     let mut kv_vec = vec![];
     if let ArrowDataType::Extension(ext) = field.dtype() {
@@ -149,7 +157,7 @@ pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_form
         None
     };
 
-    arrow_format::ipc::Field {
+    polars_arrow_format::ipc::Field {
         name: Some(field.name.to_string()),
         nullable: field.is_nullable,
         type_: Some(type_),
@@ -159,18 +167,18 @@ pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_form
     }
 }
 
-fn serialize_time_unit(unit: &TimeUnit) -> arrow_format::ipc::TimeUnit {
+fn serialize_time_unit(unit: &TimeUnit) -> polars_arrow_format::ipc::TimeUnit {
     match unit {
-        TimeUnit::Second => arrow_format::ipc::TimeUnit::Second,
-        TimeUnit::Millisecond => arrow_format::ipc::TimeUnit::Millisecond,
-        TimeUnit::Microsecond => arrow_format::ipc::TimeUnit::Microsecond,
-        TimeUnit::Nanosecond => arrow_format::ipc::TimeUnit::Nanosecond,
+        TimeUnit::Second => polars_arrow_format::ipc::TimeUnit::Second,
+        TimeUnit::Millisecond => polars_arrow_format::ipc::TimeUnit::Millisecond,
+        TimeUnit::Microsecond => polars_arrow_format::ipc::TimeUnit::Microsecond,
+        TimeUnit::Nanosecond => polars_arrow_format::ipc::TimeUnit::Nanosecond,
     }
 }
 
-fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
+fn serialize_type(dtype: &ArrowDataType) -> polars_arrow_format::ipc::Type {
     use ArrowDataType::*;
-    use arrow_format::ipc;
+    use polars_arrow_format::ipc;
     match dtype {
         Null => ipc::Type::Null(Box::new(ipc::Null {})),
         Boolean => ipc::Type::Bool(Box::new(ipc::Bool {})),
@@ -306,7 +314,7 @@ fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
 fn serialize_children(
     dtype: &ArrowDataType,
     ipc_field: &IpcField,
-) -> Vec<arrow_format::ipc::Field> {
+) -> Vec<polars_arrow_format::ipc::Field> {
     use ArrowDataType::*;
     match dtype {
         Null
@@ -367,7 +375,7 @@ pub(crate) fn serialize_dictionary(
     index_type: &IntegerType,
     dict_id: i64,
     dict_is_ordered: bool,
-) -> arrow_format::ipc::DictionaryEncoding {
+) -> polars_arrow_format::ipc::DictionaryEncoding {
     use IntegerType::*;
     let is_signed = match index_type {
         Int8 | Int16 | Int32 | Int64 | Int128 => true,
@@ -382,15 +390,15 @@ pub(crate) fn serialize_dictionary(
         Int128 | UInt128 => 128,
     };
 
-    let index_type = arrow_format::ipc::Int {
+    let index_type = polars_arrow_format::ipc::Int {
         bit_width,
         is_signed,
     };
 
-    arrow_format::ipc::DictionaryEncoding {
+    polars_arrow_format::ipc::DictionaryEncoding {
         id: dict_id,
         index_type: Some(Box::new(index_type)),
         is_ordered: dict_is_ordered,
-        dictionary_kind: arrow_format::ipc::DictionaryKind::DenseArray,
+        dictionary_kind: polars_arrow_format::ipc::DictionaryKind::DenseArray,
     }
 }

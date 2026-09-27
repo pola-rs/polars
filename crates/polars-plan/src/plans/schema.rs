@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::ops::Deref;
 use std::sync::Mutex;
 
-use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_error::feature_gated;
 use polars_utils::idx_vec::UnitVec;
@@ -100,7 +100,6 @@ pub(crate) fn det_join_schema(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
     options: &JoinOptionsIR,
-    expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<SchemaRef> {
     let condition = &options.options;
 
@@ -118,20 +117,10 @@ pub(crate) fn det_join_schema(
         //
         // df(cols=[B, A, B_right])
         JoinType::Right if options.args.should_coalesce() => {
-            // Get join names.
-            let mut join_on_left: PlIndexSet<_> =
-                PlIndexSet::with_capacity(condition.left_on_len());
-            for e in condition.left_on() {
-                let field = e.field(schema_left, expr_arena)?;
-                join_on_left.insert(field.name);
-            }
-
-            let mut join_on_right: PlIndexSet<_> =
-                PlIndexSet::with_capacity(condition.right_on_len());
-            for e in condition.right_on() {
-                let field = e.field(schema_right, expr_arena)?;
-                join_on_right.insert(field.name);
-            }
+            let join_on_left: PlIndexSet<_> = condition
+                .left_on()
+                .map(|e| e.output_name().clone())
+                .collect();
 
             // For the error message
             let mut suffixed = None;
@@ -173,8 +162,7 @@ pub(crate) fn det_join_schema(
             let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len())
                 .hstack(schema_left.iter_fields())?;
 
-            let output_names =
-                join_right_output_names(schema_left, schema_right, options, expr_arena)?;
+            let output_names = join_right_output_names(schema_left, schema_right, options)?;
             for ((name, dtype), output_name) in schema_right.iter().zip(output_names) {
                 let Some(output_name) = output_name else {
                     continue;
@@ -205,15 +193,13 @@ pub(crate) fn join_right_output_names(
     schema_left: &Schema,
     schema_right: &Schema,
     options: &JoinOptionsIR,
-    expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
     let condition = &options.options;
     let is_coalesced = options.args.should_coalesce();
 
     let mut join_on_right: PlIndexSet<_> = PlIndexSet::with_capacity(condition.right_on_len());
     for e in condition.right_on() {
-        let field = e.field(schema_right, expr_arena)?;
-        join_on_right.insert(field.name);
+        join_on_right.insert(e.output_name().clone());
     }
 
     let mut right_by: PlIndexSet<&PlSmallStr> = PlIndexSet::default();
@@ -244,12 +230,8 @@ pub(crate) fn join_right_output_names(
                 // values so if the right has a different name, it is added to the schema
                 #[cfg(feature = "asof_join")]
                 if matches!(&options.args.how, JoinType::AsOf(_)) {
-                    let field_left = condition
-                        .left_on()
-                        .nth(idx)
-                        .unwrap()
-                        .field(schema_left, expr_arena)?;
-                    need_to_include_column = field_left.name != name;
+                    need_to_include_column =
+                        condition.left_on().nth(idx).unwrap().output_name() != name;
                 }
 
                 !need_to_include_column

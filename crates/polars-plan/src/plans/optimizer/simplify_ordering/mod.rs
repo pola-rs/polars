@@ -77,6 +77,20 @@ pub fn simplify_and_fetch_orderings(
 
     cache_updater.update_cache_nodes(ir_arena);
 
+    // Scans whose output order is not observed may read out of order.
+    for (key, edges) in ir_node_to_edges_map.iter() {
+        if let Some(node) = key.node()
+            && let IR::Scan { maintain_order, .. } = ir_arena.get_mut(node)
+            && !edges.out_edges.is_empty()
+            && edges
+                .out_edges
+                .iter()
+                .all(|k| all_edges_map.get(*k).unwrap().is_unordered())
+        {
+            *maintain_order = false;
+        }
+    }
+
     (ir_node_to_edges_map, all_edges_map)
 }
 
@@ -319,23 +333,38 @@ impl SimplifyIRNodeOrder<'_> {
                 schema: _,
                 options,
             } => {
-                use polars_ops::prelude::JoinType;
+                use polars_defs::join::JoinType;
 
                 let ([in_edge_lhs, in_edge_rhs], [out_edge]) = unpack_edges!(3);
 
-                let mut eos = expr_order_simplifier!();
-
                 let ae_nodes_scratch = self.ae_nodes_scratch.get();
+
+                let mut eos = expr_order_simplifier!();
                 ae_nodes_scratch.extend(options.options.left_on().map(|eir| eir.node()));
                 let left_keys_observable = eos.simplify_projected_exprs(ae_nodes_scratch, false);
+                // Sortedness hints on the keys pin the input order.
+                let left_keys_pin_order = eos.internally_observed_orders().contains(O::COLUMN);
 
                 ae_nodes_scratch.clear();
+                let mut eos = expr_order_simplifier!();
                 ae_nodes_scratch.extend(options.options.right_on().map(|eir| eir.node()));
                 let right_keys_observable = eos.simplify_projected_exprs(ae_nodes_scratch, false);
+                let right_keys_pin_order = eos.internally_observed_orders().contains(O::COLUMN);
 
                 // Join keys should be elementwise.
                 assert!(!(left_keys_observable | right_keys_observable).contains(O::INDEPENDENT));
-                assert!(!eos.internally_observed_orders().contains(O::COLUMN));
+
+                // Deliberately overrides the unordered edges set above.
+                macro_rules! pin_key_orders {
+                    () => {
+                        if left_keys_pin_order {
+                            *in_edge_lhs = Edge::Ordered;
+                        }
+                        if right_keys_pin_order {
+                            *in_edge_rhs = Edge::Ordered;
+                        }
+                    };
+                }
 
                 #[cfg(feature = "asof_join")]
                 if let JoinType::AsOf(_) = &options.args.how {
@@ -347,10 +376,11 @@ impl SimplifyIRNodeOrder<'_> {
                         *out_edge = Edge::Unordered;
                     }
 
+                    pin_key_orders!();
                     return false;
                 }
 
-                use polars_ops::prelude::MaintainOrderJoin as JO;
+                use polars_defs::join::MaintainOrderJoin as JO;
 
                 if out_edge.is_unordered() || options.args.maintain_order == JO::None {
                     *out_edge = Edge::Unordered;
@@ -389,6 +419,8 @@ impl SimplifyIRNodeOrder<'_> {
                         JO::None | JO::Left => {},
                     }
                 }
+
+                pin_key_orders!();
             },
 
             IR::Gather { .. } => {
@@ -501,6 +533,7 @@ impl SimplifyIRNodeOrder<'_> {
             IR::Sink { input: _, payload } => {
                 let ([in_edge], []) = unpack_edges!(1);
 
+                let mut keys_pin_order = false;
                 if let SinkTypeIR::Partitioned(options) = payload {
                     let mut eos = expr_order_simplifier!();
                     let ae_nodes_scratch = self.ae_nodes_scratch.get();
@@ -510,10 +543,11 @@ impl SimplifyIRNodeOrder<'_> {
 
                     // Partition key exprs should be elementwise
                     assert!(!observable.contains(O::INDEPENDENT));
-                    assert!(!eos.internally_observed_orders().contains(O::COLUMN));
+                    // Sortedness hints on the keys pin the input order.
+                    keys_pin_order = eos.internally_observed_orders().contains(O::COLUMN);
                 }
 
-                if !payload.maintain_order() || in_edge.is_unordered() {
+                if !keys_pin_order && (!payload.maintain_order() || in_edge.is_unordered()) {
                     *in_edge = Edge::Unordered;
                     payload.set_maintain_order(false);
                 }

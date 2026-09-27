@@ -1,3 +1,14 @@
+#[cfg(feature = "temporal")]
+use chrono::NaiveDateTime;
+#[cfg(feature = "temporal")]
+use polars_arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
+
+#[cfg(feature = "temporal")]
+use crate::chunked_array::temporal::{
+    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us,
+};
 use crate::prelude::ArrowTimeUnit;
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
@@ -55,6 +66,39 @@ impl TimeUnit {
             TimeUnit::Nanoseconds => ArrowTimeUnit::Nanosecond,
             TimeUnit::Microseconds => ArrowTimeUnit::Microsecond,
             TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
+        }
+    }
+
+    /// `ns` nanoseconds expressed in this unit, truncated towards zero.
+    #[inline(always)]
+    pub const fn from_nsecs(self, ns: i64) -> i64 {
+        match self {
+            TimeUnit::Nanoseconds => ns,
+            TimeUnit::Microseconds => ns / 1_000,
+            TimeUnit::Milliseconds => ns / 1_000_000,
+        }
+    }
+}
+
+#[cfg(feature = "temporal")]
+impl TimeUnit {
+    /// The naive UTC datetime of the timestamp `t` in this unit.
+    #[inline]
+    pub fn timestamp_to_datetime(self, t: i64) -> NaiveDateTime {
+        match self {
+            TimeUnit::Nanoseconds => timestamp_ns_to_datetime(t),
+            TimeUnit::Microseconds => timestamp_us_to_datetime(t),
+            TimeUnit::Milliseconds => timestamp_ms_to_datetime(t),
+        }
+    }
+
+    /// The naive UTC datetime `dt` as a timestamp in this unit.
+    #[inline]
+    pub fn datetime_to_timestamp(self, dt: NaiveDateTime) -> i64 {
+        match self {
+            TimeUnit::Nanoseconds => datetime_to_timestamp_ns(dt),
+            TimeUnit::Microseconds => datetime_to_timestamp_us(dt),
+            TimeUnit::Milliseconds => datetime_to_timestamp_ms(dt),
         }
     }
 }

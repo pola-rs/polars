@@ -1,4 +1,4 @@
-use arrow::array::IntoBoxedArray;
+use polars_arrow::array::IntoBoxedArray;
 use polars_error::{PolarsError, PolarsResult, polars_bail};
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;

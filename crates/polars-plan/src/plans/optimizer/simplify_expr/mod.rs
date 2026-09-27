@@ -333,7 +333,7 @@ impl OptimizationRule for SimplifyBooleanRule {
             },
             AExpr::Function {
                 input,
-                function: IRFunctionExpr::DynamicPred { pred },
+                function: IRFunctionExpr::DynamicPred { pred, .. },
                 options,
             } if pred.id().is_none() => {
                 // The sender of this dynamic predicate was dropped,

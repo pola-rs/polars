@@ -623,11 +623,9 @@ impl PyExpr {
         } else if let Ok(q) = quantile.extract::<f64>() {
             lit(q)
         } else if let Ok(qs) = quantile.extract::<Vec<f64>>() {
-            let s = Series::new(PlSmallStr::from_static("literal"), qs.as_slice())
-                .implode()
-                .map_err(PyPolarsErr::from)?
-                .into_series();
-            lit(s)
+            let s = Series::new(PlSmallStr::from_static("literal"), qs.as_slice());
+            let dtype = DataType::List(Box::new(DataType::Float64));
+            lit(Scalar::new(dtype, AnyValue::List(s)))
         } else {
             return Err(pyo3::exceptions::PyTypeError::new_err(
                 "`quantile` must be a float, a list of floats, or an expression",
@@ -1103,6 +1101,14 @@ impl PyExpr {
 
     fn exp(&self) -> Self {
         self.inner.clone().exp().into()
+    }
+
+    fn erf(&self) -> Self {
+        self.inner.clone().erf().into()
+    }
+
+    fn erfc(&self) -> Self {
+        self.inner.clone().erfc().into()
     }
 
     fn entropy(&self, base: f64, normalize: bool) -> Self {

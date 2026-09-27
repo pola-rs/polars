@@ -1,12 +1,12 @@
 use std::ptr::copy_nonoverlapping;
 
-use arrow::array::*;
-use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::{ArrowDataType, Field};
-use arrow::offset::Offset;
-use arrow::types::NativeType;
 use bytemuck::cast_slice_mut;
 use num_traits::FromBytes;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::datatypes::{ArrowDataType, Field};
+use polars_arrow::offset::Offset;
+use polars_arrow::types::NativeType;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
 use super::CastOptionsImpl;

@@ -1,5 +1,5 @@
-use arrow::array::*;
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::*;
+use polars_arrow::datatypes::ArrowDataType;
 use polars_buffer::Buffer;
 
 mod mutable;

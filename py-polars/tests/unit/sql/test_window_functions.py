@@ -791,6 +791,31 @@ def test_window_multi_arg_aggregate_partition_by(agg: str) -> None:
     )
 
 
+def test_window_approx_quantile_partition_by() -> None:
+    # not compared against a reference backend: other engines use a different sketch
+    lf = pl.LazyFrame(
+        {
+            "i": [0, 1, 2, 3, 4],
+            "g": ["a", "a", "a", "b", "b"],
+            "a": [1, 2, 3, 4, 5],
+        }
+    )
+    assert_sql_matches(
+        {"df": lf},
+        query="""
+            SELECT i, g, APPROX_QUANTILE(a, 0.5) OVER (PARTITION BY g) AS res
+            FROM df
+            ORDER BY i
+        """,
+        compare_with=None,
+        expected={
+            "i": [0, 1, 2, 3, 4],
+            "g": ["a", "a", "a", "b", "b"],
+            "res": [2, 2, 2, 5, 5],
+        },
+    )
+
+
 def test_window_array_agg_partition_by() -> None:
     lf = pl.LazyFrame(
         {
@@ -807,4 +832,46 @@ def test_window_array_agg_partition_by() -> None:
             "i": [0, 1, 2, 3, 4],
             "res": [[1, 2, 3], [1, 2, 3], [1, 2, 3], [4, 5], [4, 5]],
         },
+    )
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_window_order_by_nulls_multiple_keys_29390(
+    descending: bool, nulls_last: bool
+) -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["x", "x", "x", "y", "y", "y"],
+            "a": [20.0, None, 10.0, None, 40.0, 30.0],
+        }
+    )
+    opts = (
+        f"{'DESC' if descending else 'ASC'} NULLS {'LAST' if nulls_last else 'FIRST'}"
+    )
+    single = df.sql(
+        f"SELECT a, ROW_NUMBER() OVER (ORDER BY a {opts}) AS rn FROM self ORDER BY rn"
+    )
+    multi_query = f"SELECT a, ROW_NUMBER() OVER (ORDER BY a {opts}, grp {opts}) AS rn FROM self ORDER BY rn"
+    assert_sql_matches(df, query=multi_query, compare_with="sqlite")
+    # nulls land in the same rows with or without the tiebreak key
+    multi = df.sql(multi_query)
+    assert multi["a"].is_null().to_list() == single["a"].is_null().to_list()
+
+
+@pytest.mark.parametrize(
+    "order_by",
+    [
+        "a, CAST(0 AS BIGINT)",
+        "a, 1",
+        "CASE WHEN a > 1 THEN 1 ELSE 0 END, a",
+    ],
+)
+def test_window_order_by_scalar_and_literal_keys(order_by: str) -> None:
+    df = pl.DataFrame({"a": [3, 1, 2]})
+    assert_sql_matches(
+        df,
+        query=f"SELECT a, ROW_NUMBER() OVER (ORDER BY {order_by}) AS rn FROM self ORDER BY a",
+        compare_with="sqlite",
+        engines=["in-memory", "streaming"],
     )

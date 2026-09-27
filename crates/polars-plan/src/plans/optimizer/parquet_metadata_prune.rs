@@ -63,6 +63,12 @@ pub(super) fn prune_parquet_metadata(
             continue;
         };
 
+        // Name-based pruning can drop mapped columns whose physical names differ,
+        // incorrectly returning nulls. Keep their metadata until pruning supports mappings.
+        if unified_scan_args.column_mapping.is_some() {
+            continue;
+        }
+
         let Some(projection) = unified_scan_args.projection.clone() else {
             continue;
         };

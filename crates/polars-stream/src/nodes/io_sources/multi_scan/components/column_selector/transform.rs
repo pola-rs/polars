@@ -1,5 +1,5 @@
-use arrow::array::{Array, LIST_VALUES_NAME};
-use arrow::datatypes::{ArrowDataType, Field as ArrowField};
+use polars_arrow::array::{Array, LIST_VALUES_NAME};
+use polars_arrow::datatypes::{ArrowDataType, Field as ArrowField};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::chunked_array::flags::StatisticsFlags;
 use polars_core::prelude::{Column, DataType, IntoColumn};
@@ -160,7 +160,7 @@ impl ColumnTransform {
 
             #[cfg(feature = "dtype-array")]
             TF::FixedSizeListValuesMapping { values_selector } => {
-                use arrow::array::FixedSizeListArray;
+                use polars_arrow::array::FixedSizeListArray;
                 use polars_core::prelude::ArrayChunked;
 
                 let input_array_ca = input._get_backing_series().array().unwrap().clone();

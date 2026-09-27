@@ -1,9 +1,9 @@
-use arrow::array::{Array, ArrayRef, ListArray};
-use arrow::datatypes::IdxArr;
-use arrow::legacy::index::IndexToUsize;
-use arrow::legacy::trusted_len::TrustedLenPush;
-use arrow::legacy::utils::CustomIterTools;
-use arrow::offset::{Offsets, OffsetsBuffer};
+use polars_arrow::array::{Array, ArrayRef, ListArray};
+use polars_arrow::datatypes::IdxArr;
+use polars_arrow::legacy::index::IndexToUsize;
+use polars_arrow::legacy::trusted_len::TrustedLenPush;
+use polars_arrow::legacy::utils::CustomIterTools;
+use polars_arrow::offset::{Offsets, OffsetsBuffer};
 use polars_utils::IdxSize;
 
 use crate::gather::take_unchecked;
@@ -147,8 +147,8 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
 
 #[cfg(test)]
 mod test {
-    use arrow::array::{Int32Array, PrimitiveArray};
-    use arrow::datatypes::ArrowDataType;
+    use polars_arrow::array::{Int32Array, PrimitiveArray};
+    use polars_arrow::datatypes::ArrowDataType;
 
     use super::*;
 

@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::datatypes::{ArrowDataType, ArrowSchema, Field as ArrowField};
+use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, Field as ArrowField};
 use polars_error::{PolarsResult, feature_gated, polars_bail, polars_err};
 use polars_utils::aliases::InitHashMaps;
 use polars_utils::pl_str::PlSmallStr;

@@ -1,5 +1,5 @@
-use arrow::array::PrimitiveArray as PArr;
 use num_traits::{One, Zero};
+use polars_arrow::array::PrimitiveArray as PArr;
 use polars_utils::float16::pf16;
 
 use super::PrimitiveArithmeticKernelImpl;

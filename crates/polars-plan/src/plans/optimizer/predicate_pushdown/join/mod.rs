@@ -45,6 +45,16 @@ pub(super) fn process_join(
     let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
     let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 
+    push_down_join_condition(
+        &mut input_left,
+        &mut input_right,
+        &schema_left,
+        &schema_right,
+        &mut options,
+        lp_arena,
+        expr_arena,
+    )?;
+
     let mut opt_join_key_reduction_select = try_reduce_redundant_join_keys(
         opt,
         lp_arena,
@@ -72,13 +82,24 @@ pub(super) fn process_join(
         &mut opt.dedup_state,
     )?;
 
+    let (mut pushdown_left, mut pushdown_right) = key_non_null_predicates(
+        opt,
+        &options,
+        &left_on,
+        &right_on,
+        input_left,
+        input_right,
+        lp_arena,
+        expr_arena,
+    )?;
+
     if match &options.args.how {
         // Full-join with no coalesce. We can only push filters if they do not remove NULLs, but
         // we don't have a reliable way to guarantee this.
         JoinType::Full => !options.args.should_coalesce(),
 
         _ => false,
-    } || acc_predicates.is_empty()
+    } || (acc_predicates.is_empty() && pushdown_left.is_empty() && pushdown_right.is_empty())
     {
         let lp = rewrite_hive(
             IR::Join {
@@ -279,10 +300,6 @@ pub(super) fn process_join(
         }
     }
 
-    let mut pushdown_left: PlIndexMap<PlSmallStr, ExprIR> =
-        init_indexmap(Some(acc_predicates.len()));
-    let mut pushdown_right: PlIndexMap<PlSmallStr, ExprIR> =
-        init_indexmap(Some(acc_predicates.len()));
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
     // Which sides of the join a predicate can be pushed to, and whether it has to
@@ -475,6 +492,139 @@ pub(super) fn process_join(
     Ok(lp)
 }
 
+/// `key.is_not_null()` for every join key whose null rows the join drops, but only for keys
+/// that can turn an outer join below into a stricter join. The join drops those rows itself,
+/// so the predicate is useless anywhere else.
+#[expect(clippy::too_many_arguments)]
+fn key_non_null_predicates(
+    opt: &mut PredicatePushDown,
+    options: &JoinOptionsIR,
+    left_on: &[ExprIR],
+    right_on: &[ExprIR],
+    input_left: Node,
+    input_right: Node,
+    lp_arena: &Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<(
+    PlIndexMap<PlSmallStr, ExprIR>,
+    PlIndexMap<PlSmallStr, ExprIR>,
+)> {
+    let (left_keys_non_null, right_keys_non_null) = match options.args.how {
+        _ if options.args.nulls_equal || options.is_non_equi() => (false, false),
+        JoinType::Inner => (true, true),
+        JoinType::Left => (false, true),
+        JoinType::Right => (true, false),
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Semi => (true, true),
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Anti => (false, true),
+        _ => (false, false),
+    };
+
+    let mut collect =
+        |on: &[ExprIR], input: Node| -> PolarsResult<PlIndexMap<PlSmallStr, ExprIR>> {
+            let mut out = init_indexmap(None);
+            for key in on {
+                let Some(name) = into_column(key.node(), expr_arena) else {
+                    continue;
+                };
+                let column = ExprIR::new(key.node(), OutputName::ColumnLhs(name.clone()));
+                let predicate = AExprBuilder::function(
+                    vec![column],
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
+                    expr_arena,
+                )
+                .expr_ir_retain_name(expr_arena);
+                if downgradable_outer_join_below(opt, input, &predicate, lp_arena, expr_arena)? {
+                    insert_predicate_dedup(&mut out, &predicate, expr_arena, &mut opt.dedup_state);
+                }
+            }
+            Ok(out)
+        };
+
+    let pushdown_left = if left_keys_non_null {
+        collect(left_on, input_left)?
+    } else {
+        init_indexmap(None)
+    };
+    let pushdown_right = if right_keys_non_null {
+        collect(right_on, input_right)?
+    } else {
+        init_indexmap(None)
+    };
+    Ok((pushdown_left, pushdown_right))
+}
+
+/// Whether `predicate`, `name.is_not_null()` for one column, pushed into `node` reaches an
+/// outer join that `try_rewrite_join_type` makes stricter because of it.
+fn downgradable_outer_join_below(
+    opt: &mut PredicatePushDown,
+    mut node: Node,
+    predicate: &ExprIR,
+    lp_arena: &Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<bool> {
+    let mut predicate = predicate.clone();
+    loop {
+        let IR::Join {
+            input_left,
+            input_right,
+            options,
+            schema,
+        } = lp_arena.get(node)
+        else {
+            let Some(input) = push_past(
+                node,
+                &mut predicate,
+                lp_arena,
+                expr_arena,
+                opt.nodes_scratch.get(),
+                opt.maintain_errors,
+            )?
+            else {
+                return Ok(false);
+            };
+            node = input;
+            continue;
+        };
+        let name = aexpr_to_leaf_names_iter(predicate.node(), expr_arena)
+            .next()
+            .unwrap()
+            .clone();
+        if !schema.contains(&name) {
+            return Ok(false);
+        }
+        let how = &options.args.how;
+        let schema_left = lp_arena.get(*input_left).schema(lp_arena);
+        let schema_right = lp_arena.get(*input_right).schema(lp_arena);
+        let origin = non_null_side_for_column(&name, &schema_left, &schema_right, options);
+        if options.is_pure_equi() && downgraded_join_type(how, origin).is_some() {
+            return Ok(true);
+        }
+        // Only the side whose rows the join keeps can take the predicate.
+        node = match origin {
+            ExprOrigin::Left if !matches!(how, JoinType::Right | JoinType::Full) => *input_left,
+            ExprOrigin::Right
+                if match how {
+                    JoinType::Left | JoinType::Full => false,
+                    #[cfg(feature = "asof_join")]
+                    JoinType::AsOf(_) => false,
+                    _ => true,
+                } =>
+            {
+                remove_suffix(
+                    &mut predicate,
+                    expr_arena,
+                    &schema_right,
+                    options.args.suffix(),
+                );
+                *input_right
+            },
+            _ => return Ok(false),
+        };
+    }
+}
+
 fn apply_join_key_reduction_select(
     lp: IR,
     opt_select: Option<(Vec<ExprIR>, SchemaRef)>,
@@ -588,7 +738,7 @@ fn try_reduce_redundant_join_keys(
         .options
         .set_keys(new_left_on, new_right_on);
 
-    *output_schema = det_join_schema(schema_left, schema_right, options, expr_arena)?;
+    *output_schema = det_join_schema(schema_left, schema_right, options)?;
 
     let original_names = original_schema.iter_names().collect::<Vec<_>>();
     let new_names = output_schema.iter_names().collect::<Vec<_>>();

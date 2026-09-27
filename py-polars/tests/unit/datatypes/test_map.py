@@ -13,11 +13,13 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
     from typing import IO
+
+    from polars._typing import PolarsDataType
 
 MAP = pl.Map(pl.String, pl.Int64)
 FLOAT_MAP = pl.Map(pl.String, pl.Float64)
@@ -1933,3 +1935,630 @@ def test_map_sliced_value_casts_survive_nesting(
     assert pl.select(pl.struct(pl.lit(sliced).alias("m"))).to_series().cast(
         pl.Struct({"m": target})
     ).to_list() == [{"m": row} for row in expected]
+
+
+def assert_map_method(
+    s: pl.Series, method: str, expected: pl.Series, *args: Any
+) -> None:
+    """Assert that the `Series` and `Expr` forms of a `map` method both hold."""
+    assert_series_equal(getattr(s.map, method)(*args), expected)
+
+    df = pl.DataFrame({"m": s})
+    result = df.select(getattr(pl.col("m").map, method)(*args))
+    assert_series_equal(result["m"], expected)
+
+
+def map_of(key_dtype: PolarsDataType, key: Any, value: int = 42) -> pl.Series:
+    """A one-row map with a single entry, built from entries to fix the key dtype."""
+    entries = pl.Series(
+        "m",
+        [[{"key": key, "value": value}]],
+        dtype=pl.List(pl.Struct({"key": key_dtype, "value": pl.Int64})),
+    )
+    return entries.list.to_map()
+
+
+def test_map_keys_values_len_expr_and_series() -> None:
+    # Deliberately unsorted: entry order is preserved, not normalized.
+    s = pl.Series("m", [{"b": 1, "a": 2}, {}, None], dtype=MAP)
+
+    assert_map_method(s, "keys", pl.Series("m", [["b", "a"], [], None]))
+    assert_map_method(s, "values", pl.Series("m", [[1, 2], [], None]))
+    assert_map_method(s, "len", pl.Series("m", [2, 0, None], dtype=pl.UInt32))
+
+
+def test_map_keys_values_len_ignore_entries_under_null_rows() -> None:
+    s = retaining_null_row_map()
+
+    assert_map_method(s, "keys", pl.Series("m", [None, ["b", "c"]]))
+    assert_map_method(s, "values", pl.Series("m", [None, [2, 3]]))
+    assert_map_method(s, "len", pl.Series("m", [None, 2], dtype=pl.UInt32))
+
+
+def test_map_keys_values_len_on_sliced_and_chunked() -> None:
+    s = pl.Series("m", [{"a": 1}, {"b": 2, "c": 3}, None], dtype=MAP)
+
+    sliced = s.slice(1, 2)
+    assert_map_method(sliced, "keys", pl.Series("m", [["b", "c"], None]))
+    assert_map_method(sliced, "values", pl.Series("m", [[2, 3], None]))
+    assert_map_method(sliced, "len", pl.Series("m", [2, None], dtype=pl.UInt32))
+
+    # A slice without null rows keeps the storage offsets off zero, so the row
+    # boundaries have to be rebased onto the flattened field rather than reused.
+    dense = pl.Series("m", [{"a": 1}, {"b": 2, "c": 3}, {"d": 4}], dtype=MAP).slice(
+        1, 2
+    )
+    assert dense.map.entries().to_arrow().offsets.to_pylist() == [1, 3, 4]
+    assert_map_method(dense, "keys", pl.Series("m", [["b", "c"], ["d"]]))
+    assert_map_method(dense, "values", pl.Series("m", [[2, 3], [4]]))
+    assert_map_method(dense, "len", pl.Series("m", [2, 1], dtype=pl.UInt32))
+    assert_map_method(dense, "get", pl.Series("m", [3, None], dtype=pl.Int64), "c")
+    assert_map_method(dense, "contains_key", pl.Series("m", [True, False]), "c")
+
+    chunked = pl.concat([s, s.slice(0, 1)], rechunk=False)
+    assert chunked.n_chunks() == 2
+    assert chunked.map.keys().to_list() == [["a"], ["b", "c"], None, ["a"]]
+    assert chunked.map.values().to_list() == [[1], [2, 3], None, [1]]
+    assert chunked.map.len().to_list() == [1, 2, None, 1]
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "contains"),
+    [
+        pytest.param(
+            "a", [1, None, None, None], [True, False, False, None], id="first"
+        ),
+        pytest.param("c", [3, None, None, None], [True, False, False, None], id="last"),
+        pytest.param("z", [None] * 4, [False, False, False, None], id="missing"),
+        pytest.param(None, [None] * 4, [False, False, False, None], id="null-key"),
+    ],
+)
+def test_map_get_and_contains_key(
+    key: str | None, value: list[int | None], contains: list[bool | None]
+) -> None:
+    s = pl.Series("m", [{"a": 1, "b": 2, "c": 3}, {"b": 2}, {}, None], dtype=MAP)
+
+    assert_map_method(s, "get", pl.Series("m", value, dtype=pl.Int64), key)
+    assert_map_method(s, "contains_key", pl.Series("m", contains), key)
+
+
+def test_map_contains_key_finds_a_null_value() -> None:
+    # The one case where `contains_key` and `get` disagree.
+    s = pl.Series("m", [{"a": None}], dtype=MAP)
+
+    assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), "a")
+    assert_map_method(s, "contains_key", pl.Series("m", [True]), "a")
+
+
+def test_map_get_with_a_key_per_row() -> None:
+    df = pl.DataFrame(
+        {
+            "m": pl.Series([{"a": 1, "b": 2}, {"a": 3}, None], dtype=MAP),
+            "k": ["b", "b", "a"],
+        }
+    )
+
+    result = df.select(
+        pl.col("m").map.get(pl.col("k")).alias("v"),
+        pl.col("m").map.contains_key(pl.col("k")).alias("has"),
+    )
+    assert_series_equal(result["v"], pl.Series("v", [2, None, None], dtype=pl.Int64))
+    assert_series_equal(result["has"], pl.Series("has", [True, False, None]))
+
+
+def test_map_get_broadcasts_a_single_map_over_a_key_column() -> None:
+    df = pl.DataFrame({"k": ["a", "b", "z"]})
+    single = pl.lit(pl.Series("m", [{"a": 1, "b": 2}], dtype=MAP)).first()
+
+    result = df.select(
+        single.map.get(pl.col("k")).alias("v"),
+        single.map.contains_key(pl.col("k")).alias("has"),
+    )
+    assert_series_equal(result["v"], pl.Series("v", [1, 2, None], dtype=pl.Int64))
+    assert_series_equal(result["has"], pl.Series("has", [True, True, False]))
+
+
+def test_map_get_length_mismatch() -> None:
+    s = pl.Series("m", [{"a": 1}, {"b": 2}, {}], dtype=MAP)
+    keys = pl.Series("k", ["a", "b"])
+
+    for method in ("get", "contains_key"):
+        with pytest.raises(pl.exceptions.ShapeError, match="2 keys in 3 maps"):
+            getattr(s.map, method)(keys)
+
+
+def test_map_get_on_an_empty_column() -> None:
+    s = pl.Series("m", [], dtype=MAP)
+
+    assert_map_method(s, "keys", pl.Series("m", [], dtype=pl.List(pl.String)))
+    assert_map_method(s, "len", pl.Series("m", [], dtype=pl.UInt32))
+    assert_map_method(s, "get", pl.Series("m", [], dtype=pl.Int64), "a")
+    assert_map_method(s, "contains_key", pl.Series("m", [], dtype=pl.Boolean), "a")
+
+
+def test_map_get_ignores_entries_under_null_rows() -> None:
+    s = retaining_null_row_map()
+
+    # `a` lives under the null row, so it is not part of any map.
+    assert_map_method(s, "get", pl.Series("m", [None, None], dtype=pl.Int64), "a")
+    assert_map_method(s, "contains_key", pl.Series("m", [None, False]), "a")
+    assert_map_method(s, "get", pl.Series("m", [None, 2], dtype=pl.Int64), "b")
+    assert_map_method(s, "contains_key", pl.Series("m", [None, True]), "b")
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "key", "needle", "missing"),
+    [
+        pytest.param(pl.String, "a", "a", "z", id="string"),
+        # An `Int32` literal upcasts losslessly to the `Int64` keys.
+        pytest.param(
+            pl.Int64, 7, pl.lit(7, pl.Int32), pl.lit(8, pl.Int32), id="int-upcast"
+        ),
+        pytest.param(pl.Enum(["a", "z"]), "a", "a", "z", id="enum"),
+        pytest.param(pl.Categorical, "a", "a", "z", id="categorical"),
+        pytest.param(
+            pl.List(pl.Int64),
+            [1, 2],
+            pl.lit([1, 2], pl.List(pl.Int64)),
+            pl.lit([3], pl.List(pl.Int64)),
+            id="list",
+        ),
+        pytest.param(
+            pl.Struct({"x": pl.Int64}),
+            {"x": 1},
+            pl.lit({"x": 1}, pl.Struct({"x": pl.Int64})),
+            pl.lit({"x": 2}, pl.Struct({"x": pl.Int64})),
+            id="struct",
+        ),
+    ],
+)
+def test_map_get_key_dtypes(
+    key_dtype: pl.DataType, key: Any, needle: Any, missing: Any
+) -> None:
+    # Built from entries because a `List` or `Struct` is not a Python dict key.
+    s = map_of(key_dtype, key, value=1)
+    assert s.dtype == pl.Map(key_dtype, pl.Int64)
+
+    assert_map_method(s, "get", pl.Series("m", [1], dtype=pl.Int64), needle)
+    assert_map_method(s, "contains_key", pl.Series("m", [True]), needle)
+    assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), missing)
+    assert_map_method(s, "contains_key", pl.Series("m", [False]), missing)
+
+
+def test_map_get_a_nested_map_value() -> None:
+    dtype = pl.Map(pl.String, MAP)
+    s = pl.Series("m", [{"a": {"x": 1}}, {}], dtype=dtype)
+
+    assert_map_method(s, "get", pl.Series("m", [{"x": 1}, None], dtype=MAP), "a")
+    assert_map_method(s, "values", pl.Series("m", [[{"x": 1}], []], dtype=pl.List(MAP)))
+
+
+def test_map_ops_resolve_schema_without_data() -> None:
+    lf = pl.LazyFrame(schema={"m": MAP})
+
+    assert lf.select(pl.col("m").map.keys()).collect_schema() == {
+        "m": pl.List(pl.String)
+    }
+    assert lf.select(pl.col("m").map.values()).collect_schema() == {
+        "m": pl.List(pl.Int64)
+    }
+    assert lf.select(pl.col("m").map.len()).collect_schema() == {"m": pl.UInt32}
+    assert lf.select(pl.col("m").map.contains_key("a")).collect_schema() == {
+        "m": pl.Boolean
+    }
+    assert lf.select(pl.col("m").map.get("a")).collect_schema() == {"m": pl.Int64}
+
+
+@pytest.mark.parametrize(
+    ("method", "args"),
+    [
+        ("keys", ()),
+        ("values", ()),
+        ("len", ()),
+        ("contains_key", ("a",)),
+        ("get", ("a",)),
+    ],
+)
+def test_map_ops_require_map_dtype(method: str, args: tuple[Any, ...]) -> None:
+    df = pl.DataFrame({"m": [[1, 2]]})
+
+    with pytest.raises(InvalidOperationError, match=rf"`map\.{method}` requires a Map"):
+        df.select(getattr(pl.col("m").map, method)(*args))
+
+
+def test_map_get_in_group_by_and_streaming() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 2],
+            "m": pl.Series([{"a": 1}, {"b": 2}, {"a": 3}], dtype=MAP),
+        }
+    )
+
+    grouped = df.group_by("g", maintain_order=True).agg(
+        pl.col("m").map.get("a").alias("v"),
+        pl.col("m").map.len().alias("n"),
+    )
+    assert grouped["v"].to_list() == [[1, None], [3]]
+    assert grouped["n"].to_list() == [[1, 1], [1]]
+
+    streamed = df.lazy().select(
+        pl.col("m").map.get("a").alias("v"),
+        pl.col("m").map.contains_key("a").alias("has"),
+        pl.col("m").map.keys().alias("k"),
+    )
+    assert_frame_equal(streamed.collect(engine="streaming"), streamed.collect())
+
+
+@pytest.mark.parametrize(
+    ("map_dtype", "needle_dtype", "key", "hit", "miss"),
+    [
+        pytest.param(
+            pl.Datetime("us"),
+            pl.Datetime("ms"),
+            datetime(1970, 1, 1, 0, 0, 0, 1000),
+            datetime(1970, 1, 1, 0, 0, 0, 1000),
+            datetime(1970, 1, 1, 0, 0, 0, 2000),
+            id="datetime",
+        ),
+        pytest.param(
+            pl.Duration("us"),
+            pl.Duration("ms"),
+            timedelta(microseconds=1000),
+            timedelta(milliseconds=1),
+            timedelta(milliseconds=2),
+            id="duration",
+        ),
+    ],
+)
+def test_map_get_widens_a_coarser_temporal_key(
+    map_dtype: pl.DataType,
+    needle_dtype: pl.DataType,
+    key: Any,
+    hit: Any,
+    miss: Any,
+) -> None:
+    s = map_of(map_dtype, key)
+
+    assert_map_method(
+        s, "get", pl.Series("m", [42], dtype=pl.Int64), pl.lit(hit, needle_dtype)
+    )
+    assert_map_method(
+        s, "contains_key", pl.Series("m", [True]), pl.lit(hit, needle_dtype)
+    )
+    assert_map_method(
+        s, "get", pl.Series("m", [None], dtype=pl.Int64), pl.lit(miss, needle_dtype)
+    )
+    assert_map_method(
+        s, "contains_key", pl.Series("m", [False]), pl.lit(miss, needle_dtype)
+    )
+
+
+@pytest.mark.parametrize(
+    ("map_dtype", "needle_dtype", "key", "needle"),
+    [
+        pytest.param(
+            pl.Datetime("ms"),
+            pl.Datetime("us"),
+            datetime(1970, 1, 1, 0, 0, 0, 1000),
+            datetime(1970, 1, 1, 0, 0, 0, 1001),
+            id="datetime",
+        ),
+        pytest.param(
+            pl.Duration("ms"),
+            pl.Duration("us"),
+            timedelta(milliseconds=1),
+            timedelta(microseconds=1001),
+            id="duration",
+        ),
+    ],
+)
+def test_map_get_rejects_a_key_that_would_be_rounded(
+    map_dtype: pl.DataType, needle_dtype: pl.DataType, key: Any, needle: Any
+) -> None:
+    # Truncating the key onto the coarser unit would match an entry it does not equal.
+    s = map_of(map_dtype, key)
+
+    for method in ("get", "contains_key"):
+        with pytest.raises(InvalidOperationError, match="would be rounded"):
+            getattr(s.map, method)(pl.lit(needle, needle_dtype))
+
+
+@pytest.mark.parametrize("needle", ["z", pl.lit("z"), pl.col("k")])
+def test_map_get_rejects_an_unknown_enum_label(needle: Any) -> None:
+    # The needle cast is strict, as it is for `is_in`.
+    dtype = pl.Map(pl.Enum(["a", "b"]), pl.Int64)
+    df = pl.DataFrame(
+        {"m": pl.Series([{"a": 1}], dtype=dtype), "k": ["z"]},
+    )
+
+    for method in ("get", "contains_key"):
+        with pytest.raises(
+            InvalidOperationError, match="conversion from `str` to `enum`"
+        ):
+            df.select(getattr(pl.col("m").map, method)(needle))
+
+
+def test_map_get_rejects_a_key_the_map_cannot_be_searched_by() -> None:
+    # Resolving these would have to rewrite the map's keys, which is not a lookup.
+    string_keys = pl.Series("m", [{"a": 1}], dtype=MAP)
+    with pytest.raises(InvalidOperationError, match="cannot look up a `enum` key"):
+        string_keys.map.get(pl.lit("a", pl.Enum(["a"])))
+
+    # Narrowing a float needle would round it onto a key it does not equal.
+    narrow_floats = map_of(pl.Float32, 1.5)
+    with pytest.raises(InvalidOperationError, match="cannot look up a `f64` key"):
+        narrow_floats.map.get(pl.lit(1.5, pl.Float64))
+
+
+def test_map_get_narrows_a_wider_integer_key() -> None:
+    # The cast is exact or null, and a null needle is a key no map holds.
+    s = map_of(pl.Int32, 7)
+
+    assert_map_method(
+        s, "get", pl.Series("m", [42], dtype=pl.Int64), pl.lit(7, pl.Int64)
+    )
+    assert_map_method(s, "contains_key", pl.Series("m", [True]), pl.lit(7, pl.Int64))
+
+    # Out of the key type's range, so it cannot be a key of this map.
+    out_of_range = pl.lit(2**40, pl.Int64)
+    assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), out_of_range)
+    assert_map_method(s, "contains_key", pl.Series("m", [False]), out_of_range)
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "needle"),
+    [
+        pytest.param(pl.UInt128, 7, id="u128-python-int"),
+        pytest.param(pl.UInt128, pl.lit(7, pl.Int8), id="u128-i8"),
+        pytest.param(pl.UInt128, pl.lit(7, pl.Int64), id="u128-i64"),
+        pytest.param(pl.UInt64, pl.lit(7, pl.Int64), id="u64-i64"),
+        pytest.param(pl.Int64, pl.lit(7, pl.UInt128), id="i64-u128"),
+        pytest.param(pl.Int8, pl.lit(7, pl.UInt64), id="i8-u64"),
+    ],
+)
+def test_map_get_integer_key_without_a_common_supertype(
+    key_dtype: PolarsDataType, needle: Any
+) -> None:
+    s = map_of(key_dtype, 7)
+
+    assert_map_method(s, "get", pl.Series("m", [42], dtype=pl.Int64), needle)
+    assert_map_method(s, "contains_key", pl.Series("m", [True]), needle)
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "needle"),
+    [
+        pytest.param(pl.UInt128, -1, id="u128-python-int"),
+        pytest.param(pl.UInt128, pl.lit(-1, pl.Int64), id="u128-i64"),
+        pytest.param(pl.Int8, pl.lit(2**64 - 1, pl.UInt64), id="i8-u64"),
+    ],
+)
+def test_map_get_integer_key_outside_the_key_range_is_absent(
+    key_dtype: PolarsDataType, needle: Any
+) -> None:
+    s = map_of(key_dtype, 7)
+
+    assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), needle)
+    assert_map_method(s, "contains_key", pl.Series("m", [False]), needle)
+
+
+def test_map_get_integer_key_column_without_a_common_supertype() -> None:
+    df = pl.DataFrame(
+        {
+            "m": map_of(pl.UInt128, 7).gather([0, 0, 0]),
+            "k": pl.Series([7, -1, None], dtype=pl.Int64),
+        }
+    )
+
+    out = df.select(
+        pl.col("m").map.get(pl.col("k")).alias("v"),
+        pl.col("m").map.contains_key(pl.col("k")).alias("has"),
+    )
+    assert out["v"].to_list() == [42, None, None]
+    assert out["has"].to_list() == [True, False, False]
+
+
+def map_with_keys(key_dtype: PolarsDataType, keys: list[Any]) -> pl.Series:
+    """A one-row map whose entries are `keys`, numbered from 0."""
+    entries = pl.Series(
+        "m",
+        [[{"key": key, "value": i} for i, key in enumerate(keys)]],
+        dtype=pl.List(pl.Struct({"key": key_dtype, "value": pl.Int64})),
+    )
+    return entries.list.to_map()
+
+
+def test_map_get_float_keys_match_canonicalization() -> None:
+    # Lookup and key deduplication must agree for NaN and signed zero so every stored
+    # key remains retrievable.
+    nan = float("nan")
+    s = map_with_keys(pl.Float64, [nan, 0.0, float("inf")])
+
+    for i, key in enumerate([nan, 0.0, float("inf")]):
+        assert_map_method(
+            s, "get", pl.Series("m", [i], dtype=pl.Int64), pl.lit(key, pl.Float64)
+        )
+        assert_map_method(
+            s, "contains_key", pl.Series("m", [True]), pl.lit(key, pl.Float64)
+        )
+
+    # `-0.0` and `0.0` are the same key, from both directions.
+    assert_map_method(
+        s, "get", pl.Series("m", [1], dtype=pl.Int64), pl.lit(-0.0, pl.Float64)
+    )
+    collapsed = map_with_keys(pl.Float64, [-0.0, 0.0])
+    assert collapsed.map.len().to_list() == [1]
+    assert collapsed.map.get(pl.lit(0.0, pl.Float64)).to_list() == [1]
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "keys", "absent"),
+    [
+        pytest.param(
+            pl.List(pl.Float64),
+            [[1.0, None], [None], [], [float("nan")]],
+            [2.0],
+            id="list",
+        ),
+        pytest.param(
+            pl.Struct({"x": pl.Int64, "y": pl.String}),
+            [{"x": 1, "y": "a"}, {"x": None, "y": "a"}, {"x": 1, "y": None}],
+            {"x": None, "y": None},
+            id="struct",
+        ),
+        pytest.param(
+            pl.Array(pl.Int64, 2),
+            [[1, 2], [3, 4]],
+            [9, 9],
+            id="array",
+        ),
+        pytest.param(
+            # Map equality is entry-order-sensitive, so these are three distinct keys.
+            MAP,
+            [{"a": 1, "b": 2}, {}, {"b": 2, "a": 1}],
+            {"a": 1},
+            id="map",
+        ),
+    ],
+)
+def test_map_get_composite_keys(
+    key_dtype: PolarsDataType, keys: list[Any], absent: Any
+) -> None:
+    s = map_with_keys(key_dtype, keys)
+    assert s.map.len().to_list() == [len(keys)]
+
+    for i, key in enumerate(keys):
+        needle = pl.lit(pl.Series("k", [key], dtype=key_dtype)).first()
+        assert_map_method(s, "get", pl.Series("m", [i], dtype=pl.Int64), needle)
+        assert_map_method(s, "contains_key", pl.Series("m", [True]), needle)
+
+    missing = pl.lit(pl.Series("k", [absent], dtype=key_dtype)).first()
+    assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), missing)
+    assert_map_method(s, "contains_key", pl.Series("m", [False]), missing)
+
+    # A composite key cannot be null, so a null needle is never found.
+    for null in (None, pl.lit(None, key_dtype)):
+        assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), null)
+        assert_map_method(s, "contains_key", pl.Series("m", [False]), null)
+
+
+def test_map_composite_keys_cannot_be_null() -> None:
+    entries = pl.Series(
+        "m",
+        [[{"key": None, "value": 1}]],
+        dtype=pl.List(pl.Struct({"key": pl.List(pl.Int64), "value": pl.Int64})),
+    )
+    with pytest.raises(InvalidOperationError, match="Map keys cannot be null"):
+        entries.list.to_map()
+
+
+def test_map_get_composite_key_per_row() -> None:
+    key_dtype = pl.List(pl.Int64)
+    m = pl.Series(
+        "m",
+        [
+            [{"key": [1, 2], "value": 10}, {"key": [3], "value": 20}],
+            [{"key": [1, 2], "value": 30}],
+        ],
+        dtype=pl.List(pl.Struct({"key": key_dtype, "value": pl.Int64})),
+    ).list.to_map()
+    df = pl.DataFrame({"m": m, "k": pl.Series([[3], [3]], dtype=key_dtype)})
+
+    result = df.select(
+        pl.col("m").map.get(pl.col("k")).alias("v"),
+        pl.col("m").map.contains_key(pl.col("k")).alias("has"),
+    )
+    assert_series_equal(result["v"], pl.Series("v", [20, None], dtype=pl.Int64))
+    assert_series_equal(result["has"], pl.Series("has", [True, False]))
+
+
+def test_map_null_valued_keys_values_len_across_chunks() -> None:
+    # Maps with Null-typed values must retain their keys, entry counts, and null
+    # status across chunk boundaries.
+    dtype = pl.Map(pl.String, pl.Null)
+    s = pl.concat(
+        [
+            pl.Series("m", [{"a": None}, None], dtype=dtype),
+            pl.Series("m", [{"b": None, "c": None}], dtype=dtype),
+            pl.Series("m", [{}, {"d": None}], dtype=dtype),
+        ],
+        rechunk=False,
+    )
+    assert s.n_chunks() == 3
+
+    keys = pl.Series("m", [["a"], None, ["b", "c"], [], ["d"]])
+    values = pl.Series(
+        "m", [[None], None, [None, None], [], [None]], dtype=pl.List(pl.Null)
+    )
+    assert_map_method(s, "keys", keys)
+    assert_map_method(s, "values", values)
+    assert_map_method(s, "len", pl.Series("m", [1, None, 2, 0, 1], dtype=pl.UInt32))
+
+    assert_map_method(
+        s, "contains_key", pl.Series("m", [False, None, True, False, False]), "c"
+    )
+    assert_map_method(s, "get", pl.Series("m", [None] * 5, dtype=pl.Null), "c")
+
+    # Slicing cuts across the chunk boundary as well.
+    assert_series_equal(s.slice(1, 4).map.keys(), keys.slice(1, 4))
+    assert_series_equal(s.slice(1, 4).map.values(), values.slice(1, 4))
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "key"),
+    [
+        # A Map whose keys match the needle is still not a container to search.
+        pytest.param(pl.List(pl.Int64), [1, 2], id="matching-keys"),
+        pytest.param(pl.String, "a", id="other-keys"),
+    ],
+)
+def test_is_in_rejects_a_map_haystack(key_dtype: PolarsDataType, key: Any) -> None:
+    # Only `map.get` and `map.contains_key` may search a Map by its keys.
+    df = pl.DataFrame(
+        {
+            "l": pl.Series([[1, 2]], dtype=pl.List(pl.Int64)),
+            "m": map_with_keys(key_dtype, [key]),
+        }
+    )
+
+    with pytest.raises(
+        InvalidOperationError, match=r"(?s)must be nested.*use `map.contains_key`"
+    ):
+        df.select(pl.col("l").is_in(pl.col("m")))
+
+
+def test_map_get_overflowing_temporal_key_is_missing_not_an_error() -> None:
+    # Widening the needle can overflow. A Map key is never null, so an
+    # unrepresentable needle is simply absent, and a literal must agree with a column.
+    s = map_of(pl.Duration("ns"), timedelta(microseconds=1))
+    big = timedelta(milliseconds=10**13)
+
+    assert_map_method(
+        s, "get", pl.Series("m", [None], dtype=pl.Int64), pl.lit(big, pl.Duration("ms"))
+    )
+    df = pl.DataFrame({"m": s, "k": pl.Series([big], dtype=pl.Duration("ms"))})
+    result = df.select(
+        pl.col("m").map.get(pl.col("k")).alias("v"),
+        pl.col("m").map.contains_key(pl.col("k")).alias("has"),
+    )
+    assert_series_equal(result["v"], pl.Series("v", [None], dtype=pl.Int64))
+    assert_series_equal(result["has"], pl.Series("has", [False]))
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "needle_zone"),
+    [
+        pytest.param(pl.Datetime("us"), "UTC", id="naive-keys"),
+        pytest.param(pl.Datetime("us", "UTC"), "America/New_York", id="aware-keys"),
+    ],
+)
+def test_map_get_rejects_a_key_in_another_time_zone(
+    key_dtype: PolarsDataType, needle_zone: str
+) -> None:
+    # The kernel reports this as an opaque comparison failure. Catch it while resolving.
+    s = map_of(key_dtype, datetime(2020, 1, 1))
+    needle = pl.lit(datetime(2020, 1, 1)).dt.replace_time_zone(needle_zone)
+
+    for method in ("get", "contains_key"):
+        with pytest.raises(InvalidOperationError, match="time zones differ"):
+            getattr(s.map, method)(needle)

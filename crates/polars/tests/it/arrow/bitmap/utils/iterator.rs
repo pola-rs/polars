@@ -1,4 +1,4 @@
-use arrow::bitmap::utils::BitmapIter;
+use polars_arrow::bitmap::utils::BitmapIter;
 
 #[test]
 fn basic() {

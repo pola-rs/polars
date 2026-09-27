@@ -1,4 +1,4 @@
-use arrow::datatypes::{IntervalUnit, Metadata};
+use polars_arrow::datatypes::{IntervalUnit, Metadata};
 use polars_dtype::categorical::CategoricalPhysical;
 use polars_error::feature_gated;
 use polars_utils::pl_str::PlSmallStr;
@@ -116,14 +116,14 @@ impl Field {
         self
     }
 
-    /// Converts the `Field` to an `arrow::datatypes::Field`.
+    /// Converts the `Field` to an `polars_arrow::datatypes::Field`.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let f = Field::new("Value".into(), DataType::Int64);
-    /// let af = arrow::datatypes::Field::new("Value".into(), arrow::datatypes::ArrowDataType::Int64, true);
+    /// let af = polars_arrow::datatypes::Field::new("Value".into(), polars_arrow::datatypes::ArrowDataType::Int64, true);
     ///
     /// assert_eq!(f.to_arrow(CompatLevel::newest()), af);
     /// ```
@@ -162,6 +162,24 @@ impl DataType {
 
     pub fn from_arrow_dtype(dt: &ArrowDataType) -> DataType {
         Self::from_arrow(dt, None)
+    }
+
+    /// The factor polars multiplies the values of an Arrow `dtype` by to store
+    /// them as [`Self::from_arrow_dtype`]: Arrow seconds become milliseconds and
+    /// every time of day nanoseconds, all other values stay as they are.
+    pub fn arrow_value_scale(dtype: &ArrowDataType) -> i64 {
+        use polars_arrow::temporal_conversions::{MILLISECONDS, NANOSECONDS};
+        match dtype {
+            ArrowDataType::Timestamp(ArrowTimeUnit::Second, _)
+            | ArrowDataType::Duration(ArrowTimeUnit::Second) => MILLISECONDS,
+            ArrowDataType::Time32(tu) | ArrowDataType::Time64(tu) => match tu {
+                ArrowTimeUnit::Second => NANOSECONDS,
+                ArrowTimeUnit::Millisecond => 1_000_000,
+                ArrowTimeUnit::Microsecond => 1_000,
+                ArrowTimeUnit::Nanosecond => 1,
+            },
+            _ => 1,
+        }
     }
 
     pub fn from_arrow(dt: &ArrowDataType, md: Option<&Metadata>) -> DataType {

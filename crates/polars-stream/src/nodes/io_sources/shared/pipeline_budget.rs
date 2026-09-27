@@ -1,10 +1,38 @@
+use std::num::NonZeroUsize;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
+use polars_io::cloud::concurrency_config::{FetchConfig, get_download_chunk_size};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 static SHOULD_LOG_CONCURRENCY: LazyLock<bool> =
     LazyLock::new(|| std::env::var("POLARS_LOG_CONCURRENCY").is_ok());
+
+/// Prefetch kilobyte limit for a scan pipeline.
+///
+/// A value set in `env_var` is used as given. The default is at least one download chunk.
+pub(crate) fn prefetch_kbytes_limit_from_env_or_default(
+    env_var: &str,
+    num_pipelines: usize,
+) -> usize {
+    if let Ok(x) = std::env::var(env_var) {
+        return x
+            .parse::<NonZeroUsize>()
+            .unwrap_or_else(|_| panic!("invalid value for {env_var}: {x}"))
+            .get();
+    }
+
+    // This should be large enough to be non-blocking, but small enough to avoid
+    // excessive memory use from a run-away prefetch pipeline.
+    // "Correct" formula: (a) max effective in-flight bdp-based bytes budget + (b) decode pipeline.
+    // Since we do not know (a) at startup, we use  '3 * (b) + buffer' as a proxy for (a), where the
+    // multiplier reflects the max gain factor for in-flight control.
+    // TODO: Dynamically adapt the max memory to the observed BDP.
+    // NOTE: This does not account for the decompression multiplier, so actual memory
+    // usage can be substantially larger.
+    let target_chunk_size_kb = FetchConfig::random_access().chunk_size.div_ceil(1024);
+    (4 * num_pipelines * target_chunk_size_kb).max(get_download_chunk_size().div_ceil(1024))
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct PipelineBudget {
@@ -43,8 +71,8 @@ impl PipelineBudget {
     /// value is meaningful. All pipeline paths (parquet, IPC) must acquire
     /// through this method so the order can never diverge.
     ///
-    /// The requested capacity is cap'ped to avoid deadlock, at the expense of
-    /// relaxing the memory management.
+    /// The requested capacity is capped at the kbytes limit, so a fetch larger than the
+    /// limit still proceeds, and any positive limit makes progress.
     pub(crate) async fn acquire(&self, n_bytes: usize) -> PipelinePermit {
         // Prevent deadlock.
         let n_kbytes: u32 = n_bytes

@@ -13,11 +13,12 @@ mod primitive;
 mod simple;
 mod utils;
 
-use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray};
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::{ArrowDataType, Field};
-use arrow::offset::Offsets;
+use polars_arrow::array::{Array, FixedSizeListArray, ListArray, MapArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::{ArrowDataType, Field};
+use polars_arrow::offset::Offsets;
 use simple::page_iter_to_array;
+pub(crate) use simple::unify_timestamp_unit;
 
 pub use self::nested_utils::{InitNested, NestedState, init_nested};
 pub use self::utils::filter::{Filter, PredicateFilter};
@@ -112,17 +113,17 @@ pub fn create_map(
 fn is_primitive(dtype: &ArrowDataType) -> bool {
     matches!(
         dtype.to_physical_type(),
-        arrow::datatypes::PhysicalType::Primitive(_)
-            | arrow::datatypes::PhysicalType::Null
-            | arrow::datatypes::PhysicalType::Boolean
-            | arrow::datatypes::PhysicalType::Utf8
-            | arrow::datatypes::PhysicalType::LargeUtf8
-            | arrow::datatypes::PhysicalType::Binary
-            | arrow::datatypes::PhysicalType::BinaryView
-            | arrow::datatypes::PhysicalType::Utf8View
-            | arrow::datatypes::PhysicalType::LargeBinary
-            | arrow::datatypes::PhysicalType::FixedSizeBinary
-            | arrow::datatypes::PhysicalType::Dictionary(_)
+        polars_arrow::datatypes::PhysicalType::Primitive(_)
+            | polars_arrow::datatypes::PhysicalType::Null
+            | polars_arrow::datatypes::PhysicalType::Boolean
+            | polars_arrow::datatypes::PhysicalType::Utf8
+            | polars_arrow::datatypes::PhysicalType::LargeUtf8
+            | polars_arrow::datatypes::PhysicalType::Binary
+            | polars_arrow::datatypes::PhysicalType::BinaryView
+            | polars_arrow::datatypes::PhysicalType::Utf8View
+            | polars_arrow::datatypes::PhysicalType::LargeBinary
+            | polars_arrow::datatypes::PhysicalType::FixedSizeBinary
+            | polars_arrow::datatypes::PhysicalType::Dictionary(_)
     ) && !matches!(dtype, ArrowDataType::Extension(_))
 }
 
@@ -150,7 +151,7 @@ fn columns_to_iter_recursive(
 
 /// Returns the number of (parquet) columns that a [`ArrowDataType`] contains.
 pub fn n_columns(dtype: &ArrowDataType) -> usize {
-    use arrow::datatypes::PhysicalType::*;
+    use polars_arrow::datatypes::PhysicalType::*;
     match dtype.to_physical_type() {
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
         | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => 1,

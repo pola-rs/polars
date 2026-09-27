@@ -1,8 +1,8 @@
 use std::io::Write;
 use std::sync::Arc;
 
-use arrow_format::ipc::KeyValue;
-use arrow_format::ipc::planus::Builder;
+use polars_arrow_format::ipc::KeyValue;
+use polars_arrow_format::ipc::planus::Builder;
 use polars_error::{PolarsResult, polars_bail};
 
 use super::super::{ARROW_MAGIC_V2, IpcField};
@@ -33,9 +33,9 @@ pub struct FileWriter<W: Write> {
     /// The number of bytes between each block of bytes, as an offset for random access
     pub(crate) block_offsets: usize,
     /// Dictionary blocks that will be written as part of the IPC footer
-    pub(crate) dictionary_blocks: Vec<arrow_format::ipc::Block>,
+    pub(crate) dictionary_blocks: Vec<polars_arrow_format::ipc::Block>,
     /// Record blocks that will be written as part of the IPC footer
-    pub(crate) record_blocks: Vec<arrow_format::ipc::Block>,
+    pub(crate) record_blocks: Vec<polars_arrow_format::ipc::Block>,
     /// Whether the writer footer has been written, and the writer is finished
     pub(crate) state: State,
     /// Keeps track of dictionaries that have been written
@@ -196,7 +196,7 @@ impl<W: Write> FileWriter<W> {
         for encoded_dictionary in encoded_dictionaries {
             let (meta, data) = write_message(&mut self.writer, encoded_dictionary)?;
 
-            let block = arrow_format::ipc::Block {
+            let block = polars_arrow_format::ipc::Block {
                 offset: self.block_offsets as i64,
                 meta_data_length: meta as i32,
                 body_length: data as i64,
@@ -214,7 +214,7 @@ impl<W: Write> FileWriter<W> {
     ) -> PolarsResult<()> {
         let (meta, data) = write_message(&mut self.writer, encoded_message)?;
         // add a record block for the footer
-        let block = arrow_format::ipc::Block {
+        let block = polars_arrow_format::ipc::Block {
             offset: self.block_offsets as i64,
             meta_data_length: meta as i32, // TODO: is this still applicable?
             body_length: data as i64,
@@ -242,8 +242,8 @@ impl<W: Write> FileWriter<W> {
             self.custom_schema_metadata.as_deref(),
         );
 
-        let root = arrow_format::ipc::Footer {
-            version: arrow_format::ipc::MetadataVersion::V5,
+        let root = polars_arrow_format::ipc::Footer {
+            version: polars_arrow_format::ipc::MetadataVersion::V5,
             schema: Some(Box::new(schema)),
             dictionaries: Some(std::mem::take(&mut self.dictionary_blocks)),
             record_batches: Some(std::mem::take(&mut self.record_blocks)),

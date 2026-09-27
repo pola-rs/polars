@@ -1,4 +1,4 @@
-use arrow::array::{Array, BooleanArray};
+use polars_arrow::array::{Array, BooleanArray};
 use polars_error::PolarsResult;
 
 use super::super::{EncodeNullability, WriteOptions, nested, utils};

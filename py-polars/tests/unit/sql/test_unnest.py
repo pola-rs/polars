@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal as D
+
 import pytest
 
 import polars as pl
@@ -34,8 +36,9 @@ def test_unnest_table_function(array_keyword: str) -> None:
                 {
                     "x": [1, 2, 3, 4],
                     "y": ["ww", "xx", "yy", "zz"],
-                    "z": [23.0, 24.5, 28.0, 27.5],
-                }
+                    "z": [D("23.0"), D("24.5"), D("28.0"), D("27.5")],
+                },
+                schema_overrides={"z": pl.Decimal(3, 1)},
             ),
         )
 

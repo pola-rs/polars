@@ -834,3 +834,14 @@ def test_order_project_invalidates_suborder_28831() -> None:
     lf = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [5, 10, 2, 4]})
     out = lf.set_sorted("a", "b").select(pl.col("b").max()).collect().item()
     assert out == 10
+
+
+def test_set_sorted_expr_observes_input_order_29560() -> None:
+    lf = pl.LazyFrame({"a": [2, 0, 1, 2, 1, 0, 0, 2, 1, 0]})
+    q = lf.sort("a").with_columns(pl.col("a").set_sorted()).group_by("a").agg(pl.len())
+
+    assert "SORT" in q.explain()
+    assert_frame_equal(
+        q.collect(engine="streaming").sort("a"),
+        lf.group_by("a").agg(pl.len()).sort("a").collect(),
+    )

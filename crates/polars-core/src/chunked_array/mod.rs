@@ -3,10 +3,10 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
-use arrow::compute::concatenate::concatenate_unchecked;
-use arrow::compute::utils::combine_validities_and;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::compute::concatenate::concatenate_unchecked;
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_compute::filter::filter_with_bitmap;
 use polars_utils::broadcast::BroadcastLength;
 
@@ -806,7 +806,7 @@ impl ArrayChunked {
             .to_fixed_size_list(width, true);
         let field = Arc::new(Field::new(name, dtype));
         if width == 0 {
-            use arrow::array::builder::{ArrayBuilder, make_builder};
+            use polars_arrow::array::builder::{ArrayBuilder, make_builder};
             let values = make_builder(&inner_dtype.to_arrow(CompatLevel::newest())).freeze();
             return ArrayChunked::new_with_compute_len(
                 field,
@@ -837,7 +837,7 @@ impl ArrayChunked {
         let chunks = self
             .downcast_iter()
             .map(|chunk| {
-                use arrow::offset::OffsetsBuffer;
+                use polars_arrow::offset::OffsetsBuffer;
 
                 let inner_dtype = chunk.dtype().inner_dtype().unwrap();
                 let dtype = inner_dtype.clone().to_large_list(true);
@@ -1344,13 +1344,13 @@ pub(crate) mod test {
         let before = arr
             .chunks()
             .iter()
-            .map(|arr| arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
+            .map(|arr| polars_arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
             .sum::<usize>();
         arr.shrink_to_fit();
         let after = arr
             .chunks()
             .iter()
-            .map(|arr| arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
+            .map(|arr| polars_arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
             .sum::<usize>();
         assert!(before > after);
     }

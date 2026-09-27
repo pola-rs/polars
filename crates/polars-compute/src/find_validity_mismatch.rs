@@ -1,7 +1,7 @@
-use arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
-use arrow::types::Offset;
+use polars_arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::types::Offset;
 use polars_utils::IdxSize;
 use polars_utils::itertools::Itertools;
 
@@ -17,7 +17,7 @@ pub fn find_validity_mismatch_shallow(
         (None, None) => {},
         (Some(l), Some(r)) => {
             if l != r {
-                let mismatches = arrow::bitmap::xor(l, r);
+                let mismatches = polars_arrow::bitmap::xor(l, r);
                 idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
             }
         },

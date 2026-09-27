@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
-use arrow_format::ipc::FooterRef;
-use arrow_format::ipc::planus::ReadAsRoot;
+use polars_arrow_format::ipc::FooterRef;
+use polars_arrow_format::ipc::planus::ReadAsRoot;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::bool::UnsafeBool;
@@ -35,10 +35,10 @@ pub struct FileMetadata {
     /// The blocks in the file
     ///
     /// A block indicates the regions in the file to read to get data
-    pub blocks: Vec<arrow_format::ipc::Block>,
+    pub blocks: Vec<polars_arrow_format::ipc::Block>,
 
     /// Dictionaries associated to each dict_id
-    pub dictionaries: Option<Vec<arrow_format::ipc::Block>>,
+    pub dictionaries: Option<Vec<polars_arrow_format::ipc::Block>>,
 
     /// The total size of the file in bytes
     pub size: u64,
@@ -56,7 +56,7 @@ pub fn get_row_count<R: Read + Seek>(reader: &mut R) -> PolarsResult<i64> {
 ///  Read the row count by summing the length of the of the record batches in blocks
 pub fn get_row_count_from_blocks<R: Read + Seek>(
     reader: &mut R,
-    blocks: &[arrow_format::ipc::Block],
+    blocks: &[polars_arrow_format::ipc::Block],
 ) -> PolarsResult<i64> {
     let mut message_scratch: Vec<u8> = Default::default();
 
@@ -71,14 +71,14 @@ pub fn get_row_count_from_blocks<R: Read + Seek>(
 }
 
 pub(crate) fn get_dictionary_batch<'a>(
-    message: &'a arrow_format::ipc::MessageRef,
-) -> PolarsResult<arrow_format::ipc::DictionaryBatchRef<'a>> {
+    message: &'a polars_arrow_format::ipc::MessageRef,
+) -> PolarsResult<polars_arrow_format::ipc::DictionaryBatchRef<'a>> {
     let header = message
         .header()
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferHeader(err)))?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageHeader))?;
     match header {
-        arrow_format::ipc::MessageHeaderRef::DictionaryBatch(batch) => Ok(batch),
+        polars_arrow_format::ipc::MessageHeaderRef::DictionaryBatch(batch) => Ok(batch),
         _ => polars_bail!(oos = OutOfSpecKind::UnexpectedMessageType),
     }
 }
@@ -87,7 +87,7 @@ pub(crate) fn get_dictionary_batch<'a>(
 pub fn read_dictionary_block<R: Read + Seek>(
     reader: &mut R,
     metadata: &FileMetadata,
-    block: &arrow_format::ipc::Block,
+    block: &polars_arrow_format::ipc::Block,
     // When true, the underlying reader bytestream represents a standalone IPC Block
     // rather than a complete IPC File.
     force_zero_offset: bool,
@@ -200,8 +200,8 @@ fn read_footer<R: Read + Seek>(reader: &mut R, footer_len: usize) -> PolarsResul
 
 fn deserialize_footer_blocks(
     footer_data: &[u8],
-) -> PolarsResult<(FooterRef<'_>, Vec<arrow_format::ipc::Block>)> {
-    let footer = arrow_format::ipc::FooterRef::read_as_root(footer_data)
+) -> PolarsResult<(FooterRef<'_>, Vec<polars_arrow_format::ipc::Block>)> {
+    let footer = polars_arrow_format::ipc::FooterRef::read_as_root(footer_data)
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferFooter(err)))?;
 
     let blocks = footer
@@ -211,19 +211,19 @@ fn deserialize_footer_blocks(
 
     let blocks = blocks
         .iter()
-        .map(|blockref| Ok(<arrow_format::ipc::Block>::from(blockref)))
+        .map(|blockref| Ok(<polars_arrow_format::ipc::Block>::from(blockref)))
         .collect::<PolarsResult<Vec<_>>>()?;
     Ok((footer, blocks))
 }
 
 pub(super) fn deserialize_footer_ref(footer_data: &[u8]) -> PolarsResult<FooterRef<'_>> {
-    arrow_format::ipc::FooterRef::read_as_root(footer_data)
+    polars_arrow_format::ipc::FooterRef::read_as_root(footer_data)
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferFooter(err)))
 }
 
 pub(super) fn deserialize_schema_ref_from_footer(
-    footer: arrow_format::ipc::FooterRef<'_>,
-) -> PolarsResult<arrow_format::ipc::SchemaRef<'_>> {
+    footer: polars_arrow_format::ipc::FooterRef<'_>,
+) -> PolarsResult<polars_arrow_format::ipc::SchemaRef<'_>> {
     footer
         .schema()
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferSchema(err)))?
@@ -232,8 +232,9 @@ pub(super) fn deserialize_schema_ref_from_footer(
 
 /// Get the IPC blocks from the footer containing record batches
 pub(super) fn iter_recordbatch_blocks_from_footer(
-    footer: arrow_format::ipc::FooterRef<'_>,
-) -> PolarsResult<impl SendableIterator<Item = PolarsResult<arrow_format::ipc::Block>> + '_> {
+    footer: polars_arrow_format::ipc::FooterRef<'_>,
+) -> PolarsResult<impl SendableIterator<Item = PolarsResult<polars_arrow_format::ipc::Block>> + '_>
+{
     let blocks = footer
         .record_batches()
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))?
@@ -241,13 +242,14 @@ pub(super) fn iter_recordbatch_blocks_from_footer(
 
     Ok(blocks
         .into_iter()
-        .map(|blockref| Ok(<arrow_format::ipc::Block>::from(blockref))))
+        .map(|blockref| Ok(<polars_arrow_format::ipc::Block>::from(blockref))))
 }
 
 pub(super) fn iter_dictionary_blocks_from_footer(
-    footer: arrow_format::ipc::FooterRef<'_>,
-) -> PolarsResult<Option<impl SendableIterator<Item = PolarsResult<arrow_format::ipc::Block>> + '_>>
-{
+    footer: polars_arrow_format::ipc::FooterRef<'_>,
+) -> PolarsResult<
+    Option<impl SendableIterator<Item = PolarsResult<polars_arrow_format::ipc::Block>> + '_>,
+> {
     let dictionaries = footer
         .dictionaries()
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferDictionaries(err)))?;
@@ -255,7 +257,7 @@ pub(super) fn iter_dictionary_blocks_from_footer(
     Ok(dictionaries.map(|dicts| {
         dicts
             .into_iter()
-            .map(|blockref| Ok(<arrow_format::ipc::Block>::from(blockref)))
+            .map(|blockref| Ok(<polars_arrow_format::ipc::Block>::from(blockref)))
     }))
 }
 
@@ -304,14 +306,14 @@ pub fn read_file_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMe
 }
 
 pub(crate) fn get_record_batch(
-    message: arrow_format::ipc::MessageRef,
-) -> PolarsResult<arrow_format::ipc::RecordBatchRef> {
+    message: polars_arrow_format::ipc::MessageRef,
+) -> PolarsResult<polars_arrow_format::ipc::RecordBatchRef> {
     let header = message
         .header()
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferHeader(err)))?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageHeader))?;
     match header {
-        arrow_format::ipc::MessageHeaderRef::RecordBatch(batch) => Ok(batch),
+        polars_arrow_format::ipc::MessageHeaderRef::RecordBatch(batch) => Ok(batch),
         _ => polars_bail!(oos = OutOfSpecKind::UnexpectedMessageType),
     }
 }
@@ -320,7 +322,7 @@ pub fn get_message_from_block_offset<'a, R: Read + Seek>(
     reader: &mut R,
     offset: u64,
     message_scratch: &'a mut Vec<u8>,
-) -> PolarsResult<arrow_format::ipc::MessageRef<'a>> {
+) -> PolarsResult<polars_arrow_format::ipc::MessageRef<'a>> {
     reader.seek(SeekFrom::Start(offset))?;
     let mut meta_buf = [0; 4];
     reader.read_exact(&mut meta_buf)?;
@@ -340,15 +342,15 @@ pub fn get_message_from_block_offset<'a, R: Read + Seek>(
         .take(meta_len as u64)
         .read_to_end(message_scratch)?;
 
-    arrow_format::ipc::MessageRef::read_as_root(message_scratch)
+    polars_arrow_format::ipc::MessageRef::read_as_root(message_scratch)
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))
 }
 
 pub(super) fn get_message_from_block<'a, R: Read + Seek>(
     reader: &mut R,
-    block: &arrow_format::ipc::Block,
+    block: &polars_arrow_format::ipc::Block,
     message_scratch: &'a mut Vec<u8>,
-) -> PolarsResult<arrow_format::ipc::MessageRef<'a>> {
+) -> PolarsResult<polars_arrow_format::ipc::MessageRef<'a>> {
     let offset: u64 = block
         .offset
         .try_into()

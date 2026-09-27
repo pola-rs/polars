@@ -1,12 +1,12 @@
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryViewArray, DictionaryArray, DictionaryKey, PrimitiveArray, Utf8ViewArray,
 };
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::compute::aggregate::estimated_bytes_size;
-use arrow::datatypes::{ArrowDataType, IntegerType, PhysicalType};
-use arrow::legacy::utils::CustomIterTools;
-use arrow::trusted_len::TrustMyLength;
-use arrow::types::NativeType;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::compute::aggregate::estimated_bytes_size;
+use polars_arrow::datatypes::{ArrowDataType, IntegerType, PhysicalType};
+use polars_arrow::legacy::utils::CustomIterTools;
+use polars_arrow::trusted_len::TrustMyLength;
+use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_compute::min_max::MinMaxKernel;
 use polars_error::{PolarsResult, polars_bail};
@@ -219,7 +219,7 @@ pub(crate) fn encode_as_dictionary_optional(
         ));
     }
 
-    use arrow::types::PrimitiveType as PT;
+    use polars_arrow::types::PrimitiveType as PT;
     let fast_dictionary = match array.dtype().to_physical_type() {
         PhysicalType::Primitive(pt) => match pt {
             PT::Int8 => min_max_integer_encode_as_dictionary_optional::<_, i8>(array),
@@ -434,8 +434,8 @@ fn serialize_keys_range<K: DictionaryKey>(
 }
 
 macro_rules! dyn_prim {
-    ($from:ty, $to:ty, $array:expr, $options:expr, $type_:expr) => {{
-        let values = $array.values().as_any().downcast_ref().unwrap();
+    ($from:ty, $to:ty, $values:expr, $options:expr, $type_:expr) => {{
+        let values = $values.as_any().downcast_ref().unwrap();
 
         let buffer =
             primitive_encode_plain::<$from, $to>(values, EncodeNullability::new(false), vec![]);
@@ -464,34 +464,47 @@ pub fn array_to_pages<K: DictionaryKey>(
     options: WriteOptions,
     encoding: Encoding,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
+    let values = array.values().as_ref();
+    let masked_values;
+    let values = if options.statistics.min_value || options.statistics.max_value {
+        // Only referenced, non-null dictionary values contribute to statistics.
+        let mut validity = MutableBitmap::from_len_zeroed(values.len());
+        for key in array.keys_iter().flatten() {
+            validity.set(key, !values.is_null(key));
+        }
+        masked_values = values.with_validity(validity.into());
+        masked_values.as_ref()
+    } else {
+        values
+    };
+
     match encoding {
         Encoding::PlainDictionary | Encoding::RleDictionary => {
             // write DictPage
-            let (dict_page, statistics): (_, Option<ParquetStatistics>) = match array
-                .values()
+            let (dict_page, statistics): (_, Option<ParquetStatistics>) = match values
                 .dtype()
                 .to_storage()
             {
-                ArrowDataType::Int8 => dyn_prim!(i8, i32, array, options, type_),
-                ArrowDataType::Int16 => dyn_prim!(i16, i32, array, options, type_),
+                ArrowDataType::Int8 => dyn_prim!(i8, i32, values, options, type_),
+                ArrowDataType::Int16 => dyn_prim!(i16, i32, values, options, type_),
                 ArrowDataType::Int32 | ArrowDataType::Date32 | ArrowDataType::Time32(_) => {
-                    dyn_prim!(i32, i32, array, options, type_)
+                    dyn_prim!(i32, i32, values, options, type_)
                 },
                 ArrowDataType::Int64
                 | ArrowDataType::Date64
                 | ArrowDataType::Time64(_)
                 | ArrowDataType::Timestamp(_, _)
-                | ArrowDataType::Duration(_) => dyn_prim!(i64, i64, array, options, type_),
-                ArrowDataType::UInt8 => dyn_prim!(u8, i32, array, options, type_),
-                ArrowDataType::UInt16 => dyn_prim!(u16, i32, array, options, type_),
-                ArrowDataType::UInt32 => dyn_prim!(u32, i32, array, options, type_),
-                ArrowDataType::UInt64 => dyn_prim!(u64, i64, array, options, type_),
-                ArrowDataType::Float16 => dyn_prim!(pf16, f32, array, options, type_),
-                ArrowDataType::Float32 => dyn_prim!(f32, f32, array, options, type_),
-                ArrowDataType::Float64 => dyn_prim!(f64, f64, array, options, type_),
+                | ArrowDataType::Duration(_) => dyn_prim!(i64, i64, values, options, type_),
+                ArrowDataType::UInt8 => dyn_prim!(u8, i32, values, options, type_),
+                ArrowDataType::UInt16 => dyn_prim!(u16, i32, values, options, type_),
+                ArrowDataType::UInt32 => dyn_prim!(u32, i32, values, options, type_),
+                ArrowDataType::UInt64 => dyn_prim!(u64, i64, values, options, type_),
+                ArrowDataType::Float16 => dyn_prim!(pf16, f32, values, options, type_),
+                ArrowDataType::Float32 => dyn_prim!(f32, f32, values, options, type_),
+                ArrowDataType::Float64 => dyn_prim!(f64, f64, values, options, type_),
                 ArrowDataType::LargeUtf8 => {
                     let array = polars_compute::cast::cast(
-                        array.values().as_ref(),
+                        values,
                         &ArrowDataType::LargeBinary,
                         Default::default(),
                     )
@@ -515,11 +528,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                     )
                 },
                 ArrowDataType::BinaryView => {
-                    let array = array
-                        .values()
-                        .as_any()
-                        .downcast_ref::<BinaryViewArray>()
-                        .unwrap();
+                    let array = values.as_any().downcast_ref::<BinaryViewArray>().unwrap();
                     let mut buffer = vec![];
                     binview::encode_plain(array, EncodeNullability::Required, &mut buffer);
 
@@ -538,8 +547,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                     )
                 },
                 ArrowDataType::Utf8View => {
-                    let array = array
-                        .values()
+                    let array = values
                         .as_any()
                         .downcast_ref::<Utf8ViewArray>()
                         .unwrap()
@@ -562,7 +570,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                     )
                 },
                 ArrowDataType::LargeBinary => {
-                    let values = array.values().as_any().downcast_ref().unwrap();
+                    let values = values.as_any().downcast_ref().unwrap();
 
                     let mut buffer = vec![];
                     binary_encode_plain::<i64>(values, EncodeNullability::Required, &mut buffer);
@@ -582,7 +590,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                 },
                 ArrowDataType::FixedSizeBinary(_) => {
                     let mut buffer = vec![];
-                    let array = array.values().as_any().downcast_ref().unwrap();
+                    let array = values.as_any().downcast_ref().unwrap();
                     fixed_binary_encode_plain(array, EncodeNullability::Required, &mut buffer);
                     let stats = if options.has_statistics() {
                         let stats = fixed_binary_build_statistics(

@@ -1,4 +1,4 @@
-use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add};
+use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add_scaled};
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
@@ -208,6 +208,10 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
         let rhs = rhs.decimal()?;
         ((&self.0) / rhs).map(|ca| ca.into_series())
+    }
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+        let rhs = rhs.decimal()?;
+        self.0.rem_with(rhs, true).map(|ca| ca.into_series())
     }
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
@@ -448,7 +452,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .iter()
             .flatten()
             .try_fold(0i128, |acc, v| {
-                dec128_add(acc, v, prec)
+                dec128_add_scaled(acc, scale, v, scale, scale)
                     .ok_or_else(|| polars_err!(ComputeError: "overflow in decimal addition in sum"))
             })?;
         let av = AnyValue::Decimal(sum, prec, scale);

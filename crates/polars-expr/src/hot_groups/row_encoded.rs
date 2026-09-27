@@ -1,5 +1,5 @@
-use arrow::array::{BinaryArray, PrimitiveArray};
-use arrow::offset::{Offsets, OffsetsBuffer};
+use polars_arrow::array::{BinaryArray, PrimitiveArray};
+use polars_arrow::offset::{Offsets, OffsetsBuffer};
 use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 

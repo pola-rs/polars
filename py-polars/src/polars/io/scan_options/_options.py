@@ -60,3 +60,4 @@ class ScanOptions:
     # (physical, deleted)
     row_count: tuple[int, int] | None = None
     source_sizes: Sequence[int] | None = None
+    resolve_heavy_sources: int | None = None

@@ -56,7 +56,7 @@ pub mod c_api;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "2.0.0-rc.1";
+pub static PYPOLARS_VERSION: &str = "2.0.0-rc.2";
 
 // Set by the release CI workflow; absent for local/source builds.
 pub static PYPOLARS_BUILD_COMMIT: &str = match option_env!("POLARS_BUILD_COMMIT") {

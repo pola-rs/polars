@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use arrow::datatypes::{
+use polars_arrow::datatypes::{
     DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, MAINTAIN_PL_TYPE,
     Metadata, PL_KEY,
 };
@@ -606,6 +606,21 @@ impl DataType {
 
     pub fn is_supported_list_arithmetic_input(&self) -> bool {
         self.is_primitive_numeric() || self.is_bool() || self.is_null()
+    }
+
+    /// Whether `arr.dot` has a kernel for this inner dtype.
+    pub fn is_supported_array_dot_input(&self) -> bool {
+        use DataType::*;
+        match self {
+            Int8 | Int16 | Int32 | Int64 => true,
+            #[cfg(feature = "dtype-i128")]
+            Int128 => true,
+            UInt8 | UInt16 | UInt32 | UInt64 => true,
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => true,
+            Float32 | Float64 => true,
+            _ => false,
+        }
     }
 
     /// Check if this [`DataType`] is a logical type
@@ -1345,7 +1360,7 @@ impl DataType {
             },
             #[cfg(feature = "dtype-extension")]
             Extension(typ, inner) => Ok(ArrowDataType::Extension(Box::new(
-                arrow::datatypes::ExtensionType {
+                polars_arrow::datatypes::ExtensionType {
                     name: typ.name().into(),
                     inner: inner.try_to_arrow(compat_level)?,
                     metadata: typ.serialize_metadata().map(|m| m.into()),

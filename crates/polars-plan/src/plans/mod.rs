@@ -20,6 +20,8 @@ pub(crate) mod iterator;
 mod lit;
 pub mod optimizer;
 pub mod options;
+#[cfg(feature = "parquet")]
+pub(crate) mod parquet_footers;
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]

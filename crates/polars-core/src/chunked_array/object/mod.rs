@@ -3,8 +3,8 @@ use std::any::Any;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::utils::{BitmapIter, ZipValidity};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use polars_buffer::Buffer;
 use polars_utils::total_ord::TotalHash;
 

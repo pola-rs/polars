@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 
+use regex::bytes::{Regex as BytesRegex, RegexBuilder as BytesRegexBuilder};
 use regex::{Regex, RegexBuilder};
 
 use crate::cache::LruCache;
@@ -22,6 +23,7 @@ fn get_size_limit() -> Option<usize> {
 /// A cache for compiled regular expressions.
 pub struct RegexCache {
     cache: LruCache<String, Regex>,
+    bytes_cache: LruCache<String, BytesRegex>,
     size_limit: Option<usize>,
 }
 
@@ -29,33 +31,58 @@ impl RegexCache {
     fn new() -> Self {
         Self {
             cache: LruCache::with_capacity(32),
+            bytes_cache: LruCache::with_capacity(32),
             size_limit: get_size_limit(),
         }
     }
 
     pub fn compile(&mut self, re: &str) -> Result<&Regex, regex::Error> {
+        let size_limit = &mut self.size_limit;
         let r = self.cache.try_get_or_insert_with(re, |re| {
-            // We do this little loop to only check POLARS_REGEX_SIZE_LIMIT when
-            // a regex fails to compile due to the size limit.
-            loop {
+            build_within_size_limit(size_limit, |limit| {
                 let mut builder = RegexBuilder::new(re);
-                if let Some(bytes) = self.size_limit {
+                if let Some(bytes) = limit {
                     builder.size_limit(bytes);
                 }
-                match builder.build() {
-                    err @ Err(regex::Error::CompiledTooBig(_)) => {
-                        let new_size_limit = get_size_limit();
-                        if new_size_limit != self.size_limit {
-                            self.size_limit = new_size_limit;
-                            continue; // Try to compile again.
-                        }
-                        break err;
-                    },
-                    r => break r,
-                };
-            }
+                builder.build()
+            })
         });
         Ok(&*r?)
+    }
+
+    pub fn compile_bytes(&mut self, re: &str) -> Result<&BytesRegex, regex::Error> {
+        let size_limit = &mut self.size_limit;
+        let r = self.bytes_cache.try_get_or_insert_with(re, |re| {
+            build_within_size_limit(size_limit, |limit| {
+                let mut builder = BytesRegexBuilder::new(re);
+                if let Some(bytes) = limit {
+                    builder.size_limit(bytes);
+                }
+                builder.build()
+            })
+        });
+        Ok(&*r?)
+    }
+}
+
+// We do this little loop to only check POLARS_REGEX_SIZE_LIMIT when a regex
+// fails to compile due to the size limit.
+fn build_within_size_limit<R>(
+    size_limit: &mut Option<usize>,
+    build: impl Fn(Option<usize>) -> Result<R, regex::Error>,
+) -> Result<R, regex::Error> {
+    loop {
+        match build(*size_limit) {
+            err @ Err(regex::Error::CompiledTooBig(_)) => {
+                let new_size_limit = get_size_limit();
+                if new_size_limit != *size_limit {
+                    *size_limit = new_size_limit;
+                    continue; // Try to compile again.
+                }
+                break err;
+            },
+            r => break r,
+        }
     }
 }
 
@@ -65,6 +92,10 @@ thread_local! {
 
 pub fn compile_regex(re: &str) -> Result<Regex, regex::Error> {
     LOCAL_REGEX_CACHE.with_borrow_mut(|cache| cache.compile(re).cloned())
+}
+
+pub fn compile_bytes_regex(re: &str) -> Result<BytesRegex, regex::Error> {
+    LOCAL_REGEX_CACHE.with_borrow_mut(|cache| cache.compile_bytes(re).cloned())
 }
 
 pub fn with_regex_cache<R, F: FnOnce(&mut RegexCache) -> R>(f: F) -> R {

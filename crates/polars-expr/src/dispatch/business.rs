@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::prelude::Column;
-use polars_ops::series::Roll;
+use polars_defs::expr::Roll;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRBusinessFunction;
 

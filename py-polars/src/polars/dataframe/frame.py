@@ -67,7 +67,7 @@ from polars._utils.expired import (
     removed_parameters,
 )
 from polars._utils.getitem import get_df_item_by_key
-from polars._utils.parse import parse_into_expression
+from polars._utils.parse import parse_into_list_of_expressions_require_selectors
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
@@ -82,7 +82,7 @@ from polars._utils.various import (
     scale_bytes,
     warn_null_comparison,
 )
-from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
+from polars._utils.wrap import wrap_ldf, wrap_s
 from polars.config import Config
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
@@ -7879,12 +7879,14 @@ class DataFrame:
         other
             Lazy DataFrame to join with.
         left_on
-            Join column of the left DataFrame.
+            Ordered asof key (column name, expression, or selector) for the left
+            DataFrame.
         right_on
-            Join column of the right DataFrame.
+            Ordered asof key (column name, expression, or selector) for the right
+            DataFrame.
         on
-            Join column of both DataFrames. If set, `left_on` and `right_on` should be
-            None.
+            Ordered asof key (column name, expression, or selector) for both DataFrames.
+            If set, `left_on` and `right_on` should be None.
         by_left
             Join on these columns before doing asof join
         by_right
@@ -7934,8 +7936,7 @@ class DataFrame:
             - *True*: Always coalesce join columns.
             - *False*: Never coalesce join columns.
 
-            Note that joining on any other expressions than `col`
-            will turn off coalescing.
+            Only keys that expand to plain column references support coalescing.
         allow_exact_matches
             Whether exact matches are valid join predicates.
 
@@ -7953,6 +7954,10 @@ class DataFrame:
         --------
         join
         join_where
+
+        Notes
+        -----
+        The asof key must expand to exactly one expression per input.
 
         Examples
         --------
@@ -8226,8 +8231,8 @@ class DataFrame:
         other
             DataFrame to join with.
         on
-            Name(s) of the join columns in both DataFrames. If set, `left_on` and
-            `right_on` should be None. This should not be specified if `how='cross'`.
+            Names, expressions, or selectors used on both DataFrames. If set,
+            `left_on` and `right_on` should be None. Do not use with `how='cross'`.
         how : {'inner', 'left', 'right', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
@@ -8255,9 +8260,9 @@ class DataFrame:
                    table. Does not return columns from the right table.
 
         left_on
-            Name(s) of the left join column(s).
+            Join column names, expressions, or selectors of the left DataFrame.
         right_on
-            Name(s) of the right join column(s).
+            Join column names, expressions, or selectors of the right DataFrame.
         suffix
             Suffix to append to columns with a duplicate name.
         validate: {'m:m', 'm:1', '1:m', '1:1'}
@@ -8295,8 +8300,7 @@ class DataFrame:
                  - Never coalesce join columns.
 
             .. note::
-                Joining on any other expressions than `col`
-                will turn off coalescing.
+                Only keys that expand to plain column references support coalescing.
         maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
             Which DataFrame row order to preserve, if any.
             Do not rely on any observed ordering without explicitly setting this
@@ -8342,7 +8346,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **experimental**. It may be removed or
                 changed at any point without it being considered a breaking change.
-
 
         See Also
         --------
@@ -11456,14 +11459,14 @@ class DataFrame:
             ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    def n_unique(self, subset: str | Expr | Sequence[str | Expr] | None = None) -> int:
+    def n_unique(self, subset: IntoExpr | Collection[IntoExpr] | None = None) -> int:
         """
         Return the number of unique rows, or the number of unique row-subsets.
 
         Parameters
         ----------
         subset
-            One or more columns/expressions that define what to count;
+            Column name(s), selector(s), or expressions that define what to count;
             omit to return the count of unique rows.
 
         Notes
@@ -11513,29 +11516,12 @@ class DataFrame:
         ... )
         3
         """
-        if subset is None and self.width == 0:
-            # With no columns all rows are identical, so there is a single
-            # distinct row for any non-empty frame.
-            return min(self.height, 1)
-
-        if isinstance(subset, str):
-            expr = F.col(subset)
-        elif isinstance(subset, pl.Expr):
-            expr = subset
-        elif isinstance(subset, Sequence) and len(subset) == 1:
-            expr = wrap_expr(parse_into_expression(subset[0]))
-        else:
-            struct_fields = F.all() if (subset is None) else subset
-            expr = F.struct(struct_fields)
-
-        from polars.lazyframe.opt_flags import QueryOptFlags
-
-        df = (
-            self.lazy()
-            .select(expr.n_unique())
-            ._collect_eager(optimizations=QueryOptFlags._eager())
+        parsed_subset = (
+            None
+            if subset is None
+            else parse_into_list_of_expressions_require_selectors(subset)
         )
-        return 0 if df.is_empty() else df.row(0)[0]
+        return self._df.n_unique(parsed_subset)
 
     def rechunk(self) -> DataFrame:
         """

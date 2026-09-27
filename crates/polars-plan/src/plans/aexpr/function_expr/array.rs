@@ -1,9 +1,7 @@
 #[cfg(feature = "array_to_struct")]
 use polars_buffer::Buffer;
 use polars_core::utils::{slice_offsets, try_get_supertype};
-use polars_ops::chunked_array::array::is_supported_array_dot_dtype;
 
-use super::schema::function_sum_output_dtype;
 use super::*;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
@@ -101,13 +99,13 @@ impl IRArrayFunction {
                 );
                 let inner_dtype = try_get_supertype(lhs_inner, rhs_inner)?;
                 polars_ensure!(
-                    is_supported_array_dot_dtype(&inner_dtype),
+                    inner_dtype.is_supported_array_dot_input(),
                     InvalidOperation:
                     "arr.dot does not support input dtypes {} and {} with supertype {inner_dtype}",
                     args[0].dtype(), args[1].dtype()
                 );
 
-                mapper.with_dtype(function_sum_output_dtype(&inner_dtype))
+                mapper.with_dtype(sum_output_dtype(&inner_dtype))
             },
             ToList => mapper
                 .ensure_is_array()?

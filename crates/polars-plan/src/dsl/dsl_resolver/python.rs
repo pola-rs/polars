@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
-use polars_core::schema::SchemaRef;
+use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_utils::arena::Arena;
 use polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle;
@@ -67,6 +67,7 @@ fn to_py_resolve_dsl_args<'py>(
     existing_resolved_version_key: Option<&str>,
     filters_eir: &[ExprIR],
     expr_arena: &Arena<AExpr>,
+    resolver_schema: &Schema,
 ) -> PolarsResult<Bound<'py, PyDict>> {
     let ResolveDslArgs {
         projection,
@@ -104,13 +105,15 @@ fn to_py_resolve_dsl_args<'py>(
         kwargs.set_item(
             intern!(py, "_pyarrow_expr"),
             match pyarrow_compute.as_ref() {
-                Ok(pc) => aexpr_to_pyarrow(py, pc, node, expr_arena).into_py_any(py)?,
+                Ok(pc) => {
+                    aexpr_to_pyarrow(py, pc, node, expr_arena, resolver_schema).into_py_any(py)?
+                },
                 Err(e) => e.into_py_any(py)?,
             },
         )?;
         kwargs.set_item(
             intern!(py, "pyarrow_str"),
-            predicate_to_pa(node, expr_arena),
+            predicate_to_pa(node, expr_arena, resolver_schema),
         )?;
 
         py_dsl_filters.append(py_filter_dataclass(py).call(py, (), Some(&kwargs))?)?;
@@ -177,6 +180,7 @@ impl DslResolverTrait for PythonDslResolver {
         filters_eir: Buffer<ExprIR>,
         existing_resolved_version_key: Option<PlSmallStr>,
         expr_arena: &Arena<AExpr>,
+        resolver_schema: SchemaRef,
         #[cfg(feature = "python")] py_dsl_resolve_threadpool: Arc<
             polars_utils::python_thread_pool::PyThreadPool,
         >,
@@ -191,6 +195,7 @@ impl DslResolverTrait for PythonDslResolver {
                     existing_resolved_version_key.as_deref(),
                     &filters_eir,
                     expr_arena,
+                    &resolver_schema,
                 )?
                 .unbind(),
             ))

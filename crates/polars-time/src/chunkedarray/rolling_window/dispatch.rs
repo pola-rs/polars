@@ -1,17 +1,18 @@
 use std::borrow::Cow;
 
-use arrow::types::NativeType;
 #[cfg(feature = "dtype-f16")]
 use num_traits::real::Real;
+use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls};
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_numeric_polars_type};
+use polars_defs::time::duration::ensure_duration_matches_dtype;
+use polars_defs::time::group_by::ClosedWindow;
 use polars_ops::series::SeriesMethods;
 use polars_utils::float::IsFloat;
 
 use super::*;
-use crate::prelude::*;
 use crate::series::AsSeries;
 
 #[cfg(feature = "rolling_window")]

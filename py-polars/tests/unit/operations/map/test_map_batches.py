@@ -43,6 +43,7 @@ def test_map_no_dtype_set_8531() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")  # cut
 def test_error_on_reducing_map() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}

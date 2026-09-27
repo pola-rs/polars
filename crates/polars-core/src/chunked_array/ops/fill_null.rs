@@ -1,7 +1,7 @@
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::legacy::kernels::set::set_at_nulls;
 use bytemuck::Zeroable;
 use num_traits::{NumCast, One, Zero};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::legacy::kernels::set::set_at_nulls;
 use polars_utils::itertools::Itertools;
 
 use crate::prelude::*;

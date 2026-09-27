@@ -4,19 +4,21 @@ use bitflags::bitflags;
 use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
 #[cfg(feature = "iejoin")]
-use polars_ops::frame::IEJoinOptions;
-use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinType, JoinTypeOptions};
+use polars_defs::join::IEJoinOptions;
+use polars_defs::join::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinType, JoinTypeOptions};
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::{DynamicGroupOptionsIR, RollingGroupOptionsIR};
 use polars_utils::bool::UnsafeBool;
 use polars_utils::itertools::Itertools;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-use crate::dsl::JoinOptions;
+use crate::dsl::{GroupbyOptions, JoinOptions};
 #[cfg(feature = "cse")]
 use crate::plans::ExpressionHasher;
 use crate::plans::ir::inputs::{Exprs, ExprsMut};
-use crate::plans::{ExprIR, ExpressionComparator, PlSmallStr};
+use crate::plans::{DynamicPred, ExprIR, ExpressionComparator, PlSmallStr};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -336,6 +338,53 @@ impl ProjectionOptions {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub struct GroupbyOptionsIR {
+    #[cfg(feature = "dynamic_group_by")]
+    pub dynamic: Option<DynamicGroupOptionsIR>,
+    #[cfg(feature = "dynamic_group_by")]
+    pub rolling: Option<RollingGroupOptionsIR>,
+    /// Take only a slice of the result
+    pub slice: Option<(i64, usize)>,
+}
+
+impl GroupbyOptionsIR {
+    pub fn is_rolling(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.rolling.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_dynamic(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.dynamic.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
+}
+
+impl From<GroupbyOptions> for GroupbyOptionsIR {
+    fn from(opts: GroupbyOptions) -> Self {
+        Self {
+            #[cfg(feature = "dynamic_group_by")]
+            dynamic: opts.dynamic.map(Into::into),
+            #[cfg(feature = "dynamic_group_by")]
+            rolling: opts.rolling.map(Into::into),
+            slice: opts.slice,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct JoinOptionsIR {
@@ -343,6 +392,26 @@ pub struct JoinOptionsIR {
     pub force_parallel: bool,
     pub args: JoinArgs,
     pub options: JoinTypeOptionsIR,
+    /// Ranges of build-side keys the join publishes to scans below its probe side once
+    /// the build is done. Only set together with a forced `args.build_side`.
+    pub runtime_filters: Vec<RuntimeFilter>,
+}
+
+/// Largest ratio of distinct build keys to distinct probe keys for which a
+/// bloom filter is published.
+pub const MAX_BUILD_PROBE_DISTINCT_RATIO: f64 = 0.3;
+
+/// The build-side key at `key_idx` of the join's `on`, published through
+/// `pred` for the probe side: its range, and a bloom filter over its values
+/// when `bloom_keys` gives the number of distinct keys to size it for.
+#[derive(Clone, Debug, PartialEq, Hash)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub struct RuntimeFilter {
+    pub key_idx: usize,
+    pub pred: DynamicPred,
+    pub bloom_keys: Option<usize>,
+    /// The probe side's distinct keys, when the plan can estimate them.
+    pub probe_distinct: Option<usize>,
 }
 
 impl JoinOptionsIR {
@@ -403,12 +472,14 @@ impl JoinOptionsIR {
             force_parallel,
             args,
             options,
+            runtime_filters,
         } = self;
 
         *allow_parallel == other.allow_parallel
             && *force_parallel == other.force_parallel
             && *args == other.args
             && options.shallow_eq(&other.options, expr_cmp)
+            && *runtime_filters == other.runtime_filters
     }
 
     #[cfg(feature = "cse")]
@@ -422,12 +493,14 @@ impl JoinOptionsIR {
             force_parallel,
             args,
             options,
+            runtime_filters,
         } = self;
 
         allow_parallel.hash(state);
         force_parallel.hash(state);
         args.hash(state);
         options.shallow_hash(state, expr_hash);
+        runtime_filters.hash(state);
     }
 }
 
@@ -439,6 +512,7 @@ pub enum JoinTypeOptionsIR {
     /// `fused_predicate`, that predicate as well.
     ///
     /// An empty `on` is a plain cross join.
+    /// Join keys may be scalar. Execution broadcasts keys to their input's height.
     Equi {
         on: Vec<(ExprIR, ExprIR)>,
         /// Boolean match condition in the join's output namespace, evaluated per
@@ -799,6 +873,7 @@ impl From<JoinOptions> for JoinOptionsIR {
             force_parallel: opts.force_parallel,
             args: opts.args,
             options: Default::default(),
+            runtime_filters: Vec::new(),
         }
     }
 }

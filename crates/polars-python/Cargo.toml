@@ -9,10 +9,12 @@ repository = { workspace = true }
 description = "Enable running Polars workloads in Python"
 
 [dependencies]
+polars-arrow = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
+polars-defs = { workspace = true }
 polars-descriptions = { workspace = true, optional = true }
 polars-dtype = { workspace = true }
 polars-error = { workspace = true }
@@ -33,7 +35,6 @@ polars-time = { workspace = true }
 polars-utils = { workspace = true, features = ["python"] }
 
 arboard = { workspace = true, optional = true }
-arrow = { workspace = true }
 bincode = { workspace = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }

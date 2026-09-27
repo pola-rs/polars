@@ -6,12 +6,6 @@ use std::num::IntErrorKind;
 use std::sync::RwLock;
 use std::{fmt, str};
 
-#[cfg(any(
-    feature = "dtype-date",
-    feature = "dtype-datetime",
-    feature = "dtype-time"
-))]
-use arrow::temporal_conversions::*;
 #[cfg(feature = "dtype-datetime")]
 use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
@@ -23,6 +17,12 @@ use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
 use num_traits::{Num, NumCast};
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_arrow::temporal_conversions::*;
 use polars_error::feature_gated;
 use polars_utils::relaxed_cell::RelaxedCell;
 
@@ -73,7 +73,7 @@ pub fn get_thousands_separator() -> String {
 }
 #[cfg(feature = "dtype-decimal")]
 pub fn get_trim_decimal_zeros() -> bool {
-    arrow::compute::decimal::get_trim_decimal_zeros()
+    polars_arrow::compute::decimal::get_trim_decimal_zeros()
 }
 
 // Numeric formatting setters
@@ -91,7 +91,7 @@ pub fn set_thousands_separator(sep: Option<char>) {
 }
 #[cfg(feature = "dtype-decimal")]
 pub fn set_trim_decimal_zeros(trim: Option<bool>) {
-    arrow::compute::decimal::set_trim_decimal_zeros(trim)
+    polars_arrow::compute::decimal::set_trim_decimal_zeros(trim)
 }
 
 /// Parses an environment variable value as a limit or set a default.
@@ -995,11 +995,7 @@ fn fmt_datetime(
     tu: TimeUnit,
     tz: Option<&self::datatypes::TimeZone>,
 ) -> fmt::Result {
-    let ndt = match tu {
-        TimeUnit::Nanoseconds => timestamp_ns_to_datetime(v),
-        TimeUnit::Microseconds => timestamp_us_to_datetime(v),
-        TimeUnit::Milliseconds => timestamp_ms_to_datetime(v),
-    };
+    let ndt = tu.timestamp_to_datetime(v);
     match tz {
         None => std::fmt::Display::fmt(&ndt, f),
         Some(tz) => PlTzAware::new(ndt, tz).fmt(f),

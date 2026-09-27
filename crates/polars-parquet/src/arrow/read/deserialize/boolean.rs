@@ -1,8 +1,8 @@
-use arrow::array::{BooleanArray, Splitable};
-use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::utils::BitmapIter;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{BooleanArray, Splitable};
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::bitmap::utils::BitmapIter;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_compute::filter::filter_boolean_kernel;
 
 use super::Filter;
@@ -341,7 +341,7 @@ impl Decoder for BooleanDecoder {
     fn extend_decoded(
         &self,
         decoded: &mut Self::DecodedState,
-        additional: &dyn arrow::array::Array,
+        additional: &dyn polars_arrow::array::Array,
         is_optional: bool,
     ) -> ParquetResult<()> {
         let additional = additional.as_any().downcast_ref::<BooleanArray>().unwrap();

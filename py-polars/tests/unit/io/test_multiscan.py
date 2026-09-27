@@ -1386,3 +1386,47 @@ def test_hive_join_rewrite_null_partition(tmp_path: Path, nulls_equal: bool) -> 
             q.collect(),
             q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
         )
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+@pytest.mark.parametrize(
+    ("scan", "write", "env_var"),
+    [
+        (
+            pl.scan_parquet,
+            partial(pl.DataFrame.write_parquet, row_group_size=100),
+            "POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET",
+        ),
+        (
+            pl.scan_ipc,
+            partial(pl.DataFrame.write_ipc, record_batch_size=100),
+            "POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET",
+        ),
+    ],
+)
+def test_prefetch_kbytes_budget_below_download_chunk_29464(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: Any,
+    scan: Any,
+    write: Any,
+    env_var: str,
+) -> None:
+    plmonkeypatch.setenv(env_var, "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    dfs = [
+        pl.DataFrame({"a": range(i * 1000, (i + 1) * 1000), "b": ["x" * 50] * 1000})
+        for i in range(3)
+    ]
+    paths = [tmp_path / f"{i}" for i in range(len(dfs))]
+    for df, path in zip(dfs, paths, strict=True):
+        write(df, path)
+
+    capfd.readouterr()
+    out = scan(paths).collect(engine="streaming")
+    capture = capfd.readouterr().err
+
+    assert "prefetch_kbytes_limit: 1\n" in capture
+    assert_frame_equal(out, pl.concat(dfs))

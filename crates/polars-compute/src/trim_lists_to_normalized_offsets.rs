@@ -1,5 +1,5 @@
-use arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
-use arrow::types::Offset;
+use polars_arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
+use polars_arrow::types::Offset;
 
 use crate::rebuild_list::rebuild_list_shallow;
 

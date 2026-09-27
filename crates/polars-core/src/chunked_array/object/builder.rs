@@ -1,6 +1,6 @@
-use arrow::array::builder::{ArrayBuilder, ShareStrategy};
-use arrow::bitmap::BitmapBuilder;
-use arrow::datatypes::ExtensionType;
+use polars_arrow::array::builder::{ArrayBuilder, ShareStrategy};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::datatypes::ExtensionType;
 use polars_utils::vec::PushUnchecked;
 
 use super::*;

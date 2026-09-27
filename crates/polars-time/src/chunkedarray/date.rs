@@ -1,5 +1,5 @@
-use arrow::temporal_conversions::{EPOCH_DAYS_FROM_CE, MILLISECONDS, SECONDS_IN_DAY};
 use chrono::{Datelike, NaiveDate};
+use polars_arrow::temporal_conversions::{EPOCH_DAYS_FROM_CE, MILLISECONDS, SECONDS_IN_DAY};
 
 use super::*;
 

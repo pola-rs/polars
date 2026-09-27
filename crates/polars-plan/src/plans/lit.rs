@@ -1,12 +1,14 @@
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "dtype-datetime")]
+use chrono::Datelike;
 #[cfg(feature = "temporal")]
 use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::CHEAP_SERIES_HASH_LIMIT;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
+use polars_core::series::ops::int_range::new_int_range;
 use polars_core::utils::materialize_dyn_int;
-use polars_ops::series::new_int_range;
 use polars_utils::float16::pf16;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 #[cfg(feature = "serde")]
@@ -322,6 +324,15 @@ impl LiteralValue {
         !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
     }
 
+    /// Whether this literal has exactly one value, including a single row `Series`.
+    pub fn is_single_value(&self) -> bool {
+        match self {
+            LiteralValue::Series(s) => s.len() == 1,
+            LiteralValue::Range { .. } => false,
+            _ => true,
+        }
+    }
+
     pub fn is_nan(&self) -> bool {
         self.to_any_value().is_some_and(|av| av.is_nan())
     }
@@ -561,9 +572,15 @@ impl Literal for Null {
 }
 
 #[cfg(feature = "dtype-datetime")]
+fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
+    // ~584 year around 1970
+    !(ndt.year() > 2554 || ndt.year() < 1386)
+}
+
+#[cfg(feature = "dtype-datetime")]
 impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {
-        if polars_time::in_nanoseconds_window(&self) {
+        if in_nanoseconds_window(&self) {
             Expr::Literal(
                 Scalar::new_datetime(
                     self.and_utc().timestamp_nanos_opt().unwrap(),

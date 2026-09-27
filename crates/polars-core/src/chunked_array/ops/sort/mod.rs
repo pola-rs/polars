@@ -12,9 +12,9 @@ use std::cmp::Ordering;
 
 pub(crate) use arg_sort::arg_sort_row_fmt;
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::legacy::trusted_len::TrustedLenPush;
 use compare_inner::NonNull;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use polars_buffer::Buffer;
 use polars_utils::nulls::IsNull;
 use polars_utils::sort::reorder_cmp;

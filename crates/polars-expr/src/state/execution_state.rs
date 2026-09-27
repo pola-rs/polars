@@ -1,8 +1,8 @@
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, RwLock};
 
-use arrow::bitmap::Bitmap;
 use bitflags::bitflags;
+use polars_arrow::bitmap::Bitmap;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_ops::prelude::ChunkJoinOptIds;

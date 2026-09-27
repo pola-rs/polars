@@ -36,6 +36,14 @@ pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {
         _ => {},
     }
 
+    #[cfg(feature = "dtype-decimal")]
+    if a.dtype().is_decimal() || b.dtype().is_decimal() {
+        let (a, b) = polars_core::series::arithmetic::coerce_lhs_rhs_numeric_op(a, b)?;
+        if a.dtype().is_decimal() && b.dtype().is_decimal() {
+            return Ok(a.decimal()?.int_div(b.decimal()?, true)?.into_series());
+        }
+    }
+
     if !a.dtype().is_primitive_numeric() {
         polars_bail!(op = "floor_div", a.dtype());
     }

@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
-use arrow::temporal_conversions::{NANOSECONDS, time64ns_to_time};
 use chrono::Timelike;
+use polars_arrow::temporal_conversions::{NANOSECONDS, time64ns_to_time};
 
 use super::*;
 use crate::prelude::*;

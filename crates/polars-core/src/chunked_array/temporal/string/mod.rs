@@ -1,17 +1,17 @@
 pub mod infer;
-use chrono::DateTime;
-mod patterns;
-mod strptime;
-pub use patterns::Pattern;
-#[cfg(feature = "dtype-time")]
-use polars_core::chunked_array::temporal::time_to_time64ns;
-use polars_core::prelude::arity::unary_elementwise;
+pub mod patterns;
+pub mod strptime;
+
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 use polars_utils::cache::LruCachedFunc;
 
-use super::*;
+use self::strptime::StrpTimeState;
+use crate::chunked_array::ops::arity::unary_elementwise;
 #[cfg(feature = "dtype-date")]
-use crate::chunkedarray::date::naive_date_to_date;
-use crate::prelude::string::strptime::StrpTimeState;
+use crate::chunked_array::temporal::date::naive_date_to_date;
+#[cfg(feature = "dtype-time")]
+use crate::chunked_array::temporal::time_to_time64ns;
+use crate::prelude::*;
 
 #[cfg(feature = "dtype-time")]
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
@@ -155,21 +155,16 @@ pub trait StringMethods: AsString {
             },
         };
 
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        };
-
         let ca = unary_elementwise(string_ca, |opt_s| {
             let mut s = opt_s?;
             while !s.is_empty() {
                 let timestamp = if tz_aware {
                     DateTime::parse_and_remainder(s, fmt)
                         .ok()
-                        .map(|(dt, _r)| func(dt.naive_utc()))
+                        .map(|(dt, _r)| tu.datetime_to_timestamp(dt.naive_utc()))
                 } else {
-                    infer::parse_datetime_and_remainder(s, fmt).map(|(nd, _r)| func(nd))
+                    infer::parse_datetime_and_remainder(s, fmt)
+                        .map(|(nd, _r)| tu.datetime_to_timestamp(nd))
                 };
                 match timestamp {
                     Some(ts) => return Some(ts),
@@ -191,12 +186,14 @@ pub trait StringMethods: AsString {
 
         match (tz_aware, tz) {
             #[cfg(feature = "timezones")]
-            (false, Some(tz)) => polars_ops::prelude::replace_time_zone(
-                &ca.into_datetime(tu, None),
-                Some(tz),
-                _ambiguous,
-                NonExistent::Raise,
-            ),
+            (false, Some(tz)) => {
+                crate::chunked_array::temporal::replace_time_zone::replace_time_zone(
+                    &ca.into_datetime(tu, None),
+                    Some(tz),
+                    _ambiguous,
+                    NonExistent::Raise,
+                )
+            },
             #[cfg(feature = "timezones")]
             (true, tz) => Ok(ca.into_datetime(tu, Some(tz.cloned().unwrap_or(TimeZone::UTC)))),
             _ => Ok(ca.into_datetime(tu, None)),
@@ -262,19 +259,13 @@ pub trait StringMethods: AsString {
         let fmt = strptime::compile_fmt(fmt)?;
         let use_cache = use_cache && string_ca.len() > 50;
 
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        };
-
         if tz_aware {
             #[cfg(feature = "timezones")]
             {
                 let mut convert = LruCachedFunc::new(
                     |s: &str| {
                         let dt = DateTime::parse_from_str(s, &fmt).ok()?;
-                        Some(func(dt.naive_utc()))
+                        Some(tu.datetime_to_timestamp(dt.naive_utc()))
                     },
                     (string_ca.len() as f64).sqrt() as usize,
                 );
@@ -299,7 +290,7 @@ pub trait StringMethods: AsString {
                 let mut convert = LruCachedFunc::new(
                     |s: &str| match strptime_cache.parse(s.as_bytes(), fmt.as_bytes()) {
                         None => transform(s, &fmt),
-                        Some(ndt) => Some(func(ndt)),
+                        Some(ndt) => Some(tu.datetime_to_timestamp(ndt)),
                     },
                     (string_ca.len() as f64).sqrt() as usize,
                 );
@@ -316,7 +307,7 @@ pub trait StringMethods: AsString {
                 .into_datetime(tu, None);
             match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => polars_ops::prelude::replace_time_zone(
+                Some(tz) => crate::chunked_array::temporal::replace_time_zone::replace_time_zone(
                     &dt,
                     Some(tz),
                     ambiguous,

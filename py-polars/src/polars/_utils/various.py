@@ -266,7 +266,12 @@ def parse_version(version: Sequence[str | int]) -> tuple[int, ...]:
     """Simple version parser; split into a tuple of ints for comparison."""
     if isinstance(version, str):
         version = version.split(".")
-    return tuple(int(re.sub(r"\D", "", str(v))) for v in version)
+    # Take the first run of digits in each component: stripping every non-digit
+    # instead would splice a pre-release suffix onto the number before it, making
+    # "1.2.3rc1" read as (1, 2, 31), and a component carrying no digit at all
+    # would raise rather than compare.
+    parts = (re.search(r"\d+", str(v)) for v in version)
+    return tuple(int(p.group()) if p is not None else 0 for p in parts)
 
 
 def ordered_unique(values: Sequence[Any]) -> list[Any]:

@@ -124,7 +124,7 @@ def test_collect_schema_trig_rejects_string_27565() -> None:
         lf.collect_schema()
 
 
-@pytest.mark.parametrize("dtype", [pl.String, pl.Boolean, pl.Date, pl.Categorical])
+@pytest.mark.parametrize("dtype", [pl.String, pl.Date, pl.Categorical])
 def test_collect_schema_entropy_rejects_non_numeric_27565(
     dtype: pl.DataType,
 ) -> None:
@@ -141,8 +141,6 @@ def test_collect_schema_entropy_rejects_non_numeric_27565(
         (pl.Float16, [0.25, 0.75], True, pl.Float16),
         (pl.Float32, [0.25, 0.75], True, pl.Float32),
         (pl.Int64, [1, 3], True, pl.Float64),
-        (pl.Duration, [1, 3], True, pl.Float64),
-        (pl.Duration, [1, 3], False, pl.Float64),
     ],
 )
 @pytest.mark.parametrize("grouped", [False, True])
@@ -170,8 +168,6 @@ def test_collect_schema_entropy_output_dtype_27565(
     assert schema["result"] == expected
     assert schema == in_memory.schema
     assert schema == streaming.schema
-    if dtype == pl.Duration:
-        assert streaming["result"].item() == pytest.approx(in_memory["result"].item())
 
 
 def test_arr_get_oob_errors_at_schema_26088() -> None:

@@ -15,6 +15,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric.strategies.core import dataframes
@@ -1271,6 +1272,37 @@ def test_join_asof_invalid_args() -> None:
         TypeError, match="expected `right_on` to be str or Expr, got 'list'"
     ):
         df1.join_asof(df2, left_on="a", right_on=["a"])  # type: ignore[arg-type]
+
+
+def test_join_asof_selector() -> None:
+    data1 = {"time": [1, 2, 3], "value": [10, 20, 30]}
+    left = pl.DataFrame(data1).set_sorted("time")
+
+    data2 = {"time": [1, 3], "value": [100, 300]}
+    right = pl.DataFrame(data2).set_sorted("time")
+
+    expected = left.join_asof(right, on="time")
+    assert_frame_equal(left.join_asof(right, on=cs.matches(r"^t\w+e$")), expected)
+
+    res = left.lazy().join_asof(right.lazy(), on=cs.starts_with("t"))
+    assert res.collect_schema() == expected.schema
+    assert_frame_equal(res.collect(engine="in-memory"), expected)
+    assert_frame_equal(res.collect(engine="streaming"), expected)
+
+
+@pytest.mark.parametrize(
+    ("selector", "match"),
+    [
+        (cs.float(), "left join keys expanded to zero expressions"),
+        (cs.integer(), "expects exactly one join key.*got 2"),
+    ],
+)
+def test_join_asof_selector_cardinality(selector: cs.Selector, match: str) -> None:
+    left = pl.LazyFrame({"time": [1, 2], "left_value": [10, 20]}).set_sorted("time")
+    right = pl.LazyFrame({"time": [1, 2], "right_value": [10, 20]}).set_sorted("time")
+
+    with pytest.raises(InvalidOperationError, match=match):
+        left.join_asof(right, on=selector).collect_schema()
 
 
 def test_join_as_of_by_schema() -> None:

@@ -72,7 +72,6 @@ mod compute_node_prelude {
 use compute_node_prelude::*;
 
 use crate::execute::StreamingExecutionState;
-use crate::metrics::NodeMetricsRegistrator;
 
 pub trait ComputeNode: Send {
     /// The name of this node.
@@ -112,8 +111,6 @@ pub trait ComputeNode: Send {
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
-
-    fn set_phase_metrics_registrator(&mut self, _metrics_builder: NodeMetricsRegistrator) {}
 
     /// Called once after the last execution phase to extract output from
     /// in-memory nodes.

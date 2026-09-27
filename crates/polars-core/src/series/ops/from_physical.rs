@@ -107,7 +107,7 @@ unsafe fn try_from_physical_rec(series: &Series, dtype: &DataType) -> PolarsResu
 
 #[cfg(test)]
 mod test {
-    use arrow::array::PrimitiveArray;
+    use polars_arrow::array::PrimitiveArray;
 
     use crate::prelude::*;
 

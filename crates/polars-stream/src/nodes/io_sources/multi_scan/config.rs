@@ -52,6 +52,8 @@ pub struct MultiScanConfig {
     pub n_readers_pre_init: RelaxedCell<usize>,
     pub max_concurrent_scans: RelaxedCell<usize>,
     pub disable_morsel_split: bool,
+    /// If false, rows within a file may be emitted in any order.
+    pub maintain_order: bool,
 
     pub verbose: bool,
 }

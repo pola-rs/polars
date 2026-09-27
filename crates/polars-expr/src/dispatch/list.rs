@@ -358,13 +358,13 @@ pub(super) fn sort(s: &Column, options: SortOptions) -> PolarsResult<Column> {
 #[cfg(feature = "list_sets")]
 pub(super) fn set_operation(
     s: &[Column],
-    set_type: polars_ops::prelude::SetOperation,
+    set_type: polars_defs::expr::SetOperation,
 ) -> PolarsResult<Column> {
     let s0 = &s[0];
     let s1 = &s[1];
 
     if s0.is_empty() || s1.is_empty() {
-        use polars_ops::prelude::SetOperation;
+        use polars_defs::expr::SetOperation;
 
         return match set_type {
             SetOperation::Intersection => {

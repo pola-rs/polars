@@ -884,6 +884,7 @@ pub fn write_ir_non_recursive(
             unified_scan_args,
             hive_parts: _,
             output_schema: _,
+            maintain_order: _,
         } => {
             let n_columns = unified_scan_args
                 .projection

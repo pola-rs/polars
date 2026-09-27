@@ -25,6 +25,7 @@ from polars import functions as F
 from polars._dependencies import _check_for_numpy
 from polars._dependencies import numpy as np
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
+from polars._utils.deprecation import deprecated
 from polars._utils.expired import (
     RemovedParameter,
     RenamedParameter,
@@ -960,6 +961,56 @@ class Expr(metaclass=_Meta):
         └──────────┘
         """
         return wrap_expr(self._pyexpr.exp())
+
+    def erf(self) -> Expr:
+        """
+        Compute the error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
+        >>> df.select(pl.col("a").erf())
+        shape: (3, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ f64       │
+        ╞═══════════╡
+        │ -0.842701 │
+        │ 0.0       │
+        │ 0.842701  │
+        └───────────┘
+        """
+        return wrap_expr(self._pyexpr.erf())
+
+    def erfc(self) -> Expr:
+        """
+        Compute the complementary error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
+        >>> df.select(pl.col("a").erfc())
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.842701 │
+        │ 1.0      │
+        │ 0.157299 │
+        └──────────┘
+        """
+        return wrap_expr(self._pyexpr.erfc())
 
     def alias(self, name: str_) -> Expr:
         """
@@ -3837,7 +3888,7 @@ class Expr(metaclass=_Meta):
         """
         Compute approximate quantile(s) of an expression.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -4781,7 +4832,7 @@ class Expr(metaclass=_Meta):
         quantile_pyexpr = parse_into_expression(quantile)
         return wrap_expr(self._pyexpr.quantile(quantile_pyexpr, interpolation))
 
-    @unstable()
+    @deprecated("`cut` is deprecated; use `bin_intervals` instead")
     def cut(
         self,
         breaks: Sequence[float],
@@ -4795,9 +4846,10 @@ class Expr(metaclass=_Meta):
 
         .. engine-support:: in-memory
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        .. deprecated:: 2.0.0
+            Use :meth:`bin_intervals` instead. It requires `labels` (pass
+            `labels=False` for the integer bin index), and takes
+            `right_closed=True` to keep `cut`'s right-closed bins.
 
         Parameters
         ----------
@@ -4821,7 +4873,9 @@ class Expr(metaclass=_Meta):
 
         See Also
         --------
-        qcut
+        bin_intervals
+        bin_quantiles
+        bin_ranks
 
         Examples
         --------
@@ -4864,7 +4918,7 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.cut(breaks, labels, left_closed, include_breaks))
 
-    @unstable()
+    @deprecated("`qcut` is deprecated; use `bin_quantiles` or `bin_ranks` instead")
     def qcut(
         self,
         quantiles: Sequence[float] | int,
@@ -4879,9 +4933,12 @@ class Expr(metaclass=_Meta):
 
         .. engine-support:: in-memory
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        .. deprecated:: 2.0.0
+            Use :meth:`bin_quantiles`, which places the breakpoints at the
+            quantile values, or :meth:`bin_ranks`, which splits on position in
+            sorted order to give near-equal-sized bins. Both require `labels`
+            (pass `labels=False` for the integer bin index); `bin_quantiles`
+            also takes `right_closed=True` to keep `qcut`'s right-closed bins.
 
         Parameters
         ----------
@@ -4910,7 +4967,9 @@ class Expr(metaclass=_Meta):
 
         See Also
         --------
-        cut
+        bin_intervals
+        bin_quantiles
+        bin_ranks
 
         Examples
         --------

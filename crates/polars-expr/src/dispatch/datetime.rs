@@ -1,5 +1,5 @@
 #[cfg(feature = "timezones")]
-use arrow::legacy::time_zone::Tz;
+use polars_arrow::legacy::time_zone::Tz;
 use polars_core::error::{PolarsResult, polars_bail};
 use polars_core::prelude::{
     ArithmeticChunked, Column, DataType, IntoColumn, LogicalType, TimeUnit,
@@ -67,14 +67,16 @@ pub(super) fn ordinal_day(s: &Column) -> PolarsResult<Column> {
 pub(super) fn time(s: &Column) -> PolarsResult<Column> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
-        DataType::Datetime(_, Some(_)) => polars_ops::prelude::replace_time_zone(
-            s.datetime().unwrap(),
-            None,
-            &StringChunked::from_iter(std::iter::once("raise")),
-            NonExistent::Raise,
-        )?
-        .cast(&DataType::Time)
-        .map(Column::from),
+        DataType::Datetime(_, Some(_)) => {
+            polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone(
+                s.datetime().unwrap(),
+                None,
+                &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
+            )?
+            .cast(&DataType::Time)
+            .map(Column::from)
+        },
         DataType::Datetime(_, _) => s
             .datetime()
             .unwrap()
@@ -89,7 +91,7 @@ pub(super) fn date(s: &Column) -> PolarsResult<Column> {
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(_)) => {
             let mut out = {
-                polars_ops::chunked_array::replace_time_zone(
+                polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone(
                     s.datetime().unwrap(),
                     None,
                     &StringChunked::from_iter(std::iter::once("raise")),

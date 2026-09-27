@@ -5,6 +5,7 @@ use polars_core::prelude::{Column, IntoColumn, PlRandomState};
 use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_expr::EvictIdx;
 use polars_expr::groups::Grouper;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::hot_groups::{HotGrouper, new_hash_hot_grouper};
@@ -21,6 +22,7 @@ use tokio::sync::mpsc::{Receiver, channel};
 
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
+use crate::metrics::{Metric, MetricUnit, NodeMetricsRegistry, kind};
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
@@ -28,6 +30,15 @@ use crate::nodes::in_memory_source::InMemorySourceNode;
 const DEFAULT_HOT_TABLE_SIZE: usize = 4;
 #[cfg(not(debug_assertions))]
 const DEFAULT_HOT_TABLE_SIZE: usize = 4096;
+
+#[cfg(debug_assertions)]
+const KEY_SLICE_SIZE: usize = 64;
+#[cfg(not(debug_assertions))]
+const KEY_SLICE_SIZE: usize = 4096;
+
+/// The number of hot groups up to which the reductions of a sliced morsel are updated
+/// per slice.
+const MAX_SLICE_REDUCTION_GROUPS: usize = 64;
 
 struct PreAgg {
     keys: HashKeys,
@@ -82,6 +93,41 @@ impl LocalGroupBySinkState {
             pre_agg_idxs_values_per_p: vec![Vec::new(); num_partitions],
             pre_agg_idxs_offsets_per_p: vec![0; num_partitions],
         }
+    }
+
+    /// Resizes the hot reductions of input `input_idx` to its hot groups and feeds them
+    /// rows `hot_idxs` of `df`, which go to groups `hot_group_idxs`.
+    #[allow(clippy::too_many_arguments)]
+    async fn update_hot_reductions(
+        &mut self,
+        input_idx: usize,
+        df: &DataFrame,
+        hot_idxs: &[IdxSize],
+        hot_group_idxs: &[EvictIdx],
+        identity_idxs: &mut Vec<IdxSize>,
+        reductions_per_input: &[Vec<usize>],
+        payload: &InputPayload,
+        grouped_reduction_cols: &[Vec<PlSmallStr>],
+        exec_state: &ExecutionState,
+        seq: u64,
+    ) -> PolarsResult<()> {
+        let num_groups = self.hot_grouper_per_input[input_idx].num_groups();
+        for red_idx in &reductions_per_input[input_idx] {
+            self.hot_grouped_reductions[*red_idx].resize(num_groups);
+        }
+        payload
+            .update_reductions(
+                df,
+                hot_idxs,
+                identity_idxs,
+                grouped_reduction_cols,
+                &mut self.hot_grouped_reductions,
+                exec_state,
+                |reduction, in_cols, subset| unsafe {
+                    reduction.update_groups_while_evicting(in_cols, subset, hot_group_idxs, seq)
+                },
+            )
+            .await
     }
 
     fn flush_evictions(
@@ -222,6 +268,9 @@ struct GroupBySinkState {
     random_state: PlRandomState,
     partitioner: HashPartitioner,
     has_order_sensitive_agg: bool,
+
+    estimated_groups: Metric<kind::Sum>,
+    actual_groups: Metric<kind::Sum>,
 }
 
 impl GroupBySinkState {
@@ -246,8 +295,8 @@ impl GroupBySinkState {
                 let mut hot_group_idxs = Vec::new();
                 let mut cold_idxs = Vec::new();
                 let mut identity_idxs: Vec<IdxSize> = Vec::new();
+                let mut all_hot_per_input = vec![true; key_selectors_per_input.len()];
                 while let Some((input_idx, morsel)) = recv.recv().await {
-                    // Compute hot group indices from key.
                     let seq = morsel.seq().to_u64();
                     let mut df = morsel.into_df().await;
                     let mut key_columns = Vec::new();
@@ -258,19 +307,6 @@ impl GroupBySinkState {
                     let keys = unsafe {
                         DataFrame::new_unchecked_with_broadcast(df.height(), key_columns)?
                     };
-                    let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
-
-                    let hot_grouper = &mut local.hot_grouper_per_input[input_idx];
-                    hot_idxs.clear();
-                    hot_group_idxs.clear();
-                    cold_idxs.clear();
-                    hot_grouper.insert_keys(
-                        &hash_keys,
-                        &mut hot_idxs,
-                        &mut hot_group_idxs,
-                        &mut cold_idxs,
-                        has_order_sensitive_agg,
-                    );
 
                     // Drop columns which are neither reduction inputs nor fused sources.
                     let payload = &payload_per_input[input_idx];
@@ -279,65 +315,99 @@ impl GroupBySinkState {
                     }
                     df.rechunk_mut(); // For gathers.
 
-                    // Update hot reductions.
-                    for red_idx in &reductions_per_input[input_idx] {
-                        local.hot_grouped_reductions[*red_idx].resize(hot_grouper.num_groups());
-                    }
-                    payload
-                        .update_reductions(
-                            &df,
-                            &hot_idxs,
-                            &mut identity_idxs,
-                            grouped_reduction_cols,
-                            &mut local.hot_grouped_reductions,
-                            &state.in_memory_exec_state,
-                            |reduction, in_cols, subset| unsafe {
-                                reduction.update_groups_while_evicting(
-                                    in_cols,
-                                    subset,
-                                    &hot_group_idxs,
-                                    seq,
-                                )
-                            },
-                        )
-                        .await?;
+                    let slice_size = if all_hot_per_input[input_idx] {
+                        KEY_SLICE_SIZE
+                    } else {
+                        df.height().max(1)
+                    };
+                    let reduce_per_slice = slice_size < df.height()
+                        && local.hot_grouper_per_input[input_idx].num_groups() as usize
+                            <= MAX_SLICE_REDUCTION_GROUPS;
+                    all_hot_per_input[input_idx] = true;
+                    for offset in (0..df.height()).step_by(slice_size) {
+                        // Compute hot group indices from key.
+                        let hot_grouper = &mut local.hot_grouper_per_input[input_idx];
+                        let slice_keys = keys.slice(offset as i64, slice_size);
+                        let hash_keys =
+                            HashKeys::from_df(&slice_keys, random_state.clone(), true, false);
+                        let hot_start = hot_idxs.len();
+                        cold_idxs.clear();
+                        hot_grouper.insert_keys(
+                            &hash_keys,
+                            &mut hot_idxs,
+                            &mut hot_group_idxs,
+                            &mut cold_idxs,
+                            has_order_sensitive_agg,
+                        );
+                        if !reduce_per_slice {
+                            for idx in &mut hot_idxs[hot_start..] {
+                                *idx += offset as IdxSize;
+                            }
+                        }
 
-                    // Store cold keys.
-                    if !cold_idxs.is_empty() {
-                        let mut cold_keys = hash_keys;
-                        let mut cold_df = df;
+                        // Store cold keys.
+                        if !cold_idxs.is_empty() {
+                            all_hot_per_input[input_idx] = false;
+                            let mut cold_keys = hash_keys;
+                            let mut cold_df = df.slice(offset as i64, slice_size);
 
-                        // 75% or more cold, don't gather.
-                        if cold_idxs.len() as u64 >= cold_df.height() as u64 * 3 / 4 {
-                            unsafe {
-                                cold_keys.gen_idxs_per_partition_subset(
-                                    &cold_idxs,
+                            // 75% or more cold, don't gather.
+                            if cold_idxs.len() as u64 >= cold_df.height() as u64 * 3 / 4 {
+                                unsafe {
+                                    cold_keys.gen_idxs_per_partition_subset(
+                                        &cold_idxs,
+                                        &partitioner,
+                                        &mut local.morsel_idxs_values_per_p,
+                                        &mut local.sketch_per_p,
+                                        true,
+                                    );
+                                }
+                            } else {
+                                unsafe {
+                                    cold_keys = cold_keys.gather_unchecked(&cold_idxs);
+                                    cold_df = cold_df.take_slice_unchecked_impl(&cold_idxs, false);
+                                }
+
+                                cold_keys.gen_idxs_per_partition(
                                     &partitioner,
                                     &mut local.morsel_idxs_values_per_p,
                                     &mut local.sketch_per_p,
                                     true,
                                 );
                             }
-                        } else {
-                            unsafe {
-                                cold_keys = cold_keys.gather_unchecked(&cold_idxs);
-                                cold_df = cold_df.take_slice_unchecked_impl(&cold_idxs, false);
-                            }
 
-                            cold_keys.gen_idxs_per_partition(
-                                &partitioner,
-                                &mut local.morsel_idxs_values_per_p,
-                                &mut local.sketch_per_p,
-                                true,
-                            );
+                            local
+                                .morsel_idxs_offsets_per_p
+                                .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
+                            let sf = SpillFrame::new(cold_df, spill_ctx).await;
+                            local.cold_morsels.push((input_idx, seq, cold_keys, sf));
                         }
 
-                        local
-                            .morsel_idxs_offsets_per_p
-                            .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-                        let sf = SpillFrame::new(cold_df, spill_ctx).await;
-                        local.cold_morsels.push((input_idx, seq, cold_keys, sf));
+                        if reduce_per_slice || offset + slice_size >= df.height() {
+                            let reduce_df = if reduce_per_slice {
+                                &df.slice(offset as i64, slice_size)
+                            } else {
+                                &df
+                            };
+                            local
+                                .update_hot_reductions(
+                                    input_idx,
+                                    reduce_df,
+                                    &hot_idxs,
+                                    &hot_group_idxs,
+                                    &mut identity_idxs,
+                                    reductions_per_input,
+                                    payload,
+                                    grouped_reduction_cols,
+                                    &state.in_memory_exec_state,
+                                    seq,
+                                )
+                                .await?;
+                            hot_idxs.clear();
+                            hot_group_idxs.clear();
+                        }
                     }
+                    let hot_grouper = &local.hot_grouper_per_input[input_idx];
 
                     // If we have too many evicted rows, flush them.
                     if hot_grouper.num_evictions() >= get_ideal_morsel_size() {
@@ -414,6 +484,9 @@ impl GroupBySinkState {
         let grouped_reductions_template = &self.grouped_reductions;
         let grouped_reduction_cols = &self.grouped_reduction_cols;
 
+        let estimated_groups_metric = &self.estimated_groups.reporter();
+        let actual_groups_metric = &self.actual_groups.reporter();
+
         executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
@@ -438,8 +511,11 @@ impl GroupBySinkState {
                         sketch.combine(&l.sketch_per_p[p]);
                     }
 
+                    let sketch_estimate = sketch.estimate();
+                    estimated_groups_metric.add(sketch_estimate as i64);
+
                     // Allocate grouper and reductions.
-                    let est_num_groups = sketch.estimate() * 5 / 4;
+                    let est_num_groups = sketch_estimate * 5 / 4;
                     let mut p_grouper = grouper_template.new_empty();
                     let mut p_reductions = grouped_reductions_template
                         .iter()
@@ -560,6 +636,13 @@ impl GroupBySinkState {
                         }
                     }
 
+                    // Each input only resizes its own reductions, so ensure all have the right length.
+                    for r in &mut p_reductions {
+                        r.resize(p_grouper.num_groups());
+                    }
+
+                    actual_groups_metric.add(p_grouper.num_groups() as i64);
+
                     // We're done, help others out by doing drops.
                     drop(drop_q_send); // So we don't deadlock trying to receive from ourselves.
                     while let Ok(to_drop) = drop_q_recv.recv().await {
@@ -660,6 +743,7 @@ impl GroupByNode {
         random_state: PlRandomState,
         num_pipelines: usize,
         has_order_sensitive_agg: bool,
+        metrics_registry: NodeMetricsRegistry,
     ) -> Self {
         let hot_table_size = std::env::var("POLARS_HOT_TABLE_SIZE")
             .map(|sz| sz.parse::<usize>().unwrap())
@@ -691,6 +775,10 @@ impl GroupByNode {
                 locals,
                 partitioner,
                 has_order_sensitive_agg,
+                estimated_groups: metrics_registry
+                    .new_counter("group_by.estimated_groups", MetricUnit::Unit),
+                actual_groups: metrics_registry
+                    .new_counter("group_by.actual_groups", MetricUnit::Unit),
             }),
             key_schema,
             num_inputs,

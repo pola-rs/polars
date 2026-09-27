@@ -1,5 +1,5 @@
-use arrow::array::{BinaryViewArray, FixedSizeBinaryArray, PrimitiveArray};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{BinaryViewArray, FixedSizeBinaryArray, PrimitiveArray};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_buffer::Buffer;
 use polars_core::prelude::{Column, DataType, LargeBinaryArray};
 use polars_core::with_match_physical_integer_type;

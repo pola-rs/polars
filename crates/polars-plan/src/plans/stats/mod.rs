@@ -105,6 +105,10 @@ pub struct ScanColumnStats {
     /// read. A skipped chunk can only widen it, so a partial read understates it.
     #[cfg_attr(feature = "serde", serde(default))]
     pub int_range: Option<(i128, i128)>,
+    /// `int_range` was folded over part of the data only, so values outside it may
+    /// exist.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub int_range_partial: bool,
 }
 
 impl ScanColumnStats {

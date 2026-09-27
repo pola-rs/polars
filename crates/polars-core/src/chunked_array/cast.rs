@@ -543,7 +543,7 @@ impl ChunkCast for ArrayChunked {
                     (old, new) if old == new => Ok(ca.into_owned().into_series()),
                     // TODO @ cat-rework: can we implement this now?
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, Categorical(_, _) | Enum(_, _)) if !matches!(dt, String) => {
+                    (dt, Categorical(_, _) | Enum(_, _)) if !matches!(dt, String | Null) => {
                         polars_bail!(InvalidOperation: "cannot cast Array inner type: '{:?}' to dtype: {:?}", dt, child_type)
                     },
                     _ => {

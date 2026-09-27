@@ -1515,8 +1515,8 @@ class Config(contextlib.ContextDecorator, metaclass=_Meta):
         Examples
         --------
         >>> pl.Config.warn_unstable(True)  # doctest: +SKIP
-        >>> pl.col("a").qcut(5)  # doctest: +SKIP
-        UnstableWarning: `qcut` is considered unstable. It may be changed at any point without it being considered a breaking change.
+        >>> pl.col("a").bin_quantiles(5, labels=False)  # doctest: +SKIP
+        UnstableWarning: `bin_quantiles` is considered unstable. It may be changed at any point without it being considered a breaking change.
         """  # noqa: W505
         if active is None:
             os.environ.pop("POLARS_WARN_UNSTABLE", None)

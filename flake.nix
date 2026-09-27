@@ -227,6 +227,7 @@
                       cargo test --all-features \
                         -p polars-compute       \
                         -p polars-core          \
+                        -p polars-defs          \
                         -p polars-io            \
                         -p polars-lazy          \
                         -p polars-ops           \
@@ -246,6 +247,7 @@
                       cargo nextest run --all-features \
                         -p polars-compute              \
                         -p polars-core                 \
+                        -p polars-defs                 \
                         -p polars-io                   \
                         -p polars-lazy                 \
                         -p polars-ops                  \

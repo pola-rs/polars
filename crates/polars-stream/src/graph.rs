@@ -39,9 +39,18 @@ impl Graph {
         node: N,
         inputs: impl IntoIterator<Item = (GraphNodeKey, usize)>,
     ) -> GraphNodeKey {
+        self.add_node_with_key(|_| node, inputs)
+    }
+
+    /// [`add_node`], for a node that needs its own key to construct
+    pub fn add_node_with_key<N: ComputeNode + 'static>(
+        &mut self,
+        node: impl FnOnce(GraphNodeKey) -> N,
+        inputs: impl IntoIterator<Item = (GraphNodeKey, usize)>,
+    ) -> GraphNodeKey {
         // Add the GraphNode.
-        let node_key = self.nodes.insert(GraphNode {
-            compute: Box::new(node),
+        let node_key = self.nodes.insert_with_key(|node_key| GraphNode {
+            compute: Box::new(node(node_key)),
             inputs: Vec::new(),
             outputs: Vec::new(),
         });

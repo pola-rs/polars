@@ -14,7 +14,7 @@ use slotmap::{SecondaryMap, SparseSecondaryMap};
 use tokio::task::JoinHandle;
 
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
-use crate::metrics::{GraphMetrics, NodeMetricsRegistrator};
+use crate::metrics::GraphMetrics;
 use crate::pipe::PhysicalPipe;
 
 #[derive(Clone)]
@@ -218,14 +218,6 @@ fn run_subgraph(
 
             // Spawn the tasks.
             let pre_spawn_offset = join_handles.len();
-
-            if let Some(graph_metrics) = metrics.clone() {
-                node.compute
-                    .set_phase_metrics_registrator(NodeMetricsRegistrator {
-                        graph_key: node_key,
-                        graph_metrics,
-                    });
-            }
 
             node.compute.spawn(
                 scope,

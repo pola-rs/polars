@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::Bitmap;
-use arrow::offset::{Offsets, OffsetsBuffer};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::offset::{Offsets, OffsetsBuffer};
 use polars_compute::gather::sublist::list::array_to_unit_list;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::format_tuple;

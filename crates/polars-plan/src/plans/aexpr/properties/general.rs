@@ -12,6 +12,16 @@ impl AExpr {
         matches!(self, AExpr::Column(_))
     }
 
+    pub(crate) fn is_or(&self) -> bool {
+        matches!(
+            self,
+            AExpr::BinaryExpr {
+                op: Operator::Or | Operator::LogicalOr,
+                ..
+            }
+        )
+    }
+
     /// Checks whether this expression is elementwise. This only checks the top level expression.
     pub(crate) fn is_elementwise_top_level(&self) -> bool {
         use AExpr::*;

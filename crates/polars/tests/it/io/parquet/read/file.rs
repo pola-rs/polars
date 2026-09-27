@@ -1,9 +1,9 @@
 use std::io::{Read, Seek};
 use std::sync::Arc;
 
-use arrow::array::Array;
-use arrow::datatypes::ArrowSchema;
-use arrow::record_batch::RecordBatchT;
+use polars_arrow::array::Array;
+use polars_arrow::datatypes::ArrowSchema;
+use polars_arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
 use polars_parquet::read::{Filter, RowGroupMetadata};
 

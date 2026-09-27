@@ -5,15 +5,17 @@ use polars_core::prelude::{
     DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit, polars_bail,
     polars_err,
 };
-use polars_lazy::dsl::Expr;
+use polars_defs::expr::UnicodeForm;
 #[cfg(feature = "rank")]
-use polars_lazy::prelude::{RankMethod, RankOptions};
-use polars_ops::chunked_array::UnicodeForm;
-use polars_ops::series::RoundMode;
+use polars_defs::expr::{RankMethod, RankOptions};
+use polars_lazy::dsl::Expr;
+#[cfg(feature = "approx_quantile")]
+use polars_lazy::prelude::ApproxQuantileMethod;
 use polars_plan::dsl::functions::{
     as_struct, coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal,
     min_horizontal, when,
 };
+use polars_plan::dsl::{FunctionExpr, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
 use polars_plan::prelude::StrptimeOptions;
 use polars_utils::pl_str::PlSmallStr;
@@ -29,8 +31,8 @@ use sqlparser::tokenizer::Span;
 use crate::SQLContext;
 use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
-    adjust_one_indexed_param, order_by_sort_options, parse_extract_date_part, parse_sql_array,
-    parse_sql_expr,
+    adjust_one_indexed_param, approximate_literal, decimal_literal, decimal_literal_to_f64,
+    order_by_sort_options, parse_extract_date_part, parse_sql_array, parse_sql_expr, sql_binary,
 };
 use crate::sql_visitors::grouping_call_args;
 
@@ -99,6 +101,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT DIV(col1, 2) FROM df;
     /// ```
     Div,
+    /// SQL 'erf' function.
+    /// Computes the error function of the given value.
+    /// ```sql
+    /// SELECT ERF(col1) FROM df;
+    /// ```
+    Erf,
+    /// SQL 'erfc' function.
+    /// Computes the complementary error function of the given value.
+    /// ```sql
+    /// SELECT ERFC(col1) FROM df;
+    /// ```
+    Erfc,
     /// SQL 'exp' function.
     /// Computes the exponential of the given value.
     /// ```sql
@@ -559,6 +573,16 @@ pub(crate) enum PolarsSQLFunctions {
     // ----
     // Aggregate functions
     // ----
+    /// SQL 'approx_quantile' function.
+    /// Returns an approximation of the given quantile of the grouping, with an optional
+    /// allowed rank error and sketch method.
+    /// ```sql
+    /// SELECT APPROX_QUANTILE(col1, 0.5) FROM df;
+    /// SELECT APPROX_QUANTILE(col1, 0.5, 0.01) FROM df;
+    /// SELECT APPROX_QUANTILE(col1, 0.5, 0.01, 'kll') FROM df;
+    /// ```
+    #[cfg(feature = "approx_quantile")]
+    ApproxQuantile,
     /// SQL 'avg' function.
     /// Returns the average (mean) of all the elements in the grouping.
     /// ```sql
@@ -834,6 +858,7 @@ impl PolarsSQLFunctions {
             "abs",
             "acos",
             "acosd",
+            "approx_quantile",
             "array_contains",
             "array_dot_product",
             "array_get",
@@ -885,6 +910,8 @@ impl PolarsSQLFunctions {
             "degrees",
             "dense_rank",
             "ends_with",
+            "erf",
+            "erfc",
             "exp",
             "first",
             "first_value",
@@ -983,6 +1010,8 @@ impl PolarsSQLFunctions {
             "cbrt" => Self::Cbrt,
             "ceil" | "ceiling" => Self::Ceil,
             "div" => Self::Div,
+            "erf" => Self::Erf,
+            "erfc" => Self::Erfc,
             "exp" => Self::Exp,
             "floor" => Self::Floor,
             "ln" => Self::Ln,
@@ -1082,6 +1111,8 @@ impl PolarsSQLFunctions {
             // ----
             // Aggregate functions
             // ----
+            #[cfg(feature = "approx_quantile")]
+            "approx_quantile" => Self::ApproxQuantile,
             "avg" => Self::Avg,
             "corr" => Self::Corr,
             "count" => Self::Count,
@@ -1190,7 +1221,9 @@ impl SQLFunctionVisitor<'_> {
             Abs => self.visit_unary(Expr::abs),
             Cbrt => self.visit_unary(Expr::cbrt),
             Ceil => self.visit_unary(Expr::ceil),
-            Div => self.visit_binary(|e, d| e.floor_div(d).cast(DataType::Int64)),
+            Div => self.visit_binary(|e, d| sql_binary(e, SqlBinaryOp::IntDiv, d)),
+            Erf => self.visit_unary(Expr::erf),
+            Erfc => self.visit_unary(Expr::erfc),
             Exp => self.visit_unary(Expr::exp),
             Floor => self.visit_unary(Expr::floor),
             Ln => self.visit_unary(|e| log_with_base(e, std::f64::consts::E)),
@@ -1199,21 +1232,21 @@ impl SQLFunctionVisitor<'_> {
             Log1p => self.visit_unary(Expr::log1p),
             Log2 => self.visit_unary(|e| log_with_base(e, 2.0)),
             Pi => self.visit_nullary(Expr::pi),
-            Mod => self.visit_binary(|e1, e2| e1 % e2),
-            Pow => self.visit_binary::<Expr>(Expr::pow),
+            Mod => self.visit_binary(|e1, e2| sql_binary(e1, SqlBinaryOp::Rem, e2)),
+            Pow => self.visit_binary(|e: Expr, p: Expr| sql_to_float(e).pow(sql_to_float(p))),
             Round => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    1 => self.visit_unary(|e| e.round(0, RoundMode::default())),
+                    1 => self.visit_unary(|e| sql_round(e, 0)),
                     2 => self.try_visit_binary(|e, decimals| {
-                        Ok(e.round(match decimals {
+                        Ok(sql_round(e, match decimals {
                             Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                                 if n >= 0 { n as u32 } else {
                                     polars_bail!(SQLInterface: "ROUND does not support negative decimals value ({})", args[1])
                                 }
                             },
                             _ => polars_bail!(SQLSyntax: "invalid value for ROUND decimals ({})", args[1]),
-                        }, RoundMode::default()))
+                        }))
                     }),
                     _ => polars_bail!(SQLSyntax: "ROUND expects 1-2 arguments (found {})", args.len()),
                 }
@@ -1241,24 +1274,26 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Trig functions
             // ----
-            Acos => self.visit_unary(Expr::arccos),
-            AcosD => self.visit_unary(|e| e.arccos().degrees()),
-            Asin => self.visit_unary(Expr::arcsin),
-            AsinD => self.visit_unary(|e| e.arcsin().degrees()),
-            Atan => self.visit_unary(Expr::arctan),
-            Atan2 => self.visit_binary(Expr::arctan2),
-            Atan2D => self.visit_binary(|e, s| e.arctan2(s).degrees()),
-            AtanD => self.visit_unary(|e| e.arctan().degrees()),
-            Cos => self.visit_unary(Expr::cos),
-            CosD => self.visit_unary(|e| e.radians().cos()),
-            Cot => self.visit_unary(Expr::cot),
-            CotD => self.visit_unary(|e| e.radians().cot()),
-            Degrees => self.visit_unary(Expr::degrees),
-            Radians => self.visit_unary(Expr::radians),
-            Sin => self.visit_unary(Expr::sin),
-            SinD => self.visit_unary(|e| e.radians().sin()),
-            Tan => self.visit_unary(Expr::tan),
-            TanD => self.visit_unary(|e| e.radians().tan()),
+            Acos => self.visit_unary(|e| sql_to_float(e).arccos()),
+            AcosD => self.visit_unary(|e| sql_to_float(e).arccos().degrees()),
+            Asin => self.visit_unary(|e| sql_to_float(e).arcsin()),
+            AsinD => self.visit_unary(|e| sql_to_float(e).arcsin().degrees()),
+            Atan => self.visit_unary(|e| sql_to_float(e).arctan()),
+            Atan2 => self.visit_binary(|e: Expr, s: Expr| sql_to_float(e).arctan2(sql_to_float(s))),
+            Atan2D => self.visit_binary(|e: Expr, s: Expr| {
+                sql_to_float(e).arctan2(sql_to_float(s)).degrees()
+            }),
+            AtanD => self.visit_unary(|e| sql_to_float(e).arctan().degrees()),
+            Cos => self.visit_unary(|e| sql_to_float(e).cos()),
+            CosD => self.visit_unary(|e| sql_to_float(e).radians().cos()),
+            Cot => self.visit_unary(|e| sql_to_float(e).cot()),
+            CotD => self.visit_unary(|e| sql_to_float(e).radians().cot()),
+            Degrees => self.visit_unary(|e| sql_to_float(e).degrees()),
+            Radians => self.visit_unary(|e| sql_to_float(e).radians()),
+            Sin => self.visit_unary(|e| sql_to_float(e).sin()),
+            SinD => self.visit_unary(|e| sql_to_float(e).radians().sin()),
+            Tan => self.visit_unary(|e| sql_to_float(e).tan()),
+            TanD => self.visit_unary(|e| sql_to_float(e).radians().tan()),
 
             // ----
             // Conditional functions
@@ -1630,6 +1665,7 @@ impl SQLFunctionVisitor<'_> {
                         })
                     }),
                     3 => self.try_visit_ternary(|e: Expr, start: Expr, length: Expr| {
+                        let length = approximate_literal(length);
                         Ok(match (start.clone(), length.clone()) {
                             (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => lit(lv),
                             (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) if n < 0 => {
@@ -1659,6 +1695,8 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Aggregate functions
             // ----
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile => self.visit_approx_quantile(),
             Avg => self.visit_avg(),
             Corr => self.visit_binary(sql_corr),
             Count => self.visit_count(),
@@ -1678,26 +1716,12 @@ impl SQLFunctionVisitor<'_> {
                 let args = extract_args(function)?;
                 match args.len() {
                     2 => self.try_visit_binary(|e, q| {
-                        let value = match q {
-                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) => {
-                                if (0.0..=1.0).contains(&f) {
-                                    Expr::from(f)
-                                } else {
-                                    polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, args[1])
-                                }
-                            },
-                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
-                                if (0..=1).contains(&n) {
-                                    Expr::from(n as f64)
-                                } else {
-                                    polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, args[1])
-                                }
-                            },
-                            _ => polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, args[1])
-                        };
+                        let value = parse_quantile_literal(q, fname, args[1])?;
                         Ok(e.quantile(value, method))
                     }),
-                    _ => polars_bail!(SQLSyntax: "{} expects 2 arguments (found {})", fname, args.len()),
+                    _ => {
+                        polars_bail!(SQLSyntax: "{} expects 2 arguments (found {})", fname, args.len())
+                    },
                 }
             },
             Min => self.visit_min_max(Expr::min, Expr::cum_min),
@@ -2060,7 +2084,11 @@ impl SQLFunctionVisitor<'_> {
             SQLExpr::Nested(inner) => return self.parse_array_inner_product_arg(inner),
             _ => return self.parse_sql_arg(expr),
         };
-        let values = parse_sql_array(array_expr, self.ctx)?;
+        let mut values = parse_sql_array(array_expr, self.ctx)?;
+        // `arr.dot` has no decimal kernel; decimal literals take part approximately.
+        if values.dtype().is_decimal() {
+            values = values.cast(&DataType::Float64)?;
+        }
         let width = values.len();
         Ok(self.apply_filter(lit(Scalar::new_array(values, width))))
     }
@@ -2268,6 +2296,58 @@ impl SQLFunctionVisitor<'_> {
                 polars_bail!(SQLSyntax: "ARRAY_AGG must have exactly one argument; found {}", args.len())
             },
         }
+    }
+
+    #[cfg(feature = "approx_quantile")]
+    fn visit_approx_quantile(&mut self) -> PolarsResult<Expr> {
+        /// Matches the default of `Expr.approx_quantile` in Python.
+        const DEFAULT_ERROR: f64 = 0.001;
+
+        let args = extract_args(self.func)?;
+        let (value_arg, quantile_arg, error_arg, method_arg) = match args.as_slice() {
+            [FunctionArgExpr::Expr(v), FunctionArgExpr::Expr(q)] => (v, q, None, None),
+            [
+                FunctionArgExpr::Expr(v),
+                FunctionArgExpr::Expr(q),
+                FunctionArgExpr::Expr(e),
+            ] => (v, q, Some(e), None),
+            [
+                FunctionArgExpr::Expr(v),
+                FunctionArgExpr::Expr(q),
+                FunctionArgExpr::Expr(e),
+                FunctionArgExpr::Expr(m),
+            ] => (v, q, Some(e), Some(m)),
+            _ => polars_bail!(
+                SQLSyntax: "APPROX_QUANTILE expects 2-4 arguments (found {})",
+                args.len()
+            ),
+        };
+
+        let expr = self.parse_sql_arg(value_arg)?;
+        // Parameters are not subject to an active FILTER clause; only the values are.
+        let quantile = parse_sql_expr(quantile_arg, self.ctx, self.active_schema)?;
+        let quantile = parse_quantile_literal(quantile, "APPROX_QUANTILE", args[1])?;
+
+        let error = match error_arg {
+            Some(e) => match parse_sql_expr(e, self.ctx, self.active_schema)? {
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) => f,
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => n as f64,
+                e if let Some(f) = decimal_literal_to_f64(&e) => f,
+                _ => {
+                    polars_bail!(SQLSyntax: "invalid error value for APPROX_QUANTILE ({})", args[2])
+                },
+            },
+            None => DEFAULT_ERROR,
+        };
+        let method = match method_arg {
+            Some(m) => String::from_sql_arg(m, self)?.parse()?,
+            None => ApproxQuantileMethod::Auto,
+        };
+
+        self.apply_window_spec(
+            expr.approx_quantile(quantile, error, false, method),
+            &self.func.over,
+        )
     }
 
     fn visit_string_agg(&mut self) -> PolarsResult<Expr> {
@@ -2510,8 +2590,10 @@ impl SQLFunctionVisitor<'_> {
                         },
                         _ => return self.not_supported_error(),
                     };
-                    let total = arg.clone().sum();
-                    let non_empty = arg.count().gt(lit(0));
+                    let (total, non_empty) = match literal_sum(&arg) {
+                        Some(total) => (total, len().gt(lit(0))),
+                        None => (arg.clone().sum(), arg.count().gt(lit(0))),
+                    };
                     let guarded = when(non_empty)
                         .then(total)
                         .otherwise(Expr::Literal(LiteralValue::untyped_null()));
@@ -2534,14 +2616,9 @@ impl SQLFunctionVisitor<'_> {
                     // once wrapped.
                     arg = arg.unique();
                 }
-                let (total, non_empty) = match &arg {
-                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(_))) => {
-                        ((arg * len()).cast(DataType::Int64), len().gt(lit(0)))
-                    },
-                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_))) => {
-                        (arg * len(), len().gt(lit(0)))
-                    },
-                    _ => (arg.clone().sum(), arg.count().gt(lit(0))),
+                let (total, non_empty) = match literal_sum(&arg) {
+                    Some(total) => (total, len().gt(lit(0))),
+                    None => (arg.clone().sum(), arg.count().gt(lit(0))),
                 };
                 Ok(when(non_empty)
                     .then(total)
@@ -2569,7 +2646,8 @@ impl SQLFunctionVisitor<'_> {
                 if is_distinct {
                     arg = arg.unique();
                 }
-                Ok(arg.sum().cast(DataType::Float64))
+                let total = literal_sum(&arg).unwrap_or_else(|| arg.sum());
+                Ok(total.cast(DataType::Float64))
             },
         }
     }
@@ -2714,6 +2792,55 @@ fn is_non_null_literal(expr: &SQLExpr) -> bool {
             ..
         }) if !matches!(v, SQLValue::Null)
     )
+}
+
+/// A decimal as `Float64` when planned, for functions only defined on floats.
+fn sql_to_float(e: Expr) -> Expr {
+    e.map_unary(FunctionExpr::Sql(SqlFunction::ToFloat))
+}
+
+/// SQL `ROUND`: decimals round half away from zero (as in Postgres), other types keep the
+/// default rounding.
+fn sql_round(e: Expr, decimals: u32) -> Expr {
+    e.map_unary(FunctionExpr::Sql(SqlFunction::Round { decimals }))
+}
+
+/// SUM of a numeric literal counts it once per row.
+fn literal_sum(arg: &Expr) -> Option<Expr> {
+    match arg {
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(_))) => {
+            Some((arg.clone() * len()).cast(DataType::Int64))
+        },
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_))) => Some(arg.clone() * len()),
+        _ if decimal_literal(arg).is_some() => Some(arg.clone() * len()),
+        _ => None,
+    }
+}
+
+/// Parse a literal quantile argument, validating that it lies in [0, 1].
+fn parse_quantile_literal(
+    quantile: Expr,
+    fname: &str,
+    arg: &FunctionArgExpr,
+) -> PolarsResult<Expr> {
+    match quantile {
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) if (0.0..=1.0).contains(&f) => {
+            Ok(Expr::from(f))
+        },
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if (0..=1).contains(&n) => {
+            Ok(Expr::from(n as f64))
+        },
+        ref e if let Some(f) = decimal_literal_to_f64(e) => {
+            if !(0.0..=1.0).contains(&f) {
+                polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, arg)
+            }
+            Ok(Expr::from(f))
+        },
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_) | DynLiteralValue::Int(_))) => {
+            polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, arg)
+        },
+        _ => polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, arg),
+    }
 }
 
 fn extract_args(func: &SQLFunction) -> PolarsResult<Vec<&FunctionArgExpr>> {

@@ -8,12 +8,12 @@ mod string;
 use std::borrow::Cow;
 
 pub use agg_list::*;
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::kernels::take_agg::*;
-use arrow::legacy::trusted_len::TrustedLenPush;
-use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::legacy::kernels::take_agg::*;
+use polars_arrow::legacy::trusted_len::TrustedLenPush;
+use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::{
     MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
 };

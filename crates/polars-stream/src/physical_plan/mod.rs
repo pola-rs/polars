@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 #[cfg(any(
     feature = "dtype-date",
@@ -10,10 +11,10 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::DataType;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
+use polars_defs::join::JoinArgs;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
-use polars_ops::frame::JoinArgs;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
@@ -27,7 +28,7 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_plan::plans::options::JoinTypeOptionsIR;
+use polars_plan::plans::options::{JoinTypeOptionsIR, RuntimeFilter};
 use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
 
 mod fmt;
@@ -39,10 +40,11 @@ mod to_description;
 mod to_graph;
 
 pub use fmt::{NodeStyle, visualize_plan};
-use polars_plan::prelude::PlanCallback;
+use polars_defs::time::duration::Duration;
 #[cfg(feature = "dynamic_group_by")]
-use polars_time::DynamicGroupOptions;
-use polars_time::{ClosedWindow, Duration};
+use polars_defs::time::group_by::DynamicGroupOptionsIR;
+use polars_defs::time::group_by::{ClosedWindow, RollingWindowPlacement};
+use polars_plan::prelude::PlanCallback;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
@@ -349,7 +351,7 @@ pub enum PhysNodeKind {
     #[cfg(feature = "interpolate")]
     Interpolate {
         input: PhysStream,
-        method: polars_ops::series::InterpolationMethod,
+        method: polars_defs::expr::InterpolationMethod,
     },
     Rle(PhysStream),
     RleId(PhysStream),
@@ -388,6 +390,8 @@ pub enum PhysNodeKind {
 
     MultiScan {
         scan_sources: ScanSources,
+        /// Bytes per source if loaded. For cloud visualization.
+        bytes_per_source: Option<Buffer<u64>>,
 
         file_reader_builder: Arc<dyn FileReaderBuilder>,
         cloud_options: Option<Arc<CloudOptions>>,
@@ -415,6 +419,8 @@ pub enum PhysNodeKind {
         /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
         file_schema: SchemaRef,
         disable_morsel_split: bool,
+        /// If false, rows within a file may be emitted in any order.
+        maintain_order: bool,
     },
 
     #[cfg(feature = "python")]
@@ -437,7 +443,7 @@ pub enum PhysNodeKind {
     #[cfg(feature = "dynamic_group_by")]
     DynamicGroupBy {
         input: PhysStream,
-        options: DynamicGroupOptions,
+        options: DynamicGroupOptionsIR,
         aggs: Vec<ExprIR>,
         slice: Option<(IdxSize, IdxSize)>,
     },
@@ -449,6 +455,7 @@ pub enum PhysNodeKind {
         period: Duration,
         offset: Duration,
         closed: ClosedWindow,
+        placement: Option<RollingWindowPlacement>,
         slice: Option<(IdxSize, IdxSize)>,
         aggs: Vec<ExprIR>,
     },
@@ -469,6 +476,8 @@ pub enum PhysNodeKind {
         /// Extra match condition, in the join's output namespace, applied per candidate
         /// pair. See `JoinTypeOptionsIR::Equi`.
         fused_predicate: Option<ExprIR>,
+        /// See `JoinOptionsIR::runtime_filters`.
+        runtime_filters: Vec<RuntimeFilter>,
     },
 
     MergeJoin {
@@ -491,6 +500,8 @@ pub enum PhysNodeKind {
         right_on: Vec<ExprIR>,
         args: JoinArgs,
         output_bool: bool,
+        /// See `JoinOptionsIR::runtime_filters`.
+        runtime_filters: Vec<RuntimeFilter>,
     },
 
     CrossJoin {
@@ -521,7 +532,7 @@ pub enum PhysNodeKind {
         tmp_right_key_cols: Vec<Option<PlSmallStr>>,
         descending: bool,
         args: JoinArgs,
-        options: polars_ops::frame::IEJoinOptions,
+        options: polars_defs::join::IEJoinOptions,
     },
 
     /// Generic fallback for (as-of-yet) unsupported streaming joins.
@@ -881,19 +892,28 @@ fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey
 }
 
 fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+    // Collect first: fusing swaps nodes, which would stop the traversal from reaching the
+    // inputs of the fused filter.
+    let mut projection_keys = Vec::new();
     visit_nodes_mut(roots, phys_sm, |key, phys_sm| {
+        if let PhysNodeKind::SimpleProjection { .. } = phys_sm[key].kind() {
+            projection_keys.push(key);
+        }
+    });
+
+    for key in projection_keys {
         let PhysNodeKind::SimpleProjection { input, .. } = phys_sm[key].kind() else {
-            return;
+            continue;
         };
         let len_before_drop = input.output_schema(phys_sm).len();
         let input = input.node;
 
         let Some([simple_proj_node, input_node]) = phys_sm.get_disjoint_mut([key, input]) else {
-            return;
+            continue;
         };
 
         if input_node.output_schemas.len() != 1 {
-            return;
+            continue;
         }
 
         let PhysNodeKind::SimpleProjection { input: _, columns } = simple_proj_node.kind_mut()
@@ -905,26 +925,22 @@ fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNo
 
         // TODO: Figure out why `input_schema.try_project` fails below with e.g. "\"_POLARS_TMP_7253\" not found"
         if has_rename {
-            return;
+            continue;
         }
 
-        match input_node.kind_mut() {
-            PhysNodeKind::Filter {
-                input: _,
-                predicate: _,
-                projection: projection @ None,
-            } => *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop)),
-
-            _ => return,
-        }
+        let PhysNodeKind::Filter { projection, .. } = input_node.kind_mut() else {
+            continue;
+        };
+        let len_before_drop = projection.as_ref().map_or(len_before_drop, |(_, len)| *len);
+        *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop));
 
         let input_schema = input_node.output_schema_mut(0);
         *input_schema = Arc::new(input_schema.try_project(columns.keys()).unwrap());
 
-        if !has_rename && simple_proj_node.output_schemas.len() == 1 {
+        if simple_proj_node.output_schemas.len() == 1 {
             std::mem::swap(simple_proj_node, input_node);
         }
-    });
+    }
 }
 
 /// Sets `rechunk_input` on any `Select` node directly feeding into a `GroupBy`.

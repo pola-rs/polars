@@ -166,10 +166,24 @@ pub enum IrPropsDescription {
         schema_names: Vec<String>,
         is_pure: bool,
         validate_schema: bool,
+        explain_name: Option<String>,
+        explain_detail: Option<String>,
     },
     UnoptimizedDispatch {
         num_inputs: usize,
         operation: String,
+    },
+    Resolver {
+        name: Option<String>,
+        schema_names: Vec<String>,
+        projection: Option<Vec<String>>,
+        slice: Option<(i64, u64)>,
+        filters: Vec<String>,
+        filter_drop_columns_idx: Option<usize>,
+        num_cached_resolves: usize,
+        /// Whether the resolver has already been resolved into an IR subplan. If so, that subplan
+        /// is this node's input.
+        is_resolved: bool,
     },
 
     #[default]

@@ -7,6 +7,8 @@ Aggregate
 
    * - Function
      - Description
+   * - :ref:`APPROX_QUANTILE <approx_quantile>`
+     - Returns an approximation of the given quantile of the grouping.
    * - :ref:`AVG <avg>`
      - Returns the average (mean) of all the elements in the grouping.
    * - :ref:`CORR <corr>`
@@ -86,6 +88,40 @@ so multiple aggregates in the same ``SELECT`` can see different row sets.
     # │ B        ┆ 120   ┆ 100        ┆ 20        ┆ 2     │
     # └──────────┴───────┴────────────┴───────────┴───────┘
 
+
+.. _approx_quantile:
+
+APPROX_QUANTILE
+---------------
+Returns an approximation of the given quantile of the grouping, computed from a sketch that
+trades accuracy for memory. Prefer :ref:`QUANTILE_CONT <quantile_cont>` when the data fits in
+memory.
+
+Takes an optional allowed rank error (a fraction of the number of rows; default ``0.001``) and
+an optional sketch method: one of ``'auto'``, ``'kll'``, ``'req_lo'``, ``'req_hi'`` or
+``'req_both'`` (default ``'auto'``).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": [5, 20, 10, 30, 70, 40, 10, 90]})
+    df.sql("""
+      SELECT
+        APPROX_QUANTILE(foo, 0.25) AS foo_q25,
+        APPROX_QUANTILE(foo, 0.50) AS foo_q50,
+        APPROX_QUANTILE(foo, 0.75, 0.01) AS foo_q75,
+        APPROX_QUANTILE(foo, 0.99, 0.01, 'req_hi') AS foo_q99,
+      FROM self
+    """)
+    # shape: (1, 4)
+    # ┌─────────┬─────────┬─────────┬─────────┐
+    # │ foo_q25 ┆ foo_q50 ┆ foo_q75 ┆ foo_q99 │
+    # │ ---     ┆ ---     ┆ ---     ┆ ---     │
+    # │ i64     ┆ i64     ┆ i64     ┆ i64     │
+    # ╞═════════╪═════════╪═════════╪═════════╡
+    # │ 10      ┆ 30      ┆ 40      ┆ 90      │
+    # └─────────┴─────────┴─────────┴─────────┘
 
 .. _avg:
 

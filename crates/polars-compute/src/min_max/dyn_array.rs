@@ -1,7 +1,9 @@
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8Array, Utf8ViewArray,
 };
-use arrow::scalar::{BinaryScalar, BinaryViewScalar, BooleanScalar, PrimitiveScalar, Scalar};
+use polars_arrow::scalar::{
+    BinaryScalar, BinaryViewScalar, BooleanScalar, PrimitiveScalar, Scalar,
+};
 
 use crate::min_max::MinMaxKernel;
 
@@ -38,7 +40,7 @@ macro_rules! call {
     ($arr:expr, $op:path$(, $variant:ident)?) => {{
         let arr = $arr;
 
-        use arrow::datatypes::{PhysicalType as PH, PrimitiveType as PR};
+        use polars_arrow::datatypes::{PhysicalType as PH, PrimitiveType as PR};
         use PrimitiveArray as PArr;
         use PrimitiveScalar as PScalar;
         use polars_utils::float16::pf16;

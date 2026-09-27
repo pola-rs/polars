@@ -33,7 +33,7 @@ impl NullChunked {
         Self {
             name,
             length: len,
-            chunks: vec![Box::new(arrow::array::NullArray::new(
+            chunks: vec![Box::new(polars_arrow::array::NullArray::new(
                 ArrowDataType::Null,
                 len,
             ))],

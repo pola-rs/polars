@@ -1,6 +1,7 @@
 mod any_value;
-use arrow::compute::concatenate::concatenate_validities;
-use arrow::compute::utils::combine_validities_and;
+pub mod cut;
+use polars_arrow::compute::concatenate::concatenate_validities;
+use polars_arrow::compute::utils::combine_validities_and;
 pub mod flatten;
 pub(crate) mod series;
 mod supertype;
@@ -9,12 +10,12 @@ use std::ops::{Deref, DerefMut};
 mod schema;
 
 pub use any_value::*;
-pub use arrow;
-use arrow::bitmap::Bitmap;
-pub use arrow::legacy::utils::*;
-pub use arrow::trusted_len::TrustMyLength;
 use flatten::*;
 use num_traits::{One, Zero};
+pub use polars_arrow;
+use polars_arrow::bitmap::Bitmap;
+pub use polars_arrow::legacy::utils::*;
+pub use polars_arrow::trusted_len::TrustMyLength;
 pub use rayon;
 use rayon::prelude::*;
 pub use schema::*;

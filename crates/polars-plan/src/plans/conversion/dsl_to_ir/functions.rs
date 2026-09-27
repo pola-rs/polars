@@ -1,4 +1,5 @@
-use arrow::legacy::error::PolarsResult;
+use polars_arrow::legacy::error::PolarsResult;
+use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::utils::{SuperTypeFlags, try_get_supertype, try_get_supertype_with_options};
 use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;
@@ -153,6 +154,11 @@ pub(super) fn convert_functions(
             use MapFunction as M;
             I::MapExpr(match map_function {
                 M::Entries => IM::Entries,
+                M::Keys => IM::Keys,
+                M::Values => IM::Values,
+                M::Length => IM::Length,
+                M::ContainsKey => IM::ContainsKey,
+                M::Get => IM::Get,
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -950,7 +956,22 @@ pub(super) fn convert_functions(
                 true => error,
                 false => method.empirical_error_to_formal(error),
             };
-            I::ApproxQuantile { method, error }
+
+            let values_dtype = e[0]
+                .dtype(ctx.schema, ctx.arena)?
+                .clone()
+                .materialize_unknown(false)?;
+            let sketch = AExprBuilder::function(
+                vec![e[0].clone()],
+                I::ApproxQuantileSketch { method, error },
+                ctx.arena,
+            );
+            let estimate = AExprBuilder::function(
+                vec![sketch.expr_ir_retain_name(ctx.arena), e[1].clone()],
+                I::ApproxQuantileEstimate { values_dtype },
+                ctx.arena,
+            );
+            return Ok((estimate.node(), e[0].output_name().clone()));
         },
         F::Coalesce => I::Coalesce,
         #[cfg(feature = "diff")]
@@ -972,9 +993,23 @@ pub(super) fn convert_functions(
         F::Log1p => I::Log1p,
         #[cfg(feature = "log")]
         F::Exp => I::Exp,
+        #[cfg(feature = "log")]
+        F::Erf => I::Erf,
+        #[cfg(feature = "log")]
+        F::Erfc => I::Erfc,
         F::Unique(v) => I::Unique(v),
         #[cfg(feature = "round_series")]
         F::Round { decimals, mode } => I::Round { decimals, mode },
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { op, scale } => I::DecimalArith { op, scale },
+        F::Sql(function) => {
+            let output_name = e[0].output_name().clone();
+            return Ok((
+                super::sql::lower_sql_function(function, e, ctx)?,
+                output_name,
+            ));
+        },
+        F::TruncArith(op) => I::TruncArith(op),
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => I::RoundSF { digits },
         #[cfg(feature = "round_series")]
@@ -1142,11 +1177,13 @@ pub(super) fn convert_functions(
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
         } => I::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
@@ -1281,11 +1318,29 @@ pub(super) fn convert_functions(
             I::ExtendConstant
         },
 
-        F::RowEncode(v) => {
+        F::RowEncode(mut v) => {
             let dts = e
                 .iter()
-                .map(|e| Ok(e.dtype(ctx.schema, ctx.arena)?.clone()))
+                .map(|e| {
+                    e.dtype(ctx.schema, ctx.arena)?
+                        .clone()
+                        .materialize_unknown(false)
+                })
                 .collect::<PolarsResult<Vec<_>>>()?;
+            if let RowEncodingVariant::Ordered {
+                descending,
+                nulls_last,
+                ..
+            } = &mut v
+            {
+                for opts in [descending, nulls_last].into_iter().flatten() {
+                    _broadcast_bools(e.len(), opts);
+                    polars_ensure!(
+                        opts.len() == e.len(),
+                        ShapeMismatch: "row_encode: got {} columns but {} sort options", e.len(), opts.len()
+                    );
+                }
+            }
             I::RowEncode(dts, v)
         },
         #[cfg(feature = "dtype-struct")]

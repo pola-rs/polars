@@ -1,4 +1,4 @@
-use arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
+use polars_arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
 use polars_utils::IdxSize;
 
 #[cfg(feature = "object")]

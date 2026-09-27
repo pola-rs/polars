@@ -1,4 +1,4 @@
-use arrow_format::ipc::{KeyValue, planus};
+use polars_arrow_format::ipc::{KeyValue, planus};
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 
@@ -18,17 +18,17 @@ pub fn finish_encode_ipc_record_batch(
     let variadic_buffer_counts = (!ctx.variadic_buffer_counts.is_empty())
         .then(|| std::mem::take(&mut ctx.variadic_buffer_counts));
 
-    let message = arrow_format::ipc::Message {
-        version: arrow_format::ipc::MetadataVersion::V5,
-        header: Some(arrow_format::ipc::MessageHeader::RecordBatch(Box::new(
-            arrow_format::ipc::RecordBatch {
+    let message = polars_arrow_format::ipc::Message {
+        version: polars_arrow_format::ipc::MetadataVersion::V5,
+        header: Some(polars_arrow_format::ipc::MessageHeader::RecordBatch(
+            Box::new(polars_arrow_format::ipc::RecordBatch {
                 length: num_rows as i64,
                 nodes: Some(std::mem::take(&mut ctx.field_nodes)),
                 buffers: Some(std::mem::take(&mut ctx.buffers)),
                 compression,
                 variadic_buffer_counts,
-            },
-        ))),
+            }),
+        )),
         body_length: ctx.arrow_data.len() as i64,
         custom_metadata,
     };
@@ -61,12 +61,12 @@ pub fn finish_encode_ipc_dictionary_batch(
     let variadic_buffer_counts = (!ctx.variadic_buffer_counts.is_empty())
         .then(|| std::mem::take(&mut ctx.variadic_buffer_counts));
 
-    let message = arrow_format::ipc::Message {
-        version: arrow_format::ipc::MetadataVersion::V5,
-        header: Some(arrow_format::ipc::MessageHeader::DictionaryBatch(Box::new(
-            arrow_format::ipc::DictionaryBatch {
+    let message = polars_arrow_format::ipc::Message {
+        version: polars_arrow_format::ipc::MetadataVersion::V5,
+        header: Some(polars_arrow_format::ipc::MessageHeader::DictionaryBatch(
+            Box::new(polars_arrow_format::ipc::DictionaryBatch {
                 id: dictionary_id,
-                data: Some(Box::new(arrow_format::ipc::RecordBatch {
+                data: Some(Box::new(polars_arrow_format::ipc::RecordBatch {
                     length: num_rows as i64,
                     nodes: Some(std::mem::take(&mut ctx.field_nodes)),
                     buffers: Some(std::mem::take(&mut ctx.buffers)),
@@ -74,8 +74,8 @@ pub fn finish_encode_ipc_dictionary_batch(
                     variadic_buffer_counts,
                 })),
                 is_delta: false,
-            },
-        ))),
+            }),
+        )),
         body_length: ctx.arrow_data.len() as i64,
         custom_metadata: None,
     };

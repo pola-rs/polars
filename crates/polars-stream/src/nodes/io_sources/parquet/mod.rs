@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_async::executor::{self};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::prelude::{ArrowSchema, DataType};
@@ -37,6 +37,7 @@ use crate::utils::tokio_handle_ext;
 pub mod builder;
 pub mod init;
 mod metadata_utils;
+mod passes;
 mod projection;
 mod row_group_data_fetch;
 mod row_group_decode;
@@ -235,6 +236,7 @@ impl FileReader for ParquetFileReader {
             missing_columns_policy: _,
             num_pipelines: _,
             disable_morsel_split: true,
+            maintain_order: _,
             last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
@@ -266,6 +268,7 @@ impl FileReader for ParquetFileReader {
             missing_columns_policy: _,
             num_pipelines,
             disable_morsel_split,
+            maintain_order,
             last_morsel_pipelines,
             callbacks:
                 FileReaderCallbacks {
@@ -337,13 +340,15 @@ impl FileReader for ParquetFileReader {
                 pre_slice: {:?}, \
                 resolved_pre_slice: {:?}, \
                 row_index: {:?}, \
-                predicate: {:?}",
+                predicate: {:?}, \
+                maintain_order: {}",
                 projected_arrow_fields()?.len(),
                 file_schema.len(),
                 pre_slice_arg,
                 normalized_pre_slice,
                 row_index,
                 predicate.as_ref().map(|_| "<predicate>"),
+                maintain_order,
             )
         }
 
@@ -412,6 +417,7 @@ impl FileReader for ParquetFileReader {
                 &mut self.row_group_prefetch_sync.current_all_spawned,
             ),
             disable_morsel_split,
+            maintain_order,
         }
         .run();
 
@@ -501,6 +507,8 @@ struct ParquetReadImpl {
     rg_prefetch_prev_all_spawned: Option<WaitGroup>,
     rg_prefetch_current_all_spawned: Option<WaitToken>,
     disable_morsel_split: bool,
+    /// If false, row groups are emitted in the order they finish decoding.
+    maintain_order: bool,
 }
 
 #[derive(Debug)]

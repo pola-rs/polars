@@ -216,7 +216,9 @@ pub fn python_scan_predicate(
                         )?;
                         let mut combined: Option<Bound<'_, PyAny>> = None;
                         for node in MintermIter::new(e.node(), expr_arena) {
-                            if let Some(pa) = aexpr_to_pyarrow(py, &pc, node, expr_arena) {
+                            if let Some(pa) =
+                                aexpr_to_pyarrow(py, &pc, node, expr_arena, &options.schema)
+                            {
                                 convertible_nodes.push(node);
                                 // Combine with and operator:
                                 // Need to catch error to satisfy rust, but I'm not sure how this would fail without
@@ -471,6 +473,7 @@ fn create_physical_plan_impl(
             predicate,
             predicate_file_skip_applied,
             unified_scan_args,
+            maintain_order: _,
         } => {
             let mut expr_conversion_state = ExpressionConversionState::new(true);
 

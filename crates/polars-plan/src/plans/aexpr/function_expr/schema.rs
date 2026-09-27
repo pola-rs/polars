@@ -4,16 +4,6 @@ use polars_core::utils::materialize_dyn_int;
 
 use super::*;
 
-pub(super) fn function_sum_output_dtype(dtype: &DataType) -> DataType {
-    match dtype {
-        // Preserve existing function-expression schema behavior. Core reductions
-        // promote Decimal precision, while these expressions currently do not.
-        #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => dtype.clone(),
-        dtype => sum_output_dtype(dtype),
-    }
-}
-
 impl IRFunctionExpr {
     pub(crate) fn get_field(&self, fields: &[Field]) -> PolarsResult<Field> {
         use IRFunctionExpr::*;
@@ -122,7 +112,14 @@ impl IRFunctionExpr {
             #[cfg(feature = "sign")]
             Sign => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric(), "sign")?
-                .with_same_dtype(),
+                .map_dtype(|dt| match dt {
+                    // The result 1 needs an integer digit.
+                    #[cfg(feature = "dtype-decimal")]
+                    DataType::Decimal(p, s) => {
+                        DataType::Decimal((*p).max(s + 1).min(DEC128_MAX_PREC), *s)
+                    },
+                    dt => dt.clone(),
+                }),
             FillNull => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
@@ -282,13 +279,14 @@ impl IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantile { .. } => {
-                // A list of quantiles in, a list of estimates out.
-                let quantiles_are_list = mapper.args()[1].dtype().is_list();
-                mapper.map_dtype(|dtype| match quantiles_are_list {
-                    true => DataType::List(Box::new(dtype.clone())),
-                    false => dtype.clone(),
-                })
+            ApproxQuantileSketch { .. } => mapper.with_dtype(DataType::Binary),
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantileEstimate { values_dtype } => {
+                if mapper.args()[1].dtype().is_list() {
+                    mapper.with_dtype(DataType::List(Box::new(values_dtype.clone())))
+                } else {
+                    mapper.with_dtype(values_dtype.clone())
+                }
             },
             #[cfg(feature = "hist")]
             Hist {
@@ -347,10 +345,7 @@ impl IRFunctionExpr {
             InterpolateBy => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "log")]
             Entropy { .. } => mapper
-                .ensure_satisfies(
-                    |_, dtype| dtype.is_numeric() || matches!(dtype, DataType::Duration(_)),
-                    "entropy",
-                )?
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "entropy")?
                 .map_to_float_dtype(),
             #[cfg(feature = "log")]
             Log1p => mapper
@@ -361,13 +356,71 @@ impl IRFunctionExpr {
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "exp")?
                 .map_to_float_dtype(),
             #[cfg(feature = "log")]
+            Erf => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "erf")?
+                .map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            Erfc => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "erfc")?
+                .map_to_float_dtype(),
+            #[cfg(feature = "log")]
             Log => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log")?
                 .log_dtype(),
             Unique(_) => mapper.with_same_dtype(),
+            // Rounding a decimal away from zero can carry into one more integer digit.
             #[cfg(feature = "round_series")]
-            Round { .. } | RoundSF { .. } | Truncate { .. } | Floor | Ceil => {
-                mapper.with_same_dtype()
+            Round { decimals, mode } => mapper.map_dtype(|dt| match dt {
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(p, s)
+                    if *s > *decimals as usize && *mode != RoundMode::ToZero =>
+                {
+                    DataType::Decimal((p + 1).min(DEC128_MAX_PREC), *s)
+                },
+                dt => dt.clone(),
+            }),
+            #[cfg(feature = "round_series")]
+            RoundSF { .. } => mapper.map_dtype(|dt| match dt {
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(p, s) => DataType::Decimal((p + 1).min(DEC128_MAX_PREC), *s),
+                dt => dt.clone(),
+            }),
+            #[cfg(feature = "round_series")]
+            Floor | Ceil => mapper.map_dtype(|dt| match dt {
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(p, s) if *s > 0 => {
+                    DataType::Decimal((p + 1).min(DEC128_MAX_PREC), *s)
+                },
+                dt => dt.clone(),
+            }),
+            #[cfg(feature = "round_series")]
+            Truncate { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "dtype-decimal")]
+            DecimalArith { op, scale } => mapper
+                .ensure_satisfies(
+                    |_, dtype| dtype.is_decimal() || dtype.is_integer(),
+                    op.name(),
+                )?
+                .with_dtype(DataType::Decimal(DEC128_MAX_PREC, *scale)),
+            // With a decimal, the remainder keeps the larger scale (integers are scale 0)
+            // and the quotient is an integer; other numerics keep their supertype.
+            TruncArith(op) => {
+                let args = mapper.args();
+                match (args[0].dtype(), args[1].dtype()) {
+                    #[cfg(feature = "dtype-decimal")]
+                    (l, r) if l.is_decimal() || r.is_decimal() => {
+                        let scale = |dt: &DataType| match dt {
+                            DataType::Decimal(_, s) => *s,
+                            _ => 0,
+                        };
+                        let scale = match op {
+                            TruncArithOp::Rem => scale(l).max(scale(r)),
+                            TruncArithOp::IntDiv => 0,
+                        };
+                        mapper.with_dtype(DataType::Decimal(DEC128_MAX_PREC, scale))
+                    },
+                    _ => mapper.map_to_supertype(),
+                }
             },
             #[cfg(feature = "fused")]
             Fused(_) => mapper.map_to_supertype(),
@@ -387,9 +440,9 @@ impl IRFunctionExpr {
                     polars_ensure!(l.len() == breaks.len() + 1, ShapeMismatch: "provide len(breaks) + 1 labels");
                     l.clone()
                 } else {
-                    use polars_ops::series::compute_labels;
+                    use polars_core::utils::cut::compute_cut_labels;
 
-                    compute_labels(breaks, *left_closed)?
+                    compute_cut_labels(breaks, *left_closed)?
                 };
                 let enum_dtype = DataType::from_frozen_categories(FrozenCategories::new(
                     cut_labels.iter().map(|s| s.as_str()),
@@ -479,6 +532,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin {
                 flags: _,
+                is_deterministic: _,
                 lib,
                 symbol,
                 kwargs,
@@ -573,7 +627,7 @@ impl IRFunctionExpr {
             }),
             #[cfg(feature = "dtype-struct")]
             RowDecode(fields, _) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
-            DynamicPred { .. } => mapper.with_dtype(DataType::Boolean),
+            DynamicPred { .. } | DynamicSkipBatch { .. } => mapper.with_dtype(DataType::Boolean),
         }
     }
 
@@ -830,7 +884,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub fn sum_dtype(&self) -> PolarsResult<Field> {
-        self.map_dtype(function_sum_output_dtype)
+        self.map_dtype(sum_output_dtype)
     }
 
     pub fn nested_sum_type(&self) -> PolarsResult<Field> {
@@ -842,7 +896,7 @@ impl<'a> FieldsMapper<'a> {
             )
         })?;
 
-        first.set_dtype(function_sum_output_dtype(&dt));
+        first.set_dtype(sum_output_dtype(&dt));
         Ok(first)
     }
 

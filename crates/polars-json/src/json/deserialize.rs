@@ -1,13 +1,13 @@
 use std::borrow::Borrow;
 use std::fmt::Write;
 
-use arrow::array::*;
-use arrow::bitmap::BitmapBuilder;
-use arrow::datatypes::{ArrowDataType, IntervalUnit};
-use arrow::offset::{Offset, Offsets};
-use arrow::temporal_conversions;
-use arrow::types::NativeType;
 use num_traits::NumCast;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::datatypes::{ArrowDataType, IntervalUnit};
+use polars_arrow::offset::{Offset, Offsets};
+use polars_arrow::temporal_conversions;
+use polars_arrow::types::NativeType;
 use polars_compute::cast::temporal::{utf8_to_naive_date_scalar, utf8_to_naive_time_scalar};
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::{f64_to_dec128, i128_to_dec128, str_to_dec128};

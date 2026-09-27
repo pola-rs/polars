@@ -1,3 +1,4 @@
+use polars_defs::join::{JoinArgs, JoinTypeOptions};
 use polars_ops::frame::DataFrameJoinOps;
 use recursive::recursive;
 
@@ -68,17 +69,13 @@ impl Executor for JoinExec {
         let df_left = df_left?;
         let df_right = df_right?;
 
-        let left_on_series = self
-            .left_on
-            .iter()
-            .map(|e| e.evaluate(&df_left, state))
-            .collect::<PolarsResult<Vec<_>>>()?;
-
-        let right_on_series = self
-            .right_on
-            .iter()
-            .map(|e| e.evaluate(&df_right, state))
-            .collect::<PolarsResult<Vec<_>>>()?;
+        let evaluate_keys = |df: &DataFrame, keys: &[Arc<dyn PhysicalExpr>]| {
+            keys.iter()
+                .map(|key| key.evaluate(df, state)?.broadcast_owned_to(df.height()))
+                .collect::<PolarsResult<Vec<_>>>()
+        };
+        let left_on_series = evaluate_keys(&df_left, &self.left_on)?;
+        let right_on_series = evaluate_keys(&df_right, &self.right_on)?;
 
         let df = df_left._join_impl(
             &df_right,

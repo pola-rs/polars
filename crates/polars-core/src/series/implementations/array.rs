@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 
 use self::compare_inner::TotalOrdInner;
 use self::sort::arg_sort_row_fmt;

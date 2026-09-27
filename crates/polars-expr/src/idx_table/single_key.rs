@@ -187,8 +187,9 @@ where
         );
 
         let keys: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
+        let arr = keys.downcast_as_array();
         for (i, subset_idx) in subset.iter().enumerate_idx() {
-            let key = unsafe { keys.get_unchecked(*subset_idx as usize) };
+            let key = unsafe { arr.get_unchecked(*subset_idx as usize) };
             let idx = self.idx_offset + i;
             if let Some(key) = key {
                 match self.idx_map.entry(key) {
@@ -235,8 +236,9 @@ where
         };
 
         let keys: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
+        let arr = keys.downcast_as_array();
         if keys.has_nulls() {
-            let iter = subset.iter().map(|i| (*i, keys.get_unchecked(*i as usize)));
+            let iter = subset.iter().map(|i| (*i, arr.get_unchecked(*i as usize)));
             self.probe_dispatch(
                 iter,
                 table_match,
@@ -249,7 +251,7 @@ where
         } else {
             let iter = subset
                 .iter()
-                .map(|i| (*i, Some(keys.value_unchecked(*i as usize))));
+                .map(|i| (*i, Some(arr.value_unchecked(*i as usize))));
             self.probe_dispatch(
                 iter,
                 table_match,
