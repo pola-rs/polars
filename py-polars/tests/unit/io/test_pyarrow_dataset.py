@@ -763,6 +763,25 @@ def test_arrow_predicate_conversions(tmp_path: Path) -> None:
         check_predicate_pushdown=True,
     )
 
+    # Test is_nan / is_not_nan
+    df_with_nans = pl.DataFrame({"value": [1.0, float("nan"), 3.0, float("nan")]})
+    file_path_nans = tmp_path / "test_nans.ipc"
+    df_with_nans.write_ipc(file_path_nans)
+
+    helper_dataset_test(
+        file_path_nans,
+        lambda lf: lf.filter(pl.col("value").is_nan()),
+        n_expected=2,
+        check_predicate_pushdown=True,
+    )
+
+    helper_dataset_test(
+        file_path_nans,
+        lambda lf: lf.filter(pl.col("value").is_not_nan()),
+        n_expected=2,
+        check_predicate_pushdown=True,
+    )
+
 
 def test_pyarrow_dataset_streaming_source() -> None:
     df = pl.DataFrame({"item": ["foo", "bar", "baz"], "price": [10.0, 20.0, 30.0]})
