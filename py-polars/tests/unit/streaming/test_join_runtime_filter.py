@@ -165,6 +165,17 @@ def test_filter_reaches_the_scan_through_renames(
     assert_matches_in_memory(q, out)
 
 
+def test_filter_reaches_the_scan_through_a_fallible_projection(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # A strict cast can raise, which does not stop the filter.
+    q = fact.with_columns(pl.col("v").cast(pl.Int16)).join(dim(220, 240), on="k")
+    assert "dynamic_predicate" in q.explain(engine="streaming")
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "1 / 10 row groups"
+    assert_matches_in_memory(q, out)
+
+
 def test_not_through_a_sampling_join(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -1390,13 +1401,57 @@ def test_bloom_gate_keeps_the_range_only(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    # The build holds three of the seven values `k2` takes: not worth probing
-    # per row.
+    # The build holds three of the seven values `k2` takes: not worth a bloom
+    # filter, but the range still drops the rows outside it.
     q = shuffled_fact.join(tiny(0, 1, 2, key="k2"), on="k2")
     out, err = reader_log(q, plmonkeypatch, capfd)
     assert "bloom: None" in err
     assert "bloom of" not in err
+    assert "Dynamic predicate started filtering rows" in err
+    assert "Dynamic predicate bypassed" not in err
     assert out.get_column("k2").unique().sort().to_list() == [0, 1, 2]
+    assert_matches_in_memory(q, out)
+
+
+def test_range_keeping_most_rows_is_bypassed(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Six of the seven values: the range keeps most rows, so the reader stops
+    # checking it.
+    q = shuffled_fact.join(tiny(0, 1, 2, 3, 4, 5, key="k2"), on="k2")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert "bloom: None" in err
+    assert "Dynamic predicate bypassed" in err
+    assert out.get_column("k2").unique().sort().to_list() == [0, 1, 2, 3, 4, 5]
+    assert_matches_in_memory(q, out)
+
+
+def test_bypassed_range_goes_behind_a_selective_predicate(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The range is first checked on every row and keeps most of them. Once the
+    # reader stops checking it, the static predicate on `v` goes first again, so
+    # `k2` is only decoded for the rows `v` keeps. That holds also for a row
+    # group decoded with the old passes after the range stopped being checked,
+    # which depends on timing, hence the repeats.
+    n = 50 * ROWS_PER_GROUP
+    keys = pl.Series("k", range(n)).shuffle(seed=1)
+    path = tmp_path / "fact.parquet"
+    pl.DataFrame({"k2": keys % 7, "v": keys}).write_parquet(
+        path, row_group_size=ROWS_PER_GROUP, statistics="full"
+    )
+    q = (
+        pl.scan_parquet(path)
+        .filter(pl.col("v") < n // 10)
+        .join(tiny(0, 1, 2, 3, 4, 5, key="k2"), on="k2")
+    )
+    for _ in range(5):
+        out, err = reader_log(q, plmonkeypatch, capfd)
+        assert "Dynamic predicate bypassed" in err
+        passes = [line for line in err.splitlines() if "Predicate passes" in line]
+        assert passes[-1] == '[ParquetFileReader]: Predicate passes: [["v"], ["k2"]]'
     assert_matches_in_memory(q, out)
 
 

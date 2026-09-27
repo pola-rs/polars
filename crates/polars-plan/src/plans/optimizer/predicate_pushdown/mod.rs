@@ -6,7 +6,7 @@ mod keys;
 pub(super) mod utils;
 
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
-pub(crate) use dynamic::{new_batch_only_dynamic_pred, new_dynamic_pred};
+pub(crate) use dynamic::new_dynamic_pred;
 use polars_buffer::Buffer;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
