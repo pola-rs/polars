@@ -2823,11 +2823,16 @@ impl SQLContext {
                     let mut lf =
                         self.execute_isolated(|ctx| ctx.execute_query_no_ctes(subquery))?;
                     lf = self.rename_columns_from_table_alias(lf, alias)?;
-                    self.table_map
-                        .write()
-                        .unwrap()
-                        .insert(alias.name.value.clone(), lf.clone());
-                    Ok((alias.name.value.clone(), lf))
+                    let name = alias.name.value.clone();
+                    // The alias stays registered after the query, but never replaces
+                    // a table that is already registered under that name.
+                    let mut table_map = self.table_map.write().unwrap();
+                    if get_ignoring_case(&table_map, &name).is_none() {
+                        table_map.insert(name.clone(), lf.clone());
+                    }
+                    drop(table_map);
+                    self.cte_map.insert(name.clone(), lf.clone());
+                    Ok((name, lf))
                 } else {
                     let lf = self.execute_isolated(|ctx| ctx.execute_query_no_ctes(subquery))?;
                     Ok(("".to_string(), lf))
