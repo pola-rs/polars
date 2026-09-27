@@ -40,8 +40,8 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::join_build_side::{LOPSIDED_FACTOR, side_stats};
-use super::pushdown_maintain_errors;
 use super::predicate_pushdown::utils::{map_column_references, push_past};
+use super::pushdown_maintain_errors;
 use crate::dsl::{FileScanIR, ScanFlags};
 use crate::plans::aexpr::deep_clone_ae;
 use crate::plans::aexpr::predicates::supports_runtime_range;
@@ -50,8 +50,8 @@ use crate::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::StatsCache;
 use crate::plans::{
-    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator,
-    into_column, is_inherently_nondeterministic,
+    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator, into_column,
+    is_inherently_nondeterministic,
 };
 use crate::prelude::{JoinType, MaintainOrderJoin};
 use crate::utils::has_aexpr;
@@ -389,7 +389,14 @@ fn scan_origins(
                 | IR::Filter { .. }
                 | IR::Select { .. }
                 | IR::HStack { .. } => {
-                    match push_past(node, &mut predicate, ir_arena, expr_arena, scratch, maintain_errors) {
+                    match push_past(
+                        node,
+                        &mut predicate,
+                        ir_arena,
+                        expr_arena,
+                        scratch,
+                        maintain_errors,
+                    ) {
                         Ok(Some(input)) => node = input,
                         _ => continue 'paths,
                     }
