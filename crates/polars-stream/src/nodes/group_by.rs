@@ -33,7 +33,7 @@ const DEFAULT_HOT_TABLE_SIZE: usize = 4096;
 #[cfg(debug_assertions)]
 const KEY_SLICE_SIZE: usize = 64;
 #[cfg(not(debug_assertions))]
-const KEY_SLICE_SIZE: usize = 16384;
+const KEY_SLICE_SIZE: usize = 4096;
 
 struct PreAgg {
     keys: HashKeys,
