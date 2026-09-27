@@ -5,6 +5,7 @@ use polars_core::prelude::{Column, IntoColumn, PlRandomState};
 use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_expr::EvictIdx;
 use polars_expr::groups::Grouper;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::hot_groups::{HotGrouper, new_hash_hot_grouper};
@@ -34,6 +35,10 @@ const DEFAULT_HOT_TABLE_SIZE: usize = 4096;
 const KEY_SLICE_SIZE: usize = 64;
 #[cfg(not(debug_assertions))]
 const KEY_SLICE_SIZE: usize = 4096;
+
+/// The number of hot groups up to which the reductions of a sliced morsel are updated
+/// per slice.
+const MAX_SLICE_REDUCTION_GROUPS: usize = 64;
 
 struct PreAgg {
     keys: HashKeys,
@@ -88,6 +93,41 @@ impl LocalGroupBySinkState {
             pre_agg_idxs_values_per_p: vec![Vec::new(); num_partitions],
             pre_agg_idxs_offsets_per_p: vec![0; num_partitions],
         }
+    }
+
+    /// Resizes the hot reductions of input `input_idx` to its hot groups and feeds them
+    /// rows `hot_idxs` of `df`, which go to groups `hot_group_idxs`.
+    #[allow(clippy::too_many_arguments)]
+    async fn update_hot_reductions(
+        &mut self,
+        input_idx: usize,
+        df: &DataFrame,
+        hot_idxs: &[IdxSize],
+        hot_group_idxs: &[EvictIdx],
+        identity_idxs: &mut Vec<IdxSize>,
+        reductions_per_input: &[Vec<usize>],
+        payload: &InputPayload,
+        grouped_reduction_cols: &[Vec<PlSmallStr>],
+        exec_state: &ExecutionState,
+        seq: u64,
+    ) -> PolarsResult<()> {
+        let num_groups = self.hot_grouper_per_input[input_idx].num_groups();
+        for red_idx in &reductions_per_input[input_idx] {
+            self.hot_grouped_reductions[*red_idx].resize(num_groups);
+        }
+        payload
+            .update_reductions(
+                df,
+                hot_idxs,
+                identity_idxs,
+                grouped_reduction_cols,
+                &mut self.hot_grouped_reductions,
+                exec_state,
+                |reduction, in_cols, subset| unsafe {
+                    reduction.update_groups_while_evicting(in_cols, subset, hot_group_idxs, seq)
+                },
+            )
+            .await
     }
 
     fn flush_evictions(
@@ -280,12 +320,13 @@ impl GroupBySinkState {
                     } else {
                         df.height().max(1)
                     };
-                    let hot_grouper = &mut local.hot_grouper_per_input[input_idx];
-                    hot_idxs.clear();
-                    hot_group_idxs.clear();
+                    let reduce_per_slice = slice_size < df.height()
+                        && local.hot_grouper_per_input[input_idx].num_groups() as usize
+                            <= MAX_SLICE_REDUCTION_GROUPS;
                     all_hot_per_input[input_idx] = true;
                     for offset in (0..df.height()).step_by(slice_size) {
                         // Compute hot group indices from key.
+                        let hot_grouper = &mut local.hot_grouper_per_input[input_idx];
                         let slice_keys = keys.slice(offset as i64, slice_size);
                         let hash_keys =
                             HashKeys::from_df(&slice_keys, random_state.clone(), true, false);
@@ -298,8 +339,10 @@ impl GroupBySinkState {
                             &mut cold_idxs,
                             has_order_sensitive_agg,
                         );
-                        for idx in &mut hot_idxs[hot_start..] {
-                            *idx += offset as IdxSize;
+                        if !reduce_per_slice {
+                            for idx in &mut hot_idxs[hot_start..] {
+                                *idx += offset as IdxSize;
+                            }
                         }
 
                         // Store cold keys.
@@ -339,30 +382,32 @@ impl GroupBySinkState {
                             let sf = SpillFrame::new(cold_df, spill_ctx).await;
                             local.cold_morsels.push((input_idx, seq, cold_keys, sf));
                         }
-                    }
 
-                    // Update hot reductions.
-                    for red_idx in &reductions_per_input[input_idx] {
-                        local.hot_grouped_reductions[*red_idx].resize(hot_grouper.num_groups());
-                    }
-                    payload
-                        .update_reductions(
-                            &df,
-                            &hot_idxs,
-                            &mut identity_idxs,
-                            grouped_reduction_cols,
-                            &mut local.hot_grouped_reductions,
-                            &state.in_memory_exec_state,
-                            |reduction, in_cols, subset| unsafe {
-                                reduction.update_groups_while_evicting(
-                                    in_cols,
-                                    subset,
+                        if reduce_per_slice || offset + slice_size >= df.height() {
+                            let reduce_df = if reduce_per_slice {
+                                &df.slice(offset as i64, slice_size)
+                            } else {
+                                &df
+                            };
+                            local
+                                .update_hot_reductions(
+                                    input_idx,
+                                    reduce_df,
+                                    &hot_idxs,
                                     &hot_group_idxs,
+                                    &mut identity_idxs,
+                                    reductions_per_input,
+                                    payload,
+                                    grouped_reduction_cols,
+                                    &state.in_memory_exec_state,
                                     seq,
                                 )
-                            },
-                        )
-                        .await?;
+                                .await?;
+                            hot_idxs.clear();
+                            hot_group_idxs.clear();
+                        }
+                    }
+                    let hot_grouper = &local.hot_grouper_per_input[input_idx];
 
                     // If we have too many evicted rows, flush them.
                     if hot_grouper.num_evictions() >= get_ideal_morsel_size() {
