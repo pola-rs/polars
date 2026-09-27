@@ -86,7 +86,9 @@ pub trait LogSeries: SeriesSealed {
             Float16 => Ok(s.f16().unwrap().apply_values(|v| v.ln_1p()).into_series()),
             Float32 => Ok(s.f32().unwrap().apply_values(|v| v.ln_1p()).into_series()),
             Float64 => Ok(s.f64().unwrap().apply_values(|v| v.ln_1p()).into_series()),
-            Decimal(_, _) | Boolean => s.cast(&DataType::Float64)?.log1p(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => s.cast(&DataType::Float64)?.log1p(),
+            Boolean => s.cast(&DataType::Float64)?.log1p(),
             dt => polars_bail!(opq = log1p, dt),
         }
     }
@@ -107,7 +109,9 @@ pub trait LogSeries: SeriesSealed {
             Float16 => Ok(s.f16().unwrap().apply_values(|v| v.exp()).into_series()),
             Float32 => Ok(s.f32().unwrap().apply_values(|v| v.exp()).into_series()),
             Float64 => Ok(s.f64().unwrap().apply_values(|v| v.exp()).into_series()),
-            Decimal(_, _) | Boolean => s.cast(&DataType::Float64)?.exp(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => s.cast(&DataType::Float64)?.exp(),
+            Boolean => s.cast(&DataType::Float64)?.exp(),
             dt => polars_bail!(opq = exp, dt),
         }
     }
@@ -136,7 +140,9 @@ pub trait LogSeries: SeriesSealed {
                 .apply_values(|v| erf_f64(v as f64) as f32)
                 .into_series()),
             Float64 => Ok(s.f64().unwrap().apply_values(erf_f64).into_series()),
-            Decimal(_, _) | Boolean => s.cast(&DataType::Float64)?.erf(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => s.cast(&DataType::Float64)?.erf(),
+            Boolean => s.cast(&DataType::Float64)?.erf(),
             dt => polars_bail!(opq = erf, dt),
         }
     }
@@ -165,7 +171,9 @@ pub trait LogSeries: SeriesSealed {
                 .apply_values(|v| erfc_f64(v as f64) as f32)
                 .into_series()),
             Float64 => Ok(s.f64().unwrap().apply_values(erfc_f64).into_series()),
-            Decimal(_, _) | Boolean => s.cast(&DataType::Float64)?.erfc(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => s.cast(&DataType::Float64)?.erfc(),
+            Boolean => s.cast(&DataType::Float64)?.erfc(),
             dt => polars_bail!(opq = erfc, dt),
         }
     }
