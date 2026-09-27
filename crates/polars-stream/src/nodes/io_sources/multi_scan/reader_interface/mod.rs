@@ -152,6 +152,8 @@ pub struct BeginReadArgs {
 
     pub num_pipelines: usize,
     pub disable_morsel_split: bool,
+    /// If false, the reader may emit rows in any order.
+    pub maintain_order: bool,
     /// Minimum number of pieces a reader should split a file's last morsel into, to keep
     /// downstream pipelines busy. The multi-scan layer precomputes this so the per-file
     /// budget is shared across files in the same scan. When many files are concurrent,
@@ -178,6 +180,7 @@ impl Default for BeginReadArgs {
             missing_columns_policy: MissingColumnsPolicy::Raise,
             num_pipelines: 1,
             disable_morsel_split: false,
+            maintain_order: true,
             last_morsel_pipelines: 1,
             callbacks: FileReaderCallbacks::default(),
         }

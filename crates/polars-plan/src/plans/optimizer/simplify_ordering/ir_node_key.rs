@@ -20,4 +20,12 @@ impl IRNodeKey {
             _ => Inner::Node(ir_node),
         })
     }
+
+    /// The IR node, if this is not a cache node.
+    pub fn node(&self) -> Option<Node> {
+        match self.0 {
+            Inner::Node(node) => Some(node),
+            Inner::CacheId(_) => None,
+        }
+    }
 }

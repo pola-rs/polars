@@ -473,6 +473,7 @@ fn create_physical_plan_impl(
             predicate,
             predicate_file_skip_applied,
             unified_scan_args,
+            maintain_order: _,
         } => {
             let mut expr_conversion_state = ExpressionConversionState::new(true);
 

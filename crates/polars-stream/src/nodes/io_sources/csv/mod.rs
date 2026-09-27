@@ -172,6 +172,7 @@ impl FileReader for CsvFileReader {
             missing_columns_policy,
             num_pipelines,
             disable_morsel_split: _,
+            maintain_order: _,
             last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {

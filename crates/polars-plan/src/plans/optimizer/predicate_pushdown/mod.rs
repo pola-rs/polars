@@ -361,6 +361,7 @@ impl PredicatePushDown {
                 scan_type,
                 unified_scan_args,
                 output_schema,
+                maintain_order,
             } => {
                 let mut blocked_names = Vec::with_capacity(2);
 
@@ -405,6 +406,7 @@ impl PredicatePushDown {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        maintain_order,
                     }
                 } else {
                     let lp = Scan {
@@ -416,6 +418,7 @@ impl PredicatePushDown {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        maintain_order,
                     };
                     if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);

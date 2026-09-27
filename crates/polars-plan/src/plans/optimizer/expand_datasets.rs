@@ -63,6 +63,7 @@ pub(super) fn expand_datasets(
                         predicate,
                         predicate_file_skip_applied: _,
                         output_schema: _,
+                        maintain_order: _,
                     } = storage.get_mut(key)
                     else {
                         return Ok(());
@@ -290,6 +291,7 @@ fn rebuild_scan_from_expanded(
         predicate: _,
         predicate_file_skip_applied: _,
         output_schema: _,
+        maintain_order: _,
     } = scan_ir
     else {
         unreachable!()
@@ -766,6 +768,7 @@ mod tests {
                 bytes_per_source: None,
             }),
             unified_scan_args: Box::new(args),
+            maintain_order: true,
         }
     }
 

@@ -419,6 +419,8 @@ pub enum PhysNodeKind {
         /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
         file_schema: SchemaRef,
         disable_morsel_split: bool,
+        /// If false, rows within a file may be emitted in any order.
+        maintain_order: bool,
     },
 
     #[cfg(feature = "python")]
