@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 import sys
 from functools import partial
@@ -1459,6 +1460,13 @@ def _multiscan_unordered_sources(
     return paths, pl.concat(dfs)
 
 
+def _assert_files_order(capture: str, expected: str) -> None:
+    # CI also runs with reader capabilities cleared, which takes the ordered fallback.
+    if os.environ.get("POLARS_FORCE_EMPTY_READER_CAPABILITIES") == "1":
+        expected = "unordered_files: false (reason: no capability)"
+    assert expected in capture
+
+
 def _collect_verbose(
     q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> tuple[pl.DataFrame, str]:
@@ -1481,21 +1489,21 @@ def test_multiscan_unordered_files(
     lf = pl.scan_parquet(sources)
 
     out, capture = _collect_verbose(lf.select(pl.col("a").sum()), plmonkeypatch, capfd)
-    assert "unordered_files: true, unordered_init: true" in capture
+    _assert_files_order(capture, "unordered_files: true, unordered_init: true")
     assert out.item() == df["a"].sum()
 
     # Row positions are tracked, so readers initialize in order.
     q = lf.with_row_index().filter(pl.col("a") % 3 == 0).select(pl.col("index").max())
     _, capture = _collect_verbose(q, plmonkeypatch, capfd)
-    assert (
-        "unordered_files: true, unordered_init: false (reason: row index or slice)"
-        in capture
+    _assert_files_order(
+        capture,
+        "unordered_files: true, unordered_init: false (reason: row index or slice)",
     )
 
     # The measurement knob forces file order without touching the query.
     plmonkeypatch.setenv("POLARS_FORCE_ORDERED_MULTISCAN", "1")
     _, capture = _collect_verbose(lf.select(pl.col("a").sum()), plmonkeypatch, capfd)
-    assert "unordered_files: false (reason: forced)" in capture
+    _assert_files_order(capture, "unordered_files: false (reason: forced)")
     plmonkeypatch.delenv("POLARS_FORCE_ORDERED_MULTISCAN")
 
     def collect(q: pl.LazyFrame) -> pl.DataFrame:
@@ -1560,7 +1568,7 @@ def test_multiscan_unordered_files_post_apply(
 
     out, capture = _collect_verbose(q, plmonkeypatch, capfd)
 
-    assert "unordered_files: true" in capture
+    _assert_files_order(capture, "unordered_files: true")
     assert_frame_equal(out.sort("path"), df.group_by("path").agg(aggs).sort("path"))
     assert_frame_equal(lf.sort("a").collect(engine="streaming"), df)
 
@@ -1606,7 +1614,7 @@ def test_multiscan_unordered_files_single_effective_source(
         .select(pl.col("a").sum())
         .collect(engine="streaming")
     )
-    assert "unordered_files: true" in capfd.readouterr().err
+    _assert_files_order(capfd.readouterr().err, "unordered_files: true")
     assert out.item() == df.filter(pl.col("f") >= 3)["a"].sum()
 
 
@@ -1628,7 +1636,7 @@ def test_multiscan_unordered_files_error(
         capture = capfd.readouterr().err
 
     # The error must surface from the unordered path.
-    assert "unordered_files: true" in capture
+    _assert_files_order(capture, "unordered_files: true")
 
 
 @pytest.mark.write_disk
@@ -1650,7 +1658,7 @@ def test_multiscan_unordered_files_collect_all(
         )
         capture = capfd.readouterr().err
 
-    assert "unordered_files: true" in capture
+    _assert_files_order(capture, "unordered_files: true")
     assert head.item() == df["a"].sum()
     assert count.item() == 1
     out.seek(0)
@@ -1668,11 +1676,11 @@ def test_multiscan_unordered_files_local_stays_ordered(
 
     # Same query and sources; only the async gate flips.
     out, capture = _collect_verbose(q, plmonkeypatch, capfd)
-    assert "unordered_files: true" in capture
+    _assert_files_order(capture, "unordered_files: true")
     assert out.item() == df["a"].sum()
 
     # Local reads have no stragglers to hide, so files stay ordered.
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
     out, capture = _collect_verbose(q, plmonkeypatch, capfd)
-    assert "unordered_files: false (reason: not remote)" in capture
+    _assert_files_order(capture, "unordered_files: false (reason: not remote)")
     assert out.item() == df["a"].sum()
