@@ -20,7 +20,7 @@ impl KeyRowHashHotGrouper {
             replaced: vec![false; table.num_slots()],
             table,
             keys: HotKeyRows::new(layout.clone()),
-            evicted: KeyRowCollector::default(),
+            evicted: KeyRowCollector::new(layout.clone()),
             layout,
         }
     }
@@ -46,6 +46,7 @@ impl HotGrouper for KeyRowHashHotGrouper {
         let HashKeys::KeyRows(keys) = keys else {
             unreachable!()
         };
+        debug_assert!(keys.has_layout(&self.layout));
 
         hot_idxs.reserve(keys.len());
         hot_group_idxs.reserve(keys.len());
@@ -58,8 +59,8 @@ impl HotGrouper for KeyRowHashHotGrouper {
                 .is_none_or(|v| v.get_bit_unchecked(i))
         };
         let mut found = Vec::with_capacity(VERIFY_BATCH_SIZE);
-        let mut cand_idxs = Vec::with_capacity(VERIFY_BATCH_SIZE);
-        let mut cand_ks = Vec::with_capacity(VERIFY_BATCH_SIZE);
+        let mut cand_key_idxs = Vec::with_capacity(VERIFY_BATCH_SIZE);
+        let mut cand_hot_keys = Vec::with_capacity(VERIFY_BATCH_SIZE);
         let mut rows = Vec::with_capacity(VERIFY_BATCH_SIZE);
         let mut ok = Vec::with_capacity(VERIFY_BATCH_SIZE);
         let mut replaced_ks = Vec::new();
@@ -67,8 +68,8 @@ impl HotGrouper for KeyRowHashHotGrouper {
             let end = keys.len().min(start + VERIFY_BATCH_SIZE);
 
             found.clear();
-            cand_idxs.clear();
-            cand_ks.clear();
+            cand_key_idxs.clear();
+            cand_hot_keys.clear();
             for (i, h) in (start..end).zip(&hashes[start..end]) {
                 let h = *h;
                 let f = is_valid(i)
@@ -78,19 +79,22 @@ impl HotGrouper for KeyRowHashHotGrouper {
                     })
                     .flatten();
                 if let Some((_, k)) = f {
-                    cand_idxs.push(i as IdxSize);
-                    cand_ks.push(k);
+                    cand_key_idxs.push(i as IdxSize);
+                    cand_hot_keys.push(k);
                 }
                 found.push(f);
             }
             ok.clear();
-            ok.resize(cand_idxs.len(), true);
+            ok.resize(cand_key_idxs.len(), true);
             unsafe {
                 self.keys
-                    .verify(keys, &cand_idxs, &cand_ks, &mut rows, &mut ok)
+                    .verify(keys, &cand_key_idxs, &cand_hot_keys, &mut rows, &mut ok)
             };
 
             let mut c = 0;
+            // SAFETY: `insert_key` calls at most one of its closures at a time and none of
+            // them outlives that call, so the accesses through `hot` never overlap.
+            // `self.table` is a separate field.
             let hot: *mut HotKeyRows = &mut self.keys;
             let evicted = &mut self.evicted;
             let replaced = &mut self.replaced;
@@ -146,7 +150,7 @@ impl HotGrouper for KeyRowHashHotGrouper {
     }
 
     fn take_evicted_keys(&mut self) -> HashKeys {
-        HashKeys::KeyRows(self.evicted.take(self.layout.clone()))
+        HashKeys::KeyRows(self.evicted.take())
     }
 
     fn as_any(&self) -> &dyn Any {

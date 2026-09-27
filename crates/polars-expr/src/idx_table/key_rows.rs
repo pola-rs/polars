@@ -7,11 +7,10 @@ use polars_utils::unitvec;
 
 use super::*;
 use crate::hash_keys::HashKeys;
-use crate::key_rows::{KeyRowIndexMap, KeyRowKeys};
+use crate::key_rows::{KeyRowIndexMap, KeyRowKeys, KeyRowLayout};
 
 const PROBE_CHUNK_SIZE: usize = 1024;
 
-#[derive(Default)]
 pub struct KeyRowIdxTable {
     // These AtomicU64s actually are IdxSizes, but we use the top bit of the
     // first index in each to mark keys during probing.
@@ -21,8 +20,12 @@ pub struct KeyRowIdxTable {
 }
 
 impl KeyRowIdxTable {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(layout: Arc<KeyRowLayout>) -> Self {
+        Self {
+            idx_map: KeyRowIndexMap::new(layout),
+            idx_offset: 0,
+            null_keys: Vec::new(),
+        }
     }
 
     /// Inserts the keys `key_idxs`, where key `key_idxs[p]` gets index `idx_offset + p`.
@@ -156,7 +159,7 @@ impl KeyRowIdxTable {
 
 impl IdxTable for KeyRowIdxTable {
     fn new_empty(&self) -> Box<dyn IdxTable> {
-        Box::new(Self::new())
+        Box::new(Self::new(self.idx_map.layout().clone()))
     }
 
     fn reserve(&mut self, additional: usize) {

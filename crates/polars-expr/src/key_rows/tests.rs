@@ -25,12 +25,12 @@ fn layout_places_wide_columns_first() {
     let offsets: Vec<usize> = layout.cols.iter().map(|c| c.offset).collect();
     assert_eq!(offsets, [24, 0, 16]);
     assert_eq!(layout.null_offset, 28);
-    assert_eq!(layout.stride, 4);
+    assert_eq!(layout.stride_words, 4);
     assert_eq!(layout.view_words, [0]);
     assert_eq!(layout.plain_words, [0, 2, 3]);
 
     let two_i64 = KeyRowLayout::new(&[DataType::Int64, DataType::Int64]).unwrap();
-    assert_eq!(two_i64.stride, 3);
+    assert_eq!(two_i64.stride_words, 3);
     assert!(KeyRowLayout::new(&[DataType::Int64, DataType::Null]).is_none());
     assert!(KeyRowLayout::new(&[DataType::String, DataType::Binary, DataType::String]).is_none());
 }
@@ -51,7 +51,7 @@ fn equal_content_has_equal_rows_and_hashes() {
     .unwrap();
     let random_state = PlRandomState::default();
     let (ka, kb) = (keys(&a, true, &random_state), keys(&b, true, &random_state));
-    let mut map = KeyRowIndexMap::<()>::new();
+    let mut map = KeyRowIndexMap::<()>::new(ka.layout.clone());
     unsafe {
         let groups: Vec<IdxSize> = (0..4)
             .map(|i| map.get_or_insert_with(&ka, i, || ()).0)
@@ -75,7 +75,7 @@ fn equal_content_has_equal_rows_and_hashes() {
         assert!(!hot.eq_key(0, &ka, 1));
     }
     let rows = hot.keys();
-    let mut map = KeyRowIndexMap::<()>::new();
+    let mut map = KeyRowIndexMap::<()>::new(rows.layout.clone());
     unsafe {
         for i in 0..4 {
             map.get_or_insert_with(&rows, i, || ());
@@ -97,7 +97,7 @@ fn colliding_hashes_are_told_apart() {
     let mut ks = keys(&df, true, &PlRandomState::default());
     ks.hashes = PrimitiveArray::from_vec(vec![42; df.height()]);
     let idxs: Vec<IdxSize> = (0..6).collect();
-    let mut map = KeyRowIndexMap::<()>::new();
+    let mut map = KeyRowIndexMap::<()>::new(ks.layout.clone());
     let (mut groups, mut found) = (Vec::new(), Vec::new());
     unsafe {
         map.get_or_insert_batch(&ks, &idxs, |_| (), &mut groups);
@@ -113,7 +113,7 @@ fn colliding_hashes_are_told_apart() {
         }
     }
     let rows = hot.keys();
-    let mut map = KeyRowIndexMap::<()>::new();
+    let mut map = KeyRowIndexMap::<()>::new(rows.layout.clone());
     let (mut groups, mut found) = (Vec::new(), Vec::new());
     unsafe {
         map.get_or_insert_batch(&rows, &[2, 1, 0, 1], |_| (), &mut groups);
@@ -128,7 +128,7 @@ fn colliding_new_keys_get_indices_in_order() {
     let df = df!("a" => [1i64, 2, 3, 2], "b" => [1i64, 2, 3, 2]).unwrap();
     let mut ks = keys(&df, true, &PlRandomState::default());
     ks.hashes = PrimitiveArray::from_vec(vec![42, 42, 7, 42]);
-    let mut map = KeyRowIndexMap::<IdxSize>::new();
+    let mut map = KeyRowIndexMap::<IdxSize>::new(ks.layout.clone());
     let mut groups = Vec::new();
     unsafe {
         map.get_or_insert_batch(&ks, &[0], |r| r as IdxSize, &mut groups);
@@ -149,6 +149,19 @@ fn columns_of_unequal_length_are_rejected() {
     ];
     let layout = KeyRowLayout::new(columns.iter().map(|c| c.dtype())).unwrap();
     KeyRowKeys::from_columns(&columns, Arc::new(layout), &PlRandomState::default(), true);
+}
+
+#[test]
+fn empty_map_has_no_keys() {
+    let schema = Schema::from_iter([
+        Field::new("a".into(), DataType::Int64),
+        Field::new("s".into(), DataType::String),
+    ]);
+    let layout = KeyRowLayout::new(schema.iter_values()).unwrap();
+    let map = KeyRowIndexMap::<()>::new(Arc::new(layout));
+    let out = map.keys_frame(&schema);
+    assert_eq!(out.height(), 0);
+    assert_eq!(**out.schema(), schema);
 }
 
 #[test]

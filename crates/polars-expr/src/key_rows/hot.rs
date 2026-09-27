@@ -12,8 +12,9 @@ fn append_long_bytes(buffer: &mut Vec<u8>, bytes: &[u8]) -> u32 {
     offset
 }
 
-/// The keys of a hot grouper as rows, each owning the bytes of its long views.
-pub struct HotKeyRows {
+/// The keys of a hot grouper as rows, each owning the bytes of its long views. A long
+/// view of hot key `k` has `buffer_idx == k` and its bytes in `long[k]`.
+pub(crate) struct HotKeyRows {
     layout: Arc<KeyRowLayout>,
     hashes: Vec<u64>,
     rows: Vec<u64>,
@@ -21,7 +22,7 @@ pub struct HotKeyRows {
 }
 
 impl HotKeyRows {
-    pub fn new(layout: Arc<KeyRowLayout>) -> Self {
+    pub(crate) fn new(layout: Arc<KeyRowLayout>) -> Self {
         Self {
             layout,
             hashes: Vec::new(),
@@ -37,7 +38,7 @@ impl HotKeyRows {
     /// # Safety
     /// `k` must be in-bounds.
     #[inline(always)]
-    pub unsafe fn hash(&self, k: IdxSize) -> u64 {
+    pub(crate) unsafe fn hash(&self, k: IdxSize) -> u64 {
         *self.hashes.get_unchecked(k as usize)
     }
 
@@ -46,31 +47,36 @@ impl HotKeyRows {
     /// # Safety
     /// `k` and `i` must be in-bounds, and `keys` must have the layout of these keys.
     #[inline(always)]
-    pub unsafe fn eq_key(&self, k: IdxSize, keys: &KeyRowKeys, i: usize) -> bool {
-        let (k, stride) = (k as usize, self.layout.stride);
-        let row = self.rows.get_unchecked(k * stride..(k + 1) * stride);
+    pub(crate) unsafe fn eq_key(&self, k: IdxSize, keys: &KeyRowKeys, i: usize) -> bool {
+        let (k, stride_words) = (k as usize, self.layout.stride_words);
+        let row = self
+            .rows
+            .get_unchecked(k * stride_words..(k + 1) * stride_words);
         keys.eq_stored(i, row, |view| view.get_external_slice_unchecked(&self.long))
     }
 
-    /// Clears `ok[r]` when key `idxs[r]` of `keys` is not hot key `ks[r]`.
+    /// Clears `ok[r]` when key `key_idxs[r]` of `keys` is not hot key
+    /// `hot_key_idxs[r]`. `rows` is scratch space.
     ///
     /// # Safety
     /// The indices must be in-bounds, and `keys` must have the layout of these keys.
-    pub unsafe fn verify(
+    /// The row pointers are only used during this call.
+    pub(crate) unsafe fn verify(
         &self,
         keys: &KeyRowKeys,
-        idxs: &[IdxSize],
-        ks: &[IdxSize],
+        key_idxs: &[IdxSize],
+        hot_key_idxs: &[IdxSize],
         rows: &mut Vec<*const u64>,
         ok: &mut [bool],
     ) {
-        let stride = self.layout.stride;
+        let stride_words = self.layout.stride_words;
         rows.clear();
         rows.extend(
-            ks.iter()
-                .map(|k| self.rows.as_ptr().add(*k as usize * stride)),
+            hot_key_idxs
+                .iter()
+                .map(|k| self.rows.as_ptr().add(*k as usize * stride_words)),
         );
-        keys.verify(idxs, rows, ok, |view| {
+        keys.verify(key_idxs, rows, ok, |view| {
             view.get_external_slice_unchecked(&self.long)
         });
     }
@@ -80,10 +86,11 @@ impl HotKeyRows {
     /// # Safety
     /// `i` must be in-bounds, and `keys` must have the layout of these keys.
     #[inline(always)]
-    pub unsafe fn push(&mut self, keys: &KeyRowKeys, i: usize) -> IdxSize {
+    pub(crate) unsafe fn push(&mut self, keys: &KeyRowKeys, i: usize) -> IdxSize {
         let k = self.hashes.len();
         self.hashes.push(0);
-        self.rows.resize(self.rows.len() + self.layout.stride, 0);
+        self.rows
+            .resize(self.rows.len() + self.layout.stride_words, 0);
         if self.layout.has_views() {
             self.long.push(Vec::new());
         }
@@ -96,10 +103,10 @@ impl HotKeyRows {
     /// # Safety
     /// `k` and `i` must be in-bounds, and `keys` must have the layout of these keys.
     #[inline(always)]
-    pub unsafe fn replace(&mut self, k: IdxSize, keys: &KeyRowKeys, i: usize) {
-        let (k, stride) = (k as usize, self.layout.stride);
+    pub(crate) unsafe fn replace(&mut self, k: IdxSize, keys: &KeyRowKeys, i: usize) {
+        let (k, stride_words) = (k as usize, self.layout.stride_words);
         self.rows
-            .get_unchecked_mut(k * stride..(k + 1) * stride)
+            .get_unchecked_mut(k * stride_words..(k + 1) * stride_words)
             .fill(0);
         if self.layout.has_views() {
             self.long.get_unchecked_mut(k).clear();
@@ -108,9 +115,11 @@ impl HotKeyRows {
     }
 
     unsafe fn write(&mut self, k: usize, keys: &KeyRowKeys, i: usize) {
-        let stride = self.layout.stride;
+        let stride_words = self.layout.stride_words;
         *self.hashes.get_unchecked_mut(k) = keys.hashes.value_unchecked(i);
-        let row = self.rows.get_unchecked_mut(k * stride..(k + 1) * stride);
+        let row = self
+            .rows
+            .get_unchecked_mut(k * stride_words..(k + 1) * stride_words);
         if self.layout.has_views() {
             let long = self.long.get_unchecked_mut(k);
             keys.write_row(i, row, |bytes| (k as u32, append_long_bytes(long, bytes)));
@@ -123,53 +132,67 @@ impl HotKeyRows {
     ///
     /// # Safety
     /// `k` must be in-bounds.
-    pub unsafe fn collect(&self, k: IdxSize, collector: &mut KeyRowCollector) {
-        let (k, stride) = (k as usize, self.layout.stride);
-        let row = self.rows.get_unchecked(k * stride..(k + 1) * stride);
+    pub(crate) unsafe fn collect(&self, k: IdxSize, collector: &mut KeyRowCollector) {
+        debug_assert!(Arc::ptr_eq(&self.layout, &collector.layout));
+        let (k, stride_words) = (k as usize, self.layout.stride_words);
+        let row = self
+            .rows
+            .get_unchecked(k * stride_words..(k + 1) * stride_words);
         let long = self.long.get(k).map_or(&[][..], |l| l.as_slice());
-        collector.push(&self.layout, *self.hashes.get_unchecked(k), row, long);
+        collector.push(*self.hashes.get_unchecked(k), row, long);
     }
 
     /// Returns all hot keys, in key order.
-    pub fn keys(&self) -> KeyRowKeys {
-        let mut collector = KeyRowCollector::default();
+    pub(crate) fn keys(&self) -> KeyRowKeys {
+        let mut collector = KeyRowCollector::new(self.layout.clone());
         for k in 0..self.len() {
             unsafe { self.collect(k as IdxSize, &mut collector) };
         }
-        collector.take(self.layout.clone())
+        collector.take()
     }
 }
 
-/// Collects key rows, re-pointing their long views into shared buffers.
-#[derive(Default)]
-pub struct KeyRowCollector {
+/// Collects key rows, re-pointing their long views into its own buffers.
+pub(crate) struct KeyRowCollector {
+    layout: Arc<KeyRowLayout>,
     hashes: Vec<u64>,
     rows: Vec<u64>,
     buffers: Vec<Vec<u8>>,
 }
 
 impl KeyRowCollector {
+    pub(crate) fn new(layout: Arc<KeyRowLayout>) -> Self {
+        Self {
+            layout,
+            hashes: Vec::new(),
+            rows: Vec::new(),
+            buffers: Vec::new(),
+        }
+    }
+
     pub(crate) fn len(&self) -> usize {
         self.hashes.len()
     }
 
     /// # Safety
-    /// `row` must be a row of `layout` whose long views are at their offset in `long`.
-    unsafe fn push(&mut self, layout: &KeyRowLayout, hash: u64, row: &[u64], long: &[u8]) {
+    /// `row` must be a row of this layout whose long views are at their offset in
+    /// `long`.
+    unsafe fn push(&mut self, hash: u64, row: &[u64], long: &[u8]) {
         self.hashes.push(hash);
         let start = self.rows.len();
         self.rows.extend_from_slice(row);
         let buffers = &mut self.buffers;
-        layout.repoint_long_views(
+        self.layout.repoint_long_views(
             &mut self.rows[start..],
             |view| long_slice(long, view),
             |b| push_long_bytes(buffers, b),
         );
     }
 
-    pub fn take(&mut self, layout: Arc<KeyRowLayout>) -> KeyRowKeys {
+    /// Returns the collected keys, leaving this collector empty.
+    pub(crate) fn take(&mut self) -> KeyRowKeys {
         KeyRowKeys::from_rows(
-            layout,
+            self.layout.clone(),
             std::mem::take(&mut self.hashes),
             std::mem::take(&mut self.rows),
             std::mem::take(&mut self.buffers),

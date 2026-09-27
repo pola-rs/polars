@@ -20,7 +20,7 @@ enum ColKind {
     View,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct ColLayout {
     kind: ColKind,
     pub(super) physical: DataType,
@@ -51,13 +51,21 @@ fn key_col(dtype: &DataType) -> Option<(ColLayout, usize)> {
     ))
 }
 
-#[derive(Debug)]
+/// The row format of keys of one schema. It depends only on the key dtypes: the null
+/// bits are always present, also when nulls are not keys, so keys that disagree on
+/// whether nulls match (the two sides of an anti join) share one layout.
+///
+/// Rows are written into zeroed words and null values are left zero, so equal keys
+/// have equal words, including padding. The one exception is the second word of a
+/// long view, which holds where its bytes are stored: equality skips that word and
+/// compares the bytes instead.
+#[derive(Debug, PartialEq)]
 pub(crate) struct KeyRowLayout {
     pub(super) cols: Vec<ColLayout>,
     /// Byte offset of the null bits, one per column.
     pub(super) null_offset: usize,
     null_width: usize,
-    pub(super) stride: usize,
+    pub(super) stride_words: usize,
     /// The first word of each view column, in column order.
     pub(super) view_words: Vec<usize>,
     /// Every word except the second half of each view.
@@ -97,20 +105,20 @@ impl KeyRowLayout {
             offset += width;
         }
 
-        let stride = offset.div_ceil(8);
+        let stride_words = offset.div_ceil(8);
         let view_words: Vec<usize> = cols
             .iter()
             .filter(|c| c.kind == ColKind::View)
             .map(|c| c.offset / 8)
             .collect();
-        let plain_words = (0..stride)
+        let plain_words = (0..stride_words)
             .filter(|w| !view_words.iter().any(|v| v + 1 == *w))
             .collect();
         Some(Self {
             cols,
             null_offset,
             null_width,
-            stride,
+            stride_words,
             view_words,
             plain_words,
         })
@@ -150,7 +158,7 @@ impl KeyRowLayout {
     /// that are too long to be inlined.
     ///
     /// # Safety
-    /// Both rows must have `stride` words.
+    /// Both rows must have `stride_words` words.
     #[inline(always)]
     pub(super) unsafe fn rows_eq(
         &self,
@@ -183,7 +191,7 @@ impl KeyRowLayout {
     /// `stored_long`.
     ///
     /// # Safety
-    /// `i` must be in-bounds and `row` must have `stride` words.
+    /// `i` must be in-bounds and `row` must have `stride_words` words.
     #[inline(always)]
     pub(super) unsafe fn eq_columns<'a>(
         &self,
@@ -223,7 +231,7 @@ impl KeyRowLayout {
     /// views with `store_long`, which returns the buffer index and offset of the copy.
     ///
     /// # Safety
-    /// `i` must be in-bounds and `row` must have `stride` words.
+    /// `i` must be in-bounds and `row` must have `stride_words` words.
     #[inline(always)]
     pub(super) unsafe fn write_columns(
         &self,
@@ -262,7 +270,7 @@ impl KeyRowLayout {
         self.write_nulls(row, nulls);
     }
 
-    /// Clears `ok[r]` when key `idxs[r]` of `cols` differs from the stored row at
+    /// Clears `ok[r]` when key `key_idxs[r]` of `cols` differs from the stored row at
     /// `rows[r]`, whose long views are resolved by `stored_long`.
     ///
     /// # Safety
@@ -271,7 +279,7 @@ impl KeyRowLayout {
     pub(super) unsafe fn verify_columns<'a>(
         &self,
         cols: &[KeyColumn],
-        idxs: &[IdxSize],
+        key_idxs: &[IdxSize],
         rows: &[*const u64],
         ok: &mut [bool],
         stored_long: impl Fn(View) -> &'a [u8],
@@ -281,7 +289,7 @@ impl KeyRowLayout {
                 *ok &= self.read_nulls(row.cast()) == 0;
             }
         } else {
-            for ((ok, i), row) in ok.iter_mut().zip(idxs).zip(rows) {
+            for ((ok, i), row) in ok.iter_mut().zip(key_idxs).zip(rows) {
                 let mut nulls = 0;
                 for (c, col) in cols.iter().enumerate() {
                     if let Some(v) = &col.validity {
@@ -296,33 +304,35 @@ impl KeyRowLayout {
             let off = col.offset;
             let validity = col.validity.as_ref();
             match &col.values {
-                ColValues::Bool(b) => verify_col(idxs, rows, ok, validity, |i, p| {
+                ColValues::Bool(b) => verify_col(key_idxs, rows, ok, validity, |i, p| {
                     b.get_bit_unchecked(i) as u8 == *p.add(off)
                 }),
-                ColValues::W1(v) => verify_col(idxs, rows, ok, validity, |i, p| {
+                ColValues::W1(v) => verify_col(key_idxs, rows, ok, validity, |i, p| {
                     *v.get_unchecked(i) == *p.add(off)
                 }),
-                ColValues::W2(v) => verify_col(idxs, rows, ok, validity, |i, p| {
+                ColValues::W2(v) => verify_col(key_idxs, rows, ok, validity, |i, p| {
                     *v.get_unchecked(i) == p.add(off).cast::<u16>().read_unaligned()
                 }),
-                ColValues::W4(v) => verify_col(idxs, rows, ok, validity, |i, p| {
+                ColValues::W4(v) => verify_col(key_idxs, rows, ok, validity, |i, p| {
                     *v.get_unchecked(i) == p.add(off).cast::<u32>().read_unaligned()
                 }),
-                ColValues::W8(v) => verify_col(idxs, rows, ok, validity, |i, p| {
+                ColValues::W8(v) => verify_col(key_idxs, rows, ok, validity, |i, p| {
                     *v.get_unchecked(i) == p.add(off).cast::<u64>().read_unaligned()
                 }),
-                ColValues::W16(v) => verify_col(idxs, rows, ok, validity, |i, p| {
+                ColValues::W16(v) => verify_col(key_idxs, rows, ok, validity, |i, p| {
                     *v.get_unchecked(i) == p.add(off).cast::<u128>().read_unaligned()
                 }),
-                ColValues::View(views, buffers) => verify_col(idxs, rows, ok, validity, |i, p| {
-                    let b = p.add(off).cast::<u128>().read_unaligned();
-                    view_eq(*views.get_unchecked(i), b, buffers, &stored_long)
-                }),
+                ColValues::View(views, buffers) => {
+                    verify_col(key_idxs, rows, ok, validity, |i, p| {
+                        let b = p.add(off).cast::<u128>().read_unaligned();
+                        view_eq(*views.get_unchecked(i), b, buffers, &stored_long)
+                    })
+                },
             }
         }
     }
 
-    /// Writes the keys `idxs[r]` of `cols` into the zeroed rows at `rows[r]`, storing
+    /// Writes the keys `key_idxs[r]` of `cols` into the zeroed rows at `rows[r]`, storing
     /// the bytes of long views with `store_long`, which returns the buffer index and
     /// offset of the copy.
     ///
@@ -332,7 +342,7 @@ impl KeyRowLayout {
     pub(super) unsafe fn write_columns_batch(
         &self,
         cols: &[KeyColumn],
-        idxs: &[IdxSize],
+        key_idxs: &[IdxSize],
         rows: &[*mut u64],
         mut store_long: impl FnMut(&[u8]) -> (u32, u32),
     ) {
@@ -340,33 +350,33 @@ impl KeyRowLayout {
             let off = col.offset;
             let validity = col.validity.as_ref();
             match &col.values {
-                ColValues::Bool(b) => write_col(idxs, rows, validity, |i, p| {
+                ColValues::Bool(b) => write_col(key_idxs, rows, validity, |i, p| {
                     *p.add(off) = b.get_bit_unchecked(i) as u8
                 }),
-                ColValues::W1(v) => write_col(idxs, rows, validity, |i, p| {
+                ColValues::W1(v) => write_col(key_idxs, rows, validity, |i, p| {
                     *p.add(off) = *v.get_unchecked(i)
                 }),
-                ColValues::W2(v) => write_col(idxs, rows, validity, |i, p| {
+                ColValues::W2(v) => write_col(key_idxs, rows, validity, |i, p| {
                     p.add(off)
                         .cast::<u16>()
                         .write_unaligned(*v.get_unchecked(i))
                 }),
-                ColValues::W4(v) => write_col(idxs, rows, validity, |i, p| {
+                ColValues::W4(v) => write_col(key_idxs, rows, validity, |i, p| {
                     p.add(off)
                         .cast::<u32>()
                         .write_unaligned(*v.get_unchecked(i))
                 }),
-                ColValues::W8(v) => write_col(idxs, rows, validity, |i, p| {
+                ColValues::W8(v) => write_col(key_idxs, rows, validity, |i, p| {
                     p.add(off)
                         .cast::<u64>()
                         .write_unaligned(*v.get_unchecked(i))
                 }),
-                ColValues::W16(v) => write_col(idxs, rows, validity, |i, p| {
+                ColValues::W16(v) => write_col(key_idxs, rows, validity, |i, p| {
                     p.add(off)
                         .cast::<u128>()
                         .write_unaligned(*v.get_unchecked(i))
                 }),
-                ColValues::View(views, buffers) => write_col(idxs, rows, validity, |i, p| {
+                ColValues::View(views, buffers) => write_col(key_idxs, rows, validity, |i, p| {
                     let mut view = *views.get_unchecked(i);
                     if view.length > View::MAX_INLINE_SIZE {
                         let (buffer_idx, offset) =
@@ -380,7 +390,7 @@ impl KeyRowLayout {
         }
 
         if cols.iter().any(|c| c.validity.is_some()) {
-            for (i, row) in idxs.iter().zip(rows) {
+            for (i, row) in key_idxs.iter().zip(rows) {
                 let mut nulls = 0;
                 for (c, col) in cols.iter().enumerate() {
                     if let Some(v) = &col.validity {
@@ -396,7 +406,7 @@ impl KeyRowLayout {
     /// by `store`, which returns the buffer index and offset of the copy.
     ///
     /// # Safety
-    /// The row must have `stride` words and `long_bytes` must return the bytes of
+    /// The row must have `stride_words` words and `long_bytes` must return the bytes of
     /// its long views.
     #[inline(always)]
     pub(super) unsafe fn repoint_long_views<'a>(
@@ -433,7 +443,10 @@ impl KeyRowLayout {
         num_rows: usize,
         buffers: &Buffer<Buffer<u8>>,
     ) -> DataFrame {
-        assert!(skip + self.stride <= entry_words && num_rows * entry_words <= entries.len());
+        assert!(skip + self.stride_words <= entry_words && num_rows * entry_words <= entries.len());
+        if num_rows == 0 {
+            return DataFrame::empty_with_schema(schema);
+        }
         let row_bytes = entry_words * 8;
         let base = unsafe { (entries.as_ptr() as *const u8).add(skip * 8) };
         let nulls: Vec<u64> = (0..num_rows)
@@ -528,7 +541,7 @@ unsafe fn view_eq<'a>(
         a_bits as u64 == b as u64
             && bytes_eq(
                 a.get_external_slice_unchecked(buffers),
-                stored_long(std::mem::transmute::<u128, View>(b)),
+                stored_long(View::from(b)),
             )
     }
 }
@@ -561,7 +574,7 @@ pub(super) fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
 unsafe fn view_at(row: &[u64], w: usize) -> View {
     let lo = *row.get_unchecked(w);
     let hi = *row.get_unchecked(w + 1);
-    std::mem::transmute::<u128, View>(lo as u128 | ((hi as u128) << 64))
+    View::from(lo as u128 | ((hi as u128) << 64))
 }
 
 #[inline(always)]
@@ -597,13 +610,13 @@ unsafe fn read_fixed<T: NativeType>(
     Box::new(PrimitiveArray::from_vec(values).with_validity(validity))
 }
 
-/// Clears `ok[r]` when `eq(idxs[r], rows[r])` fails for a valid key.
+/// Clears `ok[r]` when `eq(key_idxs[r], rows[r])` fails for a valid key.
 ///
 /// # Safety
 /// The indices must be in-bounds for `validity`.
 #[inline(always)]
 unsafe fn verify_col(
-    idxs: &[IdxSize],
+    key_idxs: &[IdxSize],
     rows: &[*const u64],
     ok: &mut [bool],
     validity: Option<&Bitmap>,
@@ -611,12 +624,12 @@ unsafe fn verify_col(
 ) {
     match validity {
         None => {
-            for ((ok, i), row) in ok.iter_mut().zip(idxs).zip(rows) {
+            for ((ok, i), row) in ok.iter_mut().zip(key_idxs).zip(rows) {
                 *ok &= eq(*i as usize, row.cast());
             }
         },
         Some(v) => {
-            for ((ok, i), row) in ok.iter_mut().zip(idxs).zip(rows) {
+            for ((ok, i), row) in ok.iter_mut().zip(key_idxs).zip(rows) {
                 if v.get_bit_unchecked(*i as usize) {
                     *ok &= eq(*i as usize, row.cast());
                 }
@@ -625,25 +638,25 @@ unsafe fn verify_col(
     }
 }
 
-/// Calls `write(idxs[r], rows[r])` for each valid key.
+/// Calls `write(key_idxs[r], rows[r])` for each valid key.
 ///
 /// # Safety
 /// The indices must be in-bounds for `validity`.
 #[inline(always)]
 unsafe fn write_col(
-    idxs: &[IdxSize],
+    key_idxs: &[IdxSize],
     rows: &[*mut u64],
     validity: Option<&Bitmap>,
     mut write: impl FnMut(usize, *mut u8),
 ) {
     match validity {
         None => {
-            for (i, row) in idxs.iter().zip(rows) {
+            for (i, row) in key_idxs.iter().zip(rows) {
                 write(*i as usize, row.cast());
             }
         },
         Some(v) => {
-            for (i, row) in idxs.iter().zip(rows) {
+            for (i, row) in key_idxs.iter().zip(rows) {
                 if v.get_bit_unchecked(*i as usize) {
                     write(*i as usize, row.cast());
                 }

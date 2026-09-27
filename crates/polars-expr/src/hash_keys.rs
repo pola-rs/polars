@@ -17,7 +17,8 @@ use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalHash};
 use polars_utils::vec::PushUnchecked;
 
-use crate::key_rows::{KeyRowKeys, KeyRowLayout};
+pub use crate::key_rows::KeyRowKeys;
+use crate::key_rows::KeyRowLayout;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum HashKeysVariant {

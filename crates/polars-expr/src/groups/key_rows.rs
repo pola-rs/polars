@@ -2,16 +2,17 @@ use std::borrow::Cow;
 
 use super::*;
 use crate::hash_keys::HashKeys;
-use crate::key_rows::{KeyRowIndexMap, KeyRowKeys};
+use crate::key_rows::{KeyRowIndexMap, KeyRowKeys, KeyRowLayout};
 
-#[derive(Default)]
 pub struct KeyRowHashGrouper {
     idx_map: KeyRowIndexMap<()>,
 }
 
 impl KeyRowHashGrouper {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(layout: Arc<KeyRowLayout>) -> Self {
+        Self {
+            idx_map: KeyRowIndexMap::new(layout),
+        }
     }
 
     /// # Safety
@@ -34,7 +35,7 @@ impl KeyRowHashGrouper {
 
 impl Grouper for KeyRowHashGrouper {
     fn new_empty(&self) -> Box<dyn Grouper> {
-        Box::new(Self::new())
+        Box::new(Self::new(self.idx_map.layout().clone()))
     }
 
     fn reserve(&mut self, additional: usize) {

@@ -217,14 +217,14 @@ enum KeyData {
 #[derive(Clone, Debug)]
 pub struct KeyRowKeys {
     pub(super) layout: Arc<KeyRowLayout>,
-    pub hashes: UInt64Array,
+    pub(crate) hashes: UInt64Array,
     /// Keys with a null, when nulls are not keys.
-    pub validity: Option<Bitmap>,
+    pub(crate) validity: Option<Bitmap>,
     data: KeyData,
 }
 
 impl KeyRowKeys {
-    pub fn from_columns(
+    pub(crate) fn from_columns(
         columns: &[Column],
         layout: Arc<KeyRowLayout>,
         random_state: &PlRandomState,
@@ -278,13 +278,17 @@ impl KeyRowKeys {
         self.hashes.len()
     }
 
-    pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
+    pub(crate) fn has_layout(&self, layout: &Arc<KeyRowLayout>) -> bool {
+        Arc::ptr_eq(&self.layout, layout) || *self.layout == **layout
+    }
+
+    pub(crate) fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
         for_each_hash_prehashed(self.hashes.values().as_slice(), self.validity.as_ref(), f);
     }
 
     /// # Safety
     /// The indices must be in-bounds.
-    pub unsafe fn for_each_hash_subset<F: FnMut(IdxSize, Option<u64>)>(
+    pub(crate) unsafe fn for_each_hash_subset<F: FnMut(IdxSize, Option<u64>)>(
         &self,
         subset: &[IdxSize],
         f: F,
@@ -312,9 +316,9 @@ impl KeyRowKeys {
         match &self.data {
             KeyData::Columns(cols) => self.layout.eq_columns(cols, i, row, stored_long),
             KeyData::Rows { rows, buffers } => {
-                let stride = self.layout.stride;
+                let stride_words = self.layout.stride_words;
                 self.layout.rows_eq(
-                    rows.get_unchecked(i * stride..(i + 1) * stride),
+                    rows.get_unchecked(i * stride_words..(i + 1) * stride_words),
                     row,
                     |a, b| bytes_eq(a.get_external_slice_unchecked(buffers), stored_long(b)),
                 )
@@ -322,7 +326,7 @@ impl KeyRowKeys {
         }
     }
 
-    /// Clears `ok[r]` when key `idxs[r]` differs from the stored row at `rows[r]`,
+    /// Clears `ok[r]` when key `key_idxs[r]` differs from the stored row at `rows[r]`,
     /// whose long views are resolved by `stored_long`.
     ///
     /// # Safety
@@ -330,21 +334,22 @@ impl KeyRowKeys {
     /// layout.
     pub(super) unsafe fn verify<'a>(
         &self,
-        idxs: &[IdxSize],
+        key_idxs: &[IdxSize],
         rows: &[*const u64],
         ok: &mut [bool],
         stored_long: impl Fn(View) -> &'a [u8],
     ) {
         match &self.data {
-            KeyData::Columns(cols) => self
-                .layout
-                .verify_columns(cols, idxs, rows, ok, stored_long),
+            KeyData::Columns(cols) => {
+                self.layout
+                    .verify_columns(cols, key_idxs, rows, ok, stored_long)
+            },
             KeyData::Rows { .. } => {
-                let stride = self.layout.stride;
-                for ((ok, i), row) in ok.iter_mut().zip(idxs).zip(rows) {
+                let stride_words = self.layout.stride_words;
+                for ((ok, i), row) in ok.iter_mut().zip(key_idxs).zip(rows) {
                     *ok &= self.eq_stored(
                         *i as usize,
-                        std::slice::from_raw_parts(*row, stride),
+                        std::slice::from_raw_parts(*row, stride_words),
                         &stored_long,
                     );
                 }
@@ -352,7 +357,7 @@ impl KeyRowKeys {
         }
     }
 
-    /// Writes the keys `idxs[r]` into the zeroed rows at `rows[r]`, storing the bytes
+    /// Writes the keys `key_idxs[r]` into the zeroed rows at `rows[r]`, storing the bytes
     /// of long views with `store_long`, which returns the buffer index and offset of
     /// the copy.
     ///
@@ -361,20 +366,20 @@ impl KeyRowKeys {
     /// layout.
     pub(super) unsafe fn write_rows(
         &self,
-        idxs: &[IdxSize],
+        key_idxs: &[IdxSize],
         rows: &[*mut u64],
         mut store_long: impl FnMut(&[u8]) -> (u32, u32),
     ) {
         match &self.data {
             KeyData::Columns(cols) => self
                 .layout
-                .write_columns_batch(cols, idxs, rows, store_long),
+                .write_columns_batch(cols, key_idxs, rows, store_long),
             KeyData::Rows { .. } => {
-                let stride = self.layout.stride;
-                for (i, row) in idxs.iter().zip(rows) {
+                let stride_words = self.layout.stride_words;
+                for (i, row) in key_idxs.iter().zip(rows) {
                     self.write_row(
                         *i as usize,
-                        std::slice::from_raw_parts_mut(*row, stride),
+                        std::slice::from_raw_parts_mut(*row, stride_words),
                         &mut store_long,
                     );
                 }
@@ -386,7 +391,7 @@ impl KeyRowKeys {
     /// `store_long`, which returns the buffer index and offset of the copy.
     ///
     /// # Safety
-    /// `i` must be in-bounds and `row` must have `stride` words.
+    /// `i` must be in-bounds and `row` must have `stride_words` words.
     #[inline(always)]
     pub(super) unsafe fn write_row(
         &self,
@@ -397,8 +402,8 @@ impl KeyRowKeys {
         match &self.data {
             KeyData::Columns(cols) => self.layout.write_columns(cols, i, row, store_long),
             KeyData::Rows { rows, buffers } => {
-                let stride = self.layout.stride;
-                row.copy_from_slice(rows.get_unchecked(i * stride..(i + 1) * stride));
+                let stride_words = self.layout.stride_words;
+                row.copy_from_slice(rows.get_unchecked(i * stride_words..(i + 1) * stride_words));
                 self.layout.repoint_long_views(
                     row,
                     |view| view.get_external_slice_unchecked(buffers),
@@ -410,18 +415,20 @@ impl KeyRowKeys {
 
     /// # Safety
     /// The indices must be in-bounds.
-    pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
+    pub(crate) unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
         let idx_arr = polars_arrow::ffi::mmap::slice(idxs);
         let data = match &self.data {
             KeyData::Columns(cols) => {
                 KeyData::Columns(cols.iter().map(|c| c.gather_unchecked(idxs)).collect())
             },
             KeyData::Rows { rows, buffers } => {
-                let stride = self.layout.stride;
-                let mut out = Vec::with_capacity(idxs.len() * stride);
+                let stride_words = self.layout.stride_words;
+                let mut out = Vec::with_capacity(idxs.len() * stride_words);
                 for i in idxs {
                     let i = *i as usize;
-                    out.extend_from_slice(rows.get_unchecked(i * stride..(i + 1) * stride));
+                    out.extend_from_slice(
+                        rows.get_unchecked(i * stride_words..(i + 1) * stride_words),
+                    );
                 }
                 KeyData::Rows {
                     rows: Buffer::from(out),

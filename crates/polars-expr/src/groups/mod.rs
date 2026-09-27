@@ -29,6 +29,7 @@ pub trait Grouper: Any + Send + Sync {
 
     /// Inserts the given subset of keys into this Grouper. If groups_idxs is
     /// passed it is extended such with the group index of keys[subset[i]].
+    /// New groups get consecutive indices in the order they first occur.
     ///
     /// # Safety
     /// The subset indexes must be in-bounds.
@@ -89,8 +90,8 @@ pub trait Grouper: Any + Send + Sync {
 }
 
 pub fn new_hash_grouper(key_schema: Arc<Schema>) -> Box<dyn Grouper> {
-    if KeyRowLayout::new(key_schema.iter_values()).is_some() {
-        Box::new(key_rows::KeyRowHashGrouper::new())
+    if let Some(layout) = KeyRowLayout::new(key_schema.iter_values()) {
+        Box::new(key_rows::KeyRowHashGrouper::new(Arc::new(layout)))
     } else if key_schema.len() > 1 {
         Box::new(row_encoded::RowEncodedHashGrouper::new())
     } else {
