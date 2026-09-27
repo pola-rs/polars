@@ -273,6 +273,9 @@ def _(a: Call) -> Any:
     elif f in _temporal_conversions:
         # convert from polars-native i64 to ISO8601 string
         return _temporal_conversions[f](*args).isoformat()
+    elif f == "starts_with":
+        pattern = _convert_predicate(a.keywords[0].value)
+        return pyiceberg.expressions.StartsWith(args[0][0], pattern)  # type: ignore[misc, call-arg]
     else:
         ref = _convert_predicate(a.func.value)[0]  # type: ignore[attr-defined]
         if f == "isin":
