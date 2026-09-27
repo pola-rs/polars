@@ -348,6 +348,21 @@ class TestIcebergScanIO:
         res = pl.scan_iceberg(tbl).filter(pl.col("s").str.starts_with("be"))
         assert res.collect()["s"].to_list() == ["berry"]
 
+    def test_scan_iceberg_filter_is_nan(self, tmp_path: Path) -> None:
+        tbl, _ = new_iceberg_table(
+            tmp_path, schema=IcebergSchema(NestedField(1, "value", DoubleType()))
+        )
+        pl.DataFrame({"value": [1.0, float("nan"), 2.0]}).write_iceberg(
+            tbl, mode="append"
+        )
+
+        res = pl.scan_iceberg(tbl).filter(pl.col("value").is_nan())
+        [(value,)] = res.collect().rows()
+        assert math.isnan(value)
+
+        res = pl.scan_iceberg(tbl).filter(pl.col("value").is_not_nan())
+        assert res.collect()["value"].to_list() == [1.0, 2.0]
+
     def test_scan_iceberg_filter_starts_with_non_literal_prefix(
         self, tmp_path: Path
     ) -> None:
@@ -554,6 +569,8 @@ class TestIcebergExpressions:
             "(pa.compute.field('value') == 'NaN')",
             lambda: EqualTo("value", "NaN"),
         ),
+        ("(pa.compute.field('value')).is_nan()", lambda: IsNaN("value")),
+        ("~(pa.compute.field('value')).is_nan()", lambda: Not(IsNaN("value"))),
     ],
 )
 def test_convert_nan_predicate(
