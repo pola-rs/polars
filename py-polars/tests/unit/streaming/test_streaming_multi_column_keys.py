@@ -156,7 +156,12 @@ def test_group_by_key_rows_output_types() -> None:
     )
     out = df.lazy().group_by("dec", "s", "b").agg(pl.len()).collect(engine="streaming")
     assert out.schema == pl.Schema(
-        {"dec": pl.Decimal(10, 2), "s": pl.String, "b": pl.Binary, "len": pl.UInt32}
+        {
+            "dec": pl.Decimal(10, 2),
+            "s": pl.String(),
+            "b": pl.Binary(),
+            "len": pl.UInt32(),
+        }
     )
     assert_frame_equal(
         out,
