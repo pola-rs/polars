@@ -960,3 +960,20 @@ def test_delete_with_subquery_preserves_schema(predicate: str) -> None:
 
     assert remaining.columns == ["order_no", "warehouse", "state", "cost"]
     assert remaining.schema == frames["sales"].schema
+
+
+def test_derived_table_alias_does_not_replace_registered_table() -> None:
+    s = pl.DataFrame({"a": [1, 2], "q": [10, 20]})
+    expected = pl.DataFrame({"a": [1, 2], "v": [11, 21]})
+    query = "SELECT * FROM (SELECT a, q + 1 AS v FROM s) s"
+
+    with pl.SQLContext(s=s, eager=True) as ctx:
+        assert_frame_equal(ctx.execute(query), expected)
+        assert_frame_equal(ctx.execute(query), expected)
+        assert ctx.execute(f"{query} WHERE s.v > 11").rows() == [(2, 21)]
+        assert_frame_equal(ctx.execute("SELECT * FROM s"), s)
+
+        ctx.execute(f"CREATE TABLE t AS {query}")
+        assert_frame_equal(ctx.execute("SELECT * FROM t"), expected)
+        assert_frame_equal(ctx.execute("SELECT * FROM s"), s)
+        assert ctx.tables() == ["s", "t"]
