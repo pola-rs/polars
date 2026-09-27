@@ -6,7 +6,7 @@ use futures::StreamExt;
 use futures::stream::BoxStream;
 use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
 use polars_async::primitives::oneshot_channel;
-use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config::verbose_print_sensitive;
 use polars_core::prelude::{AnyValue, DataType};
 use polars_core::scalar::Scalar;
@@ -25,7 +25,8 @@ use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSl
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::components::reader_operation_pushdown::ReaderOperationPushdown;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
-    ExtraOperations, StartReaderArgsConstant, StartReaderArgsPerFile, StartedReaderState,
+    ExtraOperations, StartReaderArgsConstant, StartReaderArgsPerFile, StartedReader,
+    StartedReaderState, UnorderedFiles,
 };
 use crate::nodes::io_sources::multi_scan::pipeline::tasks::post_apply_extra_ops::PostApplyExtraOps;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
@@ -38,11 +39,9 @@ pub struct ReaderStarter {
     pub reader_capabilities: ReaderCapabilities,
     pub readers_init_iter: BoxStream<'static, PolarsResult<InitializedReaderState>>,
     pub n_sources: usize,
-    pub started_reader_tx: tokio::sync::mpsc::Sender<(
-        AbortOnDropHandle<PolarsResult<StartedReaderState>>,
-        WaitToken,
-    )>,
+    pub started_reader_tx: tokio::sync::mpsc::Sender<StartedReader>,
     pub max_concurrent_scans: usize,
+    pub unordered_files: Option<UnorderedFiles>,
     pub skip_files_mask: Option<SkipFilesMask>,
     pub extra_ops: ExtraOperations,
     pub constant_args: StartReaderArgsConstant,
@@ -65,6 +64,7 @@ impl ReaderStarter {
             n_sources,
             started_reader_tx,
             max_concurrent_scans,
+            unordered_files,
             skip_files_mask,
             extra_ops,
             constant_args,
@@ -325,6 +325,11 @@ impl ReaderStarter {
                 ..Default::default()
             };
 
+            let slot = match &unordered_files {
+                Some(u) => Some(u.reader_slots.clone().acquire_owned().await.unwrap()),
+                None => None,
+            };
+
             reader.prepare_read()?;
 
             let start_args_this_file = StartReaderArgsPerFile {
@@ -343,7 +348,11 @@ impl ReaderStarter {
             ));
 
             if started_reader_tx
-                .send((reader_start_task_handle, wait_group.token()))
+                .send(StartedReader {
+                    handle: reader_start_task_handle,
+                    wait_token: wait_group.token(),
+                    slot,
+                })
                 .await
                 .is_err()
             {

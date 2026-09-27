@@ -16,6 +16,7 @@ use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::nodes::io_sources::multi_scan::components;
 use crate::nodes::io_sources::multi_scan::components::bridge::{BridgeRecvPort, BridgeState};
@@ -100,6 +101,23 @@ pub(super) struct StartReaderArgsPerFile {
     pub(super) extra_ops_this_file: ExtraOperations,
     pub(super) callbacks: FileReaderCallbacks,
     pub(super) external_filter_mask: Option<ExternalFilterMask>,
+}
+
+/// Files are emitted in the order their morsels are ready: readers run concurrently, bounded by
+/// `reader_slots`, and their morsels merge through a channel of `merge_capacity`.
+#[derive(Clone)]
+pub(super) struct UnorderedFiles {
+    pub(super) reader_slots: Arc<Semaphore>,
+    pub(super) merge_capacity: usize,
+}
+
+/// A reader that has been started but not yet attached to the bridge.
+pub(super) struct StartedReader {
+    pub(super) handle: AbortOnDropHandle<PolarsResult<StartedReaderState>>,
+    /// Dropped once attached; the starter waits on it with a single concurrent scan.
+    pub(super) wait_token: WaitToken,
+    /// Held until the reader is done when files are emitted unordered.
+    pub(super) slot: Option<OwnedSemaphorePermit>,
 }
 
 /// State for a reader that has been started.
