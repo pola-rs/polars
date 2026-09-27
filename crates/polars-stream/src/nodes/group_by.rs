@@ -30,6 +30,11 @@ const DEFAULT_HOT_TABLE_SIZE: usize = 4;
 #[cfg(not(debug_assertions))]
 const DEFAULT_HOT_TABLE_SIZE: usize = 4096;
 
+#[cfg(debug_assertions)]
+const KEY_SLICE_SIZE: usize = 64;
+#[cfg(not(debug_assertions))]
+const KEY_SLICE_SIZE: usize = 16384;
+
 struct PreAgg {
     keys: HashKeys,
     reduction_idxs: UnitVec<usize>,
@@ -250,8 +255,8 @@ impl GroupBySinkState {
                 let mut hot_group_idxs = Vec::new();
                 let mut cold_idxs = Vec::new();
                 let mut identity_idxs: Vec<IdxSize> = Vec::new();
+                let mut all_hot_per_input = vec![true; key_selectors_per_input.len()];
                 while let Some((input_idx, morsel)) = recv.recv().await {
-                    // Compute hot group indices from key.
                     let seq = morsel.seq().to_u64();
                     let mut df = morsel.into_df().await;
                     let mut key_columns = Vec::new();
@@ -262,19 +267,6 @@ impl GroupBySinkState {
                     let keys = unsafe {
                         DataFrame::new_unchecked_with_broadcast(df.height(), key_columns)?
                     };
-                    let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
-
-                    let hot_grouper = &mut local.hot_grouper_per_input[input_idx];
-                    hot_idxs.clear();
-                    hot_group_idxs.clear();
-                    cold_idxs.clear();
-                    hot_grouper.insert_keys(
-                        &hash_keys,
-                        &mut hot_idxs,
-                        &mut hot_group_idxs,
-                        &mut cold_idxs,
-                        has_order_sensitive_agg,
-                    );
 
                     // Drop columns which are neither reduction inputs nor fused sources.
                     let payload = &payload_per_input[input_idx];
@@ -282,6 +274,72 @@ impl GroupBySinkState {
                         df = unsafe { df.select_unchecked(&payload.stored_cols) }.unwrap();
                     }
                     df.rechunk_mut(); // For gathers.
+
+                    let slice_size = if all_hot_per_input[input_idx] {
+                        KEY_SLICE_SIZE
+                    } else {
+                        df.height().max(1)
+                    };
+                    let hot_grouper = &mut local.hot_grouper_per_input[input_idx];
+                    hot_idxs.clear();
+                    hot_group_idxs.clear();
+                    all_hot_per_input[input_idx] = true;
+                    for offset in (0..df.height()).step_by(slice_size) {
+                        // Compute hot group indices from key.
+                        let slice_keys = keys.slice(offset as i64, slice_size);
+                        let hash_keys =
+                            HashKeys::from_df(&slice_keys, random_state.clone(), true, false);
+                        let hot_start = hot_idxs.len();
+                        cold_idxs.clear();
+                        hot_grouper.insert_keys(
+                            &hash_keys,
+                            &mut hot_idxs,
+                            &mut hot_group_idxs,
+                            &mut cold_idxs,
+                            has_order_sensitive_agg,
+                        );
+                        for idx in &mut hot_idxs[hot_start..] {
+                            *idx += offset as IdxSize;
+                        }
+
+                        // Store cold keys.
+                        if !cold_idxs.is_empty() {
+                            all_hot_per_input[input_idx] = false;
+                            let mut cold_keys = hash_keys;
+                            let mut cold_df = df.slice(offset as i64, slice_size);
+
+                            // 75% or more cold, don't gather.
+                            if cold_idxs.len() as u64 >= cold_df.height() as u64 * 3 / 4 {
+                                unsafe {
+                                    cold_keys.gen_idxs_per_partition_subset(
+                                        &cold_idxs,
+                                        &partitioner,
+                                        &mut local.morsel_idxs_values_per_p,
+                                        &mut local.sketch_per_p,
+                                        true,
+                                    );
+                                }
+                            } else {
+                                unsafe {
+                                    cold_keys = cold_keys.gather_unchecked(&cold_idxs);
+                                    cold_df = cold_df.take_slice_unchecked_impl(&cold_idxs, false);
+                                }
+
+                                cold_keys.gen_idxs_per_partition(
+                                    &partitioner,
+                                    &mut local.morsel_idxs_values_per_p,
+                                    &mut local.sketch_per_p,
+                                    true,
+                                );
+                            }
+
+                            local
+                                .morsel_idxs_offsets_per_p
+                                .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
+                            let sf = SpillFrame::new(cold_df, spill_ctx).await;
+                            local.cold_morsels.push((input_idx, seq, cold_keys, sf));
+                        }
+                    }
 
                     // Update hot reductions.
                     for red_idx in &reductions_per_input[input_idx] {
@@ -305,43 +363,6 @@ impl GroupBySinkState {
                             },
                         )
                         .await?;
-
-                    // Store cold keys.
-                    if !cold_idxs.is_empty() {
-                        let mut cold_keys = hash_keys;
-                        let mut cold_df = df;
-
-                        // 75% or more cold, don't gather.
-                        if cold_idxs.len() as u64 >= cold_df.height() as u64 * 3 / 4 {
-                            unsafe {
-                                cold_keys.gen_idxs_per_partition_subset(
-                                    &cold_idxs,
-                                    &partitioner,
-                                    &mut local.morsel_idxs_values_per_p,
-                                    &mut local.sketch_per_p,
-                                    true,
-                                );
-                            }
-                        } else {
-                            unsafe {
-                                cold_keys = cold_keys.gather_unchecked(&cold_idxs);
-                                cold_df = cold_df.take_slice_unchecked_impl(&cold_idxs, false);
-                            }
-
-                            cold_keys.gen_idxs_per_partition(
-                                &partitioner,
-                                &mut local.morsel_idxs_values_per_p,
-                                &mut local.sketch_per_p,
-                                true,
-                            );
-                        }
-
-                        local
-                            .morsel_idxs_offsets_per_p
-                            .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-                        let sf = SpillFrame::new(cold_df, spill_ctx).await;
-                        local.cold_morsels.push((input_idx, seq, cold_keys, sf));
-                    }
 
                     // If we have too many evicted rows, flush them.
                     if hot_grouper.num_evictions() >= get_ideal_morsel_size() {
