@@ -4,10 +4,11 @@
 //! A join whose one side is known to be small gets that side forced as build side;
 //! one whose side is only estimated small gets it preferred. Every probe key that
 //! reads a parquet scan column unchanged gets a dynamic predicate on that scan. The
-//! join publishes the range of its build keys once the build is done, and the scan
-//! skips row groups outside it. When the build keys are estimated to be a small
-//! share of the scan's distinct keys the join also publishes a bloom filter over
-//! them, and the predicate is evaluated per row; otherwise it only skips batches.
+//! join publishes the range of its build keys once the build is done. The scan
+//! skips the row groups outside the range and drops the rows outside it. When the
+//! build keys are estimated to be a small share of the scan's distinct keys the
+//! join also publishes a bloom filter over them, which the scan probes per row
+//! instead. The scan stops checking rows once the filter keeps most of them.
 //!
 //! A forced join blocks its probe input until the build is done, so its range is
 //! always published before the scan opens. A preferred join with a filter reads its
@@ -40,16 +41,17 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::join_build_side::{LOPSIDED_FACTOR, side_stats};
 use super::predicate_pushdown::utils::{map_column_references, push_past};
+use super::pushdown_maintain_errors;
 use crate::dsl::{FileScanIR, ScanFlags};
 use crate::plans::aexpr::deep_clone_ae;
 use crate::plans::aexpr::predicates::supports_runtime_range;
-use crate::plans::optimizer::predicate_pushdown::{DynamicPred, new_batch_only_dynamic_pred};
+use crate::plans::optimizer::predicate_pushdown::{DynamicPred, new_dynamic_pred};
 use crate::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::StatsCache;
 use crate::plans::{
-    AExpr, ExprIR, IR, IRFunctionExpr, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator,
-    into_column, is_inherently_nondeterministic,
+    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator, into_column,
+    is_inherently_nondeterministic,
 };
 use crate::prelude::{JoinType, MaintainOrderJoin};
 use crate::utils::has_aexpr;
@@ -195,7 +197,6 @@ fn process_join(
                 );
             }
             if bloom {
-                evaluate_per_row(predicate.node(), expr_arena);
                 bloom_probes.add(probe_distinct);
             }
             attach_to_scan(scan, predicate, ir_arena, expr_arena);
@@ -293,7 +294,7 @@ struct TracedKey {
 }
 
 /// The probe keys whose column reaches a scan that can skip batches, each with the
-/// batch-only predicates to put on those scans.
+/// predicates to put on those scans.
 fn trace_probe_keys(
     probe_input: Node,
     probe_keys: Vec<Option<PlSmallStr>>,
@@ -309,7 +310,7 @@ fn trace_probe_keys(
             continue;
         }
         let column = expr_arena.add(AExpr::Column(name));
-        let (dyn_node, pred) = new_batch_only_dynamic_pred(column, expr_arena);
+        let (dyn_node, pred) = new_dynamic_pred(column, expr_arena);
         let predicate = ExprIR::from_node(dyn_node, expr_arena);
         let origins = scan_origins(probe_input, predicate, ir_arena, expr_arena, scratch);
         if !origins.is_empty() {
@@ -364,6 +365,7 @@ fn scan_origins(
             .iter()
             .any(|e| has_aexpr(e.node(), expr_arena, |ae| matches!(ae, AExpr::Over { .. })))
     };
+    let maintain_errors = pushdown_maintain_errors();
     let mut origins = PlIndexMap::default();
     let mut paths = vec![(node, predicate)];
     'paths: while let Some((mut node, mut predicate)) = paths.pop() {
@@ -387,7 +389,14 @@ fn scan_origins(
                 | IR::Filter { .. }
                 | IR::Select { .. }
                 | IR::HStack { .. } => {
-                    match push_past(node, &mut predicate, ir_arena, expr_arena, scratch, true) {
+                    match push_past(
+                        node,
+                        &mut predicate,
+                        ir_arena,
+                        expr_arena,
+                        scratch,
+                        maintain_errors,
+                    ) {
                         Ok(Some(input)) => node = input,
                         _ => continue 'paths,
                     }
@@ -465,18 +474,6 @@ fn skips_batches(scan_type: &FileScanIR) -> bool {
     scan_type
         .flags()
         .contains(ScanFlags::SKIPS_BATCHES_BY_STATISTICS)
-}
-
-/// Let the scan evaluate the dynamic predicate per row, not only by statistics.
-fn evaluate_per_row(node: Node, expr_arena: &mut Arena<AExpr>) {
-    let AExpr::Function {
-        function: IRFunctionExpr::DynamicPred { batch_only, .. },
-        ..
-    } = expr_arena.get_mut(node)
-    else {
-        unreachable!()
-    };
-    *batch_only = false;
 }
 
 fn column_name<'a>(predicate: &ExprIR, expr_arena: &'a Arena<AExpr>) -> &'a PlSmallStr {
