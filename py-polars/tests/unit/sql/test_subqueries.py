@@ -970,6 +970,7 @@ def test_derived_table_alias_does_not_replace_registered_table() -> None:
     with pl.SQLContext(s=s, eager=True) as ctx:
         assert_frame_equal(ctx.execute(query), expected)
         assert_frame_equal(ctx.execute(query), expected)
+        assert ctx.execute(f"{query} WHERE s.v > 11").rows() == [(2, 21)]
         assert_frame_equal(ctx.execute("SELECT * FROM s"), s)
 
         ctx.execute(f"CREATE TABLE t AS {query}")
