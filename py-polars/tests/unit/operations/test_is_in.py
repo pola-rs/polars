@@ -1403,6 +1403,12 @@ def test_is_in_categorical_needle_in_null_data(
         pytest.param(
             pl.Series([[1], [2]], dtype=pl.List(pl.Int64)),
             [None],
+            pl.List(pl.Null),
+            id="list-of-null",
+        ),
+        pytest.param(
+            pl.Series([[1], [2]], dtype=pl.List(pl.Int64)),
+            [None],
             pl.List(pl.Int64),
             id="list",
         ),
@@ -1411,6 +1417,12 @@ def test_is_in_categorical_needle_in_null_data(
             {"a": None},
             pl.Struct({"a": pl.Int64}),
             id="struct",
+        ),
+        pytest.param(
+            pl.Series([{"a": 1}, {"a": 2}], dtype=pl.Struct({"a": pl.Int64})),
+            {"a": None},
+            pl.Struct({"a": pl.Null}),
+            id="struct-of-null",
         ),
     ],
 )
@@ -1428,14 +1440,13 @@ def test_is_in_nested_needle_with_a_null_container(
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
 @pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("inner", [pl.List(pl.Null), pl.List(pl.Int8)])
 @pytest.mark.parametrize("needle", [[1], None])
 def test_is_in_literal_nested_needle_with_a_null_container(
-    op: str, nulls_equal: bool, needle: list[int] | None
+    op: str, nulls_equal: bool, inner: PolarsDataType, needle: list[int] | None
 ) -> None:
     # A single needle is broadcast over every container, including its nulls.
-    df = pl.DataFrame(
-        {"h": _container(op, [[[None]], [[None]], None], pl.List(pl.Int8))}
-    )
+    df = pl.DataFrame({"h": _container(op, [[[None]], [[None]], None], inner)})
 
     out = df.select(
         _membership(
