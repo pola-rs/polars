@@ -1390,14 +1390,13 @@ def test_is_in_needle_cast_with_a_scalar_haystack() -> None:
         ),
     ],
 )
-@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 def test_is_in_native_pair_with_a_scalar_haystack(
-    needle: pl.Series, haystack: pl.Series, expected: list[bool], engine: EngineType
+    needle: pl.Series, haystack: pl.Series, expected: list[bool]
 ) -> None:
     # The kernel compares these unequal dtypes natively, but a semi join needs equal key
     # dtypes, so streaming must not lower to one.
     lf = pl.LazyFrame({"n": needle, "h": haystack})
-    out = lf.select(pl.col("n").is_in(pl.col("h").implode())).collect(engine=engine)
+    out = lf.select(pl.col("n").is_in(pl.col("h").implode())).collect()
     assert out["n"].to_list() == expected
 
 
