@@ -54,10 +54,10 @@ pub use to_description::physical_plan_to_description;
 pub use to_graph::physical_plan_to_graph;
 
 pub use self::lower_ir::StreamingLowerIRContext;
-use crate::nodes::rolling_fixed_window::RollingFixedWindow;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::rolling_fixed_window::RollingFixedWindow;
 use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
