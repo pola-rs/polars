@@ -10,6 +10,7 @@ use polars_defs::join::AsofStrategy;
 use polars_defs::join::JoinType;
 use polars_io::HiveOptions;
 use polars_io::cloud::CloudOptions;
+use polars_io::external_reader::ExternalReaderBuilder;
 use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};
@@ -61,6 +62,12 @@ fn scan_type_to_pyobject(
         FileScanIR::Lines { name } => Ok(("lines", name.as_str()).into_py_any(py)?),
         FileScanIR::ExpandedPaths { name } => {
             Ok(("expanded-paths", name.as_str()).into_py_any(py)?)
+        },
+        FileScanIR::ExternalReaderBuilder { external } => match external {
+            ExternalReaderBuilder::Python(object) => {
+                Ok(("external-reader", object).into_py_any(py)?)
+            },
+            ExternalReaderBuilder::Rust(()) => unreachable!(),
         },
         FileScanIR::PythonDataset { .. } => {
             Err(PyNotImplementedError::new_err("python dataset scan"))

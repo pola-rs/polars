@@ -37,6 +37,7 @@ use crate::metrics::{GraphMetrics, NodeMetricsRegistry};
 use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
 use crate::nodes::ComputeNode;
+use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
@@ -909,12 +910,58 @@ fn to_graph_rec<'a>(
                         &mut ctx.expr_conversion_state,
                         true, // create_skip_batch_predicate
                         file_reader_builder
-                            .reader_capabilities()
+                            .reader_capabilities()?
                             .contains(ReaderCapabilities::PARTIAL_FILTER), // create_column_predicates
+                        file_reader_builder.is_external_python_reader_with_filter_support()?, // create_minterm_eirs
                     )
                 })
-                .transpose()?
-                .map(|p| p.to_io(None, file_schema.clone()));
+                .transpose()
+                .and_then(|p| {
+                    let Some(p) = p else { return Ok(None) };
+
+                    let (scan_io_predicate, minterm_eirs) = p.to_io(None, file_schema.clone());
+
+                    #[cfg(feature = "python")]
+                    let py_filter_exprs = if let Some(minterm_eirs) = minterm_eirs {
+                        polars_async::ASYNC.block_in_place(|| {
+                            pyo3::Python::attach(|py| {
+                                let pyarrow_compute = py.import("pyarrow.compute");
+                                let py_dsl_filters = pyo3::types::PyList::empty(py);
+
+                                for eir in minterm_eirs.iter() {
+                                    let expr = polars_plan::plans::node_to_expr(
+                                        eir.node(),
+                                        ctx.expr_arena,
+                                    );
+
+                                    pyo3::types::PyListMethods::append(
+                                        &py_dsl_filters,
+                                        polars_plan::dsl::dsl_resolver::python::expr_to_py_filter_expr(
+                                            py,
+                                            &expr,
+                                            eir.node(),
+                                            ctx.expr_arena,
+                                            &pyarrow_compute,
+                                            output_schema.as_ref(),
+                                        )?,
+                                    )?;
+                                }
+
+                                PolarsResult::Ok(Some(Arc::new(
+                                    pyo3::IntoPyObjectExt::into_py_any(py_dsl_filters, py)?,
+                                )))
+                            })
+                        })?
+                    } else {
+                        None
+                    };
+
+                    Ok(Some(multi_scan::components::predicate::Predicate {
+                        scan_io_predicate,
+                        #[cfg(feature = "python")]
+                        py_filter_exprs,
+                    }))
+                })?;
             let predicate_file_skip_applied = *predicate_file_skip_applied;
 
             let sources = scan_sources.clone();
@@ -938,6 +985,7 @@ fn to_graph_rec<'a>(
             let maintain_order = *maintain_order;
 
             let verbose = config::verbose();
+            let reader_name = file_reader_builder.reader_name()?;
 
             ctx.add_node_with_metrics(
                 |registry| {
@@ -969,6 +1017,7 @@ fn to_graph_rec<'a>(
                             verbose,
                         }),
                         registry,
+                        reader_name,
                     )
                 },
                 [],
@@ -1762,6 +1811,7 @@ fn to_graph_rec<'a>(
             let disable_morsel_split = false;
             let maintain_order = true;
             let verbose = config::verbose();
+            let reader_name = file_reader_builder.reader_name()?;
 
             ctx.add_node_with_metrics(
                 |registry| {
@@ -1793,6 +1843,7 @@ fn to_graph_rec<'a>(
                             verbose,
                         }),
                         registry,
+                        reader_name,
                     )
                 },
                 [],
