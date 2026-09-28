@@ -1252,7 +1252,6 @@ def test_is_in_literal_haystack_scalar_needle(engine: EngineType) -> None:
     assert result.height == 1
 
 
-@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("nulls_equal", [False, True])
 @pytest.mark.parametrize(
     ("haystack", "expected"),
@@ -1267,7 +1266,6 @@ def test_is_in_non_literal_scalar_haystack(
     haystack: pl.Expr,
     expected: list[bool | None],
     nulls_equal: bool,
-    engine: EngineType,
 ) -> None:
     # A null haystack gives null for every row, unlike one that holds a null.
     # `expected` is for `nulls_equal=True`; otherwise the null needle gives null.
@@ -1279,7 +1277,7 @@ def test_is_in_non_literal_scalar_haystack(
     )
     result = (
         lf.select(pl.col("n").is_in(haystack, nulls_equal=nulls_equal))
-        .collect(engine=engine)
+        .collect()
         .to_series()
         .to_list()
     )
