@@ -834,7 +834,7 @@ impl Column {
         if sc.is_empty() || sc.has_nulls() {
             return Self::full_null(name, groups.len(), &IDX_DTYPE);
         }
-        
+
         // Empty groups have no min or max.
         if groups.iter().any(|g| g.is_empty()) {
             return IdxCa::from_iter_options(
