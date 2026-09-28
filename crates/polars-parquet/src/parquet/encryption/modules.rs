@@ -11,8 +11,8 @@ pub(crate) enum ModuleType {
     DictionaryPage = 3,
     DataPageHeader = 4,
     DictionaryPageHeader = 5,
-    ColumnIndex = 6,
-    OffsetIndex = 7,
+    _ColumnIndex = 6,
+    _OffsetIndex = 7,
     _BloomFilterHeader = 8,
     _BloomFilterBitset = 9,
 }

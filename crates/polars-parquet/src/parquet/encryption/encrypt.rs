@@ -227,31 +227,6 @@ impl EncryptionPropertiesBuilder {
         self
     }
 
-    /// Set the keys used for encryption of columns. Analogous to
-    /// with_column_key but for multiple columns. This will add column keys provided to the
-    /// existing column keys. If column keys were already provided for some columns, the new keys
-    /// will overwrite the old ones.
-    /// Column names are dot-separated paths in the Parquet schema,
-    /// e.g. `a.b.c` for a nested column.
-    pub fn with_column_keys(
-        mut self,
-        column_names: Vec<&str>,
-        keys: Vec<Vec<u8>>,
-    ) -> ParquetResult<Self> {
-        if column_names.len() != keys.len() {
-            return Err(encryption_err!(
-                "The number of column names ({}) does not match the number of keys ({})",
-                column_names.len(),
-                keys.len()
-            ));
-        }
-        for (i, column_name) in column_names.into_iter().enumerate() {
-            self.column_keys
-                .insert(column_name.to_string(), EncryptionKey::new(keys[i].clone()));
-        }
-        Ok(self)
-    }
-
     /// The AAD prefix uniquely identifies the file and allows to differentiate it e.g. from
     /// older versions of the file or from other partition files in the same data set (table).
     /// These bytes are optionally passed by a writer upon file creation. When not specified, no

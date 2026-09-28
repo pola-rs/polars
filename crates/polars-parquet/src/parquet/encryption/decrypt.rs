@@ -459,30 +459,6 @@ impl FileDecryptionProperties {
             },
         }
     }
-
-    /// Get the column names and associated decryption keys that have been configured.
-    /// If a key retriever is used rather than explicit decryption keys, the result
-    /// will be empty.
-    /// Provided for testing consumer code.
-    pub fn column_keys(&self) -> (Vec<String>, Vec<Vec<u8>>) {
-        let mut column_names: Vec<String> = Vec::new();
-        let mut column_keys: Vec<Vec<u8>> = Vec::new();
-        if let DecryptionKeys::Explicit(keys) = &self.keys {
-            for (key, value) in &keys.column_keys {
-                column_names.push(key.clone());
-                column_keys.push(value.clone());
-            }
-        }
-        (column_names, column_keys)
-    }
-
-    /// Whether these decryption properties use a key retriever.
-    /// When false, explicit keys were provided up front and can
-    /// be retrieved without providing key metadata, rather than
-    /// resolved on demand.
-    pub fn uses_key_retriever(&self) -> bool {
-        matches!(self.keys, DecryptionKeys::ViaRetriever(_))
-    }
 }
 
 impl std::fmt::Debug for FileDecryptionProperties {
