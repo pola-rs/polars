@@ -287,7 +287,7 @@ pub mod kll {
 
         let k0 = k_from_total_variance(compactor_var);
         let k = k_from_total_variance(compactor_var + sampler_var(k0));
-        debug_assert!(k0 >= k);
+        debug_assert!(k >= k0);
         usize::max(MIN_COMPACTOR_SIZE, k.ceil() as usize)
     }
 
@@ -328,12 +328,12 @@ pub mod kll {
         /// Once per window of `promote_weight` size, return a uniformly sampled
         /// item from the window.
         #[inline]
-        fn feed(
+        fn feed<Q: ToOwned<Owned = T> + ?Sized>(
             &mut self,
             item_weight: u64,
             promote_weight: u64,
             rng: &mut SmallRng,
-            to_owned_item: impl FnOnce() -> T,
+            item: &Q,
         ) -> Option<T> {
             debug_assert!(0 < item_weight && item_weight < promote_weight);
             debug_assert_eq!(self.weight == 0, self.item.is_none());
@@ -342,7 +342,10 @@ pub mod kll {
             if total_weight < promote_weight {
                 // Probabilistically replace the internal value.
                 if rng.random_range(0..total_weight) < item_weight {
-                    self.item = Some(to_owned_item());
+                    match &mut self.item {
+                        Some(held) => item.clone_into(held),
+                        None => self.item = Some(item.to_owned()),
+                    }
                 }
                 self.weight = total_weight;
                 None
@@ -354,8 +357,8 @@ pub mod kll {
                 let held = self.item.take();
                 self.weight = carry;
                 let (emitted, kept) = match emit_internal_value {
-                    true => (held, (carry > 0).then(to_owned_item)),
-                    false => (Some(to_owned_item()), held.filter(|_| carry > 0)),
+                    true => (held, (carry > 0).then(|| item.to_owned())),
+                    false => (Some(item.to_owned()), held.filter(|_| carry > 0)),
                 };
                 self.item = kept;
                 emitted
@@ -366,20 +369,20 @@ pub mod kll {
     #[derive(Debug)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
-        /// Contents of the compactors.
-        ///
-        /// This algorithm uses the convention that the top-level compactor has
-        /// *level* h-1.  The bottom-level compactor has *level* h,
-        /// and height *0*. So the order of `levels` is *reversed* wrt `items`.
+        /// Contents of the compactors, from the top compactor down to the base
+        /// compactor. So the order of `levels` is *reversed* wrt `items`.
         items: Vec<T>,
+        /// `levels[i]` is the compactor at height `base_height + i`.
         levels: Vec<Level>,
         k: usize,
         /// Total number of items that were consumed by this sketch.
         consumed_items: u64,
         /// Maximum number of items before we compact.
         total_capacity: usize,
+        /// Height of the base compactor at `levels[0]`.
+        base_compactor_height: usize,
+        /// Sampler representing the (virtual) compactors below `base_height`.
         sampler: Sampler<T>,
-        sampler_level: usize,
         #[cfg_attr(feature = "serde", serde(skip, default = "rand::make_rng"))]
         rng: SmallRng,
         #[cfg_attr(feature = "serde", serde(skip, default = "Vec::new"))]
@@ -395,7 +398,7 @@ pub mod kll {
                 consumed_items: self.consumed_items,
                 total_capacity: self.total_capacity,
                 sampler: self.sampler.clone(),
-                sampler_level: self.sampler_level,
+                base_compactor_height: self.base_compactor_height,
                 rng: rand::make_rng(),
                 scratch: Vec::new(),
             }
@@ -418,7 +421,7 @@ pub mod kll {
                 total_capacity: k,
                 rng: rand::make_rng(),
                 scratch: Vec::default(),
-                sampler_level: 0,
+                base_compactor_height: 0,
                 sampler: Sampler::default(),
             };
             KLLSketch(state)
@@ -446,29 +449,29 @@ pub mod kll {
             if self.items.len() >= self.total_capacity {
                 self.compact(true);
             }
-            let level = self.sampler_level;
-            let sampled = if self.sampler_is_activated() {
-                let Self { sampler, rng, .. } = self;
-                sampler.feed(1, 1 << level, rng, || item.to_owned())
+            if self.sampler_is_activated() {
+                self.feed_sampler(1, item);
             } else {
-                Some(item.to_owned())
-            };
-            if let Some(item) = sampled {
-                self.update_compactors(item);
+                self.update_compactors(item.to_owned());
             }
         }
 
         fn sampler_is_activated(&self) -> bool {
-            self.sampler_level > 0
+            self.base_compactor_height > 0
+        }
+
+        #[inline]
+        fn feed_sampler<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item_weight: u64, item: &Q) {
+            let promote_weight = 1 << self.base_compactor_height;
+            let Self { sampler, rng, .. } = self;
+            if let Some(item) = sampler.feed(item_weight, promote_weight, rng, item) {
+                self.update_compactors(item);
+            }
         }
 
         fn update_compactors(&mut self, item: T) {
             self.items.push(item);
-            self.levels[self.sampler_level].size += 1;
-            for empty_compactor in self.levels[..self.sampler_level].iter_mut() {
-                debug_assert_eq!(empty_compactor.size, 0, "compactor should be empty");
-                empty_compactor.offset = self.items.len();
-            }
+            self.levels[0].size += 1;
         }
 
         /// Compact all of the compactors from base to top.
@@ -480,11 +483,12 @@ pub mod kll {
                 if self.levels[level].size
                     >= compactor_threshold(self.k, self.levels.len() - 1 - level)
                 {
+                    let height = self.base_compactor_height + level;
                     if level == self.levels.len() - 1 {
                         self.add_new_compactor();
                     }
                     let old_size = self.items.len();
-                    self.compact_level(level);
+                    self.compact_level(height - self.base_compactor_height);
                     debug_assert!(self.items.len() < old_size);
                     if break_early {
                         return;
@@ -495,48 +499,43 @@ pub mod kll {
 
         fn add_new_compactor(&mut self) {
             self.levels.push(Level::default());
-            self.recompute_sampler_level();
             self.flush_to_sampler();
             self.recompute_total_capacity();
         }
 
-        /// The lowest level whose compactor is larger than [`SAMPLER_CUTOFF`].
-        fn recompute_sampler_level(&mut self) {
-            self.sampler_level = (0..self.levels.len())
+        /// Move the compactors at or below [`SAMPLER_CUTOFF`] into the sampler.
+        fn flush_to_sampler(&mut self) {
+            let num_levels = self.levels.len();
+            let num_replaced = (0..num_levels)
                 .filter(|level| {
-                    compactor_threshold(self.k, self.levels.len() - 1 - level) <= SAMPLER_CUTOFF
+                    compactor_threshold(self.k, num_levels - 1 - level) <= SAMPLER_CUTOFF
                 })
                 .count();
-            // Make sure there is space for the sampler output to go.
-            debug_assert!(self.sampler_level < self.levels.len() - 1);
-        }
-
-        /// Move every item below `sampler_level` into the sampler.
-        fn flush_to_sampler(&mut self) {
-            let sampler_level = self.sampler_level;
-            if sampler_level == 0 {
+            if num_replaced == 0 {
                 return;
             }
-            let base_compactor = self.levels[sampler_level];
+            // Make sure there is space for the sampler output to go.
+            debug_assert!(num_replaced < num_levels - 1);
+
+            let base_compactor = self.levels[num_replaced];
             let start = base_compactor.offset + base_compactor.size;
-            let promote_weight = 1u64 << sampler_level;
+            let old_base_height = self.base_compactor_height;
+            self.base_compactor_height += num_replaced;
+            let promote_weight = 1u64 << self.base_compactor_height;
 
             debug_assert!(self.scratch.is_empty());
             let mut promoted = mem::take(&mut self.scratch);
 
             let mut drain = self.items.drain(start..);
-            for level in (0..sampler_level).rev() {
-                let compactor = &mut self.levels[level];
+            for (level, compactor) in self.levels.drain(..num_replaced).enumerate().rev() {
                 for item in drain.by_ref().take(compactor.size) {
                     promoted.extend(self.sampler.feed(
-                        1u64 << level,
+                        1u64 << (old_base_height + level),
                         promote_weight,
                         &mut self.rng,
-                        || item,
+                        &item,
                     ));
                 }
-                compactor.offset = start;
-                compactor.size = 0;
             }
             debug_assert_eq!(drain.len(), 0);
             drop(drain);
@@ -548,7 +547,7 @@ pub mod kll {
         }
 
         fn recompute_total_capacity(&mut self) {
-            self.total_capacity = (0..self.levels.len() - self.sampler_level)
+            self.total_capacity = (0..self.levels.len())
                 .map(|depth| compactor_threshold(self.k, depth))
                 .sum::<usize>()
                 .next_multiple_of(2);
@@ -590,7 +589,7 @@ pub mod kll {
             }
 
             // The base compactor is not sorted yet
-            if level <= self.sampler_level {
+            if level == 0 {
                 self.items[compact_start..compact_end].sort_unstable_by(TotalOrd::tot_cmp);
             }
 
@@ -643,10 +642,12 @@ pub mod kll {
             assert_eq!(self.k, other.k);
 
             // Make sure we have enough compactors on the left side.
-            while self.levels.len() < other.levels.len() {
+            while self.base_compactor_height + self.levels.len()
+                < other.base_compactor_height + other.levels.len()
+            {
                 self.add_new_compactor();
             }
-            debug_assert!(self.sampler_level >= other.sampler_level);
+            debug_assert!(self.base_compactor_height >= other.base_compactor_height);
 
             let mut items = Vec::with_capacity(self.items.len() + other.items.len());
             let items1 = mem::take(&mut self.items);
@@ -654,11 +655,12 @@ pub mod kll {
 
             let mut next_offset = 0;
             for level in (0..self.levels.len()).rev() {
+                let height = self.base_compactor_height + level;
                 let l1 = self.levels[level];
-                let l2 = other.levels.get(level).copied().unwrap_or_default();
+                let l2 = other.try_level_at(height).unwrap_or_default();
                 let comp1 = &items1[l1.offset..l1.offset + l1.size];
                 let comp2 = &items2[l2.offset..l2.offset + l2.size];
-                if level == self.sampler_level {
+                if level == 0 {
                     items.extend_from_slice(comp1);
                     items.extend_from_slice(comp2);
                 } else {
@@ -679,16 +681,24 @@ pub mod kll {
 
             self.consumed_items += other.consumed_items;
             // Absorb the low-weight compactors into our sampler.
-            self.flush_to_sampler();
-            if let Some(item) = other.sampler.item.as_ref() {
-                let level = self.sampler_level;
-                let Self { sampler, rng, .. } = self;
-                let promoted = sampler.feed(other.sampler.weight, 1 << level, rng, || item.clone());
-                if let Some(item) = promoted {
-                    self.update_compactors(item);
+            for height in other.base_compactor_height..self.base_compactor_height {
+                let Some(l2) = other.try_level_at(height) else {
+                    break;
+                };
+                for item in &items2[l2.offset..l2.offset + l2.size] {
+                    self.feed_sampler(1 << height, item);
                 }
             }
+            if let Some(item) = other.sampler.item.as_ref() {
+                self.feed_sampler(other.sampler.weight, item);
+            }
             self.compact(false);
+        }
+
+        /// Get the compactor at `height`, if there is one.
+        fn try_level_at(&self, height: usize) -> Option<Level> {
+            let level = height.checked_sub(self.base_compactor_height)?;
+            self.levels.get(level).copied()
         }
 
         fn finalize(self) -> FinalizedSketch<T> {
@@ -697,13 +707,13 @@ pub mod kll {
                 levels,
                 consumed_items,
                 mut scratch,
-                sampler_level,
+                base_compactor_height: base_height,
                 sampler,
                 ..
             } = self;
 
             // Base level is not yet sorted
-            let base = levels[sampler_level];
+            let base = levels[0];
             items[base.offset..base.offset + base.size].sort_unstable_by(TotalOrd::tot_cmp);
 
             // With a single compactor every item has weight 1.
@@ -725,7 +735,7 @@ pub mod kll {
                 if level == num_levels {
                     sampler.weight
                 } else {
-                    1u64 << level
+                    1u64 << (base_height + level)
                 }
             };
             let cum_weights = finalize_merge_levels(&level_items, level_to_weight, &mut scratch);
