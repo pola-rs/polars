@@ -128,13 +128,10 @@ impl RowGroupDataFetcher {
 
             let handle = ASYNC.spawn(async move {
                 let row_group_metadata = &metadata.row_groups[idx];
-                let uncompressed_bytes = projected_column_chunks(
-                    row_group_metadata,
-                    is_full_projection,
-                    &projection,
-                )
-                .map(|col| col.uncompressed_size().max(0) as u64)
-                .sum();
+                let uncompressed_bytes =
+                    projected_column_chunks(row_group_metadata, is_full_projection, &projection)
+                        .map(|col| col.uncompressed_size().max(0) as u64)
+                        .sum();
                 let fetched_bytes = match current_byte_source.as_ref() {
                     DynByteSource::Buffer(mem_slice) => {
                         // Skip byte range calculation for `no_prefetch`.

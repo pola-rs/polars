@@ -295,7 +295,10 @@ mod tests {
         // `v` is only decoded for the 150 rows `k` keeps.
         assert_eq!(snapshot.reading("scan.rows_read_prefiltered"), Some(200));
         assert_eq!(snapshot.reading("scan.rows_kept_prefiltered"), Some(150));
-        assert_eq!(snapshot.reading("scan.uncompressed_bytes"), Some(expected_bytes));
+        assert_eq!(
+            snapshot.reading("scan.uncompressed_bytes"),
+            Some(expected_bytes)
+        );
 
         // Without a predicate or slice nothing is skipped, and that is a reading.
         let (_, snapshot) = snapshot_of(scan());
