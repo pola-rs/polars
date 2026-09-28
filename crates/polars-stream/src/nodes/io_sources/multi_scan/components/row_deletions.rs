@@ -26,7 +26,7 @@ use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 
-use crate::metrics::IOMetrics;
+use crate::metrics::{IOMetrics, NodeMetricsRegistry};
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::{BeginReadArgs, FileReaderCallbacks};
 #[cfg(feature = "parquet")]
@@ -172,6 +172,7 @@ impl DeletionFilesProvider {
                                     source,
                                     cloud_options.clone(),
                                     deletion_file_idx,
+                                    &NodeMetricsRegistry::default(),
                                 );
 
                                 if verbose {

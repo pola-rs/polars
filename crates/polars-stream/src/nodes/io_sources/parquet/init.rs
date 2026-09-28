@@ -18,6 +18,7 @@ use tokio::sync::Semaphore;
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::{DynamicConjunct, PredicateColumn, RowGroupDecoder, Source};
 use super::{AsyncTaskData, ParquetReadImpl};
+use crate::metrics::MetricUnit;
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
@@ -121,6 +122,9 @@ impl ParquetReadImpl {
         let rg_prefetch_current_all_spawned =
             Option::take(&mut self.rg_prefetch_current_all_spawned);
 
+        let row_groups_skipped = self
+            .metrics_registry
+            .new_counter("scan.row_groups_skipped", MetricUnit::Unit);
         let prefetch_task = AbortOnDropHandle(ASYNC.spawn(async move {
             polars_ensure!(
                 metadata.num_rows < IdxSize::MAX as usize,
@@ -176,6 +180,10 @@ impl ParquetReadImpl {
                 }
             }
 
+            let can_skip_row_groups = use_statistics
+                && predicate.as_ref().is_some_and(|p| {
+                    p.skip_batch_predicate.is_some() || !p.runtime_ranges.is_empty()
+                });
             let row_group_mask = calculate_row_group_pred_pushdown_skip_mask(
                 row_group_slice.clone(),
                 use_statistics,
@@ -186,6 +194,11 @@ impl ParquetReadImpl {
                 verbose,
             )
             .await?;
+
+            if can_skip_row_groups {
+                let skipped = row_group_mask.as_ref().map_or(0, |mask| mask.set_bits());
+                row_groups_skipped.reporter().add(skipped as i64);
+            }
 
             let mut row_group_data_fetcher = RowGroupDataFetcher {
                 projection: projected_arrow_fields.clone(),
@@ -543,6 +556,8 @@ impl ParquetReadImpl {
             )
         }
 
+        let reporter = |key, unit| self.metrics_registry.new_counter(key, unit).reporter();
+
         RowGroupDecoder {
             num_pipelines: self.config.num_pipelines,
             projected_arrow_fields,
@@ -556,6 +571,10 @@ impl ParquetReadImpl {
             passes: Mutex::new(Arc::new(passes)),
             non_predicate_field_indices,
             target_values_per_thread,
+            rows_read: reporter("scan.rows_read", MetricUnit::Unit),
+            rows_read_prefiltered: reporter("scan.rows_read_prefiltered", MetricUnit::Unit),
+            rows_kept_prefiltered: reporter("scan.rows_kept_prefiltered", MetricUnit::Unit),
+            uncompressed_bytes: reporter("scan.uncompressed_bytes", MetricUnit::Bytes),
         }
     }
 }

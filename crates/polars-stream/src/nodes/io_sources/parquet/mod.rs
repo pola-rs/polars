@@ -25,7 +25,7 @@ use super::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, calc_row_position_after_slice,
 };
 use super::shared::pipeline_budget::PipelineBudget;
-use crate::metrics::OptIOMetrics;
+use crate::metrics::{NodeMetricsRegistry, OptIOMetrics};
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::parquet::projection::{
@@ -53,6 +53,7 @@ pub struct ParquetFileReader {
     byte_source_builder: DynByteSourceBuilder,
     row_group_prefetch_sync: RowGroupPrefetchSync,
     io_metrics: OptIOMetrics,
+    metrics_registry: NodeMetricsRegistry,
     verbose: bool,
 
     /// Set during initialize()
@@ -416,6 +417,7 @@ impl FileReader for ParquetFileReader {
             rg_prefetch_current_all_spawned: Option::take(
                 &mut self.row_group_prefetch_sync.current_all_spawned,
             ),
+            metrics_registry: self.metrics_registry.clone(),
             disable_morsel_split,
             maintain_order,
         }
@@ -506,6 +508,7 @@ struct ParquetReadImpl {
     pipeline_budget: PipelineBudget,
     rg_prefetch_prev_all_spawned: Option<WaitGroup>,
     rg_prefetch_current_all_spawned: Option<WaitToken>,
+    metrics_registry: NodeMetricsRegistry,
     disable_morsel_split: bool,
     /// If false, row groups are emitted in the order they finish decoding.
     maintain_order: bool,

@@ -145,6 +145,19 @@ fn run_observed_on(
 mod tests {
     use super::*;
 
+    fn snapshot_of(lf: LazyFrame) -> (DataFrame, Snapshot) {
+        let (res, events) = run_observed_on(lf, true, Engine::Streaming);
+        let df = res.unwrap().unwrap_single();
+        let snapshot = events
+            .into_iter()
+            .find_map(|e| match e {
+                Event::Snapshot(snapshot) => Some(snapshot),
+                _ => None,
+            })
+            .expect("no Snapshot event");
+        (df, snapshot)
+    }
+
     #[test]
     fn observer_called_on_successful_query() {
         let lf = load_df().lazy().group_by([col("b")]).agg([col("a").sum()]);
@@ -180,16 +193,7 @@ mod tests {
     #[test]
     fn observer_metrics_snapshot_nonempty() {
         let lf = load_df().lazy().group_by([col("b")]).agg([col("a").sum()]);
-        let (res, events) = run_observed_on(lf, true, Engine::Streaming);
-        assert!(res.is_ok());
-
-        let snapshot = events
-            .iter()
-            .find_map(|e| match e {
-                Event::Snapshot(snapshot) => Some(snapshot),
-                _ => None,
-            })
-            .expect("no Snapshot event");
+        let (_, snapshot) = snapshot_of(lf);
         // One row per physical node, and the query actually moved data.
         assert!(
             snapshot.rows > 0,
@@ -208,16 +212,7 @@ mod tests {
     #[test]
     fn observer_snapshot_carries_a_nodes_custom_metrics() {
         let lf = load_df().lazy().group_by([col("b")]).agg([col("a").sum()]);
-        let (res, events) = run_observed_on(lf, true, Engine::Streaming);
-        assert!(res.is_ok());
-
-        let snapshot = events
-            .iter()
-            .find_map(|e| match e {
-                Event::Snapshot(snapshot) => Some(snapshot),
-                _ => None,
-            })
-            .expect("no Snapshot event");
+        let (_, snapshot) = snapshot_of(lf);
 
         // `b` holds "a", "b" and "c".
         assert_eq!(snapshot.reading("group_by.actual_groups"), Some(3));
@@ -230,6 +225,75 @@ mod tests {
             estimated.abs_diff(3) <= 1,
             "estimated {estimated} groups for 3"
         );
+    }
+
+    #[test]
+    #[cfg(feature = "parquet")]
+    fn observer_snapshot_carries_parquet_scan_metrics() {
+        let total_rows = scan_foods_parquet(false).collect().unwrap().height() as i64;
+
+        let lf = scan_foods_parquet(false)
+            .filter(col("fats_g").gt(lit(5)))
+            .select([col("category"), col("fats_g")]);
+        let (df, snapshot) = snapshot_of(lf);
+
+        assert_eq!(snapshot.reading("scan.rows_read"), Some(total_rows));
+        assert!(df.height() < total_rows as usize);
+
+        assert!(snapshot.reading("scan.uncompressed_bytes").unwrap() > 0);
+
+        // Not parallel, so not prefiltered.
+        assert_eq!(snapshot.reading("scan.rows_read_prefiltered"), None);
+        assert_eq!(snapshot.reading("scan.rows_kept_prefiltered"), None);
+    }
+
+    #[test]
+    #[cfg(feature = "parquet")]
+    fn observer_snapshot_counts_row_groups_skipped_and_rows_read() {
+        // Sorted keys, so a key range maps to row groups.
+        let n = 1000;
+        let mut df = df!(
+            "k" => (0..n).collect::<Vec<i64>>(),
+            "v" => (0..n).collect::<Vec<i64>>(),
+        )
+        .unwrap();
+        let file = TempFile(std::env::temp_dir().join(format!(
+            "polars-observer-row-groups-{}.parquet",
+            std::process::id()
+        )));
+        let path = file.0.to_str().unwrap();
+        ParquetWriter::new(std::fs::File::create(path).unwrap())
+            .with_statistics(StatisticsOptions::full())
+            .with_row_group_size(Some(100))
+            .finish(&mut df)
+            .unwrap();
+
+        let scan = || LazyFrame::scan_parquet(PlRefPath::new(path), ScanArgsParquet::default());
+
+        let (df, snapshot) = snapshot_of(scan().unwrap().filter(col("k").lt(lit(150))));
+
+        assert_eq!(df.height(), 150);
+        // Only the first two row groups can hold a key below 150.
+        assert_eq!(snapshot.reading("scan.row_groups_skipped"), Some(8));
+        assert_eq!(snapshot.reading("scan.rows_read"), Some(200));
+        // `v` is only decoded for the 150 rows `k` keeps.
+        assert_eq!(snapshot.reading("scan.rows_read_prefiltered"), Some(200));
+        assert_eq!(snapshot.reading("scan.rows_kept_prefiltered"), Some(150));
+
+        // Without a predicate nothing can be skipped.
+        let (_, snapshot) = snapshot_of(scan().unwrap());
+        assert_eq!(snapshot.reading("scan.rows_read"), Some(n));
+        assert_eq!(snapshot.reading("scan.row_groups_skipped"), None);
+    }
+
+    #[cfg(feature = "parquet")]
+    struct TempFile(std::path::PathBuf);
+
+    #[cfg(feature = "parquet")]
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
     }
 
     #[test]

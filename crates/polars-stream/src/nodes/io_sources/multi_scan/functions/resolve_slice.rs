@@ -11,6 +11,7 @@ use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
 use crate::execute::StreamingExecutionState;
+use crate::metrics::NodeMetricsRegistry;
 use crate::nodes::io_sources::multi_scan::pipeline::models::ResolvedSliceInfo;
 use crate::nodes::io_sources::multi_scan::{MultiScanConfig, components};
 
@@ -18,6 +19,7 @@ pub async fn resolve_to_positive_slice(
     config: &MultiScanConfig,
     execution_state: &StreamingExecutionState,
     io_metrics: Option<Arc<IOMetrics>>,
+    metrics_registry: &NodeMetricsRegistry,
 ) -> PolarsResult<ResolvedSliceInfo> {
     match config.pre_slice.clone() {
         None => Ok(ResolvedSliceInfo {
@@ -36,7 +38,9 @@ pub async fn resolve_to_positive_slice(
             row_deletions: Default::default(),
         }),
 
-        Some(_) => resolve_negative_slice(config, execution_state, io_metrics).await,
+        Some(_) => {
+            resolve_negative_slice(config, execution_state, io_metrics, metrics_registry).await
+        },
     }
 }
 
@@ -45,6 +49,7 @@ async fn resolve_negative_slice(
     config: &MultiScanConfig,
     execution_state: &StreamingExecutionState,
     io_metrics: Option<Arc<IOMetrics>>,
+    metrics_registry: &NodeMetricsRegistry,
 ) -> PolarsResult<ResolvedSliceInfo> {
     let verbose = config.verbose;
 
@@ -111,6 +116,7 @@ async fn resolve_negative_slice(
                         source,
                         cloud_options.clone(),
                         scan_source_idx,
+                        metrics_registry,
                     )
                 });
 

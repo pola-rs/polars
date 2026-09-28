@@ -19,6 +19,7 @@ use polars_utils::{IdxSize, UnitVec};
 
 use super::passes::{Selectivity, keeps_most_rows, plan_passes, promote};
 use super::row_group_data_fetch::RowGroupData;
+use crate::metrics::{MetricReporter, kind};
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
 /// Where a column of a row group comes from. Sorts in output order.
@@ -120,6 +121,15 @@ pub(super) struct RowGroupDecoder {
     /// Indices into `projected_arrow_fields. This must be sorted.
     pub(super) non_predicate_field_indices: Arc<[usize]>,
     pub(super) target_values_per_thread: usize,
+
+    /// Rows of the row groups read, before the predicate.
+    pub(super) rows_read: MetricReporter<kind::Sum>,
+    /// Rows of `rows_read` decoded prefiltered.
+    pub(super) rows_read_prefiltered: MetricReporter<kind::Sum>,
+    /// Rows of `rows_read_prefiltered` the predicate kept.
+    pub(super) rows_kept_prefiltered: MetricReporter<kind::Sum>,
+    /// Uncompressed size of the projected column chunks read, an upper bound.
+    pub(super) uncompressed_bytes: MetricReporter<kind::Sum>,
 }
 
 impl RowGroupDecoder {
@@ -134,16 +144,53 @@ impl RowGroupDecoder {
         });
 
         let nothing_to_evaluate = self.nothing_to_evaluate();
-        if self.use_prefiltered
+        let prefiltered = self.use_prefiltered
             && row_group_data.slice.is_none()
             && !self.predicate_field_indices.is_empty()
-            && !nothing_to_evaluate
-        {
-            self.row_group_data_to_df_prefiltered(row_group_data).await
+            && !nothing_to_evaluate;
+
+        let (num_rows, uncompressed) = self.read_size(&row_group_data);
+
+        let df = if prefiltered {
+            self.row_group_data_to_df_prefiltered(row_group_data)
+                .await?
         } else {
             self.row_group_data_to_df_impl(row_group_data, nothing_to_evaluate)
-                .await
+                .await?
+        };
+
+        self.rows_read.add(num_rows as i64);
+        self.uncompressed_bytes.add(uncompressed);
+        if prefiltered {
+            self.rows_read_prefiltered.add(num_rows as i64);
+            self.rows_kept_prefiltered.add(df.height() as i64);
         }
+        Ok(df)
+    }
+
+    /// Rows and uncompressed bytes read of a row group, pro rata for a slice.
+    fn read_size(&self, row_group_data: &RowGroupData) -> (usize, i64) {
+        let row_group_metadata = &row_group_data.row_group_metadata;
+        let total_rows = row_group_metadata.num_rows();
+        let num_rows = row_group_data.slice.map_or(total_rows, |(_, len)| len);
+
+        let uncompressed: i64 = self
+            .projected_arrow_fields
+            .iter()
+            .flat_map(|projection| {
+                row_group_metadata
+                    .columns_under_root_iter(&projection.arrow_field().name)
+                    .into_iter()
+                    .flatten()
+            })
+            .map(|column_chunk| column_chunk.uncompressed_size())
+            .sum();
+        let uncompressed = match total_rows {
+            0 => 0,
+            _ => (uncompressed as i128 * num_rows as i128 / total_rows as i128) as i64,
+        };
+
+        (num_rows, uncompressed)
     }
 
     /// Whether the predicate keeps every row for now: it has no static part
