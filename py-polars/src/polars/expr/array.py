@@ -1014,10 +1014,9 @@ class ExprArrayNameSpace:
 
         Notes
         -----
-        Only `item` is cast, to the type of the sub-array elements; the sub-arrays
-        are never rewritten. A value the cast cannot represent exactly, because it is
-        out of range or would be rounded, matches nothing. Integers and floats are not
-        compared with each other; cast one side explicitly.
+        For supported dtype pairs, lossy conversions do not create matches. Values that
+        would overflow or require rounding match nothing. Cast explicitly to compare
+        integers and floats.
 
         Examples
         --------

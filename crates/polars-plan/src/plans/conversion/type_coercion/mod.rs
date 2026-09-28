@@ -1437,11 +1437,9 @@ fn coerce_is_in(
     }))
 }
 
-/// Cast the elements of a literal haystack to the needle's dtype instead of casting the needle.
-///
-/// An element the cast cannot represent exactly equals no needle of that dtype, so it is dropped;
-/// the answer is the same as with a guarded needle cast or a native comparison. The needle then
-/// keeps its own dtype, so predicate pushdown and statistics still apply to it.
+/// Cast eligible literal haystacks to the needle dtype to preserve pushdown.
+/// Inexact elements cannot match: drop them from Lists, or skip the rewrite
+/// for Arrays.
 #[cfg(feature = "is_in")]
 fn cast_literal_haystack(
     function: &IRFunctionExpr,

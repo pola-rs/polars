@@ -8,12 +8,11 @@ pub enum IRMapFunction {
     Values,
     Length,
     ContainsKey {
-        /// Set by type coercion: cast the key to this dtype when evaluating, and treat a key
-        /// the cast cannot represent exactly as absent.
+        /// Runtime cast chosen by type coercion; inexact needles match nothing.
         needle_cast: Option<DataType>,
     },
     Get {
-        /// See [`IRMapFunction::ContainsKey`].
+        /// Runtime cast chosen by type coercion; inexact needles match nothing.
         needle_cast: Option<DataType>,
     },
 }

@@ -6,12 +6,11 @@ use super::*;
 pub(super) enum IsInTypeCoercionResult {
     /// Cast the needle to `dtype`, which is exact for every value.
     CastNeedle { dtype: DataType },
-    /// Only for a container whose elements are all null, so the cast is always valid.
+    /// Cast a container whose element dtype has only Null leaves.
     CastContainer { dtype: DataType },
     #[cfg(feature = "is_in")]
     Implode,
-    /// Cast the needle to `dtype` as it is evaluated; a needle the cast cannot represent exactly
-    /// matches nothing.
+    /// Cast the needle to `dtype`; inexact values match nothing.
     GuardedNeedleCast { dtype: DataType },
 }
 
@@ -173,10 +172,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
     )
 }
 
-/// Choose the cast for a needle compared against elements of dtype `element`.
-///
-/// Only the needle is cast, so answering never depends on elements other than those compared.
-/// Whether a pair is allowed depends on the dtypes alone.
+/// Resolve membership compatibility and coercion from operand dtypes alone.
 fn resolve_needle(
     needle: &DataType,
     element: &DataType,
@@ -240,10 +236,10 @@ fn resolve_needle(
                 dtype: element.clone(),
             },
         },
-        // Integers are exact decimals at scale 0; only 128-bit values can fail the cast.
         #[cfg(feature = "dtype-decimal")]
         (n, DataType::Decimal(_, _)) if n.is_integer() => R::GuardedNeedleCast {
             dtype: match container {
+                // Integers are exact decimals at scale 0; only 128-bit values can fail the cast.
                 Container::Sequence => {
                     DataType::Decimal(polars_compute::decimal::DEC128_MAX_PREC, 0)
                 },
