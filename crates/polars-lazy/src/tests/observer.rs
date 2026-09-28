@@ -257,20 +257,27 @@ mod tests {
             "v" => (0..n).collect::<Vec<i64>>(),
         )
         .unwrap();
-        let file = TempFile(std::env::temp_dir().join(format!(
-            "polars-observer-row-groups-{}.parquet",
-            std::process::id()
-        )));
-        let path = file.0.to_str().unwrap();
-        ParquetWriter::new(std::fs::File::create(path).unwrap())
+        let mut bytes = Vec::new();
+        ParquetWriter::new(&mut bytes)
             .with_statistics(StatisticsOptions::full())
             .with_row_group_size(Some(100))
             .finish(&mut df)
             .unwrap();
+        let file = polars_buffer::Buffer::from(bytes.clone());
+        let scan = || {
+            let args = ScanArgsParquet {
+                // Buffers cannot be hive-partitioned.
+                hive_options: HiveOptions {
+                    enabled: Some(false),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            LazyFrame::scan_parquet_sources(ScanSources::Buffers([file.clone()].into()), args)
+                .unwrap()
+        };
 
-        let scan = || LazyFrame::scan_parquet(PlRefPath::new(path), ScanArgsParquet::default());
-
-        let (df, snapshot) = snapshot_of(scan().unwrap().filter(col("k").lt(lit(150))));
+        let (df, snapshot) = snapshot_of(scan().filter(col("k").lt(lit(150))));
 
         assert_eq!(df.height(), 150);
         // Only the first two row groups can hold a key below 150.
@@ -281,19 +288,9 @@ mod tests {
         assert_eq!(snapshot.reading("scan.rows_kept_prefiltered"), Some(150));
 
         // Without a predicate nothing can be skipped.
-        let (_, snapshot) = snapshot_of(scan().unwrap());
+        let (_, snapshot) = snapshot_of(scan());
         assert_eq!(snapshot.reading("scan.rows_read"), Some(n));
         assert_eq!(snapshot.reading("scan.row_groups_skipped"), None);
-    }
-
-    #[cfg(feature = "parquet")]
-    struct TempFile(std::path::PathBuf);
-
-    #[cfg(feature = "parquet")]
-    impl Drop for TempFile {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_file(&self.0);
-        }
     }
 
     #[test]
