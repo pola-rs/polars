@@ -86,7 +86,8 @@ fn python_function_caller_df(df: DataFrame, lambda: &Py<PyAny>) -> PolarsResult<
         // Downcast to Rust
         match py_pydf.extract::<PyDataFrame>(py) {
             Ok(pydf) => Ok(pydf.df.into_inner()),
-            Err(_) => python_df_to_rust(py, result_df_wrapper.into_bound(py)),
+            // SAFETY: This conversion path is reached only for foreign Polars DataFrame wrappers.
+            Err(_) => unsafe { python_df_to_rust(py, result_df_wrapper.into_bound(py)) },
         }
     })
 }
@@ -305,7 +306,8 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
             || polars_stream::nodes::io_sources::external_python::PyExternalReaderVTable {
                 extract_schema: dataset_provider_funcs::extract_schema,
                 enter_polars_send_df: |py, df, tx: &polars_stream::nodes::io_sources::external_python::ExternalPythonReaderDataFrameTx| py.enter_polars_ok(|| tx.send_df_(df)).unwrap(),
-                extract_df: |py, py_df| python_df_to_rust(py, py_df).map_err(to_py_err),
+                // SAFETY: This callback is registered for foreign Polars DataFrame conversion.
+                extract_df: |py, py_df| unsafe { python_df_to_rust(py, py_df) }.map_err(to_py_err),
             },
         );
 
