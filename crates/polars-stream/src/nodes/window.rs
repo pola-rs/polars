@@ -14,29 +14,34 @@ use polars_utils::IdxSize;
 use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
 use super::compute_node_prelude::*;
 use super::in_memory_source::InMemorySourceNode;
+
+/// More partitions than pipelines keep fewer partitions in memory at the same time.
+const PARTITIONS_PER_PIPELINE: usize = 16;
 
 pub struct WindowParams {
     pub partition_by: Vec<PlSmallStr>,
     pub order_by: Option<(PlSmallStr, SortOptions)>,
     /// The window expressions with their output names.
     pub exprs: Vec<(PlSmallStr, WindowExpr)>,
-    pub input_schema: Arc<Schema>,
+    /// The input columns the window expressions read, including the keys.
+    pub read_schema: Arc<Schema>,
     pub output_schema: Arc<Schema>,
     /// Evaluate the rows of a partition in input order.
     pub ordered_eval: bool,
-    /// Output only the window columns, in input order.
+    /// Output the rows in input order.
     pub maintain_order: bool,
 }
 
-/// Evaluates window expressions that share one partitioning. Rows are hash partitioned on the
-/// partition keys, and each hash partition is evaluated in parallel.
+/// Evaluates window expressions that share one partitioning. The columns the windows read are
+/// hash partitioned on the partition keys, and each hash partition is evaluated in parallel.
 ///
-/// Without `maintain_order` the input rows are output with the window columns appended, in an
-/// unspecified order. With `maintain_order` only the window columns are output, in input order.
+/// The input rows are output with the window columns appended. Without `maintain_order` the rows
+/// are output in an unspecified order.
 pub struct WindowNode {
     params: Arc<WindowParams>,
     state: WindowState,
@@ -64,7 +69,7 @@ struct LocalBuilder {
 
 impl WindowNode {
     pub fn new(params: Arc<WindowParams>, num_pipelines: usize) -> Self {
-        let num_partitions = num_pipelines;
+        let num_partitions = num_pipelines * PARTITIONS_PER_PIPELINE;
         let builders = (0..num_pipelines)
             .map(|_| LocalBuilder {
                 morsels: Vec::new(),
@@ -171,8 +176,17 @@ impl ComputeNode for WindowNode {
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                         while let Ok(mut morsel) = recv.recv().await {
                             morsel.take_consume_token();
-                            // Gathers need single-chunk columns.
-                            morsel.df_mut().await.rechunk_mut();
+                            {
+                                let mut df = morsel.df_mut().await;
+                                // SAFETY: the lengths and names of the columns do not change.
+                                let columns = unsafe { df.columns_mut_retain_schema() };
+                                // Gathers need single-chunk columns.
+                                for c in columns.iter_mut().filter(|c| {
+                                    c.n_chunks() > 1 && params.read_schema.contains(c.name())
+                                }) {
+                                    *c = c.rechunk();
+                                }
+                            }
                             let keys = morsel
                                 .df()
                                 .await
@@ -226,23 +240,22 @@ fn evaluate_partitions(
         morsels.sort_by_key(|(seq, ..)| *seq);
     }
 
-    // The input row index of the first row of each morsel.
-    let mut row_offsets = Vec::new();
-    if params.maintain_order {
-        let mut offset = 0 as IdxSize;
-        for (.., sf) in &morsels {
-            row_offsets.push(offset);
-            offset += sf.height() as IdxSize;
-        }
+    // The row index of the first row of each morsel.
+    let mut row_offsets = Vec::with_capacity(morsels.len());
+    let mut height = 0 as IdxSize;
+    for (.., sf) in &morsels {
+        row_offsets.push(height);
+        height += sf.height() as IdxSize;
+    }
+    if height == 0 {
+        return Ok(DataFrame::empty_with_schema(&params.output_schema));
     }
 
-    // Gather every hash partition first, so the input morsels can be freed before the
-    // partitions are sorted and evaluated.
-    let partitions = RAYON.install(|| {
+    let outputs = RAYON.install(|| {
         (0..num_partitions)
             .into_par_iter()
             .map(|p| {
-                let mut builder = DataFrameBuilder::new(params.input_schema.clone());
+                let mut builder = DataFrameBuilder::new(params.read_schema.clone());
                 let mut row_idx = Vec::new();
                 for (k, (_, b, i, sf)) in morsels.iter().enumerate() {
                     let start = b.offsets_per_p[i * num_partitions + p];
@@ -250,7 +263,9 @@ fn evaluate_partitions(
                     if start == stop {
                         continue;
                     }
-                    let df = sf.get_blocking();
+                    let df = sf
+                        .get_blocking()
+                        .select(params.read_schema.iter_names_cloned())?;
                     let idxs = &b.idxs_per_p[p][start..stop];
                     if idxs.len() == df.height() {
                         builder.extend(&df, ShareStrategy::Never);
@@ -258,21 +273,10 @@ fn evaluate_partitions(
                         // SAFETY: the indices were generated from this morsel.
                         unsafe { builder.gather_extend(&df, idxs, ShareStrategy::Never) };
                     }
-                    if params.maintain_order {
-                        row_idx.extend(idxs.iter().map(|j| row_offsets[k] + j));
-                    }
+                    row_idx.extend(idxs.iter().map(|j| row_offsets[k] + j));
                 }
-                (builder.freeze(), row_idx)
+                evaluate_partition(params, builder.freeze(), row_idx, random_state, state)
             })
-            .collect::<Vec<_>>()
-    });
-    drop(morsels);
-    drop(builders);
-
-    let outputs = RAYON.install(|| {
-        partitions
-            .into_par_iter()
-            .map(|(df, row_idx)| evaluate_partition(params, df, row_idx, random_state, state))
             .collect::<PolarsResult<Vec<_>>>()
     })?;
 
@@ -280,30 +284,53 @@ fn evaluate_partitions(
         .into_iter()
         .filter(|(df, _)| df.height() > 0)
         .unzip();
-    if dfs.is_empty() {
-        return Ok(DataFrame::empty_with_schema(&params.output_schema));
-    }
-    let df = accumulate_dataframes_vertical_unchecked(dfs);
-    if !params.maintain_order {
-        return Ok(df);
-    }
+    let mut windows = accumulate_dataframes_vertical_unchecked(dfs);
+    windows.rechunk_mut_par();
 
-    // Put every row back on its input position.
-    let mut positions = vec![0 as IdxSize; df.height()];
-    for (k, row) in row_idxs.iter().flatten().enumerate() {
-        positions[*row as usize] = k as IdxSize;
+    // The row of `windows` for each input row.
+    let mut positions = vec![0 as IdxSize; height as usize];
+    let mut starts = Vec::with_capacity(row_idxs.len());
+    let mut start = 0 as IdxSize;
+    for rows in &row_idxs {
+        starts.push(start);
+        start += rows.len() as IdxSize;
     }
+    // SAFETY: the partitions write to disjoint positions.
+    let positions_ptr = unsafe { SyncPtr::new(positions.as_mut_ptr()) };
+    RAYON.install(|| {
+        row_idxs.par_iter().zip(starts).for_each(|(rows, start)| {
+            let positions = positions_ptr.get();
+            for (i, row) in rows.iter().enumerate() {
+                // SAFETY: every input row is in exactly one partition.
+                unsafe { *positions.add(*row as usize) = start + i as IdxSize };
+            }
+        })
+    });
     drop(row_idxs);
-    let positions = IdxCa::from_vec(PlSmallStr::EMPTY, positions);
-    // SAFETY: `positions` is a permutation of the rows of `df`.
-    Ok(unsafe { df.take_unchecked(&positions) })
+
+    let dfs = RAYON.install(|| {
+        morsels
+            .par_iter()
+            .zip(row_offsets)
+            .map(|((.., sf), offset)| {
+                let mut df = sf.get_blocking().clone();
+                let rows = &positions[offset as usize..offset as usize + df.height()];
+                let rows = IdxCa::from_slice(PlSmallStr::EMPTY, rows);
+                // SAFETY: the positions are in-bounds.
+                let columns = unsafe { windows.take_unchecked(&rows) }.into_columns();
+                // SAFETY: the window columns have the height of the morsel and new names.
+                unsafe { df.hstack_mut_unchecked(&columns) };
+                df
+            })
+            .collect::<Vec<_>>()
+    });
+    Ok(accumulate_dataframes_vertical_unchecked(dfs))
 }
 
-/// Evaluates the windows on all rows of one hash partition.
+/// Evaluates the windows on the rows of one hash partition.
 ///
-/// Without `maintain_order` the rows are returned sorted by partition and order key, with the
-/// window columns appended. With `maintain_order` only the window columns are returned, together
-/// with the input row index of each row.
+/// Returns the window columns with the rows sorted by partition and order key, and the input row
+/// index of each of those rows.
 fn evaluate_partition(
     params: &WindowParams,
     df: DataFrame,
@@ -313,7 +340,7 @@ fn evaluate_partition(
 ) -> PolarsResult<(DataFrame, Vec<IdxSize>)> {
     let height = df.height();
     if height == 0 {
-        return Ok((DataFrame::empty_with_schema(&params.output_schema), row_idx));
+        return Ok((DataFrame::empty(), row_idx));
     }
 
     // Dense partition ids, in order of first occurrence.
@@ -332,7 +359,7 @@ fn evaluate_partition(
         None => None,
         Some((order_by, options)) => {
             let options = SortOptions {
-                maintain_order: params.ordered_eval || params.maintain_order,
+                maintain_order: params.ordered_eval,
                 ..*options
             };
             let order_idx = df
@@ -370,19 +397,15 @@ fn evaluate_partition(
     drop(group_idxs);
 
     let is_identity = perm.iter().enumerate().all(|(i, row)| i as IdxSize == *row);
-    let row_idx = if params.maintain_order && !is_identity {
-        perm.iter().map(|i| row_idx[*i as usize]).collect()
+    let (df, row_idx) = if is_identity {
+        (df, row_idx)
     } else {
-        row_idx
-    };
-    let mut df = if is_identity {
-        df
-    } else {
+        let row_idx = perm.iter().map(|i| row_idx[*i as usize]).collect();
         let perm = IdxCa::from_vec(PlSmallStr::EMPTY, perm);
         // SAFETY: `perm` is a permutation of the rows of `df`.
         let sorted = unsafe { df.take_unchecked(&perm) };
         drop(df);
-        sorted
+        (sorted, row_idx)
     };
 
     let groups = GroupsType::Slice {
@@ -400,13 +423,9 @@ fn evaluate_partition(
             Ok(out.with_name(name.clone()))
         })
         .collect::<PolarsResult<Vec<_>>>()?;
-
-    if params.maintain_order {
-        // SAFETY: the window columns have the same height and unique names.
-        let df = unsafe { DataFrame::new_unchecked(height, columns) };
-        return Ok((df, row_idx));
-    }
-    // SAFETY: the window columns have the height of `df` and new names.
-    unsafe { df.hstack_mut_unchecked(&columns) };
-    Ok((df, row_idx))
+    // SAFETY: the window columns have the same height and unique names.
+    Ok((
+        unsafe { DataFrame::new_unchecked(height, columns) },
+        row_idx,
+    ))
 }

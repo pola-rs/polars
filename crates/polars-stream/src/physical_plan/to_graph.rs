@@ -570,11 +570,20 @@ fn to_graph_rec<'a>(
                     PolarsResult::Ok((e.output_name().clone(), expr))
                 })
                 .try_collect_vec()?;
+            let mut read = PlHashSet::new();
+            for e in exprs {
+                read.extend(aexpr_to_leaf_names_iter(e.node(), ctx.expr_arena).cloned());
+            }
+            let read_schema = input_schema
+                .iter()
+                .filter(|(name, _)| read.contains(*name))
+                .map(|(name, dtype)| (name.clone(), dtype.clone()))
+                .collect();
             let params = nodes::window::WindowParams {
                 partition_by: partition_by.clone(),
                 order_by: order_by.clone(),
                 exprs: window_exprs,
-                input_schema,
+                read_schema: Arc::new(read_schema),
                 output_schema,
                 ordered_eval: *ordered_eval,
                 maintain_order: *maintain_order,

@@ -213,13 +213,22 @@ def _keyed_frame(n: int = 20_000) -> pl.DataFrame:
     )
 
 
+def _physical_windows(q: pl.LazyFrame) -> list[str]:
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    return [line for line in dot.splitlines() if "window[" in line]
+
+
 def _assert_unordered_window(q: pl.LazyFrame, n_nodes: int = 1) -> None:
     q = q.sort("x", "id")
     headers = _window_headers(q)
     assert len(headers) == n_nodes
     assert all("maintain_order: false" in h for h in headers)
-    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
-    assert dot.count("window[") == n_nodes
+    windows = _physical_windows(q)
+    assert len(windows) == n_nodes
+    assert all("maintain_order: false" in w for w in windows)
+    assert "zip" not in q.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True
+    )
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
@@ -287,11 +296,6 @@ def test_window_unordered_shape_error(expr: pl.Expr) -> None:
     for engine in ENGINES:
         with pytest.raises(pl.exceptions.ShapeError):
             q.collect(engine=engine)  # type: ignore[call-overload]
-
-
-def _physical_windows(q: pl.LazyFrame) -> list[str]:
-    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
-    return [line for line in dot.splitlines() if "window[" in line]
 
 
 @pytest.mark.parametrize(
