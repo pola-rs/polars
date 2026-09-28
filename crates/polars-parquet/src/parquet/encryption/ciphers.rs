@@ -106,6 +106,7 @@ impl CounterNonce {
     }
 
     /// One accessor for the nonce bytes to avoid potentially flipping endianness
+    #[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
     #[inline]
     pub fn get_bytes(&self) -> [u8; NONCE_LEN] {
         self.counter.to_le_bytes()[0..NONCE_LEN].try_into().unwrap()
