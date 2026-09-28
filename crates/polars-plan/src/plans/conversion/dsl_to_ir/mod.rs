@@ -36,6 +36,7 @@ mod expr_to_ir;
 mod functions;
 mod join;
 mod scans;
+mod sql;
 mod utils;
 pub(crate) use expr_expansion::needs_expansion;
 pub use expr_expansion::{expand_expression, is_regex_projection, prepare_projection};
@@ -121,7 +122,7 @@ async fn fetch_metadata(
     use futures::stream::StreamExt;
     #[cfg(feature = "python")]
     let py_scan_resolve_threadpool = Arc::new(LazyLock::new(
-        (|| Arc::new(PyScanResolveThreadPool::new())) as fn() -> _,
+        (|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool())) as fn() -> _,
     ));
 
     let mut futures = lp

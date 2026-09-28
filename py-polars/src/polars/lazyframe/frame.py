@@ -387,8 +387,8 @@ class LazyFrame:
             ._ldf
         )
 
-    @classmethod
-    def from_lazyframe_resolver(cls, resolver: LazyFrameResolver) -> LazyFrame:
+    @staticmethod
+    def from_lazyframe_resolver(resolver: LazyFrameResolver) -> LazyFrame:
         """
         Create a LazyFrame from a LazyFrame resolver.
 

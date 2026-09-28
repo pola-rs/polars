@@ -1000,6 +1000,16 @@ pub(super) fn convert_functions(
         F::Unique(v) => I::Unique(v),
         #[cfg(feature = "round_series")]
         F::Round { decimals, mode } => I::Round { decimals, mode },
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { op, scale } => I::DecimalArith { op, scale },
+        F::Sql(function) => {
+            let output_name = e[0].output_name().clone();
+            return Ok((
+                super::sql::lower_sql_function(function, e, ctx)?,
+                output_name,
+            ));
+        },
+        F::TruncArith(op) => I::TruncArith(op),
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => I::RoundSF { digits },
         #[cfg(feature = "round_series")]
@@ -1167,11 +1177,13 @@ pub(super) fn convert_functions(
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
         } => I::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,

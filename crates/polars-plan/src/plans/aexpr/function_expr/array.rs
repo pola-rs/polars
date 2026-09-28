@@ -2,7 +2,6 @@
 use polars_buffer::Buffer;
 use polars_core::utils::{slice_offsets, try_get_supertype};
 
-use super::schema::function_sum_output_dtype;
 use super::*;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
@@ -106,7 +105,7 @@ impl IRArrayFunction {
                     args[0].dtype(), args[1].dtype()
                 );
 
-                mapper.with_dtype(function_sum_output_dtype(&inner_dtype))
+                mapper.with_dtype(sum_output_dtype(&inner_dtype))
             },
             ToList => mapper
                 .ensure_is_array()?

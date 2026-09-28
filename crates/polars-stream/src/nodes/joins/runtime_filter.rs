@@ -1,7 +1,7 @@
 //! What a hash join knows about a build-side key, published to the scans
 //! below its probe side once the build is done: the key's range, which scans
-//! use to skip batches by their statistics, and optionally a bloom filter over
-//! the keys, which scans probe per row.
+//! use to skip batches by their statistics and to drop rows, and optionally a
+//! bloom filter over the keys, which scans probe per row instead.
 
 use std::sync::Arc;
 
@@ -362,11 +362,12 @@ impl std::fmt::Debug for KeyBloom {
 }
 
 impl PredicateExpr for KeyFilter {
-    /// Whether each value may be a build key. Nulls never are. A column of
-    /// another dtype than the key hashes differently and is left alone.
+    /// Whether each value may be a build key. Nulls never are. Without a bloom
+    /// filter only the range is checked. A column of another dtype than the key
+    /// hashes differently and is left alone.
     fn evaluate(&self, columns: &[Column]) -> PolarsResult<Option<Column>> {
         let Some(KeyBloom { spec, bloom }) = &self.bloom else {
-            return Ok(None);
+            return self.range.evaluate(columns);
         };
         let column = &columns[0];
         if column.dtype() != &spec.dtype {
@@ -395,7 +396,7 @@ impl PredicateExpr for KeyFilter {
     }
 
     fn filters_rows(&self) -> bool {
-        self.bloom.is_some()
+        self.bloom.is_some() || self.range.filters_rows()
     }
 
     fn can_bypass(&self) -> bool {
@@ -454,6 +455,19 @@ fn bounds_for(bounds: &(Scalar, Scalar), dtype: &DataType) -> Option<(Series, Se
 }
 
 impl PredicateExpr for KeyRange {
+    /// Whether each value lies in the range. Nulls never do.
+    fn evaluate(&self, columns: &[Column]) -> PolarsResult<Option<Column>> {
+        let Some(bounds) = &self.bounds else {
+            return Ok(None);
+        };
+        let column = columns[0].as_materialized_series();
+        let Some((lo, hi)) = bounds_for(bounds, column.dtype()) else {
+            return Ok(None);
+        };
+        let mask = (column.gt_eq(&lo)? & column.lt_eq(&hi)?).fill_null_with_values(false)?;
+        Ok(Some(mask.into_column()))
+    }
+
     fn evaluate_stats(
         &self,
         min: &Column,
@@ -489,7 +503,7 @@ impl PredicateExpr for KeyRange {
     }
 
     fn filters_rows(&self) -> bool {
-        false
+        self.bounds.is_some()
     }
 }
 

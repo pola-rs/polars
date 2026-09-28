@@ -550,9 +550,29 @@ fn visualize_plan_rec(
             table_statistics: _,
             file_schema: _,
             disable_morsel_split: _,
+            maintain_order: _,
         } => {
-            let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
+            let reader_name = match file_reader_builder.reader_name() {
+                Ok(x) => x.to_string(),
+                Err(e) => format!("(error fetching reader name: {e:?})"),
+            };
+            let mut out = format!("multi-scan[{reader_name}]");
             let mut f = EscapeLabel(&mut out);
+
+            #[cfg(feature = "python")]
+            if let Some(builder) = file_reader_builder.downcast_as_external_python_reader() {
+                let props = match builder.explain_properties() {
+                    Ok(x) => x,
+                    Err(e) => polars_utils::aliases::PlIndexMap::from_iter([(
+                        "Error:".into(),
+                        format!("failed explain_properties(): {e:?}"),
+                    )]),
+                };
+
+                for (k, v) in props {
+                    write!(f, "\n{k}: {v}").unwrap();
+                }
+            }
 
             write!(f, "\n{} source", scan_sources.len()).unwrap();
 
@@ -662,6 +682,7 @@ fn visualize_plan_rec(
                 include_boundaries,
                 closed_window,
                 start_by,
+                placement,
             } = options;
             let mut s = String::new();
             let f = &mut s;
@@ -692,6 +713,10 @@ fn visualize_plan_rec(
                 )
                 .unwrap();
             }
+            if let Some(placement) = placement {
+                write!(f, "origin: {}\\n", placement.origin).unwrap();
+                write!(f, "start_range: {:?}\\n", placement.start_range).unwrap();
+            }
             if let Some((offset, length)) = slice {
                 write!(f, "slice: {offset}, {length}\\n").unwrap();
             }
@@ -711,6 +736,7 @@ fn visualize_plan_rec(
             period,
             offset,
             closed,
+            placement,
             slice,
             aggs,
         } => {
@@ -720,6 +746,9 @@ fn visualize_plan_rec(
             write!(f, "index column: {index_column}\\n").unwrap();
             write!(f, "period: {period}, offset: {offset}\\n").unwrap();
             write!(f, "closed: {}\\n", <&'static str>::from(*closed)).unwrap();
+            if let Some(placement) = placement {
+                write!(f, "owned_range: {:?}\\n", placement.owned_range).unwrap();
+            }
             if let Some((offset, length)) = slice {
                 write!(f, "slice: {offset}, {length}\\n").unwrap();
             }

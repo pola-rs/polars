@@ -544,23 +544,23 @@ impl PhysicalExpr for EvalExpr {
             EvalVariant::List => {
                 let input_col = input.flat_naive();
                 let out = self.evaluate_on_list_chunked(input_col.list()?, state, false)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(out, false, Some(&self.expr), true, self.is_scalar())?;
             },
             EvalVariant::ListAgg => {
                 let input_col = input.flat_naive();
                 let out = self.evaluate_on_list_chunked(input_col.list()?, state, true)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(out, false, Some(&self.expr), true, self.is_scalar())?;
             },
             EvalVariant::Array { as_list } => feature_gated!("dtype-array", {
                 let arr_col = input.flat_naive();
                 let out =
                     self.evaluate_on_array_chunked(arr_col.array()?, state, as_list, false)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(out, false, Some(&self.expr), true, self.is_scalar())?;
             }),
             EvalVariant::ArrayAgg => feature_gated!("dtype-array", {
                 let arr_col = input.flat_naive();
                 let out = self.evaluate_on_array_chunked(arr_col.array()?, state, true, true)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(out, false, Some(&self.expr), true, self.is_scalar())?;
             }),
             EvalVariant::Cumulative { min_samples } => {
                 let mut builder = AnonymousOwnedListBuilder::new(

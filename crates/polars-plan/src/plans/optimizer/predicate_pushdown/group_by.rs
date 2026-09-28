@@ -23,7 +23,8 @@ pub(super) fn process_group_by(
     let no_push = false;
 
     // Don't pushdown predicates on these cases.
-    if apply.is_some() || no_push || options.slice.is_some() {
+    if apply.is_some() || no_push || options.slice.is_some() || !all_elementwise(&keys, expr_arena)
+    {
         let lp = GroupBy {
             input,
             keys,
@@ -61,8 +62,7 @@ pub(super) fn process_group_by(
     let mut new_acc_predicates = init_indexmap(Some(acc_predicates.len()));
 
     for (pred_name, predicate) in acc_predicates {
-        // Counts change due to groupby's
-        let mut push_down = !has_aexpr(predicate.node(), expr_arena, |ae| matches!(ae, AExpr::Len));
+        let mut push_down = true;
 
         for name in aexpr_to_leaf_names_iter(predicate.node(), expr_arena) {
             push_down &= key_schema.contains(name.as_ref());

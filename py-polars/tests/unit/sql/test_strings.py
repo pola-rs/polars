@@ -104,7 +104,7 @@ def test_string_left_right_reverse() -> None:
     }
     for func, invalid_arg, invalid_err in (
         ("LEFT", "'xyz'", '"xyz"'),
-        ("RIGHT", "6.66", "(dyn float: 6.66)"),
+        ("RIGHT", "6.66", "6.66"),
     ):
         with pytest.raises(
             SQLSyntaxError,

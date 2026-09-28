@@ -434,6 +434,10 @@ impl<'a> AnyValue<'a> {
             (av, DataType::Int64) => AnyValue::Int64(av.extract::<i64>()?),
             (av, DataType::Int128) => AnyValue::Int128(av.extract::<i128>()?),
             (av, DataType::Float16) => AnyValue::Float16(av.extract::<pf16>()?),
+            #[cfg(feature = "dtype-decimal")]
+            (AnyValue::Decimal(v, _, s), DataType::Float32) => {
+                AnyValue::Float32(polars_compute::decimal::dec128_to_f32(*v, *s))
+            },
             (av, DataType::Float32) => AnyValue::Float32(av.extract::<f32>()?),
             (av, DataType::Float64) => AnyValue::Float64(av.extract::<f64>()?),
 

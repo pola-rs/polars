@@ -272,6 +272,19 @@ pub fn predicate_to_pa(
                 ))
             }
         },
+        #[cfg(feature = "strings")]
+        AExpr::Function {
+            function: IRFunctionExpr::StringExpr(IRStringFunction::StartsWith),
+            input,
+            ..
+        } => {
+            let col = predicate_to_pa(input.first()?.node(), expr_arena, schema)?;
+            let AExpr::Literal(lv) = expr_arena.get(input.get(1)?.node()) else {
+                return None;
+            };
+            let prefix = sanitize(lv.extract_str()?)?;
+            Some(format!("pa.compute.starts_with({col}, pattern='{prefix}')"))
+        },
         AExpr::Function {
             function, input, ..
         } => {
@@ -285,6 +298,12 @@ pub fn predicate_to_pa(
                 },
                 IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => {
                     Some(format!("~({input}).is_null()"))
+                },
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNan) => {
+                    Some(format!("({input}).is_nan()"))
+                },
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNan) => {
+                    Some(format!("~({input}).is_nan()"))
                 },
                 _ => None,
             }
@@ -659,8 +678,17 @@ pub fn aexpr_to_pyarrow<'py>(
         AExpr::Function {
             function, input, ..
         } => {
-            let input = input.first().unwrap().node();
-            let input = aexpr_to_pyarrow(py, pc, input, expr_arena, schema)?;
+            let input = input.first()?;
+            if matches!(
+                function, // note: only applies to primitive (non-decimal) numeric types
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNan | IRBooleanFunction::IsNotNan)
+            ) {
+                let dtype = input.dtype(schema, expr_arena).ok()?;
+                if !dtype.is_primitive_numeric() && !dtype.is_null() {
+                    return None;
+                }
+            }
+            let input = aexpr_to_pyarrow(py, pc, input.node(), expr_arena, schema)?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {
@@ -672,6 +700,14 @@ pub fn aexpr_to_pyarrow<'py>(
                 },
                 IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => input
                     .call_method0("is_null")
+                    .ok()?
+                    .call_method0("__invert__")
+                    .ok(),
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNan) => {
+                    input.call_method0("is_nan").ok()
+                },
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNan) => input
+                    .call_method0("is_nan")
                     .ok()?
                     .call_method0("__invert__")
                     .ok(),

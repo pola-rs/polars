@@ -163,6 +163,7 @@ fn execute_projection_cached_window_fns(
                                 period: *period,
                                 offset: *offset,
                                 closed_window: *closed_window,
+                                placement: None,
                             };
                             let entry = rolling.entry(options).or_default();
                             entry.push((index, phys.clone()));

@@ -475,7 +475,11 @@ pub fn get_supertype_with_options(
             }
             #[cfg(feature = "dtype-decimal")]
             (Decimal(p1, s1), Decimal(p2, s2)) => {
-                Some(Decimal((*p1).max(*p2), (*s1).max(*s2)))
+                // Keep all integer digits and the larger scale. Beyond precision 38 values
+                // that don't fit raise when cast.
+                let s = (*s1).max(*s2);
+                let p = ((p1 - s1).max(p2 - s2) + s).min(DEC128_MAX_PREC);
+                Some(Decimal(p, s))
             },
             #[cfg(all(feature = "dtype-decimal", feature = "dtype-f16"))]
             (Decimal(_, _), Float16) => Some(Float64),

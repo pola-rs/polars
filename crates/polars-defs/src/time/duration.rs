@@ -126,6 +126,17 @@ impl Duration {
         }
     }
 
+    pub const fn new_days(days: i64) -> Self {
+        Self {
+            months: 0,
+            weeks: 0,
+            days: days.abs(),
+            nsecs: 0,
+            negative: days < 0,
+            parsed_int: false,
+        }
+    }
+
     /// Parse a string into a `Duration`
     ///
     /// Strings are composed of a sequence of number-unit pairs, such as `5d` (5 days). A string may begin with a minus

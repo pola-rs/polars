@@ -108,6 +108,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 include_boundaries,
                 closed_window,
                 start_by,
+                placement: _,
             }) = &options.dynamic
             {
                 IrPropsDescription::DynamicGroupBy {
@@ -127,6 +128,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 period,
                 offset,
                 closed_window,
+                placement: _,
             }) = &options.rolling
             {
                 IrPropsDescription::RollingGroupBy {

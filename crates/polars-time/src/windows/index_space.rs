@@ -70,6 +70,11 @@ impl IndexSpace {
         self.tz.as_ref()
     }
 
+    /// The zone of the `Datetime` dtype of this space.
+    pub fn time_zone(&self) -> Option<&TimeZone> {
+        self.time_zone.as_ref()
+    }
+
     /// The `Datetime` dtype of this space.
     pub fn window_dtype(&self) -> DataType {
         DataType::Datetime(self.time_unit, self.time_zone.clone())

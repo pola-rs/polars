@@ -38,7 +38,8 @@ pub enum GroupByLowerKind {
     Over,
 }
 
-/// The schema a `PhysNodeKind::GroupBy` input has after evaluating its fused agg inputs.
+/// The schema a `PhysNodeKind::GroupBy` input has after evaluating its fused agg inputs,
+/// in order, each of which may refer to those before it.
 pub fn augmented_group_by_input_schema(
     input_schema: &Arc<Schema>,
     fused: &[ExprIR],
@@ -47,9 +48,11 @@ pub fn augmented_group_by_input_schema(
     if fused.is_empty() {
         return Ok(input_schema.clone());
     }
-    let fused_schema = compute_output_schema(input_schema, fused, expr_arena)?;
     let mut schema = Schema::clone(input_schema);
-    schema.merge(Arc::unwrap_or_clone(fused_schema));
+    for e in fused {
+        let fused_schema = compute_output_schema(&schema, std::slice::from_ref(e), expr_arena)?;
+        schema.merge(Arc::unwrap_or_clone(fused_schema));
+    }
     Ok(Arc::new(schema))
 }
 
@@ -357,10 +360,14 @@ fn try_lower_elementwise_scalar_agg_expr(
             }))
         },
 
-        AExpr::StructEval { expr, evaluation } => {
+        AExpr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => {
             // @TODO: Reflect the lowering result of `expr` into the respective
             // StructField lowering calls.
-            let (expr, evaluation) = (*expr, evaluation.clone());
+            let (expr, evaluation, variant) = (*expr, evaluation.clone(), *variant);
             let expr = lower_rec!(expr)?;
 
             let new_evaluation = evaluation
@@ -377,6 +384,7 @@ fn try_lower_elementwise_scalar_agg_expr(
             Some(expr_arena.add(AExpr::StructEval {
                 expr,
                 evaluation: new_evaluation,
+                variant,
             }))
         },
 
@@ -1317,6 +1325,7 @@ pub fn build_group_by_stream(
                         period: rolling_options.period,
                         offset: rolling_options.offset,
                         closed: rolling_options.closed_window,
+                        placement: rolling_options.placement,
                         slice: options
                             .slice
                             .filter(|(o, _)| *o >= 0)

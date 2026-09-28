@@ -318,7 +318,11 @@ impl AExpr {
                 Ok(output_field)
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr,
+                evaluation,
+                variant,
+            } => {
                 let struct_field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                 let mut evaluation_schema = ctx.schema.clone();
                 evaluation_schema.insert(get_pl_structfields_name(), struct_field.dtype().clone());
@@ -328,29 +332,36 @@ impl AExpr {
                     &ToFieldContext::new(ctx.arena, &evaluation_schema),
                 )?;
 
-                // Merge evaluation fields into the expr Struct
-                if let DataType::Struct(expr_fields) = struct_field.dtype() {
-                    let mut fields_map =
-                        PlIndexMap::with_capacity(expr_fields.len() + eval_fields.len());
-                    for field in expr_fields {
-                        fields_map.insert(field.name(), field.dtype());
-                    }
-                    for field in &eval_fields {
-                        fields_map.insert(field.name(), field.dtype());
-                    }
-                    let dtype = DataType::Struct(
-                        fields_map
-                            .iter()
-                            .map(|(&name, &dtype)| Field::new(name.clone(), dtype.clone()))
-                            .collect(),
-                    );
-                    let mut out = struct_field.clone();
-                    out.set_dtype(dtype);
-                    Ok(out)
-                } else {
+                let DataType::Struct(expr_fields) = struct_field.dtype() else {
                     let dt = struct_field.dtype();
-                    polars_bail!(op = "with_fields", got = dt, expected = "Struct")
-                }
+                    polars_bail!(op = variant.to_name(), got = dt, expected = "Struct")
+                };
+
+                let dtype = match variant {
+                    // Merge the evaluation fields into the fields of the input Struct.
+                    StructEvalVariant::WithFields => {
+                        let mut fields_map =
+                            PlIndexMap::with_capacity(expr_fields.len() + eval_fields.len());
+                        for field in expr_fields {
+                            fields_map.insert(field.name(), field.dtype());
+                        }
+                        for field in &eval_fields {
+                            fields_map.insert(field.name(), field.dtype());
+                        }
+                        DataType::Struct(
+                            fields_map
+                                .iter()
+                                .map(|(&name, &dtype)| Field::new(name.clone(), dtype.clone()))
+                                .collect(),
+                        )
+                    },
+                    // Drop the fields of the input Struct that are not selected.
+                    StructEvalVariant::Select => DataType::Struct(eval_fields),
+                };
+
+                let mut out = struct_field.clone();
+                out.set_dtype(dtype);
+                Ok(out)
             },
             Function {
                 function,
@@ -655,6 +666,10 @@ fn get_arithmetic_field(
                     )?)
                 },
                 #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_integer() => {
+                    Decimal(DEC128_MAX_PREC, *scale)
+                },
+                #[cfg(feature = "dtype-decimal")]
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
                     Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
                 },
@@ -714,6 +729,10 @@ fn get_arithmetic_field(
                         list_dtype.leaf_dtype(),
                         other_dtype.leaf_dtype(),
                     )?)
+                },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_integer() => {
+                    Decimal(DEC128_MAX_PREC, *scale)
                 },
                 #[cfg(feature = "dtype-decimal")]
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
@@ -776,12 +795,17 @@ fn get_arithmetic_field(
                     },
                 },
                 #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_integer() => {
+                    let dtype = Decimal(DEC128_MAX_PREC, *scale);
+                    left_field.set_dtype(dtype);
+                    return Ok(left_field);
+                },
+                #[cfg(feature = "dtype-decimal")]
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
                     let dtype = Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right));
                     left_field.set_dtype(dtype);
                     return Ok(left_field);
                 },
-
                 (l @ List(a), r @ List(b))
                     if ![a, b]
                         .into_iter()
