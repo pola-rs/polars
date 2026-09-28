@@ -1544,6 +1544,44 @@ def test_is_in_integer_needle_in_decimal_data(op: str) -> None:
 
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    ("needle_dtype", "values", "inner"),
+    [
+        pytest.param(pl.Int64, [1, 300, -129, None], pl.Int8, id="int64-int8"),
+        pytest.param(pl.UInt128, [1, 2**127, 255, None], pl.Int8, id="uint128-int8"),
+        pytest.param(pl.Int8, [1, -1, 127, None], pl.UInt8, id="int8-uint8"),
+        pytest.param(
+            pl.UInt128, [1, 2**127, 255, None], pl.Decimal(5, 2), id="decimal"
+        ),
+    ],
+)
+def test_is_in_integer_column_needle_out_of_range(
+    op: str,
+    nulls_equal: bool,
+    needle_dtype: PolarsDataType,
+    values: list[int | None],
+    inner: PolarsDataType,
+) -> None:
+    # An integer needle out of the element type's range matches nothing; a null needle
+    # still follows `nulls_equal`.
+    df = pl.DataFrame(
+        {
+            "n": pl.Series(values, dtype=needle_dtype),
+            "h": _container(op, [[1, None]] * 4, pl.Int64).cast(
+                pl.List(inner)
+                if op.endswith("list") or op == "list.contains"
+                else pl.Array(inner, 2)
+            ),
+        }
+    )
+    out = df.select(
+        _membership(op, pl.col("n"), pl.col("h"), nulls_equal=nulls_equal).alias("o")
+    )
+    assert out["o"].to_list() == [True, False, False, True if nulls_equal else None]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
 @pytest.mark.parametrize("needle_dtype", [pl.Categorical, pl.Enum(["a"])])
 @pytest.mark.parametrize("nulls_equal", [False, True])
 def test_is_in_categorical_needle_in_null_data(
