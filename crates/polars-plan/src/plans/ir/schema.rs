@@ -32,6 +32,7 @@ impl IR {
             Join { .. } => "join",
             Gather { .. } => "gather",
             HStack { .. } => "hstack",
+            Window { .. } => "window",
             Distinct { .. } => "distinct",
             MapFunction { .. } => "map_function",
             Union { .. } => "union",
@@ -95,6 +96,7 @@ impl IR {
             GroupBy { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
+            Window { schema, .. } => schema,
             Distinct { input, .. }
             | Sink {
                 input,
@@ -188,6 +190,7 @@ impl IR {
             | GroupBy { schema, .. }
             | Join { schema, .. }
             | HStack { schema, .. }
+            | Window { schema, .. }
             | SimpleProjection {
                 columns: schema, ..
             } => schema.clone(),

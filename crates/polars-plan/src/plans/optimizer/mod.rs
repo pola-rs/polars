@@ -26,6 +26,7 @@ mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;
 mod expand_datasets;
+mod extract_window;
 #[cfg(feature = "python")]
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
 mod collapse_sort;
@@ -310,6 +311,10 @@ pub fn optimize(
             let rewritten = ir_node.rewrite(&mut optimizer, arena)?;
             Ok(rewritten.node())
         })?;
+    }
+
+    if opt_flags.contains(OptFlags::STREAMING) && !opt_flags.contains(OptFlags::GPU) {
+        extract_window::extract_windows(root, ir_arena, expr_arena);
     }
 
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {

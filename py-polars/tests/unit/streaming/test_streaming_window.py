@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -98,3 +98,106 @@ def test_window_seeded_random_rank_unordered_consumer(tmp_path: Path) -> None:
         .sort("g", "r")
     )
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+def _window_headers(q: pl.LazyFrame) -> list[str]:
+    return [
+        line.strip()
+        for line in q.explain(engine="streaming").splitlines()
+        if "WINDOW[" in line
+    ]
+
+
+def test_window_extracted_per_spec() -> None:
+    lf = _frame().lazy()
+    q = lf.with_columns(
+        a=pl.col("x") - pl.col("x").mean().over("g"),
+        b=pl.col("x").sum().over("g"),
+        c=pl.col("x").cum_sum().over("g", order_by="h"),
+        d=pl.col("x").rank().over(pl.col("h") + 1),
+    )
+    headers = _window_headers(q)
+    assert len(headers) == 3
+    assert "WINDOW[" not in q.explain(engine="in-memory")
+
+    out = q.collect(engine="streaming")
+    assert out.columns == ["id", "k", "g", "h", "x", "a", "b", "c", "d"]
+    assert_frame_equal(out, q.collect(engine="in-memory"))
+
+
+def test_window_nested_only_outer_extracted() -> None:
+    lf = _frame().lazy()
+    q = lf.select("id", w=pl.col("x").sum().over("h").sum().over("g"))
+    headers = _window_headers(q)
+    assert len(headers) == 1
+    assert 'PARTITION BY ["g"]' in headers[0]
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize(
+    ("expr", "extracted"),
+    [
+        (pl.col("x").sum().over("g"), True),
+        (pl.col("x").sum().over("g") + pl.col("x"), True),
+        (pl.col("x").sum().over("g").sum(), False),
+        (pl.col("x").sum().over("g", mapping_strategy="join"), False),
+        (pl.col("x").sum().over(pl.col("g").sum().over("h")), False),
+        (pl.col("x").cum_sum().over(order_by="h"), False),
+    ],
+)
+def test_window_extraction_scope(expr: pl.Expr, extracted: bool) -> None:
+    q = _frame().lazy().select("id", w=expr)
+    assert bool(_window_headers(q)) == extracted
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize(
+    ("build", "maintain_order", "ordered_eval"),
+    [
+        (lambda lf: lf.with_columns(w=pl.col("x").mean().over("g")), True, False),
+        (lambda lf: lf.with_columns(w=pl.col("x").cum_sum().over("g")), True, True),
+        (
+            lambda lf: (
+                lf.with_columns(w=pl.col("x").mean().over("g"))
+                .group_by("g")
+                .agg(pl.col("w").sum())
+            ),
+            False,
+            False,
+        ),
+        (
+            lambda lf: (
+                lf.with_columns(w=pl.col("x").cum_sum().over("g"))
+                .group_by("g")
+                .agg(pl.col("w").sum())
+            ),
+            False,
+            True,
+        ),
+        (
+            lambda lf: lf.with_columns(w=pl.col("x").cum_sum().over("g")).sort("h"),
+            False,
+            True,
+        ),
+        (
+            lambda lf: lf.with_columns(w=pl.col("x").cum_sum().over("g")).sort(
+                "h", maintain_order=True
+            ),
+            True,
+            True,
+        ),
+    ],
+)
+def test_window_order_flags(
+    build: Any, maintain_order: bool, ordered_eval: bool
+) -> None:
+    q = build(_frame().lazy())
+    headers = _window_headers(q)
+    assert len(headers) == 1
+    flags = f"WINDOW[maintain_order: {str(maintain_order).lower()}, ordered_eval: {str(ordered_eval).lower()}]"
+    assert headers[0].startswith(flags)
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=maintain_order,
+    )

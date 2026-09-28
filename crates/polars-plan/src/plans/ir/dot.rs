@@ -188,6 +188,25 @@ impl<'a> IRDotDisplay<'a> {
                 recurse!(*input);
                 write_label(f, id, |f| write!(f, "WITH COLUMNS {exprs}"))?;
             },
+            Window {
+                input,
+                partition_by,
+                order_by,
+                exprs,
+                maintain_order,
+                ordered_eval,
+                ..
+            } => {
+                let header = super::format::WindowHeaderDisplay {
+                    partition_by,
+                    order_by: order_by.as_ref(),
+                    maintain_order: *maintain_order,
+                    ordered_eval: *ordered_eval,
+                };
+                let exprs = self.display_exprs(exprs);
+                recurse!(*input);
+                write_label(f, id, |f| write!(f, "{header}\n{exprs}"))?;
+            },
             Slice { input, offset, len } => {
                 recurse!(*input);
                 write_label(f, id, |f| write!(f, "SLICE offset: {offset}; len: {len}"))?;

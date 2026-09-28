@@ -239,7 +239,7 @@ pub fn lower_ir(
             );
         },
 
-        IR::HStack { input, exprs, .. } => {
+        IR::HStack { input, exprs, .. } | IR::Window { input, exprs, .. } => {
             let exprs = exprs.to_vec();
             let phys_input = lower_ir!(*input)?;
             return build_hstack_stream(phys_input, &exprs, expr_arena, phys_sm, expr_cache, ctx);

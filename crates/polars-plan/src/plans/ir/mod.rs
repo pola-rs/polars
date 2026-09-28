@@ -141,6 +141,26 @@ pub enum IR {
         schema: SchemaRef,
         options: ProjectionOptions,
     },
+    /// Appends window expressions that share one partitioning and order to the input columns.
+    ///
+    /// - Every expression is an `over` with `GroupsToRows` mapping on exactly `partition_by`
+    ///   and `order_by`. The result for a row only depends on the rows with the same key.
+    /// - `partition_by` and `order_by` are columns of the input.
+    /// - `maintain_order`: rows are output in input order. If false, the output order is
+    ///   unspecified.
+    /// - `ordered_eval`: the rows of a partition are evaluated in input order (ties in the
+    ///   `order_by` column in input order, unless its `maintain_order` is false). If false, any
+    ///   order within a partition is valid.
+    /// - Only whole rows are moved, so the columns of an output row always belong together.
+    Window {
+        input: Node,
+        partition_by: Vec<PlSmallStr>,
+        order_by: Option<(PlSmallStr, SortOptions)>,
+        exprs: Vec<ExprIR>,
+        schema: SchemaRef,
+        maintain_order: bool,
+        ordered_eval: bool,
+    },
     Distinct {
         input: Node,
         options: DistinctOptionsIR,
