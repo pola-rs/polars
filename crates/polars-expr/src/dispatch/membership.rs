@@ -2,9 +2,8 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::column::ScalarColumn;
 use polars_core::prelude::*;
 
-/// Cast an evaluated needle as type coercion chose, keeping a scalar needle scalar.
-///
-/// Also returns the rows the cast could not represent exactly, broadcast to the needle's length.
+/// Cast the needle while preserving scalar storage.
+/// The inexact mask also has length one for scalar columns.
 pub(super) fn cast_needle(
     needle: &Column,
     dtype: &DataType,
