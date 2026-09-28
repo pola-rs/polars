@@ -1,8 +1,9 @@
 //! Let a hash join tell the parquet scan under its probe side which keys the build
 //! side holds.
 //!
-//! A join whose one side is known to be small gets that side forced as build side;
-//! one whose side is only estimated small gets it preferred. Every probe key that
+//! A join whose one side is known to be much smaller than a scan under its other
+//! side gets that side forced as build side; one whose side is only estimated to be
+//! much smaller gets it preferred. Every probe key that
 //! reads a parquet scan column unchanged gets a dynamic predicate on that scan. The
 //! join publishes the range of its build keys once the build is done. The scan
 //! skips the row groups outside the range and drops the rows outside it. When the
@@ -29,7 +30,8 @@
 //! A semi join publishes from either side and an anti join from its left side
 //! only, as the rows of its right side that match no left key change nothing. A
 //! semi join may prefer its right side on an estimate; a left side is only built
-//! when forced, as building it keeps its rows.
+//! when forced, as building it keeps its rows. It is not forced when the right keys
+//! are known to be much fewer than its rows, as a right build keeps only those.
 
 use std::sync::Arc;
 
@@ -55,9 +57,6 @@ use crate::plans::{
 };
 use crate::prelude::{JoinType, MaintainOrderJoin};
 use crate::utils::has_aexpr;
-
-/// Estimated bytes a build side chosen here may take.
-const BUILD_BYTES: f64 = 256.0 * 1024.0 * 1024.0;
 
 pub(super) fn attach_join_runtime_filters(
     root: Node,
@@ -120,24 +119,31 @@ fn process_join(
         return;
     };
     let on = on.clone();
-    let Some((left_stats, left_width)) = side_stats(input_left, ir_arena, expr_arena, stats) else {
+    let Some((left_stats, _)) = side_stats(input_left, ir_arena, expr_arena, stats) else {
         return;
     };
-    let Some((right_stats, right_width)) = side_stats(input_right, ir_arena, expr_arena, stats)
-    else {
+    let Some((right_stats, _)) = side_stats(input_right, ir_arena, expr_arena, stats) else {
         return;
     };
 
     // A bounded side before an estimated one, the smaller of two alike; the first
     // whose range prunes a scan much larger than itself is taken.
     // Try the right side first when candidates rank equally.
-    let mut sides = build_candidates(false, &right_stats, right_width);
-    sides.extend(build_candidates(true, &left_stats, left_width));
+    let mut sides = build_candidates(false, &right_stats);
+    sides.extend(build_candidates(true, &left_stats));
     let how = &options.args.how;
-    if how.is_semi() {
-        sides.retain(|s| s.forced || !s.left);
-    } else if how.is_anti() {
-        sides.retain(|s| s.forced && s.left);
+    if how.is_semi() || how.is_anti() {
+        let right_distinct = on.iter().try_fold(1.0, |acc, (_, right_key)| {
+            let name = into_column(right_key.node(), expr_arena)?;
+            Some(acc * right_stats.key_distinct_estimate(name)?)
+        });
+        sides.retain(|s| {
+            if s.left {
+                s.forced && right_distinct.is_none_or(|d| d * LOPSIDED_FACTOR >= s.rows)
+            } else {
+                how.is_semi()
+            }
+        });
     }
     sides.sort_by(|a, b| b.forced.cmp(&a.forced).then(a.rows.total_cmp(&b.rows)));
 
@@ -260,29 +266,23 @@ struct BuildCandidate {
     forced: bool,
 }
 
-/// The ways a filtered side may be built from: forced when its bound fits the
-/// byte budget, preferred when its estimate fits.
-fn build_candidates(left: bool, stats: &NodeStats, width: f64) -> Vec<BuildCandidate> {
-    let mut candidates = Vec::new();
+/// The ways a filtered side may be built from: forced when it has a bound, and
+/// preferred on its estimate.
+fn build_candidates(left: bool, stats: &NodeStats) -> Vec<BuildCandidate> {
     if stats.filtered >= stats.unfiltered {
-        return candidates;
+        return Vec::new();
     }
-    let fits = |rows: f64| rows * width <= BUILD_BYTES;
-    if let Some(rows) = stats.max_rows().filter(|b| fits(*b)) {
-        candidates.push(BuildCandidate {
-            left,
-            rows,
-            forced: true,
-        });
-    }
-    if fits(stats.filtered) {
-        candidates.push(BuildCandidate {
-            left,
-            rows: stats.filtered,
-            forced: false,
-        });
-    }
-    candidates
+    let forced = stats.max_rows().map(|rows| BuildCandidate {
+        left,
+        rows,
+        forced: true,
+    });
+    let preferred = BuildCandidate {
+        left,
+        rows: stats.filtered,
+        forced: false,
+    };
+    forced.into_iter().chain([preferred]).collect()
 }
 
 /// A probe key that reached one or more scans.
