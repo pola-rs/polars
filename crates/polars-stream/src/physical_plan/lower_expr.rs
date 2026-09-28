@@ -1078,36 +1078,31 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(stream);
             },
 
+            // A semi join only sees the haystack's elements, so a null haystack would look like one
+            // holding a null. An imploded haystack is never null.
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 input: ref inner_exprs,
                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
                 options: _,
-            } if is_scalar_ae(inner_exprs[1].node(), ctx.expr_arena)
-                && !is_single_literal_ae(inner_exprs[1].node(), ctx.expr_arena) =>
+            } if matches!(
+                ctx.expr_arena.get(inner_exprs[1].node()),
+                AExpr::Agg(IRAggExpr::Implode { .. })
+            ) =>
             {
                 // Translate left and right side separately (they could have different lengths).
 
-                use polars_core::prelude::ExplodeOptions;
                 let left_on_name = unique_column_name();
                 let right_on_name = unique_column_name();
                 let (trans_input_left, trans_expr_left) =
                     lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
-                let right_expr_exploded_node = match ctx.expr_arena.get(inner_exprs[1].node()) {
-                    // expr.implode().explode() ~= expr (and avoids rechunking)
-                    AExpr::Agg(IRAggExpr::Implode {
-                        input: n,
-                        maintain_order: _,
-                    }) => *n,
-                    _ => AExprBuilder::new_from_node(inner_exprs[1].node())
-                        .explode(
-                            ctx.expr_arena,
-                            ExplodeOptions {
-                                empty_as_null: false,
-                                keep_nulls: true,
-                            },
-                        )
-                        .node(),
+                // expr.implode().explode() ~= expr (and avoids rechunking)
+                let AExpr::Agg(IRAggExpr::Implode {
+                    input: right_expr_exploded_node,
+                    maintain_order: _,
+                }) = *ctx.expr_arena.get(inner_exprs[1].node())
+                else {
+                    unreachable!()
                 };
                 let (trans_input_right, trans_expr_right) =
                     lower_exprs_with_ctx(input, &[right_expr_exploded_node], ctx)?;

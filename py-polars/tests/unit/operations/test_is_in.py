@@ -1252,6 +1252,42 @@ def test_is_in_literal_haystack_scalar_needle(engine: EngineType) -> None:
     assert result.height == 1
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    ("haystack", "expected"),
+    [
+        pytest.param(pl.col("h").last(), [None, None, None], id="null"),
+        pytest.param(pl.col("h").get(1), [False, False, True], id="holds-null"),
+        pytest.param(pl.col("h").first(), [True, False, False], id="values"),
+        pytest.param(pl.col("n").implode(), [True, True, True], id="implode"),
+    ],
+)
+def test_is_in_non_literal_scalar_haystack(
+    haystack: pl.Expr,
+    expected: list[bool | None],
+    nulls_equal: bool,
+    engine: EngineType,
+) -> None:
+    # A null haystack gives null for every row, unlike one that holds a null.
+    # `expected` is for `nulls_equal=True`; otherwise the null needle gives null.
+    lf = pl.LazyFrame(
+        {
+            "n": [1, 2, None],
+            "h": pl.Series([[1], [None], None], dtype=pl.List(pl.Int64)),
+        }
+    )
+    result = (
+        lf.select(pl.col("n").is_in(haystack, nulls_equal=nulls_equal))
+        .collect(engine=engine)
+        .to_series()
+        .to_list()
+    )
+    if not nulls_equal:
+        expected = [*expected[:2], None]
+    assert result == expected
+
+
 def test_is_in_literal_haystack_streaming_filter_and_group_by(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
