@@ -264,7 +264,7 @@ pub mod kll {
         //    The sum of the weights of those items denote that at least that many
         //    items were ingested in total, i.e., `k * 2^(H-2) ≤ n.`
         //    Rewrite ⇒ n/k ≥ 2^(H-2) ⇒ 2^(H-1) ≤ 2*(n/k).
-        //  * Finish: Total variance (in terms of n/k) is 2 * ((1/(2c) + 1/(2c)^2 + ...).
+        //  * Finish: Total variance (in terms of (n/k)²) is 2 * ((1/(2c) + 1/(2c)^2 + ...).
         let compactor_var = 2.0 * geometric_tail(1.0 / (2.0 * CAPACITY_DECAY));
 
         // `Σw²` of the sampler in units of (n/k)²:
@@ -275,7 +275,7 @@ pub mod kll {
         //   * Recall `n/k ≥ 2^(H-2)` ⇒ `2^H ≤ 4 * n/k`.
         //   * Compute the full variance:
         //       n * 2^L = n * 2^H / 2^D ≤ (4 * n²/k) / (k / CUTOFF)^α
-        //               = (n²/k²) * 4 * k * (CUTOFF / k)^α
+        //               = (n/k)² * 4 * k * (CUTOFF / k)^α
         let alpha = f64::ln(2.0) / f64::ln(1.0 / CAPACITY_DECAY);
         let sampler_var = |k: f64| 4.0 * k * f64::powf(SAMPLER_CUTOFF as f64 / k, alpha);
 
