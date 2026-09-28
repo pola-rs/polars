@@ -31,7 +31,6 @@ impl HStackColumns {
         Self { gather_indices }
     }
 
-    #[expect(unused)]
     pub fn output_width(&self) -> usize {
         self.gather_indices.len()
     }

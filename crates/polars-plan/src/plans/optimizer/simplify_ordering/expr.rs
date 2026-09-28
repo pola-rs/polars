@@ -212,7 +212,9 @@ impl ExprOrderSimplifier<'_> {
             AExpr::Element => O::INDEPENDENT,
 
             #[cfg(feature = "dtype-struct")]
-            AExpr::StructEval { expr, evaluation } => {
+            AExpr::StructEval {
+                expr, evaluation, ..
+            } => {
                 check_return_cached!();
 
                 let evaluation_len = evaluation.len();
@@ -543,6 +545,24 @@ impl ExprOrderSimplifier<'_> {
                 }
 
                 observable_in_input
+            },
+
+            // Asserts an order on its input, so downstream may rely on that order.
+            AExpr::Function {
+                input,
+                function: IRFunctionExpr::SetSortedFlag(_),
+                ..
+            } => {
+                check_return_cached!();
+
+                assert_eq!(input.len(), 1);
+                let node = input[0].node();
+                let observable = self.rec(node, RS::NO_DEORDER);
+                self.internal_observe(observable);
+
+                cache_output!(observable);
+
+                observable
             },
 
             AExpr::Function {

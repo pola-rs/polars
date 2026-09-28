@@ -264,8 +264,10 @@ impl fmt::Debug for Expr {
             StructEval {
                 expr: input,
                 evaluation,
+                variant,
             } => {
-                write!(f, "{input:?}.struct.eval({evaluation:?}")
+                let name = variant.to_name();
+                write!(f, "{input:?}.{name}({evaluation:?})")
             },
             Slice {
                 input,

@@ -83,7 +83,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             },
             AExpr::Eval { .. } => "list.eval",
             #[cfg(feature = "dtype-struct")]
-            AExpr::StructEval { .. } => "struct.with_fields",
+            AExpr::StructEval { variant, .. } => variant.to_name(),
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling { .. } => "rolling",

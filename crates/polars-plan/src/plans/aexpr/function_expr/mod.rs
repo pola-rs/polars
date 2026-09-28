@@ -436,9 +436,6 @@ pub enum IRFunctionExpr {
     RowDecode(Vec<Field>, RowEncodingVariant),
     DynamicPred {
         pred: DynamicPredWeakRef,
-        /// A scan only consults it to skip batches by their statistics, and never
-        /// evaluates it per row.
-        batch_only: bool,
     },
     /// Batch-skipping form of `DynamicPred`, over the `min`, `max` and null count
     /// statistics of its column. True means the batch can be skipped.
@@ -778,9 +775,8 @@ impl Hash for IRFunctionExpr {
                 fs.hash(state);
                 variants.hash(state);
             },
-            DynamicPred { pred, batch_only } => {
+            DynamicPred { pred } => {
                 pred.id().hash(state);
-                batch_only.hash(state);
             },
             DynamicSkipBatch { pred } => {
                 pred.id().hash(state);

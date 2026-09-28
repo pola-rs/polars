@@ -37,6 +37,7 @@ use crate::metrics::{GraphMetrics, NodeMetricsRegistry};
 use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
 use crate::nodes::ComputeNode;
+use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
@@ -894,6 +895,7 @@ fn to_graph_rec<'a>(
             table_statistics,
             file_schema,
             disable_morsel_split,
+            maintain_order,
         } => {
             let hive_parts = hive_parts.clone();
 
@@ -908,12 +910,58 @@ fn to_graph_rec<'a>(
                         &mut ctx.expr_conversion_state,
                         true, // create_skip_batch_predicate
                         file_reader_builder
-                            .reader_capabilities()
+                            .reader_capabilities()?
                             .contains(ReaderCapabilities::PARTIAL_FILTER), // create_column_predicates
+                        file_reader_builder.is_external_python_reader_with_filter_support()?, // create_minterm_eirs
                     )
                 })
-                .transpose()?
-                .map(|p| p.to_io(None, file_schema.clone()));
+                .transpose()
+                .and_then(|p| {
+                    let Some(p) = p else { return Ok(None) };
+
+                    let (scan_io_predicate, minterm_eirs) = p.to_io(None, file_schema.clone());
+
+                    #[cfg(feature = "python")]
+                    let py_filter_exprs = if let Some(minterm_eirs) = minterm_eirs {
+                        polars_async::ASYNC.block_in_place(|| {
+                            pyo3::Python::attach(|py| {
+                                let pyarrow_compute = py.import("pyarrow.compute");
+                                let py_dsl_filters = pyo3::types::PyList::empty(py);
+
+                                for eir in minterm_eirs.iter() {
+                                    let expr = polars_plan::plans::node_to_expr(
+                                        eir.node(),
+                                        ctx.expr_arena,
+                                    );
+
+                                    pyo3::types::PyListMethods::append(
+                                        &py_dsl_filters,
+                                        polars_plan::dsl::dsl_resolver::python::expr_to_py_filter_expr(
+                                            py,
+                                            &expr,
+                                            eir.node(),
+                                            ctx.expr_arena,
+                                            &pyarrow_compute,
+                                            output_schema.as_ref(),
+                                        )?,
+                                    )?;
+                                }
+
+                                PolarsResult::Ok(Some(Arc::new(
+                                    pyo3::IntoPyObjectExt::into_py_any(py_dsl_filters, py)?,
+                                )))
+                            })
+                        })?
+                    } else {
+                        None
+                    };
+
+                    Ok(Some(multi_scan::components::predicate::Predicate {
+                        scan_io_predicate,
+                        #[cfg(feature = "python")]
+                        py_filter_exprs,
+                    }))
+                })?;
             let predicate_file_skip_applied = *predicate_file_skip_applied;
 
             let sources = scan_sources.clone();
@@ -934,8 +982,10 @@ fn to_graph_rec<'a>(
             let deletion_files = deletion_files.clone();
             let table_statistics = table_statistics.clone();
             let disable_morsel_split = *disable_morsel_split;
+            let maintain_order = *maintain_order;
 
             let verbose = config::verbose();
+            let reader_name = file_reader_builder.reader_name()?;
 
             ctx.add_node_with_metrics(
                 |registry| {
@@ -963,9 +1013,11 @@ fn to_graph_rec<'a>(
                             n_readers_pre_init: RelaxedCell::new_usize(0),
                             max_concurrent_scans: RelaxedCell::new_usize(0),
                             disable_morsel_split,
+                            maintain_order,
                             verbose,
                         }),
                         registry,
+                        reader_name,
                     )
                 },
                 [],
@@ -1063,17 +1115,26 @@ fn to_graph_rec<'a>(
                 }
                 for e in fused {
                     for leaf in aexpr_to_leaf_names_iter(e.node(), ctx.expr_arena) {
-                        stored_cols.insert(leaf.clone());
-                        gather_cols.insert(leaf.clone());
+                        if !fused_names.contains(leaf) {
+                            stored_cols.insert(leaf.clone());
+                            gather_cols.insert(leaf.clone());
+                        }
                     }
                 }
 
+                // Each fused selector sees the outputs of those before it.
                 let gather_cols: Vec<PlSmallStr> = gather_cols.into_iter().collect();
-                let gather_schema = Arc::new(input_schema.try_project(gather_cols.iter())?);
-                let fused_selectors = fused
-                    .iter()
-                    .map(|e| create_stream_expr(e, ctx, &gather_schema))
-                    .try_collect_vec()?;
+                let mut eval_schema = input_schema.try_project(gather_cols.iter())?;
+                let mut fused_selectors = Vec::with_capacity(fused.len());
+                for e in fused {
+                    fused_selectors.push(create_stream_expr(
+                        e,
+                        ctx,
+                        &Arc::new(eval_schema.clone()),
+                    )?);
+                    let name = e.output_name();
+                    eval_schema.insert(name.clone(), augmented_schema.get(name).unwrap().clone());
+                }
 
                 payload_per_input.push(nodes::group_by::InputPayload {
                     stored_cols: stored_cols.into_iter().collect(),
@@ -1748,7 +1809,9 @@ fn to_graph_rec<'a>(
             let deletion_files = None;
             let table_statistics = None;
             let disable_morsel_split = false;
+            let maintain_order = true;
             let verbose = config::verbose();
+            let reader_name = file_reader_builder.reader_name()?;
 
             ctx.add_node_with_metrics(
                 |registry| {
@@ -1776,9 +1839,11 @@ fn to_graph_rec<'a>(
                             n_readers_pre_init: RelaxedCell::new_usize(0),
                             max_concurrent_scans: RelaxedCell::new_usize(0),
                             disable_morsel_split,
+                            maintain_order,
                             verbose,
                         }),
                         registry,
+                        reader_name,
                     )
                 },
                 [],

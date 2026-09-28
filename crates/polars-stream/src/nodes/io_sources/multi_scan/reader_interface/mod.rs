@@ -12,11 +12,11 @@ use polars_async::primitives::oneshot_channel;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
-use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
+use crate::nodes::io_sources::multi_scan::components::predicate::Predicate;
 pub use crate::nodes::io_sources::multi_scan::components::projection::Projection;
 
 /// Interface to read a single file
@@ -31,8 +31,6 @@ pub trait FileReader: Send + Sync {
     /// the order in which the files are read.
     ///
     /// This can be used e.g. to synchronize data fetches such that they happen in order.
-    ///
-    /// This is not guaranteed to always to be called.
     fn prepare_read(&mut self) -> PolarsResult<()> {
         Ok(())
     }
@@ -139,7 +137,7 @@ pub struct BeginReadArgs {
 
     pub row_index: Option<RowIndex>,
     pub pre_slice: Option<Slice>,
-    pub predicate: Option<ScanIOPredicate>,
+    pub predicate: Option<Predicate>,
 
     /// User-configured policy for when datatypes do not match.
     ///
@@ -152,6 +150,8 @@ pub struct BeginReadArgs {
 
     pub num_pipelines: usize,
     pub disable_morsel_split: bool,
+    /// If false, the reader may emit rows in any order.
+    pub maintain_order: bool,
     /// Minimum number of pieces a reader should split a file's last morsel into, to keep
     /// downstream pipelines busy. The multi-scan layer precomputes this so the per-file
     /// budget is shared across files in the same scan. When many files are concurrent,
@@ -178,6 +178,7 @@ impl Default for BeginReadArgs {
             missing_columns_policy: MissingColumnsPolicy::Raise,
             num_pipelines: 1,
             disable_morsel_split: false,
+            maintain_order: true,
             last_morsel_pipelines: 1,
             callbacks: FileReaderCallbacks::default(),
         }

@@ -1,4 +1,5 @@
 import io
+import os
 import pickle
 import sys
 import uuid
@@ -11,6 +12,7 @@ import pytest
 
 import polars as pl
 import polars.io.cloud.credential_provider
+import polars.io.cloud.credential_provider._builder as credential_provider_builder
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._builder import (
     AutoInit,
@@ -124,9 +126,10 @@ def test_credential_provider_serialization_custom_provider() -> None:
             raise AssertionError(err_magic)
 
     lf = pl.scan_parquet(
-        "s3://bucket/path", credential_provider=ErrCredentialProvider()
+        "s3://bucket/path",
+        storage_options={"region": "eu-west-1"},
+        credential_provider=ErrCredentialProvider(),
     )
-
     serialized = lf.serialize()
 
     lf = pl.LazyFrame.deserialize(io.BytesIO(serialized))
@@ -187,6 +190,187 @@ def test_credential_provider_aws_import_error_with_requested_profile(
         ),
     ):
         q.collect()
+
+
+@pytest.fixture
+def isolated_aws_config(tmp_path: Path, plmonkeypatch: PlMonkeyPatch) -> Path:
+    import botocore.session
+
+    for name in tuple(os.environ):
+        if name.startswith("AWS_"):
+            plmonkeypatch.delenv(name)
+
+    config_path = tmp_path / "aws-config"
+    config_path.touch()
+    credentials_path = tmp_path / "aws-credentials"
+    credentials_path.touch()
+
+    plmonkeypatch.setenv("AWS_CONFIG_FILE", str(config_path))
+    plmonkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(credentials_path))
+    plmonkeypatch.setattr(
+        botocore.session.Session,
+        "get_credentials",
+        Mock(side_effect=AssertionError("endpoint resolution loaded credentials")),
+    )
+    return config_path
+
+
+def _build_aws_provider(
+    storage_options: dict[str, str],
+    credential_provider: Any = "auto",
+) -> pl.CredentialProviderAWS:
+    builder = _init_credential_provider_builder(
+        credential_provider,
+        "s3://bucket/path",
+        storage_options=storage_options,
+        caller_name="test",
+    )
+    assert builder is not None
+    provider = builder.build_credential_provider()
+    assert isinstance(provider, pl.CredentialProviderAWS)
+    return provider
+
+
+@pytest.mark.parametrize(
+    ("region", "dns_suffix"),
+    [
+        ("cn-north-1", "amazonaws.com.cn"),
+        ("cn-northwest-1", "amazonaws.com.cn"),
+        ("eu-isoe-west-1", "cloud.adc-e.uk"),
+        ("eu-west-1", "amazonaws.com"),
+        ("eusc-de-east-1", "amazonaws.eu"),
+        ("me-central-1", "amazonaws.com"),
+        ("us-iso-east-1", "c2s.ic.gov"),
+        ("us-isob-east-1", "sc2s.sgov.gov"),
+        ("us-isof-south-1", "csp.hci.ic.gov"),
+        ("unknown", None),
+        (None, None),
+    ],
+)
+def test_credential_provider_aws_resolves_region_endpoint(
+    region: str | None,
+    dns_suffix: str | None,
+    isolated_aws_config: Path,
+) -> None:
+    options = pl.CredentialProviderAWS(region_name=region)._storage_update_options()
+    expected = {} if region is None else {"region": region}
+    if dns_suffix is not None:
+        expected["endpoint_url"] = f"https://s3.{region}.{dns_suffix}"
+    assert options == expected
+
+
+def test_credential_provider_aws_resolves_profile_region(
+    isolated_aws_config: Path,
+) -> None:
+    isolated_aws_config.write_text("[profile china]\nregion = cn-north-1\n")
+    assert pl.CredentialProviderAWS(profile_name="china")._storage_update_options() == {
+        "region": "cn-north-1",
+        "endpoint_url": "https://s3.cn-north-1.amazonaws.com.cn",
+    }
+
+
+@pytest.mark.parametrize(
+    "endpoint_variable",
+    ["AWS_ENDPOINT", "AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_S3"],
+)
+def test_credential_provider_aws_preserves_native_endpoint(
+    endpoint_variable: str,
+    isolated_aws_config: Path,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("AWS_DEFAULT_REGION", "cn-north-1")
+    plmonkeypatch.setenv(endpoint_variable, "http://native")
+    assert pl.CredentialProviderAWS()._storage_update_options() == {
+        "region": "cn-north-1"
+    }
+
+
+@pytest.mark.parametrize(
+    ("storage_options", "environment", "expected_region"),
+    [
+        ({"region": "cn-northwest-1"}, ("AWS_REGION", "eu-west-1"), "cn-northwest-1"),
+        ({"default_region": "eu-west-1"}, ("AWS_REGION", "cn-north-1"), "cn-north-1"),
+        (
+            {"default_region": "cn-north-1"},
+            ("AWS_DEFAULT_REGION", "eu-west-1"),
+            "eu-west-1",
+        ),
+        ({"default_region": "cn-north-1"}, None, "cn-north-1"),
+    ],
+)
+def test_credential_provider_aws_region_precedence(
+    storage_options: dict[str, str],
+    environment: tuple[str, str] | None,
+    expected_region: str,
+    isolated_aws_config: Path,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    if environment is not None:
+        plmonkeypatch.setenv(*environment)
+
+    options = _build_aws_provider(storage_options)._storage_update_options()
+    assert options["region"] == expected_region
+    assert options["endpoint_url"].startswith(f"https://s3.{expected_region}.")
+
+
+def test_credential_provider_aws_virtual_hosted_style(
+    isolated_aws_config: Path,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("AWS_REGION", "cn-north-1")
+    plmonkeypatch.setenv("AWS_VIRTUAL_HOSTED_STYLE_REQUEST", "true")
+    assert pl.CredentialProviderAWS()._storage_update_options() == {
+        "region": "cn-north-1"
+    }
+    assert (
+        _build_aws_provider(
+            {"region": "cn-north-1", "virtual_hosted_style_request": "false"}
+        )
+        ._storage_update_options()["endpoint_url"]
+        .endswith(".amazonaws.com.cn")
+    )
+
+
+@pytest.mark.parametrize(
+    "endpoint_key",
+    [
+        "aws_endpoint",
+        "aws_endpoint_url",
+        "aws_endpoint_url_s3",
+        "endpoint",
+        "endpoint_url",
+    ],
+)
+def test_credential_provider_aws_storage_endpoint_precedence(
+    endpoint_key: str,
+    isolated_aws_config: Path,
+) -> None:
+    provider = _build_aws_provider(
+        {"region": "cn-north-1", endpoint_key: "http://storage"}
+    )
+    assert provider._storage_update_options() == {}
+
+
+@pytest.mark.parametrize("provider_source", ["argument", "default"])
+def test_credential_provider_aws_binds_storage_region(
+    provider_source: str,
+    isolated_aws_config: Path,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    original = pl.CredentialProviderAWS(region_name="cn-north-1")
+    credential_provider: Any = original
+    if provider_source == "default":
+        plmonkeypatch.setattr(
+            credential_provider_builder, "DEFAULT_CREDENTIAL_PROVIDER", original
+        )
+        credential_provider = "auto"
+
+    provider = _build_aws_provider({"region": "eu-west-1"}, credential_provider)
+    assert provider is not original
+    assert original.region_name == "cn-north-1"
+    assert provider._storage_update_options()["endpoint_url"] == (
+        "https://s3.eu-west-1.amazonaws.com"
+    )
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")

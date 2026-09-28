@@ -31,6 +31,7 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 use crate::scan_predicate::skip_files_mask::SkipFilesMask;
 use crate::scan_predicate::{PhysicalColumnPredicate, ScanPredicate, StagedScanPredicate};
 
+#[expect(clippy::too_many_arguments)]
 pub fn create_scan_predicate(
     predicate: &ExprIR,
     expr_arena: &mut Arena<AExpr>,
@@ -39,32 +40,14 @@ pub fn create_scan_predicate(
     state: &mut ExpressionConversionState,
     create_skip_batch_predicate: bool,
     create_column_predicates: bool,
+    create_minterm_eirs: bool,
 ) -> PolarsResult<ScanPredicate> {
-    // Every dynamic part gives a range hint to skip batches by. The parts a scan
-    // only consults for that stay out of the row predicate and its statistics
-    // predicate.
+    // Every dynamic part gives a range hint to skip batches by.
     let mut predicate = predicate.clone();
     let mut filters_rows = true;
     let runtime_ranges: Vec<RuntimeRangeHint> = MintermIter::new(predicate.node(), expr_arena)
         .filter_map(|part| runtime_range_hint(part, expr_arena))
         .collect();
-    let (batch_only, per_row): (Vec<Node>, Vec<Node>) =
-        MintermIter::new(predicate.node(), expr_arena)
-            .partition(|&part| is_batch_only(part, expr_arena));
-    if !batch_only.is_empty() {
-        filters_rows = !per_row.is_empty();
-        let node = per_row
-            .into_iter()
-            .reduce(|left, right| {
-                expr_arena.add(AExpr::BinaryExpr {
-                    left,
-                    op: Operator::And,
-                    right,
-                })
-            })
-            .unwrap_or_else(|| expr_arena.add(AExpr::Literal(Scalar::from(true).into())));
-        predicate = ExprIR::from_node(node, expr_arena);
-    }
 
     let mut hive_predicate = None;
     let mut hive_predicate_is_full_predicate = false;
@@ -190,8 +173,19 @@ pub fn create_scan_predicate(
         None
     };
 
+    let predicate_minterm_eirs = if create_minterm_eirs {
+        Some(
+            MintermIter::new(predicate.node(), expr_arena)
+                .map(|node| ExprIR::new(node, OutputName::Alias(PlSmallStr::EMPTY)))
+                .collect(),
+        )
+    } else {
+        None
+    };
+
     PolarsResult::Ok(ScanPredicate {
         predicate: phys_predicate,
+        predicate_minterm_eirs,
         staged,
         filters_rows,
         live_columns,
@@ -313,32 +307,22 @@ fn runtime_range_hint(part: Node, expr_arena: &Arena<AExpr>) -> Option<RuntimeRa
     })
 }
 
-/// Whether the predicate part is exactly a dynamic predicate a scan may only use
-/// to skip batches. Any other shape, also one wrapping such a predicate, is
-/// evaluated per row like any predicate.
-fn is_batch_only(part: Node, expr_arena: &Arena<AExpr>) -> bool {
-    matches!(
-        expr_arena.get(part),
-        AExpr::Function {
-            function: IRFunctionExpr::DynamicPred {
-                batch_only: true,
-                ..
-            },
-            ..
-        }
-    )
+#[derive(Default)]
+pub struct InitializeScanPredicateResult {
+    pub skip_files_mask: Option<SkipFilesMask>,
+    pub can_skip_scan_predicate: bool,
 }
 
 /// # Returns
 /// (skip_files_mask, predicate)
-pub fn initialize_scan_predicate<'a>(
-    predicate: Option<&'a ScanIOPredicate>,
+pub fn initialize_scan_predicate(
+    predicate: Option<&ScanIOPredicate>,
     hive_parts: Option<&HivePartitionsDf>,
     table_statistics: Option<&TableStatistics>,
     verbose: bool,
-) -> PolarsResult<(Option<SkipFilesMask>, Option<&'a ScanIOPredicate>)> {
+) -> PolarsResult<InitializeScanPredicateResult> {
     let Some(predicate) = predicate else {
-        return Ok((None, None));
+        return Ok(Default::default());
     };
 
     let mut hive_inclusion: Option<Bitmap> = None;
@@ -379,7 +363,7 @@ pub fn initialize_scan_predicate<'a>(
                 mask_len,
                 hive_len
             );
-            return Ok((None, Some(predicate)));
+            return Ok(Default::default());
         }
 
         if predicate.hive_predicate_is_full_predicate {
@@ -391,8 +375,11 @@ pub fn initialize_scan_predicate<'a>(
                     skip_files_mask.len(),
                 );
             }
-            let residual = (!predicate.runtime_ranges.is_empty()).then_some(predicate);
-            return Ok((Some(skip_files_mask), residual));
+            return Ok(InitializeScanPredicateResult {
+                skip_files_mask: Some(skip_files_mask),
+                // The predicate is still needed if it has runtime ranges to skip batches by.
+                can_skip_scan_predicate: predicate.runtime_ranges.is_empty(),
+            });
         }
 
         hive_inclusion = Some(hive_inclusion_bitmap);
@@ -430,7 +417,7 @@ pub fn initialize_scan_predicate<'a>(
                 mask_len,
                 stats_len
             );
-            return Ok((None, Some(predicate)));
+            return Ok(Default::default());
         }
 
         stats_exclusion = Some(stats_exclusion_bitmap);
@@ -443,7 +430,7 @@ pub fn initialize_scan_predicate<'a>(
         },
         (Some(hive_inclusion), None) => SkipFilesMask::Inclusion(hive_inclusion),
         (None, Some(stats_exclusion)) => SkipFilesMask::Exclusion(stats_exclusion),
-        (None, None) => return Ok((None, Some(predicate))),
+        (None, None) => return Ok(Default::default()),
     };
 
     if verbose {
@@ -454,7 +441,10 @@ pub fn initialize_scan_predicate<'a>(
         );
     }
 
-    Ok((Some(skip_files_mask), Some(predicate)))
+    Ok(InitializeScanPredicateResult {
+        skip_files_mask: Some(skip_files_mask),
+        can_skip_scan_predicate: false,
+    })
 }
 
 /// Filters the list of files in an `IR::Scan` based on the contained predicate. This is possible
@@ -506,7 +496,7 @@ pub fn apply_scan_predicate_to_scan_ir(
 
     let verbose = config::verbose();
 
-    let scan_predicate = create_scan_predicate(
+    let (scan_predicate, _) = create_scan_predicate(
         predicate,
         expr_arena,
         &scan_ir_schema,
@@ -514,15 +504,21 @@ pub fn apply_scan_predicate_to_scan_ir(
         &mut ExpressionConversionState::new(true),
         true,  // create_skip_batch_predicate
         false, // create_column_predicates
+        false, // create_minterm_eirs
     )?
     .to_io(None, file_info.schema.clone());
 
-    let (skip_files_mask, predicate_to_readers) = initialize_scan_predicate(
+    let InitializeScanPredicateResult {
+        skip_files_mask,
+        can_skip_scan_predicate,
+    } = initialize_scan_predicate(
         Some(&scan_predicate),
         hive_parts.as_ref(),
         unified_scan_args.table_statistics.as_ref(),
         verbose,
     )?;
+
+    let predicate_to_readers = (!can_skip_scan_predicate).then_some(&scan_predicate);
 
     if let Some(skip_files_mask) = skip_files_mask {
         assert_eq!(skip_files_mask.len(), sources.len());
@@ -569,6 +565,7 @@ where
         predicate: _,
         predicate_file_skip_applied: _,
         output_schema: _,
+        maintain_order: _,
         scan_type,
         unified_scan_args,
     } = scan_ir
