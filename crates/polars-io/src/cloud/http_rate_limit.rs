@@ -58,7 +58,7 @@ static LOG_HTTP_RATE_LIMIT: LazyLock<bool> =
 // Request/s rate init and boundaries. Init is also the resting rate after idle.
 // Documented baselines (rps):
 // AWS S3 per prefix 5500 GET/HEAD, 3500 PUT/POST/DELETE;
-// GCS per bucket 5000 reads, 1000 writes; 
+// GCS per bucket 5000 reads, 1000 writes;
 // Azure per account 20_000.
 const DEFAULT_READ_INIT_RATE: f64 = 5000.0;
 const DEFAULT_WRITE_INIT_RATE: f64 = 1000.0;
