@@ -283,6 +283,19 @@ pub fn phys_props(
             },
             inputs.iter().map(|s| s.node).collect(),
         ),
+        PhysNodeKind::RollingFixedWindowFunction {
+            input,
+            window,
+            format_str,
+            ..
+        } => (
+            PhysicalPropsDescription::RollingFixedWindowFunction {
+                name: format_str.clone(),
+                offset: window.offset,
+                length: window.length as u64,
+            },
+            vec![input.node],
+        ),
         PhysNodeKind::SortedGroupBy {
             input,
             key,

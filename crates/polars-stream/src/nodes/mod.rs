@@ -36,6 +36,7 @@ pub mod reduce;
 pub mod repeat;
 pub mod rle;
 pub mod rle_id;
+pub mod rolling_fixed_window;
 #[cfg(feature = "dynamic_group_by")]
 pub mod rolling_group_by;
 pub mod select;

@@ -585,6 +585,26 @@ fn to_graph_rec<'a>(
             )
         },
 
+        RollingFixedWindowFunction {
+            input,
+            func,
+            window,
+            output_name,
+            format_str: _,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = input.output_schema(ctx.phys_sm).clone();
+            ctx.graph.add_node(
+                nodes::rolling_fixed_window::RollingFixedWindowNode::new(
+                    func.clone(),
+                    *window,
+                    output_name.clone(),
+                    input_schema,
+                ),
+                [(input_key, input.port)],
+            )
+        },
+
         #[cfg(any(
             feature = "dtype-date",
             feature = "dtype-datetime",
