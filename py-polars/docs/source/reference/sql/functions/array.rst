@@ -31,6 +31,8 @@ Array
      - Returns the array with the unique elements.
    * - :ref:`ARRAY_UPPER <array_upper>`
      - Returns the upper bound (max value) in an array.
+   * - :ref:`ARRAY_VALUE <array_value>`
+     - Constructs a fixed-size Array with one element per argument.
    * - :ref:`UNNEST <unnest>`
      - Unnests (explodes) an array column into multiple rows.
 
@@ -174,6 +176,34 @@ Array is null for a row, the result for that row is null.
     # │ 50.0  │
     # │ 110.0 │
     # └───────┘
+
+.. _array_value:
+
+ARRAY_VALUE
+-----------
+``ARRAY_VALUE(expr, ...)`` constructs a fixed-size Array whose width equals
+the number of arguments. Requires at least one argument; inputs are cast to
+a common child dtype. Scalar arguments broadcast alongside column expressions.
+
+Each argument contributes one element: nested List and Array values remain
+nested, and null arguments become null elements inside a non-null Array.
+Arguments expanding to multiple expressions are not supported. Ordinary SQL
+``[...]`` literals still produce variable-size Lists.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"x": [1.0, 2.0], "y": [3.0, 4.0]})
+    df.sql("SELECT ARRAY_VALUE(x, y) AS vector FROM self")
+    # vector: array[f64, 2], values: [1.0, 3.0], [2.0, 4.0]
+
+    df.sql("""
+      SELECT ARRAY_INNER_PRODUCT(
+        ARRAY_VALUE(x, y), ARRAY_VALUE(0.5, 2.0)
+      ) AS score FROM self
+    """)
+    # score: f64, values: 6.5, 9.0
 
 .. _array_length:
 
