@@ -310,6 +310,14 @@ impl PhysicalExpr for SortByExpr {
             }
         }
 
+        // Drop per-group scalar keys: they can't affect the order, and their groups index into
+        // their own per-group values rather than the input's.
+        let (mut ac_sort_by, (descending, nulls_last)): (Vec<_>, (Vec<_>, Vec<_>)) = ac_sort_by
+            .into_iter()
+            .zip(descending.into_iter().zip(nulls_last))
+            .filter(|(ac, _)| !ac.state.is_scalar())
+            .unzip();
+
         let mut sort_by_s = ac_sort_by
             .iter()
             // @scalar-opt
@@ -322,7 +330,7 @@ impl PhysicalExpr for SortByExpr {
             UpdateGroups::WithSeriesLen | UpdateGroups::WithGroupsLen
         );
 
-        let groups = if self.by.len() == 1 {
+        let groups = if ac_sort_by.len() == 1 {
             let mut ac_sort_by = ac_sort_by.pop().unwrap();
 
             // The groups of the lhs of the expressions do not match the series values,
@@ -331,7 +339,12 @@ impl PhysicalExpr for SortByExpr {
                 return sort_by_groups_no_match_single(
                     ac_in,
                     ac_sort_by,
-                    SortOptions::from(&self.sort_options),
+                    // Keys may have been dropped, so use the remaining key's options.
+                    SortOptions {
+                        descending: descending[0],
+                        nulls_last: nulls_last[0],
+                        ..SortOptions::from(&self.sort_options)
+                    },
                     &self.expr,
                 );
             };

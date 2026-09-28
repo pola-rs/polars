@@ -1486,3 +1486,14 @@ def test_sort_by_aggregated_scalar_key_in_agg_29583() -> None:
         pl.col("a").head(1).sort_by(pl.col("a").max())
     )
     assert out["a"].to_list() == [[10], [20]]
+
+
+def test_sort_by_mixed_scalar_and_column_keys_in_agg_29583() -> None:
+    df = pl.DataFrame({"k": [0, 0, 1, 1], "a": [10, 11, 20, 21], "b": [1, 2, 3, 4]})
+    gb = df.group_by("k", maintain_order=True)
+    b = pl.col("b").head(1)
+    for by in ([pl.col("a").max(), b], [b, pl.col("a").max()]):
+        out = gb.agg(pl.col("a").head(1).sort_by(by))
+        assert out["a"].to_list() == [[10], [20]]
+    out = gb.agg(pl.col("a").sort_by(pl.col("a").max(), "b", descending=[False, True]))
+    assert out["a"].to_list() == [[11, 10], [21, 20]]
