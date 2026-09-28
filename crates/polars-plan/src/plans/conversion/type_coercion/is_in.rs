@@ -206,6 +206,12 @@ fn resolve_needle(
         (n, e) if container == Container::Sequence && is_null_shape_of(e, n) => R::CastContainer {
             dtype: with_inner(container_dtype, n.clone()),
         },
+        // Map keys are never null, but a nested key can hold only null leaves. The key equality
+        // kernel compares those with the needle's values as they are.
+        #[cfg(feature = "dtype-map")]
+        (n, e) if container == Container::Map && !e.is_null() && is_null_shape_of(e, n) => {
+            return Ok(None);
+        },
 
         (n, e) if (n.is_integer() && e.is_integer()) || (n.is_float() && e.is_float()) => {
             numeric_needle_cast(n, e)
