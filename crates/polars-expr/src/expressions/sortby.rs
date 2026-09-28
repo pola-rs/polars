@@ -291,6 +291,14 @@ impl PhysicalExpr for SortByExpr {
             .iter_mut()
             .for_each(|ac| ac.set_groups_for_undefined_agg_states());
 
+        // A per-group scalar key must still match the input's group lengths.
+        if !ac_in.is_literal() && ac_sort_by.iter().any(|ac| ac.state.is_scalar()) {
+            let groups_in = ac_in.groups();
+            for ac in ac_sort_by.iter().filter(|ac| ac.state.is_scalar()) {
+                check_groups(groups_in.as_ref().as_ref(), ac.groups.as_ref().as_ref())?;
+            }
+        }
+
         // If the input is a LiteralScalar or every key is scalar per group, sorting is a no-op.
         // Otherwise, we convert any LiteralScalar to AggregatedList.
         if ac_in.is_literal()
