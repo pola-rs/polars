@@ -2158,7 +2158,7 @@ class PyFileDecryptionProperties:
     def __init__(
         self,
         footer_key: bytes,
-        column_keys: list[tuple[str, bytes]],
+        column_keys: pylist[tuple[str, bytes]],
         aad_prefix: bytes | None,
         verify_footer_signature: bool,
     ) -> None: ...
