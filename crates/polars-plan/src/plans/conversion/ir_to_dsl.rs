@@ -226,9 +226,14 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             variant,
         },
         #[cfg(feature = "dtype-struct")]
-        AExpr::StructEval { expr, evaluation } => Expr::StructEval {
+        AExpr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => Expr::StructEval {
             expr: Arc::new(node_to_expr(expr, expr_arena)),
             evaluation: expr_irs_to_exprs(evaluation, expr_arena),
+            variant,
         },
         AExpr::Function {
             input,

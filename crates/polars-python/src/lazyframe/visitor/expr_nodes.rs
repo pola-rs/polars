@@ -10,7 +10,7 @@ use polars_defs::time::duration::Duration;
 use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptionsIR, RollingGroupOptionsIR};
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
-use polars_plan::dsl::DateRangeArgs;
+use polars_plan::dsl::{DateRangeArgs, StructEvalVariant};
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
     IRBooleanFunction, IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction,
@@ -592,6 +592,9 @@ pub struct StructEval {
     expr: usize,
     #[pyo3(get)]
     evaluation: Vec<PyExprIR>,
+    /// Either "with_fields" or "select".
+    #[pyo3(get)]
+    variant: &'static str,
 }
 
 #[pyclass(frozen)]
@@ -2260,9 +2263,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         AExpr::Len => Len {}.into_py_any(py),
         AExpr::Eval { .. } => Err(PyNotImplementedError::new_err("list.eval")),
-        AExpr::StructEval { expr, evaluation } => StructEval {
+        AExpr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => StructEval {
             expr: expr.0,
             evaluation: evaluation.iter().map(|e| e.into()).collect(),
+            variant: match variant {
+                StructEvalVariant::WithFields => "with_fields",
+                StructEvalVariant::Select => "select",
+            },
         }
         .into_py_any(py),
     }
