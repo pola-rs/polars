@@ -287,10 +287,16 @@ mod tests {
         assert_eq!(snapshot.reading("scan.rows_read_prefiltered"), Some(200));
         assert_eq!(snapshot.reading("scan.rows_kept_prefiltered"), Some(150));
 
-        // Without a predicate nothing can be skipped.
+        // Without a predicate or slice nothing is skipped, and that is a reading.
         let (_, snapshot) = snapshot_of(scan());
         assert_eq!(snapshot.reading("scan.rows_read"), Some(n));
-        assert_eq!(snapshot.reading("scan.row_groups_skipped"), None);
+        assert_eq!(snapshot.reading("scan.row_groups_skipped"), Some(0));
+
+        // A slice prunes the row groups past it, and reads half of the second.
+        let (df, snapshot) = snapshot_of(scan().limit(150));
+        assert_eq!(df.height(), 150);
+        assert_eq!(snapshot.reading("scan.rows_read"), Some(150));
+        assert_eq!(snapshot.reading("scan.row_groups_skipped"), Some(8));
     }
 
     #[test]

@@ -122,6 +122,8 @@ impl ParquetReadImpl {
         let rg_prefetch_current_all_spawned =
             Option::take(&mut self.rg_prefetch_current_all_spawned);
 
+        // Row groups not read: pruned by the pre-slice, or ruled out by their
+        // statistics for the static predicate or a runtime key range.
         let row_groups_skipped = self
             .metrics_registry
             .new_counter("scan.row_groups_skipped", MetricUnit::Unit);
@@ -180,10 +182,6 @@ impl ParquetReadImpl {
                 }
             }
 
-            let can_skip_row_groups = use_statistics
-                && predicate.as_ref().is_some_and(|p| {
-                    p.skip_batch_predicate.is_some() || !p.runtime_ranges.is_empty()
-                });
             let row_group_mask = calculate_row_group_pred_pushdown_skip_mask(
                 row_group_slice.clone(),
                 use_statistics,
@@ -195,10 +193,9 @@ impl ParquetReadImpl {
             )
             .await?;
 
-            if can_skip_row_groups {
-                let skipped = row_group_mask.as_ref().map_or(0, |mask| mask.set_bits());
-                row_groups_skipped.reporter().add(skipped as i64);
-            }
+            let skipped = metadata.row_groups.len() - row_group_slice.len()
+                + row_group_mask.as_ref().map_or(0, |mask| mask.set_bits());
+            row_groups_skipped.reporter().add(skipped as i64);
 
             let mut row_group_data_fetcher = RowGroupDataFetcher {
                 projection: projected_arrow_fields.clone(),
