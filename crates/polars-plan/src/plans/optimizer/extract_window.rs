@@ -23,7 +23,7 @@ use recursive::recursive;
 
 use crate::plans::{
     AExpr, ArenaExprIter, CanonicalExprId, CanonicalExprMap, ExprIR, IR, OutputName,
-    ToFieldContext, is_splittable,
+    ToFieldContext, is_length_preserving_ae, is_splittable,
 };
 use crate::prelude::{ProjectionOptions, WindowMapping};
 
@@ -129,6 +129,7 @@ impl Extractor {
 
         let is_valid_key = |key: Node| {
             !matches!(expr_arena.get(key), AExpr::Literal(_))
+                && is_length_preserving_ae(key, expr_arena)
                 && !expr_arena.iter(key).any(|(_, ae)| is_window(ae))
         };
 
@@ -139,11 +140,17 @@ impl Extractor {
             return None;
         }
 
+        // Repeated keys do not change the partitions.
+        let mut partition_ids = Vec::with_capacity(partition_by.len());
+        for key in partition_by {
+            let id = self.canonical.resolve(*key, expr_arena);
+            if !partition_ids.contains(&id) {
+                partition_ids.push(id);
+            }
+        }
+
         let spec = WindowSpec {
-            partition_by: partition_by
-                .iter()
-                .map(|key| self.canonical.resolve(*key, expr_arena))
-                .collect(),
+            partition_by: partition_ids,
             order_by: order_by
                 .as_ref()
                 .map(|(key, options)| (self.canonical.resolve(*key, expr_arena), *options)),

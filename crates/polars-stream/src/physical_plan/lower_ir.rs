@@ -244,10 +244,13 @@ pub fn lower_ir(
             partition_by,
             order_by,
             exprs,
-            schema: _,
+            schema,
             maintain_order,
             ordered_eval,
-        } if !is_scalar_window(exprs, order_by.is_some(), expr_arena) => {
+        } if !is_scalar_window(exprs, order_by.is_some(), expr_arena)
+            // Objects cannot be hashed or gathered by the window node.
+            && !schema.iter_values().any(|dtype| dtype.contains_objects()) =>
+        {
             let input = *input;
             let partition_by = partition_by.clone();
             let order_by = order_by.clone();

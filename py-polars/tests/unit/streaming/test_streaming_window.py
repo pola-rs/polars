@@ -318,6 +318,49 @@ def test_window_unordered_shape_error(expr: pl.Expr) -> None:
             q.collect(engine=engine)  # type: ignore[call-overload]
 
 
+def test_window_scalar_order_key_shape_error() -> None:
+    q = (
+        _keyed_frame()
+        .lazy()
+        .with_columns(w=pl.col("x").cum_sum().over("g", order_by=pl.col("t").sum()))
+    )
+    assert _window_headers(q) == []
+    errors = (pl.exceptions.ShapeError, pl.exceptions.InvalidOperationError)
+    for engine in ENGINES:
+        with pytest.raises(errors):
+            q.collect(engine=engine)  # type: ignore[call-overload]
+
+
+def test_window_repeated_partition_keys() -> None:
+    q = (
+        _keyed_frame()
+        .lazy()
+        .with_columns(w=pl.col("x").cum_sum().over(["g", "g"], order_by="t"))
+    )
+    assert len(_physical_windows(q)) == 1
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+class _Key:
+    def __init__(self, value: int) -> None:
+        self.value = value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _Key) and self.value == other.value
+
+
+def test_window_object_partition_key() -> None:
+    df = _keyed_frame(1_000).with_columns(
+        o=pl.Series([_Key(i % 7) for i in range(1_000)], dtype=pl.Object)
+    )
+    q = df.lazy().with_columns(w=pl.col("x").shift().over("o")).select("id", "w")
+    assert _physical_windows(q) == []
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
 @pytest.mark.parametrize(
     "expr",
     [
