@@ -23,7 +23,7 @@ pub enum SpecializedColumnPredicate {
     EqualOneOf(Box<[Scalar]>),
     StartsWith(Box<[u8]>),
     EndsWith(Box<[u8]>),
-    RegexMatch(regex::bytes::Regex),
+    RegexMatch(Arc<regex::bytes::Regex>),
 }
 
 #[derive(Clone)]

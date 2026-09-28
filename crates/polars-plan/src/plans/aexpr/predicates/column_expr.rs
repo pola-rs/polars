@@ -141,7 +141,7 @@ fn specialize(
                         lv.to_string()
                     };
                     let pattern = regex::bytes::Regex::new(&pattern).ok()?;
-                    Some(SpecializedColumnPredicate::RegexMatch(pattern))
+                    Some(SpecializedColumnPredicate::RegexMatch(pattern.into()))
                 },
                 IRStringFunction::StartsWith => {
                     Some(SpecializedColumnPredicate::StartsWith(lv.as_bytes().into()))

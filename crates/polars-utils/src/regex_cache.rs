@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::sync::Arc;
 
 use regex::bytes::Regex as BytesRegex;
 use regex::{Regex, RegexBuilder};
@@ -23,7 +24,7 @@ fn get_size_limit() -> Option<usize> {
 /// A cache for compiled regular expressions.
 pub struct RegexCache {
     cache: LruCache<String, Regex>,
-    bytes_cache: LruCache<String, BytesRegex>,
+    bytes_cache: LruCache<usize, (Arc<BytesRegex>, BytesRegex)>,
     size_limit: Option<usize>,
 }
 
@@ -50,11 +51,15 @@ impl RegexCache {
         Ok(&*r?)
     }
 
-    /// Borrows a cached regex, cloning the supplied regex on a cache miss.
-    /// The regex must use default builder options, since the cache is keyed by pattern.
-    pub fn get_or_insert_bytes(&mut self, re: &BytesRegex) -> &BytesRegex {
-        self.bytes_cache
-            .get_or_insert_with(re.as_str(), |_| re.clone())
+    /// Borrows a cached clone of the supplied regex, keyed by its Arc pointer.
+    pub fn get_or_insert_bytes(&mut self, re: &Arc<BytesRegex>) -> &BytesRegex {
+        // Retain the original Arc so its address cannot be reused while cached.
+        &self
+            .bytes_cache
+            .get_or_insert_with(&(Arc::as_ptr(re) as usize), |_| {
+                (re.clone(), re.as_ref().clone())
+            })
+            .1
     }
 }
 
@@ -102,3 +107,57 @@ macro_rules! cached_regex {
     };
 }
 pub use cached_regex;
+
+#[cfg(test)]
+mod tests {
+    use regex::bytes::RegexBuilder as BytesRegexBuilder;
+
+    use super::*;
+
+    #[test]
+    fn bytes_cache_preserves_builder_options() {
+        let mut cache = RegexCache::new();
+        let sensitive = Arc::new(BytesRegexBuilder::new("abc").build().unwrap());
+        let insensitive = Arc::new(
+            BytesRegexBuilder::new("abc")
+                .case_insensitive(true)
+                .build()
+                .unwrap(),
+        );
+
+        for _ in 0..2 {
+            assert!(!cache.get_or_insert_bytes(&sensitive).is_match(b"ABC"));
+            assert!(cache.get_or_insert_bytes(&insensitive).is_match(b"ABC"));
+        }
+    }
+
+    #[test]
+    fn bytes_cache_reuses_cloned_arc() {
+        let mut cache = RegexCache::new();
+        let re = Arc::new(BytesRegexBuilder::new("abc").build().unwrap());
+        let cloned = re.clone();
+        let cached = std::ptr::from_ref(cache.get_or_insert_bytes(&re));
+
+        assert_eq!(
+            cached,
+            std::ptr::from_ref(cache.get_or_insert_bytes(&cloned))
+        );
+        assert_ne!(cached, Arc::as_ptr(&re));
+    }
+
+    #[test]
+    fn bytes_cache_retains_arc_until_eviction() {
+        let mut cache = RegexCache::new();
+        let re = Arc::new(BytesRegexBuilder::new("abc").build().unwrap());
+        let weak = Arc::downgrade(&re);
+        cache.get_or_insert_bytes(&re);
+        drop(re);
+        assert!(weak.upgrade().is_some());
+
+        for _ in 0..32 {
+            let re = Arc::new(BytesRegexBuilder::new("abc").build().unwrap());
+            cache.get_or_insert_bytes(&re);
+        }
+        assert!(weak.upgrade().is_none());
+    }
+}
