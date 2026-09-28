@@ -3354,3 +3354,48 @@ def test_group_by_filtered_agg_missing_group_29322() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_group_by_arg_max_arg_min_scalar_column_empty_group_29585() -> None:
+    idx_dtype = pl.get_index_type()
+
+    df = pl.DataFrame({"key": [0], "val": [10.0]})
+    result = df.group_by("key").agg(
+        pl.col("val").head(0).arg_max().alias("arg_max"),
+        pl.col("val").head(0).arg_min().alias("arg_min"),
+    )
+    expected = pl.DataFrame(
+        {
+            "key": [0],
+            "arg_max": pl.Series([None], dtype=idx_dtype),
+            "arg_min": pl.Series([None], dtype=idx_dtype),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    # A scalar column with more groups than rows (dynamic group_by windows).
+    df = pl.DataFrame({"t": [0], "val": [10.0]})
+    result = df.group_by_dynamic("t", every="1i", period="3i", offset="-2i").agg(
+        pl.col("val").arg_max()
+    )
+    assert_series_equal(result["val"], pl.Series("val", [0, 0, 0], dtype=idx_dtype))
+
+
+@pytest.mark.parametrize("dtype", [pl.Float64, pl.Int64, pl.Boolean, pl.String])
+def test_group_by_arg_max_arg_min_null_scalar_column_29585(
+    dtype: PolarsDataType,
+) -> None:
+    idx_dtype = pl.get_index_type()
+    df = pl.DataFrame({"key": [0], "val": pl.Series([None], dtype=dtype)})
+    result = df.group_by("key").agg(
+        pl.col("val").arg_max().alias("arg_max"),
+        pl.col("val").arg_min().alias("arg_min"),
+    )
+    expected = pl.DataFrame(
+        {
+            "key": [0],
+            "arg_max": pl.Series([None], dtype=idx_dtype),
+            "arg_min": pl.Series([None], dtype=idx_dtype),
+        }
+    )
+    assert_frame_equal(result, expected)

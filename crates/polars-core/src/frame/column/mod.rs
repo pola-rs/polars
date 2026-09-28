@@ -740,7 +740,9 @@ impl Column {
         }
     }
 
-    /// General implementation for aggregation where a non-missing scalar would map to itself.
+    /// General implementation for aggregations where every group of `n >= 1` copies of a scalar
+    /// aggregates to the same result as a single copy (e.g. `min`, `mean`, `first`; for
+    /// `arg_min` / `arg_max` this holds up to tie-breaking). Empty groups aggregate to null.
     #[inline(always)]
     #[cfg(any(feature = "algorithm_group_by", feature = "bitwise"))]
     fn agg_with_scalar_identity(
@@ -773,12 +775,10 @@ impl Column {
                     );
                 }
 
-                let mut scalar_col = s.resize(groups.len());
-                // The aggregation might change the type (e.g. mean changes int -> float), so we do
-                // a cast here to the output type.
-                if series_aggregation.dtype() != s.dtype() {
-                    scalar_col = scalar_col.cast(series_aggregation.dtype()).unwrap();
-                }
+                // Broadcast the single-group result: it already has the output dtype and value
+                // (e.g. `mean` changes int -> float, `arg_max` yields the index `0`).
+                let scalar_col =
+                    ScalarColumn::from_single_value_series(series_aggregation, groups.len());
 
                 let Some(first_empty_idx) = groups.iter().position(|g| g.is_empty()) else {
                     // Fast path: no empty groups. keep the scalar intact.
@@ -833,17 +833,7 @@ impl Column {
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Self {
-        match self {
-            Column::Series(s) => unsafe { Column::from(s.agg_arg_min(groups)) },
-            Column::Scalar(sc) => {
-                let scalar = if sc.is_empty() || sc.has_nulls() {
-                    Scalar::null(IDX_DTYPE)
-                } else {
-                    Scalar::new_idxsize(0)
-                };
-                Column::new_scalar(self.name().clone(), scalar, 1)
-            },
-        }
+        self.agg_with_scalar_identity(groups, |s, g| unsafe { s.agg_arg_min(g) })
     }
 
     /// # Safety
@@ -851,17 +841,7 @@ impl Column {
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Self {
-        match self {
-            Column::Series(s) => unsafe { Column::from(s.agg_arg_max(groups)) },
-            Column::Scalar(sc) => {
-                let scalar = if sc.is_empty() || sc.has_nulls() {
-                    Scalar::null(IDX_DTYPE)
-                } else {
-                    Scalar::new_idxsize(0)
-                };
-                Column::new_scalar(self.name().clone(), scalar, 1)
-            },
-        }
+        self.agg_with_scalar_identity(groups, |s, g| unsafe { s.agg_arg_max(g) })
     }
 
     /// # Safety

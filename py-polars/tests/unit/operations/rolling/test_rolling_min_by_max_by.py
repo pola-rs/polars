@@ -261,3 +261,31 @@ def test_rolling_min_by_float_by_column() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_rolling_max_by_empty_group_single_row_29585() -> None:
+    """A single-row frame is a scalar column; an empty group must still yield null."""
+    df = pl.DataFrame({"t": [0], "b": [10.0]})
+    result = df.rolling(index_column="t", period="1i").agg(
+        pl.col("b").head(0).max_by(pl.col("t").head(0)).alias("max_by"),
+        pl.col("b").head(0).min_by(pl.col("t").head(0)).alias("min_by"),
+    )
+    expected = pl.DataFrame(
+        {"t": [0], "max_by": [None], "min_by": [None]},
+        schema_overrides={"max_by": pl.Float64, "min_by": pl.Float64},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_rolling_max_by_null_by_single_row_29585() -> None:
+    """A null `by` key in a single-row frame must not select the value."""
+    df = pl.DataFrame({"t": [0], "b": [10.0], "by": pl.Series([None], dtype=pl.Float64)})
+    result = df.rolling(index_column="t", period="1i").agg(
+        pl.col("b").max_by("by").alias("max_by"),
+        pl.col("b").min_by("by").alias("min_by"),
+    )
+    expected = pl.DataFrame(
+        {"t": [0], "max_by": [None], "min_by": [None]},
+        schema_overrides={"max_by": pl.Float64, "min_by": pl.Float64},
+    )
+    assert_frame_equal(result, expected)
