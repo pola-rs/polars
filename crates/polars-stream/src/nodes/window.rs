@@ -398,7 +398,10 @@ fn evaluate_partitions(
                         .downcast_as_array()
                         .values()
                         .iter()
-                        .map(|row| input_row_for_gathered_row[*row as usize])
+                        // SAFETY: the sort only permutes the gathered rows.
+                        .map(|row| unsafe {
+                            *input_row_for_gathered_row.get_unchecked(*row as usize)
+                        })
                         .collect(),
                 };
                 Ok(Some(PartitionWindows {
@@ -487,7 +490,9 @@ fn append_windows(
         .unzip();
     let mut windows = accumulate_dataframes_vertical_unchecked(dfs);
     windows.rechunk_mut_par();
-    let window_row_for_input_row = invert_input_rows(&input_rows, height);
+    // SAFETY: every input row is hashed to exactly one partition, gathered once there, and the
+    // sort of a partition only permutes its rows. So each input row appears exactly once.
+    let window_row_for_input_row = unsafe { invert_input_rows(&input_rows, height) };
     drop(input_rows);
 
     let dfs = RAYON.install(|| {
@@ -510,7 +515,13 @@ fn append_windows(
 
 /// Returns the window row for each input row, given the input row of each window row. The window
 /// rows are numbered through the partitions in order.
-fn invert_input_rows(input_row_for_window_row: &[Vec<IdxSize>], height: IdxSize) -> Vec<IdxSize> {
+///
+/// # Safety
+/// The concatenation of `input_row_for_window_row` must be a permutation of `0..height`.
+unsafe fn invert_input_rows(
+    input_row_for_window_row: &[Vec<IdxSize>],
+    height: IdxSize,
+) -> Vec<IdxSize> {
     let mut window_row_for_input_row = vec![0 as IdxSize; height as usize];
     let mut starts = Vec::with_capacity(input_row_for_window_row.len());
     let mut start = 0 as IdxSize;
@@ -518,7 +529,7 @@ fn invert_input_rows(input_row_for_window_row: &[Vec<IdxSize>], height: IdxSize)
         starts.push(start);
         start += input_rows.len() as IdxSize;
     }
-    // SAFETY: the partitions write to disjoint rows.
+    // SAFETY: the input rows are unique, so the partitions write to disjoint rows.
     let out = unsafe { SyncPtr::new(window_row_for_input_row.as_mut_ptr()) };
     RAYON.install(|| {
         input_row_for_window_row
@@ -527,7 +538,7 @@ fn invert_input_rows(input_row_for_window_row: &[Vec<IdxSize>], height: IdxSize)
             .for_each(|(input_rows, start)| {
                 let out = out.get();
                 for (i, row) in input_rows.iter().enumerate() {
-                    // SAFETY: every input row is in exactly one partition.
+                    // SAFETY: the input rows are in `0..height`.
                     unsafe { *out.add(*row as usize) = start + i as IdxSize };
                 }
             })
@@ -574,10 +585,13 @@ fn evaluate_partition(
     // Stable counting sort on the partition id, visiting the rows in order key order.
     let mut offsets = vec![0 as IdxSize; num_groups + 1];
     for g in &group_idxs {
-        offsets[*g as usize + 1] += 1;
+        // SAFETY: the group ids are below `num_groups`.
+        unsafe { *offsets.get_unchecked_mut(*g as usize + 1) += 1 };
     }
-    for g in 0..num_groups {
-        offsets[g + 1] += offsets[g];
+    let mut sum = 0;
+    for offset in &mut offsets {
+        sum += *offset;
+        *offset = sum;
     }
     let gathered_row_for_sorted_row = if num_groups == 1 {
         order_idx.map_or_else(|| (0..height as IdxSize).collect(), |idx| idx.to_vec())
@@ -585,9 +599,13 @@ fn evaluate_partition(
         let mut gathered_rows = vec![0 as IdxSize; height];
         let mut next = offsets.clone();
         let mut place = |row: IdxSize| {
-            let pos = &mut next[group_idxs[row as usize] as usize];
-            gathered_rows[*pos as usize] = row;
-            *pos += 1;
+            // SAFETY: `row` is below `height` and its group id below `num_groups`. A group gets as
+            // many positions as it has rows, so `pos` stays below `height`.
+            unsafe {
+                let pos = next.get_unchecked_mut(*group_idxs.get_unchecked(row as usize) as usize);
+                *gathered_rows.get_unchecked_mut(*pos as usize) = row;
+                *pos += 1;
+            }
         };
         match &order_idx {
             None => (0..height as IdxSize).for_each(&mut place),
