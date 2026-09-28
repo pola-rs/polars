@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use polars_arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
-use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::schema::Schema;
@@ -251,8 +250,12 @@ fn evaluate_partitions(
                     }
                     let df = sf.get_blocking();
                     let idxs = &b.idxs_per_p[p][start..stop];
-                    // SAFETY: the indices were generated from this morsel.
-                    unsafe { builder.gather_extend(&df, idxs, ShareStrategy::Never) };
+                    if idxs.len() == df.height() {
+                        builder.extend(&df, ShareStrategy::Never);
+                    } else {
+                        // SAFETY: the indices were generated from this morsel.
+                        unsafe { builder.gather_extend(&df, idxs, ShareStrategy::Never) };
+                    }
                     if params.maintain_order {
                         row_idx.extend(idxs.iter().map(|j| row_offsets[k] + j));
                     }
@@ -316,7 +319,23 @@ fn evaluate_partition(
     let num_groups = grouper.num_groups() as usize;
     drop(all_rows);
 
-    // Stable counting sort on the partition id.
+    // The rows sorted by the order key, stable if ties must stay in input order.
+    let order_idx = match &params.order_by {
+        None => None,
+        Some((order_by, options)) => {
+            let options = SortOptions {
+                maintain_order: params.ordered_eval || params.maintain_order,
+                ..*options
+            };
+            let order_idx = df
+                .column(order_by)?
+                .as_materialized_series()
+                .arg_sort(options);
+            Some(order_idx.rechunk().downcast_as_array().values().clone())
+        },
+    };
+
+    // Stable counting sort on the partition id, visiting the rows in order key order.
     let mut offsets = vec![0 as IdxSize; num_groups + 1];
     for g in &group_idxs {
         offsets[*g as usize + 1] += 1;
@@ -324,51 +343,37 @@ fn evaluate_partition(
     for g in 0..num_groups {
         offsets[g + 1] += offsets[g];
     }
-    let mut perm = vec![0 as IdxSize; height];
-    let mut next = offsets.clone();
-    for (row, g) in group_idxs.iter().enumerate() {
-        let pos = &mut next[*g as usize];
-        perm[*pos as usize] = row as IdxSize;
-        *pos += 1;
-    }
-    drop(group_idxs);
-    drop(next);
-
-    if let Some((order_by, options)) = &params.order_by {
-        let order_by = df.column(order_by)?.clone();
-        let encoded = _get_rows_encoded_ca(
-            PlSmallStr::EMPTY,
-            &[order_by],
-            &[options.descending],
-            &[options.nulls_last],
-            false,
-        )?;
-        let encoded = encoded.downcast_as_array();
-        let stable = params.ordered_eval || params.maintain_order;
-        for g in 0..num_groups {
-            let group = &mut perm[offsets[g] as usize..offsets[g + 1] as usize];
-            if group.len() < 2 {
-                continue;
-            }
-            // SAFETY: the indices are rows of `df`.
-            let key = |i: &IdxSize| unsafe { encoded.value_unchecked(*i as usize) };
-            if stable {
-                group.sort_by(|a, b| key(a).cmp(key(b)));
-            } else {
-                group.sort_unstable_by(|a, b| key(a).cmp(key(b)));
-            }
+    let perm = if num_groups == 1 {
+        order_idx.map_or_else(|| (0..height as IdxSize).collect(), |idx| idx.to_vec())
+    } else {
+        let mut perm = vec![0 as IdxSize; height];
+        let mut next = offsets.clone();
+        let mut place = |row: IdxSize| {
+            let pos = &mut next[group_idxs[row as usize] as usize];
+            perm[*pos as usize] = row;
+            *pos += 1;
+        };
+        match &order_idx {
+            None => (0..height as IdxSize).for_each(&mut place),
+            Some(order_idx) => order_idx.iter().copied().for_each(&mut place),
         }
-    }
+        perm
+    };
+    drop(group_idxs);
 
-    let row_idx = if params.maintain_order {
+    let is_identity = perm.iter().enumerate().all(|(i, row)| i as IdxSize == *row);
+    let row_idx = if params.maintain_order && !is_identity {
         perm.iter().map(|i| row_idx[*i as usize]).collect()
     } else {
         row_idx
     };
-    let perm = IdxCa::from_vec(PlSmallStr::EMPTY, perm);
-    // SAFETY: `perm` is a permutation of the rows of `df`.
-    let mut df = unsafe { df.take_unchecked(&perm) };
-    drop(perm);
+    let mut df = if is_identity {
+        df
+    } else {
+        let perm = IdxCa::from_vec(PlSmallStr::EMPTY, perm);
+        // SAFETY: `perm` is a permutation of the rows of `df`.
+        unsafe { df.take_unchecked(&perm) }
+    };
 
     let groups = GroupsType::Slice {
         groups: offsets
