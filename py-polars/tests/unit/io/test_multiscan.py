@@ -1556,7 +1556,8 @@ def test_multiscan_unordered_files_post_apply(
         (df.drop("f") if i == 7 else df).write_parquet(path)
         dfs.append(df.with_columns(path=pl.lit(str(path))))
     df = pl.concat(dfs).with_columns(
-        pl.when(pl.col("f") == 7).then(None).otherwise(pl.col("f")).alias("f")
+        pl.when(pl.col("f") == 7).then(None).otherwise(pl.col("f")).alias("f"),
+        normalize_path_separator_pl(pl.col("path")),
     )
 
     lf = pl.scan_parquet(
