@@ -236,7 +236,9 @@ fn evaluate_partitions(
         }
     }
 
-    let outputs = RAYON.install(|| {
+    // Gather every hash partition first, so the input morsels can be freed before the
+    // partitions are sorted and evaluated.
+    let partitions = RAYON.install(|| {
         (0..num_partitions)
             .into_par_iter()
             .map(|p| {
@@ -260,13 +262,19 @@ fn evaluate_partitions(
                         row_idx.extend(idxs.iter().map(|j| row_offsets[k] + j));
                     }
                 }
-                evaluate_partition(params, builder.freeze(), row_idx, random_state, state)
+                (builder.freeze(), row_idx)
             })
-            .collect::<PolarsResult<Vec<_>>>()
-    })?;
-
+            .collect::<Vec<_>>()
+    });
     drop(morsels);
     drop(builders);
+
+    let outputs = RAYON.install(|| {
+        partitions
+            .into_par_iter()
+            .map(|(df, row_idx)| evaluate_partition(params, df, row_idx, random_state, state))
+            .collect::<PolarsResult<Vec<_>>>()
+    })?;
 
     let (dfs, row_idxs): (Vec<_>, Vec<_>) = outputs
         .into_iter()
@@ -372,7 +380,9 @@ fn evaluate_partition(
     } else {
         let perm = IdxCa::from_vec(PlSmallStr::EMPTY, perm);
         // SAFETY: `perm` is a permutation of the rows of `df`.
-        unsafe { df.take_unchecked(&perm) }
+        let sorted = unsafe { df.take_unchecked(&perm) };
+        drop(df);
+        sorted
     };
 
     let groups = GroupsType::Slice {
