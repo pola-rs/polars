@@ -76,7 +76,24 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
 
 /// Whether the row encoding has a representation for `dtype`.
 pub fn supports_row_encoding(dtype: &DataType) -> bool {
-    get_row_encoding_context(dtype).is_ok()
+    use DataType as D;
+    let out = match dtype {
+        D::Unknown(_) => false,
+        #[cfg(feature = "object")]
+        D::Object(_) => false,
+        D::List(inner) => supports_row_encoding(inner),
+        #[cfg(feature = "dtype-array")]
+        D::Array(inner, _) => supports_row_encoding(inner),
+        #[cfg(feature = "dtype-struct")]
+        D::Struct(fields) => fields.iter().all(|f| supports_row_encoding(f.dtype())),
+        #[cfg(feature = "dtype-map")]
+        D::Map(key, value) => supports_row_encoding(key) && supports_row_encoding(value),
+        #[cfg(feature = "dtype-extension")]
+        D::Extension(_, storage) => supports_row_encoding(storage),
+        _ => true,
+    };
+    debug_assert_eq!(out, get_row_encoding_context(dtype).is_ok());
+    out
 }
 
 /// Get the [`RowEncodingContext`] for a certain [`DataType`].
@@ -149,11 +166,6 @@ pub fn get_row_encoding_context(dtype: &DataType) -> PolarsResult<Option<RowEnco
             }
 
             if ctxts.is_empty() {
-                // Every field so far was context-free, but the remaining ones still have to
-                // be checked for dtypes the row encoding cannot represent.
-                for f in &fs[ctxts.len()..] {
-                    get_row_encoding_context(f.dtype())?;
-                }
                 return Ok(None);
             }
 
