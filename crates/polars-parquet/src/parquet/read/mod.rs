@@ -12,8 +12,7 @@ pub use column::*;
 pub use compression::{BasicDecompressor, decompress};
 pub use metadata::{
     deserialize_file_crypto_metadata, deserialize_metadata, deserialize_metadata_with_decryption,
-    deserialize_num_rows, read_metadata, read_metadata_with_decryption, read_metadata_with_size,
-    read_num_rows,
+    deserialize_num_rows, read_metadata, read_metadata_with_decryption, read_num_rows,
 };
 pub use page::{PageIterator, PageMetaData, PageReader};
 use polars_buffer::Buffer;

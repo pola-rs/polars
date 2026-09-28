@@ -36,18 +36,7 @@ fn stream_len(seek: &mut impl Seek) -> std::result::Result<u64, std::io::Error> 
 
 /// Reads a [`FileMetadata`] from the reader, located at the end of the file.
 pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> ParquetResult<FileMetadata> {
-    // check file is large enough to hold footer
-    let file_size = stream_len(reader)?;
-    read_metadata_with_size(reader, file_size)
-}
-
-/// Reads a [`FileMetadata`] from the reader, located at the end of the file, with known file size.
-pub fn read_metadata_with_size<R: Read + Seek>(
-    reader: &mut R,
-    file_size: u64,
-) -> ParquetResult<FileMetadata> {
-    let footer = fetch_footer_buf(reader, file_size)?;
-    deserialize_metadata(footer.into_plaintext()?)
+    read_metadata_with_decryption(reader, None, None)
 }
 
 /// Reads a [`FileMetadata`] from the reader, located at the end of the file,
@@ -72,7 +61,7 @@ pub fn read_metadata_with_decryption<R: Read + Seek>(
 /// `ByteRange`s into it instead of allocating per-stat byte vecs.
 pub fn deserialize_metadata(footer: Buffer<u8>) -> ParquetResult<FileMetadata> {
     let compact = decode_file_metadata(footer)?;
-    FileMetadata::from_compact(compact)
+    FileMetadata::from_compact(compact, None)
 }
 
 /// Parse loaded metadata bytes, using the provided decryption properties if the file
@@ -111,7 +100,7 @@ fn decode_footer(
         )?;
         let footer = Buffer::from_vec(decryptor.decrypt_footer(&encrypted_footer)?);
         let compact = decode_file_metadata(footer)?;
-        FileMetadata::from_compact_with_decryptor(compact, Some(Arc::new(decryptor)))
+        FileMetadata::from_compact(compact, Some(Arc::new(decryptor)))
     } else {
         let mut compact = decode_file_metadata(footer.buffer.clone())?;
         // A file with a plaintext footer may have encrypted columns and require a file decryptor.
@@ -131,7 +120,7 @@ fn decode_footer(
                 Ok::<_, ParquetError>(Arc::new(decryptor))
             })
             .transpose()?;
-        FileMetadata::from_compact_with_decryptor(compact, decryptor)
+        FileMetadata::from_compact(compact, decryptor)
     }
 }
 

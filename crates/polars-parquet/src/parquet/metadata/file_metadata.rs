@@ -205,17 +205,13 @@ impl FileMetadata {
     /// the hand-written Thrift decoder. Parses the schema, attaches each
     /// row group's chunks to the schema's descriptors, and stores the
     /// footer buffer at the file level for stats resolution.
+    /// If a [`FileDecryptor`] is provided, will also decrypt any encrypted
+    /// column chunks.
     ///
     /// Crate-internal: external callers go through
     /// [`crate::parquet::read::deserialize_metadata`] which combines the
     /// hand-written decoder with this constructor.
-    pub(crate) fn from_compact(compact: CompactFileMetaData) -> ParquetResult<Self> {
-        Self::from_compact_with_decryptor(compact, None)
-    }
-
-    /// As [`Self::from_compact`], but for an encrypted file that requires a
-    /// [`FileDecryptor`] to decrypt column data.
-    pub(crate) fn from_compact_with_decryptor(
+    pub(crate) fn from_compact(
         compact: CompactFileMetaData,
         decryptor: Option<Arc<FileDecryptor>>,
     ) -> ParquetResult<Self> {
