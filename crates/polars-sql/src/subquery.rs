@@ -1816,6 +1816,11 @@ fn usable_as_join_key(expr: &Expr) -> bool {
         Expr::BinaryExpr { left, op: _, right } => {
             usable_as_join_key(left) && usable_as_join_key(right)
         },
+        // SQL operators that are lowered once the dtypes are known are elementwise.
+        Expr::Function {
+            input,
+            function: FunctionExpr::Sql(_),
+        } => input.iter().all(usable_as_join_key),
         Expr::Ternary {
             predicate,
             truthy,

@@ -2521,7 +2521,9 @@ def test_is_in_rejects_a_map_haystack(key_dtype: PolarsDataType, key: Any) -> No
         }
     )
 
-    with pytest.raises(InvalidOperationError, match="must be nested"):
+    with pytest.raises(
+        InvalidOperationError, match=r"(?s)must be nested.*use `map.contains_key`"
+    ):
         df.select(pl.col("l").is_in(pl.col("m")))
 
 

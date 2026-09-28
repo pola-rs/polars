@@ -159,6 +159,35 @@ impl<K> FixedIndexTable<K> {
         }
     }
 
+    /// Returns the slot of the given hash whose tag matches it, preferring the first
+    /// slot, and the key index in that slot, without marking it as accessed. The key
+    /// index is not below `len()` when no slot matches.
+    #[inline(always)]
+    pub fn find_tag(&self, hash: u64) -> (usize, IdxSize) {
+        let tag = hash as u32;
+        let h1 = (hash >> self.shift) as usize;
+        let h2 = (hash.wrapping_mul(H2_MULT) >> self.shift) as usize;
+        unsafe {
+            let h = select_unpredictable(self.slots.get_unchecked(h1).tag == tag, h1, h2);
+            let slot = self.slots.get_unchecked(h);
+            let k = select_unpredictable(slot.tag == tag, slot.key_index, IdxSize::MAX);
+            (h, k)
+        }
+    }
+
+    /// Marks the key in `slot`, found for `hash`, as accessed.
+    ///
+    /// # Safety
+    /// `slot` must be in-bounds.
+    #[inline(always)]
+    pub unsafe fn touch(&mut self, slot: usize, hash: u64) {
+        unsafe { self.slots.get_unchecked_mut(slot).last_access_tag = hash as u32 };
+    }
+
+    pub fn num_slots(&self) -> usize {
+        self.slots.len()
+    }
+
     pub fn keys(&self) -> &[K] {
         &self.keys
     }

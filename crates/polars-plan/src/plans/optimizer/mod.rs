@@ -157,7 +157,7 @@ pub fn optimize(
     if comm_subplan_elim {
         feature_gated!("cse", {
             let members = get_or_init_members!();
-            if ((members.has_sink_multiple || members.has_joins_or_unions)
+            if ((members.has_sink_multiple || members.has_joins || members.has_unions)
                 && members.has_duplicate_scans())
                 || members.has_cse_equivalent_resolvers()
             {
@@ -232,13 +232,13 @@ pub fn optimize(
     if opt_flags.join_order() && get_or_init_members!().has_preserving_join {
         root = join_pushthrough::push_through_outer_joins(root, ir_arena, expr_arena);
     }
-    if opt_flags.join_order() && get_or_init_members!().has_joins_or_unions {
+    if opt_flags.join_order() && get_or_init_members!().has_joins {
         root = join_order::join_order(root, ir_arena, expr_arena)?;
     }
 
     // After join ordering, and before projection pushdown drops what only the fused predicate
     // reads.
-    if opt_flags.predicate_pushdown() && get_or_init_members!().has_joins_or_unions {
+    if opt_flags.predicate_pushdown() && get_or_init_members!().has_joins {
         join_predicate_fusion::fuse_predicates(root, ir_arena, expr_arena)?;
     }
 
@@ -287,7 +287,7 @@ pub fn optimize(
     }
 
     // Needs the final join order and the pushed-down projections.
-    if opt_flags.contains(OptFlags::ROW_ESTIMATE) && get_or_init_members!().has_joins_or_unions {
+    if opt_flags.contains(OptFlags::ROW_ESTIMATE) && get_or_init_members!().has_joins {
         join_build_side::set_join_build_sides(root, ir_arena, expr_arena);
         if opt_flags.streaming() {
             join_runtime_filter::attach_join_runtime_filters(root, ir_arena, expr_arena);

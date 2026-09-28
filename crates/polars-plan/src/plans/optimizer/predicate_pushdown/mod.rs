@@ -5,8 +5,8 @@ mod join;
 mod keys;
 pub(super) mod utils;
 
+pub(crate) use dynamic::new_dynamic_pred;
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
-pub(crate) use dynamic::{new_batch_only_dynamic_pred, new_dynamic_pred};
 use polars_buffer::Buffer;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
@@ -18,7 +18,7 @@ use utils::*;
 use super::*;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
-use crate::utils::{check_input_node, has_aexpr};
+use crate::utils::check_input_node;
 
 pub struct PredicatePushDown {
     // How many cache nodes a predicate may be pushed down to.
@@ -361,6 +361,7 @@ impl PredicatePushDown {
                 scan_type,
                 unified_scan_args,
                 output_schema,
+                maintain_order,
             } => {
                 let mut blocked_names = Vec::with_capacity(2);
 
@@ -405,6 +406,7 @@ impl PredicatePushDown {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        maintain_order,
                     }
                 } else {
                     let lp = Scan {
@@ -416,6 +418,7 @@ impl PredicatePushDown {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        maintain_order,
                     };
                     if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);

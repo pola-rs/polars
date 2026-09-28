@@ -377,11 +377,7 @@ pub fn resolve_join(
                 .to_dtype(&ToFieldContext::new(ctxt.expr_arena, &schema_left))?
             {
                 Datetime(tu, _) | Duration(tu) => {
-                    let tolerance = match tu {
-                        TimeUnit::Nanoseconds => duration.duration_ns(),
-                        TimeUnit::Microseconds => duration.duration_us(),
-                        TimeUnit::Milliseconds => duration.duration_ms(),
-                    };
+                    let tolerance = duration.duration(tu);
                     options.tolerance = Some(Scalar::from(tolerance))
                 },
                 Date => {

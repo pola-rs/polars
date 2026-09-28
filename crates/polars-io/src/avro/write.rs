@@ -67,6 +67,9 @@ where
         let schema = schema_to_arrow_checked(df.schema(), CompatLevel::oldest(), "avro")?;
         let record = write::to_record(&schema, self.name.clone())?;
 
+        avro_schema::write::write_metadata(&mut self.writer, record.clone(), self.compression)
+            .map_err(to_compute_err)?;
+
         let mut data = vec![];
         let mut compressed_block = avro_schema::file::CompressedBlock::default();
         for chunk in df.iter_chunks(CompatLevel::oldest(), true) {
@@ -82,9 +85,6 @@ where
             let _was_compressed =
                 avro_schema::write::compress(&mut block, &mut compressed_block, self.compression)
                     .map_err(to_compute_err)?;
-
-            avro_schema::write::write_metadata(&mut self.writer, record.clone(), self.compression)
-                .map_err(to_compute_err)?;
 
             avro_schema::write::write_block(&mut self.writer, &compressed_block)
                 .map_err(to_compute_err)?;

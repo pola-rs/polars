@@ -121,16 +121,35 @@ def test_cross_join_prefers_the_row_bound_over_the_estimate(tmp_path: Path) -> N
     )
     small = pl.scan_parquet(tmp_path / "small.parquet")
     big = pl.scan_parquet(tmp_path / "big.parquet").filter(
-        pl.col("b") >= 0,
-        pl.col("b") < 1_000,
-        pl.col("c") >= 0,
-        pl.col("c") < 1_000,
-        pl.col("b") != -1,
+        (pl.col("b") - pl.col("c")) == 0,
+        (pl.col("b") + pl.col("c")) >= 0,
+        pl.col("b").abs() < 1_000,
+        pl.col("c").abs() < 1_000,
+        (pl.col("b") * 2) >= 0,
     )
 
     q = small.join(big.select("b"), how="cross")
     assert cross_join_build_side(q.explain()) == "PreferLeft"
     assert q.collect(engine="streaming").height == 10_000
+
+
+def test_cross_join_estimate_uses_the_range_a_filter_keeps(tmp_path: Path) -> None:
+    # The filter keeps 80% of the left side. The column's min/max tells the planner
+    # so, and the joined right side is estimated far below it.
+    tmp_path.mkdir(exist_ok=True)
+    pl.DataFrame({"k": range(4_000)}).write_parquet(tmp_path / "big.parquet")
+    pl.DataFrame({"k": range(200), "w": range(200)}).write_parquet(
+        tmp_path / "small.parquet"
+    )
+    big = pl.scan_parquet(tmp_path / "big.parquet").filter(
+        pl.col("k") >= 400, pl.col("k") < 3_600
+    )
+    small = pl.scan_parquet(tmp_path / "small.parquet")
+    joined = small.join(small, on="k", suffix="_r").select("w")
+
+    q = big.join(joined, how="cross")
+    assert cross_join_build_side(q.explain()) == "PreferRight"
+    assert q.select(pl.len()).collect(engine="streaming").item() == 640_000
 
 
 def test_no_cross_join_build_side_for_similar_sizes(tmp_path: Path) -> None:

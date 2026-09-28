@@ -1,9 +1,7 @@
 use bitflags::bitflags;
 use num_traits::Signed;
 #[cfg(feature = "dtype-decimal")]
-use polars_compute::decimal::{
-    DEC128_MAX_PREC, dec128_fits, f64_dec128_scale, f64_to_dec128_exact, i128_to_dec128,
-};
+use polars_compute::decimal::{DEC128_MAX_PREC, i128_to_dec128};
 
 use super::*;
 
@@ -456,7 +454,7 @@ pub fn get_supertype_with_options(
                 Some(List(Box::new(st)))
             }
             #[cfg(feature = "dtype-struct")]
-            (Struct(inner), right @ Unknown(UnknownKind::Float(_) | UnknownKind::Int(_))) => {
+            (Struct(inner), right @ Unknown(UnknownKind::Float | UnknownKind::Int(_))) => {
                 match inner.first() {
                     Some(inner) => get_supertype(&inner.dtype, right),
                     None => None
@@ -477,16 +475,16 @@ pub fn get_supertype_with_options(
             }
             #[cfg(feature = "dtype-decimal")]
             (Decimal(p1, s1), Decimal(p2, s2)) => {
-                Some(Decimal((*p1).max(*p2), (*s1).max(*s2)))
+                // Keep all integer digits and the larger scale. Beyond precision 38 values
+                // that don't fit raise when cast.
+                let s = (*s1).max(*s2);
+                let p = ((p1 - s1).max(p2 - s2) + s).min(DEC128_MAX_PREC);
+                Some(Decimal(p, s))
             },
             #[cfg(all(feature = "dtype-decimal", feature = "dtype-f16"))]
             (Decimal(_, _), Float16) => Some(Float64),
             #[cfg(feature = "dtype-decimal")]
-            (Decimal(prec, scale), Unknown(UnknownKind::Float(v))) => {
-                Some(dyn_float_decimal_supertype(v.0, *prec, *scale).unwrap_or(Float64))
-            },
-            #[cfg(feature = "dtype-decimal")]
-            (Decimal(_, _), Float32 | Float64) => Some(Float64),
+            (Decimal(_, _), Float32 | Float64 | Unknown(UnknownKind::Float)) => Some(Float64),
             #[cfg(feature = "dtype-decimal")]
             (Decimal(prec, scale), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => {
                 let fits = |v| { i128_to_dec128(v, *prec, *scale).is_some() };
@@ -511,7 +509,7 @@ pub fn get_supertype_with_options(
             }
             (dt, Unknown(kind)) => {
                 match kind {
-                    UnknownKind::Float(_) | UnknownKind::Int(_) if  dt.is_string() => {
+                    UnknownKind::Float | UnknownKind::Int(_) if  dt.is_string() => {
                         if options.allow_primitive_to_string() {
                             Some(dt.clone())
                         } else {
@@ -519,12 +517,12 @@ pub fn get_supertype_with_options(
                         }
                     },
                     // Materialize float to float
-                    UnknownKind::Float(_) | UnknownKind::Int(_) if dt.is_float() => Some(dt.clone()),
-                    UnknownKind::Float(v) if dt.is_integer() => {
+                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() => Some(dt.clone()),
+                    UnknownKind::Float if dt.is_integer() => {
                         if dt.is_known() {
                             Some(Float64)
                         } else {
-                            Some(Unknown(UnknownKind::Float(*v)))
+                            Some(Unknown(UnknownKind::Float))
                         }
                     },
                     // Materialize str
@@ -635,23 +633,6 @@ fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType
             new_fields.push(Field::new(a.name.clone(), st))
         }
         Some(DataType::Struct(new_fields))
-    }
-}
-
-/// Supertype of a decimal and a dynamic float literal, or `None` if the
-/// literal cannot be represented as a decimal.
-#[cfg(feature = "dtype-decimal")]
-fn dyn_float_decimal_supertype(v: f64, prec: usize, scale: usize) -> Option<DataType> {
-    let new_scale = scale.max(f64_dec128_scale(v)?);
-    let new_prec = prec - scale + new_scale;
-    if new_prec > DEC128_MAX_PREC {
-        return None;
-    }
-    let x = f64_to_dec128_exact(v, DEC128_MAX_PREC, new_scale)?;
-    if dec128_fits(x, new_prec) {
-        Some(DataType::Decimal(new_prec, new_scale))
-    } else {
-        Some(DataType::Decimal(DEC128_MAX_PREC, new_scale))
     }
 }
 

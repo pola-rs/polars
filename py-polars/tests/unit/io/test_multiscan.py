@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 import sys
 from functools import partial
@@ -1386,3 +1387,301 @@ def test_hive_join_rewrite_null_partition(tmp_path: Path, nulls_equal: bool) -> 
             q.collect(),
             q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
         )
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+@pytest.mark.parametrize(
+    ("scan", "write", "env_var"),
+    [
+        (
+            pl.scan_parquet,
+            partial(pl.DataFrame.write_parquet, row_group_size=100),
+            "POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET",
+        ),
+        (
+            pl.scan_ipc,
+            partial(pl.DataFrame.write_ipc, record_batch_size=100),
+            "POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET",
+        ),
+    ],
+)
+def test_prefetch_kbytes_budget_below_download_chunk_29464(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: Any,
+    scan: Any,
+    write: Any,
+    env_var: str,
+) -> None:
+    plmonkeypatch.setenv(env_var, "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    dfs = [
+        pl.DataFrame({"a": range(i * 1000, (i + 1) * 1000), "b": ["x" * 50] * 1000})
+        for i in range(3)
+    ]
+    paths = [tmp_path / f"{i}" for i in range(len(dfs))]
+    for df, path in zip(dfs, paths, strict=True):
+        write(df, path)
+
+    capfd.readouterr()
+    out = scan(paths).collect(engine="streaming")
+    capture = capfd.readouterr().err
+
+    assert "prefetch_kbytes_limit: 1\n" in capture
+    assert_frame_equal(out, pl.concat(dfs))
+
+
+def _multiscan_unordered_frames(
+    n_files: int = 20, n_rows: int = 1_000
+) -> list[pl.DataFrame]:
+    return [
+        pl.select(
+            a=pl.int_range(i * n_rows, (i + 1) * n_rows), f=pl.lit(i, dtype=pl.Int64)
+        )
+        for i in range(n_files)
+    ]
+
+
+def _multiscan_unordered_sources(
+    write: Any, tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> tuple[list[Path], pl.DataFrame]:
+    # Files are only emitted unordered for remote sources; force the async path.
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_MAX_CONCURRENT_SCANS", "4")
+    dfs = _multiscan_unordered_frames()
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for i, df in enumerate(dfs):
+        path = tmp_path / f"{i:02}"
+        write(df, path)
+        paths.append(path)
+    return paths, pl.concat(dfs)
+
+
+def _assert_files_order(capture: str, expected: str) -> None:
+    # CI also runs with reader capabilities cleared, which takes the ordered fallback.
+    if os.environ.get("POLARS_FORCE_EMPTY_READER_CAPABILITIES") == "1":
+        expected = "unordered_files: false (reason: no capability)"
+    assert expected in capture
+
+
+def _collect_verbose(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> tuple[pl.DataFrame, str]:
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        out = q.collect(engine="streaming")
+        return out, capfd.readouterr().err
+
+
+@pytest.mark.write_disk
+def test_multiscan_unordered_files(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    sources, df = _multiscan_unordered_sources(
+        pl.DataFrame.write_parquet, tmp_path, plmonkeypatch
+    )
+    lf = pl.scan_parquet(sources)
+
+    out, capture = _collect_verbose(lf.select(pl.col("a").sum()), plmonkeypatch, capfd)
+    _assert_files_order(capture, "unordered_files: true, unordered_init: true")
+    assert out.item() == df["a"].sum()
+
+    # Row positions are tracked, so readers initialize in order.
+    q = lf.with_row_index().filter(pl.col("a") % 3 == 0).select(pl.col("index").max())
+    _, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    _assert_files_order(
+        capture,
+        "unordered_files: true, unordered_init: false (reason: row index or slice)",
+    )
+
+    # The measurement knob forces file order without touching the query.
+    plmonkeypatch.setenv("POLARS_FORCE_ORDERED_MULTISCAN", "1")
+    _, capture = _collect_verbose(lf.select(pl.col("a").sum()), plmonkeypatch, capfd)
+    _assert_files_order(capture, "unordered_files: false (reason: forced)")
+    plmonkeypatch.delenv("POLARS_FORCE_ORDERED_MULTISCAN")
+
+    def collect(q: pl.LazyFrame) -> pl.DataFrame:
+        return q.collect(engine="streaming")
+
+    assert_frame_equal(collect(lf.sort("a")), df)
+    assert_frame_equal(
+        collect(lf.with_row_index().filter(pl.col("a") % 3 == 0).sort("index")),
+        df.with_row_index().filter(pl.col("a") % 3 == 0),
+    )
+    assert_frame_equal(
+        collect(lf.slice(1_234, 10_000).select(pl.col("a").sum(), pl.len())),
+        df.slice(1_234, 10_000).select(pl.col("a").sum(), pl.len()),
+    )
+    assert_frame_equal(
+        collect(lf.group_by("f").agg(pl.len(), pl.col("a").min()).sort("f")),
+        df.group_by("f").agg(pl.len(), pl.col("a").min()).sort("f"),
+    )
+    # Order is observed.
+    assert_frame_equal(collect(lf), df)
+
+
+@pytest.mark.write_disk
+def test_multiscan_unordered_files_requires_capability(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Only parquet opts in to emitting files unordered.
+    sources, df = _multiscan_unordered_sources(
+        pl.DataFrame.write_ipc, tmp_path, plmonkeypatch
+    )
+    q = pl.scan_ipc(sources).select(pl.col("a").sum())
+
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    assert "unordered_files: false (reason: no capability)" in capture
+    assert out.item() == df["a"].sum()
+
+
+@pytest.mark.write_disk
+def test_multiscan_unordered_files_post_apply(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # File paths and missing columns go through each file's post-apply pipeline.
+    plmonkeypatch.setenv("POLARS_MAX_CONCURRENT_SCANS", "4")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    dfs = []
+    for i, df in enumerate(_multiscan_unordered_frames()):
+        path = tmp_path / f"{i:02}.parquet"
+        (df.drop("f") if i == 7 else df).write_parquet(path)
+        dfs.append(df.with_columns(path=pl.lit(str(path))))
+    df = pl.concat(dfs).with_columns(
+        pl.when(pl.col("f") == 7).then(None).otherwise(pl.col("f")).alias("f"),
+        normalize_path_separator_pl(pl.col("path")),
+    )
+
+    lf = pl.scan_parquet(
+        tmp_path / "*.parquet", include_file_paths="path", missing_columns="insert"
+    )
+    # `f` is constant per file; `min` keeps the query order-agnostic.
+    aggs = [pl.len(), pl.col("a").min(), pl.col("f").min()]
+    q = lf.group_by("path").agg(aggs)
+
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+
+    _assert_files_order(capture, "unordered_files: true")
+    assert_frame_equal(out.sort("path"), df.group_by("path").agg(aggs).sort("path"))
+    assert_frame_equal(lf.sort("a").collect(engine="streaming"), df)
+
+
+@pytest.mark.write_disk
+def test_multiscan_unordered_files_single_effective_source(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # With one file left to read there is nothing to interleave.
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    sources, df = _multiscan_unordered_sources(
+        pl.DataFrame.write_parquet, tmp_path / "flat", plmonkeypatch
+    )
+
+    capfd.readouterr()
+    out = (
+        pl.scan_parquet(sources[:1])
+        .select(pl.col("a").sum())
+        .collect(engine="streaming")
+    )
+    assert "unordered_files: false (reason: single source)" in capfd.readouterr().err
+    assert out.item() == df.head(1_000)["a"].sum()
+
+    # The hive partition filter skips every file but one.
+    hive = tmp_path / "hive"
+    for i, frame in enumerate(df.partition_by("f", maintain_order=True)):
+        (hive / f"f={i}").mkdir(parents=True)
+        frame.drop("f").write_parquet(hive / f"f={i}" / "0.parquet")
+    lf = pl.scan_parquet(hive, hive_partitioning=True)
+
+    capfd.readouterr()
+    out = (
+        lf.filter(pl.col("f") == 3)
+        .select(pl.col("a").sum())
+        .collect(engine="streaming")
+    )
+    assert "unordered_files: false (reason: single source)" in capfd.readouterr().err
+    assert out.item() == df.filter(pl.col("f") == 3)["a"].sum()
+
+    capfd.readouterr()
+    out = (
+        lf.filter(pl.col("f") >= 3)
+        .select(pl.col("a").sum())
+        .collect(engine="streaming")
+    )
+    _assert_files_order(capfd.readouterr().err, "unordered_files: true")
+    assert out.item() == df.filter(pl.col("f") >= 3)["a"].sum()
+
+
+@pytest.mark.write_disk
+def test_multiscan_unordered_files_error(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    sources, _ = _multiscan_unordered_sources(
+        pl.DataFrame.write_parquet, tmp_path, plmonkeypatch
+    )
+    pl.DataFrame({"a": ["x"], "f": [0]}).write_parquet(sources[10])
+    q = pl.scan_parquet(sources).select(pl.col("a").sum())
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        with pytest.raises(pl.exceptions.SchemaError):
+            q.collect(engine="streaming")
+        capture = capfd.readouterr().err
+
+    # The error must surface from the unordered path.
+    _assert_files_order(capture, "unordered_files: true")
+
+
+@pytest.mark.write_disk
+def test_multiscan_unordered_files_collect_all(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    sources, df = _multiscan_unordered_sources(
+        pl.DataFrame.write_parquet, tmp_path, plmonkeypatch
+    )
+    q = pl.scan_parquet(sources).select(pl.col("a").sum())
+    out = io.BytesIO()
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        _, head, count = pl.collect_all(
+            [q.sink_parquet(out, lazy=True), q.head(10), q.select(pl.len())],
+            engine="streaming",
+        )
+        capture = capfd.readouterr().err
+
+    _assert_files_order(capture, "unordered_files: true")
+    assert head.item() == df["a"].sum()
+    assert count.item() == 1
+    out.seek(0)
+    assert pl.read_parquet(out).item() == df["a"].sum()
+
+
+@pytest.mark.write_disk
+def test_multiscan_unordered_files_local_stays_ordered(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    sources, df = _multiscan_unordered_sources(
+        pl.DataFrame.write_parquet, tmp_path, plmonkeypatch
+    )
+    q = pl.scan_parquet(sources).select(pl.col("a").sum())
+
+    # Same query and sources; only the async gate flips.
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    _assert_files_order(capture, "unordered_files: true")
+    assert out.item() == df["a"].sum()
+
+    # Local reads have no stragglers to hide, so files stay ordered.
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    _assert_files_order(capture, "unordered_files: false (reason: not remote)")
+    assert out.item() == df["a"].sum()

@@ -207,10 +207,13 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "log")]
         F::Entropy { .. } => false,
         #[cfg(feature = "log")]
-        F::Log | F::Log1p | F::Exp => false,
+        F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc => false,
         F::Unique(_) => false,
         #[cfg(feature = "round_series")]
         F::Round { .. } | F::RoundSF { .. } | F::Truncate { .. } | F::Floor | F::Ceil => false,
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { .. } => false,
+        F::TruncArith(_) => false,
         #[cfg(feature = "fused")]
         F::Fused(_) => false,
         F::ConcatExpr { .. } => false,
@@ -244,7 +247,9 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Random { .. } => true,
 
         #[cfg(feature = "ffi_plugin")]
-        F::FfiPlugin { .. } => true,
+        F::FfiPlugin {
+            is_deterministic, ..
+        } => !is_deterministic,
         F::FoldHorizontal { .. } | F::ReduceHorizontal { .. } => true,
         #[cfg(feature = "dtype-struct")]
         F::CumFoldHorizontal { .. } | F::CumReduceHorizontal { .. } => true,

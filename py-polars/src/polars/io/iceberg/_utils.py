@@ -18,6 +18,7 @@ from ast import (
     Invert,
     List,
     Name,
+    NotEq,
     UnaryOp,
 )
 from dataclasses import dataclass
@@ -245,6 +246,9 @@ def _(a: Constant) -> Any:
 
 @_convert_predicate.register(Name)
 def _(a: Name) -> Any:
+    if a.id == "NaN":
+        msg = "NaN literal is not supported in this predicate position"
+        raise ValueError(msg)
     return a.id
 
 
@@ -269,6 +273,9 @@ def _(a: Call) -> Any:
     elif f in _temporal_conversions:
         # convert from polars-native i64 to ISO8601 string
         return _temporal_conversions[f](*args).isoformat()
+    elif f == "starts_with":
+        pattern = _convert_predicate(a.keywords[0].value)
+        return pyiceberg.expressions.StartsWith(args[0][0], pattern)  # type: ignore[misc, call-arg]
     else:
         ref = _convert_predicate(a.func.value)[0]  # type: ignore[attr-defined]
         if f == "isin":
@@ -306,7 +313,15 @@ def _(a: BinOp) -> Any:
 def _(a: Compare) -> Any:
     op = a.ops[0]
     lhs = _convert_predicate(a.left)[0]
-    rhs = _convert_predicate(a.comparators[0])
+    rhs_ast = a.comparators[0]
+
+    if isinstance(rhs_ast, Name) and rhs_ast.id == "NaN":
+        if isinstance(op, Eq):
+            return pyiceberg.expressions.IsNaN(lhs)  # type: ignore[misc]
+        if isinstance(op, NotEq):
+            return pyiceberg.expressions.NotNaN(lhs)  # type: ignore[misc]
+
+    rhs = _convert_predicate(rhs_ast)
 
     if isinstance(op, Gt):
         return pyiceberg.expressions.GreaterThan(lhs, rhs)  # type: ignore[misc, call-arg]
@@ -314,6 +329,8 @@ def _(a: Compare) -> Any:
         return pyiceberg.expressions.GreaterThanOrEqual(lhs, rhs)  # type: ignore[misc, call-arg]
     if isinstance(op, Eq):
         return pyiceberg.expressions.EqualTo(lhs, rhs)  # type: ignore[misc, call-arg]
+    if isinstance(op, NotEq):
+        return pyiceberg.expressions.NotEqualTo(lhs, rhs)  # type: ignore[misc, call-arg]
     if isinstance(op, Lt):
         return pyiceberg.expressions.LessThan(lhs, rhs)  # type: ignore[misc, call-arg]
     if isinstance(op, LtE):

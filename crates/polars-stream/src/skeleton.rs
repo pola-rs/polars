@@ -6,6 +6,7 @@ use parking_lot::Mutex;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
 use polars_core::runtime::RAYON;
+use polars_descriptions::MetricUnit;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
 use polars_observer::{PlannedQuery, QueryObserver};
 use polars_plan::plans::{IR, IRPlan, IRPlanSorted};
@@ -160,11 +161,6 @@ impl StreamingQuery {
             std::fs::write(visual_path, visualization).unwrap();
         }
 
-        let (mut graph, phys_to_graph) =
-            crate::physical_plan::physical_plan_to_graph(root_phys_node, &phys_sm, expr_arena)?;
-
-        let top_ir = ir_arena.get(node).clone();
-
         let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1")
             || std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
             || observe
@@ -174,6 +170,15 @@ impl StreamingQuery {
         } else {
             None
         };
+
+        let (mut graph, phys_to_graph) = crate::physical_plan::physical_plan_to_graph(
+            root_phys_node,
+            &phys_sm,
+            expr_arena,
+            metrics.clone(),
+        )?;
+
+        let top_ir = ir_arena.get(node).clone();
 
         let out = StreamingQuery {
             top_ir,
@@ -243,6 +248,27 @@ impl StreamingQuery {
                 let io_total_bytes_received = node_metrics.io_total_bytes_received;
                 let io_total_bytes_sent = node_metrics.io_total_bytes_sent;
 
+                let custom = node_metrics
+                    .custom
+                    .iter()
+                    .map(|metric| {
+                        let Some(value) = metric.value else {
+                            return format!(", {}=[UNSET]", metric.key);
+                        };
+
+                        match metric.unit {
+                            MetricUnit::Unit => format!(", {}={}", metric.key, value),
+                            MetricUnit::Bytes => format!(", {}={}B", metric.key, value),
+                            MetricUnit::DurationNs => format!(
+                                ", {}={}{:.2?}",
+                                metric.key,
+                                if value < 0 { "-" } else { "" },
+                                Duration::from_nanos(value.unsigned_abs())
+                            ),
+                        }
+                    })
+                    .collect::<String>();
+
                 lines.push(
                     (total_time, format!(
                         "{name}: tot({total_time:.2?}), \
@@ -254,7 +280,8 @@ impl StreamingQuery {
                                     total_active_time={io_total_active_time:.2?}, \
                                     total_bytes_requested={io_total_bytes_requested}, \
                                     total_bytes_received={io_total_bytes_received}, \
-                                    total_bytes_sent={io_total_bytes_sent})"))
+                                    total_bytes_sent={io_total_bytes_sent})\
+                                 {custom}"))
                 );
 
                 total_query_ns += total_ns;

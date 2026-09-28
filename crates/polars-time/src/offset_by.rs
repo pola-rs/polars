@@ -15,45 +15,29 @@ fn apply_offsets_to_datetime(
                 let offset = &Duration::parse(offset);
                 if offset.is_constant_duration(datetime.time_zone().as_ref()) {
                     // fastpath!
-                    let mut duration = match datetime.time_unit() {
-                        TimeUnit::Milliseconds => offset.duration_ms(),
-                        TimeUnit::Microseconds => offset.duration_us(),
-                        TimeUnit::Nanoseconds => offset.duration_ns(),
-                    };
+                    let mut duration = offset.duration(datetime.time_unit());
                     if offset.negative() {
                         duration = -duration;
                     }
                     Ok(datetime.phys.clone().wrapping_add_scalar(duration))
                 } else {
-                    let offset_fn = match datetime.time_unit() {
-                        TimeUnit::Milliseconds => Duration::add_ms,
-                        TimeUnit::Microseconds => Duration::add_us,
-                        TimeUnit::Nanoseconds => Duration::add_ns,
-                    };
-                    datetime
-                        .phys
-                        .try_apply_nonnull_values_generic(|v| offset_fn(offset, v, time_zone))
+                    datetime.phys.try_apply_nonnull_values_generic(|v| {
+                        offset.add(datetime.time_unit(), v, time_zone)
+                    })
                 }
             },
             _ => Ok(datetime.phys.apply(|_| None)),
         },
-        _ => {
-            let offset_fn = match datetime.time_unit() {
-                TimeUnit::Milliseconds => Duration::add_ms,
-                TimeUnit::Microseconds => Duration::add_us,
-                TimeUnit::Nanoseconds => Duration::add_ns,
-            };
-            broadcast_try_binary_elementwise(
-                datetime.physical(),
-                offsets,
-                |timestamp_opt, offset_opt| match (timestamp_opt, offset_opt) {
-                    (Some(timestamp), Some(offset)) => {
-                        offset_fn(&Duration::try_parse(offset)?, timestamp, time_zone).map(Some)
-                    },
-                    _ => Ok(None),
-                },
-            )
-        },
+        _ => broadcast_try_binary_elementwise(
+            datetime.physical(),
+            offsets,
+            |timestamp_opt, offset_opt| match (timestamp_opt, offset_opt) {
+                (Some(timestamp), Some(offset)) => Duration::try_parse(offset)?
+                    .add(datetime.time_unit(), timestamp, time_zone)
+                    .map(Some),
+                _ => Ok(None),
+            },
+        ),
     }
 }
 

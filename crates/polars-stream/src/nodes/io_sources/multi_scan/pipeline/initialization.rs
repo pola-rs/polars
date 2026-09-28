@@ -12,6 +12,7 @@ use polars_mem_engine::scan_predicate::initialize_scan_predicate;
 use polars_plan::dsl::PredicateFileSkip;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
+use tokio::sync::Semaphore;
 
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sources::multi_scan::components::bridge::{BridgeRecvPort, BridgeState};
@@ -23,6 +24,7 @@ use crate::nodes::io_sources::multi_scan::functions::is_compressed_source;
 use crate::nodes::io_sources::multi_scan::functions::resolve_slice::resolve_to_positive_slice;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
     ExtraOperations, InitializedPipelineState, ResolvedSliceInfo, StartReaderArgsConstant,
+    UnorderedFiles,
 };
 use crate::nodes::io_sources::multi_scan::pipeline::tasks::attach_reader_to_bridge::AttachReaderToBridge;
 use crate::nodes::io_sources::multi_scan::pipeline::tasks::bridge::spawn_bridge;
@@ -47,13 +49,15 @@ pub fn initialize_multi_scan_pipeline(
             {:?}, \
             n_readers_pre_init: {}, \
             max_concurrent_scans: {}, \
-            disable_morsel_split: {}",
+            disable_morsel_split: {}, \
+            maintain_order: {}",
             config.sources.len(),
             config.file_reader_builder.reader_name(),
             config.reader_capabilities(),
             config.n_readers_pre_init(),
             config.max_concurrent_scans(),
             config.disable_morsel_split,
+            config.maintain_order,
         );
     }
 
@@ -154,8 +158,10 @@ async fn finish_initialize_multi_scan_pipeline(
     let num_pipelines = config.num_pipelines();
     let reader_capabilities = config.reader_capabilities();
 
-    if config.sources.first().is_some_and(|x| x.run_async())
-        && reader_capabilities.contains(ReaderCapabilities::NEEDS_FILE_CACHE_INIT)
+    // Remote paths, or any path under `POLARS_FORCE_ASYNC`. Files and buffers never qualify.
+    let sources_run_async = config.sources.first().is_some_and(|x| x.run_async());
+
+    if sources_run_async && reader_capabilities.contains(ReaderCapabilities::NEEDS_FILE_CACHE_INIT)
     {
         // In cloud execution the entries may not exist at this point due to DSL resolution
         // happening on a separate machine.
@@ -274,6 +280,57 @@ async fn finish_initialize_multi_scan_pipeline(
 
     let has_row_index_or_slice = extra_ops.has_row_index_or_slice();
 
+    let max_concurrent_scans = config.max_concurrent_scans();
+
+    // Files to initialize. A resolved negative slice ends at the last initialized reader.
+    let init_range = {
+        let end = if initialized_readers.is_empty() {
+            config.sources.len()
+        } else {
+            scan_source_idx + initialized_readers.len()
+        };
+        scan_source_idx..end
+    };
+
+    let n_effective_sources = init_range.len()
+        - skip_files_mask.as_ref().map_or(0, |m| {
+            m.clone()
+                .sliced(init_range.start, init_range.len())
+                .num_skipped_files()
+        });
+
+    // Emit files in the order their morsels become ready if the output order is not observed.
+    // The first condition that keeps files ordered, if any.
+    let files_ordered_reason = if config.maintain_order {
+        Some("order observed")
+    } else if max_concurrent_scans <= 1 {
+        Some("single scan")
+    } else if n_effective_sources <= 1 {
+        Some("single source")
+    } else if !reader_capabilities.contains(ReaderCapabilities::UNORDERED_FILES) {
+        Some("no capability")
+    } else if !sources_run_async {
+        // Local reads have no stragglers to hide, only a larger decoded backlog.
+        Some("not remote")
+    } else if std::env::var("POLARS_FORCE_ORDERED_MULTISCAN").as_deref() == Ok("1") {
+        Some("forced")
+    } else {
+        None
+    };
+    let unordered_files = files_ordered_reason.is_none();
+
+    // Row positions are only tracked with a row index or slice, so readers may start unordered.
+    let init_ordered_reason = if !unordered_files {
+        None
+    } else if has_row_index_or_slice {
+        Some("row index or slice")
+    } else if std::env::var("POLARS_FORCE_ORDERED_READER_INIT").as_deref() == Ok("1") {
+        Some("forced")
+    } else {
+        None
+    };
+    let unordered_init = unordered_files && init_ordered_reason.is_none();
+
     let config = config.clone();
 
     // Buffered initialization stream. This concurrently calls `FileReader::initialize()`,
@@ -281,17 +338,7 @@ async fn finish_initialize_multi_scan_pipeline(
     let readers_init_iter = {
         let skip_files_mask = skip_files_mask.clone();
 
-        let mut range = {
-            // If a negative slice was initialized, the length of the initialized readers will be the exact
-            // stopping position.
-            let end = if initialized_readers.is_empty() {
-                config.sources.len()
-            } else {
-                scan_source_idx + initialized_readers.len()
-            };
-
-            scan_source_idx..end
-        };
+        let mut range = init_range;
 
         if verbose {
             let n_filtered = skip_files_mask.clone().map_or(0, |x| {
@@ -340,90 +387,101 @@ async fn finish_initialize_multi_scan_pipeline(
             io_metrics,
         )?;
 
-        futures::stream::iter(range)
-            .map(move |scan_source_idx| {
-                let sources = sources.clone();
-                let cloud_options = cloud_options.clone();
-                let file_reader_builder = file_reader_builder.clone();
-                let deletion_files_provider = deletion_files_provider.clone();
-                let initialized_row_deletions = initialized_row_deletions.clone();
+        let init_futures = futures::stream::iter(range).map(move |scan_source_idx| {
+            let sources = sources.clone();
+            let cloud_options = cloud_options.clone();
+            let file_reader_builder = file_reader_builder.clone();
+            let deletion_files_provider = deletion_files_provider.clone();
+            let initialized_row_deletions = initialized_row_deletions.clone();
 
-                let maybe_initialized = initialized_readers.pop_front();
-                let scan_source = sources.get(scan_source_idx).unwrap().into_owned();
+            let maybe_initialized = initialized_readers.pop_front();
+            let scan_source = sources.get(scan_source_idx).unwrap().into_owned();
 
-                AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
-                    let (scan_source, reader, n_rows_in_file) = async {
-                        if verbose {
-                            eprintln!("[MultiScan]: Initialize source {scan_source_idx}");
-                        }
-
-                        let scan_source = scan_source?;
-
-                        if let Some((reader, n_rows_in_file)) = maybe_initialized {
-                            return PolarsResult::Ok((scan_source, reader, Some(n_rows_in_file)));
-                        }
-
-                        let mut reader = file_reader_builder.build_file_reader(
-                            scan_source.clone(),
-                            cloud_options.clone(),
-                            scan_source_idx,
-                        );
-
-                        reader.initialize().await?;
-                        let opt_n_rows = reader
-                            .fast_n_rows_in_file()
-                            .await?
-                            .map(|num_phys_rows| RowCounter::new(num_phys_rows, 0));
-
-                        PolarsResult::Ok((scan_source, reader, opt_n_rows))
+            AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+                let (scan_source, reader, n_rows_in_file) = async {
+                    if verbose {
+                        eprintln!("[MultiScan]: Initialize source {scan_source_idx}");
                     }
-                    .await?;
 
-                    let row_deletions: Option<RowDeletionsInit> = initialized_row_deletions
-                        .get(&scan_source_idx)
-                        .map(|x| RowDeletionsInit::Initialized(x.clone()))
-                        .or_else(|| {
-                            deletion_files_provider.spawn_row_deletions_init(
-                                scan_source_idx,
-                                cloud_options,
-                                num_pipelines,
-                                verbose,
-                            )
-                        });
+                    let scan_source = scan_source?;
 
-                    Ok(InitializedReaderState {
+                    if let Some((reader, n_rows_in_file)) = maybe_initialized {
+                        return PolarsResult::Ok((scan_source, reader, Some(n_rows_in_file)));
+                    }
+
+                    let mut reader = file_reader_builder.build_file_reader(
+                        scan_source.clone(),
+                        cloud_options.clone(),
                         scan_source_idx,
-                        scan_source,
-                        reader,
-                        n_rows_in_file,
-                        row_deletions,
-                    })
-                }))
-            })
-            .buffered(config.n_readers_pre_init().max(1))
+                    );
+
+                    reader.initialize().await?;
+                    let opt_n_rows = reader
+                        .fast_n_rows_in_file()
+                        .await?
+                        .map(|num_phys_rows| RowCounter::new(num_phys_rows, 0));
+
+                    PolarsResult::Ok((scan_source, reader, opt_n_rows))
+                }
+                .await?;
+
+                let row_deletions: Option<RowDeletionsInit> = initialized_row_deletions
+                    .get(&scan_source_idx)
+                    .map(|x| RowDeletionsInit::Initialized(x.clone()))
+                    .or_else(|| {
+                        deletion_files_provider.spawn_row_deletions_init(
+                            scan_source_idx,
+                            cloud_options,
+                            num_pipelines,
+                            verbose,
+                        )
+                    });
+
+                Ok(InitializedReaderState {
+                    scan_source_idx,
+                    scan_source,
+                    reader,
+                    n_rows_in_file,
+                    row_deletions,
+                })
+            }))
+        });
+
+        let n_readers_pre_init = config.n_readers_pre_init().max(1);
+        if unordered_init {
+            init_futures.buffer_unordered(n_readers_pre_init).boxed()
+        } else {
+            init_futures.buffered(n_readers_pre_init).boxed()
+        }
     };
 
     let sources = config.sources.clone();
-    let readers_init_iter = readers_init_iter.boxed();
     let hive_parts = config.hive_parts.clone();
     let final_output_schema = config.final_output_schema.clone();
     let file_projection_builder = config.file_projection_builder.clone();
-    let max_concurrent_scans = config.max_concurrent_scans();
     let disable_morsel_split = config.disable_morsel_split;
 
     // Share the last-morsel split budget across files in the scan: divide it by the number
     // of files that can be in flight at once, so the total morsel count at end-of-file
     // boundaries stays bounded by `num_pipelines`.
-    let n_effective_sources = sources.len().saturating_sub(
-        skip_files_mask
-            .as_ref()
-            .map_or(0, |m| m.num_skipped_files()),
-    );
     let last_morsel_pipelines =
         num_pipelines.div_ceil(n_effective_sources.min(max_concurrent_scans).max(1));
 
     let (started_reader_tx, started_reader_rx) =
         tokio::sync::mpsc::channel(max_concurrent_scans.max(2) - 1);
+
+    if verbose {
+        eprintln!(
+            "[MultiScanTaskInit]: unordered_files: {unordered_files}{}, unordered_init: {unordered_init}{}",
+            fmt_reason(files_ordered_reason),
+            fmt_reason(init_ordered_reason),
+        );
+    }
+
+    let unordered_files = unordered_files.then(|| UnorderedFiles {
+        reader_slots: Arc::new(Semaphore::new(max_concurrent_scans)),
+        merge_capacity: num_pipelines,
+    });
 
     let reader_starter_handle = AbortOnDropHandle::new(executor::spawn(
         TaskPriority::Low,
@@ -434,6 +492,7 @@ async fn finish_initialize_multi_scan_pipeline(
             readers_init_iter,
             started_reader_tx,
             max_concurrent_scans,
+            unordered_files: unordered_files.clone(),
             skip_files_mask,
             extra_ops,
             constant_args: StartReaderArgsConstant {
@@ -448,6 +507,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 num_pipelines,
                 max_concurrent_scans,
                 disable_morsel_split,
+                maintain_order: config.maintain_order,
                 last_morsel_pipelines,
                 verbose,
             },
@@ -460,14 +520,19 @@ async fn finish_initialize_multi_scan_pipeline(
         TaskPriority::Low,
         AttachReaderToBridge {
             started_reader_rx,
+            reader_starter_handle,
             bridge_recv_port_tx,
+            unordered_files,
             verbose,
         }
         .run(),
     ));
 
     attach_to_bridge_handle.await?;
-    reader_starter_handle.await?;
 
     Ok(())
+}
+
+fn fmt_reason(reason: Option<&str>) -> String {
+    reason.map_or_else(String::new, |r| format!(" (reason: {r})"))
 }

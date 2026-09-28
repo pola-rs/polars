@@ -145,6 +145,7 @@ impl IR {
                 output_schema: _,
                 scan_type: l_scan_type,
                 unified_scan_args: l_unified_scan_args,
+                maintain_order: l_maintain_order,
             } => {
                 let IR::Scan {
                     sources: r_sources,
@@ -155,6 +156,7 @@ impl IR {
                     output_schema: _,
                     scan_type: r_scan_type,
                     unified_scan_args: r_unified_scan_args,
+                    maintain_order: r_maintain_order,
                 } = other
                 else {
                     return false;
@@ -163,6 +165,7 @@ impl IR {
                     && expr_iter_eq!(l_predicate, r_predicate)
                     && l_scan_type == r_scan_type
                     && l_unified_scan_args == r_unified_scan_args
+                    && l_maintain_order == r_maintain_order
             },
             IR::DataFrameScan {
                 df: l_df,

@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
-use chrono_tz::Tz;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, GroupsType, TimeUnit};
+use polars_core::prelude::{Column, DataType, GroupsType};
 use polars_core::schema::Schema;
 use polars_defs::time::duration::{Duration, ensure_duration_matches_dtype};
-use polars_defs::time::group_by::ClosedWindow;
-use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};
+use polars_defs::time::group_by::{ClosedWindow, IndexRange, RollingWindowPlacement};
+use polars_error::{PolarsError, PolarsResult, polars_ensure};
 use polars_expr::state::ExecutionState;
 use polars_ops::series::SeriesMethods;
+use polars_time::IndexSpace;
 use polars_time::prelude::RollingWindower;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -42,17 +42,22 @@ pub struct RollingGroupBy {
     slice_length: IdxSize,
 
     index_column: PlSmallStr,
+    space: IndexSpace,
     windower: RollingWindower,
+    placement: Option<PlacementTracker>,
     aggs: Arc<[(PlSmallStr, StreamExpr)]>,
     seq_offset: Arc<RelaxedCell<u64>>,
 }
+
 impl RollingGroupBy {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         schema: Arc<Schema>,
         index_column: PlSmallStr,
         period: Duration,
         offset: Duration,
         closed: ClosedWindow,
+        placement: Option<RollingWindowPlacement>,
         slice: Option<(IdxSize, IdxSize)>,
         aggs: Arc<[(PlSmallStr, StreamExpr)]>,
     ) -> PolarsResult<Self> {
@@ -65,29 +70,18 @@ impl RollingGroupBy {
         ensure_duration_matches_dtype(period, key_dtype, "period")?;
         ensure_duration_matches_dtype(offset, key_dtype, "offset")?;
 
-        use DataType as DT;
-        let (tu, tz) = match key_dtype {
-            DT::Datetime(tu, tz) => (*tu, tz.clone()),
-            DT::Date => (TimeUnit::Microseconds, None),
-            DT::UInt32 | DT::UInt64 | DT::Int64 | DT::Int32 => (TimeUnit::Nanoseconds, None),
-            dt => polars_bail!(
-                ComputeError:
-                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64, UInt32, UInt64 }}, got {}",
-                dt
-            ),
-        };
+        let space = IndexSpace::rolling(key_dtype)?;
 
         let buf_df = DataFrame::empty_with_arc_schema(schema.clone());
         let buf_key_column = Column::new_empty(index_column.clone(), key_dtype);
-        let buf_index_column =
-            Column::new_empty(index_column.clone(), &DT::Datetime(tu, tz.clone()));
+        let buf_index_column = Column::new_empty(index_column.clone(), &space.window_dtype());
 
-        // @NOTE: This is a bit strange since it ignores errors, but it mirrors the in-memory
-        // engine.
-        let tz = tz.and_then(|tz| tz.parse::<Tz>().ok());
-        let windower = RollingWindower::new(period, offset, closed, tu, tz);
+        let windower =
+            RollingWindower::new(period, offset, closed, space.time_unit, space.tz().cloned());
 
         let (slice_offset, slice_length) = slice.unwrap_or((0, IdxSize::MAX));
+
+        let placement = placement.map(|p| PlacementTracker::new(p, &space.window_dtype()));
 
         Ok(Self {
             buf_df,
@@ -98,7 +92,9 @@ impl RollingGroupBy {
             slice_offset,
             slice_length,
             index_column,
+            space,
             windower,
+            placement,
             aggs,
             seq_offset: Arc::default(),
         })
@@ -167,8 +163,18 @@ impl RollingGroupBy {
             return Ok(None);
         }
 
-        let key;
+        let mut key;
         (key, self.buf_key_column) = self.buf_key_column.split_at(windows.len() as i64);
+        if let Some(placement) = &mut self.placement {
+            if let Some(range) = placement.next_batch_slice(windows.len() as i64)? {
+                windows.truncate(range.end);
+                windows.drain(..range.start);
+                key = key.slice(range.start as i64, range.len());
+                if windows.is_empty() {
+                    return Ok(None);
+                }
+            }
+        }
         let key = key.slice(self.slice_offset as i64, self.slice_length as usize);
 
         let offset = windows[0][0];
@@ -200,6 +206,10 @@ impl RollingGroupBy {
 
         Ok(Some((windows, data, key)))
     }
+
+    fn is_past_range(&self) -> bool {
+        self.placement.as_ref().is_some_and(|p| p.is_past_range())
+    }
 }
 
 impl ComputeNode for RollingGroupBy {
@@ -215,7 +225,7 @@ impl ComputeNode for RollingGroupBy {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
-        if self.slice_length == 0 {
+        if self.slice_length == 0 || self.is_past_range() {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
             std::mem::take(&mut self.buf_df);
@@ -276,6 +286,9 @@ impl ComputeNode for RollingGroupBy {
                 self.buf_df = self.buf_df.clear();
                 self.buf_key_column = self.buf_key_column.clear();
                 self.buf_index_column = self.buf_index_column.clear();
+                if let Some(placement) = &mut self.placement {
+                    placement.clear_indices();
+                }
 
                 Ok(())
             }));
@@ -324,6 +337,7 @@ impl ComputeNode for RollingGroupBy {
             let mut prev_max = None;
             while let Ok(morsel) = recv.recv().await
                 && self.slice_length > 0
+                && !self.is_past_range()
             {
                 let (sf, seq, source_token, wait_token) = morsel.into_inner();
                 let df = sf.into_df().await;
@@ -352,22 +366,11 @@ impl ComputeNode for RollingGroupBy {
                         .into_static(),
                 );
                 self.buf_key_column.append(morsel_index_column)?;
-
-                use DataType as DT;
-                let morsel_index_column = match morsel_index_column.dtype() {
-                    DT::Datetime(_, _) => morsel_index_column.clone(),
-                    DT::Date => {
-                        morsel_index_column.cast(&DT::Datetime(TimeUnit::Microseconds, None))?
-                    },
-                    DT::UInt32 | DT::UInt64 | DT::Int32 => morsel_index_column
-                        .cast(&DT::Int64)?
-                        .cast(&DT::Datetime(TimeUnit::Nanoseconds, None))?,
-                    DT::Int64 => {
-                        morsel_index_column.cast(&DT::Datetime(TimeUnit::Nanoseconds, None))?
-                    },
-                    _ => unreachable!(),
-                };
-                self.buf_index_column.append(&morsel_index_column)?;
+                let index_column = self.space.cast_to_space(morsel_index_column)?;
+                if let Some(placement) = &mut self.placement {
+                    placement.append_indices(&index_column)?;
+                }
+                self.buf_index_column.append(&index_column)?;
                 self.buf_df.vstack_mut_owned(df)?;
 
                 if let Some((windows, df, key)) = self.next_windows(false)? {
@@ -386,5 +389,62 @@ impl ComputeNode for RollingGroupBy {
 
             Ok(())
         }));
+    }
+}
+
+/// A tracker of windows to output.
+struct PlacementTracker {
+    /// The range of indices to output.
+    valid_index_range: IndexRange,
+    /// The index column in the window space, appended in lockstep with the key column.
+    /// `buf_index_column` retires values at a different pace, hence a second column.
+    index_buf: Column,
+    is_past_range: bool,
+}
+
+impl PlacementTracker {
+    pub fn new(placement: RollingWindowPlacement, window_dtype: &DataType) -> Self {
+        Self {
+            valid_index_range: placement.owned_range,
+            index_buf: Column::new_empty(PlSmallStr::EMPTY, window_dtype),
+            is_past_range: false,
+        }
+    }
+
+    pub fn append_indices(&mut self, index_column: &Column) -> PolarsResult<()> {
+        self.index_buf.append(index_column).map(drop)
+    }
+
+    pub fn clear_indices(&mut self) {
+        self.index_buf = self.index_buf.clear();
+    }
+
+    /// Removes the indices for the batch from the internal buffer. Returns a range to slice the
+    /// batch by, or None if no slicing is needed.
+    pub fn next_batch_slice(&mut self, count: i64) -> PolarsResult<Option<std::ops::Range<usize>>> {
+        let key_space;
+        (key_space, self.index_buf) = self.index_buf.split_at(count);
+        let values = key_space.datetime()?.physical();
+        // The key is sorted, so the owned rows are one contiguous range. Most batches lie
+        // fully inside it and pass through untouched.
+        let first = values.first().unwrap();
+        let last = values.last().unwrap();
+        let range = self.valid_index_range;
+        if range.is_past(last) {
+            self.is_past_range = true;
+        }
+        let out = if !(range.contains(first) && range.contains(last)) {
+            let values = values.rechunk();
+            let range = range.row_range(values.cont_slice()?);
+            Some(range)
+        } else {
+            None
+        };
+
+        Ok(out)
+    }
+
+    pub fn is_past_range(&self) -> bool {
+        self.is_past_range
     }
 }

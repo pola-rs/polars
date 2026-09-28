@@ -118,9 +118,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          workspaces: py-polars
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
 
       - name: Install Polars
         run: |

@@ -218,6 +218,7 @@ pub(super) async fn dsl_to_ir(
                 scan_type: Box::new(scan_type_ir),
                 output_schema: None,
                 unified_scan_args,
+                maintain_order: true,
             }
         };
 
@@ -690,6 +691,7 @@ fn parquet_column_stats(
                 } else {
                     a.int_range
                 },
+                int_range_partial: sampled || !complete,
             };
             (name, stats)
         })

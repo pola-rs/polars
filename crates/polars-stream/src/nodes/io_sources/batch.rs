@@ -183,6 +183,7 @@ impl FileReader for BatchFnReader {
             missing_columns_policy: _,
             num_pipelines: _,
             disable_morsel_split: _,
+            maintain_order: _,
             last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {

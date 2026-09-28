@@ -15,6 +15,10 @@ Math
      - Returns the nearest integer closest from zero.
    * - :ref:`DIV <div>`
      - Returns the integer quotient of the division.
+   * - :ref:`ERF <erf>`
+     - Computes the error function of the given value.
+   * - :ref:`ERFC <erfc>`
+     - Computes the complementary error function of the given value.
    * - :ref:`EXP <exp>`
      - Computes the exponential of the given value.
    * - :ref:`FLOOR <floor_function>`
@@ -148,6 +152,56 @@ Returns the integer quotient of the division.
     # │ 6.5   ┆ 3       ┆ 1       │
     # │ 25.0  ┆ 12      ┆ 5       │
     # └───────┴─────────┴─────────┘
+
+.. _erf:
+
+ERF
+---
+Computes the error function of the given value.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"a": [-1, 0, 1]})
+    df.sql("""
+      SELECT a, ERF(a) AS erf_a FROM self
+    """)
+    # shape: (3, 2)
+    # ┌─────┬───────────┐
+    # │ a   ┆ erf_a     │
+    # │ --- ┆ ---       │
+    # │ i64 ┆ f64       │
+    # ╞═════╪═══════════╡
+    # │ -1  ┆ -0.842701 │
+    # │ 0   ┆ 0.0       │
+    # │ 1   ┆ 0.842701  │
+    # └─────┴───────────┘
+
+.. _erfc:
+
+ERFC
+----
+Computes the complementary error function of the given value.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"a": [-1, 0, 1]})
+    df.sql("""
+      SELECT a, ERFC(a) AS erfc_a FROM self
+    """)
+    # shape: (3, 2)
+    # ┌─────┬──────────┐
+    # │ a   ┆ erfc_a   │
+    # │ --- ┆ ---      │
+    # │ i64 ┆ f64      │
+    # ╞═════╪══════════╡
+    # │ -1  ┆ 1.842701 │
+    # │ 0   ┆ 1.0      │
+    # │ 1   ┆ 0.157299 │
+    # └─────┴──────────┘
 
 .. _exp:
 

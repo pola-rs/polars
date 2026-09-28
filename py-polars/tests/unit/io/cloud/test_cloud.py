@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,8 @@ from polars.exceptions import ArgumentRemovedError
 from polars.io.cloud._utils import _is_aws_cloud
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from tests.conftest import PlMonkeyPatch
 
 
@@ -236,3 +239,75 @@ def test_scan_ipc_cache_removed() -> None:
     msg = "The file cache is no longer supported."
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         pl.scan_ipc("s3://.../...", cache=True)  # type: ignore[call-arg]
+
+
+def _scan_s3_endpoint(endpoint: str, **storage_options: Any) -> pl.LazyFrame:
+    return pl.scan_parquet(
+        "s3://bucket/x.parquet",
+        storage_options={
+            "aws_endpoint_url": endpoint,
+            "aws_allow_http": "true",
+            "aws_access_key_id": "a",
+            "aws_secret_access_key": "b",
+            "aws_region": "us-east-1",
+            "max_retries": 0,
+            **storage_options,
+        },
+        credential_provider=None,
+    )
+
+
+@contextlib.contextmanager
+def _http_server(delay: float = 0.0) -> Iterator[str]:
+    """Serve 404 for every request, after an optional delay."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def _not_found(self) -> None:
+            time.sleep(delay)
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        do_GET = do_HEAD = _not_found
+
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+    with HTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{server.server_address[1]}"
+        finally:
+            server.shutdown()
+            thread.join()
+
+
+@pytest.mark.slow
+def test_cloud_connection_refused_error() -> None:
+    q = _scan_s3_endpoint("http://127.0.0.1:1")
+
+    with pytest.raises(ConnectionRefusedError, match="Caused by:") as exc:
+        q.collect()
+
+    assert "tcp connect error" in str(exc.value)
+
+
+@pytest.mark.slow
+def test_cloud_not_found_error() -> None:
+    with _http_server() as endpoint:
+        q = _scan_s3_endpoint(endpoint)
+        with pytest.raises(FileNotFoundError, match=re.escape("x.parquet")):
+            q.collect()
+
+
+@pytest.mark.slow
+def test_cloud_timeout_error() -> None:
+    with _http_server(delay=2.0) as endpoint:
+        q = _scan_s3_endpoint(endpoint, timeout="100ms", max_retries=1)
+        with pytest.raises(TimeoutError, match="after 1 retries") as exc:
+            q.collect()
+
+    assert "operation timed out" in str(exc.value)

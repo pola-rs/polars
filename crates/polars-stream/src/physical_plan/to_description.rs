@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use polars_core::prelude::SortMultipleOptions;
 use polars_defs::join::JoinType;
 #[cfg(feature = "dynamic_group_by")]
-use polars_defs::time::group_by::DynamicGroupOptions;
+use polars_defs::time::group_by::DynamicGroupOptionsIR;
 #[cfg(feature = "iejoin")]
 use polars_descriptions::InequalityOperatorDescription;
 #[cfg(feature = "python")]
@@ -786,7 +786,7 @@ pub fn phys_props(
             slice,
             ..
         } => {
-            let DynamicGroupOptions {
+            let DynamicGroupOptionsIR {
                 index_column,
                 every,
                 period,
@@ -795,6 +795,7 @@ pub fn phys_props(
                 include_boundaries,
                 closed_window,
                 start_by,
+                placement: _,
             } = options;
             (
                 PhysicalPropsDescription::DynamicGroupBy {

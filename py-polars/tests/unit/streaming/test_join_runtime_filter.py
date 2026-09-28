@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as D
 from math import inf, nan
@@ -52,17 +53,31 @@ def tiny(*keys: Any, key: str = "k") -> pl.LazyFrame:
     return lf.filter(pl.col("e") >= 0)
 
 
-def row_groups_read(
+def reader_log(
     q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
-) -> tuple[pl.DataFrame, str | None]:
-    """Collect on the streaming engine and report what the reader logged."""
+) -> tuple[pl.DataFrame, str]:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
     out = q.collect(engine="streaming")
-    err = capfd.readouterr().err
+    return out, capfd.readouterr().err
+
+
+def row_groups_read_per_scan(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> tuple[pl.DataFrame, list[str]]:
+    """Collect on the streaming engine and report what each reader logged."""
+    out, err = reader_log(q, plmonkeypatch, capfd)
     lines = [line for line in err.splitlines() if "Predicate pushdown: reading" in line]
-    assert len(lines) <= 1, err
-    return out, lines[0].split("reading ")[1] if lines else None
+    return out, sorted(line.split("reading ")[1] for line in lines)
+
+
+def row_groups_read(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> tuple[pl.DataFrame, str | None]:
+    """Collect on the streaming engine and report what its one reader logged."""
+    out, groups = row_groups_read_per_scan(q, plmonkeypatch, capfd)
+    assert len(groups) <= 1, groups
+    return out, groups[0] if groups else None
 
 
 def assert_matches_in_memory(q: pl.LazyFrame, out: pl.DataFrame) -> None:
@@ -150,6 +165,17 @@ def test_filter_reaches_the_scan_through_renames(
     assert_matches_in_memory(q, out)
 
 
+def test_filter_reaches_the_scan_through_a_fallible_projection(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # A strict cast can raise, which does not stop the filter.
+    q = fact.with_columns(pl.col("v").cast(pl.Int16)).join(dim(220, 240), on="k")
+    assert "dynamic_predicate" in q.explain(engine="streaming")
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "1 / 10 row groups"
+    assert_matches_in_memory(q, out)
+
+
 def test_not_through_a_sampling_join(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -197,6 +223,106 @@ def test_shared_scan_is_not_filtered(fact: pl.LazyFrame) -> None:
     assert "CACHE" in plan
     assert "dynamic_predicate" not in plan
     out = q.collect(engine="streaming")
+    assert_matches_in_memory(q, out)
+
+
+def fact_part(
+    tmp_path: Path, name: str, keys: Any, key: str = "k", **write_options: Any
+) -> pl.LazyFrame:
+    df = pl.DataFrame({key: keys, "v": range(len(keys))})
+    path = tmp_path / f"{name}.parquet"
+    df.write_parquet(path, row_group_size=ROWS_PER_GROUP, **write_options)
+    return pl.scan_parquet(path)
+
+
+def sorted_part(tmp_path: Path, name: str, offset: int, key: str = "k") -> pl.LazyFrame:
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    return fact_part(
+        tmp_path, name, range(offset, offset + n), key=key, statistics="full"
+    )
+
+
+def test_filter_reaches_every_scan_under_a_union(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    a = sorted_part(tmp_path, "a", 0)
+    # The second input stores the key under another name.
+    b = sorted_part(tmp_path, "b", 500, key="key").select(pl.col("key").alias("k"), "v")
+    q = pl.concat([a, b]).join(tiny(520, 540), on="k")
+    plan = q.explain(engine="streaming")
+    assert 'col("k").dynamic_predicate()' in plan
+    assert 'col("key").dynamic_predicate()' in plan
+
+    out, groups = row_groups_read_per_scan(q, plmonkeypatch, capfd)
+    assert groups == ["1 / 10 row groups", "1 / 10 row groups"]
+    assert out.get_column("k").sort().to_list() == [520, 520, 540, 540]
+    assert_matches_in_memory(q, out)
+
+
+def test_union_branch_without_a_parquet_scan_is_left_alone(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    a = sorted_part(tmp_path, "a", 0)
+    b = pl.LazyFrame({"k": [240, 5000], "v": [1, 2]})
+    q = pl.concat([a, b]).join(tiny(220, 240), on="k")
+    assert q.explain(engine="streaming").count("dynamic_predicate") == 1
+
+    out, groups = row_groups_read_per_scan(q, plmonkeypatch, capfd)
+    assert groups == ["1 / 10 row groups"]
+    assert out.height == 3
+    assert_matches_in_memory(q, out)
+
+
+def test_slice_on_a_union_is_a_barrier(tmp_path: Path) -> None:
+    a = sorted_part(tmp_path, "a", 0)
+    b = sorted_part(tmp_path, "b", 1000)
+    q = pl.concat([a, b]).head(1500).join(dim(*range(0, 1000, 20)), on="k")
+    assert "dynamic_predicate" not in q.explain(engine="streaming")
+    out = q.collect(engine="streaming")
+    assert_matches_in_memory(q, out)
+
+
+def union_bloom_log(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> tuple[pl.DataFrame, list[str], str]:
+    """The plan's bloom choice per scan, and the reader log."""
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    choices = sorted(re.findall(r"distinct probe keys, bloom: (\w+)", err))
+    return out, choices, err
+
+
+def test_union_scans_choose_per_row_filtering_each(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Five build keys are few against the thousand keys of the first input but
+    # not against the ten of the second: only the first probes the bloom filter.
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    wide = fact_part(tmp_path, "wide", pl.Series(range(n)).shuffle(seed=1))
+    narrow = fact_part(tmp_path, "narrow", [i % 10 for i in range(n)])
+    q = pl.concat([wide, narrow]).join(tiny(0, 1, 2, 3, 4), on="k")
+    out, choices, err = union_bloom_log(q, plmonkeypatch, capfd)
+    assert choices == ["false", "true"]
+    assert "bloom of" in err
+    assert "dropping bloom filter" not in err
+    assert out.height == 5 + 500
+    assert_matches_in_memory(q, out)
+
+
+def test_union_scan_with_unknown_distinct_keys_keeps_the_bloom(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Without statistics the second input's distinct keys are unknown, so no
+    # count of build keys can rule the bloom filter out for it.
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    keys = pl.Series(range(n)).shuffle(seed=1)
+    known = fact_part(tmp_path, "known", keys)
+    unknown = fact_part(tmp_path, "unknown", keys, statistics=False)
+    q = pl.concat([known, unknown]).join(tiny(220, 240), on="k")
+    out, choices, err = union_bloom_log(q, plmonkeypatch, capfd)
+    assert "None distinct probe keys, bloom: true" in err
+    assert choices == ["true", "true"]
+    assert "dropping bloom filter" not in err
+    assert out.height == 4
     assert_matches_in_memory(q, out)
 
 
@@ -399,7 +525,7 @@ def test_build_side_of_several_morsels(
     pl.DataFrame(
         {"k": [300, 301, 302, 303, 304, 660, 661, 662, 663, 664]}
     ).write_parquet(path, row_group_size=1)
-    q = fact.join(pl.scan_parquet(path).filter(pl.col("k") > 0), on="k")
+    q = fact.join(pl.scan_parquet(path).filter((pl.col("k") * 2) > 0), on="k")
     assert "dynamic_predicate" in q.explain(engine="streaming")
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
@@ -942,15 +1068,6 @@ def test_a_key_that_may_change_gets_no_range(fact: pl.LazyFrame) -> None:
     assert set(out.get_column("k").to_list()) <= {220, 720}
 
 
-def reader_log(
-    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
-) -> tuple[pl.DataFrame, str]:
-    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
-    capfd.readouterr()
-    out = q.collect(engine="streaming")
-    return out, capfd.readouterr().err
-
-
 def test_scan_without_statistics_is_not_eligible(tmp_path: Path) -> None:
     # A range no scan can use gives the join no build side either.
     path = tmp_path / "plain.parquet"
@@ -1284,13 +1401,57 @@ def test_bloom_gate_keeps_the_range_only(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    # The build holds three of the seven values `k2` takes: not worth probing
-    # per row.
+    # The build holds three of the seven values `k2` takes: not worth a bloom
+    # filter, but the range still drops the rows outside it.
     q = shuffled_fact.join(tiny(0, 1, 2, key="k2"), on="k2")
     out, err = reader_log(q, plmonkeypatch, capfd)
     assert "bloom: None" in err
     assert "bloom of" not in err
+    assert "Dynamic predicate started filtering rows" in err
+    assert "Dynamic predicate bypassed" not in err
     assert out.get_column("k2").unique().sort().to_list() == [0, 1, 2]
+    assert_matches_in_memory(q, out)
+
+
+def test_range_keeping_most_rows_is_bypassed(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Six of the seven values: the range keeps most rows, so the reader stops
+    # checking it.
+    q = shuffled_fact.join(tiny(0, 1, 2, 3, 4, 5, key="k2"), on="k2")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    assert "bloom: None" in err
+    assert "Dynamic predicate bypassed" in err
+    assert out.get_column("k2").unique().sort().to_list() == [0, 1, 2, 3, 4, 5]
+    assert_matches_in_memory(q, out)
+
+
+def test_bypassed_range_goes_behind_a_selective_predicate(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The range is first checked on every row and keeps most of them. Once the
+    # reader stops checking it, the static predicate on `v` goes first again, so
+    # `k2` is only decoded for the rows `v` keeps. That holds also for a row
+    # group decoded with the old passes after the range stopped being checked,
+    # which depends on timing, hence the repeats.
+    n = 50 * ROWS_PER_GROUP
+    keys = pl.Series("k", range(n)).shuffle(seed=1)
+    path = tmp_path / "fact.parquet"
+    pl.DataFrame({"k2": keys % 7, "v": keys}).write_parquet(
+        path, row_group_size=ROWS_PER_GROUP, statistics="full"
+    )
+    q = (
+        pl.scan_parquet(path)
+        .filter(pl.col("v") < n // 10)
+        .join(tiny(0, 1, 2, 3, 4, 5, key="k2"), on="k2")
+    )
+    for _ in range(5):
+        out, err = reader_log(q, plmonkeypatch, capfd)
+        assert "Dynamic predicate bypassed" in err
+        passes = [line for line in err.splitlines() if "Predicate passes" in line]
+        assert passes[-1] == '[ParquetFileReader]: Predicate passes: [["v"], ["k2"]]'
     assert_matches_in_memory(q, out)
 
 
@@ -1337,6 +1498,36 @@ def test_bloom_never_matches_null_keys(
     q = pl.scan_parquet(path).join(build, on="k")
     err = bloom_run(q, plmonkeypatch, capfd, [221])
     assert "bloom of" in err
+
+
+def test_bloom_is_sized_from_the_build_keys_seen(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    n = 1_000_000
+    keys = pl.Series("k", range(n)).shuffle(seed=5)
+    path = tmp_path / "large.parquet"
+    pl.DataFrame({"k": keys, "v": keys}).write_parquet(
+        path, row_group_size=n // 10, statistics="full"
+    )
+    # Conjuncts the plan cannot estimate, so it expects far fewer build keys than
+    # the 200k that arrive: more than a bloom filter of the planned size holds,
+    # yet few enough of the probe keys to be worth probing.
+    build = pl.LazyFrame({"k": range(0, n, 5), "a": range(0, n, 5)}).filter(
+        (pl.col("a") >= 0) & (pl.col("k") < n)
+    )
+    q = pl.scan_parquet(path).join(build, on="k")
+    out, err = reader_log(q, plmonkeypatch, capfd)
+    planned = re.search(r"runtime filter on k: (\d+) distinct build keys", err)
+    assert planned is not None
+    assert int(planned.group(1)) <= 20_000
+    assert "dropping bloom filter" not in err
+    # Larger than the planned (smallest) bloom filter; the exact size depends on
+    # the distinct count estimate.
+    published = re.search(r"bloom: Some\(bloom of (\d+) bytes\)", err)
+    assert published is not None
+    assert int(published.group(1)) > 64 * 1024
+    assert out.height == n // 5
+    assert_matches_in_memory(q, out)
 
 
 @pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt16, pl.String, pl.Date])

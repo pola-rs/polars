@@ -34,10 +34,11 @@ if TYPE_CHECKING:
 
 def test_semi_anti_join() -> None:
     df_a = pl.DataFrame({"key": [1, 2, 3], "payload": ["f", "i", None]})
-
     df_b = pl.DataFrame({"key": [3, 4, 5, None]})
 
-    assert df_a.join(df_b, on="key", how="anti").to_dict(as_series=False) == {
+    assert df_a.join(df_b, on="key", how="anti", maintain_order="left").to_dict(
+        as_series=False
+    ) == {
         "key": [1, 2],
         "payload": ["f", "i"],
     }
@@ -47,7 +48,11 @@ def test_semi_anti_join() -> None:
     }
 
     # lazy
-    result = df_a.lazy().join(df_b.lazy(), on="key", how="anti").collect()
+    result = (
+        df_a.lazy()
+        .join(df_b.lazy(), on="key", how="anti", maintain_order="left")
+        .collect()
+    )
     expected_values = {"key": [1, 2], "payload": ["f", "i"]}
     assert result.to_dict(as_series=False) == expected_values
 
@@ -58,10 +63,11 @@ def test_semi_anti_join() -> None:
     df_a = pl.DataFrame(
         {"a": [1, 2, 3, 1], "b": ["a", "b", "c", "a"], "payload": [10, 20, 30, 40]}
     )
-
     df_b = pl.DataFrame({"a": [3, 3, 4, 5], "b": ["c", "c", "d", "e"]})
 
-    assert df_a.join(df_b, on=["a", "b"], how="anti").to_dict(as_series=False) == {
+    assert df_a.join(df_b, on=["a", "b"], how="anti", maintain_order="left").to_dict(
+        as_series=False
+    ) == {
         "a": [1, 2, 1],
         "b": ["a", "b", "a"],
         "payload": [10, 20, 40],
@@ -480,7 +486,7 @@ def test_semi_join_projection_pushdown_6455() -> None:
 
     latest = df.group_by("id").agg(pl.col("timestamp").max())
     df = df.join(latest, on=["id", "timestamp"], how="semi")
-    assert df.select(["id", "value"]).collect().to_dict(as_series=False) == {
+    assert df.select(["id", "value"]).sort("id").collect().to_dict(as_series=False) == {
         "id": [1, 2],
         "value": [2, 4],
     }
@@ -502,7 +508,6 @@ def test_update() -> None:
             ],
         }
     )
-
     df2 = pl.DataFrame(
         {
             "key1": [1, 2, 3, 4],
@@ -4492,7 +4497,6 @@ def test_join_i128_23688(
     rhs = rhs.collect().sort("a").lazy() if sort_right else rhs
 
     q = lhs.join(rhs, on="a", how=how, coalesce=False)  # type: ignore[arg-type]
-
     assert_frame_equal(
         q.collect().sort(pl.all()),
         expected,
@@ -4508,7 +4512,6 @@ def test_join_i128_23688(
         )
         .select(expected.columns)
     )
-
     assert_frame_equal(
         q.collect().sort(pl.all()),
         expected,

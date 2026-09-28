@@ -990,9 +990,11 @@ def test_list_sum_bool_schema() -> None:
 
 
 def test_list_sum_decimal_schema() -> None:
-    dtype = pl.Decimal(10, 2)
-    q = pl.LazyFrame(schema={"x": pl.List(dtype)})
-    assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == dtype
+    # like `sum()`, the sum takes the full precision
+    q = pl.LazyFrame({"x": [[1, 2]]}, schema={"x": pl.List(pl.Decimal(10, 2))})
+    q = q.select(pl.col("x").list.sum())
+    assert q.collect_schema()["x"] == pl.Decimal(38, 2)
+    assert q.collect().schema == q.collect_schema()
 
 
 def test_list_concat_struct_19279() -> None:

@@ -50,7 +50,6 @@ jobs:
         with:
           env-vars: ImageVersion
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
 
       - name: Run cargo clippy with all features enabled
         run: python3 tools/cargo-fail-warning.py clippy --workspace --all-targets --all-features --locked -- -W clippy::dbg_macro
@@ -72,7 +71,6 @@ jobs:
         with:
           env-vars: ImageVersion
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
 
       - name: Run cargo clippy
         run: python3 tools/cargo-fail-warning.py clippy --all-targets --locked -- -W clippy::dbg_macro

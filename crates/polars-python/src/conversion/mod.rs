@@ -302,7 +302,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Float32"))?;
                 class.call0()
             },
-            DataType::Float64 | DataType::Unknown(UnknownKind::Float(_)) => {
+            DataType::Float64 | DataType::Unknown(UnknownKind::Float) => {
                 let class = pl.getattr(intern!(py, "Float64"))?;
                 class.call0()
             },
