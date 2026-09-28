@@ -95,41 +95,6 @@ impl LocalGroupBySinkState {
         }
     }
 
-    /// Resizes the hot reductions of input `input_idx` to its hot groups and feeds them
-    /// rows `hot_idxs` of `df`, which go to groups `hot_group_idxs`.
-    #[allow(clippy::too_many_arguments)]
-    async fn update_hot_reductions(
-        &mut self,
-        input_idx: usize,
-        df: &DataFrame,
-        hot_idxs: &[IdxSize],
-        hot_group_idxs: &[EvictIdx],
-        identity_idxs: &mut Vec<IdxSize>,
-        reductions_per_input: &[Vec<usize>],
-        payload: &InputPayload,
-        grouped_reduction_cols: &[Vec<PlSmallStr>],
-        exec_state: &ExecutionState,
-        seq: u64,
-    ) -> PolarsResult<()> {
-        let num_groups = self.hot_grouper_per_input[input_idx].num_groups();
-        for red_idx in &reductions_per_input[input_idx] {
-            self.hot_grouped_reductions[*red_idx].resize(num_groups);
-        }
-        payload
-            .update_reductions(
-                df,
-                hot_idxs,
-                identity_idxs,
-                grouped_reduction_cols,
-                &mut self.hot_grouped_reductions,
-                exec_state,
-                |reduction, in_cols, subset| unsafe {
-                    reduction.update_groups_while_evicting(in_cols, subset, hot_group_idxs, seq)
-                },
-            )
-            .await
-    }
-
     fn flush_evictions(
         &mut self,
         input_idx: usize,
@@ -324,9 +289,13 @@ impl GroupBySinkState {
                         && local.hot_grouper_per_input[input_idx].num_groups() as usize
                             <= MAX_SLICE_REDUCTION_GROUPS;
                     all_hot_per_input[input_idx] = true;
+                    let mut evictions_before = 0;
                     for offset in (0..df.height()).step_by(slice_size) {
                         // Compute hot group indices from key.
                         let hot_grouper = &mut local.hot_grouper_per_input[input_idx];
+                        if hot_idxs.is_empty() {
+                            evictions_before = hot_grouper.num_evictions();
+                        }
                         let slice_keys = keys.slice(offset as i64, slice_size);
                         let hash_keys =
                             HashKeys::from_df(&slice_keys, random_state.clone(), true, false);
@@ -389,18 +358,37 @@ impl GroupBySinkState {
                             } else {
                                 &df
                             };
-                            local
-                                .update_hot_reductions(
-                                    input_idx,
+                            let has_evictions = local.hot_grouper_per_input[input_idx]
+                                .num_evictions()
+                                != evictions_before;
+                            let num_groups = local.hot_grouper_per_input[input_idx].num_groups();
+                            for red_idx in &reductions_per_input[input_idx] {
+                                local.hot_grouped_reductions[*red_idx].resize(num_groups);
+                            }
+                            payload
+                                .update_reductions(
                                     reduce_df,
                                     &hot_idxs,
-                                    &hot_group_idxs,
                                     &mut identity_idxs,
-                                    reductions_per_input,
-                                    payload,
                                     grouped_reduction_cols,
+                                    &mut local.hot_grouped_reductions,
                                     &state.in_memory_exec_state,
-                                    seq,
+                                    |reduction, in_cols, subset| unsafe {
+                                        if has_evictions {
+                                            reduction.update_groups_while_evicting(
+                                                in_cols,
+                                                subset,
+                                                &hot_group_idxs,
+                                                seq,
+                                            )
+                                        } else {
+                                            let group_idxs =
+                                                EvictIdx::cast_to_idxs(&hot_group_idxs);
+                                            reduction.update_groups_subset(
+                                                in_cols, subset, group_idxs, seq,
+                                            )
+                                        }
+                                    },
                                 )
                                 .await?;
                             hot_idxs.clear();
