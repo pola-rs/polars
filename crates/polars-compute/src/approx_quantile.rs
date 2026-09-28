@@ -231,8 +231,8 @@ pub mod kll {
     /// Compactors at or below this capacity are replaced by [`Sampler`].
     const SAMPLER_CUTOFF: usize = 8;
 
-    /// Smallest `k` guaranteeing rank error <= `error * n` w.p. >= 1 - `delta` for a
-    /// *single* query value, with `delta` = `FAILURE_PROBABILITY`.
+    /// Some small `k` guaranteeing rank error <= `error * n` w.p. >= 1 - `delta`
+    /// for a *single* query value, with `delta` = `FAILURE_PROBABILITY`.
     #[inline(never)]
     fn compute_k(error: f64) -> usize {
         assert!((MIN_ERROR..1.0).contains(&error), "invalid error: {error}");
@@ -258,7 +258,7 @@ pub mod kll {
         //     == (c^d(h) / c^d(h+1)) * (2^h / 2^(h+1))
         //     == c^(H - 1 - h - H + 1 + (h+1)) * 2^(h - h + 1)
         //     == 2*c
-        //  * So the the total number of all weight shifts is equal to:
+        //  * So the total number of all weight shifts is equal to:
         //    (1/(2c) + 1/(2c)^2 + 1/(2c)^3 + ...)
         //  * We know that the creation of level H-1 consumed k items of weight 2^(H-2).
         //    The sum of the weights of those items denote that at least that many
@@ -279,8 +279,9 @@ pub mod kll {
         let alpha = f64::ln(2.0) / f64::ln(1.0 / CAPACITY_DECAY);
         let sampler_var = |k: f64| 4.0 * k * f64::powf(SAMPLER_CUTOFF as f64 / k, alpha);
 
-        let k = k_from_total_variance(compactor_var);
-        let k = k_from_total_variance(compactor_var + sampler_var(k));
+        let k0 = k_from_total_variance(compactor_var);
+        let k = k_from_total_variance(compactor_var + sampler_var(k0));
+        debug_assert!(k0 >= k);
         usize::max(MIN_COMPACTOR_SIZE, k.ceil() as usize)
     }
 
@@ -567,7 +568,6 @@ pub mod kll {
             let old_compact_end = compact_end;
             let next_start = next_level.offset;
             let next_end = next_start + next_level.size;
-            debug_assert!(self.scratch.is_empty());
             self.scratch.clear();
             let buf = &mut self.scratch;
 
@@ -1120,7 +1120,6 @@ pub mod req {
                 let next = next_start..next_start + next_end;
                 let (left, right) = self.items[next.clone()].split_at(next_split);
                 let (left, right) = (left.iter().cloned(), right.iter().cloned());
-                debug_assert!(self.scratch.is_empty());
                 self.scratch.clear();
                 match self.is_hra {
                     false => merge_sorted(&mut self.scratch, left, right, cmp_desc::<false, T>),
