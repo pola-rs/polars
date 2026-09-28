@@ -895,6 +895,7 @@ fn to_graph_rec<'a>(
             table_statistics,
             file_schema,
             disable_morsel_split,
+            maintain_order,
         } => {
             let hive_parts = hive_parts.clone();
 
@@ -981,6 +982,7 @@ fn to_graph_rec<'a>(
             let deletion_files = deletion_files.clone();
             let table_statistics = table_statistics.clone();
             let disable_morsel_split = *disable_morsel_split;
+            let maintain_order = *maintain_order;
 
             let verbose = config::verbose();
             let reader_name = file_reader_builder.reader_name()?;
@@ -1011,6 +1013,7 @@ fn to_graph_rec<'a>(
                             n_readers_pre_init: RelaxedCell::new_usize(0),
                             max_concurrent_scans: RelaxedCell::new_usize(0),
                             disable_morsel_split,
+                            maintain_order,
                             verbose,
                         }),
                         registry,
@@ -1797,6 +1800,7 @@ fn to_graph_rec<'a>(
             let deletion_files = None;
             let table_statistics = None;
             let disable_morsel_split = false;
+            let maintain_order = true;
             let verbose = config::verbose();
             let reader_name = file_reader_builder.reader_name()?;
 
@@ -1826,6 +1830,7 @@ fn to_graph_rec<'a>(
                             n_readers_pre_init: RelaxedCell::new_usize(0),
                             max_concurrent_scans: RelaxedCell::new_usize(0),
                             disable_morsel_split,
+                            maintain_order,
                             verbose,
                         }),
                         registry,

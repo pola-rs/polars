@@ -10,6 +10,7 @@ use polars_compute::decimal::{
     DEC128_MAX_PREC, dec128_add_scaled, dec128_mul_scaled, dec128_sub_scaled,
 };
 use polars_core::prelude::*;
+use polars_lazy::prelude::*;
 use polars_plan::prelude::{Expr, Literal};
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Expr as SQLExpr, UnaryOperator as SQLUnaryOperator,
@@ -135,4 +136,11 @@ pub(crate) fn try_fold_decimal_arithmetic(
         return Ok(None);
     }
     Ok(combine(left, op, right)?.map(|(m, s)| decimal_lit((m, precision_of(m, s), s))))
+}
+
+/// Evaluate `expr`, built from literals only, into one literal.
+pub(crate) fn fold_scalar(expr: Expr) -> PolarsResult<Expr> {
+    let df = DataFrame::empty().lazy().select([expr]).collect()?;
+    let value = df.columns()[0].get(0)?.into_static();
+    Ok(lit(Scalar::new(df.columns()[0].dtype().clone(), value)))
 }

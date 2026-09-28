@@ -42,31 +42,12 @@ pub fn create_scan_predicate(
     create_column_predicates: bool,
     create_minterm_eirs: bool,
 ) -> PolarsResult<ScanPredicate> {
-    // Every dynamic part gives a range hint to skip batches by. The parts a scan
-    // only consults for that stay out of the row predicate and its statistics
-    // predicate.
+    // Every dynamic part gives a range hint to skip batches by.
     let mut predicate = predicate.clone();
     let mut filters_rows = true;
     let runtime_ranges: Vec<RuntimeRangeHint> = MintermIter::new(predicate.node(), expr_arena)
         .filter_map(|part| runtime_range_hint(part, expr_arena))
         .collect();
-    let (batch_only, per_row): (Vec<Node>, Vec<Node>) =
-        MintermIter::new(predicate.node(), expr_arena)
-            .partition(|&part| is_batch_only(part, expr_arena));
-    if !batch_only.is_empty() {
-        filters_rows = !per_row.is_empty();
-        let node = per_row
-            .into_iter()
-            .reduce(|left, right| {
-                expr_arena.add(AExpr::BinaryExpr {
-                    left,
-                    op: Operator::And,
-                    right,
-                })
-            })
-            .unwrap_or_else(|| expr_arena.add(AExpr::Literal(Scalar::from(true).into())));
-        predicate = ExprIR::from_node(node, expr_arena);
-    }
 
     let mut hive_predicate = None;
     let mut hive_predicate_is_full_predicate = false;
@@ -324,22 +305,6 @@ fn runtime_range_hint(part: Node, expr_arena: &Arena<AExpr>) -> Option<RuntimeRa
         source: Arc::new(pred.clone()),
         constant: None,
     })
-}
-
-/// Whether the predicate part is exactly a dynamic predicate a scan may only use
-/// to skip batches. Any other shape, also one wrapping such a predicate, is
-/// evaluated per row like any predicate.
-fn is_batch_only(part: Node, expr_arena: &Arena<AExpr>) -> bool {
-    matches!(
-        expr_arena.get(part),
-        AExpr::Function {
-            function: IRFunctionExpr::DynamicPred {
-                batch_only: true,
-                ..
-            },
-            ..
-        }
-    )
 }
 
 #[derive(Default)]
@@ -600,6 +565,7 @@ where
         predicate: _,
         predicate_file_skip_applied: _,
         output_schema: _,
+        maintain_order: _,
         scan_type,
         unified_scan_args,
     } = scan_ir
