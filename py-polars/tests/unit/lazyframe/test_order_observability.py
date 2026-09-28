@@ -845,3 +845,51 @@ def test_set_sorted_expr_observes_input_order_29560() -> None:
         q.collect(engine="streaming").sort("a"),
         lf.group_by("a").agg(pl.len()).sort("a").collect(),
     )
+
+
+@pytest.mark.parametrize(
+    ("expr", "is_order_observing"),
+    [
+        (pl.col("x").mean().over("g"), False),
+        (pl.col("x").sum().over("g", order_by="x"), False),
+        ((pl.col("x") - pl.col("x").mean()).over("g"), False),
+        (pl.len().over("g"), False),
+        (pl.col("x").n_unique().over("g", "h"), False),
+        (pl.col("x").rank().over("g"), False),
+        (pl.col("x").rank("min").over("g"), False),
+        (pl.col("x").rank("max").over("g"), False),
+        (pl.col("x").rank("dense").over("g"), False),
+        (pl.col("x").rank("ordinal").over("g"), True),
+        (pl.col("x").rank("random", seed=1).over("g"), True),
+        (pl.col("x").cum_sum().over("g"), True),
+        (pl.col("x").shift().over("g"), True),
+        (pl.col("x").first().over("g"), True),
+        (pl.col("x").sort().over("g"), True),
+        (pl.col("x").sum().over((pl.col("g") == 0).cum_sum()), True),
+        (pl.col("x").sum().over("g", order_by=pl.col("x").cum_sum()), True),
+        (pl.col("x").over("g", mapping_strategy="explode"), True),
+    ],
+)
+def test_order_insensitive_window_streaming(
+    expr: pl.Expr, is_order_observing: bool
+) -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": [1, 2, 1, 2, 1, 3],
+            "h": [1, 1, 2, 2, 1, 1],
+            "x": [3, 1, 2, 2, 5, 4],
+        }
+    )
+    q = (
+        lf.unique(maintain_order=True)
+        .with_columns(out=expr)
+        .group_by("g")
+        .agg(pl.col("out").sort())
+        .sort("g")
+    )
+
+    kept = "UNIQUE[maintain_order: true"
+    assert (kept in q.explain(engine="streaming")) == is_order_observing
+    assert kept in q.explain(engine="in-memory")
+
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))

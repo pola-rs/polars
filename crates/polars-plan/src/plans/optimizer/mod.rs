@@ -313,6 +313,8 @@ pub fn optimize(
     }
 
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
+        let order_insensitive_windows =
+            opt_flags.contains(OptFlags::STREAMING) && !opt_flags.contains(OptFlags::GPU);
         match ir_arena.get(root) {
             IR::SinkMultiple { inputs } => {
                 let mut roots = inputs.clone();
@@ -324,7 +326,12 @@ pub fn optimize(
                         });
                     }
                 }
-                simplify_ordering::simplify_and_fetch_orderings(&roots, ir_arena, expr_arena);
+                simplify_ordering::simplify_and_fetch_orderings(
+                    &roots,
+                    ir_arena,
+                    expr_arena,
+                    order_insensitive_windows,
+                );
             },
             ir => {
                 let mut tmp_top = root;
@@ -334,7 +341,12 @@ pub fn optimize(
                         payload: SinkTypeIR::Memory,
                     });
                 }
-                simplify_ordering::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena);
+                simplify_ordering::simplify_and_fetch_orderings(
+                    &[tmp_top],
+                    ir_arena,
+                    expr_arena,
+                    order_insensitive_windows,
+                );
             },
         }
     }
