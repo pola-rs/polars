@@ -330,7 +330,7 @@ impl PhysicalExpr for SortByExpr {
             UpdateGroups::WithSeriesLen | UpdateGroups::WithGroupsLen
         );
 
-        let groups = if ac_sort_by.len() == 1 {
+        let groups = if self.by.len() == 1 {
             let mut ac_sort_by = ac_sort_by.pop().unwrap();
 
             // The groups of the lhs of the expressions do not match the series values,
@@ -339,12 +339,7 @@ impl PhysicalExpr for SortByExpr {
                 return sort_by_groups_no_match_single(
                     ac_in,
                     ac_sort_by,
-                    // Keys may have been dropped, so use the remaining key's options.
-                    SortOptions {
-                        descending: descending[0],
-                        nulls_last: nulls_last[0],
-                        ..SortOptions::from(&self.sort_options)
-                    },
+                    SortOptions::from(&self.sort_options),
                     &self.expr,
                 );
             };
