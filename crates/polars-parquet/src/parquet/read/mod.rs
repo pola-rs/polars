@@ -3,21 +3,17 @@ mod compression;
 pub mod levels;
 mod metadata;
 mod page;
-#[cfg(feature = "async")]
-mod stream;
 
 use std::io::{Cursor, Seek, SeekFrom};
 
 pub use column::*;
 pub use compression::{BasicDecompressor, decompress};
 pub use metadata::{
-    deserialize_file_crypto_metadata, deserialize_metadata, deserialize_metadata_with_decryption,
-    deserialize_num_rows, read_metadata, read_metadata_with_decryption, read_num_rows,
+    deserialize_file_crypto_metadata, deserialize_metadata, deserialize_num_rows, read_metadata,
+    read_metadata_with_decryption, read_num_rows,
 };
 pub use page::{PageIterator, PageMetaData, PageReader};
 use polars_buffer::Buffer;
-#[cfg(feature = "async")]
-pub use stream::read_metadata as read_metadata_async;
 
 use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::ColumnChunkMetadata;

@@ -12,14 +12,11 @@ pub use deserialize::{
     Filter, InitNested, NestedState, PredicateFilter, column_iter_to_arrays, create_list,
     create_map, init_nested, n_columns,
 };
-#[cfg(feature = "async")]
-use futures::{AsyncRead, AsyncSeek};
 use polars_arrow::types::{NativeType, i256};
 use polars_error::PolarsResult;
 pub use schema::{FileMetadata, infer_schema};
 
 #[cfg(feature = "async")]
-pub use crate::parquet::read::read_metadata_async as _read_metadata_async;
 // re-exports of crate::parquet's relevant APIs
 pub use crate::parquet::{
     FallibleStreamingIterator,
@@ -41,14 +38,6 @@ pub use crate::parquet::{
 /// Reads parquets' metadata synchronously.
 pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetadata> {
     Ok(_read_metadata(reader)?)
-}
-
-/// Reads parquets' metadata asynchronously.
-#[cfg(feature = "async")]
-pub async fn read_metadata_async<R: AsyncRead + AsyncSeek + Send + Unpin>(
-    reader: &mut R,
-) -> PolarsResult<FileMetadata> {
-    Ok(_read_metadata_async(reader).await?)
 }
 
 fn convert_days_ms(value: &[u8]) -> polars_arrow::types::days_ms {

@@ -5,7 +5,7 @@ use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_parquet::parquet::error::ParquetError;
-use polars_parquet::parquet::read::{deserialize_metadata_with_decryption, deserialize_num_rows};
+use polars_parquet::parquet::read::{deserialize_metadata, deserialize_num_rows};
 use polars_parquet::parquet::{ENCRYPTED_PARQUET_MAGIC, FOOTER_SIZE, PARQUET_MAGIC};
 use polars_utils::pl_path::PlRefPath;
 
@@ -62,7 +62,7 @@ impl ParquetObjectStore {
     pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetadataRef> {
         if self.metadata.is_none() {
             let footer = fetch_footer_bytes(&self.store, &self.path).await?;
-            self.metadata = Some(Arc::new(deserialize_metadata_with_decryption(
+            self.metadata = Some(Arc::new(deserialize_metadata(
                 footer,
                 self.decryption_properties.as_ref().map(|p| &p.0),
             )?));

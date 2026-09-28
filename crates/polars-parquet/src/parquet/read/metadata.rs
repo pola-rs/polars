@@ -54,26 +54,19 @@ pub fn read_metadata_with_decryption<R: Read + Seek>(
     decode_footer(footer, decryption_properties)
 }
 
-/// Parse loaded metadata bytes via the hand-written Thrift compact decoder.
+/// Parse loaded metadata bytes via the hand-written Thrift compact decoder,
+/// using the provided decryption properties if the file is encrypted.
 ///
 /// `footer` must be a [`Buffer<u8>`] because [`FileMetadata`] holds the buffer
 /// for the lifetime of the metadata; column-chunk statistics store
 /// `ByteRange`s into it instead of allocating per-stat byte vecs.
-pub fn deserialize_metadata(footer: Buffer<u8>) -> ParquetResult<FileMetadata> {
-    let compact = decode_file_metadata(footer)?;
-    FileMetadata::from_compact(compact, None)
-}
-
-/// Parse loaded metadata bytes, using the provided decryption properties if the file
-/// is encrypted.
-///
 /// `footer` must include the trailing metadata length and magic bytes, which are used
 /// to determine whether the footer is encrypted.
 ///
 /// Files with an encrypted footer require the decryption properties to read the metadata.
 /// Files with a plaintext footer may still have encrypted columns. If decryption properties
 /// are provided, the footer signature is verified unless disabled in the decryption properties.
-pub fn deserialize_metadata_with_decryption(
+pub fn deserialize_metadata(
     footer: Buffer<u8>,
     decryption_properties: Option<&Arc<FileDecryptionProperties>>,
 ) -> ParquetResult<FileMetadata> {
@@ -85,7 +78,8 @@ fn decode_footer(
     decryption_properties: Option<&Arc<FileDecryptionProperties>>,
 ) -> ParquetResult<FileMetadata> {
     let Some(decryption_properties) = decryption_properties else {
-        return deserialize_metadata(footer.into_plaintext()?);
+        let compact = decode_file_metadata(footer.into_plaintext()?)?;
+        return FileMetadata::from_compact(compact, None);
     };
 
     if footer.encrypted {
@@ -416,8 +410,7 @@ mod tests {
     fn deserialize_encrypted_footer() {
         let footer = footer_bytes("uniform_encryption.parquet.encrypted");
         let metadata =
-            deserialize_metadata_with_decryption(footer, Some(&footer_key_properties(FOOTER_KEY)))
-                .unwrap();
+            deserialize_metadata(footer, Some(&footer_key_properties(FOOTER_KEY))).unwrap();
         check_metadata(&metadata);
         assert!(metadata.decryptor.is_some());
     }
@@ -425,7 +418,7 @@ mod tests {
     #[test]
     fn deserialize_encrypted_footer_without_decryption_properties() {
         let footer = footer_bytes("uniform_encryption.parquet.encrypted");
-        let result = deserialize_metadata_with_decryption(footer, None);
+        let result = deserialize_metadata(footer, None);
         assert!(matches!(result, Err(ParquetError::Encryption(_))));
     }
 
@@ -433,8 +426,7 @@ mod tests {
     fn deserialize_plaintext_footer() {
         let footer = footer_bytes("encrypt_columns_plaintext_footer.parquet.encrypted");
         let metadata =
-            deserialize_metadata_with_decryption(footer, Some(&column_key_properties(FOOTER_KEY)))
-                .unwrap();
+            deserialize_metadata(footer, Some(&column_key_properties(FOOTER_KEY))).unwrap();
         check_metadata(&metadata);
         assert!(metadata.decryptor.is_some());
     }
@@ -442,7 +434,7 @@ mod tests {
     #[test]
     fn deserialize_footer_with_invalid_magic() {
         let footer = Buffer::from_vec(vec![0, 0, 0, 0, b'P', b'A', b'R', b'X']);
-        let result = deserialize_metadata_with_decryption(footer, None);
+        let result = deserialize_metadata(footer, None);
         assert!(matches!(result, Err(ParquetError::OutOfSpec(_))));
     }
 
