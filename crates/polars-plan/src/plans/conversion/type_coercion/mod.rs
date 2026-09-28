@@ -1327,7 +1327,22 @@ fn coerce_is_in(
         return Ok(None);
     }
 
-    let Some(result) = resolve(input, expr_arena)? else {
+    let result = resolve(input, expr_arena)?;
+
+    #[cfg(feature = "is_in")]
+    if let Some(haystack) =
+        cast_literal_haystack(function, input, form, result.as_ref(), expr_arena, schema)?
+    {
+        let (function, mut input) = (function.clone(), input.to_vec());
+        input[nested].set_node(expr_arena.add(AExpr::Literal(haystack.into())));
+        return Ok(Some(AExpr::Function {
+            function,
+            input,
+            options,
+        }));
+    }
+
+    let Some(result) = result else {
         return Ok(None);
     };
 
@@ -1420,6 +1435,74 @@ fn coerce_is_in(
         input,
         options,
     }))
+}
+
+/// Cast the elements of a literal haystack to the needle's dtype instead of casting the needle.
+///
+/// An element the cast cannot represent exactly equals no needle of that dtype, so it is dropped;
+/// the answer is the same as with a guarded needle cast or a native comparison. The needle then
+/// keeps its own dtype, so predicate pushdown and statistics still apply to it.
+#[cfg(feature = "is_in")]
+fn cast_literal_haystack(
+    function: &IRFunctionExpr,
+    input: &[ExprIR],
+    form: MembershipForm,
+    result: Option<&is_in::IsInTypeCoercionResult>,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+) -> PolarsResult<Option<Scalar>> {
+    use self::is_in::IsInTypeCoercionResult as R;
+
+    let (flat, nested) = (form.flat(), form.nested());
+    if is_in::is_map_lookup(function)
+        || !matches!(result, None | Some(R::GuardedNeedleCast { .. }))
+        || matches!(expr_arena.get(input[flat].node()), AExpr::Literal(_))
+    {
+        return Ok(None);
+    }
+    let AExpr::Literal(LiteralValue::Scalar(haystack)) = expr_arena.get(input[nested].node())
+    else {
+        return Ok(None);
+    };
+    let needle = input[flat].dtype(schema, expr_arena)?;
+    // Casting strings to a Categorical would add them to its categories.
+    if !needle.is_known() || needle.contains_categoricals() {
+        return Ok(None);
+    }
+    let (elements, width) = match haystack.value() {
+        AnyValue::List(s) => (s, None),
+        #[cfg(feature = "dtype-array")]
+        AnyValue::Array(s, width) => (s, Some(*width)),
+        _ => return Ok(None),
+    };
+    if elements.dtype() == needle {
+        return Ok(None);
+    }
+    let Ok((casted, inexact)) = elements._cast_reporting_inexact(needle) else {
+        return Ok(None);
+    };
+    let (value, dtype) = match (inexact, width) {
+        (None, None) => (
+            AnyValue::List(casted),
+            DataType::List(Box::new(needle.clone())),
+        ),
+        (Some(inexact), None) => (
+            AnyValue::List(casted.filter(&!&inexact)?),
+            DataType::List(Box::new(needle.clone())),
+        ),
+        #[cfg(feature = "dtype-array")]
+        (None, Some(width)) => (
+            AnyValue::Array(casted, width),
+            DataType::Array(Box::new(needle.clone()), width),
+        ),
+        // Dropping elements would change the width.
+        #[cfg(feature = "dtype-array")]
+        (Some(_), Some(_)) => return Ok(None),
+        #[cfg(not(feature = "dtype-array"))]
+        (_, Some(_)) => unreachable!(),
+    };
+
+    Ok(Some(Scalar::new(dtype, value.into_static())))
 }
 
 fn try_inline_literal_cast(

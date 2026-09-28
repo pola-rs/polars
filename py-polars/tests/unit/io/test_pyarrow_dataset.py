@@ -837,14 +837,14 @@ def test_pyarrow_dataset_residual_predicate() -> None:
     ).collect().to_dict(as_series=False) == {"item": ["doo"], "price": [1]}
 
 
-def test_pyarrow_dataset_is_in_other_time_zone_is_not_pushed_down(
+def test_pyarrow_dataset_is_in_other_time_zone(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
 
-    # 01:00 UTC and 02:00 in Amsterdam are the same instant, which pyarrow would
-    # compare by its own coercion rules.
+    # 01:00 UTC and 02:00 in Amsterdam are the same instant. The haystack is
+    # converted to the column's zone, so pyarrow compares like dtypes.
     df = pl.DataFrame(
         {"t": pl.Series([datetime(2020, 1, 1, 1)]).dt.replace_time_zone("UTC")}
     )
@@ -860,5 +860,6 @@ def test_pyarrow_dataset_is_in_other_time_zone_is_not_pushed_down(
     result = q.collect()
     capture = capfd.readouterr().err
 
-    assert "converted pyarrow predicate: <conversion failed>" in capture
+    assert "value_set=timestamp[us, tz=UTC]" in capture
+    assert "residual predicate: None" in capture
     assert_frame_equal(result, df)
