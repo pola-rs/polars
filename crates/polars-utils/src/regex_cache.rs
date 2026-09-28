@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use regex::bytes::{Regex as BytesRegex, RegexBuilder as BytesRegexBuilder};
+use regex::bytes::Regex as BytesRegex;
 use regex::{Regex, RegexBuilder};
 
 use crate::cache::LruCache;
@@ -50,18 +50,11 @@ impl RegexCache {
         Ok(&*r?)
     }
 
-    pub fn compile_bytes(&mut self, re: &str) -> Result<&BytesRegex, regex::Error> {
-        let size_limit = &mut self.size_limit;
-        let r = self.bytes_cache.try_get_or_insert_with(re, |re| {
-            build_within_size_limit(size_limit, |limit| {
-                let mut builder = BytesRegexBuilder::new(re);
-                if let Some(bytes) = limit {
-                    builder.size_limit(bytes);
-                }
-                builder.build()
-            })
-        });
-        Ok(&*r?)
+    /// Borrows a cached regex, cloning the supplied regex on a cache miss.
+    /// The regex must use default builder options, since the cache is keyed by pattern.
+    pub fn get_or_insert_bytes(&mut self, re: &BytesRegex) -> &BytesRegex {
+        self.bytes_cache
+            .get_or_insert_with(re.as_str(), |_| re.clone())
     }
 }
 
@@ -92,10 +85,6 @@ thread_local! {
 
 pub fn compile_regex(re: &str) -> Result<Regex, regex::Error> {
     LOCAL_REGEX_CACHE.with_borrow_mut(|cache| cache.compile(re).cloned())
-}
-
-pub fn compile_bytes_regex(re: &str) -> Result<BytesRegex, regex::Error> {
-    LOCAL_REGEX_CACHE.with_borrow_mut(|cache| cache.compile_bytes(re).cloned())
 }
 
 pub fn with_regex_cache<R, F: FnOnce(&mut RegexCache) -> R>(f: F) -> R {
