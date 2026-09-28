@@ -35,56 +35,6 @@ use polars_core::prelude::*;
 
 use crate::EvictIdx;
 
-const LANES: usize = 4;
-
-/// The number of groups up to which `update_laned` is used.
-const MAX_LANED_GROUPS: usize = 64;
-
-/// Whether `update_laned` should be used for `num_rows` rows into `num_groups` groups.
-fn use_lanes(num_groups: usize, num_rows: usize) -> bool {
-    num_groups <= MAX_LANED_GROUPS && num_rows >= 16 * LANES * num_groups
-}
-
-/// Calls `update(state, subset[r])` with a state of group `group_idxs[r]` for a prefix
-/// of the rows that ends before the first group to evict, and returns the length of
-/// that prefix. Consecutive rows update separate states, which are combined into
-/// `values` afterwards.
-///
-/// # Safety
-/// The group indices must be in-bounds for `values`.
-#[inline(always)]
-unsafe fn update_laned<V: Clone>(
-    values: &mut [V],
-    init: V,
-    combine: impl Fn(&mut V, &V),
-    subset: &[IdxSize],
-    group_idxs: &[EvictIdx],
-    mut update: impl FnMut(&mut V, usize),
-) -> usize {
-    let mut lanes = vec![init; values.len() * LANES];
-    let mut len = 0;
-    let (subset_chunks, _) = subset.as_chunks::<LANES>();
-    let (group_chunks, _) = group_idxs.as_chunks::<LANES>();
-    for (s, g) in subset_chunks.iter().zip(group_chunks) {
-        if g.iter().any(|g| g.should_evict()) {
-            break;
-        }
-        for l in 0..LANES {
-            update(
-                lanes.get_unchecked_mut(g[l].idx() * LANES + l),
-                s[l] as usize,
-            );
-        }
-        len += LANES;
-    }
-    for (v, lanes) in values.iter_mut().zip(lanes.chunks_exact(LANES)) {
-        for lane in lanes {
-            combine(v, lane);
-        }
-    }
-    len
-}
-
 /// A reduction with groups.
 ///
 /// Each group has its own reduction state that values can be aggregated into.
@@ -182,9 +132,6 @@ pub trait GroupedReduction: Any + Send + Sync {
 pub trait Reducer: Send + Sync + Clone + 'static {
     type Dtype: PolarsPhysicalType;
     type Value: Clone + Send + Sync + 'static;
-    /// Whether the values of a group may be reduced into several states that are
-    /// combined afterwards, changing the result by at most floating-point rounding.
-    const ORDER_INDEPENDENT: bool = false;
     fn init(&self) -> Self::Value;
     #[inline(always)]
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
@@ -339,8 +286,8 @@ where
     unsafe fn update_groups_while_evicting(
         &mut self,
         values: &[&Column],
-        mut subset: &[IdxSize],
-        mut group_idxs: &[EvictIdx],
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
         seq_id: u64,
     ) -> PolarsResult<()> {
         let &[values] = values else { unreachable!() };
@@ -353,31 +300,6 @@ where
         let arr = ca.downcast_as_array();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
-            if R::ORDER_INDEPENDENT && use_lanes(self.values.len(), subset.len()) {
-                let reducer = &self.reducer;
-                let len = if values.has_nulls() {
-                    update_laned(
-                        &mut self.values,
-                        reducer.init(),
-                        |a, b| reducer.combine(a, b),
-                        subset,
-                        group_idxs,
-                        |grp, i| reducer.reduce_one(grp, arr.get_unchecked(i), seq_id),
-                    )
-                } else {
-                    update_laned(
-                        &mut self.values,
-                        reducer.init(),
-                        |a, b| reducer.combine(a, b),
-                        subset,
-                        group_idxs,
-                        |grp, i| reducer.reduce_one(grp, Some(arr.value_unchecked(i)), seq_id),
-                    )
-                };
-                subset = &subset[len..];
-                group_idxs = &group_idxs[len..];
-            }
-
             if values.has_nulls() {
                 for (i, g) in subset.iter().zip(group_idxs) {
                     let ov = arr.get_unchecked(*i as usize);
@@ -665,74 +587,5 @@ impl GroupedReduction for NullGroupedReduction {
 
     fn as_any(&self) -> &dyn Any {
         self
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const NUM_ROWS: usize = 1000;
-    const NUM_GROUPS: usize = 3;
-    const EVICT_AT: usize = 501;
-
-    /// Row `i` goes to group `i % NUM_GROUPS`, and row `EVICT_AT` evicts its group.
-    fn update(reduction: &mut dyn GroupedReduction, values: &Column) -> (Series, Series) {
-        let subset: Vec<IdxSize> = (0..NUM_ROWS as IdxSize).collect();
-        let group_idxs: Vec<EvictIdx> = (0..NUM_ROWS)
-            .map(|i| EvictIdx::new((i % NUM_GROUPS) as IdxSize, i == EVICT_AT))
-            .collect();
-        assert!(use_lanes(NUM_GROUPS, NUM_ROWS));
-        reduction.resize(NUM_GROUPS as IdxSize);
-        unsafe {
-            reduction
-                .update_groups_while_evicting(&[values], &subset, &group_idxs, 0)
-                .unwrap()
-        };
-        let evicted = reduction.take_evictions().finalize().unwrap();
-        (evicted, reduction.finalize().unwrap())
-    }
-
-    /// The evicted and final value per group of summing `value(i)` over the rows.
-    fn expected(value: impl Fn(usize) -> u64) -> (Vec<u64>, Vec<u64>) {
-        let mut groups = [0; NUM_GROUPS];
-        let mut evicted = Vec::new();
-        for i in 0..NUM_ROWS {
-            if i == EVICT_AT {
-                evicted.push(std::mem::take(&mut groups[i % NUM_GROUPS]));
-            }
-            groups[i % NUM_GROUPS] += value(i);
-        }
-        (evicted, groups.to_vec())
-    }
-
-    fn as_u64(s: &Series) -> Vec<u64> {
-        let s = s.cast(&DataType::UInt64).unwrap();
-        s.u64().unwrap().into_no_null_iter().collect()
-    }
-
-    #[test]
-    fn laned_sum_evicts_in_row_order() {
-        let values = Column::new("a".into(), (0..NUM_ROWS as i64).collect::<Vec<_>>());
-        let mut reduction = sum::new_sum_reduction(DataType::Int64).unwrap();
-        let (evicted, groups) = update(&mut *reduction, &values);
-        let (exp_evicted, exp_groups) = expected(|i| i as u64);
-        assert_eq!(as_u64(&evicted), exp_evicted);
-        assert_eq!(as_u64(&groups), exp_groups);
-    }
-
-    #[test]
-    fn laned_count_evicts_in_row_order() {
-        let values = Column::new(
-            "a".into(),
-            (0..NUM_ROWS)
-                .map(|i| (i % 7 != 0).then_some(i as i64))
-                .collect::<Vec<_>>(),
-        );
-        let mut reduction = count::CountReduce::new(false);
-        let (evicted, groups) = update(&mut reduction, &values);
-        let (exp_evicted, exp_groups) = expected(|i| (i % 7 != 0) as u64);
-        assert_eq!(as_u64(&evicted), exp_evicted);
-        assert_eq!(as_u64(&groups), exp_groups);
     }
 }

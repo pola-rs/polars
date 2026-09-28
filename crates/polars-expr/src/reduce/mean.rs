@@ -93,7 +93,6 @@ where
 {
     type Dtype = T;
     type Value = (f64, usize);
-    const ORDER_INDEPENDENT: bool = true;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {

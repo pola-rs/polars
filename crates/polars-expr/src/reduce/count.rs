@@ -50,8 +50,8 @@ impl GroupedReduction for CountReduce {
     unsafe fn update_groups_while_evicting(
         &mut self,
         values: &[&Column],
-        mut subset: &[IdxSize],
-        mut group_idxs: &[EvictIdx],
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
         let &[values] = values else { unreachable!() };
@@ -60,32 +60,8 @@ impl GroupedReduction for CountReduce {
         let chunks = values.chunks();
         assert!(chunks.len() == 1);
         let arr = &*chunks[0];
-        let valid = arr
-            .validity()
-            .filter(|_| arr.has_nulls() && !self.include_nulls);
-        if use_lanes(self.counts.len(), subset.len()) {
-            let len = match valid {
-                Some(valid) => update_laned(
-                    &mut self.counts,
-                    0,
-                    |a, b| *a += b,
-                    subset,
-                    group_idxs,
-                    |c, i| *c += valid.get_bit_unchecked(i) as u64,
-                ),
-                None => update_laned(
-                    &mut self.counts,
-                    0,
-                    |a, b| *a += b,
-                    subset,
-                    group_idxs,
-                    |c, _| *c += 1,
-                ),
-            };
-            subset = &subset[len..];
-            group_idxs = &group_idxs[len..];
-        }
-        if let Some(valid) = valid {
+        if arr.has_nulls() && !self.include_nulls {
+            let valid = arr.validity().unwrap();
             for (i, g) in subset.iter().zip(group_idxs) {
                 let grp = self.counts.get_unchecked_mut(g.idx());
                 if g.should_evict() {

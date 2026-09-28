@@ -55,7 +55,6 @@ where
 {
     type Dtype = T;
     type Value = <T::Native as SumCast>::Sum;
-    const ORDER_INDEPENDENT: bool = true;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {
