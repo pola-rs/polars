@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import re
 from collections.abc import Collection
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any
 
@@ -1399,6 +1399,87 @@ def test_is_in_native_pair_with_a_scalar_haystack(
     lf = pl.LazyFrame({"n": needle, "h": haystack})
     out = lf.select(pl.col("n").is_in(pl.col("h").implode())).collect(engine=engine)
     assert out["n"].to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("column", "haystack", "expected"),
+    [
+        pytest.param(
+            pl.Series([1, 2, 3], dtype=pl.Int64),
+            pl.Series([1, 2], dtype=pl.Int8),
+            [1, 2],
+            id="narrower-int",
+        ),
+        pytest.param(
+            pl.Series([1, 2, 3], dtype=pl.Int64),
+            pl.Series([1, 2**63], dtype=pl.UInt64),
+            [1],
+            id="out-of-range",
+        ),
+        pytest.param(
+            pl.Series([D("1.00"), D("2.00")], dtype=pl.Decimal(10, 2)),
+            pl.Series([D("1.000"), D("2.005")], dtype=pl.Decimal(10, 3)),
+            [D("1.00")],
+            id="decimal-rounded",
+        ),
+        pytest.param(
+            pl.Series(["a", "b", "c"]),
+            pl.Series(["a", "b"], dtype=pl.Enum(["b", "a"])),
+            ["a", "b"],
+            id="string-in-enum",
+        ),
+        pytest.param(
+            pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"])),
+            pl.Series(["a", "zz"]),
+            ["a"],
+            id="enum-in-string",
+        ),
+        pytest.param(
+            pl.Series(
+                [datetime(2020, 1, 1, 1), datetime(2020, 1, 2)]
+            ).dt.replace_time_zone("UTC"),
+            pl.Series([datetime(2020, 1, 1, 2)]).dt.replace_time_zone(
+                "Europe/Amsterdam"
+            ),
+            [datetime(2020, 1, 1, 1, tzinfo=timezone.utc)],
+            id="datetime-other-zone",
+        ),
+    ],
+)
+def test_is_in_literal_haystack_takes_the_column_dtype(
+    column: pl.Series, haystack: pl.Series, expected: list[Any]
+) -> None:
+    # A literal haystack is cast to the column's dtype, dropping elements that no value
+    # of that dtype can equal, so the column itself stays uncast and statistics apply.
+    f = io.BytesIO()
+    pl.DataFrame({"c": column}).write_parquet(f, row_group_size=1)
+    f.seek(0)
+    q = pl.scan_parquet(f).filter(pl.col("c").is_in(pl.lit(haystack).implode()))
+
+    plan = q.explain()
+    assert "needle" not in plan
+    assert 'col("c").is_in(' in plan
+    assert q.collect()["c"].to_list() == expected
+
+
+def test_is_in_literal_array_haystack_that_would_lose_elements_keeps_the_guard() -> (
+    None
+):
+    # Dropping elements would change the Array width, so the needle is cast instead.
+    lf = pl.LazyFrame({"n": pl.Series([1, 2], dtype=pl.Int64)})
+    haystack = pl.lit(pl.Series([[1, 2**63]], dtype=pl.Array(pl.UInt64, 2)))
+    q = lf.select(pl.col("n").is_in(haystack))
+    _assert_needle_cast(q, "u64")
+    assert q.collect()["n"].to_list() == [True, False]
+
+
+def test_is_in_categorical_needle_keeps_its_categories() -> None:
+    # Casting the haystack's strings to Categorical would register them as categories.
+    lf = pl.LazyFrame({"c": pl.Series(["a", "b"], dtype=pl.Categorical)})
+    q = lf.select(
+        pl.col("c").is_in(pl.lit(pl.Series(["a", "not-a-category"])).implode())
+    )
+    assert q.collect()["c"].to_list() == [True, False]
 
 
 def test_is_in_native_pair_does_not_skip_row_groups_by_category_order() -> None:
