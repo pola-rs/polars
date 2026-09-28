@@ -1066,17 +1066,26 @@ fn to_graph_rec<'a>(
                 }
                 for e in fused {
                     for leaf in aexpr_to_leaf_names_iter(e.node(), ctx.expr_arena) {
-                        stored_cols.insert(leaf.clone());
-                        gather_cols.insert(leaf.clone());
+                        if !fused_names.contains(leaf) {
+                            stored_cols.insert(leaf.clone());
+                            gather_cols.insert(leaf.clone());
+                        }
                     }
                 }
 
+                // Each fused selector sees the outputs of those before it.
                 let gather_cols: Vec<PlSmallStr> = gather_cols.into_iter().collect();
-                let gather_schema = Arc::new(input_schema.try_project(gather_cols.iter())?);
-                let fused_selectors = fused
-                    .iter()
-                    .map(|e| create_stream_expr(e, ctx, &gather_schema))
-                    .try_collect_vec()?;
+                let mut eval_schema = input_schema.try_project(gather_cols.iter())?;
+                let mut fused_selectors = Vec::with_capacity(fused.len());
+                for e in fused {
+                    fused_selectors.push(create_stream_expr(
+                        e,
+                        ctx,
+                        &Arc::new(eval_schema.clone()),
+                    )?);
+                    let name = e.output_name();
+                    eval_schema.insert(name.clone(), augmented_schema.get(name).unwrap().clone());
+                }
 
                 payload_per_input.push(nodes::group_by::InputPayload {
                     stored_cols: stored_cols.into_iter().collect(),
