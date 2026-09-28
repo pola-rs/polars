@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from collections.abc import Collection
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as D
@@ -1363,6 +1364,61 @@ def test_is_in_literal_haystack_streaming_filter_and_group_by(
         .collect(engine="streaming")
     )
     assert result["v"].to_list() == [2, 1, 2]
+
+
+def _utc(*values: datetime) -> pl.Series:
+    return pl.Series(values).dt.replace_time_zone("UTC")
+
+
+def _amsterdam(*values: datetime) -> pl.Series:
+    return pl.Series(values).dt.replace_time_zone("Europe/Amsterdam")
+
+
+# 01:00 UTC is 02:00 in Amsterdam: the same instant in another zone, which the kernel
+# compares natively.
+AT_ONE_UTC = datetime(2020, 1, 1, 1)
+AT_ONE_UTC_IN_AMSTERDAM = datetime(2020, 1, 1, 2)
+
+
+def test_is_in_other_time_zone_with_a_scalar_haystack() -> None:
+    # A semi join needs equal key dtypes, so streaming must not lower to one.
+    lf = pl.LazyFrame(
+        {
+            "n": _utc(AT_ONE_UTC, datetime(2020, 1, 1)),
+            "h": _amsterdam(AT_ONE_UTC_IN_AMSTERDAM, AT_ONE_UTC_IN_AMSTERDAM),
+        }
+    )
+    q = lf.select(pl.col("n").is_in(pl.col("h").implode()))
+
+    assert q.collect(engine="streaming")["n"].to_list() == [True, False]
+
+
+def test_is_in_other_time_zone_does_not_skip_row_groups() -> None:
+    f = io.BytesIO()
+    pl.DataFrame({"t": _utc(AT_ONE_UTC)}).write_parquet(f)
+    haystack = pl.lit(_amsterdam(AT_ONE_UTC_IN_AMSTERDAM)).implode()
+
+    for use_statistics in (True, False):
+        f.seek(0)
+        out = (
+            pl.scan_parquet(f, use_statistics=use_statistics)
+            .filter(pl.col("t").is_in(haystack))
+            .collect()
+        )
+        assert out.height == 1
+
+
+def test_is_in_other_time_zone_is_not_a_filter_constraint() -> None:
+    # The haystacks' values differ as scalars, so intersecting them as allowed sets
+    # would wrongly empty the filter.
+    lf = pl.LazyFrame({"c": _utc(AT_ONE_UTC)})
+    q = lf.filter(
+        pl.col("c").is_in(pl.lit(_amsterdam(AT_ONE_UTC_IN_AMSTERDAM)).implode())
+        & pl.col("c").is_in(pl.lit(_utc(AT_ONE_UTC)).implode())
+    )
+
+    assert "FILTER" in q.explain()
+    assert q.collect().height == 1
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])

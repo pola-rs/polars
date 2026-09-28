@@ -516,6 +516,13 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 if !can_use_min_max_stats(dtype, None, None) {
                                     return None;
                                 }
+                                // The kernel compares some unequal dtypes natively, such as
+                                // aware datetimes in different zones, but the statistics only
+                                // compare with haystack values of the column's own dtype.
+                                if input[1].dtype(schema, arena).ok()?.inner_dtype() != Some(dtype)
+                                {
+                                    return None;
+                                }
 
                                 // col(A).is_in([B1, ..., Bn]) -> {
                                 //     min(A) == max(A) && null_count(A) == 0 && !min(A).is_in(lv),
