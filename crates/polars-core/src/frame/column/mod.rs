@@ -828,6 +828,25 @@ impl Column {
         self.agg_with_scalar_identity(groups, |s, g| unsafe { s.agg_mean(g) })
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    fn scalar_agg_arg_min_max(sc: &ScalarColumn, groups: &GroupsType) -> Self {
+        let name = sc.name().clone();
+        if sc.is_empty() || sc.has_nulls() {
+            return Self::full_null(name, groups.len(), &IDX_DTYPE);
+        }
+        
+        // Empty groups have no min or max.
+        if groups.iter().any(|g| g.is_empty()) {
+            return IdxCa::from_iter_options(
+                name,
+                groups.iter().map(|g| (!g.is_empty()).then_some(0)),
+            )
+            .into_column();
+        }
+
+        Self::new_scalar(name, Scalar::new_idxsize(0), groups.len())
+    }
+
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
@@ -835,14 +854,7 @@ impl Column {
     pub unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Self {
         match self {
             Column::Series(s) => unsafe { Column::from(s.agg_arg_min(groups)) },
-            Column::Scalar(sc) => {
-                let scalar = if sc.is_empty() || sc.has_nulls() {
-                    Scalar::null(IDX_DTYPE)
-                } else {
-                    Scalar::new_idxsize(0)
-                };
-                Column::new_scalar(self.name().clone(), scalar, 1)
-            },
+            Column::Scalar(sc) => Self::scalar_agg_arg_min_max(sc, groups),
         }
     }
 
@@ -853,14 +865,7 @@ impl Column {
     pub unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Self {
         match self {
             Column::Series(s) => unsafe { Column::from(s.agg_arg_max(groups)) },
-            Column::Scalar(sc) => {
-                let scalar = if sc.is_empty() || sc.has_nulls() {
-                    Scalar::null(IDX_DTYPE)
-                } else {
-                    Scalar::new_idxsize(0)
-                };
-                Column::new_scalar(self.name().clone(), scalar, 1)
-            },
+            Column::Scalar(sc) => Self::scalar_agg_arg_min_max(sc, groups),
         }
     }
 
