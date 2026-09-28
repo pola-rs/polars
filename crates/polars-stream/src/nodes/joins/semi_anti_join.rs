@@ -25,11 +25,15 @@ use rayon::prelude::*;
 use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::utils::JoinSampleStats;
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, emit_morsel_size, sample_sink,
-    select_key_columns, send_frames,
+    BufferedStream, LOPSIDED_SAMPLE_FACTOR, UNIQUE_BUILD_MARGIN, build_side_left,
+    emit_morsel_size, sample_sink, select_key_columns, send_frames,
 };
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
+
+/// A right sample that reached the sample limit keeps growing when its distinct
+/// keys grew at least this much from its first half to all of it.
+const KEY_GROWTH_RATIO: f64 = 1.3;
 
 fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
     HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
@@ -267,7 +271,9 @@ impl SampleState {
 
         // Building the left side also keeps all of its rows, so it is only
         // chosen when it was read completely and its estimated bytes are no
-        // more than the key bytes of the sampled right rows.
+        // more than the key bytes of the sampled right rows. A right sample
+        // that stopped at the limit while its keys kept growing counts as
+        // `UNIQUE_BUILD_MARGIN` times bigger.
         let left_complete = recv[0] == PortState::Done;
         let left_is_build = match (left_complete, right_saturated) {
             (false, true) => left_saturated && prefer_left,
@@ -294,10 +300,27 @@ impl SampleState {
                     &state.in_memory_exec_state,
                 )?;
                 let left_bytes = left.all_rows_build_bytes(self.left_len);
-                let right_bytes = right.distinct_keys_build_bytes(self.right_len);
+                let mut right_bytes = right.distinct_keys_build_bytes(self.right_len);
+                let mut key_growth = 1.0;
+                if right_saturated {
+                    let first_half = JoinSampleStats::from_sample(
+                        &self.right,
+                        &params.right_key_selectors,
+                        None,
+                        false,
+                        params.null_is_valid_when_built(false),
+                        &params.random_state,
+                        params.sample_limit / 2,
+                        &state.in_memory_exec_state,
+                    )?;
+                    key_growth = 2.0 * right.key_ratio / first_half.key_ratio;
+                    if key_growth >= KEY_GROWTH_RATIO {
+                        right_bytes *= UNIQUE_BUILD_MARGIN;
+                    }
+                }
                 if config::verbose() {
                     eprintln!(
-                        "estimated retained bytes are: {left_bytes:.0} (left, keys and rows) vs. {right_bytes:.0} (right, keys)"
+                        "estimated retained bytes are: {left_bytes:.0} (left, keys and rows) vs. {right_bytes:.0} (right, keys, key growth {key_growth:.2})"
                     );
                 }
                 left_bytes <= right_bytes

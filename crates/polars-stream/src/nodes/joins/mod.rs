@@ -36,6 +36,11 @@ mod utils;
 // smaller side as the build side without checking cardinalities.
 const LOPSIDED_SAMPLE_FACTOR: usize = 10;
 
+/// Extra weight against building a side that keeps growing past its sample,
+/// such as one referencing a side with unique keys. A prefix under-counts the
+/// repeats and the distinct keys of such a side.
+const UNIQUE_BUILD_MARGIN: f64 = 8.0;
+
 /// The side a plan's build side names, if any.
 fn build_side_left(side: Option<&JoinBuildSide>) -> Option<bool> {
     match side {

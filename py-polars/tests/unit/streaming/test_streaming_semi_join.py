@@ -247,6 +247,39 @@ def test_sampling_keeps_right_build_for_incomplete_left(
     assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
 
 
+@pytest.mark.parametrize(
+    ("keys_grow", "expected_side"), [(True, "left"), (False, "right")]
+)
+def test_sampling_right_side_at_the_limit(
+    keys_grow: bool,
+    expected_side: str,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # The right side stops at the sample limit with fewer key bytes than the
+    # left side. When its keys keep growing it is much bigger than its sample
+    # and the left side is built.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000")
+
+    def source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        for i in range(100):
+            rows = np.arange(1000) + i * 1000
+            yield pl.DataFrame({"k": rows // 3 if keys_grow else rows % 50})
+
+    left = pl.LazyFrame({"k": np.arange(3000), "v": np.arange(3000)})
+    right = register_io_source(source, schema={"k": pl.Int64})
+    expected = left.collect().filter(pl.col("k") < (3000 if keys_grow else 50))
+    q = assert_semi(left, right, expected, on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd) == expected_side
+    q = left.join(right, on="k", how="anti")
+    assert build_side_chosen(q, plmonkeypatch, capfd) == expected_side
+
+
 def test_sampling_hints(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
