@@ -2023,6 +2023,10 @@ def test_titlecase() -> None:
                 "İstanbul",
                 "İSTANBUL",
                 "ΟΔΟΣ ΣΟΦΙΑΣ",
+                "straße ßa",
+                "ǆungla ǈ",
+                "ﬁne ﬂow",
+                "ᾳ ᾀa",
             ]
         }
     )

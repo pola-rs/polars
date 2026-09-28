@@ -140,7 +140,7 @@ pub(super) fn to_titlecase<'a>(ca: &'a StringChunked) -> StringChunked {
         let mut next_is_upper = true;
         for (i, c) in s.char_indices() {
             if next_is_upper {
-                out.extend(c.to_uppercase());
+                out.extend(c.to_titlecase());
             } else if c == 'Σ' {
                 map_uppercase_sigma(s, i, &mut out);
             } else {
