@@ -375,8 +375,11 @@ fn visualize_plan_rec(
             order_by,
             exprs,
             ordered_eval,
+            maintain_order,
         } => {
-            let mut label = format!("window[ordered_eval: {ordered_eval}]\\npartition by: ");
+            let mut label = format!(
+                "window[maintain_order: {maintain_order}, ordered_eval: {ordered_eval}]\\npartition by: "
+            );
             for (i, name) in partition_by.iter().enumerate() {
                 if i > 0 {
                     label.push_str(", ");

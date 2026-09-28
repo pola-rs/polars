@@ -264,8 +264,9 @@ pub enum PhysNodeKind {
         format_str: Option<String>,
     },
 
-    /// Evaluates window expressions that share one partitioning. The output order is
-    /// unspecified.
+    /// Evaluates window expressions that share one partitioning. Without `maintain_order` it
+    /// outputs the input columns and the window columns in an unspecified order. With
+    /// `maintain_order` it outputs only the window columns, in input order.
     Window {
         input: PhysStream,
         partition_by: Vec<PlSmallStr>,
@@ -273,6 +274,7 @@ pub enum PhysNodeKind {
         exprs: Vec<ExprIR>,
         /// Evaluate the rows of a partition in input order.
         ordered_eval: bool,
+        maintain_order: bool,
     },
 
     Map {

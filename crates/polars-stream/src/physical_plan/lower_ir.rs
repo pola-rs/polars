@@ -5,7 +5,7 @@ use polars_arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor::ALLOW_RAYON_THREADS;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
+use polars_core::prelude::{DataType, Field, InitHashMaps, IntoColumn, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -247,18 +247,67 @@ pub fn lower_ir(
             schema: _,
             maintain_order,
             ordered_eval,
-        } if !*maintain_order && !is_scalar_window(exprs, order_by.is_some(), expr_arena) => {
+        } if !is_scalar_window(exprs, order_by.is_some(), expr_arena) => {
+            let input = *input;
             let partition_by = partition_by.clone();
             let order_by = order_by.clone();
             let exprs = exprs.clone();
             let ordered_eval = *ordered_eval;
-            let phys_input = lower_ir!(*input)?;
-            PhysNodeKind::Window {
-                input: phys_input,
-                partition_by,
-                order_by,
-                exprs,
-                ordered_eval,
+            let maintain_order = *maintain_order;
+            let phys_input = lower_ir!(input)?;
+
+            if !maintain_order {
+                PhysNodeKind::Window {
+                    input: phys_input,
+                    partition_by,
+                    order_by,
+                    exprs,
+                    ordered_eval,
+                    maintain_order,
+                }
+            } else {
+                // Only the columns the windows read go through the window node. Its output is
+                // in input order and is zipped onto the input.
+                let input_schema = IR::schema_with_cache(input, ir_arena, schema_cache);
+                let mut read = PlHashSet::new();
+                for e in &exprs {
+                    read.extend(aexpr_to_leaf_names_iter(e.node(), expr_arena).cloned());
+                }
+                read.extend(order_by.iter().map(|(name, _)| name.clone()));
+                let read_columns = input_schema
+                    .iter_names()
+                    .filter(|name| read.contains(*name))
+                    .map(|name| ExprIR::from_column_name(name.clone(), expr_arena))
+                    .collect_vec();
+                let window_input = build_select_stream(
+                    phys_input,
+                    &read_columns,
+                    expr_arena,
+                    phys_sm,
+                    expr_cache,
+                    ctx,
+                )?;
+
+                let window_schema = output_schema
+                    .iter()
+                    .skip(input_schema.len())
+                    .map(|(name, dtype)| Field::new(name.clone(), dtype.clone()))
+                    .collect::<Schema>();
+                let window_node = phys_sm.insert(PhysNode::new(
+                    Arc::new(window_schema),
+                    PhysNodeKind::Window {
+                        input: window_input,
+                        partition_by,
+                        order_by,
+                        exprs,
+                        ordered_eval,
+                        maintain_order,
+                    },
+                ));
+                PhysNodeKind::Zip {
+                    inputs: vec![phys_input, PhysStream::first(window_node)],
+                    zip_behavior: ZipBehavior::Strict,
+                }
             }
         },
 

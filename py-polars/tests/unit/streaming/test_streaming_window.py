@@ -287,3 +287,91 @@ def test_window_unordered_shape_error(expr: pl.Expr) -> None:
     for engine in ENGINES:
         with pytest.raises(pl.exceptions.ShapeError):
             q.collect(engine=engine)  # type: ignore[call-overload]
+
+
+def _physical_windows(q: pl.LazyFrame) -> list[str]:
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    return [line for line in dot.splitlines() if "window[" in line]
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").rank().over("g"),
+        pl.col("x").cum_sum().over("g", order_by="t"),
+        pl.col("x").cum_sum().over("g"),
+        pl.col("x").shift(2).over(["g", "h"], order_by=["t", "x"]),
+        (pl.col("x") + 1).over("g"),
+        pl.col("x").sum().over("g", order_by="t"),
+    ],
+)
+def test_window_row_index_mode(expr: pl.Expr) -> None:
+    q = _keyed_frame().lazy().with_columns(w=expr)
+    windows = _physical_windows(q)
+    assert len(windows) == 1
+    assert "maintain_order: true" in windows[0]
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+def test_window_row_index_mode_over_group_by() -> None:
+    gb = (
+        _frame()
+        .lazy()
+        .group_by("k")
+        .agg(pl.col("g").first(), pl.col("x").sum())
+        .cache()
+    )
+    q = pl.concat(
+        [
+            gb.select(k2="k", g2="g", x2="x"),
+            gb.with_columns(w=pl.col("x").cum_sum().over("g")),
+        ],
+        how="horizontal",
+    )
+    windows = _physical_windows(q)
+    assert len(windows) == 1
+    assert "maintain_order: true" in windows[0]
+
+    out = q.collect(engine="streaming")
+    assert_series_equal(out["k"], out["k2"], check_names=False)
+    expected = out.select(pl.col("x2").cum_sum().over("g2")).to_series()
+    assert_series_equal(out["w"], expected, check_names=False)
+
+
+def test_window_before_stable_sort() -> None:
+    q = (
+        _keyed_frame()
+        .lazy()
+        .with_columns(w=pl.col("x").cum_sum().over("g"))
+        .sort("t", maintain_order=True)
+    )
+    assert "maintain_order: true" in _physical_windows(q)[0]
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+def test_window_after_sort() -> None:
+    q = (
+        _keyed_frame()
+        .lazy()
+        .sort("t", "id")
+        .with_columns(w=pl.col("x").cum_sum().over("g"))
+    )
+    assert "SORT BY" in q.explain(engine="streaming")
+    assert "maintain_order: true" in _physical_windows(q)[0]
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+def test_window_row_index_mode_several_specs() -> None:
+    q = (
+        _keyed_frame()
+        .lazy()
+        .with_columns(
+            a=pl.col("x").cum_sum().over("g"),
+            b=pl.col("x").rank().over("g"),
+            c=pl.col("x").cum_sum().over("h", order_by="t"),
+        )
+    )
+    windows = _physical_windows(q)
+    assert len(windows) == 2
+    assert all("maintain_order: true" in w for w in windows)
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))

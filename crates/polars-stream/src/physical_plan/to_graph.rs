@@ -554,6 +554,7 @@ fn to_graph_rec<'a>(
             order_by,
             exprs,
             ordered_eval,
+            maintain_order,
         } => {
             let input_schema = input.output_schema(ctx.phys_sm).clone();
             let output_schema = node.output_schema(0).clone();
@@ -576,6 +577,7 @@ fn to_graph_rec<'a>(
                 input_schema,
                 output_schema,
                 ordered_eval: *ordered_eval,
+                maintain_order: *maintain_order,
             };
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(

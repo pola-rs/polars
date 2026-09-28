@@ -70,6 +70,7 @@ pub enum PhysicalPropsDescription {
         order_by: Option<String>,
         exprs: Vec<String>,
         ordered_eval: bool,
+        maintain_order: bool,
     },
     InMemorySink,
     InMemorySource {
