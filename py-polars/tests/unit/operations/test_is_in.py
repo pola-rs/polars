@@ -1296,7 +1296,7 @@ def test_is_in_other_time_zone_with_a_scalar_haystack() -> None:
     )
     q = lf.select(pl.col("n").is_in(pl.col("h").implode()))
 
-    assert q.collect(engine="streaming")["n"].to_list() == [True, False]
+    assert q.collect()["n"].to_list() == [True, False]
 
 
 def test_is_in_other_time_zone_does_not_skip_row_groups() -> None:
