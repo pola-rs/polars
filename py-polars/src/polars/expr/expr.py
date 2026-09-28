@@ -8908,7 +8908,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9020,7 +9020,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9133,7 +9133,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9246,7 +9246,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9360,7 +9360,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9478,7 +9478,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9594,7 +9594,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9708,7 +9708,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9857,7 +9857,9 @@ class Expr(metaclass=_Meta):
         parameter. The resulting values will be the rank of the value that is
         at the end of the sliding window.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, partially-streaming
+            :partially-streaming: Falls back to in-memory for
+                ``method="random"`` with a ``seed``.
 
         Parameters
         ----------
@@ -9939,7 +9941,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -10005,7 +10007,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -10073,7 +10075,7 @@ class Expr(metaclass=_Meta):
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
