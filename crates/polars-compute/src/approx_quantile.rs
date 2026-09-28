@@ -243,28 +243,34 @@ pub mod kll {
         // Hoeffding's tail `2 exp(-t² / 2Σw²)` (KLL Lemma 1) at `t = εn`, solved for `Σw²`.
         let z = f64::sqrt(2.0 * f64::ln(2.0 / FAILURE_PROBABILITY));
 
-        // Compute k from the total variance (`Σw²`) and multiply by the "error spread" (`•/error`)
+        // Solve `z * sqrt(Σw²) ≤ error * n` for `k`, with `Σw² = var * (n/k)²`.
         let k_from_total_variance = |var: f64| z * f64::sqrt(var) / error;
 
         // `Σw²` of the compactors in units of (n/k)²:
         //   * Where c is the CAPACITY_DECAY.
         //   * Where h is the height of a compactor (counting from 0).
         //   * Let d(h) := H - 1 - h (the depth of a compactor).
-        //   * c^d is the size of a compactor at depth d.
-        //   * 2^h is the number of items that get inserted into the compactor).
+        //   * k * c^d is the capacity of a compactor at depth d.
+        //   * 2^h is the weight of each item in the compactor at height h.
         //   * Each compactor leads to at most `y_h := n / (k * c^d(h) * 2^h)` "weight shifts".
-        //   * So each compactor weight-shifts y_(h+1) / y_h times the one below it:
-        //     == (n/(k * c^d(h+1) * 2^(h+1))) / (n/(k * c^d(h) * 2^h))
-        //     == (c^d(h) / c^d(h+1)) * (2^h / 2^(h+1))
-        //     == c^(H - 1 - h - H + 1 + (h+1)) * 2^(h - h + 1)
+        //   * A weight shift at height h moves a rank by at most one item's weight, so it adds
+        //     (2^h)² = 4^h to `Σw²`.
+        //   * So each compactor adds y_(h+1) * 4^(h+1) / (y_h * 4^h) times as many
+        //     weight-shifts as the one below it:
+        //     == (c^d(h) / c^d(h+1)) * (2^h / 2^(h+1)) * 4
+        //     == c^(H - 1 - h - H + 1 + (h+1)) * 2^(h - (h+1)) * 4
         //     == 2*c
-        //  * So the total number of all weight shifts is equal to:
-        //    (1/(2c) + 1/(2c)^2 + 1/(2c)^3 + ...)
+        //  * Level H-1 has never compacted, so the top compacting level is H-2 (depth 1). It adds
+        //    y_(H-2) * 4^(H-2) = n * 2^(H-2) / (k * c).
+        //  * Each level below adds 1/(2c) times as much as the one above it, so all levels add
+        //    at most:
+        //       n * 2^(H-2) / (k * c) * (1 + 1/(2c) + 1/(2c)^2 + ...)
+        //    == n * 2^(H-1) / k * (1/(2c) + 1/(2c)^2 + 1/(2c)^3 + ...)
         //  * We know that the creation of level H-1 consumed k items of weight 2^(H-2).
         //    The sum of the weights of those items denote that at least that many
         //    items were ingested in total, i.e., `k * 2^(H-2) ≤ n.`
         //    Rewrite ⇒ n/k ≥ 2^(H-2) ⇒ 2^(H-1) ≤ 2*(n/k).
-        //  * Finish: Total variance (in terms of (n/k)²) is 2 * ((1/(2c) + 1/(2c)^2 + ...).
+        //  * Finish: Total variance (in terms of (n/k)²) is at most 2 * (1/(2c) + 1/(2c)^2 + ...).
         let compactor_var = 2.0 * geometric_tail(1.0 / (2.0 * CAPACITY_DECAY));
 
         // `Σw²` of the sampler in units of (n/k)²:
