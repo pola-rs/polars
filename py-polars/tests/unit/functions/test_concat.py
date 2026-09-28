@@ -567,7 +567,7 @@ def test_concat_horizontal_strict_cached_projection_27923(
         ],
         how="horizontal",
     )
- 
+
     assert_frame_equal(
         q.collect(),
         pl.DataFrame(
