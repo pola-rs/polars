@@ -148,14 +148,15 @@ mod tests {
     #[test]
     fn bytes_cache_retains_arc_until_eviction() {
         let mut cache = RegexCache::new();
-        let re = Arc::new(BytesRegexBuilder::new("abc").build().unwrap());
+        let regex = BytesRegexBuilder::new("abc").build().unwrap();
+        let re = Arc::new(regex.clone());
         let weak = Arc::downgrade(&re);
         cache.get_or_insert_bytes(&re);
         drop(re);
         assert!(weak.upgrade().is_some());
 
         for _ in 0..32 {
-            let re = Arc::new(BytesRegexBuilder::new("abc").build().unwrap());
+            let re = Arc::new(regex.clone());
             cache.get_or_insert_bytes(&re);
         }
         assert!(weak.upgrade().is_none());
