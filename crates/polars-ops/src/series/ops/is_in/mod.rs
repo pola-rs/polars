@@ -607,13 +607,14 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
     if nulls_equal {
         let ca_in = s.null()?;
         Ok(match other.dtype() {
-            DataType::List(_) => other.list()?.apply_amortized_generic(|opt_s| {
-                Some(opt_s.map(|s| s.as_ref().has_nulls()) == Some(true))
-            }),
+            // A null container stays null.
+            DataType::List(_) => other
+                .list()?
+                .apply_amortized_generic(|opt_s| opt_s.map(|s| s.as_ref().has_nulls())),
             #[cfg(feature = "dtype-array")]
-            DataType::Array(_, _) => other.array()?.apply_amortized_generic(|opt_s| {
-                Some(opt_s.map(|s| s.as_ref().has_nulls()) == Some(true))
-            }),
+            DataType::Array(_, _) => other
+                .array()?
+                .apply_amortized_generic(|opt_s| opt_s.map(|s| s.as_ref().has_nulls())),
             _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
         })
     } else {
