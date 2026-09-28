@@ -122,13 +122,18 @@ pub(super) struct RowGroupDecoder {
     pub(super) non_predicate_field_indices: Arc<[usize]>,
     pub(super) target_values_per_thread: usize,
 
+    // The metrics of this file, shared by its decode tasks. They cover the data
+    // files: the deletion files of an Iceberg scan count in the node's IO
+    // metrics only.
     /// Rows of the row groups read, before the predicate.
     pub(super) rows_read: MetricReporter<kind::Sum>,
     /// Rows of `rows_read` decoded prefiltered.
     pub(super) rows_read_prefiltered: MetricReporter<kind::Sum>,
     /// Rows of `rows_read_prefiltered` the predicate kept.
     pub(super) rows_kept_prefiltered: MetricReporter<kind::Sum>,
-    /// Uncompressed size of the projected column chunks read, an upper bound.
+    /// Uncompressed size, per the file metadata, of the projected column chunks
+    /// of the row groups read. A slice or prefilter decompresses only some of
+    /// their pages.
     pub(super) uncompressed_bytes: MetricReporter<kind::Sum>,
 }
 
@@ -149,7 +154,10 @@ impl RowGroupDecoder {
             && !self.predicate_field_indices.is_empty()
             && !nothing_to_evaluate;
 
-        let (num_rows, uncompressed) = self.read_size(&row_group_data);
+        let num_rows = row_group_data
+            .slice
+            .map_or(row_group_data.row_group_metadata.num_rows(), |(_, len)| len);
+        let uncompressed_bytes = row_group_data.uncompressed_bytes;
 
         let df = if prefiltered {
             self.row_group_data_to_df_prefiltered(row_group_data)
@@ -160,37 +168,12 @@ impl RowGroupDecoder {
         };
 
         self.rows_read.add(num_rows as i64);
-        self.uncompressed_bytes.add(uncompressed);
+        self.uncompressed_bytes.add(uncompressed_bytes as i64);
         if prefiltered {
             self.rows_read_prefiltered.add(num_rows as i64);
             self.rows_kept_prefiltered.add(df.height() as i64);
         }
         Ok(df)
-    }
-
-    /// Rows and uncompressed bytes read of a row group, pro rata for a slice.
-    fn read_size(&self, row_group_data: &RowGroupData) -> (usize, i64) {
-        let row_group_metadata = &row_group_data.row_group_metadata;
-        let total_rows = row_group_metadata.num_rows();
-        let num_rows = row_group_data.slice.map_or(total_rows, |(_, len)| len);
-
-        let uncompressed: i64 = self
-            .projected_arrow_fields
-            .iter()
-            .flat_map(|projection| {
-                row_group_metadata
-                    .columns_under_root_iter(&projection.arrow_field().name)
-                    .into_iter()
-                    .flatten()
-            })
-            .map(|column_chunk| column_chunk.uncompressed_size())
-            .sum();
-        let uncompressed = match total_rows {
-            0 => 0,
-            _ => (uncompressed as i128 * num_rows as i128 / total_rows as i128) as i64,
-        };
-
-        (num_rows, uncompressed)
     }
 
     /// Whether the predicate keeps every row for now: it has no static part

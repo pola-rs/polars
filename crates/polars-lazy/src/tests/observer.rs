@@ -264,6 +264,15 @@ mod tests {
             .finish(&mut df)
             .unwrap();
         let file = polars_buffer::Buffer::from(bytes.clone());
+        // The two row groups the filter reads, both columns projected.
+        let expected_bytes: i64 = ParquetReader::new(Cursor::new(bytes))
+            .get_metadata()
+            .unwrap()
+            .row_groups[..2]
+            .iter()
+            .flat_map(|rg| rg.parquet_columns())
+            .map(|c| c.uncompressed_size())
+            .sum();
         let scan = || {
             let args = ScanArgsParquet {
                 // Buffers cannot be hive-partitioned.
@@ -286,6 +295,7 @@ mod tests {
         // `v` is only decoded for the 150 rows `k` keeps.
         assert_eq!(snapshot.reading("scan.rows_read_prefiltered"), Some(200));
         assert_eq!(snapshot.reading("scan.rows_kept_prefiltered"), Some(150));
+        assert_eq!(snapshot.reading("scan.uncompressed_bytes"), Some(expected_bytes));
 
         // Without a predicate or slice nothing is skipped, and that is a reading.
         let (_, snapshot) = snapshot_of(scan());
