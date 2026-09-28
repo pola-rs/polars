@@ -1215,7 +1215,7 @@ impl IRFunctionExpr {
                     RankMethod::Average | RankMethod::Min | RankMethod::Max | RankMethod::Dense => {
                         f | FunctionFlags::NON_ORDER_OBSERVING | FunctionFlags::NON_ORDER_PRODUCING
                     },
-                    RankMethod::Ordinal | RankMethod::Random => f,
+                    _ => f,
                 }
             }),
             F::Repeat => {
