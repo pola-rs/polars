@@ -259,6 +259,26 @@ def test_window_unordered_results(expr: pl.Expr) -> None:
     _assert_unordered_window(_keyed_frame().lazy().with_columns(w=expr))
 
 
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").cum_sum().over("g", order_by="t"),
+        pl.col("x").rank().over("g"),
+        pl.col("x").shift(1).over("h", order_by="t"),
+        (pl.col("x") - pl.col("x").mean()).over("g", order_by="t"),
+        pl.col("x").sort().over("g"),
+    ],
+)
+@pytest.mark.parametrize("n", [0, 20_000])
+def test_window_unordered_reads_all_columns(expr: pl.Expr, n: int) -> None:
+    columns = list(dict.fromkeys(expr.meta.root_names()))
+    q = _keyed_frame(n).lazy().select(columns).with_columns(w=expr).sort(pl.all())
+    windows = _physical_windows(q)
+    assert len(windows) == 1
+    assert "maintain_order: false" in windows[0]
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
 def test_window_unordered_several_specs() -> None:
     q = (
         _keyed_frame()

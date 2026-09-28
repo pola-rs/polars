@@ -574,11 +574,12 @@ fn to_graph_rec<'a>(
             for e in exprs {
                 read.extend(aexpr_to_leaf_names_iter(e.node(), ctx.expr_arena).cloned());
             }
-            let read_schema = input_schema
+            let read_schema: Schema = input_schema
                 .iter()
                 .filter(|(name, _)| read.contains(*name))
                 .map(|(name, dtype)| (name.clone(), dtype.clone()))
                 .collect();
+            let output_partitions = !*maintain_order && read_schema.len() == input_schema.len();
             let params = nodes::window::WindowParams {
                 partition_by: partition_by.clone(),
                 order_by: order_by.clone(),
@@ -587,6 +588,7 @@ fn to_graph_rec<'a>(
                 output_schema,
                 ordered_eval: *ordered_eval,
                 maintain_order: *maintain_order,
+                output_partitions,
             };
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
