@@ -678,8 +678,17 @@ pub fn aexpr_to_pyarrow<'py>(
         AExpr::Function {
             function, input, ..
         } => {
-            let input = input.first().unwrap().node();
-            let input = aexpr_to_pyarrow(py, pc, input, expr_arena, schema)?;
+            let input = input.first()?;
+            if matches!(
+                function, // note: only applies to primitive (non-decimal) numeric types
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNan | IRBooleanFunction::IsNotNan)
+            ) {
+                let dtype = input.dtype(schema, expr_arena).ok()?;
+                if !dtype.is_primitive_numeric() && !dtype.is_null() {
+                    return None;
+                }
+            }
+            let input = aexpr_to_pyarrow(py, pc, input.node(), expr_arena, schema)?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {

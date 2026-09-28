@@ -763,24 +763,56 @@ def test_arrow_predicate_conversions(tmp_path: Path) -> None:
         check_predicate_pushdown=True,
     )
 
-    # Test is_nan / is_not_nan
-    df_with_nans = pl.DataFrame({"value": [1.0, float("nan"), 3.0, float("nan")]})
-    file_path_nans = tmp_path / "test_nans.ipc"
-    df_with_nans.write_ipc(file_path_nans)
 
-    helper_dataset_test(
-        file_path_nans,
-        lambda lf: lf.filter(pl.col("value").is_nan()),
-        n_expected=2,
-        check_predicate_pushdown=True,
-    )
+@pytest.mark.parametrize(
+    ("dtype", "values"),
+    [
+        (pl.Float64, [None, 1.0, float("nan"), 3.0]),
+        (pl.UInt64, [None, 0, 2**64 - 1]),
+        (pl.Null, [None, None]),
+    ],
+)
+@pytest.mark.parametrize(
+    ("predicate", "pyarrow_repr"),
+    [
+        (pl.col("value").is_nan(), "is_nan(value)"),
+        (pl.col("value").is_not_nan(), "invert(is_nan(value))"),
+    ],
+)
+def test_pyarrow_dataset_nan_predicate_pushdown(
+    dtype: type[pl.DataType],
+    values: list[float | int | None],
+    predicate: pl.Expr,
+    pyarrow_repr: str,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    df = pl.DataFrame({"value": pl.Series(values, dtype=dtype)})
+    dset = ds.dataset(df.to_arrow())
 
-    helper_dataset_test(
-        file_path_nans,
-        lambda lf: lf.filter(pl.col("value").is_not_nan()),
-        n_expected=2,
-        check_predicate_pushdown=True,
-    )
+    capfd.readouterr()
+    actual = pl.scan_pyarrow_dataset(dset).filter(predicate).collect()
+    capture = capfd.readouterr().err
+
+    assert (
+        f"converted pyarrow predicate: <pyarrow.compute.Expression {pyarrow_repr}>, "
+        "residual predicate: None"
+    ) in capture
+    assert_frame_equal(actual, df.filter(predicate))
+
+
+@pytest.mark.parametrize("method", ["is_nan", "is_not_nan"])
+def test_pyarrow_dataset_nan_decimal_rejected(method: str) -> None:
+    df = pl.DataFrame({"value": pl.Series([None, 1, 2], dtype=pl.Decimal(10, 1))})
+    dset = ds.dataset(df.to_arrow())
+    predicate = getattr(pl.col("value"), method)()
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match=rf"`{method}` operation not supported for dtype `decimal",
+    ):
+        pl.scan_pyarrow_dataset(dset).filter(predicate).collect()
 
 
 def test_pyarrow_dataset_streaming_source() -> None:
