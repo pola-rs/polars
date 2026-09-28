@@ -1437,22 +1437,27 @@ def test_bypassed_range_goes_behind_a_selective_predicate(
     # group decoded with the old passes after the range stopped being checked,
     # which depends on timing, hence the repeats.
     n = 50 * ROWS_PER_GROUP
-    keys = pl.Series("k", range(n)).shuffle(seed=1)
+    keys = pl.concat(
+        [
+            pl.Series("k", range(start, start + ROWS_PER_GROUP)).shuffle(seed=start + 1)
+            for start in range(0, n, ROWS_PER_GROUP)
+        ]
+    )
     path = tmp_path / "fact.parquet"
-    pl.DataFrame({"k2": keys % 7, "v": keys}).write_parquet(
+    pl.DataFrame({"k2": keys % 20, "v": keys % ROWS_PER_GROUP}).write_parquet(
         path, row_group_size=ROWS_PER_GROUP, statistics="full"
     )
     q = (
         pl.scan_parquet(path)
-        .filter(pl.col("v") < n // 10)
-        .join(tiny(0, 1, 2, 3, 4, 5, key="k2"), on="k2")
+        .filter(pl.col("v") < ROWS_PER_GROUP // 5)
+        .join(tiny(*range(19), key="k2"), on="k2")
     )
     for _ in range(5):
         out, err = reader_log(q, plmonkeypatch, capfd)
+        assert_matches_in_memory(q, out)
         assert "Dynamic predicate bypassed" in err
         passes = [line for line in err.splitlines() if "Predicate passes" in line]
         assert passes[-1] == '[ParquetFileReader]: Predicate passes: [["v"], ["k2"]]'
-    assert_matches_in_memory(q, out)
 
 
 def test_two_blooms_on_one_scan_key(
