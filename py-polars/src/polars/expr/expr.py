@@ -6981,21 +6981,23 @@ class Expr(metaclass=_Meta):
         self,
         other: Expr | Collection[Any] | Series,
         *,
-        nulls_equal: bool = False,
+        nulls_equal: bool = True,
     ) -> Expr:
         """
         Check if elements of this expression are present in the other Series.
 
         .. engine-support:: in-memory, streaming, distributed
 
+        .. versionchanged:: 2.0
+            `nulls_equal` defaults to `True`, like :meth:`Expr.list.contains`.
+
         Parameters
         ----------
         other
             Series or sequence of primitive type.
-        nulls_equal : bool, default False
+        nulls_equal : bool, default True
             If True, treat null as a distinct value. Null values will not propagate.
-            Note that :meth:`Expr.list.contains` and :meth:`Expr.arr.contains` default
-            to `True`.
+            Set to False to propagate nulls, as SQL `IN` does.
 
         Returns
         -------

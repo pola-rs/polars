@@ -1806,7 +1806,11 @@ def test_filter_range_tightening() -> None:
     # is null, so `~` stays null and the row is dropped. Folding `!is_in(<empty>)` to
     # always-true would instead keep the null row, which is why no such fold exists.
     nulls = pl.LazyFrame({"a": [None, 1]}, schema={"a": pl.Int64})
-    q = nulls.filter(~pl.col("a").is_in(pl.Series("", [[]], dtype=pl.List(pl.Int64))))
+    q = nulls.filter(
+        ~pl.col("a").is_in(
+            pl.Series("", [[]], dtype=pl.List(pl.Int64)), nulls_equal=False
+        )
+    )
     assert "FILTER" in q.explain()
     assert_frame_equal(
         q.select("a").collect(), pl.DataFrame({"a": [1]}, schema={"a": pl.Int64})

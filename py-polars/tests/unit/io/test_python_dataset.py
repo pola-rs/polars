@@ -130,7 +130,7 @@ def test_dataset_provider_predicate_is_in_nulls_equal(df: pl.DataFrame) -> None:
 
     # Nulls are dropped from the haystack unless they are to compare equal.
     assert (
-        lowered_predicate(df, pl.col("cat").is_in(["alpha", None]))
+        lowered_predicate(df, pl.col("cat").is_in(["alpha", None], nulls_equal=False))
         == "(pa.compute.field('cat')).isin([\"alpha\"])"
     )
     assert (

@@ -139,7 +139,7 @@ def test_is_in_empty_list_4639() -> None:
     empty_list: list[int] = []
 
     result = df.with_columns([pl.col("a").is_in(empty_list).alias("a_in_list")])
-    expected = pl.DataFrame({"a": [1, None], "a_in_list": [False, None]})
+    expected = pl.DataFrame({"a": [1, None], "a_in_list": [False, False]})
     assert_frame_equal(result, expected)
 
 
@@ -165,16 +165,16 @@ def test_is_in_struct() -> None:
 def test_is_in_null_prop() -> None:
     assert (
         pl.Series([None], dtype=pl.Float32)
-        .is_in(pl.Series([42], dtype=pl.Float32))
+        .is_in(pl.Series([42], dtype=pl.Float32), nulls_equal=False)
         .item()
         is None
     )
     assert pl.Series([{"a": None}, None], dtype=pl.Struct({"a": pl.Float32})).is_in(
-        pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Float32}))
+        pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Float32})), nulls_equal=False
     ).to_list() == [False, None]
 
     assert pl.Series([{"a": None}, None], dtype=pl.Struct({"a": pl.Boolean})).is_in(
-        pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Boolean}))
+        pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Boolean})), nulls_equal=False
     ).to_list() == [False, None]
 
 
@@ -418,7 +418,7 @@ def test_is_in_float(dtype: PolarsDataType) -> None:
 def test_is_in_expr_list_series(
     df: pl.DataFrame, matches: list[bool] | None, expected_error: str | None
 ) -> None:
-    expr_is_in = pl.col("a").is_in(pl.col("b"))
+    expr_is_in = pl.col("a").is_in(pl.col("b"), nulls_equal=False)
     if matches:
         assert df.select(expr_is_in).to_series().to_list() == matches
     else:
@@ -458,6 +458,26 @@ def test_is_in_expr_list_series_nonullpropagate(
 ) -> None:
     expr_is_in = pl.col("a").is_in(pl.col("b"), nulls_equal=True)
     assert df.select(expr_is_in).to_series().to_list() == matches
+
+
+def test_is_in_defaults_to_nulls_equal_like_contains() -> None:
+    # A null needle matches a null element and nothing else; a null container is null.
+    lf = pl.LazyFrame(
+        {
+            "n": pl.Series([None, None, None, None], dtype=pl.Int64),
+            "h": pl.Series([[None], [1], [], None], dtype=pl.List(pl.Int64)),
+        }
+    )
+    out = lf.select(
+        is_in=pl.col("n").is_in(pl.col("h")),
+        contains=pl.col("h").list.contains(pl.col("n")),
+    ).collect()
+    assert out["is_in"].to_list() == [True, False, False, None]
+    assert out["contains"].to_list() == out["is_in"].to_list()
+
+    s = pl.Series([1, None])
+    assert s.is_in([1]).to_list() == [True, False]
+    assert s.is_in([1], nulls_equal=False).to_list() == [True, None]
 
 
 @pytest.mark.parametrize("nulls_equal", [False, True])
@@ -889,9 +909,7 @@ def test_is_in_casts_the_needle_to_the_element_dtype(
 
     column = lf.select(_membership(op, pl.col("n"), pl.col("h")).alias("o"))
     _assert_needle_cast(column, _RUST_DTYPE[inner])
-    # `is_in` defaults to `nulls_equal=False`, the `contains` methods to `True`.
-    null = None if op.startswith("is_in") else False
-    assert column.collect()["o"].to_list() == [True, False, null]
+    assert column.collect()["o"].to_list() == [True, False, False]
 
     for value, expected in ((hit, True), (miss, False)):
         literal = lf.select(
@@ -1354,7 +1372,7 @@ def test_is_in_needle_cast_with_a_scalar_haystack() -> None:
 
     expr = pl.col("n").is_in(pl.col("h").first())
     _assert_needle_cast(lf.select(expr), "i8")
-    assert lf.select(expr).collect()["n"].to_list() == [True, True, False, None]
+    assert lf.select(expr).collect()["n"].to_list() == [True, True, False, False]
 
 
 @pytest.mark.parametrize(
@@ -1740,7 +1758,7 @@ def test_is_in_literal_haystack_in_group_by() -> None:
 def test_is_in_all_null_literal_haystack() -> None:
     s = pl.Series("n", [1, None])
     haystack = pl.Series([None], dtype=pl.Int64)
-    assert s.is_in(haystack).to_list() == [False, None]
+    assert s.is_in(haystack, nulls_equal=False).to_list() == [False, None]
     assert s.is_in(haystack, nulls_equal=True).to_list() == [False, True]
 
 
@@ -1926,7 +1944,7 @@ def test_is_in_literal_haystack_array_dtype(engine: EngineType) -> None:
         .collect(engine=engine)
         .to_series()
     )
-    assert result.to_list() == [True, False, None]
+    assert result.to_list() == [True, False, False]
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
@@ -1935,7 +1953,7 @@ def test_is_in_literal_haystack_scalar_needle(engine: EngineType) -> None:
     result = lf.select(
         a=pl.lit(2).is_in([1, 2]),
         b=pl.lit(5).is_in([1, 2]),
-        c=pl.lit(None, dtype=pl.Int64).is_in([1, 2]),
+        c=pl.lit(None, dtype=pl.Int64).is_in([1, 2], nulls_equal=False),
         d=pl.lit(None, dtype=pl.Int64).is_in([1, None], nulls_equal=True),
     ).collect(engine=engine)
     assert result.row(0) == (True, False, None, True)
@@ -1971,7 +1989,7 @@ def test_is_in_literal_haystack_chunked_needle_with_nulls(engine: EngineType) ->
         s.to_frame()
         .lazy()
         .select(
-            a=pl.col("s").is_in(["a", LONG]),
+            a=pl.col("s").is_in(["a", LONG], nulls_equal=False),
             b=pl.col("s").is_in(["a", LONG, None], nulls_equal=True),
         )
         .collect(engine=engine)
@@ -2001,7 +2019,7 @@ def test_is_in_nested_null_needles_in_aggregation(
 ) -> None:
     haystack = pl.Series([needles[0], needles[1]], dtype=dtype).implode()
     df = pl.DataFrame({"g": [0, 1, 1, 0], "n": pl.Series(needles, dtype=dtype)})
-    is_in = pl.col("n").is_in(haystack)
+    is_in = pl.col("n").is_in(haystack, nulls_equal=False)
     result = (
         df.lazy()
         .group_by("g", maintain_order=True)

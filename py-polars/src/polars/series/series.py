@@ -4468,17 +4468,21 @@ class Series(metaclass=_Meta):
         self,
         other: Series | Collection[Any],
         *,
-        nulls_equal: bool = False,
+        nulls_equal: bool = True,
     ) -> Series:
         """
         Check if elements of this Series are in the other Series.
+
+        .. versionchanged:: 2.0
+            `nulls_equal` defaults to `True`, like :meth:`Series.list.contains`.
 
         Parameters
         ----------
         other
             A Series or collection to search in.
-        nulls_equal : bool, default False
+        nulls_equal : bool, default True
             If True, treat null as a distinct value. Null values will not propagate.
+            Set to False to propagate nulls, as SQL `IN` does.
 
         Returns
         -------
@@ -4495,16 +4499,16 @@ class Series(metaclass=_Meta):
         [
             true
             false
-            null
+            false
         ]
-        >>> # when nulls_equal=True, None is treated as a distinct value
-        >>> s2.is_in(s, nulls_equal=True)
+        >>> # when nulls_equal=False, nulls propagate
+        >>> s2.is_in(s, nulls_equal=False)
         shape: (3,)
         Series: 'b' [bool]
         [
             true
             false
-            false
+            null
         ]
 
         >>> # check if some values are a member of sublists

@@ -559,7 +559,7 @@ def test_empty_inputs_error() -> None:
                 eager=True,
             ),
             # The needle is cast to the values' unit.
-            [False, None, False],
+            [False, False, False],
         ),
         ("d", [time(10, 30)], None),
         ("e", [datetime(1999, 12, 31, 10, 30)], None),

@@ -842,7 +842,6 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
             Item that will be checked for membership
         nulls_equal : bool, default True
             If True, treat null as a distinct value. Null values will not propagate.
-            Note that :meth:`Expr.is_in` defaults to `False`.
 
         Returns
         -------

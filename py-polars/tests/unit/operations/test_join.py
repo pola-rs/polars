@@ -4273,8 +4273,8 @@ def test_join_rewrite_panic_23307() -> None:
         (pl.lit(None, dtype=pl.Int64), lambda col: (~(col >= 1)).is_not_null()),
         (pl.lit(None, dtype=pl.Int64), lambda col: ~(col >= 1).is_null()),
         #
-        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_in([1])),
-        (pl.lit(None, dtype=pl.Int64), lambda col: ~col.is_in([1])),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_in([1], nulls_equal=False)),
+        (pl.lit(None, dtype=pl.Int64), lambda col: ~col.is_in([1], nulls_equal=False)),
         #
         (pl.lit(None, dtype=pl.Int64), lambda col: col.is_between(1, 1)),
         #

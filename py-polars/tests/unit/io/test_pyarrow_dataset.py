@@ -399,7 +399,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     df = pl.DataFrame({"id": [1, 2, 3, 4, None], "val": [10, 20, 30, 40, 50]})
     dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
 
-    pred = pl.col("id").is_in([1, None, 3])
+    pred = pl.col("id").is_in([1, None, 3], nulls_equal=False)
     expected = pl.DataFrame({"id": [1, 3], "val": [10, 30]})
     q = pl.scan_pyarrow_dataset(dset).filter(pred)
 
