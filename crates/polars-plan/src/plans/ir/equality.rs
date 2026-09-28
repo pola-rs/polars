@@ -307,6 +307,33 @@ impl IR {
                 };
                 expr_iter_eq!(l_exprs, r_exprs) && l_options == r_options
             },
+            IR::Window {
+                input: _,
+                partition_by: l_partition_by,
+                order_by: l_order_by,
+                exprs: l_exprs,
+                schema: _,
+                maintain_order: l_maintain_order,
+                ordered_eval: l_ordered_eval,
+            } => {
+                let IR::Window {
+                    input: _,
+                    partition_by: r_partition_by,
+                    order_by: r_order_by,
+                    exprs: r_exprs,
+                    schema: _,
+                    maintain_order: r_maintain_order,
+                    ordered_eval: r_ordered_eval,
+                } = other
+                else {
+                    return false;
+                };
+                l_partition_by == r_partition_by
+                    && l_order_by == r_order_by
+                    && expr_iter_eq!(l_exprs, r_exprs)
+                    && l_maintain_order == r_maintain_order
+                    && l_ordered_eval == r_ordered_eval
+            },
             IR::Distinct {
                 input: _,
                 options: l_options,

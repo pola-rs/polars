@@ -273,6 +273,23 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
+        PhysNodeKind::Window {
+            input,
+            partition_by,
+            order_by,
+            exprs,
+            ordered_eval,
+            maintain_order,
+        } => (
+            PhysicalPropsDescription::Window {
+                partition_by: partition_by.iter().map(ToString::to_string).collect(),
+                order_by: order_by.as_ref().map(|(name, _)| name.to_string()),
+                exprs: fmt_exprs(exprs, expr_arena),
+                ordered_eval: *ordered_eval,
+                maintain_order: *maintain_order,
+            },
+            vec![input.node],
+        ),
         PhysNodeKind::Map { input, .. } => (PhysicalPropsDescription::Map, vec![input.node]),
         PhysNodeKind::ColumnarFunction {
             inputs, format_str, ..

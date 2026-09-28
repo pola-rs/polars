@@ -44,6 +44,7 @@ impl NodeStyle {
             | K::SemiAntiJoin { .. }
             | K::CrossJoin { .. }
             | K::Multiplexer { .. }
+            | K::Window { .. }
             | K::Gather { .. } => Self::MemoryIntensive,
             #[cfg(feature = "iejoin")]
             K::RangeJoin { .. } => Self::MemoryIntensive,
@@ -366,6 +367,34 @@ fn visualize_plan_rec(
                 let mut f = EscapeLabel(&mut label);
                 f.write_str(format_str).unwrap();
             }
+            (label, from_ref(input))
+        },
+        PhysNodeKind::Window {
+            input,
+            partition_by,
+            order_by,
+            exprs,
+            ordered_eval,
+            maintain_order,
+        } => {
+            let mut label = format!(
+                "window[maintain_order: {maintain_order}, ordered_eval: {ordered_eval}]\\npartition by: "
+            );
+            for (i, name) in partition_by.iter().enumerate() {
+                if i > 0 {
+                    label.push_str(", ");
+                }
+                label.push_str(&escape_graphviz(name));
+            }
+            if let Some((name, _)) = order_by {
+                write!(&mut label, "\\norder by: {}", escape_graphviz(name)).unwrap();
+            }
+            write!(
+                &mut label,
+                "\\n{}",
+                fmt_exprs_to_label(exprs, expr_arena, FormatExprStyle::Select)
+            )
+            .unwrap();
             (label, from_ref(input))
         },
         PhysNodeKind::Map {

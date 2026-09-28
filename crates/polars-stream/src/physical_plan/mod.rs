@@ -9,7 +9,9 @@ use polars_core::frame::DataFrame;
     feature = "dtype-time"
 ))]
 use polars_core::prelude::DataType;
-use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
+use polars_core::prelude::{
+    IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions, SortOptions,
+};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_defs::join::JoinArgs;
 use polars_error::PolarsResult;
@@ -260,6 +262,18 @@ pub enum PhysNodeKind {
         map: Arc<dyn DataFrameUdf>,
         /// A formatted string of what the in-memory map is. This usually calls format on the IR.
         format_str: Option<String>,
+    },
+
+    /// Evaluates window expressions that share one partitioning and appends them to the input
+    /// columns. Without `maintain_order` the rows are output in an unspecified order.
+    Window {
+        input: PhysStream,
+        partition_by: Vec<PlSmallStr>,
+        order_by: Option<(PlSmallStr, SortOptions)>,
+        exprs: Vec<ExprIR>,
+        /// Evaluate the rows of a partition in input order.
+        ordered_eval: bool,
+        maintain_order: bool,
     },
 
     Map {
@@ -636,6 +650,7 @@ fn _visit_nodes_impl(
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionedSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
+            | PhysNodeKind::Window { input, .. }
             | PhysNodeKind::SortedGroupBy { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }

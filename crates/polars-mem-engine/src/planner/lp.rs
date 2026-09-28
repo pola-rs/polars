@@ -822,6 +822,33 @@ fn create_physical_plan_impl(
                 allow_vertical_parallelism,
             }))
         },
+        Window {
+            input,
+            exprs,
+            schema: output_schema,
+            ..
+        } => {
+            let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
+            let input = recurse!(input, state)?;
+
+            let mut state =
+                ExpressionConversionState::new(RAYON.current_num_threads() > exprs.len());
+
+            let phys_exprs = create_physical_expressions_from_irs(
+                &exprs,
+                expr_arena,
+                &input_schema,
+                &mut state,
+            )?;
+            Ok(Box::new(executors::StackExec {
+                input,
+                has_windows: state.has_windows,
+                exprs: phys_exprs,
+                output_schema,
+                options: ProjectionOptions::default(),
+                allow_vertical_parallelism: false,
+            }))
+        },
         MapFunction {
             input, function, ..
         } => {

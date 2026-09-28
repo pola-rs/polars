@@ -185,6 +185,13 @@ pub enum IrPropsDescription {
         /// is this node's input.
         is_resolved: bool,
     },
+    Window {
+        partition_by: Vec<String>,
+        order_by: Option<SortColumnDescription>,
+        exprs: Vec<String>,
+        maintain_order: bool,
+        ordered_eval: bool,
+    },
 
     #[default]
     #[serde(other)]

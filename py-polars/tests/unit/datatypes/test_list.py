@@ -900,3 +900,12 @@ def test_list_implode_concat_agg_schema_23974(maintain_order: bool) -> None:
     out = q.collect()
     assert_frame_equal(out, expected, check_row_order=maintain_order)
     assert q.collect_schema() == out.schema
+
+
+@pytest.mark.parametrize("inner_dtype", [pl.Int32, pl.Date])
+def test_list_physical_repr_many_slices(inner_dtype: PolarsDataType) -> None:
+    # Every slice keeps the whole values array; together they exceed the maximum length.
+    s = pl.Series("a", [list(range(200))] * 20_000, dtype=pl.List(inner_dtype))
+    sliced = pl.concat([s.slice(i, 4) for i in range(0, s.len(), 4)], rechunk=False)
+    assert sliced.n_chunks() == 5_000
+    assert_series_equal(sliced, s)

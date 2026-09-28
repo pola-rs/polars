@@ -185,6 +185,21 @@ impl IR {
                 hash_exprs(exprs, state);
                 options.hash(state);
             },
+            IR::Window {
+                input: _,
+                partition_by,
+                order_by,
+                exprs,
+                schema: _,
+                maintain_order,
+                ordered_eval,
+            } => {
+                partition_by.hash(state);
+                order_by.hash(state);
+                hash_exprs(exprs, state);
+                maintain_order.hash(state);
+                ordered_eval.hash(state);
+            },
             IR::Distinct { input: _, options } => {
                 options.hash(state);
             },

@@ -1209,7 +1209,15 @@ impl IRFunctionExpr {
             // TODO: Only decimal product is order-observing, we should get schema here to indicate `NON_ORDER_OBSERVING` for other dtypes.
             F::Product => FunctionOptions::aggregation(),
             #[cfg(feature = "rank")]
-            F::Rank { .. } => FunctionOptions::length_preserving(),
+            F::Rank { options, .. } => FunctionOptions::length_preserving().with_flags(|f| {
+                // Ordinal and random ranks break ties by position.
+                match options.method {
+                    RankMethod::Average | RankMethod::Min | RankMethod::Max | RankMethod::Dense => {
+                        f | FunctionFlags::NON_ORDER_OBSERVING | FunctionFlags::NON_ORDER_PRODUCING
+                    },
+                    _ => f,
+                }
+            }),
             F::Repeat => {
                 FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
