@@ -16,7 +16,6 @@ use polars_arrow::types::{NativeType, i256};
 use polars_error::PolarsResult;
 pub use schema::{FileMetadata, infer_schema};
 
-#[cfg(feature = "async")]
 // re-exports of crate::parquet's relevant APIs
 pub use crate::parquet::{
     FallibleStreamingIterator,
