@@ -1160,6 +1160,68 @@ def test_is_in_null_elements_take_the_needle_dtype(
     assert out["o"].to_list() == [False]
 
 
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    ("needle", "null", "inner"),
+    [
+        pytest.param(
+            pl.Series([[1], [2]], dtype=pl.List(pl.Int64)),
+            [None],
+            pl.List(pl.Null),
+            id="list-of-null",
+        ),
+        pytest.param(
+            pl.Series([[1], [2]], dtype=pl.List(pl.Int64)),
+            [None],
+            pl.List(pl.Int64),
+            id="list",
+        ),
+        pytest.param(
+            pl.Series([{"a": 1}, {"a": 2}], dtype=pl.Struct({"a": pl.Int64})),
+            {"a": None},
+            pl.Struct({"a": pl.Null}),
+            id="struct-of-null",
+        ),
+    ],
+)
+def test_is_in_nested_needle_with_a_null_container(
+    op: str, nulls_equal: bool, needle: pl.Series, null: Any, inner: PolarsDataType
+) -> None:
+    # Nested needles take the row-encoded path, which must keep a null container null.
+    df = pl.DataFrame({"n": needle, "h": _container(op, [[null], None], inner)})
+
+    out = df.select(
+        _membership(op, pl.col("n"), pl.col("h"), nulls_equal=nulls_equal).alias("o")
+    )
+    assert out["o"].to_list() == [False, None]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("inner", [pl.List(pl.Null), pl.List(pl.Int8)])
+@pytest.mark.parametrize("needle", [[1], None])
+def test_is_in_literal_nested_needle_with_a_null_container(
+    op: str, nulls_equal: bool, inner: PolarsDataType, needle: list[int] | None
+) -> None:
+    # A single needle is broadcast over every container, including its nulls.
+    df = pl.DataFrame({"h": _container(op, [[[None]], [[None]], None], inner)})
+
+    out = df.select(
+        _membership(
+            op,
+            pl.lit(needle, pl.List(pl.Int8)),
+            pl.col("h"),
+            nulls_equal=nulls_equal,
+        ).alias("o")
+    )
+    if needle is None and not nulls_equal:
+        expected: list[bool | None] = [None, None, None]
+    else:
+        expected = [False, False, None]
+    assert out["o"].to_list() == expected
+
+
 @pytest.mark.parametrize(
     ("values", "haystack", "same_dtype_haystack"),
     [
