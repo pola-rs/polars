@@ -579,17 +579,16 @@ fn to_graph_rec<'a>(
                 .filter(|(name, _)| read.contains(*name))
                 .map(|(name, dtype)| (name.clone(), dtype.clone()))
                 .collect();
-            let output_partitions = !*maintain_order && read_schema.len() == input_schema.len();
-            let params = nodes::window::WindowParams {
-                partition_by: partition_by.clone(),
-                order_by: order_by.clone(),
-                exprs: window_exprs,
-                read_schema: Arc::new(read_schema),
+            let params = nodes::window::WindowParams::new(
+                partition_by.clone(),
+                order_by.clone(),
+                window_exprs,
+                &input_schema,
+                read_schema,
                 output_schema,
-                ordered_eval: *ordered_eval,
-                maintain_order: *maintain_order,
-                output_partitions,
-            };
+                *ordered_eval,
+                *maintain_order,
+            );
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
                 nodes::window::WindowNode::new(Arc::new(params), ctx.num_pipelines),

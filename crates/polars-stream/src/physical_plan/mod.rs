@@ -264,9 +264,8 @@ pub enum PhysNodeKind {
         format_str: Option<String>,
     },
 
-    /// Evaluates window expressions that share one partitioning. Without `maintain_order` it
-    /// outputs the input columns and the window columns in an unspecified order. With
-    /// `maintain_order` it outputs only the window columns, in input order.
+    /// Evaluates window expressions that share one partitioning and appends them to the input
+    /// columns. Without `maintain_order` the rows are output in an unspecified order.
     Window {
         input: PhysStream,
         partition_by: Vec<PlSmallStr>,

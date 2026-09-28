@@ -21,7 +21,9 @@ use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTypeIR};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
+use polars_plan::plans::{
+    AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, window_exprs_match_keys, write_ir_non_recursive,
+};
 use polars_plan::prelude::*;
 use polars_utils::aliases::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
@@ -251,6 +253,13 @@ pub fn lower_ir(
             // Objects cannot be hashed or gathered by the window node.
             && !schema.iter_values().any(|dtype| dtype.contains_objects()) =>
         {
+            // The node partitions and sorts on the keys of the IR, not on those of the exprs.
+            debug_assert!(window_exprs_match_keys(
+                exprs,
+                partition_by,
+                order_by.as_ref(),
+                expr_arena
+            ));
             let input = *input;
             let partition_by = partition_by.clone();
             let order_by = order_by.clone();

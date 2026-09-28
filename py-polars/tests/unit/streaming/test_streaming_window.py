@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -8,6 +8,7 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 pytestmark = pytest.mark.xdist_group("streaming")
@@ -189,7 +190,9 @@ def test_window_extraction_scope(expr: pl.Expr, extracted: bool) -> None:
     ],
 )
 def test_window_order_flags(
-    build: Any, maintain_order: bool, ordered_eval: bool
+    build: Callable[[pl.LazyFrame], pl.LazyFrame],
+    maintain_order: bool,
+    ordered_eval: bool,
 ) -> None:
     q = build(_frame().lazy())
     headers = _window_headers(q)
