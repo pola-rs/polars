@@ -279,7 +279,9 @@ def test_rolling_max_by_empty_group_single_row_29585() -> None:
 
 def test_rolling_max_by_null_by_single_row_29585() -> None:
     """A null `by` key in a single-row frame must not select the value."""
-    df = pl.DataFrame({"t": [0], "b": [10.0], "by": pl.Series([None], dtype=pl.Float64)})
+    df = pl.DataFrame(
+        {"t": [0], "b": [10.0], "by": pl.Series([None], dtype=pl.Float64)}
+    )
     result = df.rolling(index_column="t", period="1i").agg(
         pl.col("b").max_by("by").alias("max_by"),
         pl.col("b").min_by("by").alias("min_by"),
