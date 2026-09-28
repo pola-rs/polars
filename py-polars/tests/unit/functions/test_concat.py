@@ -578,6 +578,7 @@ def test_concat_horizontal_strict_cached_projection_27923(
         ),
     )
 
+
 def test_concat_horizontal_nested_strict_pruned_input(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
