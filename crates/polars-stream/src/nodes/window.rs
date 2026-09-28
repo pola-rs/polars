@@ -386,11 +386,7 @@ fn evaluate_partition(
     };
 
     let groups = GroupsType::Slice {
-        groups: offsets
-            .windows(2)
-            .map(|w| [w[0], w[1] - w[0]])
-            .collect::<Vec<_>>()
-            .into(),
+        groups: offsets.windows(2).map(|w| [w[0], w[1] - w[0]]).collect(),
         overlapping: false,
         monotonic: true,
     }

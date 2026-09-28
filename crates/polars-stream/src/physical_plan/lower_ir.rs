@@ -1969,7 +1969,6 @@ pub fn lower_ir(
     Ok(PhysStream::first(node_key))
 }
 
-#[cfg(feature = "iejoin")]
 /// Whether all windows compute one value per partition without ordering, these are lowered to a
 /// group-by and a join.
 fn is_scalar_window(exprs: &[ExprIR], has_order_by: bool, expr_arena: &Arena<AExpr>) -> bool {
@@ -1980,6 +1979,7 @@ fn is_scalar_window(exprs: &[ExprIR], has_order_by: bool, expr_arena: &Arena<AEx
         })
 }
 
+#[cfg(feature = "iejoin")]
 fn insert_sort_node_if_not_sorted(
     input: Node,
     on: &ExprIR,
