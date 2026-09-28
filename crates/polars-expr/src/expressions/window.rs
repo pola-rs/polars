@@ -340,6 +340,85 @@ impl WindowExpr {
     }
 }
 
+impl WindowExpr {
+    /// Evaluates the window function on `df`, whose partitions are the contiguous slices in
+    /// `groups`, each already in evaluation order. Returns one value per row of `df`.
+    pub fn evaluate_on_sorted_partitions(
+        &self,
+        df: &DataFrame,
+        groups: GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<Column> {
+        debug_assert!(matches!(self.mapping, WindowMapping::GroupsToRows));
+        debug_assert!(matches!(groups.as_ref(), GroupsType::Slice { .. }));
+
+        let name = self.output_field.name().clone();
+        if df.height() == 0 {
+            return Ok(Column::full_null(name, 0, self.output_field.dtype()));
+        }
+
+        let gb = GroupBy::new(df, vec![], groups, Some(self.apply_columns.clone()));
+        let mut ac = self.run_aggregation(df, state, &gb)?;
+
+        let out = match self.determine_map_strategy(&mut ac, &gb)? {
+            MapStrategy::Nothing => {
+                let out = ac.flat_naive().into_owned();
+                if ac.is_literal() {
+                    out.new_from_index(0, df.height())
+                } else {
+                    out
+                }
+            },
+            MapStrategy::Explode => {
+                if self.phys_function.is_scalar() {
+                    ac.get_values().clone()
+                } else {
+                    ac.aggregated().explode(ExplodeOptions {
+                        empty_as_null: true,
+                        keep_nulls: true,
+                    })?
+                }
+            },
+            // The partitions are in row order, so values that still belong to the original
+            // groups are already on their rows.
+            MapStrategy::Map => {
+                let groups_unchanged = matches!(ac.update_groups, UpdateGroups::No)
+                    && std::ptr::eq(ac.groups().as_ref(), gb.get_groups());
+                if groups_unchanged && matches!(ac.agg_state(), AggState::NotAggregated(_)) {
+                    ac.flat_naive().into_owned()
+                } else {
+                    let flattened = ac.aggregated().explode(ExplodeOptions {
+                        empty_as_null: true,
+                        keep_nulls: true,
+                    })?;
+                    polars_ensure!(
+                        flattened.len() == df.height(),
+                        expr = self.expr, ShapeMismatch:
+                        "the length of the window expression did not match that of the group"
+                    );
+                    flattened
+                }
+            },
+            // One value per partition.
+            MapStrategy::Join => {
+                let out = ac.aggregated();
+                let GroupsType::Slice { groups, .. } = gb.get_groups().as_ref() else {
+                    unreachable!()
+                };
+                let idx = groups
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(i, [_, len])| std::iter::repeat_n(i as IdxSize, *len as usize))
+                    .collect::<Vec<_>>();
+                let idx = IdxCa::from_vec(PlSmallStr::EMPTY, idx);
+                // SAFETY: there is one aggregated value per group.
+                unsafe { out.take_unchecked(&idx) }
+            },
+        };
+        Ok(out.with_name(name))
+    }
+}
+
 // Utility to create partitions and cache keys
 pub fn window_function_format_order_by(to: &mut String, e: &Expr, k: &SortOptions) {
     write!(to, "_PL_{:?}{}_{}", e, k.descending, k.nulls_last).unwrap();

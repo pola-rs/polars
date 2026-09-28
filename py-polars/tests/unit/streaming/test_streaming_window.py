@@ -201,3 +201,89 @@ def test_window_order_flags(
         q.collect(engine="in-memory"),
         check_row_order=maintain_order,
     )
+
+
+def _keyed_frame(n: int = 20_000) -> pl.DataFrame:
+    i = pl.col("id")
+    return pl.DataFrame({"id": pl.int_range(n, eager=True)}).with_columns(
+        g=pl.when(i % 101 == 0).then(None).otherwise(i % 97),
+        h=(i % 13).cast(pl.String),
+        t=pl.when(i % 89 == 0).then(None).otherwise((i * 7919) % 50),
+        x=((i * 104729) % 1_000).cast(pl.Float64),
+    )
+
+
+def _assert_unordered_window(q: pl.LazyFrame, n_nodes: int = 1) -> None:
+    q = q.sort("x", "id")
+    headers = _window_headers(q)
+    assert len(headers) == n_nodes
+    assert all("maintain_order: false" in h for h in headers)
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert dot.count("window[") == n_nodes
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").sum().over("g", order_by="t"),
+        pl.col("x").implode().over("g", order_by="t"),
+        pl.lit(1).over("g", order_by="t"),
+        pl.col("x").cum_sum().over("g"),
+        pl.col("x").cum_sum().over("g", order_by="t"),
+        pl.col("x").cum_sum().over("g", order_by="t", descending=True),
+        pl.col("x").cum_sum().over("g", order_by="t", nulls_last=True),
+        pl.col("x").cum_sum().over(["g", "h"], order_by=["t", "x"]),
+        pl.col("x").shift(1).over("h", order_by="t"),
+        pl.col("x").rank().over("g"),
+        pl.col("x").rank("ordinal").over("g", order_by="t"),
+        pl.col("t").rank("dense").over("h"),
+        (pl.col("x") + 1).over("g"),
+        (pl.col("x") - pl.col("x").mean()).over("g", order_by="t"),
+        pl.col("x").sort().over("g"),
+        pl.col("x").reverse().over("g"),
+        pl.int_range(pl.len()).over("g", order_by="t"),
+        pl.col("t").cum_count().over("g"),
+    ],
+)
+def test_window_unordered_results(expr: pl.Expr) -> None:
+    _assert_unordered_window(_keyed_frame().lazy().with_columns(w=expr))
+
+
+def test_window_unordered_several_specs() -> None:
+    q = (
+        _keyed_frame()
+        .lazy()
+        .with_columns(
+            a=pl.col("x").cum_sum().over("g"),
+            b=pl.col("x").shift().over("g"),
+            c=pl.col("x").rank().over("h"),
+        )
+    )
+    _assert_unordered_window(q, n_nodes=2)
+
+
+def test_window_unordered_empty() -> None:
+    q = (
+        _keyed_frame()
+        .lazy()
+        .filter(pl.col("id") < 0)
+        .with_columns(w=pl.col("x").cum_sum().over("g"))
+    )
+    _assert_unordered_window(q)
+    assert q.sort("x", "id").collect(engine="streaming").schema["w"] == pl.Float64
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").filter(pl.col("x") > 500).over("g", order_by="t"),
+        pl.col("x").head(1).over("g", order_by="t"),
+    ],
+)
+def test_window_unordered_shape_error(expr: pl.Expr) -> None:
+    q = _keyed_frame().lazy().with_columns(w=expr).sort("x", "id")
+    assert len(_window_headers(q)) == 1
+    for engine in ENGINES:
+        with pytest.raises(pl.exceptions.ShapeError):
+            q.collect(engine=engine)  # type: ignore[call-overload]

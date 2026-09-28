@@ -7,7 +7,7 @@ use polars_core::prelude::{InitHashMaps, PlHashSet, PlIndexSet, PlRandomState};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
-use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
+use polars_expr::planner::{ExpressionConversionState, create_physical_expr, create_window_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
@@ -544,6 +544,42 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
                 nodes::in_memory_map::InMemoryMapNode::new(input_schema, map.clone()),
+                [(input_key, input.port)],
+            )
+        },
+
+        Window {
+            input,
+            partition_by,
+            order_by,
+            exprs,
+            ordered_eval,
+        } => {
+            let input_schema = input.output_schema(ctx.phys_sm).clone();
+            let output_schema = node.output_schema(0).clone();
+            let window_exprs = exprs
+                .iter()
+                .map(|e| {
+                    let expr = create_window_expr(
+                        e.node(),
+                        ctx.expr_arena,
+                        &input_schema,
+                        &mut ctx.expr_conversion_state,
+                    )?;
+                    PolarsResult::Ok((e.output_name().clone(), expr))
+                })
+                .try_collect_vec()?;
+            let params = nodes::window::WindowParams {
+                partition_by: partition_by.clone(),
+                order_by: order_by.clone(),
+                exprs: window_exprs,
+                input_schema,
+                output_schema,
+                ordered_eval: *ordered_eval,
+            };
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::window::WindowNode::new(Arc::new(params), ctx.num_pipelines),
                 [(input_key, input.port)],
             )
         },

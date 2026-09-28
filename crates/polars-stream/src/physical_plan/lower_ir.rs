@@ -239,6 +239,29 @@ pub fn lower_ir(
             );
         },
 
+        IR::Window {
+            input,
+            partition_by,
+            order_by,
+            exprs,
+            schema: _,
+            maintain_order,
+            ordered_eval,
+        } if !*maintain_order && !is_scalar_window(exprs, order_by.is_some(), expr_arena) => {
+            let partition_by = partition_by.clone();
+            let order_by = order_by.clone();
+            let exprs = exprs.clone();
+            let ordered_eval = *ordered_eval;
+            let phys_input = lower_ir!(*input)?;
+            PhysNodeKind::Window {
+                input: phys_input,
+                partition_by,
+                order_by,
+                exprs,
+                ordered_eval,
+            }
+        },
+
         IR::HStack { input, exprs, .. } | IR::Window { input, exprs, .. } => {
             let exprs = exprs.to_vec();
             let phys_input = lower_ir!(*input)?;
@@ -1897,6 +1920,16 @@ pub fn lower_ir(
 }
 
 #[cfg(feature = "iejoin")]
+/// Whether all windows compute one value per partition without ordering, these are lowered to a
+/// group-by and a join.
+fn is_scalar_window(exprs: &[ExprIR], has_order_by: bool, expr_arena: &Arena<AExpr>) -> bool {
+    !has_order_by
+        && exprs.iter().all(|e| match expr_arena.get(e.node()) {
+            AExpr::Over { function, .. } => is_scalar_ae(*function, expr_arena),
+            _ => false,
+        })
+}
+
 fn insert_sort_node_if_not_sorted(
     input: Node,
     on: &ExprIR,
