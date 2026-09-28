@@ -256,7 +256,14 @@ pub fn lower_ir(
             let maintain_order = *maintain_order;
             let phys_input = lower_ir!(input)?;
 
-            if !maintain_order {
+            let input_schema = IR::schema_with_cache(input, ir_arena, schema_cache);
+            let mut read = PlHashSet::new();
+            for e in &exprs {
+                read.extend(aexpr_to_leaf_names_iter(e.node(), expr_arena).cloned());
+            }
+            read.extend(order_by.iter().map(|(name, _)| name.clone()));
+
+            if !maintain_order && read.len() == input_schema.len() {
                 PhysNodeKind::Window {
                     input: phys_input,
                     partition_by,
@@ -268,12 +275,6 @@ pub fn lower_ir(
             } else {
                 // Only the columns the windows read go through the window node. Its output is
                 // in input order and is zipped onto the input.
-                let input_schema = IR::schema_with_cache(input, ir_arena, schema_cache);
-                let mut read = PlHashSet::new();
-                for e in &exprs {
-                    read.extend(aexpr_to_leaf_names_iter(e.node(), expr_arena).cloned());
-                }
-                read.extend(order_by.iter().map(|(name, _)| name.clone()));
                 let read_columns = input_schema
                     .iter_names()
                     .filter(|name| read.contains(*name))
@@ -301,7 +302,7 @@ pub fn lower_ir(
                         order_by,
                         exprs,
                         ordered_eval,
-                        maintain_order,
+                        maintain_order: true,
                     },
                 ));
                 PhysNodeKind::Zip {
