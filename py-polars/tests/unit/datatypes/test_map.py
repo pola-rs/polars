@@ -2798,3 +2798,47 @@ def test_map_get_aware_key_in_another_time_zone_compares_instants(unit: str) -> 
         df = pl.DataFrame({"m": s}).with_columns(k=needle)
         has = df.select(pl.col("m").map.contains_key(pl.col("k")))["m"]
         assert has.to_list() == [found]
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "key", "needle_dtype", "hit", "miss"),
+    [
+        pytest.param(
+            pl.Struct({"a": pl.Null}),
+            {"a": None},
+            pl.Struct({"a": pl.Int64}),
+            {"a": None},
+            {"a": 1},
+            id="struct",
+        ),
+        pytest.param(
+            pl.List(pl.Null), [None], pl.List(pl.Int64), [None], [1], id="list"
+        ),
+        pytest.param(pl.List(pl.Null), [], pl.List(pl.Int64), [], [1], id="empty-list"),
+        pytest.param(
+            pl.Array(pl.Null, 1), [None], pl.Array(pl.Int64, 1), [None], [1], id="array"
+        ),
+    ],
+)
+def test_map_lookup_in_null_only_nested_keys(
+    key_dtype: PolarsDataType,
+    key: Any,
+    needle_dtype: PolarsDataType,
+    hit: Any,
+    miss: Any,
+) -> None:
+    # A key whose leaves are all null compares with the needle as `list.contains` does.
+    for needle, found in ((hit, True), (miss, False)):
+        df = pl.DataFrame(
+            {
+                "m": map_with_keys(key_dtype, [key]),
+                "k": pl.Series([needle], dtype=needle_dtype),
+            }
+        )
+        for n in (pl.lit(needle, needle_dtype), pl.col("k")):
+            out = df.select(
+                pl.col("m").map.contains_key(n).alias("has"),
+                pl.col("m").map.get(n).alias("v"),
+                pl.col("m").map.keys().list.contains(n).alias("keys"),
+            )
+            assert out.row(0) == (found, 0 if found else None, found)
