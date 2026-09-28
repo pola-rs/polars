@@ -699,16 +699,24 @@ fn is_in_row_encoded(
         _ => unreachable!(),
     }?;
 
+    // The helpers already null rows whose container is null. Row encoding keeps null needles
+    // as values, so their nulls are applied here, replacing the helpers' validity.
     let mut validity = other.rechunk_validity();
     if !nulls_equal {
-        validity = match (validity, s.rechunk_validity()) {
+        // A single needle is broadcast over every container.
+        let needle_validity = if s.len() == mask.len() {
+            s.rechunk_validity()
+        } else {
+            s.has_nulls()
+                .then(|| polars_arrow::bitmap::Bitmap::new_zeroed(mask.len()))
+        };
+        validity = match (validity, needle_validity) {
             (None, None) => None,
             (Some(v), None) | (None, Some(v)) => Some(v),
             (Some(l), Some(r)) => Some(polars_arrow::bitmap::and(&l, &r)),
         };
     }
 
-    assert_eq!(mask.null_count(), 0);
     mask.with_validities(&[validity]);
 
     Ok(mask)

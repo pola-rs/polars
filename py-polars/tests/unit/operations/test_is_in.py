@@ -846,10 +846,13 @@ def test_is_in_does_not_match_null_on_temporal_overflow() -> None:
 MEMBERSHIP_OPS = ["is_in-list", "is_in-array", "list.contains", "arr.contains"]
 
 
-def _container(op: str, rows: list[list[Any]], inner: PolarsDataType) -> pl.Series:
+def _container(
+    op: str, rows: list[list[Any] | None], inner: PolarsDataType
+) -> pl.Series:
     if op.endswith("list") or op == "list.contains":
         return pl.Series("h", rows, dtype=pl.List(inner))
-    return pl.Series("h", rows, dtype=pl.Array(inner, len(rows[0])))
+    width = len(next(r for r in rows if r is not None))
+    return pl.Series("h", rows, dtype=pl.Array(inner, width))
 
 
 def _membership(op: str, needle: pl.Expr, container: pl.Expr, **kwargs: Any) -> pl.Expr:
@@ -905,6 +908,63 @@ def test_is_in_categorical_needle_in_null_data(
 
     assert search("a") == [False]
     assert search(None) == [True if nulls_equal else None]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    ("needle", "null", "inner"),
+    [
+        pytest.param(
+            pl.Series([[1], [2]], dtype=pl.List(pl.Int64)),
+            [None],
+            pl.List(pl.Int64),
+            id="list",
+        ),
+        pytest.param(
+            pl.Series([{"a": 1}, {"a": 2}], dtype=pl.Struct({"a": pl.Int64})),
+            {"a": None},
+            pl.Struct({"a": pl.Int64}),
+            id="struct",
+        ),
+    ],
+)
+def test_is_in_nested_needle_with_a_null_container(
+    op: str, nulls_equal: bool, needle: pl.Series, null: Any, inner: PolarsDataType
+) -> None:
+    # Nested needles take the row-encoded path, which must keep a null container null.
+    df = pl.DataFrame({"n": needle, "h": _container(op, [[null], None], inner)})
+
+    out = df.select(
+        _membership(op, pl.col("n"), pl.col("h"), nulls_equal=nulls_equal).alias("o")
+    )
+    assert out["o"].to_list() == [False, None]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("needle", [[1], None])
+def test_is_in_literal_nested_needle_with_a_null_container(
+    op: str, nulls_equal: bool, needle: list[int] | None
+) -> None:
+    # A single needle is broadcast over every container, including its nulls.
+    df = pl.DataFrame(
+        {"h": _container(op, [[[None]], [[None]], None], pl.List(pl.Int8))}
+    )
+
+    out = df.select(
+        _membership(
+            op,
+            pl.lit(needle, pl.List(pl.Int8)),
+            pl.col("h"),
+            nulls_equal=nulls_equal,
+        ).alias("o")
+    )
+    if needle is None and not nulls_equal:
+        expected: list[bool | None] = [None, None, None]
+    else:
+        expected = [False, False, None]
+    assert out["o"].to_list() == expected
 
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
