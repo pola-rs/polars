@@ -375,3 +375,45 @@ def test_window_row_index_mode_several_specs() -> None:
     assert len(windows) == 2
     assert all("maintain_order: true" in w for w in windows)
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+def test_sql_window_peers_any_order() -> None:
+    lf = _keyed_frame().lazy().with_columns(pl.col("t").fill_null(0))
+    ctx = pl.SQLContext(t=lf)
+    q = ctx.execute(
+        """
+        SELECT g, MAX(c) AS c, SUM(x) AS x FROM (
+            SELECT g, x, SUM(x) OVER (PARTITION BY g ORDER BY t) AS c FROM t
+        ) GROUP BY g
+        """
+    )
+    headers = _window_headers(q)
+    assert len(headers) == 1
+    assert headers[0].startswith("WINDOW[maintain_order: false, ordered_eval: false]")
+
+    out = q.collect(engine="streaming")
+    assert_series_equal(out["c"], out["x"], check_names=False)
+
+    q = ctx.execute(
+        """
+        SELECT id, SUM(x) OVER (PARTITION BY g ORDER BY t, id) AS c FROM t ORDER BY x, id
+        """
+    )
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+def test_dataframe_window_ties_in_input_order() -> None:
+    q = (
+        _keyed_frame()
+        .lazy()
+        .with_columns(c=pl.col("x").cum_sum().over("g", order_by="t"))
+        .group_by("g")
+        .agg(pl.col("c").sort())
+    )
+    headers = _window_headers(q)
+    assert headers[0].startswith("WINDOW[maintain_order: false, ordered_eval: true]")
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )

@@ -815,7 +815,7 @@ impl PyExpr {
                 SortOptions {
                     descending: order_by_descending,
                     nulls_last: order_by_nulls_last,
-                    maintain_order: false,
+                    maintain_order: true,
                     ..Default::default()
                 },
             )

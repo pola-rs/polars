@@ -863,7 +863,10 @@ impl Expr {
                 }),
                 e,
             );
-            Some((Arc::new(encoded), SortOptions::default()))
+            Some((
+                Arc::new(encoded),
+                SortOptions::default().with_maintain_order(options.maintain_order),
+            ))
         });
 
         Ok(Expr::Over {

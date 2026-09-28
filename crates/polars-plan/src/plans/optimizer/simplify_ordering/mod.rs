@@ -313,6 +313,7 @@ impl SimplifyIRNodeOrder<'_> {
             // The out edge is never marked unordered here: a reordered result can still expose
             // the order in which the rows were evaluated.
             IR::Window {
+                order_by,
                 exprs,
                 maintain_order,
                 ordered_eval,
@@ -320,9 +321,15 @@ impl SimplifyIRNodeOrder<'_> {
             } => {
                 let ([in_edge], [out_edge]) = unpack_edges!(2);
 
-                let observes = exprs
-                    .iter()
-                    .any(|e| !is_order_insensitive_window(e.node(), self.expr_arena));
+                // Without `maintain_order` on the order key, rows with equal keys may be
+                // evaluated in any order.
+                let ties_in_input_order = order_by
+                    .as_ref()
+                    .is_none_or(|(_, options)| options.maintain_order);
+                let observes = ties_in_input_order
+                    && exprs
+                        .iter()
+                        .any(|e| !is_order_insensitive_window(e.node(), self.expr_arena));
 
                 if out_edge.is_unordered() {
                     *maintain_order = false;
