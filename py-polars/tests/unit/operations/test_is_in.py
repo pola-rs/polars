@@ -1362,3 +1362,29 @@ def test_is_in_nested_null_needles_in_aggregation(
     assert result["first"].to_list() == [None, True]
     assert result["last"].to_list() == [None, False]
     assert df.select(is_in.null_count()).item() == 2
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_null_needle_in_null_data_keeps_null_containers_null(
+    nulls_equal: bool, engine: EngineType
+) -> None:
+    lf = pl.LazyFrame(
+        {
+            "n": pl.Series([None, None, None], dtype=pl.Null),
+            "l": pl.Series([None, [None], []], dtype=pl.List(pl.Null)),
+            "a": pl.Series([None, [None], [None]], dtype=pl.Array(pl.Null, 1)),
+        }
+    )
+    out = lf.select(
+        l_contains=pl.col("l").list.contains(None, nulls_equal=nulls_equal),
+        is_in=pl.col("n").is_in(pl.col("l"), nulls_equal=nulls_equal),
+        a_contains=pl.col("a").arr.contains(None, nulls_equal=nulls_equal),
+    ).collect(engine=engine)
+    if nulls_equal:
+        assert out["l_contains"].to_list() == [None, True, False]
+        assert out["is_in"].to_list() == [None, True, False]
+        assert out["a_contains"].to_list() == [None, True, True]
+    else:
+        for column in out.columns:
+            assert out[column].to_list() == [None, None, None]
