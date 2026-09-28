@@ -254,8 +254,18 @@ fn evaluate_partitions(
         return Ok(DataFrame::empty_with_schema(&params.output_schema));
     }
 
+    // The positions of the read columns in the input morsels.
+    let read_idxs = {
+        let df = morsels[0].3.get_blocking();
+        params
+            .read_schema
+            .iter_names()
+            .map(|name| df.try_get_column_index(name))
+            .collect::<PolarsResult<Vec<_>>>()?
+    };
+
     // The read columns of partition `p` with the input row index of each row.
-    let gather = |p: usize| -> PolarsResult<(DataFrame, Vec<IdxSize>)> {
+    let gather = |p: usize| -> (DataFrame, Vec<IdxSize>) {
         let mut builder = DataFrameBuilder::new(params.read_schema.clone());
         let mut row_idx = Vec::new();
         for (k, (_, b, i, sf)) in morsels.iter().enumerate() {
@@ -264,9 +274,10 @@ fn evaluate_partitions(
             if start == stop {
                 continue;
             }
-            let df = sf
-                .get_blocking()
-                .select(params.read_schema.iter_names_cloned())?;
+            let df = sf.get_blocking();
+            let columns = read_idxs.iter().map(|j| df.columns()[*j].clone()).collect();
+            // SAFETY: the columns come from one frame and have unique names.
+            let df = unsafe { DataFrame::new_unchecked(df.height(), columns) };
             let idxs = &b.idxs_per_p[p][start..stop];
             if idxs.len() == df.height() {
                 builder.extend(&df, ShareStrategy::Never);
@@ -278,7 +289,7 @@ fn evaluate_partitions(
                 row_idx.extend(idxs.iter().map(|j| row_offsets[k] + j));
             }
         }
-        Ok((builder.freeze(), row_idx))
+        (builder.freeze(), row_idx)
     };
 
     if params.output_partitions {
@@ -288,8 +299,8 @@ fn evaluate_partitions(
             (0..num_partitions)
                 .into_par_iter()
                 .map(gather)
-                .collect::<PolarsResult<Vec<_>>>()
-        })?;
+                .collect::<Vec<_>>()
+        });
         drop(morsels);
         drop(builders);
 
@@ -312,7 +323,7 @@ fn evaluate_partitions(
         (0..num_partitions)
             .into_par_iter()
             .map(|p| {
-                let (df, row_idx) = gather(p)?;
+                let (df, row_idx) = gather(p);
                 let height = df.height();
                 if height == 0 {
                     return Ok((DataFrame::empty(), row_idx));
@@ -371,9 +382,8 @@ fn evaluate_partitions(
             .map(|((.., sf), offset)| {
                 let mut df = sf.get_blocking().clone();
                 let rows = &positions[offset as usize..offset as usize + df.height()];
-                let rows = IdxCa::from_slice(PlSmallStr::EMPTY, rows);
                 // SAFETY: the positions are in-bounds.
-                let columns = unsafe { windows.take_unchecked(&rows) }.into_columns();
+                let columns = unsafe { windows.take_slice_unchecked(rows) }.into_columns();
                 // SAFETY: the window columns have the height of the morsel and new names.
                 unsafe { df.hstack_mut_unchecked(&columns) };
                 df

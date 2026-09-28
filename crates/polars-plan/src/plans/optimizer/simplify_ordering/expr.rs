@@ -4,8 +4,6 @@ use polars_utils::arena::{Arena, Node};
 
 use crate::dsl::{EvalVariant, WindowMapping};
 use crate::plans::{AExpr, ExprIR, IRAggExpr, IRFunctionExpr, is_length_preserving_ae};
-#[cfg(feature = "rank")]
-use crate::prelude::RankMethod;
 
 bitflags! {
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -837,24 +835,15 @@ fn is_order_insensitive(node: Node, arena: &Arena<AExpr>) -> bool {
             | IRAggExpr::LastNonNull(_)
             | IRAggExpr::Implode { .. } => false,
         },
-        #[cfg(feature = "rank")]
-        AExpr::Function {
-            input,
-            function: IRFunctionExpr::Rank { options, .. },
-            ..
-        } => {
-            matches!(
-                options.method,
-                RankMethod::Average | RankMethod::Min | RankMethod::Max | RankMethod::Dense
-            ) && inputs_insensitive(input)
-        },
         AExpr::Function {
             function: IRFunctionExpr::SetSortedFlag(_),
             ..
         } => false,
         AExpr::Function { input, options, .. } => {
             let flags = options.flags;
-            (flags.is_elementwise() || (flags.returns_scalar() && !flags.observes_input_order()))
+            !flags.observes_input_order()
+                && flags.non_order_producing()
+                && (flags.is_length_preserving() || flags.returns_scalar())
                 && inputs_insensitive(input)
         },
         _ => false,

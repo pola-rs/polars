@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import functools
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType, RankMethod
 
 
 def test_order_observability() -> None:
@@ -893,3 +896,32 @@ def test_order_insensitive_window_streaming(
     assert kept in q.explain(engine="in-memory")
 
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize(
+    ("method", "is_order_observing"),
+    [
+        ("average", False),
+        ("min", False),
+        ("max", False),
+        ("dense", False),
+        ("ordinal", True),
+        ("random", True),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_rank_order_observing(
+    method: RankMethod, is_order_observing: bool, engine: EngineType
+) -> None:
+    lf = pl.LazyFrame({"g": [1, 2, 1, 2, 1, 3], "x": [3, 1, 2, 2, 5, 4]})
+    q = (
+        lf.unique(maintain_order=True)
+        .with_columns(r=pl.col("x").rank(method, seed=1))
+        .group_by("g")
+        .agg(pl.col("r").sort())
+        .sort("g")
+    )
+
+    kept = "UNIQUE[maintain_order: true"
+    assert (kept in q.explain(engine=engine)) == is_order_observing
+    assert_frame_equal(q.collect(engine=engine), q.collect(engine="in-memory"))

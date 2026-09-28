@@ -338,6 +338,26 @@ impl WindowExpr {
             (_, AggState::LiteralScalar(_)) => Ok(MapStrategy::Nothing),
         }
     }
+
+    fn map_explode(&self, ac: &mut AggregationContext) -> PolarsResult<Column> {
+        if self.phys_function.is_scalar() {
+            Ok(ac.get_values().clone())
+        } else {
+            ac.aggregated().explode(ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            })
+        }
+    }
+}
+
+fn map_nothing(ac: &AggregationContext, height: usize) -> Column {
+    let out = ac.flat_naive().into_owned();
+    if ac.is_literal() {
+        out.new_from_index(0, height)
+    } else {
+        out
+    }
 }
 
 impl WindowExpr {
@@ -361,24 +381,8 @@ impl WindowExpr {
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         let out = match self.determine_map_strategy(&mut ac, &gb)? {
-            MapStrategy::Nothing => {
-                let out = ac.flat_naive().into_owned();
-                if ac.is_literal() {
-                    out.new_from_index(0, df.height())
-                } else {
-                    out
-                }
-            },
-            MapStrategy::Explode => {
-                if self.phys_function.is_scalar() {
-                    ac.get_values().clone()
-                } else {
-                    ac.aggregated().explode(ExplodeOptions {
-                        empty_as_null: true,
-                        keep_nulls: true,
-                    })?
-                }
-            },
+            MapStrategy::Nothing => map_nothing(&ac, df.height()),
+            MapStrategy::Explode => self.map_explode(&mut ac)?,
             // The partitions are in row order, so values that still belong to the original
             // groups are already on their rows.
             MapStrategy::Map => {
@@ -574,25 +578,8 @@ impl PhysicalExpr for WindowExpr {
         use MapStrategy::*;
 
         match self.determine_map_strategy(&mut ac, &gb)? {
-            Nothing => {
-                let mut out = ac.flat_naive().into_owned();
-
-                if ac.is_literal() {
-                    out = out.new_from_index(0, df.height())
-                }
-                Ok(out.into_column())
-            },
-            Explode => {
-                let out = if self.phys_function.is_scalar() {
-                    ac.get_values().clone()
-                } else {
-                    ac.aggregated().explode(ExplodeOptions {
-                        empty_as_null: true,
-                        keep_nulls: true,
-                    })?
-                };
-                Ok(out.into_column())
-            },
+            Nothing => Ok(map_nothing(&ac, df.height())),
+            Explode => self.map_explode(&mut ac),
             Map => {
                 // TODO!
                 // investigate if sorted arrays can be return directly

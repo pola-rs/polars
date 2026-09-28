@@ -23,7 +23,7 @@ use recursive::recursive;
 
 use crate::plans::{
     AExpr, ArenaExprIter, CanonicalExprId, CanonicalExprMap, ExprIR, IR, OutputName,
-    ToFieldContext, is_elementwise,
+    ToFieldContext, is_splittable,
 };
 use crate::prelude::{ProjectionOptions, WindowMapping};
 
@@ -90,11 +90,8 @@ impl Extractor {
             let mut inputs_rev = UnitVec::new();
             ae.inputs_rev(&mut inputs_rev);
 
-            let mut detachable = UnitVec::new();
-            let descend = !matches!(ae, AExpr::Column(_) | AExpr::Eval { .. })
-                && !is_struct_eval(ae)
-                && is_elementwise(&mut detachable, ae, expr_arena)
-                && *detachable == *inputs_rev;
+            let descend =
+                !matches!(ae, AExpr::Eval { .. }) && is_splittable(ae, &inputs_rev, expr_arena);
 
             if descend {
                 let inputs = inputs_rev
@@ -169,13 +166,6 @@ fn is_window(ae: &AExpr) -> bool {
         AExpr::Rolling { .. } => true,
         _ => false,
     }
-}
-
-fn is_struct_eval(ae: &AExpr) -> bool {
-    #[cfg(feature = "dtype-struct")]
-    return matches!(ae, AExpr::StructEval { .. });
-    #[cfg(not(feature = "dtype-struct"))]
-    return false;
 }
 
 fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {

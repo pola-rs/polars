@@ -313,13 +313,12 @@ pub fn optimize(
         })?;
     }
 
-    if opt_flags.contains(OptFlags::STREAMING) && !opt_flags.contains(OptFlags::GPU) {
+    let streaming_windows = opt_flags.streaming() && !opt_flags.gpu();
+    if streaming_windows {
         extract_window::extract_windows(root, ir_arena, expr_arena);
     }
 
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
-        let order_insensitive_windows =
-            opt_flags.contains(OptFlags::STREAMING) && !opt_flags.contains(OptFlags::GPU);
         match ir_arena.get(root) {
             IR::SinkMultiple { inputs } => {
                 let mut roots = inputs.clone();
@@ -335,7 +334,7 @@ pub fn optimize(
                     &roots,
                     ir_arena,
                     expr_arena,
-                    order_insensitive_windows,
+                    streaming_windows,
                 );
             },
             ir => {
@@ -350,7 +349,7 @@ pub fn optimize(
                     &[tmp_top],
                     ir_arena,
                     expr_arena,
-                    order_insensitive_windows,
+                    streaming_windows,
                 );
             },
         }
