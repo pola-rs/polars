@@ -1283,6 +1283,57 @@ def test_is_in_needle_cast_with_a_scalar_haystack() -> None:
     assert lf.select(expr).collect()["n"].to_list() == [True, True, False, None]
 
 
+@pytest.mark.parametrize(
+    ("needle", "haystack", "expected"),
+    [
+        pytest.param(
+            pl.Series(["a", "b"]),
+            pl.Series(["a", "a"], dtype=pl.Enum(["a", "b"])),
+            [True, False],
+            id="string-in-enum",
+        ),
+        pytest.param(
+            pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"])),
+            pl.Series(["a", "z"]),
+            [True, False],
+            id="enum-in-string",
+        ),
+        pytest.param(
+            pl.Series([D("1.00"), D("1.50")], dtype=pl.Decimal(10, 2)),
+            pl.Series([D("1"), D("2")], dtype=pl.Decimal(5, 0)),
+            [True, False],
+            id="decimal-other-scale",
+        ),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_is_in_native_pair_with_a_scalar_haystack(
+    needle: pl.Series, haystack: pl.Series, expected: list[bool], engine: EngineType
+) -> None:
+    # The kernel compares these unequal dtypes natively, but a semi join needs equal key
+    # dtypes, so streaming must not lower to one.
+    lf = pl.LazyFrame({"n": needle, "h": haystack})
+    out = lf.select(pl.col("n").is_in(pl.col("h").implode())).collect(engine=engine)
+    assert out["n"].to_list() == expected
+
+
+def test_is_in_native_pair_does_not_skip_row_groups_by_category_order() -> None:
+    # The Enum orders "z" before "a", so comparing String statistics with the
+    # haystack's Enum min/max would wrongly skip the row group holding "z".
+    f = io.BytesIO()
+    pl.DataFrame({"s": ["a", "z"]}).write_parquet(f)
+    haystack = pl.lit(["z"], dtype=pl.List(pl.Enum(["z", "a"])))
+
+    for use_statistics in (True, False):
+        f.seek(0)
+        out = (
+            pl.scan_parquet(f, use_statistics=use_statistics)
+            .filter(pl.col("s").is_in(haystack))
+            .collect()
+        )
+        assert out["s"].to_list() == ["z"]
+
+
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
 @pytest.mark.parametrize(
     ("inner", "value"),
