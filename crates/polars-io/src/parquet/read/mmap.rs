@@ -57,7 +57,7 @@ pub fn to_deserializer(
     field: Field,
     filter: Option<Filter>,
 ) -> PolarsResult<(Vec<Box<dyn Array>>, Bitmap)> {
-    let (columns, types): (Vec<_>, Vec<_>) = columns
+    let (columns, types) = columns
         .into_iter()
         .map(|(column_meta, chunk)| {
             // Advise fetching the data for the column chunk
@@ -69,9 +69,7 @@ pub fn to_deserializer(
                 &column_meta.descriptor().descriptor.primitive_type,
             ))
         })
-        .collect::<PolarsResult<Vec<_>>>()?
-        .into_iter()
-        .unzip();
+        .collect::<PolarsResult<(Vec<_>, Vec<_>)>>()?;
 
     column_iter_to_arrays(columns, types, field, filter)
 }
