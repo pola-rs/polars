@@ -1478,3 +1478,11 @@ def test_sort_by_nested_categorical_keys(key: pl.Series) -> None:
 
     grouped = df.with_columns(g=1).group_by("g").agg(pl.col("x").sort_by("k", "y"))
     assert grouped["x"].to_list() == [[3, 2, 1]]
+
+
+def test_sort_by_aggregated_scalar_key_in_agg_29583() -> None:
+    df = pl.DataFrame({"k": [0, 0, 1, 1], "a": [10, 11, 20, 21]})
+    out = df.group_by("k", maintain_order=True).agg(
+        pl.col("a").head(1).sort_by(pl.col("a").max())
+    )
+    assert out["a"].to_list() == [[10], [20]]
