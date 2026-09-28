@@ -20,6 +20,7 @@ from tests.unit.io.conftest import format_file_uri
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -141,6 +142,75 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     assert result.to_dict(as_series=False) == expected
 
     capfd.readouterr()
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.parametrize(
+    "hive_filter",
+    [
+        pl.date("year", "month", 1) <= date(2026, 1, 1),
+        pl.col("month").cast(pl.Int8, strict=True) <= 1,
+    ],
+    ids=["date", "strict_cast"],
+)
+@pytest.mark.write_disk
+def test_hive_fallible_predicate_with_file_filter_prunes_files_29494(
+    tmp_path: Path, engine: EngineType, hive_filter: pl.Expr
+) -> None:
+    for month in ("1", "2", "__HIVE_DEFAULT_PARTITION__"):
+        path = tmp_path / f"year=2026/month={month}/0.parquet"
+        path.parent.mkdir(parents=True)
+        pl.DataFrame({"flag": [True, False]}).write_parquet(path)
+        if month == "2":
+            path.write_bytes(b"not parquet")
+
+    lf = pl.scan_parquet(tmp_path / "**/*.parquet", hive_partitioning=True)
+    result = lf.filter(hive_filter, pl.col("flag")).collect(engine=engine)
+    assert result.rows() == [(True, 2026, 1)]
+
+
+@pytest.mark.parametrize("invalid_flag", [False, True])
+@pytest.mark.write_disk
+def test_hive_date_predicate_with_file_filter_invalid_date_29494(
+    tmp_path: Path, invalid_flag: bool
+) -> None:
+    for month, flag in ((1, True), (13, invalid_flag)):
+        path = tmp_path / f"year=2026/month={month}/0.parquet"
+        path.parent.mkdir(parents=True)
+        pl.DataFrame({"flag": [flag]}).write_parquet(path)
+
+    lf = (
+        pl.scan_parquet(tmp_path / "**/*.parquet", hive_partitioning=True)
+        .filter(pl.date("year", "month", 1) <= date(2026, 1, 1))
+        .filter(pl.col("flag"))
+    )
+    if invalid_flag:
+        with pytest.raises(ComputeError, match="Invalid date components"):
+            lf.collect()
+    else:
+        assert lf.collect().rows() == [(True, 2026, 1)]
+
+
+@pytest.mark.write_disk
+def test_hive_fallible_predicate_does_not_evaluate_udf_when_pruning_29494(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "year=2026/month=1/0.parquet"
+    path.parent.mkdir(parents=True)
+    pl.DataFrame({"flag": [True]}).write_parquet(path)
+
+    calls: list[int] = []
+
+    def observe(value: int) -> int:
+        calls.append(value)
+        return value
+
+    udf = pl.col("month").map_elements(observe, return_dtype=pl.Int64)
+    lf = pl.scan_parquet(tmp_path / "**/*.parquet", hive_partitioning=True).filter(
+        udf.cast(pl.Int8, strict=True) <= 1, pl.col("flag")
+    )
+    lf.explain()
+    assert calls == []
 
 
 @pytest.mark.write_disk
