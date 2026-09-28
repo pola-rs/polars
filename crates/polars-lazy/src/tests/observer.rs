@@ -307,6 +307,12 @@ mod tests {
         assert_eq!(df.height(), 150);
         assert_eq!(snapshot.reading("scan.rows_read"), Some(150));
         assert_eq!(snapshot.reading("scan.row_groups_skipped"), Some(8));
+
+        // No columns projected: the reader answers from the metadata and still
+        // counts the rows.
+        let (df, snapshot) = snapshot_of(scan().select([len()]));
+        assert_eq!(df.height(), 1);
+        assert_eq!(snapshot.reading("scan.rows_read"), Some(n));
     }
 
     #[test]

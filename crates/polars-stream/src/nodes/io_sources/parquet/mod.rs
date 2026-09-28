@@ -25,7 +25,7 @@ use super::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, calc_row_position_after_slice,
 };
 use super::shared::pipeline_budget::PipelineBudget;
-use crate::metrics::{NodeMetricsRegistry, OptIOMetrics};
+use crate::metrics::{MetricUnit, NodeMetricsRegistry, OptIOMetrics};
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::parquet::projection::{
@@ -354,6 +354,12 @@ impl FileReader for ParquetFileReader {
         }
 
         if let Some(single_morsel_height) = single_morsel_height {
+            // Answered from the metadata: every row is read, none is decoded.
+            self.metrics_registry
+                .new_counter("scan.rows_read", MetricUnit::Unit)
+                .reporter()
+                .add(single_morsel_height as i64);
+
             let (mut tx, rx) = FileReaderOutputSend::new_serial();
 
             let handle = executor::spawn(TaskPriority::Low, async move {
