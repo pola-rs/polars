@@ -9,8 +9,7 @@ pub enum IRListFunction {
     #[cfg(feature = "is_in")]
     Contains {
         nulls_equal: bool,
-        /// Set by type coercion: cast the needle to this dtype when evaluating, and treat a
-        /// needle the cast cannot represent exactly as absent.
+        /// Runtime cast chosen by type coercion; inexact needles match nothing.
         needle_cast: Option<DataType>,
     },
     #[cfg(feature = "list_drop_nulls")]
@@ -280,15 +279,6 @@ impl Display for IRListFunction {
             #[cfg(feature = "dtype-map")]
             ToMap => "to_map",
         };
-        write!(f, "list.{name}")?;
-        #[cfg(feature = "is_in")]
-        if let Contains {
-            needle_cast: Some(dtype),
-            ..
-        } = self
-        {
-            write!(f, "[needle: {dtype}]")?;
-        }
-        Ok(())
+        write!(f, "list.{name}")
     }
 }

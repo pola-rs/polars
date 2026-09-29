@@ -6,7 +6,7 @@ mod binary;
 mod datetime;
 mod functions;
 #[cfg(any(feature = "is_in", feature = "dtype-map"))]
-mod is_in;
+mod membership;
 
 use binary::process_binary;
 #[cfg(all(
@@ -17,7 +17,7 @@ use datetime::coerce_temporal_dt;
 #[cfg(all(feature = "range", feature = "dtype-datetime"))]
 use datetime::{ensure_datetime, ensure_int, temporal_range_output_type};
 #[cfg(any(feature = "is_in", feature = "dtype-map"))]
-use is_in::MembershipForm;
+use membership::MembershipForm;
 use polars_core::chunked_array::cast::CastOptions;
 #[cfg(any(
     all(
@@ -460,12 +460,12 @@ impl OptimizationRule for TypeCoercionRule {
                     IRMapFunction::Get { .. } => "map.get",
                     _ => "map.contains_key",
                 };
-                coerce_is_in(
+                membership::coerce_is_in(
                     expr_node,
                     expr_arena,
                     schema,
                     MembershipForm::Contains,
-                    |input, arena| is_in::resolve_map_key(input, arena, schema, op),
+                    |input, arena| membership::resolve_map_key(input, arena, schema, op),
                 )?
             },
             #[cfg(feature = "is_in")]
@@ -500,8 +500,8 @@ impl OptimizationRule for TypeCoercionRule {
                     _ => unreachable!(),
                 };
 
-                coerce_is_in(expr_node, expr_arena, schema, form, |input, arena| {
-                    is_in::resolve_is_in(input, arena, schema, form, op, None)
+                membership::coerce_is_in(expr_node, expr_arena, schema, form, |input, arena| {
+                    membership::resolve_is_in(input, arena, schema, form, op)
                 })?
             },
             AExpr::Function {
@@ -1297,148 +1297,6 @@ fn inline_or_prune_cast(
     Ok(out)
 }
 
-/// Apply membership or Map lookup casts chosen by `resolve`.
-///
-/// `expr_node` must be an [`AExpr::Function`] whose operands are laid out as `form` says.
-#[cfg(any(feature = "is_in", feature = "dtype-map"))]
-fn coerce_is_in(
-    expr_node: Node,
-    expr_arena: &mut Arena<AExpr>,
-    schema: &Schema,
-    form: MembershipForm,
-    resolve: impl FnOnce(
-        &[ExprIR],
-        &Arena<AExpr>,
-    ) -> PolarsResult<Option<is_in::IsInTypeCoercionResult>>,
-) -> PolarsResult<Option<AExpr>> {
-    let AExpr::Function {
-        function,
-        input,
-        options,
-    } = expr_arena.get(expr_node)
-    else {
-        unreachable!("caller matched a function expression")
-    };
-    let options = *options;
-    let (flat, nested) = (form.flat(), form.nested());
-
-    // The needle is only cast when the function runs, so its dtype still differs.
-    if function.membership_needle_cast().is_some() {
-        return Ok(None);
-    }
-
-    let Some(result) = resolve(input, expr_arena)? else {
-        return Ok(None);
-    };
-
-    let mut function = function.clone();
-    let mut input = input.to_vec();
-    use self::is_in::IsInTypeCoercionResult;
-    match result {
-        IsInTypeCoercionResult::SuperType(flat_type, nested_type) => {
-            let (_, type_left) =
-                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-            let (_, type_other) =
-                unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
-            cast_expr_ir(
-                &mut input[flat],
-                &type_left,
-                &flat_type,
-                expr_arena,
-                CastOptions::NonStrict,
-            )?;
-            cast_expr_ir(
-                &mut input[nested],
-                &type_other,
-                &nested_type,
-                expr_arena,
-                CastOptions::NonStrict,
-            )?;
-        },
-        IsInTypeCoercionResult::CastNeedle { dtype, strict } => {
-            let (_, type_self) =
-                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-            let options = if strict {
-                CastOptions::Strict
-            } else {
-                CastOptions::NonStrict
-            };
-            cast_expr_ir(&mut input[flat], &type_self, &dtype, expr_arena, options)?;
-        },
-        IsInTypeCoercionResult::CastContainer { dtype, strict } => {
-            let (_, type_other) =
-                unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
-            let options = if strict {
-                CastOptions::Strict
-            } else {
-                CastOptions::NonStrict
-            };
-            cast_expr_ir(&mut input[nested], &type_other, &dtype, expr_arena, options)?;
-        },
-        IsInTypeCoercionResult::GuardedNeedleCast { dtype } => {
-            let lv = match expr_arena.get(input[flat].node()) {
-                AExpr::Literal(lv) if lv.is_scalar() => lv,
-                // Cast and check the evaluated needle, so that it is evaluated once.
-                _ => {
-                    *is_in::needle_cast_mut(&mut function) = Some(dtype);
-                    return Ok(Some(AExpr::Function {
-                        function,
-                        input,
-                        options,
-                    }));
-                },
-            };
-
-            // A literal needle is cast and checked once, here.
-            let (_, type_self) =
-                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-            let type_self = type_self.materialize_unknown(false)?;
-            let needle = match lv {
-                LiteralValue::Dyn(dyn_value) => dyn_value
-                    .clone()
-                    .try_materialize_to_dtype(&type_self, CastOptions::Strict)?,
-                LiteralValue::Scalar(scalar) => scalar.clone(),
-                _ => unreachable!("a scalar literal"),
-            }
-            .into_series(PlSmallStr::EMPTY);
-            let (casted, inexact) = needle._cast_reporting_inexact(&dtype)?;
-            let needle = match inexact {
-                None => Scalar::new(dtype.clone(), casted.get(0)?.into_static()),
-                // A Map holds no null key, so a null needle is simply absent.
-                Some(_) if is_in::is_map_lookup(&function) => Scalar::null(dtype.clone()),
-                // A null needle would match null elements, so answer directly: no match, except
-                // for a null container.
-                Some(_) => {
-                    let container = AExprBuilder::new_from_node(input[nested].node());
-                    let null =
-                        AExprBuilder::lit_scalar(Scalar::null(DataType::Boolean), expr_arena);
-                    let miss = AExprBuilder::lit_scalar(Scalar::from(false), expr_arena);
-                    let out = container
-                        .is_null(expr_arena)
-                        .ternary(null, miss, expr_arena);
-                    return Ok(Some(out.build(expr_arena)));
-                },
-            };
-            input[flat].set_node(expr_arena.add(AExpr::Literal(needle.into())));
-            input[flat].set_dtype(dtype);
-        },
-        IsInTypeCoercionResult::Implode => {
-            assert!(!form.is_contains());
-            let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                input: input[nested].node(),
-                maintain_order: true,
-            }));
-            input[nested].set_node(other_input);
-        },
-    }
-
-    Ok(Some(AExpr::Function {
-        function,
-        input,
-        options,
-    }))
-}
-
 fn try_inline_literal_cast(
     lv: &LiteralValue,
     dtype: &DataType,
@@ -1499,32 +1357,13 @@ fn try_inline_literal_cast(
     Ok(Some(lv))
 }
 
+/// Cast `e` to `to_dtype`. `options` applies to folding a literal; inserted casts are strict.
 fn cast_expr_ir(
     e: &mut ExprIR,
     from_dtype: &DataType,
     to_dtype: &DataType,
     expr_arena: &mut Arena<AExpr>,
     options: CastOptions,
-) -> PolarsResult<()> {
-    // Non-literal casts are strict; `options` controls only literal folding.
-    cast_expr_ir_with(
-        e,
-        from_dtype,
-        to_dtype,
-        expr_arena,
-        options,
-        CastOptions::Strict,
-    )
-}
-
-/// Use `literal_options` for folding and `cast_options` for inserted casts.
-fn cast_expr_ir_with(
-    e: &mut ExprIR,
-    from_dtype: &DataType,
-    to_dtype: &DataType,
-    expr_arena: &mut Arena<AExpr>,
-    literal_options: CastOptions,
-    cast_options: CastOptions,
 ) -> PolarsResult<()> {
     if from_dtype == to_dtype {
         return Ok(());
@@ -1533,7 +1372,7 @@ fn cast_expr_ir_with(
     check_cast(from_dtype, to_dtype)?;
 
     if let AExpr::Literal(lv) = expr_arena.get(e.node()) {
-        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, literal_options)? {
+        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, options)? {
             e.set_node(expr_arena.add(AExpr::Literal(literal)));
             e.set_dtype(to_dtype.clone());
             return Ok(());
@@ -1543,7 +1382,7 @@ fn cast_expr_ir_with(
     e.set_node(expr_arena.add(AExpr::Cast {
         expr: e.node(),
         dtype: to_dtype.clone(),
-        options: cast_options,
+        options: CastOptions::Strict,
     }));
     e.set_dtype(to_dtype.clone());
 

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import io
 from collections.abc import Collection
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -525,10 +525,9 @@ def test_enum_is_in_series_non_existent(nulls_equal: bool) -> None:
     s2_str = pl.Series(["a", "d", "e"])
     expected = pl.Series([True, False, False, missing_value])
 
-    with pytest.raises(InvalidOperationError):
-        s.is_in(s2_str, nulls_equal=nulls_equal)
-    with pytest.raises(InvalidOperationError):
-        s.is_in(["a", "d", "e"], nulls_equal=nulls_equal)
+    # A label outside the categories cannot match; it is not an error.
+    assert_series_equal(s.is_in(s2_str.implode(), nulls_equal=nulls_equal), expected)
+    assert_series_equal(s.is_in(["a", "d", "e"], nulls_equal=nulls_equal), expected)
 
     out = s.is_in(["a"], nulls_equal=nulls_equal)
     assert_series_equal(out, expected)
@@ -805,10 +804,14 @@ def test_is_in_non_nested_container() -> None:
 MEMBERSHIP_OPS = ["is_in-list", "is_in-array", "list.contains", "arr.contains"]
 
 
+def _is_array(op: str) -> bool:
+    return op.endswith("array") or op == "arr.contains"
+
+
 def _container(
     op: str, rows: list[list[Any] | None], inner: PolarsDataType
 ) -> pl.Series:
-    if op.endswith("list") or op == "list.contains":
+    if not _is_array(op):
         return pl.Series("h", rows, dtype=pl.List(inner))
     width = len(next(r for r in rows if r is not None))
     return pl.Series("h", rows, dtype=pl.Array(inner, width))
@@ -825,22 +828,17 @@ def _membership(
     return container.arr.contains(needle, **kwargs)
 
 
-_RUST_DTYPE: dict[PolarsDataType, str] = {
-    pl.Int8: "i8",
-    pl.Int64: "i64",
-    pl.UInt64: "u64",
-    pl.Float16: "f16",
-    pl.Float32: "f32",
-    pl.Datetime("ms"): "datetime[ms]",
-    pl.Datetime("ns"): "datetime[ns]",
-    pl.Duration("ms"): "duration[ms]",
-}
-
-
-def _assert_needle_cast(lf: pl.LazyFrame, dtype: str) -> None:
-    # The needle is cast as the function runs; the container is never rewritten.
-    plan = lf.explain()
-    assert f"[needle: {dtype}]" in plan
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+def test_is_in_shows_the_needle_cast_on_the_function(op: str) -> None:
+    # Only the needle is cast, as the function runs; the container is never rewritten.
+    lf = pl.LazyFrame(
+        {
+            "n": pl.Series([1], dtype=pl.Int64),
+            "h": _container(op, [[1, 2]], pl.Int8),
+        }
+    )
+    plan = lf.select(_membership(op, pl.col("n"), pl.col("h"))).explain()
+    assert "[needle: i8]" in plan
     assert ".cast(" not in plan
 
 
@@ -879,7 +877,7 @@ def test_is_in_casts_the_needle_to_the_element_dtype(
 ) -> None:
     # A needle the cast cannot represent exactly (out of range, rounded, overflowing)
     # equals no element, so it is a miss rather than an error or a rounded hit.
-    hay = [hit, hit] if op.endswith("array") or op == "arr.contains" else [hit]
+    hay = [hit, hit] if _is_array(op) else [hit]
     lf = pl.LazyFrame(
         {
             "n": pl.Series([hit, miss, None], dtype=needle_dtype),
@@ -888,7 +886,6 @@ def test_is_in_casts_the_needle_to_the_element_dtype(
     )
 
     column = lf.select(_membership(op, pl.col("n"), pl.col("h")).alias("o"))
-    _assert_needle_cast(column, _RUST_DTYPE[inner])
     # `is_in` defaults to `nulls_equal=False`, the `contains` methods to `True`.
     null = None if op.startswith("is_in") else False
     assert column.collect()["o"].to_list() == [True, False, null]
@@ -897,11 +894,6 @@ def test_is_in_casts_the_needle_to_the_element_dtype(
         literal = lf.select(
             _membership(op, pl.lit(value, needle_dtype), pl.col("h")).alias("o")
         )
-        plan = literal.explain()
-        assert "[needle:" not in plan
-        assert ".cast(" not in plan
-        # An inexact literal is resolved at plan time and never reaches the kernel.
-        assert (op.split("-")[0] in plan) == expected
         assert literal.collect()["o"].to_list() == [expected] * 3
 
 
@@ -932,11 +924,7 @@ def test_is_in_needle_with_an_inexact_cast_never_matches(
     element: int | None,
     inner: PolarsDataType,
 ) -> None:
-    hay = (
-        [element, element]
-        if op.endswith("array") or op == "arr.contains"
-        else [element]
-    )
+    hay = [element, element] if _is_array(op) else [element]
     df = pl.DataFrame(
         {
             "n": pl.Series([needle, needle]).cast(needle_dtype),
@@ -952,6 +940,234 @@ def test_is_in_needle_with_an_inexact_cast_never_matches(
         )
         # A null container stays null.
         assert out["o"].to_list() == [False, None]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("dtype", [pl.Enum(["a", "b"]), pl.Categorical])
+@pytest.mark.parametrize("needle_is_string", [False, True])
+def test_is_in_compares_strings_with_categories_natively(
+    op: str, dtype: PolarsDataType, needle_is_string: bool
+) -> None:
+    # Neither side is cast: an unknown label matches nothing, on whichever side it is.
+    needle_dtype, inner = (pl.String, dtype) if needle_is_string else (dtype, pl.String)
+    hay = ["a", "b"] if needle_is_string else ["a", "z"]
+    lf = pl.LazyFrame(
+        {
+            "n": pl.Series(["a", "b", None], dtype=needle_dtype),
+            "h": _container(op, [hay, hay, hay], inner),
+        }
+    )
+    if needle_is_string:
+        lf = lf.with_columns(pl.lit(pl.Series(["a", "z", None])).alias("n"))
+
+    q = lf.select(
+        _membership(op, pl.col("n"), pl.col("h"), nulls_equal=True).alias("o")
+    )
+    expected = [True, False, False]
+    assert q.collect()["o"].to_list() == expected
+
+    for value, found in (("a", True), ("z" if needle_is_string else "b", False)):
+        needle = pl.lit(value, needle_dtype)
+        out = lf.select(_membership(op, needle, pl.col("h")).alias("o")).collect()
+        assert out["o"].to_list() == [found] * 3
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+def test_is_in_null_category_does_not_match_an_unknown_label(op: str) -> None:
+    # An element without a category must not read as a null element.
+    dtype = pl.Enum(["a"])
+    df = pl.DataFrame(
+        {
+            "n": pl.Series([None, None], dtype=dtype),
+            "h": _container(op, [["z", "z"], ["z", None]], pl.String),
+        }
+    )
+
+    out = df.select(_membership(op, pl.col("n"), pl.col("h"), nulls_equal=True))
+    assert out.to_series().to_list() == [False, True]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize(
+    ("needle", "found"),
+    [
+        pytest.param(D("1.50"), True, id="hit"),
+        pytest.param(D("1.55"), False, id="rounded"),
+        # Rounds to `10.0`, whose cast back to `Decimal(3, 2)` overflows.
+        pytest.param(D("9.99"), False, id="reverse-overflow"),
+    ],
+)
+def test_is_in_decimal_of_another_scale(op: str, needle: D, found: bool) -> None:
+    hay = [D("1.5"), D("10.0")]
+    lf = pl.LazyFrame(
+        {
+            "n": pl.Series([needle] * 2, dtype=pl.Decimal(3, 2)),
+            "h": _container(op, [hay, None], pl.Decimal(3, 1)),
+        }
+    )
+
+    for n in (pl.col("n"), pl.lit(needle, pl.Decimal(3, 2))):
+        q = lf.select(_membership(op, n, pl.col("h")).alias("o"))
+        assert q.collect()["o"].to_list() == [found, None]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize(
+    ("needle_dtype", "inner"),
+    [
+        pytest.param(pl.Float64, pl.Float32, id="f64-f32"),
+        pytest.param(pl.Float64, pl.Float16, id="f64-f16"),
+        pytest.param(pl.Float32, pl.Float16, id="f32-f16"),
+    ],
+)
+def test_is_in_narrows_a_float_needle(
+    op: str, needle_dtype: PolarsDataType, inner: PolarsDataType
+) -> None:
+    # `1.1` has no exact value in the narrower type, so it must not round onto one.
+    hay = [1.5, 1.1]
+    lf = pl.LazyFrame(
+        {
+            "n": pl.Series([1.5, 1.1, float("nan")], dtype=needle_dtype),
+            "h": _container(op, [hay, hay, hay], inner),
+        }
+    )
+
+    q = lf.select(_membership(op, pl.col("n"), pl.col("h")).alias("o"))
+    assert q.collect()["o"].to_list() == [True, False, False]
+    for value, found in ((1.5, True), (1.1, False)):
+        needle = pl.lit(value, needle_dtype)
+        out = lf.select(_membership(op, needle, pl.col("h")).alias("o")).collect()
+        assert out["o"].to_list() == [found] * 3
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize(
+    ("needle_dtype", "inner"),
+    [
+        pytest.param(pl.Float16, pl.Float64, id="f16-f64"),
+        pytest.param(pl.Float32, pl.Float64, id="f32-f64"),
+        pytest.param(pl.Int8, pl.Int64, id="i8-i64"),
+    ],
+)
+def test_is_in_widens_a_numeric_needle_exactly(
+    op: str, needle_dtype: PolarsDataType, inner: PolarsDataType
+) -> None:
+    hay = [1, 2]
+    lf = pl.LazyFrame(
+        {
+            "n": pl.Series([1, 3], dtype=needle_dtype),
+            "h": _container(op, [hay, hay], inner),
+        }
+    )
+
+    q = lf.select(_membership(op, pl.col("n"), pl.col("h")).alias("o"))
+    assert q.collect()["o"].to_list() == [True, False]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("unit", ["us", "ms"])
+def test_is_in_compares_instants_across_time_zones(op: str, unit: str) -> None:
+    midnight = pl.lit(datetime(2020, 1, 1)).dt.cast_time_unit(unit)  # type: ignore[arg-type]
+    hay = [datetime(2020, 1, 1), datetime(2020, 1, 2)]
+    df = pl.DataFrame({"h": _container(op, [hay], pl.Datetime("us"))}).with_columns(
+        pl.col("h").cast(_container(op, [hay], pl.Datetime("us", "UTC")).dtype)
+    )
+
+    # The same instant, shown in another zone.
+    same = midnight.dt.replace_time_zone("UTC").dt.convert_time_zone("America/New_York")
+    # Midnight in New York is a different instant from midnight UTC.
+    other = midnight.dt.replace_time_zone("America/New_York")
+    for needle, found in ((same, True), (other, False)):
+        for n in (needle, pl.col("n")):
+            out = df.with_columns(n=needle).select(
+                _membership(op, n, pl.col("h")).alias("o")
+            )
+            assert out["o"].to_list() == [found]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("needle_is_aware", [False, True])
+def test_is_in_rejects_naive_and_aware_datetimes(
+    op: str, needle_is_aware: bool
+) -> None:
+    aware = pl.Datetime("us", "UTC")
+    needle_dtype, inner = (
+        (aware, pl.Datetime("us")) if needle_is_aware else (pl.Datetime("us"), aware)
+    )
+    hay = [datetime(2020, 1, 1), datetime(2020, 1, 2)]
+    df = pl.DataFrame(
+        {
+            "n": pl.Series([datetime(2020, 1, 1)]).cast(needle_dtype),
+            "h": _container(op, [hay], pl.Datetime("us")),
+        }
+    ).with_columns(pl.col("h").cast(_container(op, [hay], inner).dtype))
+
+    with pytest.raises(InvalidOperationError, match="time-zone-aware"):
+        df.select(_membership(op, pl.col("n"), pl.col("h")))
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize(
+    ("needle", "needle_dtype", "inner"),
+    [
+        pytest.param([1], pl.List(pl.Int64), pl.List(pl.Null), id="list"),
+        pytest.param(
+            {"a": 1},
+            pl.Struct({"a": pl.Int64}),
+            pl.Struct({"a": pl.Null}),
+            id="struct",
+        ),
+        pytest.param("a", pl.Enum(["a"]), pl.Null, id="null"),
+    ],
+)
+def test_is_in_null_elements_take_the_needle_dtype(
+    op: str, needle: Any, needle_dtype: PolarsDataType, inner: PolarsDataType
+) -> None:
+    # Elements that can only be null are cast to the needle's dtype, which is always
+    # valid.
+    null = (
+        {"a": None}
+        if isinstance(needle, dict)
+        else ([None] if isinstance(needle, list) else None)
+    )
+    df = pl.DataFrame({"h": _container(op, [[null, null]], inner)})
+
+    out = df.select(
+        _membership(op, pl.lit(needle, needle_dtype), pl.col("h")).alias("o")
+    )
+    assert out["o"].to_list() == [False]
+
+
+@pytest.mark.parametrize(
+    ("values", "haystack", "same_dtype_haystack"),
+    [
+        pytest.param(
+            pl.Series(["a", "b"]),
+            pl.Series([["a"]], dtype=pl.List(pl.Enum(["a", "b"]))),
+            pl.Series([["a"]]),
+            id="string-enum",
+        ),
+        pytest.param(
+            pl.Series([D("1.50"), D("2.50")], dtype=pl.Decimal(3, 2)),
+            pl.Series([[D("1.5")]], dtype=pl.List(pl.Decimal(3, 1))),
+            pl.Series([[D("1.50")]], dtype=pl.List(pl.Decimal(3, 2))),
+            id="decimal-scale",
+        ),
+    ],
+)
+def test_is_in_haystack_of_another_dtype_is_not_a_filter_constraint(
+    values: pl.Series, haystack: pl.Series, same_dtype_haystack: pl.Series
+) -> None:
+    # The kernel compares these natively; their values differ from the column's as
+    # scalars, so intersecting them as allowed sets would wrongly empty the filter.
+    lf = pl.LazyFrame({"c": values})
+    q = lf.filter(
+        pl.col("c").is_in(pl.lit(haystack))
+        & pl.col("c").is_in(pl.lit(same_dtype_haystack))
+    )
+
+    assert "FILTER" in q.explain()
+    assert q.collect()["c"].to_list() == values.head(1).to_list()
 
 
 def test_is_in_does_not_match_null_on_temporal_overflow() -> None:
@@ -972,7 +1188,7 @@ def test_is_in_does_not_match_null_on_temporal_overflow() -> None:
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
 def test_is_in_inexact_literal_needle_keeps_the_shape(op: str) -> None:
-    hay = [1, 2] if op.endswith("array") or op == "arr.contains" else [1]
+    hay = [1, 2] if _is_array(op) else [1]
     df = pl.DataFrame({"g": [1, 1, 2], "h": _container(op, [hay, None, hay], pl.Int8)})
     expr = _membership(op, pl.lit(300, pl.Int64), pl.col("h")).alias("o")
 
@@ -987,6 +1203,9 @@ def test_is_in_inexact_literal_needle_keeps_the_shape(op: str) -> None:
     ("needle_dtype", "inner", "values"),
     [
         pytest.param(pl.Int64, pl.Int8, list(range(30)), id="int"),
+        pytest.param(
+            pl.Float64, pl.Float32, [i / 4 for i in range(30)], id="float-narrowing"
+        ),
         pytest.param(
             pl.Datetime("us"),
             pl.Datetime("ms"),
@@ -1014,7 +1233,7 @@ def test_is_in_needle_cast_masks_with_the_evaluated_container(
 ) -> None:
     # The null-container mask must come from the same evaluation the kernel searched.
     n = 30
-    hay = [0, 1] if op.endswith("array") or op == "arr.contains" else [0]
+    hay = [0, 1] if _is_array(op) else [0]
     rows = [hay if i % 3 else None for i in range(n)]
     df = pl.DataFrame({"h": _container(op, rows, pl.Int8)})
     needle = pl.lit(pl.Series([300] * n, dtype=pl.Int64))
@@ -1028,7 +1247,17 @@ def test_is_in_needle_cast_masks_with_the_evaluated_container(
     assert out["o"].drop_nulls().to_list() == [False] * (n - out["o"].null_count())
 
 
-def test_is_in_needle_cast_with_a_scalar_haystack() -> None:
+@pytest.mark.parametrize("op", ["list.contains", "arr.contains"])
+@pytest.mark.parametrize("needle", [300, 1])
+def test_contains_needle_of_another_length_raises(op: str, needle: int) -> None:
+    # The shape check must not depend on whether the needle casts exactly.
+    lf = pl.LazyFrame({"h": _container(op, [[1], [1], [1]], pl.Int8)})
+    expr = _membership(op, pl.repeat(needle, 2, dtype=pl.Int64), pl.col("h"))
+    with pytest.raises(ShapeError):
+        lf.select(expr).collect()
+
+
+def test_is_in_inexact_needle_with_a_scalar_haystack() -> None:
     # A scalar haystack can lower to a semi join, which needs matching key dtypes.
     lf = pl.LazyFrame(
         {
@@ -1038,8 +1267,155 @@ def test_is_in_needle_cast_with_a_scalar_haystack() -> None:
     )
 
     expr = pl.col("n").is_in(pl.col("h").first())
-    _assert_needle_cast(lf.select(expr), "i8")
     assert lf.select(expr).collect()["n"].to_list() == [True, True, False, None]
+
+
+@pytest.mark.parametrize(
+    ("needle", "haystack", "expected"),
+    [
+        pytest.param(
+            pl.Series(["a", "b"]),
+            pl.Series(["a", "a"], dtype=pl.Enum(["a", "b"])),
+            [True, False],
+            id="string-in-enum",
+        ),
+        pytest.param(
+            pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"])),
+            pl.Series(["a", "z"]),
+            [True, False],
+            id="enum-in-string",
+        ),
+        pytest.param(
+            pl.Series([D("1.00"), D("1.50")], dtype=pl.Decimal(10, 2)),
+            pl.Series([D("1"), D("2")], dtype=pl.Decimal(5, 0)),
+            [True, False],
+            id="decimal-other-scale",
+        ),
+    ],
+)
+def test_is_in_native_pair_with_a_scalar_haystack(
+    needle: pl.Series, haystack: pl.Series, expected: list[bool]
+) -> None:
+    # The kernel compares these unequal dtypes natively, but a semi join needs equal key
+    # dtypes, so streaming must not lower to one.
+    lf = pl.LazyFrame({"n": needle, "h": haystack})
+    out = lf.select(pl.col("n").is_in(pl.col("h").implode())).collect()
+    assert out["n"].to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("column", "haystack", "expected"),
+    [
+        pytest.param(
+            pl.Series([1, 2, 3], dtype=pl.Int64),
+            pl.Series([1, 2], dtype=pl.Int8),
+            [1, 2],
+            id="narrower-int",
+        ),
+        pytest.param(
+            pl.Series([1, 2, 3], dtype=pl.Int64),
+            pl.Series([1, 2**63], dtype=pl.UInt64),
+            [1],
+            id="out-of-range",
+        ),
+        pytest.param(
+            pl.Series([1, 2, 3], dtype=pl.Int8),
+            pl.Series([1, 300], dtype=pl.Int64),
+            [1],
+            id="wider-int",
+        ),
+        pytest.param(
+            pl.Series([0.1, 1.5], dtype=pl.Float32),
+            pl.Series([0.1, 1.5], dtype=pl.Float64),
+            [1.5],
+            id="wider-float",
+        ),
+        pytest.param(
+            pl.Series([D("1.00"), D("2.00")], dtype=pl.Decimal(10, 2)),
+            pl.Series([D("1.000"), D("2.005")], dtype=pl.Decimal(10, 3)),
+            [D("1.00")],
+            id="decimal-rounded",
+        ),
+        pytest.param(
+            pl.Series(["a", "b", "c"]),
+            pl.Series(["a", "b"], dtype=pl.Enum(["b", "a"])),
+            ["a", "b"],
+            id="string-in-enum",
+        ),
+        pytest.param(
+            pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"])),
+            pl.Series(["a", "zz"]),
+            ["a"],
+            id="enum-in-string",
+        ),
+        pytest.param(
+            pl.Series(
+                [datetime(2020, 1, 1, 1), datetime(2020, 1, 2)]
+            ).dt.replace_time_zone("UTC"),
+            pl.Series([datetime(2020, 1, 1, 2)]).dt.replace_time_zone(
+                "Europe/Amsterdam"
+            ),
+            [datetime(2020, 1, 1, 1, tzinfo=timezone.utc)],
+            id="datetime-other-zone",
+        ),
+    ],
+)
+def test_is_in_literal_haystack_takes_the_column_dtype(
+    column: pl.Series, haystack: pl.Series, expected: list[Any]
+) -> None:
+    # A literal haystack is cast to the column's dtype, dropping elements that no value
+    # of that dtype can equal, so the column itself stays uncast and statistics apply.
+    f = io.BytesIO()
+    pl.DataFrame({"c": column}).write_parquet(f, row_group_size=1)
+    f.seek(0)
+    q = pl.scan_parquet(f).filter(pl.col("c").is_in(pl.lit(haystack).implode()))
+
+    plan = q.explain()
+    assert "needle" not in plan
+    assert 'col("c").is_in(' in plan
+    assert q.collect()["c"].to_list() == expected
+
+
+def test_is_in_null_needle_in_a_literal_struct_haystack() -> None:
+    # Casting a Struct haystack to `Null` gives a Struct of nulls, not `Null`, which
+    # must not send coercion into a loop.
+    haystack = pl.Series([{"a": 1}, None], dtype=pl.Struct({"a": pl.Int64}))
+    lf = pl.LazyFrame({"n": pl.Series([None, None], dtype=pl.Null)})
+    q = lf.select(pl.col("n").is_in(pl.lit(haystack).implode(), nulls_equal=True))
+    assert q.collect()["n"].to_list() == [True, True]
+
+
+def test_is_in_literal_array_haystack_with_an_unrepresentable_element() -> None:
+    lf = pl.LazyFrame({"n": pl.Series([1, 2], dtype=pl.Int64)})
+    haystack = pl.lit(pl.Series([[1, 2**63]], dtype=pl.Array(pl.UInt64, 2)))
+    q = lf.select(pl.col("n").is_in(haystack))
+    assert q.collect()["n"].to_list() == [True, False]
+
+
+def test_is_in_categorical_needle_keeps_its_categories() -> None:
+    # Casting the haystack's strings to Categorical would register them as categories.
+    lf = pl.LazyFrame({"c": pl.Series(["a", "b"], dtype=pl.Categorical)})
+    q = lf.select(
+        pl.col("c").is_in(pl.lit(pl.Series(["a", "not-a-category"])).implode())
+    )
+    assert q.collect()["c"].to_list() == [True, False]
+
+
+def test_is_in_native_pair_does_not_skip_row_groups_by_category_order() -> None:
+    # The Enum orders "z" before "a", so comparing String statistics with the
+    # haystack's Enum min/max would wrongly skip the row group holding "z".
+    f = io.BytesIO()
+    pl.DataFrame({"s": ["a", "z"]}).write_parquet(f)
+    haystack = pl.lit(["z"], dtype=pl.List(pl.Enum(["z", "a"])))
+
+    for use_statistics in (True, False):
+        f.seek(0)
+        out = (
+            pl.scan_parquet(f, use_statistics=use_statistics)
+            .filter(pl.col("s").is_in(haystack))
+            .collect()
+        )
+        assert out["s"].to_list() == ["z"]
 
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
@@ -1073,6 +1449,54 @@ def test_is_in_decimal_needle_in_integer_data(op: str) -> None:
 
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+def test_is_in_integer_needle_in_decimal_data(op: str) -> None:
+    df = pl.DataFrame({"h": _container(op, [[D("1.50"), D("2.00")]], pl.Decimal(3, 2))})
+
+    def search(value: int, dtype: PolarsDataType) -> list[bool | None]:
+        needle = pl.lit(value, dtype)
+        return df.select(_membership(op, needle, pl.col("h")).alias("o"))["o"].to_list()
+
+    assert search(2, pl.Int8) == [True]
+    assert search(1, pl.Int64) == [False]
+    # Beyond `Decimal(38, 0)`, so the needle matches nothing instead of raising.
+    assert search(2**127, pl.UInt128) == [False]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    ("needle_dtype", "values", "inner"),
+    [
+        pytest.param(pl.Int64, [1, 300, -129, None], pl.Int8, id="int64-int8"),
+        pytest.param(pl.UInt128, [1, 2**127, 255, None], pl.Int8, id="uint128-int8"),
+        pytest.param(pl.Int8, [1, -1, 127, None], pl.UInt8, id="int8-uint8"),
+        pytest.param(
+            pl.UInt128, [1, 2**127, 255, None], pl.Decimal(5, 2), id="decimal"
+        ),
+    ],
+)
+def test_is_in_integer_column_needle_out_of_range(
+    op: str,
+    nulls_equal: bool,
+    needle_dtype: PolarsDataType,
+    values: list[int | None],
+    inner: PolarsDataType,
+) -> None:
+    # An integer needle out of the element type's range matches nothing; a null needle
+    # still follows `nulls_equal`.
+    df = pl.DataFrame(
+        {
+            "n": pl.Series(values, dtype=needle_dtype),
+            "h": _container(op, [[1, None]] * 4, inner),
+        }
+    )
+    out = df.select(
+        _membership(op, pl.col("n"), pl.col("h"), nulls_equal=nulls_equal).alias("o")
+    )
+    assert out["o"].to_list() == [True, False, False, True if nulls_equal else None]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
 @pytest.mark.parametrize("needle_dtype", [pl.Categorical, pl.Enum(["a"])])
 @pytest.mark.parametrize("nulls_equal", [False, True])
 def test_is_in_categorical_needle_in_null_data(
@@ -1097,6 +1521,12 @@ def test_is_in_categorical_needle_in_null_data(
         pytest.param(
             pl.Series([[1], [2]], dtype=pl.List(pl.Int64)),
             [None],
+            pl.List(pl.Null),
+            id="list-of-null",
+        ),
+        pytest.param(
+            pl.Series([[1], [2]], dtype=pl.List(pl.Int64)),
+            [None],
             pl.List(pl.Int64),
             id="list",
         ),
@@ -1105,6 +1535,12 @@ def test_is_in_categorical_needle_in_null_data(
             {"a": None},
             pl.Struct({"a": pl.Int64}),
             id="struct",
+        ),
+        pytest.param(
+            pl.Series([{"a": 1}, {"a": 2}], dtype=pl.Struct({"a": pl.Int64})),
+            {"a": None},
+            pl.Struct({"a": pl.Null}),
+            id="struct-of-null",
         ),
     ],
 )
@@ -1122,14 +1558,13 @@ def test_is_in_nested_needle_with_a_null_container(
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
 @pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("inner", [pl.List(pl.Null), pl.List(pl.Int8)])
 @pytest.mark.parametrize("needle", [[1], None])
 def test_is_in_literal_nested_needle_with_a_null_container(
-    op: str, nulls_equal: bool, needle: list[int] | None
+    op: str, nulls_equal: bool, inner: PolarsDataType, needle: list[int] | None
 ) -> None:
     # A single needle is broadcast over every container, including its nulls.
-    df = pl.DataFrame(
-        {"h": _container(op, [[[None]], [[None]], None], pl.List(pl.Int8))}
-    )
+    df = pl.DataFrame({"h": _container(op, [[[None]], [[None]], None], inner)})
 
     out = df.select(
         _membership(

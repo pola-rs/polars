@@ -38,8 +38,7 @@ pub enum IRBooleanFunction {
     #[cfg(feature = "is_in")]
     IsIn {
         nulls_equal: bool,
-        /// Set by type coercion: cast the needle to this dtype when evaluating, and treat a
-        /// needle the cast cannot represent exactly as absent.
+        /// Runtime cast chosen by type coercion; inexact needles match nothing.
         needle_cast: Option<DataType>,
     },
     #[cfg(feature = "is_close")]
@@ -99,15 +98,14 @@ impl IRBooleanFunction {
                 )
                 .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_ALL_INPUTS),
             #[cfg(feature = "is_in")]
-            B::IsIn { nulls_equal, .. } => FunctionOptions::elementwise()
-                .with_casting_rules(CastingRules::FirstArgLossless)
-                .with_flags(|f| {
-                    if !*nulls_equal {
-                        f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT
-                    } else {
-                        f
-                    }
-                }),
+            // Type coercion resolves `is_in` itself; see `coerce_is_in`.
+            B::IsIn { nulls_equal, .. } => FunctionOptions::elementwise().with_flags(|f| {
+                if !*nulls_equal {
+                    f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT
+                } else {
+                    f
+                }
+            }),
             #[cfg(feature = "is_close")]
             B::IsClose { .. } => FunctionOptions::elementwise()
                 .with_supertyping(
@@ -166,16 +164,7 @@ impl Display for IRBooleanFunction {
             AllHorizontal => "all_horizontal",
             Not => "not",
         };
-        write!(f, "{s}")?;
-        #[cfg(feature = "is_in")]
-        if let IsIn {
-            needle_cast: Some(dtype),
-            ..
-        } = self
-        {
-            write!(f, "[needle: {dtype}]")?;
-        }
-        Ok(())
+        write!(f, "{s}")
     }
 }
 

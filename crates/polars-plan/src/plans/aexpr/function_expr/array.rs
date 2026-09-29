@@ -25,8 +25,7 @@ pub enum IRArrayFunction {
     #[cfg(feature = "is_in")]
     Contains {
         nulls_equal: bool,
-        /// Set by type coercion: cast the needle to this dtype when evaluating, and treat a
-        /// needle the cast cannot represent exactly as absent.
+        /// Runtime cast chosen by type coercion; inexact needles match nothing.
         needle_cast: Option<DataType>,
     },
     #[cfg(feature = "array_count")]
@@ -241,16 +240,7 @@ impl Display for IRArrayFunction {
             #[cfg(feature = "array_to_struct")]
             ToStruct { fields: _ } => "to_struct",
         };
-        write!(f, "arr.{name}")?;
-        #[cfg(feature = "is_in")]
-        if let Contains {
-            needle_cast: Some(dtype),
-            ..
-        } = self
-        {
-            write!(f, "[needle: {dtype}]")?;
-        }
-        Ok(())
+        write!(f, "arr.{name}")
     }
 }
 

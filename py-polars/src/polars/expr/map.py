@@ -155,7 +155,9 @@ class ExprMapNameSpace:
         Parameters
         ----------
         key
-            Key to look up. A single value is broadcast over all maps.
+            Key to look up. A single value is broadcast over all maps. It is cast to
+            the map's key type, and a key the cast cannot represent exactly, because it
+            is out of range or would be rounded, is absent.
 
         Returns
         -------
@@ -198,7 +200,9 @@ class ExprMapNameSpace:
         Parameters
         ----------
         key
-            Key to look up. A single value is broadcast over all maps.
+            Key to look up. A single value is broadcast over all maps. It is cast to
+            the map's key type, and a key the cast cannot represent exactly, because it
+            is out of range or would be rounded, is absent.
 
         Returns
         -------

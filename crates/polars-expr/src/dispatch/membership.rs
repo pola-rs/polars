@@ -1,12 +1,11 @@
-use polars_arrow::array::BooleanArray;
 use polars_arrow::bitmap::{self, Bitmap};
 use polars_core::error::PolarsResult;
 use polars_core::frame::column::ScalarColumn;
 use polars_core::prelude::*;
+use polars_utils::broadcast::broadcast_len;
 
-/// Cast an evaluated needle as type coercion chose, keeping a scalar needle scalar.
-///
-/// Also returns the rows the cast could not represent exactly, broadcast to the needle's length.
+/// Cast the needle while preserving scalar storage.
+/// The inexact mask also has length one for scalar columns.
 pub(super) fn cast_needle(
     needle: &Column,
     dtype: &DataType,
@@ -41,41 +40,52 @@ pub(super) fn with_needle_cast(
     let Some(inexact) = inexact else {
         return f(s);
     };
-    let container_validity = s[container]
-        .as_materialized_series_maintain_scalar()
-        .rechunk_validity();
-    let out = f(s)?;
+    let container = s[container].clone();
 
-    let result = out.as_materialized_series_maintain_scalar();
-    let result = result.bool()?.rechunk();
-    let result = result.downcast_as_array();
-    let len = result.len();
-    let broadcast = |mask: Bitmap| {
-        if mask.len() == len {
-            mask
-        } else {
-            Bitmap::new_with_value(mask.get_bit(0), len)
-        }
-    };
-    let inexact = broadcast(inexact.rechunk().downcast_as_array().values().clone());
-    // The kernel already made null containers null. The other inexact rows become `false`.
-    let values = bitmap::and_not(result.values(), &inexact);
-    let validity = result.validity().map(|valid| {
-        let miss = match container_validity {
-            Some(container_valid) => bitmap::and(&inexact, &broadcast(container_valid)),
-            None => inexact,
-        };
-        bitmap::or(valid, &miss)
-    });
-    let result = BooleanChunked::with_chunk(
-        out.name().clone(),
-        BooleanArray::new(ArrowDataType::Boolean, values, validity),
-    )
-    .into_series();
-    Ok(match out {
-        Column::Scalar(_) => ScalarColumn::from_single_value_series(result, out.len()).into(),
-        Column::Series(_) => result.into(),
+    // A single needle that no element can equal: skip the kernel. Kernels name their output
+    // after their first operand.
+    if inexact.len() == 1 {
+        let len = broadcast_len([&s[needle], &container])?;
+        let valid = container_valid(&container, len)?;
+        let miss = BooleanChunked::from_bitmap(s[0].name().clone(), Bitmap::new_zeroed(len));
+        return Ok(miss.with_validity(Some(valid)).into_column());
+    }
+
+    let out = f(s)?;
+    out.try_apply_unary_elementwise(|result| {
+        let result = result.bool()?.rechunk();
+        let result = result.downcast_as_array();
+        let len = result.len();
+        let inexact = inexact.broadcast_to(len)?;
+        let inexact = inexact.rechunk();
+        let inexact = inexact.downcast_as_array().values();
+        // The kernel already made null containers null. The other inexact rows become `false`.
+        let values = bitmap::and_not(result.values(), inexact);
+        let validity = result
+            .validity()
+            .map(|valid| {
+                let miss = bitmap::and(inexact, &container_valid(&container, len)?);
+                PolarsResult::Ok(bitmap::or(valid, &miss))
+            })
+            .transpose()?;
+        Ok(BooleanChunked::from_bitmap(out.name().clone(), values)
+            .with_validity(validity)
+            .into_series())
     })
+}
+
+/// The rows where `container` is valid, broadcast to `len`.
+#[cfg(feature = "is_in")]
+fn container_valid(container: &Column, len: usize) -> PolarsResult<Bitmap> {
+    let valid = container
+        .as_materialized_series_maintain_scalar()
+        .is_not_null();
+    Ok(valid
+        .broadcast_to(len)?
+        .rechunk()
+        .downcast_as_array()
+        .values()
+        .clone())
 }
 
 /// Null a Map key the cast could not represent exactly: no Map holds a null key.

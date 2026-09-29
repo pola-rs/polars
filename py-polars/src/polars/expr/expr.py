@@ -6994,11 +6994,19 @@ class Expr(metaclass=_Meta):
             Series or sequence of primitive type.
         nulls_equal : bool, default False
             If True, treat null as a distinct value. Null values will not propagate.
+            Note that :meth:`Expr.list.contains` and :meth:`Expr.arr.contains` default
+            to `True`.
 
         Returns
         -------
         Expr
             Expression of data type :class:`Boolean`.
+
+        Notes
+        -----
+        For supported dtype pairs, lossy conversions do not create matches. Values that
+        would overflow or require rounding match nothing. Cast explicitly to compare
+        integers and floats.
 
         Examples
         --------
