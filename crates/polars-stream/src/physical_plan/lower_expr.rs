@@ -7,6 +7,8 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet,
 };
+#[cfg(feature = "rolling_window")]
+use polars_core::prelude::{RollingFnParams, RollingOptionsFixedWindow, RollingRankMethod};
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_defs::join::{JoinArgs, JoinType};
@@ -29,6 +31,8 @@ use slotmap::SlotMap;
 
 use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
+#[cfg(feature = "rolling_window")]
+use crate::nodes::rolling_fixed_window::RollingFixedWindow;
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_group_by::{
     GroupByLowerKind, build_group_by_stream, try_build_streaming_group_by,
@@ -2572,6 +2576,39 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
+            #[cfg(feature = "rolling_window")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: ref function @ IRFunctionExpr::RollingExpr { ref options, .. },
+                options: _,
+            } if let Some(window) = rolling_fixed_window(options) => {
+                let out_name = unique_column_name();
+                let input_schema = input.output_schema(ctx.phys_sm);
+                let out_schema = compute_output_schema(
+                    input_schema,
+                    &[ExprIR::new(expr, OutputName::Alias(out_name.clone()))],
+                    ctx.expr_arena,
+                )?;
+                let func = function_expr_to_udf(function.clone(), inner_exprs, ctx.expr_arena)
+                    .into_inner();
+
+                let select_exprs = inner_exprs
+                    .iter()
+                    .map(|e| e.with_alias(unique_column_name()))
+                    .collect_vec();
+                let input = build_select_stream_with_ctx(input, &select_exprs, ctx)?;
+                let kind = PhysNodeKind::RollingFixedWindowFunction {
+                    input,
+                    func,
+                    window,
+                    output_name: out_name.clone(),
+                    format_str: function.to_string(),
+                };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(out_schema, kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
             #[cfg(feature = "dynamic_group_by")]
             rolling_function @ AExpr::Rolling {
                 function,
@@ -2761,6 +2798,35 @@ fn lower_exprs_with_ctx(
         .insert(PhysNode::new(Arc::new(output_schema), zip_kind));
 
     Ok((PhysStream::first(zip_node), transformed_exprs))
+}
+
+/// Returns the window of a fixed-window rolling function, or `None` if it can't be computed on
+/// batches of rows.
+#[cfg(feature = "rolling_window")]
+fn rolling_fixed_window(options: &RollingOptionsFixedWindow) -> Option<RollingFixedWindow> {
+    let window_size = options.window_size;
+    // Seeded random tie-breaking depends on the rows seen before, not only on the window.
+    let is_seeded_random_rank = matches!(
+        options.fn_params,
+        Some(RollingFnParams::Rank {
+            method: RollingRankMethod::Random,
+            seed: Some(_),
+        })
+    );
+    if window_size == 0 || is_seeded_random_rank {
+        return None;
+    }
+
+    // These match `det_offsets` and `det_offsets_center` in `polars_compute::rolling`.
+    let offset = if options.center {
+        -((window_size / 2) as i64)
+    } else {
+        -(window_size as i64 - 1)
+    };
+    Some(RollingFixedWindow {
+        offset,
+        length: window_size,
+    })
 }
 
 /// Computes the schema that selecting the given expressions on the input schema
