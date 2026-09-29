@@ -5,18 +5,18 @@ use super::*;
 #[derive(Debug)]
 pub(super) enum IsInTypeCoercionResult {
     SuperType(DataType, DataType),
-    SelfCast {
+    CastNeedle {
         dtype: DataType,
         strict: bool,
     },
-    OtherCast {
+    CastContainer {
         dtype: DataType,
         strict: bool,
     },
     Implode,
     /// Cast the needle to `dtype` as it is evaluated; a needle the cast cannot represent exactly
     /// matches nothing.
-    GuardedSelfCast {
+    GuardedNeedleCast {
         dtype: DataType,
     },
 }
@@ -26,12 +26,12 @@ fn needle_to_element(needle: &DataType, element: &DataType) -> IsInTypeCoercionR
     if needle.is_primitive_numeric()
         && get_numeric_upcast_supertype_lossless(needle, element).as_ref() == Some(element)
     {
-        IsInTypeCoercionResult::SelfCast {
+        IsInTypeCoercionResult::CastNeedle {
             dtype: element.clone(),
             strict: false,
         }
     } else {
-        IsInTypeCoercionResult::GuardedSelfCast {
+        IsInTypeCoercionResult::GuardedNeedleCast {
             dtype: element.clone(),
         }
     }
@@ -151,18 +151,18 @@ pub(super) fn resolve_map_key(
             None => return Ok(None),
             // The needle alone moves, so a strict cast still raises as it would for `is_in`.
             Some(
-                result @ (IsInTypeCoercionResult::SelfCast { .. }
-                | IsInTypeCoercionResult::GuardedSelfCast { .. }),
+                result @ (IsInTypeCoercionResult::CastNeedle { .. }
+                | IsInTypeCoercionResult::GuardedNeedleCast { .. }),
             ) => result,
             // Only the needle has to widen to reach the stored key type.
             Some(IsInTypeCoercionResult::SuperType(supertype, _)) if supertype == **key => {
-                IsInTypeCoercionResult::SelfCast {
+                IsInTypeCoercionResult::CastNeedle {
                     dtype: supertype,
                     strict: false,
                 }
             },
             Some(
-                IsInTypeCoercionResult::SuperType(_, _) | IsInTypeCoercionResult::OtherCast { .. },
+                IsInTypeCoercionResult::SuperType(_, _) | IsInTypeCoercionResult::CastContainer { .. },
             ) => {
                 polars_bail!(
                 InvalidOperation:
@@ -207,7 +207,7 @@ fn resolve_temporal_map_key(
     if needle_unit == key_unit {
         return Ok(None);
     }
-    Ok(Some(IsInTypeCoercionResult::GuardedSelfCast {
+    Ok(Some(IsInTypeCoercionResult::GuardedNeedleCast {
         dtype: target,
     }))
 }
@@ -271,32 +271,32 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         (dtml, dto) if dtml == dto => return Ok(None),
 
         // All-null can represent anything (and/or empty list), so cast to target dtype
-        (DataType::Null, _) => IsInTypeCoercionResult::SelfCast {
+        (DataType::Null, _) => IsInTypeCoercionResult::CastNeedle {
             dtype: type_other_inner.clone(),
             strict: false,
         },
-        (_, DataType::Null) => IsInTypeCoercionResult::OtherCast {
+        (_, DataType::Null) => IsInTypeCoercionResult::CastContainer {
             dtype: wrap_other(type_left_materialized),
             strict: false,
         },
 
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Enum(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
+        (DataType::Enum(_, _), DataType::String) => IsInTypeCoercionResult::CastContainer {
             dtype: wrap_other(type_left_materialized),
             strict: true,
         },
         #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::Enum(_, _)) => IsInTypeCoercionResult::SelfCast {
+        (DataType::String, DataType::Enum(_, _)) => IsInTypeCoercionResult::CastNeedle {
             dtype: type_other_inner.clone(),
             strict: true,
         },
         #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::Categorical(_, _)) => IsInTypeCoercionResult::SelfCast {
+        (DataType::String, DataType::Categorical(_, _)) => IsInTypeCoercionResult::CastNeedle {
             dtype: type_other_inner.clone(),
             strict: false,
         },
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
+        (DataType::Categorical(_, _), DataType::String) => IsInTypeCoercionResult::CastContainer {
             dtype: wrap_other(type_left_materialized),
             strict: false,
         },
@@ -306,12 +306,12 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         (DataType::Decimal(_, _), DataType::Decimal(_, _)) => return Ok(None),
         // Integers are exact decimals at scale 0; only 128-bit values can fail the cast.
         #[cfg(feature = "dtype-decimal")]
-        (dt, DataType::Decimal(_, _)) if dt.is_integer() => IsInTypeCoercionResult::SelfCast {
+        (dt, DataType::Decimal(_, _)) if dt.is_integer() => IsInTypeCoercionResult::CastNeedle {
             dtype: DataType::Decimal(polars_compute::decimal::DEC128_MAX_PREC, 0),
             strict: true,
         },
         #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, _), dt) if dt.is_integer() => IsInTypeCoercionResult::OtherCast {
+        (DataType::Decimal(_, _), dt) if dt.is_integer() => IsInTypeCoercionResult::CastContainer {
             dtype: wrap_other(DataType::Decimal(
                 polars_compute::decimal::DEC128_MAX_PREC,
                 0,
@@ -332,12 +332,12 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             if needle_unit == other_unit {
                 return Ok(None);
             }
-            IsInTypeCoercionResult::GuardedSelfCast {
+            IsInTypeCoercionResult::GuardedNeedleCast {
                 dtype: DataType::Datetime(*other_unit, needle_tz.clone()),
             }
         },
         (DataType::Duration(_), DataType::Duration(other_unit)) => {
-            IsInTypeCoercionResult::GuardedSelfCast {
+            IsInTypeCoercionResult::GuardedNeedleCast {
                 dtype: DataType::Duration(*other_unit),
             }
         },

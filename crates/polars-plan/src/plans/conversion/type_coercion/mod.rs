@@ -1355,7 +1355,7 @@ fn coerce_is_in(
                 CastOptions::NonStrict,
             )?;
         },
-        IsInTypeCoercionResult::SelfCast { dtype, strict } => {
+        IsInTypeCoercionResult::CastNeedle { dtype, strict } => {
             let (_, type_self) =
                 unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
             let options = if strict {
@@ -1365,7 +1365,7 @@ fn coerce_is_in(
             };
             cast_expr_ir(&mut input[flat], &type_self, &dtype, expr_arena, options)?;
         },
-        IsInTypeCoercionResult::OtherCast { dtype, strict } => {
+        IsInTypeCoercionResult::CastContainer { dtype, strict } => {
             let (_, type_other) =
                 unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
             let options = if strict {
@@ -1375,7 +1375,7 @@ fn coerce_is_in(
             };
             cast_expr_ir(&mut input[nested], &type_other, &dtype, expr_arena, options)?;
         },
-        IsInTypeCoercionResult::GuardedSelfCast { dtype } => {
+        IsInTypeCoercionResult::GuardedNeedleCast { dtype } => {
             let lv = match expr_arena.get(input[flat].node()) {
                 AExpr::Literal(lv) if lv.is_scalar() => lv,
                 // Cast and check the evaluated needle, so that it is evaluated once.
