@@ -11,7 +11,7 @@ use polars_plan::prelude::FileWriteFormat;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
 use polars_utils::slice_enum::Slice;
-use slotmap::{Key, SecondaryMap, SlotMap};
+use slotmap::{DenseSlotMap, Key, SecondaryMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::physical_plan::ZipBehavior;
@@ -178,7 +178,7 @@ fn fmt_join_label(base_label: &str, left_on: &str, right_on: &str, args: &JoinAr
 #[recursive::recursive]
 fn visualize_plan_rec(
     node_key: PhysNodeKey,
-    phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &Arena<AExpr>,
     visited: &mut SecondaryMap<PhysNodeKey, ()>,
     out: &mut Vec<String>,
@@ -1014,7 +1014,7 @@ fn visualize_plan_rec(
 
 pub fn visualize_plan(
     root: PhysNodeKey,
-    phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &Arena<AExpr>,
 ) -> String {
     let mut visited: SecondaryMap<PhysNodeKey, ()> = SecondaryMap::new();

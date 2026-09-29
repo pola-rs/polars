@@ -27,7 +27,7 @@ use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
 use recursive::recursive;
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::{DenseSlotMap, SecondaryMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::execute::StreamingExecutionState;
@@ -71,7 +71,7 @@ fn create_stream_expr(
 }
 
 struct GraphConversionContext<'a> {
-    phys_sm: &'a SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &'a DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &'a mut Arena<AExpr>,
     graph: Graph,
     phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
@@ -102,7 +102,7 @@ impl GraphConversionContext<'_> {
 
 pub fn physical_plan_to_graph(
     root: PhysNodeKey,
-    phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &mut Arena<AExpr>,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {

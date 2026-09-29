@@ -14,7 +14,7 @@ use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::{AExpr, ir_plan_to_description};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::relaxed_cell::RelaxedCell;
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::{DenseSlotMap, SecondaryMap};
 
 use crate::graph::{Graph, GraphNodeKey};
 use crate::metrics::GraphMetrics;
@@ -102,7 +102,7 @@ pub struct StreamingQuery {
     top_ir: IR,
     pub graph: Graph,
     pub root_phys_node: PhysNodeKey,
-    pub phys_sm: SlotMap<PhysNodeKey, PhysNode>,
+    pub phys_sm: DenseSlotMap<PhysNodeKey, PhysNode>,
     pub phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     pub metrics: Option<Arc<Mutex<GraphMetrics>>>,
 }

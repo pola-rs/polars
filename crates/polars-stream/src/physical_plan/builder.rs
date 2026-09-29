@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use polars_utils::arena::Node;
-use slotmap::SlotMap;
+use slotmap::DenseSlotMap;
 
 use super::{PhysNode, PhysNodeKey};
 
@@ -10,7 +10,7 @@ use super::{PhysNode, PhysNodeKey};
 /// Every physical node is inserted through [`PhysSmBuilder::insert`], which records the IR
 /// node whose lowering created it. Reads and in-place edits go through `Deref` to the slotmap.
 pub struct PhysSmBuilder {
-    phys_sm: SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: DenseSlotMap<PhysNodeKey, PhysNode>,
     /// IR node that nodes inserted through [`Self::insert`] are attributed to. Only ever set
     /// inside [`Self::with_ir_node`], so it is `None` between lowering scopes.
     current_ir_node: Option<Node>,
@@ -21,7 +21,7 @@ pub struct PhysSmBuilder {
 }
 
 impl PhysSmBuilder {
-    pub fn new(phys_sm: SlotMap<PhysNodeKey, PhysNode>, original_ir_len: usize) -> Self {
+    pub fn new(phys_sm: DenseSlotMap<PhysNodeKey, PhysNode>, original_ir_len: usize) -> Self {
         Self {
             phys_sm,
             current_ir_node: None,
@@ -61,13 +61,13 @@ impl PhysSmBuilder {
         self.phys_sm.insert(node)
     }
 
-    pub fn into_inner(self) -> SlotMap<PhysNodeKey, PhysNode> {
+    pub fn into_inner(self) -> DenseSlotMap<PhysNodeKey, PhysNode> {
         self.phys_sm
     }
 }
 
 impl Deref for PhysSmBuilder {
-    type Target = SlotMap<PhysNodeKey, PhysNode>;
+    type Target = DenseSlotMap<PhysNodeKey, PhysNode>;
 
     fn deref(&self) -> &Self::Target {
         &self.phys_sm

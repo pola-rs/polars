@@ -53,7 +53,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use polars_utils::{UnitVec, unitvec};
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::{DenseSlotMap, SecondaryMap};
 pub use to_description::physical_plan_to_description;
 pub use to_graph::physical_plan_to_graph;
 
@@ -146,13 +146,16 @@ impl PhysStream {
         Self { node, port: 0 }
     }
 
-    pub fn output_schema<'sm>(&self, sm: &'sm SlotMap<PhysNodeKey, PhysNode>) -> &'sm Arc<Schema> {
+    pub fn output_schema<'sm>(
+        &self,
+        sm: &'sm DenseSlotMap<PhysNodeKey, PhysNode>,
+    ) -> &'sm Arc<Schema> {
         sm[self.node].output_schema(self.port)
     }
 
     pub fn output_schema_mut<'sm>(
         &self,
-        sm: &'sm mut SlotMap<PhysNodeKey, PhysNode>,
+        sm: &'sm mut DenseSlotMap<PhysNodeKey, PhysNode>,
     ) -> &'sm mut Arc<Schema> {
         sm[self.node].output_schema_mut(self.port)
     }
@@ -622,7 +625,7 @@ pub enum PhysNodeKind {
 
 fn visit_node_inputs_mut(
     roots: Vec<PhysNodeKey>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     visit: impl FnMut(&mut PhysStream),
 ) {
     _visit_nodes_impl(roots, phys_sm, |_, _| (), visit)
@@ -630,16 +633,16 @@ fn visit_node_inputs_mut(
 
 fn visit_nodes_mut(
     roots: Vec<PhysNodeKey>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
-    visit: impl FnMut(PhysNodeKey, &mut SlotMap<PhysNodeKey, PhysNode>),
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    visit: impl FnMut(PhysNodeKey, &mut DenseSlotMap<PhysNodeKey, PhysNode>),
 ) {
     _visit_nodes_impl(roots, phys_sm, visit, |_| ())
 }
 
 fn _visit_nodes_impl(
     roots: Vec<PhysNodeKey>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
-    mut visit_node: impl FnMut(PhysNodeKey, &mut SlotMap<PhysNodeKey, PhysNode>),
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    mut visit_node: impl FnMut(PhysNodeKey, &mut DenseSlotMap<PhysNodeKey, PhysNode>),
     mut visit_input: impl FnMut(&mut PhysStream),
 ) {
     let mut to_visit = roots;
@@ -938,7 +941,7 @@ fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysSmBuilder) {
     });
 }
 
-fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>) {
     // Collect first: fusing swaps nodes, which would stop the traversal from reaching the
     // inputs of the fused filter.
     let mut projection_keys = Vec::new();
@@ -994,7 +997,10 @@ fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNo
 ///
 /// The group-by consumes the selected key/aggregation columns in bulk, so it is
 /// worth paying for a rechunk of the select's output to get contiguous inputs.
-fn rechunk_group_by_inputs(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+fn rechunk_group_by_inputs(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+) {
     visit_nodes_mut(roots, phys_sm, |key, phys_sm| {
         let PhysNodeKind::GroupBy { inputs, .. } = phys_sm[key].kind() else {
             return;
@@ -1016,12 +1022,12 @@ pub fn build_physical_plan(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     ctx: StreamingLowerIRContext<'_>,
-) -> PolarsResult<(PhysNodeKey, SlotMap<PhysNodeKey, PhysNode>)> {
+) -> PolarsResult<(PhysNodeKey, DenseSlotMap<PhysNodeKey, PhysNode>)> {
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
     let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
     let mut cache_nodes = PlHashMap::new();
     let mut phys_sm = PhysSmBuilder::new(
-        SlotMap::with_capacity_and_key(ir_arena.len()),
+        DenseSlotMap::with_capacity_and_key(ir_arena.len()),
         ir_arena.len(),
     );
     let phys_root = lower_ir::lower_ir(

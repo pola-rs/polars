@@ -24,13 +24,13 @@ use polars_plan::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
 use polars_utils::aliases::{InitHashMaps, PlIndexSet};
 use polars_utils::arena::Arena;
 use polars_utils::index::idxsize_to_u64;
-use slotmap::{Key, SlotMap};
+use slotmap::{DenseSlotMap, Key};
 
 use crate::{PhysNode, PhysNodeKey, PhysNodeKind};
 
 pub fn physical_plan_to_description(
     roots: &[PhysNodeKey],
-    phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &Arena<AExpr>,
 ) -> Vec<PhysicalNodeDescription> {
     let mut nodes = Vec::new();
