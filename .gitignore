@@ -1,50 +1,55 @@
 *.iml
-*.so
-*.pyd
-*.pdb
 *.ipynb
+*.pdb
+*.pyd
+*.so
 .ENV
 .env*
 .ipynb_checkpoints/
 .python-version
 .yarn/
+_polars_runtime*/
 coverage.lcov
 coverage.xml
-profile.json
 polars/vendor
-_polars_runtime*/
+profile.json
 
 # OS
 .DS_Store
 
 # IDE
+.emacs*
 .idea/
-.vscode/
 .vim
+.vs
+.vscode/
 
 # Python
+*.egg-info
+.coverage
 .hypothesis/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
 .venv*/
 __pycache__/
-.coverage
-*.egg-info
 
 # Rust
+debug/
 target/
 .cargo/config.generated.toml
 .cargo/config.local.toml
+*.rs.bk
 
 # Data
 *.csv
-*.parquet
 *.feather
+*.parquet
 *.tbl
 
 # Project
 /docs/assets/data/*
+/docs/assets/people.md
 !/docs/assets/data/alltypes_plain.parquet
 !/docs/assets/data/apple_stock.csv
 !/docs/assets/data/iris.csv
@@ -52,12 +57,17 @@ target/
 !/docs/assets/data/monopoly_props_prices.csv
 !/docs/assets/data/pokemon.csv
 !/docs/assets/data/reddit.csv
-/docs/assets/people.md
 
 # User specific source setups
 # You can put anything here that needs to be done to prepare your env.
 .user_env.*
 site/
 
+# Misc AI
+.ai/
 .claude/
+.codex/
+AGENTS.md
 CLAUDE.md
+superpowers/
+tasks/
