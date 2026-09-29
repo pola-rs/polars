@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import contextlib
+from glob import glob, has_magic
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from polars import functions as F
 from polars._utils.various import normalize_filepath
 from polars._utils.wrap import wrap_df
-from polars.datatypes import N_INFER_DEFAULT
+from polars.datatypes import N_INFER_DEFAULT, String
+from polars.exceptions import DuplicateError
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import PyDataFrame
@@ -25,6 +28,7 @@ def read_json(
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDefinition | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    include_file_paths: str | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a JSON file.
@@ -32,10 +36,11 @@ def read_json(
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by "file-like object" we refer to objects
-        that have a `read()` method, such as a file handler like the builtin `open`
-        function, or a `BytesIO` instance). For file-like objects, the stream position
-        may not be updated accordingly after reading.
+        A file path, glob pattern, file-like object, or bytes containing JSON data.
+        File-like objects include file handles returned by `open` and `BytesIO`
+        instances. Their stream position may not be updated after reading.
+        Glob matches are read in sorted path order. An existing file path is read
+        literally, even if its name contains glob characters.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -50,8 +55,18 @@ def read_json(
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the schema param will be overridden.
     infer_schema_length
-        The maximum number of rows to scan for schema inference.
+        The maximum number of rows per file to scan for schema inference.
         If set to `None`, the full data may be scanned *(this is slow)*.
+    include_file_paths
+        Include the path of the source file as a column with this name. For in-memory
+        data and file-like objects, the column contains "in-mem". The name must not
+        conflict with a column in the data.
+
+    Notes
+    -----
+    When reading multiple files, schemas are inferred separately for each file.
+    Columns are matched by name, missing columns are filled with nulls, and differing
+    data types are cast to their common supertype.
 
     See Also
     --------
@@ -86,11 +101,35 @@ def read_json(
     │ 2   ┆ 7.0 │
     │ 3   ┆ 8.0 │
     └─────┴─────┘
+
+    Read multiple files and include their paths in the result:
+
+    >>> pl.read_json("data/*.json", include_file_paths="source")  # doctest: +SKIP
     """
     if isinstance(source, StringIO):
         source = BytesIO(source.getvalue().encode())
     elif isinstance(source, (str, Path)):
         source = normalize_filepath(source)
+        if has_magic(source) and not Path(source).exists():
+            paths = sorted(glob(source, recursive=True))  # noqa: PTH207
+            if not paths:
+                msg = f"no JSON files found at path {source!r}"
+                raise FileNotFoundError(msg)
+            frames = [
+                read_json(
+                    path,
+                    schema=schema,
+                    schema_overrides=schema_overrides,
+                    infer_schema_length=infer_schema_length,
+                    include_file_paths=include_file_paths,
+                )
+                for path in paths
+            ]
+            result = F.concat(frames, how="diagonal_relaxed")
+            if include_file_paths is not None:
+                columns = [c for c in result.columns if c != include_file_paths]
+                result = result[[*columns, include_file_paths]]
+            return result
 
     pydf = PyDataFrame.read_json(
         source,
@@ -98,4 +137,16 @@ def read_json(
         schema=schema,
         schema_overrides=schema_overrides,
     )
-    return wrap_df(pydf)
+    result = wrap_df(pydf)
+    if include_file_paths is not None:
+        if include_file_paths in result.columns:
+            msg = (
+                f"column name for file paths {include_file_paths!r} "
+                "conflicts with column name from file"
+            )
+            raise DuplicateError(msg)
+        path = source if isinstance(source, str) else "in-mem"
+        result = result.with_columns(
+            F.lit(path, dtype=String).alias(include_file_paths)
+        )
+    return result
