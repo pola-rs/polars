@@ -2735,48 +2735,57 @@ def test_map_get_decimal_key_of_another_scale(needle: Decimal, found: bool) -> N
         assert out["has"].to_list() == [found, None]
 
 
+DEC_KEYS = [Decimal("1.5"), Decimal("15.0")]
+
+
 @pytest.mark.parametrize(
-    ("needle", "found"),
+    ("key_dtype", "keys", "needle_dtype", "needle", "value"),
     [
-        pytest.param(15, True, id="hit"),
-        pytest.param(16, False, id="miss"),
+        pytest.param(pl.Decimal(3, 1), DEC_KEYS, pl.Int64, 15, 1, id="int-hit"),
+        pytest.param(pl.Decimal(3, 1), DEC_KEYS, pl.Int64, 16, None, id="int-miss"),
         # Needs more digits than `Decimal(3, 1)` holds.
-        pytest.param(100, False, id="overflow"),
-    ],
-)
-def test_map_get_integer_key_in_decimal_keys(needle: int, found: bool) -> None:
-    s = map_with_keys(pl.Decimal(3, 1), [Decimal("1.5"), Decimal("15.0")])
-    df = pl.DataFrame({"m": s, "k": pl.Series([needle], dtype=pl.Int64)})
-
-    for n in (pl.col("k"), pl.lit(needle, pl.Int64)):
-        out = df.select(
-            pl.col("m").map.get(n).alias("v"),
-            pl.col("m").map.contains_key(n).alias("has"),
-        )
-        assert out["v"].to_list() == [1 if found else None]
-        assert out["has"].to_list() == [found]
-
-
-@pytest.mark.parametrize(
-    ("needle", "found"),
-    [
-        pytest.param(Decimal("2.00"), True, id="hit"),
+        pytest.param(
+            pl.Decimal(3, 1), DEC_KEYS, pl.Int64, 100, None, id="int-overflow"
+        ),
+        pytest.param(
+            pl.Int8, [1, 2], pl.Decimal(5, 2), Decimal("2.00"), 1, id="decimal-hit"
+        ),
         # Truncating onto the integer key `2` would be a false match.
-        pytest.param(Decimal("2.50"), False, id="fractional"),
-        pytest.param(Decimal("300.00"), False, id="out-of-range"),
+        pytest.param(
+            pl.Int8,
+            [1, 2],
+            pl.Decimal(5, 2),
+            Decimal("2.50"),
+            None,
+            id="decimal-fractional",
+        ),
+        pytest.param(
+            pl.Int8,
+            [1, 2],
+            pl.Decimal(5, 2),
+            Decimal("300.00"),
+            None,
+            id="decimal-out-of-range",
+        ),
     ],
 )
-def test_map_get_decimal_key_in_integer_keys(needle: Decimal, found: bool) -> None:
-    s = map_with_keys(pl.Int8, [1, 2])
-    df = pl.DataFrame({"m": s, "k": pl.Series([needle], dtype=pl.Decimal(5, 2))})
+def test_map_get_between_integer_and_decimal_keys(
+    key_dtype: PolarsDataType,
+    keys: list[Any],
+    needle_dtype: PolarsDataType,
+    needle: Any,
+    value: int | None,
+) -> None:
+    s = map_with_keys(key_dtype, keys)
+    df = pl.DataFrame({"m": s, "k": pl.Series([needle], dtype=needle_dtype)})
 
-    for n in (pl.col("k"), pl.lit(needle, pl.Decimal(5, 2))):
+    for n in (pl.col("k"), pl.lit(needle, needle_dtype)):
         out = df.select(
             pl.col("m").map.get(n).alias("v"),
             pl.col("m").map.contains_key(n).alias("has"),
         )
-        assert out["v"].to_list() == [1 if found else None]
-        assert out["has"].to_list() == [found]
+        assert out["v"].to_list() == [value]
+        assert out["has"].to_list() == [value is not None]
 
 
 def test_map_get_narrows_a_wider_integer_key() -> None:
@@ -3034,19 +3043,21 @@ def test_map_get_overflowing_temporal_key_is_missing_not_an_error() -> None:
     assert_series_equal(result["has"], pl.Series("has", [False]))
 
 
-def test_map_get_rejects_a_naive_key_in_aware_keys() -> None:
-    for key_dtype, needle_zone in (
-        (pl.Datetime("us"), "UTC"),
-        (pl.Datetime("us", "UTC"), None),
-    ):
-        s = map_of(key_dtype, datetime(2020, 1, 1))
-        needle = pl.lit(datetime(2020, 1, 1))
-        if needle_zone is not None:
-            needle = needle.dt.replace_time_zone(needle_zone)
+@pytest.mark.parametrize(
+    ("key_dtype", "needle_zone"),
+    [(pl.Datetime("us"), "UTC"), (pl.Datetime("us", "UTC"), None)],
+)
+@pytest.mark.parametrize("method", ["get", "contains_key"])
+def test_map_get_rejects_a_naive_key_in_aware_keys(
+    key_dtype: PolarsDataType, needle_zone: str | None, method: str
+) -> None:
+    s = map_of(key_dtype, datetime(2020, 1, 1))
+    needle = pl.lit(datetime(2020, 1, 1))
+    if needle_zone is not None:
+        needle = needle.dt.replace_time_zone(needle_zone)
 
-        for method in ("get", "contains_key"):
-            with pytest.raises(InvalidOperationError, match="time-zone-aware"):
-                getattr(s.map, method)(needle)
+    with pytest.raises(InvalidOperationError, match="time-zone-aware"):
+        getattr(s.map, method)(needle)
 
 
 @pytest.mark.parametrize("unit", ["us", "ms"])

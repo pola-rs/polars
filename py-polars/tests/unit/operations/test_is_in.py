@@ -804,10 +804,14 @@ def test_is_in_non_nested_container() -> None:
 MEMBERSHIP_OPS = ["is_in-list", "is_in-array", "list.contains", "arr.contains"]
 
 
+def _is_array(op: str) -> bool:
+    return op.endswith("array") or op == "arr.contains"
+
+
 def _container(
     op: str, rows: list[list[Any] | None], inner: PolarsDataType
 ) -> pl.Series:
-    if op.endswith("list") or op == "list.contains":
+    if not _is_array(op):
         return pl.Series("h", rows, dtype=pl.List(inner))
     width = len(next(r for r in rows if r is not None))
     return pl.Series("h", rows, dtype=pl.Array(inner, width))
@@ -873,7 +877,7 @@ def test_is_in_casts_the_needle_to_the_element_dtype(
 ) -> None:
     # A needle the cast cannot represent exactly (out of range, rounded, overflowing)
     # equals no element, so it is a miss rather than an error or a rounded hit.
-    hay = [hit, hit] if op.endswith("array") or op == "arr.contains" else [hit]
+    hay = [hit, hit] if _is_array(op) else [hit]
     lf = pl.LazyFrame(
         {
             "n": pl.Series([hit, miss, None], dtype=needle_dtype),
@@ -920,11 +924,7 @@ def test_is_in_needle_with_an_inexact_cast_never_matches(
     element: int | None,
     inner: PolarsDataType,
 ) -> None:
-    hay = (
-        [element, element]
-        if op.endswith("array") or op == "arr.contains"
-        else [element]
-    )
+    hay = [element, element] if _is_array(op) else [element]
     df = pl.DataFrame(
         {
             "n": pl.Series([needle, needle]).cast(needle_dtype),
@@ -972,9 +972,7 @@ def test_is_in_compares_strings_with_categories_natively(
         assert out["o"].to_list() == [found] * 3
 
 
-@pytest.mark.parametrize(
-    "op", ["is_in-list", "is_in-array", "list.contains", "arr.contains"]
-)
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
 def test_is_in_null_category_does_not_match_an_unknown_label(op: str) -> None:
     # An element without a category must not read as a null element.
     dtype = pl.Enum(["a"])
@@ -1190,7 +1188,7 @@ def test_is_in_does_not_match_null_on_temporal_overflow() -> None:
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
 def test_is_in_inexact_literal_needle_keeps_the_shape(op: str) -> None:
-    hay = [1, 2] if op.endswith("array") or op == "arr.contains" else [1]
+    hay = [1, 2] if _is_array(op) else [1]
     df = pl.DataFrame({"g": [1, 1, 2], "h": _container(op, [hay, None, hay], pl.Int8)})
     expr = _membership(op, pl.lit(300, pl.Int64), pl.col("h")).alias("o")
 
@@ -1235,7 +1233,7 @@ def test_is_in_needle_cast_masks_with_the_evaluated_container(
 ) -> None:
     # The null-container mask must come from the same evaluation the kernel searched.
     n = 30
-    hay = [0, 1] if op.endswith("array") or op == "arr.contains" else [0]
+    hay = [0, 1] if _is_array(op) else [0]
     rows = [hay if i % 3 else None for i in range(n)]
     df = pl.DataFrame({"h": _container(op, rows, pl.Int8)})
     needle = pl.lit(pl.Series([300] * n, dtype=pl.Int64))
@@ -1479,11 +1477,7 @@ def test_is_in_integer_column_needle_out_of_range(
     df = pl.DataFrame(
         {
             "n": pl.Series(values, dtype=needle_dtype),
-            "h": _container(op, [[1, None]] * 4, pl.Int64).cast(
-                pl.List(inner)
-                if op.endswith("list") or op == "list.contains"
-                else pl.Array(inner, 2)
-            ),
+            "h": _container(op, [[1, None]] * 4, inner),
         }
     )
     out = df.select(
