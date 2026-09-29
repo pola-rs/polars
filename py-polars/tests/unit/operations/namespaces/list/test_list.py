@@ -1292,6 +1292,26 @@ def test_list_contains() -> None:
     )
 
 
+def test_list_contains_multiple_sliced_chunks() -> None:
+    base = pl.DataFrame(
+        {
+            "n": pl.Series([9, 1, 2], dtype=pl.Int8),
+            "h": pl.Series([[9], [1], [2]], dtype=pl.List(pl.Int8)),
+        }
+    )
+    df = pl.concat([base.slice(1, 1), base.slice(2, 1)], rechunk=False)
+    assert df["h"].n_chunks() == 2
+
+    assert_series_equal(
+        df.select(pl.col("h").list.contains(pl.col("n"))).to_series(),
+        pl.Series("h", [True, True]),
+    )
+    assert_series_equal(
+        df.select(pl.col("h").list.contains(2)).to_series(),
+        pl.Series("h", [False, True]),
+    )
+
+
 def test_list_diff_invalid_type() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series([1, 2, 3]).list.diff()
