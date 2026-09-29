@@ -607,13 +607,14 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
     if nulls_equal {
         let ca_in = s.null()?;
         Ok(match other.dtype() {
-            DataType::List(_) => other.list()?.apply_amortized_generic(|opt_s| {
-                Some(opt_s.map(|s| s.as_ref().has_nulls()) == Some(true))
-            }),
+            // A null container stays null.
+            DataType::List(_) => other
+                .list()?
+                .apply_amortized_generic(|opt_s| opt_s.map(|s| s.as_ref().has_nulls())),
             #[cfg(feature = "dtype-array")]
-            DataType::Array(_, _) => other.array()?.apply_amortized_generic(|opt_s| {
-                Some(opt_s.map(|s| s.as_ref().has_nulls()) == Some(true))
-            }),
+            DataType::Array(_, _) => other
+                .array()?
+                .apply_amortized_generic(|opt_s| opt_s.map(|s| s.as_ref().has_nulls())),
             _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
         })
     } else {
@@ -699,16 +700,24 @@ fn is_in_row_encoded(
         _ => unreachable!(),
     }?;
 
+    // The helpers already null rows whose container is null. Row encoding keeps null needles
+    // as values, so their nulls are applied here, replacing the helpers' validity.
     let mut validity = other.rechunk_validity();
     if !nulls_equal {
-        validity = match (validity, s.rechunk_validity()) {
+        // A single needle is broadcast over every container.
+        let needle_validity = if s.len() == mask.len() {
+            s.rechunk_validity()
+        } else {
+            s.has_nulls()
+                .then(|| polars_arrow::bitmap::Bitmap::new_zeroed(mask.len()))
+        };
+        validity = match (validity, needle_validity) {
             (None, None) => None,
             (Some(v), None) | (None, Some(v)) => Some(v),
             (Some(l), Some(r)) => Some(polars_arrow::bitmap::and(&l, &r)),
         };
     }
 
-    assert_eq!(mask.null_count(), 0);
     mask.with_validities(&[validity]);
 
     Ok(mask)

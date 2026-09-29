@@ -835,3 +835,30 @@ def test_pyarrow_dataset_residual_predicate() -> None:
     assert dataset.filter(
         pl.col("item").str.head(2).is_in(["do"]) & (pl.col("price") <= 2)
     ).collect().to_dict(as_series=False) == {"item": ["doo"], "price": [1]}
+
+
+def test_pyarrow_dataset_is_in_other_time_zone_is_not_pushed_down(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    # 01:00 UTC and 02:00 in Amsterdam are the same instant, which pyarrow would
+    # compare by its own coercion rules.
+    df = pl.DataFrame(
+        {"t": pl.Series([datetime(2020, 1, 1, 1)]).dt.replace_time_zone("UTC")}
+    )
+    dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+    haystack = pl.Series([datetime(2020, 1, 1, 2)]).dt.replace_time_zone(
+        "Europe/Amsterdam"
+    )
+    q = pl.scan_pyarrow_dataset(dset).filter(
+        pl.col("t").is_in(pl.lit(haystack).implode())
+    )
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "converted pyarrow predicate: <conversion failed>" in capture
+    assert_frame_equal(result, df)

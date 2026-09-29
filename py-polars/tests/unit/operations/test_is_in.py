@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from collections.abc import Collection
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as D
@@ -846,10 +847,13 @@ def test_is_in_does_not_match_null_on_temporal_overflow() -> None:
 MEMBERSHIP_OPS = ["is_in-list", "is_in-array", "list.contains", "arr.contains"]
 
 
-def _container(op: str, rows: list[list[Any]], inner: PolarsDataType) -> pl.Series:
+def _container(
+    op: str, rows: list[list[Any] | None], inner: PolarsDataType
+) -> pl.Series:
     if op.endswith("list") or op == "list.contains":
         return pl.Series("h", rows, dtype=pl.List(inner))
-    return pl.Series("h", rows, dtype=pl.Array(inner, len(rows[0])))
+    width = len(next(r for r in rows if r is not None))
+    return pl.Series("h", rows, dtype=pl.Array(inner, width))
 
 
 def _membership(op: str, needle: pl.Expr, container: pl.Expr, **kwargs: Any) -> pl.Expr:
@@ -905,6 +909,63 @@ def test_is_in_categorical_needle_in_null_data(
 
     assert search("a") == [False]
     assert search(None) == [True if nulls_equal else None]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    ("needle", "null", "inner"),
+    [
+        pytest.param(
+            pl.Series([[1], [2]], dtype=pl.List(pl.Int64)),
+            [None],
+            pl.List(pl.Int64),
+            id="list",
+        ),
+        pytest.param(
+            pl.Series([{"a": 1}, {"a": 2}], dtype=pl.Struct({"a": pl.Int64})),
+            {"a": None},
+            pl.Struct({"a": pl.Int64}),
+            id="struct",
+        ),
+    ],
+)
+def test_is_in_nested_needle_with_a_null_container(
+    op: str, nulls_equal: bool, needle: pl.Series, null: Any, inner: PolarsDataType
+) -> None:
+    # Nested needles take the row-encoded path, which must keep a null container null.
+    df = pl.DataFrame({"n": needle, "h": _container(op, [[null], None], inner)})
+
+    out = df.select(
+        _membership(op, pl.col("n"), pl.col("h"), nulls_equal=nulls_equal).alias("o")
+    )
+    assert out["o"].to_list() == [False, None]
+
+
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("needle", [[1], None])
+def test_is_in_literal_nested_needle_with_a_null_container(
+    op: str, nulls_equal: bool, needle: list[int] | None
+) -> None:
+    # A single needle is broadcast over every container, including its nulls.
+    df = pl.DataFrame(
+        {"h": _container(op, [[[None]], [[None]], None], pl.List(pl.Int8))}
+    )
+
+    out = df.select(
+        _membership(
+            op,
+            pl.lit(needle, pl.List(pl.Int8)),
+            pl.col("h"),
+            nulls_equal=nulls_equal,
+        ).alias("o")
+    )
+    if needle is None and not nulls_equal:
+        expected: list[bool | None] = [None, None, None]
+    else:
+        expected = [False, False, None]
+    assert out["o"].to_list() == expected
 
 
 @pytest.mark.parametrize("op", MEMBERSHIP_OPS)
@@ -1252,6 +1313,40 @@ def test_is_in_literal_haystack_scalar_needle(engine: EngineType) -> None:
     assert result.height == 1
 
 
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    ("haystack", "expected"),
+    [
+        pytest.param(pl.col("h").last(), [None, None, None], id="null"),
+        pytest.param(pl.col("h").get(1), [False, False, True], id="holds-null"),
+        pytest.param(pl.col("h").first(), [True, False, False], id="values"),
+        pytest.param(pl.col("n").implode(), [True, True, True], id="implode"),
+    ],
+)
+def test_is_in_non_literal_scalar_haystack(
+    haystack: pl.Expr,
+    expected: list[bool | None],
+    nulls_equal: bool,
+) -> None:
+    # A null haystack gives null for every row, unlike one that holds a null.
+    # `expected` is for `nulls_equal=True`; otherwise the null needle gives null.
+    lf = pl.LazyFrame(
+        {
+            "n": [1, 2, None],
+            "h": pl.Series([[1], [None], None], dtype=pl.List(pl.Int64)),
+        }
+    )
+    result = (
+        lf.select(pl.col("n").is_in(haystack, nulls_equal=nulls_equal))
+        .collect()
+        .to_series()
+        .to_list()
+    )
+    if not nulls_equal:
+        expected = [*expected[:2], None]
+    assert result == expected
+
+
 def test_is_in_literal_haystack_streaming_filter_and_group_by(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
@@ -1269,6 +1364,61 @@ def test_is_in_literal_haystack_streaming_filter_and_group_by(
         .collect(engine="streaming")
     )
     assert result["v"].to_list() == [2, 1, 2]
+
+
+def _utc(*values: datetime) -> pl.Series:
+    return pl.Series(values).dt.replace_time_zone("UTC")
+
+
+def _amsterdam(*values: datetime) -> pl.Series:
+    return pl.Series(values).dt.replace_time_zone("Europe/Amsterdam")
+
+
+# 01:00 UTC is 02:00 in Amsterdam: the same instant in another zone, which the kernel
+# compares natively.
+AT_ONE_UTC = datetime(2020, 1, 1, 1)
+AT_ONE_UTC_IN_AMSTERDAM = datetime(2020, 1, 1, 2)
+
+
+def test_is_in_other_time_zone_with_a_scalar_haystack() -> None:
+    # A semi join needs equal key dtypes, so streaming must not lower to one.
+    lf = pl.LazyFrame(
+        {
+            "n": _utc(AT_ONE_UTC, datetime(2020, 1, 1)),
+            "h": _amsterdam(AT_ONE_UTC_IN_AMSTERDAM, AT_ONE_UTC_IN_AMSTERDAM),
+        }
+    )
+    q = lf.select(pl.col("n").is_in(pl.col("h").implode()))
+
+    assert q.collect()["n"].to_list() == [True, False]
+
+
+def test_is_in_other_time_zone_does_not_skip_row_groups() -> None:
+    f = io.BytesIO()
+    pl.DataFrame({"t": _utc(AT_ONE_UTC)}).write_parquet(f)
+    haystack = pl.lit(_amsterdam(AT_ONE_UTC_IN_AMSTERDAM)).implode()
+
+    for use_statistics in (True, False):
+        f.seek(0)
+        out = (
+            pl.scan_parquet(f, use_statistics=use_statistics)
+            .filter(pl.col("t").is_in(haystack))
+            .collect()
+        )
+        assert out.height == 1
+
+
+def test_is_in_other_time_zone_is_not_a_filter_constraint() -> None:
+    # The haystacks' values differ as scalars, so intersecting them as allowed sets
+    # would wrongly empty the filter.
+    lf = pl.LazyFrame({"c": _utc(AT_ONE_UTC)})
+    q = lf.filter(
+        pl.col("c").is_in(pl.lit(_amsterdam(AT_ONE_UTC_IN_AMSTERDAM)).implode())
+        & pl.col("c").is_in(pl.lit(_utc(AT_ONE_UTC)).implode())
+    )
+
+    assert "FILTER" in q.explain()
+    assert q.collect().height == 1
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
@@ -1328,3 +1478,28 @@ def test_is_in_nested_null_needles_in_aggregation(
     assert result["first"].to_list() == [None, True]
     assert result["last"].to_list() == [None, False]
     assert df.select(is_in.null_count()).item() == 2
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_null_needle_in_null_data_keeps_null_containers_null(
+    nulls_equal: bool,
+) -> None:
+    lf = pl.LazyFrame(
+        {
+            "n": pl.Series([None, None, None], dtype=pl.Null),
+            "l": pl.Series([None, [None], []], dtype=pl.List(pl.Null)),
+            "a": pl.Series([None, [None], [None]], dtype=pl.Array(pl.Null, 1)),
+        }
+    )
+    out = lf.select(
+        l_contains=pl.col("l").list.contains(None, nulls_equal=nulls_equal),
+        is_in=pl.col("n").is_in(pl.col("l"), nulls_equal=nulls_equal),
+        a_contains=pl.col("a").arr.contains(None, nulls_equal=nulls_equal),
+    ).collect()
+    if nulls_equal:
+        assert out["l_contains"].to_list() == [None, True, False]
+        assert out["is_in"].to_list() == [None, True, False]
+        assert out["a_contains"].to_list() == [None, True, True]
+    else:
+        for column in out.columns:
+            assert out[column].to_list() == [None, None, None]
