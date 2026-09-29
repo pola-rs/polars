@@ -1384,9 +1384,9 @@ impl EmitUnmatchedState {
                 // Generate a chunk of unmarked key indices.
                 *offset_in_active_p += p.hash_table.unmarked_keys(
                     &mut unmarked_idxs,
-                    *offset_in_active_p as IdxSize,
+                    *offset_in_active_p,
                     morsel_size as IdxSize,
-                ) as usize;
+                );
                 if unmarked_idxs.is_empty() {
                     *active_partition_idx += 1;
                     *offset_in_active_p = 0;

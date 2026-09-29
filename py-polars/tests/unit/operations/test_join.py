@@ -30,6 +30,7 @@ if TYPE_CHECKING:
         MaintainOrderJoin,
         PolarsDataType,
     )
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_semi_anti_join() -> None:
@@ -4964,3 +4965,53 @@ def test_join_key_keeps_outer_join_when_nulls_match() -> None:
     assert "LEFT JOIN:" in q.explain()
     expect = q.collect(optimizations=pl.QueryOptFlags.none())
     assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.Float64])
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full", "semi", "anti"])
+@pytest.mark.parametrize(
+    "maintain_order", ["none", "left", "right", "left_right", "right_left"]
+)
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_join_many_duplicate_build_keys_streaming(
+    dtype: PolarsDataType,
+    how: JoinStrategy,
+    maintain_order: MaintainOrderJoin,
+    nulls_equal: bool,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # Small morsels, so the build is inserted in many parts.
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    rng = np.random.default_rng(0)
+    values: list[Any] = list(range(-20, 30))
+    if dtype == pl.Float64:
+        values += [float("nan"), -0.0, 0.0]
+    values.append(None)
+
+    left = pl.LazyFrame(
+        {
+            "a": [values[i] for i in rng.integers(0, len(values), 5_000)],
+            "l": range(5_000),
+        },
+        schema_overrides={"a": dtype},
+    )
+    right = pl.LazyFrame(
+        {
+            "a": [values[i] for i in rng.integers(5, len(values), 3_000)],
+            "r": range(3_000),
+        },
+        schema_overrides={"a": dtype},
+    )
+
+    q = left.join(
+        right, on="a", how=how, maintain_order=maintain_order, nulls_equal=nulls_equal
+    )
+    expected = q.collect(engine="in-memory")
+    out = q.collect(engine="streaming")
+    fully_ordered = maintain_order in ("left_right", "right_left")
+    assert_frame_equal(
+        out, expected, check_row_order=fully_ordered or how in ("semi", "anti")
+    )
+    if maintain_order in ("left", "right") and how not in ("semi", "anti"):
+        col = "l" if maintain_order == "left" else "r"
+        assert_series_equal(out[col], expected[col])

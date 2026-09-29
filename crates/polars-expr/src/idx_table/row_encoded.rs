@@ -300,13 +300,9 @@ impl IdxTable for RowEncodedIdxTable {
         }
     }
 
-    fn unmarked_keys(
-        &self,
-        out: &mut Vec<IdxSize>,
-        mut offset: IdxSize,
-        limit: IdxSize,
-    ) -> IdxSize {
+    fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: usize, limit: IdxSize) -> usize {
         out.clear();
+        let mut offset = offset as IdxSize;
 
         let mut keys_processed = 0;
         if (offset as usize) < self.null_keys.len() {
@@ -319,7 +315,7 @@ impl IdxTable for RowEncodedIdxTable {
             keys_processed += out.len() as IdxSize;
             offset += out.len() as IdxSize;
             if out.len() >= limit as usize {
-                return keys_processed;
+                return keys_processed as usize;
             }
         }
 
@@ -341,6 +337,6 @@ impl IdxTable for RowEncodedIdxTable {
             }
         }
 
-        keys_processed
+        keys_processed as usize
     }
 }
