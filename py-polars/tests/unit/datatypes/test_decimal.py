@@ -1248,6 +1248,45 @@ def test_decimal_add_sub_mul_overflow_in_null_slot() -> None:
             df.select(expr)
 
 
+@pytest.mark.parametrize("shift", [0, 1])
+def test_decimal_add_sub_mul_i64_edges(shift: int) -> None:
+    lo, hi = -(2**63), 2**63 - 1
+    # With shift 1, the second chunk has values that don't fit an i64.
+    a = [lo, hi, 7, lo - shift, hi + shift, None]
+    b = [hi, lo, None, lo, hi + shift, 7]
+    df = pl.concat(
+        [
+            pl.DataFrame(
+                {"a": a[i : i + 3], "b": b[i : i + 3]},
+                schema=[("a", pl.Int128), ("b", pl.Int128)],
+            )
+            for i in (0, 3)
+        ],
+        rechunk=False,
+    ).cast(pl.Decimal(38, 0))
+    out = df.select(
+        add=pl.col.a + pl.col.b,
+        sub=pl.col.a - pl.col.b,
+        mul=pl.col.a * pl.col.b,
+        sub_lit=1 - pl.col.a,
+        mul_lit=pl.col.a * 3,
+    )
+
+    def expected(op: Callable[[int, int], int]) -> list[int | None]:
+        return [
+            None if x is None or y is None else op(x, y)
+            for x, y in zip(a, b, strict=True)
+        ]
+
+    assert out.to_dict(as_series=False) == {
+        "add": expected(operator.add),
+        "sub": expected(operator.sub),
+        "mul": expected(operator.mul),
+        "sub_lit": [None if x is None else 1 - x for x in a],
+        "mul_lit": [None if x is None else x * 3 for x in a],
+    }
+
+
 def test_decimal_integer_ops_mixed_scale() -> None:
     df = pl.DataFrame(
         {"a": [D("1.50"), None], "i": [1, 2]},

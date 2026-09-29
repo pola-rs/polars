@@ -474,6 +474,43 @@ pub fn dec128_fits(x: i128, p: usize) -> bool {
     (-POW10_I128[p] < x) & (x < POW10_I128[p])
 }
 
+/// Returns zero if x fits in an i64.
+#[inline(always)]
+fn i64_overflow_bits(x: i128) -> u64 {
+    ((x >> 64) as u64) ^ (((x as i64) >> 63) as u64)
+}
+
+/// Applies `op` to all values as i64s. Returns `None` if a value doesn't fit an i64.
+pub fn i64_unary_values(xs: &[i128], op: impl Fn(i64) -> i128) -> Option<Vec<i128>> {
+    let mut out = Vec::with_capacity(xs.len());
+    let mut overflow = 0;
+    for (o, x) in out.spare_capacity_mut().iter_mut().zip(xs) {
+        overflow |= i64_overflow_bits(*x);
+        o.write(op(*x as i64));
+    }
+    // SAFETY: the loop wrote xs.len() values.
+    unsafe { out.set_len(xs.len()) };
+    (overflow == 0).then_some(out)
+}
+
+/// Applies `op` to all pairs as i64s. Returns `None` if a value doesn't fit an i64.
+pub fn i64_binary_values(
+    l: &[i128],
+    r: &[i128],
+    op: impl Fn(i64, i64) -> i128,
+) -> Option<Vec<i128>> {
+    assert_eq!(l.len(), r.len());
+    let mut out = Vec::with_capacity(l.len());
+    let mut overflow = 0;
+    for ((o, a), b) in out.spare_capacity_mut().iter_mut().zip(l).zip(r) {
+        overflow |= i64_overflow_bits(*a) | i64_overflow_bits(*b);
+        o.write(op(*a as i64, *b as i64));
+    }
+    // SAFETY: the loop wrote l.len() values.
+    unsafe { out.set_len(l.len()) };
+    (overflow == 0).then_some(out)
+}
+
 #[inline]
 pub fn dec128_to_i128(x: i128, s: usize) -> i128 {
     if s == 0 { x } else { div_128_pow10(x, s) }
