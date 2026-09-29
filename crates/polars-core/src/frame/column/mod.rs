@@ -773,12 +773,10 @@ impl Column {
                     );
                 }
 
-                let mut scalar_col = s.resize(groups.len());
-                // The aggregation might change the type (e.g. mean changes int -> float), so we do
-                // a cast here to the output type.
-                if series_aggregation.dtype() != s.dtype() {
-                    scalar_col = scalar_col.cast(series_aggregation.dtype()).unwrap();
-                }
+                // Broadcast the single-group result: it already has the output dtype and value
+                // (e.g. `mean` changes int -> float, `arg_max` yields the index `0`).
+                let scalar_col =
+                    ScalarColumn::from_single_value_series(series_aggregation, groups.len());
 
                 let Some(first_empty_idx) = groups.iter().position(|g| g.is_empty()) else {
                     // Fast path: no empty groups. keep the scalar intact.
