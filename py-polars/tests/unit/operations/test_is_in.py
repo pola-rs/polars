@@ -1332,6 +1332,18 @@ def test_is_in_native_pair_with_a_scalar_haystack(
             id="out-of-range",
         ),
         pytest.param(
+            pl.Series([1, 2, 3], dtype=pl.Int8),
+            pl.Series([1, 300], dtype=pl.Int64),
+            [1],
+            id="wider-int",
+        ),
+        pytest.param(
+            pl.Series([0.1, 1.5], dtype=pl.Float32),
+            pl.Series([0.1, 1.5], dtype=pl.Float64),
+            [1.5],
+            id="wider-float",
+        ),
+        pytest.param(
             pl.Series([D("1.00"), D("2.00")], dtype=pl.Decimal(10, 2)),
             pl.Series([D("1.000"), D("2.005")], dtype=pl.Decimal(10, 3)),
             [D("1.00")],

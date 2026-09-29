@@ -1453,7 +1453,10 @@ fn cast_literal_haystack(
 
     let (flat, nested) = (form.flat(), form.nested());
     if is_in::is_map_lookup(function)
-        || !matches!(result, None | Some(R::GuardedNeedleCast { .. }))
+        || !matches!(
+            result,
+            None | Some(R::CastNeedle { .. } | R::GuardedNeedleCast { .. })
+        )
         || matches!(expr_arena.get(input[flat].node()), AExpr::Literal(_))
     {
         return Ok(None);
