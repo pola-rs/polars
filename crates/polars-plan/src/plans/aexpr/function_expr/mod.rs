@@ -1106,6 +1106,36 @@ macro_rules! map {
 }
 
 impl IRFunctionExpr {
+    /// The dtype a membership function casts its needle to as it runs, if coercion chose one.
+    pub fn membership_needle_cast(&self) -> Option<&DataType> {
+        match self {
+            #[cfg(feature = "is_in")]
+            Self::Boolean(IRBooleanFunction::IsIn { needle_cast, .. })
+            | Self::ListExpr(IRListFunction::Contains { needle_cast, .. }) => needle_cast.as_ref(),
+            #[cfg(all(feature = "is_in", feature = "dtype-array"))]
+            Self::ArrayExpr(IRArrayFunction::Contains { needle_cast, .. }) => needle_cast.as_ref(),
+            #[cfg(feature = "dtype-map")]
+            Self::MapExpr(
+                IRMapFunction::Get { needle_cast } | IRMapFunction::ContainsKey { needle_cast },
+            ) => needle_cast.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Whether a membership function compares its needle with elements of the needle's own dtype.
+    ///
+    /// Optimizations that treat the haystack's elements as values of the needle, such as
+    /// statistics, allowed sets or join keys, require this. Otherwise the needle is cast as the
+    /// function runs, or the kernel compares unequal dtypes natively: strings with an Enum,
+    /// decimals of another scale, or datetimes in another time zone.
+    pub fn membership_compares_in_needle_dtype(
+        &self,
+        needle: &DataType,
+        container: &DataType,
+    ) -> bool {
+        self.membership_needle_cast().is_none() && container.inner_dtype() == Some(needle)
+    }
+
     pub fn function_options(&self) -> FunctionOptions {
         use IRFunctionExpr as F;
         match self {

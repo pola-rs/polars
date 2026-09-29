@@ -37,26 +37,6 @@ fn needle_to_element(needle: &DataType, element: &DataType) -> IsInTypeCoercionR
     }
 }
 
-/// The needle dtype a membership function casts to as it runs, if coercion chose one.
-pub(super) fn needle_cast(function: &IRFunctionExpr) -> Option<&DataType> {
-    match function {
-        #[cfg(feature = "is_in")]
-        IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { needle_cast, .. })
-        | IRFunctionExpr::ListExpr(IRListFunction::Contains { needle_cast, .. }) => {
-            needle_cast.as_ref()
-        },
-        #[cfg(all(feature = "is_in", feature = "dtype-array"))]
-        IRFunctionExpr::ArrayExpr(IRArrayFunction::Contains { needle_cast, .. }) => {
-            needle_cast.as_ref()
-        },
-        #[cfg(feature = "dtype-map")]
-        IRFunctionExpr::MapExpr(
-            IRMapFunction::Get { needle_cast } | IRMapFunction::ContainsKey { needle_cast },
-        ) => needle_cast.as_ref(),
-        _ => None,
-    }
-}
-
 pub(super) fn needle_cast_mut(function: &mut IRFunctionExpr) -> &mut Option<DataType> {
     match function {
         #[cfg(feature = "is_in")]
@@ -162,7 +142,8 @@ pub(super) fn resolve_map_key(
                 }
             },
             Some(
-                IsInTypeCoercionResult::SuperType(_, _) | IsInTypeCoercionResult::CastContainer { .. },
+                IsInTypeCoercionResult::SuperType(_, _)
+                | IsInTypeCoercionResult::CastContainer { .. },
             ) => {
                 polars_bail!(
                 InvalidOperation:

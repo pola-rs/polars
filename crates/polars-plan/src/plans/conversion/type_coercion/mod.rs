@@ -1323,7 +1323,7 @@ fn coerce_is_in(
     let (flat, nested) = (form.flat(), form.nested());
 
     // The needle is only cast when the function runs, so its dtype still differs.
-    if is_in::needle_cast(function).is_some() {
+    if function.membership_needle_cast().is_some() {
         return Ok(None);
     }
 
