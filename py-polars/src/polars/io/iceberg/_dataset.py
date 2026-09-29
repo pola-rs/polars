@@ -444,9 +444,10 @@ class IcebergScanResolver:
             if verbose:
                 eprint("IcebergScanResolver: to_dataset_scan(): begin path expansion")
 
-            metadata_file_cache = get_metadata_file_cache()
-            cache_hits = metadata_file_cache.hits
-            cache_misses = metadata_file_cache.misses
+                metadata_file_cache = get_metadata_file_cache()
+                cache_hits = metadata_file_cache.hits
+                cache_misses = metadata_file_cache.misses
+
             start_time = perf_counter()
 
             scan = _new_pyiceberg_scan(

@@ -17,8 +17,6 @@ import threading
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any
 
-from polars._warnings import issue_warning
-
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
@@ -134,13 +132,6 @@ class IcebergMetadataFileCache:
 
         return data
 
-    def clear(self) -> None:
-        with self._lock:
-            self._entries.clear()
-            self._total_bytes = 0
-            self.hits = 0
-            self.misses = 0
-
 
 _global_cache: IcebergMetadataFileCache | None = None
 _global_cache_lock = threading.Lock()
@@ -159,10 +150,9 @@ def _configured_size() -> int:
     if size_mb < 0:
         msg = (
             f"invalid value for {ENV_CACHE_MB}: {value!r}, expected a "
-            f"non-negative number of megabytes; using the default of {DEFAULT_CACHE_MB}"
+            "non-negative number of megabytes"
         )
-        issue_warning(msg, UserWarning)
-        size_mb = DEFAULT_CACHE_MB
+        raise ValueError(msg)
 
     return size_mb * _BYTES_PER_MB
 
@@ -223,7 +213,7 @@ class CachedInputFile:
             return True
         return self._inner.new_input(self._location).exists()
 
-    def open(self, *, seekable: bool = True) -> InputStream:  # noqa: ARG002
+    def open(self, seekable: bool = True) -> InputStream:  # noqa: ARG002, FBT001
         return io.BytesIO(self._bytes())
 
 
@@ -253,6 +243,14 @@ class CachingFileIO:
             raise AttributeError(name)
         return getattr(self._inner, name)
 
+    def __reduce__(self) -> tuple[Any, ...]:
+        # The cache is process-local, a copy attaches the process-wide cache.
+        return (_wrap_file_io, (self._inner,))
+
+
+def _wrap_file_io(inner: FileIO) -> CachingFileIO:
+    return CachingFileIO(inner, get_metadata_file_cache())
+
 
 def with_metadata_file_cache(scan: Any) -> Any:
     """Route the metadata reads of a PyIceberg scan through the cache.
@@ -263,7 +261,7 @@ def with_metadata_file_cache(scan: Any) -> Any:
     """
     inner = getattr(scan, "io", None)
 
-    if inner is None or isinstance(inner, CachingFileIO):
+    if inner is None:
         return scan
 
     cache = get_metadata_file_cache()

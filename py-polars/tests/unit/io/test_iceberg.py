@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import io
 import itertools
 import json
@@ -5536,16 +5537,16 @@ def test_iceberg_metadata_file_cache_invalid_size(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     from polars.io.iceberg._cache import (
-        DEFAULT_CACHE_MB,
         get_metadata_file_cache,
         reset_metadata_file_cache,
     )
 
     try:
-        plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_CACHE_MB", "256MiB")
-        reset_metadata_file_cache()
-        with pytest.warns(UserWarning, match="POLARS_ICEBERG_METADATA_CACHE_MB"):
-            assert get_metadata_file_cache().max_bytes == DEFAULT_CACHE_MB * 1_000_000
+        for value in ("256MiB", "-1"):
+            plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_CACHE_MB", value)
+            reset_metadata_file_cache()
+            with pytest.raises(ValueError, match="POLARS_ICEBERG_METADATA_CACHE_MB"):
+                get_metadata_file_cache()
 
         plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_CACHE_MB", "5")
         reset_metadata_file_cache()
@@ -5597,3 +5598,24 @@ def test_iceberg_caching_file_io_scope(tmp_path: Path) -> None:
     # File names without a UUID are not cached.
     assert read({"s3.access-key-id": "a"}, no_uuid) == b"data"
     assert len(cache) == 2
+
+
+@pytest.mark.write_disk
+def test_iceberg_caching_file_io_copy_pickle(tmp_path: Path) -> None:
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    from polars.io.iceberg._cache import CachingFileIO, IcebergMetadataFileCache
+
+    manifest = tmp_path / f"{uuid.uuid4()}-m0.avro"
+    manifest.write_bytes(b"data")
+
+    file_io = CachingFileIO(PyArrowFileIO(), IcebergMetadataFileCache(1024))
+
+    for copied in (
+        copy.copy(file_io),
+        copy.deepcopy(file_io),
+        pickle.loads(pickle.dumps(file_io)),
+    ):
+        input_file = copied.new_input(format_file_uri_iceberg(manifest))
+        with input_file.open(False) as f:
+            assert f.read() == b"data"
