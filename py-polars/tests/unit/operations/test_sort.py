@@ -1480,15 +1480,21 @@ def test_sort_by_nested_categorical_keys(key: pl.Series) -> None:
     assert grouped["x"].to_list() == [[3, 2, 1]]
 
 
+@pytest.mark.parametrize("n", [1, 2])
 @pytest.mark.parametrize(
-    "by",
+    "make_by",
     [
-        [pl.col("a").max()],
-        [pl.col("a").max(), pl.col("b").head(1)],
-        [pl.col("b").head(1), pl.col("a").max()],  # used to read out of bounds
+        lambda n: [pl.col("a").max()],
+        lambda n: [pl.col("a").max(), pl.col("b").head(n)],
+        # used to read out of bounds
+        lambda n: [pl.col("b").head(n), pl.col("a").max()],
     ],
 )
-def test_sort_by_scalar_keys_in_agg_29583(by: list[pl.Expr]) -> None:
+def test_sort_by_scalar_keys_in_agg_29583(
+    n: int, make_by: Callable[[int], list[pl.Expr]]
+) -> None:
     df = pl.DataFrame({"k": [0, 0, 1, 1], "a": [10, 11, 20, 21], "b": [1, 2, 3, 4]})
-    out = df.group_by("k", maintain_order=True).agg(pl.col("a").head(1).sort_by(by))
-    assert out["a"].to_list() == [[10], [20]]
+    out = df.group_by("k", maintain_order=True).agg(
+        pl.col("a").head(n).sort_by(make_by(n))
+    )
+    assert out["a"].to_list() == [[10, 11][:n], [20, 21][:n]]
