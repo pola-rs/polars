@@ -2080,6 +2080,23 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
+            // Gathering from a literal is elementwise in the indices.
+            AExpr::Gather {
+                expr: input_expr,
+                idx: idx_expr,
+                returns_scalar,
+                null_on_oob,
+            } if matches!(ctx.expr_arena.get(input_expr), AExpr::Literal(_)) => {
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[idx_expr], ctx)?;
+                input_streams.insert(trans_input);
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Gather {
+                    expr: input_expr,
+                    idx: trans_exprs[0],
+                    returns_scalar,
+                    null_on_oob,
+                }));
+            },
+
             AExpr::Gather {
                 expr: input_expr,
                 idx: idx_expr,
