@@ -1011,6 +1011,35 @@ def test_decimal_sum_overflow_28585(
         s.to_frame().lazy().select(pl.col("d").sum()).collect(engine=engine)
 
 
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_decimal_sum_past_38_digits_in_between(
+    engine: Literal["streaming", "in-memory"],
+) -> None:
+    s = pl.Series("d", [D(6 * 10**37)] * 2 + [D(-6 * 10**37)], dtype=pl.Decimal(38, 0))
+    assert s.sum() == D(6 * 10**37)
+    out = s.to_frame().lazy().select(pl.col("d").sum()).collect(engine=engine)
+    assert out.item() == D(6 * 10**37)
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_decimal_group_by_mean_sum_past_i128(
+    engine: Literal["streaming", "in-memory"],
+) -> None:
+    big = D(10**38 - 1)
+    lf = pl.LazyFrame(
+        {"g": [1, 2, 1, 2, 1], "d": [big, D(1), big, D(2), big]},
+        schema={"g": pl.Int64, "d": pl.Decimal(38, 0)},
+    )
+    out = lf.group_by("g").agg(pl.col("d").mean()).sort("g").collect(engine=engine)
+    assert out["d"].to_list() == [pytest.approx(1e38), 1.5]
+    out = lf.select(pl.col("d").mean()).collect(engine=engine)
+    assert out.item() == pytest.approx(3e38 / 5)
+
+    if engine == "streaming":
+        with pytest.raises(ComputeError, match="overflow in decimal addition in sum"):
+            lf.group_by("g").agg(pl.col("d").sum()).collect(engine=engine)
+
+
 def _mixed_scale_frame() -> pl.DataFrame:
     return pl.DataFrame(
         {"a": [D("99999.99")], "b": [D("0.333")]},
