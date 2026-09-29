@@ -1961,6 +1961,27 @@ def test_min_max_by_all_null_by_group_slice(agg: Callable[..., pl.Expr]) -> None
 
 
 @pytest.mark.parametrize(
+    ("agg", "expected"),
+    [(pl.Expr.min_by, ["b", "d"]), (pl.Expr.max_by, ["a", "d"])],
+)
+@pytest.mark.parametrize(
+    "by",
+    [
+        pl.Series([[1, 5], [0, 9], None, [3]]),
+        pl.Series([{"x": 1, "y": 5}, {"x": 0, "y": 9}, None, {"x": 3, "y": 0}]),
+        pl.Series([[1, 5], [0, 9], None, [3, 0]], dtype=pl.Array(pl.Int64, 2)),
+    ],
+    ids=["list", "struct", "array"],
+)
+def test_min_max_by_nested_by_group_by(
+    agg: Callable[..., pl.Expr], expected: list[str], by: pl.Series
+) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2, 2], "by": by, "v": ["a", "b", "c", "d"]})
+    q = lf.group_by("g", maintain_order=True).agg(agg(pl.col("v"), pl.col("by")))
+    assert_frame_equal(q.collect(), pl.DataFrame({"g": [1, 2], "v": expected}))
+
+
+@pytest.mark.parametrize(
     ("dtype", "input", "expect"),
     [
         (pl.Int32, [1, 2, 2], [[1, 2], [2]]),
