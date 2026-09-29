@@ -16,7 +16,10 @@ pub(super) fn lower_sql_function(
         SqlFunction::IsIn { nulls_equal } => {
             let needle = e[0].dtype(ctx.schema, ctx.arena)?.clone();
             adapt_decimal_literal(&mut e[1], &needle, ctx)?;
-            let function = IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal });
+            let function = IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                nulls_equal,
+                needle_cast: None,
+            });
             Ok(AExprBuilder::function(e, function, ctx.arena).node())
         },
         SqlFunction::ToFloat => {

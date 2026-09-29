@@ -563,9 +563,9 @@ fn lower_reduce_node(
     Ok((reduce_stream, out_node))
 }
 
-/// Whether the needle of an `is_in` has the dtype of the haystack's elements.
 #[cfg(feature = "is_in")]
-fn is_in_needle_matches_elements(
+fn compares_in_needle_dtype(
+    function: &IRFunctionExpr,
     inputs: &[ExprIR],
     stream: PhysStream,
     ctx: &LowerExprContext,
@@ -575,7 +575,9 @@ fn is_in_needle_matches_elements(
         inputs[0].dtype(schema, ctx.expr_arena),
         inputs[1].dtype(schema, ctx.expr_arena),
     ) {
-        (Ok(needle), Ok(haystack)) => haystack.inner_dtype() == Some(needle),
+        (Ok(needle), Ok(haystack)) => {
+            function.membership_compares_in_needle_dtype(needle, haystack)
+        },
         _ => false,
     }
 }
@@ -1100,18 +1102,19 @@ fn lower_exprs_with_ctx(
             },
 
             // A semi join only sees the haystack's elements, so a null haystack would look like one
-            // holding a null. An imploded haystack is never null. It also needs equal key dtypes,
-            // so a pair the kernel compares natively, such as aware datetimes in different zones,
-            // takes the generic path.
+            // holding a null. An imploded haystack is never null. It also needs equal key dtypes.
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 input: ref inner_exprs,
-                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+                function:
+                    ref function @ IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                        nulls_equal, ..
+                    }),
                 options: _,
             } if matches!(
                 ctx.expr_arena.get(inner_exprs[1].node()),
                 AExpr::Agg(IRAggExpr::Implode { .. })
-            ) && is_in_needle_matches_elements(inner_exprs, input, ctx) =>
+            ) && compares_in_needle_dtype(function, inner_exprs, input, ctx) =>
             {
                 // Translate left and right side separately (they could have different lengths).
 

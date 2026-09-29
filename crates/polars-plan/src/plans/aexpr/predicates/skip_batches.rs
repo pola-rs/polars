@@ -498,7 +498,7 @@ fn aexpr_to_skip_batch_predicate_rec(
             } => match function {
                 IRFunctionExpr::Boolean(f) => match f {
                     #[cfg(feature = "is_in")]
-                    IRBooleanFunction::IsIn { nulls_equal } => {
+                    IRBooleanFunction::IsIn { nulls_equal, .. } => {
                         if !is_scalar_ae(input[1].node(), arena) {
                             return None;
                         }
@@ -516,11 +516,10 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 if !can_use_min_max_stats(dtype, None, None) {
                                     return None;
                                 }
-                                // The kernel compares some unequal dtypes natively, such as
-                                // aware datetimes in different zones, but the statistics only
-                                // compare with haystack values of the column's own dtype.
-                                if input[1].dtype(schema, arena).ok()?.inner_dtype() != Some(dtype)
-                                {
+                                if !function.membership_compares_in_needle_dtype(
+                                    dtype,
+                                    input[1].dtype(schema, arena).ok()?,
+                                ) {
                                     return None;
                                 }
 

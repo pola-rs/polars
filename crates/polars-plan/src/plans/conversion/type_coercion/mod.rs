@@ -452,12 +452,12 @@ impl OptimizationRule for TypeCoercionRule {
             AExpr::Function {
                 function:
                     IRFunctionExpr::MapExpr(
-                        ref func @ (IRMapFunction::Get | IRMapFunction::ContainsKey),
+                        ref func @ (IRMapFunction::Get { .. } | IRMapFunction::ContainsKey { .. }),
                     ),
                 ..
             } => {
                 let op = match func {
-                    IRMapFunction::Get => "map.get",
+                    IRMapFunction::Get { .. } => "map.get",
                     _ => "map.contains_key",
                 };
                 coerce_is_in(
@@ -1322,11 +1322,16 @@ fn coerce_is_in(
     let options = *options;
     let (flat, nested) = (form.flat(), form.nested());
 
+    // The needle is only cast when the function runs, so its dtype still differs.
+    if function.membership_needle_cast().is_some() {
+        return Ok(None);
+    }
+
     let Some(result) = resolve(input, expr_arena)? else {
         return Ok(None);
     };
 
-    let function = function.clone();
+    let mut function = function.clone();
     let mut input = input.to_vec();
     use self::is_in::IsInTypeCoercionResult;
     match result {
@@ -1350,7 +1355,7 @@ fn coerce_is_in(
                 CastOptions::NonStrict,
             )?;
         },
-        IsInTypeCoercionResult::SelfCast { dtype, strict } => {
+        IsInTypeCoercionResult::CastNeedle { dtype, strict } => {
             let (_, type_self) =
                 unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
             let options = if strict {
@@ -1360,7 +1365,7 @@ fn coerce_is_in(
             };
             cast_expr_ir(&mut input[flat], &type_self, &dtype, expr_arena, options)?;
         },
-        IsInTypeCoercionResult::OtherCast { dtype, strict } => {
+        IsInTypeCoercionResult::CastContainer { dtype, strict } => {
             let (_, type_other) =
                 unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
             let options = if strict {
@@ -1370,19 +1375,52 @@ fn coerce_is_in(
             };
             cast_expr_ir(&mut input[nested], &type_other, &dtype, expr_arena, options)?;
         },
-        #[cfg(feature = "dtype-map")]
-        IsInTypeCoercionResult::LenientSelfCast(dtype) => {
+        IsInTypeCoercionResult::GuardedNeedleCast { dtype } => {
+            let lv = match expr_arena.get(input[flat].node()) {
+                AExpr::Literal(lv) if lv.is_scalar() => lv,
+                // Cast and check the evaluated needle, so that it is evaluated once.
+                _ => {
+                    *is_in::needle_cast_mut(&mut function) = Some(dtype);
+                    return Ok(Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    }));
+                },
+            };
+
+            // A literal needle is cast and checked once, here.
             let (_, type_self) =
                 unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-            // Unrepresentable keys become null rather than raising.
-            cast_expr_ir_with(
-                &mut input[flat],
-                &type_self,
-                &dtype,
-                expr_arena,
-                CastOptions::NonStrict,
-                CastOptions::NonStrict,
-            )?;
+            let type_self = type_self.materialize_unknown(false)?;
+            let needle = match lv {
+                LiteralValue::Dyn(dyn_value) => dyn_value
+                    .clone()
+                    .try_materialize_to_dtype(&type_self, CastOptions::Strict)?,
+                LiteralValue::Scalar(scalar) => scalar.clone(),
+                _ => unreachable!("a scalar literal"),
+            }
+            .into_series(PlSmallStr::EMPTY);
+            let (casted, inexact) = needle._cast_reporting_inexact(&dtype)?;
+            let needle = match inexact {
+                None => Scalar::new(dtype.clone(), casted.get(0)?.into_static()),
+                // A Map holds no null key, so a null needle is simply absent.
+                Some(_) if is_in::is_map_lookup(&function) => Scalar::null(dtype.clone()),
+                // A null needle would match null elements, so answer directly: no match, except
+                // for a null container.
+                Some(_) => {
+                    let container = AExprBuilder::new_from_node(input[nested].node());
+                    let null =
+                        AExprBuilder::lit_scalar(Scalar::null(DataType::Boolean), expr_arena);
+                    let miss = AExprBuilder::lit_scalar(Scalar::from(false), expr_arena);
+                    let out = container
+                        .is_null(expr_arena)
+                        .ternary(null, miss, expr_arena);
+                    return Ok(Some(out.build(expr_arena)));
+                },
+            };
+            input[flat].set_node(expr_arena.add(AExpr::Literal(needle.into())));
+            input[flat].set_dtype(dtype);
         },
         IsInTypeCoercionResult::Implode => {
             assert!(!form.is_contains());
