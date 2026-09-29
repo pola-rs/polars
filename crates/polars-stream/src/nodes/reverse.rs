@@ -33,6 +33,12 @@ impl ReverseNode {
     }
 }
 
+impl Default for ReverseNode {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ComputeNode for ReverseNode {
     fn name(&self) -> &str {
         "reverse"
