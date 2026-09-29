@@ -24,8 +24,9 @@ if TYPE_CHECKING:
 
     from pyiceberg.io import FileIO, InputFile, InputStream
 
-ENV_CACHE_SIZE = "POLARS_ICEBERG_METADATA_CACHE_SIZE"
-DEFAULT_CACHE_SIZE = 64 * 1024 * 1024
+ENV_CACHE_MB = "POLARS_ICEBERG_METADATA_CACHE_MB"
+DEFAULT_CACHE_MB = 64
+_BYTES_PER_MB = 1_000_000
 
 _UUID_PATTERN = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE
@@ -146,24 +147,24 @@ _global_cache_lock = threading.Lock()
 
 
 def _configured_size() -> int:
-    value = os.getenv(ENV_CACHE_SIZE)
+    value = os.getenv(ENV_CACHE_MB)
     if value is None:
-        return DEFAULT_CACHE_SIZE
+        return DEFAULT_CACHE_MB * _BYTES_PER_MB
 
     try:
-        size = int(value)
+        size_mb = int(value)
     except ValueError:
-        size = -1
+        size_mb = -1
 
-    if size < 0:
+    if size_mb < 0:
         msg = (
-            f"invalid value for {ENV_CACHE_SIZE}: {value!r}, expected a "
-            f"non-negative number of bytes; using the default of {DEFAULT_CACHE_SIZE}"
+            f"invalid value for {ENV_CACHE_MB}: {value!r}, expected a "
+            f"non-negative number of megabytes; using the default of {DEFAULT_CACHE_MB}"
         )
         issue_warning(msg, UserWarning)
-        return DEFAULT_CACHE_SIZE
+        size_mb = DEFAULT_CACHE_MB
 
-    return size
+    return size_mb * _BYTES_PER_MB
 
 
 def get_metadata_file_cache() -> IcebergMetadataFileCache:
@@ -251,15 +252,6 @@ class CachingFileIO:
         if name.startswith("_"):
             raise AttributeError(name)
         return getattr(self._inner, name)
-
-    def __reduce__(self) -> tuple[Any, ...]:
-        # The cache is process-local; unpickling attaches the cache of the
-        # receiving process.
-        return (_wrap_file_io, (self._inner,))
-
-
-def _wrap_file_io(inner: FileIO) -> CachingFileIO:
-    return CachingFileIO(inner, get_metadata_file_cache())
 
 
 def with_metadata_file_cache(scan: Any) -> Any:
