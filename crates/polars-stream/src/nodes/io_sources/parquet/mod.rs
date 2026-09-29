@@ -390,12 +390,6 @@ impl FileReader for ParquetFileReader {
         }
 
         if let Some(single_morsel_height) = single_morsel_height {
-            // Answered from the metadata: every row is read, none is decoded.
-            self.metrics
-                .rows_read
-                .reporter()
-                .add(single_morsel_height as i64);
-
             let (mut tx, rx) = FileReaderOutputSend::new_serial();
 
             let handle = executor::spawn(TaskPriority::Low, async move {
