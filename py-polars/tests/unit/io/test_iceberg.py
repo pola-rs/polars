@@ -407,6 +407,73 @@ class TestIcebergScanIO:
         )
         assert res.collect().rows() == [(3,)]
 
+    def test_scan_iceberg_filter_struct_field_nested_depth_2(
+        self, tmp_path: Path
+    ) -> None:
+        # `struct_field_path` recurses; make sure it actually handles more
+        # than one level rather than just the immediate child.
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(
+                NestedField(1, "id", LongType()),
+                NestedField(
+                    2,
+                    "a",
+                    StructType(
+                        NestedField(
+                            3,
+                            "b",
+                            StructType(NestedField(4, "c", LongType())),
+                            required=False,
+                        )
+                    ),
+                    required=False,
+                ),
+            ),
+        )
+        pl.DataFrame(
+            {"id": [1, 2], "a": [{"b": {"c": 5}}, {"b": {"c": 9}}]}
+        ).write_iceberg(tbl, mode="append")
+
+        res = pl.scan_iceberg(tbl).filter(
+            pl.col("a").struct.field("b").struct.field("c") == 5
+        )
+        assert res.select("id").collect().rows() == [(1,)]
+
+    def test_scan_iceberg_filter_struct_field_unsanitizable_name(
+        self,
+        tmp_path: Path,
+        plmonkeypatch: PlMonkeyPatch,
+        capfd: pytest.CaptureFixture[str],
+    ) -> None:
+        # A nested field name that `sanitize()` rejects must not be pushed
+        # down - checked via `.explain()` rather than `.collect()`, since
+        # actually executing a filter on a struct field with a special
+        # character in its name currently hits an unrelated bug in the
+        # native reader's own stats-skip optimization (reproduces the same
+        # way on plain `scan_parquet`, nothing to do with this pushdown).
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(
+                NestedField(1, "id", LongType()),
+                NestedField(
+                    2,
+                    "mydict",
+                    StructType(NestedField(3, "age!", LongType())),
+                    required=False,
+                ),
+            ),
+        )
+        plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+        capfd.readouterr()
+        pl.scan_iceberg(tbl).filter(pl.col("mydict").struct.field("age!") == 17).select(
+            "id"
+        ).explain()
+        log = capfd.readouterr().err
+        assert "pyarrow_predicate = None" in log
+        assert "iceberg_table_filter = None" in log
+
     @pytest.mark.parametrize("method", ["is_nan", "is_not_nan"])
     def test_scan_iceberg_nan_decimal_rejected(
         self, tmp_path: Path, method: str
