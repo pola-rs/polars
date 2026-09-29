@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -1245,6 +1245,16 @@ def test_is_in_needle_cast_masks_with_the_evaluated_container(
     )
     assert out["o"].null_count() == sum(r is None for r in rows)
     assert out["o"].drop_nulls().to_list() == [False] * (n - out["o"].null_count())
+
+
+@pytest.mark.parametrize("op", ["list.contains", "arr.contains"])
+@pytest.mark.parametrize("needle", [300, 1])
+def test_contains_needle_of_another_length_raises(op: str, needle: int) -> None:
+    # The shape check must not depend on whether the needle casts exactly.
+    lf = pl.LazyFrame({"h": _container(op, [[1], [1], [1]], pl.Int8)})
+    expr = _membership(op, pl.repeat(needle, 2, dtype=pl.Int64), pl.col("h"))
+    with pytest.raises(ShapeError):
+        lf.select(expr).collect()
 
 
 def test_is_in_inexact_needle_with_a_scalar_haystack() -> None:

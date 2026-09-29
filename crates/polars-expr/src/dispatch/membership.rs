@@ -45,7 +45,7 @@ pub(super) fn with_needle_cast(
     // A single needle that no element can equal: skip the kernel. Kernels name their output
     // after their first operand.
     if inexact.len() == 1 {
-        let len = broadcast_len([&s[0], &container])?;
+        let len = broadcast_len([&s[needle], &container])?;
         let valid = container_valid(&container, len)?;
         let miss = BooleanChunked::from_bitmap(s[0].name().clone(), Bitmap::new_zeroed(len));
         return Ok(miss.with_validity(Some(valid)).into_column());
