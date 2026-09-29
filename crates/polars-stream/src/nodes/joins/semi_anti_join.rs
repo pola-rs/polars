@@ -494,6 +494,7 @@ impl BuildState {
                 &partitioner,
                 &mut local.key_idxs_values_per_p,
                 &mut local.sketch_per_p,
+                None,
                 false,
             );
 

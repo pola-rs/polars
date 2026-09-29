@@ -30,6 +30,7 @@ pub mod compression;
 pub mod concat_vec;
 pub mod cpuid;
 pub mod error;
+pub mod f2_sketch;
 pub mod file;
 pub mod fixedringbuffer;
 pub mod float;

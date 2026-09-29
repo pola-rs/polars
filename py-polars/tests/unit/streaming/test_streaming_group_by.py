@@ -570,3 +570,36 @@ def test_streaming_group_by_shared_agg_subexpression(n_groups: int) -> None:
         q.collect(engine="in-memory"),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("key_dtype", [pl.Int64, pl.String])
+def test_streaming_group_by_hot_table_growth(
+    key_dtype: pl.DataType,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1000")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "256")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    # Frequent keys, more than the initial hot table holds, mixed with keys that
+    # occur only once.
+    n = 200_000
+    rng = np.random.default_rng(0)
+    heavy = rng.integers(0, 30, n)
+    unique = np.arange(1_000_000, 1_000_000 + n)
+    key = np.where(rng.random(n) < 0.7, heavy, unique)
+    df = pl.DataFrame({"g": key, "v": np.arange(n)}).with_columns(
+        pl.col("g").cast(key_dtype)
+    )
+    q = (
+        df.lazy()
+        .group_by("g")
+        .agg(pl.col("v").sum().alias("sum"), pl.col("v").first().alias("first"))
+    )
+
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    assert "[group-by]: hot table" in capfd.readouterr().err
+    assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
