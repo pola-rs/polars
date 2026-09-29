@@ -815,7 +815,7 @@ impl PyExpr {
                 SortOptions {
                     descending: order_by_descending,
                     nulls_last: order_by_nulls_last,
-                    maintain_order: false,
+                    maintain_order: true,
                     ..Default::default()
                 },
             )
@@ -1101,6 +1101,14 @@ impl PyExpr {
 
     fn exp(&self) -> Self {
         self.inner.clone().exp().into()
+    }
+
+    fn erf(&self) -> Self {
+        self.inner.clone().erf().into()
+    }
+
+    fn erfc(&self) -> Self {
+        self.inner.clone().erfc().into()
     }
 
     fn entropy(&self, base: f64, normalize: bool) -> Self {

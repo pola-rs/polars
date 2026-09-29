@@ -863,7 +863,10 @@ impl Expr {
                 }),
                 e,
             );
-            Some((Arc::new(encoded), SortOptions::default()))
+            Some((
+                Arc::new(encoded),
+                SortOptions::default().with_maintain_order(options.maintain_order),
+            ))
         });
 
         Ok(Expr::Over {
@@ -1628,6 +1631,18 @@ impl Expr {
     /// Calculate the exponential of all elements in the input array.
     pub fn exp(self) -> Self {
         self.map_unary(FunctionExpr::Exp)
+    }
+
+    #[cfg(feature = "log")]
+    /// Compute the error function of all elements in the input array.
+    pub fn erf(self) -> Self {
+        self.map_unary(FunctionExpr::Erf)
+    }
+
+    #[cfg(feature = "log")]
+    /// Compute the complementary error function of all elements in the input array.
+    pub fn erfc(self) -> Self {
+        self.map_unary(FunctionExpr::Erfc)
     }
 
     #[cfg(feature = "log")]

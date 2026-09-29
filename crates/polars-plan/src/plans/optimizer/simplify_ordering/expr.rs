@@ -2,8 +2,8 @@ use bitflags::bitflags;
 use polars_core::prelude::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 
-use crate::dsl::EvalVariant;
-use crate::plans::{AExpr, IRAggExpr, IRFunctionExpr, is_length_preserving_ae};
+use crate::dsl::{EvalVariant, WindowMapping};
+use crate::plans::{AExpr, ExprIR, IRAggExpr, IRFunctionExpr, is_length_preserving_ae};
 
 bitflags! {
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -88,6 +88,7 @@ impl RecursionState {
 
 pub(crate) struct ExprOrderSimplifier<'a> {
     struct_field_ordering: Option<ObservableOrders>,
+    order_insensitive_windows: bool,
 
     /// Entries for nodes whose subtrees will no longer change when revisited with a de-ordering
     /// recursion state.
@@ -101,9 +102,11 @@ impl<'a> ExprOrderSimplifier<'a> {
     pub fn new(
         expr_arena: &'a mut Arena<AExpr>,
         revisit_cache: &'a mut PlIndexMap<Node, ObservableOrders>,
+        order_insensitive_windows: bool,
     ) -> Self {
         Self {
             struct_field_ordering: None,
+            order_insensitive_windows,
 
             revisit_cache,
             internally_observed: ObservableOrders::empty(),
@@ -212,7 +215,9 @@ impl ExprOrderSimplifier<'_> {
             AExpr::Element => O::INDEPENDENT,
 
             #[cfg(feature = "dtype-struct")]
-            AExpr::StructEval { expr, evaluation } => {
+            AExpr::StructEval {
+                expr, evaluation, ..
+            } => {
                 check_return_cached!();
 
                 let evaluation_len = evaluation.len();
@@ -404,14 +409,25 @@ impl ExprOrderSimplifier<'_> {
                 output_observable
             },
 
-            AExpr::Over {
-                function,
-                partition_by,
-                order_by,
-                mapping: _,
-            } => {
+            AExpr::Over { .. } => {
                 check_return_cached!();
 
+                if self.order_insensitive_windows
+                    && is_order_insensitive_window(current_ae_node, self.expr_arena)
+                {
+                    cache_output!(O::COLUMN);
+                    return O::COLUMN;
+                }
+
+                let AExpr::Over {
+                    function,
+                    partition_by,
+                    order_by,
+                    mapping: _,
+                } = self.expr_arena.get(current_ae_node)
+                else {
+                    unreachable!()
+                };
                 let function = *function;
                 let partition_by_len = partition_by.len();
                 let order_by = order_by.as_ref().map(|(node, _)| *node);
@@ -543,6 +559,24 @@ impl ExprOrderSimplifier<'_> {
                 }
 
                 observable_in_input
+            },
+
+            // Asserts an order on its input, so downstream may rely on that order.
+            AExpr::Function {
+                input,
+                function: IRFunctionExpr::SetSortedFlag(_),
+                ..
+            } => {
+                check_return_cached!();
+
+                assert_eq!(input.len(), 1);
+                let node = input[0].node();
+                let observable = self.rec(node, RS::NO_DEORDER);
+                self.internal_observe(observable);
+
+                cache_output!(observable);
+
+                observable
             },
 
             AExpr::Function {
@@ -739,5 +773,79 @@ impl ExprOrderSimplifier<'_> {
                 output_observable
             },
         }
+    }
+}
+
+/// Whether `node` is a `GroupsToRows` window whose result for a row does not depend on the order
+/// of the rows.
+pub(crate) fn is_order_insensitive_window(node: Node, arena: &Arena<AExpr>) -> bool {
+    let AExpr::Over {
+        function,
+        partition_by,
+        order_by,
+        mapping,
+    } = arena.get(node)
+    else {
+        return false;
+    };
+
+    *mapping == WindowMapping::GroupsToRows
+        && is_order_insensitive(*function, arena)
+        && partition_by.iter().all(|n| is_order_insensitive(*n, arena))
+        && order_by
+            .as_ref()
+            .is_none_or(|(n, _)| is_order_insensitive(*n, arena))
+}
+
+/// Whether every output value only depends on the values in its own row and on the set of rows
+/// in the group, not on the order of those rows.
+#[recursive::recursive]
+fn is_order_insensitive(node: Node, arena: &Arena<AExpr>) -> bool {
+    let inputs_insensitive =
+        |input: &[ExprIR]| input.iter().all(|e| is_order_insensitive(e.node(), arena));
+
+    match arena.get(node) {
+        AExpr::Column(_) | AExpr::Len => true,
+        AExpr::Literal(lv) => lv.is_scalar(),
+        AExpr::Cast { expr, .. } => is_order_insensitive(*expr, arena),
+        AExpr::BinaryExpr { left, op: _, right } => {
+            is_order_insensitive(*left, arena) && is_order_insensitive(*right, arena)
+        },
+        AExpr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => [*predicate, *truthy, *falsy]
+            .into_iter()
+            .all(|n| is_order_insensitive(n, arena)),
+        AExpr::Agg(agg) => match agg {
+            IRAggExpr::Min { input, .. }
+            | IRAggExpr::Max { input, .. }
+            | IRAggExpr::Median(input)
+            | IRAggExpr::NUnique(input)
+            | IRAggExpr::Item { input, .. }
+            | IRAggExpr::Mean(input)
+            | IRAggExpr::Sum(input)
+            | IRAggExpr::Count { input, .. }
+            | IRAggExpr::Std(input, _)
+            | IRAggExpr::Var(input, _) => is_order_insensitive(*input, arena),
+            IRAggExpr::First(_)
+            | IRAggExpr::FirstNonNull(_)
+            | IRAggExpr::Last(_)
+            | IRAggExpr::LastNonNull(_)
+            | IRAggExpr::Implode { .. } => false,
+        },
+        AExpr::Function {
+            function: IRFunctionExpr::SetSortedFlag(_),
+            ..
+        } => false,
+        AExpr::Function { input, options, .. } => {
+            let flags = options.flags;
+            !flags.observes_input_order()
+                && flags.non_order_producing()
+                && (flags.is_length_preserving() || flags.returns_scalar())
+                && inputs_insensitive(input)
+        },
+        _ => false,
     }
 }

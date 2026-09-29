@@ -1,8 +1,8 @@
 use polars_arrow::array::PrimitiveArray;
 use polars_defs::time::duration::Duration;
-use polars_defs::time::group_by::{ClosedWindow, RollingGroupOptions};
-use polars_time::PolarsTemporalGroupby;
+use polars_defs::time::group_by::{ClosedWindow, RollingGroupOptionsIR};
 use polars_time::prelude::RollingWindower;
+use polars_time::{IndexSpace, PolarsTemporalGroupby};
 use polars_utils::UnitVec;
 
 use super::*;
@@ -28,11 +28,12 @@ pub(crate) struct RollingExpr {
 impl PhysicalExpr for RollingExpr {
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let groups = if let Some(index_column_name) = self.index_column.as_column() {
-            let options = RollingGroupOptions {
+            let options = RollingGroupOptionsIR {
                 index_column: index_column_name.clone(),
                 period: self.period,
                 offset: self.offset,
                 closed_window: self.closed_window,
+                placement: None,
             };
             let groups_key = format!("{options:?}");
             let groups = {
@@ -53,11 +54,12 @@ impl PhysicalExpr for RollingExpr {
             }
         } else {
             let index_column_name = PlSmallStr::from_static("__PL_INDEX_COL");
-            let options = RollingGroupOptions {
+            let options = RollingGroupOptionsIR {
                 index_column: index_column_name.clone(),
                 period: self.period,
                 offset: self.offset,
                 closed_window: self.closed_window,
+                placement: None,
             };
 
             let index_column = self.index_column.evaluate(df, state)?;
@@ -86,28 +88,9 @@ impl PhysicalExpr for RollingExpr {
 
         index_column.groups();
 
-        let mut index_column_data = index_column.flat_naive();
-        use DataType as DT;
-        let (time_unit, time_zone): (TimeUnit, Option<TimeZone>) = match index_column_data.dtype() {
-            DT::Datetime(tu, tz) => (*tu, tz.clone()),
-            DT::Date => (TimeUnit::Microseconds, None),
-            DT::UInt32 | DT::UInt64 | DT::Int32 => {
-                index_column_data = Cow::Owned(index_column_data.cast(&DT::Int64)?);
-                (TimeUnit::Nanoseconds, None)
-            },
-            DT::Int64 => (TimeUnit::Nanoseconds, None),
-            dt => polars_bail!(
-                ComputeError:
-                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64, UInt32, UInt64 }}, got {}",
-                dt
-            ),
-        };
-        let index_column_data =
-            index_column_data.cast(&DataType::Datetime(time_unit, time_zone.clone()))?;
-
-        // @NOTE: This is a bit strange since it ignores errors, but it mirrors the in-memory
-        // engine.
-        let tz = time_zone.and_then(|tz| tz.parse::<chrono_tz::Tz>().ok());
+        let index_column_data = index_column.flat_naive();
+        let space = IndexSpace::rolling(index_column_data.dtype())?;
+        let index_column_data = space.cast_to_space(&index_column_data)?;
 
         polars_ensure!(
             index_column_data.null_count() == 0,
@@ -119,8 +102,13 @@ impl PhysicalExpr for RollingExpr {
             .downcast_ref::<PrimitiveArray<i64>>()
             .unwrap();
         let mut index_column_data = Cow::Borrowed(index_column_data.values().as_slice());
-        let mut rolling =
-            RollingWindower::new(self.period, self.offset, self.closed_window, time_unit, tz);
+        let mut rolling = RollingWindower::new(
+            self.period,
+            self.offset,
+            self.closed_window,
+            space.time_unit,
+            space.tz().cloned(),
+        );
 
         let num_elements = groups.num_elements();
 

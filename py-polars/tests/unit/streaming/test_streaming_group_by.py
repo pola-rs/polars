@@ -541,3 +541,32 @@ def test_streaming_group_by_nested_agg_fallback() -> None:
     )
     expected = {("aaa", n // 3), ("bbb", n - n // 3)}
     assert expected == set(res.rows())
+
+
+@pytest.mark.parametrize("n_groups", [3, 5000])
+def test_streaming_group_by_shared_agg_subexpression(n_groups: int) -> None:
+    n = 20_000
+    df = pl.DataFrame(
+        {
+            "g": [i % n_groups for i in range(n)],
+            "a": [float(i) for i in range(n)],
+            "b": [None if i % 11 == 0 else (i % 7) / 10 for i in range(n)],
+            "c": [(i % 5) / 10 for i in range(n)],
+        }
+    )
+    shared = pl.col("a") * (1 - pl.col("b"))
+    q = (
+        df.lazy()
+        .group_by("g")
+        .agg(
+            shared.sum().alias("s1"),
+            (shared * (1 + pl.col("c"))).sum().alias("s2"),
+            (shared * (1 + pl.col("c"))).max().alias("m2"),
+            pl.col("b").mean(),
+        )
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )

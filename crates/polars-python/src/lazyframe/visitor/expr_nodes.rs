@@ -7,10 +7,10 @@ use polars_core::chunked_array::ops::FillNullStrategy;
 use polars_defs::expr::UnicodeForm;
 use polars_defs::expr::{ClosedInterval, InterpolationMethod, RankMethod};
 use polars_defs::time::duration::Duration;
-use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptions, RollingGroupOptions};
+use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptionsIR, RollingGroupOptionsIR};
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
-use polars_plan::dsl::DateRangeArgs;
+use polars_plan::dsl::{DateRangeArgs, StructEvalVariant};
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
     IRBooleanFunction, IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction,
@@ -20,7 +20,7 @@ use polars_plan::plans::{
 #[cfg(feature = "cutqcut")]
 use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
 use polars_plan::prelude::{
-    AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
+    AExpr, GroupbyOptionsIR, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
 };
 use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
@@ -592,6 +592,9 @@ pub struct StructEval {
     expr: usize,
     #[pyo3(get)]
     evaluation: Vec<PyExprIR>,
+    /// Either "with_fields" or "select".
+    #[pyo3(get)]
+    variant: &'static str,
 }
 
 #[pyclass(frozen)]
@@ -682,7 +685,7 @@ impl<'py> IntoPyObject<'py> for Wrap<ClosedWindow> {
 
 #[pyclass(name = "RollingGroupOptions", frozen)]
 pub struct PyRollingGroupOptions {
-    inner: RollingGroupOptions,
+    inner: RollingGroupOptionsIR,
 }
 
 #[pymethods]
@@ -710,7 +713,7 @@ impl PyRollingGroupOptions {
 
 #[pyclass(name = "DynamicGroupOptions", frozen)]
 pub struct PyDynamicGroupOptions {
-    inner: DynamicGroupOptions,
+    inner: DynamicGroupOptionsIR,
 }
 
 #[pymethods]
@@ -757,11 +760,11 @@ impl PyDynamicGroupOptions {
 
 #[pyclass(name = "GroupbyOptions", frozen)]
 pub struct PyGroupbyOptions {
-    inner: GroupbyOptions,
+    inner: GroupbyOptionsIR,
 }
 
 impl PyGroupbyOptions {
-    pub(crate) fn new(inner: GroupbyOptions) -> Self {
+    pub(crate) fn new(inner: GroupbyOptionsIR) -> Self {
         Self { inner }
     }
 }
@@ -1922,12 +1925,16 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Log => ("log",).into_py_any(py),
                 IRFunctionExpr::Log1p => ("log1p",).into_py_any(py),
                 IRFunctionExpr::Exp => ("exp",).into_py_any(py),
+                IRFunctionExpr::Erf => ("erf",).into_py_any(py),
+                IRFunctionExpr::Erfc => ("erfc",).into_py_any(py),
                 IRFunctionExpr::Unique(maintain_order) => {
                     ("unique", maintain_order).into_py_any(py)
                 },
                 IRFunctionExpr::Round { decimals, mode } => {
                     ("round", decimals, Into::<&str>::into(mode)).into_py_any(py)
                 },
+                IRFunctionExpr::DecimalArith { op, scale } => (op.name(), scale).into_py_any(py),
+                IRFunctionExpr::TruncArith(op) => (op.name(),).into_py_any(py),
                 IRFunctionExpr::RoundSF { digits } => ("round_sig_figs", digits).into_py_any(py),
                 IRFunctionExpr::Truncate { decimals } => ("truncate", decimals).into_py_any(py),
                 IRFunctionExpr::Floor => ("floor",).into_py_any(py),
@@ -2063,6 +2070,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 #[cfg(feature = "ffi_plugin")]
                 IRFunctionExpr::FfiPlugin {
                     flags,
+                    is_deterministic: _,
                     lib,
                     symbol,
                     kwargs,
@@ -2255,9 +2263,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         AExpr::Len => Len {}.into_py_any(py),
         AExpr::Eval { .. } => Err(PyNotImplementedError::new_err("list.eval")),
-        AExpr::StructEval { expr, evaluation } => StructEval {
+        AExpr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => StructEval {
             expr: expr.0,
             evaluation: evaluation.iter().map(|e| e.into()).collect(),
+            variant: match variant {
+                StructEvalVariant::WithFields => "with_fields",
+                StructEvalVariant::Select => "select",
+            },
         }
         .into_py_any(py),
     }

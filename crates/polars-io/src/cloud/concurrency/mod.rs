@@ -91,8 +91,8 @@ impl Default for ControllerConfig {
             floor_byte_budget: target_chunk_size,
 
             // Count-based budget.
-            request_budget: get_request_budget(),
-            floor_request_budget: get_floor_request_budget(),
+            request_budget: get_inflight_request_budget(),
+            floor_request_budget: get_inflight_floor_request_budget(),
             control_interval: Duration::from_millis(100),
             budget_resize_threshold: 0.05,
         }
@@ -126,7 +126,7 @@ fn get_init_byte_budget(target_chunk_size: u64) -> u64 {
 }
 
 /// Maximum number of requests concurrently in flight.
-pub fn get_request_budget() -> u64 {
+pub fn get_inflight_request_budget() -> u64 {
     // Since object_store/reqwest use HTTP/1 with a connection pool, this value controls the
     // max concurrent TCP sessions to S3 for the pipeline.
     // When modifying this value, consider the max_thread count configuration(s), the OS limitations
@@ -142,7 +142,7 @@ pub fn get_request_budget() -> u64 {
 }
 
 /// Minimum number of requests concurrently in flight, if demand is there.
-pub fn get_floor_request_budget() -> u64 {
+pub fn get_inflight_floor_request_budget() -> u64 {
     // Since object_store/reqwest use HTTP/1 with a connection pool, this value controls the
     // max concurrent TCP sessions to S3 for the pipeline.
     // When modifying this value, consider the max_thread count configuration(s), the OS limitations
@@ -306,16 +306,16 @@ impl ConcurrencyController {
             let mut ticker = tokio::time::interval(config.control_interval);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+            let max_inflight_budget = config.request_budget as f64;
+
             loop {
                 ticker.tick().await;
                 let now = Instant::now();
 
-                // Limit concurrency to the pacing budget from the rate-limiter.
+                // Reduce concurrency to the pacing budget from the rate-limiter.
                 if let Some(ref pacing_budget) = pacing_budget {
-                    let rate = pacing_budget.rate();
-                    let horizon_s = pacing_budget.horizon().as_secs_f64();
-                    let request_budget = rate * horizon_s;
-                    admission.resize_request_budget(request_budget as u64);
+                    let request_budget = pacing_budget.request_budget(max_inflight_budget) as u64;
+                    admission.resize_request_budget(request_budget);
                 }
 
                 // Update model statistics and step regime.

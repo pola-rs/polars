@@ -467,6 +467,8 @@ enum Item {
 
 /// The rows a predicate column keeps.
 enum Kept {
+    /// Nothing was evaluated on the column, so it keeps every row of the pass.
+    All,
     /// The column holds every row of the pass.
     Masked(Bitmap),
     /// The column holds the kept rows only.
@@ -530,7 +532,7 @@ impl Pass {
             if let Some(m) = dynamic_mask(c, column)? {
                 mask = Some(and_masks(mask, m));
             }
-            Ok(mask.map(|m| (i, Kept::Masked(m))))
+            Ok(Some((i, mask.map_or(Kept::All, Kept::Masked))))
         };
 
         let field_idx = match source {
@@ -628,6 +630,9 @@ impl RowGroupDecoder {
             })
             .collect();
         if !newly_active.is_empty() {
+            if polars_core::config::verbose() {
+                eprintln!("[ParquetFileReader]: Dynamic predicate started filtering rows");
+            }
             passes = Arc::new(promote(&passes, &newly_active));
             *self.passes.lock().unwrap() = passes.clone();
         }
@@ -691,15 +696,18 @@ impl RowGroupDecoder {
                     continue;
                 };
                 let m = match &kept_rows {
-                    Kept::Masked(m) | Kept::Filtered(m) => m,
+                    Kept::All => None,
+                    Kept::Masked(m) | Kept::Filtered(m) => Some(m),
                 };
                 selectivity[c] = Selectivity {
                     input_rows: kept,
-                    kept_rows: m.set_bits(),
+                    kept_rows: m.map_or(kept, |m| m.set_bits()),
                 };
-                pass_mask = Some(and_masks(pass_mask, m.clone()));
+                if let Some(m) = m {
+                    pass_mask = Some(and_masks(pass_mask, m.clone()));
+                }
                 match kept_rows {
-                    Kept::Masked(_) => live_columns.push((d.source, d.column)),
+                    Kept::All | Kept::Masked(_) => live_columns.push((d.source, d.column)),
                     Kept::Filtered(own) => filtered.push((d.source, d.column, own)),
                 }
             }

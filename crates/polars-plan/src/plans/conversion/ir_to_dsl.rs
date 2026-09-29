@@ -226,9 +226,14 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             variant,
         },
         #[cfg(feature = "dtype-struct")]
-        AExpr::StructEval { expr, evaluation } => Expr::StructEval {
+        AExpr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => Expr::StructEval {
             expr: Arc::new(node_to_expr(expr, expr_arena)),
             evaluation: expr_irs_to_exprs(evaluation, expr_arena),
+            variant,
         },
         AExpr::Function {
             input,
@@ -1010,9 +1015,16 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Log1p => F::Log1p,
         #[cfg(feature = "log")]
         IF::Exp => F::Exp,
+        #[cfg(feature = "log")]
+        IF::Erf => F::Erf,
+        #[cfg(feature = "log")]
+        IF::Erfc => F::Erfc,
         IF::Unique(v) => F::Unique(v),
         #[cfg(feature = "round_series")]
         IF::Round { decimals, mode } => F::Round { decimals, mode },
+        #[cfg(feature = "dtype-decimal")]
+        IF::DecimalArith { op, scale } => F::DecimalArith { op, scale },
+        IF::TruncArith(op) => F::TruncArith(op),
         #[cfg(feature = "round_series")]
         IF::RoundSF { digits } => F::RoundSF { digits },
         #[cfg(feature = "round_series")]
@@ -1131,11 +1143,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "ffi_plugin")]
         IF::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
         } => F::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,

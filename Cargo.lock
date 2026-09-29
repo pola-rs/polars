@@ -3486,6 +3486,7 @@ dependencies = [
  "futures",
  "memmap2",
  "polars-arrow",
+ "polars-buffer",
  "polars-config",
  "polars-core",
  "polars-defs",

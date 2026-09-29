@@ -1,8 +1,12 @@
 #[cfg(feature = "approx_quantile")]
 use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
-use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
+use polars_core::prelude::row_encode::{
+    _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_vertical_par_ordered,
+    encode_rows_vertical_par_unordered,
+};
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::series::ops::NullBehavior;
@@ -23,6 +27,7 @@ use polars_plan::plans::{AExprSorted, DynamicPredWeakRef, RowEncodingVariant};
 use polars_plan::plans::{IRBinMethod, IRBinOptions};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 #[cfg(feature = "abs")]
@@ -584,15 +589,23 @@ pub(super) fn sign(s: &Column) -> PolarsResult<Column> {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
             Ok(sign_impl(ca))
         }),
-        DataType::Decimal(_, scale) => {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, scale) => {
+            use polars_compute::decimal::{DEC128_MAX_PREC, dec128_sign};
             use polars_core::prelude::ChunkApply;
 
+            let precision = (*precision).max(scale + 1).min(DEC128_MAX_PREC);
             let ca = s.decimal()?;
+            // At scale 38 only 0 is representable.
+            polars_ensure!(
+                *scale < DEC128_MAX_PREC || ca.physical().iter().all(|x| x.is_none_or(|x| x == 0)),
+                ComputeError: "sign of a nonzero Decimal({precision}, {scale}) value doesn't fit its type"
+            );
             let out = ca
                 .physical()
-                .apply_values(|x| polars_compute::decimal::dec128_sign(x, *scale))
+                .apply_values(|x| dec128_sign(x, *scale))
                 .into_column();
-            unsafe { out.from_physical_unchecked(dtype) }
+            unsafe { out.from_physical_unchecked(&DataType::Decimal(precision, *scale)) }
         },
         _ => polars_bail!(opq = sign, dtype),
     }
@@ -721,17 +734,148 @@ pub fn as_list(s: &mut [Column]) -> PolarsResult<Column> {
         .map(IntoColumn::into_column)
 }
 
+/// The truncated remainder or quotient. Decimals (with integers) use the exact decimal
+/// kernels; other operands have been cast to one numeric type.
+pub(super) fn trunc_arith(
+    s: &mut [Column],
+    op: polars_plan::dsl::TruncArithOp,
+) -> PolarsResult<Column> {
+    s[0].try_apply_broadcasting_binary_elementwise(&s[1], |lhs, rhs| {
+        trunc_arith_series(lhs, rhs, op).map(|out| out.with_name(lhs.name().clone()))
+    })
+}
+
+fn trunc_arith_series(
+    lhs: &Series,
+    rhs: &Series,
+    op: polars_plan::dsl::TruncArithOp,
+) -> PolarsResult<Series> {
+    use polars_plan::dsl::TruncArithOp;
+
+    Ok(if lhs.dtype().is_decimal() || rhs.dtype().is_decimal() {
+        #[cfg(feature = "dtype-decimal")]
+        {
+            let (l, r) = polars_core::series::arithmetic::coerce_lhs_rhs_numeric_op(lhs, rhs)?;
+            let (l, r) = (l.decimal()?, r.decimal()?);
+            match op {
+                TruncArithOp::Rem => l.rem_with(r, false)?,
+                TruncArithOp::IntDiv => l.int_div_with_scale(r, 0, false)?,
+            }
+            .into_series()
+        }
+        #[cfg(not(feature = "dtype-decimal"))]
+        unreachable!()
+    } else {
+        polars_ensure!(
+            lhs.dtype() == rhs.dtype(),
+            ComputeError: "{} expects operands of one type, got {} and {}",
+            op.name(), lhs.dtype(), rhs.dtype()
+        );
+        match lhs.dtype() {
+            DataType::Float32 => float_trunc_arith(lhs.f32()?, rhs.f32()?, op).into_series(),
+            DataType::Float64 => float_trunc_arith(lhs.f64()?, rhs.f64()?, op).into_series(),
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                let (l, r) = (lhs.cast(&DataType::Float32)?, rhs.cast(&DataType::Float32)?);
+                float_trunc_arith(l.f32()?, r.f32()?, op)
+                    .into_series()
+                    .cast(&DataType::Float16)?
+            },
+            dt if dt.is_integer() => {
+                polars_core::with_match_physical_integer_polars_type!(dt, |$T| {
+                    let a: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                    let b: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                    int_trunc_arith(a, b, op)?.into_series()
+                })
+            },
+            dt => polars_bail!(InvalidOperation: "{} is not supported for {}", op.name(), dt),
+        }
+    })
+}
+
+fn float_trunc_arith<T>(
+    a: &ChunkedArray<T>,
+    b: &ChunkedArray<T>,
+    op: polars_plan::dsl::TruncArithOp,
+) -> ChunkedArray<T>
+where
+    T: PolarsFloatType,
+    T::Native: num_traits::Float,
+{
+    use num_traits::Float;
+    use polars_core::prelude::arity::broadcast_binary_elementwise_values;
+    use polars_plan::dsl::TruncArithOp;
+
+    // `%` on floats is `fmod`: exact, with the dividend's sign.
+    match op {
+        TruncArithOp::Rem => broadcast_binary_elementwise_values(a, b, |x, y| x % y),
+        TruncArithOp::IntDiv => broadcast_binary_elementwise_values(a, b, |x, y| (x / y).trunc()),
+    }
+}
+
+fn int_trunc_arith<T>(
+    a: &ChunkedArray<T>,
+    b: &ChunkedArray<T>,
+    op: polars_plan::dsl::TruncArithOp,
+) -> PolarsResult<ChunkedArray<T>>
+where
+    T: PolarsIntegerType,
+    T::Native: num_traits::CheckedRem + num_traits::CheckedDiv + num_traits::Zero,
+{
+    use num_traits::{CheckedDiv, CheckedRem, Zero};
+    use polars_core::prelude::arity::broadcast_try_binary_elementwise;
+    use polars_plan::dsl::TruncArithOp;
+
+    broadcast_try_binary_elementwise(a, b, |x, y| {
+        let (Some(x), Some(y)) = (x, y) else {
+            return Ok(None);
+        };
+        // Division by zero is null, as for the integer `/` and `%`.
+        if y.is_zero() {
+            return Ok(None);
+        }
+        match op {
+            // Only MIN % -1 overflows, and its remainder is 0.
+            TruncArithOp::Rem => Ok(Some(x.checked_rem(&y).unwrap_or_else(T::Native::zero))),
+            TruncArithOp::IntDiv => x
+                .checked_div(&y)
+                .map(Some)
+                .ok_or_else(|| polars_err!(ComputeError: "overflow in integer division")),
+        }
+    })
+}
+
+#[cfg(feature = "dtype-decimal")]
+pub(super) fn decimal_arith(
+    s: &mut [Column],
+    op: polars_plan::dsl::DecimalArithOp,
+    scale: usize,
+) -> PolarsResult<Column> {
+    use polars_core::series::arithmetic::coerce_lhs_rhs_numeric_op;
+    use polars_plan::dsl::DecimalArithOp;
+
+    s[0].try_apply_broadcasting_binary_elementwise(&s[1], |lhs, rhs| {
+        let (l, r) = coerce_lhs_rhs_numeric_op(lhs, rhs)?;
+        let (l, r) = (l.decimal()?, r.decimal()?);
+        let out = match op {
+            DecimalArithOp::Mul => l.mul_with_scale(r, scale)?,
+            DecimalArithOp::Div => l.div_with_scale(r, scale)?,
+        };
+        Ok(out.into_series().with_name(lhs.name().clone()))
+    })
+}
+
 #[cfg(feature = "log")]
 pub(super) fn entropy(s: &Column, base: f64, normalize: bool) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
     let out = s.as_materialized_series().entropy(base, normalize)?;
-    if matches!(s.dtype(), DataType::Float32) {
-        let out = out as f32;
-        Ok(Column::new(s.name().clone(), [out]))
+    let out_dtype = if s.dtype().is_float() {
+        s.dtype().clone()
     } else {
-        Ok(Column::new(s.name().clone(), [out]))
-    }
+        DataType::Float64
+    };
+    Column::new(s.name().clone(), [out]).cast(&out_dtype)
 }
 
 #[cfg(feature = "log")]
@@ -754,6 +898,20 @@ pub(super) fn exp(s: &Column) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
     Ok(s.as_materialized_series().exp()?.into())
+}
+
+#[cfg(feature = "log")]
+pub(super) fn erf(s: &Column) -> PolarsResult<Column> {
+    use polars_ops::series::LogSeries;
+
+    Ok(s.as_materialized_series().erf()?.into())
+}
+
+#[cfg(feature = "log")]
+pub(super) fn erfc(s: &Column) -> PolarsResult<Column> {
+    use polars_ops::series::LogSeries;
+
+    Ok(s.as_materialized_series().erfc()?.into())
 }
 
 pub(super) fn unique(s: &Column, stable: bool) -> PolarsResult<Column> {
@@ -1061,6 +1219,8 @@ pub(super) fn ewm_sum_by(
     .map(Column::from)
 }
 
+const ROW_ENCODE_PAR_MIN_ROWS: usize = 1 << 16;
+
 pub fn row_encode(
     c: &mut [Column],
     dts: Vec<DataType>,
@@ -1076,18 +1236,17 @@ pub fn row_encode(
         }
     }
 
-    let length = if c.iter().any(|c| c.is_empty()) {
-        0
-    } else {
-        c.iter().map(Column::len).max().unwrap_or(0)
-    };
+    let length = broadcast_len(c.iter())?;
     for c in c.iter_mut() {
         c.broadcast_in_place_to(length)?;
     }
 
-    let name = PlSmallStr::from_static("row_encoded");
+    let parallel = length >= ROW_ENCODE_PAR_MIN_ROWS && RAYON.current_num_threads() > 1;
     match variant {
-        RowEncodingVariant::Unordered => _get_rows_encoded_ca_unordered(name, c),
+        RowEncodingVariant::Unordered if parallel => {
+            encode_rows_vertical_par_unordered(c).map(|ca| ca.rechunk().into_owned())
+        },
+        RowEncodingVariant::Unordered => _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, c),
         RowEncodingVariant::Ordered {
             descending,
             nulls_last,
@@ -1100,10 +1259,24 @@ pub fn row_encode(
             assert_eq!(c.len(), descending.len());
             assert_eq!(c.len(), nulls_last.len());
 
-            _get_rows_encoded_ca(name, c, &descending, &nulls_last, broadcast_nulls)
+            if parallel {
+                encode_rows_vertical_par_ordered(c, &descending, &nulls_last, broadcast_nulls)
+                    .map(|ca| ca.rechunk().into_owned())
+            } else {
+                _get_rows_encoded_ca(
+                    PlSmallStr::EMPTY,
+                    c,
+                    &descending,
+                    &nulls_last,
+                    broadcast_nulls,
+                )
+            }
         },
     }
-    .map(IntoColumn::into_column)
+    .map(|ca| {
+        ca.with_name(PlSmallStr::from_static("row_encoded"))
+            .into_column()
+    })
 }
 
 #[cfg(feature = "dtype-struct")]

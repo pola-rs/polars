@@ -1,4 +1,5 @@
-use polars_defs::time::group_by::RollingGroupOptions;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::RollingGroupOptionsIR;
 use polars_utils::unique_column_name;
 
 use super::*;
@@ -9,7 +10,7 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) keys: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
     #[cfg(feature = "dynamic_group_by")]
-    pub(crate) options: RollingGroupOptions,
+    pub(crate) options: RollingGroupOptionsIR,
     pub(crate) output_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,
     pub(crate) apply: Option<PlanCallback<DataFrame, DataFrame>>,

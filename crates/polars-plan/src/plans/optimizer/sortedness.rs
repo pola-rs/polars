@@ -363,6 +363,26 @@ fn is_sorted_rec(
                     .map(|s| IRSorted([s].into()))
             }
         },
+        IR::Window {
+            input,
+            exprs,
+            maintain_order,
+            ..
+        } => {
+            if !*maintain_order {
+                return None;
+            }
+            let input_sorted = rec!(*input)?;
+            let first_overwritten_key = input_sorted
+                .0
+                .iter()
+                .position(|v| exprs.iter().any(|e| e.output_name() == &v.column));
+            match first_overwritten_key {
+                None => Some(input_sorted),
+                Some(0) => None,
+                Some(i) => Some(IRSorted(input_sorted.0.iter().take(i).cloned().collect())),
+            }
+        },
         IR::Sort {
             input: _,
             by_column,

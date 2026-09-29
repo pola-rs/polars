@@ -3,6 +3,7 @@ use std::ops::ControlFlow;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_utils::UnitVec;
 use polars_utils::collection::{Collection, CollectionWrap, MappedCollection};
+use polars_utils::index::idxsize_try_from;
 
 use super::*;
 use crate::plans::optimizer::slice_pushdown_lp::{
@@ -284,6 +285,53 @@ impl SlicePushDown {
     }
 }
 
+/// Flips a comparison operator so that `n <op> len()` becomes `len() <flip(op)> n`.
+fn flip_comparison(op: Operator) -> Operator {
+    match op {
+        Operator::Lt => Operator::Gt,
+        Operator::LtEq => Operator::GtEq,
+        Operator::Gt => Operator::Lt,
+        Operator::GtEq => Operator::LtEq,
+        other => other,
+    }
+}
+
+/// If `ae` is a comparison between `len()` and a non-negative integer literal, returns the
+/// leading-rows slice that needs to be materialized to answer it.
+fn len_cmp_head_slice(ae: &AExpr, expr_arena: &Arena<AExpr>) -> Option<ExtractedSlice> {
+    let AExpr::BinaryExpr { left, op, right } = ae else {
+        return None;
+    };
+
+    let (op, literal_node) = if matches!(expr_arena.get(*left), AExpr::Len) {
+        (*op, *right)
+    } else if matches!(expr_arena.get(*right), AExpr::Len) {
+        (flip_comparison(*op), *left)
+    } else {
+        return None;
+    };
+
+    let AExpr::Literal(lv) = expr_arena.get(literal_node) else {
+        return None;
+    };
+    let n: u64 = lv.extract_i64().ok()?.try_into().ok()?;
+
+    let head_len = match op {
+        // `len() < n` doesn't need the extra row: `head(n).len() < n` is
+        // already equivalent to `len() < n`.
+        Operator::Lt => n,
+        Operator::Eq | Operator::NotEq | Operator::LtEq | Operator::Gt | Operator::GtEq => {
+            n.saturating_add(1)
+        },
+        _ => return None,
+    };
+
+    Some(ExtractedSlice {
+        offset: 0,
+        len: idxsize_try_from(head_len).ok()?,
+    })
+}
+
 fn aexpr_slice_pushdown_top(
     current_ae_node: Node,
     input_states: &mut dyn Collection<State>,
@@ -358,26 +406,38 @@ fn aexpr_slice_pushdown_top(
         *col_hit_count = col_hit_count.map(|x| x + 1);
     }
 
+    let len_cmp_slice = len_cmp_head_slice(ae, expr_arena)
+        .map(|slice| (expr_arena.add(AExpr::Column(PlSmallStr::EMPTY)), slice));
+    if state.candidate_push_locations.is_empty()
+        && let Some((dummy_node, _)) = len_cmp_slice
+    {
+        state.candidate_push_locations.push(dummy_node);
+    }
+
     'pushdown_current_slice: {
         if state.candidate_push_locations.is_empty() {
             break 'pushdown_current_slice;
         }
 
-        let (current_input_node, current_slice) = match ae {
-            AExpr::Slice {
-                input,
-                offset,
-                length,
-            } => (*input, Slice::from_nodes(*offset, *length, expr_arena)),
-            AExpr::Agg(IRAggExpr::First(input)) => (
-                *input,
-                Slice::Extracted(ExtractedSlice { offset: 0, len: 1 }),
-            ),
-            AExpr::Agg(IRAggExpr::Last(input)) => (
-                *input,
-                Slice::Extracted(ExtractedSlice { offset: -1, len: 1 }),
-            ),
-            _ => break 'pushdown_current_slice,
+        let (current_input_node, current_slice) = if let Some((dummy_node, slice)) = len_cmp_slice {
+            (dummy_node, Slice::Extracted(slice))
+        } else {
+            match expr_arena.get(current_ae_node) {
+                AExpr::Slice {
+                    input,
+                    offset,
+                    length,
+                } => (*input, Slice::from_nodes(*offset, *length, expr_arena)),
+                AExpr::Agg(IRAggExpr::First(input)) => (
+                    *input,
+                    Slice::Extracted(ExtractedSlice { offset: 0, len: 1 }),
+                ),
+                AExpr::Agg(IRAggExpr::Last(input)) => (
+                    *input,
+                    Slice::Extracted(ExtractedSlice { offset: -1, len: 1 }),
+                ),
+                _ => break 'pushdown_current_slice,
+            }
         };
 
         for candidate_node in state.candidate_push_locations.iter().copied() {

@@ -6,6 +6,13 @@ on:
       - docs/**
       - mkdocs.yml
       - .github/workflows/docs-global.yml
+  push:
+    branches:
+      - main
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - .github/workflows/docs-global.yml
   repository_dispatch:
     types:
       - python-release-docs
@@ -52,17 +59,19 @@ jobs:
           args: format --diff
 
   deploy:
-    # Running under ubuntu doesn't have enough disk space
-    runs-on: macos-15
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.client_payload.sha }}
 
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Create virtual environment
         run: |
@@ -84,9 +93,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          workspaces: py-polars
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
 
       - name: Install Polars
         working-directory: py-polars
@@ -102,10 +109,7 @@ jobs:
       - name: Build documentation
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdocs build
-          cargo clean
-          uv clean
+        run: mkdocs build
 
       - name: Add .nojekyll
         if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'

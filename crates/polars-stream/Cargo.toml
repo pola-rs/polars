@@ -30,7 +30,7 @@ serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
 strum_macros = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "macros"] }
 uuid = { workspace = true }
 
 polars-arrow = { workspace = true }

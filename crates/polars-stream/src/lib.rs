@@ -13,7 +13,10 @@ mod graph;
 pub use graph::{GraphNodeKey, LogicalPipe, LogicalPipeKey};
 pub use skeleton::StreamingQuery;
 mod metrics;
-pub use metrics::{GraphMetrics, NodeMetrics};
+pub use metrics::{
+    AggMode, CustomMetric, GraphMetrics, Metric, MetricKind, MetricReporter, NodeMetrics,
+    NodeMetricsRegistry, kind,
+};
 mod observer_metrics;
 pub use observer_metrics::StreamingQueryMetricsSnapshotter;
 pub use polars_observer::{
@@ -21,7 +24,7 @@ pub use polars_observer::{
     register_query_observer_factory,
 };
 mod morsel;
-mod nodes;
+pub mod nodes;
 mod physical_plan;
 pub use physical_plan::{
     NodeStyle, PhysNode, PhysNodeKey, PhysNodeKind, ZipBehavior, physical_plan_to_description,

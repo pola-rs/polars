@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use polars_core::prelude::SortMultipleOptions;
 use polars_defs::join::JoinType;
 #[cfg(feature = "dynamic_group_by")]
-use polars_defs::time::group_by::DynamicGroupOptions;
+use polars_defs::time::group_by::DynamicGroupOptionsIR;
 #[cfg(feature = "iejoin")]
 use polars_descriptions::InequalityOperatorDescription;
 #[cfg(feature = "python")]
@@ -273,6 +273,23 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
+        PhysNodeKind::Window {
+            input,
+            partition_by,
+            order_by,
+            exprs,
+            ordered_eval,
+            maintain_order,
+        } => (
+            PhysicalPropsDescription::Window {
+                partition_by: partition_by.iter().map(ToString::to_string).collect(),
+                order_by: order_by.as_ref().map(|(name, _)| name.to_string()),
+                exprs: fmt_exprs(exprs, expr_arena),
+                ordered_eval: *ordered_eval,
+                maintain_order: *maintain_order,
+            },
+            vec![input.node],
+        ),
         PhysNodeKind::Map { input, .. } => (PhysicalPropsDescription::Map, vec![input.node]),
         PhysNodeKind::ColumnarFunction {
             inputs, format_str, ..
@@ -455,7 +472,10 @@ pub fn phys_props(
             let pre_slice = pre_slice.as_ref().map(|x| x.to_signed_offset_len());
             (
                 PhysicalPropsDescription::MultiScan {
-                    scan_type: file_reader_builder.reader_name().to_string(),
+                    scan_type: match file_reader_builder.reader_name() {
+                        Ok(x) => x.to_string(),
+                        Err(e) => format!("(error fetching scan type: {e:?})"),
+                    },
                     num_sources: scan_sources.len(),
                     first_source: scan_sources
                         .first()
@@ -592,6 +612,17 @@ pub fn phys_props(
             },
             vec![input_left.node, input_right.node],
         ),
+        // Note: `PhysNodeKind::AsOfJoin` is not feature-gated, but it can only be constructed
+        // from a `JoinType::AsOf`, which is.
+        #[cfg(not(feature = "asof_join"))]
+        PhysNodeKind::AsOfJoin {
+            input_left,
+            input_right,
+            ..
+        } => (
+            PhysicalPropsDescription::Other,
+            vec![input_left.node, input_right.node],
+        ),
         #[cfg(feature = "asof_join")]
         PhysNodeKind::AsOfJoin {
             input_left,
@@ -602,7 +633,6 @@ pub fn phys_props(
             ..
         } => {
             let props = match &args.how {
-                #[cfg(feature = "asof_join")]
                 JoinType::AsOf(asof_options) => {
                     use polars_defs::join::AsOfOptions;
 
@@ -776,7 +806,7 @@ pub fn phys_props(
             slice,
             ..
         } => {
-            let DynamicGroupOptions {
+            let DynamicGroupOptionsIR {
                 index_column,
                 every,
                 period,
@@ -785,6 +815,7 @@ pub fn phys_props(
                 include_boundaries,
                 closed_window,
                 start_by,
+                placement: _,
             } = options;
             (
                 PhysicalPropsDescription::DynamicGroupBy {
@@ -926,8 +957,10 @@ pub fn phys_props(
         PhysNodeKind::EwmStd { input, options, .. } => {
             (ewm_props(options, "EwmStd"), vec![input.node])
         },
-        #[allow(unreachable_patterns)]
-        _ => (PhysicalPropsDescription::Other, vec![]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmSum { input, options, .. } => {
+            (ewm_props(options, "EwmSum"), vec![input.node])
+        },
     }
 }
 

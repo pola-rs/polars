@@ -65,6 +65,13 @@ pub enum PhysicalPropsDescription {
     InMemoryMap {
         format_str: String,
     },
+    Window {
+        partition_by: Vec<String>,
+        order_by: Option<String>,
+        exprs: Vec<String>,
+        ordered_eval: bool,
+        maintain_order: bool,
+    },
     InMemorySink,
     InMemorySource {
         n_rows: usize,

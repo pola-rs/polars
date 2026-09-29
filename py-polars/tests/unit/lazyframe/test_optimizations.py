@@ -277,6 +277,48 @@ def test_len_null_count_comparison_optimized(
     )
 
 
+@pytest.mark.parametrize(
+    ("op", "n", "expected_head_len"),
+    [
+        ("__eq__", 2, 3),
+        ("__ne__", 2, 3),
+        ("__lt__", 2, 2),
+        ("__le__", 2, 3),
+        ("__gt__", 2, 3),
+        ("__ge__", 2, 3),
+    ],
+)
+def test_len_cmp_head_insertion(op: str, n: int, expected_head_len: int) -> None:
+    # Filter first so the inserted slice isn't collapsed directly into the
+    # `DataFrameScan` (which would elide the `SLICE` node from the plan entirely).
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).filter(pl.col("a") > 0)
+    expr = getattr(pl.len(), op)(n)
+    result_lf = lf.select(expr.alias("out"))
+
+    plan = result_lf.explain()
+    assert f"SLICE[offset: 0, len: {expected_head_len}]" in plan
+
+    assert_frame_equal(
+        result_lf.collect(),
+        result_lf.collect(optimizations=pl.QueryOptFlags(slice_pushdown=False)),
+    )
+
+
+def test_len_cmp_head_insertion_pushed_into_filter() -> None:
+    lf = pl.LazyFrame({"a": list(range(10))})
+    result_lf = lf.filter(pl.col("a") >= 0).select((pl.len() > 3).alias("out"))
+
+    plan = result_lf.explain()
+    assert "SLICE[offset: 0, len: 4]" in plan
+    # The slice should have been pushed below the filter.
+    assert plan.index("SLICE") < plan.index("FILTER")
+
+    assert_frame_equal(
+        result_lf.collect(),
+        result_lf.collect(optimizations=pl.QueryOptFlags(slice_pushdown=False)),
+    )
+
+
 def test_collapse_joins() -> None:
     a = pl.LazyFrame({"a": [1, 2, 3], "b": [2, 2, 2]})
     b = pl.LazyFrame({"x": [7, 1, 2]})
@@ -1305,6 +1347,31 @@ def test_streaming_engine_fused_filter_drop() -> None:
 
     assert phys_plan.index("project 2 / 3") > phys_plan.index("filter")
     assert_frame_equal(q.collect(), pl.DataFrame({"x": 1, "z": "Z"}))
+
+
+def test_streaming_engine_fused_filter_drop_stacked() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7], "d": [7, 8, 9]})
+    q = (
+        lf.filter(pl.col("d") > 7)
+        .select("a", "b", "c")
+        .with_columns(pl.col("a").cum_sum())
+        .filter(pl.col("c") > 6)
+        .select("a")
+    )
+
+    phys_plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert "project 1 / 2: a" in phys_plan
+    assert "project 2 / 3: a, c" in phys_plan
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 5}))
+
+    # Non-elementwise predicate.
+    q = lf.filter(pl.col("b") > pl.col("b").mean()).select("a", "c")
+
+    phys_plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert "project 2 / 4: a, c" in phys_plan
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 3, "c": 7}))
 
 
 def test_projection_pushdown_select_prune_expr_28729() -> None:

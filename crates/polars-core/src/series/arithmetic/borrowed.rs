@@ -374,17 +374,56 @@ pub fn coerce_lhs_rhs<'a>(
         new_right_dtype = new_left_dtype.clone();
     }
 
-    let left = if lhs.dtype() == &new_left_dtype {
-        Cow::Borrowed(lhs)
-    } else {
-        Cow::Owned(lhs.cast(&new_left_dtype)?)
+    // A decimal supertype can be narrower than an input, which must raise rather than
+    // produce nulls.
+    let cast = |s: &'a Series, dtype: &DataType| -> PolarsResult<Cow<'a, Series>> {
+        Ok(if s.dtype() == dtype {
+            Cow::Borrowed(s)
+        } else if dtype.leaf_dtype().is_decimal() {
+            Cow::Owned(s.strict_cast(dtype)?)
+        } else {
+            Cow::Owned(s.cast(dtype)?)
+        })
     };
-    let right = if rhs.dtype() == &new_right_dtype {
-        Cow::Borrowed(rhs)
-    } else {
-        Cow::Owned(rhs.cast(&new_right_dtype)?)
+    Ok((cast(lhs, &new_left_dtype)?, cast(rhs, &new_right_dtype)?))
+}
+
+/// Returns both operands as decimals if one is a decimal and the other a decimal or
+/// integer. Decimals keep their own scale, since the decimal kernels handle mixed scales
+/// without a lossy common cast, and integers are cast to `Decimal(38, 0)`.
+#[cfg(feature = "dtype-decimal")]
+pub(crate) fn decimal_op_operands<'a>(
+    lhs: &'a Series,
+    rhs: &'a Series,
+) -> Option<PolarsResult<(Cow<'a, Series>, Cow<'a, Series>)>> {
+    let (l, r) = (lhs.dtype(), rhs.dtype());
+    if !((l.is_decimal() && (r.is_decimal() || r.is_integer()))
+        || (l.is_integer() && r.is_decimal()))
+    {
+        return None;
+    }
+    let to_decimal = |s: &'a Series| -> PolarsResult<Cow<'a, Series>> {
+        if s.dtype().is_decimal() {
+            Ok(Cow::Borrowed(s))
+        } else {
+            let dtype = DataType::Decimal(polars_compute::decimal::DEC128_MAX_PREC, 0);
+            Ok(Cow::Owned(s.strict_cast(&dtype)?))
+        }
     };
-    Ok((left, right))
+    Some(to_decimal(lhs).and_then(|l| Ok((l, to_decimal(rhs)?))))
+}
+
+/// Like [`coerce_lhs_rhs`], but decimal operands keep their own scales, and an integer
+/// combined with a decimal is cast to `Decimal(38, 0)`.
+pub fn coerce_lhs_rhs_numeric_op<'a>(
+    lhs: &'a Series,
+    rhs: &'a Series,
+) -> PolarsResult<(Cow<'a, Series>, Cow<'a, Series>)> {
+    #[cfg(feature = "dtype-decimal")]
+    if let Some(out) = decimal_op_operands(lhs, rhs) {
+        return out;
+    }
+    coerce_lhs_rhs(lhs, rhs)
 }
 
 // Handle (Date | Datetime) +/- (Duration) | (Duration) +/- (Date | Datetime) | (Duration) +-
@@ -513,7 +552,7 @@ impl Add for &Series {
                 polars_bail!(opq = add, l_dtype, r_dtype)
             },
             _ => {
-                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
+                let (lhs, rhs) = coerce_lhs_rhs_numeric_op(self, rhs)?;
                 lhs.add_to(rhs.as_ref())
             },
         }
@@ -541,7 +580,7 @@ impl Sub for &Series {
                 polars_bail!(opq = sub, l_dtype, r_dtype)
             },
             _ => {
-                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
+                let (lhs, rhs) = coerce_lhs_rhs_numeric_op(self, rhs)?;
                 lhs.subtract(rhs.as_ref())
             },
         }
@@ -582,7 +621,7 @@ impl Mul for &Series {
                 fixed_size_list::NumericFixedSizeListOp::mul().execute(self, rhs)
             },
             _ => {
-                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
+                let (lhs, rhs) = coerce_lhs_rhs_numeric_op(self, rhs)?;
                 lhs.multiply(rhs.as_ref())
             },
         }
@@ -619,7 +658,7 @@ impl Div for &Series {
                 fixed_size_list::NumericFixedSizeListOp::div().execute(self, rhs)
             },
             _ => {
-                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
+                let (lhs, rhs) = coerce_lhs_rhs_numeric_op(self, rhs)?;
                 lhs.divide(rhs.as_ref())
             },
         }
@@ -649,7 +688,7 @@ impl Rem for &Series {
                 fixed_size_list::NumericFixedSizeListOp::rem().execute(self, rhs)
             },
             _ => {
-                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
+                let (lhs, rhs) = coerce_lhs_rhs_numeric_op(self, rhs)?;
                 lhs.remainder(rhs.as_ref())
             },
         }

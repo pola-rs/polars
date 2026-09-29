@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import functools
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType, RankMethod
 
 
 def test_order_observability() -> None:
@@ -834,3 +837,91 @@ def test_order_project_invalidates_suborder_28831() -> None:
     lf = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [5, 10, 2, 4]})
     out = lf.set_sorted("a", "b").select(pl.col("b").max()).collect().item()
     assert out == 10
+
+
+def test_set_sorted_expr_observes_input_order_29560() -> None:
+    lf = pl.LazyFrame({"a": [2, 0, 1, 2, 1, 0, 0, 2, 1, 0]})
+    q = lf.sort("a").with_columns(pl.col("a").set_sorted()).group_by("a").agg(pl.len())
+
+    assert "SORT" in q.explain()
+    assert_frame_equal(
+        q.collect(engine="streaming").sort("a"),
+        lf.group_by("a").agg(pl.len()).sort("a").collect(),
+    )
+
+
+@pytest.mark.parametrize(
+    ("expr", "is_order_observing"),
+    [
+        (pl.col("x").mean().over("g"), False),
+        (pl.col("x").sum().over("g", order_by="x"), False),
+        ((pl.col("x") - pl.col("x").mean()).over("g"), False),
+        (pl.len().over("g"), False),
+        (pl.col("x").n_unique().over("g", "h"), False),
+        (pl.col("x").rank().over("g"), False),
+        (pl.col("x").rank("min").over("g"), False),
+        (pl.col("x").rank("max").over("g"), False),
+        (pl.col("x").rank("dense").over("g"), False),
+        (pl.col("x").rank("ordinal").over("g"), True),
+        (pl.col("x").rank("random", seed=1).over("g"), True),
+        (pl.col("x").cum_sum().over("g"), True),
+        (pl.col("x").shift().over("g"), True),
+        (pl.col("x").first().over("g"), True),
+        (pl.col("x").sort().over("g"), True),
+        (pl.col("x").sum().over((pl.col("g") == 0).cum_sum()), True),
+        (pl.col("x").sum().over("g", order_by=pl.col("x").cum_sum()), True),
+        (pl.col("x").over("g", mapping_strategy="explode"), True),
+    ],
+)
+def test_order_insensitive_window_streaming(
+    expr: pl.Expr, is_order_observing: bool
+) -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": [1, 2, 1, 2, 1, 3],
+            "h": [1, 1, 2, 2, 1, 1],
+            "x": [3, 1, 2, 2, 5, 4],
+        }
+    )
+    q = (
+        lf.unique(maintain_order=True)
+        .with_columns(out=expr)
+        .group_by("g")
+        .agg(pl.col("out").sort())
+        .sort("g")
+    )
+
+    kept = "UNIQUE[maintain_order: true"
+    assert (kept in q.explain(engine="streaming")) == is_order_observing
+    assert kept in q.explain(engine="in-memory")
+
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize(
+    ("method", "is_order_observing"),
+    [
+        ("average", False),
+        ("min", False),
+        ("max", False),
+        ("dense", False),
+        ("ordinal", True),
+        ("random", True),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_rank_order_observing(
+    method: RankMethod, is_order_observing: bool, engine: EngineType
+) -> None:
+    lf = pl.LazyFrame({"g": [1, 2, 1, 2, 1, 3], "x": [3, 1, 2, 2, 5, 4]})
+    q = (
+        lf.unique(maintain_order=True)
+        .with_columns(r=pl.col("x").rank(method, seed=1))
+        .group_by("g")
+        .agg(pl.col("r").sort())
+        .sort("g")
+    )
+
+    kept = "UNIQUE[maintain_order: true"
+    assert (kept in q.explain(engine=engine)) == is_order_observing
+    assert_frame_equal(q.collect(engine=engine), q.collect(engine="in-memory"))

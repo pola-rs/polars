@@ -10,27 +10,26 @@ use chrono::TimeDelta;
 use chrono::TimeZone as ChronoTimeZone;
 #[cfg(feature = "timezones")]
 use chrono::offset::LocalResult;
+#[cfg(feature = "temporal")]
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 #[cfg(feature = "timezones")]
 use chrono_tz::OffsetComponents;
 #[cfg(feature = "timezones")]
 use polars_arrow::legacy::kernels::{Ambiguous, NonExistent};
-use polars_arrow::legacy::time_zone::Tz;
-use polars_arrow::temporal_conversions::{
-    MICROSECONDS, MILLISECONDS, NANOSECONDS, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
-    timestamp_us_to_datetime,
-};
 #[cfg(feature = "temporal")]
-use polars_core::chunked_array::temporal::{
-    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us,
-};
+use polars_arrow::legacy::time_zone::Tz;
+use polars_arrow::temporal_conversions::NANOSECONDS;
 #[cfg(feature = "timezones")]
 use polars_core::chunked_array::temporal::{try_localize_datetime, unlocalize_datetime};
-use polars_core::datatypes::{DataType, TimeZone};
-use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_core::datatypes::{DataType, TimeUnit, TimeZone};
+#[cfg(feature = "temporal")]
+use polars_error::polars_err;
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
+#[cfg(feature = "temporal")]
+use polars_utils::time::{DAYS_PER_MONTH, is_leap_year};
 use polars_utils::time::{
-    DAYS_PER_MONTH, NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK,
-    NTE_NS_DAY, NTE_NS_WEEK, is_leap_year,
+    NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK, NTE_NS_DAY,
+    NTE_NS_WEEK,
 };
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -124,6 +123,17 @@ impl Duration {
             nsecs: fixed_slots.abs(),
             negative: fixed_slots < 0,
             parsed_int: true,
+        }
+    }
+
+    pub const fn new_days(days: i64) -> Self {
+        Self {
+            months: 0,
+            weeks: 0,
+            days: days.abs(),
+            nsecs: 0,
+            negative: days < 0,
+            parsed_int: false,
         }
     }
 
@@ -417,56 +427,82 @@ impl Duration {
         self.negative
     }
 
-    /// Estimated duration of the window duration. Not a very good one if not a constant duration.
+    /// Estimated duration of the window duration in `tu`. Not a very good one if not a
+    /// constant duration.
+    #[doc(hidden)]
+    #[inline]
+    pub const fn duration(&self, tu: TimeUnit) -> i64 {
+        // The arms' unit conversions are constants.
+        match tu {
+            TimeUnit::Nanoseconds => self.duration_ns(),
+            TimeUnit::Microseconds => self.duration_us(),
+            TimeUnit::Milliseconds => self.duration_ms(),
+        }
+    }
+
     #[doc(hidden)]
     pub const fn duration_ns(&self) -> i64 {
-        self.months * 28 * 24 * 3600 * NANOSECONDS
-            + self.weeks * NS_WEEK
-            + self.days * NS_DAY
-            + self.nsecs
+        self.duration_inline(TimeUnit::Nanoseconds)
     }
 
     #[doc(hidden)]
     pub const fn duration_us(&self) -> i64 {
-        self.months * 28 * 24 * 3600 * MICROSECONDS
-            + (self.weeks * (NS_WEEK / 1000) + self.nsecs / 1000 + self.days * (NS_DAY / 1000))
+        self.duration_inline(TimeUnit::Microseconds)
     }
 
     #[doc(hidden)]
     pub const fn duration_ms(&self) -> i64 {
-        self.months * 28 * 24 * 3600 * MILLISECONDS
-            + (self.weeks * (NS_WEEK / 1_000_000)
-                + self.nsecs / 1_000_000
-                + self.days * (NS_DAY / 1_000_000))
+        self.duration_inline(TimeUnit::Milliseconds)
     }
 
-    /// Not-to-exceed estimated duration of the window duration. The actual duration will be
-    /// less or equal than the estimate.
+    // `duration` for a `tu` known at compile time, so that the conversions fold.
+    #[inline(always)]
+    const fn duration_inline(&self, tu: TimeUnit) -> i64 {
+        self.months * 28 * 24 * 3600 * tu.from_nsecs(NANOSECONDS)
+            + self.weeks * tu.from_nsecs(NS_WEEK)
+            + self.days * tu.from_nsecs(NS_DAY)
+            + tu.from_nsecs(self.nsecs)
+    }
+
+    /// Not-to-exceed estimated duration of the window duration in `tu`. The actual duration
+    /// will be less or equal than the estimate.
+    #[doc(hidden)]
+    #[inline]
+    pub const fn nte_duration(&self, tu: TimeUnit) -> i64 {
+        // The arms' unit conversions are constants.
+        match tu {
+            TimeUnit::Nanoseconds => self.nte_duration_ns(),
+            TimeUnit::Microseconds => self.nte_duration_us(),
+            TimeUnit::Milliseconds => self.nte_duration_ms(),
+        }
+    }
+
     #[doc(hidden)]
     pub const fn nte_duration_ns(&self) -> i64 {
-        self.months * (31 * 24 + 1) * 3600 * NANOSECONDS
-            + self.weeks * NTE_NS_WEEK
-            + self.days * NTE_NS_DAY
-            + self.nsecs
+        self.nte_duration_inline(TimeUnit::Nanoseconds)
     }
 
     #[doc(hidden)]
     pub const fn nte_duration_us(&self) -> i64 {
-        self.months * (31 * 24 + 1) * 3600 * MICROSECONDS
-            + self.weeks * (NTE_NS_WEEK / 1000)
-            + self.days * (NTE_NS_DAY / 1000)
-            + self.nsecs / 1000
+        self.nte_duration_inline(TimeUnit::Microseconds)
     }
 
     #[doc(hidden)]
     pub const fn nte_duration_ms(&self) -> i64 {
-        self.months * (31 * 24 + 1) * 3600 * MILLISECONDS
-            + self.weeks * (NTE_NS_WEEK / 1_000_000)
-            + self.days * (NTE_NS_DAY / 1_000_000)
-            + self.nsecs / 1_000_000
+        self.nte_duration_inline(TimeUnit::Milliseconds)
+    }
+
+    // `nte_duration` for a `tu` known at compile time, so that the conversions fold.
+    #[inline(always)]
+    const fn nte_duration_inline(&self, tu: TimeUnit) -> i64 {
+        self.months * (31 * 24 + 1) * 3600 * tu.from_nsecs(NANOSECONDS)
+            + self.weeks * tu.from_nsecs(NTE_NS_WEEK)
+            + self.days * tu.from_nsecs(NTE_NS_DAY)
+            + tu.from_nsecs(self.nsecs)
     }
 
     #[doc(hidden)]
+    #[cfg(feature = "temporal")]
     fn add_month(ts: NaiveDateTime, n_months: i64, negative: bool) -> PolarsResult<NaiveDateTime> {
         let mut months = n_months;
         if negative {
@@ -566,34 +602,32 @@ impl Duration {
         }
     }
 
-    fn truncate_subweekly<G, J>(
+    #[cfg(feature = "temporal")]
+    #[cfg_attr(not(feature = "timezones"), allow(unused_variables))]
+    #[inline(always)]
+    fn truncate_subweekly(
         &self,
+        tu: TimeUnit,
         t: i64,
         tz: Option<&Tz>,
         duration: i64,
-        _timestamp_to_datetime: G,
-        _datetime_to_timestamp: J,
-    ) -> PolarsResult<i64>
-    where
-        G: Fn(i64) -> NaiveDateTime,
-        J: Fn(NaiveDateTime) -> i64,
-    {
+    ) -> PolarsResult<i64> {
         match tz {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
             Some(tz) if tz != &chrono_tz::UTC => {
-                let original_dt_utc = _timestamp_to_datetime(t);
+                let original_dt_utc = tu.timestamp_to_datetime(t);
                 let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
-                let t = _datetime_to_timestamp(original_dt_local);
+                let t = tu.datetime_to_timestamp(original_dt_local);
                 let mut remainder = t % duration;
                 if remainder < 0 {
                     remainder += duration
                 }
                 let result_timestamp = t - remainder;
-                let result_dt_local = _timestamp_to_datetime(result_timestamp);
+                let result_dt_local = tu.timestamp_to_datetime(result_timestamp);
                 let result_dt_utc =
                     self.localize_result_rfc_5545(original_dt_utc, result_dt_local, tz)?;
-                Ok(_datetime_to_timestamp(result_dt_utc))
+                Ok(tu.datetime_to_timestamp(result_dt_utc))
             },
             _ => {
                 let mut remainder = t % duration;
@@ -605,27 +639,25 @@ impl Duration {
         }
     }
 
-    fn truncate_weekly<G, J>(
+    #[cfg(feature = "temporal")]
+    #[cfg_attr(not(feature = "timezones"), allow(unused_variables))]
+    #[inline(always)]
+    fn truncate_weekly(
         &self,
+        tu: TimeUnit,
         t: i64,
         tz: Option<&Tz>,
-        _timestamp_to_datetime: G,
-        _datetime_to_timestamp: J,
         daily_duration: i64,
-    ) -> PolarsResult<i64>
-    where
-        G: Fn(i64) -> NaiveDateTime,
-        J: Fn(NaiveDateTime) -> i64,
-    {
+    ) -> PolarsResult<i64> {
         let _original_dt_utc: Option<NaiveDateTime>;
         let _original_dt_local: Option<NaiveDateTime>;
         let t = match tz {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
             Some(tz) if tz != &chrono_tz::UTC => {
-                _original_dt_utc = Some(_timestamp_to_datetime(t));
+                _original_dt_utc = Some(tu.timestamp_to_datetime(t));
                 _original_dt_local = Some(unlocalize_datetime(_original_dt_utc.unwrap(), tz));
-                _datetime_to_timestamp(_original_dt_local.unwrap())
+                tu.datetime_to_timestamp(_original_dt_local.unwrap())
             },
             _ => {
                 _original_dt_utc = None;
@@ -647,40 +679,37 @@ impl Duration {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
             Some(tz) if tz != &chrono_tz::UTC => {
-                let result_dt_local = _timestamp_to_datetime(result_t_local);
+                let result_dt_local = tu.timestamp_to_datetime(result_t_local);
                 let result_dt_utc =
                     self.localize_result_rfc_5545(_original_dt_utc.unwrap(), result_dt_local, tz)?;
-                Ok(_datetime_to_timestamp(result_dt_utc))
+                Ok(tu.datetime_to_timestamp(result_dt_utc))
             },
             _ => Ok(result_t_local),
         }
     }
-    fn truncate_monthly<G, J>(
+    #[cfg(feature = "temporal")]
+    #[inline(always)]
+    fn truncate_monthly(
         &self,
+        tu: TimeUnit,
         t: i64,
         tz: Option<&Tz>,
-        timestamp_to_datetime: G,
-        datetime_to_timestamp: J,
         daily_duration: i64,
-    ) -> PolarsResult<i64>
-    where
-        G: Fn(i64) -> NaiveDateTime,
-        J: Fn(NaiveDateTime) -> i64,
-    {
+    ) -> PolarsResult<i64> {
         let original_dt_utc;
         let original_dt_local;
         let t = match tz {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
             Some(tz) if tz != &chrono_tz::UTC => {
-                original_dt_utc = timestamp_to_datetime(t);
+                original_dt_utc = tu.timestamp_to_datetime(t);
                 original_dt_local = unlocalize_datetime(original_dt_utc, tz);
-                datetime_to_timestamp(original_dt_local)
+                tu.datetime_to_timestamp(original_dt_local)
             },
             _ => {
-                original_dt_utc = timestamp_to_datetime(t);
+                original_dt_utc = tu.timestamp_to_datetime(t);
                 original_dt_local = original_dt_utc;
-                datetime_to_timestamp(original_dt_local)
+                tu.datetime_to_timestamp(original_dt_local)
             },
         };
 
@@ -730,136 +759,80 @@ impl Duration {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
             Some(tz) if tz != &chrono_tz::UTC => {
-                let result_dt_local = timestamp_to_datetime(t - remainder_days * daily_duration);
+                let result_dt_local = tu.timestamp_to_datetime(t - remainder_days * daily_duration);
                 let result_dt_utc =
                     self.localize_result_rfc_5545(original_dt_utc, result_dt_local, tz)?;
-                Ok(datetime_to_timestamp(result_dt_utc))
+                Ok(tu.datetime_to_timestamp(result_dt_utc))
             },
             _ => Ok(t - remainder_days * daily_duration),
         }
     }
 
-    #[inline]
-    pub fn truncate_impl<F, G, J>(
-        &self,
-        t: i64,
-        tz: Option<&Tz>,
-        nsecs_to_unit: F,
-        timestamp_to_datetime: G,
-        datetime_to_timestamp: J,
-    ) -> PolarsResult<i64>
-    where
-        F: Fn(i64) -> i64,
-        G: Fn(i64) -> NaiveDateTime,
-        J: Fn(NaiveDateTime) -> i64,
-    {
+    // `truncate` for a `tu` known at compile time, so that the conversions fold.
+    #[cfg(feature = "temporal")]
+    #[inline(always)]
+    fn truncate_inline(&self, tu: TimeUnit, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         match (self.months, self.weeks, self.days, self.nsecs) {
             (0, 0, 0, 0) => polars_bail!(ComputeError: "duration cannot be zero"),
             // truncate by ns/us/ms
             (0, 0, 0, _) => {
-                let duration = nsecs_to_unit(self.nsecs);
+                let duration = tu.from_nsecs(self.nsecs);
                 if duration == 0 {
                     return Ok(t);
                 }
-                self.truncate_subweekly(
-                    t,
-                    tz,
-                    duration,
-                    timestamp_to_datetime,
-                    datetime_to_timestamp,
-                )
+                self.truncate_subweekly(tu, t, tz, duration)
             },
             // truncate by days
             (0, 0, _, 0) => {
-                let duration = self.days * nsecs_to_unit(NS_DAY);
-                self.truncate_subweekly(
-                    t,
-                    tz,
-                    duration,
-                    timestamp_to_datetime,
-                    datetime_to_timestamp,
-                )
+                let duration = self.days * tu.from_nsecs(NS_DAY);
+                self.truncate_subweekly(tu, t, tz, duration)
             },
             // truncate by weeks
-            (0, _, 0, 0) => {
-                let duration = nsecs_to_unit(NS_DAY);
-                self.truncate_weekly(
-                    t,
-                    tz,
-                    timestamp_to_datetime,
-                    datetime_to_timestamp,
-                    duration,
-                )
-            },
+            (0, _, 0, 0) => self.truncate_weekly(tu, t, tz, tu.from_nsecs(NS_DAY)),
             // truncate by months
-            (_, 0, 0, 0) => {
-                let duration = nsecs_to_unit(NS_DAY);
-                self.truncate_monthly(
-                    t,
-                    tz,
-                    timestamp_to_datetime,
-                    datetime_to_timestamp,
-                    duration,
-                )
-            },
+            (_, 0, 0, 0) => self.truncate_monthly(tu, t, tz, tu.from_nsecs(NS_DAY)),
             _ => {
                 polars_bail!(ComputeError: "cannot mix month, week, day, and sub-daily units for this operation")
             },
         }
     }
 
-    // Truncate the given ns timestamp by the window boundary.
+    /// Truncate the timestamp `t` in `tu` by the window boundary.
     #[cfg(feature = "temporal")]
     #[inline]
+    pub fn truncate(&self, tu: TimeUnit, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+        // The arms have constant unit conversions and are never inlined, so a constant `tu`
+        // costs nothing, a loop-invariant one a predictable branch, and the calendar code
+        // stays out of the callers' hot loops.
+        match tu {
+            TimeUnit::Nanoseconds => self.truncate_ns(t, tz),
+            TimeUnit::Microseconds => self.truncate_us(t, tz),
+            TimeUnit::Milliseconds => self.truncate_ms(t, tz),
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[inline(never)]
     pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        self.truncate_impl(
-            t,
-            tz,
-            |nsecs| nsecs,
-            timestamp_ns_to_datetime,
-            datetime_to_timestamp_ns,
-        )
+        self.truncate_inline(TimeUnit::Nanoseconds, t, tz)
     }
 
-    // Truncate the given ns timestamp by the window boundary.
     #[cfg(feature = "temporal")]
-    #[inline]
+    #[inline(never)]
     pub fn truncate_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        self.truncate_impl(
-            t,
-            tz,
-            |nsecs| nsecs / 1000,
-            timestamp_us_to_datetime,
-            datetime_to_timestamp_us,
-        )
+        self.truncate_inline(TimeUnit::Microseconds, t, tz)
     }
 
-    // Truncate the given ms timestamp by the window boundary.
     #[cfg(feature = "temporal")]
-    #[inline]
+    #[inline(never)]
     pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        self.truncate_impl(
-            t,
-            tz,
-            |nsecs| nsecs / 1_000_000,
-            timestamp_ms_to_datetime,
-            datetime_to_timestamp_ms,
-        )
+        self.truncate_inline(TimeUnit::Milliseconds, t, tz)
     }
 
-    fn add_impl_month_week_or_day<F, G, J>(
-        &self,
-        mut t: i64,
-        tz: Option<&Tz>,
-        nsecs_to_unit: F,
-        timestamp_to_datetime: G,
-        datetime_to_timestamp: J,
-    ) -> PolarsResult<i64>
-    where
-        F: Fn(i64) -> i64,
-        G: Fn(i64) -> NaiveDateTime,
-        J: Fn(NaiveDateTime) -> i64,
-    {
+    // `add` for a `tu` known at compile time, so that the conversions fold.
+    #[cfg(feature = "temporal")]
+    #[inline(always)]
+    fn add_inline(&self, tu: TimeUnit, mut t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
 
         if d.months > 0 {
@@ -867,17 +840,17 @@ impl Duration {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    let original_dt_utc = timestamp_to_datetime(t);
+                    let original_dt_utc = tu.timestamp_to_datetime(t);
                     let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
                     let result_dt_local = Self::add_month(original_dt_local, d.months, d.negative);
-                    datetime_to_timestamp(self.localize_result_rfc_5545(
+                    tu.datetime_to_timestamp(self.localize_result_rfc_5545(
                         original_dt_utc,
                         result_dt_local?,
                         tz,
                     )?)
                 },
-                _ => datetime_to_timestamp(Self::add_month(
-                    timestamp_to_datetime(t),
+                _ => tu.datetime_to_timestamp(Self::add_month(
+                    tu.timestamp_to_datetime(t),
                     d.months,
                     d.negative,
                 )?),
@@ -885,17 +858,17 @@ impl Duration {
         }
 
         if d.weeks > 0 {
-            let t_weeks = nsecs_to_unit(NS_WEEK) * self.weeks;
+            let t_weeks = tu.from_nsecs(NS_WEEK) * self.weeks;
             t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    let original_dt_utc = timestamp_to_datetime(t);
+                    let original_dt_utc = tu.timestamp_to_datetime(t);
                     let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
-                    let mut result_timestamp_local = datetime_to_timestamp(original_dt_local);
+                    let mut result_timestamp_local = tu.datetime_to_timestamp(original_dt_local);
                     result_timestamp_local += if d.negative { -t_weeks } else { t_weeks };
-                    let result_dt_local = timestamp_to_datetime(result_timestamp_local);
-                    datetime_to_timestamp(self.localize_result_rfc_5545(
+                    let result_dt_local = tu.timestamp_to_datetime(result_timestamp_local);
+                    tu.datetime_to_timestamp(self.localize_result_rfc_5545(
                         original_dt_utc,
                         result_dt_local,
                         tz,
@@ -912,19 +885,19 @@ impl Duration {
         }
 
         if d.days > 0 {
-            let t_days = nsecs_to_unit(NS_DAY) * self.days;
+            let t_days = tu.from_nsecs(NS_DAY) * self.days;
             t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    let original_dt_utc = timestamp_to_datetime(t);
+                    let original_dt_utc = tu.timestamp_to_datetime(t);
                     let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
-                    t = datetime_to_timestamp(original_dt_local);
+                    t = tu.datetime_to_timestamp(original_dt_local);
                     t += if d.negative { -t_days } else { t_days };
-                    let result_dt_local = timestamp_to_datetime(t);
+                    let result_dt_local = tu.timestamp_to_datetime(t);
                     let result_dt_utc =
                         self.localize_result_rfc_5545(original_dt_utc, result_dt_local, tz)?;
-                    datetime_to_timestamp(result_dt_utc)
+                    tu.datetime_to_timestamp(result_dt_utc)
                 },
                 _ => {
                     if d.negative {
@@ -936,49 +909,57 @@ impl Duration {
             };
         }
 
-        Ok(t)
+        Ok(t + tu.from_nsecs(self.signed_nsecs()))
+    }
+
+    /// Add this duration to the timestamp `t` in `tu`.
+    #[cfg(feature = "temporal")]
+    #[inline]
+    pub fn add(&self, tu: TimeUnit, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+        if self.months == 0 && self.weeks == 0 && self.days == 0 {
+            // TODO: UTC with months == 0 can also have a fast path here, but checking for it here
+            // slows down hot loops of the other cases. If it turns out to be important, we might
+            // need to check once beforehand and convert it to nanos.
+
+            // A constant duration needs no calendar: keep this path inline at the call site.
+            return Ok(t + tu.from_nsecs(self.signed_nsecs()));
+        }
+        // The arms have constant unit conversions and are never inlined, so a constant `tu`
+        // costs nothing, a loop-invariant one a predictable branch, and the calendar code
+        // stays out of the callers' hot loops.
+        match tu {
+            TimeUnit::Nanoseconds => self.add_ns(t, tz),
+            TimeUnit::Microseconds => self.add_us(t, tz),
+            TimeUnit::Milliseconds => self.add_ms(t, tz),
+        }
     }
 
     #[cfg(feature = "temporal")]
+    #[inline(never)]
     pub fn add_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        let d = self;
-        let new_t = self.add_impl_month_week_or_day(
-            t,
-            tz,
-            |nsecs| nsecs,
-            timestamp_ns_to_datetime,
-            datetime_to_timestamp_ns,
-        );
-        let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
-        Ok(new_t? + nsecs)
+        self.add_inline(TimeUnit::Nanoseconds, t, tz)
     }
 
     #[cfg(feature = "temporal")]
+    #[inline(never)]
     pub fn add_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        let d = self;
-        let new_t = self.add_impl_month_week_or_day(
-            t,
-            tz,
-            |nsecs| nsecs / 1000,
-            timestamp_us_to_datetime,
-            datetime_to_timestamp_us,
-        );
-        let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
-        Ok(new_t? + nsecs / 1_000)
+        self.add_inline(TimeUnit::Microseconds, t, tz)
     }
 
     #[cfg(feature = "temporal")]
+    #[inline(never)]
     pub fn add_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        let d = self;
-        let new_t = self.add_impl_month_week_or_day(
-            t,
-            tz,
-            |nsecs| nsecs / 1_000_000,
-            timestamp_ms_to_datetime,
-            datetime_to_timestamp_ms,
-        );
-        let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
-        Ok(new_t? + nsecs / 1_000_000)
+        self.add_inline(TimeUnit::Milliseconds, t, tz)
+    }
+
+    #[cfg(feature = "temporal")]
+    #[inline(always)]
+    fn signed_nsecs(&self) -> i64 {
+        if self.negative {
+            -self.nsecs
+        } else {
+            self.nsecs
+        }
     }
 }
 
@@ -998,6 +979,7 @@ impl Mul<i64> for Duration {
     }
 }
 
+#[cfg(feature = "temporal")]
 fn new_datetime(
     year: i32,
     month: u32,

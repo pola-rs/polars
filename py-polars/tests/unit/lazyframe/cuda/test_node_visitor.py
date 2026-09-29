@@ -689,6 +689,7 @@ def test_ffi_plugin_expr_visitor(
             cast_to_supertype=False,
             pass_name_to_apply=False,
             changes_length=changes_length,
+            is_deterministic=False,
         )
     )
     visitor = pl.LazyFrame(schema={"x": pl.Float64})._ldf.visit()

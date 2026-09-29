@@ -3,7 +3,7 @@ use std::fmt::Write;
 use polars_defs::join::JoinArgs;
 use polars_defs::time::group_by::ClosedWindow;
 #[cfg(feature = "dynamic_group_by")]
-use polars_defs::time::group_by::DynamicGroupOptions;
+use polars_defs::time::group_by::DynamicGroupOptionsIR;
 use polars_plan::dsl::PartitionStrategyIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
@@ -44,6 +44,7 @@ impl NodeStyle {
             | K::SemiAntiJoin { .. }
             | K::CrossJoin { .. }
             | K::Multiplexer { .. }
+            | K::Window { .. }
             | K::Gather { .. } => Self::MemoryIntensive,
             #[cfg(feature = "iejoin")]
             K::RangeJoin { .. } => Self::MemoryIntensive,
@@ -368,6 +369,34 @@ fn visualize_plan_rec(
             }
             (label, from_ref(input))
         },
+        PhysNodeKind::Window {
+            input,
+            partition_by,
+            order_by,
+            exprs,
+            ordered_eval,
+            maintain_order,
+        } => {
+            let mut label = format!(
+                "window[maintain_order: {maintain_order}, ordered_eval: {ordered_eval}]\\npartition by: "
+            );
+            for (i, name) in partition_by.iter().enumerate() {
+                if i > 0 {
+                    label.push_str(", ");
+                }
+                label.push_str(&escape_graphviz(name));
+            }
+            if let Some((name, _)) = order_by {
+                write!(&mut label, "\\norder by: {}", escape_graphviz(name)).unwrap();
+            }
+            write!(
+                &mut label,
+                "\\n{}",
+                fmt_exprs_to_label(exprs, expr_arena, FormatExprStyle::Select)
+            )
+            .unwrap();
+            (label, from_ref(input))
+        },
         PhysNodeKind::Map {
             input,
             map: _,
@@ -550,9 +579,29 @@ fn visualize_plan_rec(
             table_statistics: _,
             file_schema: _,
             disable_morsel_split: _,
+            maintain_order: _,
         } => {
-            let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
+            let reader_name = match file_reader_builder.reader_name() {
+                Ok(x) => x.to_string(),
+                Err(e) => format!("(error fetching reader name: {e:?})"),
+            };
+            let mut out = format!("multi-scan[{reader_name}]");
             let mut f = EscapeLabel(&mut out);
+
+            #[cfg(feature = "python")]
+            if let Some(builder) = file_reader_builder.downcast_as_external_python_reader() {
+                let props = match builder.explain_properties() {
+                    Ok(x) => x,
+                    Err(e) => polars_utils::aliases::PlIndexMap::from_iter([(
+                        "Error:".into(),
+                        format!("failed explain_properties(): {e:?}"),
+                    )]),
+                };
+
+                for (k, v) in props {
+                    write!(f, "\n{k}: {v}").unwrap();
+                }
+            }
 
             write!(f, "\n{} source", scan_sources.len()).unwrap();
 
@@ -653,7 +702,7 @@ fn visualize_plan_rec(
         } => {
             use polars_defs::time::group_by::{Label, StartBy};
 
-            let DynamicGroupOptions {
+            let DynamicGroupOptionsIR {
                 index_column,
                 every,
                 period,
@@ -662,6 +711,7 @@ fn visualize_plan_rec(
                 include_boundaries,
                 closed_window,
                 start_by,
+                placement,
             } = options;
             let mut s = String::new();
             let f = &mut s;
@@ -692,6 +742,10 @@ fn visualize_plan_rec(
                 )
                 .unwrap();
             }
+            if let Some(placement) = placement {
+                write!(f, "origin: {}\\n", placement.origin).unwrap();
+                write!(f, "start_range: {:?}\\n", placement.start_range).unwrap();
+            }
             if let Some((offset, length)) = slice {
                 write!(f, "slice: {offset}, {length}\\n").unwrap();
             }
@@ -711,6 +765,7 @@ fn visualize_plan_rec(
             period,
             offset,
             closed,
+            placement,
             slice,
             aggs,
         } => {
@@ -720,6 +775,9 @@ fn visualize_plan_rec(
             write!(f, "index column: {index_column}\\n").unwrap();
             write!(f, "period: {period}, offset: {offset}\\n").unwrap();
             write!(f, "closed: {}\\n", <&'static str>::from(*closed)).unwrap();
+            if let Some(placement) = placement {
+                write!(f, "owned_range: {:?}\\n", placement.owned_range).unwrap();
+            }
             if let Some((offset, length)) = slice {
                 write!(f, "slice: {offset}, {length}\\n").unwrap();
             }

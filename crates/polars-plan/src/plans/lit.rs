@@ -10,7 +10,7 @@ use polars_core::prelude::*;
 use polars_core::series::ops::int_range::new_int_range;
 use polars_core::utils::materialize_dyn_int;
 use polars_utils::float16::pf16;
-use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
+use polars_utils::total_ord::{TotalEq, TotalHash};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -176,15 +176,7 @@ impl DynLiteralValue {
 
                 Ok(Scalar::from(i).cast_with_options(dtype, options)?)
             },
-            DynLiteralValue::Float(f) => {
-                #[cfg(feature = "dtype-decimal")]
-                if let DataType::Decimal(p, s) = dtype
-                    && let Some(v) = polars_compute::decimal::f64_to_dec128_exact(f, *p, *s)
-                {
-                    return Ok(Scalar::new(dtype.clone(), AnyValue::Decimal(v, *p, *s)));
-                }
-                Ok(Scalar::from(f).cast_with_options(dtype, options)?)
-            },
+            DynLiteralValue::Float(f) => Ok(Scalar::from(f).cast_with_options(dtype, options)?),
             DynLiteralValue::List(dyn_list_value) => {
                 dyn_list_value.try_materialize_to_dtype(dtype, options)
             },
@@ -368,9 +360,7 @@ impl LiteralValue {
         match self {
             Self::Dyn(d) => match d {
                 DynLiteralValue::Int(v) => DataType::Unknown(UnknownKind::Int(*v)),
-                DynLiteralValue::Float(v) => {
-                    DataType::Unknown(UnknownKind::Float(TotalOrdWrap(*v)))
-                },
+                DynLiteralValue::Float(_) => DataType::Unknown(UnknownKind::Float),
                 DynLiteralValue::Str(_) => DataType::Unknown(UnknownKind::Str),
                 DynLiteralValue::List(_) => todo!(),
             },

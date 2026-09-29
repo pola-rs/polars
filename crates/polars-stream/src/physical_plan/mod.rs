@@ -9,7 +9,9 @@ use polars_core::frame::DataFrame;
     feature = "dtype-time"
 ))]
 use polars_core::prelude::DataType;
-use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
+use polars_core::prelude::{
+    IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions, SortOptions,
+};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_defs::join::JoinArgs;
 use polars_error::PolarsResult;
@@ -41,9 +43,9 @@ mod to_graph;
 
 pub use fmt::{NodeStyle, visualize_plan};
 use polars_defs::time::duration::Duration;
-use polars_defs::time::group_by::ClosedWindow;
 #[cfg(feature = "dynamic_group_by")]
-use polars_defs::time::group_by::DynamicGroupOptions;
+use polars_defs::time::group_by::DynamicGroupOptionsIR;
+use polars_defs::time::group_by::{ClosedWindow, RollingWindowPlacement};
 use polars_plan::prelude::PlanCallback;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -262,6 +264,18 @@ pub enum PhysNodeKind {
         format_str: Option<String>,
     },
 
+    /// Evaluates window expressions that share one partitioning and appends them to the input
+    /// columns. Without `maintain_order` the rows are output in an unspecified order.
+    Window {
+        input: PhysStream,
+        partition_by: Vec<PlSmallStr>,
+        order_by: Option<(PlSmallStr, SortOptions)>,
+        exprs: Vec<ExprIR>,
+        /// Evaluate the rows of a partition in input order.
+        ordered_eval: bool,
+        maintain_order: bool,
+    },
+
     Map {
         input: PhysStream,
         map: Arc<dyn DataFrameUdf>,
@@ -419,6 +433,8 @@ pub enum PhysNodeKind {
         /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
         file_schema: SchemaRef,
         disable_morsel_split: bool,
+        /// If false, rows within a file may be emitted in any order.
+        maintain_order: bool,
     },
 
     #[cfg(feature = "python")]
@@ -441,7 +457,7 @@ pub enum PhysNodeKind {
     #[cfg(feature = "dynamic_group_by")]
     DynamicGroupBy {
         input: PhysStream,
-        options: DynamicGroupOptions,
+        options: DynamicGroupOptionsIR,
         aggs: Vec<ExprIR>,
         slice: Option<(IdxSize, IdxSize)>,
     },
@@ -453,6 +469,7 @@ pub enum PhysNodeKind {
         period: Duration,
         offset: Duration,
         closed: ClosedWindow,
+        placement: Option<RollingWindowPlacement>,
         slice: Option<(IdxSize, IdxSize)>,
         aggs: Vec<ExprIR>,
     },
@@ -633,6 +650,7 @@ fn _visit_nodes_impl(
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionedSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
+            | PhysNodeKind::Window { input, .. }
             | PhysNodeKind::SortedGroupBy { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
@@ -889,19 +907,28 @@ fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey
 }
 
 fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+    // Collect first: fusing swaps nodes, which would stop the traversal from reaching the
+    // inputs of the fused filter.
+    let mut projection_keys = Vec::new();
     visit_nodes_mut(roots, phys_sm, |key, phys_sm| {
+        if let PhysNodeKind::SimpleProjection { .. } = phys_sm[key].kind() {
+            projection_keys.push(key);
+        }
+    });
+
+    for key in projection_keys {
         let PhysNodeKind::SimpleProjection { input, .. } = phys_sm[key].kind() else {
-            return;
+            continue;
         };
         let len_before_drop = input.output_schema(phys_sm).len();
         let input = input.node;
 
         let Some([simple_proj_node, input_node]) = phys_sm.get_disjoint_mut([key, input]) else {
-            return;
+            continue;
         };
 
         if input_node.output_schemas.len() != 1 {
-            return;
+            continue;
         }
 
         let PhysNodeKind::SimpleProjection { input: _, columns } = simple_proj_node.kind_mut()
@@ -913,26 +940,22 @@ fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNo
 
         // TODO: Figure out why `input_schema.try_project` fails below with e.g. "\"_POLARS_TMP_7253\" not found"
         if has_rename {
-            return;
+            continue;
         }
 
-        match input_node.kind_mut() {
-            PhysNodeKind::Filter {
-                input: _,
-                predicate: _,
-                projection: projection @ None,
-            } => *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop)),
-
-            _ => return,
-        }
+        let PhysNodeKind::Filter { projection, .. } = input_node.kind_mut() else {
+            continue;
+        };
+        let len_before_drop = projection.as_ref().map_or(len_before_drop, |(_, len)| *len);
+        *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop));
 
         let input_schema = input_node.output_schema_mut(0);
         *input_schema = Arc::new(input_schema.try_project(columns.keys()).unwrap());
 
-        if !has_rename && simple_proj_node.output_schemas.len() == 1 {
+        if simple_proj_node.output_schemas.len() == 1 {
             std::mem::swap(simple_proj_node, input_node);
         }
-    });
+    }
 }
 
 /// Sets `rechunk_input` on any `Select` node directly feeding into a `GroupBy`.

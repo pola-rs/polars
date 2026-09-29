@@ -8,7 +8,6 @@ use polars_arrow::datatypes::{
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
-use polars_utils::total_ord::TotalOrdWrap;
 #[cfg(any(feature = "serde-lazy", feature = "serde"))]
 use serde::{Deserialize, Serialize};
 pub use temporal::time_zone::TimeZone;
@@ -68,9 +67,7 @@ impl IntoMetadata for Metadata {
 pub enum UnknownKind {
     // Hold the value to determine the concrete size.
     Int(i128),
-    // Hold the value to determine the decimal scale. NaN means the value is
-    // not known.
-    Float(TotalOrdWrap<f64>),
+    Float,
     // Can be Categorical or String
     Str,
     #[default]
@@ -81,7 +78,7 @@ impl UnknownKind {
     pub fn materialize(&self) -> Option<DataType> {
         let dtype = match self {
             UnknownKind::Int(v) => materialize_dyn_int(*v).dtype(),
-            UnknownKind::Float(_) => DataType::Float64,
+            UnknownKind::Float => DataType::Float64,
             UnknownKind::Str => DataType::String,
             UnknownKind::Any => return None,
         };
@@ -193,7 +190,6 @@ impl PartialEq for DataType {
                 },
                 (Unknown(l), Unknown(r)) => match (l, r) {
                     (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
-                    (UnknownKind::Float(_), UnknownKind::Float(_)) => true,
                     _ => l == r,
                 },
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
@@ -923,7 +919,7 @@ impl DataType {
             DataType::Float16
                 | DataType::Float32
                 | DataType::Float64
-                | DataType::Unknown(UnknownKind::Float(_))
+                | DataType::Unknown(UnknownKind::Float)
         )
     }
 
@@ -1373,7 +1369,7 @@ impl DataType {
             Unknown(kind) => {
                 let dt = match kind {
                     UnknownKind::Any => ArrowDataType::Unknown,
-                    UnknownKind::Float(_) => ArrowDataType::Float64,
+                    UnknownKind::Float => ArrowDataType::Float64,
                     UnknownKind::Str => ArrowDataType::Utf8View,
                     UnknownKind::Int(v) => {
                         return materialize_dyn_int(*v).dtype().try_to_arrow(compat_level);
@@ -1589,7 +1585,7 @@ impl Display for DataType {
             DataType::Unknown(kind) => match kind {
                 UnknownKind::Any => "unknown",
                 UnknownKind::Int(_) => "dyn int",
-                UnknownKind::Float(_) => "dyn float",
+                UnknownKind::Float => "dyn float",
                 UnknownKind::Str => "dyn str",
             },
         };

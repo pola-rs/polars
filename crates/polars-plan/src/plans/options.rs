@@ -6,13 +6,15 @@ use polars_core::utils::SuperTypeOptions;
 #[cfg(feature = "iejoin")]
 use polars_defs::join::IEJoinOptions;
 use polars_defs::join::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinType, JoinTypeOptions};
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::{DynamicGroupOptionsIR, RollingGroupOptionsIR};
 use polars_utils::bool::UnsafeBool;
 use polars_utils::itertools::Itertools;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-use crate::dsl::JoinOptions;
+use crate::dsl::{GroupbyOptions, JoinOptions};
 #[cfg(feature = "cse")]
 use crate::plans::ExpressionHasher;
 use crate::plans::ir::inputs::{Exprs, ExprsMut};
@@ -332,6 +334,53 @@ impl ProjectionOptions {
             should_broadcast: self.should_broadcast | other.should_broadcast,
             maintain_dataframe_height: self.maintain_dataframe_height
                 & other.maintain_dataframe_height,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub struct GroupbyOptionsIR {
+    #[cfg(feature = "dynamic_group_by")]
+    pub dynamic: Option<DynamicGroupOptionsIR>,
+    #[cfg(feature = "dynamic_group_by")]
+    pub rolling: Option<RollingGroupOptionsIR>,
+    /// Take only a slice of the result
+    pub slice: Option<(i64, usize)>,
+}
+
+impl GroupbyOptionsIR {
+    pub fn is_rolling(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.rolling.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_dynamic(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.dynamic.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
+}
+
+impl From<GroupbyOptions> for GroupbyOptionsIR {
+    fn from(opts: GroupbyOptions) -> Self {
+        Self {
+            #[cfg(feature = "dynamic_group_by")]
+            dynamic: opts.dynamic.map(Into::into),
+            #[cfg(feature = "dynamic_group_by")]
+            rolling: opts.rolling.map(Into::into),
+            slice: opts.slice,
         }
     }
 }

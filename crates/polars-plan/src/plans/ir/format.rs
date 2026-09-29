@@ -1,10 +1,12 @@
 use std::fmt::{self, Display, Formatter, Write};
 
 use polars_core::frame::DataFrame;
+use polars_core::prelude::SortOptions;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
-use polars_utils::aliases::{InitHashMaps as _, PlIndexSet};
+use polars_utils::aliases::{InitHashMaps as _, PlIndexMap, PlIndexSet};
 use polars_utils::format_list_truncated;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
@@ -66,10 +68,45 @@ impl AsExpr for ExprIR {
     }
 }
 
+pub(crate) struct WindowHeaderDisplay<'a> {
+    pub(crate) partition_by: &'a [PlSmallStr],
+    pub(crate) order_by: Option<&'a (PlSmallStr, SortOptions)>,
+    pub(crate) maintain_order: bool,
+    pub(crate) ordered_eval: bool,
+}
+
+impl Display for WindowHeaderDisplay<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "WINDOW[maintain_order: {}, ordered_eval: {}] PARTITION BY [",
+            self.maintain_order, self.ordered_eval
+        )?;
+        for (i, name) in self.partition_by.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "\"{name}\"")?;
+        }
+        f.write_char(']')?;
+        if let Some((name, options)) = self.order_by {
+            write!(f, " ORDER BY \"{name}\"")?;
+            if options.descending {
+                f.write_str(" DESC")?;
+            }
+            if options.nulls_last {
+                f.write_str(" NULLS LAST")?;
+            }
+        }
+        Ok(())
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn write_scan(
     f: &mut dyn fmt::Write,
     name: &str,
+    scan_type: Option<&FileScanIR>,
     sources: &ScanSources,
     indent: usize,
     n_columns: usize,
@@ -86,6 +123,23 @@ fn write_scan(
         "",
         ScanSourcesDisplay(sources),
     )?;
+
+    if let Some(FileScanIR::ExternalReaderBuilder { external }) = scan_type {
+        let props = match external.explain_properties() {
+            Ok(x) => x,
+            Err(e) => PlIndexMap::from_iter([(
+                "Error:".into(),
+                format!("failed explain_properties(): {e:?}"),
+            )]),
+        };
+
+        let indent = indent + INDENT_INCREMENT;
+
+        for (k, v) in props {
+            writeln!(f)?;
+            write!(EscapeLabel(f), "{:indent$}{k}: {v}", "")?;
+        }
+    }
 
     let total_columns = total_columns - usize::from(row_index.is_some());
     if n_columns != usize::MAX {
@@ -686,10 +740,15 @@ impl Display for ExprIRDisplay<'_> {
                 }
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr,
+                evaluation,
+                variant,
+            } => {
                 let expr = self.with_root(expr).parenthesize_if_binexpr();
                 let evaluation = self.with_slice(evaluation);
-                write!(f, "{expr}.struct.with_fields({evaluation})")
+                let name = variant.to_name();
+                write!(f, "{expr}.{name}({evaluation})")
             },
             Slice {
                 input,
@@ -840,6 +899,7 @@ pub fn write_ir_non_recursive(
             write_scan(
                 f,
                 &header_name,
+                None,
                 &ScanSources::default(),
                 indent,
                 n_columns,
@@ -884,6 +944,7 @@ pub fn write_ir_non_recursive(
             unified_scan_args,
             hive_parts: _,
             output_schema: _,
+            maintain_order: _,
         } => {
             let n_columns = unified_scan_args
                 .projection
@@ -898,6 +959,7 @@ pub fn write_ir_non_recursive(
             write_scan(
                 f,
                 (&**scan_type).into(),
+                Some(&**scan_type),
                 sources,
                 indent,
                 n_columns,
@@ -1085,6 +1147,25 @@ pub fn write_ir_non_recursive(
             let exprs = ExprIRSliceDisplay { exprs, expr_arena };
 
             write!(f, "{:indent$} WITH_COLUMNS:", "",)?;
+            write!(f, "\n{:indent$} {exprs} ", "")
+        },
+        IR::Window {
+            input: _,
+            partition_by,
+            order_by,
+            exprs,
+            schema: _,
+            maintain_order,
+            ordered_eval,
+        } => {
+            let header = WindowHeaderDisplay {
+                partition_by,
+                order_by: order_by.as_ref(),
+                maintain_order: *maintain_order,
+                ordered_eval: *ordered_eval,
+            };
+            let exprs = ExprIRSliceDisplay { exprs, expr_arena };
+            write!(f, "{:indent$}{header}:", "")?;
             write!(f, "\n{:indent$} {exprs} ", "")
         },
         IR::Distinct { input: _, options } => {
