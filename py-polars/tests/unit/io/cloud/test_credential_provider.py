@@ -373,7 +373,6 @@ def test_credential_provider_aws_binds_storage_region(
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_scan_no_parameters(
@@ -394,8 +393,9 @@ def test_credential_provider_aws_endpoint_url_scan_no_parameters(
 endpoint_url = http://localhost:333
 """)
 
-    # Scan with no parameters should load via CredentialProviderAWS
-    q = pl.scan_parquet("s3://.../...")
+    # Scan with no parameters should load via CredentialProviderAWS. Polars
+    # config keys like `max_retries` don't count, as the provider ignores them.
+    q = pl.scan_parquet("s3://.../...", storage_options={"max_retries": 0})
 
     capfd.readouterr()
 
@@ -408,7 +408,6 @@ endpoint_url = http://localhost:333
     assert "[CredentialProviderAWS]: Loaded endpoint_url: http://localhost:333" in lines
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_serde(
@@ -429,7 +428,7 @@ def test_credential_provider_aws_endpoint_url_serde(
 endpoint_url = http://localhost:333
 """)
 
-    q = pl.scan_parquet("s3://.../...")
+    q = pl.scan_parquet("s3://.../...", storage_options={"max_retries": 0})
     q = pickle.loads(pickle.dumps(q))
 
     cfg_file_path.write_text("""\
@@ -443,7 +442,6 @@ endpoint_url = http://localhost:777
         q.collect()
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_with_storage_options(
@@ -473,6 +471,7 @@ endpoint_url = http://localhost:333
         storage_options={
             "aws_access_key_id": "...",
             "aws_secret_access_key": "...",
+            "max_retries": 0,
         },
     )
 
@@ -489,7 +488,6 @@ endpoint_url = http://localhost:333
     assert "[CredentialProviderAWS]: Loaded endpoint_url: http://localhost:333" in lines
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.parametrize(
     "storage_options",
     [
@@ -519,7 +517,7 @@ def test_credential_provider_aws_endpoint_url_passed_in_storage_options(
 endpoint_url = http://localhost:333
 """)
 
-    q = pl.scan_parquet("s3://.../...")
+    q = pl.scan_parquet("s3://.../...", storage_options={"max_retries": 0})
 
     with pytest.raises(IOError, match=r"Error performing \w+ http://localhost:333"):
         q.collect()
@@ -527,7 +525,7 @@ endpoint_url = http://localhost:333
     # An endpoint_url passed in `storage_options` should take precedence.
     q = pl.scan_parquet(
         "s3://.../...",
-        storage_options=storage_options,
+        storage_options={**storage_options, "max_retries": 0},
     )
 
     with pytest.raises(IOError, match=r"Error performing \w+ http://localhost:777"):
@@ -546,7 +544,6 @@ aws_secret_access_key=Z
     plmonkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(creds_file_path))
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_credential_provider_python_builder_cache(
     plmonkeypatch: PlMonkeyPatch,
@@ -581,6 +578,7 @@ def test_credential_provider_python_builder_cache(
                 storage_options={
                     "aws_profile": "A",
                     "aws_endpoint_url": "http://localhost",
+                    "max_retries": 0,
                 },
                 credential_provider="auto",
             )
@@ -603,6 +601,7 @@ def test_credential_provider_python_builder_cache(
                 storage_options={
                     "aws_profile": "B",
                     "aws_endpoint_url": "http://localhost",
+                    "max_retries": 0,
                 },
                 credential_provider="auto",
             ).collect()
@@ -809,12 +808,11 @@ credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path
         "updated_credentials",
     ),
     [
-        pytest.param(
+        (
             pl.CredentialProviderAWS,
             "s3://.../...",
             {"aws_access_key_id": "initial", "aws_secret_access_key": "initial"},
             {"aws_access_key_id": "updated", "aws_secret_access_key": "updated"},
-            marks=pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961"),
         ),
         (
             pl.CredentialProviderAzure,
@@ -845,11 +843,9 @@ def test_credential_provider_rebuild_clears_cache(
         lambda *_: (initial_credentials, None),
     )
 
-    storage_options = (
-        {"aws_endpoint_url": "http://localhost:333"}
-        if credential_provider_class == pl.CredentialProviderAWS
-        else None
-    )
+    storage_options: dict[str, Any] = {"max_retries": 0}
+    if credential_provider_class == pl.CredentialProviderAWS:
+        storage_options["aws_endpoint_url"] = "http://localhost:333"
 
     builder = _init_credential_provider_builder(
         "auto",
@@ -965,7 +961,6 @@ def test_credential_provider_init_from_partition_target(
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     user_provider = Mock(
@@ -978,7 +973,10 @@ def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     def get_q() -> pl.LazyFrame:
         return pl.scan_parquet(
             "s3://.../...",
-            storage_options={"aws_endpoint_url": "http://localhost:333"},
+            storage_options={
+                "aws_endpoint_url": "http://localhost:333",
+                "max_retries": 0,
+            },
             credential_provider=user_provider,
         )
 
@@ -1005,7 +1003,6 @@ def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     assert user_provider.call_count == 4
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_credential_provider_global_config(plmonkeypatch: PlMonkeyPatch) -> None:
     import polars as pl
@@ -1029,17 +1026,16 @@ def test_credential_provider_global_config(plmonkeypatch: PlMonkeyPatch) -> None
     plmonkeypatch.setenv("AWS_ACCESS_KEY_ID", "...")
     plmonkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "...")
 
+    storage_options = {"aws_endpoint_url": "http://localhost:333", "max_retries": 0}
+
     def get_q() -> pl.LazyFrame:
-        return pl.scan_parquet(
-            "s3://.../...",
-            storage_options={"aws_endpoint_url": "http://localhost:333"},
-        )
+        return pl.scan_parquet("s3://.../...", storage_options=storage_options)
 
     def get_q_disable_cred_provider() -> pl.LazyFrame:
         return pl.scan_parquet(
             "s3://.../...",
             credential_provider=None,
-            storage_options={"aws_endpoint_url": "http://localhost:333"},
+            storage_options=storage_options,
         )
 
     assert provider.call_count == 0
@@ -1082,7 +1078,6 @@ def test_credential_provider_global_config(plmonkeypatch: PlMonkeyPatch) -> None
         get_q().collect()
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_cache_user_credential_provider_pickle(
     plmonkeypatch: PlMonkeyPatch,
@@ -1100,6 +1095,7 @@ def test_cache_user_credential_provider_pickle(
         f"s3://{prefix}/...",
         storage_options={
             "aws_endpoint_url": "http://localhost:333",
+            "max_retries": 0,
         },
         credential_provider="auto",
     )
