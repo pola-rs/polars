@@ -1198,6 +1198,27 @@ def test_decimal_add_sub_scalar_mixed_scale() -> None:
         df.select(pl.lit(D(-(10**36)), pl.Decimal(38, 0)) - a)
 
 
+def test_decimal_add_sub_mul_overflow_in_null_slot() -> None:
+    df = pl.DataFrame(
+        {"a": [D(9 * 10**37), D(1)], "valid": [False, True]},
+        schema={"a": pl.Decimal(38, 0), "valid": pl.Boolean},
+    )
+    # The null slot keeps 9 * 10^37.
+    b = pl.when("valid").then("a")
+    c = pl.lit(D(-5 * 10**37), pl.Decimal(38, 0))
+    out = df.select(add=b + b, sub=b - c, mul=b * b)
+    assert out.to_dict(as_series=False) == {
+        "add": [None, D(2)],
+        "sub": [None, D(5 * 10**37 + 1)],
+        "mul": [None, D(1)],
+    }
+
+    a = pl.col("a")
+    for expr in [a + a, a - c, a * a]:
+        with pytest.raises(ComputeError, match="overflow in decimal"):
+            df.select(expr)
+
+
 def test_decimal_integer_ops_mixed_scale() -> None:
     df = pl.DataFrame(
         {"a": [D("1.50"), None], "i": [1, 2]},

@@ -659,10 +659,10 @@ fn i256_to_dec128(x: I256, s: usize, s_out: usize) -> Option<i128> {
 /// if the result doesn't fit a Decimal128.
 #[inline]
 fn i128_to_dec128_scaled(x: i128, s: usize, s_out: usize) -> Option<i128> {
-    let r = if s_out < s {
-        div_128_pow10(x, s - s_out)
-    } else {
-        x.checked_mul(POW10_I128[s_out - s])?
+    let r = match s_out.cmp(&s) {
+        Ordering::Less => div_128_pow10(x, s - s_out),
+        Ordering::Equal => x,
+        Ordering::Greater => x.checked_mul(POW10_I128[s_out - s])?,
     };
     dec128_fits(r, DEC128_MAX_PREC).then_some(r)
 }

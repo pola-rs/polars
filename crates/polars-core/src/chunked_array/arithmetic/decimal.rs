@@ -4,7 +4,9 @@ use polars_compute::decimal::{
 };
 
 use super::*;
-use crate::prelude::arity::broadcast_try_binary_elementwise;
+use crate::prelude::arity::{
+    broadcast_binary_elementwise_values, broadcast_try_binary_elementwise,
+};
 
 impl DecimalChunked {
     /// Applies `kernel(l, left_scale, r, right_scale, scale)` elementwise, producing a
@@ -42,6 +44,30 @@ impl DecimalChunked {
         Ok(phys.into_decimal_unchecked(DEC128_MAX_PREC, scale))
     }
 
+    /// [`Self::apply_scaled_kernel`] for kernels that only fail on overflow. It first
+    /// computes all slots without per-row validity, and only goes row by row if a slot
+    /// failed, as null slots can hold any value.
+    fn apply_scaled_kernel_values(
+        &self,
+        rhs: &Self,
+        scale: usize,
+        op: &str,
+        kernel: impl Fn(i128, usize, i128, usize, usize) -> Option<i128>,
+    ) -> PolarsResult<Self> {
+        let left_s = self.scale();
+        let right_s = rhs.scale();
+        let mut failed = false;
+        let phys = broadcast_binary_elementwise_values(self.physical(), rhs.physical(), |l, r| {
+            let ret = kernel(l, left_s, r, right_s, scale);
+            failed |= ret.is_none();
+            ret.unwrap_or(0)
+        });
+        if failed {
+            return self.apply_scaled_kernel(rhs, scale, op, kernel);
+        }
+        Ok(phys.into_decimal_unchecked(DEC128_MAX_PREC, scale))
+    }
+
     /// A single non-null value at `scale`, if it has another scale and fits.
     fn scalar_with_scale(&self, scale: usize) -> Option<Self> {
         if self.len() != 1 || self.scale() == scale {
@@ -70,17 +96,15 @@ impl DecimalChunked {
         let scale = self.scale().max(rhs.scale());
         let lhs_scalar = self.scalar_with_scale(scale);
         let rhs_scalar = rhs.scalar_with_scale(scale);
-        lhs_scalar.as_ref().unwrap_or(self).apply_scaled_kernel(
-            rhs_scalar.as_ref().unwrap_or(rhs),
-            scale,
-            op,
-            kernel,
-        )
+        lhs_scalar
+            .as_ref()
+            .unwrap_or(self)
+            .apply_scaled_kernel_values(rhs_scalar.as_ref().unwrap_or(rhs), scale, op, kernel)
     }
 
     /// Multiplies with the result rounded to `scale`.
     pub fn mul_with_scale(&self, rhs: &Self, scale: usize) -> PolarsResult<Self> {
-        self.apply_scaled_kernel(rhs, scale, "multiplication", dec128_mul_scaled)
+        self.apply_scaled_kernel_values(rhs, scale, "multiplication", dec128_mul_scaled)
     }
 
     /// Divides with the result rounded to `scale`.
