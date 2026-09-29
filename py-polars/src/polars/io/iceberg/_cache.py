@@ -43,15 +43,18 @@ _FINGERPRINT_EXCLUDED_KEYS = frozenset(
 )
 
 
-def _properties_fingerprint(properties: Mapping[str, Any]) -> str:
-    # Object values are skipped, their string form is not stable across instances.
-    items = sorted(
-        (str(k), repr(v))
-        for k, v in properties.items()
-        if k not in _FINGERPRINT_EXCLUDED_KEYS
-        and (v is None or isinstance(v, (str, bytes, int, float, bool)))
-    )
-    return hashlib.sha256(repr(items).encode()).hexdigest()
+def _properties_fingerprint(properties: Mapping[str, Any]) -> str | None:
+    # None when a value is not plain: nested settings and objects, such as REST
+    # catalog auth, can carry identity that their contents do not show.
+    items = []
+    for k, v in properties.items():
+        if k in _FINGERPRINT_EXCLUDED_KEYS:
+            continue
+        if not (v is None or isinstance(v, (str, bytes, int, float, bool))):
+            return None
+        items.append((str(k), repr(v)))
+
+    return hashlib.sha256(repr(sorted(items)).encode()).hexdigest()
 
 
 class IcebergMetadataFileCache:
@@ -222,7 +225,8 @@ class CachingFileIO:
 
     Reads of cacheable paths go through the cache. Everything else is
     forwarded to the wrapped FileIO. Cache entries are scoped to the
-    properties of the wrapped FileIO.
+    properties of the wrapped FileIO, and nothing is cached when a property
+    value is not plain.
     """
 
     def __init__(self, inner: FileIO, cache: IcebergMetadataFileCache) -> None:
@@ -232,9 +236,10 @@ class CachingFileIO:
         self._scope = _properties_fingerprint(self.properties)
 
     def new_input(self, location: str) -> InputFile:
-        if self._cache.enabled and _is_cacheable(location):
+        scope = self._scope
+        if scope is not None and self._cache.enabled and _is_cacheable(location):
             return CachedInputFile(  # type: ignore[return-value]
-                self._inner, location, self._cache, self._scope
+                self._inner, location, self._cache, scope
             )
         return self._inner.new_input(location)
 
@@ -261,7 +266,8 @@ def with_metadata_file_cache(scan: Any) -> Any:
     """
     inner = getattr(scan, "io", None)
 
-    if inner is None:
+    # A nested wrapper deadlocks: both levels take the same per-file fetch lock.
+    if inner is None or isinstance(inner, CachingFileIO):
         return scan
 
     cache = get_metadata_file_cache()

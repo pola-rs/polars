@@ -5574,29 +5574,28 @@ def test_iceberg_caching_file_io_scope(tmp_path: Path) -> None:
             return f.read()  # type: ignore[no-any-return]
 
     assert read({"s3.access-key-id": "a"}, manifest) == b"data"
-    assert cache.misses == 1
+    assert (cache.hits, cache.misses) == (0, 1)
 
-    # Object values and table metadata pointers do not change the scope.
-    assert (
-        read(
-            {
-                "s3.access-key-id": "a",
-                "auth.manager": object(),
-                "metadata_location": "v2",
-                "previous_metadata_location": "v1",
-            },
-            manifest,
-        )
-        == b"data"
-    )
-    assert cache.misses == 1
+    # Table metadata pointers do not change the scope.
+    pointers = {"metadata_location": "v2", "previous_metadata_location": "v1"}
+    assert read({"s3.access-key-id": "a", **pointers}, manifest) == b"data"
+    assert (cache.hits, cache.misses) == (1, 1)
 
     # Entries are not shared across credentials.
     assert read({"s3.access-key-id": "b"}, manifest) == b"data"
-    assert cache.misses == 2
+    assert (cache.hits, cache.misses) == (1, 2)
+
+    # Values that are not plain bypass the cache.
+    for opaque in (
+        {"auth": {"type": "basic", "basic": {"username": "a", "password": "x"}}},
+        {"auth.manager": object()},
+    ):
+        assert read({"s3.access-key-id": "a", **opaque}, manifest) == b"data"
+    assert (cache.hits, cache.misses) == (1, 2)
 
     # File names without a UUID are not cached.
     assert read({"s3.access-key-id": "a"}, no_uuid) == b"data"
+    assert (cache.hits, cache.misses) == (1, 2)
     assert len(cache) == 2
 
 
@@ -5619,3 +5618,55 @@ def test_iceberg_caching_file_io_copy_pickle(tmp_path: Path) -> None:
         input_file = copied.new_input(format_file_uri_iceberg(manifest))
         with input_file.open(False) as f:
             assert f.read() == b"data"
+
+
+def test_iceberg_metadata_file_cache_wraps_once() -> None:
+    from types import SimpleNamespace
+
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    from polars.io.iceberg._cache import CachingFileIO, with_metadata_file_cache
+
+    scan = SimpleNamespace(io=PyArrowFileIO())
+    with_metadata_file_cache(scan)
+    wrapped = scan.io
+    assert isinstance(wrapped, CachingFileIO)
+
+    with_metadata_file_cache(scan)
+    assert scan.io is wrapped
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_metadata_file_cache_incremental(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from polars.io.iceberg._cache import reset_metadata_file_cache
+
+    reset_metadata_file_cache()
+
+    try:
+        tbl, _ = new_iceberg_table(
+            tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+        )
+        for i in range(3):
+            pl.DataFrame({"a": [i]}).write_iceberg(tbl, mode="append")
+
+        snapshots = tbl.snapshots()
+        opened = _count_avro_opens(monkeypatch, tbl)
+        expected = pl.DataFrame({"a": [1, 2]})
+
+        def scan() -> pl.DataFrame:
+            return pl.scan_iceberg(
+                tbl,
+                from_snapshot_id_exclusive=snapshots[0].snapshot_id,
+                to_snapshot_id_inclusive=snapshots[-1].snapshot_id,
+            ).collect()
+
+        assert_frame_equal(scan(), expected, check_row_order=False)
+        assert opened
+
+        opened.clear()
+        assert_frame_equal(scan(), expected, check_row_order=False)
+        assert opened == []
+    finally:
+        reset_metadata_file_cache()
