@@ -514,6 +514,13 @@ fn simplify_input_streams(
             {
                 if *inner == orig_input {
                     combined_exprs.extend(exprs.iter().cloned());
+                    // The only removal from `phys_sm` during lowering. The IR attribution in
+                    // `lower_ir` slices the keys inserted since it started lowering a node, and
+                    // `DenseSlotMap::remove` swaps the last key into the removed position, so a
+                    // removal may only touch nodes inserted during the current `lower_ir` call.
+                    // This one does: `lower_reduce_node` inserted these while lowering the same
+                    // expression. Removing an older node here would silently attribute a new
+                    // node to an outer IR node.
                     ctx.phys_sm.remove(input_stream.node);
                     return false;
                 }

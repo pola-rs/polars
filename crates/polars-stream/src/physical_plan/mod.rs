@@ -875,7 +875,11 @@ fn _visit_nodes_impl(
     }
 }
 
-fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysSmBuilder) {
+fn insert_multiplexers(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut PhysSmBuilder,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+) {
     let mut refcount: PlIndexMap<_, usize> = PlIndexMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(*i).or_insert(0) += 1;
@@ -897,6 +901,8 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysSmBuilder) {
                     PhysNodeKind::Multiplexer { input: stream },
                 ))
             });
+            let source_ir_node = phys_to_ir[stream.node];
+            phys_to_ir.insert(multiplexer_node, source_ir_node);
             (stream, PhysStream::first(multiplexer_node))
         })
         .collect();
@@ -909,27 +915,35 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysSmBuilder) {
     });
 }
 
-fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysSmBuilder) {
+fn split_multiplexers(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut PhysSmBuilder,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+) {
     let mut refcount: SecondaryMap<PhysNodeKey, usize> = SecondaryMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(i.node).unwrap().or_insert(0) += 1;
     });
 
-    let mut split_map: SecondaryMap<PhysNodeKey, PhysNode> = SecondaryMap::new();
+    // The in-memory source to clone for each multiplexer, with the IR node it was lowered from.
+    let mut split_map: SecondaryMap<PhysNodeKey, (PhysNode, Node)> = SecondaryMap::new();
     for (k, n) in phys_sm.iter() {
         if let PhysNodeKind::Multiplexer { input } = n.kind {
             if let PhysNodeKind::InMemorySource { .. } = phys_sm[input.node].kind {
-                split_map.insert(k, phys_sm[input.node].clone());
+                split_map.insert(k, (phys_sm[input.node].clone(), phys_to_ir[input.node]));
             }
         }
     }
 
     let mut replacements: SecondaryMap<PhysNodeKey, Vec<PhysStream>> = split_map
         .into_iter()
-        .map(|(k, n)| {
-            // The clones are the same source split per consumer; `insert` keeps the IR node
-            // they already carry.
-            let repls = (0..refcount[k]).map(|_| PhysStream::first(phys_sm.insert(n.clone())));
+        .map(|(k, (n, source_ir_node))| {
+            // The clones are the same source split per consumer, so each keeps its IR node.
+            let repls = (0..refcount[k]).map(|_| {
+                let clone = phys_sm.insert(n.clone());
+                phys_to_ir.insert(clone, source_ir_node);
+                PhysStream::first(clone)
+            });
             (k, repls.collect())
         })
         .collect();
@@ -941,7 +955,11 @@ fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut PhysSmBuilder) {
     });
 }
 
-fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>) {
+fn fuse_drops(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+) {
     // Collect first: fusing swaps nodes, which would stop the traversal from reaching the
     // inputs of the fused filter.
     let mut projection_keys = Vec::new();
@@ -989,6 +1007,12 @@ fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut DenseSlotMap<PhysNodeKey, P
 
         if simple_proj_node.output_schemas.len() == 1 {
             std::mem::swap(simple_proj_node, input_node);
+            // The filter now lives in the projection's slot; move the attribution with it so
+            // the surviving node keeps the `Filter` IR node.
+            let proj_ir_node = phys_to_ir[key];
+            let filter_ir_node = phys_to_ir[input];
+            phys_to_ir.insert(key, filter_ir_node);
+            phys_to_ir.insert(input, proj_ir_node);
         }
     }
 }
@@ -1016,44 +1040,60 @@ fn rechunk_group_by_inputs(
 }
 
 /// Lowers the IR rooted at `root` into a physical plan and returns the root physical node
-/// together with the slotmap holding the plan.
+/// together with the slotmap holding the plan and the IR node each physical node was lowered
+/// from.
 pub fn build_physical_plan(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     ctx: StreamingLowerIRContext<'_>,
-) -> PolarsResult<(PhysNodeKey, DenseSlotMap<PhysNodeKey, PhysNode>)> {
+) -> PolarsResult<(
+    PhysNodeKey,
+    DenseSlotMap<PhysNodeKey, PhysNode>,
+    SecondaryMap<PhysNodeKey, Node>,
+)> {
+    // IR nodes at or beyond this index are added by lowering itself and are not part of the
+    // plan the query observer sees.
+    let original_ir_len = ir_arena.len();
+    let mut phys_to_ir: SecondaryMap<PhysNodeKey, Node> =
+        SecondaryMap::with_capacity(ir_arena.len());
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
     let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
     let mut cache_nodes = PlHashMap::new();
     let mut phys_sm = PhysSmBuilder::new(
         DenseSlotMap::with_capacity_and_key(ir_arena.len()),
-        ir_arena.len(),
+        original_ir_len,
     );
     let phys_root = lower_ir::lower_ir(
         root,
         ir_arena,
         expr_arena,
         &mut phys_sm,
+        &mut phys_to_ir,
+        original_ir_len,
         &mut schema_cache,
         &mut expr_cache,
         &mut cache_nodes,
         ctx,
         None,
     )?;
-    insert_multiplexers(vec![phys_root.node], &mut phys_sm);
-    split_multiplexers(vec![phys_root.node], &mut phys_sm);
-    fuse_drops(vec![phys_root.node], &mut phys_sm);
+    insert_multiplexers(vec![phys_root.node], &mut phys_sm, &mut phys_to_ir);
+    split_multiplexers(vec![phys_root.node], &mut phys_sm, &mut phys_to_ir);
+    fuse_drops(vec![phys_root.node], &mut phys_sm, &mut phys_to_ir);
 
     // TODO: remove this after fusing pre-select into group-by node.
     rechunk_group_by_inputs(vec![phys_root.node], &mut phys_sm);
 
+    // Transitional, removed with `PhysSmBuilder`: the external map must agree with the IR node
+    // stamped on every physical node.
     debug_assert!(
-        phys_sm.values().all(|n| n
-            .ir_node()
-            .is_some_and(|ir| phys_sm.is_original_ir_node(ir))),
-        "every physical node must be attributed to an IR node of the original plan"
+        phys_sm.iter().all(|(key, node)| {
+            node.ir_node()
+                .is_some_and(|ir| phys_sm.is_original_ir_node(ir))
+                && phys_to_ir.get(key).copied() == node.ir_node()
+        }),
+        "phys_to_ir must match the IR node stamped on every physical node"
     );
 
-    Ok((phys_root.node, phys_sm.into_inner()))
+    Ok((phys_root.node, phys_sm.into_inner(), phys_to_ir))
 }

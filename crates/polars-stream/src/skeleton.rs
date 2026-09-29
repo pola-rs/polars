@@ -68,8 +68,12 @@ impl StreamingQuery {
         expr_arena: &Arena<AExpr>,
     ) -> PlannedQuery {
         let ir = ir_plan_to_description(&[ir_node], ir_arena, expr_arena);
-        let physical =
-            physical_plan_to_description(&[self.root_phys_node], &self.phys_sm, expr_arena);
+        let physical = physical_plan_to_description(
+            &[self.root_phys_node],
+            &self.phys_sm,
+            &self.phys_to_ir,
+            expr_arena,
+        );
         let mut query = PlannedQuery::new(ir).with_physical(physical);
         if let Some(snapshotter) = StreamingQueryMetricsSnapshotter::from_query(self) {
             query = query.with_metrics_snapshotter(snapshotter);
@@ -90,7 +94,7 @@ pub fn visualize_physical_plan(
         prepare_visualization: true,
         sortedness: &sortedness,
     };
-    let (root_phys_node, phys_sm) =
+    let (root_phys_node, phys_sm, _phys_to_ir) =
         crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, ctx)?;
 
     let out = crate::physical_plan::visualize_plan(root_phys_node, &phys_sm, expr_arena);
@@ -103,6 +107,8 @@ pub struct StreamingQuery {
     pub graph: Graph,
     pub root_phys_node: PhysNodeKey,
     pub phys_sm: DenseSlotMap<PhysNodeKey, PhysNode>,
+    /// The IR node each physical node in `phys_sm` was lowered from.
+    pub phys_to_ir: SecondaryMap<PhysNodeKey, Node>,
     pub phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     pub metrics: Option<Arc<Mutex<GraphMetrics>>>,
 }
@@ -146,7 +152,7 @@ impl StreamingQuery {
             prepare_visualization: cfg_prepare_visualization_data(),
             sortedness: &sortedness,
         };
-        let (root_phys_node, phys_sm) =
+        let (root_phys_node, phys_sm, phys_to_ir) =
             crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, ctx)?;
         if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_PHYSICAL_PLAN") {
             let visualization =
@@ -178,6 +184,7 @@ impl StreamingQuery {
             graph,
             root_phys_node,
             phys_sm,
+            phys_to_ir,
             phys_to_graph,
             metrics,
         };
@@ -191,6 +198,7 @@ impl StreamingQuery {
             mut graph,
             root_phys_node,
             phys_sm,
+            phys_to_ir: _,
             phys_to_graph,
             metrics,
         } = self;

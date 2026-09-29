@@ -22,15 +22,18 @@ use polars_plan::plans::options::JoinTypeOptionsIR;
 #[cfg(feature = "python")]
 use polars_plan::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
 use polars_utils::aliases::{InitHashMaps, PlIndexSet};
-use polars_utils::arena::Arena;
+use polars_utils::arena::{Arena, Node};
 use polars_utils::index::idxsize_to_u64;
-use slotmap::{DenseSlotMap, Key};
+use slotmap::{DenseSlotMap, Key, SecondaryMap};
 
 use crate::{PhysNode, PhysNodeKey, PhysNodeKind};
 
+/// Describes the physical nodes reachable from `roots`. `phys_to_ir` maps each physical node
+/// to the IR node it was lowered from; a node missing from it is described with no `ir_node_id`.
 pub fn physical_plan_to_description(
     roots: &[PhysNodeKey],
     phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &SecondaryMap<PhysNodeKey, Node>,
     expr_arena: &Arena<AExpr>,
 ) -> Vec<PhysicalNodeDescription> {
     let mut nodes = Vec::new();
@@ -44,12 +47,11 @@ pub fn physical_plan_to_description(
     }
 
     while let Some(key) = queue.pop_front() {
-        let phys_node = &phys_sm[key];
-        let (properties, inputs) = phys_props(phys_node.kind(), expr_arena);
+        let (properties, inputs) = phys_props(phys_sm[key].kind(), expr_arena);
         let node = PhysicalNodeDescription {
             id: key.data().as_ffi(),
             input_ids: inputs.iter().map(|k| k.data().as_ffi()).collect(),
-            ir_node_id: phys_node.ir_node().map(|n| n.0),
+            ir_node_id: phys_to_ir.get(key).map(|n| n.0),
             properties,
         };
 

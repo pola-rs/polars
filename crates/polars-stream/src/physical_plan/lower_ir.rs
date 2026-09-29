@@ -37,9 +37,10 @@ use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
 use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
+use slotmap::SecondaryMap;
 
 use super::lower_expr::build_hstack_stream;
-use super::{PhysNode, PhysNodeKind, PhysSmBuilder, PhysStream};
+use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysSmBuilder, PhysStream};
 #[cfg(feature = "python")]
 use crate::nodes::io_sources;
 use crate::nodes::io_sources::multi_scan;
@@ -169,9 +170,9 @@ pub struct StreamingLowerIRContext<'a> {
 /// Lowers `node` and everything below it to physical nodes.
 ///
 /// Every physical node inserted while lowering an IR node of the original plan is attributed
-/// to that IR node. Lowering also appends temporary IR nodes to the arena and lowers them
-/// recursively; those are not part of the plan the query observer sees, so nodes lowered from
-/// them inherit the attribution of the original IR node whose lowering created them.
+/// to that IR node in `phys_to_ir`. Lowering also appends temporary IR nodes to the arena and
+/// lowers them recursively; those are not part of the plan the query observer sees, so nodes
+/// lowered from them are attributed to the original IR node whose lowering created them.
 #[recursive::recursive]
 #[allow(clippy::too_many_arguments)]
 pub fn lower_ir(
@@ -179,19 +180,29 @@ pub fn lower_ir(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut PhysSmBuilder,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+    original_ir_len: usize,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
     cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
     ctx: StreamingLowerIRContext<'_>,
     disable_morsel_split: Option<bool>,
 ) -> PolarsResult<PhysStream> {
-    if phys_sm.is_original_ir_node(node) {
+    // Every key at or beyond this position was inserted by lowering `node` or one of its
+    // inputs. This relies on the slotmap being append-only while lowering: `DenseSlotMap::remove`
+    // swaps the last key into the removed position, so removing a key below `len_before` would
+    // hide a new node from this window. The one removal, in `simplify_input_streams`, only
+    // removes nodes inserted during the current `lower_ir` call; see the comment there.
+    let len_before = phys_sm.len();
+    let out = if phys_sm.is_original_ir_node(node) {
         phys_sm.with_ir_node(node, |phys_sm| {
             lower_ir_inner(
                 node,
                 ir_arena,
                 expr_arena,
                 phys_sm,
+                phys_to_ir,
+                original_ir_len,
                 schema_cache,
                 expr_cache,
                 cache_nodes,
@@ -205,13 +216,28 @@ pub fn lower_ir(
             ir_arena,
             expr_arena,
             phys_sm,
+            phys_to_ir,
+            original_ir_len,
             schema_cache,
             expr_cache,
             cache_nodes,
             ctx,
             disable_morsel_split,
         )
+    };
+    let out = out?;
+    // Temporary IR nodes are not in the IR the observer sees; the physical nodes lowered from
+    // them are claimed by the enclosing original node's window instead.
+    if node.0 < original_ir_len {
+        for key in phys_sm.keys().skip(len_before) {
+            // A nested `lower_ir` call already claimed its own nodes, so the innermost
+            // original IR node wins.
+            if !phys_to_ir.contains_key(key) {
+                phys_to_ir.insert(key, node);
+            }
+        }
     }
+    Ok(out)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -220,6 +246,8 @@ fn lower_ir_inner(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut PhysSmBuilder,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+    original_ir_len: usize,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
     cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
@@ -238,6 +266,8 @@ fn lower_ir_inner(
                 ir_arena,
                 expr_arena,
                 phys_sm,
+                phys_to_ir,
+                original_ir_len,
                 schema_cache,
                 expr_cache,
                 cache_nodes,
