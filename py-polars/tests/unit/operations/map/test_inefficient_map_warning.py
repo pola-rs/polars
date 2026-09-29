@@ -367,6 +367,10 @@ NOOP_TEST_CASES = [
     "lambda x: MY_LIST in x",
     'lambda x: "first" if x == 1 else "not first"',
     'lambda x: np.sign(x, casting="unsafe")',
+    "lambda x: x.encode()",
+    "lambda x: x.lower",
+    "lambda x: x.replace('a', x)",
+    "lambda x: x.replace('a', 'b', 1, 2)",
 ]
 
 EVAL_ENVIRONMENT = {

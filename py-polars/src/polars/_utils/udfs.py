@@ -671,10 +671,6 @@ class InstructionTranslator:
         self._map_target = map_target
         self._dtype = dtype
 
-    def _get_function_variable(self, name: str) -> Any:
-        """Resolve a name from the function's lexical scope."""
-        return _get_function_variable(self._function, name)
-
     def _containment_kind(
         self, operand: StackEntry, param_name: str
     ) -> ContainmentKind | None:
@@ -695,7 +691,7 @@ class InstructionTranslator:
         if operand in self._constants:
             value = self._constants[operand]
         elif operand.isidentifier():
-            value = self._get_function_variable(operand)
+            value = _get_function_variable(self._function, operand)
         else:
             return None
 
@@ -808,7 +804,7 @@ class InstructionTranslator:
                         haystack, suffix = f"pl.lit({e2})", f'.alias("{col}")'
                     return f"{not_}{haystack}.str.contains({e1}, literal=True){suffix}"
                 elif op == "replace_strict":
-                    if not isinstance(self._get_function_variable(e1), dict):
+                    if not isinstance(_get_function_variable(self._function, e1), dict):
                         msg = "require dict mapping"
                         raise NotImplementedError(msg)
                     return f"{e2}.{op}({e1})"
@@ -928,10 +924,6 @@ class RewrittenInstructions:
 
     def __getitem__(self, item: Any) -> Instruction:
         return self._rewritten_instructions[item]
-
-    def _get_function_variable(self, name: str) -> Any:
-        """Resolve a name from the function's lexical scope."""
-        return _get_function_variable(self._function, name)
 
     def _matches(
         self,
@@ -1099,7 +1091,7 @@ class RewrittenInstructions:
                     ]
                     if check_globals:
                         expr_name = inst1.argval
-                        func = self._get_function_variable(expr_name)
+                        func = _get_function_variable(self._function, expr_name)
                         if func is NO_DEFAULT:
                             continue
                         else:
@@ -1157,75 +1149,38 @@ class RewrittenInstructions:
         self, idx: int, updated_instructions: list[Instruction]
     ) -> int:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
-        if matching_instructions := (
-            # method call with one arg, eg: "s.endswith('!')"
-            self._matches(
-                idx,
-                opnames=[_START_METHOD_REWRITE, {"LOAD_CONST"}, OpNames.CALL],
-                argvals=[_PYTHON_METHODS_MAP],
-            )
-            or
-            # method call with no arg, eg: "s.lower()"
-            self._matches(
-                idx,
-                opnames=[_START_METHOD_REWRITE, OpNames.CALL],
-                argvals=[_PYTHON_METHODS_MAP],
-            )
+        instructions = self._instructions
+        inst = instructions[idx]
+        if (
+            inst.opname not in _START_METHOD_REWRITE
+            or inst.argval not in _PYTHON_METHODS_MAP
         ):
-            inst = matching_instructions[0]
-            expr = _PYTHON_METHODS_MAP[inst.argval]
+            return 0
 
-            if matching_instructions[1].opname == "LOAD_CONST":
-                param_value = matching_instructions[1].argval
-                if isinstance(param_value, tuple) and expr in (
-                    "str.starts_with",
-                    "str.ends_with",
-                ):
-                    starts, ends = ("^", "") if "starts" in expr else ("", "$")
-                    rx = "|".join(re_escape(v) for v in param_value)
-                    q = '"' if "'" in param_value else "'"
-                    expr = f"str.contains(r{q}{starts}({rx}){ends}{q})"
-                else:
-                    expr += f"({param_value!r})"
+        end = idx + 1
+        stop = min(len(instructions), idx + 4)
+        while end < stop and instructions[end].opname == "LOAD_CONST":
+            end += 1
+        if end == len(instructions) or instructions[end].opname not in OpNames.CALL:
+            return 0
 
-            px = inst._replace(opname="POLARS_EXPRESSION", argval=expr, argrepr=expr)
-            updated_instructions.append(px)
-
-        elif matching_instructions := (
-            # method call with three args, eg: "s.replace('!','?',count=2)"
-            self._matches(
-                idx,
-                opnames=[
-                    _START_METHOD_REWRITE,
-                    {"LOAD_CONST"},
-                    {"LOAD_CONST"},
-                    {"LOAD_CONST"},
-                    OpNames.CALL,
-                ],
-                argvals=[_PYTHON_METHODS_MAP],
-            )
-            or
-            # method call with two args, eg: "s.replace('!','?')"
-            self._matches(
-                idx,
-                opnames=[
-                    _START_METHOD_REWRITE,
-                    {"LOAD_CONST"},
-                    {"LOAD_CONST"},
-                    OpNames.CALL,
-                ],
-                argvals=[_PYTHON_METHODS_MAP],
-            )
-        ):
-            inst = matching_instructions[0]
-            expr = _PYTHON_METHODS_MAP[inst.argval]
-
-            param_values = [
-                i.argval
-                for i in matching_instructions[1 : len(matching_instructions) - 1]
-            ]
+        expr = _PYTHON_METHODS_MAP[inst.argval]
+        param_values = [i.argval for i in instructions[idx + 1 : end]]
+        if (n_param_values := len(param_values)) == 1:
+            param_value = param_values[0]
+            if isinstance(param_value, tuple) and expr in (
+                "str.starts_with",
+                "str.ends_with",
+            ):
+                starts, ends = ("^", "") if "starts" in expr else ("", "$")
+                rx = "|".join(re_escape(v) for v in param_value)
+                q = '"' if "'" in param_value else "'"
+                expr = f"str.contains(r{q}{starts}({rx}){ends}{q})"
+            else:
+                expr += f"({param_value!r})"
+        elif n_param_values > 1:
             if expr == "str.replace":
-                if len(param_values) == 3:
+                if n_param_values == 3:
                     old, new, count = param_values
                     expr += f"({old!r},{new!r},n={count},literal=True)"
                 else:
@@ -1234,10 +1189,9 @@ class RewrittenInstructions:
             else:
                 expr += f"({','.join(repr(v) for v in param_values)})"
 
-            px = inst._replace(opname="POLARS_EXPRESSION", argval=expr, argrepr=expr)
-            updated_instructions.append(px)
-
-        return len(matching_instructions)
+        px = inst._replace(opname="POLARS_EXPRESSION", argval=expr, argrepr=expr)
+        updated_instructions.append(px)
+        return end - idx + 1
 
     @staticmethod
     def _unpack_superinstructions(
@@ -1287,10 +1241,11 @@ class RewrittenInstructions:
     ) -> bool:
         return (
             attribute_count == 0
-            and self._get_function_variable(function_name) is datetime.datetime
+            and _get_function_variable(self._function, function_name)
+            is datetime.datetime
         ) or (
             attribute_count == 1
-            and self._get_function_variable(module_name) is datetime
+            and _get_function_variable(self._function, module_name) is datetime
         )
 
 
