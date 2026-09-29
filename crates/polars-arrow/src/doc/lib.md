@@ -4,7 +4,7 @@ This is a library for efficient in-memory data operations with
 [Arrow in-memory format](https://arrow.apache.org/docs/format/Columnar.html). It is a re-write from
 the bottom up of the official `arrow` crate with soundness and type safety in mind.
 
-Check out [the guide](https://jorgecarleitao.github.io/polars_arrow/main/guide/) for an
+Check out [the guide](https://docs.rs/polars-arrow) for an
 introduction. Below is an example of some of the things you can do with it:
 
 ```rust
