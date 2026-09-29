@@ -1410,7 +1410,10 @@ mod tests {
                 ExprIR::from_node(a, expr_arena),
                 ExprIR::from_node(haystack, expr_arena),
             ],
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal: false }),
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                nulls_equal: false,
+                needle_cast: None,
+            }),
             options: crate::prelude::FunctionOptions::elementwise(),
         })
     }

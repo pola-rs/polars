@@ -2536,6 +2536,8 @@ def rolling_cov(
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
 
+    .. engine-support:: in-memory, streaming
+
     Parameters
     ----------
     a
@@ -2582,6 +2584,8 @@ def rolling_corr(
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
+
+    .. engine-support:: in-memory, streaming
 
     Parameters
     ----------

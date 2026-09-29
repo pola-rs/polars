@@ -304,6 +304,11 @@ pub enum PhysicalPropsDescription {
         num_inputs: usize,
         name: Option<String>,
     },
+    RollingFixedWindowFunction {
+        name: String,
+        offset: i64,
+        length: u64,
+    },
     IsSorted {
         descending: Option<bool>,
         nulls_last: Option<bool>,

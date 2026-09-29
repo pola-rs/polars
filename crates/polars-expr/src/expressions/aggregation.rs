@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use polars_core::frame::group_by::aggregations::{_use_rolling_kernels, rolling_numeric_minmax_by};
+use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
@@ -482,6 +483,13 @@ impl PhysicalExpr for AggMinMaxByExpr {
         }
 
         // Slow path: per-group agg_arg_min/agg_arg_max.
+        let by_col = if by_col.dtype().is_nested() {
+            let encoded =
+                _get_rows_encoded_ca(by_col.name().clone(), &[by_col], &[false], &[false], true)?;
+            encoded.cast(&DataType::Binary)?.into_column()
+        } else {
+            by_col
+        };
         // SAFETY: Groups are correct.
         let idxs_in_groups = if self.is_max_by {
             unsafe { by_col.agg_arg_max(&by_groups) }

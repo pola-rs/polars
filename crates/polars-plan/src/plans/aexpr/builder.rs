@@ -339,7 +339,10 @@ impl AExprBuilder {
                 self.expr_ir_unnamed(),
                 other.into_aexpr_builder().expr_ir_unnamed(),
             ],
-            IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                nulls_equal,
+                needle_cast: None,
+            }),
             arena,
         )
     }

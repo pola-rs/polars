@@ -234,6 +234,7 @@ fn replace_elementwise_components(
 fn try_lower_elementwise_scalar_agg_expr(
     expr: Node,
     gbl_kind: GroupByLowerKind,
+    input_schema: &Schema,
     canonical_exprs: &mut CanonicalExprMap,
     expr_cache: &mut ExprCache,
     expr_arena: &mut Arena<AExpr>,
@@ -249,6 +250,7 @@ fn try_lower_elementwise_scalar_agg_expr(
             try_lower_elementwise_scalar_agg_expr(
                 $input,
                 gbl_kind,
+                input_schema,
                 canonical_exprs,
                 expr_cache,
                 expr_arena,
@@ -433,11 +435,39 @@ fn try_lower_elementwise_scalar_agg_expr(
                     | IRBooleanFunction::IsEmpty { .. }
                     | IRBooleanFunction::HasNulls,
                 )
-                | IRFunctionExpr::MinBy
-                | IRFunctionExpr::MaxBy
                 | IRFunctionExpr::NullCount,
             ..
         } => Some(replace_agg_uniq!(expr)),
+
+        AExpr::Function {
+            input,
+            function: function @ (IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy),
+            options,
+        } => {
+            let (input, function, options) = (input.clone(), function.clone(), *options);
+            let by_dtype = input[1].dtype(input_schema, expr_arena).ok()?.clone();
+            if !by_dtype.is_nested() {
+                return Some(replace_agg_uniq!(expr));
+            }
+
+            let by = AExprBuilder::row_encode(
+                vec![input[1].clone()],
+                vec![by_dtype],
+                RowEncodingVariant::Ordered {
+                    descending: None,
+                    nulls_last: None,
+                    broadcast_nulls: Some(true),
+                },
+                expr_arena,
+            )
+            .expr_ir_unnamed();
+            let encoded = expr_arena.add(AExpr::Function {
+                input: vec![input[0].clone(), by],
+                function,
+                options,
+            });
+            Some(replace_agg_uniq!(encoded))
+        },
 
         #[cfg(feature = "cov")]
         AExpr::Function {
@@ -842,10 +872,12 @@ pub fn try_build_streaming_group_by(
     // sub-stream derived from the pre-select, which reads them from there as columns.
     let mut substream_input_ids = PlIndexSet::new();
 
+    let input_schema = input.output_schema(phys_sm).clone();
     for agg in aggs {
         let Some(trans_node) = try_lower_elementwise_scalar_agg_expr(
             agg.node(),
             gbl_kind,
+            &input_schema,
             &mut canonical_exprs,
             expr_cache,
             expr_arena,
@@ -883,7 +915,6 @@ pub fn try_build_streaming_group_by(
     // Keep the pre-select narrow: whatever is cheaper to recompute inside the group-by
     // node than to store in its (spilled) payload comes back as a post-select expression,
     // which the node evaluates over the rows that need it.
-    let input_schema = input.output_schema(phys_sm).clone();
     let (mut pre_select_exprs, post_select_agg_inputs) = split_pre_post_select_minsize_elementwise(
         &splittable_agg_inputs,
         &must_preselect,
