@@ -2548,9 +2548,7 @@ def test_map_get_key_that_would_be_rounded_is_absent(
 
 def test_map_get_shows_the_key_cast_on_the_function() -> None:
     # Only the key is cast, as the lookup runs; the Map is never rewritten.
-    lf = pl.LazyFrame(
-        {"m": map_of(pl.Int8, 7), "k": pl.Series([7], dtype=pl.Int64)}
-    )
+    lf = pl.LazyFrame({"m": map_of(pl.Int8, 7), "k": pl.Series([7], dtype=pl.Int64)})
     plan = lf.select(pl.col("m").map.get(pl.col("k"))).explain()
     assert "[key: i8]" in plan
     assert ".cast(" not in plan

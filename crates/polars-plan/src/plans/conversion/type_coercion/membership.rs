@@ -193,7 +193,7 @@ fn resolve_needle(
             ),
         }
     };
-    let self_cast = |dtype: &DataType| R::CastNeedle {
+    let cast_needle = |dtype: &DataType| R::CastNeedle {
         dtype: dtype.clone(),
     };
 
@@ -201,7 +201,7 @@ fn resolve_needle(
         (n, e) if n == e => return Ok(None),
 
         // A null needle can take any element dtype; it is absent from a Map.
-        (DataType::Null, e) => self_cast(e),
+        (DataType::Null, e) => cast_needle(e),
         // Elements that can only be null take the needle's dtype without looking at the data.
         (n, e) if container == Container::Sequence && is_null_shape_of(e, n) => R::CastContainer {
             dtype: with_inner(container_dtype, n.clone()),
@@ -275,7 +275,7 @@ fn resolve_needle(
                 Container::Map => element.clone(),
             };
             if needle_unit == unit {
-                self_cast(&dtype)
+                cast_needle(&dtype)
             } else {
                 R::GuardedNeedleCast { dtype }
             }
@@ -291,7 +291,7 @@ fn resolve_needle(
         {
             Container::Sequence => return Ok(None),
             #[cfg(feature = "dtype-map")]
-            Container::Map if element.is_string() => self_cast(element),
+            Container::Map if element.is_string() => cast_needle(element),
             // An unknown label becomes a null key, which no Map holds.
             #[cfg(feature = "dtype-map")]
             Container::Map => R::GuardedNeedleCast {
@@ -349,4 +349,210 @@ fn map_hint(
     }
     let _ = (form, container, element);
     ""
+}
+
+/// Apply membership or Map lookup casts chosen by `resolve`.
+///
+/// `expr_node` must be an [`AExpr::Function`] whose operands are laid out as `form` says.
+#[cfg(any(feature = "is_in", feature = "dtype-map"))]
+pub(super) fn coerce_is_in(
+    expr_node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    schema: &Schema,
+    form: MembershipForm,
+    resolve: impl FnOnce(&[ExprIR], &Arena<AExpr>) -> PolarsResult<Option<IsInTypeCoercionResult>>,
+) -> PolarsResult<Option<AExpr>> {
+    let AExpr::Function {
+        function,
+        input,
+        options,
+    } = expr_arena.get(expr_node)
+    else {
+        unreachable!("caller matched a function expression")
+    };
+    let options = *options;
+    let (flat, nested) = (form.flat(), form.nested());
+
+    // The needle is only cast when the function runs, so its dtype still differs.
+    if function.membership_needle_cast().is_some() {
+        return Ok(None);
+    }
+
+    let result = resolve(input, expr_arena)?;
+
+    #[cfg(feature = "is_in")]
+    if let Some(haystack) =
+        cast_literal_haystack(function, input, form, result.as_ref(), expr_arena, schema)?
+    {
+        let (function, mut input) = (function.clone(), input.to_vec());
+        input[nested].set_node(expr_arena.add(AExpr::Literal(haystack.into())));
+        return Ok(Some(AExpr::Function {
+            function,
+            input,
+            options,
+        }));
+    }
+
+    let Some(result) = result else {
+        return Ok(None);
+    };
+
+    let mut function = function.clone();
+    let mut input = input.to_vec();
+    use IsInTypeCoercionResult;
+    match result {
+        IsInTypeCoercionResult::CastNeedle { dtype } => {
+            let (_, type_self) =
+                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
+            cast_expr_ir(
+                &mut input[flat],
+                &type_self,
+                &dtype,
+                expr_arena,
+                CastOptions::NonStrict,
+            )?;
+        },
+        IsInTypeCoercionResult::CastContainer { dtype } => {
+            let (_, type_other) =
+                unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
+            cast_expr_ir(
+                &mut input[nested],
+                &type_other,
+                &dtype,
+                expr_arena,
+                CastOptions::NonStrict,
+            )?;
+        },
+        IsInTypeCoercionResult::GuardedNeedleCast { dtype } => {
+            let lv = match expr_arena.get(input[flat].node()) {
+                AExpr::Literal(lv) if lv.is_scalar() => lv,
+                // Cast and check the evaluated needle, so that it is evaluated once.
+                _ => {
+                    *needle_cast_mut(&mut function) = Some(dtype);
+                    return Ok(Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    }));
+                },
+            };
+
+            // A literal needle is cast and checked once, here.
+            let (_, type_self) =
+                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
+            let type_self = type_self.materialize_unknown(false)?;
+            let needle = match lv {
+                LiteralValue::Dyn(dyn_value) => dyn_value
+                    .clone()
+                    .try_materialize_to_dtype(&type_self, CastOptions::Strict)?,
+                LiteralValue::Scalar(scalar) => scalar.clone(),
+                _ => unreachable!("a scalar literal"),
+            }
+            .into_series(PlSmallStr::EMPTY);
+            let (casted, inexact) = needle._cast_reporting_inexact(&dtype)?;
+            let needle = match inexact {
+                None => Scalar::new(dtype.clone(), casted.get(0)?.into_static()),
+                // A Map holds no null key, so a null needle is simply absent.
+                Some(_) if is_map_lookup(&function) => Scalar::null(dtype.clone()),
+                // A null needle would match null elements, so answer directly: no match, except
+                // for a null container.
+                Some(_) => {
+                    let container = AExprBuilder::new_from_node(input[nested].node());
+                    let null =
+                        AExprBuilder::lit_scalar(Scalar::null(DataType::Boolean), expr_arena);
+                    let miss = AExprBuilder::lit_scalar(Scalar::from(false), expr_arena);
+                    let out = container
+                        .is_null(expr_arena)
+                        .ternary(null, miss, expr_arena);
+                    return Ok(Some(out.build(expr_arena)));
+                },
+            };
+            input[flat].set_node(expr_arena.add(AExpr::Literal(needle.into())));
+            input[flat].set_dtype(dtype);
+        },
+        #[cfg(feature = "is_in")]
+        IsInTypeCoercionResult::Implode => {
+            assert!(!form.is_contains());
+            let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                input: input[nested].node(),
+                maintain_order: true,
+            }));
+            input[nested].set_node(other_input);
+        },
+    }
+
+    Ok(Some(AExpr::Function {
+        function,
+        input,
+        options,
+    }))
+}
+
+/// Cast eligible literal haystacks to the needle dtype to preserve pushdown.
+/// Inexact elements cannot match: drop them from Lists, or skip the rewrite
+/// for Arrays.
+#[cfg(feature = "is_in")]
+fn cast_literal_haystack(
+    function: &IRFunctionExpr,
+    input: &[ExprIR],
+    form: MembershipForm,
+    result: Option<&IsInTypeCoercionResult>,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+) -> PolarsResult<Option<Scalar>> {
+    use IsInTypeCoercionResult as R;
+
+    let (flat, nested) = (form.flat(), form.nested());
+    if is_map_lookup(function)
+        || !matches!(
+            result,
+            None | Some(R::CastNeedle { .. } | R::GuardedNeedleCast { .. })
+        )
+        || matches!(expr_arena.get(input[flat].node()), AExpr::Literal(_))
+    {
+        return Ok(None);
+    }
+    let AExpr::Literal(LiteralValue::Scalar(haystack)) = expr_arena.get(input[nested].node())
+    else {
+        return Ok(None);
+    };
+    let needle = input[flat].dtype(schema, expr_arena)?;
+    // Casting strings to a Categorical would add them to its categories.
+    if !needle.is_known() || needle.contains_categoricals() {
+        return Ok(None);
+    }
+    let (elements, width) = match haystack.value() {
+        AnyValue::List(s) => (s, None),
+        #[cfg(feature = "dtype-array")]
+        AnyValue::Array(s, width) => (s, Some(*width)),
+        _ => return Ok(None),
+    };
+    if elements.dtype() == needle {
+        return Ok(None);
+    }
+    let Ok((casted, inexact)) = elements._cast_reporting_inexact(needle) else {
+        return Ok(None);
+    };
+    let (value, dtype) = match (inexact, width) {
+        (None, None) => (
+            AnyValue::List(casted),
+            DataType::List(Box::new(needle.clone())),
+        ),
+        (Some(inexact), None) => (
+            AnyValue::List(casted.filter(&!&inexact)?),
+            DataType::List(Box::new(needle.clone())),
+        ),
+        #[cfg(feature = "dtype-array")]
+        (None, Some(width)) => (
+            AnyValue::Array(casted, width),
+            DataType::Array(Box::new(needle.clone()), width),
+        ),
+        // Dropping elements would change the width.
+        #[cfg(feature = "dtype-array")]
+        (Some(_), Some(_)) => return Ok(None),
+        #[cfg(not(feature = "dtype-array"))]
+        (_, Some(_)) => unreachable!(),
+    };
+
+    Ok(Some(Scalar::new(dtype, value.into_static())))
 }
