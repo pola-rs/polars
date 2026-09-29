@@ -1493,6 +1493,32 @@ def test_map_json_read_array_of_maps_wrong_width_ignore_errors(path: str) -> Non
     s = read_json_column(path, rows, dtype, ignore_errors=True)
     assert s.to_list() == [None, [{"a": 1}, {"b": 2}], None]
 
+    s = read_json_column(path, rows[1:2], dtype, ignore_errors=True)
+    assert s.to_list() == [[{"a": 1}, {"b": 2}]]
+
+
+@pytest.mark.parametrize("path", JSON_READ_PATHS)
+def test_map_json_read_extension_of_map(path: str) -> None:
+    dtype = pl.Extension(name=MAP_EXTENSION_NAME, storage=ENUM_MAP)
+    s = read_json_column(path, ['{"b":1,"a":2}', "null"], dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == [{"b": 1, "a": 2}, None]
+
+
+@pytest.mark.parametrize("path", ["read_ndjson", "scan_ndjson"])
+def test_map_json_read_array_values(path: str) -> None:
+    dtype = pl.Map(pl.String, pl.Array(pl.Int64, 2))
+    s = read_json_column(path, ['{"a":[1,2],"b":null}', "null"], dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == [{"a": [1, 2], "b": None}, None]
+
+
+@pytest.mark.parametrize("path", ["read_ndjson", "scan_ndjson"])
+def test_map_json_read_ignore_errors_nulls_unknown_enum_values(path: str) -> None:
+    dtype = pl.Map(pl.String, pl.Enum(["x"]))
+    s = read_json_column(path, ['{"a":"x","b":"y"}'], dtype, ignore_errors=True)
+    assert s.to_list() == [{"a": "x", "b": None}]
+
 
 ENUM_MAP = pl.Map(pl.Enum(["a", "b"]), pl.Int64)
 

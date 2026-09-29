@@ -30,8 +30,9 @@ impl DataType {
 
     /// The dtype a JSON reader decodes into before [`Series::from_json_decoded`].
     ///
-    /// Maps become `List(Struct {key: String, value})`, Arrays containing a Map become Lists
-    /// and Enum/Categorical leaves become String.
+    /// Maps become `List(Struct {key: String, value})`, Arrays containing a Map become Lists,
+    /// Extensions containing a Map become their storage and Enum/Categorical leaves become
+    /// String.
     pub fn json_decode_dtype(&self) -> DataType {
         use DataType as D;
         match self {
@@ -53,6 +54,8 @@ impl DataType {
                     .map(|f| Field::new(f.name.clone(), f.dtype.json_decode_dtype()))
                     .collect(),
             ),
+            #[cfg(feature = "dtype-extension")]
+            D::Extension(_, storage) if storage.contains_map() => storage.json_decode_dtype(),
             #[cfg(feature = "dtype-extension")]
             D::Extension(ext, storage) => {
                 D::Extension(ext.clone(), Box::new(storage.json_decode_dtype()))
@@ -108,10 +111,6 @@ fn from_json_decoded_rec(
     target: &DataType,
     ignore_errors: bool,
 ) -> PolarsResult<Series> {
-    if !target.contains_map() {
-        return cast_leaf(series.clone(), target, ignore_errors);
-    }
-
     match target {
         DataType::Map(key_dtype, value_dtype) => {
             let mut ok_keys: Option<Bitmap> = None;
@@ -142,13 +141,13 @@ fn from_json_decoded_rec(
             };
             Ok(MapChunked::try_from_storage(target.clone(), storage)?.into_series())
         },
-        DataType::List(inner) => {
+        DataType::List(inner) if inner.contains_map() => {
             let ca = series.list()?;
             let values = from_json_decoded_rec(&ca.get_inner(), inner, ignore_errors)?;
             Ok(ca.with_inner_values(&values).into_series())
         },
         #[cfg(feature = "dtype-array")]
-        DataType::Array(inner, width) => {
+        DataType::Array(inner, width) if inner.contains_map() => {
             let ca = series.list()?;
             let values = from_json_decoded_rec(&ca.get_inner(), inner, ignore_errors)?;
             let mut list = ca.with_inner_values(&values).into_series();
@@ -157,15 +156,20 @@ fn from_json_decoded_rec(
             }
             list.cast_with_options(target, CastOptions::Strict)
         },
-        DataType::Struct(fields) => {
+        DataType::Struct(fields) if target.contains_map() => {
             let ca = series.struct_()?;
             let out = ca.try_apply_fields(|field| {
-                match fields.iter().find(|f| f.name() == field.name()) {
-                    Some(f) => from_json_decoded_rec(field, f.dtype(), ignore_errors),
-                    None => Ok(field.clone()),
-                }
+                let f = fields
+                    .iter()
+                    .find(|f| f.name() == field.name())
+                    .expect("the decode dtype keeps the target's struct fields");
+                from_json_decoded_rec(field, f.dtype(), ignore_errors)
             })?;
             Ok(out.into_series())
+        },
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(typ, storage) if storage.contains_map() => {
+            Ok(from_json_decoded_rec(series, storage, ignore_errors)?.into_extension(typ.clone()))
         },
         _ => cast_leaf(series.clone(), target, ignore_errors),
     }

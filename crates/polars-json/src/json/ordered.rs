@@ -37,11 +37,11 @@ impl<'a> Guide<'a> {
                 };
                 Guide::Map(Box::new(Guide::new(entry_fields[1].dtype())))
             },
-            ArrowDataType::LargeList(field)
-            | ArrowDataType::List(field)
-            | ArrowDataType::FixedSizeList(field, _) => match Guide::new(field.dtype()) {
-                Guide::Default => Guide::Default,
-                inner => Guide::List(Box::new(inner)),
+            ArrowDataType::LargeList(field) | ArrowDataType::FixedSizeList(field, _) => {
+                match Guide::new(field.dtype()) {
+                    Guide::Default => Guide::Default,
+                    inner => Guide::List(Box::new(inner)),
+                }
             },
             ArrowDataType::Struct(fields) => {
                 let fields: PlHashMap<_, _> = fields
