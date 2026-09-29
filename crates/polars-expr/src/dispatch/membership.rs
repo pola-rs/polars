@@ -1,3 +1,5 @@
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::{self, Bitmap};
 use polars_core::error::PolarsResult;
 use polars_core::frame::column::ScalarColumn;
 use polars_core::prelude::*;
@@ -39,26 +41,41 @@ pub(super) fn with_needle_cast(
     let Some(inexact) = inexact else {
         return f(s);
     };
-    let container_valid = s[container].is_not_null();
+    let container_validity = s[container]
+        .as_materialized_series_maintain_scalar()
+        .rechunk_validity();
     let out = f(s)?;
 
-    let len = out.len();
-    let broadcast = |mask: BooleanChunked| {
+    let result = out.as_materialized_series_maintain_scalar();
+    let result = result.bool()?.rechunk();
+    let result = result.downcast_as_array();
+    let len = result.len();
+    let broadcast = |mask: Bitmap| {
         if mask.len() == len {
             mask
         } else {
-            debug_assert_eq!(mask.len(), 1);
-            BooleanChunked::full(mask.name().clone(), mask.get(0).unwrap(), len)
+            Bitmap::new_with_value(mask.get_bit(0), len)
         }
     };
-    let exact = !&broadcast(inexact);
-    let miss = BooleanChunked::full(PlSmallStr::EMPTY, false, len)
-        .into_series()
-        .zip_with(
-            &broadcast(container_valid),
-            &Series::full_null(PlSmallStr::EMPTY, len, &DataType::Boolean),
-        )?;
-    out.zip_with(&exact, &miss.into_column())
+    let inexact = broadcast(inexact.rechunk().downcast_as_array().values().clone());
+    // The kernel already made null containers null. The other inexact rows become `false`.
+    let values = bitmap::and_not(result.values(), &inexact);
+    let validity = result.validity().map(|valid| {
+        let miss = match container_validity {
+            Some(container_valid) => bitmap::and(&inexact, &broadcast(container_valid)),
+            None => inexact,
+        };
+        bitmap::or(valid, &miss)
+    });
+    let result = BooleanChunked::with_chunk(
+        out.name().clone(),
+        BooleanArray::new(ArrowDataType::Boolean, values, validity),
+    )
+    .into_series();
+    Ok(match out {
+        Column::Scalar(_) => ScalarColumn::from_single_value_series(result, out.len()).into(),
+        Column::Series(_) => result.into(),
+    })
 }
 
 /// Null a Map key the cast could not represent exactly: no Map holds a null key.
@@ -70,19 +87,7 @@ pub(super) fn cast_map_key(key: &mut Column, needle_cast: Option<&DataType>) -> 
     let (casted, inexact) = cast_needle(key, dtype)?;
     *key = match inexact {
         None => casted,
-        Some(inexact) => {
-            let casted = casted.as_materialized_series_maintain_scalar();
-            let nulled = casted.zip_with(
-                &!&inexact,
-                &Series::full_null(casted.name().clone(), casted.len(), dtype),
-            )?;
-            match key {
-                Column::Scalar(_) => {
-                    ScalarColumn::from_single_value_series(nulled, key.len()).into()
-                },
-                Column::Series(_) => nulled.into(),
-            }
-        },
+        Some(inexact) => casted.mask(&!inexact.rechunk().downcast_as_array().values()),
     };
     Ok(())
 }
