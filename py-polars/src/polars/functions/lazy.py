@@ -1335,7 +1335,7 @@ def pipe_with_dtype(
     function: Callable[[list[tuple[Expr, DataType]]], IntoExpr],
 ) -> Expr:
     """
-    Replace expressions during the plan stage, based on their resolved dtypes.
+    Replace `exprs`, at plan time, with the expression returned by `callback`.
 
     `function` is not executed immediately but only during the plan stage, once
     the dtypes of `exprs` are known. This allows choosing a different expression
@@ -1367,7 +1367,7 @@ def pipe_with_dtype(
 
     See Also
     --------
-    Expr.pipe_with_dtype
+    Expr.pipe_with_dtype : Same functionality for a single expressions.
     LazyFrame.pipe_with_schema
 
     Examples
