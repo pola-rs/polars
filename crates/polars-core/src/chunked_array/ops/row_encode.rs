@@ -76,22 +76,7 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
 
 /// Whether the row encoding has a representation for `dtype`.
 pub fn supports_row_encoding(dtype: &DataType) -> bool {
-    use DataType as D;
-    let out = match dtype {
-        D::Unknown(_) => false,
-        #[cfg(feature = "object")]
-        D::Object(_) => false,
-        D::List(inner) => supports_row_encoding(inner),
-        #[cfg(feature = "dtype-array")]
-        D::Array(inner, _) => supports_row_encoding(inner),
-        #[cfg(feature = "dtype-struct")]
-        D::Struct(fields) => fields.iter().all(|f| supports_row_encoding(f.dtype())),
-        #[cfg(feature = "dtype-map")]
-        D::Map(key, value) => supports_row_encoding(key) && supports_row_encoding(value),
-        #[cfg(feature = "dtype-extension")]
-        D::Extension(_, storage) => supports_row_encoding(storage),
-        _ => true,
-    };
+    let out = !dtype.contains_unknown() && !dtype.contains_objects();
     debug_assert_eq!(out, get_row_encoding_context(dtype).is_ok());
     out
 }

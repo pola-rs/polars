@@ -2,6 +2,7 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
+use polars_core::chunked_array::ops::row_encode::supports_row_encoding;
 use polars_core::datatypes::AnyValue;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
@@ -746,7 +747,11 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 function: IRFunctionExpr::Unique(maintain_order),
                 options: _,
-            } => {
+            } if !maintain_order
+                || inner_exprs[0]
+                    .dtype(input.output_schema(ctx.phys_sm), ctx.expr_arena)
+                    .is_ok_and(supports_row_encoding) =>
+            {
                 assert!(inner_exprs.len() == 1);
 
                 let tmp_name = unique_column_name();
@@ -2103,7 +2108,10 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsFirstDistinct),
                 ..
-            } => {
+            } if inner_exprs[0]
+                .dtype(input.output_schema(ctx.phys_sm), ctx.expr_arena)
+                .is_ok_and(supports_row_encoding) =>
+            {
                 let val_name = unique_column_name();
                 let distinct_name = unique_column_name();
 

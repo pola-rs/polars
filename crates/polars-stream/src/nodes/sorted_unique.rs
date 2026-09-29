@@ -5,7 +5,7 @@ use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
-use polars_core::prelude::{AnyValue, BooleanChunked, Column, IntoColumn};
+use polars_core::prelude::{AnyValue, BooleanChunked, Column, DataType, IntoColumn};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_utils::IdxSize;
@@ -29,15 +29,11 @@ pub struct SortedUnique {
 impl SortedUnique {
     pub fn new(keys: &[PlSmallStr], schema: &Schema) -> Self {
         assert!(!keys.is_empty());
-        let mut row_encode = keys.len() > 1;
+        let row_encode = Self::needs_row_encoding(keys.iter().map(|key| schema.get(key).unwrap()));
         let last = vec![None; keys.len()];
         let keys = keys
             .iter()
-            .map(|key| {
-                let (idx, _, dtype) = schema.get_full(key).unwrap();
-                row_encode |= dtype.is_nested();
-                idx
-            })
+            .map(|key| schema.index_of(key).unwrap())
             .collect();
         Self {
             keys,
@@ -45,6 +41,12 @@ impl SortedUnique {
             last,
             seq_offset: Arc::default(),
         }
+    }
+
+    pub fn needs_row_encoding<'a>(
+        mut key_dtypes: impl ExactSizeIterator<Item = &'a DataType>,
+    ) -> bool {
+        key_dtypes.len() > 1 || key_dtypes.any(|dtype| dtype.is_nested())
     }
 }
 
