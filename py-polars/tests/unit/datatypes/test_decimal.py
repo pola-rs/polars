@@ -1174,6 +1174,30 @@ def test_decimal_add_sub_cancellation() -> None:
         df.select(pl.col("a") + pl.col("b"))
 
 
+def test_decimal_add_sub_scalar_mixed_scale() -> None:
+    df = pl.DataFrame(
+        {"a": [D("0.05"), None, D("1.25")]}, schema={"a": pl.Decimal(15, 2)}
+    )
+    a = pl.col("a")
+    out = df.select(
+        rsub=1 - a,
+        add=a + pl.lit(D("0.5"), pl.Decimal(2, 1)),
+        # 10^36 doesn't fit Decimal(38, 2) on its own, only the differences do.
+        big=a - pl.lit(D(10**36), pl.Decimal(38, 0)),
+        null=pl.lit(None, pl.Decimal(2, 1)) + a,
+    )
+    assert out.to_dict(as_series=False) == {
+        "rsub": [D("0.95"), None, D("-0.25")],
+        "add": [D("0.55"), None, D("1.75")],
+        "big": [D("-" + "9" * 36 + ".95"), None, D("-" + "9" * 35 + "8.75")],
+        "null": [None, None, None],
+    }
+    assert out.schema == pl.Schema(dict.fromkeys(out.columns, pl.Decimal(38, 2)))
+
+    with pytest.raises(ComputeError, match="overflow in decimal"):
+        df.select(pl.lit(D(-(10**36)), pl.Decimal(38, 0)) - a)
+
+
 def test_decimal_integer_ops_mixed_scale() -> None:
     df = pl.DataFrame(
         {"a": [D("1.50"), None], "i": [1, 2]},
