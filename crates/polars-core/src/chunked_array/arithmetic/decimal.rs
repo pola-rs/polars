@@ -1,6 +1,6 @@
 use polars_compute::decimal::{
     DEC128_MAX_PREC, dec128_add_scaled, dec128_div_scaled, dec128_int_div_scaled,
-    dec128_mul_scaled, dec128_rem_scaled, dec128_sub_scaled,
+    dec128_mul_scaled, dec128_rem_scaled, dec128_rescale, dec128_sub_scaled,
 };
 
 use super::*;
@@ -42,6 +42,42 @@ impl DecimalChunked {
         Ok(phys.into_decimal_unchecked(DEC128_MAX_PREC, scale))
     }
 
+    /// A single non-null value at `scale`, if it has another scale and fits.
+    fn scalar_with_scale(&self, scale: usize) -> Option<Self> {
+        if self.len() != 1 || self.scale() == scale {
+            return None;
+        }
+        let value = dec128_rescale(
+            self.physical().get(0)?,
+            self.scale(),
+            DEC128_MAX_PREC,
+            scale,
+        )?;
+        Some(
+            Int128Chunked::from_slice(self.name().clone(), &[value])
+                .into_decimal_unchecked(DEC128_MAX_PREC, scale),
+        )
+    }
+
+    /// Applies an addition or subtraction kernel at the larger scale. A single
+    /// value is brought to that scale once instead of in every row.
+    fn add_sub(
+        &self,
+        rhs: &Self,
+        op: &str,
+        kernel: impl Fn(i128, usize, i128, usize, usize) -> Option<i128>,
+    ) -> PolarsResult<Self> {
+        let scale = self.scale().max(rhs.scale());
+        let lhs_scalar = self.scalar_with_scale(scale);
+        let rhs_scalar = rhs.scalar_with_scale(scale);
+        lhs_scalar.as_ref().unwrap_or(self).apply_scaled_kernel(
+            rhs_scalar.as_ref().unwrap_or(rhs),
+            scale,
+            op,
+            kernel,
+        )
+    }
+
     /// Multiplies with the result rounded to `scale`.
     pub fn mul_with_scale(&self, rhs: &Self, scale: usize) -> PolarsResult<Self> {
         self.apply_scaled_kernel(rhs, scale, "multiplication", dec128_mul_scaled)
@@ -77,8 +113,7 @@ impl Add for &DecimalChunked {
     type Output = PolarsResult<DecimalChunked>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let scale = self.scale().max(rhs.scale());
-        self.apply_scaled_kernel(rhs, scale, "addition", dec128_add_scaled)
+        self.add_sub(rhs, "addition", dec128_add_scaled)
     }
 }
 
@@ -86,8 +121,7 @@ impl Sub for &DecimalChunked {
     type Output = PolarsResult<DecimalChunked>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let scale = self.scale().max(rhs.scale());
-        self.apply_scaled_kernel(rhs, scale, "subtraction", dec128_sub_scaled)
+        self.add_sub(rhs, "subtraction", dec128_sub_scaled)
     }
 }
 
