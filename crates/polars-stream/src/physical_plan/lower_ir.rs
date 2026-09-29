@@ -210,7 +210,9 @@ pub fn lower_ir(
     // Temporary IR nodes are not in the IR the observer sees; the physical nodes lowered from
     // them are claimed by the enclosing original node's window instead.
     if node.0 < original_ir_len {
-        for key in phys_sm.keys().skip(len_before) {
+        // `keys_as_slice` is the dense key vector in insertion order; slicing it is O(1),
+        // whereas `keys().skip(len_before)` walks every earlier key.
+        for &key in &phys_sm.keys_as_slice()[len_before..] {
             // A nested `lower_ir` call already claimed its own nodes, so the innermost
             // original IR node wins.
             if !phys_to_ir.contains_key(key) {
