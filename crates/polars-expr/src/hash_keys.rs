@@ -12,6 +12,7 @@ use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType
 use polars_core::series::Series;
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
+use polars_utils::f2_sketch::F2Sketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalHash};
@@ -280,28 +281,40 @@ impl HashKeys {
 
     /// After this call partition_idxs[p] will be extended with the indices of
     /// hashes that belong to partition p, and the cardinality sketches are
-    /// updated accordingly.
+    /// updated accordingly. If given, every non-null hash is also inserted into
+    /// `f2_sketch`, which requires the cardinality sketches to be built as well.
     pub fn gen_idxs_per_partition(
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
         sketches: &mut [CardinalitySketch],
+        f2_sketch: Option<&mut F2Sketch>,
         partition_nulls: bool,
     ) {
-        if sketches.is_empty() {
-            self.gen_idxs_per_partition_impl::<false>(
+        let partition_nulls = partition_nulls | self.null_is_valid();
+        match (sketches.is_empty(), f2_sketch.is_some()) {
+            (true, false) => self.gen_idxs_per_partition_impl::<false, false>(
                 partitioner,
                 partition_idxs,
                 sketches,
-                partition_nulls | self.null_is_valid(),
-            );
-        } else {
-            self.gen_idxs_per_partition_impl::<true>(
+                f2_sketch,
+                partition_nulls,
+            ),
+            (false, false) => self.gen_idxs_per_partition_impl::<true, false>(
                 partitioner,
                 partition_idxs,
                 sketches,
-                partition_nulls | self.null_is_valid(),
-            );
+                f2_sketch,
+                partition_nulls,
+            ),
+            (false, true) => self.gen_idxs_per_partition_impl::<true, true>(
+                partitioner,
+                partition_idxs,
+                sketches,
+                f2_sketch,
+                partition_nulls,
+            ),
+            (true, true) => panic!("the F2 sketch requires the cardinality sketches"),
         }
     }
 
@@ -315,38 +328,52 @@ impl HashKeys {
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
         sketches: &mut [CardinalitySketch],
+        f2_sketch: Option<&mut F2Sketch>,
         partition_nulls: bool,
     ) {
+        let partition_nulls = partition_nulls | self.null_is_valid();
         unsafe {
-            if sketches.is_empty() {
-                self.gen_idxs_per_partition_subset_impl::<false>(
+            match (sketches.is_empty(), f2_sketch.is_some()) {
+                (true, false) => self.gen_idxs_per_partition_subset_impl::<false, false>(
                     subset,
                     partitioner,
                     partition_idxs,
                     sketches,
-                    partition_nulls | self.null_is_valid(),
-                );
-            } else {
-                self.gen_idxs_per_partition_subset_impl::<true>(
+                    f2_sketch,
+                    partition_nulls,
+                ),
+                (false, false) => self.gen_idxs_per_partition_subset_impl::<true, false>(
                     subset,
                     partitioner,
                     partition_idxs,
                     sketches,
-                    partition_nulls | self.null_is_valid(),
-                );
+                    f2_sketch,
+                    partition_nulls,
+                ),
+                (false, true) => self.gen_idxs_per_partition_subset_impl::<true, true>(
+                    subset,
+                    partitioner,
+                    partition_idxs,
+                    sketches,
+                    f2_sketch,
+                    partition_nulls,
+                ),
+                (true, true) => panic!("the F2 sketch requires the cardinality sketches"),
             }
         }
     }
 
-    fn gen_idxs_per_partition_impl<const BUILD_SKETCHES: bool>(
+    fn gen_idxs_per_partition_impl<const BUILD_SKETCHES: bool, const BUILD_F2: bool>(
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
         sketches: &mut [CardinalitySketch],
+        mut f2_sketch: Option<&mut F2Sketch>,
         partition_nulls: bool,
     ) {
         assert!(partition_idxs.len() == partitioner.num_partitions());
         assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
+        assert!(BUILD_F2 == f2_sketch.is_some());
 
         let null_p = partitioner.null_partition();
         self.for_each_hash(|idx, opt_h| {
@@ -357,6 +384,10 @@ impl HashKeys {
                     partition_idxs.get_unchecked_mut(p).push(idx);
                     if BUILD_SKETCHES {
                         sketches.get_unchecked_mut(p).insert(h);
+                    }
+                    if BUILD_F2 {
+                        // SAFETY: we assured the F2 sketch exists.
+                        f2_sketch.as_mut().unwrap_unchecked().insert(h);
                     }
                 }
             } else if partition_nulls {
@@ -369,16 +400,21 @@ impl HashKeys {
 
     /// # Safety
     /// The subset indices must be in-bounds.
-    unsafe fn gen_idxs_per_partition_subset_impl<const BUILD_SKETCHES: bool>(
+    unsafe fn gen_idxs_per_partition_subset_impl<
+        const BUILD_SKETCHES: bool,
+        const BUILD_F2: bool,
+    >(
         &self,
         subset: &[IdxSize],
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
         sketches: &mut [CardinalitySketch],
+        mut f2_sketch: Option<&mut F2Sketch>,
         partition_nulls: bool,
     ) {
         assert!(partition_idxs.len() == partitioner.num_partitions());
         assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
+        assert!(BUILD_F2 == f2_sketch.is_some());
 
         let null_p = partitioner.null_partition();
         unsafe {
@@ -389,6 +425,10 @@ impl HashKeys {
                     partition_idxs.get_unchecked_mut(p).push(idx);
                     if BUILD_SKETCHES {
                         sketches.get_unchecked_mut(p).insert(h);
+                    }
+                    if BUILD_F2 {
+                        // SAFETY: we assured the F2 sketch exists.
+                        f2_sketch.as_mut().unwrap_unchecked().insert(h);
                     }
                 } else if partition_nulls {
                     partition_idxs.get_unchecked_mut(null_p).push(idx);

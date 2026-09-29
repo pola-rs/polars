@@ -25,8 +25,15 @@ pub(crate) enum IsInHaystack {
 }
 
 #[cfg(feature = "is_in")]
-pub(crate) fn needle_isin_haystack(lv: &LiteralValue, nulls_equal: bool) -> Option<IsInHaystack> {
-    if !lv.get_datatype().is_list() {
+pub(crate) fn needle_isin_haystack(
+    function: &IRFunctionExpr,
+    needle: &DataType,
+    lv: &LiteralValue,
+    nulls_equal: bool,
+) -> Option<IsInHaystack> {
+    let haystack = lv.get_datatype();
+    // Otherwise pyarrow would compare by its own coercion rules.
+    if !haystack.is_list() || !function.membership_compares_in_needle_dtype(needle, &haystack) {
         return None;
     }
 
@@ -227,7 +234,8 @@ pub fn predicate_to_pa(
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            function:
+                function @ IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal, .. }),
             input,
             ..
         } => {
@@ -236,8 +244,8 @@ pub fn predicate_to_pa(
             let AExpr::Literal(lv) = expr_arena.get(input.get(1)?.node()) else {
                 return None;
             };
-
-            match needle_isin_haystack(lv, *nulls_equal)? {
+            let needle = input[0].dtype(schema, expr_arena).ok()?;
+            match needle_isin_haystack(function, needle, lv, *nulls_equal)? {
                 IsInHaystack::Empty => Some("pa.compute.scalar(False)".to_string()),
                 IsInHaystack::Series(s) => {
                     let values = series_to_pyarrow_list(&s)?;
@@ -288,8 +296,17 @@ pub fn predicate_to_pa(
         AExpr::Function {
             function, input, ..
         } => {
-            let input = input.first().unwrap().node();
-            let input = predicate_to_pa(input, expr_arena, schema)?;
+            let input = input.first()?;
+            if matches!(
+                function, // note: only applies to primitive (non-decimal) numeric types
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNan | IRBooleanFunction::IsNotNan)
+            ) {
+                let dtype = input.dtype(schema, expr_arena).ok()?;
+                if !dtype.is_primitive_numeric() && !dtype.is_null() {
+                    return None;
+                }
+            }
+            let input = predicate_to_pa(input.node(), expr_arena, schema)?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => Some(format!("~({input})")),
@@ -632,7 +649,8 @@ pub fn aexpr_to_pyarrow<'py>(
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            function:
+                function @ IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal, .. }),
             input,
             ..
         } => {
@@ -642,7 +660,8 @@ pub fn aexpr_to_pyarrow<'py>(
             let AExpr::Literal(lv) = expr_arena.get(rhs_node) else {
                 return None;
             };
-            let values_list = match needle_isin_haystack(lv, *nulls_equal)? {
+            let needle = input[0].dtype(schema, expr_arena).ok()?;
+            let values_list = match needle_isin_haystack(function, needle, lv, *nulls_equal)? {
                 IsInHaystack::Empty => return pc.call_method1("scalar", (false,)).ok(),
                 IsInHaystack::Series(s) => series_to_py_list(py, &s)?,
             };

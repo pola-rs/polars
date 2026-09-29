@@ -39,6 +39,7 @@ Manipulation/selection
     Expr.limit
     Expr.lower_bound
     Expr.pipe
+    Expr.pipe_with_dtype
     Expr.qcut
     Expr.reinterpret
     Expr.repeat_by

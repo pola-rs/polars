@@ -447,6 +447,9 @@ def test_str_to_lowercase() -> None:
     expected = pl.Series(["hello", "world"])
     assert_series_equal(s.str.to_lowercase(), expected)
 
+    vals = ["ΟΔΟΣ", "ABCDEFGHIJKLMNOPΣ", "ABCDEFGHIJKLMNOPΣ ABC", "ABCDEFGHIJKLMNOP ΣA"]
+    assert pl.Series(vals).str.to_lowercase().to_list() == [v.lower() for v in vals]
+
 
 def test_str_to_uppercase() -> None:
     s = pl.Series(["Hello", "WORLD"])
@@ -2017,6 +2020,13 @@ def test_titlecase() -> None:
                 "and\ta\t tab",
                 "by jean-paul sartre, 'esq'",
                 "SOMETIMES/life/gives/you/a/2nd/chance",
+                "İstanbul",
+                "İSTANBUL",
+                "ΟΔΟΣ ΣΟΦΙΑΣ",
+                "straße ßa",
+                "ǆungla ǈ",
+                "ﬁne ﬂow",
+                "ᾳ ᾀa",
             ]
         }
     )

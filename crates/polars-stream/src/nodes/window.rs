@@ -244,6 +244,7 @@ impl ComputeNode for WindowNode {
                                 partitioner,
                                 &mut local.idxs_per_p,
                                 &mut [],
+                                None,
                                 true,
                             );
                             local

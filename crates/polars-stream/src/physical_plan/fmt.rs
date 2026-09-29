@@ -429,6 +429,19 @@ fn visualize_plan_rec(
             }
             (label, &inputs[..])
         },
+        PhysNodeKind::RollingFixedWindowFunction {
+            input,
+            func: _,
+            window,
+            output_name: _,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("rolling-fixed-window-function\\n");
+            let mut f = EscapeLabel(&mut label);
+            write!(f, "{format_str}\nwindow: {window}").unwrap();
+            (label, from_ref(input))
+        },
         PhysNodeKind::SortedGroupBy {
             input,
             key,

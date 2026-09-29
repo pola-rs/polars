@@ -201,10 +201,17 @@ fn specialize(
         #[cfg(feature = "is_in")]
         AExpr::Function {
             input,
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            function:
+                function @ IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal, .. }),
             options: _,
         } => {
             into_column(input[0].node(), expr_arena)?;
+            if !function.membership_compares_in_needle_dtype(
+                &dtype,
+                input[1].dtype(schema, expr_arena).ok()?,
+            ) {
+                return None;
+            }
 
             let (values, had_nulls) = super::try_extract_is_in_haystack(
                 input[1].node(),
