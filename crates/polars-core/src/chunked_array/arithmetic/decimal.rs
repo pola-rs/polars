@@ -83,10 +83,11 @@ impl DecimalChunked {
         op: impl Fn(i64, i64) -> i128,
     ) -> Option<Self> {
         let failed = Cell::new(false);
-        let to_arr = |values: Option<Vec<i128>>, len: usize, validity: Option<Bitmap>| {
+        let to_arr = |values: Option<Vec<i128>>, validity: Option<Bitmap>| {
             let Some(values) = values else {
+                // The output is not used if a chunk failed.
                 failed.set(true);
-                return Int128Array::new_null(ArrowDataType::Int128, len);
+                return Int128Array::new_empty(ArrowDataType::Int128);
             };
             Int128Array::from_vec(values).with_validity(validity)
         };
@@ -95,23 +96,19 @@ impl DecimalChunked {
             rhs.physical(),
             |l, r| {
                 let values = i64_binary_values(l.values(), r.values(), &op);
-                to_arr(
-                    values,
-                    l.len(),
-                    combine_validities_and(l.validity(), r.validity()),
-                )
+                to_arr(values, combine_validities_and(l.validity(), r.validity()))
             },
             |l, r| {
                 let values = i64::try_from(l)
                     .ok()
                     .and_then(|l| i64_unary_values(r.values(), |r| op(l, r)));
-                to_arr(values, r.len(), r.validity().cloned())
+                to_arr(values, r.validity().cloned())
             },
             |l, r| {
                 let values = i64::try_from(r)
                     .ok()
                     .and_then(|r| i64_unary_values(l.values(), |l| op(l, r)));
-                to_arr(values, l.len(), l.validity().cloned())
+                to_arr(values, l.validity().cloned())
             },
         );
         (!failed.get()).then(|| phys.into_decimal_unchecked(DEC128_MAX_PREC, scale))

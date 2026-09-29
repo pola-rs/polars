@@ -1287,6 +1287,15 @@ def test_decimal_add_sub_mul_i64_edges(shift: int) -> None:
     }
 
 
+@pytest.mark.parametrize("last", [7, 2**63])
+def test_decimal_add_mul_i64_blocks(last: int) -> None:
+    # Spans several blocks of the i64 path, with the last value not fitting an i64.
+    values = [*range(3000), last]
+    s = pl.Series(values, dtype=pl.Int128).cast(pl.Decimal(38, 0))
+    assert (s + s).to_list() == [2 * v for v in values]
+    assert (s * s).to_list() == [v * v for v in values]
+
+
 def test_decimal_integer_ops_mixed_scale() -> None:
     df = pl.DataFrame(
         {"a": [D("1.50"), None], "i": [1, 2]},

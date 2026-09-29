@@ -483,14 +483,20 @@ fn i64_overflow_bits(x: i128) -> u64 {
 /// Applies `op` to all values as i64s. Returns `None` if a value doesn't fit an i64.
 pub fn i64_unary_values(xs: &[i128], op: impl Fn(i64) -> i128) -> Option<Vec<i128>> {
     let mut out = Vec::with_capacity(xs.len());
-    let mut overflow = 0;
-    for (o, x) in out.spare_capacity_mut().iter_mut().zip(xs) {
-        overflow |= i64_overflow_bits(*x);
-        o.write(op(*x as i64));
+    // Checks per block, to stop early if values don't fit.
+    for xs in xs.chunks(1024) {
+        let mut overflow = 0;
+        for (o, x) in out.spare_capacity_mut().iter_mut().zip(xs) {
+            overflow |= i64_overflow_bits(*x);
+            o.write(op(*x as i64));
+        }
+        if overflow != 0 {
+            return None;
+        }
+        // SAFETY: the loop wrote xs.len() values.
+        unsafe { out.set_len(out.len() + xs.len()) };
     }
-    // SAFETY: the loop wrote xs.len() values.
-    unsafe { out.set_len(xs.len()) };
-    (overflow == 0).then_some(out)
+    Some(out)
 }
 
 /// Applies `op` to all pairs as i64s. Returns `None` if a value doesn't fit an i64.
@@ -501,14 +507,20 @@ pub fn i64_binary_values(
 ) -> Option<Vec<i128>> {
     assert_eq!(l.len(), r.len());
     let mut out = Vec::with_capacity(l.len());
-    let mut overflow = 0;
-    for ((o, a), b) in out.spare_capacity_mut().iter_mut().zip(l).zip(r) {
-        overflow |= i64_overflow_bits(*a) | i64_overflow_bits(*b);
-        o.write(op(*a as i64, *b as i64));
+    // Checks per block, to stop early if values don't fit.
+    for (l, r) in l.chunks(1024).zip(r.chunks(1024)) {
+        let mut overflow = 0;
+        for ((o, a), b) in out.spare_capacity_mut().iter_mut().zip(l).zip(r) {
+            overflow |= i64_overflow_bits(*a) | i64_overflow_bits(*b);
+            o.write(op(*a as i64, *b as i64));
+        }
+        if overflow != 0 {
+            return None;
+        }
+        // SAFETY: the loop wrote l.len() values.
+        unsafe { out.set_len(out.len() + l.len()) };
     }
-    // SAFETY: the loop wrote l.len() values.
-    unsafe { out.set_len(l.len()) };
-    (overflow == 0).then_some(out)
+    Some(out)
 }
 
 #[inline]
