@@ -644,24 +644,9 @@ impl Expr {
         self.map_ternary(FunctionExpr::ShiftAndFill, n.into(), fill_value.into())
     }
 
-    /// See [Self::pipe_with_dtypes]
+    /// Single-input version of [`functions::pipe_with_dtype`].
     pub fn pipe_with_dtype(self, callback: PlanCallback<(Vec<Expr>, Vec<DataType>), Expr>) -> Self {
-        self.pipe_with_dtypes(vec![], callback)
-    }
-
-    /// Replace this expression and `others`, at plan time, with the expression returned by
-    /// `callback`.
-    ///
-    /// The callback receives all input expressions and their resolved dtypes, with this expression
-    /// first.
-    pub fn pipe_with_dtypes(
-        self,
-        others: Vec<Expr>,
-        callback: PlanCallback<(Vec<Expr>, Vec<DataType>), Expr>,
-    ) -> Self {
-        let mut input = vec![self];
-        input.extend(others);
-        Expr::PipeWithDtype { input, callback }
+        functions::pipe_with_dtype([self], callback)
     }
 
     /// Cumulatively count values from 0 to len.
