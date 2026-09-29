@@ -8,7 +8,7 @@ pub struct PhysicalNodeDescription {
     pub id: u64,
     pub input_ids: Vec<u64>,
     /// `id` of the [`IrNodeDescription`](crate::IrNodeDescription) whose lowering created this
-    /// node. Absent in payloads from producers that predate this field.
+    /// node. Optional only for backwards compatibility with old polars clients.
     pub ir_node_id: Option<usize>,
     pub properties: PhysicalPropsDescription,
 }

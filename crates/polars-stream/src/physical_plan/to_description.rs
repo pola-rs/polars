@@ -28,8 +28,6 @@ use slotmap::{DenseSlotMap, Key, SecondaryMap};
 
 use crate::{PhysNode, PhysNodeKey, PhysNodeKind};
 
-/// Describes the physical nodes reachable from `roots`. `phys_to_ir` maps each physical node
-/// to the IR node it was lowered from; a node missing from it is described with no `ir_node_id`.
 pub fn physical_plan_to_description(
     roots: &[PhysNodeKey],
     phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
@@ -51,7 +49,7 @@ pub fn physical_plan_to_description(
         let node = PhysicalNodeDescription {
             id: key.data().as_ffi(),
             input_ids: inputs.iter().map(|k| k.data().as_ffi()).collect(),
-            ir_node_id: phys_to_ir.get(key).map(|n| n.0),
+            ir_node_id: Some(phys_to_ir[key].0),
             properties,
         };
 

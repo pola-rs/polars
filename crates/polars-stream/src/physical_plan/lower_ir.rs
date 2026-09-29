@@ -167,12 +167,6 @@ pub struct StreamingLowerIRContext<'a> {
     pub sortedness: &'a IRPlanSorted,
 }
 
-/// Lowers `node` and everything below it to physical nodes.
-///
-/// Every physical node inserted while lowering an IR node of the original plan is attributed
-/// to that IR node in `phys_to_ir`. Lowering also appends temporary IR nodes to the arena and
-/// lowers them recursively; those are not part of the plan the query observer sees, so nodes
-/// lowered from them are attributed to the original IR node whose lowering created them.
 #[recursive::recursive]
 #[allow(clippy::too_many_arguments)]
 pub fn lower_ir(
@@ -188,11 +182,7 @@ pub fn lower_ir(
     ctx: StreamingLowerIRContext<'_>,
     disable_morsel_split: Option<bool>,
 ) -> PolarsResult<PhysStream> {
-    // Every key at or beyond this position was inserted by lowering `node` or one of its
-    // inputs. This relies on the slotmap being append-only while lowering: `DenseSlotMap::remove`
-    // swaps the last key into the removed position, so removing a key below `len_before` would
-    // hide a new node from this window. The one removal, in `simplify_input_streams`, only
-    // removes nodes inserted during the current `lower_ir` call; see the comment there.
+    // Every key at or beyond this position was inserted by lowering `node` or one of its inputs.
     let len_before = phys_sm.len();
     let out = lower_ir_inner(
         node,
@@ -207,14 +197,11 @@ pub fn lower_ir(
         ctx,
         disable_morsel_split,
     )?;
-    // Temporary IR nodes are not in the IR the observer sees; the physical nodes lowered from
-    // them are claimed by the enclosing original node's window instead.
+
     if node.0 < original_ir_len {
-        // `keys_as_slice` is the dense key vector in insertion order; slicing it is O(1),
-        // whereas `keys().skip(len_before)` walks every earlier key.
         for &key in &phys_sm.keys_as_slice()[len_before..] {
-            // A nested `lower_ir` call already claimed its own nodes, so the innermost
-            // original IR node wins.
+            // If the key is already present it was already claimed by a nested `lower_ir` call,
+            // so we shouldn't overwrite it.
             if !phys_to_ir.contains_key(key) {
                 phys_to_ir.insert(key, node);
             }

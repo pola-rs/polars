@@ -108,7 +108,6 @@ pub struct StreamingQuery {
     pub graph: Graph,
     pub root_phys_node: PhysNodeKey,
     pub phys_sm: DenseSlotMap<PhysNodeKey, PhysNode>,
-    /// The IR node each physical node in `phys_sm` was lowered from.
     pub phys_to_ir: SecondaryMap<PhysNodeKey, Node>,
     pub phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     pub metrics: Option<Arc<Mutex<GraphMetrics>>>,

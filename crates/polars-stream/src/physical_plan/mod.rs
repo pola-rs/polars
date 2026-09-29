@@ -883,8 +883,6 @@ fn insert_multiplexers(
                 (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
                 PhysNodeKind::Multiplexer { input: stream },
             ));
-            // A multiplexer only fans out the stream it wraps, so it belongs to the same IR
-            // node as that stream's producer.
             let source_ir_node = phys_to_ir[stream.node];
             phys_to_ir.insert(multiplexer_node, source_ir_node);
             (stream, PhysStream::first(multiplexer_node))
@@ -909,7 +907,6 @@ fn split_multiplexers(
         *refcount.entry(i.node).unwrap().or_insert(0) += 1;
     });
 
-    // The in-memory source to clone for each multiplexer, with the IR node it was lowered from.
     let mut split_map: SecondaryMap<PhysNodeKey, (PhysNode, Node)> = SecondaryMap::new();
     for (k, n) in phys_sm.iter() {
         if let PhysNodeKind::Multiplexer { input } = n.kind {
@@ -922,7 +919,6 @@ fn split_multiplexers(
     let mut replacements: SecondaryMap<PhysNodeKey, Vec<PhysStream>> = split_map
         .into_iter()
         .map(|(k, (n, source_ir_node))| {
-            // The clones are the same source split per consumer, so each keeps its IR node.
             let repls = (0..refcount[k]).map(|_| {
                 let clone = phys_sm.insert(n.clone());
                 phys_to_ir.insert(clone, source_ir_node);
@@ -1023,8 +1019,6 @@ fn rechunk_group_by_inputs(
     });
 }
 
-/// Lowers the IR rooted at `root` into physical nodes in `phys_sm` and returns the root
-/// physical node together with the IR node each physical node was lowered from.
 pub fn build_physical_plan(
     root: Node,
     ir_arena: &mut Arena<IR>,
@@ -1032,8 +1026,6 @@ pub fn build_physical_plan(
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysNodeKey, SecondaryMap<PhysNodeKey, Node>)> {
-    // IR nodes at or beyond this index are added by lowering itself and are not part of the
-    // plan the query observer sees.
     let original_ir_len = ir_arena.len();
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
     let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
@@ -1059,16 +1051,6 @@ pub fn build_physical_plan(
 
     // TODO: remove this after fusing pre-select into group-by node.
     rechunk_group_by_inputs(vec![phys_root.node], phys_sm);
-
-    // Guards the passes above: a pass that inserts a node without attributing it fails here.
-    // It cannot detect a node claimed by the wrong `lower_ir` window, since the root's window
-    // starts at 0 and claims anything left over.
-    debug_assert!(
-        phys_sm
-            .keys()
-            .all(|key| phys_to_ir.get(key).is_some_and(|ir| ir.0 < original_ir_len)),
-        "every physical node must be attributed to an IR node of the original plan"
-    );
 
     Ok((phys_root.node, phys_to_ir))
 }
