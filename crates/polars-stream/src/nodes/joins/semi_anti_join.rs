@@ -265,14 +265,17 @@ impl SampleState {
             );
         }
 
-        // Building the left side also keeps all of its rows, so it is only
-        // chosen when it was read completely and its estimated bytes are no
-        // more than the key bytes of the sampled right rows.
+        // Building the left side also keeps all of its rows. A complete left
+        // side is built when the right side is still being read, as that side
+        // could be arbitrarily big. When both are complete, the left side is
+        // only built when its estimated bytes are no more than the key bytes
+        // of the right side.
         let left_complete = recv[0] == PortState::Done;
-        let left_is_build = match (left_complete, right_saturated) {
-            (false, true) => left_saturated && prefer_left,
-            (false, false) => false,
-            (true, _) => {
+        let right_complete = recv[1] == PortState::Done;
+        let left_is_build = match (left_complete, right_complete) {
+            (false, _) => right_saturated && left_saturated && prefer_left,
+            (true, false) => true,
+            (true, true) => {
                 let left = JoinSampleStats::from_sample(
                     &self.left,
                     &params.left_key_selectors,
