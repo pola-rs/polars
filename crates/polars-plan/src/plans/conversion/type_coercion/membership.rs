@@ -517,8 +517,9 @@ fn cast_literal_haystack(
         return Ok(None);
     };
     let needle = input[flat].dtype(schema, expr_arena)?;
-    // Casting strings to a Categorical would add them to its categories.
-    if !needle.is_known() || needle.contains_categoricals() {
+    // Casting strings to a Categorical would add them to its categories. A null needle
+    // gains nothing from pushdown.
+    if !needle.is_known() || needle.contains_categoricals() || needle.is_null() {
         return Ok(None);
     }
     let (elements, width) = match haystack.value() {
@@ -533,6 +534,11 @@ fn cast_literal_haystack(
     let Ok((casted, inexact)) = elements._cast_reporting_inexact(needle) else {
         return Ok(None);
     };
+    // Some casts keep the nesting, e.g. a Struct to `Null` gives a Struct of nulls. A haystack
+    // of another dtype would be rewritten again on every pass.
+    if casted.dtype() != needle {
+        return Ok(None);
+    }
     let (value, dtype) = match (inexact, width) {
         (None, None) => (
             AnyValue::List(casted),

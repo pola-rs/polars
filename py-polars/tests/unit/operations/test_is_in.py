@@ -1368,6 +1368,15 @@ def test_is_in_literal_haystack_takes_the_column_dtype(
     assert q.collect()["c"].to_list() == expected
 
 
+def test_is_in_null_needle_in_a_literal_struct_haystack() -> None:
+    # Casting a Struct haystack to `Null` gives a Struct of nulls, not `Null`, which
+    # must not send coercion into a loop.
+    haystack = pl.Series([{"a": 1}, None], dtype=pl.Struct({"a": pl.Int64}))
+    lf = pl.LazyFrame({"n": pl.Series([None, None], dtype=pl.Null)})
+    q = lf.select(pl.col("n").is_in(pl.lit(haystack).implode(), nulls_equal=True))
+    assert q.collect()["n"].to_list() == [True, True]
+
+
 def test_is_in_literal_array_haystack_with_an_unrepresentable_element() -> None:
     lf = pl.LazyFrame({"n": pl.Series([1, 2], dtype=pl.Int64)})
     haystack = pl.lit(pl.Series([[1, 2**63]], dtype=pl.Array(pl.UInt64, 2)))
