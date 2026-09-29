@@ -609,6 +609,7 @@ def test_approx_quantile_group_by_is_exact(
     # pre-aggregate paths of the streaming group-by. Every group still fits in a
     # sketch, so the estimate is the exact rank.
     plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "2")
     groups, per_group = 10, 5
     df = pl.DataFrame(
         {

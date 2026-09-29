@@ -731,6 +731,7 @@ impl BuildState {
                 &partitioner,
                 &mut local.morsel_idxs_values_per_p,
                 &mut local.sketch_per_p,
+                None,
                 track_unmatchable,
             );
 
@@ -1192,6 +1193,7 @@ impl ProbeState {
                         &partitioner,
                         &mut partition_idxs,
                         &mut [],
+                        None,
                         emit_unmatched,
                     );
 
