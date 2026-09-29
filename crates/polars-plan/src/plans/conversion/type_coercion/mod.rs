@@ -1401,7 +1401,7 @@ fn coerce_is_in(
                 _ => unreachable!("a scalar literal"),
             }
             .into_series(PlSmallStr::EMPTY);
-            let (casted, inexact) = needle.cast_reporting_inexact(&dtype)?;
+            let (casted, inexact) = needle._cast_reporting_inexact(&dtype)?;
             let needle = match inexact {
                 None => Scalar::new(dtype.clone(), casted.get(0)?.into_static()),
                 // A Map holds no null key, so a null needle is simply absent.

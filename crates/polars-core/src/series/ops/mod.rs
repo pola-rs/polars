@@ -1,5 +1,4 @@
 mod canonicalize_maps;
-mod cast_exact;
 mod downcast;
 mod extend;
 mod from_physical;

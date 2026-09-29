@@ -11,7 +11,7 @@ pub(super) fn cast_needle(
 ) -> PolarsResult<(Column, Option<BooleanChunked>)> {
     let (casted, inexact) = needle
         .as_materialized_series_maintain_scalar()
-        .cast_reporting_inexact(dtype)?;
+        ._cast_reporting_inexact(dtype)?;
     let casted = match needle {
         Column::Scalar(_) => ScalarColumn::from_single_value_series(casted, needle.len()).into(),
         Column::Series(_) => casted.into(),
