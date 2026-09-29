@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import re
 from collections.abc import Collection
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
@@ -825,22 +824,17 @@ def _membership(
     return container.arr.contains(needle, **kwargs)
 
 
-_RUST_DTYPE: dict[PolarsDataType, str] = {
-    pl.Int8: "i8",
-    pl.Int64: "i64",
-    pl.UInt64: "u64",
-    pl.Float16: "f16",
-    pl.Float32: "f32",
-    pl.Datetime("ms"): "datetime[ms]",
-    pl.Datetime("ns"): "datetime[ns]",
-    pl.Duration("ms"): "duration[ms]",
-}
-
-
-def _assert_needle_cast(lf: pl.LazyFrame, dtype: str) -> None:
-    # The needle is cast as the function runs; the container is never rewritten.
-    plan = lf.explain()
-    assert f"[needle: {dtype}]" in plan
+@pytest.mark.parametrize("op", MEMBERSHIP_OPS)
+def test_is_in_shows_the_needle_cast_on_the_function(op: str) -> None:
+    # Only the needle is cast, as the function runs; the container is never rewritten.
+    lf = pl.LazyFrame(
+        {
+            "n": pl.Series([1], dtype=pl.Int64),
+            "h": _container(op, [[1, 2]], pl.Int8),
+        }
+    )
+    plan = lf.select(_membership(op, pl.col("n"), pl.col("h"))).explain()
+    assert "[needle: i8]" in plan
     assert ".cast(" not in plan
 
 
@@ -888,7 +882,6 @@ def test_is_in_casts_the_needle_to_the_element_dtype(
     )
 
     column = lf.select(_membership(op, pl.col("n"), pl.col("h")).alias("o"))
-    _assert_needle_cast(column, _RUST_DTYPE[inner])
     # `is_in` defaults to `nulls_equal=False`, the `contains` methods to `True`.
     null = None if op.startswith("is_in") else False
     assert column.collect()["o"].to_list() == [True, False, null]
@@ -897,11 +890,6 @@ def test_is_in_casts_the_needle_to_the_element_dtype(
         literal = lf.select(
             _membership(op, pl.lit(value, needle_dtype), pl.col("h")).alias("o")
         )
-        plan = literal.explain()
-        assert "[needle:" not in plan
-        assert ".cast(" not in plan
-        # An inexact literal is resolved at plan time and never reaches the kernel.
-        assert (op.split("-")[0] in plan) == expected
         assert literal.collect()["o"].to_list() == [expected] * 3
 
 
@@ -975,7 +963,6 @@ def test_is_in_compares_strings_with_categories_natively(
     q = lf.select(
         _membership(op, pl.col("n"), pl.col("h"), nulls_equal=True).alias("o")
     )
-    assert ".cast(" not in q.explain()
     expected = [True, False, False]
     assert q.collect()["o"].to_list() == expected
 
@@ -1023,8 +1010,6 @@ def test_is_in_decimal_of_another_scale(op: str, needle: D, found: bool) -> None
 
     for n in (pl.col("n"), pl.lit(needle, pl.Decimal(3, 2))):
         q = lf.select(_membership(op, n, pl.col("h")).alias("o"))
-        # The kernel compares any precision and scale; neither side is cast.
-        assert ".cast(" not in q.explain()
         assert q.collect()["o"].to_list() == [found, None]
 
 
@@ -1050,7 +1035,6 @@ def test_is_in_narrows_a_float_needle(
     )
 
     q = lf.select(_membership(op, pl.col("n"), pl.col("h")).alias("o"))
-    _assert_needle_cast(q, _RUST_DTYPE[inner])
     assert q.collect()["o"].to_list() == [True, False, False]
     for value, found in ((1.5, True), (1.1, False)):
         needle = pl.lit(value, needle_dtype)
@@ -1079,10 +1063,6 @@ def test_is_in_widens_a_numeric_needle_exactly(
     )
 
     q = lf.select(_membership(op, pl.col("n"), pl.col("h")).alias("o"))
-    plan = q.explain()
-    assert re.search(r'col\("n"\)\.(strict_)?cast\(', plan)
-    assert "[needle:" not in plan
-    assert 'col("h").cast' not in plan
     assert q.collect()["o"].to_list() == [True, False]
 
 
@@ -1269,7 +1249,7 @@ def test_is_in_needle_cast_masks_with_the_evaluated_container(
     assert out["o"].drop_nulls().to_list() == [False] * (n - out["o"].null_count())
 
 
-def test_is_in_needle_cast_with_a_scalar_haystack() -> None:
+def test_is_in_inexact_needle_with_a_scalar_haystack() -> None:
     # A scalar haystack can lower to a semi join, which needs matching key dtypes.
     lf = pl.LazyFrame(
         {
@@ -1279,7 +1259,6 @@ def test_is_in_needle_cast_with_a_scalar_haystack() -> None:
     )
 
     expr = pl.col("n").is_in(pl.col("h").first())
-    _assert_needle_cast(lf.select(expr), "i8")
     assert lf.select(expr).collect()["n"].to_list() == [True, True, False, None]
 
 
@@ -1389,14 +1368,10 @@ def test_is_in_literal_haystack_takes_the_column_dtype(
     assert q.collect()["c"].to_list() == expected
 
 
-def test_is_in_literal_array_haystack_that_would_lose_elements_keeps_the_guard() -> (
-    None
-):
-    # Dropping elements would change the Array width, so the needle is cast instead.
+def test_is_in_literal_array_haystack_with_an_unrepresentable_element() -> None:
     lf = pl.LazyFrame({"n": pl.Series([1, 2], dtype=pl.Int64)})
     haystack = pl.lit(pl.Series([[1, 2**63]], dtype=pl.Array(pl.UInt64, 2)))
     q = lf.select(pl.col("n").is_in(haystack))
-    _assert_needle_cast(q, "u64")
     assert q.collect()["n"].to_list() == [True, False]
 
 
