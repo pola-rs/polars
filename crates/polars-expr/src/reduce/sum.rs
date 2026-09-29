@@ -118,8 +118,7 @@ where
 #[cfg(feature = "dtype-decimal")]
 const DECIMAL_SUM_OVERFLOW: i128 = i128::MIN;
 
-/// Tests the sentinel on the high word, which no valid decimal reaches.
-/// A full i128 compare cannot forward from the addition's 8-byte stores.
+/// Tests the sentinel on the high word only, which no valid decimal has.
 #[cfg(feature = "dtype-decimal")]
 #[inline(always)]
 fn is_sum_overflow(x: i128) -> bool {

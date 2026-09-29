@@ -130,6 +130,18 @@ where
 struct DecimalMeanReducer;
 
 #[cfg(feature = "dtype-decimal")]
+#[inline(always)]
+fn add_to_sum(a: &mut (i128, f64, usize), x: i128) {
+    match a.0.checked_add(x) {
+        Some(v) => a.0 = v,
+        None => {
+            a.1 += a.0 as f64;
+            a.0 = x;
+        },
+    }
+}
+
+#[cfg(feature = "dtype-decimal")]
 impl Reducer for DecimalMeanReducer {
     type Dtype = Int128Type;
     type Value = (i128, f64, usize);
@@ -146,27 +158,14 @@ impl Reducer for DecimalMeanReducer {
 
     #[inline(always)]
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
+        add_to_sum(a, b.0);
         a.1 += b.1;
         a.2 += b.2;
-        match a.0.checked_add(b.0) {
-            Some(v) => a.0 = v,
-            None => {
-                a.1 += a.0 as f64;
-                a.0 = b.0;
-            },
-        }
     }
 
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<i128>, _seq_id: u64) {
-        let x = b.unwrap_or(0);
-        let (v, overflowed) = a.0.overflowing_add(x);
-        if overflowed {
-            a.1 += a.0 as f64;
-            a.0 = x;
-        } else {
-            a.0 = v;
-        }
+        add_to_sum(a, b.unwrap_or(0));
         a.2 += b.is_some() as usize;
     }
 
