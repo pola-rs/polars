@@ -277,15 +277,15 @@ def _(a: Call) -> Any:
         return _temporal_conversions[f](*args).isoformat()
     elif f == "starts_with":
         pattern = _convert_predicate(a.keywords[0].value)
-        return pyiceberg.expressions.StartsWith(".".join(args[0]), pattern)  # type: ignore[misc, call-arg]
+        return pyiceberg.expressions.StartsWith(".".join(args[0]), pattern)  # type: ignore[misc, call-arg, arg-type]
     else:
         ref = ".".join(_convert_predicate(a.func.value))  # type: ignore[attr-defined]
         if f == "isin":
-            return pyiceberg.expressions.In(ref, args[0])  # type: ignore[misc, call-arg]
+            return pyiceberg.expressions.In(ref, args[0])  # type: ignore[misc, call-arg, arg-type]
         elif f == "is_null":
-            return pyiceberg.expressions.IsNull(ref)  # type: ignore[misc]
+            return pyiceberg.expressions.IsNull(ref)  # type: ignore[misc, arg-type]
         elif f == "is_nan":
-            return pyiceberg.expressions.IsNaN(ref)  # type: ignore[misc]
+            return pyiceberg.expressions.IsNaN(ref)  # type: ignore[misc, arg-type]
 
     msg = f"Unknown call: {f!r}"
     raise ValueError(msg)
@@ -319,24 +319,24 @@ def _(a: Compare) -> Any:
 
     if isinstance(rhs_ast, Name) and rhs_ast.id == "NaN":
         if isinstance(op, Eq):
-            return pyiceberg.expressions.IsNaN(lhs)  # type: ignore[misc]
+            return pyiceberg.expressions.IsNaN(lhs)  # type: ignore[misc, arg-type]
         if isinstance(op, NotEq):
-            return pyiceberg.expressions.NotNaN(lhs)  # type: ignore[misc]
+            return pyiceberg.expressions.NotNaN(lhs)  # type: ignore[misc, arg-type]
 
     rhs = _convert_predicate(rhs_ast)
 
     if isinstance(op, Gt):
-        return pyiceberg.expressions.GreaterThan(lhs, rhs)  # type: ignore[misc, call-arg]
+        return pyiceberg.expressions.GreaterThan(lhs, rhs)  # type: ignore[misc, call-arg, arg-type]
     if isinstance(op, GtE):
-        return pyiceberg.expressions.GreaterThanOrEqual(lhs, rhs)  # type: ignore[misc, call-arg]
+        return pyiceberg.expressions.GreaterThanOrEqual(lhs, rhs)  # type: ignore[misc, call-arg, arg-type]
     if isinstance(op, Eq):
-        return pyiceberg.expressions.EqualTo(lhs, rhs)  # type: ignore[misc, call-arg]
+        return pyiceberg.expressions.EqualTo(lhs, rhs)  # type: ignore[misc, call-arg, arg-type]
     if isinstance(op, NotEq):
-        return pyiceberg.expressions.NotEqualTo(lhs, rhs)  # type: ignore[misc, call-arg]
+        return pyiceberg.expressions.NotEqualTo(lhs, rhs)  # type: ignore[misc, call-arg, arg-type]
     if isinstance(op, Lt):
-        return pyiceberg.expressions.LessThan(lhs, rhs)  # type: ignore[misc, call-arg]
+        return pyiceberg.expressions.LessThan(lhs, rhs)  # type: ignore[misc, call-arg, arg-type]
     if isinstance(op, LtE):
-        return pyiceberg.expressions.LessThanOrEqual(lhs, rhs)  # type: ignore[misc, call-arg]
+        return pyiceberg.expressions.LessThanOrEqual(lhs, rhs)  # type: ignore[misc, call-arg, arg-type]
     else:
         msg = f"Unknown comparison: {op}"
         raise TypeError(msg)
