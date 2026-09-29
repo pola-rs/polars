@@ -522,7 +522,7 @@ fn cast_literal_haystack(
         return Ok(None);
     }
     let (elements, width) = match haystack.value() {
-        AnyValue::List(s) => (s, None),
+        AnyValue::List(s) => (s, None::<usize>),
         #[cfg(feature = "dtype-array")]
         AnyValue::Array(s, width) => (s, Some(*width)),
         _ => return Ok(None),
