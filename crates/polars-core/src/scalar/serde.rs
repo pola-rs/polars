@@ -79,9 +79,21 @@ pub enum SerializableScalar {
     /// A 16-bit floating point number.
     Float16(pf16),
     /// A 32-bit floating point number.
-    Float32(f32),
+    Float32(
+        #[serde(
+            serialize_with = "polars_utils::float::serde_nonfinite::serde_f32::serialize",
+            deserialize_with = "polars_utils::float::serde_nonfinite::serde_f32::deserialize"
+        )]
+        f32,
+    ),
     /// A 64-bit floating point number.
-    Float64(f64),
+    Float64(
+        #[serde(
+            serialize_with = "polars_utils::float::serde_nonfinite::serde_f64::serialize",
+            deserialize_with = "polars_utils::float::serde_nonfinite::serde_f64::deserialize"
+        )]
+        f64,
+    ),
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
     #[cfg(feature = "dtype-map")]
@@ -335,5 +347,93 @@ impl TryFrom<SerializableScalar> for Scalar {
                 Self::new(dtype, AnyValue::StructOwned(Box::new((avs, fields))))
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use polars_utils::float::IsFloat;
+    use polars_utils::total_ord::TotalEq;
+
+    use super::*;
+
+    fn json_roundtrip(scalar: Scalar) -> Scalar {
+        let json = serde_json::to_string(&scalar).unwrap();
+        println!("{json}");
+        serde_json::from_str(&json).unwrap()
+    }
+
+    #[test]
+    fn nonfinite_f64_json_roundtrip() {
+        for v in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let scalar = Scalar::from(v);
+            let out = json_roundtrip(scalar);
+            let AnyValue::Float64(out) = out.value else {
+                panic!()
+            };
+            assert!(out.tot_eq(&v), "{out} != {v}");
+        }
+    }
+
+    #[test]
+    fn nonfinite_f32_json_roundtrip() {
+        for v in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let scalar = Scalar::from(v);
+            let out = json_roundtrip(scalar);
+            let AnyValue::Float32(out) = out.value else {
+                panic!()
+            };
+            assert!(out.tot_eq(&v), "{out} != {v}");
+        }
+    }
+
+    #[test]
+    fn nonfinite_f16_json_roundtrip() {
+        for v in [
+            pf16::nan_value(),
+            pf16::pos_inf_value(),
+            pf16::neg_inf_value(),
+        ] {
+            let scalar = Scalar::from(v);
+            let out = json_roundtrip(scalar);
+            let AnyValue::Float16(out) = out.value else {
+                panic!()
+            };
+            assert!(out.tot_eq(&v), "{out:?} != {v:?}");
+        }
+    }
+
+    #[test]
+    fn finite_float_json_stays_numeric() {
+        // Finite values must still be plain JSON numbers, not strings.
+        let json = serde_json::to_string(&Scalar::from(1.5f64)).unwrap();
+        assert_eq!(json, r#"{"Float64":1.5}"#);
+        let json = serde_json::to_string(&Scalar::from(1.5f32)).unwrap();
+        assert_eq!(json, r#"{"Float32":1.5}"#);
+    }
+
+    #[test]
+    fn nonfinite_float_bincode_roundtrip() {
+        // The binary format already round-tripped non-finite floats correctly; make sure that's
+        // still the case.
+        for scalar in [
+            Scalar::from(f64::NAN),
+            Scalar::from(f64::INFINITY),
+            Scalar::from(f64::NEG_INFINITY),
+            Scalar::from(f32::NAN),
+            Scalar::from(f32::INFINITY),
+            Scalar::from(f32::NEG_INFINITY),
+        ] {
+            let encoded =
+                bincode::serde::encode_to_vec(&scalar, bincode::config::standard()).unwrap();
+            let (out, _): (Scalar, usize) =
+                bincode::serde::decode_from_slice(&encoded, bincode::config::standard()).unwrap();
+            assert_eq!(out.dtype(), scalar.dtype());
+            match (out.value, scalar.value) {
+                (AnyValue::Float64(a), AnyValue::Float64(b)) => assert!(a.tot_eq(&b)),
+                (AnyValue::Float32(a), AnyValue::Float32(b)) => assert!(a.tot_eq(&b)),
+                _ => panic!(),
+            }
+        }
     }
 }

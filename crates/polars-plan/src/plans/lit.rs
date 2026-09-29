@@ -21,7 +21,16 @@ use crate::prelude::*;
 pub enum DynLiteralValue {
     Str(PlSmallStr),
     Int(i128),
-    Float(f64),
+    Float(
+        #[cfg_attr(
+            feature = "serde",
+            serde(
+                serialize_with = "polars_utils::float::serde_nonfinite::serde_f64::serialize",
+                deserialize_with = "polars_utils::float::serde_nonfinite::serde_f64::deserialize"
+            )
+        )]
+        f64,
+    ),
     List(DynListLiteralValue),
 }
 
@@ -663,6 +672,21 @@ impl Hash for LiteralValue {
             LiteralValue::Range(range) => range.hash(state),
             LiteralValue::Scalar(sc) => sc.hash(state),
             LiteralValue::Dyn(d) => d.hash(state),
+        }
+    }
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod test {
+    use super::*;
+
+    #[test]
+    fn nonfinite_dyn_literal_float_json_roundtrip() {
+        for v in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let value = DynLiteralValue::Float(v);
+            let json = serde_json::to_string(&value).unwrap();
+            let out: DynLiteralValue = serde_json::from_str(&json).unwrap();
+            assert_eq!(out, value, "{json}");
         }
     }
 }

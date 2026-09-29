@@ -1,5 +1,85 @@
 use crate::float16::pf16;
 
+/// (De)serialization for floats that round-trips non-finite values (NaN, inf, -inf) through
+/// human-readable formats like JSON.
+///
+/// serde_json (and other human-readable formats) writes any non-finite f32/f64 as `null`, since
+/// JSON itself has no literal for them, and then fails to read that `null` back as a float. To
+/// avoid that, non-finite values are written as their `Display` string (e.g. "NaN", "inf",
+/// "-inf") for human-readable formats only; binary formats are untouched, as they already encode
+/// the value's bits directly and round-trip non-finite values without help.
+#[cfg(feature = "serde")]
+pub mod serde_nonfinite {
+    macro_rules! impl_nonfinite_float_serde {
+        ($mod_name:ident, $ty:ty, $serialize_fn:ident, $deserialize_fn:ident) => {
+            pub mod $mod_name {
+                use std::fmt;
+
+                use serde::de::{self, Visitor};
+                use serde::{Deserializer, Serializer};
+
+                pub fn serialize<S>(v: &$ty, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: Serializer,
+                {
+                    if serializer.is_human_readable() && !v.is_finite() {
+                        serializer.serialize_str(&v.to_string())
+                    } else {
+                        serializer.$serialize_fn(*v)
+                    }
+                }
+
+                struct FloatVisitor;
+
+                impl<'de> Visitor<'de> for FloatVisitor {
+                    type Value = $ty;
+
+                    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                        f.write_str(
+                            "a float, or a string encoding one (e.g. \"NaN\", \"inf\", \"-inf\")",
+                        )
+                    }
+
+                    fn visit_f32<E: de::Error>(self, v: f32) -> Result<Self::Value, E> {
+                        Ok(v as $ty)
+                    }
+
+                    fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
+                        Ok(v as $ty)
+                    }
+
+                    fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+                        Ok(v as $ty)
+                    }
+
+                    fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+                        Ok(v as $ty)
+                    }
+
+                    fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                        v.parse::<$ty>()
+                            .map_err(|_| de::Error::invalid_value(de::Unexpected::Str(v), &self))
+                    }
+                }
+
+                pub fn deserialize<'de, D>(deserializer: D) -> Result<$ty, D::Error>
+                where
+                    D: Deserializer<'de>,
+                {
+                    if deserializer.is_human_readable() {
+                        deserializer.deserialize_any(FloatVisitor)
+                    } else {
+                        deserializer.$deserialize_fn(FloatVisitor)
+                    }
+                }
+            }
+        };
+    }
+
+    impl_nonfinite_float_serde!(serde_f32, f32, serialize_f32, deserialize_f32);
+    impl_nonfinite_float_serde!(serde_f64, f64, serialize_f64, deserialize_f64);
+}
+
 /// # Safety
 /// Unsafe code downstream relies on the correct is_float call.
 pub unsafe trait IsFloat: private::Sealed + Sized {
