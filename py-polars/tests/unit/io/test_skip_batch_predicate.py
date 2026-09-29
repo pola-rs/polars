@@ -164,6 +164,36 @@ def test_datetimes() -> None:
     )
 
 
+def test_value_predicate_needs_a_constant_batch() -> None:
+    # `str.len_chars()` has no specialized handler: its rewrite substitutes `min` for
+    # the column, so it may only be evaluated for a batch whose statistics are that
+    # value — a single value (`min == max`) and no nulls. Every other batch is read.
+    assert_skp_series(
+        "a",
+        pl.String(),
+        pl.col("a").str.len_chars() == 7,
+        [
+            {"min": "abc", "max": "abc", "null_count": 0, "len": 42, "can_skip": True},
+            {
+                "min": "abcdefg",
+                "max": "abcdefg",
+                "null_count": 0,
+                "len": 42,
+                "can_skip": False,
+            },
+            {"min": "abc", "max": "abd", "null_count": 0, "len": 42, "can_skip": False},
+            {
+                "min": "abc",
+                "max": "abc",
+                "null_count": 42,
+                "len": 42,
+                "can_skip": False,
+            },
+            {"min": None, "max": None, "null_count": 42, "len": 42, "can_skip": False},
+        ],
+    )
+
+
 def _null_count_dtype(dtype: PolarsDataType) -> PolarsDataType:
     """Statistics-frame dtype of the ``<col>_nc`` column, mirroring the Rust producer.
 

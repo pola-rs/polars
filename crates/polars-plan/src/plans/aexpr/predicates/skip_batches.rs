@@ -158,6 +158,19 @@ fn get_binary_expr_target_and_lv<'a>(
 /// To evaluate, the expression it is given all the original column appended with `_min` and
 /// `_max`. The `min` or `max` cannot be null and when they are null it is assumed they are not
 /// known.
+///
+/// A statistic is a bound of a batch's values, not necessarily a value the batch contains. An
+/// expression this rewrite substitutes a statistic into is therefore conjoined with the tests
+/// that prove the substitution sound (`min == max`, `null_count == 0`, ...), and must be placed
+/// to the *right* of them: the predicate is evaluated with `&` and `|` short-circuiting left to
+/// right (polars-mem-engine's `create_skip_batch_expr`, the evaluator of every reader that uses
+/// this), so a guarded expression is only evaluated for the batches those tests hold for, and
+/// any other batch is read instead of skipped.
+///
+/// The short-circuiting is a property of that evaluator, not of the returned expression: a
+/// consumer that evaluates it eagerly — `Expr::_skip_batch_predicate` hands it to ordinary
+/// expression evaluation — evaluates a substituted expression for batches whose guards do not
+/// hold, and it can fail on the bound it then sees.
 pub fn aexpr_to_skip_batch_predicate(
     e: Node,
     expr_arena: &mut Arena<AExpr>,
@@ -822,8 +835,16 @@ fn aexpr_to_skip_batch_predicate_rec(
     }
 
     // Rename all uses of column names with the min value.
-    let expr = rename_columns(e, arena, &live_columns);
-    let mut expr = expr.into_aexpr_builder().not(arena);
+    //
+    // The renamed expression is arbitrary — it may not even be evaluable on a bound — so it is
+    // conjoined to the *right* of the guards: `&` is evaluated strictly left to right (see the
+    // doc comment above), so the expression is only evaluated for the batches the guards hold
+    // for, and only then is the statistic it reads the batch's value.
+    let substituted = rename_columns(e, arena, &live_columns)
+        .into_aexpr_builder()
+        .not(arena);
+
+    let mut guards: Option<AExprBuilder> = None;
     for col in live_columns.keys() {
         let col_min = col!(min: col);
         let col_max = col!(max: col);
@@ -832,8 +853,24 @@ fn aexpr_to_skip_batch_predicate_rec(
         let min_is_max = col_min.eq(col_max, arena); // Eq so that (None == None) == None
         let idx_zero = lv!(idx: 0);
         let has_no_nulls = col_nc.eq(idx_zero, arena);
+        // The statistics are bounds of the batch's values, so `min == max` and no nulls mean
+        // every row of the batch is that value: the substituted expression then reads what the
+        // row predicate would read. This is what the substitution rests on — the bound
+        // property, which the file format requires of every statistic; see the reader's
+        // `ArrowBound`/`BoundConversion` for how statistics that are not usable bounds are
+        // dropped.
+        let guard = min_is_max.and(has_no_nulls, arena);
 
-        expr = min_is_max.and(has_no_nulls, arena).and(expr, arena);
+        guards = Some(match guards {
+            Some(guards) => guards.and(guard, arena),
+            None => guard,
+        });
     }
-    Some(expr.node())
+
+    Some(match guards {
+        Some(guards) => guards.and(substituted, arena).node(),
+        // Nothing was substituted: the expression reads no statistics, and is safe to evaluate
+        // for every batch.
+        None => substituted.node(),
+    })
 }

@@ -12895,6 +12895,21 @@ class Expr(metaclass=_Meta):
         return wrap_expr(result)
 
     def _skip_batch_predicate(self, schema: SchemaDict) -> Expr | None:
+        """
+        The row predicate rewritten into a predicate on batch statistics.
+
+        Evaluating the result for a batch answers whether that batch can be skipped.
+        The rewritten predicate substitutes a batch's statistics for column values,
+        guarded by the tests that prove the substitution sound (``min == max``,
+        ``null_count == 0``, ...) *to the left* of the substituted expression: a
+        statistic is a bound of a batch's values, not necessarily a value the batch
+        contains, so the expression may fail on it. Readers therefore evaluate the
+        predicate with ``&``/``|`` short-circuiting left to right, and only evaluate a
+        substituted expression for the batches its guards hold for. Evaluating the
+        result without that short-circuiting (e.g. ``df.select(pred)`` for a predicate
+        whose substituted expression fails on a bound) evaluates the expression on
+        statistics that are not the batch's values, and can raise.
+        """
         result = self._pyexpr.skip_batch_predicate(schema)
         if result is None:
             return None

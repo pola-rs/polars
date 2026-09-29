@@ -1,5 +1,6 @@
 pub mod functions;
 pub mod skip_files_mask;
+mod skip_batch_predicate;
 #[cfg(feature = "dtype-categorical")]
 mod table_statistics;
 use core::fmt;

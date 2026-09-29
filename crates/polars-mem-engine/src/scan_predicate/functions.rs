@@ -28,6 +28,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
+use crate::scan_predicate::skip_batch_predicate::create_skip_batch_expr;
 use crate::scan_predicate::skip_files_mask::SkipFilesMask;
 use crate::scan_predicate::{PhysicalColumnPredicate, ScanPredicate, StagedScanPredicate};
 
@@ -153,8 +154,11 @@ pub fn create_scan_predicate(
                 skip_batch_schema.insert(format_pl_smallstr!("{col}_nc"), null_count_dtype(dtype));
             }
 
-            skip_batch_predicate = Some(create_physical_expr(
-                &expr,
+            // Evaluated with `&`/`|` strictly left to right, so a term that substituted a
+            // statistic for a column value is only evaluated for the batches the guards to its
+            // left hold for.
+            skip_batch_predicate = Some(create_skip_batch_expr(
+                node,
                 expr_arena,
                 &Arc::new(skip_batch_schema),
                 state,
