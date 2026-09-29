@@ -1242,7 +1242,6 @@ class Expr(metaclass=_Meta):
         See Also
         --------
         pipe
-        polars.pipe_with_dtype : Pass multiple expressions to a single function.
         LazyFrame.pipe_with_schema
 
         Examples
@@ -1274,7 +1273,14 @@ class Expr(metaclass=_Meta):
         │ 2.0 ┆ 2.5 ┆ 3.0 ┆ [2, 3]    │
         └─────┴─────┴─────┴───────────┘
         """
-        return F.pipe_with_dtype([self], lambda inputs: function(*inputs[0]))
+
+        def wrapper(exprs_and_dtypes: Any) -> PyExpr:
+            # Inputs are passed as lists to support multiple inputs, but this
+            # method only has one.
+            exprs, dtypes = exprs_and_dtypes
+            return parse_into_expression(function(wrap_expr(exprs[0]), dtypes[0]))
+
+        return wrap_expr(self._pyexpr.pipe_with_dtype(wrapper))
 
     def not_(self) -> Expr:
         """

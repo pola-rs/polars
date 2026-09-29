@@ -37,7 +37,6 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
-    from polars._plr import PyExpr
     from polars._typing import (
         AsyncResult,
         CorrelationMethod,
@@ -48,7 +47,6 @@ if TYPE_CHECKING:
         QuantileMethod,
     )
     from polars._utils.async_ import _GeventDataFrameResult
-    from polars.datatypes import DataType
     from polars.lazyframe.opt_flags import (
         QueryOptFlags,
     )
@@ -1327,85 +1325,6 @@ def _wrap_acc_lambda(
         return function(wrap_s(a), wrap_s(b))._s
 
     return wrapper
-
-
-@unstable()
-def pipe_with_dtype(
-    exprs: Sequence[str | Expr],
-    function: Callable[[list[tuple[Expr, DataType]]], IntoExpr],
-) -> Expr:
-    """
-    Replace expressions during the plan stage, based on their resolved dtypes.
-
-    `function` is not executed immediately but only during the plan stage, once
-    the dtypes of `exprs` are known. This allows choosing a different expression
-    depending on the dtypes of the inputs, including the metadata of extension
-    types. This also means that any exceptions raised by `function` will only be
-    emitted during the plan stage.
-
-    If any of `exprs` expands to multiple columns (e.g. a selector), `function` is
-    called once for every column, as with other functions taking multiple
-    expressions. It may also be called more than once for the same inputs, for
-    example when the schema is resolved separately. It should not have side
-    effects.
-
-    .. warning::
-        This functionality is considered **unstable**. It may be changed at any
-        point without it being considered a breaking change.
-
-    .. engine-support:: in-memory, streaming, distributed
-
-    Parameters
-    ----------
-    exprs
-        Expression(s) whose dtypes are passed to `function`. Strings are parsed as
-        column names.
-    function
-        Callable; will receive a list with an `(expression, dtype)` pair for every
-        input, in the same order as `exprs`. The returned expression takes the
-        place of the inputs, including its output name.
-
-    See Also
-    --------
-    Expr.pipe_with_dtype
-    LazyFrame.pipe_with_schema
-
-    Examples
-    --------
-    Sum the inputs, unless one of them is a string, in which case they are
-    concatenated instead.
-
-    >>> def sum_or_concat(inputs: list[tuple[pl.Expr, pl.DataType]]) -> pl.Expr:
-    ...     exprs = [expr for expr, _ in inputs]
-    ...     if any(dtype == pl.String for _, dtype in inputs):
-    ...         return pl.concat_str(exprs)
-    ...     return pl.sum_horizontal(exprs)
-    >>> df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": ["x", "y"]})
-    >>> df.select(
-    ...     ab=pl.pipe_with_dtype(["a", "b"], sum_or_concat),
-    ...     ac=pl.pipe_with_dtype(["a", "c"], sum_or_concat),
-    ... )
-    shape: (2, 2)
-    ┌─────┬─────┐
-    │ ab  ┆ ac  │
-    │ --- ┆ --- │
-    │ i64 ┆ str │
-    ╞═════╪═════╡
-    │ 4   ┆ 1x  │
-    │ 6   ┆ 2y  │
-    └─────┴─────┘
-    """
-    pyexprs = parse_into_list_of_expressions(exprs)
-
-    def wrapper(exprs_and_dtypes: Any) -> PyExpr:
-        pyexprs, dtypes = exprs_and_dtypes
-        inputs = [
-            (wrap_expr(pyexpr), dtype)
-            for pyexpr, dtype in zip(pyexprs, dtypes, strict=True)
-        ]
-        return parse_into_expression(function(inputs))
-
-    return wrap_expr(plr.pipe_with_dtype(pyexprs, wrapper))
 
 
 def fold(

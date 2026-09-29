@@ -59,22 +59,6 @@ pub fn len() -> Expr {
     Expr::Len
 }
 
-/// Replace `exprs`, at plan time, with the expression returned by `callback`.
-///
-/// The callback receives the input expressions and their resolved dtypes, in the same order.
-/// Inputs that expand to multiple columns (e.g. selectors) are combined
-/// in the same way as other multi-input functions,
-/// calling `callback` once per combination.
-pub fn pipe_with_dtype<E: AsRef<[Expr]>>(
-    exprs: E,
-    callback: PlanCallback<(Vec<Expr>, Vec<DataType>), Expr>,
-) -> Expr {
-    Expr::PipeWithDtype {
-        input: exprs.as_ref().to_vec(),
-        callback,
-    }
-}
-
 /// First column in a DataFrame.
 pub fn first() -> Selector {
     nth(0)

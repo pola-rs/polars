@@ -70,7 +70,6 @@ These functions are available from the Polars module root and can be used as exp
    n_unique
    nth
    ones
-   pipe_with_dtype
    quantile
    reduce
    repeat
