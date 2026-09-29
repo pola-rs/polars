@@ -58,6 +58,7 @@ gevent
 matplotlib
 # Testing
 hypothesis
+msgpack
 # Miscellaneous
 orjson
 
