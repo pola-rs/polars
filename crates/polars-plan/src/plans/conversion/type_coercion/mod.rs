@@ -1357,32 +1357,13 @@ fn try_inline_literal_cast(
     Ok(Some(lv))
 }
 
+/// Cast `e` to `to_dtype`. `options` applies to folding a literal; inserted casts are strict.
 fn cast_expr_ir(
     e: &mut ExprIR,
     from_dtype: &DataType,
     to_dtype: &DataType,
     expr_arena: &mut Arena<AExpr>,
     options: CastOptions,
-) -> PolarsResult<()> {
-    // Non-literal casts are strict; `options` controls only literal folding.
-    cast_expr_ir_with(
-        e,
-        from_dtype,
-        to_dtype,
-        expr_arena,
-        options,
-        CastOptions::Strict,
-    )
-}
-
-/// Use `literal_options` for folding and `cast_options` for inserted casts.
-fn cast_expr_ir_with(
-    e: &mut ExprIR,
-    from_dtype: &DataType,
-    to_dtype: &DataType,
-    expr_arena: &mut Arena<AExpr>,
-    literal_options: CastOptions,
-    cast_options: CastOptions,
 ) -> PolarsResult<()> {
     if from_dtype == to_dtype {
         return Ok(());
@@ -1391,7 +1372,7 @@ fn cast_expr_ir_with(
     check_cast(from_dtype, to_dtype)?;
 
     if let AExpr::Literal(lv) = expr_arena.get(e.node()) {
-        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, literal_options)? {
+        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, options)? {
             e.set_node(expr_arena.add(AExpr::Literal(literal)));
             e.set_dtype(to_dtype.clone());
             return Ok(());
@@ -1401,7 +1382,7 @@ fn cast_expr_ir_with(
     e.set_node(expr_arena.add(AExpr::Cast {
         expr: e.node(),
         dtype: to_dtype.clone(),
-        options: cast_options,
+        options: CastOptions::Strict,
     }));
     e.set_dtype(to_dtype.clone());
 

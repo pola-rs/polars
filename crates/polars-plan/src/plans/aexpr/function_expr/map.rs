@@ -84,17 +84,7 @@ impl Display for IRMapFunction {
             ContainsKey { .. } => "contains_key",
             Get { .. } => "get",
         };
-        write!(f, "map.{name}")?;
-        if let ContainsKey {
-            needle_cast: Some(dtype),
-        }
-        | Get {
-            needle_cast: Some(dtype),
-        } = self
-        {
-            write!(f, "[key: {dtype}]")?;
-        }
-        Ok(())
+        write!(f, "map.{name}")
     }
 }
 

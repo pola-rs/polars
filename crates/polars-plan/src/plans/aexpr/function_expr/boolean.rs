@@ -164,16 +164,7 @@ impl Display for IRBooleanFunction {
             AllHorizontal => "all_horizontal",
             Not => "not",
         };
-        write!(f, "{s}")?;
-        #[cfg(feature = "is_in")]
-        if let IsIn {
-            needle_cast: Some(dtype),
-            ..
-        } = self
-        {
-            write!(f, "[needle: {dtype}]")?;
-        }
-        Ok(())
+        write!(f, "{s}")
     }
 }
 

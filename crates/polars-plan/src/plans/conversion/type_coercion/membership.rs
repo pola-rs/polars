@@ -27,21 +27,6 @@ fn numeric_needle_cast(needle: &DataType, element: &DataType) -> IsInTypeCoercio
     }
 }
 
-pub(super) fn needle_cast_mut(function: &mut IRFunctionExpr) -> &mut Option<DataType> {
-    match function {
-        #[cfg(feature = "is_in")]
-        IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { needle_cast, .. })
-        | IRFunctionExpr::ListExpr(IRListFunction::Contains { needle_cast, .. }) => needle_cast,
-        #[cfg(all(feature = "is_in", feature = "dtype-array"))]
-        IRFunctionExpr::ArrayExpr(IRArrayFunction::Contains { needle_cast, .. }) => needle_cast,
-        #[cfg(feature = "dtype-map")]
-        IRFunctionExpr::MapExpr(
-            IRMapFunction::Get { needle_cast } | IRMapFunction::ContainsKey { needle_cast },
-        ) => needle_cast,
-        _ => unreachable!("not a membership function"),
-    }
-}
-
 pub(super) fn is_map_lookup(function: &IRFunctionExpr) -> bool {
     #[cfg(feature = "dtype-map")]
     if matches!(function, IRFunctionExpr::MapExpr(_)) {
@@ -196,6 +181,9 @@ fn resolve_needle(
     let cast_needle = |dtype: &DataType| R::CastNeedle {
         dtype: dtype.clone(),
     };
+    let guarded = |dtype: &DataType| R::GuardedNeedleCast {
+        dtype: dtype.clone(),
+    };
 
     let result = match (needle, element) {
         (n, e) if n == e => return Ok(None),
@@ -238,26 +226,21 @@ fn resolve_needle(
         (DataType::Decimal(_, _), DataType::Decimal(_, _)) => match container {
             Container::Sequence => return Ok(None),
             #[cfg(feature = "dtype-map")]
-            Container::Map => R::GuardedNeedleCast {
-                dtype: element.clone(),
-            },
+            Container::Map => guarded(element),
         },
         #[cfg(feature = "dtype-decimal")]
-        (n, DataType::Decimal(_, _)) if n.is_integer() => R::GuardedNeedleCast {
-            dtype: match container {
-                // Integers are exact decimals at scale 0; only 128-bit values can fail the cast.
-                Container::Sequence => {
-                    DataType::Decimal(polars_compute::decimal::DEC128_MAX_PREC, 0)
-                },
-                #[cfg(feature = "dtype-map")]
-                Container::Map => element.clone(),
-            },
+        (n, DataType::Decimal(_, _)) if n.is_integer() => match container {
+            // Integers are exact decimals at scale 0; only 128-bit values can fail the cast.
+            Container::Sequence => guarded(&DataType::Decimal(
+                polars_compute::decimal::DEC128_MAX_PREC,
+                0,
+            )),
+            #[cfg(feature = "dtype-map")]
+            Container::Map => guarded(element),
         },
         // A decimal with a fractional part, or out of the integer's range, matches nothing.
         #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, _), e) if e.is_integer() => R::GuardedNeedleCast {
-            dtype: element.clone(),
-        },
+        (DataType::Decimal(_, _), e) if e.is_integer() => guarded(element),
 
         (DataType::Datetime(needle_unit, needle_tz), DataType::Datetime(unit, tz)) => {
             if needle_tz.is_some() != tz.is_some() {
@@ -277,12 +260,10 @@ fn resolve_needle(
             if needle_unit == unit {
                 cast_needle(&dtype)
             } else {
-                R::GuardedNeedleCast { dtype }
+                guarded(&dtype)
             }
         },
-        (DataType::Duration(_), DataType::Duration(_)) => R::GuardedNeedleCast {
-            dtype: element.clone(),
-        },
+        (DataType::Duration(_), DataType::Duration(_)) => guarded(element),
 
         // The kernel looks strings up by category, so an unknown label is absent.
         #[cfg(feature = "dtype-categorical")]
@@ -294,9 +275,7 @@ fn resolve_needle(
             Container::Map if element.is_string() => cast_needle(element),
             // An unknown label becomes a null key, which no Map holds.
             #[cfg(feature = "dtype-map")]
-            Container::Map => R::GuardedNeedleCast {
-                dtype: element.clone(),
-            },
+            Container::Map => guarded(element),
         },
 
         _ => return Err(fail("")),
@@ -399,93 +378,94 @@ pub(super) fn coerce_is_in(
 
     let mut function = function.clone();
     let mut input = input.to_vec();
-    use IsInTypeCoercionResult;
-    match result {
-        IsInTypeCoercionResult::CastNeedle { dtype } => {
-            let (_, type_self) =
-                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-            cast_expr_ir(
-                &mut input[flat],
-                &type_self,
-                &dtype,
-                expr_arena,
-                CastOptions::NonStrict,
-            )?;
-        },
-        IsInTypeCoercionResult::CastContainer { dtype } => {
-            let (_, type_other) =
-                unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
-            cast_expr_ir(
-                &mut input[nested],
-                &type_other,
-                &dtype,
-                expr_arena,
-                CastOptions::NonStrict,
-            )?;
-        },
-        IsInTypeCoercionResult::GuardedNeedleCast { dtype } => {
-            let lv = match expr_arena.get(input[flat].node()) {
-                AExpr::Literal(lv) if lv.is_scalar() => lv,
-                // Cast and check the evaluated needle, so that it is evaluated once.
-                _ => {
-                    *needle_cast_mut(&mut function) = Some(dtype);
-                    return Ok(Some(AExpr::Function {
-                        function,
-                        input,
-                        options,
-                    }));
+    use IsInTypeCoercionResult as R;
+    let (operand, dtype) = match result {
+        R::CastNeedle { dtype } => (flat, dtype),
+        R::CastContainer { dtype } => (nested, dtype),
+        R::GuardedNeedleCast { dtype } => {
+            // A literal needle that casts exactly is substituted now. Any other needle is cast
+            // and checked as the function runs, so that it is evaluated once.
+            match exact_literal_needle(&input[flat], &dtype, expr_arena, schema)? {
+                Some(needle) => {
+                    input[flat].set_node(expr_arena.add(AExpr::Literal(needle.into())));
+                    input[flat].set_dtype(dtype);
                 },
-            };
-
-            // A literal needle is cast and checked once, here.
-            let (_, type_self) =
-                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-            let type_self = type_self.materialize_unknown(false)?;
-            let needle = match lv {
-                LiteralValue::Dyn(dyn_value) => dyn_value
-                    .clone()
-                    .try_materialize_to_dtype(&type_self, CastOptions::Strict)?,
-                LiteralValue::Scalar(scalar) => scalar.clone(),
-                _ => unreachable!("a scalar literal"),
+                None => *function.membership_needle_cast_mut().unwrap() = Some(dtype),
             }
-            .into_series(PlSmallStr::EMPTY);
-            let (casted, inexact) = needle._cast_reporting_inexact(&dtype)?;
-            let needle = match inexact {
-                None => Scalar::new(dtype.clone(), casted.get(0)?.into_static()),
-                // A Map holds no null key, so a null needle is simply absent.
-                Some(_) if is_map_lookup(&function) => Scalar::null(dtype.clone()),
-                // A null needle would match null elements, so answer directly: no match, except
-                // for a null container.
-                Some(_) => {
-                    let container = AExprBuilder::new_from_node(input[nested].node());
-                    let null =
-                        AExprBuilder::lit_scalar(Scalar::null(DataType::Boolean), expr_arena);
-                    let miss = AExprBuilder::lit_scalar(Scalar::from(false), expr_arena);
-                    let out = container
-                        .is_null(expr_arena)
-                        .ternary(null, miss, expr_arena);
-                    return Ok(Some(out.build(expr_arena)));
-                },
-            };
-            input[flat].set_node(expr_arena.add(AExpr::Literal(needle.into())));
-            input[flat].set_dtype(dtype);
+            return Ok(Some(AExpr::Function {
+                function,
+                input,
+                options,
+            }));
         },
         #[cfg(feature = "is_in")]
-        IsInTypeCoercionResult::Implode => {
+        R::Implode => {
             assert!(!form.is_contains());
             let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
                 input: input[nested].node(),
                 maintain_order: true,
             }));
             input[nested].set_node(other_input);
+            return Ok(Some(AExpr::Function {
+                function,
+                input,
+                options,
+            }));
         },
-    }
+    };
+    let (_, from) = unpack!(get_aexpr_and_type(
+        expr_arena,
+        input[operand].node(),
+        schema
+    ));
+    cast_expr_ir(
+        &mut input[operand],
+        &from,
+        &dtype,
+        expr_arena,
+        CastOptions::NonStrict,
+    )?;
 
     Ok(Some(AExpr::Function {
         function,
         input,
         options,
     }))
+}
+
+/// A scalar literal needle cast to `dtype`, if the cast is exact.
+fn exact_literal_needle(
+    needle: &ExprIR,
+    dtype: &DataType,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+) -> PolarsResult<Option<Scalar>> {
+    let AExpr::Literal(lv) = expr_arena.get(needle.node()) else {
+        return Ok(None);
+    };
+    let scalar = match lv {
+        LiteralValue::Dyn(dyn_value) => {
+            let from = needle
+                .dtype(schema, expr_arena)?
+                .clone()
+                .materialize_unknown(false)?;
+            dyn_value
+                .clone()
+                .try_materialize_to_dtype(&from, CastOptions::Strict)?
+        },
+        LiteralValue::Scalar(scalar) => scalar.clone(),
+        _ => return Ok(None),
+    };
+    let (casted, inexact) = scalar
+        .into_series(PlSmallStr::EMPTY)
+        ._cast_reporting_inexact(dtype)?;
+    if inexact.is_some() {
+        return Ok(None);
+    }
+    Ok(Some(Scalar::new(
+        dtype.clone(),
+        casted.get(0)?.into_static(),
+    )))
 }
 
 /// Cast eligible literal haystacks to the needle dtype to preserve pushdown.
@@ -517,9 +497,8 @@ fn cast_literal_haystack(
         return Ok(None);
     };
     let needle = input[flat].dtype(schema, expr_arena)?;
-    // Casting strings to a Categorical would add them to its categories. A null needle
-    // gains nothing from pushdown.
-    if !needle.is_known() || needle.contains_categoricals() || needle.is_null() {
+    // Casting strings to a Categorical would add them to its categories.
+    if !needle.is_known() || needle.contains_categoricals() {
         return Ok(None);
     }
     let (elements, width) = match haystack.value() {
@@ -539,26 +518,22 @@ fn cast_literal_haystack(
     if casted.dtype() != needle {
         return Ok(None);
     }
-    let (value, dtype) = match (inexact, width) {
-        (None, None) => (
-            AnyValue::List(casted),
-            DataType::List(Box::new(needle.clone())),
-        ),
-        (Some(inexact), None) => (
-            AnyValue::List(casted.filter(&!&inexact)?),
-            DataType::List(Box::new(needle.clone())),
-        ),
-        #[cfg(feature = "dtype-array")]
-        (None, Some(width)) => (
-            AnyValue::Array(casted, width),
-            DataType::Array(Box::new(needle.clone()), width),
-        ),
-        // Dropping elements would change the width.
-        #[cfg(feature = "dtype-array")]
+    let casted = match (inexact, width) {
+        (None, _) => casted,
+        (Some(inexact), None) => casted.filter(&!&inexact)?,
+        // Dropping elements would change an Array's width.
         (Some(_), Some(_)) => return Ok(None),
+    };
+    let value = match width {
+        None => AnyValue::List(casted),
+        #[cfg(feature = "dtype-array")]
+        Some(width) => AnyValue::Array(casted, width),
         #[cfg(not(feature = "dtype-array"))]
-        (_, Some(_)) => unreachable!(),
+        Some(_) => unreachable!(),
     };
 
-    Ok(Some(Scalar::new(dtype, value.into_static())))
+    Ok(Some(Scalar::new(
+        with_inner(haystack.dtype(), needle.clone()),
+        value.into_static(),
+    )))
 }

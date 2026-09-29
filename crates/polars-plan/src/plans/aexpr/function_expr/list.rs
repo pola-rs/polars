@@ -279,15 +279,6 @@ impl Display for IRListFunction {
             #[cfg(feature = "dtype-map")]
             ToMap => "to_map",
         };
-        write!(f, "list.{name}")?;
-        #[cfg(feature = "is_in")]
-        if let Contains {
-            needle_cast: Some(dtype),
-            ..
-        } = self
-        {
-            write!(f, "[needle: {dtype}]")?;
-        }
-        Ok(())
+        write!(f, "list.{name}")
     }
 }

@@ -240,16 +240,7 @@ impl Display for IRArrayFunction {
             #[cfg(feature = "array_to_struct")]
             ToStruct { fields: _ } => "to_struct",
         };
-        write!(f, "arr.{name}")?;
-        #[cfg(feature = "is_in")]
-        if let Contains {
-            needle_cast: Some(dtype),
-            ..
-        } = self
-        {
-            write!(f, "[needle: {dtype}]")?;
-        }
-        Ok(())
+        write!(f, "arr.{name}")
     }
 }
 

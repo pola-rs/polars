@@ -787,6 +787,20 @@ impl Hash for IRFunctionExpr {
 
 impl Display for IRFunctionExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.fmt_name(f)?;
+        if let Some(dtype) = self.membership_needle_cast() {
+            #[cfg(feature = "dtype-map")]
+            if matches!(self, Self::MapExpr(_)) {
+                return write!(f, "[key: {dtype}]");
+            }
+            write!(f, "[needle: {dtype}]")?;
+        }
+        Ok(())
+    }
+}
+
+impl IRFunctionExpr {
+    fn fmt_name(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use IRFunctionExpr::*;
         let s = match self {
             // Namespaces
@@ -1118,6 +1132,21 @@ impl IRFunctionExpr {
             Self::MapExpr(
                 IRMapFunction::Get { needle_cast } | IRMapFunction::ContainsKey { needle_cast },
             ) => needle_cast.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub fn membership_needle_cast_mut(&mut self) -> Option<&mut Option<DataType>> {
+        match self {
+            #[cfg(feature = "is_in")]
+            Self::Boolean(IRBooleanFunction::IsIn { needle_cast, .. })
+            | Self::ListExpr(IRListFunction::Contains { needle_cast, .. }) => Some(needle_cast),
+            #[cfg(all(feature = "is_in", feature = "dtype-array"))]
+            Self::ArrayExpr(IRArrayFunction::Contains { needle_cast, .. }) => Some(needle_cast),
+            #[cfg(feature = "dtype-map")]
+            Self::MapExpr(
+                IRMapFunction::Get { needle_cast } | IRMapFunction::ContainsKey { needle_cast },
+            ) => Some(needle_cast),
             _ => None,
         }
     }
