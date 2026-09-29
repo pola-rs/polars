@@ -133,6 +133,7 @@ struct DecimalMeanReducer;
 impl Reducer for DecimalMeanReducer {
     type Dtype = Int128Type;
     type Value = (i128, f64, usize);
+    const ORDER_INDEPENDENT: bool = true;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {

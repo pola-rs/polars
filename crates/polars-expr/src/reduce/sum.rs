@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use num_traits::Zero;
 use polars_arrow::array::PrimitiveArray;
 #[cfg(feature = "dtype-decimal")]
-use polars_compute::decimal::dec128_add_scaled;
+use polars_compute::decimal::{DEC128_MAX_PREC, dec128_fits};
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 use polars_core::prelude::sum_output_dtype;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -112,9 +112,9 @@ where
     }
 }
 
-/// Sums Decimal128 values with overflow checking. `i128::MIN` marks an
-/// overflowed group (it is never a valid decimal physical value), which
-/// raises a `ComputeError` on `finish()`.
+/// Sums Decimal128 values with overflow checking. `i128::MIN` marks a group
+/// whose sum overflowed i128. Whether a sum fits 38 digits is only checked on
+/// `finish()`, which raises a `ComputeError` if it doesn't.
 #[cfg(feature = "dtype-decimal")]
 const DECIMAL_SUM_OVERFLOW: i128 = i128::MIN;
 
@@ -130,17 +130,17 @@ fn is_sum_overflow(x: i128) -> bool {
 #[derive(Clone)]
 struct DecimalSumReducer;
 
-/// Adds two mantissas of the same scale; the scale itself doesn't affect the sum.
 #[cfg(feature = "dtype-decimal")]
 #[inline(always)]
-fn add(a: i128, b: i128) -> Option<i128> {
-    dec128_add_scaled(a, 0, b, 0, 0)
+fn add(a: i128, b: i128) -> i128 {
+    a.checked_add(b).unwrap_or(DECIMAL_SUM_OVERFLOW)
 }
 
 #[cfg(feature = "dtype-decimal")]
 impl Reducer for DecimalSumReducer {
     type Dtype = Int128Type;
     type Value = i128;
+    const ORDER_INDEPENDENT: bool = true;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {
@@ -156,23 +156,23 @@ impl Reducer for DecimalSumReducer {
         *a = if is_sum_overflow(*a) || is_sum_overflow(*b) {
             DECIMAL_SUM_OVERFLOW
         } else {
-            add(*a, *b).unwrap_or(DECIMAL_SUM_OVERFLOW)
+            add(*a, *b)
         };
     }
 
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<i128>, _seq_id: u64) {
         if !is_sum_overflow(*a) {
-            *a = add(*a, b.unwrap_or(0)).unwrap_or(DECIMAL_SUM_OVERFLOW);
+            *a = add(*a, b.unwrap_or(0));
         }
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        if *v != DECIMAL_SUM_OVERFLOW {
+        if !is_sum_overflow(*v) {
             *v = ca
                 .iter()
                 .flatten()
-                .try_fold(*v, add)
+                .try_fold(*v, i128::checked_add)
                 .unwrap_or(DECIMAL_SUM_OVERFLOW);
         }
     }
@@ -185,7 +185,7 @@ impl Reducer for DecimalSumReducer {
     ) -> PolarsResult<Series> {
         assert!(m.is_none());
         polars_ensure!(
-            !v.contains(&DECIMAL_SUM_OVERFLOW),
+            v.iter().all(|x| dec128_fits(*x, DEC128_MAX_PREC)),
             ComputeError: "overflow in decimal addition in sum"
         );
         let arr = Box::new(PrimitiveArray::from_vec(v));
