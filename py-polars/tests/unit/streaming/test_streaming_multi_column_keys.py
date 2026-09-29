@@ -12,8 +12,6 @@ if TYPE_CHECKING:
     from polars._typing import JoinStrategy
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 LONG = "a string that is too long to be inlined"
 
 KEYS = [
