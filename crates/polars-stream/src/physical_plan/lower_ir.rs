@@ -37,10 +37,10 @@ use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
 use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
-use slotmap::SecondaryMap;
+use slotmap::{DenseSlotMap, SecondaryMap};
 
 use super::lower_expr::build_hstack_stream;
-use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysSmBuilder, PhysStream};
+use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 #[cfg(feature = "python")]
 use crate::nodes::io_sources;
 use crate::nodes::io_sources::multi_scan;
@@ -60,7 +60,7 @@ pub fn build_slice_stream(
     input: PhysStream,
     offset: i64,
     length: usize,
-    phys_sm: &mut PhysSmBuilder,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
 ) -> PhysStream {
     if offset >= 0 {
         let offset = offset as usize;
@@ -89,7 +89,7 @@ pub fn build_filter_stream(
     input: PhysStream,
     predicate: ExprIR,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut PhysSmBuilder,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
@@ -145,7 +145,7 @@ pub fn build_row_idx_stream(
     input: PhysStream,
     name: PlSmallStr,
     offset: Option<IdxSize>,
-    phys_sm: &mut PhysSmBuilder,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
 ) -> PhysStream {
     let input_schema = input.output_schema(phys_sm);
     let mut output_schema = (**input_schema).clone();
@@ -179,7 +179,7 @@ pub fn lower_ir(
     node: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut PhysSmBuilder,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
     original_ir_len: usize,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
@@ -194,38 +194,19 @@ pub fn lower_ir(
     // hide a new node from this window. The one removal, in `simplify_input_streams`, only
     // removes nodes inserted during the current `lower_ir` call; see the comment there.
     let len_before = phys_sm.len();
-    let out = if phys_sm.is_original_ir_node(node) {
-        phys_sm.with_ir_node(node, |phys_sm| {
-            lower_ir_inner(
-                node,
-                ir_arena,
-                expr_arena,
-                phys_sm,
-                phys_to_ir,
-                original_ir_len,
-                schema_cache,
-                expr_cache,
-                cache_nodes,
-                ctx,
-                disable_morsel_split,
-            )
-        })
-    } else {
-        lower_ir_inner(
-            node,
-            ir_arena,
-            expr_arena,
-            phys_sm,
-            phys_to_ir,
-            original_ir_len,
-            schema_cache,
-            expr_cache,
-            cache_nodes,
-            ctx,
-            disable_morsel_split,
-        )
-    };
-    let out = out?;
+    let out = lower_ir_inner(
+        node,
+        ir_arena,
+        expr_arena,
+        phys_sm,
+        phys_to_ir,
+        original_ir_len,
+        schema_cache,
+        expr_cache,
+        cache_nodes,
+        ctx,
+        disable_morsel_split,
+    )?;
     // Temporary IR nodes are not in the IR the observer sees; the physical nodes lowered from
     // them are claimed by the enclosing original node's window instead.
     if node.0 < original_ir_len {
@@ -245,7 +226,7 @@ fn lower_ir_inner(
     node: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut PhysSmBuilder,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
     original_ir_len: usize,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
@@ -2060,7 +2041,7 @@ fn append_sorted_key_column(
     keys_sorted: Option<&Vec<AExprSorted>>,
     broadcast_nulls: Option<bool>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut PhysSmBuilder,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>, Option<PlSmallStr>)> {
@@ -2111,7 +2092,7 @@ fn lower_subtree_to_inmem_engine(
     ir_node_output_schema: Arc<Schema>,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut PhysSmBuilder,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
     let mem_engine_executor = create_physical_plan(

@@ -33,7 +33,6 @@ use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::options::{JoinTypeOptionsIR, RuntimeFilter};
 use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
 
-mod builder;
 mod fmt;
 mod io;
 mod lower_expr;
@@ -42,7 +41,6 @@ mod lower_ir;
 mod to_description;
 mod to_graph;
 
-pub use builder::PhysSmBuilder;
 pub use fmt::{NodeStyle, visualize_plan};
 use polars_defs::time::duration::Duration;
 #[cfg(feature = "dynamic_group_by")]
@@ -83,9 +81,6 @@ impl PhysNodeKey {
 pub struct PhysNode {
     output_schemas: UnitVec<Arc<Schema>>,
     kind: PhysNodeKind,
-    /// The IR node whose lowering created this node. Set by `PhysSmBuilder::insert`; always
-    /// `Some` once `build_physical_plan` has returned.
-    ir_node: Option<Node>,
 }
 
 impl PhysNode {
@@ -93,7 +88,6 @@ impl PhysNode {
         Self {
             output_schemas: unitvec![output_schema],
             kind,
-            ir_node: None,
         }
     }
 
@@ -101,12 +95,7 @@ impl PhysNode {
         Self {
             output_schemas,
             kind,
-            ir_node: None,
         }
-    }
-
-    pub fn ir_node(&self) -> Option<Node> {
-        self.ir_node
     }
 
     pub fn output_schema(&self, port_idx: usize) -> &Arc<Schema> {
@@ -877,7 +866,7 @@ fn _visit_nodes_impl(
 
 fn insert_multiplexers(
     roots: Vec<PhysNodeKey>,
-    phys_sm: &mut PhysSmBuilder,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
 ) {
     let mut refcount: PlIndexMap<_, usize> = PlIndexMap::new();
@@ -890,17 +879,12 @@ fn insert_multiplexers(
         .filter(|(_stream, refcount)| *refcount > 1)
         .map(|(stream, refcount)| {
             let input_schema = Arc::clone(stream.output_schema(phys_sm));
+            let multiplexer_node = phys_sm.insert(PhysNode::new_multi_output(
+                (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
+                PhysNodeKind::Multiplexer { input: stream },
+            ));
             // A multiplexer only fans out the stream it wraps, so it belongs to the same IR
             // node as that stream's producer.
-            let ir_node = phys_sm[stream.node]
-                .ir_node()
-                .expect("lowered physical nodes are attributed to an IR node");
-            let multiplexer_node = phys_sm.with_ir_node(ir_node, |phys_sm| {
-                phys_sm.insert(PhysNode::new_multi_output(
-                    (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
-                    PhysNodeKind::Multiplexer { input: stream },
-                ))
-            });
             let source_ir_node = phys_to_ir[stream.node];
             phys_to_ir.insert(multiplexer_node, source_ir_node);
             (stream, PhysStream::first(multiplexer_node))
@@ -917,7 +901,7 @@ fn insert_multiplexers(
 
 fn split_multiplexers(
     roots: Vec<PhysNodeKey>,
-    phys_sm: &mut PhysSmBuilder,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
 ) {
     let mut refcount: SecondaryMap<PhysNodeKey, usize> = SecondaryMap::new();
@@ -1039,36 +1023,28 @@ fn rechunk_group_by_inputs(
     });
 }
 
-/// Lowers the IR rooted at `root` into a physical plan and returns the root physical node
-/// together with the slotmap holding the plan and the IR node each physical node was lowered
-/// from.
+/// Lowers the IR rooted at `root` into physical nodes in `phys_sm` and returns the root
+/// physical node together with the IR node each physical node was lowered from.
 pub fn build_physical_plan(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     ctx: StreamingLowerIRContext<'_>,
-) -> PolarsResult<(
-    PhysNodeKey,
-    DenseSlotMap<PhysNodeKey, PhysNode>,
-    SecondaryMap<PhysNodeKey, Node>,
-)> {
+) -> PolarsResult<(PhysNodeKey, SecondaryMap<PhysNodeKey, Node>)> {
     // IR nodes at or beyond this index are added by lowering itself and are not part of the
     // plan the query observer sees.
     let original_ir_len = ir_arena.len();
-    let mut phys_to_ir: SecondaryMap<PhysNodeKey, Node> =
-        SecondaryMap::with_capacity(ir_arena.len());
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
     let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
     let mut cache_nodes = PlHashMap::new();
-    let mut phys_sm = PhysSmBuilder::new(
-        DenseSlotMap::with_capacity_and_key(ir_arena.len()),
-        original_ir_len,
-    );
+    let mut phys_to_ir: SecondaryMap<PhysNodeKey, Node> =
+        SecondaryMap::with_capacity(ir_arena.len());
     let phys_root = lower_ir::lower_ir(
         root,
         ir_arena,
         expr_arena,
-        &mut phys_sm,
+        phys_sm,
         &mut phys_to_ir,
         original_ir_len,
         &mut schema_cache,
@@ -1077,23 +1053,22 @@ pub fn build_physical_plan(
         ctx,
         None,
     )?;
-    insert_multiplexers(vec![phys_root.node], &mut phys_sm, &mut phys_to_ir);
-    split_multiplexers(vec![phys_root.node], &mut phys_sm, &mut phys_to_ir);
-    fuse_drops(vec![phys_root.node], &mut phys_sm, &mut phys_to_ir);
+    insert_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
+    split_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
+    fuse_drops(vec![phys_root.node], phys_sm, &mut phys_to_ir);
 
     // TODO: remove this after fusing pre-select into group-by node.
-    rechunk_group_by_inputs(vec![phys_root.node], &mut phys_sm);
+    rechunk_group_by_inputs(vec![phys_root.node], phys_sm);
 
-    // Transitional, removed with `PhysSmBuilder`: the external map must agree with the IR node
-    // stamped on every physical node.
+    // Guards the passes above: a pass that inserts a node without attributing it fails here.
+    // It cannot detect a node claimed by the wrong `lower_ir` window, since the root's window
+    // starts at 0 and claims anything left over.
     debug_assert!(
-        phys_sm.iter().all(|(key, node)| {
-            node.ir_node()
-                .is_some_and(|ir| phys_sm.is_original_ir_node(ir))
-                && phys_to_ir.get(key).copied() == node.ir_node()
-        }),
-        "phys_to_ir must match the IR node stamped on every physical node"
+        phys_sm
+            .keys()
+            .all(|key| phys_to_ir.get(key).is_some_and(|ir| ir.0 < original_ir_len)),
+        "every physical node must be attributed to an IR node of the original plan"
     );
 
-    Ok((phys_root.node, phys_sm.into_inner(), phys_to_ir))
+    Ok((phys_root.node, phys_to_ir))
 }

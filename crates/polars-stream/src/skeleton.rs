@@ -94,8 +94,9 @@ pub fn visualize_physical_plan(
         prepare_visualization: true,
         sortedness: &sortedness,
     };
-    let (root_phys_node, phys_sm, _phys_to_ir) =
-        crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, ctx)?;
+    let mut phys_sm = DenseSlotMap::with_capacity_and_key(ir_arena.len());
+    let (root_phys_node, _phys_to_ir) =
+        crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, &mut phys_sm, ctx)?;
 
     let out = crate::physical_plan::visualize_plan(root_phys_node, &phys_sm, expr_arena);
 
@@ -152,8 +153,14 @@ impl StreamingQuery {
             prepare_visualization: cfg_prepare_visualization_data(),
             sortedness: &sortedness,
         };
-        let (root_phys_node, phys_sm, phys_to_ir) =
-            crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, ctx)?;
+        let mut phys_sm = DenseSlotMap::with_capacity_and_key(ir_arena.len());
+        let (root_phys_node, phys_to_ir) = crate::physical_plan::build_physical_plan(
+            node,
+            ir_arena,
+            expr_arena,
+            &mut phys_sm,
+            ctx,
+        )?;
         if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_PHYSICAL_PLAN") {
             let visualization =
                 crate::physical_plan::visualize_plan(root_phys_node, &phys_sm, expr_arena);
