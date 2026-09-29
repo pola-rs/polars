@@ -174,6 +174,57 @@ def test_pipe_with_dtype_without_schema() -> None:
         expr.meta.is_scalar()
 
 
+def test_pipe_with_dtype_multiple_inputs() -> None:
+    seen: list[list[tuple[str, pl.DataType]]] = []
+
+    def sum_or_concat(inputs: list[tuple[pl.Expr, pl.DataType]]) -> pl.Expr:
+        seen.append([(expr.meta.output_name(), dtype) for expr, dtype in inputs])
+        exprs = [expr for expr, _ in inputs]
+        if any(dtype == pl.String for _, dtype in inputs):
+            return pl.concat_str(exprs)
+        return pl.sum_horizontal(exprs)
+
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": ["x", "y"]})
+
+    assert_frame_equal(
+        df.select(
+            ab=pl.pipe_with_dtype([pl.col("a"), "b"], sum_or_concat),
+            ac=pl.pipe_with_dtype([pl.col("a") * 10, pl.col("c")], sum_or_concat),
+        ),
+        pl.DataFrame({"ab": [4, 6], "ac": ["10x", "20y"]}),
+    )
+    assert [("a", pl.Int64()), ("b", pl.Int64())] in seen
+    assert [("a", pl.Int64()), ("c", pl.String())] in seen
+
+
+def test_pipe_with_dtype_multiple_inputs_selector_broadcast() -> None:
+    seen: list[list[str]] = []
+
+    def record(inputs: list[tuple[pl.Expr, pl.DataType]]) -> pl.Expr:
+        seen.append([expr.meta.output_name() for expr, _ in inputs])
+        return inputs[0][0] + inputs[1][0]
+
+    df = pl.DataFrame({"a": [1], "b": [2], "w": [10]})
+
+    assert_frame_equal(
+        df.select(pl.pipe_with_dtype([pl.col("a", "b"), pl.col("w")], record)),
+        pl.DataFrame({"a": [11], "b": [12]}),
+    )
+    assert sorted(seen) == [["a", "w"], ["b", "w"]]
+
+
+def test_pipe_with_dtype_multiple_inputs_mismatched_selectors() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="cannot combine selectors that produce a different number of columns",
+    ):
+        df.select(
+            pl.pipe_with_dtype([pl.col("a", "b"), pl.col("a", "b", "c")], lambda _: 1)
+        )
+
+
 def test_pipe_with_dtype_raises_at_plan_time() -> None:
     def fail(expr: pl.Expr, dtype: pl.DataType) -> pl.Expr:
         msg = "planning failed"
