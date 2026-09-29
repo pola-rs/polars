@@ -29,8 +29,8 @@ use rayon::prelude::*;
 use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::utils::JoinSampleStats;
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, UNIQUE_BUILD_MARGIN, build_side_left, emit_morsel_size,
-    sample_sink, select_key_columns, send_frames,
+    BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, emit_morsel_size, sample_sink,
+    select_key_columns, send_frames,
 };
 use crate::expression::StreamExpr;
 use crate::morsel::get_ideal_morsel_size;
@@ -388,6 +388,11 @@ const UNIQUE_KEY_RATIO: f64 = 0.9;
 /// A side with at most this key ratio is taken as referencing a side with
 /// unique keys.
 const REF_KEY_RATIO: f64 = 0.55;
+
+/// Extra weight against building a side referencing a side with unique keys.
+/// Referencing sides tend to keep growing and a prefix under-counts their
+/// repeats.
+const UNIQUE_BUILD_MARGIN: f64 = 8.0;
 
 /// How much smaller the left side's score must be for it to be built.
 /// This is used to make noisy near-50/50 decisions more stable.
