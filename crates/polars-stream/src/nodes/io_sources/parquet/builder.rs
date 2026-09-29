@@ -16,7 +16,7 @@ use polars_utils::pl_str::PlSmallStr;
 use super::super::shared::pipeline_budget::{
     PipelineBudget, prefetch_kbytes_limit_from_env_or_default,
 };
-use super::{FileReader, ParquetFileReader};
+use super::{FileReader, ParquetFileReader, ScanMetrics};
 use crate::metrics::{IOMetrics, NodeMetricsRegistry, OptIOMetrics};
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
@@ -187,7 +187,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                 current_all_spawned: None,
             },
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
-            metrics_registry: metrics_registry.clone(),
+            metrics: ScanMetrics::register(metrics_registry),
             verbose,
 
             init_data: None,

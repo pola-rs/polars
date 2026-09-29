@@ -19,7 +19,6 @@ use polars_utils::{IdxSize, UnitVec};
 
 use super::passes::{Selectivity, keeps_most_rows, plan_passes, promote};
 use super::row_group_data_fetch::RowGroupData;
-use crate::metrics::{MetricReporter, kind};
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
 /// Where a column of a row group comes from. Sorts in output order.
@@ -121,27 +120,24 @@ pub(super) struct RowGroupDecoder {
     /// Indices into `projected_arrow_fields. This must be sorted.
     pub(super) non_predicate_field_indices: Arc<[usize]>,
     pub(super) target_values_per_thread: usize,
+}
 
-    // The metrics of this file, shared by its decode tasks. They cover the data
-    // files: the deletion files of an Iceberg scan count in the node's IO
-    // metrics only.
-    /// Rows of the row groups read, before the predicate.
-    pub(super) rows_read: MetricReporter<kind::Sum>,
-    /// Rows of `rows_read` decoded prefiltered.
-    pub(super) rows_read_prefiltered: MetricReporter<kind::Sum>,
-    /// Rows of `rows_read_prefiltered` the predicate kept.
-    pub(super) rows_kept_prefiltered: MetricReporter<kind::Sum>,
-    /// Uncompressed size, per the file metadata, of the projected column chunks
-    /// of the row groups read. A slice or prefilter decompresses only some of
-    /// their pages.
-    pub(super) uncompressed_bytes: MetricReporter<kind::Sum>,
+/// What decoding a row group read, for the scan metrics.
+#[derive(Clone, Copy)]
+pub(super) struct RowGroupRead {
+    /// Rows of the row group, after the slice.
+    pub(super) rows: usize,
+    /// Uncompressed size, per the file metadata, of its projected column chunks.
+    pub(super) uncompressed_bytes: u64,
+    /// The rows the predicate kept, when the row group was decoded prefiltered.
+    pub(super) rows_kept_prefiltered: Option<usize>,
 }
 
 impl RowGroupDecoder {
     pub(super) async fn row_group_data_to_df(
         &self,
         mut row_group_data: RowGroupData,
-    ) -> PolarsResult<DataFrame> {
+    ) -> PolarsResult<(DataFrame, RowGroupRead)> {
         // If the slice consumes the entire row-group. Don't slice. This allows for prefiltering to
         // happen more often until we properly support prefiltering with pre-slices.
         row_group_data.slice.take_if(|slice| {
@@ -154,7 +150,7 @@ impl RowGroupDecoder {
             && !self.predicate_field_indices.is_empty()
             && !nothing_to_evaluate;
 
-        let num_rows = row_group_data
+        let rows = row_group_data
             .slice
             .map_or(row_group_data.row_group_metadata.num_rows(), |(_, len)| len);
         let uncompressed_bytes = row_group_data.uncompressed_bytes;
@@ -167,13 +163,12 @@ impl RowGroupDecoder {
                 .await?
         };
 
-        self.rows_read.add(num_rows as i64);
-        self.uncompressed_bytes.add(uncompressed_bytes as i64);
-        if prefiltered {
-            self.rows_read_prefiltered.add(num_rows as i64);
-            self.rows_kept_prefiltered.add(df.height() as i64);
-        }
-        Ok(df)
+        let read = RowGroupRead {
+            rows,
+            uncompressed_bytes,
+            rows_kept_prefiltered: prefiltered.then(|| df.height()),
+        };
+        Ok((df, read))
     }
 
     /// Whether the predicate keeps every row for now: it has no static part

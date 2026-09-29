@@ -16,9 +16,10 @@ use polars_utils::IdxSize;
 use tokio::sync::Semaphore;
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
-use super::row_group_decode::{DynamicConjunct, PredicateColumn, RowGroupDecoder, Source};
+use super::row_group_decode::{
+    DynamicConjunct, PredicateColumn, RowGroupDecoder, RowGroupRead, Source,
+};
 use super::{AsyncTaskData, ParquetReadImpl};
-use crate::metrics::MetricUnit;
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
@@ -122,12 +123,9 @@ impl ParquetReadImpl {
         let rg_prefetch_current_all_spawned =
             Option::take(&mut self.rg_prefetch_current_all_spawned);
 
-        // Row groups not read: pruned by the pre-slice, or ruled out by their
-        // statistics for the static predicate or a runtime key range.
-        let row_groups_skipped = self
-            .metrics_registry
-            .new_counter("scan.row_groups_skipped", MetricUnit::Unit);
+        let metrics = self.metrics.clone();
         let prefetch_task = AbortOnDropHandle(ASYNC.spawn(async move {
+            let row_groups_skipped = metrics.row_groups_skipped.reporter();
             polars_ensure!(
                 metadata.num_rows < IdxSize::MAX as usize,
                 bigidx,
@@ -195,7 +193,7 @@ impl ParquetReadImpl {
 
             let skipped = metadata.row_groups.len() - row_group_slice.len()
                 + row_group_mask.as_ref().map_or(0, |mask| mask.set_bits());
-            row_groups_skipped.reporter().add(skipped as i64);
+            row_groups_skipped.add(skipped as i64);
 
             let mut row_group_data_fetcher = RowGroupDataFetcher {
                 projection: projected_arrow_fields.clone(),
@@ -299,14 +297,13 @@ impl ParquetReadImpl {
                             decode_handles.push(executor::AbortOnDropHandle::new(executor::spawn(
                                 TaskPriority::High,
                                 async move {
-                                    let df = row_group_decoder
+                                    let decoded = row_group_decoder
                                         .row_group_data_to_df(row_group_data)
                                         .await;
 
-                                    if !matches!(&df, Ok(df) if df.height() == 0) {
-                                        let fut = Either::Right(std::future::ready(df));
-                                        let _ = decode_send.send((fut, permits)).await;
-                                    }
+                                    // An empty result still counts for the metrics.
+                                    let fut = Either::Right(std::future::ready(decoded));
+                                    let _ = decode_send.send((fut, permits)).await;
                                     drop(slot);
                                 },
                             )));
@@ -327,10 +324,25 @@ impl ParquetReadImpl {
         // is shared across files in the scan.
         let last_morsel_pipelines = self.config.last_morsel_pipelines;
         let disable_morsel_split = self.disable_morsel_split;
+        let metrics = self.metrics.clone();
         let distribute_task = executor::spawn(TaskPriority::High, async move {
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
+
+            // This task sees every decoded row group, so it alone reports them.
+            let rows_read = metrics.rows_read.reporter();
+            let rows_read_prefiltered = metrics.rows_read_prefiltered.reporter();
+            let rows_kept_prefiltered = metrics.rows_kept_prefiltered.reporter();
+            let uncompressed_bytes = metrics.uncompressed_bytes.reporter();
+            let report = |read: RowGroupRead| {
+                rows_read.add(read.rows as i64);
+                uncompressed_bytes.add(read.uncompressed_bytes as i64);
+                if let Some(kept) = read.rows_kept_prefiltered {
+                    rows_read_prefiltered.add(read.rows as i64);
+                    rows_kept_prefiltered.add(kept as i64);
+                }
+            };
 
             // Decode first non-empty morsel.
             let mut next = None;
@@ -338,7 +350,8 @@ impl ParquetReadImpl {
                 let Some((decode_fut, permits)) = decode_recv.recv().await else {
                     break;
                 };
-                let df = decode_fut.await?;
+                let (df, read) = decode_fut.await?;
+                report(read);
                 if df.height() == 0 {
                     continue;
                 }
@@ -376,7 +389,8 @@ impl ParquetReadImpl {
                     let Some((decode_fut, permit)) = decode_recv.recv().await else {
                         break;
                     };
-                    let next_df = decode_fut.await?;
+                    let (next_df, read) = decode_fut.await?;
+                    report(read);
                     if next_df.height() == 0 {
                         continue;
                     }
@@ -553,8 +567,6 @@ impl ParquetReadImpl {
             )
         }
 
-        let reporter = |key, unit| self.metrics_registry.new_counter(key, unit).reporter();
-
         RowGroupDecoder {
             num_pipelines: self.config.num_pipelines,
             projected_arrow_fields,
@@ -568,10 +580,6 @@ impl ParquetReadImpl {
             passes: Mutex::new(Arc::new(passes)),
             non_predicate_field_indices,
             target_values_per_thread,
-            rows_read: reporter("scan.rows_read", MetricUnit::Unit),
-            rows_read_prefiltered: reporter("scan.rows_read_prefiltered", MetricUnit::Unit),
-            rows_kept_prefiltered: reporter("scan.rows_kept_prefiltered", MetricUnit::Unit),
-            uncompressed_bytes: reporter("scan.uncompressed_bytes", MetricUnit::Bytes),
         }
     }
 }
