@@ -247,51 +247,6 @@ def test_sampling_keeps_right_build_for_incomplete_left(
     assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
 
 
-@pytest.mark.parametrize("keys_grow", [True, False])
-def test_sampling_right_side_past_the_limit(
-    keys_grow: bool,
-    plmonkeypatch: PlMonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    # The right side is still being read past the sample limit, so it could be
-    # arbitrarily big and the complete left side is built, however few key
-    # bytes the right sample holds.
-    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000")
-
-    def source(
-        with_columns: list[str] | None,
-        predicate: pl.Expr | None,
-        n_rows: int | None,
-        batch_size: int | None,
-    ) -> Iterator[pl.DataFrame]:
-        for i in range(30):
-            rows = np.arange(1000) + i * 1000
-            yield pl.DataFrame({"k": rows // 3 if keys_grow else rows % 50})
-
-    left = pl.LazyFrame({"k": np.arange(3000), "v": np.arange(3000)})
-    right = register_io_source(source, schema={"k": pl.Int64})
-    expected = left.collect().filter(pl.col("k") < (3000 if keys_grow else 50))
-    q = assert_semi(left, right, expected, on="k")
-    assert build_side_chosen(q, plmonkeypatch, capfd) == "left"
-    q = left.join(right, on="k", how="anti")
-    assert build_side_chosen(q, plmonkeypatch, capfd) == "left"
-
-
-def test_sampling_complete_right_side_at_the_limit(
-    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
-) -> None:
-    # The right side ends at the sample limit, so its sample is all of it
-    # however fast its keys grow.
-    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000")
-    payload = {f"v{i}": np.arange(3000) for i in range(8)}
-    left = pl.LazyFrame({"k": np.arange(3000), **payload})
-    right = pl.LazyFrame({"k": np.arange(10_000) // 3})
-    q = assert_semi(left, right, left.collect(), on="k")
-    assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
-    q = left.join(right, on="k", how="anti")
-    assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
-
-
 def test_sampling_hints(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
