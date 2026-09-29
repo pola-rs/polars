@@ -167,8 +167,10 @@ def _ensure_boolean_expression(result: Any) -> Any:
         return pyiceberg.expressions.AlwaysTrue()
     if result is False:
         return pyiceberg.expressions.AlwaysFalse()
-    if isinstance(result, list) and len(result) == 1:
-        return pyiceberg.expressions.EqualTo(result[0], True)  # type: ignore[misc, call-arg, arg-type]
+    if isinstance(result, list):
+        # A `field(...)` call: one name per path segment (>1 for a nested
+        # struct field access), joined the way pyiceberg indexes them.
+        return pyiceberg.expressions.EqualTo(".".join(result), True)  # type: ignore[misc, call-arg, arg-type]
     return result
 
 
@@ -275,9 +277,9 @@ def _(a: Call) -> Any:
         return _temporal_conversions[f](*args).isoformat()
     elif f == "starts_with":
         pattern = _convert_predicate(a.keywords[0].value)
-        return pyiceberg.expressions.StartsWith(args[0][0], pattern)  # type: ignore[misc, call-arg]
+        return pyiceberg.expressions.StartsWith(".".join(args[0]), pattern)  # type: ignore[misc, call-arg]
     else:
-        ref = _convert_predicate(a.func.value)[0]  # type: ignore[attr-defined]
+        ref = ".".join(_convert_predicate(a.func.value))  # type: ignore[attr-defined]
         if f == "isin":
             return pyiceberg.expressions.In(ref, args[0])  # type: ignore[misc, call-arg]
         elif f == "is_null":
@@ -312,7 +314,7 @@ def _(a: BinOp) -> Any:
 @_convert_predicate.register(Compare)
 def _(a: Compare) -> Any:
     op = a.ops[0]
-    lhs = _convert_predicate(a.left)[0]
+    lhs = ".".join(_convert_predicate(a.left))
     rhs_ast = a.comparators[0]
 
     if isinstance(rhs_ast, Name) and rhs_ast.id == "NaN":

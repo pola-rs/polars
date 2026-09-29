@@ -372,6 +372,40 @@ class TestIcebergScanIO:
             f"iceberg_table_filter = {Not(IsNaN('value'))!r}" in capfd.readouterr().err
         )
 
+    def test_scan_iceberg_filter_struct_field(self, tmp_path: Path) -> None:
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(
+                NestedField(1, "id", LongType()),
+                NestedField(
+                    2,
+                    "mydict",
+                    StructType(NestedField(3, "age", LongType())),
+                    required=False,
+                ),
+            ),
+        )
+        pl.DataFrame(
+            {
+                "id": [1, 2, 3],
+                "mydict": [{"age": 17}, {"age": 42}, None],
+            }
+        ).write_iceberg(tbl, mode="append")
+
+        res = (
+            pl.scan_iceberg(tbl)
+            .filter(pl.col("mydict").struct.field("age") == 17)
+            .select("id")
+        )
+        assert res.collect().rows() == [(1,)]
+
+        res = (
+            pl.scan_iceberg(tbl)
+            .filter(pl.col("mydict").struct.field("age").is_null())
+            .select("id")
+        )
+        assert res.collect().rows() == [(3,)]
+
     @pytest.mark.parametrize("method", ["is_nan", "is_not_nan"])
     def test_scan_iceberg_nan_decimal_rejected(
         self, tmp_path: Path, method: str
@@ -573,6 +607,20 @@ class TestIcebergExpressions:
         # Not valid Python at all - nothing to convert.
         expr = try_convert_pyarrow_predicate("pa.compute.field('id') >")
         assert expr is None
+
+    def test_convert_nested_struct_field_predicate(self) -> None:
+        # PyArrow's nested-field form is a single multi-arg `field()` call,
+        # not chained `.field()` calls; pyiceberg indexes nested fields as a
+        # dot-joined name.
+        expr = try_convert_pyarrow_predicate(
+            "(pa.compute.field('mydict', 'age') == 17)"
+        )
+        assert expr == EqualTo("mydict.age", 17)
+
+        expr = try_convert_pyarrow_predicate(
+            "(pa.compute.field('mydict', 'age')).is_null()"
+        )
+        assert expr == IsNull("mydict.age")
 
     def test_unconvertible_disjunct_is_not_dropped(self) -> None:
         # Unlike a conjunct, dropping one side of an `|` would narrow the filter.
