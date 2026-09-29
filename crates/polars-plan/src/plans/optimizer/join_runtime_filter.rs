@@ -31,7 +31,8 @@
 //! only, as the rows of its right side that match no left key change nothing. A
 //! semi join may prefer its right side on an estimate; a left side is only built
 //! when forced, as building it keeps its rows. It is not forced when the right keys
-//! are known to be much fewer than its rows, as a right build keeps only those.
+//! are known to be much fewer than its estimated rows, as a right build keeps only
+//! those.
 
 use std::sync::Arc;
 
@@ -139,7 +140,8 @@ fn process_join(
         });
         sides.retain(|s| {
             if s.left {
-                s.forced && right_distinct.is_none_or(|d| d * LOPSIDED_FACTOR >= s.rows)
+                s.forced
+                    && right_distinct.is_none_or(|d| d * LOPSIDED_FACTOR >= left_stats.filtered)
             } else {
                 how.is_semi()
             }
