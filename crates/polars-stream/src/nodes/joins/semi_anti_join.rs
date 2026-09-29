@@ -25,8 +25,8 @@ use rayon::prelude::*;
 use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::utils::JoinSampleStats;
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, UNIQUE_BUILD_MARGIN, build_side_left,
-    emit_morsel_size, sample_sink, select_key_columns, send_frames,
+    BufferedStream, LOPSIDED_SAMPLE_FACTOR, UNIQUE_BUILD_MARGIN, build_side_left, emit_morsel_size,
+    sample_sink, select_key_columns, send_frames,
 };
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
@@ -271,10 +271,11 @@ impl SampleState {
 
         // Building the left side also keeps all of its rows, so it is only
         // chosen when it was read completely and its estimated bytes are no
-        // more than the key bytes of the sampled right rows. A right sample
-        // that stopped at the limit while its keys kept growing counts as
-        // `UNIQUE_BUILD_MARGIN` times bigger.
+        // more than the key bytes of the sampled right rows. A right side that
+        // is still being read past the limit while its keys kept growing counts
+        // as `UNIQUE_BUILD_MARGIN` times bigger.
         let left_complete = recv[0] == PortState::Done;
+        let right_complete = recv[1] == PortState::Done;
         let left_is_build = match (left_complete, right_saturated) {
             (false, true) => left_saturated && prefer_left,
             (false, false) => false,
@@ -302,7 +303,7 @@ impl SampleState {
                 let left_bytes = left.all_rows_build_bytes(self.left_len);
                 let mut right_bytes = right.distinct_keys_build_bytes(self.right_len);
                 let mut key_growth = 1.0;
-                if right_saturated {
+                if right_saturated && !right_complete {
                     let first_half = JoinSampleStats::from_sample(
                         &self.right,
                         &params.right_key_selectors,

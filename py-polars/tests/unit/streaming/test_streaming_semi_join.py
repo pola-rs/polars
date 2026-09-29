@@ -280,6 +280,21 @@ def test_sampling_right_side_at_the_limit(
     assert build_side_chosen(q, plmonkeypatch, capfd) == expected_side
 
 
+def test_sampling_complete_right_side_at_the_limit(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The right side ends at the sample limit, so its sample is all of it
+    # however fast its keys grow.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000")
+    payload = {f"v{i}": np.arange(3000) for i in range(8)}
+    left = pl.LazyFrame({"k": np.arange(3000), **payload})
+    right = pl.LazyFrame({"k": np.arange(10_000) // 3})
+    q = assert_semi(left, right, left.collect(), on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
+    q = left.join(right, on="k", how="anti")
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
+
+
 def test_sampling_hints(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:

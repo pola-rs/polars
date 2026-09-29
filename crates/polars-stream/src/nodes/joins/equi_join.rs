@@ -29,8 +29,8 @@ use rayon::prelude::*;
 use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::utils::JoinSampleStats;
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, UNIQUE_BUILD_MARGIN, build_side_left,
-    emit_morsel_size, sample_sink, select_key_columns, send_frames,
+    BufferedStream, LOPSIDED_SAMPLE_FACTOR, UNIQUE_BUILD_MARGIN, build_side_left, emit_morsel_size,
+    sample_sink, select_key_columns, send_frames,
 };
 use crate::expression::StreamExpr;
 use crate::morsel::get_ideal_morsel_size;
