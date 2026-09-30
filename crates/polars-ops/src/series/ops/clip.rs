@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary_elementwise};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -21,6 +23,18 @@ fn clamp_min<T: PartialOrd>(input: T, min: T) -> T {
 #[inline]
 fn clamp_max<T: PartialOrd>(input: T, max: T) -> T {
     if input > max { max } else { input }
+}
+
+/// Broadcast a length-1 input to `len` so it lines up with full-length bounds.
+fn broadcast_input<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    len: usize,
+) -> Cow<'_, ChunkedArray<T>> {
+    if ca.len() == 1 && len > 1 {
+        Cow::Owned(ca.new_from_index(0, len))
+    } else {
+        Cow::Borrowed(ca)
+    }
 }
 
 /// Set values outside the given boundaries to the boundary value.
@@ -151,6 +165,7 @@ where
     T: PolarsNumericType,
     T::Native: PartialOrd,
 {
+    let ca = &*broadcast_input(ca, min.len().max(max.len()));
     match (min.len(), max.len()) {
         (1, 1) => match (min.get(0), max.get(0)) {
             (Some(min), Some(max)) => clip_unary(ca, |v| clamp(v, min, max)),
@@ -196,6 +211,7 @@ where
     T::Native: PartialOrd,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
+    let ca = &*broadcast_input(ca, bound.len());
     match bound.len() {
         1 => match bound.get(0) {
             Some(bound) => clip_unary(ca, |v| op(v, bound)),
