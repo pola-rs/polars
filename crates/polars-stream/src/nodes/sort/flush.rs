@@ -6,6 +6,7 @@ use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::chunked_array::ops::sort::options::SortMultipleOptions;
 use polars_core::frame::DataFrame;
+use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_error::PolarsResult;
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
@@ -214,8 +215,20 @@ async fn sort_bucket(
     let df = accumulate_dataframes_vertical_unchecked(dfs);
     let (offset, len) = bucket.local;
     if bucket.needs_sort {
-        sort_range(df, key, sort_options.clone(), bucket.local)
-    } else {
-        Ok(df.slice(offset as i64, len))
+        return sort_range(df, key, sort_options.clone(), bucket.local);
     }
+    // The bucket holds a single key value or only nulls, so it is sorted
+    // already, but its frames don't carry the flag.
+    let mut df = df.slice(offset as i64, len);
+    let sorted = if sort_options.descending[0] {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
+    df.apply(key, |c| {
+        let mut c = c.clone();
+        c.set_sorted_flag(sorted);
+        c
+    })?;
+    Ok(df)
 }
