@@ -709,32 +709,17 @@ fn to_graph_rec<'a>(
             sort_options,
         } => {
             let input_schema = input.output_schema(ctx.phys_sm).clone();
-            let lmdf = Arc::new(LateMaterializedDataFrame::default());
-            let mut lp_arena = Arena::default();
-            let df_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema.clone()));
-            let sort_node = lp_arena.add(IR::Sort {
-                input: df_node,
-                by_column: by_column.clone(),
-                slice: slice.map(|t| (t.0, t.1, None)),
-                sort_options: sort_options.clone(),
-            });
-            let executor = Mutex::new(create_physical_plan(
-                sort_node,
-                &mut lp_arena,
-                ctx.expr_arena,
-                Some(crate::dispatch::build_streaming_query_executor),
-            )?);
+            let [by] = by_column.as_slice() else {
+                unreachable!()
+            };
+            let AExpr::Column(key) = ctx.expr_arena.get(by.node()) else {
+                unreachable!()
+            };
+            let key = key.clone();
 
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
-                nodes::in_memory_map::InMemoryMapNode::new(
-                    input_schema,
-                    Arc::new(move |df| {
-                        lmdf.set_materialized_dataframe(df);
-                        let mut state = ExecutionState::new();
-                        executor.lock().execute(&mut state)
-                    }),
-                ),
+                nodes::sort::SortNode::new(key, input_schema, *slice, sort_options.clone()),
                 [(input_key, input.port)],
             )
         },

@@ -23,6 +23,7 @@ num-traits = { workspace = true }
 parking_lot = { workspace = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+rand = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 schemars = { workspace = true, optional = true }

@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 use polars_arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor::ALLOW_RAYON_THREADS;
+use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
@@ -39,7 +40,7 @@ use polars_utils::unique_id::UniqueId;
 use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
 use slotmap::SlotMap;
 
-use super::lower_expr::build_hstack_stream;
+use super::lower_expr::{build_hstack_stream, build_sort_stream};
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 #[cfg(feature = "python")]
 use crate::nodes::io_sources;
@@ -560,10 +561,11 @@ pub fn lower_ir(
 
             let mut stream = phys_input;
 
-            // If we need to maintain order augment with row index. This is
-            // not yet necessary for the non-limiting case as that one
-            // dispatches to in-memory.
+            // TopK is not stable, so if we need to maintain order augment with
+            // row index. The sort node itself is stable.
             if sort_options.maintain_order && limit < u64::MAX {
+                _broadcast_bools(by_column.len(), &mut sort_options.descending);
+                _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
                 let row_idx_name = unique_column_name();
                 stream = build_row_idx_stream(stream, row_idx_name.clone(), None, phys_sm);
 
@@ -630,15 +632,16 @@ pub fn lower_ir(
                 )));
             }
 
-            stream = PhysStream::first(phys_sm.insert(PhysNode::new(
-                stream.output_schema(phys_sm).clone(),
-                PhysNodeKind::Sort {
-                    input: stream,
-                    by_column: trans_by_column,
-                    slice: slice.as_ref().map(|t| (t.0, t.1)),
-                    sort_options,
-                },
-            )));
+            stream = build_sort_stream(
+                stream,
+                trans_by_column,
+                slice.as_ref().map(|t| (t.0, t.1)),
+                sort_options,
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+            )?;
 
             // Remove any temporary columns we may have added.
             stream =
