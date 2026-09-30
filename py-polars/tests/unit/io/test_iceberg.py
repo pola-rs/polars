@@ -93,7 +93,7 @@ from tests.unit.io.conftest import normalize_path_separator_pl
 from tests.unit.io.test_scan_row_deletion import write_position_deletes  # noqa: F401
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from pyiceberg.table.snapshots import Snapshot
 
@@ -228,6 +228,33 @@ def new_iceberg_table(
     return catalog.create_table(
         (namespace, name), schema, **create_table_kwargs
     ), catalog
+
+
+def nested_field_by_path(
+    field_path: list[str], field_ids: Iterator[int]
+) -> NestedField:
+    """Build a (possibly nested) `NestedField` wrapping a `LongType` leaf.
+
+    E.g. `["mydict", "age"]` -> a `mydict` struct field containing `age`;
+    `["a", "b", "c"]` -> `a` containing `b` containing `c`.
+    """
+    name = field_path[0]
+    field_id = next(field_ids)
+    if len(field_path) == 1:
+        return NestedField(field_id, name, LongType())
+    return NestedField(
+        field_id,
+        name,
+        StructType(nested_field_by_path(field_path[1:], field_ids)),
+        required=False,
+    )
+
+
+def nested_cell(field_path: list[str], value: Any) -> Any:
+    """The row value for `field_path[0]`'s column matching `nested_field_by_path`."""
+    if len(field_path) == 1:
+        return value
+    return {field_path[1]: nested_cell(field_path[1:], value)}
 
 
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
@@ -373,72 +400,43 @@ class TestIcebergScanIO:
             f"iceberg_table_filter = {Not(IsNaN('value'))!r}" in capfd.readouterr().err
         )
 
-    def test_scan_iceberg_filter_struct_field(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(
+        "field_path",
+        [
+            ["mydict", "age"],
+            ["a", "b", "c"],  # `struct_field_path` recurses - depth 2+.
+        ],
+    )
+    def test_scan_iceberg_filter_struct_field(
+        self, tmp_path: Path, field_path: list[str]
+    ) -> None:
         tbl, _ = new_iceberg_table(
             tmp_path,
             schema=IcebergSchema(
                 NestedField(1, "id", LongType()),
-                NestedField(
-                    2,
-                    "mydict",
-                    StructType(NestedField(3, "age", LongType())),
-                    required=False,
-                ),
+                nested_field_by_path(field_path, itertools.count(2)),
             ),
         )
         pl.DataFrame(
             {
                 "id": [1, 2, 3],
-                "mydict": [{"age": 17}, {"age": 42}, None],
+                field_path[0]: [
+                    nested_cell(field_path, 17),
+                    nested_cell(field_path, 42),
+                    None,
+                ],
             }
         ).write_iceberg(tbl, mode="append")
 
-        res = (
-            pl.scan_iceberg(tbl)
-            .filter(pl.col("mydict").struct.field("age") == 17)
-            .select("id")
-        )
+        expr = pl.col(field_path[0])
+        for name in field_path[1:]:
+            expr = expr.struct.field(name)
+
+        res = pl.scan_iceberg(tbl).filter(expr == 17).select("id")
         assert res.collect().rows() == [(1,)]
 
-        res = (
-            pl.scan_iceberg(tbl)
-            .filter(pl.col("mydict").struct.field("age").is_null())
-            .select("id")
-        )
+        res = pl.scan_iceberg(tbl).filter(expr.is_null()).select("id")
         assert res.collect().rows() == [(3,)]
-
-    def test_scan_iceberg_filter_struct_field_nested_depth_2(
-        self, tmp_path: Path
-    ) -> None:
-        # `struct_field_path` recurses; make sure it actually handles more
-        # than one level rather than just the immediate child.
-        tbl, _ = new_iceberg_table(
-            tmp_path,
-            schema=IcebergSchema(
-                NestedField(1, "id", LongType()),
-                NestedField(
-                    2,
-                    "a",
-                    StructType(
-                        NestedField(
-                            3,
-                            "b",
-                            StructType(NestedField(4, "c", LongType())),
-                            required=False,
-                        )
-                    ),
-                    required=False,
-                ),
-            ),
-        )
-        pl.DataFrame(
-            {"id": [1, 2], "a": [{"b": {"c": 5}}, {"b": {"c": 9}}]}
-        ).write_iceberg(tbl, mode="append")
-
-        res = pl.scan_iceberg(tbl).filter(
-            pl.col("a").struct.field("b").struct.field("c") == 5
-        )
-        assert res.select("id").collect().rows() == [(1,)]
 
     def test_scan_iceberg_filter_struct_field_unsanitizable_name(
         self,
