@@ -842,6 +842,9 @@ unsafe fn to_physical_and_dtype(
         | ArrowDataType::Timestamp(_, _)
         | ArrowDataType::Date32
         | ArrowDataType::Decimal(_, _)
+        | ArrowDataType::Decimal32(_, _)
+        | ArrowDataType::Decimal64(_, _)
+        | ArrowDataType::Decimal256(_, _)
         | ArrowDataType::Date64
         | ArrowDataType::Map(_, _)) => {
             let dt = dt.clone();
@@ -1149,9 +1152,69 @@ fn new_null(name: PlSmallStr, chunks: &[ArrayRef]) -> Series {
     feature = "dtype-time"
 ))]
 mod tests {
-    use polars_arrow::array::PrimitiveArray;
+    use polars_arrow::array::{PrimitiveArray, StructArray};
 
     use super::*;
+
+    #[cfg(all(feature = "dtype-decimal", feature = "dtype-struct"))]
+    #[test]
+    fn decimal_struct_child_is_not_corrupted() {
+        // Regression test: a narrow-width Decimal child inside a Struct hits
+        // the ArrowDataType::Struct(_) arm above, not the top-level Decimal
+        // arm covered elsewhere.
+        let check = |value_array: Box<dyn polars_arrow::array::Array>, expected: Vec<i128>| {
+            let struct_dtype = ArrowDataType::Struct(vec![polars_arrow::datatypes::Field::new(
+                "value".into(),
+                value_array.dtype().clone(),
+                false,
+            )]);
+            let n = value_array.len();
+            let struct_array = StructArray::new(struct_dtype, n, vec![value_array], None);
+
+            let s = Series::from_arrow(PlSmallStr::EMPTY, struct_array.boxed()).unwrap();
+            let value_series = s.struct_().unwrap().field_by_name("value").unwrap();
+            let got: Vec<i128> = (0..n)
+                .map(|i| value_series.decimal().unwrap().physical().get(i).unwrap())
+                .collect();
+            assert_eq!(got, expected, "decimal struct child corrupted on import");
+        };
+
+        let unscaled: [i64; 5] = [2457900000, 2456725000, 2462450000, 2439175000, 2423350000];
+        let expected: Vec<i128> = unscaled.iter().map(|&v| v as i128).collect();
+        let unscaled32: [i32; 5] = [245790, 245672, 246245, 243917, 242335];
+        let expected32: Vec<i128> = unscaled32.iter().map(|&v| v as i128).collect();
+
+        check(
+            PrimitiveArray::<i32>::new(
+                ArrowDataType::Decimal32(9, 4),
+                unscaled32.to_vec().into(),
+                None,
+            )
+            .boxed(),
+            expected32,
+        );
+        check(
+            PrimitiveArray::<i64>::new(
+                ArrowDataType::Decimal64(18, 8),
+                unscaled.to_vec().into(),
+                None,
+            )
+            .boxed(),
+            expected.clone(),
+        );
+        check(
+            PrimitiveArray::<polars_arrow::types::i256>::new(
+                ArrowDataType::Decimal256(38, 8),
+                unscaled
+                    .iter()
+                    .map(|&v| polars_arrow::types::i256::from_words(0, v as i128))
+                    .collect(),
+                None,
+            )
+            .boxed(),
+            expected,
+        );
+    }
 
     #[test]
     fn imported_values_are_scaled_like_the_dtype_says() {
