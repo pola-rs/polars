@@ -9,12 +9,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalEq, TotalHash};
 
 use super::*;
-use crate::hash_keys::HashKeys;
-
-/// Keys are hashed and prefetched in blocks of this many.
-const BLOCK_SIZE: usize = 256;
-/// Smaller tables fit in the cache and aren't prefetched.
-const MIN_PREFETCH_BUCKETS: usize = 1 << 15;
+use crate::hash_keys::{BLOCK_SIZE, HashKeys, MIN_PREFETCH_BUCKETS};
 
 /// Set in `Slot::first` once a probe key matched the slot.
 const MARKED: IdxSize = 1 << (IdxSize::BITS - 1);
