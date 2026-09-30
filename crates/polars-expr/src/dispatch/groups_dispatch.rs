@@ -960,15 +960,14 @@ pub fn int_range<'a>(
     let (start, start_lengths) = one_value_per_group(&mut ac, groups.len())?;
     let (end, end_lengths) = one_value_per_group(&mut end_ac, groups.len())?;
 
-    let ensure_one_value = |lengths: &Option<IdxCa>, i: usize, name: &str| {
-        match lengths.as_ref().map(|l| l.get(i)) {
+    let ensure_one_value =
+        |lengths: &Option<IdxCa>, i: usize, name: &str| match lengths.as_ref().map(|l| l.get(i)) {
             None | Some(Some(1)) => Ok(()),
             Some(Some(n)) => polars_bail!(
                 ComputeError: "`{name}` must contain exactly one value, got {n} values"
             ),
             Some(None) => polars_bail!(ComputeError: "invalid null input for `int_range`"),
-        }
-    };
+        };
 
     let dtype = start.dtype().clone();
     let out = with_match_physical_integer_polars_type!(dtype, |$T| {
