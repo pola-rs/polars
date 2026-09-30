@@ -248,6 +248,7 @@ pub mod kll {
     }
 
     #[derive(Debug, Clone, Copy, Default)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     struct Level {
         offset: usize,
         size: usize,
@@ -258,6 +259,7 @@ pub mod kll {
     }
 
     #[derive(Debug)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
         /// Contents of the compactors.
         ///
@@ -271,7 +273,9 @@ pub mod kll {
         consumed_items: u64,
         /// Maximum number of items before we compact.
         total_capacity: usize,
+        #[cfg_attr(feature = "serde", serde(skip, default = "super::fresh_rng"))]
         rng: SmallRng,
+        #[cfg_attr(feature = "serde", serde(skip, default = "Vec::new"))]
         scratch: Vec<T>,
     }
 
@@ -290,6 +294,7 @@ pub mod kll {
     }
 
     #[derive(Debug, Clone)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[repr(transparent)]
     pub struct KLLSketch<T: fmt::Debug + Clone + TotalOrd>(IngestingState<T>);
 
@@ -600,6 +605,7 @@ pub mod req {
     }
 
     #[derive(Debug, Clone, Copy, Default)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     struct Level {
         offset: usize,
         size: usize,
@@ -609,6 +615,7 @@ pub mod req {
     }
 
     #[derive(Debug)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
         /// Contents of the relative compactors. The offsets of the compactors
         /// are stored in the levels vector. The top-level compactor is stored at
@@ -620,6 +627,7 @@ pub mod req {
         /// and height *0*. So the order of `levels` is *reversed* wrt `items`.
         items: Vec<T>,
         /// Scratch Vec to reduce an allocation during merging.
+        #[cfg_attr(feature = "serde", serde(skip, default = "Vec::new"))]
         scratch: Vec<T>,
         levels: Vec<Level>,
         /// Bit that specifies if this sketch is high-rank-accurate or low-rank-accurate.
@@ -634,6 +642,7 @@ pub mod req {
         /// see `close_out_if_needed`.
         k: usize,
         consumed_items: u64,
+        #[cfg_attr(feature = "serde", serde(skip, default = "super::fresh_rng"))]
         rng: SmallRng,
     }
 
@@ -654,6 +663,7 @@ pub mod req {
     }
 
     #[derive(Debug, Clone)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[repr(transparent)]
     pub struct ReqSketch<T: fmt::Debug + Clone + TotalOrd>(IngestingState<T>);
 
@@ -702,6 +712,7 @@ pub mod req {
     ///
     /// Costs 2x the size and speed of a single [`ReqSketch`]
     #[derive(Debug, Clone)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct DoubleReqSketch<T: fmt::Debug + Clone + TotalOrd> {
         lra: ReqSketch<T>,
         hra: ReqSketch<T>,
@@ -1019,6 +1030,11 @@ fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
     cum_weights
 }
 
+#[cfg(feature = "serde")]
+fn fresh_rng() -> SmallRng {
+    rand::make_rng()
+}
+
 fn merge_coin(mid1: bool, coin1: bool, mid2: bool, coin2: bool, rng: &mut SmallRng) -> bool {
     match (mid1, mid2) {
         (true, true) if coin1 != coin2 => rng.random(),
@@ -1055,6 +1071,7 @@ fn merge_sorted<T>(
 
 /// A sketch picked by [`ApproxQuantileMethod`].
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Sketch<T: fmt::Debug + Clone + TotalOrd> {
     Kll(KLLSketch<T>),
     Req(ReqSketch<T>),
