@@ -443,12 +443,8 @@ class TestIcebergScanIO:
         plmonkeypatch: PlMonkeyPatch,
         capfd: pytest.CaptureFixture[str],
     ) -> None:
-        # A nested field name that `sanitize()` rejects must not be pushed
-        # down - checked via `.explain()` rather than `.collect()`, since
-        # actually executing a filter on a struct field with a special
-        # character in its name currently hits an unrelated bug in the
-        # native reader's own stats-skip optimization, nothing to do with
-        # this pushdown (tracked separately).
+        # Unsafe name must not be pushed down. Uses `.explain()`, not
+        # `.collect()` - collecting hits an unrelated, separately tracked bug.
         tbl, _ = new_iceberg_table(
             tmp_path,
             schema=IcebergSchema(
