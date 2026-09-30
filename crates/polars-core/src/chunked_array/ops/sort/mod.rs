@@ -254,12 +254,13 @@ where
     options.multithreaded &= RAYON.current_num_threads() > 1;
     arg_sort_fast_path!(ca, options);
     if ca.null_count() == 0 {
-        let iter = ca
+        let chunks = ca
             .downcast_iter()
-            .map(|arr| arr.values().as_slice().iter().copied());
-        arg_sort::arg_sort_no_nulls(
+            .map(|arr| arr.values().as_slice())
+            .collect::<Vec<_>>();
+        arg_sort::arg_sort_no_nulls_slices(
             ca.name().clone(),
-            iter,
+            &chunks,
             options,
             ca.len(),
             ca.is_sorted_flag(),
@@ -950,6 +951,34 @@ mod test {
         // the duplicates are in reverse order of appearance, so we cannot reverse expected
         let expected = [2, 4, 1, 5, 6, 0, 3, 7];
         assert_eq!(idx, expected);
+    }
+
+    #[test]
+    fn test_arg_sort_multithreaded() {
+        // large enough to build the pairs in parallel, in two chunks, with ties
+        let mut a = Int64Chunked::from_vec(
+            PlSmallStr::from_static("a"),
+            (0..150_000).map(|i| (i * 7919) % 1000).collect(),
+        );
+        a.append(&Int64Chunked::from_vec(
+            PlSmallStr::from_static("a"),
+            (150_000..300_000).map(|i| (i * 7919) % 1000).collect(),
+        ))
+        .unwrap();
+
+        for descending in [false, true] {
+            let par = a.arg_sort(SortOptions {
+                descending,
+                multithreaded: true,
+                ..Default::default()
+            });
+            let seq = a.arg_sort(SortOptions {
+                descending,
+                multithreaded: false,
+                ..Default::default()
+            });
+            assert_eq!(par.cont_slice().unwrap(), seq.cont_slice().unwrap());
+        }
     }
 
     #[test]

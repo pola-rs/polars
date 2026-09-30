@@ -3,6 +3,8 @@ use polars_utils::itertools::Itertools;
 use self::row_encode::_get_rows_encoded;
 use super::*;
 
+const PARALLEL_THRESHOLD: usize = 1 << 17;
+
 // Reduce monomorphisation.
 fn sort_impl<T>(vals: &mut [(IdxSize, T)], options: SortOptions)
 where
@@ -234,6 +236,46 @@ where
         }));
     }
 
+    arg_sort_pairs(name, vals, options)
+}
+
+// As arg_sort_no_nulls, but builds the (idx, value) pairs in parallel.
+pub(super) fn arg_sort_no_nulls_slices<T>(
+    name: PlSmallStr,
+    chunks: &[&[T]],
+    options: SortOptions,
+    len: usize,
+    is_sorted_flag: IsSorted,
+) -> IdxCa
+where
+    T: TotalOrd + Copy + Send + Sync,
+{
+    if !options.multithreaded || len < PARALLEL_THRESHOLD || is_sorted_flag != IsSorted::Not {
+        let iters = chunks.iter().map(|chunk| chunk.iter().copied());
+        return arg_sort_no_nulls(name, iters, options, len, is_sorted_flag);
+    }
+
+    let mut vals = Vec::with_capacity(len);
+    RAYON.install(|| {
+        let mut offset = 0;
+        for chunk in chunks {
+            vals.par_extend(
+                chunk
+                    .par_iter()
+                    .enumerate()
+                    .map(|(i, v)| ((offset + i) as IdxSize, *v)),
+            );
+            offset += chunk.len();
+        }
+    });
+
+    arg_sort_pairs(name, vals, options)
+}
+
+fn arg_sort_pairs<T>(name: PlSmallStr, mut vals: Vec<(IdxSize, T)>, options: SortOptions) -> IdxCa
+where
+    T: TotalOrd + Send + Sync,
+{
     let vals = if let Some(limit) = options.limit {
         let limit = limit as usize;
         let out = if limit >= vals.len() {
@@ -255,8 +297,11 @@ where
         vals.as_slice()
     };
 
-    let iter = vals.iter().map(|(idx, _v)| idx).copied();
-    let idx: Vec<_> = iter.collect_trusted();
+    let idx: Vec<_> = if options.multithreaded && vals.len() >= PARALLEL_THRESHOLD {
+        RAYON.install(|| vals.par_iter().map(|(idx, _v)| *idx).collect())
+    } else {
+        vals.iter().map(|(idx, _v)| idx).copied().collect_trusted()
+    };
 
     ChunkedArray::with_chunk(name, IdxArr::from_data_default(Buffer::from(idx), None))
 }
