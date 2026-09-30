@@ -68,15 +68,13 @@ def read_json(
     Columns are matched by name, missing columns are filled with nulls, and differing
     data types are cast to their common supertype.
 
-    See Also
-    --------
-    read_ndjson
-
-    Notes
-    -----
     JSON objects can be read as :class:`Map` with String, Categorical or Enum keys.
     Specify Map through `schema` or `schema_overrides`; it is never inferred.
     Duplicate keys retain their first position and last value.
+
+    See Also
+    --------
+    read_ndjson
 
     Examples
     --------
