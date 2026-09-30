@@ -168,8 +168,6 @@ def _ensure_boolean_expression(result: Any) -> Any:
     if result is False:
         return pyiceberg.expressions.AlwaysFalse()
     if isinstance(result, list):
-        # A `field(...)` call: one name per path segment (>1 for a nested
-        # struct field access), joined the way pyiceberg indexes them.
         return pyiceberg.expressions.EqualTo(".".join(result), True)  # type: ignore[misc, call-arg, arg-type]
     return result
 
@@ -279,6 +277,8 @@ def _(a: Call) -> Any:
         pattern = _convert_predicate(a.keywords[0].value)
         return pyiceberg.expressions.StartsWith(".".join(args[0]), pattern)  # type: ignore[misc, call-arg, arg-type]
     else:
+        # `field(...)` resolves to a name-per-path-segment list; join with
+        # "." to match how PyIceberg indexes nested fields.
         ref = ".".join(_convert_predicate(a.func.value))  # type: ignore[attr-defined]
         if f == "isin":
             return pyiceberg.expressions.In(ref, args[0])  # type: ignore[misc, call-arg, arg-type]
