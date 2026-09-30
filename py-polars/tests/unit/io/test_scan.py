@@ -1624,12 +1624,16 @@ def test_scan_sink_metrics_multiple_phases(
             maintain_order="right",
         )
         .collect(),
+        # Both sides of the join scan the file.
         pl.DataFrame(
             {
-                "io_total_bytes_requested": [f"{expected_read_amount_bytes}", "0"],
-                "io_total_bytes_received": [f"{expected_read_amount_bytes}", "0"],
-                "io_total_bytes_sent": ["0", f"{137254 + created_by_size}"],
-                "node_name": ["multi-scan[parquet]", "io-sink[single-file[parquet]]"],
+                "io_total_bytes_requested": [f"{expected_read_amount_bytes}"] * 2
+                + ["0"],
+                "io_total_bytes_received": [f"{expected_read_amount_bytes}"] * 2
+                + ["0"],
+                "io_total_bytes_sent": ["0", "0", f"{137254 + created_by_size}"],
+                "node_name": ["multi-scan[parquet]"] * 2
+                + ["io-sink[single-file[parquet]]"],
             }
         ),
     )
