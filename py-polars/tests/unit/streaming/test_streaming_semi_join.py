@@ -347,3 +347,24 @@ def test_left_build_output_projection() -> None:
     q = left.join(right, on="k", how="anti", build_side="force_left").select("b", "a")
     expected = pl.DataFrame({"b": ["y"], "a": [2]})
     assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def with_nulls(values: np.ndarray[Any, Any], rng: np.random.Generator) -> pl.Series:
+    s = pl.Series("k", values)
+    return s.scatter(rng.choice(len(s), len(s) // 50, replace=False), None)
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_single_key(nulls_equal: bool) -> None:
+    # The keys fill many blocks of lookups, the last one partly.
+    n = 5_003
+    rng = np.random.default_rng(0)
+    lf = pl.LazyFrame(
+        {
+            "a": with_nulls(rng.integers(0, n, n), rng),
+            "b": with_nulls(rng.integers(0, 2 * n, n), rng),
+        }
+    )
+    is_in = pl.col("a").is_in(pl.col("b").implode(), nulls_equal=nulls_equal)
+    q = lf.select(is_in.alias("in"), (~is_in).alias("not_in"))
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))

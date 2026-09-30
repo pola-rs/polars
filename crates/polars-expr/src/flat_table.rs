@@ -1,7 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use std::mem::MaybeUninit;
-
 use polars_utils::mem::prefetch::prefetch_l1;
 
 /// Tags are read 8 at a time. A table has at least this many slots.
@@ -112,6 +110,18 @@ impl<S: Copy + Default> FlatTable<S> {
         }
     }
 
+    /// Grows so `num_keys` keys fit, to at least twice the size. Returns
+    /// whether it grew.
+    #[inline(always)]
+    pub fn grow_for(&mut self, num_keys: usize, hash_of: impl Fn(&S) -> u64) -> bool {
+        let num_slots = slots_for(num_keys);
+        let grow = num_slots > self.slots.len();
+        if grow {
+            self.resize(num_slots.max(self.slots.len() * 2), hash_of);
+        }
+        grow
+    }
+
     /// The slot for which `eq` holds, or else the empty slot where it goes.
     #[inline(always)]
     pub unsafe fn find_slot(&self, hash: u64, eq: impl Fn(&S) -> bool) -> Result<usize, usize> {
@@ -183,12 +193,27 @@ impl<S: Copy + Default> FlatTable<S> {
         self.slots.get_unchecked_mut(pos)
     }
 
-    /// Prefetches the first tags and slot of each hash.
+    /// Whether the table is too large for the cache, so lookups are prefetched.
     #[inline(always)]
-    pub unsafe fn prefetch(&self, hashes: &[MaybeUninit<u64>]) {
-        if self.slots.len() >= MIN_PREFETCH_SLOTS {
-            for hash in hashes {
-                let pos = home_slot(hash.assume_init(), self.slots.len());
+    pub fn prefetches(&self) -> bool {
+        self.slots.len() >= MIN_PREFETCH_SLOTS
+    }
+
+    /// The first slot whose tag matches `hash`, without comparing keys.
+    #[inline(always)]
+    pub unsafe fn first_match(&self, hash: u64) -> Option<&S> {
+        let num_slots = self.slots.len();
+        let pos = home_slot(hash, num_slots);
+        let matches = Group::load(&self.tags, pos).matches(tag(hash));
+        (matches != 0).then(|| self.slots.get_unchecked(slot_of(matches, pos, num_slots)))
+    }
+
+    /// Prefetches the first tags and slot of `hash`.
+    #[inline(always)]
+    pub fn prefetch(&self, hash: u64) {
+        if self.prefetches() {
+            let pos = home_slot(hash, self.slots.len());
+            unsafe {
                 prefetch_l1(self.tags.as_ptr().add(pos));
                 prefetch_l1(self.slots.as_ptr().add(pos).cast());
             }

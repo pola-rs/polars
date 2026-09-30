@@ -10,6 +10,11 @@ use super::*;
 use crate::flat_table::{BLOCK_SIZE, FlatTable, slots_for};
 use crate::hash_keys::HashKeys;
 
+/// Marks are only set after building, so the table can clear them when it grows.
+fn cleared_marks(num_slots: usize) -> Vec<RelaxedCell<bool>> {
+    (0..num_slots).map(|_| RelaxedCell::from(false)).collect()
+}
+
 #[derive(Clone, Copy, Default)]
 struct Slot<K> {
     key: K,
@@ -41,9 +46,7 @@ where
     pub fn new() -> Self {
         let table = FlatTable::new();
         Self {
-            marked: (0..table.num_slots())
-                .map(|_| RelaxedCell::from(false))
-                .collect(),
+            marked: cleared_marks(table.num_slots()),
             table,
             next: Vec::new(),
             num_keys: 0,
@@ -52,13 +55,6 @@ where
             null_keys: Vec::new(),
             nulls_emitted: RelaxedCell::from(false),
         }
-    }
-
-    /// Clears the marks, which is fine as they are only set after building.
-    fn resize(&mut self, num_slots: usize) {
-        self.table
-            .resize(num_slots, |slot| self.random_state.tot_hash_one(slot.key));
-        self.marked = (0..num_slots).map(|_| RelaxedCell::from(false)).collect();
     }
 
     /// The build rows of the key in this slot.
@@ -95,7 +91,9 @@ where
                 let key = arr.value_unchecked(*key_idx as usize);
                 hash.write(self.random_state.tot_hash_one(key));
             }
-            self.table.prefetch(&hashes[..block.len()]);
+            for hash in &hashes[..block.len()] {
+                self.table.prefetch(hash.assume_init());
+            }
 
             // Keys with one output row can only reach the limit if the whole
             // block can. Keys with more rows always check the limit.
@@ -203,7 +201,9 @@ where
     fn reserve(&mut self, additional: usize) {
         let num_slots = slots_for(self.num_keys + additional);
         if num_slots > self.table.num_slots() {
-            self.resize(num_slots);
+            self.table
+                .resize(num_slots, |slot| self.random_state.tot_hash_one(slot.key));
+            self.marked = cleared_marks(num_slots);
         }
     }
 
@@ -241,15 +241,20 @@ where
         for block in subset.chunks(BLOCK_SIZE) {
             // Grows for the whole block at once. Nulls and duplicates don't
             // take a slot, so this can grow a bit early.
-            let num_slots = slots_for(self.num_keys + block.len());
-            if num_slots > self.table.num_slots() {
-                self.resize(num_slots.max(self.table.num_slots() * 2));
+            let num_keys = self.num_keys + block.len();
+            if self
+                .table
+                .grow_for(num_keys, |slot| self.random_state.tot_hash_one(slot.key))
+            {
+                self.marked = cleared_marks(self.table.num_slots());
             }
             for (hash, subset_idx) in hashes.iter_mut().zip(block) {
                 let key = arr.value_unchecked(*subset_idx as usize);
                 hash.write(self.random_state.tot_hash_one(key));
             }
-            self.table.prefetch(&hashes[..block.len()]);
+            for hash in &hashes[..block.len()] {
+                self.table.prefetch(hash.assume_init());
+            }
 
             for (hash, subset_idx) in hashes.iter().zip(block) {
                 let subset_idx = *subset_idx as usize;

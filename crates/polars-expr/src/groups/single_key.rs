@@ -1,38 +1,57 @@
+#![allow(unsafe_op_in_unsafe_fn)]
+
+use std::mem::MaybeUninit;
+
 use polars_arrow::array::Array;
 use polars_arrow::bitmap::MutableBitmap;
-use polars_utils::idx_map::total_idx_map::{Entry, TotalIndexMap};
-use polars_utils::total_ord::{TotalEq, TotalHash};
+use polars_utils::mem::prefetch::prefetch_l1;
+use polars_utils::total_ord::{BuildHasherTotalExt, TotalEq, TotalHash};
 use polars_utils::vec::PushUnchecked;
 
 use super::*;
-use crate::hash_keys::{HashKeys, for_each_hash_single};
+use crate::flat_table::{BLOCK_SIZE, FlatTable, slots_for};
+use crate::hash_keys::HashKeys;
 
-#[derive(Default)]
 pub struct SingleKeyHashGrouper<T: PolarsDataType> {
-    idx_map: TotalIndexMap<T::Physical<'static>, ()>,
+    /// The group of each key.
+    table: FlatTable<IdxSize>,
+    /// The key of each group. The null group has a default key.
+    keys: Vec<T::Physical<'static>>,
     null_idx: IdxSize,
+    random_state: PlRandomState,
 }
 
 impl<K, T: PolarsDataType> SingleKeyHashGrouper<T>
 where
     for<'a> T: PolarsDataType<Physical<'a> = K>,
-    K: Default + TotalHash + TotalEq,
+    K: Default + TotalHash + TotalEq + Copy + Send + Sync + 'static,
 {
     pub fn new() -> Self {
         Self {
-            idx_map: TotalIndexMap::default(),
+            table: FlatTable::new(),
+            keys: Vec::new(),
             null_idx: IdxSize::MAX,
+            random_state: PlRandomState::default(),
         }
     }
 
     #[inline(always)]
-    fn insert_key(&mut self, key: T::Physical<'static>) -> IdxSize {
-        match self.idx_map.entry(key) {
-            Entry::Occupied(o) => o.index(),
-            Entry::Vacant(v) => {
-                let index = v.index();
-                v.insert(());
-                index
+    unsafe fn key(&self, group: IdxSize) -> &K {
+        self.keys.get_unchecked(group as usize)
+    }
+
+    #[inline(always)]
+    unsafe fn insert_key(&mut self, hash: u64, key: K) -> IdxSize {
+        match self
+            .table
+            .find_slot(hash, |group| self.key(*group).tot_eq(&key))
+        {
+            Ok(pos) => *self.table.slot(pos),
+            Err(pos) => {
+                let group: IdxSize = self.keys.len().try_into().unwrap();
+                self.keys.push(key);
+                self.table.insert(pos, hash, group);
+                group
             },
         }
     }
@@ -40,14 +59,19 @@ where
     #[inline(always)]
     fn insert_null(&mut self) -> IdxSize {
         if self.null_idx == IdxSize::MAX {
-            self.null_idx = self.idx_map.push_unmapped_entry(T::Physical::default(), ());
+            self.null_idx = self.keys.len().try_into().unwrap();
+            self.keys.push(K::default());
         }
         self.null_idx
     }
 
     #[inline(always)]
-    fn group_idx(&self, key: &T::Physical<'static>) -> Option<IdxSize> {
-        self.idx_map.get_index_of(key)
+    unsafe fn group_idx(&self, hash: u64, key: &K) -> Option<IdxSize> {
+        let pos = self
+            .table
+            .find_slot(hash, |group| self.key(*group).tot_eq(key))
+            .ok()?;
+        Some(*self.table.slot(pos))
     }
 
     #[inline(always)]
@@ -55,17 +79,127 @@ where
         (self.null_idx < IdxSize::MAX).then_some(self.null_idx)
     }
 
+    /// Prefetches the key of the first slot whose tag matches `hash`, as a
+    /// key is compared after reading its group from the slot.
     #[inline(always)]
-    fn contains_key(&self, key: &T::Physical<'static>) -> bool {
-        self.group_idx(key).is_some()
+    unsafe fn prefetch_key(&self, hash: u64) {
+        if self.table.prefetches()
+            && let Some(group) = self.table.first_match(hash)
+        {
+            prefetch_l1(self.keys.as_ptr().add(*group as usize).cast());
+        }
     }
 
+    /// Inserts the keys in blocks. Each block first hashes all its keys, so
+    /// the CPU can work on the lookups of several keys at once.
     #[inline(always)]
-    fn contains_null(&self) -> bool {
-        self.null_group_idx().is_some()
+    unsafe fn insert_impl(
+        &mut self,
+        arr: &T::Array,
+        null_is_valid: bool,
+        subset: &[IdxSize],
+        mut on_group: impl FnMut(IdxSize),
+    ) {
+        let validity = arr.validity().filter(|_| arr.has_nulls());
+        let mut hashes = [const { MaybeUninit::<u64>::uninit() }; BLOCK_SIZE];
+        for block in subset.chunks(BLOCK_SIZE) {
+            // Grows for the whole block at once. Nulls and keys already in
+            // the table don't take a slot, so this can grow a bit early.
+            let num_keys = self.keys.len() + block.len();
+            self.table.grow_for(num_keys, |group| {
+                self.random_state
+                    .tot_hash_one(*self.keys.get_unchecked(*group as usize))
+            });
+            for (hash, idx) in hashes.iter_mut().zip(block) {
+                let key = arr.value_unchecked(*idx as usize);
+                hash.write(self.random_state.tot_hash_one(key));
+            }
+            let hashes = &hashes[..block.len()];
+            for hash in hashes {
+                self.table.prefetch(hash.assume_init());
+            }
+            for hash in hashes {
+                self.prefetch_key(hash.assume_init());
+            }
+
+            for (hash, idx) in hashes.iter().zip(block) {
+                let idx = *idx as usize;
+                if validity.is_some_and(|v| !v.get_bit_unchecked(idx)) {
+                    if null_is_valid {
+                        on_group(self.insert_null());
+                    }
+                } else {
+                    let key = arr.value_unchecked(idx);
+                    on_group(self.insert_key(hash.assume_init(), key));
+                }
+            }
+        }
     }
 
-    fn finalize_keys(&self, schema: &Schema, keys: Vec<T::Physical<'static>>) -> DataFrame {
+    /// Looks up each key in the grouper of its partition, in blocks as when
+    /// inserting. `f` gets the index of each key, and the partition and group
+    /// of the keys that are found.
+    ///
+    /// # Safety
+    /// All groupers must be a SingleKeyHashGrouper<T>.
+    #[inline(always)]
+    unsafe fn probe_partitions(
+        groupers: &[Box<dyn Grouper>],
+        hash_keys: &HashKeys,
+        partitioner: &HashPartitioner,
+        mut f: impl FnMut(IdxSize, Option<(usize, IdxSize)>),
+    ) {
+        let HashKeys::Single(hash_keys) = hash_keys else {
+            unreachable!()
+        };
+        let ca: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
+        let arr = ca.downcast_as_array();
+        let validity = arr.validity().filter(|_| arr.has_nulls());
+        assert!(partitioner.num_partitions() == groupers.len());
+        let grouper =
+            |p: usize| &*(&**groupers.get_unchecked(p) as *const dyn Grouper as *const Self);
+        let null_p = partitioner.null_partition();
+        let null_group = hash_keys
+            .null_is_valid
+            .then(|| grouper(null_p).null_group_idx())
+            .flatten()
+            .map(|g| (null_p, g));
+
+        let mut hashes = [const { MaybeUninit::<u64>::uninit() }; BLOCK_SIZE];
+        let mut partitions = [const { MaybeUninit::<usize>::uninit() }; BLOCK_SIZE];
+        for block_start in (0..arr.len()).step_by(BLOCK_SIZE) {
+            let block_len = BLOCK_SIZE.min(arr.len() - block_start);
+            for i in 0..block_len {
+                let key = arr.value_unchecked(block_start + i);
+                let p = partitioner.hash_to_partition(hash_keys.random_state.tot_hash_one(key));
+                let p_grouper = grouper(p);
+                let hash = p_grouper.random_state.tot_hash_one(key);
+                p_grouper.table.prefetch(hash);
+                hashes.get_unchecked_mut(i).write(hash);
+                partitions.get_unchecked_mut(i).write(p);
+            }
+            for i in 0..block_len {
+                let p = partitions.get_unchecked(i).assume_init();
+                let hash = hashes.get_unchecked(i).assume_init();
+                grouper(p).prefetch_key(hash);
+            }
+
+            for i in 0..block_len {
+                let idx = block_start + i;
+                let found = if validity.is_some_and(|v| !v.get_bit_unchecked(idx)) {
+                    null_group
+                } else {
+                    let p = partitions.get_unchecked(i).assume_init();
+                    let hash = hashes.get_unchecked(i).assume_init();
+                    let key = arr.value_unchecked(idx);
+                    grouper(p).group_idx(hash, &key).map(|g| (p, g))
+                };
+                f(idx as IdxSize, found);
+            }
+        }
+    }
+
+    fn finalize_keys(&self, schema: &Schema, keys: Vec<K>) -> DataFrame {
         let (name, dtype) = schema.get_at_index(0).unwrap();
         let mut keys =
             T::Array::from_vec(keys, dtype.to_physical().to_arrow(CompatLevel::newest()));
@@ -86,18 +220,25 @@ where
 impl<K, T: PolarsDataType> Grouper for SingleKeyHashGrouper<T>
 where
     for<'a> T: PolarsDataType<Physical<'a> = K>,
-    K: Default + TotalHash + TotalEq + Clone + Send + Sync + 'static,
+    K: Default + TotalHash + TotalEq + Copy + Send + Sync + 'static,
 {
     fn new_empty(&self) -> Box<dyn Grouper> {
         Box::new(Self::new())
     }
 
     fn reserve(&mut self, additional: usize) {
-        self.idx_map.reserve(additional);
+        let num_slots = slots_for(self.keys.len() + additional);
+        if num_slots > self.table.num_slots() {
+            self.table.resize(num_slots, |group| unsafe {
+                self.random_state
+                    .tot_hash_one(*self.keys.get_unchecked(*group as usize))
+            });
+        }
+        self.keys.reserve(additional);
     }
 
     fn num_groups(&self) -> IdxSize {
-        self.idx_map.len()
+        self.keys.len() as IdxSize
     }
 
     unsafe fn insert_keys_subset(
@@ -111,59 +252,19 @@ where
         };
         let ca: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
         let arr = ca.downcast_as_array();
-
-        unsafe {
-            if arr.has_nulls() {
-                if hash_keys.null_is_valid {
-                    let groups = subset.iter().map(|idx| {
-                        let opt_k = arr.get_unchecked(*idx as usize);
-                        if let Some(k) = opt_k {
-                            self.insert_key(k)
-                        } else {
-                            self.insert_null()
-                        }
-                    });
-                    if let Some(group_idxs) = group_idxs {
-                        group_idxs.reserve(subset.len());
-                        group_idxs.extend(groups);
-                    } else {
-                        groups.for_each(drop);
-                    }
-                } else {
-                    let groups = subset.iter().filter_map(|idx| {
-                        let opt_k = arr.get_unchecked(*idx as usize);
-                        opt_k.map(|k| self.insert_key(k))
-                    });
-                    if let Some(group_idxs) = group_idxs {
-                        group_idxs.reserve(subset.len());
-                        group_idxs.extend(groups);
-                    } else {
-                        groups.for_each(drop);
-                    }
-                }
-            } else {
-                let groups = subset.iter().map(|idx| {
-                    let k = arr.value_unchecked(*idx as usize);
-                    self.insert_key(k)
-                });
-                if let Some(group_idxs) = group_idxs {
-                    group_idxs.reserve(subset.len());
-                    group_idxs.extend(groups);
-                } else {
-                    groups.for_each(drop);
-                }
-            }
+        let null_is_valid = hash_keys.null_is_valid;
+        if let Some(group_idxs) = group_idxs {
+            group_idxs.reserve(subset.len());
+            self.insert_impl(arr, null_is_valid, subset, |group| {
+                group_idxs.push_unchecked(group)
+            });
+        } else {
+            self.insert_impl(arr, null_is_valid, subset, |_| {});
         }
     }
 
     fn get_keys_in_group_order(&self, schema: &Schema) -> DataFrame {
-        unsafe {
-            let mut key_rows = Vec::with_capacity(self.idx_map.len() as usize);
-            for key in self.idx_map.iter_keys() {
-                key_rows.push_unchecked(key.clone());
-            }
-            self.finalize_keys(schema, key_rows)
-        }
+        self.finalize_keys(schema, self.keys.clone())
     }
 
     /// # Safety
@@ -176,37 +277,11 @@ where
         invert: bool,
         probe_matches: &mut Vec<IdxSize>,
     ) {
-        let HashKeys::Single(hash_keys) = hash_keys else {
-            unreachable!()
-        };
-        let ca: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
-        let arr = ca.downcast_as_array();
-        assert!(partitioner.num_partitions() == groupers.len());
-
-        unsafe {
-            let null_p = partitioner.null_partition();
-            for_each_hash_single(ca, &hash_keys.random_state, |idx, opt_h| {
-                let has_group = if let Some(h) = opt_h {
-                    let p = partitioner.hash_to_partition(h);
-                    let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
-                    let grouper =
-                        &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
-                    let key = arr.value_unchecked(idx as usize);
-                    grouper.contains_key(&key)
-                } else if hash_keys.null_is_valid {
-                    let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
-                    let grouper =
-                        &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
-                    grouper.contains_null()
-                } else {
-                    false
-                };
-
-                if has_group != invert {
-                    probe_matches.push(idx);
-                }
-            });
-        }
+        Self::probe_partitions(groupers, hash_keys, partitioner, |idx, found| {
+            if found.is_some() != invert {
+                probe_matches.push(idx);
+            }
+        });
     }
 
     /// # Safety
@@ -219,35 +294,9 @@ where
         invert: bool,
         contains_key: &mut BitmapBuilder,
     ) {
-        let HashKeys::Single(hash_keys) = hash_keys else {
-            unreachable!()
-        };
-        let ca: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
-        let arr = ca.downcast_as_array();
-        assert!(partitioner.num_partitions() == groupers.len());
-
-        unsafe {
-            let null_p = partitioner.null_partition();
-            for_each_hash_single(ca, &hash_keys.random_state, |idx, opt_h| {
-                let has_group = if let Some(h) = opt_h {
-                    let p = partitioner.hash_to_partition(h);
-                    let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
-                    let grouper =
-                        &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
-                    let key = arr.value_unchecked(idx as usize);
-                    grouper.contains_key(&key)
-                } else if hash_keys.null_is_valid {
-                    let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
-                    let grouper =
-                        &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
-                    grouper.contains_null()
-                } else {
-                    false
-                };
-
-                contains_key.push(has_group != invert);
-            });
-        }
+        Self::probe_partitions(groupers, hash_keys, partitioner, |_idx, found| {
+            contains_key.push(found.is_some() != invert);
+        });
     }
 
     /// # Safety
@@ -259,40 +308,14 @@ where
         partitioner: &HashPartitioner,
         marks: &mut [MutableBitmap],
     ) {
-        let HashKeys::Single(hash_keys) = hash_keys else {
-            unreachable!()
-        };
-        let ca: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
-        let arr = ca.downcast_as_array();
-        assert!(partitioner.num_partitions() == groupers.len());
         assert!(marks.len() == groupers.len());
-
-        unsafe {
-            let null_p = partitioner.null_partition();
-            for_each_hash_single(ca, &hash_keys.random_state, |idx, opt_h| {
-                let (p, group_idx) = if let Some(h) = opt_h {
-                    let p = partitioner.hash_to_partition(h);
-                    let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
-                    let grouper =
-                        &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
-                    let key = arr.value_unchecked(idx as usize);
-                    (p, grouper.group_idx(&key))
-                } else if hash_keys.null_is_valid {
-                    let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
-                    let grouper =
-                        &*(dyn_grouper as *const dyn Grouper as *const SingleKeyHashGrouper<T>);
-                    (null_p, grouper.null_group_idx())
-                } else {
-                    (null_p, None)
-                };
-
-                if let Some(group_idx) = group_idx {
-                    marks
-                        .get_unchecked_mut(p)
-                        .set_unchecked(group_idx as usize, true);
-                }
-            });
-        }
+        Self::probe_partitions(groupers, hash_keys, partitioner, |_idx, found| {
+            if let Some((p, group_idx)) = found {
+                marks
+                    .get_unchecked_mut(p)
+                    .set_unchecked(group_idx as usize, true);
+            }
+        });
     }
 
     fn as_any(&self) -> &dyn Any {
