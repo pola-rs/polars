@@ -5599,7 +5599,7 @@ def test_iceberg_caching_file_io_scope(tmp_path: Path) -> None:
     assert (cache.hits, cache.misses) == (1, 2)
 
     # FileIO classes other than PyIceberg's built-in ones bypass the cache.
-    class CustomFileIO(PyArrowFileIO):
+    class CustomFileIO(PyArrowFileIO):  # type: ignore[misc]
         pass
 
     custom = CachingFileIO(CustomFileIO({"s3.access-key-id": "a"}), cache)
