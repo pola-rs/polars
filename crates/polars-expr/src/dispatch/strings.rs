@@ -275,7 +275,7 @@ pub(super) fn starts_with(s: &[Column]) -> PolarsResult<Column> {
     Ok(ca.starts_with_chunked(&prefix)?.into_column())
 }
 
-/// Extract a regex pattern from the a string value.
+/// Extract a regex pattern from a string value.
 pub(super) fn extract(s: &[Column], group_index: usize) -> PolarsResult<Column> {
     let ca = s[0].str()?;
     let pat = s[1].str()?;
