@@ -100,10 +100,8 @@ fn sanitize(name: &str) -> Option<&str> {
     }
 }
 
-/// Collect the nested-field path for a chain of `.struct.field(...)` accesses
-/// rooted at a plain column, e.g. `pl.col('a').struct.field('b')` ->
-/// `["a", "b"]`. `None` for anything else (an arbitrary struct-typed source
-/// expression, rather than a plain column).
+/// `pl.col('a').struct.field('b')` -> `["a", "b"]`. `None` if not a plain
+/// column rooting a `.struct.field(...)` chain.
 #[cfg(feature = "dtype-struct")]
 fn struct_field_path(node: Node, expr_arena: &Arena<AExpr>) -> Option<Vec<PlSmallStr>> {
     match expr_arena.get(node) {
