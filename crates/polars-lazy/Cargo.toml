@@ -265,6 +265,7 @@ interpolate = ["polars-expr/interpolate", "polars-stream?/interpolate"]
 interpolate_by = ["polars-expr/interpolate_by"]
 rolling_window = [
   "polars-expr/rolling_window",
+  "polars-stream?/rolling_window",
 ]
 rolling_window_by = [
   "polars-expr/rolling_window_by",

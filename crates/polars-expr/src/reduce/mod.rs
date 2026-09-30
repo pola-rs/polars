@@ -35,54 +35,99 @@ use polars_core::prelude::*;
 
 use crate::EvictIdx;
 
-const LANES: usize = 4;
+/// For small grouped reductions we always allocate at least this many groups,
+/// if there are no evictions. This way we can spread aggregations over multiple
+/// lanes, reducing store-load stalls.
+const LANE_SLOTS: usize = 64;
+const LANE_MASK: usize = LANE_SLOTS - 1;
 
-/// The number of groups up to which `update_laned` is used.
-const MAX_LANED_GROUPS: usize = 64;
-
-/// Whether `update_laned` should be used for `num_rows` rows into `num_groups` groups.
-fn use_lanes(num_groups: usize, num_rows: usize) -> bool {
-    num_groups <= MAX_LANED_GROUPS && num_rows >= 16 * LANES * num_groups
+/// The layout of the per-group values of a grouped reduction: lane `l` of group
+/// `g` is stored in slot `g + l * stride`. Update `r` goes to the slot at offset
+/// `(r * stride) % LANE_SLOTS` from its group, which is always zero when there
+/// is only one lane.
+#[derive(Clone, Copy)]
+struct LaneLayout {
+    num_groups: usize,
+    stride: usize,
 }
 
-/// Calls `update(state, subset[r])` with a state of group `group_idxs[r]` for a prefix
-/// of the rows that ends before the first group to evict, and returns the length of
-/// that prefix. Consecutive rows update separate states, which are combined into
-/// `values` afterwards.
-///
-/// # Safety
-/// The group indices must be in-bounds for `values`.
-#[inline(always)]
-unsafe fn update_laned<V: Clone>(
-    values: &mut [V],
-    init: V,
-    combine: impl Fn(&mut V, &V),
-    subset: &[IdxSize],
-    group_idxs: &[EvictIdx],
-    mut update: impl FnMut(&mut V, usize),
-) -> usize {
-    let mut lanes = vec![init; values.len() * LANES];
-    let mut len = 0;
-    let (subset_chunks, _) = subset.as_chunks::<LANES>();
-    let (group_chunks, _) = group_idxs.as_chunks::<LANES>();
-    for (s, g) in subset_chunks.iter().zip(group_chunks) {
-        if g.iter().any(|g| g.should_evict()) {
-            break;
-        }
-        for l in 0..LANES {
-            update(
-                lanes.get_unchecked_mut(g[l].idx() * LANES + l),
-                s[l] as usize,
-            );
-        }
-        len += LANES;
-    }
-    for (v, lanes) in values.iter_mut().zip(lanes.chunks_exact(LANES)) {
-        for lane in lanes {
-            combine(v, lane);
+impl LaneLayout {
+    fn single(num_groups: usize) -> Self {
+        Self {
+            num_groups,
+            stride: LANE_SLOTS,
         }
     }
-    len
+
+    /// The layout that spreads the groups over lanes, if that is useful.
+    fn new(num_groups: usize) -> Self {
+        let stride = num_groups.next_power_of_two();
+        if num_groups > 1 && stride < LANE_SLOTS {
+            Self { num_groups, stride }
+        } else {
+            Self::single(num_groups)
+        }
+    }
+
+    fn num_lanes(&self) -> usize {
+        (LANE_SLOTS / self.stride).max(1)
+    }
+
+    fn num_slots(&self) -> usize {
+        if self.num_lanes() > 1 {
+            LANE_SLOTS
+        } else {
+            self.num_groups
+        }
+    }
+
+    /// Combines all lanes into the first lane and truncates `values` to it.
+    fn fold<V>(&self, values: &mut Vec<V>, combine: impl Fn(&mut V, &V)) {
+        assert!(values.len() == self.num_slots());
+        if self.num_lanes() > 1 {
+            let (first, rest) = values.split_at_mut(self.stride);
+            for lane in rest.chunks_exact(self.stride) {
+                for (a, b) in first.iter_mut().zip(lane) {
+                    combine(a, b);
+                }
+            }
+        }
+        values.truncate(self.num_groups);
+    }
+
+    /// Combines all lanes into the first lane and switches to a single lane.
+    fn collapse<V>(&mut self, values: &mut Vec<V>, combine: impl Fn(&mut V, &V)) {
+        self.fold(values, combine);
+        *self = Self::single(self.num_groups);
+    }
+
+    /// Resizes to `num_groups` groups, collapsing the lanes if the number changes.
+    fn resize<V: Clone>(
+        &mut self,
+        values: &mut Vec<V>,
+        num_groups: usize,
+        init: V,
+        combine: impl Fn(&mut V, &V),
+    ) {
+        if self.num_lanes() > 1 && num_groups != self.num_groups {
+            self.collapse(values, combine);
+        }
+        if self.num_lanes() == 1 {
+            values.resize(num_groups, init);
+        }
+        self.num_groups = num_groups;
+    }
+
+    /// Spreads the groups over lanes if that is useful.
+    fn expand<V: Clone>(&mut self, values: &mut Vec<V>, init: V) {
+        let new = Self::new(self.num_groups);
+        if new.stride != self.stride {
+            // `resize` collapses the lanes when the number of groups changes.
+            debug_assert!(self.num_lanes() == 1);
+            values.resize(new.num_slots(), init);
+            *self = new;
+        }
+    }
 }
 
 /// A reduction with groups.
@@ -184,6 +229,7 @@ pub trait Reducer: Send + Sync + Clone + 'static {
     type Value: Clone + Send + Sync + 'static;
     /// Whether the values of a group may be reduced into several states that are
     /// combined afterwards, changing the result by at most floating-point rounding.
+    /// If so, `init` must be an identity of `combine`.
     const ORDER_INDEPENDENT: bool = false;
     fn init(&self) -> Self::Value;
     #[inline(always)]
@@ -233,6 +279,7 @@ impl<R: NumericReduction> Clone for NumReducer<R> {
 impl<R: NumericReduction> Reducer for NumReducer<R> {
     type Dtype = <R as NumericReduction>::Dtype;
     type Value = <<R as NumericReduction>::Dtype as PolarsNumericType>::Native;
+    const ORDER_INDEPENDENT: bool = true;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {
@@ -281,6 +328,7 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
 
 pub struct VecGroupedReduction<R: Reducer> {
     values: Vec<R::Value>,
+    layout: LaneLayout,
     evicted_values: Vec<R::Value>,
     in_dtype: DataType,
     reducer: R,
@@ -290,6 +338,7 @@ impl<R: Reducer> VecGroupedReduction<R> {
     pub fn new(in_dtype: DataType, reducer: R) -> Self {
         Self {
             values: Vec::new(),
+            layout: LaneLayout::single(0),
             evicted_values: Vec::new(),
             in_dtype,
             reducer,
@@ -302,12 +351,7 @@ where
     R: Reducer,
 {
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self {
-            values: Vec::new(),
-            evicted_values: Vec::new(),
-            in_dtype: self.in_dtype.clone(),
-            reducer: self.reducer.clone(),
-        })
+        Box::new(Self::new(self.in_dtype.clone(), self.reducer.clone()))
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -315,7 +359,12 @@ where
     }
 
     fn resize(&mut self, num_groups: IdxSize) {
-        self.values.resize(num_groups as usize, self.reducer.init());
+        self.layout.resize(
+            &mut self.values,
+            num_groups as usize,
+            self.reducer.init(),
+            |a, b| self.reducer.combine(a, b),
+        );
     }
 
     fn update_group(
@@ -336,11 +385,11 @@ where
         Ok(())
     }
 
-    unsafe fn update_groups_while_evicting(
+    unsafe fn update_groups_subset(
         &mut self,
         values: &[&Column],
-        mut subset: &[IdxSize],
-        mut group_idxs: &[EvictIdx],
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
         seq_id: u64,
     ) -> PolarsResult<()> {
         let &[values] = values else { unreachable!() };
@@ -349,35 +398,57 @@ where
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
         let values = self.reducer.cast_series(values);
+
+        if R::ORDER_INDEPENDENT {
+            self.layout.expand(&mut self.values, self.reducer.init());
+        }
+        let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
+        let arr = ca.downcast_as_array();
+        let stride = self.layout.stride;
+        let slots = self.values.as_mut_slice();
+        let mut offset = 0usize;
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            if values.has_nulls() {
+                for (i, g) in subset.iter().zip(group_idxs) {
+                    let grp = slots.get_unchecked_mut(*g as usize + (offset & LANE_MASK));
+                    self.reducer
+                        .reduce_one(grp, arr.get_unchecked(*i as usize), seq_id);
+                    offset = offset.wrapping_add(stride);
+                }
+            } else {
+                for (i, g) in subset.iter().zip(group_idxs) {
+                    let grp = slots.get_unchecked_mut(*g as usize + (offset & LANE_MASK));
+                    self.reducer
+                        .reduce_one(grp, Some(arr.value_unchecked(*i as usize)), seq_id);
+                    offset = offset.wrapping_add(stride);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        values: &[&Column],
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
+        assert!(values.dtype() == &self.in_dtype);
+        assert!(subset.len() == group_idxs.len());
+        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
+        let values = values.as_materialized_series(); // @scalar-opt
+        let values = self.reducer.cast_series(values);
+        let reducer = &self.reducer;
+        self.layout
+            .collapse(&mut self.values, |a, b| reducer.combine(a, b));
+
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
-            if R::ORDER_INDEPENDENT && use_lanes(self.values.len(), subset.len()) {
-                let reducer = &self.reducer;
-                let len = if values.has_nulls() {
-                    update_laned(
-                        &mut self.values,
-                        reducer.init(),
-                        |a, b| reducer.combine(a, b),
-                        subset,
-                        group_idxs,
-                        |grp, i| reducer.reduce_one(grp, arr.get_unchecked(i), seq_id),
-                    )
-                } else {
-                    update_laned(
-                        &mut self.values,
-                        reducer.init(),
-                        |a, b| reducer.combine(a, b),
-                        subset,
-                        group_idxs,
-                        |grp, i| reducer.reduce_one(grp, Some(arr.value_unchecked(i)), seq_id),
-                    )
-                };
-                subset = &subset[len..];
-                group_idxs = &group_idxs[len..];
-            }
-
             if values.has_nulls() {
                 for (i, g) in subset.iter().zip(group_idxs) {
                     let ov = arr.get_unchecked(*i as usize);
@@ -412,20 +483,27 @@ where
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         assert!(self.in_dtype == other.in_dtype);
         assert!(subset.len() == group_idxs.len());
+        let other_lanes = other.layout.num_lanes();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (i, g) in subset.iter().zip(group_idxs) {
-                let v = other.values.get_unchecked(*i as usize);
                 let grp = self.values.get_unchecked_mut(*g as usize);
-                self.reducer.combine(grp, v);
+                for l in 0..other_lanes {
+                    let v = other
+                        .values
+                        .get_unchecked(*i as usize + l * other.layout.stride);
+                    self.reducer.combine(grp, v);
+                }
             }
         }
         Ok(())
     }
 
     fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        let values = core::mem::take(&mut self.evicted_values);
         Box::new(Self {
-            values: core::mem::take(&mut self.evicted_values),
+            layout: LaneLayout::single(values.len()),
+            values,
             evicted_values: Vec::new(),
             in_dtype: self.in_dtype.clone(),
             reducer: self.reducer.clone(),
@@ -433,6 +511,10 @@ where
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
+        let reducer = &self.reducer;
+        self.layout
+            .fold(&mut self.values, |a, b| reducer.combine(a, b));
+        self.layout = LaneLayout::single(0);
         let v = core::mem::take(&mut self.values);
         self.reducer.finish(v, None, &self.in_dtype)
     }
@@ -444,6 +526,7 @@ where
 
 pub struct VecMaskGroupedReduction<R: Reducer> {
     values: Vec<R::Value>,
+    layout: LaneLayout,
     mask: MutableBitmap,
     evicted_values: Vec<R::Value>,
     evicted_mask: BitmapBuilder,
@@ -455,6 +538,7 @@ impl<R: Reducer> VecMaskGroupedReduction<R> {
     fn new(in_dtype: DataType, reducer: R) -> Self {
         Self {
             values: Vec::new(),
+            layout: LaneLayout::single(0),
             mask: MutableBitmap::new(),
             evicted_values: Vec::new(),
             evicted_mask: BitmapBuilder::new(),
@@ -478,7 +562,13 @@ where
     }
 
     fn resize(&mut self, num_groups: IdxSize) {
-        self.values.resize(num_groups as usize, self.reducer.init());
+        let reducer = &self.reducer;
+        self.layout.resize(
+            &mut self.values,
+            num_groups as usize,
+            reducer.init(),
+            |a, b| reducer.combine(a, b),
+        );
         self.mask.resize(num_groups as usize, false);
     }
 
@@ -502,6 +592,47 @@ where
         Ok(())
     }
 
+    unsafe fn update_groups_subset(
+        &mut self,
+        values: &[&Column],
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
+        assert!(values.dtype() == &self.in_dtype);
+        assert!(subset.len() == group_idxs.len());
+        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
+        let values = values.as_materialized_series(); // @scalar-opt
+        let values = self.reducer.cast_series(values);
+
+        if R::ORDER_INDEPENDENT {
+            self.layout.expand(&mut self.values, self.reducer.init());
+        }
+        let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
+        let arr = ca.downcast_as_array();
+        let stride = self.layout.stride;
+        let slots = self.values.as_mut_slice();
+        let mut offset = 0usize;
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                if let Some(v) = arr.get_unchecked(*i as usize) {
+                    let g = *g as usize;
+                    let grp = slots.get_unchecked_mut(g + (offset & LANE_MASK));
+                    self.reducer.reduce_one(grp, Some(v), seq_id);
+                    // Only store if needed, a store on each row would chain
+                    // the updates through the shared mask byte.
+                    if !self.mask.get_unchecked(g) {
+                        self.mask.set_unchecked(g, true);
+                    }
+                }
+                offset = offset.wrapping_add(stride);
+            }
+        }
+        Ok(())
+    }
+
     unsafe fn update_groups_while_evicting(
         &mut self,
         values: &[&Column],
@@ -515,6 +646,10 @@ where
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
         let values = self.reducer.cast_series(values);
+        let reducer = &self.reducer;
+        self.layout
+            .collapse(&mut self.values, |a, b| reducer.combine(a, b));
+
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
         unsafe {
@@ -546,14 +681,19 @@ where
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         assert!(self.in_dtype == other.in_dtype);
         assert!(subset.len() == group_idxs.len());
+        let other_lanes = other.layout.num_lanes();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (i, g) in subset.iter().zip(group_idxs) {
                 let o = other.mask.get_unchecked(*i as usize);
                 if o {
-                    let v = other.values.get_unchecked(*i as usize);
                     let grp = self.values.get_unchecked_mut(*g as usize);
-                    self.reducer.combine(grp, v);
+                    for l in 0..other_lanes {
+                        let v = other
+                            .values
+                            .get_unchecked(*i as usize + l * other.layout.stride);
+                        self.reducer.combine(grp, v);
+                    }
                     self.mask.set_unchecked(*g as usize, true);
                 }
             }
@@ -562,8 +702,10 @@ where
     }
 
     fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        let values = core::mem::take(&mut self.evicted_values);
         Box::new(Self {
-            values: core::mem::take(&mut self.evicted_values),
+            layout: LaneLayout::single(values.len()),
+            values,
             mask: core::mem::take(&mut self.evicted_mask).into_mut(),
             evicted_values: Vec::new(),
             evicted_mask: BitmapBuilder::new(),
@@ -573,6 +715,10 @@ where
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
+        let reducer = &self.reducer;
+        self.layout
+            .fold(&mut self.values, |a, b| reducer.combine(a, b));
+        self.layout = LaneLayout::single(0);
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
         self.reducer.finish(v, Some(m.freeze()), &self.in_dtype)
@@ -665,74 +811,5 @@ impl GroupedReduction for NullGroupedReduction {
 
     fn as_any(&self) -> &dyn Any {
         self
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const NUM_ROWS: usize = 1000;
-    const NUM_GROUPS: usize = 3;
-    const EVICT_AT: usize = 501;
-
-    /// Row `i` goes to group `i % NUM_GROUPS`, and row `EVICT_AT` evicts its group.
-    fn update(reduction: &mut dyn GroupedReduction, values: &Column) -> (Series, Series) {
-        let subset: Vec<IdxSize> = (0..NUM_ROWS as IdxSize).collect();
-        let group_idxs: Vec<EvictIdx> = (0..NUM_ROWS)
-            .map(|i| EvictIdx::new((i % NUM_GROUPS) as IdxSize, i == EVICT_AT))
-            .collect();
-        assert!(use_lanes(NUM_GROUPS, NUM_ROWS));
-        reduction.resize(NUM_GROUPS as IdxSize);
-        unsafe {
-            reduction
-                .update_groups_while_evicting(&[values], &subset, &group_idxs, 0)
-                .unwrap()
-        };
-        let evicted = reduction.take_evictions().finalize().unwrap();
-        (evicted, reduction.finalize().unwrap())
-    }
-
-    /// The evicted and final value per group of summing `value(i)` over the rows.
-    fn expected(value: impl Fn(usize) -> u64) -> (Vec<u64>, Vec<u64>) {
-        let mut groups = [0; NUM_GROUPS];
-        let mut evicted = Vec::new();
-        for i in 0..NUM_ROWS {
-            if i == EVICT_AT {
-                evicted.push(std::mem::take(&mut groups[i % NUM_GROUPS]));
-            }
-            groups[i % NUM_GROUPS] += value(i);
-        }
-        (evicted, groups.to_vec())
-    }
-
-    fn as_u64(s: &Series) -> Vec<u64> {
-        let s = s.cast(&DataType::UInt64).unwrap();
-        s.u64().unwrap().into_no_null_iter().collect()
-    }
-
-    #[test]
-    fn laned_sum_evicts_in_row_order() {
-        let values = Column::new("a".into(), (0..NUM_ROWS as i64).collect::<Vec<_>>());
-        let mut reduction = sum::new_sum_reduction(DataType::Int64).unwrap();
-        let (evicted, groups) = update(&mut *reduction, &values);
-        let (exp_evicted, exp_groups) = expected(|i| i as u64);
-        assert_eq!(as_u64(&evicted), exp_evicted);
-        assert_eq!(as_u64(&groups), exp_groups);
-    }
-
-    #[test]
-    fn laned_count_evicts_in_row_order() {
-        let values = Column::new(
-            "a".into(),
-            (0..NUM_ROWS)
-                .map(|i| (i % 7 != 0).then_some(i as i64))
-                .collect::<Vec<_>>(),
-        );
-        let mut reduction = count::CountReduce::new(false);
-        let (evicted, groups) = update(&mut reduction, &values);
-        let (exp_evicted, exp_groups) = expected(|i| (i % 7 != 0) as u64);
-        assert_eq!(as_u64(&evicted), exp_evicted);
-        assert_eq!(as_u64(&groups), exp_groups);
     }
 }

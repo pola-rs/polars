@@ -64,16 +64,15 @@ pub trait LogSeries: SeriesSealed {
                     Ok(out.into_series())
                 })
             },
-            (dt1, _) if dt1.is_float() => s.log(&base.cast(dt1).unwrap()),
-            (_, dt2) if dt2.is_float() => s.cast(base.dtype()).unwrap().log(base),
-            (_, _) => s.cast(&DataType::Float64).unwrap().log(base),
+            (dt1, _) if dt1.is_float() => s.log(&base.cast(dt1)?),
+            (_, dt2) if dt2.is_float() => s.cast(base.dtype())?.log(base),
+            (_, _) => s.cast(&DataType::Float64)?.log(base),
         }
     }
 
     /// Compute the natural logarithm of all elements plus one in the input array
     fn log1p(&self) -> PolarsResult<Series> {
         let s = self.as_series();
-        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'log1p'");
 
         use DataType::*;
         match s.dtype() {
@@ -87,14 +86,16 @@ pub trait LogSeries: SeriesSealed {
             Float16 => Ok(s.f16().unwrap().apply_values(|v| v.ln_1p()).into_series()),
             Float32 => Ok(s.f32().unwrap().apply_values(|v| v.ln_1p()).into_series()),
             Float64 => Ok(s.f64().unwrap().apply_values(|v| v.ln_1p()).into_series()),
-            _ => s.cast(&DataType::Float64).unwrap().log1p(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => s.cast(&DataType::Float64)?.log1p(),
+            Boolean => s.cast(&DataType::Float64)?.log1p(),
+            dt => polars_bail!(opq = log1p, dt),
         }
     }
 
     /// Calculate the exponential of all elements in the input array.
     fn exp(&self) -> PolarsResult<Series> {
         let s = self.as_series();
-        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'exp'");
 
         use DataType::*;
         match s.dtype() {
@@ -108,26 +109,22 @@ pub trait LogSeries: SeriesSealed {
             Float16 => Ok(s.f16().unwrap().apply_values(|v| v.exp()).into_series()),
             Float32 => Ok(s.f32().unwrap().apply_values(|v| v.exp()).into_series()),
             Float64 => Ok(s.f64().unwrap().apply_values(|v| v.exp()).into_series()),
-            _ => s.cast(&DataType::Float64).unwrap().exp(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => s.cast(&DataType::Float64)?.exp(),
+            Boolean => s.cast(&DataType::Float64)?.exp(),
+            dt => polars_bail!(opq = exp, dt),
         }
     }
 
     /// Compute the error function of all elements in the input array.
     fn erf(&self) -> PolarsResult<Series> {
         let s = self.as_series();
-        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'erf'");
-        if s.dtype().is_decimal() {
-            return s.cast(&DataType::Float64).unwrap().erf();
-        }
-
-        let s = s.to_physical_repr();
-        let s = s.as_ref();
 
         use DataType::*;
         match s.dtype() {
             dt if dt.is_integer() => {
                 with_match_physical_integer_polars_type!(s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
                     Ok(erf(ca).into_series())
                 })
             },
@@ -143,26 +140,22 @@ pub trait LogSeries: SeriesSealed {
                 .apply_values(|v| erf_f64(v as f64) as f32)
                 .into_series()),
             Float64 => Ok(s.f64().unwrap().apply_values(erf_f64).into_series()),
-            _ => s.cast(&DataType::Float64).unwrap().erf(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => s.cast(&DataType::Float64)?.erf(),
+            Boolean => s.cast(&DataType::Float64)?.erf(),
+            dt => polars_bail!(opq = erf, dt),
         }
     }
 
     /// Compute the complementary error function of all elements in the input array.
     fn erfc(&self) -> PolarsResult<Series> {
         let s = self.as_series();
-        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'erfc'");
-        if s.dtype().is_decimal() {
-            return s.cast(&DataType::Float64).unwrap().erfc();
-        }
-
-        let s = s.to_physical_repr();
-        let s = s.as_ref();
 
         use DataType::*;
         match s.dtype() {
             dt if dt.is_integer() => {
                 with_match_physical_integer_polars_type!(s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
                     Ok(erfc(ca).into_series())
                 })
             },
@@ -178,7 +171,10 @@ pub trait LogSeries: SeriesSealed {
                 .apply_values(|v| erfc_f64(v as f64) as f32)
                 .into_series()),
             Float64 => Ok(s.f64().unwrap().apply_values(erfc_f64).into_series()),
-            _ => s.cast(&DataType::Float64).unwrap().erfc(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => s.cast(&DataType::Float64)?.erfc(),
+            Boolean => s.cast(&DataType::Float64)?.erfc(),
+            dt => polars_bail!(opq = erfc, dt),
         }
     }
 
@@ -186,14 +182,13 @@ pub trait LogSeries: SeriesSealed {
     /// where `pk` are discrete probabilities.
     fn entropy(&self, base: f64, normalize: bool) -> PolarsResult<f64> {
         let s = self.as_series();
-        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'entropy'");
 
         // If there is only one value in the series, return 0.0 to prevent the function from returning -0.0.
         if s.len() == 1 {
             return Ok(0.0);
         }
         match s.dtype() {
-            DataType::Float16 | DataType::Float32 | DataType::Float64 => {
+            dt if dt.is_float() => {
                 let pk = s;
 
                 let pk = if normalize {
@@ -211,9 +206,10 @@ pub trait LogSeries: SeriesSealed {
                 let base = &Series::new(PlSmallStr::EMPTY, [base]);
                 (&pk * &pk.log(base)?)?.sum::<f64>().map(|v| -v)
             },
-            _ => s
+            dt if dt.is_integer() || dt.is_decimal() || dt.is_bool() => s
                 .cast(&DataType::Float64)
                 .map(|s| s.entropy(base, normalize))?,
+            dt => polars_bail!(opq = entropy, dt),
         }
     }
 }

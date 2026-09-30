@@ -348,6 +348,51 @@ class TestIcebergScanIO:
         res = pl.scan_iceberg(tbl).filter(pl.col("s").str.starts_with("be"))
         assert res.collect()["s"].to_list() == ["berry"]
 
+    def test_scan_iceberg_filter_is_nan(
+        self,
+        tmp_path: Path,
+        plmonkeypatch: PlMonkeyPatch,
+        capfd: pytest.CaptureFixture[str],
+    ) -> None:
+        schema = IcebergSchema(NestedField(1, "value", DoubleType(), required=False))
+        tbl, _ = new_iceberg_table(tmp_path, schema=schema)
+        data = pl.DataFrame({"value": [None, 1.0, float("nan"), 2.0]})
+        data.write_iceberg(tbl, mode="append")
+        plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+        capfd.readouterr()
+        res = pl.scan_iceberg(tbl).filter(pl.col("value").is_nan())
+        [(value,)] = res.collect().rows()
+        assert math.isnan(value)
+        assert f"iceberg_table_filter = {IsNaN('value')!r}" in capfd.readouterr().err
+
+        res = pl.scan_iceberg(tbl).filter(pl.col("value").is_not_nan())
+        assert res.collect()["value"].to_list() == [1.0, 2.0]
+        assert (
+            f"iceberg_table_filter = {Not(IsNaN('value'))!r}" in capfd.readouterr().err
+        )
+
+    @pytest.mark.parametrize("method", ["is_nan", "is_not_nan"])
+    def test_scan_iceberg_nan_decimal_rejected(
+        self, tmp_path: Path, method: str
+    ) -> None:
+        # `is_nan`/`is_not_nan` on a Decimal column must raise, same as every
+        # other Polars path - not be silently dropped by predicate pushdown.
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(NestedField(1, "value", DecimalType(10, 1))),
+        )
+        pl.DataFrame(
+            {"value": [D("1.0"), D("2.0")]}, schema={"value": pl.Decimal(10, 1)}
+        ).write_iceberg(tbl, mode="append")
+
+        predicate = getattr(pl.col("value"), method)()
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError,
+            match=rf"`{method}` operation not supported for dtype `decimal",
+        ):
+            pl.scan_iceberg(tbl).filter(predicate).collect()
+
     def test_scan_iceberg_filter_starts_with_non_literal_prefix(
         self, tmp_path: Path
     ) -> None:
@@ -554,6 +599,8 @@ class TestIcebergExpressions:
             "(pa.compute.field('value') == 'NaN')",
             lambda: EqualTo("value", "NaN"),
         ),
+        ("(pa.compute.field('value')).is_nan()", lambda: IsNaN("value")),
+        ("~(pa.compute.field('value')).is_nan()", lambda: Not(IsNaN("value"))),
     ],
 )
 def test_convert_nan_predicate(

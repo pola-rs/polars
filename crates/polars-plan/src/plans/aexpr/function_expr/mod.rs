@@ -787,6 +787,20 @@ impl Hash for IRFunctionExpr {
 
 impl Display for IRFunctionExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.fmt_name(f)?;
+        if let Some(dtype) = self.membership_needle_cast() {
+            #[cfg(feature = "dtype-map")]
+            if matches!(self, Self::MapExpr(_)) {
+                return write!(f, "[key: {dtype}]");
+            }
+            write!(f, "[needle: {dtype}]")?;
+        }
+        Ok(())
+    }
+}
+
+impl IRFunctionExpr {
+    fn fmt_name(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use IRFunctionExpr::*;
         let s = match self {
             // Namespaces
@@ -1106,6 +1120,51 @@ macro_rules! map {
 }
 
 impl IRFunctionExpr {
+    /// The dtype a membership function casts its needle to as it runs, if coercion chose one.
+    pub fn membership_needle_cast(&self) -> Option<&DataType> {
+        match self {
+            #[cfg(feature = "is_in")]
+            Self::Boolean(IRBooleanFunction::IsIn { needle_cast, .. })
+            | Self::ListExpr(IRListFunction::Contains { needle_cast, .. }) => needle_cast.as_ref(),
+            #[cfg(all(feature = "is_in", feature = "dtype-array"))]
+            Self::ArrayExpr(IRArrayFunction::Contains { needle_cast, .. }) => needle_cast.as_ref(),
+            #[cfg(feature = "dtype-map")]
+            Self::MapExpr(
+                IRMapFunction::Get { needle_cast } | IRMapFunction::ContainsKey { needle_cast },
+            ) => needle_cast.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub fn membership_needle_cast_mut(&mut self) -> Option<&mut Option<DataType>> {
+        match self {
+            #[cfg(feature = "is_in")]
+            Self::Boolean(IRBooleanFunction::IsIn { needle_cast, .. })
+            | Self::ListExpr(IRListFunction::Contains { needle_cast, .. }) => Some(needle_cast),
+            #[cfg(all(feature = "is_in", feature = "dtype-array"))]
+            Self::ArrayExpr(IRArrayFunction::Contains { needle_cast, .. }) => Some(needle_cast),
+            #[cfg(feature = "dtype-map")]
+            Self::MapExpr(
+                IRMapFunction::Get { needle_cast } | IRMapFunction::ContainsKey { needle_cast },
+            ) => Some(needle_cast),
+            _ => None,
+        }
+    }
+
+    /// Whether a membership function compares its needle with elements of the needle's own dtype.
+    ///
+    /// Optimizations that treat the haystack's elements as values of the needle, such as
+    /// statistics, allowed sets or join keys, require this. Otherwise the needle is cast as the
+    /// function runs, or the kernel compares unequal dtypes natively: strings with an Enum,
+    /// decimals of another scale, or datetimes in another time zone.
+    pub fn membership_compares_in_needle_dtype(
+        &self,
+        needle: &DataType,
+        container: &DataType,
+    ) -> bool {
+        self.membership_needle_cast().is_none() && container.inner_dtype() == Some(needle)
+    }
+
     pub fn function_options(&self) -> FunctionOptions {
         use IRFunctionExpr as F;
         match self {
@@ -1209,7 +1268,15 @@ impl IRFunctionExpr {
             // TODO: Only decimal product is order-observing, we should get schema here to indicate `NON_ORDER_OBSERVING` for other dtypes.
             F::Product => FunctionOptions::aggregation(),
             #[cfg(feature = "rank")]
-            F::Rank { .. } => FunctionOptions::length_preserving(),
+            F::Rank { options, .. } => FunctionOptions::length_preserving().with_flags(|f| {
+                // Ordinal and random ranks break ties by position.
+                match options.method {
+                    RankMethod::Average | RankMethod::Min | RankMethod::Max | RankMethod::Dense => {
+                        f | FunctionFlags::NON_ORDER_OBSERVING | FunctionFlags::NON_ORDER_PRODUCING
+                    },
+                    _ => f,
+                }
+            }),
             F::Repeat => {
                 FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },

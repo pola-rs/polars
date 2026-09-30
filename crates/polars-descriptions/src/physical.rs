@@ -65,6 +65,13 @@ pub enum PhysicalPropsDescription {
     InMemoryMap {
         format_str: String,
     },
+    Window {
+        partition_by: Vec<String>,
+        order_by: Option<String>,
+        exprs: Vec<String>,
+        ordered_eval: bool,
+        maintain_order: bool,
+    },
     InMemorySink,
     InMemorySource {
         n_rows: usize,
@@ -296,6 +303,11 @@ pub enum PhysicalPropsDescription {
     ColumnarFunction {
         num_inputs: usize,
         name: Option<String>,
+    },
+    RollingFixedWindowFunction {
+        name: String,
+        offset: i64,
+        length: u64,
     },
     IsSorted {
         descending: Option<bool>,

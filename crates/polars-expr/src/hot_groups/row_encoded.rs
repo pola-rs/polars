@@ -36,6 +36,14 @@ impl HotGrouper for RowEncodedHashHotGrouper {
         self.table.len() as IdxSize
     }
 
+    fn num_slots(&self) -> usize {
+        self.table.num_slots()
+    }
+
+    fn double(&mut self) {
+        self.table.double();
+    }
+
     fn insert_keys(
         &mut self,
         keys: &HashKeys,

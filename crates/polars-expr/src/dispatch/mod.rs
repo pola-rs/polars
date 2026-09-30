@@ -116,6 +116,8 @@ mod horizontal;
 mod list;
 #[cfg(feature = "dtype-map")]
 mod map;
+#[cfg(any(feature = "is_in", feature = "dtype-map"))]
+mod membership;
 mod misc;
 mod pow;
 #[cfg(feature = "random")]

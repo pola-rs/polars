@@ -15,7 +15,7 @@ use polars_utils::unique_column_name;
 use recursive::recursive;
 
 use crate::plans::{
-    AExpr, CanonicalExprId, CanonicalExprMap, ExprIR, OutputName, ToFieldContext, is_elementwise,
+    AExpr, CanonicalExprId, CanonicalExprMap, ExprIR, OutputName, ToFieldContext, is_splittable,
 };
 
 /// Assumed payload of one variable-length value, in bits.
@@ -170,24 +170,6 @@ struct DagNode {
     splittable: bool,
     /// Expected bits per row when this node is materialized.
     weight: u64,
-}
-
-/// Whether `ae`'s own operation may be moved into the post-select, leaving its inputs to
-/// be produced by the pre-select. `inputs_rev` must be `ae.inputs_rev()`.
-fn is_splittable(ae: &AExpr, inputs_rev: &[Node], expr_arena: &Arena<AExpr>) -> bool {
-    match ae {
-        AExpr::Column(_) | AExpr::Element => return false,
-        #[cfg(feature = "dtype-struct")]
-        AExpr::StructEval { .. } => return false,
-        _ => {},
-    }
-
-    // `is_elementwise` reports which sub-expressions may be split off. Where that differs
-    // from `inputs_rev` an input has to stay attached to its parent (the literal
-    // right-hand side of `is_in`, say) and `replace_inputs` could no longer put rebuilt
-    // inputs back in the right places.
-    let mut detachable = UnitVec::new();
-    is_elementwise(&mut detachable, ae, expr_arena) && *detachable == *inputs_rev
 }
 
 #[recursive]

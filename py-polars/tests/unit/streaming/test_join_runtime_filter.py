@@ -1437,22 +1437,27 @@ def test_bypassed_range_goes_behind_a_selective_predicate(
     # group decoded with the old passes after the range stopped being checked,
     # which depends on timing, hence the repeats.
     n = 50 * ROWS_PER_GROUP
-    keys = pl.Series("k", range(n)).shuffle(seed=1)
+    keys = pl.concat(
+        [
+            pl.Series("k", range(start, start + ROWS_PER_GROUP)).shuffle(seed=start + 1)
+            for start in range(0, n, ROWS_PER_GROUP)
+        ]
+    )
     path = tmp_path / "fact.parquet"
-    pl.DataFrame({"k2": keys % 7, "v": keys}).write_parquet(
+    pl.DataFrame({"k2": keys % 20, "v": keys % ROWS_PER_GROUP}).write_parquet(
         path, row_group_size=ROWS_PER_GROUP, statistics="full"
     )
     q = (
         pl.scan_parquet(path)
-        .filter(pl.col("v") < n // 10)
-        .join(tiny(0, 1, 2, 3, 4, 5, key="k2"), on="k2")
+        .filter(pl.col("v") < ROWS_PER_GROUP // 5)
+        .join(tiny(*range(19), key="k2"), on="k2")
     )
     for _ in range(5):
         out, err = reader_log(q, plmonkeypatch, capfd)
+        assert_matches_in_memory(q, out)
         assert "Dynamic predicate bypassed" in err
         passes = [line for line in err.splitlines() if "Predicate passes" in line]
         assert passes[-1] == '[ParquetFileReader]: Predicate passes: [["v"], ["k2"]]'
-    assert_matches_in_memory(q, out)
 
 
 def test_two_blooms_on_one_scan_key(
@@ -1592,6 +1597,31 @@ def test_anti_join_publishes_from_the_left_only(
     out = q.collect(engine="streaming")
     assert out.height == N_ROW_GROUPS * ROWS_PER_GROUP - 2
     assert_matches_in_memory(q, out)
+
+
+@pytest.mark.parametrize("how", ["semi", "anti"])
+def test_left_side_forced_by_its_filtered_rows_against_few_right_keys(
+    fact: pl.LazyFrame, tmp_path: Path, how: JoinStrategy
+) -> None:
+    # A left build keeps every left row that passes its filter while a right
+    # build keeps only the distinct right keys, of which `k2` has seven.
+    path = tmp_path / "left.parquet"
+    pl.DataFrame({"k2": [i % 10 for i in range(100)], "e": range(100)}).write_parquet(
+        path
+    )
+    left = pl.scan_parquet(path)
+
+    q = left.filter(pl.col("e") >= 5).join(fact, on="k2", how=how)
+    plan = q.explain(engine="streaming")
+    assert "ForceLeft" not in plan
+    assert "dynamic_predicate" not in plan
+    assert_matches_in_memory(q, q.collect(engine="streaming"))
+
+    q = left.filter(pl.col("e") == 5).join(fact, on="k2", how=how)
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: ForceLeft" in plan
+    assert plan.count("dynamic_predicate") == 1
+    assert_matches_in_memory(q, q.collect(engine="streaming"))
 
 
 def test_preferred_semi_join_publishes_its_right_side(

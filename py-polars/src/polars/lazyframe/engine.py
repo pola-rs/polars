@@ -695,7 +695,7 @@ class _AutoEngine(_LocalEngine):
 
 class InMemoryEngine(_LocalEngine):
     """
-    The in-memory engine.
+    Execute queries fully in memory.
 
     Parameters
     ----------
@@ -710,7 +710,7 @@ class InMemoryEngine(_LocalEngine):
 
 class StreamingEngine(_LocalEngine):
     """
-    The streaming engine.
+    Execute queries in a streaming fashion, supporting larger-than-memory data.
 
     Parameters
     ----------
@@ -731,7 +731,7 @@ class StreamingEngine(_LocalEngine):
 
 class GPUEngine(_LocalEngine):
     """
-    Configuration options for the GPU execution engine.
+    Execute queries on the GPU.
 
     Use this if you want control over details of the execution.
 

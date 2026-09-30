@@ -45,4 +45,11 @@ impl EvictIdx {
         // SAFETY: same size and align, repr(transparent).
         unsafe { std::slice::from_raw_parts(idxs.as_ptr() as *const EvictIdx, idxs.len()) }
     }
+
+    /// Returns the raw indices, including their evict bits.
+    #[inline]
+    pub fn cast_to_idxs(idxs: &[EvictIdx]) -> &[IdxSize] {
+        // SAFETY: same size and align, repr(transparent).
+        unsafe { std::slice::from_raw_parts(idxs.as_ptr() as *const IdxSize, idxs.len()) }
+    }
 }

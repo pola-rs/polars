@@ -56,8 +56,7 @@ pub(crate) use sortby::*;
 #[cfg(feature = "dtype-struct")]
 pub(crate) use structeval::*;
 pub(crate) use ternary::*;
-pub use window::window_function_format_order_by;
-pub(crate) use window::*;
+pub use window::{WindowExpr, window_function_format_order_by};
 
 use crate::state::ExecutionState;
 

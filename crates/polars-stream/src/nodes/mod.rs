@@ -36,6 +36,7 @@ pub mod reduce;
 pub mod repeat;
 pub mod rle;
 pub mod rle_id;
+pub mod rolling_fixed_window;
 #[cfg(feature = "dynamic_group_by")]
 pub mod rolling_group_by;
 pub mod select;
@@ -52,6 +53,7 @@ pub mod streaming_slice;
 pub mod strptime_infer;
 pub mod top_k;
 pub mod unordered_union;
+pub mod window;
 pub mod with_row_index;
 pub mod zip;
 

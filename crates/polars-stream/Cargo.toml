@@ -137,6 +137,7 @@ dtype-map = ["polars-core/dtype-map", "polars-expr/dtype-map", "polars-plan/dtyp
 ewma = ["polars-expr/ewma", "polars-plan/ewma"]
 mode = ["polars-expr/mode", "polars-plan/mode"]
 moment = ["polars-expr/moment", "polars-plan/moment"]
+rolling_window = ["polars-expr/rolling_window", "polars-plan/rolling_window"]
 object = ["polars-ops/object"]
 physical_plan_visualization_schema = [
   "dep:schemars",

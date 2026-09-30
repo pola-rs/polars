@@ -302,7 +302,7 @@ pub(crate) fn node_stats_with_cache(
             let columns = passed_through_columns(&inner, expr, expr_arena);
             Some(NodeStats { columns, ..inner })
         },
-        IR::HStack { input, exprs, .. } => {
+        IR::HStack { input, exprs, .. } | IR::Window { input, exprs, .. } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             let columns = shadowed_columns(&inner, exprs, expr_arena);
             Some(NodeStats { columns, ..inner })
@@ -1410,7 +1410,10 @@ mod tests {
                 ExprIR::from_node(a, expr_arena),
                 ExprIR::from_node(haystack, expr_arena),
             ],
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal: false }),
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                nulls_equal: false,
+                needle_cast: None,
+            }),
             options: crate::prelude::FunctionOptions::elementwise(),
         })
     }

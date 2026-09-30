@@ -26,6 +26,7 @@ mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;
 mod expand_datasets;
+mod extract_window;
 #[cfg(feature = "python")]
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
 mod collapse_sort;
@@ -312,6 +313,11 @@ pub fn optimize(
         })?;
     }
 
+    let streaming_windows = opt_flags.streaming() && !opt_flags.gpu();
+    if streaming_windows {
+        extract_window::extract_windows(root, ir_arena, expr_arena);
+    }
+
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
         match ir_arena.get(root) {
             IR::SinkMultiple { inputs } => {
@@ -324,7 +330,12 @@ pub fn optimize(
                         });
                     }
                 }
-                simplify_ordering::simplify_and_fetch_orderings(&roots, ir_arena, expr_arena);
+                simplify_ordering::simplify_and_fetch_orderings(
+                    &roots,
+                    ir_arena,
+                    expr_arena,
+                    streaming_windows,
+                );
             },
             ir => {
                 let mut tmp_top = root;
@@ -334,7 +345,12 @@ pub fn optimize(
                         payload: SinkTypeIR::Memory,
                     });
                 }
-                simplify_ordering::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena);
+                simplify_ordering::simplify_and_fetch_orderings(
+                    &[tmp_top],
+                    ir_arena,
+                    expr_arena,
+                    streaming_windows,
+                );
             },
         }
     }

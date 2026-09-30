@@ -15,7 +15,7 @@ This page gives an overview of all public LazyFrame methods.
    modify_select
    miscellaneous
    in_process
-   gpu_engine
+   engines
    query_result
    resolver
 

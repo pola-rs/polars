@@ -33,7 +33,7 @@ from polars.dataframe.frame import DataFrame
 from polars.datatypes import List, String
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, MutableMapping
+    from collections.abc import Callable, Iterable, Iterator, MutableMapping
     from collections.abc import Set as AbstractSet
     from dis import Instruction
     from typing import TypeAlias
@@ -66,8 +66,13 @@ _MIN_PY312: Final = _MIN_PY311 and sys.version_info >= (3, 12)
 _MIN_PY314: Final = _MIN_PY312 and sys.version_info >= (3, 14)
 
 _BYTECODE_PARSER_CACHE_: MutableMapping[
-    tuple[Callable[[Any], Any], str], BytecodeParser
-] = LRUCache(32)
+    tuple[Callable[[Any], Any], str],
+    BytecodeParser,
+] = LRUCache(64)
+_INSTRUCTIONS_CACHE_: MutableMapping[
+    types.CodeType,
+    list[Instruction],
+] = LRUCache(64)
 
 
 class OpNames:
@@ -373,6 +378,7 @@ class BytecodeParser:
 
     _map_target_name: str | None = None
     _can_attempt_rewrite: bool | None = None
+    _skipped_disassembly: bool = False
     _col_expression: tuple[str, str] | NoDefault | None = NO_DEFAULT
 
     def __init__(self, function: Callable[[Any], Any], map_target: MapTarget) -> None:
@@ -386,8 +392,21 @@ class BytecodeParser:
         map_target : {'expr','series','frame'}
             The underlying target object type of the map operation.
         """
+        original_instructions: Iterable[Instruction]
         try:
-            original_instructions = get_instructions(function)
+            if type(function) is types.FunctionType:
+                code = function.__code__
+                if code.co_code[::2].translate(None, _REWRITABLE_OPCODES):
+                    # bytecode contains ops we cannot rewrite, so skip disassembly
+                    self._skipped_disassembly = True
+                    original_instructions = []
+                elif (cached := _INSTRUCTIONS_CACHE_.get(code)) is not None:
+                    original_instructions = cached
+                else:
+                    original_instructions = list(get_instructions(code))
+                    _INSTRUCTIONS_CACHE_[code] = original_instructions
+            else:
+                original_instructions = get_instructions(function)
         except TypeError:
             # in case we hit something that can't be disassembled (eg: code object
             # unavailable, like a bare numpy ufunc that isn't in a lambda/function)
@@ -505,6 +524,8 @@ class BytecodeParser:
     @property
     def original_instructions(self) -> list[Instruction]:
         """The original bytecode instructions from the function we are parsing."""
+        if self._skipped_disassembly:
+            return list(get_instructions(self._function))
         return list(self._rewritten_instructions._original_instructions)
 
     @property
@@ -902,7 +923,7 @@ class RewrittenInstructions:
 
     def __init__(
         self,
-        instructions: Iterator[Instruction],
+        instructions: Iterable[Instruction],
         function: Callable[[Any], Any],
     ) -> None:
         self._function = function
@@ -1292,6 +1313,19 @@ class RewrittenInstructions:
             attribute_count == 1
             and self._get_function_variable(module_name) is datetime
         )
+
+
+# raw opcodes that can appear in a rewritable function; if a function's bytecode
+# contains any other opcode, `RewrittenInstructions` is guaranteed to bail out
+_REWRITABLE_OPCODES: Final = bytes(
+    dis.opmap[opname]
+    for opname in (
+        OpNames.MATCHABLE_OPS
+        | RewrittenInstructions._ignored_ops
+        | {"CACHE", "LOAD_FAST_LOAD_FAST", "LOAD_FAST_BORROW_LOAD_FAST_BORROW"}
+    )
+    if opname in dis.opmap and dis.opmap[opname] < 256
+)
 
 
 def _raw_function_meta(function: Callable[[Any], Any]) -> tuple[str, str]:

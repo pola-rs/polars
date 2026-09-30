@@ -2698,7 +2698,8 @@ impl SQLFunctionVisitor<'_> {
         };
         // TODO: per-key sort options are not currently supported; we need to
         //  enhance `over_with_options` to take SortMultipleOptions
-        let sort_options = order_by_sort_options(&first.options);
+        // Rows with equal keys (peers) may be processed in any order.
+        let sort_options = order_by_sort_options(&first.options).with_maintain_order(false);
         let mut exprs = Vec::with_capacity(order_by.len());
         for o in order_by {
             let options = order_by_sort_options(&o.options);
