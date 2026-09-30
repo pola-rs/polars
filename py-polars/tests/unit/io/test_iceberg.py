@@ -450,8 +450,9 @@ class TestIcebergScanIO:
         # down - checked via `.explain()` rather than `.collect()`, since
         # actually executing a filter on a struct field with a special
         # character in its name currently hits an unrelated bug in the
-        # native reader's own stats-skip optimization (reproduces the same
-        # way on plain `scan_parquet`, nothing to do with this pushdown).
+        # native reader's own stats-skip optimization for Iceberg (nothing
+        # to do with this pushdown - see the xfail test right below for the
+        # tracked bug itself).
         tbl, _ = new_iceberg_table(
             tmp_path,
             schema=IcebergSchema(
@@ -473,6 +474,46 @@ class TestIcebergScanIO:
         log = capfd.readouterr().err
         assert "pyarrow_predicate = None" in log
         assert "iceberg_table_filter = None" in log
+
+    @pytest.mark.xfail(
+        reason=(
+            "Known bug in the native reader's skip-batches statistics for "
+            "nested struct fields: StructFieldNotFoundError, unrelated to "
+            "this PR's pushdown (predicate_to_pa correctly declines to push "
+            "this down at all, per the test above). Tracked with a "
+            "confirmed root cause and fix plan at "
+            "https://github.com/dominikandreasseitz/polars/pull/9 - remove "
+            "this xfail once that fix lands."
+        ),
+        raises=pl.exceptions.StructFieldNotFoundError,
+        strict=True,
+    )
+    def test_scan_iceberg_filter_struct_field_unsanitizable_name_collect(
+        self, tmp_path: Path
+    ) -> None:
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(
+                NestedField(1, "id", LongType()),
+                NestedField(
+                    2,
+                    "mydict",
+                    StructType(NestedField(3, "age!", LongType())),
+                    required=False,
+                ),
+            ),
+        )
+        pl.DataFrame(
+            {"id": [1, 2], "mydict": [{"age!": 17}, {"age!": 42}]},
+            schema={"id": pl.Int64, "mydict": pl.Struct({"age!": pl.Int64})},
+        ).write_iceberg(tbl, mode="append")
+
+        res = (
+            pl.scan_iceberg(tbl)
+            .filter(pl.col("mydict").struct.field("age!") == 17)
+            .select("id")
+        )
+        assert res.collect().rows() == [(1,)]
 
     @pytest.mark.parametrize("method", ["is_nan", "is_not_nan"])
     def test_scan_iceberg_nan_decimal_rejected(
