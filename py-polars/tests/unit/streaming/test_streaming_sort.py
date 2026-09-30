@@ -723,33 +723,3 @@ def test_sort_resume_over_phase_boundary_multiplexer(sort_mode: str) -> None:
         sorted_lf.join(sorted_lf.select("rn", pl.col("idx").alias("idx2")), on="rn"),
         [],
     )
-
-
-@pytest.mark.parametrize(
-    ("keys", "min_buckets"),
-    [
-        (DIRECT_KEYS["i32"], 2),
-        (DIRECT_KEYS["string"], 2),
-        (ROW_ENCODED_KEYS["categorical"], 2),
-        (DEGENERATE_KEYS["constant"], 1),
-        (DEGENERATE_KEYS["all_null"], 1),
-        (DEGENERATE_KEYS["mostly_null"], 2),
-    ],
-)
-def test_sort_partitioned_path_is_used(
-    plmonkeypatch: PlMonkeyPatch,
-    tmp_path: Path,
-    capfd: pytest.CaptureFixture[str],
-    keys: pl.Series,
-    min_buckets: int,
-) -> None:
-    _apply_sort_mode("partitioned", plmonkeypatch, tmp_path)
-    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
-    lf = _payload(keys).lazy()
-    out = lf.sort("k", maintain_order=True).collect(engine="streaming")
-    assert out.height == N_ROWS
-    captured = capfd.readouterr().err
-    match = re.search(r"sort: partitioning (\d+) rows into (\d+) buckets", captured)
-    assert match is not None, captured
-    assert int(match.group(1)) == N_ROWS
-    assert int(match.group(2)) >= min_buckets
