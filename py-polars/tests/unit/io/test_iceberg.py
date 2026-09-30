@@ -675,9 +675,6 @@ class TestIcebergExpressions:
         assert expr is None
 
     def test_convert_nested_struct_field_predicate(self) -> None:
-        # PyArrow's nested-field form is a single multi-arg `field()` call,
-        # not chained `.field()` calls; pyiceberg indexes nested fields as a
-        # dot-joined name.
         expr = try_convert_pyarrow_predicate(
             "(pa.compute.field('mydict', 'age') == 17)"
         )
