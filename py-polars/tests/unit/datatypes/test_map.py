@@ -2530,42 +2530,262 @@ def test_map_get_widens_a_coarser_temporal_key(
         ),
     ],
 )
-def test_map_get_rejects_a_key_that_would_be_rounded(
+def test_map_get_key_that_would_be_rounded_is_absent(
     map_dtype: pl.DataType, needle_dtype: pl.DataType, key: Any, needle: Any
 ) -> None:
     # Truncating the key onto the coarser unit would match an entry it does not equal.
     s = map_of(map_dtype, key)
 
-    for method in ("get", "contains_key"):
-        with pytest.raises(InvalidOperationError, match="would be rounded"):
-            getattr(s.map, method)(pl.lit(needle, needle_dtype))
+    for n in (pl.lit(needle, needle_dtype), pl.col("k")):
+        df = pl.DataFrame({"m": s, "k": pl.Series([needle], dtype=needle_dtype)})
+        out = df.select(
+            pl.col("m").map.get(n).alias("v"),
+            pl.col("m").map.contains_key(n).alias("has"),
+        )
+        assert out["v"].to_list() == [None]
+        assert out["has"].to_list() == [False]
 
 
-@pytest.mark.parametrize("needle", ["z", pl.lit("z"), pl.col("k")])
-def test_map_get_rejects_an_unknown_enum_label(needle: Any) -> None:
-    # The needle cast is strict, as it is for `is_in`.
-    dtype = pl.Map(pl.Enum(["a", "b"]), pl.Int64)
-    df = pl.DataFrame(
-        {"m": pl.Series([{"a": 1}], dtype=dtype), "k": ["z"]},
+def test_map_get_shows_the_key_cast_on_the_function() -> None:
+    # Only the key is cast, as the lookup runs; the Map is never rewritten.
+    lf = pl.LazyFrame({"m": map_of(pl.Int8, 7), "k": pl.Series([7], dtype=pl.Int64)})
+    plan = lf.select(pl.col("m").map.get(pl.col("k"))).explain()
+    assert "[key: i8]" in plan
+    assert ".cast(" not in plan
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "needle_dtype", "hit", "miss"),
+    [
+        pytest.param(pl.Int8, pl.Int64, 7, 300, id="int-narrowing"),
+        pytest.param(pl.UInt64, pl.Int8, 7, -1, id="int-sign"),
+        pytest.param(
+            pl.Datetime("ms"),
+            pl.Datetime("us"),
+            datetime(2020, 1, 1, 0, 0, 0, 1000),
+            datetime(2020, 1, 1, 0, 0, 0, 1001),
+            id="datetime-finer",
+        ),
+        pytest.param(
+            pl.Datetime("ns"),
+            pl.Datetime("us"),
+            datetime(2020, 1, 1),
+            datetime(2500, 1, 1),
+            id="datetime-coarser",
+        ),
+    ],
+)
+def test_map_get_casts_the_key_to_the_key_dtype(
+    key_dtype: PolarsDataType,
+    needle_dtype: PolarsDataType,
+    hit: Any,
+    miss: Any,
+) -> None:
+    lf = pl.LazyFrame(
+        {
+            "m": map_of(key_dtype, hit).gather(pl.Series([0, 0, 0, None])),
+            "k": pl.Series([hit, miss, None, miss], dtype=needle_dtype),
+        }
     )
 
-    for method in ("get", "contains_key"):
-        with pytest.raises(
-            InvalidOperationError, match="conversion from `str` to `enum`"
-        ):
-            df.select(getattr(pl.col("m").map, method)(needle))
+    column = lf.select(
+        pl.col("m").map.get(pl.col("k")).alias("v"),
+        pl.col("m").map.contains_key(pl.col("k")).alias("has"),
+    )
+    out = column.collect()
+    assert out["v"].to_list() == [42, None, None, None]
+    # A null Map stays null.
+    assert out["has"].to_list() == [True, False, False, None]
+
+    for value, found in ((hit, True), (miss, False)):
+        literal = lf.select(
+            pl.col("m").map.get(pl.lit(value, needle_dtype)).alias("v"),
+            pl.col("m").map.contains_key(pl.lit(value, needle_dtype)).alias("has"),
+        )
+        out = literal.collect()
+        assert out["v"].to_list() == [42 if found else None] * 3 + [None]
+        assert out["has"].to_list() == [found] * 3 + [None]
 
 
-def test_map_get_rejects_a_key_the_map_cannot_be_searched_by() -> None:
-    # Resolving these would have to rewrite the map's keys, which is not a lookup.
-    string_keys = pl.Series("m", [{"a": 1}], dtype=MAP)
-    with pytest.raises(InvalidOperationError, match="cannot look up a `enum` key"):
-        string_keys.map.get(pl.lit("a", pl.Enum(["a"])))
+def test_map_get_inexact_literal_key_keeps_the_shape() -> None:
+    df = pl.DataFrame(
+        {"g": [1, 1, 2], "m": map_of(pl.Int8, 7).gather(pl.Series([0, None, 0]))}
+    )
+    exprs = [
+        pl.col("m").map.get(pl.lit(300, pl.Int64)).alias("v"),
+        pl.col("m").map.contains_key(pl.lit(300, pl.Int64)).alias("has"),
+    ]
 
-    # Narrowing a float needle would round it onto a key it does not equal.
-    narrow_floats = map_of(pl.Float32, 1.5)
-    with pytest.raises(InvalidOperationError, match="cannot look up a `f64` key"):
-        narrow_floats.map.get(pl.lit(1.5, pl.Float64))
+    out = df.select(exprs)
+    assert out["v"].to_list() == [None, None, None]
+    assert out["has"].to_list() == [False, None, False]
+    assert df.head(0).select(exprs).height == 0
+    out = df.group_by("g", maintain_order=True).agg(exprs)
+    assert out["has"].to_list() == [[False, None], [False]]
+
+
+@pytest.mark.parametrize(
+    ("needle_dtype", "key_dtype", "keys"),
+    [
+        pytest.param(pl.Int64, pl.Int8, list(range(30)), id="int"),
+        pytest.param(
+            pl.Float64, pl.Float32, [i / 4 for i in range(30)], id="float-narrowing"
+        ),
+        pytest.param(
+            pl.Datetime("us"),
+            pl.Datetime("ms"),
+            [datetime(2020, 1, 1) + timedelta(milliseconds=i) for i in range(30)],
+            id="temporal",
+        ),
+    ],
+)
+def test_map_key_cast_evaluates_the_key_once(
+    needle_dtype: PolarsDataType, key_dtype: PolarsDataType, keys: list[Any]
+) -> None:
+    # A shuffled key checked against a second evaluation would be looked up wrongly.
+    df = pl.DataFrame({"m": map_with_keys(key_dtype, keys).gather([0] * 30)})
+    needle = pl.lit(pl.Series(keys, dtype=needle_dtype)).shuffle()
+
+    out = df.select(
+        pl.col("m").map.contains_key(needle).alias("has"),
+        pl.col("m").map.get(needle).is_not_null().alias("found"),
+    )
+    assert out["has"].to_list() == [True] * 30
+    assert out["found"].to_list() == [True] * 30
+
+
+@pytest.mark.parametrize("key_dtype", [pl.Enum(["a", "b"]), pl.Categorical])
+@pytest.mark.parametrize("literal", [False, True])
+def test_map_get_unknown_label_is_absent(
+    key_dtype: PolarsDataType, literal: bool
+) -> None:
+    # No key can hold a label outside the categories, so it is absent, not an error.
+    df = pl.DataFrame(
+        {
+            "m": map_with_keys(key_dtype, ["a", "b"]).gather(pl.Series([0, 0, None])),
+            "k": ["b", "z", "a"],
+        },
+    )
+    needle = pl.lit(pl.Series(["b", "z", "a"])) if literal else pl.col("k")
+
+    out = df.select(
+        pl.col("m").map.get(needle).alias("v"),
+        pl.col("m").map.contains_key(needle).alias("has"),
+    )
+    assert out["v"].to_list() == [1, None, None]
+    assert out["has"].to_list() == [True, False, None]
+    for label, found in (("a", True), ("z", False)):
+        has = df.select(pl.col("m").map.contains_key(label))["m"]
+        assert has.to_list() == [found, found, None]
+
+
+@pytest.mark.parametrize("needle_dtype", [pl.Enum(["a", "b"]), pl.Categorical])
+def test_map_get_categorical_key_in_string_keys(needle_dtype: PolarsDataType) -> None:
+    lf = pl.LazyFrame(
+        {
+            "m": map_with_keys(pl.String, ["z", "a"]),
+            "k": pl.Series(["a"], dtype=needle_dtype),
+        }
+    )
+
+    q = lf.select(pl.col("m").map.get(pl.col("k")))
+    assert q.collect()["m"].to_list() == [1]
+
+
+def test_map_get_narrows_a_wider_float_key() -> None:
+    s = map_of(pl.Float32, 1.5)
+
+    for key_dtype in (pl.Float64, pl.Float16):
+        assert_map_method(
+            s, "get", pl.Series("m", [42], dtype=pl.Int64), pl.lit(1.5, key_dtype)
+        )
+    # `1.1` has no exact `Float32` value, so no key can equal it.
+    assert_map_method(
+        s, "get", pl.Series("m", [None], dtype=pl.Int64), pl.lit(1.1, pl.Float64)
+    )
+    df = pl.DataFrame({"m": s, "k": pl.Series([1.1], dtype=pl.Float64)})
+    q = df.lazy().select(pl.col("m").map.contains_key(pl.col("k")))
+    assert q.collect()["m"].to_list() == [False]
+
+
+@pytest.mark.parametrize(
+    ("needle", "found"),
+    [
+        pytest.param(Decimal("1.50"), True, id="hit"),
+        pytest.param(Decimal("1.55"), False, id="rounded"),
+        # Rounds to `10.0`, whose cast back to `Decimal(3, 2)` overflows.
+        pytest.param(Decimal("9.99"), False, id="reverse-overflow"),
+    ],
+)
+def test_map_get_decimal_key_of_another_scale(needle: Decimal, found: bool) -> None:
+    s = map_with_keys(pl.Decimal(3, 1), [Decimal("1.5"), Decimal("10.0")])
+    df = pl.DataFrame(
+        {
+            "m": s.gather(pl.Series([0, None])),
+            "k": pl.Series([needle] * 2, dtype=pl.Decimal(3, 2)),
+        }
+    )
+
+    for n in (pl.col("k"), pl.lit(needle, pl.Decimal(3, 2))):
+        out = df.select(
+            pl.col("m").map.get(n).alias("v"),
+            pl.col("m").map.contains_key(n).alias("has"),
+        )
+        assert out["v"].to_list() == [0 if found else None, None]
+        assert out["has"].to_list() == [found, None]
+
+
+DEC_KEYS = [Decimal("1.5"), Decimal("15.0")]
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "keys", "needle_dtype", "needle", "value"),
+    [
+        pytest.param(pl.Decimal(3, 1), DEC_KEYS, pl.Int64, 15, 1, id="int-hit"),
+        pytest.param(pl.Decimal(3, 1), DEC_KEYS, pl.Int64, 16, None, id="int-miss"),
+        # Needs more digits than `Decimal(3, 1)` holds.
+        pytest.param(
+            pl.Decimal(3, 1), DEC_KEYS, pl.Int64, 100, None, id="int-overflow"
+        ),
+        pytest.param(
+            pl.Int8, [1, 2], pl.Decimal(5, 2), Decimal("2.00"), 1, id="decimal-hit"
+        ),
+        # Truncating onto the integer key `2` would be a false match.
+        pytest.param(
+            pl.Int8,
+            [1, 2],
+            pl.Decimal(5, 2),
+            Decimal("2.50"),
+            None,
+            id="decimal-fractional",
+        ),
+        pytest.param(
+            pl.Int8,
+            [1, 2],
+            pl.Decimal(5, 2),
+            Decimal("300.00"),
+            None,
+            id="decimal-out-of-range",
+        ),
+    ],
+)
+def test_map_get_between_integer_and_decimal_keys(
+    key_dtype: PolarsDataType,
+    keys: list[Any],
+    needle_dtype: PolarsDataType,
+    needle: Any,
+    value: int | None,
+) -> None:
+    s = map_with_keys(key_dtype, keys)
+    df = pl.DataFrame({"m": s, "k": pl.Series([needle], dtype=needle_dtype)})
+
+    for n in (pl.col("k"), pl.lit(needle, needle_dtype)):
+        out = df.select(
+            pl.col("m").map.get(n).alias("v"),
+            pl.col("m").map.contains_key(n).alias("has"),
+        )
+        assert out["v"].to_list() == [value]
+        assert out["has"].to_list() == [value is not None]
 
 
 def test_map_get_narrows_a_wider_integer_key() -> None:
@@ -2825,18 +3045,76 @@ def test_map_get_overflowing_temporal_key_is_missing_not_an_error() -> None:
 
 @pytest.mark.parametrize(
     ("key_dtype", "needle_zone"),
+    [(pl.Datetime("us"), "UTC"), (pl.Datetime("us", "UTC"), None)],
+)
+@pytest.mark.parametrize("method", ["get", "contains_key"])
+def test_map_get_rejects_a_naive_key_in_aware_keys(
+    key_dtype: PolarsDataType, needle_zone: str | None, method: str
+) -> None:
+    s = map_of(key_dtype, datetime(2020, 1, 1))
+    needle = pl.lit(datetime(2020, 1, 1))
+    if needle_zone is not None:
+        needle = needle.dt.replace_time_zone(needle_zone)
+
+    with pytest.raises(InvalidOperationError, match="time-zone-aware"):
+        getattr(s.map, method)(needle)
+
+
+@pytest.mark.parametrize("unit", ["us", "ms"])
+def test_map_get_aware_key_in_another_time_zone_compares_instants(unit: str) -> None:
+    s = map_of(pl.Datetime("us", "UTC"), datetime(2020, 1, 1))
+    midnight = pl.lit(datetime(2020, 1, 1)).dt.cast_time_unit(unit)  # type: ignore[arg-type]
+
+    # The same instant, shown in another zone.
+    same = midnight.dt.replace_time_zone("UTC").dt.convert_time_zone("America/New_York")
+    # Midnight in New York is a different instant from midnight UTC.
+    other = midnight.dt.replace_time_zone("America/New_York")
+    for needle, found in ((same, True), (other, False)):
+        assert_map_method(s, "contains_key", pl.Series("m", [found]), needle)
+        df = pl.DataFrame({"m": s}).with_columns(k=needle)
+        has = df.select(pl.col("m").map.contains_key(pl.col("k")))["m"]
+        assert has.to_list() == [found]
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "key", "needle_dtype", "hit", "miss"),
     [
-        pytest.param(pl.Datetime("us"), "UTC", id="naive-keys"),
-        pytest.param(pl.Datetime("us", "UTC"), "America/New_York", id="aware-keys"),
+        pytest.param(
+            pl.Struct({"a": pl.Null}),
+            {"a": None},
+            pl.Struct({"a": pl.Int64}),
+            {"a": None},
+            {"a": 1},
+            id="struct",
+        ),
+        pytest.param(
+            pl.List(pl.Null), [None], pl.List(pl.Int64), [None], [1], id="list"
+        ),
+        pytest.param(pl.List(pl.Null), [], pl.List(pl.Int64), [], [1], id="empty-list"),
+        pytest.param(
+            pl.Array(pl.Null, 1), [None], pl.Array(pl.Int64, 1), [None], [1], id="array"
+        ),
     ],
 )
-def test_map_get_rejects_a_key_in_another_time_zone(
-    key_dtype: PolarsDataType, needle_zone: str
+def test_map_lookup_in_null_only_nested_keys(
+    key_dtype: PolarsDataType,
+    key: Any,
+    needle_dtype: PolarsDataType,
+    hit: Any,
+    miss: Any,
 ) -> None:
-    # The kernel reports this as an opaque comparison failure. Catch it while resolving.
-    s = map_of(key_dtype, datetime(2020, 1, 1))
-    needle = pl.lit(datetime(2020, 1, 1)).dt.replace_time_zone(needle_zone)
-
-    for method in ("get", "contains_key"):
-        with pytest.raises(InvalidOperationError, match="time zones differ"):
-            getattr(s.map, method)(needle)
+    # A key whose leaves are all null compares with the needle as `list.contains` does.
+    for needle, found in ((hit, True), (miss, False)):
+        df = pl.DataFrame(
+            {
+                "m": map_with_keys(key_dtype, [key]),
+                "k": pl.Series([needle], dtype=needle_dtype),
+            }
+        )
+        for n in (pl.lit(needle, needle_dtype), pl.col("k")):
+            out = df.select(
+                pl.col("m").map.contains_key(n).alias("has"),
+                pl.col("m").map.get(n).alias("v"),
+                pl.col("m").map.keys().list.contains(n).alias("keys"),
+            )
+            assert out.row(0) == (found, 0 if found else None, found)

@@ -110,23 +110,32 @@ impl RuntimeFilters {
         key_selectors: &[StreamExpr],
         state: &ExecutionState,
     ) -> PolarsResult<()> {
-        let new_builders = || self.new_builders();
-        let builders = RAYON.install(|| {
-            morsels
-                .par_iter()
-                .try_fold(new_builders, |mut builders, morsel| {
-                    let df = morsel.df_blocking();
-                    let keys = ASYNC.block_on(select_key_columns(&df, key_selectors, state))?;
-                    self.extend(&keys, &mut builders)?;
-                    PolarsResult::Ok(builders)
-                })
-                .try_reduce(new_builders, |mut a, b| {
-                    for (a, b) in a.iter_mut().zip(b) {
-                        a.merge(b);
-                    }
-                    Ok(a)
-                })
-        })?;
+        // One builder per thread, as every builder past `BUFFERED_ROWS_BUDGET`
+        // allocates a whole bloom filter.
+        let chunk_len = morsels.len().div_ceil(RAYON.current_num_threads()).max(1);
+        let builders = RAYON
+            .install(|| {
+                morsels
+                    .par_chunks(chunk_len)
+                    .map(|chunk| {
+                        let mut builders = self.new_builders();
+                        for morsel in chunk {
+                            let df = morsel.df_blocking();
+                            let keys =
+                                ASYNC.block_on(select_key_columns(&df, key_selectors, state))?;
+                            self.extend(&keys, &mut builders)?;
+                        }
+                        PolarsResult::Ok(builders)
+                    })
+                    .try_reduce_with(|mut a, b| {
+                        for (a, b) in a.iter_mut().zip(b) {
+                            a.merge(b);
+                        }
+                        Ok(a)
+                    })
+            })
+            .transpose()?
+            .unwrap_or_else(|| self.new_builders());
         self.publish(builders);
         Ok(())
     }
