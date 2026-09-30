@@ -1599,7 +1599,7 @@ def test_scan_sink_metrics_multiple_phases(
     (
         pl.scan_parquet(path)
         .join(pl.scan_parquet(path), on="a")
-        .sink_parquet(tmp_path / "b", row_group_size=1)
+        .sink_parquet(tmp_path / "b", row_group_size=1, engine="streaming")
     )
     capture = capfd.readouterr().err
 
