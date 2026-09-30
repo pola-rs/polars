@@ -38,6 +38,27 @@ def test_clip_int(clip_exprs: list[pl.Expr]) -> None:
     assert_frame_equal(result, expected)
 
 
+def test_clip_broadcasts_single_value_to_bounds() -> None:
+    s = pl.Series([5])
+    lower = pl.Series([1, 2, 3, 4])
+    upper = pl.Series([10, 11, 12, 13])
+
+    assert_series_equal(s.clip(upper_bound=lower), lower)
+    assert_series_equal(s.clip(lower_bound=upper), upper)
+    assert_series_equal(
+        s.clip(lower_bound=lower, upper_bound=upper),
+        pl.Series([5, 5, 5, 5]),
+    )
+
+    lf = pl.LazyFrame({"a": [1.0, 2.0, None, 3.0]})
+    query = lf.select(
+        x=pl.lit(5.0).clip(pl.col("a") + 3, pl.col("a") + 10),
+    )
+    expected = pl.DataFrame({"x": [5.0, 5.0, 5.0, 6.0]})
+    assert_frame_equal(query.collect(engine="in-memory"), expected)
+    assert_frame_equal(query.collect(engine="streaming"), expected)
+
+
 def test_clip_float(clip_exprs: list[pl.Expr]) -> None:
     lf = pl.LazyFrame(
         {

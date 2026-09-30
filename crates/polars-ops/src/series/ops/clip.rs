@@ -50,6 +50,7 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
 
     let original_type = s.dtype();
     let (min, max) = (min.strict_cast(s.dtype())?, max.strict_cast(s.dtype())?);
+    let s = s.broadcast_to(n)?;
 
     let (s, min, max) = (
         s.to_physical_repr(),
@@ -87,6 +88,8 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
         max.len()
     );
 
+    let n = if s.len() == 1 { max.len() } else { s.len() };
+    let s = s.broadcast_to(n)?;
     let original_type = s.dtype();
     let max = max.strict_cast(s.dtype())?;
 
@@ -121,6 +124,8 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
         min.len()
     );
 
+    let n = if s.len() == 1 { min.len() } else { s.len() };
+    let s = s.broadcast_to(n)?;
     let original_type = s.dtype();
     let min = min.strict_cast(s.dtype())?;
 
@@ -235,4 +240,31 @@ where
             (None, _, _) => None,
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clip_broadcasts_single_value_to_bounds() -> PolarsResult<()> {
+        let input = Series::new("input".into(), [5]);
+        let lower = Series::new("lower".into(), [1, 2, 3, 4]);
+        let upper = Series::new("upper".into(), [10, 11, 12, 13]);
+
+        assert_eq!(
+            clip_max(&input, &lower)?,
+            Series::new("input".into(), [1, 2, 3, 4]),
+        );
+        assert_eq!(
+            clip_min(&input, &upper)?,
+            Series::new("input".into(), [10, 11, 12, 13]),
+        );
+        assert_eq!(
+            clip(&input, &lower, &upper)?,
+            Series::new("input".into(), [5, 5, 5, 5]),
+        );
+
+        Ok(())
+    }
 }
