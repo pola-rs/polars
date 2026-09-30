@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict, UserDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
@@ -1187,6 +1187,10 @@ def test_from_dicts_missing_columns() -> None:
     data = [{"a": 1}, {"b": 2}]
     result = pl.from_dicts(data)
     expected = pl.DataFrame({"a": [1, None], "b": [None, 2]})
+    assert_frame_equal(result, expected)
+
+    # ...and from some of the (non-dict) mappings
+    result = pl.from_dicts([UserDict(d) for d in data])
     assert_frame_equal(result, expected)
 
     # partial schema with some columns missing; only load the declared keys

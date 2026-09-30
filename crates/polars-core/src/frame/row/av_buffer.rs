@@ -154,7 +154,7 @@ impl<'a> AnyValueBuffer<'a> {
         Some(())
     }
 
-    pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
+    pub fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
         self.add(val.clone()).ok_or_else(|| {
             polars_err!(
                 ComputeError: "could not append value: {} of type: {} to the builder; make sure that all rows \

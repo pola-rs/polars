@@ -713,6 +713,7 @@ class PyDataFrame:
         schema_overrides: Any | None,
         strict: bool,
         infer_schema_length: int | None,
+        index_name: str | None = None,
     ) -> PyDataFrame: ...
     @staticmethod
     def from_arrow_record_batches(

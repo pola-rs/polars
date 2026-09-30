@@ -16,6 +16,8 @@ from polars._dependencies import pyarrow as pa
 from polars._utils.construction.dataframe import (
     arrow_to_pydf,
     dict_to_pydf,
+    indexed_dict_to_pydf,
+    indexed_dicts_to_pydf,
     numpy_to_pydf,
     pandas_to_pydf,
     sequence_to_pydf,
@@ -53,7 +55,7 @@ if TYPE_CHECKING:
 
 def from_dict(
     data: Mapping[
-        str, Sequence[object] | Mapping[str, Sequence[object]] | Series | object
+        Any, Sequence[object] | Mapping[str, Sequence[object]] | Series | None
     ],
     schema: SchemaDefinition | None = None,
     *,
@@ -86,9 +88,9 @@ def from_dict(
         any dtypes inferred from the columns param will be overridden.
     indexed : {bool, str}, default False
         If True (or a string name), the `data` dictionary key is expected to represent
-        an index column, with values being dictionary records associated with that key.
-        If a string is passed then that will be the index column name, otherwise the
-        default value "index" is used.
+        an index column, with values being dictionaries of sequences associated with
+        that key. If a string is passed then that will be the index column name,
+        otherwise the default value "index" is used.
     strict : bool, default True
         Throw an error if any `data` value does not exactly match the given or inferred
         data type for that column. If set to `False`, values that do not match the data
@@ -138,28 +140,24 @@ def from_dict(
     └───────┴─────┴─────┘
     """
     if indexed:
-        label = indexed if isinstance(indexed, str) else "index"
-        records = [
-            {label: idx, **dict(zip(values.keys(), v, strict=False) if values else {})}  # type: ignore[attr-defined,arg-type]
-            for idx, values in data.items()
-            for v in (zip(*values.values(), strict=False) if values else (None,))  # type: ignore[attr-defined]
-        ]
-        return from_records(
-            records,
-            schema=schema,
-            schema_overrides=schema_overrides,
-            strict=strict,
-            orient="row",
-        )
-    else:
+        index_name = indexed if isinstance(indexed, str) else "index"
         return wrap_df(
-            dict_to_pydf(
+            indexed_dict_to_pydf(
                 data,  # type: ignore[arg-type]
+                index_name,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
             )
         )
+    return wrap_df(
+        dict_to_pydf(
+            data,  # type: ignore[arg-type]
+            schema=schema,
+            schema_overrides=schema_overrides,
+            strict=strict,
+        )
+    )
 
 
 def from_dicts(
@@ -200,7 +198,7 @@ def from_dicts(
         If True (or a string name), the `data` dictionary key is expected to represent
         an index column, with values being a list of dictionary records associated
         with that key. If a string is passed then that will be the index column name,
-        otherwise the default value "idx" is used.
+        otherwise the default value "index" is used.
     strict : bool, default True
         Throw an error if any `data` value does not exactly match the given or inferred
         data type for that column. If set to `False`, values that do not match the data
@@ -294,12 +292,17 @@ def from_dicts(
     └───────┴──────┴──────┴──────┴──────┘
     """
     if indexed:
-        label = indexed if isinstance(indexed, str) else "index"
-        data = [
-            {label: key, **record}
-            for key, records in data.items()  # type: ignore[union-attr]
-            for record in records
-        ]
+        index_name = indexed if isinstance(indexed, str) else "index"
+        return wrap_df(
+            indexed_dicts_to_pydf(
+                data,  # type: ignore[arg-type]
+                index_name,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
+                infer_schema_length=infer_schema_length,
+            )
+        )
 
     if not data and not (schema or schema_overrides):
         msg = "no data, cannot infer schema"

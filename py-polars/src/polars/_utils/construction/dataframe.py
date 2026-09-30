@@ -735,6 +735,74 @@ def _sequence_of_dict_to_pydf(
     return pydf
 
 
+def indexed_dicts_to_pydf(
+    data: Mapping[Any, Iterable[Mapping[str, Any]]],
+    index_name: str,
+    schema: SchemaDefinition | None = None,
+    *,
+    schema_overrides: SchemaDict | None = None,
+    strict: bool = True,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
+) -> PyDataFrame:
+    """Construct a PyDataFrame from a dictionary of record sequences, keyed by index."""
+    column_names, schema_overrides = _unpack_schema(
+        schema, schema_overrides=schema_overrides
+    )
+    dicts_schema = (
+        _include_unknowns(schema_overrides, column_names or list(schema_overrides))
+        if column_names
+        else None
+    )
+    return PyDataFrame.from_dicts(
+        data,
+        dicts_schema,
+        schema_overrides,
+        strict=strict,
+        infer_schema_length=infer_schema_length,
+        index_name=index_name,
+    )
+
+
+def indexed_dict_to_pydf(
+    data: Mapping[Any, Mapping[str, Sequence[Any]] | None],
+    index_name: str,
+    schema: SchemaDefinition | None = None,
+    *,
+    schema_overrides: SchemaDict | None = None,
+    strict: bool = True,
+) -> PyDataFrame:
+    """Construct a PyDataFrame from a dictionary of column dicts, keyed by index."""
+    # a schema selects the columns; otherwise take all of them, index first
+    column_names, _ = _unpack_schema(schema)
+    columns: dict[str, list[Any]] = {
+        name: [] for name in column_names or ([index_name] if data else [])
+    }
+    index = columns.get(index_name)
+    height = 0
+    for key, group in data.items():
+        group = group or {}
+        n_rows = len(next(iter(group.values()))) if group else 1
+        for name, values in group.items():
+            if len(values) != n_rows:
+                msg = f"columns for index {key!r} must all have the same length"
+                raise ShapeError(msg)
+            if (column := columns.get(name)) is None:
+                if column_names:
+                    continue
+                column = columns[name] = []
+            column.extend([None] * (height - len(column)))
+            column.extend(values)
+        if index is not None and index_name not in group:
+            index.extend([key] * n_rows)
+        height += n_rows
+
+    for column in columns.values():
+        column.extend([None] * (height - len(column)))
+    return dict_to_pydf(
+        columns, schema=schema, schema_overrides=schema_overrides, strict=strict
+    )
+
+
 @_sequence_to_pydf_dispatcher.register(str)
 def _sequence_of_elements_to_pydf(
     first_element: Any,  # noqa: ARG001
