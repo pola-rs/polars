@@ -171,6 +171,7 @@ pub fn optimize(
                     ir_arena,
                     expr_arena,
                     polars_config::config().allow_nested_cspe(),
+                    !opt_flags.streaming(),
                 );
             }
         });
