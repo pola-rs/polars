@@ -398,7 +398,7 @@ fn evaluate_partitions(
                     Some(gathered_rows) => gathered_rows
                         .downcast_as_array()
                         .values()
-                        .iter()
+                        .par_iter()
                         // SAFETY: the sort only permutes the gathered rows.
                         .map(|row| unsafe {
                             *input_row_for_gathered_row.get_unchecked(*row as usize)
@@ -428,8 +428,14 @@ fn gather_partition(
     p: usize,
 ) -> GatheredPartition {
     let with_input_rows = params.output != WindowOutput::Partitions;
+    let height = morsels
+        .iter()
+        .map(|morsel| morsel.partition_rows(p).len())
+        .sum::<usize>();
     let mut builder = DataFrameBuilder::new(params.read_schema.clone());
-    let mut input_row_for_gathered_row = Vec::new();
+    builder.reserve(height);
+    let mut input_row_for_gathered_row =
+        Vec::with_capacity(if with_input_rows { height } else { 0 });
     for morsel in morsels {
         let rows = morsel.partition_rows(p);
         if rows.is_empty() {
