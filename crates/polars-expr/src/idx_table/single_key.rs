@@ -104,6 +104,7 @@ where
     /// # Safety
     /// The subset indices must be in-bounds for `arr`, and `validity` must be
     /// `Some` if `HAS_NULLS`.
+    #[allow(clippy::too_many_arguments)]
     unsafe fn probe_impl<
         const MARK_MATCHES: bool,
         const EMIT_UNMATCHED: bool,
