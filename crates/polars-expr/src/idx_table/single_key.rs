@@ -3,84 +3,12 @@
 use std::mem::MaybeUninit;
 
 use polars_arrow::bitmap::Bitmap;
-use polars_utils::mem::prefetch::prefetch_l1;
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalEq, TotalHash};
 
 use super::*;
+use crate::flat_table::{BLOCK_SIZE, FlatTable, slots_for};
 use crate::hash_keys::HashKeys;
-
-/// Tags are read 8 at a time. A table has at least this many slots.
-const GROUP: usize = 8;
-/// Keys are hashed and prefetched in blocks of this many.
-const BLOCK_SIZE: usize = 256;
-/// Smaller tables fit in the cache and aren't prefetched.
-const MIN_PREFETCH_SLOTS: usize = 1 << 15;
-
-/// A byte with 7 bits of the hash, never 0 as that marks an empty slot. It
-/// uses the low bits, as the slot position comes from the high bits.
-#[inline(always)]
-fn tag(hash: u64) -> u8 {
-    hash as u8 | 0x80
-}
-
-/// The first slot to look at for `hash`.
-#[inline(always)]
-fn home_slot(hash: u64, num_slots: usize) -> usize {
-    ((hash as u128 * num_slots as u128) >> 64) as usize
-}
-
-#[inline(always)]
-fn wrap(pos: usize, num_slots: usize) -> usize {
-    if pos >= num_slots {
-        pos - num_slots
-    } else {
-        pos
-    }
-}
-
-/// The slots needed for `num_keys` keys, as the table is at most 3/4 full.
-fn slots_for(num_keys: usize) -> usize {
-    (num_keys * 4).div_ceil(3).max(GROUP)
-}
-
-const LO: u64 = u64::from_ne_bytes([0x01; 8]);
-const HI: u64 = u64::from_ne_bytes([0x80; 8]);
-
-/// The tags of 8 slots in one word, the first slot in the lowest byte.
-#[derive(Clone, Copy)]
-struct Group(u64);
-
-impl Group {
-    /// # Safety
-    /// `pos + GROUP <= tags.len()`.
-    #[inline(always)]
-    unsafe fn load(tags: &[u8], pos: usize) -> Self {
-        Self(u64::from_le(
-            tags.as_ptr().add(pos).cast::<u64>().read_unaligned(),
-        ))
-    }
-
-    /// The top bit of each byte whose slot is empty.
-    #[inline(always)]
-    fn empty(self) -> u64 {
-        !self.0 & HI
-    }
-
-    /// The top bit of each byte whose tag may equal `tag`. Never an empty
-    /// slot, but there can be false matches, which comparing the keys rules out.
-    #[inline(always)]
-    fn matches(self, tag: u8) -> u64 {
-        let x = self.0 ^ (LO * tag as u64);
-        x.wrapping_sub(LO) & !x & HI
-    }
-}
-
-/// The slot of the byte of the lowest top bit in `bits`, for a group at `pos`.
-#[inline(always)]
-fn slot_of(bits: u64, pos: usize, num_slots: usize) -> usize {
-    wrap(pos + (bits.trailing_zeros() / 8) as usize, num_slots)
-}
 
 #[derive(Clone, Copy, Default)]
 struct Slot<K> {
@@ -92,11 +20,7 @@ struct Slot<K> {
 
 /// Open addressing table with linear probing.
 pub struct SingleKeyIdxTable<T: PolarsDataType> {
-    slots: Vec<Slot<T::Physical<'static>>>,
-    /// One tag per slot, then a copy of the first `GROUP` tags so a group can
-    /// be read at any slot. Most lookups of missing keys only read these,
-    /// which is much less memory than the slots.
-    tags: Vec<u8>,
+    table: FlatTable<Slot<T::Physical<'static>>>,
     /// One flag per slot, set once a probe key matched that slot.
     marked: Vec<RelaxedCell<bool>>,
     /// For each build row, the next build row with the same key. Only rows
@@ -115,82 +39,26 @@ where
     K: TotalHash + TotalEq + Copy + Default + Send + Sync + 'static,
 {
     pub fn new() -> Self {
-        let mut out = Self {
-            slots: Vec::new(),
-            tags: Vec::new(),
-            marked: Vec::new(),
+        let table = FlatTable::new();
+        Self {
+            marked: (0..table.num_slots())
+                .map(|_| RelaxedCell::from(false))
+                .collect(),
+            table,
             next: Vec::new(),
             num_keys: 0,
             random_state: PlRandomState::default(),
             idx_offset: 0,
             null_keys: Vec::new(),
             nulls_emitted: RelaxedCell::from(false),
-        };
-        out.resize(GROUP);
-        out
+        }
     }
 
     /// Clears the marks, which is fine as they are only set after building.
     fn resize(&mut self, num_slots: usize) {
-        let old_slots = std::mem::replace(&mut self.slots, vec![Slot::default(); num_slots]);
-        let old_tags = std::mem::replace(&mut self.tags, vec![0; num_slots + GROUP]);
+        self.table
+            .resize(num_slots, |slot| self.random_state.tot_hash_one(slot.key));
         self.marked = (0..num_slots).map(|_| RelaxedCell::from(false)).collect();
-        for (slot, old_tag) in old_slots.into_iter().zip(old_tags) {
-            if old_tag != 0 {
-                let hash = self.random_state.tot_hash_one(slot.key);
-                unsafe {
-                    let Err(pos) = self.find_slot(hash, &slot.key) else {
-                        std::hint::unreachable_unchecked()
-                    };
-                    *self.slots.get_unchecked_mut(pos) = slot;
-                    self.set_tag(pos, tag(hash));
-                }
-            }
-        }
-    }
-
-    /// The slot holding `key`, or else the empty slot where it goes.
-    #[inline(always)]
-    unsafe fn find_slot(&self, hash: u64, key: &K) -> Result<usize, usize> {
-        let num_slots = self.slots.len();
-        let tag = tag(hash);
-        let mut pos = home_slot(hash, num_slots);
-        loop {
-            let group = Group::load(&self.tags, pos);
-            let mut matches = group.matches(tag);
-            while matches != 0 {
-                let i = slot_of(matches, pos, num_slots);
-                if self.slots.get_unchecked(i).key.tot_eq(key) {
-                    return Ok(i);
-                }
-                matches &= matches - 1;
-            }
-            let empty = group.empty();
-            if empty != 0 {
-                return Err(slot_of(empty, pos, num_slots));
-            }
-            pos = wrap(pos + GROUP, num_slots);
-        }
-    }
-
-    #[inline(always)]
-    unsafe fn set_tag(&mut self, pos: usize, tag: u8) {
-        *self.tags.get_unchecked_mut(pos) = tag;
-        if pos < GROUP {
-            *self.tags.get_unchecked_mut(self.slots.len() + pos) = tag;
-        }
-    }
-
-    /// Prefetches the first tags and slot of each hash.
-    #[inline(always)]
-    unsafe fn prefetch(&self, hashes: &[MaybeUninit<u64>]) {
-        if self.slots.len() >= MIN_PREFETCH_SLOTS {
-            for hash in hashes {
-                let pos = home_slot(hash.assume_init(), self.slots.len());
-                prefetch_l1(self.tags.as_ptr().add(pos));
-                prefetch_l1(self.slots.as_ptr().add(pos).cast());
-            }
-        }
     }
 
     /// The build rows of the key in this slot.
@@ -227,7 +95,7 @@ where
                 let key = arr.value_unchecked(*key_idx as usize);
                 hash.write(self.random_state.tot_hash_one(key));
             }
-            self.prefetch(&hashes[..block.len()]);
+            self.table.prefetch(&hashes[..block.len()]);
 
             // Keys with one output row can only reach the limit if the whole
             // block can. Keys with more rows always check the limit.
@@ -249,8 +117,11 @@ where
                 let mut many_rows = false;
                 if is_valid {
                     let key = arr.value_unchecked(key_idx as usize);
-                    if let Ok(pos) = self.find_slot(hash.assume_init(), &key) {
-                        let slot = self.slots.get_unchecked(pos);
+                    if let Ok(pos) = self
+                        .table
+                        .find_slot(hash.assume_init(), |slot| slot.key.tot_eq(&key))
+                    {
+                        let slot = self.table.slot(pos);
                         if slot.first == slot.last {
                             single_row = Some(slot.first);
                         } else {
@@ -331,7 +202,7 @@ where
 
     fn reserve(&mut self, additional: usize) {
         let num_slots = slots_for(self.num_keys + additional);
-        if num_slots > self.slots.len() {
+        if num_slots > self.table.num_slots() {
             self.resize(num_slots);
         }
     }
@@ -371,14 +242,14 @@ where
             // Grows for the whole block at once. Nulls and duplicates don't
             // take a slot, so this can grow a bit early.
             let num_slots = slots_for(self.num_keys + block.len());
-            if num_slots > self.slots.len() {
-                self.resize(num_slots.max(self.slots.len() * 2));
+            if num_slots > self.table.num_slots() {
+                self.resize(num_slots.max(self.table.num_slots() * 2));
             }
             for (hash, subset_idx) in hashes.iter_mut().zip(block) {
                 let key = arr.value_unchecked(*subset_idx as usize);
                 hash.write(self.random_state.tot_hash_one(key));
             }
-            self.prefetch(&hashes[..block.len()]);
+            self.table.prefetch(&hashes[..block.len()]);
 
             for (hash, subset_idx) in hashes.iter().zip(block) {
                 let subset_idx = *subset_idx as usize;
@@ -389,9 +260,9 @@ where
                 } else {
                     let key = arr.value_unchecked(subset_idx);
                     let hash = hash.assume_init();
-                    match self.find_slot(hash, &key) {
+                    match self.table.find_slot(hash, |slot| slot.key.tot_eq(&key)) {
                         Ok(pos) => {
-                            let slot = self.slots.get_unchecked_mut(pos);
+                            let slot = self.table.slot_mut(pos);
                             let last = slot.last as usize;
                             slot.last = idx;
                             if last >= self.next.len() {
@@ -400,12 +271,12 @@ where
                             *self.next.get_unchecked_mut(last) = idx;
                         },
                         Err(pos) => {
-                            *self.slots.get_unchecked_mut(pos) = Slot {
+                            let slot = Slot {
                                 key,
                                 first: idx,
                                 last: idx,
                             };
-                            self.set_tag(pos, tag(hash));
+                            self.table.insert(pos, hash, slot);
                             self.num_keys += 1;
                         },
                     }
@@ -491,11 +362,12 @@ where
         }
 
         // The offset is a slot index, not all slots hold a key.
-        while offset < self.slots.len() {
-            let slot = unsafe { self.slots.get_unchecked(offset) };
-            let tag = unsafe { *self.tags.get_unchecked(offset) };
+        while offset < self.table.num_slots() {
+            let slot = unsafe { self.table.get(offset) };
             let marked = unsafe { self.marked.get_unchecked(offset) };
-            if tag != 0 && !marked.load() {
+            if let Some(slot) = slot
+                && !marked.load()
+            {
                 out.extend(self.rows(slot));
             }
 

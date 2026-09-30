@@ -4,6 +4,7 @@
 )] // Maybe be caused by some feature
 pub mod dispatch;
 mod expressions;
+mod flat_table;
 pub mod groups;
 pub mod hash_keys;
 pub mod hot_groups;
