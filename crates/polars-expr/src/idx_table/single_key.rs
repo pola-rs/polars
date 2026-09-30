@@ -1,20 +1,37 @@
 #![allow(clippy::unnecessary_cast)] // Clippy doesn't recognize that IdxSize and u64 can be different.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use polars_utils::idx_map::total_idx_map::{Entry, TotalIndexMap};
-use polars_utils::idx_vec::UnitVec;
-use polars_utils::itertools::Itertools;
+use hashbrown::hash_table::{Entry, HashTable};
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::Bitmap;
+use polars_core::error::constants::LENGTH_LIMIT_MSG;
 use polars_utils::relaxed_cell::RelaxedCell;
-use polars_utils::total_ord::{TotalEq, TotalHash};
-use polars_utils::unitvec;
+use polars_utils::total_ord::{BuildHasherTotalExt, TotalEq, TotalHash};
 
 use super::*;
 use crate::hash_keys::HashKeys;
 
+/// Keys are hashed and prefetched in blocks of this many.
+const BLOCK_SIZE: usize = 256;
+/// Smaller tables fit in the cache and aren't prefetched.
+const MIN_PREFETCH_BUCKETS: usize = 1 << 15;
+
+/// Set in `Slot::first` once a probe key matched the slot.
+const MARKED: IdxSize = 1 << (IdxSize::BITS - 1);
+
+struct Slot<K> {
+    key: K,
+    /// The first build row with this key, combined with the MARKED flag.
+    first: RelaxedCell<IdxSize>,
+    last: IdxSize,
+}
+
 pub struct SingleKeyIdxTable<T: PolarsDataType> {
-    // These AtomicU64s actually are IdxSizes, but we use the top bit of the
-    // first index in each to mark keys during probing.
-    idx_map: TotalIndexMap<T::Physical<'static>, UnitVec<RelaxedCell<u64>>>,
+    table: HashTable<Slot<T::Physical<'static>>>,
+    /// For each build row that is not the last of its key, the next build row
+    /// with that key. Empty if all keys are unique.
+    next: Vec<IdxSize>,
+    random_state: PlRandomState,
     idx_offset: IdxSize,
     null_keys: Vec<IdxSize>,
     nulls_emitted: RelaxedCell<bool>,
@@ -23,7 +40,9 @@ pub struct SingleKeyIdxTable<T: PolarsDataType> {
 impl<T: PolarsDataType> SingleKeyIdxTable<T> {
     pub fn new() -> Self {
         Self {
-            idx_map: TotalIndexMap::default(),
+            table: HashTable::new(),
+            next: Vec::new(),
+            random_state: PlRandomState::default(),
             idx_offset: 0,
             null_keys: Vec::new(),
             nulls_emitted: RelaxedCell::from(false),
@@ -34,31 +53,44 @@ impl<T: PolarsDataType> SingleKeyIdxTable<T> {
 impl<T, K> SingleKeyIdxTable<T>
 where
     for<'a> T: PolarsDataType<Physical<'a> = K>,
-    K: TotalHash + TotalEq + Send + Sync + 'static,
+    K: TotalHash + TotalEq + Copy + Send + Sync + 'static,
 {
+    #[inline(always)]
+    fn should_prefetch(&self) -> bool {
+        self.table.num_buckets() >= MIN_PREFETCH_BUCKETS
+    }
+
+    /// Calls `f` on each build row of a slot, in insertion order.
+    #[inline(always)]
+    fn for_each_row(&self, first: IdxSize, last: IdxSize, mut f: impl FnMut(IdxSize)) {
+        let mut idx = first & !MARKED;
+        while idx != last {
+            f(idx);
+            idx = unsafe { *self.next.get_unchecked(idx as usize) };
+        }
+        f(last);
+    }
+
     #[inline(always)]
     fn probe_one<const MARK_MATCHES: bool>(
         &self,
         key_idx: IdxSize,
         key: &K,
+        hash: u64,
         table_match: &mut Vec<IdxSize>,
         probe_match: &mut Vec<IdxSize>,
     ) -> bool {
-        if let Some(idxs) = self.idx_map.get(key) {
-            for idx in &idxs[..] {
-                // Create matches, making sure to clear top bit.
-                table_match.push((idx.load() & !(1 << 63)) as IdxSize);
+        if let Some(slot) = self.table.find(hash, |s| s.key.tot_eq(key)) {
+            let first = slot.first.load();
+            self.for_each_row(first, slot.last, |idx| {
+                table_match.push(idx);
                 probe_match.push(key_idx);
-            }
+            });
 
             // Mark if necessary. This action is idempotent so doesn't need
             // atomic fetch_or to do it atomically.
-            if MARK_MATCHES {
-                let first_idx = unsafe { idxs.get_unchecked(0) };
-                let first_idx_val = first_idx.load();
-                if first_idx_val >> 63 == 0 {
-                    first_idx.store(first_idx_val | (1 << 63));
-                }
+            if MARK_MATCHES && first & MARKED == 0 {
+                slot.first.store(first | MARKED);
             }
             true
         } else {
@@ -66,51 +98,82 @@ where
         }
     }
 
-    fn probe_impl<
+    /// Probes the keys in blocks, first hashing (and prefetching) the whole
+    /// block so the CPU can work on the lookups of several keys at once.
+    ///
+    /// # Safety
+    /// The subset indices must be in-bounds for `arr`, and `validity` must be
+    /// `Some` if `HAS_NULLS`.
+    unsafe fn probe_impl<
         const MARK_MATCHES: bool,
         const EMIT_UNMATCHED: bool,
-        const NULL_IS_VALID: bool,
+        const HAS_NULLS: bool,
     >(
         &self,
-        keys: impl Iterator<Item = (IdxSize, Option<K>)>,
+        arr: &T::Array,
+        validity: Option<&Bitmap>,
+        null_is_valid: bool,
+        subset: &[IdxSize],
         table_match: &mut Vec<IdxSize>,
         probe_match: &mut Vec<IdxSize>,
         limit: IdxSize,
     ) -> IdxSize {
+        let prefetch = self.should_prefetch();
+        let mut hashes = [0; BLOCK_SIZE];
         let mut keys_processed = 0;
-        for (key_idx, key) in keys {
-            let found_match = if let Some(key) = key {
-                self.probe_one::<MARK_MATCHES>(key_idx, &key, table_match, probe_match)
-            } else if NULL_IS_VALID {
-                for idx in &self.null_keys {
-                    table_match.push(*idx);
-                    probe_match.push(key_idx);
+        for block in subset.chunks(BLOCK_SIZE) {
+            for (hash, key_idx) in hashes.iter_mut().zip(block) {
+                *hash = self
+                    .random_state
+                    .tot_hash_one(arr.value_unchecked(*key_idx as usize));
+                if prefetch {
+                    self.table.prefetch_get(*hash);
                 }
-                if MARK_MATCHES && !self.nulls_emitted.load() {
-                    self.nulls_emitted.store(true);
-                }
-                !self.null_keys.is_empty()
-            } else {
-                false
-            };
-
-            if EMIT_UNMATCHED && !found_match {
-                table_match.push(IdxSize::MAX);
-                probe_match.push(key_idx);
             }
 
-            keys_processed += 1;
-            if table_match.len() >= limit as usize {
-                break;
+            for (hash, key_idx) in hashes.iter().zip(block) {
+                let key_idx = *key_idx;
+                let is_valid = !HAS_NULLS
+                    || validity
+                        .unwrap_unchecked()
+                        .get_bit_unchecked(key_idx as usize);
+                let found_match = if is_valid {
+                    let key = arr.value_unchecked(key_idx as usize);
+                    self.probe_one::<MARK_MATCHES>(key_idx, &key, *hash, table_match, probe_match)
+                } else if null_is_valid {
+                    for idx in &self.null_keys {
+                        table_match.push(*idx);
+                        probe_match.push(key_idx);
+                    }
+                    if MARK_MATCHES && !self.nulls_emitted.load() {
+                        self.nulls_emitted.store(true);
+                    }
+                    !self.null_keys.is_empty()
+                } else {
+                    false
+                };
+
+                if EMIT_UNMATCHED && !found_match {
+                    table_match.push(IdxSize::MAX);
+                    probe_match.push(key_idx);
+                }
+
+                keys_processed += 1;
+                if table_match.len() >= limit as usize {
+                    return keys_processed;
+                }
             }
         }
         keys_processed
     }
 
+    #[rustfmt::skip]
     #[allow(clippy::too_many_arguments)]
-    fn probe_dispatch(
+    unsafe fn probe_dispatch(
         &self,
-        keys: impl Iterator<Item = (IdxSize, Option<K>)>,
+        arr: &T::Array,
+        validity: Option<&Bitmap>,
+        subset: &[IdxSize],
         table_match: &mut Vec<IdxSize>,
         probe_match: &mut Vec<IdxSize>,
         mark_matches: bool,
@@ -118,31 +181,15 @@ where
         null_is_valid: bool,
         limit: IdxSize,
     ) -> IdxSize {
-        match (mark_matches, emit_unmatched, null_is_valid) {
-            (false, false, false) => {
-                self.probe_impl::<false, false, false>(keys, table_match, probe_match, limit)
-            },
-            (false, false, true) => {
-                self.probe_impl::<false, false, true>(keys, table_match, probe_match, limit)
-            },
-            (false, true, false) => {
-                self.probe_impl::<false, true, false>(keys, table_match, probe_match, limit)
-            },
-            (false, true, true) => {
-                self.probe_impl::<false, true, true>(keys, table_match, probe_match, limit)
-            },
-            (true, false, false) => {
-                self.probe_impl::<true, false, false>(keys, table_match, probe_match, limit)
-            },
-            (true, false, true) => {
-                self.probe_impl::<true, false, true>(keys, table_match, probe_match, limit)
-            },
-            (true, true, false) => {
-                self.probe_impl::<true, true, false>(keys, table_match, probe_match, limit)
-            },
-            (true, true, true) => {
-                self.probe_impl::<true, true, true>(keys, table_match, probe_match, limit)
-            },
+        match (mark_matches, emit_unmatched, validity.is_some()) {
+            (false, false, false) => self.probe_impl::<false, false, false>(arr, validity, null_is_valid, subset, table_match, probe_match, limit),
+            (false, false, true) => self.probe_impl::<false, false, true>(arr, validity, null_is_valid, subset, table_match, probe_match, limit),
+            (false, true, false) => self.probe_impl::<false, true, false>(arr, validity, null_is_valid, subset, table_match, probe_match, limit),
+            (false, true, true) => self.probe_impl::<false, true, true>(arr, validity, null_is_valid, subset, table_match, probe_match, limit),
+            (true, false, false) => self.probe_impl::<true, false, false>(arr, validity, null_is_valid, subset, table_match, probe_match, limit),
+            (true, false, true) => self.probe_impl::<true, false, true>(arr, validity, null_is_valid, subset, table_match, probe_match, limit),
+            (true, true, false) => self.probe_impl::<true, true, false>(arr, validity, null_is_valid, subset, table_match, probe_match, limit),
+            (true, true, true) => self.probe_impl::<true, true, true>(arr, validity, null_is_valid, subset, table_match, probe_match, limit),
         }
     }
 }
@@ -150,18 +197,20 @@ where
 impl<T, K> IdxTable for SingleKeyIdxTable<T>
 where
     for<'a> T: PolarsDataType<Physical<'a> = K>,
-    K: TotalHash + TotalEq + Send + Sync + 'static,
+    K: TotalHash + TotalEq + Copy + Send + Sync + 'static,
 {
     fn new_empty(&self) -> Box<dyn IdxTable> {
         Box::new(Self::new())
     }
 
     fn reserve(&mut self, additional: usize) {
-        self.idx_map.reserve(additional);
+        let random_state = &self.random_state;
+        self.table
+            .reserve(additional, |s| random_state.tot_hash_one(s.key));
     }
 
     fn num_keys(&self) -> IdxSize {
-        self.idx_map.len()
+        self.table.len() as IdxSize
     }
 
     fn insert_keys(&mut self, _hash_keys: &HashKeys, _track_unmatchable: bool) {
@@ -181,27 +230,54 @@ where
         let new_idx_offset = (self.idx_offset as usize)
             .checked_add(subset.len())
             .unwrap();
-        assert!(
-            new_idx_offset < IdxSize::MAX as usize,
-            "overly large index in SingleKeyIdxTable"
-        );
+        // The top bit of each index is reserved for MARKED.
+        assert!(new_idx_offset <= MARKED as usize, "{}", LENGTH_LIMIT_MSG);
 
         let keys: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
         let arr = keys.downcast_as_array();
-        for (i, subset_idx) in subset.iter().enumerate_idx() {
-            let key = unsafe { arr.get_unchecked(*subset_idx as usize) };
-            let idx = self.idx_offset + i;
-            if let Some(key) = key {
-                match self.idx_map.entry(key) {
-                    Entry::Occupied(o) => {
-                        o.into_mut().push(RelaxedCell::from(idx as u64));
-                    },
-                    Entry::Vacant(v) => {
-                        v.insert(unitvec![RelaxedCell::from(idx as u64)]);
-                    },
+        let validity = arr.validity();
+        let random_state = &self.random_state;
+        let hasher = |s: &Slot<K>| random_state.tot_hash_one(s.key);
+        let mut hashes = [0; BLOCK_SIZE];
+        let mut idx = self.idx_offset;
+        for block in subset.chunks(BLOCK_SIZE) {
+            // Reserve up front so the table doesn't move after prefetching.
+            self.table.reserve(block.len(), hasher);
+            let prefetch = self.table.num_buckets() >= MIN_PREFETCH_BUCKETS;
+            for (hash, subset_idx) in hashes.iter_mut().zip(block) {
+                *hash = random_state.tot_hash_one(arr.value_unchecked(*subset_idx as usize));
+                if prefetch {
+                    self.table.prefetch_insert(*hash);
                 }
-            } else if track_unmatchable | hash_keys.null_is_valid {
-                self.null_keys.push(idx);
+            }
+
+            for (hash, subset_idx) in hashes.iter().zip(block) {
+                let subset_idx = *subset_idx as usize;
+                if validity.is_some_and(|v| !v.get_bit_unchecked(subset_idx)) {
+                    if track_unmatchable | hash_keys.null_is_valid {
+                        self.null_keys.push(idx);
+                    }
+                } else {
+                    let key = arr.value_unchecked(subset_idx);
+                    match self.table.entry(*hash, |s| s.key.tot_eq(&key), hasher) {
+                        Entry::Occupied(o) => {
+                            let slot = o.into_mut();
+                            if self.next.len() < new_idx_offset {
+                                self.next.resize(new_idx_offset, 0);
+                            }
+                            *self.next.get_unchecked_mut(slot.last as usize) = idx;
+                            slot.last = idx;
+                        },
+                        Entry::Vacant(v) => {
+                            v.insert(Slot {
+                                key,
+                                first: RelaxedCell::from(idx),
+                                last: idx,
+                            });
+                        },
+                    }
+                }
+                idx += 1;
             }
         }
 
@@ -237,31 +313,18 @@ where
 
         let keys: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
         let arr = keys.downcast_as_array();
-        if keys.has_nulls() {
-            let iter = subset.iter().map(|i| (*i, arr.get_unchecked(*i as usize)));
-            self.probe_dispatch(
-                iter,
-                table_match,
-                probe_match,
-                mark_matches,
-                emit_unmatched,
-                hash_keys.null_is_valid,
-                limit,
-            )
-        } else {
-            let iter = subset
-                .iter()
-                .map(|i| (*i, Some(arr.value_unchecked(*i as usize))));
-            self.probe_dispatch(
-                iter,
-                table_match,
-                probe_match,
-                mark_matches,
-                emit_unmatched,
-                false, // Whether or not nulls are valid doesn't matter.
-                limit,
-            )
-        }
+        let validity = keys.has_nulls().then(|| arr.validity()).flatten();
+        self.probe_dispatch(
+            arr,
+            validity,
+            subset,
+            table_match,
+            probe_match,
+            mark_matches,
+            emit_unmatched,
+            hash_keys.null_is_valid,
+            limit,
+        )
     }
 
     fn unmarked_keys(
@@ -290,12 +353,12 @@ where
             offset -= self.null_keys.len() as IdxSize;
         }
 
-        while let Some((_, idxs)) = self.idx_map.get_index(offset) {
-            let first_idx = unsafe { idxs.get_unchecked(0) };
-            let first_idx_val = first_idx.load();
-            if first_idx_val >> 63 == 0 {
-                for idx in &idxs[..] {
-                    out.push((idx.load() & !(1 << 63)) as IdxSize);
+        // The offset is a bucket index, not all buckets hold a key.
+        while (offset as usize) < self.table.num_buckets() {
+            if let Some(slot) = self.table.get_bucket(offset as usize) {
+                let first = slot.first.load();
+                if first & MARKED == 0 {
+                    self.for_each_row(first, slot.last, |idx| out.push(idx));
                 }
             }
 
