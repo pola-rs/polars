@@ -169,22 +169,35 @@ def test_hive_fallible_predicate_with_file_filter_prunes_files_29494(
     assert result.rows() == [(True, 2026, 1)]
 
 
-@pytest.mark.parametrize("invalid_flag", [False, True])
+@pytest.mark.parametrize(
+    ("partition_month", "keep_partition", "expect_invalid_date"),
+    [
+        pytest.param(12, True, False, id="valid-month"),
+        pytest.param(13, True, True, id="invalid-month-retained"),
+        pytest.param(13, False, False, id="invalid-month-filtered-out"),
+    ],
+)
 @pytest.mark.write_disk
 def test_hive_date_predicate_with_file_filter_invalid_date_29494(
-    tmp_path: Path, invalid_flag: bool
+    tmp_path: Path,
+    partition_month: int,
+    keep_partition: bool,
+    expect_invalid_date: bool,
 ) -> None:
-    for month, flag in ((1, True), (13, invalid_flag)):
+    for month, flag_value in (
+        (1, True),
+        (partition_month, keep_partition),
+    ):
         path = tmp_path / f"year=2026/month={month}/0.parquet"
         path.parent.mkdir(parents=True)
-        pl.DataFrame({"flag": [flag]}).write_parquet(path)
+        pl.DataFrame({"flag": [flag_value]}).write_parquet(path)
 
     lf = (
         pl.scan_parquet(tmp_path / "**/*.parquet", hive_partitioning=True)
         .filter(pl.date("year", "month", 1) <= date(2026, 1, 1))
         .filter(pl.col("flag"))
     )
-    if invalid_flag:
+    if expect_invalid_date:
         with pytest.raises(ComputeError, match="Invalid date components"):
             lf.collect()
     else:
