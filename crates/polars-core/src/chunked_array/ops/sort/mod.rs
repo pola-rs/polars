@@ -954,6 +954,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_arg_sort_multithreaded() {
         // large enough to build the pairs in parallel, in two chunks, with ties
         let mut a = Int64Chunked::from_vec(
