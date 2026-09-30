@@ -5585,12 +5585,26 @@ def test_iceberg_caching_file_io_scope(tmp_path: Path) -> None:
     assert read({"s3.access-key-id": "b"}, manifest) == b"data"
     assert (cache.hits, cache.misses) == (1, 2)
 
-    # Values that are not plain bypass the cache.
+    # Values that are not of a plain type bypass the cache.
+    class Redacted(str):
+        def __repr__(self) -> str:
+            return "'***'"
+
     for opaque in (
         {"auth": {"type": "basic", "basic": {"username": "a", "password": "x"}}},
         {"auth.manager": object()},
+        {"s3.secret-access-key": Redacted("x")},
     ):
         assert read({"s3.access-key-id": "a", **opaque}, manifest) == b"data"
+    assert (cache.hits, cache.misses) == (1, 2)
+
+    # FileIO classes other than PyIceberg's built-in ones bypass the cache.
+    class CustomFileIO(PyArrowFileIO):
+        pass
+
+    custom = CachingFileIO(CustomFileIO({"s3.access-key-id": "a"}), cache)
+    with custom.new_input(format_file_uri_iceberg(manifest)).open() as f:
+        assert f.read() == b"data"
     assert (cache.hits, cache.misses) == (1, 2)
 
     # File names without a UUID are not cached.

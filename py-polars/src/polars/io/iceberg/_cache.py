@@ -43,18 +43,36 @@ _FINGERPRINT_EXCLUDED_KEYS = frozenset(
 )
 
 
+_PLAIN_TYPES = (str, bytes, int, float, bool, type(None))
+
+# Custom FileIO classes can hold identity outside their properties.
+_BUILTIN_FILE_IO_CLASSES = frozenset(
+    ("pyiceberg.io.pyarrow.PyArrowFileIO", "pyiceberg.io.fsspec.FsspecFileIO")
+)
+
+
 def _properties_fingerprint(properties: Mapping[str, Any]) -> str | None:
-    # None when a value is not plain: nested settings and objects, such as REST
-    # catalog auth, can carry identity that their contents do not show.
+    # None when a key or value is not of an exact plain type: nested settings,
+    # objects and subclasses, such as REST catalog auth or secret wrappers, can
+    # carry identity that their repr does not show.
     items = []
     for k, v in properties.items():
+        if type(k) is not str:
+            return None
         if k in _FINGERPRINT_EXCLUDED_KEYS:
             continue
-        if not (v is None or isinstance(v, (str, bytes, int, float, bool))):
+        if type(v) not in _PLAIN_TYPES:
             return None
-        items.append((str(k), repr(v)))
+        items.append((k, repr(v)))
 
     return hashlib.sha256(repr(sorted(items)).encode()).hexdigest()
+
+
+def _file_io_scope(file_io: FileIO) -> str | None:
+    cls = type(file_io)
+    if f"{cls.__module__}.{cls.__qualname__}" not in _BUILTIN_FILE_IO_CLASSES:
+        return None
+    return _properties_fingerprint(file_io.properties)
 
 
 class IcebergMetadataFileCache:
@@ -225,15 +243,16 @@ class CachingFileIO:
 
     Reads of cacheable paths go through the cache. Everything else is
     forwarded to the wrapped FileIO. Cache entries are scoped to the
-    properties of the wrapped FileIO, and nothing is cached when a property
-    value is not plain.
+    properties of the wrapped FileIO. Nothing is cached when a property is not
+    of a plain type, or when the wrapped FileIO is not one of PyIceberg's
+    built-in classes.
     """
 
     def __init__(self, inner: FileIO, cache: IcebergMetadataFileCache) -> None:
         self._inner = inner
         self._cache = cache
         self.properties = inner.properties
-        self._scope = _properties_fingerprint(self.properties)
+        self._scope = _file_io_scope(inner)
 
     def new_input(self, location: str) -> InputFile:
         scope = self._scope
