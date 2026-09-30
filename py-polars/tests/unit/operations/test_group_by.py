@@ -3354,3 +3354,37 @@ def test_group_by_filtered_agg_missing_group_29322() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_group_by_arg_min_max_by_scalar_column_29504() -> None:
+    idx_dtype = pl.get_index_type()
+    df = pl.DataFrame({"k": [1], "v": [1.0], "p": [2]})
+
+    for empty in [df.clear(), df.filter(False)]:
+        result = empty.group_by("k").agg(
+            pl.col("v").max_by("p").alias("max_by"),
+            pl.col("v").min_by("p").alias("min_by"),
+            pl.col("p").arg_max().alias("arg_max"),
+            pl.col("p").arg_min().alias("arg_min"),
+        )
+        expected = pl.DataFrame(
+            schema={
+                "k": pl.Int64,
+                "max_by": pl.Float64,
+                "min_by": pl.Float64,
+                "arg_max": idx_dtype,
+                "arg_min": idx_dtype,
+            }
+        )
+        assert_frame_equal(result, expected)
+
+    df = pl.DataFrame({"k": [1, 2, 2], "v": [1.0, 2.0, 3.0]})
+    result = df.group_by("k", maintain_order=True).agg(
+        pl.col("v").max_by(pl.lit(1)).alias("max_by"),
+        pl.col("v").min_by(pl.lit(None, dtype=pl.Int64)).alias("min_by"),
+    )
+    expected = pl.DataFrame(
+        {"k": [1, 2], "max_by": [1.0, 2.0], "min_by": [None, None]},
+        schema_overrides={"min_by": pl.Float64},
+    )
+    assert_frame_equal(result, expected)

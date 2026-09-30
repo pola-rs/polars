@@ -137,6 +137,8 @@ def test_unique_stable() -> None:
     ("dtype_in", "dtype_out"),
     [
         (pl.Int32, pl.Float64),
+        (pl.Int64, pl.Float64),
+        (pl.UInt8, pl.Float64),
         (pl.Float16, pl.Float16),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
@@ -269,6 +271,8 @@ def test_log(
     ("dtype_in", "dtype_out"),
     [
         (pl.Int32, pl.Float64),
+        (pl.Int64, pl.Float64),
+        (pl.UInt8, pl.Float64),
         (pl.Float16, pl.Float16),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
@@ -298,6 +302,7 @@ def test_exp_log1p(dtype_in: PolarsDataType, dtype_out: PolarsDataType) -> None:
     [
         (pl.Boolean, pl.Float64),
         (pl.Int32, pl.Float64),
+        (pl.Int64, pl.Float64),
         (pl.Decimal(10, 2), pl.Float64),
         (pl.Float16, pl.Float16),
         (pl.Float32, pl.Float32),

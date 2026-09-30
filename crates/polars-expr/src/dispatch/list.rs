@@ -14,7 +14,14 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
     match func {
         Concat => wrap!(concat),
         #[cfg(feature = "is_in")]
-        Contains { nulls_equal } => map_as_slice!(contains, nulls_equal),
+        Contains {
+            nulls_equal,
+            needle_cast,
+        } => wrap!(move |s: &mut [Column]| {
+            super::membership::with_needle_cast(s, 1, 0, needle_cast.as_ref(), |s| {
+                contains(s, nulls_equal)
+            })
+        }),
         #[cfg(feature = "list_drop_nulls")]
         DropNulls => map!(drop_nulls),
         #[cfg(feature = "list_sample")]

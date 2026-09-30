@@ -1206,7 +1206,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
             },
 
-            IR::GroupBy { apply: Some(_), .. } => {
+            // Windows are created after projection pushdown.
+            IR::GroupBy { apply: Some(_), .. } | IR::Window { .. } => {
                 post_project_and_return!()
             },
 

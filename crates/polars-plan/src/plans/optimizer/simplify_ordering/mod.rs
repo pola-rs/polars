@@ -12,7 +12,9 @@ use polars_utils::scratch_vec::ScratchVec;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::dsl::{SinkTypeIR, UnionOptions};
-use crate::plans::simplify_ordering::expr::{ExprOrderSimplifier, ObservableOrders};
+use crate::plans::simplify_ordering::expr::{
+    ExprOrderSimplifier, ObservableOrders, is_order_insensitive_window,
+};
 use crate::plans::simplify_ordering::ir_node_key::IRNodeKey;
 use crate::plans::{IRAggExpr, is_scalar_ae};
 use crate::prelude::{AExpr, IR};
@@ -36,10 +38,13 @@ new_key_type! {
 
 type EdgesMap = SlotMap<EdgeKey, Edge>;
 
+/// `order_insensitive_windows`: windows whose results do not depend on the row order are treated
+/// like elementwise expressions.
 pub fn simplify_and_fetch_orderings(
     roots: &[Node],
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    order_insensitive_windows: bool,
 ) -> (
     PlIndexMap<IRNodeKey, IRNodeEdgeKeys<EdgeKey>>,
     SlotMap<EdgeKey, Edge>,
@@ -58,6 +63,7 @@ pub fn simplify_and_fetch_orderings(
         expr_arena,
         eos_revisit_cache,
         ae_nodes_scratch,
+        order_insensitive_windows,
     };
 
     for (i, node) in ir_nodes_stack.iter().copied().enumerate() {
@@ -101,6 +107,7 @@ struct SimplifyIRNodeOrder<'a> {
     expr_arena: &'a mut Arena<AExpr>,
     eos_revisit_cache: &'a mut PlIndexMap<Node, ObservableOrders>,
     ae_nodes_scratch: &'a mut ScratchVec<Node>,
+    order_insensitive_windows: bool,
 }
 
 impl SimplifyIRNodeOrder<'_> {
@@ -144,7 +151,11 @@ impl SimplifyIRNodeOrder<'_> {
         macro_rules! expr_order_simplifier {
             () => {{
                 self.eos_revisit_cache.clear();
-                ExprOrderSimplifier::new(self.expr_arena, self.eos_revisit_cache)
+                ExprOrderSimplifier::new(
+                    self.expr_arena,
+                    self.eos_revisit_cache,
+                    self.order_insensitive_windows,
+                )
             }};
         }
 
@@ -296,6 +307,37 @@ impl SimplifyIRNodeOrder<'_> {
                 {
                     *out_edge = Edge::Unordered;
                     *maintain_order = false;
+                }
+            },
+
+            // The out edge is never marked unordered here: a reordered result can still expose
+            // the order in which the rows were evaluated.
+            IR::Window {
+                order_by,
+                exprs,
+                maintain_order,
+                ordered_eval,
+                ..
+            } => {
+                let ([in_edge], [out_edge]) = unpack_edges!(2);
+
+                // Without `maintain_order` on the order key, rows with equal keys may be
+                // evaluated in any order.
+                let ties_in_input_order = order_by
+                    .as_ref()
+                    .is_none_or(|(_, options)| options.maintain_order);
+                let observes = ties_in_input_order
+                    && exprs
+                        .iter()
+                        .any(|e| !is_order_insensitive_window(e.node(), self.expr_arena));
+
+                if out_edge.is_unordered() {
+                    *maintain_order = false;
+                }
+                *ordered_eval = observes;
+
+                if !*maintain_order && !observes {
+                    *in_edge = Edge::Unordered;
                 }
             },
 

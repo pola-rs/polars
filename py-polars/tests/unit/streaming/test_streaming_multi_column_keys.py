@@ -69,6 +69,7 @@ def hot_table_size(
     request: pytest.FixtureRequest, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", str(request.param))
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", str(request.param))
 
 
 def assert_engines_equal(lf: pl.LazyFrame, *, check_row_order: bool = False) -> None:

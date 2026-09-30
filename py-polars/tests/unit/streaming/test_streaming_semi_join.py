@@ -211,11 +211,11 @@ def test_sampling_builds_smaller_left(
 def test_sampling_keeps_right_build_for_wide_left(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # The left side has few rows but retains far more bytes than the distinct
-    # keys of the right side, so the right side is built.
+    # Both sides are complete and the left side retains far more bytes than
+    # the distinct keys of the right side, so the right side is built.
     plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000")
     wide = pl.LazyFrame({"k": np.arange(1000), "payload": ["x" * 2000] * 1000})
-    right = pl.LazyFrame({"k": np.arange(500_000) % 100})
+    right = pl.LazyFrame({"k": np.arange(5000) % 100})
     expected = wide.collect().filter(pl.col("k") < 100)
     q = assert_semi(wide, right, expected, on="k")
     assert build_side_chosen(q, plmonkeypatch, capfd) == "right"

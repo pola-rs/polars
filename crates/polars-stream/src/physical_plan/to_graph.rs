@@ -7,7 +7,7 @@ use polars_core::prelude::{InitHashMaps, PlHashSet, PlIndexSet, PlRandomState};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
-use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
+use polars_expr::planner::{ExpressionConversionState, create_physical_expr, create_window_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
@@ -548,6 +548,54 @@ fn to_graph_rec<'a>(
             )
         },
 
+        Window {
+            input,
+            partition_by,
+            order_by,
+            exprs,
+            ordered_eval,
+            maintain_order,
+        } => {
+            let input_schema = input.output_schema(ctx.phys_sm).clone();
+            let output_schema = node.output_schema(0).clone();
+            let window_exprs = exprs
+                .iter()
+                .map(|e| {
+                    let expr = create_window_expr(
+                        e.node(),
+                        ctx.expr_arena,
+                        &input_schema,
+                        &mut ctx.expr_conversion_state,
+                    )?;
+                    PolarsResult::Ok((e.output_name().clone(), expr))
+                })
+                .try_collect_vec()?;
+            let mut read = PlHashSet::new();
+            for e in exprs {
+                read.extend(aexpr_to_leaf_names_iter(e.node(), ctx.expr_arena).cloned());
+            }
+            let read_schema: Schema = input_schema
+                .iter()
+                .filter(|(name, _)| read.contains(*name))
+                .map(|(name, dtype)| (name.clone(), dtype.clone()))
+                .collect();
+            let params = nodes::window::WindowParams::new(
+                partition_by.clone(),
+                order_by.clone(),
+                window_exprs,
+                &input_schema,
+                read_schema,
+                output_schema,
+                *ordered_eval,
+                *maintain_order,
+            );
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::window::WindowNode::new(Arc::new(params), ctx.num_pipelines),
+                [(input_key, input.port)],
+            )
+        },
+
         Map {
             input,
             map,
@@ -583,6 +631,26 @@ fn to_graph_rec<'a>(
                     output_name.clone(),
                 ),
                 input_keys,
+            )
+        },
+
+        RollingFixedWindowFunction {
+            input,
+            func,
+            window,
+            output_name,
+            format_str: _,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = input.output_schema(ctx.phys_sm).clone();
+            ctx.graph.add_node(
+                nodes::rolling_fixed_window::RollingFixedWindowNode::new(
+                    func.clone(),
+                    *window,
+                    output_name.clone(),
+                    input_schema,
+                ),
+                [(input_key, input.port)],
             )
         },
 

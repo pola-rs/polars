@@ -699,6 +699,10 @@ impl PredicatePushDown {
             lp @ (Slice { .. } | Gather { .. } | HConcat { .. }) => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
+            // Windows are created after predicate pushdown.
+            lp @ Window { .. } => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
             // Caches will run predicate push-down in the `cache_states` run.
             Cache { .. } => {
                 if self.caches_pass_allowance == 0 {

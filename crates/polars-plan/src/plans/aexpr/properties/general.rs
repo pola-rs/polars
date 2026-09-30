@@ -189,6 +189,24 @@ pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<
     is_prop(stack, ae, expr_arena, |ae| ae.is_elementwise_top_level())
 }
 
+/// Whether `ae`'s own operation may be applied to its inputs computed elsewhere, e.g. in a
+/// separate projection. `inputs_rev` must be `ae.inputs_rev()`.
+pub fn is_splittable(ae: &AExpr, inputs_rev: &[Node], expr_arena: &Arena<AExpr>) -> bool {
+    match ae {
+        AExpr::Column(_) | AExpr::Element => return false,
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { .. } => return false,
+        _ => {},
+    }
+
+    // `is_elementwise` reports which sub-expressions may be split off. Where that differs
+    // from `inputs_rev` an input has to stay attached to its parent (the literal
+    // right-hand side of `is_in`, say) and `replace_inputs` could no longer put rebuilt
+    // inputs back in the right places.
+    let mut detachable = UnitVec::new();
+    is_elementwise(&mut detachable, ae, expr_arena) && *detachable == *inputs_rev
+}
+
 pub fn all_elementwise<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
 where
     Node: From<&'a N>,

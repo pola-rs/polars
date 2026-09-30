@@ -31,6 +31,13 @@ Window
     window specification is omitted; specifically, `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. This
     differs from the default `RANGE` framing semantics typically used by database engines.
 
+.. note::
+
+    Rows that have equal values for the `ORDER BY` of a window (peers) may be processed in any
+    order. Functions such as `ROW_NUMBER`, `LAG`, `LEAD`, `FIRST_VALUE` and running aggregates
+    can then give tied rows different results between runs. Add columns to the `ORDER BY` to make
+    the order unique.
+
 
 .. _dense_rank:
 

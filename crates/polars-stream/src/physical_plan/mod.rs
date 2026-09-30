@@ -9,7 +9,9 @@ use polars_core::frame::DataFrame;
     feature = "dtype-time"
 ))]
 use polars_core::prelude::DataType;
-use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
+use polars_core::prelude::{
+    IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions, SortOptions,
+};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_defs::join::JoinArgs;
 use polars_error::PolarsResult;
@@ -57,6 +59,7 @@ pub use self::lower_ir::StreamingLowerIRContext;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::rolling_fixed_window::RollingFixedWindow;
 use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
@@ -262,6 +265,18 @@ pub enum PhysNodeKind {
         format_str: Option<String>,
     },
 
+    /// Evaluates window expressions that share one partitioning and appends them to the input
+    /// columns. Without `maintain_order` the rows are output in an unspecified order.
+    Window {
+        input: PhysStream,
+        partition_by: Vec<PlSmallStr>,
+        order_by: Option<(PlSmallStr, SortOptions)>,
+        exprs: Vec<ExprIR>,
+        /// Evaluate the rows of a partition in input order.
+        ordered_eval: bool,
+        maintain_order: bool,
+    },
+
     Map {
         input: PhysStream,
         map: Arc<dyn DataFrameUdf>,
@@ -275,6 +290,16 @@ pub enum PhysNodeKind {
         arg_map: Option<FunctionArgMap>,
         output_name: PlSmallStr,
         format_str: Option<String>,
+    },
+
+    /// Applies `func` to batches of consecutive rows, where the output of each row only depends
+    /// on the rows in its `window`.
+    RollingFixedWindowFunction {
+        input: PhysStream,
+        func: Arc<dyn ColumnsUdf>,
+        window: RollingFixedWindow,
+        output_name: PlSmallStr,
+        format_str: String,
     },
 
     /// Streaming strptime without an explicit format.
@@ -636,8 +661,10 @@ fn _visit_nodes_impl(
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionedSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
+            | PhysNodeKind::Window { input, .. }
             | PhysNodeKind::SortedGroupBy { input, .. }
             | PhysNodeKind::Map { input, .. }
+            | PhysNodeKind::RollingFixedWindowFunction { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
             | PhysNodeKind::GatherEvery { input, .. }

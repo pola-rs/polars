@@ -21,7 +21,9 @@ use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTypeIR};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
+use polars_plan::plans::{
+    AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, window_exprs_match_keys, write_ir_non_recursive,
+};
 use polars_plan::prelude::*;
 use polars_utils::aliases::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
@@ -239,7 +241,43 @@ pub fn lower_ir(
             );
         },
 
-        IR::HStack { input, exprs, .. } => {
+        IR::Window {
+            input,
+            partition_by,
+            order_by,
+            exprs,
+            schema,
+            maintain_order,
+            ordered_eval,
+        } if !is_scalar_window(exprs, order_by.is_some(), expr_arena)
+            // Objects cannot be hashed or gathered by the window node.
+            && !schema.iter_values().any(|dtype| dtype.contains_objects()) =>
+        {
+            // The node partitions and sorts on the keys of the IR, not on those of the exprs.
+            debug_assert!(window_exprs_match_keys(
+                exprs,
+                partition_by,
+                order_by.as_ref(),
+                expr_arena
+            ));
+            let input = *input;
+            let partition_by = partition_by.clone();
+            let order_by = order_by.clone();
+            let exprs = exprs.clone();
+            let ordered_eval = *ordered_eval;
+            let maintain_order = *maintain_order;
+            let phys_input = lower_ir!(input)?;
+            PhysNodeKind::Window {
+                input: phys_input,
+                partition_by,
+                order_by,
+                exprs,
+                ordered_eval,
+                maintain_order,
+            }
+        },
+
+        IR::HStack { input, exprs, .. } | IR::Window { input, exprs, .. } => {
             let exprs = exprs.to_vec();
             let phys_input = lower_ir!(*input)?;
             return build_hstack_stream(phys_input, &exprs, expr_arena, phys_sm, expr_cache, ctx);
@@ -1894,6 +1932,16 @@ pub fn lower_ir(
 
     let node_key = phys_sm.insert(PhysNode::new(output_schema, node_kind));
     Ok(PhysStream::first(node_key))
+}
+
+/// Whether all windows compute one value per partition without ordering, these are lowered to a
+/// group-by and a join.
+fn is_scalar_window(exprs: &[ExprIR], has_order_by: bool, expr_arena: &Arena<AExpr>) -> bool {
+    !has_order_by
+        && exprs.iter().all(|e| match expr_arena.get(e.node()) {
+            AExpr::Over { function, .. } => is_scalar_ae(*function, expr_arena),
+            _ => false,
+        })
 }
 
 #[cfg(feature = "iejoin")]

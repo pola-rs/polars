@@ -50,7 +50,10 @@ pub(super) fn convert_functions(
                 A::Get(v) => IA::Get(v),
                 A::Join(v) => IA::Join(v),
                 #[cfg(feature = "is_in")]
-                A::Contains { nulls_equal } => IA::Contains { nulls_equal },
+                A::Contains { nulls_equal } => IA::Contains {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "array_count")]
                 A::CountMatches => IA::CountMatches,
                 A::Shift => IA::Shift,
@@ -157,8 +160,8 @@ pub(super) fn convert_functions(
                 M::Keys => IM::Keys,
                 M::Values => IM::Values,
                 M::Length => IM::Length,
-                M::ContainsKey => IM::ContainsKey,
-                M::Get => IM::Get,
+                M::ContainsKey => IM::ContainsKey { needle_cast: None },
+                M::Get => IM::Get { needle_cast: None },
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -182,7 +185,10 @@ pub(super) fn convert_functions(
             I::ListExpr(match list_function {
                 L::Concat => IL::Concat,
                 #[cfg(feature = "is_in")]
-                L::Contains { nulls_equal } => IL::Contains { nulls_equal },
+                L::Contains { nulls_equal } => IL::Contains {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "list_drop_nulls")]
                 L::DropNulls => IL::DropNulls,
                 #[cfg(feature = "list_sample")]
@@ -507,7 +513,10 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "is_between")]
                 B::IsBetween { closed } => IB::IsBetween { closed },
                 #[cfg(feature = "is_in")]
-                B::IsIn { nulls_equal } => IB::IsIn { nulls_equal },
+                B::IsIn { nulls_equal } => IB::IsIn {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "is_close")]
                 B::IsClose {
                     abs_tol,

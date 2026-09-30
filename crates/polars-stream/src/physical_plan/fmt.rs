@@ -44,6 +44,7 @@ impl NodeStyle {
             | K::SemiAntiJoin { .. }
             | K::CrossJoin { .. }
             | K::Multiplexer { .. }
+            | K::Window { .. }
             | K::Gather { .. } => Self::MemoryIntensive,
             #[cfg(feature = "iejoin")]
             K::RangeJoin { .. } => Self::MemoryIntensive,
@@ -368,6 +369,34 @@ fn visualize_plan_rec(
             }
             (label, from_ref(input))
         },
+        PhysNodeKind::Window {
+            input,
+            partition_by,
+            order_by,
+            exprs,
+            ordered_eval,
+            maintain_order,
+        } => {
+            let mut label = format!(
+                "window[maintain_order: {maintain_order}, ordered_eval: {ordered_eval}]\\npartition by: "
+            );
+            for (i, name) in partition_by.iter().enumerate() {
+                if i > 0 {
+                    label.push_str(", ");
+                }
+                label.push_str(&escape_graphviz(name));
+            }
+            if let Some((name, _)) = order_by {
+                write!(&mut label, "\\norder by: {}", escape_graphviz(name)).unwrap();
+            }
+            write!(
+                &mut label,
+                "\\n{}",
+                fmt_exprs_to_label(exprs, expr_arena, FormatExprStyle::Select)
+            )
+            .unwrap();
+            (label, from_ref(input))
+        },
         PhysNodeKind::Map {
             input,
             map: _,
@@ -399,6 +428,19 @@ fn visualize_plan_rec(
                 write!(f, "{output_name} = {format_str}(...)").unwrap();
             }
             (label, &inputs[..])
+        },
+        PhysNodeKind::RollingFixedWindowFunction {
+            input,
+            func: _,
+            window,
+            output_name: _,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("rolling-fixed-window-function\\n");
+            let mut f = EscapeLabel(&mut label);
+            write!(f, "{format_str}\nwindow: {window}").unwrap();
+            (label, from_ref(input))
         },
         PhysNodeKind::SortedGroupBy {
             input,

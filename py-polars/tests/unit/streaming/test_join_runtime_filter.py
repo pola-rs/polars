@@ -1599,6 +1599,31 @@ def test_anti_join_publishes_from_the_left_only(
     assert_matches_in_memory(q, out)
 
 
+@pytest.mark.parametrize("how", ["semi", "anti"])
+def test_left_side_forced_by_its_filtered_rows_against_few_right_keys(
+    fact: pl.LazyFrame, tmp_path: Path, how: JoinStrategy
+) -> None:
+    # A left build keeps every left row that passes its filter while a right
+    # build keeps only the distinct right keys, of which `k2` has seven.
+    path = tmp_path / "left.parquet"
+    pl.DataFrame({"k2": [i % 10 for i in range(100)], "e": range(100)}).write_parquet(
+        path
+    )
+    left = pl.scan_parquet(path)
+
+    q = left.filter(pl.col("e") >= 5).join(fact, on="k2", how=how)
+    plan = q.explain(engine="streaming")
+    assert "ForceLeft" not in plan
+    assert "dynamic_predicate" not in plan
+    assert_matches_in_memory(q, q.collect(engine="streaming"))
+
+    q = left.filter(pl.col("e") == 5).join(fact, on="k2", how=how)
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: ForceLeft" in plan
+    assert plan.count("dynamic_predicate") == 1
+    assert_matches_in_memory(q, q.collect(engine="streaming"))
+
+
 def test_preferred_semi_join_publishes_its_right_side(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
