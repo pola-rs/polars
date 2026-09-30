@@ -1,10 +1,18 @@
+use std::cell::Cell;
+
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_compute::decimal::{
     DEC128_MAX_PREC, dec128_add_scaled, dec128_div_scaled, dec128_int_div_scaled,
-    dec128_mul_scaled, dec128_rem_scaled, dec128_rescale, dec128_sub_scaled,
+    dec128_mul_scaled, dec128_rem_scaled, dec128_rescale, dec128_sub_scaled, i64_binary_values,
+    i64_unary_values,
 };
 
 use super::*;
-use crate::prelude::arity::broadcast_try_binary_elementwise;
+use crate::prelude::arity::{
+    apply_binary_kernel_broadcast, broadcast_binary_elementwise_values,
+    broadcast_try_binary_elementwise,
+};
 
 impl DecimalChunked {
     /// Applies `kernel(l, left_scale, r, right_scale, scale)` elementwise, producing a
@@ -42,6 +50,70 @@ impl DecimalChunked {
         Ok(phys.into_decimal_unchecked(DEC128_MAX_PREC, scale))
     }
 
+    /// [`Self::apply_scaled_kernel`] for kernels that only fail on overflow. It first
+    /// computes all slots without per-row validity, and only goes row by row if a slot
+    /// failed, as null slots can hold any value.
+    fn apply_scaled_kernel_values(
+        &self,
+        rhs: &Self,
+        scale: usize,
+        op: &str,
+        kernel: impl Fn(i128, usize, i128, usize, usize) -> Option<i128>,
+    ) -> PolarsResult<Self> {
+        let left_s = self.scale();
+        let right_s = rhs.scale();
+        let mut failed = false;
+        let phys = broadcast_binary_elementwise_values(self.physical(), rhs.physical(), |l, r| {
+            let ret = kernel(l, left_s, r, right_s, scale);
+            failed |= ret.is_none();
+            ret.unwrap_or(0)
+        });
+        if failed {
+            return self.apply_scaled_kernel(rhs, scale, op, kernel);
+        }
+        Ok(phys.into_decimal_unchecked(DEC128_MAX_PREC, scale))
+    }
+
+    /// Applies `op` to all slots as i64s. Returns `None` if a slot, null ones included,
+    /// doesn't fit an i64.
+    fn apply_i64_values(
+        &self,
+        rhs: &Self,
+        scale: usize,
+        op: impl Fn(i64, i64) -> i128,
+    ) -> Option<Self> {
+        let failed = Cell::new(false);
+        let to_arr = |values: Option<Vec<i128>>, validity: Option<Bitmap>| {
+            let Some(values) = values else {
+                // The output is not used if a chunk failed.
+                failed.set(true);
+                return Int128Array::new_empty(ArrowDataType::Int128);
+            };
+            Int128Array::from_vec(values).with_validity(validity)
+        };
+        let phys = apply_binary_kernel_broadcast(
+            self.physical(),
+            rhs.physical(),
+            |l, r| {
+                let values = i64_binary_values(l.values(), r.values(), &op);
+                to_arr(values, combine_validities_and(l.validity(), r.validity()))
+            },
+            |l, r| {
+                let values = i64::try_from(l)
+                    .ok()
+                    .and_then(|l| i64_unary_values(r.values(), |r| op(l, r)));
+                to_arr(values, r.validity().cloned())
+            },
+            |l, r| {
+                let values = i64::try_from(r)
+                    .ok()
+                    .and_then(|r| i64_unary_values(l.values(), |l| op(l, r)));
+                to_arr(values, l.validity().cloned())
+            },
+        );
+        (!failed.get()).then(|| phys.into_decimal_unchecked(DEC128_MAX_PREC, scale))
+    }
+
     /// A single non-null value at `scale`, if it has another scale and fits.
     fn scalar_with_scale(&self, scale: usize) -> Option<Self> {
         if self.len() != 1 || self.scale() == scale {
@@ -65,22 +137,30 @@ impl DecimalChunked {
         &self,
         rhs: &Self,
         op: &str,
+        i64_op: impl Fn(i64, i64) -> i128,
         kernel: impl Fn(i128, usize, i128, usize, usize) -> Option<i128>,
     ) -> PolarsResult<Self> {
         let scale = self.scale().max(rhs.scale());
         let lhs_scalar = self.scalar_with_scale(scale);
         let rhs_scalar = rhs.scalar_with_scale(scale);
-        lhs_scalar.as_ref().unwrap_or(self).apply_scaled_kernel(
-            rhs_scalar.as_ref().unwrap_or(rhs),
-            scale,
-            op,
-            kernel,
-        )
+        let lhs = lhs_scalar.as_ref().unwrap_or(self);
+        let rhs = rhs_scalar.as_ref().unwrap_or(rhs);
+        if lhs.scale() == rhs.scale()
+            && let Some(out) = lhs.apply_i64_values(rhs, scale, i64_op)
+        {
+            return Ok(out);
+        }
+        lhs.apply_scaled_kernel_values(rhs, scale, op, kernel)
     }
 
     /// Multiplies with the result rounded to `scale`.
     pub fn mul_with_scale(&self, rhs: &Self, scale: usize) -> PolarsResult<Self> {
-        self.apply_scaled_kernel(rhs, scale, "multiplication", dec128_mul_scaled)
+        if self.scale() + rhs.scale() == scale
+            && let Some(out) = self.apply_i64_values(rhs, scale, |l, r| l as i128 * r as i128)
+        {
+            return Ok(out);
+        }
+        self.apply_scaled_kernel_values(rhs, scale, "multiplication", dec128_mul_scaled)
     }
 
     /// Divides with the result rounded to `scale`.
@@ -113,7 +193,12 @@ impl Add for &DecimalChunked {
     type Output = PolarsResult<DecimalChunked>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        self.add_sub(rhs, "addition", dec128_add_scaled)
+        self.add_sub(
+            rhs,
+            "addition",
+            |l, r| l as i128 + r as i128,
+            dec128_add_scaled,
+        )
     }
 }
 
@@ -121,7 +206,12 @@ impl Sub for &DecimalChunked {
     type Output = PolarsResult<DecimalChunked>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        self.add_sub(rhs, "subtraction", dec128_sub_scaled)
+        self.add_sub(
+            rhs,
+            "subtraction",
+            |l, r| l as i128 - r as i128,
+            dec128_sub_scaled,
+        )
     }
 }
 
