@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict, UserDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
@@ -1190,6 +1190,10 @@ def test_from_dicts_missing_columns() -> None:
     expected = pl.DataFrame({"a": [1, None], "b": [None, 2]})
     assert_frame_equal(result, expected)
 
+    # ...and from some of the (non-dict) mappings
+    result = pl.from_dicts([UserDict(d) for d in data])
+    assert_frame_equal(result, expected)
+
     # partial schema with some columns missing; only load the declared keys
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["a"])
@@ -1317,6 +1321,24 @@ def test_from_rows_ragged(
             schema=schema,
             infer_schema_length=infer_schema_length,
         )
+
+
+def test_from_rows_owned_values() -> None:
+    # values that own their data (long strings, tz-aware datetimes, binary, structs)
+    dt = datetime(2024, 1, 1, 12, tzinfo=ZoneInfo("Asia/Tokyo"))
+    rows = [
+        ("x" * 30, dt, b"\x00" * 30, {"a": "y" * 30}),
+        (None, None, None, None),
+        ("short", dt, b"b", {"a": "z"}),
+    ]
+    df = pl.DataFrame(rows, schema=["s", "dt", "bin", "st"], orient="row")
+    assert df.schema == {
+        "s": pl.String,
+        "dt": pl.Datetime("us", "Asia/Tokyo"),
+        "bin": pl.Binary,
+        "st": pl.Struct({"a": pl.String}),
+    }
+    assert df.rows() == rows
 
 
 def test_from_dicts_schema() -> None:
