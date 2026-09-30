@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from collections import UserDict
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
 
 
 def test_from_dict_with_column_order() -> None:
@@ -255,3 +260,229 @@ def test_from_dict_cast_logical_type(dtype: pl.DataType, data: Any) -> None:
     )
 
     assert_frame_equal(df_from_dicts, df)
+
+
+def test_from_dicts_mixed_mappings() -> None:
+    data: list[Mapping[str, int]] = [{"a": 1}, UserDict({"a": 2, "b": 3}), {"b": 4}]
+    result = pl.from_dicts(data)
+    expected = pl.DataFrame({"a": [1, 2, None], "b": [None, 3, 4]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("data", "schema", "infer_schema_length", "value"),
+    [
+        ([{"x": 1}], None, 0, "1 of type: i64"),
+        ([{"x": 1}] * 3 + [{"x": "a"}], None, 3, '"a" of type: str'),
+        ([{"x": 1}, {"x": 1000}], {"x": pl.Int8}, 100, "1000 of type: i64"),
+    ],
+)
+def test_from_dicts_rejected_value(
+    data: list[dict[str, Any]],
+    schema: dict[str, pl.DataType] | None,
+    infer_schema_length: int,
+    value: str,
+) -> None:
+    with pytest.raises(ComputeError, match=f"could not append value: {value}"):
+        pl.from_dicts(data, schema=schema, infer_schema_length=infer_schema_length)
+
+
+def test_from_dict_indexed() -> None:
+    data: dict[str, dict[str, list[float]] | None] = {
+        "a": {"x": [1, 8], "y": [2.5, 5.0]},
+        "b": {"w": [0, 0], "y": [2, 3], "z": [8, 7]},
+        "c": None,
+    }
+    expected_data = {
+        "index": ["a", "a", "b", "b", "c"],
+        "x": [1, 8, None, None, None],
+        "y": [2.5, 5.0, 2.0, 3.0, None],
+        "w": [None, None, 0, 0, None],
+        "z": [None, None, 8, 7, None],
+    }
+    expected_frame = pl.DataFrame(expected_data)
+
+    res = pl.from_dict(data, indexed=True)
+    assert_frame_equal(expected_frame, res)
+
+    res = pl.from_dict(data=data, indexed="key")
+    assert_frame_equal(expected_frame.rename({"index": "key"}), res)
+
+
+def test_from_dict_indexed_empty_groups() -> None:
+    data: dict[str, dict[str, list[int]] | None] = {
+        "a": {"x": [1, 2], "y": [4, 5]},
+        "b": None,
+        "c": {},
+        "d": {"x": []},
+    }
+    result = pl.from_dict(data, indexed=True)
+    expected = pl.DataFrame(
+        {
+            "index": ["a", "a", "b", "c"],
+            "x": [1, 2, None, None],
+            "y": [4, 5, None, None],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_from_dict_indexed_unequal_lengths() -> None:
+    with pytest.raises(ShapeError, match="must all have the same length"):
+        pl.from_dict({"a": {"x": [1, 2, 3], "y": [4, 5]}}, indexed=True)
+
+
+def test_from_dict_indexed_late_column() -> None:
+    data: dict[int, dict[str, list[int]]] = {n: {"x": [n]} for n in range(150)}
+    data[150] = {"x": [150], "y": [0]}
+    result = pl.from_dict(data, indexed=True, schema_overrides={"index": pl.Int16})
+    expected = pl.DataFrame(
+        {"index": range(151), "x": range(151), "y": [None] * 150 + [0]},
+        schema_overrides={"index": pl.Int16},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_from_dicts_indexed_iterables_and_collision() -> None:
+    def records(key: str) -> Iterator[dict[str, object]]:
+        yield {"index": f"{key}0", "value": 0}
+        yield {"value": 1}
+
+    result = pl.from_dicts({"a": records("a"), "b": records("b")}, indexed=True)
+    expected = pl.DataFrame({"index": ["a0", "a", "b0", "b"], "value": [0, 1, 0, 1]})
+    assert_frame_equal(result, expected)
+
+
+def test_from_dicts_indexed_rejected_key() -> None:
+    with pytest.raises(ComputeError, match="could not append value: 1000 of type: i64"):
+        pl.from_dicts(
+            {1: [{"x": 1}], 1000: [{"x": 2}]},
+            indexed=True,
+            schema_overrides={"index": pl.Int8},
+        )
+
+
+def test_from_dicts_indexed_null_record_and_index_dtype() -> None:
+    data = {1: [None, {"x": 2}], 3: [{"x": 4}]}
+    result = pl.from_dicts(
+        data,  # type: ignore[arg-type]
+        indexed=True,
+        schema_overrides={"index": pl.Int8},
+    )
+    expected = pl.DataFrame(
+        {"index": [1, 1, 3], "x": [None, 2, 4]}, schema_overrides={"index": pl.Int8}
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_from_dicts_indexed_mapping_and_full_inference() -> None:
+    data: UserDict[str, list[UserDict[str, int | None]]] = UserDict(
+        {"a": [UserDict({"x": None}), UserDict({"x": 2, "y": 3})]}
+    )
+    result = pl.from_dicts(data, indexed=True, infer_schema_length=None)
+    expected = pl.DataFrame({"index": ["a", "a"], "x": [None, 2], "y": [None, 3]})
+    assert_frame_equal(result, expected)
+
+
+def test_from_dicts_indexed_inference_and_partial_schema() -> None:
+    data: dict[str, list[dict[str, int | None]]] = {
+        "a": [{"x": None}, {"x": 2, "y": 3}],
+        "b": [{"x": 4, "z": 5}],
+    }
+    result = pl.from_dicts(data, indexed=True, infer_schema_length=2)
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"index": ["a", "a", "b"], "x": [None, 2, 4], "y": [None, 3, None]}
+        ),
+    )
+
+    result = pl.from_dicts(
+        data,
+        indexed=True,
+        schema={"x": pl.Int32, "missing": pl.String},
+        schema_overrides={"x": pl.Int64},
+    )
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"x": [None, 2, 4], "missing": [None, None, None]},
+            schema={"x": pl.Int64, "missing": pl.String},
+        ),
+    )
+
+
+def test_from_indexed_empty() -> None:
+    no_records: list[dict[str, list[dict[str, Any]]]] = [{}, {"a": []}]
+    for data in no_records:
+        with pytest.raises(pl.exceptions.NoDataError, match="cannot infer schema"):
+            pl.from_dicts(data, indexed=True)
+
+    assert_frame_equal(pl.from_dict({}, indexed=True), pl.DataFrame())
+    assert_frame_equal(
+        pl.from_dict({}, indexed=True, schema=["x"]),
+        pl.DataFrame(schema=["x"]),
+    )
+    assert_frame_equal(
+        pl.from_dict({}, indexed=True, schema={"x": pl.Int32}),
+        pl.DataFrame(schema={"x": pl.Int32}),
+    )
+    assert_frame_equal(
+        pl.from_dicts({"a": []}, indexed=True, schema=["x"]),
+        pl.DataFrame(schema=["x"]),
+    )
+    assert_frame_equal(
+        pl.from_dicts({"a": []}, indexed=True, schema_overrides={"index": pl.Int8}),
+        pl.DataFrame(schema={"index": pl.Int8}),
+    )
+
+
+def test_from_indexed_projected_keys_and_shadowed_index() -> None:
+    result = pl.from_dicts(
+        data={"not-an-integer": [{1: "ignored", "index": 7, "x": 2}]},  # type: ignore[arg-type]
+        indexed=True,
+        schema={"index": pl.Int64, "x": pl.Int64},
+    )
+    assert_frame_equal(result, pl.DataFrame({"index": [7], "x": [2]}))
+
+    result = pl.from_dict(
+        data={"not-an-integer": {1: ["ignored"], "index": [7], "x": [2]}},  # type: ignore[dict-item]
+        indexed=True,
+        schema={"index": pl.Int64, "x": pl.Int64},
+    )
+    assert_frame_equal(result, pl.DataFrame({"index": [7], "x": [2]}))
+
+
+def test_from_dicts_indexed() -> None:
+    df = pl.DataFrame(
+        {
+            "idx": ["a", "a", "b", "b", "c"],
+            "x": [1, 8, None, None, None],
+            "y": [2.5, 5.0, 2.0, 3.0, None],
+            "w": [None, None, 0, 0, None],
+            "z": [None, None, 8, 7, None],
+        }
+    )
+
+    # export records...
+    indexed_records = df.rows_by_key("idx", named=True)
+    assert indexed_records == {
+        "a": [
+            {"x": 1, "y": 2.5, "w": None, "z": None},
+            {"x": 8, "y": 5.0, "w": None, "z": None},
+        ],
+        "b": [
+            {"x": None, "y": 2.0, "w": 0, "z": 8},
+            {"x": None, "y": 3.0, "w": 0, "z": 7},
+        ],
+        "c": [
+            {"x": None, "y": None, "w": None, "z": None},
+        ],
+    }
+
+    # ...and read them back
+    res = pl.from_dicts(indexed_records, indexed=True)
+    assert_frame_equal(res, df.rename({"idx": "index"}))
+
+    res = pl.from_dicts(data=indexed_records, indexed="key")
+    assert_frame_equal(res.rename({"key": "idx"}), df)
