@@ -1088,10 +1088,10 @@ def _pandas_index_column_names(index: pd.Index) -> list[str]:
 def _check_pandas_columns(data: pd.DataFrame, *, include_index: bool) -> None:
     """Check pandas dataframe columns can be converted to polars."""
     stringified_cols: set[str] = {str(col) for col in data.columns}
-        # only the index levels that will actually become columns are checked
+    # only the index levels that will actually become columns are checked
     # (a default index is dropped by the caller, so its names can't clash)
     check_index: bool = include_index and not _pandas_has_default_index(data)
-stringified_index: set[str] = (
+    stringified_index: set[str] = (
         set(_pandas_index_column_names(data.index)) if check_index else set()
     )
 
