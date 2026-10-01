@@ -2167,15 +2167,13 @@ fn spell_conjunct(
     })
 }
 
-// Whether an aggregate keeps its value when every input row is repeated the
-// same number of times.
+// Whether an aggregate keeps its exact value when every input row is repeated
+// the same number of times. A mean does not: summing the repeats rounds
+// differently, and can overflow.
 fn ignores_uniform_repeats(agg: &Expr) -> bool {
     match agg {
         Expr::Agg(
-            AggExpr::Min { input, .. }
-            | AggExpr::Max { input, .. }
-            | AggExpr::Mean(input)
-            | AggExpr::NUnique(input),
+            AggExpr::Min { input, .. } | AggExpr::Max { input, .. } | AggExpr::NUnique(input),
         ) => is_elementwise(input),
         Expr::Alias(inner, _) | Expr::Cast { expr: inner, .. } => ignores_uniform_repeats(inner),
         Expr::BinaryExpr { left, op: _, right } => {

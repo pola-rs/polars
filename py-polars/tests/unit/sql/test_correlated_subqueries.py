@@ -995,7 +995,6 @@ SUPPLY_SUBQUERY = """
     [
         (SUPPLY_SUBQUERY.format(agg="MIN"), "="),
         (SUPPLY_SUBQUERY.format(agg="MAX"), "="),
-        (SUPPLY_SUBQUERY.format(agg="AVG"), "<="),
         (SUPPLY_SUBQUERY.format(agg="2 * MIN"), "<"),
         # the same joins written with other aliases and qualified columns
         (
@@ -1058,5 +1057,24 @@ def test_correlated_aggregate_not_over_outer_join_tree(
         frames=_supply_frames(),
         query=query,
         compare_with="duckdb",
+        engines=ENGINES,
+    )
+
+
+def test_correlated_avg_over_repeated_outer_rows() -> None:
+    # The outer join repeats the row of `i` three times, and the mean of three
+    # 0.1 values is not 0.1, so the average must come from `i` itself.
+    frames = {
+        "o": pl.DataFrame({"ok": [1, 1, 1]}),
+        "i": pl.DataFrame({"ik": [1], "v": [0.1]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT ok, v FROM o, i
+            WHERE ok = ik AND v = (SELECT AVG(v) FROM i WHERE ik = ok)
+        """,
+        compare_with="duckdb",
+        expected={"ok": [1, 1, 1], "v": [0.1, 0.1, 0.1]},
         engines=ENGINES,
     )
