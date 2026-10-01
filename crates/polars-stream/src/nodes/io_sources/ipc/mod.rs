@@ -472,57 +472,59 @@ impl FileReader for IpcFileReader {
             let metrics = task_metrics.as_deref();
             let mut current_row_offset: IdxSize = 0;
 
-            'fetches: while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
-                // The permit covers the bytes of every record batch in the fetch.
-                let permit = permit.map(Arc::new);
+            // Record batches of the current fetch, which share its budget permit.
+            let mut fetched = Vec::new().into_iter();
+            let mut permit = None;
 
-                for mut record_batch_data in prefetch_task.await.unwrap()? {
-                    match record_batch_data.row_offset {
-                        Some(row_offset) => current_row_offset = row_offset,
-                        None => record_batch_data.row_offset = Some(current_row_offset),
+            loop {
+                let Some(mut record_batch_data) = fetched.next() else {
+                    // Release the permit before waiting, the fetcher may need the budget.
+                    drop(permit.take());
+                    let Some((prefetch_task, fetch_permit)) = prefetch_recv.recv().await else {
+                        break;
                     };
+                    fetched = prefetch_task.await.unwrap()?.into_iter();
+                    permit = fetch_permit.map(Arc::new);
+                    continue;
+                };
 
-                    // Fetch every record batch so we can track the total row count.
-                    let rb_num_rows = record_batch_data.num_rows;
-                    let rb_num_rows =
-                        IdxSize::try_from(rb_num_rows).map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
+                match record_batch_data.row_offset {
+                    Some(row_offset) => current_row_offset = row_offset,
+                    None => record_batch_data.row_offset = Some(current_row_offset),
+                };
 
-                    // Only pass to decoder if we need the data.
-                    let record_batch_position = SplitSlicePosition::split_slice_at_file(
-                        current_row_offset as usize,
-                        rb_num_rows as usize,
-                        slice_range.clone(),
-                    );
+                // Fetch every record batch so we can track the total row count.
+                let rb_num_rows = record_batch_data.num_rows;
+                let rb_num_rows =
+                    IdxSize::try_from(rb_num_rows).map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
 
-                    current_row_offset = current_row_offset
-                        .checked_add(rb_num_rows)
-                        .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
+                // Only pass to decoder if we need the data.
+                let record_batch_position = SplitSlicePosition::split_slice_at_file(
+                    current_row_offset as usize,
+                    rb_num_rows as usize,
+                    slice_range.clone(),
+                );
 
-                    match record_batch_position {
-                        SplitSlicePosition::Before => continue,
-                        SplitSlicePosition::Overlapping(rows_offset, rows_len) => {
-                            let record_batch_decoder = record_batch_decoder.clone();
-                            let decode_fut =
-                                executor::spawn(TaskPriority::High, metrics, async move {
-                                    record_batch_decoder
-                                        .record_batch_data_to_df(
-                                            record_batch_data,
-                                            rows_offset,
-                                            rows_len,
-                                        )
-                                        .await
-                                });
-                            if decode_send
-                                .send((decode_fut, permit.clone()))
+                current_row_offset = current_row_offset
+                    .checked_add(rb_num_rows)
+                    .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
+
+                match record_batch_position {
+                    SplitSlicePosition::Before => continue,
+                    SplitSlicePosition::Overlapping(rows_offset, rows_len) => {
+                        let permit = permit.clone();
+                        let record_batch_decoder = record_batch_decoder.clone();
+                        let decode_fut = executor::spawn(TaskPriority::High, metrics, async move {
+                            record_batch_decoder
+                                .record_batch_data_to_df(record_batch_data, rows_offset, rows_len)
                                 .await
-                                .is_err()
-                            {
-                                break 'fetches;
-                            }
-                        },
-                        SplitSlicePosition::After => break 'fetches,
-                    };
-                }
+                        });
+                        if decode_send.send((decode_fut, permit)).await.is_err() {
+                            break;
+                        }
+                    },
+                    SplitSlicePosition::After => break,
+                };
             }
 
             PolarsResult::Ok(())

@@ -80,7 +80,15 @@ impl RecordBatchDataFetcher {
 
         let global_slice = pre_slice.clone().map(Range::<usize>::from);
         let mut rb_fetch_count: u64 = 0;
-        let mut fetches = Vec::new();
+
+        // Fetch consecutive record batches from the cloud together, as the Parquet reader does
+        // per row group, so `get_ranges` can coalesce them into fewer requests.
+        let group_byte_limit = match byte_source.as_ref() {
+            DynByteSource::Buffer(_) | DynByteSource::File(_) => 0,
+            _ => FetchConfig::random_access().chunk_size,
+        };
+        let mut group: Vec<RecordBatchFetch> = Vec::new();
+        let mut group_bytes = 0;
 
         for record_batch_idx in 0..file_metadata.blocks.len() {
             let mut num_rows_this_rb: Option<IdxSize> = None;
@@ -108,27 +116,58 @@ impl RecordBatchDataFetcher {
                 }
             }
 
-            let block = file_metadata.blocks.get(record_batch_idx).unwrap();
-            let fetch_length = if subset_projection_idxs
+            #[derive(Debug, PartialEq)]
+            enum RbFetch {
+                All,
+                Metadata,
+                None,
+            }
+
+            let rb_fetch = if subset_projection_idxs
                 .as_ref()
                 .is_some_and(|x| x.is_empty())
             {
                 // 0-length projection or slice.
                 if num_rows_this_rb.is_some() {
-                    0
+                    RbFetch::None
                 } else {
                     rb_fetch_count += 1 << 32;
-                    block.meta_data_length as usize
+                    RbFetch::Metadata
                 }
             } else {
                 rb_fetch_count += 1;
-                block.meta_data_length as usize + block.body_length as usize
+                RbFetch::All
+            };
+
+            let block = file_metadata.blocks.get(record_batch_idx).unwrap();
+            let fetch_length = match rb_fetch {
+                RbFetch::None => 0,
+                RbFetch::Metadata => block.meta_data_length as usize,
+                RbFetch::All => block.meta_data_length as usize + block.body_length as usize,
             };
             let range = block.offset as usize
                 ..usize::checked_add(block.offset as _, fetch_length)
                     .ok_or_else(|| polars_err!(ComputeError: "IPC block range overflows usize"))?;
 
-            fetches.push(RecordBatchFetch {
+            if !group.is_empty() && group_bytes + range.len() > group_byte_limit {
+                let group = std::mem::take(&mut group);
+                let group_bytes = std::mem::take(&mut group_bytes);
+                if !spawn_fetch(
+                    group,
+                    group_bytes,
+                    &byte_source,
+                    memory_prefetch_func,
+                    &pipeline_budget,
+                    &prefetch_send,
+                )
+                .await
+                {
+                    break;
+                }
+            }
+
+            group_bytes += range.len();
+            group.push(RecordBatchFetch {
                 record_batch_idx,
                 num_rows: num_rows_this_rb,
                 row_offset,
@@ -136,42 +175,16 @@ impl RecordBatchDataFetcher {
             });
         }
 
-        // Fetch consecutive record batches from the cloud together, as the Parquet reader does
-        // per row group, so `get_ranges` can coalesce them into fewer requests.
-        let group_byte_limit = match byte_source.as_ref() {
-            DynByteSource::Buffer(_) | DynByteSource::File(_) => 0,
-            _ => FetchConfig::random_access().chunk_size,
-        };
-
-        let mut fetches = fetches.into_iter().peekable();
-        while let Some(first) = fetches.next() {
-            let mut group_bytes = first.range.len();
-            let mut group = vec![first];
-            while let Some(next) = fetches.peek()
-                && group_bytes + next.range.len() <= group_byte_limit
-            {
-                group_bytes += next.range.len();
-                group.push(fetches.next().unwrap());
-            }
-
-            let fetch_permit = if group_bytes > 0 {
-                Some(pipeline_budget.acquire(group_bytes).await)
-            } else {
-                None
-            };
-
-            let byte_source = byte_source.clone();
-            let fetch_handle = tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
-                fetch_record_batches(&byte_source, memory_prefetch_func, group).await
-            }));
-
-            if prefetch_send
-                .send((fetch_handle, fetch_permit))
-                .await
-                .is_err()
-            {
-                break;
-            }
+        if !group.is_empty() {
+            spawn_fetch(
+                group,
+                group_bytes,
+                &byte_source,
+                memory_prefetch_func,
+                &pipeline_budget,
+                &prefetch_send,
+            )
+            .await;
         }
 
         drop(rb_prefetch_current_all_spawned);
@@ -193,6 +206,33 @@ impl RecordBatchDataFetcher {
     }
 }
 
+/// Spawns the fetch of a group of record batches. Returns `false` if the receiver is gone.
+async fn spawn_fetch(
+    group: Vec<RecordBatchFetch>,
+    group_bytes: usize,
+    byte_source: &Arc<DynByteSource>,
+    memory_prefetch_func: fn(&[u8]) -> (),
+    pipeline_budget: &PipelineBudget,
+    prefetch_send: &Sender<RecordBatchFetchHandle>,
+) -> bool {
+    let fetch_permit = if group_bytes > 0 {
+        Some(pipeline_budget.acquire(group_bytes).await)
+    } else {
+        None
+    };
+
+    let byte_source = byte_source.clone();
+    let fetch_handle = ASYNC.spawn(async move {
+        fetch_record_batches(&byte_source, memory_prefetch_func, group).await
+    });
+    let fetch_handle = tokio_handle_ext::AbortOnDropHandle(fetch_handle);
+
+    prefetch_send
+        .send((fetch_handle, fetch_permit))
+        .await
+        .is_ok()
+}
+
 async fn fetch_record_batches(
     byte_source: &DynByteSource,
     memory_prefetch_func: fn(&[u8]) -> (),
@@ -200,10 +240,12 @@ async fn fetch_record_batches(
 ) -> PolarsResult<Vec<RecordBatchData>> {
     let fetched: Vec<Buffer<u8>> = if let DynByteSource::Buffer(mem_slice) = byte_source {
         let slice = mem_slice.0.as_ref();
+
         group
             .iter()
             .map(|fetch| {
                 let range = fetch.range.clone();
+
                 if !range.is_empty()
                     && !std::ptr::eq(
                         memory_prefetch_func as *const (),
@@ -213,6 +255,7 @@ async fn fetch_record_batches(
                     debug_assert!(range.end <= slice.len());
                     memory_prefetch_func(unsafe { slice.get_unchecked(range.clone()) })
                 }
+
                 mem_slice.0.clone().sliced(range)
             })
             .collect()
@@ -227,6 +270,7 @@ async fn fetch_record_batches(
         } else {
             byte_source.get_ranges(&mut ranges).await?
         };
+
         group
             .iter()
             .map(|fetch| {
