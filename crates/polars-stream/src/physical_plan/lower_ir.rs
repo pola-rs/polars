@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 use polars_arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor::ALLOW_RAYON_THREADS;
+use polars_core::chunked_array::ops::row_encode::supports_row_encoding;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
@@ -47,6 +48,7 @@ use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::sorted_unique::SortedUnique;
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_expr::{
     ExprCache, LowerExprContext, build_hstack_stream_with_ctx, build_select_stream,
@@ -1590,6 +1592,10 @@ pub fn lower_ir(
                 .map(|name| ExprIR::from_column_name(name.clone(), expr_arena))
                 .collect_vec();
 
+            let are_keys_row_encodable = group_by_output_schema
+                .iter_values()
+                .all(supports_row_encoding);
+
             // Sorted unique node, the fastest strategy.
             let are_keys_sorted = ctx
                 .sortedness
@@ -1600,6 +1606,8 @@ pub fn lower_ir(
                     options.keep_strategy,
                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any
                 )
+                && (!SortedUnique::needs_row_encoding(group_by_output_schema.iter_values())
+                    || are_keys_row_encodable)
             {
                 let sorted_uniq_node = phys_sm.insert(PhysNode::new(
                     input_schema.clone(),
@@ -1623,6 +1631,7 @@ pub fn lower_ir(
                     options.keep_strategy,
                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any
                 )
+                && are_keys_row_encodable
             {
                 let distinct_name = unique_column_name();
                 let mut distinct_out_schema = (**input_schema).clone();

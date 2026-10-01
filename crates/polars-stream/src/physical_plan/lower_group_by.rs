@@ -812,6 +812,14 @@ pub fn try_build_streaming_group_by(
         );
     }
 
+    let input_schema = input.output_schema(phys_sm);
+    if keys.iter().any(|k| {
+        k.dtype(input_schema, expr_arena)
+            .is_ok_and(|dtype| dtype.contains_objects())
+    }) {
+        return Ok(None);
+    }
+
     // Not supported yet.
     let all_independent = keys
         .iter()
@@ -1331,13 +1339,15 @@ pub fn build_group_by_stream(
     are_keys_sorted: bool,
 ) -> PolarsResult<PhysStream> {
     'build_streaming_group_by: {
-        // Fallback to in-mem for objects. Otherwise we get an error in CI:
-        //   FAILED tests/unit/dataframe/test_df.py::test_hashing_on_python_objects
-        //   pyo3_runtime.PanicException: Unsupported in row encoding
-        if input
-            .output_schema(phys_sm)
+        // Fallback to in-mem for objects, which cannot be row encoded.
+        let input_schema = input.output_schema(phys_sm);
+        if input_schema
             .iter_values()
             .any(|dtype| dtype.contains_objects())
+            || keys.iter().any(|k| {
+                k.dtype(input_schema, expr_arena)
+                    .is_ok_and(|dtype| dtype.contains_objects())
+            })
         {
             break 'build_streaming_group_by;
         }

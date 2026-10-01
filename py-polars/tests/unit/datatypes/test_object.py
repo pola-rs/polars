@@ -309,3 +309,96 @@ def test_implode_object_raises() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
         df.select(pl.col("obj").implode())
+
+
+def test_join_on_object_key_raises() -> None:
+    lhs = pl.LazyFrame(
+        {
+            "k": [1, 2],
+            "o": pl.Series("o", [object(), object()], dtype=pl.Object),
+            "a": [3, 4],
+        }
+    )
+    rhs = pl.LazyFrame(
+        {
+            "k": [1, 2],
+            "o": pl.Series("o", [object(), object()], dtype=pl.Object),
+            "b": [3, 4],
+        }
+    )
+
+    for how in ("inner", "left", "semi", "anti"):
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError,
+            match="cannot row encode dtype 'object'",
+        ):
+            lhs.join(rhs, on=["k", "o"], how=how).collect()  # type: ignore[arg-type]
+
+
+def test_unique_maintain_order_on_object_key() -> None:
+    a, b = object(), object()
+    lf = pl.LazyFrame(
+        {
+            "k": [1, 1, 2],
+            "o": pl.Series("o", [a, a, b], dtype=pl.Object),
+            "x": [3, 4, 5],
+        }
+    )
+
+    out = lf.unique(subset=["k", "o"], maintain_order=True).collect()
+    assert out["k"].to_list() == [1, 2]
+    assert out["o"].to_list() == [a, b]
+    assert out["x"].to_list() == [3, 5]
+
+
+def test_unique_on_sorted_object_key() -> None:
+    obj = object()
+    lf = pl.LazyFrame({"o": pl.Series("o", [obj], dtype=pl.Object), "k": [1]})
+
+    out = lf.unique(subset=["o", "k"], maintain_order=True).collect()
+    assert out["k"].to_list() == [1]
+    assert out["o"].to_list() == [obj]
+
+
+def test_group_by_on_computed_object_key() -> None:
+    obj = object()
+    lf = pl.LazyFrame({"k": [1, 1, 2], "x": [1, 2, 3]})
+
+    out = (
+        lf.group_by(pl.lit(obj, dtype=pl.Object).alias("o"), "k", maintain_order=True)
+        .agg(pl.col("x").sum())
+        .collect()
+    )
+    assert out["o"].to_list() == [obj, obj]
+    assert out["k"].to_list() == [1, 2]
+    assert out["x"].to_list() == [3, 3]
+
+
+def test_over_object_partition_key() -> None:
+    obj = object()
+    lf = pl.LazyFrame(
+        {"o": pl.Series("o", [obj, obj, 1], dtype=pl.Object), "k": [1, 2, 4]}
+    )
+
+    out = lf.select(pl.col("k").sum().over("o")).collect()
+    assert out["k"].to_list() == [3, 3, 4]
+
+
+def test_is_first_distinct_on_object_raises() -> None:
+    lf = pl.LazyFrame({"o": pl.Series("o", [object(), object()], dtype=pl.Object)})
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="`is_first_distinct` operation not supported for dtype `object`",
+    ):
+        lf.select(pl.col("o").is_first_distinct()).collect()
+
+
+def test_unique_expr_maintain_order_on_object_raises() -> None:
+    lf = pl.LazyFrame({"o": pl.Series("o", [object(), object()], dtype=pl.Object)})
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="`arg_unique` operation not supported for dtype `object`",
+    ):
+        lf.select(pl.col("o").unique(maintain_order=True)).collect()

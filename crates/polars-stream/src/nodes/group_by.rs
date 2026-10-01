@@ -382,7 +382,7 @@ impl GroupBySinkState {
                         }
                         let slice_keys = keys.slice(offset as i64, slice_size);
                         let hash_keys =
-                            HashKeys::from_df(&slice_keys, random_state.clone(), true, false);
+                            HashKeys::from_df(&slice_keys, random_state.clone(), true, false)?;
                         let hot_start = hot_idxs.len();
                         cold_idxs.clear();
                         hot_grouper.insert_keys(

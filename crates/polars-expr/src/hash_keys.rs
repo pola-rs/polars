@@ -121,16 +121,16 @@ impl HashKeys {
         random_state: PlRandomState,
         null_is_valid: bool,
         force_row_encoding: bool,
-    ) -> Self {
+    ) -> PolarsResult<Self> {
         if !force_row_encoding
             && let Some(layout) = KeyRowLayout::new(df.columns().iter().map(|c| c.dtype()))
         {
-            return Self::KeyRows(KeyRowKeys::from_columns(
+            return Ok(Self::KeyRows(KeyRowKeys::from_columns(
                 df.columns(),
                 Arc::new(layout),
                 &random_state,
                 null_is_valid,
-            ));
+            )));
         }
 
         let first_col_variant = hash_keys_variant_for_dtype(df[0].dtype());
@@ -139,7 +139,7 @@ impl HashKeys {
             || first_col_variant == HashKeysVariant::RowEncoded;
         if use_row_encoding {
             let keys = df.columns();
-            let mut keys_encoded = _get_rows_encoded_unordered(keys).unwrap().into_array();
+            let mut keys_encoded = _get_rows_encoded_unordered(keys)?.into_array();
 
             if !null_is_valid {
                 let validities = keys
@@ -158,10 +158,10 @@ impl HashKeys {
                 .values_iter()
                 .map(|k| random_state.hash_one(k))
                 .collect();
-            Self::RowEncoded(RowEncodedKeys {
+            Ok(Self::RowEncoded(RowEncodedKeys {
                 hashes: PrimitiveArray::from_vec(hashes),
                 keys: keys_encoded,
-            })
+            }))
         } else if first_col_variant == HashKeysVariant::Binview {
             let keys = if let Ok(ca_str) = df[0].str() {
                 ca_str.as_binary()
@@ -180,17 +180,17 @@ impl HashKeys {
                     .collect()
             };
 
-            Self::Binview(BinviewKeys {
+            Ok(Self::Binview(BinviewKeys {
                 hashes: PrimitiveArray::from_vec(hashes),
                 keys,
                 null_is_valid,
-            })
+            }))
         } else {
-            Self::Single(SingleKeys {
+            Ok(Self::Single(SingleKeys {
                 random_state,
                 keys: df[0].as_materialized_series().rechunk(),
                 null_is_valid,
-            })
+            }))
         }
     }
 

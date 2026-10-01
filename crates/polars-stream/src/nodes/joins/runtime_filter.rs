@@ -200,7 +200,7 @@ impl KeyFilterSpec {
         Self::bloom_for(self.bloom_keys?)
     }
 
-    fn hash_keys(&self, column: &Column) -> HashKeys {
+    fn hash_keys(&self, column: &Column) -> PolarsResult<HashKeys> {
         HashKeys::from_df(
             &column.clone().into_frame(),
             self.random_state.clone(),
@@ -279,7 +279,7 @@ impl KeyFilterBuilder {
                 BloomKeys::Buffered(hashes) => hashes.reserve(column.len()),
                 BloomKeys::Planned(Some(_)) => {},
             }
-            b.spec.hash_keys(column).for_each_hash(|_, hash| {
+            b.spec.hash_keys(column)?.for_each_hash(|_, hash| {
                 if let Some(hash) = hash {
                     b.keys.insert(hash);
                     b.sketch.insert(hash);
@@ -383,7 +383,7 @@ impl PredicateExpr for KeyFilter {
             return Ok(None);
         }
         let mut mask = BitmapBuilder::with_capacity(column.len());
-        spec.hash_keys(column).for_each_hash(|_, hash| {
+        spec.hash_keys(column)?.for_each_hash(|_, hash| {
             mask.push(hash.is_some_and(|hash| bloom.contains(hash)));
         });
         Ok(Some(
