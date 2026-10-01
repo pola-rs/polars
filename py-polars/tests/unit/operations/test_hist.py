@@ -519,3 +519,30 @@ def test_hist_ulp_edge_22234() -> None:
     # Manual path
     result = s.hist(bins=[-1, 0, 1])
     assert result["count"].to_list() == [1, 3]
+
+
+def test_hist_string_raises_27155() -> None:
+    s = pl.Series("a", ["A", "G", "Y", "Z"])
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="hist"):
+        s.to_frame().select(pl.col.a.hist(bins=pl.Series("bins", ["N"])))
+
+
+def test_hist_string_no_bins_raises_27155() -> None:
+    s = pl.Series("a", ["A", "G", "Y", "Z"])
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="hist"):
+        s.hist()
+
+
+def test_hist_non_numeric_bins_raise_27155() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="conversion from `str` to `f64` failed",
+    ):
+        s.to_frame().select(pl.col.a.hist(bins=pl.Series("bins", ["N"])))
+
+
+def test_hist_integer_bins_strict_cast_regression() -> None:
+    s = pl.Series("a", [1.5, 2.5, 3.5])
+    result = s.hist(bins=[1, 2, 3, 4])
+    assert result["count"].to_list() == [1, 1, 1]
