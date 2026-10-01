@@ -561,12 +561,10 @@ mod tests {
         Column::new("k".into(), range.collect::<Vec<_>>())
     }
 
-    /// A builder of `spec` that saw `ranges`, one batch each.
-    fn built(spec: &KeyFilterSpec, ranges: &[std::ops::Range<i64>]) -> KeyFilterBuilder {
+    /// A builder of `spec` that saw the keys of `range` in one batch.
+    fn built(spec: &KeyFilterSpec, range: std::ops::Range<i64>) -> KeyFilterBuilder {
         let mut builder = KeyFilterBuilder::new(spec);
-        for range in ranges {
-            builder.extend(&keys(range.clone())).unwrap();
-        }
+        builder.extend(&keys(range)).unwrap();
         builder
     }
 
@@ -601,7 +599,7 @@ mod tests {
     fn buffered_bloom_is_sized_from_the_keys_seen() {
         // Planned for 1000 keys, but 1M arrive.
         let spec = spec(1000, BUFFERED_ROWS_BUDGET);
-        let builder = built(&spec, &[0..1_000_000]);
+        let builder = built(&spec, 0..1_000_000);
         assert!(is_buffered(&builder));
 
         let (size, mask) = published(&spec, vec![builder], &keys(0..1_000_000)).unwrap();
@@ -612,7 +610,7 @@ mod tests {
     #[test]
     fn planned_bloom_past_the_budget() {
         let filled = spec(1000, 10_000);
-        let mut builder = built(&filled, &[0..5_000]);
+        let mut builder = built(&filled, 0..5_000);
         assert!(is_buffered(&builder));
         builder.extend(&keys(5_000..10_001)).unwrap();
         assert!(!is_buffered(&builder));
@@ -624,15 +622,15 @@ mod tests {
 
         // Too many keys for the planned size, so it is dropped.
         let overloaded = spec(1000, 10_000);
-        let builder = built(&overloaded, &[0..1_000_000]);
+        let builder = built(&overloaded, 0..1_000_000);
         assert!(published(&overloaded, vec![builder], &keys(0..10)).is_none());
     }
 
     #[test]
     fn budget_and_bloom_are_shared_by_all_builders() {
         let spec = spec(1000, 1000);
-        let mut a = built(&spec, &[0..600]);
-        let b = built(&spec, &[600..1200]);
+        let mut a = built(&spec, 0..600);
+        let b = built(&spec, 600..1200);
         assert!(is_buffered(&a));
         assert!(!is_buffered(&b));
         // `a` goes over on its next batch, however small, into the same bloom
@@ -652,7 +650,7 @@ mod tests {
             let spec = spec_with_hashes(10, 100_000, random_state.clone());
             let builders = splits
                 .iter()
-                .map(|range| built(&spec, std::slice::from_ref(range)))
+                .map(|range| built(&spec, range.clone()))
                 .collect::<Vec<_>>();
             assert!(builders.iter().all(is_buffered));
             published(&spec, builders, &probe).unwrap()
@@ -670,15 +668,16 @@ mod tests {
 
         // All keys in one builder, which goes over the budget halfway.
         let one = spec();
-        let builder = built(&one, &[0..4_000, 4_000..8_000]);
+        let mut builder = built(&one, 0..4_000);
+        builder.extend(&keys(4_000..8_000)).unwrap();
         let expected = published(&one, vec![builder], &probe).unwrap();
         assert!(expected.1[..8_000].iter().all(|m| *m));
 
         // Two builders, one of which stays buffered, in either order.
         for buffered_first in [true, false] {
             let two = spec();
-            let buffered = built(&two, &[0..4_000]);
-            let planned = built(&two, &[4_000..8_000]);
+            let buffered = built(&two, 0..4_000);
+            let planned = built(&two, 4_000..8_000);
             assert!(is_buffered(&buffered));
             assert!(!is_buffered(&planned));
             let builders = if buffered_first {
