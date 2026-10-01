@@ -4161,6 +4161,31 @@ def test_scan_parquet_skip_row_groups_missing_struct_field(
     )
 
 
+def test_scan_parquet_skip_row_groups_struct_cast_keeps_null_count(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # A cast-only Mapped struct (same fields, no insertion) must keep its
+    # real null_count stats rather than fall back to "unknown" - confirmed
+    # via full row-group pruning on a field that's never null.
+    f = io.BytesIO()
+    pl.DataFrame(
+        {"s": [{"a": 1}, {"a": 2}]}, schema={"s": pl.Struct({"a": pl.Int8})}
+    ).write_parquet(f)
+    f.seek(0)
+
+    q = pl.scan_parquet(
+        f,
+        schema={"s": pl.Struct({"a": pl.Int64})},
+        cast_options=pl.ScanCastOptions(integer_cast="upcast"),
+    ).filter(pl.col("s").struct.field("a").is_null())
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    assert "reading 0 / 1 row groups" in capfd.readouterr().err
+    assert_frame_equal(out, pl.DataFrame(schema={"s": pl.Struct({"a": pl.Int64})}))
+
+
 @pytest.mark.may_fail_cloud  # reason: looks at stdout
 @pytest.mark.parametrize(
     ("df", "predicate", "reading"),
