@@ -441,10 +441,8 @@ class TestIcebergScanIO:
     def test_scan_iceberg_filter_null_struct_with_required_child(
         self, tmp_path: Path
     ) -> None:
-        # A null struct with a required child field: PyIceberg's own
-        # BoundIsNull short-circuits on the leaf's `required` flag alone,
-        # ignoring that an optional ancestor can itself be null - decline to
-        # push this down rather than get a silently wrong (empty) result.
+        # Null struct, required child: PyIceberg's BoundIsNull would wrongly
+        # prune this, so we must decline to push it down.
         catalog = SqlCatalog(
             "default",
             uri="sqlite:///:memory:",
