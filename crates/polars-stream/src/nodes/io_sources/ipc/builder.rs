@@ -52,7 +52,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
     fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
         use ReaderCapabilities as RC;
 
-        Ok(RC::ROW_INDEX | RC::PRE_SLICE)
+        Ok(RC::ROW_INDEX | RC::PRE_SLICE | RC::UNORDERED_FILES)
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
