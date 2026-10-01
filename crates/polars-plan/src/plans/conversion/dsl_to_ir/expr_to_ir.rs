@@ -338,7 +338,13 @@ pub(super) fn to_aexpr_impl(
                 },
                 AggExpr::Sum(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::Sum(input), output_name)
+                    (
+                        IRAggExpr::Sum {
+                            input,
+                            null_on_empty: false,
+                        },
+                        output_name,
+                    )
                 },
                 AggExpr::Std(input, ddof) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;

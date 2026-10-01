@@ -81,6 +81,7 @@ def test_sum_min_max_empty_group_global() -> None:
         df,
         query="SELECT SUM(a) AS s, MIN(a) AS mn, MAX(a) AS mx FROM self WHERE a > 100",
         compare_with="duckdb",
+        engines=["in-memory", "streaming"],
         expected={"s": [None], "mn": [None], "mx": [None]},
     )
 
@@ -92,6 +93,7 @@ def test_sum_min_max_all_null_group_global() -> None:
         df,
         query="SELECT SUM(a) AS s, MIN(a) AS mn, MAX(a) AS mx FROM self",
         compare_with="duckdb",
+        engines=["in-memory", "streaming"],
         expected={"s": [None], "mn": [None], "mx": [None]},
     )
 
@@ -113,6 +115,7 @@ def test_sum_min_max_empty_and_null_group_by() -> None:
             ORDER BY g
         """,
         compare_with="duckdb",
+        engines=["in-memory", "streaming"],
         expected={
             "g": ["a", "b"],
             "s": [30, None],
@@ -120,6 +123,14 @@ def test_sum_min_max_empty_and_null_group_by() -> None:
             "mx": [20, None],
         },
     )
+
+
+def test_sum_plan_has_no_count() -> None:
+    lf = pl.LazyFrame({"g": ["a", "b"], "v": [1, None]})
+    plan = lf.sql("SELECT g, SUM(v) AS s, SUM(DISTINCT v) AS d FROM self GROUP BY g")
+    explained = plan.explain()
+    assert explained.count("sum(null_on_empty=true)") == 2
+    assert "count()" not in explained
 
 
 def test_sum_where_empties_group() -> None:

@@ -130,6 +130,7 @@ impl IRAggExpr {
             A::Max { input: _, propagate_nans: l_propagate_nans } => matches!(other, A::Max { input: _, propagate_nans: r_propagate_nans } if l_propagate_nans == r_propagate_nans),
             A::Count { input: _, include_nulls: l_include_nulls } => matches!(other, A::Count { input: _, include_nulls: r_include_nulls } if l_include_nulls == r_include_nulls),
             A::Item { input: _, allow_empty: l_allow_empty } => matches!(other, A::Item { input: _, allow_empty: r_allow_empty } if l_allow_empty == r_allow_empty),
+            A::Sum { input: _, null_on_empty: l_null_on_empty } => matches!(other, A::Sum { input: _, null_on_empty: r_null_on_empty } if l_null_on_empty == r_null_on_empty),
             A::Std(_, l_ddof) => matches!(other, A::Std(_, r_ddof) if l_ddof == r_ddof),
             A::Var(_, l_ddof) => matches!(other, A::Var(_, r_ddof) if l_ddof == r_ddof),
 
@@ -141,8 +142,7 @@ impl IRAggExpr {
             A::Last(_) |
             A::LastNonNull(_) |
             A::Mean(_) |
-            A::Implode { .. } |
-            A::Sum(_)  => true,
+            A::Implode { .. } => true,
         };
 
         is_equal

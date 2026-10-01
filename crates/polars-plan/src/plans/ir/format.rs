@@ -641,11 +641,17 @@ impl Display for ExprIRDisplay<'_> {
                         "{}.n_unique()",
                         self.with_root(expr).parenthesize_if_binexpr()
                     ),
-                    Sum(expr) => write!(
-                        f,
-                        "{}.sum()",
-                        self.with_root(expr).parenthesize_if_binexpr()
-                    ),
+                    Sum {
+                        input,
+                        null_on_empty,
+                    } => {
+                        self.with_root(input).parenthesize_if_binexpr().fmt(f)?;
+                        if *null_on_empty {
+                            write!(f, ".sum(null_on_empty=true)")
+                        } else {
+                            write!(f, ".sum()")
+                        }
+                    },
                     Count {
                         input,
                         include_nulls: false,
