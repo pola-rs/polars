@@ -175,13 +175,10 @@ def _ensure_boolean_expression(result: Any) -> Any:
 def _is_null_pushdown_safe(
     path: list[str], schema: pyiceberg.schema.Schema | None
 ) -> bool:
-    """Check whether every ancestor of `path` (excluding the leaf) is required.
+    """Check that every ancestor of `path` (excluding the leaf) is required.
 
-    PyIceberg's `BoundIsNull`/`BoundNotNull` short-circuit based solely on the
-    leaf field's own `required` flag, ignoring that an optional *ancestor*
-    struct can itself be null - which makes the leaf absent regardless of its
-    own declared requiredness. Only safe to push down when every ancestor
-    can't itself be missing.
+    PyIceberg's `BoundIsNull`/`BoundNotNull` only check the leaf's own
+    `required` flag, so a null optional ancestor can still slip through.
     """
     if schema is None or len(path) <= 1:
         return True
@@ -313,10 +310,7 @@ def _(a: Call, schema: pyiceberg.schema.Schema | None = None) -> Any:
             return pyiceberg.expressions.In(ref, args[0])  # type: ignore[misc, call-arg, arg-type]
         elif f == "is_null":
             if not _is_null_pushdown_safe(path, schema):
-                # A `required` leaf under an `optional` ancestor struct can still
-                # be absent; PyIceberg's own `BoundIsNull` ignores that and would
-                # short-circuit to AlwaysFalse. Decline - the engine re-applies
-                # the full predicate after the scan regardless.
+                # Decline - PyIceberg would wrongly prune this.
                 msg = f"is_null pushdown unsafe for nested field: {ref}"
                 raise ValueError(msg)
             return pyiceberg.expressions.IsNull(ref)  # type: ignore[misc, arg-type]
