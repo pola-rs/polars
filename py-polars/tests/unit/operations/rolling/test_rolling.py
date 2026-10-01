@@ -2576,3 +2576,14 @@ def test_min_periods_removed() -> None:
 
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         pl.rolling_corr("a", "b", window_size=2, min_periods=1)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("op", ["rolling_mean_by", "rolling_sum_by"])
+def test_rolling_by_with_nulls_raises_27366(op: str) -> None:
+    s = pl.Series([1.0, 2.0, 3.0])
+    null_by = pl.Series([1, None, 3], dtype=pl.Int64)
+    with pytest.raises(InvalidOperationError, match="must not contain nulls"):
+        getattr(s, op)(null_by, window_size="2i")
+
+    ok_by = pl.Series([1, 2, 3], dtype=pl.Int64)
+    assert getattr(s, op)(ok_by, window_size="2i").len() == 3
