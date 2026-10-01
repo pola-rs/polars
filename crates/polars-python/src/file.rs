@@ -535,3 +535,29 @@ pub(crate) fn get_mmap_bytes_reader_and_path(
         }
     }
 }
+
+/// Like [`get_mmap_bytes_reader`], but reads a file-like object lazily instead of
+/// eagerly reading all of its contents. This leaves the stream position at the
+/// end of the bytes that were consumed, allowing multiple payloads to be read
+/// from a single handle (except for `BytesIO`, which uses `getvalue()` fast-path).
+pub(crate) fn get_incremental_bytes_reader(
+    py_f: &Bound<PyAny>,
+) -> PyResult<Box<dyn MmapBytesReader>> {
+    let py_f = read_if_bytesio(py_f.clone());
+
+    // bytes object
+    if let Ok(bytes) = py_f.cast::<PyBytes>() {
+        // SAFETY: we keep the underlying python object alive.
+        let slice = bytes.as_bytes();
+        let owner = bytes.clone().unbind();
+        let ss = unsafe { SharedStorage::from_slice_with_owner(slice, owner) };
+        Ok(Box::new(Cursor::new(Buffer::from_storage(ss))))
+    }
+    // string so read file
+    else {
+        match get_either_buffer_or_path(py_f.to_owned().unbind(), false)? {
+            (EitherRustPythonFile::Rust(f), _) => Ok(Box::new(f)),
+            (EitherRustPythonFile::Py(f), _) => Ok(Box::new(f)),
+        }
+    }
+}
