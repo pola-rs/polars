@@ -309,21 +309,12 @@ impl core::fmt::Display for PlSmallStr {
     }
 }
 
-/// The stage of query processing that mints a temporary column name.
-///
-/// Names from different namespaces never clash, even when they are minted in different
-/// processes, such as when one process plans a query and another executes it. Names within
-/// one namespace come from a per-process counter, so a namespace must mint the names of a
-/// query in a single process.
+/// The query stage that mints a temporary column name.
 #[derive(Clone, Copy, Debug)]
 pub enum TmpNamespace {
-    /// Translating SQL to the DSL.
     Sql,
-    /// Optimizing the IR.
     Optimizer,
-    /// Lowering the IR to a streaming physical plan.
     Lowering,
-    /// Executing a physical plan.
     Execution,
 }
 
