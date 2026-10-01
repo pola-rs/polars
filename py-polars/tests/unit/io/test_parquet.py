@@ -4139,11 +4139,8 @@ def test_scan_parquet_skip_row_groups_missing_struct_field(
     filter_expr: pl.Expr,
     expected_value: dict[str, Any],
 ) -> None:
-    # Regression test: inserting a missing struct field widened the
-    # skip-batches min/max stats to the new shape but left null_count stats
-    # at the file's original (narrower) shape, crashing with
-    # StructFieldNotFoundError when filtering on the inserted field. Covers
-    # both a directly-missing field and one nested two levels deep.
+    # Inserting a missing struct field used to crash StructFieldNotFoundError:
+    # min/max stats widened to the new shape, null_count didn't.
     f = io.BytesIO()
     pl.DataFrame({"s": [write_value, write_value]}).write_parquet(f)
     f.seek(0)

@@ -189,8 +189,7 @@ async fn static_skip_mask(
             statistics.min = projection.apply_transform(statistics.min)?;
             statistics.max = projection.apply_transform(statistics.max)?;
 
-            // Per-field null counts still describe the file's original struct shape, so use
-            // unknown counts in the output shape for mapped structs.
+            // null_count isn't transformed above; mark it unknown rather than leave it mismatched.
             if let ArrowFieldProjection::Mapped { output_dtype, .. } = projection {
                 if output_dtype.is_struct() {
                     statistics.null_count = Column::full_null(
