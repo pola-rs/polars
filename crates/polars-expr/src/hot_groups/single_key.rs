@@ -33,17 +33,17 @@ where
     }
 
     #[inline(always)]
-    fn insert_key<R: BuildHasher>(
+    fn insert_key<R: BuildHasher, F: FnOnce() -> bool>(
         &mut self,
         k: T::Physical<'static>,
-        force_hot: bool,
+        force_insert: F,
         random_state: &R,
     ) -> Option<EvictIdx> {
         let h = random_state.tot_hash_one(&k);
         self.table.insert_key(
             h,
             k,
-            force_hot,
+            force_insert,
             |a, b| a.tot_eq(b),
             |k| k,
             |k, ev_k| self.evicted_keys.push(core::mem::replace(ev_k, k)),
@@ -139,28 +139,52 @@ where
 
         let mut idx = 0;
         for arr in keys.downcast_iter() {
+            let n = arr.len();
+            let next_is_same = |i: usize| {
+                i + 1 < n && unsafe { arr.value_unchecked(i + 1).tot_eq(&arr.value_unchecked(i)) }
+            };
             if arr.has_nulls() {
                 if hash_keys.null_is_valid {
-                    for opt_k in arr.iter() {
+                    for (i, opt_k) in arr.iter().enumerate() {
                         if let Some(k) = opt_k {
-                            push_g(idx, self.insert_key(k, force_hot, &hash_keys.random_state));
+                            push_g(
+                                idx,
+                                self.insert_key(
+                                    k,
+                                    || force_hot || next_is_same(i),
+                                    &hash_keys.random_state,
+                                ),
+                            );
                         } else {
                             push_g(idx, self.insert_null());
                         }
                         idx += 1;
                     }
                 } else {
-                    for opt_k in arr.iter() {
+                    for (i, opt_k) in arr.iter().enumerate() {
                         if let Some(k) = opt_k {
-                            push_g(idx, self.insert_key(k, force_hot, &hash_keys.random_state));
+                            push_g(
+                                idx,
+                                self.insert_key(
+                                    k,
+                                    || force_hot || next_is_same(i),
+                                    &hash_keys.random_state,
+                                ),
+                            );
                         }
                         idx += 1;
                     }
                 }
             } else {
-                for k in arr.values_iter() {
-                    let g = self.insert_key(k, force_hot, &hash_keys.random_state);
-                    push_g(idx, g);
+                for (i, k) in arr.values_iter().enumerate() {
+                    push_g(
+                        idx,
+                        self.insert_key(
+                            k,
+                            || force_hot || next_is_same(i),
+                            &hash_keys.random_state,
+                        ),
+                    );
                     idx += 1;
                 }
             }

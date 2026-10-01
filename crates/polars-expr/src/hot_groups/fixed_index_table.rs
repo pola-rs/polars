@@ -61,12 +61,16 @@ impl<K> FixedIndexTable<K> {
 
     /// Tries to insert a key with a given hash.
     ///
+    /// `force_insert` is only called for a missed key which would not evict
+    /// another key, and decides whether it evicts one anyway.
+    ///
     /// Returns Some((index, evict_old)) if successful, None otherwise.
-    pub fn insert_key<Q, E, I, V>(
+    #[inline(always)]
+    pub fn insert_key<Q, E, I, V, F>(
         &mut self,
         hash: u64,
         key: Q,
-        force_insert: bool,
+        force_insert: F,
         mut eq: E,
         mut insert: I,
         mut evict_insert: V,
@@ -75,6 +79,7 @@ impl<K> FixedIndexTable<K> {
         E: FnMut(&Q, &K) -> bool,
         I: FnMut(Q) -> K,
         V: FnMut(Q, &mut K),
+        F: FnOnce() -> bool,
     {
         let tag = hash as u32;
         let h1 = (hash >> self.shift) as usize;
@@ -149,7 +154,7 @@ impl<K> FixedIndexTable<K> {
             self.prng = self.prng.wrapping_add(hash);
             let slot = self.slots.get_unchecked_mut(hr);
 
-            if (slot.last_access_tag == tag) | force_insert {
+            if slot.last_access_tag == tag || force_insert() {
                 slot.hash = hash;
                 let evict_key = self.keys.get_unchecked_mut(slot.key_index as usize);
                 evict_insert(key, evict_key);

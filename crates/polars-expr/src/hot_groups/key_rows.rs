@@ -137,7 +137,7 @@ impl HotGrouper for KeyRowHashHotGrouper {
                     let opt_g = self.table.insert_key(
                         h,
                         i,
-                        force_hot,
+                        || force_hot || hashes.get(i + 1) == Some(&h),
                         |i, k| (*hot).eq_key(*k, keys, *i),
                         |i| (*hot).push(keys, i),
                         |i, k| {
