@@ -68,7 +68,8 @@ impl HotGrouper for RowEncodedHashHotGrouper {
                     let opt_g = self.table.insert_key(
                         h,
                         key,
-                        || force_hot || hashes.get(idx as usize + 1) == Some(&h),
+                        force_hot,
+                        *hashes.get(idx as usize + 1).unwrap_or(&u64::MAX),
                         |a, b| *a == b.1,
                         |k| (h, k.to_owned()),
                         |k, ev_k| {

@@ -29,11 +29,12 @@ impl BinviewHashHotGrouper {
     /// # Safety
     /// The view must be valid for the given buffer set.
     #[inline(always)]
-    unsafe fn insert_key<F: FnOnce() -> bool>(
+    unsafe fn insert_key(
         &mut self,
         hash: u64,
         view: View,
-        force_insert: F,
+        force_hot: bool,
+        next_hash: u64,
         buffers: &Buffer<Buffer<u8>>,
     ) -> Option<EvictIdx> {
         unsafe {
@@ -50,7 +51,8 @@ impl BinviewHashHotGrouper {
                 self.table.insert_key(
                     hash,
                     (),
-                    force_insert,
+                    force_hot,
+                    next_hash,
                     |_, b| view == b.1,
                     |_| (hash, view, Vec::new()),
                     |_, ev_k| {
@@ -66,7 +68,8 @@ impl BinviewHashHotGrouper {
                 self.table.insert_key(
                     hash,
                     (),
-                    force_insert,
+                    force_hot,
+                    next_hash,
                     |_, b| {
                         // We only reach here if the hash matched, so jump straight to full comparison.
                         bytes == b.2
@@ -139,7 +142,6 @@ impl HotGrouper for BinviewHashHotGrouper {
         };
 
         let hashes = hash_keys.hashes.values().as_slice();
-        let next_is_same = |idx: IdxSize, h: u64| hashes.get(idx as usize + 1) == Some(&h);
         unsafe {
             let views = hash_keys.keys.views().as_slice();
             let buffers = hash_keys.keys.data_buffers();
@@ -147,14 +149,10 @@ impl HotGrouper for BinviewHashHotGrouper {
                 hash_keys.for_each_hash(|idx, opt_h| {
                     if let Some(h) = opt_h {
                         let view = views.get_unchecked(idx as usize);
+                        let next_h = *hashes.get(idx as usize + 1).unwrap_or(&u64::MAX);
                         push_g(
                             idx as usize,
-                            self.insert_key(
-                                h,
-                                *view,
-                                || force_hot || next_is_same(idx, h),
-                                buffers,
-                            ),
+                            self.insert_key(h, *view, force_hot, next_h, buffers),
                         );
                     } else {
                         push_g(idx as usize, self.insert_null());
@@ -164,14 +162,10 @@ impl HotGrouper for BinviewHashHotGrouper {
                 hash_keys.for_each_hash(|idx, opt_h| {
                     if let Some(h) = opt_h {
                         let view = views.get_unchecked(idx as usize);
+                        let next_h = *hashes.get(idx as usize + 1).unwrap_or(&u64::MAX);
                         push_g(
                             idx as usize,
-                            self.insert_key(
-                                h,
-                                *view,
-                                || force_hot || next_is_same(idx, h),
-                                buffers,
-                            ),
+                            self.insert_key(h, *view, force_hot, next_h, buffers),
                         );
                     }
                 });

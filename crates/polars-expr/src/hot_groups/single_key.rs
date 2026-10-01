@@ -1,5 +1,3 @@
-use std::hash::BuildHasher;
-
 use polars_arrow::array::Array;
 use polars_arrow::bitmap::MutableBitmap;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalEq, TotalHash};
@@ -33,17 +31,18 @@ where
     }
 
     #[inline(always)]
-    fn insert_key<R: BuildHasher, F: FnOnce() -> bool>(
+    fn insert_key(
         &mut self,
+        h: u64,
         k: T::Physical<'static>,
-        force_insert: F,
-        random_state: &R,
+        force_hot: bool,
+        next_h: u64,
     ) -> Option<EvictIdx> {
-        let h = random_state.tot_hash_one(&k);
         self.table.insert_key(
             h,
             k,
-            force_insert,
+            force_hot,
+            next_h,
             |a, b| a.tot_eq(b),
             |k| k,
             |k, ev_k| self.evicted_keys.push(core::mem::replace(ev_k, k)),
@@ -137,24 +136,25 @@ where
             }
         };
 
+        let random_state = &hash_keys.random_state;
         let mut idx = 0;
         for arr in keys.downcast_iter() {
             let n = arr.len();
-            let next_is_same = |i: usize| {
-                i + 1 < n && unsafe { arr.value_unchecked(i + 1).tot_eq(&arr.value_unchecked(i)) }
+            let hash_at = |i: usize| {
+                if i < n {
+                    random_state.tot_hash_one(unsafe { arr.value_unchecked(i) })
+                } else {
+                    u64::MAX
+                }
             };
+            let mut next_h = hash_at(0);
             if arr.has_nulls() {
                 if hash_keys.null_is_valid {
                     for (i, opt_k) in arr.iter().enumerate() {
+                        let h = next_h;
+                        next_h = hash_at(i + 1);
                         if let Some(k) = opt_k {
-                            push_g(
-                                idx,
-                                self.insert_key(
-                                    k,
-                                    || force_hot || next_is_same(i),
-                                    &hash_keys.random_state,
-                                ),
-                            );
+                            push_g(idx, self.insert_key(h, k, force_hot, next_h));
                         } else {
                             push_g(idx, self.insert_null());
                         }
@@ -162,29 +162,19 @@ where
                     }
                 } else {
                     for (i, opt_k) in arr.iter().enumerate() {
+                        let h = next_h;
+                        next_h = hash_at(i + 1);
                         if let Some(k) = opt_k {
-                            push_g(
-                                idx,
-                                self.insert_key(
-                                    k,
-                                    || force_hot || next_is_same(i),
-                                    &hash_keys.random_state,
-                                ),
-                            );
+                            push_g(idx, self.insert_key(h, k, force_hot, next_h));
                         }
                         idx += 1;
                     }
                 }
             } else {
                 for (i, k) in arr.values_iter().enumerate() {
-                    push_g(
-                        idx,
-                        self.insert_key(
-                            k,
-                            || force_hot || next_is_same(i),
-                            &hash_keys.random_state,
-                        ),
-                    );
+                    let h = next_h;
+                    next_h = hash_at(i + 1);
+                    push_g(idx, self.insert_key(h, k, force_hot, next_h));
                     idx += 1;
                 }
             }

@@ -32,8 +32,8 @@ pub trait HotGrouper: Any + Send + Sync {
     /// Inserts the given keys into this Grouper, extending groups_idxs with
     /// the group index of keys[i].
     ///
-    /// A missed key that is followed by the same key (or the same hash) is
-    /// inserted even if that evicts another key, as is every missed key with
+    /// A missed key that is followed by a key with the same hash is inserted
+    /// even if that evicts another key, as is every missed key with
     /// `force_hot`. This keeps sorted keys from first going cold.
     fn insert_keys(
         &mut self,
