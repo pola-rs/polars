@@ -667,3 +667,28 @@ impl<'a> ArrowArrayChild<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn null_array_exports_no_buffers() {
+        let array = NullArray::new(ArrowDataType::Null, 4).boxed();
+        let exported = ffi::export_array_to_c(array);
+        assert_eq!(exported.n_buffers, 0);
+    }
+
+    #[test]
+    fn null_array_imports_legacy_single_buffer() {
+        // Arrow C++ before 6.0.0 exported Null arrays with a single null buffer.
+        let expected = NullArray::new(ArrowDataType::Null, 3).boxed();
+        let mut legacy_buffers = [std::ptr::null::<std::os::raw::c_void>()];
+        let mut exported = ffi::export_array_to_c(expected.clone());
+        exported.n_buffers = 1;
+        exported.buffers = legacy_buffers.as_mut_ptr();
+
+        let imported = unsafe { ffi::import_array_from_c(exported, ArrowDataType::Null) }.unwrap();
+        assert_eq!(imported, expected);
+    }
+}
