@@ -437,6 +437,34 @@ class TestIcebergScanIO:
         res = pl.scan_iceberg(tbl).filter(expr.is_null()).select("id")
         assert res.collect().rows() == [(3,)]
 
+    def test_scan_iceberg_filter_null_struct_with_required_child(
+        self, tmp_path: Path
+    ) -> None:
+        # A null struct with a required child field: PyIceberg's own
+        # BoundIsNull short-circuits on the leaf's `required` flag alone,
+        # ignoring that an optional ancestor can itself be null - decline to
+        # push this down rather than get a silently wrong (empty) result.
+        catalog = SqlCatalog(
+            "default",
+            uri="sqlite:///:memory:",
+            warehouse=format_file_uri_iceberg(tmp_path),
+        )
+        catalog.create_namespace("ns")
+
+        dtype = pa.struct([pa.field("x", pa.int64(), nullable=False)])
+        data = pa.table({"s": pa.array([None], type=dtype)})
+        tbl = catalog.create_table("ns.t", schema=data.schema)
+        tbl.append(data)
+
+        q = pl.scan_iceberg(tbl).filter(pl.col("s").struct.field("x").is_null())
+        expected = [(None,)]
+
+        assert q.collect().rows() == expected
+        assert (
+            q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).rows()
+            == expected
+        )
+
     def test_scan_iceberg_filter_struct_field_unsanitizable_name(
         self,
         tmp_path: Path,
