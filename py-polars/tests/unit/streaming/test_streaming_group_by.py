@@ -638,3 +638,36 @@ def test_streaming_group_by_sorted_runs(
         q.collect(engine="in-memory"),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("n_groups", [3, 100])
+def test_streaming_group_by_null_on_empty_after_valid_morsels(
+    n_groups: int, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "50")
+
+    # Morsels without nulls, then a group that only has nulls.
+    n = 1_000
+    df = pl.DataFrame(
+        {
+            "g": [i % n_groups for i in range(n)] + [n_groups] * 10,
+            "v": [*range(n), *([None] * 10)],
+        }
+    )
+    v = pl.col("v")
+    q = (
+        df.lazy()
+        .group_by("g")
+        .agg(
+            s=pl.when(v.count() > 0).then(v.sum()),
+            mn=v.min(),
+            mx=v.max(),
+        )
+    )
+    out = q.collect(engine="streaming")
+    assert out.filter(pl.col("g") == n_groups).select("s", "mn", "mx").row(0) == (
+        None,
+        None,
+        None,
+    )
+    assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
