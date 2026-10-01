@@ -212,11 +212,13 @@ fn compare(lhs: Expr, op: &SQLBinaryOperator, rhs: Expr) -> Option<Expr> {
     })
 }
 
+type StringMatch = fn(StringNameSpace, Expr) -> Expr;
+
 /// The string method matching a case-sensitive LIKE pattern whose only wildcards
 /// are a '%' at its start and/or end, with the literal text between them.
-fn literal_like_match(pattern: &str) -> Option<(fn(StringNameSpace, Expr) -> Expr, &str)> {
+fn literal_like_match(pattern: &str) -> Option<(StringMatch, &str)> {
     let plain = |s: &str| !s.is_empty() && !s.contains(['%', '_']);
-    let (matches, needle): (fn(StringNameSpace, Expr) -> Expr, &str) =
+    let (matches, needle): (StringMatch, &str) =
         match (pattern.strip_prefix('%'), pattern.strip_suffix('%')) {
             (Some(rest), Some(_)) => (StringNameSpace::contains_literal, rest.strip_suffix('%')?),
             (None, Some(prefix)) => (StringNameSpace::starts_with, prefix),
