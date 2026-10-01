@@ -128,9 +128,9 @@ impl From<std::array::TryFromSliceError> for ParquetError {
     }
 }
 
-impl From<ring::error::Unspecified> for ParquetError {
-    fn from(e: ring::error::Unspecified) -> ParquetError {
-        ParquetError::Encryption(format!("underlying ring error: {e}"))
+impl From<aws_lc_rs::error::Unspecified> for ParquetError {
+    fn from(e: aws_lc_rs::error::Unspecified) -> ParquetError {
+        ParquetError::Encryption(format!("underlying aws-lc-rs error: {e}"))
     }
 }
 

@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
+use aws_lc_rs::rand::{SecureRandom, SystemRandom};
 use polars_parquet_format::{
     ColumnCryptoMetaData, EncryptionWithColumnKey, EncryptionWithFooterKey,
 };
 use polars_utils::aliases::{PlHashMap, PlHashSet};
-use ring::rand::{SecureRandom, SystemRandom};
 
-use super::ciphers::{BlockEncryptor, RingGcmBlockEncryptor};
+use super::ciphers::{AesGcmBlockEncryptor, BlockEncryptor};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::{ColumnDescriptor, SchemaDescriptor};
 
@@ -312,7 +312,7 @@ impl FileEncryptor {
 
     /// Get the BlockEncryptor for the footer
     pub(crate) fn get_footer_encryptor(&self) -> ParquetResult<Box<dyn BlockEncryptor>> {
-        Ok(Box::new(RingGcmBlockEncryptor::new(
+        Ok(Box::new(AesGcmBlockEncryptor::new(
             &self.properties.footer_key.key,
         )?))
     }
@@ -328,7 +328,7 @@ impl FileEncryptor {
         }
         match self.properties.column_keys.get(column_path) {
             None => Err(encryption_err!("Column '{}' is not encrypted", column_path)),
-            Some(column_key) => Ok(Box::new(RingGcmBlockEncryptor::new(column_key.key())?)),
+            Some(column_key) => Ok(Box::new(AesGcmBlockEncryptor::new(column_key.key())?)),
         }
     }
 }

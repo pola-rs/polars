@@ -5,7 +5,7 @@ use polars_buffer::Buffer;
 use polars_parquet_format::{ColumnCryptoMetaData, EncryptionAlgorithm};
 use polars_utils::aliases::PlHashMap;
 
-use super::ciphers::{BlockDecryptor, NONCE_LEN, RingGcmBlockDecryptor, SIZE_LEN, TAG_LEN};
+use super::ciphers::{AesGcmBlockDecryptor, BlockDecryptor, NONCE_LEN, SIZE_LEN, TAG_LEN};
 use super::modules::{ModuleType, create_footer_aad, create_module_aad};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::handwritten_thrift::decode_column_meta_data;
@@ -632,7 +632,7 @@ impl FileDecryptor {
     ) -> ParquetResult<Self> {
         let file_aad = [aad_prefix.as_slice(), aad_file_unique.as_slice()].concat();
         let footer_key = decryption_properties.footer_key(footer_key_metadata)?;
-        let footer_decryptor = RingGcmBlockDecryptor::new(&footer_key).map_err(|e| match e {
+        let footer_decryptor = AesGcmBlockDecryptor::new(&footer_key).map_err(|e| match e {
             ParquetError::Encryption(message) => encryption_err!("Invalid footer key. {message}"),
             e => e,
         })?;
@@ -730,7 +730,7 @@ impl FileDecryptor {
         let column_key = self
             .decryption_properties
             .column_key(column_name, key_metadata)?;
-        Ok(Arc::new(RingGcmBlockDecryptor::new(&column_key)?))
+        Ok(Arc::new(AesGcmBlockDecryptor::new(&column_key)?))
     }
 
     pub(crate) fn get_column_metadata_decryptor(
