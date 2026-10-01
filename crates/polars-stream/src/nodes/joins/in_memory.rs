@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::schema::Schema;
 
 use crate::nodes::compute_node_prelude::*;
@@ -25,11 +26,12 @@ impl InMemoryJoinNode {
         left_input_schema: Arc<Schema>,
         right_input_schema: Arc<Schema>,
         joiner: Arc<dyn Fn(DataFrame, DataFrame) -> PolarsResult<DataFrame> + Send + Sync>,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         Self {
             state: InMemoryJoinState::Sink {
-                left: InMemorySinkNode::new(left_input_schema),
-                right: InMemorySinkNode::new(right_input_schema),
+                left: InMemorySinkNode::new(left_input_schema, task_metrics.clone()),
+                right: InMemorySinkNode::new(right_input_schema, task_metrics),
             },
             joiner,
         }

@@ -4,7 +4,7 @@ use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use polars_async::executor::{JoinHandle, TaskPriority};
+use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority};
 use polars_async::{ASYNC, executor};
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
@@ -53,6 +53,7 @@ pub struct PythonFileReaderBuilder {
     send_dfs_loop_threadpool: Arc<PyThreadPool>,
     capabilities: PyOnceLock<ReaderCapabilities>,
     py_multi_scan_context: Arc<Py<PyDict>>,
+    task_metrics: OnceLock<Arc<TaskMetricAggregator>>,
 }
 
 impl std::fmt::Debug for PythonFileReaderBuilder {
@@ -75,6 +76,7 @@ impl PythonFileReaderBuilder {
             send_dfs_loop_threadpool,
             capabilities: PyOnceLock::new(),
             py_multi_scan_context,
+            task_metrics: OnceLock::new(),
         }
     }
 
@@ -171,6 +173,12 @@ impl FileReaderBuilder for PythonFileReaderBuilder {
             .copied()
     }
 
+    fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
+        if let Some(task_metrics) = execution_state.task_metrics.clone() {
+            let _ = self.task_metrics.set(task_metrics);
+        }
+    }
+
     fn build_file_reader(
         &self,
         source: polars_plan::prelude::ScanSource,
@@ -202,6 +210,7 @@ impl FileReaderBuilder for PythonFileReaderBuilder {
                     }),
                     send_dfs_loop_threadpool: Arc::clone(&self.send_dfs_loop_threadpool),
                     begin_read_called: false,
+                    task_metrics: self.task_metrics.get().cloned(),
                 }) as Box<dyn FileReader>)
             })
         })
@@ -213,6 +222,7 @@ pub struct PythonFileReader {
     inner: Arc<PythonFileReaderInner>,
     send_dfs_loop_threadpool: Arc<PyThreadPool>,
     begin_read_called: bool,
+    task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 struct PythonFileReaderInner {
@@ -355,7 +365,8 @@ impl FileReader for PythonFileReader {
         let mut slf = self.clone();
         let filters = predicate.map(|x| x.py_filter_exprs.unwrap());
 
-        let handle = executor::spawn(TaskPriority::Low, async move {
+        let task_metrics = self.task_metrics.as_deref();
+        let handle = executor::spawn(TaskPriority::Low, task_metrics, async move {
             if let Some(file_schema_tx) = file_schema_tx.take() {
                 let file_schema = slf.file_schema().await?;
                 let _ = file_schema_tx.send(file_schema);
@@ -382,8 +393,10 @@ impl FileReader for PythonFileReader {
 
             let mut total_n_rows: u64 = 0;
 
-            let dfs_pass_handle =
-                executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+            let dfs_pass_handle = executor::AbortOnDropHandle::new(executor::spawn(
+                TaskPriority::Low,
+                slf.task_metrics.as_deref(),
+                async move {
                     let source_token = SourceToken::new();
 
                     let mut i: u64 = 0;
@@ -417,7 +430,8 @@ impl FileReader for PythonFileReader {
                     if let Some(row_position_on_end_tx) = row_position_on_end_tx.take() {
                         let _ = row_position_on_end_tx.send(total_n_rows);
                     }
-                }));
+                },
+            ));
 
             ASYNC
                 .spawn_blocking(move || {

@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use chunk_reader::ChunkReader;
 use futures::FutureExt;
 use line_batch_source::{LineBatch, LineBatchSource};
-use polars_async::executor::{AbortOnDropHandle, spawn};
+use polars_async::executor::{AbortOnDropHandle, TaskMetricAggregator, spawn};
 use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::oneshot_channel;
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
@@ -56,6 +56,7 @@ struct CsvFileReader {
     pub chunk_prefetch_sync: ChunkPrefetchSync,
     pub init_data: Option<InitializedState>,
     pub io_metrics: OptIOMetrics,
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 pub(crate) struct ChunkPrefetchSync {
@@ -321,10 +322,12 @@ impl FileReader for CsvFileReader {
                 PolarsResult::Ok(())
             }));
 
+        let task_metrics = self.task_metrics.as_deref();
+
         // Task: Line batch source.
         // Create and send newline-aligned batches. Create chunk_reader for decoder.
         let line_batch_source_handle =
-            AbortOnDropHandle::new(spawn(TaskPriority::Low, async move {
+            AbortOnDropHandle::new(spawn(TaskPriority::Low, task_metrics, async move {
                 let pre_read_result = infer_schema_rx.recv().await.map_err(
                     |_| polars_err!(ComputeError: "CSV pre-read task panicked or was dropped"),
                 )?;
@@ -412,7 +415,7 @@ impl FileReader for CsvFileReader {
                 // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
                 let source_token = SourceToken::new();
 
-                AbortOnDropHandle::new(spawn(TaskPriority::Low, async move {
+                AbortOnDropHandle::new(spawn(TaskPriority::Low, task_metrics, async move {
                     let chunk_reader = chunk_reader_shared.await.map_err(
                         |_| polars_err!(ComputeError: "CSV pipeline dropped unexpectedly"),
                     )??;
@@ -479,7 +482,7 @@ impl FileReader for CsvFileReader {
 
         Ok((
             rx,
-            spawn(TaskPriority::Low, async move {
+            spawn(TaskPriority::Low, task_metrics, async move {
                 let mut row_position: usize = 0;
 
                 for handle in line_batch_decode_handles {

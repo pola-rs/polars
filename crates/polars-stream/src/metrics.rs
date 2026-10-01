@@ -1,7 +1,7 @@
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
-use polars_async::executor::TaskMetrics;
+use polars_async::executor::{TaskMetricAggregator, TaskMetricsSnapshot};
 pub use polars_descriptions::MetricUnit;
 pub use polars_io::metrics::{IOMetrics, OptIOMetrics};
 use polars_utils::pl_str::PlSmallStr;
@@ -43,14 +43,12 @@ pub struct NodeMetrics {
 }
 
 impl NodeMetrics {
-    fn add_task(&mut self, task_metrics: &TaskMetrics) {
-        self.total_polls += task_metrics.total_polls.load();
-        self.total_stolen_polls += task_metrics.total_stolen_polls.load();
-        self.total_poll_time_ns += task_metrics.total_poll_time_ns.load();
-        self.max_poll_time_ns = self
-            .max_poll_time_ns
-            .max(task_metrics.max_poll_time_ns.load());
-        self.num_running_tasks += (!task_metrics.done.load()) as u32;
+    fn set_task_metrics(&mut self, task_metrics: &TaskMetricsSnapshot) {
+        self.total_polls = task_metrics.total_polls;
+        self.total_stolen_polls = task_metrics.total_stolen_polls;
+        self.total_poll_time_ns = task_metrics.total_poll_time_ns;
+        self.max_poll_time_ns = task_metrics.max_poll_time_ns;
+        self.num_running_tasks = task_metrics.num_running_tasks;
     }
 
     fn add_io(&mut self, io_metrics: &IOMetrics) {
@@ -102,17 +100,14 @@ pub struct GraphMetrics {
     node_metrics: SecondaryMap<GraphNodeKey, NodeMetrics>,
     in_progress_io_metrics: SecondaryMap<GraphNodeKey, Arc<IOMetrics>>,
     in_progress_custom_metrics: SecondaryMap<GraphNodeKey, Arc<CustomMetrics>>,
-    in_progress_task_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<TaskMetrics>>>,
+    task_metrics: SecondaryMap<GraphNodeKey, Arc<TaskMetricAggregator>>,
     in_progress_pipe_metrics: SecondaryMap<LogicalPipeKey, Vec<Arc<PipeMetrics>>>,
 }
 
 impl GraphMetrics {
-    pub fn add_task(&mut self, key: GraphNodeKey, task_metrics: Arc<TaskMetrics>) {
-        self.in_progress_task_metrics
-            .entry(key)
-            .unwrap()
-            .or_default()
-            .push(task_metrics);
+    /// The aggregator for the metrics of all tasks spawned by this node.
+    pub fn node_task_metrics(&mut self, key: GraphNodeKey) -> Arc<TaskMetricAggregator> {
+        self.task_metrics.entry(key).unwrap().or_default().clone()
     }
 
     pub fn add_pipe(&mut self, key: LogicalPipeKey, pipe_metrics: Arc<PipeMetrics>) {
@@ -136,12 +131,9 @@ impl GraphMetrics {
     }
 
     pub fn flush(&mut self, pipes: &SlotMap<LogicalPipeKey, LogicalPipe>) {
-        for (key, in_progress_task_metrics) in self.in_progress_task_metrics.iter_mut() {
+        for (key, task_metrics) in self.task_metrics.iter() {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
-            this_node_metrics.num_running_tasks = 0;
-            for task_metrics in in_progress_task_metrics.drain(..) {
-                this_node_metrics.add_task(&task_metrics);
-            }
+            this_node_metrics.set_task_metrics(&task_metrics.snapshot());
         }
 
         for (key, io_metrics) in self.in_progress_io_metrics.iter_mut() {
@@ -189,6 +181,13 @@ pub struct NodeMetricsRegistry {
 impl NodeMetricsRegistry {
     pub fn is_some(&self) -> bool {
         self.graph_metrics.is_some()
+    }
+
+    /// The aggregator for the metrics of tasks spawned by this node, if tracked.
+    pub fn task_metrics(&self) -> Option<Arc<TaskMetricAggregator>> {
+        self.graph_metrics
+            .as_ref()
+            .map(|m| m.lock().node_task_metrics(self.graph_key))
     }
 
     /// Registers this node's IO metrics.

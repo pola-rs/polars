@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::prelude::*;
 use polars_ops::frame::gather::GatherDf;
 
@@ -18,9 +19,13 @@ enum GatherState {
 }
 
 impl GatherNode {
-    pub fn new(input_schema: Arc<Schema>, null_on_oob: bool) -> Self {
+    pub fn new(
+        input_schema: Arc<Schema>,
+        null_on_oob: bool,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         Self {
-            state: GatherState::Sink(InMemorySinkNode::new(input_schema)),
+            state: GatherState::Sink(InMemorySinkNode::new(input_schema, task_metrics)),
             null_on_oob,
         }
     }

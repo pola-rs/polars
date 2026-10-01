@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use polars_arrow::array::builder::ShareStrategy;
-use polars_async::executor;
+use polars_async::executor::{self, TaskMetricAggregator};
 use polars_core::config;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
@@ -590,11 +590,13 @@ impl SampleState {
             "equi-join-left-sample".into(),
             core::mem::take(&mut self.left),
             MorselSeq::default(),
+            state.task_metrics.clone(),
         );
         let mut sampled_probe_morsels = BufferedStream::new(
             "equi-join-right-sample".into(),
             core::mem::take(&mut self.right),
             MorselSeq::default(),
+            state.task_metrics.clone(),
         );
         if !left_is_build {
             core::mem::swap(&mut sampled_build_morsels, &mut sampled_probe_morsels);
@@ -610,7 +612,7 @@ impl SampleState {
 
         // Simulate the sample build morsels flowing into the build side.
         if !sampled_build_morsels.is_empty() {
-            executor::task_scope(|scope| {
+            executor::task_scope(state.task_metrics(), |scope| {
                 let mut join_handles = Vec::new();
                 let receivers = sampled_build_morsels
                     .reinsert(state.num_pipelines, None, scope, &mut join_handles)
@@ -869,7 +871,12 @@ impl BuildState {
         }
     }
 
-    fn finalize_unordered(&mut self, params: &EquiJoinParams, table: &dyn IdxTable) -> ProbeState {
+    fn finalize_unordered(
+        &mut self,
+        params: &EquiJoinParams,
+        table: &dyn IdxTable,
+        state: &StreamingExecutionState,
+    ) -> ProbeState {
         let track_unmatchable = params.emit_unmatched_build();
         let payload_schema = if params.left_is_build.unwrap() {
             &params.left_payload_schema
@@ -892,7 +899,7 @@ impl BuildState {
         let local_builders = &self.local_builders;
         let probe_tables: SparseInitVec<ProbeTable> = SparseInitVec::with_capacity(num_partitions);
 
-        executor::task_scope(|s| {
+        executor::task_scope(state.task_metrics(), |s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_morsels_per_local_builder = Arc::new(morsels_per_local_builder);
@@ -1446,6 +1453,7 @@ impl EquiJoinNode {
         runtime_filters: Vec<RuntimeFilter>,
         args: JoinArgs,
         num_pipelines: usize,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> PolarsResult<Self> {
         let sample_limit: usize = polars_config::config()
             .join_sample_limit()
@@ -1565,7 +1573,7 @@ impl EquiJoinNode {
             state,
             params,
             table: new_idx_table(unique_key_schema),
-            spill_ctx: MostRecentSpillContext::new("equi-join".into()),
+            spill_ctx: MostRecentSpillContext::new("equi-join".into(), task_metrics),
         })
     }
 }
@@ -1618,7 +1626,11 @@ impl ComputeNode for EquiJoinNode {
                 } else if self.params.preserve_order_build {
                     EquiJoinState::Probe(build_state.finalize_ordered(&self.params, &*self.table))
                 } else {
-                    EquiJoinState::Probe(build_state.finalize_unordered(&self.params, &*self.table))
+                    EquiJoinState::Probe(build_state.finalize_unordered(
+                        &self.params,
+                        &*self.table,
+                        state,
+                    ))
                 };
             }
         }

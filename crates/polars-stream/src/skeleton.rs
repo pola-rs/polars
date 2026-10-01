@@ -170,7 +170,6 @@ impl StreamingQuery {
             || std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
             || observe
         {
-            polars_async::executor::track_task_metrics(true);
             Some(Arc::default())
         } else {
             None

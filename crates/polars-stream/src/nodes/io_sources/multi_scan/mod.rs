@@ -62,7 +62,7 @@ impl ComputeNode for MultiScan {
         &mut self,
         recv: &mut [crate::graph::PortState],
         send: &mut [crate::graph::PortState],
-        _state: &StreamingExecutionState,
+        state: &StreamingExecutionState,
     ) -> polars_error::PolarsResult<()> {
         use MultiScanState::*;
         assert!(recv.is_empty());
@@ -75,7 +75,7 @@ impl ComputeNode for MultiScan {
         } else {
             // Refresh first - in case there is an error we end here instead of ending when we go
             // into spawn.
-            executor::task_scope(|s| {
+            executor::task_scope(state.task_metrics(), |s| {
                 ASYNC.block_in_place_on(
                     s.spawn_task(TaskPriority::High, self.state.refresh(self.verbose)),
                 )

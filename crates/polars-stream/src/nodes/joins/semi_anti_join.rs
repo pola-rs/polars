@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_arrow::array::BooleanArray;
 use polars_arrow::array::builder::ShareStrategy;
 use polars_arrow::bitmap::{BitmapBuilder, MutableBitmap};
-use polars_async::executor;
+use polars_async::executor::{self, TaskMetricAggregator};
 use polars_core::config;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
@@ -115,6 +115,7 @@ impl SemiAntiJoinNode {
         args: JoinArgs,
         return_bool: bool,
         num_pipelines: usize,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> PolarsResult<Self> {
         let sample_limit: usize = polars_config::config()
             .join_sample_limit()
@@ -179,7 +180,7 @@ impl SemiAntiJoinNode {
             state,
             params,
             grouper: new_hash_grouper(unique_key_schema),
-            spill_ctx: MostRecentSpillContext::new("semi-anti-join".into()),
+            spill_ctx: MostRecentSpillContext::new("semi-anti-join".into(), task_metrics),
         })
     }
 }
@@ -355,11 +356,13 @@ impl SampleState {
             "semi-anti-join-left-sample".into(),
             core::mem::take(&mut self.left),
             MorselSeq::default(),
+            state.task_metrics.clone(),
         );
         let mut sampled_probe_morsels = BufferedStream::new(
             "semi-anti-join-right-sample".into(),
             core::mem::take(&mut self.right),
             MorselSeq::default(),
+            state.task_metrics.clone(),
         );
         if !left_is_build {
             core::mem::swap(&mut sampled_build_morsels, &mut sampled_probe_morsels);
@@ -375,7 +378,7 @@ impl SampleState {
 
         // Simulate the sample build morsels flowing into the build side.
         if !sampled_build_morsels.is_empty() {
-            executor::task_scope(|scope| {
+            executor::task_scope(state.task_metrics(), |scope| {
                 let mut join_handles = Vec::new();
                 let receivers = sampled_build_morsels
                     .reinsert(state.num_pipelines, None, scope, &mut join_handles)
@@ -536,7 +539,12 @@ impl BuildState {
         params.runtime_filters.publish_merged(locals);
     }
 
-    fn finalize(&mut self, params: &SemiAntiJoinParams, grouper: &dyn Grouper) -> ProbeState {
+    fn finalize(
+        &mut self,
+        params: &SemiAntiJoinParams,
+        grouper: &dyn Grouper,
+        state: &StreamingExecutionState,
+    ) -> ProbeState {
         let left_is_build = params.left_is_build();
 
         // To reduce maximum memory usage we want to drop the original keys
@@ -561,7 +569,7 @@ impl BuildState {
             SparseInitVec::with_capacity(num_partitions);
         let payloads: SparseInitVec<BuildPayload> = SparseInitVec::with_capacity(num_partitions);
 
-        executor::task_scope(|s| {
+        executor::task_scope(state.task_metrics(), |s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_keys_per_local_builder = Arc::new(keys_per_local_builder);
@@ -835,7 +843,7 @@ impl ProbeState {
         }
         let sampled = core::mem::take(&mut self.sampled_probe_morsels);
         let partitioner = HashPartitioner::new(state.num_pipelines, 0);
-        executor::task_scope(|scope| {
+        executor::task_scope(state.task_metrics(), |scope| {
             let mut join_handles = Vec::new();
             let receivers = sampled
                 .reinsert(state.num_pipelines, None, scope, &mut join_handles)
@@ -998,7 +1006,7 @@ impl ComputeNode for SemiAntiJoinNode {
                 if self.params.empty_build_gives_empty_output() && build_state.is_empty() {
                     self.state = SemiAntiJoinState::Done;
                 } else {
-                    let mut probe_state = build_state.finalize(&self.params, &*self.grouper);
+                    let mut probe_state = build_state.finalize(&self.params, &*self.grouper, state);
                     if self.params.left_is_build() {
                         probe_state.mark_sampled(&self.params, state)?;
                     }

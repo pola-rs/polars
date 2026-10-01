@@ -877,6 +877,7 @@ fn lower_ir_inner(
                             shared_prefetch_wait_group_slot: Default::default(),
                             file_read_context: std::sync::OnceLock::new(),
                             io_metrics: std::sync::OnceLock::new(),
+                            task_metrics: std::sync::OnceLock::new(),
                         },
                     ) as _,
 
@@ -890,6 +891,7 @@ fn lower_ir_inner(
                         pipeline_budget: std::sync::OnceLock::new(),
                         shared_prefetch_wait_group_slot: Default::default(),
                         io_metrics: std::sync::OnceLock::new(),
+                        task_metrics: std::sync::OnceLock::new(),
                     }) as _,
 
                     #[cfg(feature = "csv")]
@@ -900,6 +902,7 @@ fn lower_ir_inner(
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
                             io_metrics: std::sync::OnceLock::new(),
+                            task_metrics: std::sync::OnceLock::new(),
                         }) as _
                     },
                     #[cfg(feature = "json")]
@@ -910,6 +913,7 @@ fn lower_ir_inner(
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
                             io_metrics: std::sync::OnceLock::new(),
+                            task_metrics: std::sync::OnceLock::new(),
                         },
                     ) as _,
                     #[cfg(feature = "python")]
@@ -936,6 +940,7 @@ fn lower_ir_inner(
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
                             io_metrics: std::sync::OnceLock::new(),
+                            task_metrics: std::sync::OnceLock::new(),
                             file_read_context: std::sync::OnceLock::new(),
                         }) as _
                     },

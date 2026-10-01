@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::Mutex;
 use polars_arrow::array::builder::ShareStrategy;
-use polars_async::executor::{self, JoinHandle, TaskPriority, TaskScope};
+use polars_async::executor::{self, JoinHandle, TaskMetricAggregator, TaskPriority, TaskScope};
 use polars_core::chunked_array::ops::sort::options::SortMultipleOptions;
 use polars_core::datatypes::DataType;
 use polars_core::frame::DataFrame;
@@ -71,6 +71,7 @@ impl SortNode {
         input_schema: Arc<Schema>,
         slice: Option<(i64, usize)>,
         mut sort_options: SortMultipleOptions,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         assert_eq!(sort_options.descending.len(), 1);
         assert_eq!(sort_options.nulls_last.len(), 1);
@@ -85,7 +86,7 @@ impl SortNode {
                 morsels: Mutex::default(),
                 samples: Vec::new(),
                 bytes: AtomicU64::new(0),
-                spill_ctx: LeastRecentSpillContext::new("sort".into()),
+                spill_ctx: LeastRecentSpillContext::new("sort".into(), task_metrics),
             }),
             key,
             key_dtype,
@@ -186,7 +187,8 @@ impl SortNode {
         let flush_rows =
             self.tuning
                 .flush_rows(total_bytes, total_rows, num_tasks * (num_buckets + 1));
-        let spill_ctx = MostRecentSpillContext::new("sort-partition".into());
+        let spill_ctx =
+            MostRecentSpillContext::new("sort-partition".into(), state.task_metrics.clone());
 
         if polars_core::config::verbose() {
             eprintln!(
@@ -211,7 +213,7 @@ impl SortNode {
             }
         }
 
-        let out_per_task = executor::task_scope(|scope| {
+        let out_per_task = executor::task_scope(state.task_metrics(), |scope| {
             let mut join_handles = Vec::new();
             for task_frames in frames_per_task {
                 let classifier = &classifier;

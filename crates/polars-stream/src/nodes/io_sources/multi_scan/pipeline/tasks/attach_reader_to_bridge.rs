@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
-use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
+use polars_async::executor::{self, AbortOnDropHandle, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
 use polars_error::PolarsResult;
 
@@ -17,6 +19,7 @@ pub struct AttachReaderToBridge {
     pub bridge_recv_port_tx: connector::Sender<BridgeRecvPort>,
     pub unordered_files: Option<UnorderedFiles>,
     pub verbose: bool,
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 impl AttachReaderToBridge {
@@ -27,6 +30,7 @@ impl AttachReaderToBridge {
             mut bridge_recv_port_tx,
             unordered_files,
             verbose,
+            task_metrics,
         } = self;
 
         if let Some(unordered) = unordered_files {
@@ -36,6 +40,7 @@ impl AttachReaderToBridge {
                 bridge_recv_port_tx,
                 unordered.merge_capacity,
                 verbose,
+                task_metrics.as_deref(),
             )
             .await;
         }
@@ -83,6 +88,7 @@ async fn run_unordered(
     mut bridge_recv_port_tx: connector::Sender<BridgeRecvPort>,
     capacity: usize,
     verbose: bool,
+    task_metrics: Option<&TaskMetricAggregator>,
 ) -> PolarsResult<()> {
     let (merged_tx, merged_rx) = tokio::sync::mpsc::channel(capacity);
     if bridge_recv_port_tx
@@ -135,7 +141,7 @@ async fn run_unordered(
                 let tx = merged_tx.clone();
 
                 // Forwarding runs in its own task, so readers don't share one poller.
-                active.push(AbortOnDropHandle::new(executor::spawn(TaskPriority::High, async move {
+                let forward_handle = executor::spawn(TaskPriority::High, task_metrics, async move {
                     let StartedReaderState {
                         mut bridge_recv_port,
                         post_apply_pipeline_handle,
@@ -155,7 +161,8 @@ async fn run_unordered(
                     join_reader(reader_handle, post_apply_pipeline_handle).await?;
                     drop(slot);
                     PolarsResult::Ok(())
-                })));
+                });
+                active.push(AbortOnDropHandle::new(forward_handle));
             },
         }
     }
