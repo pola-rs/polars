@@ -111,13 +111,38 @@ impl SplitBlockBloom {
             .next_power_of_two()
     }
 
-    /// The bytes [`AtomicSplitBlockBloom::with_capacity`] allocates.
+    /// The bytes `with_capacity` allocates.
     pub fn size_for(num_keys: usize, bits_per_key: usize) -> usize {
         Self::num_blocks_for(num_keys, bits_per_key).saturating_mul(BLOCK_BYTES)
     }
 
+    /// A filter sized for `num_keys` keys at `bits_per_key` bits each, rounded
+    /// up to a power of two blocks. Its pages are only touched once a key is
+    /// inserted in them.
+    pub fn with_capacity(num_keys: usize, bits_per_key: usize) -> Self {
+        Self {
+            blocks: zeroed_vec(Self::num_blocks_for(num_keys, bits_per_key)),
+        }
+    }
+
     pub fn size_bytes(&self) -> usize {
         self.blocks.len() * BLOCK_BYTES
+    }
+
+    /// The number of bits the filter holds.
+    pub fn num_bits(&self) -> usize {
+        self.size_bytes() * 8
+    }
+
+    pub fn insert_many(&mut self, hashes: &[u64]) {
+        let blocks = &mut self.blocks;
+        for_each_block_mask(hashes, blocks.as_ptr().cast(), blocks.len(), |b, mask| {
+            // SAFETY: `b` is below the number of blocks.
+            let block = unsafe { &mut blocks.get_unchecked_mut(b).0 };
+            for i in 0..8 {
+                block[i] |= mask[i];
+            }
+        });
     }
 
     #[inline]
@@ -134,6 +159,37 @@ const INSERT_GROUP: usize = 64;
 /// Filters with fewer blocks than this stay in the cache and aren't prefetched.
 const MIN_PREFETCH_BLOCKS: usize = 1 << 15;
 
+/// Call `f` with the block index and mask of every hash, for a filter of
+/// `num_blocks` blocks starting at `blocks`. The masks of a group of hashes are
+/// computed together, which vectorizes, and on a large filter the blocks of the
+/// group are fetched before any is written, so that their cache misses overlap.
+#[inline(always)]
+fn for_each_block_mask(
+    hashes: &[u64],
+    blocks: *const u8,
+    num_blocks: usize,
+    mut f: impl FnMut(usize, [u32; 8]),
+) {
+    let prefetch = num_blocks >= MIN_PREFETCH_BLOCKS;
+    let mut masks = [[0u32; 8]; INSERT_GROUP];
+    let mut idxs = [0usize; INSERT_GROUP];
+    for group in hashes.chunks(INSERT_GROUP) {
+        for ((hash, mask), b) in group.iter().zip(&mut masks).zip(&mut idxs) {
+            *mask = block_mask(*hash);
+            *b = block_index(*hash, num_blocks);
+        }
+        let idxs = &idxs[..group.len()];
+        if prefetch {
+            for b in idxs {
+                prefetch_write(blocks.wrapping_add(b * BLOCK_BYTES));
+            }
+        }
+        for (mask, b) in masks.iter().zip(idxs) {
+            f(*b, *mask);
+        }
+    }
+}
+
 /// The words of a [`Block`], two at a time, so fewer atomic operations are
 /// needed per key.
 #[repr(C, align(32))]
@@ -144,77 +200,50 @@ const _: () = assert!(
         && align_of::<AtomicBlock>() == align_of::<Block>()
 );
 
-/// A [`SplitBlockBloom`] that many threads insert into at once.
+/// A [`SplitBlockBloom`] that many threads insert into at once. An atomic
+/// insert costs several times a plain one, so a filter only one thread fills
+/// is better built as a [`SplitBlockBloom`].
 pub struct AtomicSplitBlockBloom {
     blocks: Vec<AtomicBlock>,
 }
 
-impl AtomicSplitBlockBloom {
-    /// A filter sized for `num_keys` keys at `bits_per_key` bits each, rounded
-    /// up to a power of two blocks. Its pages are only touched once a key is
-    /// inserted in them.
-    pub fn with_capacity(num_keys: usize, bits_per_key: usize) -> Self {
-        let blocks: Vec<Block> =
-            zeroed_vec(SplitBlockBloom::num_blocks_for(num_keys, bits_per_key));
+impl From<SplitBlockBloom> for AtomicSplitBlockBloom {
+    fn from(bloom: SplitBlockBloom) -> Self {
         // SAFETY: the blocks have the same size and alignment, and any bits
         // are valid in both.
         Self {
-            blocks: unsafe { cast_vec(blocks) },
+            blocks: unsafe { cast_vec(bloom.blocks) },
         }
     }
+}
 
-    /// The number of bits the filter holds.
-    pub fn num_bits(&self) -> usize {
-        self.blocks.len() * BLOCK_BYTES * 8
-    }
-
-    /// Insert every hash of `hashes`. The masks of a group of hashes are
-    /// computed together, which vectorizes, and on a large filter the blocks
-    /// of the group are fetched before any is written, so that their cache
-    /// misses overlap.
+impl AtomicSplitBlockBloom {
     pub fn insert_many(&self, hashes: &[u64]) {
-        let prefetch = self.blocks.len() >= MIN_PREFETCH_BLOCKS;
-        let mut masks = [[0u32; 8]; INSERT_GROUP];
-        let mut idxs = [0usize; INSERT_GROUP];
-        for group in hashes.chunks(INSERT_GROUP) {
-            for ((hash, mask), b) in group.iter().zip(&mut masks).zip(&mut idxs) {
-                *mask = block_mask(*hash);
-                *b = block_index(*hash, self.blocks.len());
+        let blocks = &self.blocks;
+        for_each_block_mask(hashes, blocks.as_ptr().cast(), blocks.len(), |b, mask| {
+            // SAFETY: `b` is below the number of blocks.
+            let block = unsafe { &blocks.get_unchecked(b).0 };
+            let mask: [u64; 4] = bytemuck::cast(mask);
+            let words: [u64; 4] = std::array::from_fn(|i| block[i].load(Ordering::Relaxed));
+            let mut missing = 0;
+            for i in 0..4 {
+                missing |= mask[i] & !words[i];
             }
-            let idxs = &idxs[..group.len()];
-            if prefetch {
-                for b in idxs {
-                    // SAFETY: `b` is below the number of blocks.
-                    let block = unsafe { self.blocks.get_unchecked(*b) };
-                    prefetch_write((block as *const AtomicBlock).cast());
-                }
-            }
-            for (mask, b) in masks.iter().zip(idxs) {
-                // SAFETY: `b` is below the number of blocks.
-                let block = unsafe { &self.blocks.get_unchecked(*b).0 };
-                let mask: [u64; 4] = bytemuck::cast(*mask);
-                let words: [u64; 4] = std::array::from_fn(|i| block[i].load(Ordering::Relaxed));
-                let mut missing = 0;
+            // A block that has the bits of the key already is only read, so
+            // the blocks of keys seen before stay shared between threads.
+            if missing != 0 {
                 for i in 0..4 {
-                    missing |= mask[i] & !words[i];
-                }
-                // A block that has the bits of the key already is only read,
-                // so the blocks of keys seen before stay shared between
-                // threads.
-                if missing != 0 {
-                    for i in 0..4 {
-                        if mask[i] & !words[i] != 0 {
-                            block[i].fetch_or(mask[i], Ordering::Relaxed);
-                        }
+                    if mask[i] & !words[i] != 0 {
+                        block[i].fetch_or(mask[i], Ordering::Relaxed);
                     }
                 }
             }
-        }
+        });
     }
 
     /// The filter, once no thread inserts anymore.
     pub fn into_inner(self) -> SplitBlockBloom {
-        // SAFETY: as in `with_capacity`.
+        // SAFETY: as in `from`.
         SplitBlockBloom {
             blocks: unsafe { cast_vec(self.blocks) },
         }
@@ -271,12 +300,17 @@ mod tests {
         // don't fill a group.
         for keys in [1000, 1 << 20] {
             let hashes = spread_hashes(0..keys as u64);
+            let expected = |bloom: &SplitBlockBloom| bitset_words(&hashes, bloom.size_bytes());
             for batch in [7, 100, keys] {
-                let atomic = AtomicSplitBlockBloom::with_capacity(keys, 8);
+                let mut plain = SplitBlockBloom::with_capacity(keys, 8);
+                hashes.chunks(batch).for_each(|c| plain.insert_many(c));
+                assert_eq!(plain.size_bytes(), SplitBlockBloom::size_for(keys, 8));
+                assert!(words(&plain) == expected(&plain));
+
+                let atomic = AtomicSplitBlockBloom::from(SplitBlockBloom::with_capacity(keys, 8));
                 hashes.chunks(batch).for_each(|c| atomic.insert_many(c));
-                assert_eq!(atomic.num_bits(), SplitBlockBloom::size_for(keys, 8) * 8);
-                let bloom = atomic.into_inner();
-                assert!(words(&bloom) == bitset_words(&hashes, bloom.size_bytes()));
+                let atomic = atomic.into_inner();
+                assert!(words(&atomic) == expected(&atomic));
             }
         }
     }
@@ -284,9 +318,8 @@ mod tests {
     #[test]
     fn contains_like_bitset() {
         let hashes = spread_hashes(0..1000);
-        let atomic = AtomicSplitBlockBloom::with_capacity(1000, 8);
-        atomic.insert_many(&hashes);
-        let bloom = atomic.into_inner();
+        let mut bloom = SplitBlockBloom::with_capacity(1000, 8);
+        bloom.insert_many(&hashes);
         let mut bitset = vec![0u8; bloom.size_bytes()];
         hashes.iter().for_each(|h| insert(&mut bitset, *h));
         assert!(hashes.iter().all(|h| bloom.contains(*h)));
@@ -298,7 +331,7 @@ mod tests {
     #[test]
     fn insert_from_several_threads() {
         let hashes = spread_hashes(0..100_000);
-        let shared = AtomicSplitBlockBloom::with_capacity(hashes.len(), 8);
+        let shared = AtomicSplitBlockBloom::from(SplitBlockBloom::with_capacity(hashes.len(), 8));
         std::thread::scope(|s| {
             for part in hashes.chunks(10_000) {
                 let shared = &shared;

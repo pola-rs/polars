@@ -36,8 +36,6 @@ const BLOOM_MAX_BYTES: usize = 32 << 20;
 /// the bloom filter can be sized from the keys seen. Past this, the builders
 /// share one bloom filter of the size the plan estimated.
 const BUFFERED_ROWS_BUDGET: usize = BLOOM_MAX_BYTES / size_of::<u64>();
-/// Buffered key hashes are inserted in parallel in chunks of this many.
-const INSERT_CHUNK: usize = 1 << 16;
 
 /// The runtime filters of a join and how each is built. Published once, from
 /// the side the plan named as build side. Builders come from `new_builders`
@@ -186,10 +184,10 @@ impl KeyFilterSpec {
 
     /// An empty bloom filter for `keys` distinct keys, or `None` when it would
     /// be larger than is published.
-    fn bloom_for(keys: usize) -> Option<AtomicSplitBlockBloom> {
+    fn bloom_for(keys: usize) -> Option<SplitBlockBloom> {
         let keys = keys.max(BLOOM_MIN_BYTES * 8 / BLOOM_BITS_PER_KEY);
         (SplitBlockBloom::size_for(keys, BLOOM_BITS_PER_KEY) <= BLOOM_MAX_BYTES)
-            .then(|| AtomicSplitBlockBloom::with_capacity(keys, BLOOM_BITS_PER_KEY))
+            .then(|| SplitBlockBloom::with_capacity(keys, BLOOM_BITS_PER_KEY))
     }
 
     /// The bloom filter of the size the plan estimated, which all builders
@@ -197,7 +195,7 @@ impl KeyFilterSpec {
     fn planned_bloom(&self) -> Option<Arc<AtomicSplitBlockBloom>> {
         let mut planned = self.shared.planned.lock();
         if planned.is_none() {
-            *planned = Self::bloom_for(self.bloom_keys?).map(Arc::new);
+            *planned = Self::bloom_for(self.bloom_keys?).map(|bloom| Arc::new(bloom.into()));
             if planned.is_some() && config::verbose() {
                 eprintln!(
                     "runtime filter over {BUFFERED_ROWS_BUDGET} build rows, using the planned bloom filter size"
@@ -331,21 +329,22 @@ impl KeyFilter {
         let bloom = if weak {
             None
         } else if planned {
+            // Every builder holding it was dropped above, so no thread inserts
+            // anymore.
             shared
+                .and_then(|bloom| {
+                    debug_assert_eq!(Arc::strong_count(&bloom), 1);
+                    Arc::into_inner(bloom).map(AtomicSplitBlockBloom::into_inner)
+                })
                 .filter(|bloom| distinct.saturating_mul(BLOOM_MIN_BITS_PER_KEY) <= bloom.num_bits())
         } else {
-            KeyFilterSpec::bloom_for(distinct).map(Arc::new)
+            KeyFilterSpec::bloom_for(distinct)
         };
-        let bloom = bloom.and_then(|bloom| {
-            RAYON.install(|| {
-                buffered
-                    .par_iter()
-                    .flat_map(|hashes| hashes.par_chunks(INSERT_CHUNK))
-                    .for_each(|hashes| bloom.insert_many(hashes))
-            });
-            // Every builder holding it was dropped above.
-            debug_assert_eq!(Arc::strong_count(&bloom), 1);
-            Arc::into_inner(bloom).map(AtomicSplitBlockBloom::into_inner)
+        let bloom = bloom.map(|mut bloom| {
+            for hashes in &buffered {
+                bloom.insert_many(hashes);
+            }
+            bloom
         });
         if bloom.is_none() && config::verbose() {
             eprintln!(
