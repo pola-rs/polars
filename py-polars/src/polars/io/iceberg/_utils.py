@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import ast
 import contextlib
+import contextvars
 import uuid
 from _ast import GtE, Lt, LtE
 from ast import (
@@ -178,7 +179,34 @@ def _ensure_boolean_expression(result: Any) -> Any:
     return result
 
 
-def try_convert_pyarrow_predicate(pyarrow_predicate: str) -> Any | None:
+_current_iceberg_schema: contextvars.ContextVar[pyiceberg.schema.Schema | None] = (
+    contextvars.ContextVar("_current_iceberg_schema", default=None)
+)
+
+
+def _is_null_pushdown_safe(path: list[str]) -> bool:
+    """Check whether every ancestor of `path` (excluding the leaf) is required.
+
+    PyIceberg's `BoundIsNull`/`BoundNotNull` short-circuit based solely on the
+    leaf field's own `required` flag, ignoring that an optional *ancestor*
+    struct can itself be null - which makes the leaf absent regardless of its
+    own declared requiredness. Only safe to push down when every ancestor
+    can't itself be missing.
+    """
+    schema = _current_iceberg_schema.get()
+    if schema is None or len(path) <= 1:
+        return True
+    try:
+        return all(
+            schema.find_field(".".join(path[:i])).required for i in range(1, len(path))
+        )
+    except ValueError:
+        return False
+
+
+def try_convert_pyarrow_predicate(
+    pyarrow_predicate: str, schema: pyiceberg.schema.Schema | None = None
+) -> Any | None:
     try:
         expr_ast = _to_ast(pyarrow_predicate)
     except Exception:
@@ -190,9 +218,15 @@ def try_convert_pyarrow_predicate(pyarrow_predicate: str) -> Any | None:
     # the engine re-applies the full predicate after the scan.
     converted: list[Any] = []
 
-    for conjunct in _split_conjuncts(expr_ast):
-        with contextlib.suppress(Exception):
-            converted.append(_ensure_boolean_expression(_convert_predicate(conjunct)))
+    token = _current_iceberg_schema.set(schema)
+    try:
+        for conjunct in _split_conjuncts(expr_ast):
+            with contextlib.suppress(Exception):
+                converted.append(
+                    _ensure_boolean_expression(_convert_predicate(conjunct))
+                )
+    finally:
+        _current_iceberg_schema.reset(token)
 
     if not converted:
         return None
@@ -285,10 +319,18 @@ def _(a: Call) -> Any:
     else:
         # `field(...)` resolves to a name-per-path-segment list; join with
         # "." to match how PyIceberg indexes nested fields.
-        ref = ".".join(_convert_predicate(a.func.value))  # type: ignore[attr-defined]
+        path = _convert_predicate(a.func.value)  # type: ignore[attr-defined]
+        ref = ".".join(path)
         if f == "isin":
             return pyiceberg.expressions.In(ref, args[0])  # type: ignore[misc, call-arg, arg-type]
         elif f == "is_null":
+            if not _is_null_pushdown_safe(path):
+                # A `required` leaf under an `optional` ancestor struct can still
+                # be absent; PyIceberg's own `BoundIsNull` ignores that and would
+                # short-circuit to AlwaysFalse. Decline - the engine re-applies
+                # the full predicate after the scan regardless.
+                msg = f"is_null pushdown unsafe for nested field: {ref}"
+                raise ValueError(msg)
             return pyiceberg.expressions.IsNull(ref)  # type: ignore[misc, arg-type]
         elif f == "is_nan":
             return pyiceberg.expressions.IsNaN(ref)  # type: ignore[misc, arg-type]
