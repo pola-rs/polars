@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use parking_lot::Mutex;
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::config;
 use polars_core::prelude::*;
@@ -13,7 +14,7 @@ use polars_expr::hash_keys::HashKeys;
 use polars_io::predicates::{RuntimeRange, cast_bound};
 use polars_plan::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use polars_plan::plans::{PredicateExpr, TrivialPredicateExpr};
-use polars_utils::bloom_filter::SplitBlockBloom;
+use polars_utils::bloom_filter::{AtomicSplitBlockBloom, SplitBlockBloom};
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
@@ -32,9 +33,11 @@ const BLOOM_MIN_BYTES: usize = 64 << 10;
 /// Largest bloom filter that is published.
 const BLOOM_MAX_BYTES: usize = 32 << 20;
 /// Build rows whose key hashes are kept, over all builders of one filter, so
-/// the bloom filter can be sized from the keys seen. Past this, it gets the
-/// size the plan estimated.
+/// the bloom filter can be sized from the keys seen. Past this, the builders
+/// share one bloom filter of the size the plan estimated.
 const BUFFERED_ROWS_BUDGET: usize = BLOOM_MAX_BYTES / size_of::<u64>();
+/// Buffered key hashes are inserted in parallel in chunks of this many.
+const INSERT_CHUNK: usize = 1 << 16;
 
 /// The runtime filters of a join and how each is built. Published once, from
 /// the side the plan named as build side. Builders come from `new_builders`
@@ -86,21 +89,6 @@ impl RuntimeFilters {
         Ok(())
     }
 
-    /// Set every filter to what its builder collected.
-    pub(super) fn publish(&self, builders: Vec<KeyFilterBuilder>) {
-        assert_eq!(builders.len(), self.filters.len());
-        for ((filter, _), builder) in self.filters.iter().zip(builders) {
-            let key_filter = builder.finish();
-            if config::verbose() {
-                eprintln!(
-                    "publishing runtime filter for key {}: {key_filter:?}",
-                    filter.key_idx
-                );
-            }
-            filter.pred.set(Arc::new(key_filter));
-        }
-    }
-
     /// Set every filter to the keys of a completely sampled side. The filter
     /// holds whichever side is built later, as no key of the other side outside
     /// it can match.
@@ -110,46 +98,46 @@ impl RuntimeFilters {
         key_selectors: &[StreamExpr],
         state: &ExecutionState,
     ) -> PolarsResult<()> {
-        // One builder per thread, as every builder past `BUFFERED_ROWS_BUDGET`
-        // allocates a whole bloom filter.
+        // One set of builders per thread.
         let chunk_len = morsels.len().div_ceil(RAYON.current_num_threads()).max(1);
-        let builders = RAYON
-            .install(|| {
-                morsels
-                    .par_chunks(chunk_len)
-                    .map(|chunk| {
-                        let mut builders = self.new_builders();
-                        for morsel in chunk {
-                            let df = morsel.df_blocking();
-                            let keys =
-                                ASYNC.block_on(select_key_columns(&df, key_selectors, state))?;
-                            self.extend(&keys, &mut builders)?;
-                        }
-                        PolarsResult::Ok(builders)
-                    })
-                    .try_reduce_with(|mut a, b| {
-                        for (a, b) in a.iter_mut().zip(b) {
-                            a.merge(b);
-                        }
-                        Ok(a)
-                    })
-            })
-            .transpose()?
-            .unwrap_or_else(|| self.new_builders());
-        self.publish(builders);
+        let locals = RAYON.install(|| {
+            morsels
+                .par_chunks(chunk_len)
+                .map(|chunk| {
+                    let mut builders = self.new_builders();
+                    for morsel in chunk {
+                        let df = morsel.df_blocking();
+                        let keys = ASYNC.block_on(select_key_columns(&df, key_selectors, state))?;
+                        self.extend(&keys, &mut builders)?;
+                    }
+                    PolarsResult::Ok(builders)
+                })
+                .collect::<PolarsResult<Vec<_>>>()
+        })?;
+        self.publish_merged(locals);
         Ok(())
     }
 
     /// Set every filter to what the builders of every local build collected.
     pub(super) fn publish_merged(&self, locals: impl IntoIterator<Item = Vec<KeyFilterBuilder>>) {
-        let mut builders = self.new_builders();
+        let mut per_filter: Vec<Vec<KeyFilterBuilder>> =
+            self.filters.iter().map(|_| Vec::new()).collect();
         for local in locals {
-            assert_eq!(local.len(), builders.len());
-            for (builder, seen) in builders.iter_mut().zip(local) {
-                builder.merge(seen);
+            assert_eq!(local.len(), per_filter.len());
+            for (builders, builder) in per_filter.iter_mut().zip(local) {
+                builders.push(builder);
             }
         }
-        self.publish(builders);
+        for ((filter, spec), builders) in self.filters.iter().zip(per_filter) {
+            let key_filter = KeyFilter::from_builders(spec, builders);
+            if config::verbose() {
+                eprintln!(
+                    "publishing runtime filter for key {}: {key_filter:?}",
+                    filter.key_idx
+                );
+            }
+            filter.pred.set(Arc::new(key_filter));
+        }
     }
 
     /// Set every filter not published yet to one that skips nothing.
@@ -163,7 +151,7 @@ impl RuntimeFilters {
 }
 
 /// How a join builds the filter of one key.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct KeyFilterSpec {
     dtype: DataType,
     /// Distinct keys the bloom filter is sized for; `None` gives the range only.
@@ -172,8 +160,17 @@ struct KeyFilterSpec {
     probe_distinct: Option<usize>,
     /// Shared by the build and probe sides.
     random_state: PlRandomState,
-    /// Build rows seen by all builders of this filter. It only grows.
-    rows_seen: Arc<RelaxedCell<usize>>,
+    shared: Arc<SharedBloom>,
+}
+
+/// What all builders of one filter share.
+#[derive(Default)]
+struct SharedBloom {
+    /// Build rows seen by all builders. It only grows.
+    rows_seen: RelaxedCell<usize>,
+    /// The bloom filter of the planned size, made by the first builder past
+    /// `BUFFERED_ROWS_BUDGET` and filled by all of them. Taken when publishing.
+    planned: Mutex<Option<Arc<AtomicSplitBlockBloom>>>,
 }
 
 impl KeyFilterSpec {
@@ -183,21 +180,31 @@ impl KeyFilterSpec {
             bloom_keys: filter.bloom_keys,
             probe_distinct: filter.probe_distinct,
             random_state: PlRandomState::default(),
-            rows_seen: Arc::default(),
+            shared: Arc::default(),
         }
     }
 
     /// An empty bloom filter for `keys` distinct keys, or `None` when it would
     /// be larger than is published.
-    fn bloom_for(keys: usize) -> Option<SplitBlockBloom> {
+    fn bloom_for(keys: usize) -> Option<AtomicSplitBlockBloom> {
         let keys = keys.max(BLOOM_MIN_BYTES * 8 / BLOOM_BITS_PER_KEY);
-        let bytes = SplitBlockBloom::size_for(keys, BLOOM_BITS_PER_KEY);
-        (bytes <= BLOOM_MAX_BYTES).then(|| SplitBlockBloom::with_capacity(keys, BLOOM_BITS_PER_KEY))
+        (SplitBlockBloom::size_for(keys, BLOOM_BITS_PER_KEY) <= BLOOM_MAX_BYTES)
+            .then(|| AtomicSplitBlockBloom::with_capacity(keys, BLOOM_BITS_PER_KEY))
     }
 
-    /// The bloom filter of the size the plan estimated.
-    fn planned_bloom(&self) -> Option<SplitBlockBloom> {
-        Self::bloom_for(self.bloom_keys?)
+    /// The bloom filter of the size the plan estimated, which all builders
+    /// share, or `None` when it would be larger than is published.
+    fn planned_bloom(&self) -> Option<Arc<AtomicSplitBlockBloom>> {
+        let mut planned = self.shared.planned.lock();
+        if planned.is_none() {
+            *planned = Self::bloom_for(self.bloom_keys?).map(Arc::new);
+            if planned.is_some() && config::verbose() {
+                eprintln!(
+                    "runtime filter over {BUFFERED_ROWS_BUDGET} build rows, using the planned bloom filter size"
+                );
+            }
+        }
+        planned.clone()
     }
 
     fn hash_keys(&self, column: &Column) -> HashKeys {
@@ -219,37 +226,31 @@ pub(super) struct KeyFilterBuilder {
 struct BloomBuilder {
     spec: KeyFilterSpec,
     keys: BloomKeys,
+    /// Every key hash seen while buffered, else those of the last batch.
+    hashes: Vec<u64>,
     sketch: CardinalitySketch,
 }
 
 enum BloomKeys {
-    /// The key hashes, while the filter's build rows fit in
+    /// The key hashes are kept while the filter's build rows fit in
     /// `BUFFERED_ROWS_BUDGET`. The bloom filter is sized when publishing.
-    Buffered(Vec<u64>),
-    /// A bloom filter of the planned size, or `None` when that is too large.
-    Planned(Option<SplitBlockBloom>),
+    Buffered,
+    /// The shared bloom filter of the planned size, or `None` when that is too
+    /// large.
+    Planned(Option<Arc<AtomicSplitBlockBloom>>),
 }
 
-impl BloomKeys {
-    fn insert(&mut self, hash: u64) {
-        match self {
-            BloomKeys::Buffered(hashes) => hashes.push(hash),
-            BloomKeys::Planned(Some(bloom)) => bloom.insert(hash),
-            BloomKeys::Planned(None) => {},
-        }
-    }
-
-    /// Move the buffered hashes into a bloom filter of the planned size.
-    fn switch_to_planned(&mut self, spec: &KeyFilterSpec) {
-        if let BloomKeys::Buffered(hashes) = self {
-            if config::verbose() {
-                eprintln!(
-                    "runtime filter over {BUFFERED_ROWS_BUDGET} build rows, using the planned bloom filter size"
-                );
+impl BloomBuilder {
+    /// Move the buffered hashes into the shared bloom filter of the planned
+    /// size.
+    fn switch_to_planned(&mut self) {
+        if matches!(self.keys, BloomKeys::Buffered) {
+            let bloom = self.spec.planned_bloom();
+            if let Some(bloom) = &bloom {
+                bloom.insert_many(&self.hashes);
             }
-            let hashes = std::mem::take(hashes);
-            *self = BloomKeys::Planned(spec.planned_bloom());
-            hashes.into_iter().for_each(|hash| self.insert(hash));
+            self.hashes = Vec::new();
+            self.keys = BloomKeys::Planned(bloom);
         }
     }
 }
@@ -260,7 +261,8 @@ impl KeyFilterBuilder {
             range: KeyRange::default(),
             bloom: spec.bloom_keys.map(|_| BloomBuilder {
                 spec: spec.clone(),
-                keys: BloomKeys::Buffered(Vec::new()),
+                keys: BloomKeys::Buffered,
+                hashes: Vec::new(),
                 sketch: CardinalitySketch::new(),
             }),
         }
@@ -270,82 +272,93 @@ impl KeyFilterBuilder {
     fn extend(&mut self, column: &Column) -> PolarsResult<()> {
         self.range.extend(column)?;
         if let Some(b) = &mut self.bloom {
-            let rows_seen = b.spec.rows_seen.fetch_add(column.len()) + column.len();
+            let rows_seen = b.spec.shared.rows_seen.fetch_add(column.len()) + column.len();
             if rows_seen > BUFFERED_ROWS_BUDGET {
-                b.keys.switch_to_planned(&b.spec);
+                b.switch_to_planned();
             }
-            match &mut b.keys {
+            let bloom = match &b.keys {
+                BloomKeys::Buffered => None,
                 BloomKeys::Planned(None) => return Ok(()),
-                BloomKeys::Buffered(hashes) => hashes.reserve(column.len()),
-                BloomKeys::Planned(Some(_)) => {},
-            }
+                BloomKeys::Planned(Some(bloom)) => {
+                    b.hashes.clear();
+                    Some(bloom)
+                },
+            };
+            b.hashes.reserve(column.len());
             b.spec.hash_keys(column).for_each_hash(|_, hash| {
                 if let Some(hash) = hash {
-                    b.keys.insert(hash);
+                    b.hashes.push(hash);
                     b.sketch.insert(hash);
                 }
             });
+            if let Some(bloom) = bloom {
+                bloom.insert_many(&b.hashes);
+            }
         }
         Ok(())
     }
+}
 
-    /// Add everything `other` collected.
-    pub(super) fn merge(&mut self, other: Self) {
-        self.range.merge(other.range);
-        let (Some(a), Some(b)) = (&mut self.bloom, other.bloom) else {
-            return;
-        };
-        a.sketch.combine(&b.sketch);
-        if matches!(b.keys, BloomKeys::Planned(_)) {
-            a.keys.switch_to_planned(&a.spec);
-        }
-        match (&mut a.keys, b.keys) {
-            (BloomKeys::Buffered(a), BloomKeys::Buffered(b)) => a.extend(b),
-            (a, BloomKeys::Buffered(b)) => b.into_iter().for_each(|hash| a.insert(hash)),
-            (BloomKeys::Planned(Some(a)), BloomKeys::Planned(Some(b))) => a.union_with(&b),
-            (BloomKeys::Planned(_), BloomKeys::Planned(_)) => {},
-            (BloomKeys::Buffered(_), BloomKeys::Planned(_)) => unreachable!(),
-        }
-    }
-
-    /// The filter to publish. The bloom filter is left out when it holds too
-    /// many distinct keys for its size, or too large a share of the probe's
-    /// distinct keys to be worth probing.
-    fn finish(self) -> KeyFilter {
-        let bloom = self.bloom.and_then(|b| {
-            let distinct = b.sketch.estimate();
-            let weak = b
-                .spec
-                .probe_distinct
-                .is_some_and(|probe| distinct as f64 > probe as f64 * MAX_BUILD_PROBE_DISTINCT_RATIO);
-            let bloom = match b.keys {
-                _ if weak => None,
-                BloomKeys::Buffered(hashes) => {
-                    KeyFilterSpec::bloom_for(distinct).map(|mut bloom| {
-                        for hash in hashes {
-                            bloom.insert(hash);
-                        }
-                        bloom
-                    })
-                },
-                BloomKeys::Planned(bloom) => bloom.filter(|bloom| {
-                    distinct.saturating_mul(BLOOM_MIN_BITS_PER_KEY) <= bloom.num_bits()
-                }),
-            };
-            if bloom.is_none() && config::verbose() {
-                eprintln!(
-                    "dropping bloom filter: {distinct} distinct build keys, {:?} distinct probe keys",
-                    b.spec.probe_distinct
-                );
+impl KeyFilter {
+    /// The filter to publish from all builders of `spec`. The bloom filter is
+    /// left out when it holds too many distinct keys for its size, or too large
+    /// a share of the probe's distinct keys to be worth probing.
+    fn from_builders(spec: &KeyFilterSpec, builders: Vec<KeyFilterBuilder>) -> Self {
+        let mut range = KeyRange::default();
+        let mut sketch = CardinalitySketch::new();
+        let mut planned = false;
+        let mut buffered = Vec::new();
+        for builder in builders {
+            range.merge(builder.range);
+            if let Some(b) = builder.bloom {
+                sketch.combine(&b.sketch);
+                match b.keys {
+                    BloomKeys::Buffered => buffered.push(b.hashes),
+                    BloomKeys::Planned(_) => planned = true,
+                }
             }
-            Some(KeyBloom {
-                spec: b.spec,
-                bloom: bloom?,
-            })
+        }
+        // Taken whether it is published or not, so it is freed.
+        let shared = spec.shared.planned.lock().take();
+        if spec.bloom_keys.is_none() {
+            return Self { range, bloom: None };
+        }
+
+        let distinct = sketch.estimate();
+        let weak = spec
+            .probe_distinct
+            .is_some_and(|probe| distinct as f64 > probe as f64 * MAX_BUILD_PROBE_DISTINCT_RATIO);
+        let bloom = if weak {
+            None
+        } else if planned {
+            shared
+                .filter(|bloom| distinct.saturating_mul(BLOOM_MIN_BITS_PER_KEY) <= bloom.num_bits())
+        } else {
+            KeyFilterSpec::bloom_for(distinct).map(Arc::new)
+        };
+        let bloom = bloom.and_then(|bloom| {
+            RAYON.install(|| {
+                buffered
+                    .par_iter()
+                    .flat_map(|hashes| hashes.par_chunks(INSERT_CHUNK))
+                    .for_each(|hashes| bloom.insert_many(hashes))
+            });
+            // Every builder holding it was dropped above.
+            debug_assert_eq!(Arc::strong_count(&bloom), 1);
+            Arc::into_inner(bloom).map(AtomicSplitBlockBloom::into_inner)
         });
-        KeyFilter {
-            range: self.range,
-            bloom,
+        if bloom.is_none() && config::verbose() {
+            eprintln!(
+                "dropping bloom filter: {distinct} distinct build keys, {:?} distinct probe keys",
+                spec.probe_distinct
+            );
+        }
+        Self {
+            range,
+            bloom: bloom.map(|bloom| KeyBloom {
+                spec: spec.clone(),
+                bloom,
+            }),
         }
     }
 }
@@ -537,7 +550,10 @@ mod tests {
             bloom_keys: Some(bloom_keys),
             probe_distinct: None,
             random_state,
-            rows_seen: Arc::new(RelaxedCell::from(BUFFERED_ROWS_BUDGET - rows_left)),
+            shared: Arc::new(SharedBloom {
+                rows_seen: RelaxedCell::from(BUFFERED_ROWS_BUDGET - rows_left),
+                planned: Mutex::default(),
+            }),
         }
     }
 
@@ -545,13 +561,33 @@ mod tests {
         Column::new("k".into(), range.collect::<Vec<_>>())
     }
 
+    /// A builder of `spec` that saw `ranges`, one batch each.
+    fn built(spec: &KeyFilterSpec, ranges: &[std::ops::Range<i64>]) -> KeyFilterBuilder {
+        let mut builder = KeyFilterBuilder::new(spec);
+        for range in ranges {
+            builder.extend(&keys(range.clone())).unwrap();
+        }
+        builder
+    }
+
+    fn planned_bloom(builder: &KeyFilterBuilder) -> Option<&Arc<AtomicSplitBlockBloom>> {
+        match &builder.bloom.as_ref().unwrap().keys {
+            BloomKeys::Planned(bloom) => bloom.as_ref(),
+            BloomKeys::Buffered => None,
+        }
+    }
+
     fn is_buffered(builder: &KeyFilterBuilder) -> bool {
-        matches!(builder.bloom.as_ref().unwrap().keys, BloomKeys::Buffered(_))
+        matches!(builder.bloom.as_ref().unwrap().keys, BloomKeys::Buffered)
     }
 
     /// The bloom filter's size and which of `probe` it may contain.
-    fn published(builder: KeyFilterBuilder, probe: &Column) -> Option<(usize, Vec<bool>)> {
-        let filter = builder.finish();
+    fn published(
+        spec: &KeyFilterSpec,
+        builders: Vec<KeyFilterBuilder>,
+        probe: &Column,
+    ) -> Option<(usize, Vec<bool>)> {
+        let filter = KeyFilter::from_builders(spec, builders);
         let size = filter.bloom.as_ref()?.bloom.size_bytes();
         let mask = filter
             .evaluate(std::slice::from_ref(probe))
@@ -565,11 +601,10 @@ mod tests {
     fn buffered_bloom_is_sized_from_the_keys_seen() {
         // Planned for 1000 keys, but 1M arrive.
         let spec = spec(1000, BUFFERED_ROWS_BUDGET);
-        let mut builder = KeyFilterBuilder::new(&spec);
-        builder.extend(&keys(0..1_000_000)).unwrap();
+        let builder = built(&spec, &[0..1_000_000]);
         assert!(is_buffered(&builder));
 
-        let (size, mask) = published(builder, &keys(0..1_000_000)).unwrap();
+        let (size, mask) = published(&spec, vec![builder], &keys(0..1_000_000)).unwrap();
         assert!(size * 8 >= 1_000_000 * BLOOM_MIN_BITS_PER_KEY);
         assert!(mask.iter().all(|m| *m));
     }
@@ -577,36 +612,36 @@ mod tests {
     #[test]
     fn planned_bloom_past_the_budget() {
         let filled = spec(1000, 10_000);
-        let mut builder = KeyFilterBuilder::new(&filled);
-        builder.extend(&keys(0..5_000)).unwrap();
+        let mut builder = built(&filled, &[0..5_000]);
         assert!(is_buffered(&builder));
         builder.extend(&keys(5_000..10_001)).unwrap();
         assert!(!is_buffered(&builder));
 
         // The planned size holds these keys, so it is published.
-        let (size, mask) = published(builder, &keys(0..10_001)).unwrap();
+        let (size, mask) = published(&filled, vec![builder], &keys(0..10_001)).unwrap();
         assert_eq!(size, BLOOM_MIN_BYTES);
         assert!(mask.iter().all(|m| *m));
 
         // Too many keys for the planned size, so it is dropped.
         let overloaded = spec(1000, 10_000);
-        let mut builder = KeyFilterBuilder::new(&overloaded);
-        builder.extend(&keys(0..1_000_000)).unwrap();
-        assert!(published(builder, &keys(0..10)).is_none());
+        let builder = built(&overloaded, &[0..1_000_000]);
+        assert!(published(&overloaded, vec![builder], &keys(0..10)).is_none());
     }
 
     #[test]
-    fn budget_is_shared_by_all_builders() {
+    fn budget_and_bloom_are_shared_by_all_builders() {
         let spec = spec(1000, 1000);
-        let mut a = KeyFilterBuilder::new(&spec);
-        let mut b = KeyFilterBuilder::new(&spec);
-        a.extend(&keys(0..600)).unwrap();
-        b.extend(&keys(600..1200)).unwrap();
+        let mut a = built(&spec, &[0..600]);
+        let b = built(&spec, &[600..1200]);
         assert!(is_buffered(&a));
         assert!(!is_buffered(&b));
-        // `a` goes over on its next batch, however small.
+        // `a` goes over on its next batch, however small, into the same bloom
+        // filter.
         a.extend(&keys(1200..1201)).unwrap();
-        assert!(!is_buffered(&a));
+        assert!(Arc::ptr_eq(
+            planned_bloom(&a).unwrap(),
+            planned_bloom(&b).unwrap()
+        ));
     }
 
     #[test]
@@ -615,15 +650,12 @@ mod tests {
         let random_state = PlRandomState::default();
         let build = |splits: &[std::ops::Range<i64>]| {
             let spec = spec_with_hashes(10, 100_000, random_state.clone());
-            let mut merged = KeyFilterBuilder::new(&spec);
-            for range in splits {
-                let mut local = KeyFilterBuilder::new(&spec);
-                local.extend(&keys(range.clone())).unwrap();
-                assert!(is_buffered(&local));
-                merged.merge(local);
-            }
-            assert!(is_buffered(&merged));
-            published(merged, &probe).unwrap()
+            let builders = splits
+                .iter()
+                .map(|range| built(&spec, std::slice::from_ref(range)))
+                .collect::<Vec<_>>();
+            assert!(builders.iter().all(is_buffered));
+            published(&spec, builders, &probe).unwrap()
         };
         let skewed = build(&[0..90_000, 90_000..95_000, 95_000..100_000]);
         let even = build(&[0..33_000, 33_000..66_000, 66_000..100_000]);
@@ -631,37 +663,37 @@ mod tests {
     }
 
     #[test]
-    fn merge_order_does_not_matter() {
+    fn split_over_builders_does_not_matter() {
         let probe = keys(0..40_000);
-        // Two builders of one filter, one over the budget.
         let random_state = PlRandomState::default();
-        let pair = || {
-            let spec = spec_with_hashes(1000, 5_000, random_state.clone());
-            let mut buffered = KeyFilterBuilder::new(&spec);
-            buffered.extend(&keys(0..4_000)).unwrap();
-            let mut planned = KeyFilterBuilder::new(&spec);
-            planned.extend(&keys(4_000..8_000)).unwrap();
+        let spec = || spec_with_hashes(1000, 5_000, random_state.clone());
+
+        // All keys in one builder, which goes over the budget halfway.
+        let one = spec();
+        let builder = built(&one, &[0..4_000, 4_000..8_000]);
+        let expected = published(&one, vec![builder], &probe).unwrap();
+        assert!(expected.1[..8_000].iter().all(|m| *m));
+
+        // Two builders, one of which stays buffered, in either order.
+        for buffered_first in [true, false] {
+            let two = spec();
+            let buffered = built(&two, &[0..4_000]);
+            let planned = built(&two, &[4_000..8_000]);
             assert!(is_buffered(&buffered));
             assert!(!is_buffered(&planned));
-            (spec, buffered, planned)
-        };
+            let builders = if buffered_first {
+                vec![buffered, planned]
+            } else {
+                vec![planned, buffered]
+            };
+            assert_eq!(expected, published(&two, builders, &probe).unwrap());
+        }
+    }
 
-        let (spec, buffered, planned) = pair();
-        let mut buffered_first = KeyFilterBuilder::new(&spec);
-        buffered_first.merge(buffered);
-        buffered_first.merge(planned);
-
-        let (spec, buffered, planned) = pair();
-        let mut planned_first = KeyFilterBuilder::new(&spec);
-        planned_first.merge(planned);
-        planned_first.merge(buffered);
-
-        let (_, buffered, mut planned) = pair();
-        planned.merge(buffered);
-
-        let expected = published(buffered_first, &probe).unwrap();
-        assert!(expected.1[..8_000].iter().all(|m| *m));
-        assert_eq!(expected, published(planned_first, &probe).unwrap());
-        assert_eq!(expected, published(planned, &probe).unwrap());
+    #[test]
+    fn no_builders_publish_an_empty_filter() {
+        let spec = spec(1000, BUFFERED_ROWS_BUDGET);
+        let (_, mask) = published(&spec, Vec::new(), &keys(0..1000)).unwrap();
+        assert!(mask.iter().all(|m| !*m));
     }
 }
