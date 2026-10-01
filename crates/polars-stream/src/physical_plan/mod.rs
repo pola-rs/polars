@@ -38,6 +38,7 @@ mod io;
 mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
+mod split_select;
 mod to_description;
 mod to_graph;
 

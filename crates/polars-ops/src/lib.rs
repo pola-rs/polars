@@ -12,3 +12,5 @@ pub use frame::unpivot;
 pub mod frame;
 pub mod prelude;
 pub mod series;
+
+polars_utils::define_unique_column_name!("OPS");

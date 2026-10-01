@@ -37,7 +37,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
+use polars_utils::{IdxSize, format_pl_smallstr};
 use slotmap::{DenseSlotMap, SecondaryMap};
 
 use super::lower_expr::{build_hstack_stream, build_sort_stream};
@@ -54,6 +54,7 @@ use crate::physical_plan::lower_expr::{
     is_elementwise_rec_cached, lower_exprs,
 };
 use crate::physical_plan::lower_group_by::build_group_by_stream;
+use crate::unique_column_name;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 /// Creates a new PhysStream which outputs a slice of the input stream.

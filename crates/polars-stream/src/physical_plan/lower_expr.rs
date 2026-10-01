@@ -28,7 +28,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
-use polars_utils::{unique_column_name, unitvec};
+use polars_utils::unitvec;
 use slotmap::DenseSlotMap;
 
 use super::fmt::fmt_exprs;
@@ -42,6 +42,7 @@ use crate::physical_plan::lower_group_by::{
 use crate::physical_plan::lower_ir::{
     build_filter_stream_with_ctx, build_row_idx_stream, build_slice_stream,
 };
+use crate::unique_column_name;
 
 type ExprNodeKey = Node;
 

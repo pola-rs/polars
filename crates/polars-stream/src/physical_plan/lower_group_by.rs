@@ -10,15 +10,14 @@ use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::optimizer::cse::split_select::split_pre_post_select_minsize_elementwise;
 use polars_plan::plans::{
     AExpr, CanonicalExprId, CanonicalExprMap, IR, IRAggExpr, IRFunctionExpr, write_group_by,
 };
 use polars_plan::prelude::*;
 use polars_plan::utils::rename_columns;
+use polars_utils::IdxSize;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::{IdxSize, unique_column_name};
 use recursive::recursive;
 use slotmap::DenseSlotMap;
 
@@ -30,6 +29,8 @@ use crate::physical_plan::lower_expr::{
 use crate::physical_plan::lower_ir::{
     build_filter_stream, build_row_idx_stream, build_slice_stream,
 };
+use crate::physical_plan::split_select::split_pre_post_select_minsize_elementwise;
+use crate::unique_column_name;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 #[derive(Copy, Clone, Debug)]
