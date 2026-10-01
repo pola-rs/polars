@@ -10,7 +10,6 @@ use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::optimizer::cse::split_select::split_pre_post_select_minsize_elementwise;
 use polars_plan::plans::{
     AExpr, CanonicalExprId, CanonicalExprMap, IR, IRAggExpr, IRFunctionExpr, write_group_by,
 };
@@ -30,6 +29,7 @@ use crate::physical_plan::lower_expr::{
 use crate::physical_plan::lower_ir::{
     build_filter_stream, build_row_idx_stream, build_slice_stream,
 };
+use crate::physical_plan::split_select::split_pre_post_select_minsize_elementwise;
 use crate::unique_column_name;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -921,7 +921,6 @@ pub fn try_build_streaming_group_by(
         &must_preselect,
         &input_schema,
         expr_arena,
-        unique_column_name,
     )?;
 
     // A post-select expression that is a bare column reference means the split chose to

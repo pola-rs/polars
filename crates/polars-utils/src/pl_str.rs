@@ -308,6 +308,20 @@ impl core::fmt::Display for PlSmallStr {
     }
 }
 
+/// Defines a `pub(crate) fn unique_column_name()` minting `_POLARS_TMP_{tag}_{n}`.
+#[macro_export]
+macro_rules! define_unique_column_name {
+    ($(#[$attr:meta])* $tag:literal) => {
+        $(#[$attr])*
+        pub(crate) fn unique_column_name() -> $crate::pl_str::PlSmallStr {
+            static COUNTER: $crate::relaxed_cell::RelaxedCell<u64> =
+                $crate::relaxed_cell::RelaxedCell::new_u64(0);
+            let idx = COUNTER.fetch_add(1);
+            $crate::format_pl_smallstr!(concat!("_POLARS_TMP_", $tag, "_{}"), idx)
+        }
+    };
+}
+
 #[cfg(feature = "python")]
 mod _python_impl {
     use std::convert::Infallible;

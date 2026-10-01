@@ -8,14 +8,14 @@
 use polars_core::prelude::{DataType, InitHashMaps, PlIndexMap, PlIndexSet};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
+use polars_plan::plans::expr_ir::{ExprIR, OutputName};
+use polars_plan::plans::{AExpr, CanonicalExprId, CanonicalExprMap, ToFieldContext, is_splittable};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
-use crate::plans::{
-    AExpr, CanonicalExprId, CanonicalExprMap, ExprIR, OutputName, ToFieldContext, is_splittable,
-};
+use crate::unique_column_name;
 
 /// Assumed payload of one variable-length value, in bits.
 const ESTIMATED_VARLEN_PAYLOAD_BITS: u64 = 16 * 8;
@@ -44,7 +44,6 @@ fn expected_row_bits(dtype: &DataType) -> u64 {
             D::List(inner) => 64 + ESTIMATED_LIST_LEN * expected_row_bits(inner),
             #[cfg(feature = "dtype-array")]
             D::Array(inner, width) => (*width as u64).saturating_mul(expected_row_bits(inner)),
-            #[cfg(feature = "dtype-struct")]
             D::Struct(fields) => fields
                 .iter()
                 .map(|f| expected_row_bits(f.dtype()))
@@ -227,7 +226,6 @@ struct Rebuilder<'a> {
     memo: Vec<Option<Node>>,
     used_names: PlIndexSet<PlSmallStr>,
     pre_select: Vec<ExprIR>,
-    unique_column_name: fn() -> PlSmallStr,
 }
 
 impl Rebuilder<'_> {
@@ -252,7 +250,7 @@ impl Rebuilder<'_> {
             // renaming it for no reason.
             let name = match expr_arena.get(node) {
                 AExpr::Column(name) if !self.used_names.contains(name) => name.clone(),
-                _ => (self.unique_column_name)(),
+                _ => unique_column_name(),
             };
             self.used_names.insert(name.clone());
             self.pre_select
@@ -292,7 +290,6 @@ pub fn split_pre_post_select_minsize_elementwise(
     must_preselect: &[ExprIR],
     input_schema: &Schema,
     expr_arena: &mut Arena<AExpr>,
-    unique_column_name: fn() -> PlSmallStr,
 ) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>)> {
     let mut canonical = CanonicalExprMap::new();
     let mut idx_of = PlIndexMap::new();
@@ -377,7 +374,6 @@ pub fn split_pre_post_select_minsize_elementwise(
         memo,
         used_names,
         pre_select,
-        unique_column_name,
     };
 
     // Inputs precede their users in the DAG, so this rebuilds an expression before those

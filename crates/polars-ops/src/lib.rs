@@ -13,9 +13,4 @@ pub mod frame;
 pub mod prelude;
 pub mod series;
 
-pub(crate) fn unique_column_name() -> polars_utils::pl_str::PlSmallStr {
-    static COUNTER: polars_utils::relaxed_cell::RelaxedCell<u64> =
-        polars_utils::relaxed_cell::RelaxedCell::new_u64(0);
-    let idx = COUNTER.fetch_add(1);
-    polars_utils::format_pl_smallstr!("_POLARS_TMP_OPS_{idx}")
-}
+polars_utils::define_unique_column_name!("OPS");
