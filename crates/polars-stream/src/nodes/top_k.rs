@@ -3,6 +3,7 @@ use std::collections::BinaryHeap;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::prelude::row_encode::_get_rows_encoded;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
@@ -543,13 +544,14 @@ impl TopKNode {
         key_schema: Arc<Schema>,
         key_selectors: Vec<StreamExpr>,
         dyn_pred: Option<DynamicPred>,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         Self {
             reverse,
             nulls_last,
             key_schema,
             key_selectors,
-            state: TopKState::WaitingForK(InMemorySinkNode::new(k_schema)),
+            state: TopKState::WaitingForK(InMemorySinkNode::new(k_schema, task_metrics)),
             dyn_pred,
         }
     }

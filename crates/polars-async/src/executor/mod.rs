@@ -7,6 +7,7 @@ mod numa;
 #[path = "numa/dummy.rs"]
 mod numa;
 
+mod metrics;
 mod park_group;
 mod task;
 
@@ -23,15 +24,16 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::{Receiver, Sender};
 use crossbeam_deque::{Injector, Steal, Stealer, Worker as WorkQueue};
 use crossbeam_utils::CachePadded;
+use metrics::TaskMetrics;
+pub use metrics::{TaskMetricAggregator, TaskMetricsSnapshot};
 use numa::{NumaRegionId, cpu_idx_to_numa_region, num_numa_regions, pin_thread_to_numa_region};
 use park_group::ParkGroup;
 use parking_lot::Mutex;
-use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::with_drop::WithDrop;
 use rand::rngs::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
 use slotmap::SlotMap;
-use task::{Cancellable, DynTask, Runnable};
+use task::{Cancellable, DynTask, OnCancel, Runnable};
 
 thread_local! {
     pub static ALLOW_RAYON_THREADS: Cell<bool> = const { Cell::new(true) };
@@ -46,12 +48,6 @@ thread_local! {
 /// Returns whether this thread is actively used for scheduling tasks.
 pub fn is_scheduling_polars_executor_thread() -> bool {
     TLS_THREAD_ID.get() != usize::MAX
-}
-
-static TRACK_METRICS: RelaxedCell<bool> = RelaxedCell::new_bool(false);
-
-pub fn track_task_metrics(should_track: bool) {
-    TRACK_METRICS.store(should_track);
 }
 
 static GLOBAL_SCHEDULER: OnceLock<Executor> = OnceLock::new();
@@ -73,16 +69,6 @@ struct ScopedTaskMetadata {
     completed_tasks: Weak<Mutex<Vec<TaskKey>>>,
 }
 
-#[derive(Default)]
-#[repr(align(128))]
-pub struct TaskMetrics {
-    pub total_polls: RelaxedCell<u64>,
-    pub total_stolen_polls: RelaxedCell<u64>,
-    pub total_poll_time_ns: RelaxedCell<u64>,
-    pub max_poll_time_ns: RelaxedCell<u64>,
-    pub done: RelaxedCell<bool>,
-}
-
 struct TaskMetadata {
     spawn_location: &'static Location<'static>,
     priority: TaskPriority,
@@ -93,10 +79,6 @@ struct TaskMetadata {
 
 impl Drop for TaskMetadata {
     fn drop(&mut self) {
-        if let Some(metrics) = self.metrics.as_ref() {
-            metrics.done.store(true);
-        }
-
         if let Some(scoped) = &self.scoped {
             if let Some(completed_tasks) = scoped.completed_tasks.upgrade() {
                 completed_tasks.lock().push(scoped.task_key);
@@ -105,14 +87,18 @@ impl Drop for TaskMetadata {
     }
 }
 
+impl OnCancel for TaskMetadata {
+    fn on_cancel(&self) {
+        if let Some(metrics) = &self.metrics {
+            metrics.mark_done();
+        }
+    }
+}
+
 pub struct JoinHandle<T>(Arc<dyn DynTask<T, TaskMetadata>>);
 pub struct CancelHandle(Weak<dyn Cancellable>);
 
 impl<T> JoinHandle<T> {
-    pub fn metrics(&self) -> Option<&Arc<TaskMetrics>> {
-        self.0.metadata().metrics.as_ref()
-    }
-
     #[allow(unused)]
     pub fn spawn_location(&self) -> &'static Location<'static> {
         self.0.metadata().spawn_location
@@ -384,14 +370,8 @@ impl Executor {
 
                 if let Some(metrics) = task.metadata().metrics.clone() {
                     let start = Instant::now();
-                    task.run();
-                    let elapsed_ns = start.elapsed().as_nanos() as u64;
-                    metrics.total_polls.fetch_add(1);
-                    if !local {
-                        metrics.total_stolen_polls.fetch_add(1);
-                    }
-                    metrics.total_poll_time_ns.fetch_add(elapsed_ns);
-                    metrics.max_poll_time_ns.fetch_max(elapsed_ns);
+                    let done = task.run();
+                    metrics.record_poll(start.elapsed().as_nanos() as u64, !local, done);
                 } else {
                     task.run();
                 }
@@ -490,6 +470,7 @@ pub struct TaskScope<'scope, 'env: 'scope> {
     // reclaim the memory used by the cancel_handles.
     cancel_handles: Mutex<SlotMap<TaskKey, CancelHandle>>,
     completed_tasks: Arc<Mutex<Vec<TaskKey>>>,
+    task_metrics: Cell<Option<&'scope TaskMetricAggregator>>,
 
     // Copied from std::thread::scope. Necessary to prevent unsoundness.
     scope: PhantomData<&'scope mut &'scope ()>,
@@ -512,6 +493,11 @@ impl<'scope> TaskScope<'scope, '_> {
         }
     }
 
+    /// Sets the aggregator used for the metrics of tasks spawned hereafter.
+    pub fn set_task_metrics(&self, task_metrics: Option<&'scope TaskMetricAggregator>) {
+        self.task_metrics.set(task_metrics);
+    }
+
     #[track_caller]
     pub fn spawn_task<F: Future + Send + 'scope>(
         &self,
@@ -522,12 +508,15 @@ impl<'scope> TaskScope<'scope, '_> {
         <F as Future>::Output: Send + 'static,
     {
         let spawn_location = Location::caller();
+        let metrics = self
+            .task_metrics
+            .get()
+            .map(TaskMetricAggregator::new_task_metrics);
         self.clear_completed_tasks();
 
         let mut runnable = None;
         let mut join_handle = None;
         self.cancel_handles.lock().insert_with_key(|task_key| {
-            let metrics = TRACK_METRICS.load().then(Arc::default);
             let dyn_task = unsafe {
                 // SAFETY: we make sure to cancel this task before 'scope ends.
                 let executor = Executor::global();
@@ -558,7 +547,7 @@ impl<'scope> TaskScope<'scope, '_> {
     }
 }
 
-pub fn task_scope<'env, F, T>(f: F) -> T
+pub fn task_scope<'env, F, T>(task_metrics: Option<&'env TaskMetricAggregator>, f: F) -> T
 where
     F: for<'scope> FnOnce(&'scope TaskScope<'scope, 'env>) -> T,
 {
@@ -568,6 +557,7 @@ where
     let scope = TaskScope {
         cancel_handles: Mutex::default(),
         completed_tasks: Arc::new(Mutex::default()),
+        task_metrics: Cell::new(task_metrics),
         scope: PhantomData,
         env: PhantomData,
     };
@@ -584,14 +574,18 @@ where
 }
 
 #[track_caller]
-pub fn spawn<F: Future + Send + 'static>(priority: TaskPriority, fut: F) -> JoinHandle<F::Output>
+pub fn spawn<F: Future + Send + 'static>(
+    priority: TaskPriority,
+    task_metrics: Option<&TaskMetricAggregator>,
+    fut: F,
+) -> JoinHandle<F::Output>
 where
     <F as Future>::Output: Send + 'static,
 {
     let spawn_location = Location::caller();
     let executor = Executor::global();
     let on_wake = move |task| executor.schedule_task(task);
-    let metrics = TRACK_METRICS.load().then(Arc::default);
+    let metrics = task_metrics.map(TaskMetricAggregator::new_task_metrics);
     let dyn_task = task::spawn(
         fut,
         on_wake,

@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_buffer::Buffer;
 use polars_core::config;
@@ -31,6 +32,7 @@ pub struct ParquetReaderBuilder {
     /// Shared with every file in the scan. Only relevant for `DynByteSourceBuilder::FilePread`.
     pub file_read_context: std::sync::OnceLock<FileReadContext>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
+    pub task_metrics: std::sync::OnceLock<Arc<TaskMetricAggregator>>,
 }
 
 impl std::fmt::Debug for ParquetReaderBuilder {
@@ -71,6 +73,10 @@ impl FileReaderBuilder for ParquetReaderBuilder {
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
+        if let Some(task_metrics) = execution_state.task_metrics.clone() {
+            let _ = self.task_metrics.set(task_metrics);
+        }
+
         // Bound the number of fetches in the pipeline.
         // This bound goes together with the `prefetch_kbytes_limit` bound. In most
         // large-dataset use cases, the kbytes memory bound will kick in first.
@@ -186,6 +192,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                 current_all_spawned: None,
             },
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
+            task_metrics: self.task_metrics.get().cloned(),
             verbose,
 
             init_data: None,

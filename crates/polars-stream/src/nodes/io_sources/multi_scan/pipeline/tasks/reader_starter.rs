@@ -344,6 +344,7 @@ impl ReaderStarter {
 
             let reader_start_task_handle = AbortOnDropHandle::new(executor::spawn(
                 TaskPriority::Low,
+                constant_args.task_metrics.as_deref(),
                 start_reader_impl(constant_args.clone(), start_args_this_file),
             ));
 
@@ -433,6 +434,7 @@ async fn start_reader_impl(
         maintain_order,
         last_morsel_pipelines,
         verbose,
+        task_metrics,
     } = constant_args;
 
     let StartReaderArgsPerFile {
@@ -713,6 +715,7 @@ async fn start_reader_impl(
                 first_morsel_position,
                 num_pipelines,
                 max_concurrent_scans,
+                task_metrics,
             }
             .run();
 

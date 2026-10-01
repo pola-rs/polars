@@ -4,7 +4,7 @@ use std::ops::Range;
 use polars_arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray, StructArray};
 use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_arrow::pushable::Pushable;
-use polars_async::executor::{self, TaskPriority};
+use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_core::prelude::*;
 use polars_io::RowIndex;
 use polars_io::predicates::{RuntimeRange, RuntimeRangeHint, ScanIOPredicate};
@@ -78,6 +78,7 @@ impl StatisticsColumns {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     row_group_slice: Range<usize>,
     use_statistics: bool,
@@ -86,6 +87,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     projected_arrow_fields: Arc<[ArrowFieldProjection]>,
     row_index: Option<RowIndex>,
     verbose: bool,
+    task_metrics: Option<&TaskMetricAggregator>,
 ) -> PolarsResult<Option<Bitmap>> {
     if !use_statistics {
         return Ok(None);
@@ -104,6 +106,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
                 metadata,
                 projected_arrow_fields.clone(),
                 row_index,
+                task_metrics,
             )
             .await?
         },
@@ -144,13 +147,14 @@ async fn static_skip_mask(
     metadata: &Arc<FileMetadata>,
     projected_arrow_fields: Arc<[ArrowFieldProjection]>,
     mut row_index: Option<RowIndex>,
+    task_metrics: Option<&TaskMetricAggregator>,
 ) -> PolarsResult<Option<Bitmap>> {
     let num_row_groups = row_group_slice.len();
     let metadata = metadata.clone();
 
     // Note: We are spawning here onto the computational async runtime because the caller is being run
     // on a tokio async thread.
-    let skip_row_group_mask = executor::spawn(TaskPriority::High, async move {
+    let skip_row_group_mask = executor::spawn(TaskPriority::High, task_metrics, async move {
         let row_groups_slice = &metadata.row_groups[row_group_slice.clone()];
 
         if let Some(ri) = &mut row_index {

@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_arrow::io::ipc::read::FileMetadata;
+use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 #[cfg(feature = "ipc")]
@@ -31,6 +32,7 @@ pub struct IpcReaderBuilder {
     pub pipeline_budget: std::sync::OnceLock<PipelineBudget>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
+    pub task_metrics: std::sync::OnceLock<Arc<TaskMetricAggregator>>,
 }
 
 impl std::fmt::Debug for IpcReaderBuilder {
@@ -56,6 +58,10 @@ impl FileReaderBuilder for IpcReaderBuilder {
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
+        if let Some(task_metrics) = execution_state.task_metrics.clone() {
+            self.task_metrics.set(task_metrics).ok().unwrap();
+        }
+
         let prefetch_limit = std::env::var("POLARS_RECORD_BATCH_PREFETCH_SIZE")
             .map(|x| {
                 x.parse::<NonZeroUsize>()
@@ -140,6 +146,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
                 current_all_spawned: None,
             },
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
+            task_metrics: self.task_metrics.get().cloned(),
             verbose,
             init_data: None,
             checked: self.options.checked,

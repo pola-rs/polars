@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crossbeam_queue::ArrayQueue;
-use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::IntoColumn;
@@ -168,10 +168,15 @@ struct BufferedStream {
 }
 
 impl BufferedStream {
-    pub fn new(name: PlSmallStr, morsels: Vec<Morsel>, start_offset: MorselSeq) -> Self {
+    pub fn new(
+        name: PlSmallStr,
+        morsels: Vec<Morsel>,
+        start_offset: MorselSeq,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         // Relabel so we can insert into parallel streams later.
         let mut seq = start_offset;
-        let ctx = MostRecentSpillContext::new(name);
+        let ctx = MostRecentSpillContext::new(name, task_metrics);
         let queue = ArrayQueue::new(morsels.len().max(1));
         for morsel in morsels {
             let sf = SpillFrame::new_blocking(morsel.into_df_blocking(), &ctx);

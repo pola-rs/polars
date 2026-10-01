@@ -64,9 +64,11 @@ pub fn initialize_multi_scan_pipeline(
 
     let bridge_state = Arc::new(Mutex::new(BridgeState::NotYetStarted));
 
-    let (bridge_handle, bridge_recv_port_tx, phase_channel_tx) = spawn_bridge(bridge_state.clone());
+    let (bridge_handle, bridge_recv_port_tx, phase_channel_tx) =
+        spawn_bridge(bridge_state.clone(), execution_state.task_metrics());
 
-    let task_handle = AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+    let task_metrics = execution_state.task_metrics.clone();
+    let task_handle = executor::spawn(TaskPriority::Low, task_metrics.as_deref(), async move {
         finish_initialize_multi_scan_pipeline(
             config,
             bridge_recv_port_tx,
@@ -76,10 +78,10 @@ pub fn initialize_multi_scan_pipeline(
         .await?;
         bridge_handle.await;
         Ok(())
-    }));
+    });
 
     Ok(InitializedPipelineState {
-        task_handle,
+        task_handle: AbortOnDropHandle::new(task_handle),
         phase_channel_tx,
         bridge_state,
     })
@@ -392,6 +394,7 @@ async fn finish_initialize_multi_scan_pipeline(
         let sources = config.sources.clone();
         let cloud_options = config.cloud_options.clone();
         let file_reader_builder = config.file_reader_builder.clone();
+        let task_metrics = execution_state.task_metrics.clone();
 
         // Note: The list of sources is fixed, so indexing via `scan_source_idx` is sound.
         // The list of sources is captured so that in the case of Delta deletion vector,
@@ -413,7 +416,8 @@ async fn finish_initialize_multi_scan_pipeline(
             let maybe_initialized = initialized_readers.pop_front();
             let scan_source = sources.get(scan_source_idx).unwrap().into_owned();
 
-            AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+            let metrics = task_metrics.as_deref();
+            AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, metrics, async move {
                 let (scan_source, reader, n_rows_in_file) = async {
                     if verbose {
                         eprintln!("[MultiScan]: Initialize source {scan_source_idx}");
@@ -501,6 +505,7 @@ async fn finish_initialize_multi_scan_pipeline(
 
     let reader_starter_handle = AbortOnDropHandle::new(executor::spawn(
         TaskPriority::Low,
+        execution_state.task_metrics(),
         ReaderStarter {
             reader_capabilities,
             n_sources: sources.len(),
@@ -526,6 +531,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 maintain_order: config.maintain_order,
                 last_morsel_pipelines,
                 verbose,
+                task_metrics: execution_state.task_metrics.clone(),
             },
             verbose,
         }
@@ -534,12 +540,14 @@ async fn finish_initialize_multi_scan_pipeline(
 
     let attach_to_bridge_handle = AbortOnDropHandle::new(executor::spawn(
         TaskPriority::Low,
+        execution_state.task_metrics(),
         AttachReaderToBridge {
             started_reader_rx,
             reader_starter_handle,
             bridge_recv_port_tx,
             unordered_files,
             verbose,
+            task_metrics: execution_state.task_metrics.clone(),
         }
         .run(),
     ));

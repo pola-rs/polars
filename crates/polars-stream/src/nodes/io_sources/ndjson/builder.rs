@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 #[cfg(feature = "json")]
@@ -25,6 +26,7 @@ pub struct NDJsonReaderBuilder {
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
+    pub task_metrics: std::sync::OnceLock<Arc<TaskMetricAggregator>>,
 }
 
 impl std::fmt::Debug for NDJsonReaderBuilder {
@@ -54,6 +56,10 @@ impl FileReaderBuilder for NDJsonReaderBuilder {
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
+        if let Some(task_metrics) = execution_state.task_metrics.clone() {
+            self.task_metrics.set(task_metrics).ok().unwrap();
+        }
+
         // The maximum number of chunks actively being prefetched at any given point in time.
         let prefetch_limit = std::env::var("POLARS_NDJSON_CHUNK_PREFETCH_LIMIT")
             .map(|x| {
@@ -123,6 +129,7 @@ impl FileReaderBuilder for NDJsonReaderBuilder {
             },
             init_data: None,
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
+            task_metrics: self.task_metrics.get().cloned(),
         };
 
         Ok(Box::new(reader) as _)

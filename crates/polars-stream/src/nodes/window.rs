@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_arrow::array::builder::ShareStrategy;
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
@@ -115,7 +116,11 @@ struct LocalBuilder {
 }
 
 impl WindowNode {
-    pub fn new(params: Arc<WindowParams>, num_pipelines: usize) -> Self {
+    pub fn new(
+        params: Arc<WindowParams>,
+        num_pipelines: usize,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         let num_partitions = num_pipelines * PARTITIONS_PER_PIPELINE;
         let builders = (0..num_pipelines)
             .map(|_| LocalBuilder {
@@ -130,7 +135,7 @@ impl WindowNode {
                 builders,
                 partitioner: HashPartitioner::new(num_partitions, 0),
                 random_state: PlRandomState::default(),
-                spill_ctx: LeastRecentSpillContext::new("window".into()),
+                spill_ctx: LeastRecentSpillContext::new("window".into(), task_metrics),
             },
         }
     }

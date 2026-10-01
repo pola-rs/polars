@@ -121,6 +121,8 @@ impl ParquetReadImpl {
         let rg_prefetch_current_all_spawned =
             Option::take(&mut self.rg_prefetch_current_all_spawned);
 
+        let task_metrics = self.task_metrics.clone();
+
         let prefetch_task = AbortOnDropHandle(ASYNC.spawn(async move {
             polars_ensure!(
                 metadata.num_rows < IdxSize::MAX as usize,
@@ -184,6 +186,7 @@ impl ParquetReadImpl {
                 projected_arrow_fields.clone(),
                 row_index,
                 verbose,
+                task_metrics.as_deref(),
             )
             .await?;
 
@@ -234,10 +237,11 @@ impl ParquetReadImpl {
             tokio::sync::mpsc::channel(if maintain_order { num_pipelines } else { 1 });
         let decode_task = if maintain_order {
             AbortOnDropHandle(ASYNC.spawn(async move {
+                let metrics = row_group_decoder.task_metrics.as_deref();
                 while let Some((prefetch_task, permits)) = prefetch_recv.recv().await {
                     let row_group_data = prefetch_task.await.unwrap()?;
                     let row_group_decoder = row_group_decoder.clone();
-                    let decode_fut = executor::spawn(TaskPriority::High, async move {
+                    let decode_fut = executor::spawn(TaskPriority::High, metrics, async move {
                         row_group_decoder.row_group_data_to_df(row_group_data).await
                     });
                     if decode_send
@@ -253,6 +257,7 @@ impl ParquetReadImpl {
         } else {
             // Decode in fetch completion order; each decode hands off its own result.
             AbortOnDropHandle(ASYNC.spawn(async move {
+                let metrics = row_group_decoder.task_metrics.as_deref();
                 let mut fetches = FuturesUnordered::new();
                 let mut prefetch_done = false;
                 // In-flight bound of num_pipelines + 1, matching the ordered path.
@@ -288,6 +293,7 @@ impl ParquetReadImpl {
 
                             decode_handles.push(executor::AbortOnDropHandle::new(executor::spawn(
                                 TaskPriority::High,
+                                metrics,
                                 async move {
                                     let df = row_group_decoder
                                         .row_group_data_to_df(row_group_data)
@@ -317,7 +323,8 @@ impl ParquetReadImpl {
         // is shared across files in the scan.
         let last_morsel_pipelines = self.config.last_morsel_pipelines;
         let disable_morsel_split = self.disable_morsel_split;
-        let distribute_task = executor::spawn(TaskPriority::High, async move {
+        let task_metrics = self.task_metrics.as_deref();
+        let distribute_task = executor::spawn(TaskPriority::High, task_metrics, async move {
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
@@ -545,6 +552,7 @@ impl ParquetReadImpl {
 
         RowGroupDecoder {
             num_pipelines: self.config.num_pipelines,
+            task_metrics: self.task_metrics.clone(),
             projected_arrow_fields,
             row_index,
             predicate,

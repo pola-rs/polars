@@ -1,7 +1,7 @@
 use std::num::NonZeroU64;
 use std::sync::Arc;
 
-use polars_async::executor::{self, TaskPriority};
+use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_buffer::Buffer;
@@ -84,6 +84,7 @@ impl FileWriterStarter for IpcWriterStarter {
         morsel_rx: connector::Receiver<SinkMorsel>,
         file: FileOpenTaskHandle,
         num_pipelines: std::num::NonZeroUsize,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>> {
         let file_schema = Arc::clone(&self.schema);
         let options = Arc::clone(&self.options);
@@ -94,8 +95,9 @@ impl FileWriterStarter for IpcWriterStarter {
         let bytes_bufferer_config = self.bytes_bufferer_config.clone();
 
         let finish_record_batch_write_wg = WaitGroup::default();
+        let encoder_task_metrics = task_metrics.clone();
 
-        let handle = executor::spawn(TaskPriority::High, async move {
+        let handle = executor::spawn(TaskPriority::High, task_metrics.as_deref(), async move {
             let (ipc_batch_tx, ipc_batch_rx) = tokio::sync::mpsc::channel::<(
                 executor::AbortOnDropHandle<PolarsResult<IpcBatch>>,
                 Option<WaitToken>,
@@ -122,6 +124,7 @@ impl FileWriterStarter for IpcWriterStarter {
 
             let record_batch_encoder_handle = executor::AbortOnDropHandle::new(executor::spawn(
                 TaskPriority::High,
+                encoder_task_metrics.as_deref(),
                 record_batch_encoder::RecordBatchEncoder {
                     morsel_rx,
                     ipc_batch_tx,
@@ -132,6 +135,7 @@ impl FileWriterStarter for IpcWriterStarter {
                     write_statistics_flags,
                     bytes_bufferer_config,
                     finish_record_batch_write_wg,
+                    task_metrics: encoder_task_metrics.clone(),
                 }
                 .run(),
             ));
