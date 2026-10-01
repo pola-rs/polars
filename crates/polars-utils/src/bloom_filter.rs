@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use bytemuck::Zeroable;
 use bytemuck::allocation::zeroed_vec;
 
-use crate::mem::prefetch::prefetch_write;
+use crate::mem::prefetch::prefetch_l1;
 
 const SALT: [u32; 8] = [
     1203114875, 1150766481, 2284105051, 2729912477, 1884591559, 770785867, 2667333959, 1550580529,
@@ -180,8 +180,10 @@ fn for_each_block_mask(
         }
         let idxs = &idxs[..group.len()];
         if prefetch {
+            // A read prefetch, so that the blocks other threads share stay
+            // shared when the key's bits are set already.
             for b in idxs {
-                prefetch_write(blocks.wrapping_add(b * BLOCK_BYTES));
+                prefetch_l1(blocks.wrapping_add(b * BLOCK_BYTES));
             }
         }
         for (mask, b) in masks.iter().zip(idxs) {
