@@ -151,7 +151,11 @@ where
     T: PolarsNumericType,
     T::Native: PartialOrd,
 {
-    let ca = &*ca.broadcast_to(ca.len().max(min.len()).max(max.len()))?;
+    let len = [ca.len(), min.len(), max.len()]
+        .into_iter()
+        .find(|l| *l != 1)
+        .unwrap_or(1);
+    let ca = &*ca.broadcast_to(len)?;
     let out = match (min.len(), max.len()) {
         (1, 1) => match (min.get(0), max.get(0)) {
             (Some(min), Some(max)) => clip_unary(ca, |v| clamp(v, min, max)),
@@ -198,7 +202,8 @@ where
     T::Native: PartialOrd,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
-    let ca = &*ca.broadcast_to(ca.len().max(bound.len()))?;
+    let len = if ca.len() == 1 { bound.len() } else { ca.len() };
+    let ca = &*ca.broadcast_to(len)?;
     let out = match bound.len() {
         1 => match bound.get(0) {
             Some(bound) => clip_unary(ca, |v| op(v, bound)),
