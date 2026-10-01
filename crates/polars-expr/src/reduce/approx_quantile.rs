@@ -44,10 +44,7 @@ pub fn new_approx_quantile_sketch_reduction(
     method: ApproxQuantileMethod,
     error: f64,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
-    Ok(with_match_sketch_item!(&dtype, |T, I| {
-        let reducer = SketchReducer::<T, I>::new(method, error, true);
-        Box::new(VecGroupedReduction::new(dtype.clone(), reducer))
-    }))
+    new_sketch_reduction(dtype, method, error, true)
 }
 
 /// Like [`new_approx_quantile_sketch_reduction`], but outputs the serialized
@@ -58,8 +55,17 @@ pub fn new_approx_quantile_state_reduction(
     method: ApproxQuantileMethod,
     error: f64,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
+    new_sketch_reduction(dtype, method, error, false)
+}
+
+fn new_sketch_reduction(
+    dtype: DataType,
+    method: ApproxQuantileMethod,
+    error: f64,
+    finalize: bool,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
     Ok(with_match_sketch_item!(&dtype, |T, I| {
-        let reducer = SketchReducer::<T, I>::new(method, error, false);
+        let reducer = SketchReducer::<T, I>::new(method, error, finalize);
         Box::new(VecGroupedReduction::new(dtype.clone(), reducer))
     }))
 }
@@ -156,25 +162,11 @@ where
     ) -> PolarsResult<Series> {
         assert!(m.is_none());
         if !self.finalize {
-            return states_to_series(&v);
+            return sketches_to_series(&v);
         }
         let sketches: Vec<_> = v.into_iter().map(Sketch::finalize).collect();
         sketches_to_series(&sketches)
     }
-}
-
-fn states_to_series<I>(states: &[Sketch<I>]) -> PolarsResult<Series>
-where
-    I: fmt::Debug + Clone + TotalOrd + serde::Serialize,
-{
-    let mut builder = BinaryChunkedBuilder::new(PlSmallStr::EMPTY, states.len());
-    let mut blob = Vec::new();
-    for state in states {
-        blob.clear();
-        pl_serialize::serialize_into_writer::<_, _, false>(&mut blob, state)?;
-        builder.append_value(&blob);
-    }
-    Ok(builder.finish().into_series())
 }
 
 #[derive(Clone)]
@@ -186,12 +178,15 @@ impl<I> SketchMergeReducer<I>
 where
     I: fmt::Debug + Clone + TotalOrd + serde::de::DeserializeOwned,
 {
-    fn merge_blob(&self, acc: &mut PolarsResult<Sketch<I>>, blob: &[u8]) {
+    fn merge_blob(&self, acc: &mut PolarsResult<Option<Sketch<I>>>, blob: &[u8]) {
         let Ok(sketch) = acc else {
             return;
         };
         match pl_serialize::deserialize_from_reader::<Sketch<I>, _, false>(blob) {
-            Ok(state) => sketch.merge(&state),
+            Ok(state) => match sketch {
+                Some(sketch) => sketch.merge(&state),
+                None => *sketch = Some(state),
+            },
             Err(e) => *acc = Err(e),
         }
     }
@@ -209,17 +204,20 @@ where
         + 'static,
 {
     type Dtype = BinaryType;
-    type Value = PolarsResult<Sketch<I>>;
+    /// `None` until the group's first state, which is adopted rather than
+    /// merged into an empty sketch.
+    type Value = PolarsResult<Option<Sketch<I>>>;
 
     fn init(&self) -> Self::Value {
-        Ok(self.template.clone())
+        Ok(None)
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
         match (a, b) {
-            (Ok(a), Ok(b)) => a.merge(b),
+            (Ok(Some(a)), Ok(Some(b))) => a.merge(b),
+            (Ok(a @ None), Ok(b)) => *a = b.clone(),
+            (Ok(Some(_)), Ok(None)) | (Err(_), _) => {},
             (a @ Ok(_), Err(e)) => *a = Err(e.clone()),
-            (Err(_), _) => {},
         }
     }
 
@@ -244,7 +242,7 @@ where
         assert!(m.is_none());
         let sketches = v
             .into_iter()
-            .map(|s| s.map(Sketch::finalize))
+            .map(|s| Ok(s?.unwrap_or_else(|| self.template.clone()).finalize()))
             .collect::<PolarsResult<Vec<_>>>()?;
         sketches_to_series(&sketches)
     }

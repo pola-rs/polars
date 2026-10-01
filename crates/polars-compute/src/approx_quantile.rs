@@ -273,7 +273,7 @@ pub mod kll {
         consumed_items: u64,
         /// Maximum number of items before we compact.
         total_capacity: usize,
-        #[cfg_attr(feature = "serde", serde(skip, default = "super::fresh_rng"))]
+        #[cfg_attr(feature = "serde", serde(skip, default = "rand::make_rng"))]
         rng: SmallRng,
         #[cfg_attr(feature = "serde", serde(skip, default = "Vec::new"))]
         scratch: Vec<T>,
@@ -642,7 +642,7 @@ pub mod req {
         /// see `close_out_if_needed`.
         k: usize,
         consumed_items: u64,
-        #[cfg_attr(feature = "serde", serde(skip, default = "super::fresh_rng"))]
+        #[cfg_attr(feature = "serde", serde(skip, default = "rand::make_rng"))]
         rng: SmallRng,
     }
 
@@ -1028,11 +1028,6 @@ fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
     debug_assert_eq!(out.len(), num_items);
     debug_assert_eq!(cum_weights.len(), num_items);
     cum_weights
-}
-
-#[cfg(feature = "serde")]
-fn fresh_rng() -> SmallRng {
-    rand::make_rng()
 }
 
 fn merge_coin(mid1: bool, coin1: bool, mid2: bool, coin2: bool, rng: &mut SmallRng) -> bool {

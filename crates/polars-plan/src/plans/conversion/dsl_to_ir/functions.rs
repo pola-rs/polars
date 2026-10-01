@@ -960,17 +960,6 @@ pub(super) fn convert_functions(
                 Some(av) => av.extract().map(|q| vec![q]),
                 None => None,
             };
-            // The estimate casts the quantile to `Float64`. Do that for a dynamic literal
-            // here, so that its unknown dtype does not stay in the plan.
-            let quantile = match (ctx.arena.get(e[1].node()), quantiles.as_deref()) {
-                (AExpr::Literal(LiteralValue::Dyn(_)), Some(&[q])) => {
-                    let node = ctx
-                        .arena
-                        .add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(q))));
-                    ExprIR::new(node, e[1].output_name_inner().clone())
-                },
-                _ => e[1].clone(),
-            };
             let method = method.resolve(quantiles.as_deref());
             let error = match use_formal_bound {
                 true => error,
@@ -987,7 +976,7 @@ pub(super) fn convert_functions(
                 ctx.arena,
             );
             let estimate = AExprBuilder::function(
-                vec![sketch.expr_ir_retain_name(ctx.arena), quantile],
+                vec![sketch.expr_ir_retain_name(ctx.arena), e[1].clone()],
                 I::ApproxQuantileEstimate { values_dtype },
                 ctx.arena,
             );
