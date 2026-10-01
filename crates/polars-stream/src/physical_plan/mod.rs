@@ -59,6 +59,7 @@ pub use self::lower_ir::StreamingLowerIRContext;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::rolling_fixed_window::RollingFixedWindow;
 use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
@@ -289,6 +290,16 @@ pub enum PhysNodeKind {
         arg_map: Option<FunctionArgMap>,
         output_name: PlSmallStr,
         format_str: Option<String>,
+    },
+
+    /// Applies `func` to batches of consecutive rows, where the output of each row only depends
+    /// on the rows in its `window`.
+    RollingFixedWindowFunction {
+        input: PhysStream,
+        func: Arc<dyn ColumnsUdf>,
+        window: RollingFixedWindow,
+        output_name: PlSmallStr,
+        format_str: String,
     },
 
     /// Streaming strptime without an explicit format.
@@ -653,6 +664,7 @@ fn _visit_nodes_impl(
             | PhysNodeKind::Window { input, .. }
             | PhysNodeKind::SortedGroupBy { input, .. }
             | PhysNodeKind::Map { input, .. }
+            | PhysNodeKind::RollingFixedWindowFunction { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
             | PhysNodeKind::GatherEvery { input, .. }

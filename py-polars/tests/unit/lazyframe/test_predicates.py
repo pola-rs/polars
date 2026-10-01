@@ -1948,7 +1948,8 @@ def test_predicate_normalization() -> None:
     def scans(branch1: Any, branch2: Any) -> Any:
         counter = [0]
         lf = make_source(counter)
-        pl.collect_all([branch1(lf), branch2(lf)])
+        # The streaming engine reads a pure source per branch instead of caching it.
+        pl.collect_all([branch1(lf), branch2(lf)], engine="in-memory")
         return counter[0]
 
     out = scans(lambda lf: lf.filter((A & B) & C), lambda lf: lf.filter(A & (B & C)))

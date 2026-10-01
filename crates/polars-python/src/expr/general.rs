@@ -14,6 +14,7 @@ use polars_plan::plans::{
     AExprSorted, ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir,
 };
 use polars_utils::arena::Arena;
+use polars_utils::python_function::PythonObject;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
@@ -895,6 +896,13 @@ impl PyExpr {
     }
     fn cum_count(&self, reverse: bool) -> Self {
         self.inner.clone().cum_count(reverse).into()
+    }
+
+    fn pipe_with_dtype(&self, callback: Py<PyAny>) -> Self {
+        self.inner
+            .clone()
+            .pipe_with_dtype(PlanCallback::new_python(PythonObject(callback)))
+            .into()
     }
 
     fn cumulative_eval(&self, expr: Self, min_samples: usize) -> Self {

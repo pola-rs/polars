@@ -23,6 +23,12 @@ pub trait HotGrouper: Any + Send + Sync {
     /// Returns the number of groups in this HotGrouper.
     fn num_groups(&self) -> IdxSize;
 
+    /// Returns the number of slots in the hot table.
+    fn num_slots(&self) -> usize;
+
+    /// Doubles the number of slots in the hot table. Group indices are unchanged.
+    fn double(&mut self);
+
     /// Inserts the given keys into this Grouper, extending groups_idxs with
     /// the group index of keys[i].
     fn insert_keys(

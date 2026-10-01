@@ -214,14 +214,29 @@ def test_barriers_between_join_and_scan(
     assert_matches_in_memory(q, out)
 
 
-def test_shared_scan_is_not_filtered(fact: pl.LazyFrame) -> None:
-    # The scan is cached for two consumers; a filter for one of them must not reach it.
-    q = fact.join(dim(220, 240), on="k").join(
-        fact.select("k", pl.col("v").alias("w")), on="k"
+def test_shared_subplan_is_not_filtered(fact: pl.LazyFrame) -> None:
+    # The subplan is cached for two consumers; a filter for one of them must not
+    # reach it.
+    shared = fact.with_columns(pl.col("v") + 1)
+    q = shared.join(dim(220, 240), on="k").join(
+        shared.select("k", pl.col("v").alias("w")), on="k"
     )
     plan = q.explain(engine="streaming")
     assert "CACHE" in plan
     assert "dynamic_predicate" not in plan
+    out = q.collect(engine="streaming")
+    assert_matches_in_memory(q, out)
+
+
+def test_scan_read_twice_is_filtered_once(fact: pl.LazyFrame) -> None:
+    # A plain scan is not cached, so each consumer reads it and only the one joined
+    # with the small side is filtered.
+    q = fact.join(dim(220, 240), on="k").join(
+        fact.select("k", pl.col("v").alias("w")), on="k"
+    )
+    plan = q.explain(engine="streaming")
+    assert "CACHE" not in plan
+    assert plan.count("dynamic_predicate") == 1
     out = q.collect(engine="streaming")
     assert_matches_in_memory(q, out)
 
@@ -1597,6 +1612,31 @@ def test_anti_join_publishes_from_the_left_only(
     out = q.collect(engine="streaming")
     assert out.height == N_ROW_GROUPS * ROWS_PER_GROUP - 2
     assert_matches_in_memory(q, out)
+
+
+@pytest.mark.parametrize("how", ["semi", "anti"])
+def test_left_side_forced_by_its_filtered_rows_against_few_right_keys(
+    fact: pl.LazyFrame, tmp_path: Path, how: JoinStrategy
+) -> None:
+    # A left build keeps every left row that passes its filter while a right
+    # build keeps only the distinct right keys, of which `k2` has seven.
+    path = tmp_path / "left.parquet"
+    pl.DataFrame({"k2": [i % 10 for i in range(100)], "e": range(100)}).write_parquet(
+        path
+    )
+    left = pl.scan_parquet(path)
+
+    q = left.filter(pl.col("e") >= 5).join(fact, on="k2", how=how)
+    plan = q.explain(engine="streaming")
+    assert "ForceLeft" not in plan
+    assert "dynamic_predicate" not in plan
+    assert_matches_in_memory(q, q.collect(engine="streaming"))
+
+    q = left.filter(pl.col("e") == 5).join(fact, on="k2", how=how)
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: ForceLeft" in plan
+    assert plan.count("dynamic_predicate") == 1
+    assert_matches_in_memory(q, q.collect(engine="streaming"))
 
 
 def test_preferred_semi_join_publishes_its_right_side(

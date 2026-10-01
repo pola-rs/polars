@@ -105,6 +105,14 @@ impl HotGrouper for BinviewHashHotGrouper {
         self.table.len() as IdxSize
     }
 
+    fn num_slots(&self) -> usize {
+        self.table.num_slots()
+    }
+
+    fn double(&mut self) {
+        self.table.double();
+    }
+
     fn insert_keys(
         &mut self,
         hash_keys: &HashKeys,

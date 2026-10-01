@@ -16,6 +16,8 @@ pub struct FromPythonConvertRegistry {
     pub df: FromPython,
     pub dsl_plan: FromPython,
     pub schema: FromPython,
+    pub expr: FromPython,
+    pub dtype: FromPython,
 }
 
 #[derive(Clone)]
@@ -24,6 +26,8 @@ pub struct ToPythonConvertRegistry {
     pub series: ToPython,
     pub dsl_plan: ToPython,
     pub schema: ToPython,
+    pub expr: ToPython,
+    pub dtype: ToPython,
 }
 
 impl ToPythonConvertRegistry {

@@ -636,8 +636,8 @@ fn predicate_selectivity(
     (selectivity, known)
 }
 
-/// Integer range and type of `name`, when the range covers all its data and is in
-/// the unit of its values.
+/// Integer range and type of `name`, when the range covers all its sources and is
+/// in the unit of its values.
 fn int_range<'a>(
     name: &str,
     columns: Option<&ScanColumnStatsMap>,
@@ -1410,7 +1410,10 @@ mod tests {
                 ExprIR::from_node(a, expr_arena),
                 ExprIR::from_node(haystack, expr_arena),
             ],
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal: false }),
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                nulls_equal: false,
+                needle_cast: None,
+            }),
             options: crate::prelude::FunctionOptions::elementwise(),
         })
     }

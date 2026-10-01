@@ -1019,11 +1019,19 @@ def test_cse_custom_io_source_same_object() -> None:
     assert io_source.call_count == 0
 
     assert_frame_equal(
-        pl.concat(pl.collect_all(lfs)),
+        pl.concat(pl.collect_all(lfs, engine="in-memory")),
         pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
     )
 
     assert io_source.call_count == 1
+
+    # The streaming engine reads a pure source again instead of caching it.
+    assert_frame_equal(
+        pl.concat(pl.collect_all(lfs, engine="streaming")),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
+    )
+
+    assert io_source.call_count == 3
 
     io_source = Mock(wraps=lambda *_: iter([df]))
 

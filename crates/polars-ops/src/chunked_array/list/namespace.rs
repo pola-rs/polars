@@ -683,6 +683,10 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_concat(&self, other: &[Column]) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
+        if other.is_empty() {
+            return Ok(ca.clone());
+        }
+
         let other_len = other.len();
         let length = ca.len();
         let mut other = other.to_vec();

@@ -7,6 +7,8 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet,
 };
+#[cfg(feature = "rolling_window")]
+use polars_core::prelude::{RollingFnParams, RollingOptionsFixedWindow, RollingRankMethod};
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_defs::join::{JoinArgs, JoinType};
@@ -29,6 +31,8 @@ use slotmap::SlotMap;
 
 use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
+#[cfg(feature = "rolling_window")]
+use crate::nodes::rolling_fixed_window::RollingFixedWindow;
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_group_by::{
     GroupByLowerKind, build_group_by_stream, try_build_streaming_group_by,
@@ -559,6 +563,25 @@ fn lower_reduce_node(
     Ok((reduce_stream, out_node))
 }
 
+#[cfg(feature = "is_in")]
+fn compares_in_needle_dtype(
+    function: &IRFunctionExpr,
+    inputs: &[ExprIR],
+    stream: PhysStream,
+    ctx: &LowerExprContext,
+) -> bool {
+    let schema = stream.output_schema(ctx.phys_sm);
+    match (
+        inputs[0].dtype(schema, ctx.expr_arena),
+        inputs[1].dtype(schema, ctx.expr_arena),
+    ) {
+        (Ok(needle), Ok(haystack)) => {
+            function.membership_compares_in_needle_dtype(needle, haystack)
+        },
+        _ => false,
+    }
+}
+
 // In the recursive lowering we don't bother with named expressions at all, so
 // we work directly with Nodes.
 #[recursive::recursive]
@@ -1078,36 +1101,34 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(stream);
             },
 
+            // A semi join only sees the haystack's elements, so a null haystack would look like one
+            // holding a null. An imploded haystack is never null. It also needs equal key dtypes.
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 input: ref inner_exprs,
-                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+                function:
+                    ref function @ IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                        nulls_equal, ..
+                    }),
                 options: _,
-            } if is_scalar_ae(inner_exprs[1].node(), ctx.expr_arena)
-                && !is_single_literal_ae(inner_exprs[1].node(), ctx.expr_arena) =>
+            } if matches!(
+                ctx.expr_arena.get(inner_exprs[1].node()),
+                AExpr::Agg(IRAggExpr::Implode { .. })
+            ) && compares_in_needle_dtype(function, inner_exprs, input, ctx) =>
             {
                 // Translate left and right side separately (they could have different lengths).
 
-                use polars_core::prelude::ExplodeOptions;
                 let left_on_name = unique_column_name();
                 let right_on_name = unique_column_name();
                 let (trans_input_left, trans_expr_left) =
                     lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
-                let right_expr_exploded_node = match ctx.expr_arena.get(inner_exprs[1].node()) {
-                    // expr.implode().explode() ~= expr (and avoids rechunking)
-                    AExpr::Agg(IRAggExpr::Implode {
-                        input: n,
-                        maintain_order: _,
-                    }) => *n,
-                    _ => AExprBuilder::new_from_node(inner_exprs[1].node())
-                        .explode(
-                            ctx.expr_arena,
-                            ExplodeOptions {
-                                empty_as_null: false,
-                                keep_nulls: true,
-                            },
-                        )
-                        .node(),
+                // expr.implode().explode() ~= expr (and avoids rechunking)
+                let AExpr::Agg(IRAggExpr::Implode {
+                    input: right_expr_exploded_node,
+                    maintain_order: _,
+                }) = *ctx.expr_arena.get(inner_exprs[1].node())
+                else {
+                    unreachable!()
                 };
                 let (trans_input_right, trans_expr_right) =
                     lower_exprs_with_ctx(input, &[right_expr_exploded_node], ctx)?;
@@ -2076,6 +2097,23 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
+            // Gathering from a literal is elementwise in the indices.
+            AExpr::Gather {
+                expr: input_expr,
+                idx: idx_expr,
+                returns_scalar,
+                null_on_oob,
+            } if matches!(ctx.expr_arena.get(input_expr), AExpr::Literal(_)) => {
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[idx_expr], ctx)?;
+                input_streams.insert(trans_input);
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Gather {
+                    expr: input_expr,
+                    idx: trans_exprs[0],
+                    returns_scalar,
+                    null_on_oob,
+                }));
+            },
+
             AExpr::Gather {
                 expr: input_expr,
                 idx: idx_expr,
@@ -2146,7 +2184,7 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::Last(_)
                 | IRAggExpr::LastNonNull(_)
                 | IRAggExpr::Item { .. }
-                | IRAggExpr::Sum(_)
+                | IRAggExpr::Sum { .. }
                 | IRAggExpr::Mean(_)
                 | IRAggExpr::Var { .. }
                 | IRAggExpr::Std { .. }
@@ -2572,6 +2610,39 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
+            #[cfg(feature = "rolling_window")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: ref function @ IRFunctionExpr::RollingExpr { ref options, .. },
+                options: _,
+            } if let Some(window) = rolling_fixed_window(options) => {
+                let out_name = unique_column_name();
+                let input_schema = input.output_schema(ctx.phys_sm);
+                let out_schema = compute_output_schema(
+                    input_schema,
+                    &[ExprIR::new(expr, OutputName::Alias(out_name.clone()))],
+                    ctx.expr_arena,
+                )?;
+                let func = function_expr_to_udf(function.clone(), inner_exprs, ctx.expr_arena)
+                    .into_inner();
+
+                let select_exprs = inner_exprs
+                    .iter()
+                    .map(|e| e.with_alias(unique_column_name()))
+                    .collect_vec();
+                let input = build_select_stream_with_ctx(input, &select_exprs, ctx)?;
+                let kind = PhysNodeKind::RollingFixedWindowFunction {
+                    input,
+                    func,
+                    window,
+                    output_name: out_name.clone(),
+                    format_str: function.to_string(),
+                };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(out_schema, kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
             #[cfg(feature = "dynamic_group_by")]
             rolling_function @ AExpr::Rolling {
                 function,
@@ -2761,6 +2832,35 @@ fn lower_exprs_with_ctx(
         .insert(PhysNode::new(Arc::new(output_schema), zip_kind));
 
     Ok((PhysStream::first(zip_node), transformed_exprs))
+}
+
+/// Returns the window of a fixed-window rolling function, or `None` if it can't be computed on
+/// batches of rows.
+#[cfg(feature = "rolling_window")]
+fn rolling_fixed_window(options: &RollingOptionsFixedWindow) -> Option<RollingFixedWindow> {
+    let window_size = options.window_size;
+    // Seeded random tie-breaking depends on the rows seen before, not only on the window.
+    let is_seeded_random_rank = matches!(
+        options.fn_params,
+        Some(RollingFnParams::Rank {
+            method: RollingRankMethod::Random,
+            seed: Some(_),
+        })
+    );
+    if window_size == 0 || is_seeded_random_rank {
+        return None;
+    }
+
+    // These match `det_offsets` and `det_offsets_center` in `polars_compute::rolling`.
+    let offset = if options.center {
+        -((window_size / 2) as i64)
+    } else {
+        -(window_size as i64 - 1)
+    };
+    Some(RollingFixedWindow {
+        offset,
+        length: window_size,
+    })
 }
 
 /// Computes the schema that selecting the given expressions on the input schema

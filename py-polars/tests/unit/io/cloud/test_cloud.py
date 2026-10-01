@@ -14,11 +14,13 @@ import pytest
 import polars as pl
 from polars.exceptions import ArgumentRemovedError
 from polars.io.cloud._utils import _is_aws_cloud
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from tests.conftest import PlMonkeyPatch
+    from tests.unit.io.cloud.conftest import CountingS3
 
 
 @pytest.mark.slow
@@ -311,3 +313,45 @@ def test_cloud_timeout_error() -> None:
             q.collect()
 
     assert "operation timed out" in str(exc.value)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    ("sink", "scan"),
+    [
+        (pl.LazyFrame.sink_ipc, pl.scan_ipc),
+        (pl.LazyFrame.sink_parquet, pl.scan_parquet),
+    ],
+)
+def test_sink_single_put_28356(
+    s3: CountingS3, sink: Any, scan: Any, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # S3 minimum part size.
+    plmonkeypatch.setenv("POLARS_UPLOAD_CHUNK_SIZE", str(5 * 1024 * 1024))
+
+    requests: list[str] = []
+
+    def record(environ: dict[str, Any]) -> None:
+        # E.g. "PUT", "POST uploads", "PUT partNumber", "POST uploadId".
+        query = environ["QUERY_STRING"].partition("=")[0]
+        requests.append(f"{environ['REQUEST_METHOD']} {query}".strip())
+
+    s3.on_request = record
+
+    small = pl.DataFrame({"x": range(10)})
+    sink(small.lazy(), "s3://bucket/small", storage_options=s3.storage_options)
+
+    assert requests == ["PUT"]
+
+    # Incompressible, so that it spans multiple parts.
+    large = pl.DataFrame({"x": pl.int_range(1_000_000, eager=True).hash()})
+    requests.clear()
+    sink(large.lazy(), "s3://bucket/large", storage_options=s3.storage_options)
+
+    assert requests[0] == "POST uploads"
+    assert set(requests[1:-1]) == {"PUT partNumber"}
+    assert requests[-1] == "POST uploadId"
+
+    for df, key in [(small, "small"), (large, "large")]:
+        out = scan(f"s3://bucket/{key}", storage_options=s3.storage_options)
+        assert_frame_equal(out.collect(), df)

@@ -171,7 +171,7 @@ impl AExpr {
                     | Last(expr)
                     | LastNonNull(expr) => ctx.arena.get(*expr).to_field_impl(ctx),
                     Item { input: expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
-                    Sum(expr) => {
+                    Sum { input: expr, .. } => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         let dt = match field.dtype() {
                             String | Binary | BinaryOffset | List(_) => {
@@ -448,7 +448,7 @@ impl AExpr {
             | Agg(Last(expr))
             | Agg(LastNonNull(expr))
             | Agg(Item { input: expr, .. })
-            | Agg(Sum(expr))
+            | Agg(Sum { input: expr, .. })
             | Agg(Median(expr))
             | Agg(Mean(expr))
             | Agg(Implode { input: expr, .. })
