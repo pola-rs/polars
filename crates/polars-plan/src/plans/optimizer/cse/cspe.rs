@@ -12,11 +12,15 @@ use crate::traversal::tree_traversal::{PersistInputEdgeIdxs, TreeTraversalImpl};
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 
 /// Inserts `IR::Cache` on common subplans.
+///
+/// With `cache_plain_scans` unset, a common subplan that is only a scan is read
+/// again by each of its users instead of cached.
 pub fn common_subplan_elimination(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
     insert_nested_caches: bool,
+    cache_plain_scans: bool,
 ) -> bool {
     let mut visit_stack = ScratchVec::default();
     let mut edges = vec![usize::MAX]; // Indices into `id_map`
@@ -57,6 +61,7 @@ pub fn common_subplan_elimination(
             id_map: &mut id_map,
             inserted_cache: &mut inserted_cache,
             insert_nested_caches,
+            cache_plain_scans,
         },
     }
     .traverse_rec(root, 0, false)
@@ -158,6 +163,7 @@ struct InsertCachesVisitor<'a> {
     id_map: &'a mut PlIndexMap<CanonicalIRId, IDState>,
     inserted_cache: &'a mut bool,
     insert_nested_caches: bool,
+    cache_plain_scans: bool,
 }
 
 impl NodeVisitor for InsertCachesVisitor<'_> {
@@ -209,7 +215,8 @@ impl NodeVisitor for InsertCachesVisitor<'_> {
                 curr_state.hits > 1
             } else {
                 curr_state.hits > output_state.hits
-            };
+            }
+            && (self.cache_plain_scans || !is_plain_scan(storage.get(key)));
 
         if should_cache {
             let replacement_ir = match storage.get(key) {
@@ -249,5 +256,26 @@ impl NodeVisitor for InsertCachesVisitor<'_> {
         }
 
         ControlFlow::Continue(())
+    }
+}
+
+/// A scan that gives the same rows when it is read again.
+fn is_plain_scan(ir: &IR) -> bool {
+    match ir {
+        IR::DataFrameScan { .. } => true,
+        #[cfg(feature = "python")]
+        IR::PythonScan { options } => options.is_pure,
+        IR::Scan { scan_type, .. } => match scan_type.as_ref() {
+            #[cfg(feature = "parquet")]
+            crate::dsl::FileScanIR::Parquet { .. } => true,
+            #[cfg(feature = "ipc")]
+            crate::dsl::FileScanIR::Ipc { .. } => true,
+            #[cfg(feature = "csv")]
+            crate::dsl::FileScanIR::Csv { .. } => true,
+            #[cfg(feature = "json")]
+            crate::dsl::FileScanIR::NDJson { .. } => true,
+            _ => false,
+        },
+        _ => false,
     }
 }
