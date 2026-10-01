@@ -51,12 +51,6 @@ impl DataFrame {
     where
         I: Iterator<Item = &'a Row<'a>>,
     {
-        if schema.is_empty() {
-            let height = rows.count();
-            let columns = Vec::new();
-            return Ok(unsafe { DataFrame::new_unchecked(height, columns) });
-        }
-
         let capacity = rows.size_hint().0;
 
         let mut buffers: Vec<_> = schema
@@ -68,7 +62,9 @@ impl DataFrame {
             .collect();
 
         let mut expected_len = 0;
+        let mut width = None;
         rows.try_for_each::<_, PolarsResult<()>>(|row| {
+            check_row_width(row, &mut width, buffers.len(), expected_len)?;
             expected_len += 1;
             for (value, buf) in row.0.iter().zip(&mut buffers) {
                 buf.add_fallible(value)?
@@ -95,8 +91,8 @@ impl DataFrame {
         DataFrame::new(expected_len, v)
     }
 
-    /// Create a new [`DataFrame`] from an iterator over rows. This should only be used when you have row wise data,
-    /// as this is a lot slower than creating the [`Series`] in a columnar fashion
+    /// Create a new [`DataFrame`] from an iterator over rows. This should only be used when you have
+    /// row-wise data, as this is a lot slower than creating the [`Series`] in a columnar fashion
     pub fn try_from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> PolarsResult<Self>
     where
         I: Iterator<Item = PolarsResult<&'a Row<'a>>>,
@@ -112,9 +108,12 @@ impl DataFrame {
             .collect();
 
         let mut expected_len = 0;
+        let mut width = None;
         rows.try_for_each::<_, PolarsResult<()>>(|row| {
+            let row = row?;
+            check_row_width(row, &mut width, buffers.len(), expected_len)?;
             expected_len += 1;
-            for (value, buf) in row?.0.iter().zip(&mut buffers) {
+            for (value, buf) in row.0.iter().zip(&mut buffers) {
                 buf.add_fallible(value)?
             }
             Ok(())
@@ -138,8 +137,8 @@ impl DataFrame {
         DataFrame::new(expected_len, v)
     }
 
-    /// Create a new [`DataFrame`] from rows. This should only be used when you have row wise data,
-    /// as this is a lot slower than creating the [`Series`] in a columnar fashion
+    /// Create a new [`DataFrame`] from rows. This should only be used when you have row-wise
+    /// data, as this is a lot slower than creating the [`Series`] in a columnar fashion
     pub fn from_rows(rows: &[Row]) -> PolarsResult<Self> {
         let schema = rows_to_schema_first_non_null(rows, Some(50))?;
         let has_nulls = schema
@@ -150,4 +149,21 @@ impl DataFrame {
         );
         Self::from_rows_and_schema(rows, &schema)
     }
+}
+
+/// Every row must have the same width as the first, which can be narrower than
+/// the schema (the missing columns are filled with nulls) but not wider, as
+/// the extra values would otherwise be silently dropped.
+fn check_row_width(
+    row: &Row,
+    width: &mut Option<usize>,
+    n_columns: usize,
+    idx: usize,
+) -> PolarsResult<()> {
+    let expected = *width.get_or_insert(row.0.len().min(n_columns));
+    polars_ensure!(
+        row.0.len() == expected,
+        ShapeMismatch: "row at index {} has length {} (expected {})", idx, row.0.len(), expected
+    );
+    Ok(())
 }
