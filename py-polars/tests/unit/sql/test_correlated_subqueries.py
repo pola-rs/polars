@@ -945,3 +945,17 @@ def test_correlated_aggregate_limit_and_empty_results(engine: EngineType) -> Non
             "SELECT k, (SELECT SUM(v) FROM i WHERE i.k = o.k) AS r FROM o WHERE k < 0"
         ).collect(engine=engine)
         assert none_match.height == 0
+
+
+def test_tmp_column_tag_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    query = "SELECT p FROM o WHERE s > (SELECT MIN(v) FROM i WHERE i.k = o.k)"
+    monkeypatch.setenv("POLARS_TMP_COLUMN_TAG", "custom")
+    pl._plr.config_reload_env_var("POLARS_TMP_COLUMN_TAG")
+    try:
+        with pl.SQLContext(frames=_key_frames()) as ctx:
+            plan = ctx.execute(query).explain(optimized=False)
+    finally:
+        monkeypatch.delenv("POLARS_TMP_COLUMN_TAG")
+        pl._plr.config_reload_env_var("POLARS_TMP_COLUMN_TAG")
+    assert re.search(r"_POLARS_TMP_custom_\d+", plan), plan
+    assert not re.search(r"_POLARS_TMP_\d+", plan), plan

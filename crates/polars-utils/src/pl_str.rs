@@ -312,7 +312,10 @@ impl core::fmt::Display for PlSmallStr {
 pub fn unique_column_name() -> PlSmallStr {
     static COUNTER: RelaxedCell<u64> = RelaxedCell::new_u64(0);
     let idx = COUNTER.fetch_add(1);
-    format_pl_smallstr!("_POLARS_TMP_{idx}")
+    match polars_config::config().tmp_column_tag() {
+        Some(tag) => format_pl_smallstr!("_POLARS_TMP_{tag}_{idx}"),
+        None => format_pl_smallstr!("_POLARS_TMP_{idx}"),
+    }
 }
 
 #[cfg(feature = "python")]

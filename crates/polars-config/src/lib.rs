@@ -1,5 +1,5 @@
-use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock, RwLock};
 use std::time::Duration;
 
 mod engine;
@@ -148,6 +148,9 @@ const DEFAULT_HOT_TABLE_SIZE: u64 = if cfg!(debug_assertions) { 4 } else { 4096 
 const MAX_HOT_TABLE_SIZE: &str = "POLARS_MAX_HOT_TABLE_SIZE";
 const DEFAULT_MAX_HOT_TABLE_SIZE: u64 = if cfg!(debug_assertions) { 16 } else { 1 << 17 };
 
+/// Tag inserted into temporary column names, to keep names minted by different processes apart.
+const TMP_COLUMN_TAG: &str = "POLARS_TMP_COLUMN_TAG";
+
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
     VERBOSE,
@@ -210,6 +213,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     FILE_POSIX_FADV,
     HOT_TABLE_SIZE,
     MAX_HOT_TABLE_SIZE,
+    TMP_COLUMN_TAG,
 ];
 
 pub struct Config {
@@ -253,6 +257,7 @@ pub struct Config {
     file_posix_fadv: AtomicU8,
     hot_table_size: AtomicU64,
     max_hot_table_size: AtomicU64,
+    tmp_column_tag: RwLock<Option<Arc<str>>>,
 
     // Derived from others.
     ooc_memory_prefetch_bytes: AtomicU64,
@@ -315,6 +320,7 @@ impl Config {
             file_posix_fadv: AtomicU8::new(DEFAULT_FILE_POSIX_FADV as u8),
             hot_table_size: AtomicU64::new(DEFAULT_HOT_TABLE_SIZE),
             max_hot_table_size: AtomicU64::new(DEFAULT_MAX_HOT_TABLE_SIZE),
+            tmp_column_tag: RwLock::new(None),
             ooc_memory_prefetch_bytes: AtomicU64::new(0),
         };
         cfg.reload_env_vars();
@@ -551,6 +557,9 @@ impl Config {
                     .unwrap_or(DEFAULT_MAX_HOT_TABLE_SIZE),
                 Ordering::Relaxed,
             ),
+            TMP_COLUMN_TAG => {
+                *self.tmp_column_tag.write().unwrap() = val.filter(|x| !x.is_empty()).map(Arc::from)
+            },
             _ => {
                 if var.starts_with("POLARS_") {
                     if self.warn_unknown_config.load(Ordering::Relaxed) {
@@ -787,6 +796,10 @@ impl Config {
     #[inline(always)]
     pub fn max_hot_table_size(&self) -> u64 {
         self.max_hot_table_size.load(Ordering::Relaxed)
+    }
+
+    pub fn tmp_column_tag(&self) -> Option<Arc<str>> {
+        self.tmp_column_tag.read().unwrap().clone()
     }
 }
 
