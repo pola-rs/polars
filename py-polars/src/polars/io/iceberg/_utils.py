@@ -3,7 +3,6 @@ from __future__ import annotations
 import abc
 import ast
 import contextlib
-import contextvars
 import uuid
 from _ast import GtE, Lt, LtE
 from ast import (
@@ -173,12 +172,9 @@ def _ensure_boolean_expression(result: Any) -> Any:
     return result
 
 
-_current_iceberg_schema: contextvars.ContextVar[pyiceberg.schema.Schema | None] = (
-    contextvars.ContextVar("_current_iceberg_schema", default=None)
-)
-
-
-def _is_null_pushdown_safe(path: list[str]) -> bool:
+def _is_null_pushdown_safe(
+    path: list[str], schema: pyiceberg.schema.Schema | None
+) -> bool:
     """Check whether every ancestor of `path` (excluding the leaf) is required.
 
     PyIceberg's `BoundIsNull`/`BoundNotNull` short-circuit based solely on the
@@ -187,7 +183,6 @@ def _is_null_pushdown_safe(path: list[str]) -> bool:
     own declared requiredness. Only safe to push down when every ancestor
     can't itself be missing.
     """
-    schema = _current_iceberg_schema.get()
     if schema is None or len(path) <= 1:
         return True
     try:
@@ -212,15 +207,11 @@ def try_convert_pyarrow_predicate(
     # the engine re-applies the full predicate after the scan.
     converted: list[Any] = []
 
-    token = _current_iceberg_schema.set(schema)
-    try:
-        for conjunct in _split_conjuncts(expr_ast):
-            with contextlib.suppress(Exception):
-                converted.append(
-                    _ensure_boolean_expression(_convert_predicate(conjunct))
-                )
-    finally:
-        _current_iceberg_schema.reset(token)
+    for conjunct in _split_conjuncts(expr_ast):
+        with contextlib.suppress(Exception):
+            converted.append(
+                _ensure_boolean_expression(_convert_predicate(conjunct, schema))
+            )
 
     if not converted:
         return None
@@ -267,19 +258,22 @@ def _to_ast(expr: str) -> ast.expr:
 
 
 @singledispatch
-def _convert_predicate(a: Any) -> Any:
+def _convert_predicate(
+    a: Any,
+    schema: pyiceberg.schema.Schema | None = None,  # noqa: ARG001
+) -> Any:
     """Walks the AST to convert the PyArrow expression to a PyIceberg expression."""
     msg = f"Unexpected symbol: {a}"
     raise ValueError(msg)
 
 
 @_convert_predicate.register(Constant)
-def _(a: Constant) -> Any:
+def _(a: Constant, schema: pyiceberg.schema.Schema | None = None) -> Any:  # noqa: ARG001
     return a.value
 
 
 @_convert_predicate.register(Name)
-def _(a: Name) -> Any:
+def _(a: Name, schema: pyiceberg.schema.Schema | None = None) -> Any:  # noqa: ARG001
     if a.id == "NaN":
         msg = "NaN literal is not supported in this predicate position"
         raise ValueError(msg)
@@ -287,9 +281,9 @@ def _(a: Name) -> Any:
 
 
 @_convert_predicate.register(UnaryOp)
-def _(a: UnaryOp) -> Any:
+def _(a: UnaryOp, schema: pyiceberg.schema.Schema | None = None) -> Any:
     if isinstance(a.op, Invert):
-        operand = _ensure_boolean_expression(_convert_predicate(a.operand))
+        operand = _ensure_boolean_expression(_convert_predicate(a.operand, schema))
         return pyiceberg.expressions.Not(operand)
     else:
         msg = f"Unexpected UnaryOp: {a}"
@@ -297,9 +291,9 @@ def _(a: UnaryOp) -> Any:
 
 
 @_convert_predicate.register(Call)
-def _(a: Call) -> Any:
-    args = [_convert_predicate(arg) for arg in a.args]
-    f = _convert_predicate(a.func)
+def _(a: Call, schema: pyiceberg.schema.Schema | None = None) -> Any:
+    args = [_convert_predicate(arg, schema) for arg in a.args]
+    f = _convert_predicate(a.func, schema)
     if f == "field":
         return args
     elif f == "scalar":
@@ -308,17 +302,17 @@ def _(a: Call) -> Any:
         # convert from polars-native i64 to ISO8601 string
         return _temporal_conversions[f](*args).isoformat()
     elif f == "starts_with":
-        pattern = _convert_predicate(a.keywords[0].value)
+        pattern = _convert_predicate(a.keywords[0].value, schema)
         return pyiceberg.expressions.StartsWith(".".join(args[0]), pattern)  # type: ignore[misc, call-arg, arg-type]
     else:
         # `field(...)` resolves to a name-per-path-segment list; join with
         # "." to match how PyIceberg indexes nested fields.
-        path = _convert_predicate(a.func.value)  # type: ignore[attr-defined]
+        path = _convert_predicate(a.func.value, schema)  # type: ignore[attr-defined]
         ref = ".".join(path)
         if f == "isin":
             return pyiceberg.expressions.In(ref, args[0])  # type: ignore[misc, call-arg, arg-type]
         elif f == "is_null":
-            if not _is_null_pushdown_safe(path):
+            if not _is_null_pushdown_safe(path, schema):
                 # A `required` leaf under an `optional` ancestor struct can still
                 # be absent; PyIceberg's own `BoundIsNull` ignores that and would
                 # short-circuit to AlwaysFalse. Decline - the engine re-applies
@@ -334,14 +328,14 @@ def _(a: Call) -> Any:
 
 
 @_convert_predicate.register(Attribute)
-def _(a: Attribute) -> Any:
+def _(a: Attribute, schema: pyiceberg.schema.Schema | None = None) -> Any:  # noqa: ARG001
     return a.attr
 
 
 @_convert_predicate.register(BinOp)
-def _(a: BinOp) -> Any:
-    lhs = _ensure_boolean_expression(_convert_predicate(a.left))
-    rhs = _ensure_boolean_expression(_convert_predicate(a.right))
+def _(a: BinOp, schema: pyiceberg.schema.Schema | None = None) -> Any:
+    lhs = _ensure_boolean_expression(_convert_predicate(a.left, schema))
+    rhs = _ensure_boolean_expression(_convert_predicate(a.right, schema))
 
     op = a.op
     if isinstance(op, BitAnd):
@@ -354,9 +348,9 @@ def _(a: BinOp) -> Any:
 
 
 @_convert_predicate.register(Compare)
-def _(a: Compare) -> Any:
+def _(a: Compare, schema: pyiceberg.schema.Schema | None = None) -> Any:
     op = a.ops[0]
-    lhs = ".".join(_convert_predicate(a.left))
+    lhs = ".".join(_convert_predicate(a.left, schema))
     rhs_ast = a.comparators[0]
 
     if isinstance(rhs_ast, Name) and rhs_ast.id == "NaN":
@@ -365,7 +359,7 @@ def _(a: Compare) -> Any:
         if isinstance(op, NotEq):
             return pyiceberg.expressions.NotNaN(lhs)  # type: ignore[misc, arg-type]
 
-    rhs = _convert_predicate(rhs_ast)
+    rhs = _convert_predicate(rhs_ast, schema)
 
     if isinstance(op, Gt):
         return pyiceberg.expressions.GreaterThan(lhs, rhs)  # type: ignore[misc, call-arg, arg-type]
@@ -385,8 +379,8 @@ def _(a: Compare) -> Any:
 
 
 @_convert_predicate.register(List)
-def _(a: List) -> Any:
-    return [_convert_predicate(e) for e in a.elts]
+def _(a: List, schema: pyiceberg.schema.Schema | None = None) -> Any:
+    return [_convert_predicate(e, schema) for e in a.elts]
 
 
 def extract_field_initial_default(field: NestedField) -> pl.Series | None:
