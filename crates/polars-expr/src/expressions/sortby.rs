@@ -273,7 +273,7 @@ impl PhysicalExpr for SortByExpr {
         let descending = prepare_bool_vec(&self.sort_options.descending, self.by.len());
         let nulls_last = prepare_bool_vec(&self.sort_options.nulls_last, self.by.len());
 
-        let mut ac_sort_by = self
+        let ac_sort_by = self
             .by
             .iter()
             .map(|e| e.evaluate_on_groups(df, groups, state))
@@ -285,31 +285,24 @@ impl PhysicalExpr for SortByExpr {
                 .all(|ac_sort_by| ac_sort_by.groups.len() == ac_in.groups.len())
         );
 
+        // Scalar keys (literal or aggregated) are broadcast to the input's length, so they never
+        // affect the order and are dropped.
+        let (mut ac_sort_by, (descending, nulls_last)): (Vec<_>, (Vec<_>, Vec<_>)) = ac_sort_by
+            .into_iter()
+            .zip(descending.into_iter().zip(nulls_last))
+            .filter(|(ac, _)| !(ac.is_literal() || ac.state.is_scalar()))
+            .unzip();
+
+        // If the input is a LiteralScalar or every key is scalar, sorting is a no-op.
+        if ac_in.is_literal() || ac_sort_by.is_empty() {
+            return Ok(ac_in);
+        }
+
         // Enable reliable length checks downstream
         ac_in.set_groups_for_undefined_agg_states();
         ac_sort_by
             .iter_mut()
             .for_each(|ac| ac.set_groups_for_undefined_agg_states());
-
-        // If every input is a LiteralScalar, we return a LiteralScalar.
-        // Otherwise, we convert any LiteralScalar to AggregatedList.
-        let all_literal = matches!(ac_in.state, AggState::LiteralScalar(_))
-            || ac_sort_by
-                .iter()
-                .all(|ac| matches!(ac.state, AggState::LiteralScalar(_)));
-
-        if all_literal {
-            return Ok(ac_in);
-        } else {
-            if matches!(ac_in.state, AggState::LiteralScalar(_)) {
-                ac_in.aggregated();
-            }
-            for ac in ac_sort_by.iter_mut() {
-                if matches!(ac.state, AggState::LiteralScalar(_)) {
-                    ac.aggregated();
-                }
-            }
-        }
 
         let mut sort_by_s = ac_sort_by
             .iter()
