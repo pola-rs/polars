@@ -21,6 +21,7 @@ use polars_defs::time::duration::Duration;
 use polars_lazy::prelude::*;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::functions::{DurationArgs, duration};
+use polars_plan::dsl::string::StringNameSpace;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::{has_expr, typed_lit};
 #[cfg(feature = "serde")]
@@ -209,6 +210,22 @@ fn compare(lhs: Expr, op: &SQLBinaryOperator, rhs: Expr) -> Option<Expr> {
         SQLBinaryOperator::NotEq => lhs.eq(rhs).not(),
         _ => return None,
     })
+}
+
+type StringMatch = fn(StringNameSpace, Expr) -> Expr;
+
+/// The string method matching a case-sensitive LIKE pattern whose only wildcards
+/// are a '%' at its start and/or end, with the literal text between them.
+fn literal_like_match(pattern: &str) -> Option<(StringMatch, &str)> {
+    let plain = |s: &str| !s.is_empty() && !s.contains(['%', '_']);
+    let (matches, needle): (StringMatch, &str) =
+        match (pattern.strip_prefix('%'), pattern.strip_suffix('%')) {
+            (Some(rest), Some(_)) => (StringNameSpace::contains_literal, rest.strip_suffix('%')?),
+            (None, Some(prefix)) => (StringNameSpace::starts_with, prefix),
+            (Some(suffix), None) => (StringNameSpace::ends_with, suffix),
+            (None, None) => return None,
+        };
+    plain(needle).then_some((matches, needle))
 }
 
 /// `expr`, a string, as a value of temporal `dtype`: folded when it is a literal
@@ -618,16 +635,9 @@ impl SQLExprVisitor<'_> {
                 SQLBinaryOperator::Eq
             };
             self.visit_binary_op(expr, &op, pattern)
-        } else if !case_insensitive
-            && pat.len() > 2
-            && pat.starts_with('%')
-            && pat.ends_with('%')
-            && !pat[1..pat.len() - 1].contains(['%', '_'])
-        {
-            // plain substring match (eg: '%foo%' with no other wildcard chars)
-            let needle = pat[1..pat.len() - 1].to_string();
+        } else if !case_insensitive && let Some((matches, needle)) = literal_like_match(&pat) {
             let expr = self.visit_expr(expr)?;
-            let matches = expr.str().contains_literal(lit(needle));
+            let matches = matches(expr.str(), lit(needle.to_string()));
             Ok(if negated { matches.not() } else { matches })
         } else {
             // create regex from pattern containing SQL wildcard chars ('%' => '.*', '_' => '.');
