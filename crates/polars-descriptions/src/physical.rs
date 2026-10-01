@@ -7,6 +7,9 @@ use crate::{PredicateFileSkipDescription, PythonPredicateDescription, SortColumn
 pub struct PhysicalNodeDescription {
     pub id: u64,
     pub input_ids: Vec<u64>,
+    /// `id` of the [`IrNodeDescription`](crate::IrNodeDescription) whose lowering created this
+    /// node. Optional only for backwards compatibility with old polars clients.
+    pub ir_node_id: Option<usize>,
     pub properties: PhysicalPropsDescription,
 }
 
