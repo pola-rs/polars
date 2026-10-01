@@ -420,6 +420,47 @@ def test_sink_ipc_custom_metadata() -> None:
         assert reader.metadata is None
 
 
+def test_sink_ipc_custom_metadata_dictionary() -> None:
+    df = pl.DataFrame({"a": ["x", "y", "z", "x", "w"]}, schema={"a": pl.Categorical})
+
+    f = io.BytesIO()
+    df.lazy().sink_ipc(f, record_batch_size=2, _record_batch_statistics=True)
+
+    # Dictionary batches must not be counted.
+    with pa.ipc.open_file(f) as reader:
+        assert json.loads(reader.metadata.get(b"__POLARS_IPC_METADATA")) == {
+            "record_batch_cum_len": [2, 4, 5]
+        }
+
+    buf = f.getvalue()
+    assert_frame_equal(pl.scan_ipc(buf).tail(1).collect(), df.tail(1))
+    assert_frame_equal(pl.scan_ipc(buf).slice(1, 3).collect(), df.slice(1, 3))
+    assert pl.scan_ipc(buf).select(pl.len()).collect().item() == 5
+
+
+@pytest.mark.parametrize(
+    "custom_metadata",
+    [
+        # Older versions of Polars also counted dictionary batches.
+        b'{"record_batch_cum_len": [3, 6]}',
+        b"not json",
+    ],
+)
+def test_scan_ipc_ignores_unusable_custom_metadata(custom_metadata: bytes) -> None:
+    table = pa.table({"a": pa.array(["x", "y", "z"]).dictionary_encode()})
+    metadata = {b"__POLARS_IPC_METADATA": custom_metadata}
+
+    f = io.BytesIO()
+    with pa.ipc.new_file(f, table.schema, metadata=metadata) as writer:
+        writer.write_table(table)
+
+    buf = f.getvalue()
+    with pytest.warns(UserWarning, match="ignoring unusable Polars metadata"):
+        assert pl.scan_ipc(buf).tail(1).collect()["a"].to_list() == ["z"]
+    with pytest.warns(UserWarning, match="ignoring unusable Polars metadata"):
+        assert pl.scan_ipc(buf).select(pl.len()).collect().item() == 3
+
+
 def test_scan_ipc_slicing_and_count_with_custom_metadata(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],

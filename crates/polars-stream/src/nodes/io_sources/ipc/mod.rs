@@ -15,7 +15,7 @@ use polars_core::utils::polars_arrow::io::ipc::read::{
     BlockReader, FileMetadata, ProjectionInfo, prepare_projection, read_file_metadata,
 };
 use polars_error::constants::LENGTH_LIMIT_MSG;
-use polars_error::{ErrString, PolarsError, PolarsResult, polars_err, to_compute_err};
+use polars_error::{ErrString, PolarsError, PolarsResult, polars_err, polars_warn};
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
 use polars_io::ipc::pl_ipc_metadata::{POLARS_IPC_METADATA_KEY, PlIpcMetadata};
@@ -151,14 +151,19 @@ impl FileReader for IpcFileReader {
             Arc::new(Some(dictionaries))
         };
 
-        let file_pl_metadata = file_metadata
-            .custom_metadata
-            .as_ref()
-            .and_then(|md| md.get(POLARS_IPC_METADATA_KEY))
-            .map(|md_str| serde_json::from_str::<PlIpcMetadata>(md_str))
-            .transpose()
-            .map_err(to_compute_err)?
-            .map(Arc::new);
+        let file_pl_metadata = PlIpcMetadata::from_ipc_footer(&file_metadata).map(Arc::new);
+
+        if file_pl_metadata.is_none()
+            && file_metadata
+                .custom_metadata
+                .as_ref()
+                .is_some_and(|md| md.contains_key(POLARS_IPC_METADATA_KEY))
+        {
+            polars_warn!(
+                "ignoring unusable Polars metadata in IPC file, \
+                reading row counts from the record batches instead"
+            );
+        }
 
         self.init_data = Some(InitializedState {
             file_metadata,
