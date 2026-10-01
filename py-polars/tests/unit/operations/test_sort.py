@@ -13,7 +13,7 @@ from polars.testing.parametric import dataframes, series
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import PolarsDataType
+    from polars._typing import EngineType, PolarsDataType
 
 
 @given(
@@ -1575,3 +1575,12 @@ def test_sort_by_nested_categorical_keys(key: pl.Series) -> None:
 
     grouped = df.with_columns(g=1).group_by("g").agg(pl.col("x").sort_by("k", "y"))
     assert grouped["x"].to_list() == [[3, 2, 1]]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_sort_multiple_keys_maintain_order_reversed_input(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"a": [3, 2, 1, 1], "b": [6, 5, 4, 4]})
+    assert_frame_equal(
+        lf.sort("a", "b", maintain_order=True).collect(engine=engine),
+        pl.DataFrame({"a": [1, 1, 2, 3], "b": [4, 4, 5, 6]}),
+    )

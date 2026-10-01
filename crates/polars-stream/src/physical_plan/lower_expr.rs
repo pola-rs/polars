@@ -2,17 +2,19 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
+use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::datatypes::AnyValue;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet,
+    SortMultipleOptions,
 };
 #[cfg(feature = "rolling_window")]
 use polars_core::prelude::{RollingFnParams, RollingOptionsFixedWindow, RollingRankMethod};
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_defs::join::{JoinArgs, JoinType};
-use polars_error::{PolarsResult, feature_gated};
+use polars_error::{PolarsResult, feature_gated, polars_ensure};
 use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
@@ -37,7 +39,9 @@ use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_group_by::{
     GroupByLowerKind, build_group_by_stream, try_build_streaming_group_by,
 };
-use crate::physical_plan::lower_ir::{build_filter_stream_with_ctx, build_row_idx_stream};
+use crate::physical_plan::lower_ir::{
+    build_filter_stream_with_ctx, build_row_idx_stream, build_slice_stream,
+};
 
 type ExprNodeKey = Node;
 
@@ -1969,15 +1973,14 @@ fn lower_exprs_with_ctx(
                 let select_stream =
                     build_select_stream_with_ctx(input, std::slice::from_ref(&inner_expr_ir), ctx)?;
                 let col_expr = ctx.expr_arena.add(AExpr::Column(sorted_name.clone()));
-                let kind = PhysNodeKind::Sort {
-                    input: select_stream,
-                    by_column: vec![ExprIR::new(col_expr, OutputName::Alias(sorted_name))],
-                    slice: None,
-                    sort_options: (&options).into(),
-                };
-                let output_schema = select_stream.output_schema(ctx.phys_sm).clone();
-                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                input_streams.insert(PhysStream::first(node_key));
+                let sort_stream = build_sort_stream_with_ctx(
+                    select_stream,
+                    vec![ExprIR::new(col_expr, OutputName::Alias(sorted_name))],
+                    None,
+                    (&options).into(),
+                    ctx,
+                )?;
+                input_streams.insert(sort_stream);
                 transformed_exprs.push(col_expr);
             },
 
@@ -1997,25 +2000,20 @@ fn lower_exprs_with_ctx(
                 let select_stream = build_select_stream_with_ctx(input, &all_inner_expr_irs, ctx)?;
 
                 // Sort the inputs.
-                let kind = PhysNodeKind::Sort {
-                    input: select_stream,
-                    by_column: by_names
-                        .into_iter()
-                        .map(|name| {
-                            ExprIR::new(
-                                ctx.expr_arena.add(AExpr::Column(name.clone())),
-                                OutputName::Alias(name),
-                            )
-                        })
-                        .collect(),
-                    slice: None,
-                    sort_options,
-                };
-                let output_schema = select_stream.output_schema(ctx.phys_sm).clone();
-                let sort_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                let by_column = by_names
+                    .into_iter()
+                    .map(|name| {
+                        ExprIR::new(
+                            ctx.expr_arena.add(AExpr::Column(name.clone())),
+                            OutputName::Alias(name),
+                        )
+                    })
+                    .collect();
+                let sort_stream =
+                    build_sort_stream_with_ctx(select_stream, by_column, None, sort_options, ctx)?;
 
                 let sorted_col_expr = ctx.expr_arena.add(AExpr::Column(sorted_name.clone()));
-                input_streams.insert(PhysStream::first(sort_node_key));
+                input_streams.insert(sort_stream);
                 transformed_exprs.push(sorted_col_expr);
             },
 
@@ -3139,4 +3137,146 @@ fn build_length_preserving_select_stream_with_ctx(
     let out_schema = Arc::make_mut(out_stream.output_schema_mut(ctx.phys_sm));
     out_schema.shift_remove(tmp_name.as_ref()).unwrap();
     Ok(out_stream)
+}
+
+/// Builds a sort node given an input stream and the columns to sort by.
+///
+/// The sort node is given a single plain key column with a directly sortable
+/// dtype; the key expressions are evaluated, cast or row encoded into a
+/// temporary column where that is not already the case.
+pub(crate) fn build_sort_stream_with_ctx(
+    input: PhysStream,
+    by_column: Vec<ExprIR>,
+    slice: Option<(i64, usize)>,
+    mut sort_options: SortMultipleOptions,
+    ctx: &mut LowerExprContext,
+) -> PolarsResult<PhysStream> {
+    // Any order is sorted by no keys, so the input order is kept.
+    if by_column.is_empty() {
+        return Ok(match slice {
+            Some((offset, len)) => build_slice_stream(input, offset, len, ctx.phys_sm),
+            None => input,
+        });
+    }
+    let input_schema = input.output_schema(ctx.phys_sm).clone();
+
+    _broadcast_bools(by_column.len(), &mut sort_options.descending);
+    _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
+    assert_eq!(sort_options.descending.len(), by_column.len());
+    assert_eq!(sort_options.nulls_last.len(), by_column.len());
+
+    let dtypes = by_column
+        .iter()
+        .map(|e| e.dtype(&input_schema, ctx.expr_arena).cloned())
+        .try_collect_vec()?;
+    for (expr, dtype) in by_column.iter().zip(&dtypes) {
+        polars_ensure!(
+            !dtype.is_object(),
+            InvalidOperation: "column '{}' has a dtype of '{}', which does not support sorting",
+            expr.output_name(),
+            dtype
+        );
+    }
+
+    let single_key_dtype = (dtypes.len() == 1).then(|| dtypes[0].clone());
+    // Enum and Decimal are sortable through their numeric physical
+    // representation, Categorical (also as extension storage) is not: its
+    // order is lexical.
+    let is_directly_sortable = |dtype: &DataType| {
+        matches!(
+            dtype,
+            DataType::String | DataType::Binary | DataType::BinaryOffset
+        ) || (!dtype.to_storage().is_categorical() && dtype.to_physical().is_primitive_numeric())
+    };
+
+    // The expression for a temporary key column, unless the key already is a
+    // plain column the node can sort on.
+    let first_key = by_column[0].clone();
+    let key_expr = match single_key_dtype {
+        Some(dtype) if is_directly_sortable(&dtype) => {
+            let node = first_key.node();
+            (!matches!(ctx.expr_arena.get(node), AExpr::Column(_)))
+                .then(|| AExprBuilder::new_from_node(node))
+        },
+        Some(DataType::Boolean) => Some(
+            AExprBuilder::new_from_node(first_key.node()).cast(DataType::UInt8, ctx.expr_arena),
+        ),
+        _ => {
+            let encoded = AExprBuilder::row_encode(
+                by_column,
+                dtypes,
+                RowEncodingVariant::Ordered {
+                    descending: Some(std::mem::take(&mut sort_options.descending)),
+                    nulls_last: Some(std::mem::take(&mut sort_options.nulls_last)),
+                    broadcast_nulls: None,
+                },
+                ctx.expr_arena,
+            );
+            // The order is folded into the encoding, which has no nulls.
+            sort_options.descending = vec![false];
+            sort_options.nulls_last = vec![false];
+            Some(encoded)
+        },
+    };
+
+    let added_key_column = key_expr.is_some();
+    let (input, key) = match key_expr {
+        None => (input, first_key),
+        Some(expr) => {
+            let key_name = unique_column_name();
+            let input =
+                build_hstack_stream_with_ctx(input, &[expr.expr_ir(key_name.clone())], ctx)?;
+            let key = AExprBuilder::col(key_name.clone(), ctx.expr_arena).expr_ir(key_name);
+            (input, key)
+        },
+    };
+
+    let output_schema = input.output_schema(ctx.phys_sm).clone();
+    let kind = PhysNodeKind::Sort {
+        input,
+        by_column: vec![key],
+        slice,
+        sort_options,
+    };
+    let mut stream = PhysStream::first(ctx.phys_sm.insert(PhysNode::new(output_schema, kind)));
+
+    if added_key_column {
+        let output_exprs = input_schema
+            .iter_names_cloned()
+            .map(|name| {
+                ExprIR::new(
+                    ctx.expr_arena.add(AExpr::Column(name.clone())),
+                    OutputName::ColumnLhs(name),
+                )
+            })
+            .collect_vec();
+        stream = build_select_stream_with_ctx(stream, &output_exprs, ctx)?;
+    }
+    Ok(stream)
+}
+
+/// Builds a sort node given an input stream and the columns to sort by.
+///
+/// See [`build_sort_stream_with_ctx`].
+#[expect(clippy::too_many_arguments)]
+pub fn build_sort_stream(
+    input: PhysStream,
+    by_column: Vec<ExprIR>,
+    slice: Option<(i64, usize)>,
+    sort_options: SortMultipleOptions,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext<'_>,
+) -> PolarsResult<PhysStream> {
+    let mut ctx = LowerExprContext {
+        expr_arena,
+        phys_sm,
+        cache: expr_cache,
+        prepare_visualization: ctx.prepare_visualization,
+        sortedness: ctx.sortedness,
+        node_scratch: &mut Default::default(),
+        ae_height_scratch: &mut Default::default(),
+    };
+    build_sort_stream_with_ctx(input, by_column, slice, sort_options, &mut ctx)
 }

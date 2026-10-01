@@ -24,8 +24,8 @@ use slotmap::SlotMap;
 
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::lower_expr::{
-    build_hstack_stream, build_select_stream, compute_output_schema, is_elementwise_rec_cached,
-    is_fake_elementwise_function, is_input_independent,
+    build_hstack_stream, build_select_stream, build_sort_stream, compute_output_schema,
+    is_elementwise_rec_cached, is_fake_elementwise_function, is_input_independent,
 };
 use crate::physical_plan::lower_ir::{
     build_filter_stream, build_row_idx_stream, build_slice_stream,
@@ -1056,7 +1056,7 @@ pub fn try_build_streaming_group_by(
     let group_by_output_schema = Arc::new(group_by_output_schema);
 
     let agg_node = phys_sm.insert(PhysNode::new(
-        group_by_output_schema.clone(),
+        group_by_output_schema,
         PhysNodeKind::GroupBy {
             inputs,
             key_per_input,
@@ -1067,17 +1067,18 @@ pub fn try_build_streaming_group_by(
 
     // Sort the input based on the first row index if maintaining order.
     let mut post_select_input = if maintain_order {
-        let sort_node = phys_sm.insert(PhysNode::new(
-            group_by_output_schema,
-            PhysNodeKind::Sort {
-                input: PhysStream::first(agg_node),
-                by_column: vec![trans_output_exprs.last().unwrap().clone()],
-                slice: None,
-                sort_options: SortMultipleOptions::new(),
-            },
-        ));
+        let sort_stream = build_sort_stream(
+            PhysStream::first(agg_node),
+            vec![trans_output_exprs.last().unwrap().clone()],
+            None,
+            SortMultipleOptions::new(),
+            expr_arena,
+            phys_sm,
+            expr_cache,
+            ctx,
+        )?;
         trans_output_exprs.pop(); // Remove row idx from post-select.
-        PhysStream::first(sort_node)
+        sort_stream
     } else {
         PhysStream::first(agg_node)
     };
@@ -1211,21 +1212,16 @@ pub fn try_build_sorted_group_by(
 
     let schema = input.output_schema(phys_sm).clone();
     if !are_keys_sorted {
-        let row_idx_name = unique_column_name();
-        input = build_row_idx_stream(input, row_idx_name.clone(), None, phys_sm);
-
-        let row_idx_expr =
-            AExprBuilder::col(row_idx_name.clone(), expr_arena).expr_ir(row_idx_name.clone());
-
-        input = PhysStream::first(phys_sm.insert(PhysNode::new(
-            input.output_schema(phys_sm).clone(),
-            PhysNodeKind::Sort {
-                input,
-                by_column: vec![key, row_idx_expr],
-                slice: None,
-                sort_options: SortMultipleOptions::default(),
-            },
-        )));
+        input = build_sort_stream(
+            input,
+            vec![key],
+            None,
+            SortMultipleOptions::default().with_maintain_order(true),
+            expr_arena,
+            phys_sm,
+            expr_cache,
+            ctx,
+        )?;
     }
 
     let mut gb_output_schema = Schema::with_capacity(aggs.len() + 1);

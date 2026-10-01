@@ -3843,6 +3843,7 @@ dependencies = [
  "polars-time",
  "polars-utils",
  "pyo3",
+ "rand 0.10.2",
  "rayon",
  "recursive",
  "schemars",
