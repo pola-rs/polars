@@ -189,6 +189,18 @@ async fn static_skip_mask(
             statistics.min = projection.apply_transform(statistics.min)?;
             statistics.max = projection.apply_transform(statistics.max)?;
 
+            // Per-field null counts still describe the file's original struct shape, so use
+            // unknown counts in the output shape for mapped structs.
+            if let ArrowFieldProjection::Mapped { output_dtype, .. } = projection {
+                if output_dtype.is_struct() {
+                    statistics.null_count = Column::full_null(
+                        PlSmallStr::EMPTY,
+                        num_row_groups,
+                        &null_count_dtype(output_dtype),
+                    );
+                }
+            }
+
             let statistics = statistics.with_base_column_name(c);
 
             columns.extend([statistics.min, statistics.max, statistics.null_count]);

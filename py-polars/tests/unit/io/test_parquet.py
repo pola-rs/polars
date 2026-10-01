@@ -4116,6 +4116,54 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
     assert_frame_equal(out, pl.select(x=value).select(pl.first().cast(scan_dtype)))
 
 
+@pytest.mark.parametrize(
+    ("write_value", "scan_dtype", "filter_expr", "expected_value"),
+    [
+        (
+            {"a": 1},
+            pl.Struct({"a": pl.Int64, "b": pl.Int64}),
+            pl.col("s").struct.field("b").is_null(),
+            {"a": 1, "b": None},
+        ),
+        (
+            {"t": {"a": 1}},
+            pl.Struct({"t": pl.Struct({"a": pl.Int64, "b": pl.Int64})}),
+            pl.col("s").struct.field("t").struct.field("b").is_null(),
+            {"t": {"a": 1, "b": None}},
+        ),
+    ],
+)
+def test_scan_parquet_skip_row_groups_missing_struct_field(
+    write_value: dict[str, Any],
+    scan_dtype: pl.DataType,
+    filter_expr: pl.Expr,
+    expected_value: dict[str, Any],
+) -> None:
+    # Regression test: inserting a missing struct field widened the
+    # skip-batches min/max stats to the new shape but left null_count stats
+    # at the file's original (narrower) shape, crashing with
+    # StructFieldNotFoundError when filtering on the inserted field. Covers
+    # both a directly-missing field and one nested two levels deep.
+    f = io.BytesIO()
+    pl.DataFrame({"s": [write_value, write_value]}).write_parquet(f)
+    f.seek(0)
+
+    q = pl.scan_parquet(
+        f,
+        schema={"s": scan_dtype},
+        cast_options=pl.ScanCastOptions(missing_struct_fields="insert"),
+    ).filter(filter_expr)
+
+    expected = pl.DataFrame(
+        {"s": [expected_value, expected_value]}, schema={"s": scan_dtype}
+    )
+
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)), expected
+    )
+
+
 @pytest.mark.may_fail_cloud  # reason: looks at stdout
 @pytest.mark.parametrize(
     ("df", "predicate", "reading"),
