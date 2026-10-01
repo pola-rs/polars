@@ -37,7 +37,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
+use polars_utils::{IdxSize, TmpNamespace, format_pl_smallstr, unique_column_name};
 use slotmap::{DenseSlotMap, SecondaryMap};
 
 use super::lower_expr::{build_hstack_stream, build_sort_stream};
@@ -124,7 +124,7 @@ pub(crate) fn build_filter_stream_with_ctx(
         ));
     }
 
-    let pred_name = unique_column_name();
+    let pred_name = unique_column_name(TmpNamespace::Lowering);
     let with_pred =
         build_hstack_stream_with_ctx(input, &[predicate.with_alias(pred_name.clone())], ctx)?;
 
@@ -463,7 +463,7 @@ fn lower_ir_inner(
                 .map(|k| left_schema.try_get(k.as_str()).cloned())
                 .try_collect_vec()?;
 
-            let key_name = unique_column_name();
+            let key_name = unique_column_name(TmpNamespace::Lowering);
             use polars_plan::plans::{AExprBuilder, RowEncodingVariant};
 
             // The merge order is decided on a single trailing key column. With a
@@ -613,7 +613,7 @@ fn lower_ir_inner(
             if sort_options.maintain_order && limit < u64::MAX {
                 _broadcast_bools(by_column.len(), &mut sort_options.descending);
                 _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
-                let row_idx_name = unique_column_name();
+                let row_idx_name = unique_column_name(TmpNamespace::Lowering);
                 stream = build_row_idx_stream(stream, row_idx_name.clone(), None, phys_sm);
 
                 // Add row index to sort columns.
@@ -1240,7 +1240,7 @@ fn lower_ir_inner(
                         if key_expr_is_trivial(on_expr, expr_arena) {
                             tmp_col_names.push(None);
                         } else {
-                            let tmp_name = unique_column_name();
+                            let tmp_name = unique_column_name(TmpNamespace::Lowering);
                             tmp_col_names.push(Some(tmp_name.clone()));
                             let dtype = on_expr
                                 .dtype(&hstack_schema, expr_arena)?
@@ -1674,7 +1674,7 @@ fn lower_ir_inner(
                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any
                 )
             {
-                let distinct_name = unique_column_name();
+                let distinct_name = unique_column_name(TmpNamespace::Lowering);
                 let mut distinct_out_schema = (**input_schema).clone();
                 distinct_out_schema.insert(distinct_name.clone(), DataType::Boolean);
                 let is_first_distinct_node = phys_sm.insert(PhysNode::new(
@@ -1771,7 +1771,7 @@ fn lower_ir_inner(
 
             if options.keep_strategy == UniqueKeepStrategy::None {
                 // Track the length so we can filter out non-unique keys later.
-                let name = unique_column_name();
+                let name = unique_column_name(TmpNamespace::Lowering);
                 group_by_output_schema.insert(name.clone(), DataType::IDX_DTYPE);
                 aggs.push(ExprIR::new(
                     expr_arena.add(AExpr::Len),
@@ -2044,7 +2044,7 @@ fn append_sorted_key_column(
     let key_expr_is_trivial =
         |c: &ExprIR, ea: &mut Arena<AExpr>| matches!(ea.get(c.node()), AExpr::Column(_));
     let (phys_output, key_col_name) = if use_row_encoding {
-        let key_col_name = unique_column_name();
+        let key_col_name = unique_column_name(TmpNamespace::Lowering);
         let tfc = ToFieldContext::new(expr_arena, input_schema);
         let sorted_descending =
             keys_sorted.and_then(|v| v.iter().map(|s| s.descending).collect::<Option<Vec<_>>>());
@@ -2068,7 +2068,7 @@ fn append_sorted_key_column(
             build_hstack_stream(phys_input, &key_exprs, expr_arena, phys_sm, expr_cache, ctx)?;
         (output, Some(key_col_name))
     } else if !key_expr_is_trivial(&key_exprs[0], expr_arena) {
-        let key_col_name = unique_column_name();
+        let key_col_name = unique_column_name(TmpNamespace::Lowering);
         key_exprs[0] = key_exprs[0].with_alias(key_col_name.clone());
         let output =
             build_hstack_stream(phys_input, &key_exprs, expr_arena, phys_sm, expr_cache, ctx)?;

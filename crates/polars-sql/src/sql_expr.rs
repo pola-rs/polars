@@ -23,7 +23,7 @@ use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::functions::{DurationArgs, duration};
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::{has_expr, typed_lit};
-use polars_utils::unique_column_name;
+use polars_utils::{TmpNamespace, unique_column_name};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
@@ -558,7 +558,7 @@ impl SQLExprVisitor<'_> {
             .ctx
             .execute_isolated(|ctx| ctx.execute_query(subquery))?;
 
-        let new_name = unique_column_name();
+        let new_name = unique_column_name(TmpNamespace::Sql);
         let reduce_expr = match restriction {
             SubqueryRestriction::SingleColumn => first().as_expr().implode(true),
             SubqueryRestriction::SingleValue => first().as_expr().item(true),

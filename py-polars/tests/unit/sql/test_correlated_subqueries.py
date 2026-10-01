@@ -205,7 +205,7 @@ def _decorrelation_count(ctx: pl.SQLContext[pl.LazyFrame], query: str) -> int:
     pipeline id itself (not a strategy-specific column suffix) is what's counted.
     """
     plan = ctx.execute(query).explain()
-    return len(set(re.findall(r"__POLARS_CORR.*?(POLARS_TMP_\d+)_", plan)))
+    return len(set(re.findall(r"__POLARS_CORR.*?(POLARS_TMP_SQL_\d+)_", plan)))
 
 
 def test_repeated_correlated_subquery_is_decorrelated_once() -> None:
@@ -597,7 +597,7 @@ def test_correlated_aggregate_where_conjunct_scheduling(where: str) -> None:
 
 
 def _assert_restricted_to_outer_keys(plan: str) -> None:
-    (result_col,) = set(re.findall(r"__POLARS_CORR__POLARS_TMP_\d+_res", plan))
+    (result_col,) = set(re.findall(r"__POLARS_CORR__POLARS_TMP_SQL_\d+_res", plan))
     lines = plan.splitlines()
     agg_input = None
     for idx, line in enumerate(lines):

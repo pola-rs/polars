@@ -1,6 +1,6 @@
 #[cfg(feature = "dynamic_group_by")]
 use polars_defs::time::group_by::RollingGroupOptionsIR;
-use polars_utils::unique_column_name;
+use polars_utils::{TmpNamespace, unique_column_name};
 
 use super::*;
 
@@ -22,7 +22,7 @@ pub(super) fn sort_and_groups(
 ) -> PolarsResult<Vec<[IdxSize; 2]>> {
     let encoded = row_encode::encode_rows_vertical_par_unordered(keys)?;
     let encoded = encoded.rechunk().into_owned();
-    let encoded = encoded.with_name(unique_column_name());
+    let encoded = encoded.with_name(unique_column_name(TmpNamespace::Execution));
     let idx = encoded.arg_sort(SortOptions {
         maintain_order: true,
         ..Default::default()

@@ -10,7 +10,7 @@ use polars_plan::plans::visitor::{TreeWalker, VisitRecursion, Visitor};
 use polars_plan::plans::{ArenaExprIter, ExprToIRContext, is_scalar_ae, to_expr_ir};
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
-use polars_utils::{format_pl_smallstr, unique_column_name};
+use polars_utils::{TmpNamespace, format_pl_smallstr, unique_column_name};
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
@@ -737,7 +737,7 @@ impl SQLContext {
         };
 
         let lf = if bag_semantics {
-            let occurrence_col = unique_column_name();
+            let occurrence_col = unique_column_name(TmpNamespace::Sql);
             let mut lf_on = lf_cols.clone();
             let mut rf_on =
                 rf_cols.expect("ALL quantifier always resolves the right-hand columns above");
@@ -1559,7 +1559,10 @@ impl SQLContext {
         self.group_scope
             .whole_frame_partition
             .get_or_insert_with(|| {
-                format_pl_smallstr!("__POLARS_WHOLE_FRAME_{}", unique_column_name())
+                format_pl_smallstr!(
+                    "__POLARS_WHOLE_FRAME_{}",
+                    unique_column_name(TmpNamespace::Sql)
+                )
             })
             .clone()
     }
@@ -4180,7 +4183,10 @@ impl AggregateOutputs {
             _ => None,
         });
         let name = existing.unwrap_or_else(|| {
-            let name = format_pl_smallstr!("__POLARS_HOISTED_AGG_{}", unique_column_name());
+            let name = format_pl_smallstr!(
+                "__POLARS_HOISTED_AGG_{}",
+                unique_column_name(TmpNamespace::Sql)
+            );
             self.exprs.push(expr.alias(name.clone()));
             name
         });

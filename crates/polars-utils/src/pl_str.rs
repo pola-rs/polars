@@ -309,10 +309,39 @@ impl core::fmt::Display for PlSmallStr {
     }
 }
 
-pub fn unique_column_name() -> PlSmallStr {
+/// The stage of query processing that mints a temporary column name.
+///
+/// Names from different namespaces never clash, even when they are minted in different
+/// processes, such as when one process plans a query and another executes it. Names within
+/// one namespace come from a per-process counter, so a namespace must mint the names of a
+/// query in a single process.
+#[derive(Clone, Copy, Debug)]
+pub enum TmpNamespace {
+    /// Translating SQL to the DSL.
+    Sql,
+    /// Optimizing the IR.
+    Optimizer,
+    /// Lowering the IR to a streaming physical plan.
+    Lowering,
+    /// Executing a physical plan.
+    Execution,
+}
+
+impl TmpNamespace {
+    fn tag(self) -> &'static str {
+        match self {
+            Self::Sql => "SQL",
+            Self::Optimizer => "OPT",
+            Self::Lowering => "LOWER",
+            Self::Execution => "EXEC",
+        }
+    }
+}
+
+pub fn unique_column_name(namespace: TmpNamespace) -> PlSmallStr {
     static COUNTER: RelaxedCell<u64> = RelaxedCell::new_u64(0);
     let idx = COUNTER.fetch_add(1);
-    format_pl_smallstr!("_POLARS_TMP_{idx}")
+    format_pl_smallstr!("_POLARS_TMP_{}_{idx}", namespace.tag())
 }
 
 #[cfg(feature = "python")]

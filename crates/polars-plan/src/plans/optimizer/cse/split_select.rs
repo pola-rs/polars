@@ -11,7 +11,7 @@ use polars_error::PolarsResult;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::unique_column_name;
+use polars_utils::{TmpNamespace, unique_column_name};
 use recursive::recursive;
 
 use crate::plans::{
@@ -228,6 +228,7 @@ struct Rebuilder<'a> {
     memo: Vec<Option<Node>>,
     used_names: PlIndexSet<PlSmallStr>,
     pre_select: Vec<ExprIR>,
+    namespace: TmpNamespace,
 }
 
 impl Rebuilder<'_> {
@@ -252,7 +253,7 @@ impl Rebuilder<'_> {
             // renaming it for no reason.
             let name = match expr_arena.get(node) {
                 AExpr::Column(name) if !self.used_names.contains(name) => name.clone(),
-                _ => unique_column_name(),
+                _ => unique_column_name(self.namespace),
             };
             self.used_names.insert(name.clone());
             self.pre_select
@@ -292,6 +293,7 @@ pub fn split_pre_post_select_minsize_elementwise(
     must_preselect: &[ExprIR],
     input_schema: &Schema,
     expr_arena: &mut Arena<AExpr>,
+    namespace: TmpNamespace,
 ) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>)> {
     let mut canonical = CanonicalExprMap::new();
     let mut idx_of = PlIndexMap::new();
@@ -376,6 +378,7 @@ pub fn split_pre_post_select_minsize_elementwise(
         memo,
         used_names,
         pre_select,
+        namespace,
     };
 
     // Inputs precede their users in the DAG, so this rebuilds an expression before those

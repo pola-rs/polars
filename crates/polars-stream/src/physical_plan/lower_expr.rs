@@ -28,7 +28,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
-use polars_utils::{unique_column_name, unitvec};
+use polars_utils::{TmpNamespace, unique_column_name, unitvec};
 use slotmap::DenseSlotMap;
 
 use super::fmt::fmt_exprs;
@@ -557,7 +557,7 @@ fn lower_reduce_node(
     let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &agg_input, ctx)?;
     let trans_agg_node = ctx.expr_arena.add(agg_aexpr.replace_inputs(&trans_exprs));
 
-    let out_name = unique_column_name();
+    let out_name = unique_column_name(TmpNamespace::Lowering);
     let expr_ir = ExprIR::new(trans_agg_node, OutputName::Alias(out_name.clone()));
     let output_schema = schema_for_select(trans_input, std::slice::from_ref(&expr_ir), ctx)?;
     let kind = PhysNodeKind::Reduce {
@@ -603,7 +603,12 @@ fn lower_exprs_with_ctx(
     if exprs.iter().all(|e| is_input_independent_ctx(*e, ctx)) {
         let expr_irs = exprs
             .iter()
-            .map(|e| ExprIR::new(*e, OutputName::Alias(unique_column_name())))
+            .map(|e| {
+                ExprIR::new(
+                    *e,
+                    OutputName::Alias(unique_column_name(TmpNamespace::Lowering)),
+                )
+            })
             .collect_vec();
         let node = build_input_independent_node_with_ctx(&expr_irs, ctx)?;
         let out_exprs = expr_irs
@@ -645,7 +650,7 @@ fn lower_exprs_with_ctx(
                 // While explode is streamable, it is not elementwise, so we
                 // have to transform it to a select node.
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
-                let exploded_name = unique_column_name();
+                let exploded_name = unique_column_name(TmpNamespace::Lowering);
                 let trans_inner = ctx.expr_arena.add(AExpr::Explode {
                     expr: trans_exprs[0],
                     options,
@@ -666,7 +671,7 @@ fn lower_exprs_with_ctx(
             },
             AExpr::Column(_) => unreachable!("column should always be streamable"),
             AExpr::Literal(_) => {
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let inner_expr = ExprIR::new(expr, OutputName::Alias(out_name.clone()));
                 let node_key = build_input_independent_node_with_ctx(&[inner_expr], ctx)?;
                 input_streams.insert(PhysStream::first(node_key));
@@ -679,7 +684,7 @@ fn lower_exprs_with_ctx(
                 options: _,
             } => {
                 assert!(inner_exprs.len() == 2);
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let value_expr_ir = inner_exprs[0].with_alias(out_name.clone());
                 let repeats_expr_ir = inner_exprs[1].clone();
                 let value_stream = build_select_stream_with_ctx(input, &[value_expr_ir], ctx)?;
@@ -702,7 +707,7 @@ fn lower_exprs_with_ctx(
             } => {
                 assert!(inner_exprs.len() == 3);
                 let input_schema = input.output_schema(ctx.phys_sm);
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let first_ir = inner_exprs[0].with_alias(out_name.clone());
                 let out_dtype = first_ir.dtype(input_schema, ctx.expr_arena)?;
                 let mut value_expr_ir = inner_exprs[1].with_alias(out_name.clone());
@@ -751,7 +756,7 @@ fn lower_exprs_with_ctx(
             } => {
                 // We have to lower each expression separately as they might have different lengths.
                 let mut concat_streams = Vec::new();
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 for inner_expr in inner_exprs {
                     let (trans_input, trans_expr) =
                         lower_exprs_with_ctx(input, &[inner_expr.node()], ctx)?;
@@ -780,12 +785,12 @@ fn lower_exprs_with_ctx(
             } => {
                 assert!(inner_exprs.len() == 1);
 
-                let tmp_name = unique_column_name();
+                let tmp_name = unique_column_name(TmpNamespace::Lowering);
 
                 // TODO: lower through IR instead of duplicating logic here, need to pass ir_arena here.
                 if maintain_order {
                     feature_gated!("is_first_distinct", {
-                        let distinct_name = unique_column_name();
+                        let distinct_name = unique_column_name(TmpNamespace::Lowering);
                         let tmp_expr = inner_exprs[0].with_alias(tmp_name.clone());
                         let input_stream = build_select_stream_with_ctx(
                             input,
@@ -862,8 +867,8 @@ fn lower_exprs_with_ctx(
 
                 let input_schema = input.output_schema(ctx.phys_sm);
 
-                let key_name = unique_column_name();
-                let tmp_count_name = unique_column_name();
+                let key_name = unique_column_name(TmpNamespace::Lowering);
+                let tmp_count_name = unique_column_name(TmpNamespace::Lowering);
 
                 let input_expr = &inner_exprs[0];
                 let output_dtype = input_expr.dtype(input_schema, ctx.expr_arena)?.clone();
@@ -926,8 +931,8 @@ fn lower_exprs_with_ctx(
 
                 let input_schema = input.output_schema(ctx.phys_sm);
 
-                let tmp_value_name = unique_column_name();
-                let tmp_count_name = unique_column_name();
+                let tmp_value_name = unique_column_name(TmpNamespace::Lowering);
+                let tmp_count_name = unique_column_name(TmpNamespace::Lowering);
 
                 let input_expr = &inner_exprs[0];
                 let output_field = input_expr.field(input_schema, ctx.expr_arena)?;
@@ -996,8 +1001,8 @@ fn lower_exprs_with_ctx(
 
                 assert_eq!(inner_exprs.len(), 1);
 
-                let tmp_value_name = unique_column_name();
-                let tmp_count_name = unique_column_name();
+                let tmp_value_name = unique_column_name(TmpNamespace::Lowering);
+                let tmp_count_name = unique_column_name(TmpNamespace::Lowering);
 
                 let stream = build_select_stream_with_ctx(
                     input,
@@ -1065,8 +1070,8 @@ fn lower_exprs_with_ctx(
 
                 assert_eq!(inner_exprs.len(), 1);
 
-                let expr_name = unique_column_name();
-                let idx_name = unique_column_name();
+                let expr_name = unique_column_name(TmpNamespace::Lowering);
+                let idx_name = unique_column_name(TmpNamespace::Lowering);
 
                 let stream = build_select_stream_with_ctx(
                     input,
@@ -1126,8 +1131,8 @@ fn lower_exprs_with_ctx(
             {
                 // Translate left and right side separately (they could have different lengths).
 
-                let left_on_name = unique_column_name();
-                let right_on_name = unique_column_name();
+                let left_on_name = unique_column_name(TmpNamespace::Lowering);
+                let right_on_name = unique_column_name(TmpNamespace::Lowering);
                 let (trans_input_left, trans_expr_left) =
                     lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
                 // expr.implode().explode() ~= expr (and avoids rechunking)
@@ -1205,7 +1210,7 @@ fn lower_exprs_with_ctx(
 
                 let input_schema = input.output_schema(ctx.phys_sm);
 
-                let value_key = unique_column_name();
+                let value_key = unique_column_name(TmpNamespace::Lowering);
                 let value_dtype =
                     agg_expr.to_dtype(&ToFieldContext::new(ctx.expr_arena, input_schema))?;
 
@@ -1244,7 +1249,7 @@ fn lower_exprs_with_ctx(
                 assert_eq!(inner_exprs.len(), 1);
 
                 let input_schema = input.output_schema(ctx.phys_sm);
-                let value_key = unique_column_name();
+                let value_key = unique_column_name(TmpNamespace::Lowering);
                 let value_dtype = inner_exprs[0].dtype(input_schema, ctx.expr_arena)?;
 
                 let input = build_select_stream_with_ctx(
@@ -1276,7 +1281,7 @@ fn lower_exprs_with_ctx(
                 assert_eq!(inner_exprs.len(), 1);
 
                 let input_schema = input.output_schema(ctx.phys_sm);
-                let value_key = unique_column_name();
+                let value_key = unique_column_name(TmpNamespace::Lowering);
                 // Use the dtype of the full interpolate expression, not the inner expression,
                 // since interpolate may change the dtype (e.g. Int64 -> Float64).
                 let value_dtype = ExprIR::new(expr, OutputName::Alias(value_key.clone()))
@@ -1377,7 +1382,7 @@ fn lower_exprs_with_ctx(
 
                 let input_schema = input.output_schema(ctx.phys_sm);
 
-                let value_key = unique_column_name();
+                let value_key = unique_column_name(TmpNamespace::Lowering);
                 let value_dtype = inner_exprs[0].dtype(input_schema, ctx.expr_arena)?;
 
                 let input = build_select_stream_with_ctx(
@@ -1411,7 +1416,7 @@ fn lower_exprs_with_ctx(
             } => {
                 assert_eq!(inner_exprs.len(), 1);
 
-                let value_key = unique_column_name();
+                let value_key = unique_column_name(TmpNamespace::Lowering);
 
                 let input = build_select_stream_with_ctx(
                     input,
@@ -1435,7 +1440,7 @@ fn lower_exprs_with_ctx(
             } => {
                 assert_eq!(inner_exprs.len(), 1);
 
-                let value_key = unique_column_name();
+                let value_key = unique_column_name(TmpNamespace::Lowering);
 
                 let input = build_select_stream_with_ctx(
                     input,
@@ -1457,7 +1462,7 @@ fn lower_exprs_with_ctx(
             } => {
                 assert_eq!(inner_exprs.len(), 1);
 
-                let value_key = unique_column_name();
+                let value_key = unique_column_name(TmpNamespace::Lowering);
 
                 let input = build_select_stream_with_ctx(
                     input,
@@ -1486,7 +1491,7 @@ fn lower_exprs_with_ctx(
             } => {
                 assert_eq!(inner_exprs.len(), 1);
 
-                let value_key = unique_column_name();
+                let value_key = unique_column_name(TmpNamespace::Lowering);
 
                 let input = build_select_stream_with_ctx(
                     input,
@@ -1524,7 +1529,7 @@ fn lower_exprs_with_ctx(
                 dtype == DataType::IDX_DTYPE && start_is_zero && stop_is_len
             } =>
             {
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
                 let row_idx_col_expr_ir =
                     ExprIR::new(row_idx_col_aexpr, OutputName::ColumnLhs(out_name.clone()));
@@ -1564,7 +1569,7 @@ fn lower_exprs_with_ctx(
                 };
                 let (input_expr, include_nulls) = (*input_expr, *include_nulls);
 
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let mut row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
                 if dtype != IDX_DTYPE {
                     row_idx_col_aexpr = AExprBuilder::new_from_node(row_idx_col_aexpr)
@@ -1604,7 +1609,7 @@ fn lower_exprs_with_ctx(
                 && matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Literal(s) if matches!(s.extract_str(), Some("raise" | "null"))) =>
             {
                 let input_name = inner_exprs[0].output_name().clone();
-                let col_name = unique_column_name();
+                let col_name = unique_column_name(TmpNamespace::Lowering);
                 let select_stream = build_select_stream_with_ctx(
                     input,
                     &[inner_exprs[0].with_alias(col_name.clone())],
@@ -1676,7 +1681,7 @@ fn lower_exprs_with_ctx(
                 // have to transform them to a select node.
                 let inner_nodes = inner_exprs.iter().map(|x| x.node()).collect_vec();
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let trans_inner = ctx.expr_arena.add(AExpr::Function {
                     input: trans_exprs
                         .iter()
@@ -1730,7 +1735,7 @@ fn lower_exprs_with_ctx(
                 },
                 EvalVariant::Cumulative { .. } => {
                     // Cumulative is not elementwise, this would need a special node.
-                    let out_name = unique_column_name();
+                    let out_name = unique_column_name(TmpNamespace::Lowering);
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
@@ -1771,7 +1776,7 @@ fn lower_exprs_with_ctx(
                 // calling `unnest()`, with PREFIX being unique for each StructEval expression.
 
                 // Evaluate input `expr` and capture `col` references from `evaluation`
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(out_name.clone()));
                 let mut expr_irs = Vec::new();
                 expr_irs.push(inner_expr_ir);
@@ -1972,7 +1977,7 @@ fn lower_exprs_with_ctx(
             } => {
                 // As we'll refer to the sorted column twice, ensure the inner
                 // expr is available as a column by selecting first.
-                let sorted_name = unique_column_name();
+                let sorted_name = unique_column_name(TmpNamespace::Lowering);
                 let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(sorted_name.clone()));
                 let select_stream =
                     build_select_stream_with_ctx(input, std::slice::from_ref(&inner_expr_ir), ctx)?;
@@ -1994,8 +1999,11 @@ fn lower_exprs_with_ctx(
                 sort_options,
             } => {
                 // Select our inputs (if we don't do this we'll waste time sorting irrelevant columns).
-                let sorted_name = unique_column_name();
-                let by_names = by.iter().map(|_| unique_column_name()).collect_vec();
+                let sorted_name = unique_column_name(TmpNamespace::Lowering);
+                let by_names = by
+                    .iter()
+                    .map(|_| unique_column_name(TmpNamespace::Lowering))
+                    .collect_vec();
                 let all_inner_expr_irs = [(&sorted_name, inner)]
                     .into_iter()
                     .chain(by_names.iter().zip(by.iter().copied()))
@@ -2029,8 +2037,11 @@ fn lower_exprs_with_ctx(
             } => {
                 // Select our inputs.
                 let by = &inner_exprs[2..];
-                let out_name = unique_column_name();
-                let by_names = by.iter().map(|_| unique_column_name()).collect_vec();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
+                let by_names = by
+                    .iter()
+                    .map(|_| unique_column_name(TmpNamespace::Lowering))
+                    .collect_vec();
                 let data_irs = [(&out_name, &inner_exprs[0])]
                     .into_iter()
                     .chain(by_names.iter().zip(by.iter()))
@@ -2079,8 +2090,8 @@ fn lower_exprs_with_ctx(
 
             AExpr::Filter { input: inner, by } => {
                 // Select our inputs (if we don't do this we'll waste time filtering irrelevant columns).
-                let out_name = unique_column_name();
-                let by_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
+                let by_name = unique_column_name(TmpNamespace::Lowering);
                 let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(out_name.clone()));
                 let by_expr_ir = ExprIR::new(by, OutputName::Alias(by_name.clone()));
                 let select_stream =
@@ -2122,7 +2133,7 @@ fn lower_exprs_with_ctx(
                 returns_scalar: _,
                 null_on_oob,
             } => {
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let input_expr_ir = ExprIR::new(input_expr, OutputName::Alias(out_name.clone()));
                 let idx_expr_ir = ExprIR::from_node(idx_expr, ctx.expr_arena);
                 let input_stream = build_select_stream_with_ctx(input, &[input_expr_ir], ctx)?;
@@ -2144,8 +2155,8 @@ fn lower_exprs_with_ctx(
                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsFirstDistinct),
                 ..
             } => {
-                let val_name = unique_column_name();
-                let distinct_name = unique_column_name();
+                let val_name = unique_column_name(TmpNamespace::Lowering);
+                let distinct_name = unique_column_name(TmpNamespace::Lowering);
 
                 let val_stream = build_select_stream_with_ctx(
                     input,
@@ -2197,7 +2208,7 @@ fn lower_exprs_with_ctx(
                 },
                 IRAggExpr::NUnique(inner) => {
                     // Lower to no-aggregate group-by with unique name feeding into len aggregate.
-                    let tmp_name = unique_column_name();
+                    let tmp_name = unique_column_name(TmpNamespace::Lowering);
                     let (trans_input, trans_inner_exprs) =
                         lower_exprs_with_ctx(input, &[inner], ctx)?;
                     let group_by_key_expr =
@@ -2239,7 +2250,7 @@ fn lower_exprs_with_ctx(
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
                 },
                 IRAggExpr::Median(_) | IRAggExpr::Implode { .. } => {
-                    let out_name = unique_column_name();
+                    let out_name = unique_column_name(TmpNamespace::Lowering);
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
@@ -2351,8 +2362,8 @@ fn lower_exprs_with_ctx(
                 } else {
                     // Compute sum(x) and sum(x*log(x, base)) in a single Reduce node,
                     // then combine elementwise.
-                    let sum_x_name = unique_column_name();
-                    let sum_x_log_x_name = unique_column_name();
+                    let sum_x_name = unique_column_name(TmpNamespace::Lowering);
+                    let sum_x_log_x_name = unique_column_name(TmpNamespace::Lowering);
                     let sum_x_expr = ExprIR::new(
                         x.sum(ctx.expr_arena).node(),
                         OutputName::Alias(sum_x_name.clone()),
@@ -2397,7 +2408,7 @@ fn lower_exprs_with_ctx(
 
             // Length-based expressions.
             AExpr::Len => {
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let expr_ir = ExprIR::new(expr, OutputName::Alias(out_name.clone()));
                 let output_schema = schema_for_select(input, std::slice::from_ref(&expr_ir), ctx)?;
                 let kind = PhysNodeKind::Reduce {
@@ -2421,8 +2432,8 @@ fn lower_exprs_with_ctx(
                 // .with_row_index(out_name)
                 // .filter(predicate_name)
                 // .select(out_name)
-                let out_name = unique_column_name();
-                let predicate_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
+                let predicate_name = unique_column_name(TmpNamespace::Lowering);
                 let predicate = build_select_stream_with_ctx(
                     input,
                     &[inner_exprs[0].with_alias(predicate_name.clone())],
@@ -2455,9 +2466,9 @@ fn lower_exprs_with_ctx(
                 // .with_row_index(idx_name)
                 // .filter(col_name.eq(val_name))
                 // .select(idx_name.first())
-                let col_name = unique_column_name();
-                let val_name = unique_column_name();
-                let idx_name = unique_column_name();
+                let col_name = unique_column_name(TmpNamespace::Lowering);
+                let val_name = unique_column_name(TmpNamespace::Lowering);
+                let idx_name = unique_column_name(TmpNamespace::Lowering);
 
                 let col_val_stream = build_select_stream_with_ctx(
                     input,
@@ -2494,8 +2505,8 @@ fn lower_exprs_with_ctx(
                 // .select(tmp_expr = expr)
                 // .with_row_index(tmp_idx)
                 // .select(tmp_idx.min_by(tmp_expr))
-                let col_name = unique_column_name();
-                let idx_name = unique_column_name();
+                let col_name = unique_column_name(TmpNamespace::Lowering);
+                let idx_name = unique_column_name(TmpNamespace::Lowering);
 
                 let col_stream = build_select_stream_with_ctx(
                     input,
@@ -2524,7 +2535,7 @@ fn lower_exprs_with_ctx(
                 offset,
                 length,
             } => {
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(out_name.clone()));
                 let offset_expr_ir = ExprIR::from_node(offset, ctx.expr_arena);
                 let length_expr_ir = ExprIR::from_node(length, ctx.expr_arena);
@@ -2548,7 +2559,7 @@ fn lower_exprs_with_ctx(
                 function: func @ (IRFunctionExpr::Shift | IRFunctionExpr::ShiftAndFill),
                 options: _,
             } => {
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let data_col_expr = inner_exprs[0].with_alias(out_name.clone());
                 let trans_data_column = build_select_stream_with_ctx(input, &[data_col_expr], ctx)?;
                 let trans_offset =
@@ -2585,7 +2596,7 @@ fn lower_exprs_with_ctx(
                     | ewm_variant @ IRFunctionExpr::EwmStd { options },
                 options: _,
             } => {
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
 
                 let input = match input_exprs.as_slice() {
                     [input_expr] => build_select_stream_with_ctx(
@@ -2618,7 +2629,7 @@ fn lower_exprs_with_ctx(
                 function: ref function @ IRFunctionExpr::RollingExpr { ref options, .. },
                 options: _,
             } if let Some(window) = rolling_fixed_window(options) => {
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let input_schema = input.output_schema(ctx.phys_sm);
                 let out_schema = compute_output_schema(
                     input_schema,
@@ -2630,7 +2641,7 @@ fn lower_exprs_with_ctx(
 
                 let select_exprs = inner_exprs
                     .iter()
-                    .map(|e| e.with_alias(unique_column_name()))
+                    .map(|e| e.with_alias(unique_column_name(TmpNamespace::Lowering)))
                     .collect_vec();
                 let input = build_select_stream_with_ctx(input, &select_exprs, ctx)?;
                 let kind = PhysNodeKind::RollingFixedWindowFunction {
@@ -2662,8 +2673,8 @@ fn lower_exprs_with_ctx(
                 // .agg(_tmp1 = function)
                 // .select(_tmp1)
 
-                let out_name = unique_column_name();
-                let index_column_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
+                let index_column_name = unique_column_name(TmpNamespace::Lowering);
 
                 let index_column_expr_ir =
                     AExprBuilder::new_from_node(index_column).expr_ir(index_column_name.clone());
@@ -2714,11 +2725,14 @@ fn lower_exprs_with_ctx(
                 order_by: None,
                 mapping: WindowMapping::GroupsToRows,
             } => {
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let function_ir = AExprBuilder::new_from_node(function).expr_ir(out_name.clone());
                 let key_ir = partition_by
                     .iter()
-                    .map(|n| AExprBuilder::new_from_node(*n).expr_ir(unique_column_name()))
+                    .map(|n| {
+                        AExprBuilder::new_from_node(*n)
+                            .expr_ir(unique_column_name(TmpNamespace::Lowering))
+                    })
                     .collect_vec();
 
                 if let Some(gb) = try_build_streaming_group_by(
@@ -2761,7 +2775,7 @@ fn lower_exprs_with_ctx(
                     .try_collect_vec()?;
 
                 let input_schema = input.output_schema(ctx.phys_sm);
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 let out_schema = compute_output_schema(
                     input_schema,
                     &[ExprIR::new(expr, OutputName::Alias(out_name.clone()))],
@@ -2799,7 +2813,7 @@ fn lower_exprs_with_ctx(
             },
 
             AExpr::Over { .. } => {
-                let out_name = unique_column_name();
+                let out_name = unique_column_name(TmpNamespace::Lowering);
                 fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
@@ -3103,7 +3117,7 @@ fn build_length_preserving_select_stream_with_ctx(
     // Hacky work-around: append an input column with a temporary name, but
     // remove it from the final selector. This should ensure scalars gets zipped
     // back to the input to broadcast them.
-    let tmp_name = unique_column_name();
+    let tmp_name = unique_column_name(TmpNamespace::Lowering);
     let height_ae = if let Some(name) = input_schema.iter_names_cloned().next() {
         AExpr::Column(name)
     } else {
@@ -3227,7 +3241,7 @@ pub(crate) fn build_sort_stream_with_ctx(
     let (input, key) = match key_expr {
         None => (input, first_key),
         Some(expr) => {
-            let key_name = unique_column_name();
+            let key_name = unique_column_name(TmpNamespace::Lowering);
             let input =
                 build_hstack_stream_with_ctx(input, &[expr.expr_ir(key_name.clone())], ctx)?;
             let key = AExprBuilder::col(key_name.clone(), ctx.expr_arena).expr_ir(key_name);
