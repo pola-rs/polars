@@ -8,6 +8,7 @@ use polars_utils::IdxSize;
 use super::keys::KeyRowKeys;
 use super::layout::KeyRowLayout;
 use super::{VERIFY_BATCH_SIZE, push_long_bytes};
+use crate::hash_keys::MIN_PREFETCH_BUCKETS;
 
 /// One batch of a batched lookup. Keys are first matched by hash alone: a key whose
 /// hash is stored becomes a candidate for that stored key and, when inserting, a key
@@ -193,6 +194,17 @@ impl<V> KeyRowIndexMap<V> {
         self.values.len() as IdxSize
     }
 
+    #[inline(always)]
+    pub(crate) fn should_prefetch(&self) -> bool {
+        self.table.num_buckets() >= MIN_PREFETCH_BUCKETS
+    }
+
+    /// Prefetches the part of the table where a lookup of `hash` starts.
+    #[inline(always)]
+    pub(crate) fn prefetch(&self, hash: u64) {
+        self.table.prefetch_get(hash.wrapping_mul(self.seed));
+    }
+
     /// Gets the index by insertion order of key `i` of `keys`.
     ///
     /// # Safety
@@ -335,10 +347,16 @@ impl<V> KeyRowIndexMap<V> {
     ) {
         keys.assert_layout(&self.layout);
         let entry_words = self.entry_words();
+        let prefetch = self.should_prefetch();
         let mut batch = LookupBatch::default();
         for chunk in key_idxs.chunks(VERIFY_BATCH_SIZE) {
             let start = out.len();
             batch.clear();
+            if prefetch {
+                for key_idx in chunk {
+                    self.prefetch(keys.hashes.value_unchecked(*key_idx as usize));
+                }
+            }
             for (pos, key_idx) in chunk.iter().enumerate() {
                 let is_valid = keys
                     .validity
@@ -385,6 +403,14 @@ impl<V> KeyRowIndexMap<V> {
             let checkpoint = self.checkpoint();
             let mut next_map_idx = checkpoint.num_keys;
             batch.clear();
+            // Reserve up front so the table doesn't move after prefetching.
+            self.reserve(chunk.len());
+            if self.should_prefetch() {
+                for key_idx in chunk {
+                    let hash = keys.hashes.value_unchecked(*key_idx as usize);
+                    self.table.prefetch_insert(hash.wrapping_mul(seed));
+                }
+            }
             for (pos, key_idx) in chunk.iter().enumerate() {
                 let hash = keys.hashes.value_unchecked(*key_idx as usize);
                 let entries = &self.entries;
