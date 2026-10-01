@@ -873,8 +873,9 @@ def test_set_sorted_expr_observes_input_order_29560() -> None:
         (pl.col("x").over("g", mapping_strategy="explode"), True),
     ],
 )
-def test_order_insensitive_window_streaming(
-    expr: pl.Expr, is_order_observing: bool
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_order_insensitive_window(
+    expr: pl.Expr, is_order_observing: bool, engine: EngineType
 ) -> None:
     lf = pl.LazyFrame(
         {
@@ -892,10 +893,10 @@ def test_order_insensitive_window_streaming(
     )
 
     kept = "UNIQUE[maintain_order: true"
-    assert (kept in q.explain(engine="streaming")) == is_order_observing
-    assert kept in q.explain(engine="in-memory")
+    assert (kept in q.explain(engine=engine)) == is_order_observing
 
-    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+    expected = q.collect(optimizations=pl.QueryOptFlags(check_order_observe=False))
+    assert_frame_equal(q.collect(engine=engine), expected)
 
 
 @pytest.mark.parametrize(

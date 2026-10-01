@@ -38,13 +38,10 @@ new_key_type! {
 
 type EdgesMap = SlotMap<EdgeKey, Edge>;
 
-/// `order_insensitive_windows`: windows whose results do not depend on the row order are treated
-/// like elementwise expressions.
 pub fn simplify_and_fetch_orderings(
     roots: &[Node],
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    order_insensitive_windows: bool,
 ) -> (
     PlIndexMap<IRNodeKey, IRNodeEdgeKeys<EdgeKey>>,
     SlotMap<EdgeKey, Edge>,
@@ -63,7 +60,6 @@ pub fn simplify_and_fetch_orderings(
         expr_arena,
         eos_revisit_cache,
         ae_nodes_scratch,
-        order_insensitive_windows,
     };
 
     for (i, node) in ir_nodes_stack.iter().copied().enumerate() {
@@ -107,7 +103,6 @@ struct SimplifyIRNodeOrder<'a> {
     expr_arena: &'a mut Arena<AExpr>,
     eos_revisit_cache: &'a mut PlIndexMap<Node, ObservableOrders>,
     ae_nodes_scratch: &'a mut ScratchVec<Node>,
-    order_insensitive_windows: bool,
 }
 
 impl SimplifyIRNodeOrder<'_> {
@@ -151,11 +146,7 @@ impl SimplifyIRNodeOrder<'_> {
         macro_rules! expr_order_simplifier {
             () => {{
                 self.eos_revisit_cache.clear();
-                ExprOrderSimplifier::new(
-                    self.expr_arena,
-                    self.eos_revisit_cache,
-                    self.order_insensitive_windows,
-                )
+                ExprOrderSimplifier::new(self.expr_arena, self.eos_revisit_cache)
             }};
         }
 
