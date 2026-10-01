@@ -199,7 +199,8 @@ pub fn lower_ir(
     )?;
 
     if node.0 < original_ir_len {
-        for &key in &phys_sm.keys_as_slice()[len_before..] {
+        let (keys, _) = phys_sm.as_slices();
+        for &key in &keys[len_before..] {
             // If the key is already present it was already claimed by a nested `lower_ir` call,
             // so we shouldn't overwrite it.
             if !phys_to_ir.contains_key(key) {
