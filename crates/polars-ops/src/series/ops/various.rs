@@ -105,17 +105,16 @@ fn row_encode_nested(
     descending: bool,
     nulls_last: bool,
 ) -> PolarsResult<Option<Series>> {
-    let s = match s.dtype() {
-        DataType::List(_) => s,
+    match s.dtype() {
+        DataType::List(_) => {},
         #[cfg(feature = "dtype-array")]
-        DataType::Array(..) => s,
+        DataType::Array(..) => {},
         #[cfg(feature = "dtype-struct")]
-        DataType::Struct(_) => s,
-        // `sort` orders maps by their storage, a list of key-value structs.
+        DataType::Struct(_) => {},
         #[cfg(feature = "dtype-map")]
-        DataType::Map(..) => s.map()?.storage(),
+        DataType::Map(..) => {},
         _ => return Ok(None),
-    };
+    }
     let encoded = _get_rows_encoded_ca(
         PlSmallStr::EMPTY,
         &[s.clone().into()],
