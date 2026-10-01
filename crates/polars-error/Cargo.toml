@@ -17,6 +17,9 @@ pyo3 = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 simdutf8 = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 signal-hook = "0.4"
 
