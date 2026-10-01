@@ -633,10 +633,7 @@ impl SQLExprVisitor<'_> {
                 SQLBinaryOperator::Eq
             };
             self.visit_binary_op(expr, &op, pattern)
-        } else if let Some((matches, needle)) = (!case_insensitive)
-            .then(|| literal_like_match(&pat))
-            .flatten()
-        {
+        } else if !case_insensitive && let Some((matches, needle)) = literal_like_match(&pat) {
             let expr = self.visit_expr(expr)?;
             let matches = matches(expr.str(), lit(needle.to_string()));
             Ok(if negated { matches.not() } else { matches })

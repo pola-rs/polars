@@ -641,18 +641,16 @@ impl SQLContext {
 
         let mut relations: Vec<TreeRelation> = Vec::with_capacity(select.from.len());
         for tbl_expr in &select.from {
-            let Some((table, table_name, name)) = plain_table(tbl_expr) else {
+            let Some((table, name)) = plain_table(tbl_expr) else {
                 return Ok(None);
             };
-            if relations.iter().any(|r| r.table == table || r.name == name)
-                || !self.names_own_table(table_name)
-            {
+            if relations.iter().any(|r| r.table == table || r.name == name) {
                 return Ok(None);
             }
             let mut rel_lf = self.execute_from_statement(tbl_expr)?;
             let schema = self.get_frame_schema(&mut rel_lf)?;
             relations.push(TreeRelation {
-                table,
+                table: table.to_string(),
                 name: name.to_string(),
                 schema,
             });
@@ -1978,8 +1976,8 @@ pub(crate) struct OuterJoinTree {
 }
 
 struct TreeRelation {
-    // The table factor without its alias.
-    table: TableFactor,
+    // The name of the table it reads.
+    table: String,
     // The name that qualifies its columns: its alias, else its table name.
     name: String,
     schema: SchemaRef,
@@ -2005,7 +2003,7 @@ impl OuterJoinTree {
     fn covers(&self, from: &[TableWithJoins], selection: &SQLExpr, inner_schema: &Schema) -> bool {
         let mut own: Vec<(&str, usize)> = Vec::with_capacity(from.len());
         for tbl_expr in from {
-            let Some((table, _, name)) = plain_table(tbl_expr) else {
+            let Some((table, name)) = plain_table(tbl_expr) else {
                 return false;
             };
             let Some(idx) = self.relations.iter().position(|r| r.table == table) else {
@@ -2063,9 +2061,9 @@ impl OuterJoinTree {
     }
 }
 
-// A FROM item that is a plain table without joins: the table without its
-// alias, the table's name, and the name that qualifies its columns.
-fn plain_table(tbl_expr: &TableWithJoins) -> Option<(TableFactor, &str, &str)> {
+// A FROM item that is a plain table without joins: the table's name and the
+// name that qualifies its columns.
+fn plain_table(tbl_expr: &TableWithJoins) -> Option<(&str, &str)> {
     let TableFactor::Table {
         name,
         alias,
@@ -2078,16 +2076,12 @@ fn plain_table(tbl_expr: &TableWithJoins) -> Option<(TableFactor, &str, &str)> {
     let [part] = name.0.as_slice() else {
         return None;
     };
-    let table_name = part.as_ident()?.value.as_str();
+    let table = part.as_ident()?.value.as_str();
     if !tbl_expr.joins.is_empty() || alias.as_ref().is_some_and(|a| !a.columns.is_empty()) {
         return None;
     }
-    let mut table = tbl_expr.relation.clone();
-    if let TableFactor::Table { alias, .. } = &mut table {
-        *alias = None;
-    }
-    let qualifier = alias.as_ref().map_or(table_name, |a| a.name.value.as_str());
-    Some((table, table_name, qualifier))
+    let qualifier = alias.as_ref().map_or(table, |a| a.name.value.as_str());
+    Some((table, qualifier))
 }
 
 // Spell a conjunct's columns by relation index. A column resolves against the

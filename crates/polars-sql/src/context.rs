@@ -516,12 +516,6 @@ impl SQLContext {
             .or_else(|| self.get_table_unaliased(name))
     }
 
-    /// Whether a table name resolves to the table of that name, not to another
-    /// relation through an alias spelled the same.
-    pub(super) fn names_own_table(&self, name: &str) -> bool {
-        get_ignoring_case(&self.table_aliases, name).is_none_or(|table| table == name)
-    }
-
     fn get_table_unaliased(&self, name: &str) -> Option<LazyFrame> {
         get_ignoring_case(&self.cte_map, name)
             .cloned()
