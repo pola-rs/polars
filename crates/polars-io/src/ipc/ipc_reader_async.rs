@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use object_store::ObjectMeta;
 use object_store::path::Path;
 use polars_arrow::io::ipc::read::{FileMetadata, OutOfSpecKind, get_row_count};
 use polars_core::datatypes::IDX_DTYPE;
@@ -13,10 +12,11 @@ use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::RowIndex;
-use crate::cloud::concurrency_config::{ConcurrencyStrategy, FetchConfig};
+use crate::cloud::concurrency_config::FetchConfig;
 use crate::cloud::{
     CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
 };
+use crate::configs::cloud_footer_read_size;
 use crate::file_cache::{FileCacheEntry, init_entries_from_uri_list};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::{IpcReader, materialize_projection};
@@ -85,50 +85,45 @@ impl IpcReaderAsync {
         })
     }
 
-    async fn object_metadata(&self) -> PolarsResult<ObjectMeta> {
-        self.store
-            .head(&self.path, ConcurrencyStrategy::BytesBased)
-            .await
-    }
-
-    async fn file_size(&self) -> PolarsResult<usize> {
-        Ok(self.object_metadata().await?.size as usize)
-    }
-
     pub async fn metadata(&self) -> PolarsResult<FileMetadata> {
-        let file_size = self.file_size().await?;
+        // A suffix request returns the file size along with the tail, saving a round trip to
+        // request the size separately. The tail usually contains the whole footer.
+        let (tail, file_size) = self
+            .store
+            .get_suffix(
+                &self.path,
+                cloud_footer_read_size(),
+                FetchConfig::random_access(),
+            )
+            .await?;
 
-        // TODO: Do a larger request and hope that the entire footer is contained within it to save one round-trip.
-        let footer_metadata =
-            self.store
-                .get_range(
-                    &self.path,
-                    file_size.checked_sub(FOOTER_METADATA_SIZE).ok_or_else(|| {
-                        to_compute_err("ipc file size is smaller than the minimum")
-                    })?..file_size,
-                    FetchConfig::legacy(),
-                )
-                .await?;
+        if tail.len() < FOOTER_METADATA_SIZE {
+            polars_bail!(ComputeError: "ipc file size is smaller than the minimum");
+        }
 
         let footer_size = deserialize_footer_metadata(
-            footer_metadata
-                .as_ref()
+            tail[tail.len() - FOOTER_METADATA_SIZE..]
                 .try_into()
                 .map_err(to_compute_err)?,
         )?;
+        let footer_len = FOOTER_METADATA_SIZE + footer_size;
 
-        let footer = self
-            .store
-            .get_range(
-                &self.path,
-                file_size
-                    .checked_sub(FOOTER_METADATA_SIZE + footer_size)
-                    .ok_or_else(|| {
-                        to_compute_err("invalid ipc footer metadata: footer size too large")
-                    })?..file_size,
-                FetchConfig::legacy(),
-            )
-            .await?;
+        if file_size < footer_len {
+            polars_bail!(ComputeError: "invalid ipc footer metadata: footer size too large");
+        }
+
+        let footer = if tail.len() >= footer_len {
+            let offset = tail.len() - footer_len;
+            tail.sliced(offset..)
+        } else {
+            self.store
+                .get_range(
+                    &self.path,
+                    file_size - footer_len..file_size,
+                    FetchConfig::legacy(),
+                )
+                .await?
+        };
 
         polars_arrow::io::ipc::read::deserialize_footer(
             footer.as_ref(),
