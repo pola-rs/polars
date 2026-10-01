@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary_elementwise};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -23,18 +21,6 @@ fn clamp_min<T: PartialOrd>(input: T, min: T) -> T {
 #[inline]
 fn clamp_max<T: PartialOrd>(input: T, max: T) -> T {
     if input > max { max } else { input }
-}
-
-/// Broadcast a length-1 input to `len` so it lines up with full-length bounds.
-fn broadcast_input<T: PolarsNumericType>(
-    ca: &ChunkedArray<T>,
-    len: usize,
-) -> Cow<'_, ChunkedArray<T>> {
-    if ca.len() == 1 && len > 1 {
-        Cow::Owned(ca.new_from_index(0, len))
-    } else {
-        Cow::Borrowed(ca)
-    }
 }
 
 /// Set values outside the given boundaries to the boundary value.
@@ -75,7 +61,7 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
         let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
         let min: &ChunkedArray<$T> = min.as_ref().as_ref().as_ref();
         let max: &ChunkedArray<$T> = max.as_ref().as_ref().as_ref();
-        let out = clip_helper_both_bounds(ca, min, max).into_series();
+        let out = clip_helper_both_bounds(ca, min, max)?.into_series();
         match original_type {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
@@ -109,7 +95,7 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
     with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
         let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
         let max: &ChunkedArray<$T> = max.as_ref().as_ref().as_ref();
-        let out = clip_helper_single_bound(ca, max, clamp_max).into_series();
+        let out = clip_helper_single_bound(ca, max, clamp_max)?.into_series();
         match original_type {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
@@ -143,7 +129,7 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
     with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
         let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
         let min: &ChunkedArray<$T> = min.as_ref().as_ref().as_ref();
-        let out = clip_helper_single_bound(ca, min, clamp_min).into_series();
+        let out = clip_helper_single_bound(ca, min, clamp_min)?.into_series();
         match original_type {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
@@ -160,13 +146,13 @@ fn clip_helper_both_bounds<T>(
     ca: &ChunkedArray<T>,
     min: &ChunkedArray<T>,
     max: &ChunkedArray<T>,
-) -> ChunkedArray<T>
+) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsNumericType,
     T::Native: PartialOrd,
 {
-    let ca = &*broadcast_input(ca, min.len().max(max.len()));
-    match (min.len(), max.len()) {
+    let ca = &*ca.broadcast_to(ca.len().max(min.len()).max(max.len()))?;
+    let out = match (min.len(), max.len()) {
         (1, 1) => match (min.get(0), max.get(0)) {
             (Some(min), Some(max)) => clip_unary(ca, |v| clamp(v, min, max)),
             (Some(min), None) => clip_unary(ca, |v| clamp_min(v, min)),
@@ -198,21 +184,22 @@ where
             }),
         },
         _ => clip_ternary(ca, min, max),
-    }
+    };
+    Ok(out)
 }
 
 fn clip_helper_single_bound<T, F>(
     ca: &ChunkedArray<T>,
     bound: &ChunkedArray<T>,
     op: F,
-) -> ChunkedArray<T>
+) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsNumericType,
     T::Native: PartialOrd,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
-    let ca = &*broadcast_input(ca, bound.len());
-    match bound.len() {
+    let ca = &*ca.broadcast_to(ca.len().max(bound.len()))?;
+    let out = match bound.len() {
         1 => match bound.get(0) {
             Some(bound) => clip_unary(ca, |v| op(v, bound)),
             None => ca.clone(),
@@ -222,7 +209,8 @@ where
             (Some(s), None) => Some(s),
             (None, _) => None,
         }),
-    }
+    };
+    Ok(out)
 }
 
 fn clip_unary<T, F>(ca: &ChunkedArray<T>, op: F) -> ChunkedArray<T>
