@@ -30,7 +30,7 @@ impl CloudWriter {
                 path,
                 max_concurrency,
                 io_metrics: OptIOMetrics(io_metrics),
-                state: InternalCloudWriterState::NotStarted,
+                state: InternalCloudWriterState::NotStarted(None),
             },
             bufferer,
         }
@@ -66,11 +66,9 @@ impl CloudWriter {
     }
 
     pub(super) async fn flush(&mut self) -> PolarsResult<()> {
-        if let Some(payload) = self.bufferer.flush() {
+        if let Some(payload) = self.bufferer.flush_full_chunk() {
             self.writer.put(payload).await?;
         }
-
-        assert!(self.bufferer.is_empty());
 
         Ok(())
     }
