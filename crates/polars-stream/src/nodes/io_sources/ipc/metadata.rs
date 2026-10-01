@@ -1,6 +1,7 @@
 use polars_arrow::io::ipc::read::OutOfSpecKind;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_io::configs::cloud_footer_read_size;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 
 /// Read the metadata bytes of a parquet file, does not decode the bytes. If during metadata fetch
@@ -13,23 +14,22 @@ pub async fn read_ipc_metadata_bytes(
     const ARROW_MAGIC_V1: [u8; 4] = *b"FEA1";
     const ARROW_MAGIC_V2: [u8; 6] = *b"ARROW1";
 
-    let file_size = byte_source.get_size().await?;
+    let prefetch_size = if let DynByteSource::Buffer(_) = byte_source {
+        // Mmapped or in-memory, reads are free.
+        usize::MAX
+    } else {
+        cloud_footer_read_size()
+    };
+
+    // A suffix request returns the file size along with the tail, saving a round trip to
+    // request the size separately.
+    let (bytes, file_size) = byte_source.get_suffix(prefetch_size).await?;
+    let estimated_metadata_size = bytes.len();
 
     polars_ensure!(
         file_size >= FOOTER_HEADER_SIZE,
         ComputeError: "ipc file size is smaller than the minimum"
     );
-
-    let estimated_metadata_size = if let DynByteSource::Buffer(_) = byte_source {
-        // Mmapped or in-memory, reads are free.
-        file_size
-    } else {
-        (file_size / 2048).clamp(16_384, 131_072).min(file_size)
-    };
-
-    let bytes = byte_source
-        .get_range((file_size - estimated_metadata_size)..file_size)
-        .await?;
 
     let footer_header_bytes = bytes.clone().sliced((bytes.len() - FOOTER_HEADER_SIZE)..);
 

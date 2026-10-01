@@ -64,6 +64,60 @@ def test_scan_parquet_metadata_prefetch_too_small(
     assert s3.requests[f"GET bytes={file_size - footer_size}-{file_size - 1}"] == 1
 
 
+def upload_ipc(s3: CountingS3, key: str, n: int) -> tuple[int, int]:
+    """Upload an IPC file, returning its size and the size of its footer."""
+    df = pl.DataFrame({"a": range(n), "b": ["x"] * n})
+    f = io.BytesIO()
+    df.write_ipc(f, record_batch_size=500)
+    body = f.getvalue()
+    s3.client.put_object(Bucket="bucket", Key=key, Body=body)
+    # The footer is followed by its 4-byte length and the 6-byte magic bytes.
+    return len(body), int.from_bytes(body[-10:-6], "little") + 10
+
+
+def test_scan_ipc_metadata_without_head_request(s3: CountingS3) -> None:
+    file_size, _ = upload_ipc(s3, "hit.arrow", 5000)
+    assert file_size < 256 * 1024
+
+    df = pl.scan_ipc(
+        "s3://bucket/hit.arrow", storage_options=s3.storage_options
+    ).collect()
+
+    assert df.height == 5000
+    # The suffix range request carries the file size, and here it covers the whole
+    # file, so no further requests are needed.
+    assert s3.n_requests("HEAD") == 0
+    assert s3.n_requests("GET") == 1
+    assert s3.n_requests("GET bytes=-") == 1
+
+
+def test_scan_ipc_metadata_prefetch_too_small(
+    s3: CountingS3, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file_size, footer_size = upload_ipc(s3, "miss.arrow", 50_000)
+    prefetch_size = 1024
+    assert footer_size > prefetch_size
+
+    monkeypatch.setenv("POLARS_CLOUD_FOOTER_READ_SIZE", str(prefetch_size))
+
+    df = pl.scan_ipc(
+        "s3://bucket/miss.arrow", storage_options=s3.storage_options
+    ).collect()
+
+    assert df.height == 50_000
+    assert df["a"].sum() == sum(range(50_000))
+    # The footer did not fit in the prefetch, so the rest of it is fetched. Still no
+    # HEAD: the file size is known from the first response.
+    assert s3.n_requests("HEAD") == 0
+    assert s3.requests[f"GET bytes=-{prefetch_size}"] == 1
+    assert (
+        s3.requests[
+            f"GET bytes={file_size - footer_size}-{file_size - prefetch_size - 1}"
+        ]
+        == 1
+    )
+
+
 def upload_rows(s3: CountingS3, key: str, n: int) -> int:
     """Upload `n` rows as Parquet and return the file size."""
     f = io.BytesIO()
