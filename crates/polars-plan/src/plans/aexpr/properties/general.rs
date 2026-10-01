@@ -393,7 +393,7 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                             agg_e,
                             IRAggExpr::Min { .. }
                                 | IRAggExpr::Max { .. }
-                                | IRAggExpr::Sum(_)
+                                | IRAggExpr::Sum { .. }
                                 | IRAggExpr::Last(_)
                                 | IRAggExpr::First(_)
                                 | IRAggExpr::Count {

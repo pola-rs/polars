@@ -12,20 +12,40 @@ use polars_utils::index::{idxsize_to_u64, idxsize_try_from};
 
 use super::*;
 
-pub fn new_sum_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+/// With `null_on_empty`, groups without any non-null value give a missing value instead of zero.
+pub fn new_sum_reduction(
+    dtype: DataType,
+    null_on_empty: bool,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
     // TODO: Move the error checks up and make this function infallible
     use DataType::*;
-    use VecGroupedReduction as VGR;
+
+    fn new_reduction<R: Reducer + 'static>(
+        dtype: DataType,
+        reducer: R,
+        null_on_empty: bool,
+    ) -> Box<dyn GroupedReduction> {
+        if null_on_empty {
+            Box::new(VecMaskGroupedReduction::new(dtype, reducer))
+        } else {
+            Box::new(VecGroupedReduction::new(dtype, reducer))
+        }
+    }
+
     Ok(match dtype {
-        Boolean => Box::new(VGR::new(dtype, BoolSumReducer)),
+        Boolean => new_reduction(dtype, BoolSumReducer, null_on_empty),
         _ if dtype.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, NumSumReducer::<$T>(PhantomData)))
+                new_reduction(dtype, NumSumReducer::<$T>(PhantomData), null_on_empty)
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::new(dtype, DecimalSumReducer)),
-        Duration(_) => Box::new(VGR::new(dtype, NumSumReducer::<Int64Type>(PhantomData))),
+        Decimal(_, _) => new_reduction(dtype, DecimalSumReducer, null_on_empty),
+        Duration(_) => new_reduction(
+            dtype,
+            NumSumReducer::<Int64Type>(PhantomData),
+            null_on_empty,
+        ),
         Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
             DataType::Null,
         ))),
@@ -100,8 +120,7 @@ where
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series> {
-        assert!(m.is_none());
-        let arr = Box::new(PrimitiveArray::from_vec(v));
+        let arr = Box::new(PrimitiveArray::from_vec(v).with_validity(m));
         Ok(unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::EMPTY,
@@ -182,12 +201,11 @@ impl Reducer for DecimalSumReducer {
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series> {
-        assert!(m.is_none());
         polars_ensure!(
             v.iter().all(|x| dec128_fits(*x, DEC128_MAX_PREC)),
             ComputeError: "overflow in decimal addition in sum"
         );
-        let arr = Box::new(PrimitiveArray::from_vec(v));
+        let arr = Box::new(PrimitiveArray::from_vec(v).with_validity(m));
         Ok(unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::EMPTY,
@@ -321,8 +339,8 @@ impl Reducer for BoolSumReducer {
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series> {
-        assert!(m.is_none());
         assert!(dtype == &DataType::Boolean);
-        Ok(IdxCa::from_vec(PlSmallStr::EMPTY, v).into_series())
+        let arr = PrimitiveArray::from_vec(v).with_validity(m);
+        Ok(IdxCa::with_chunk(PlSmallStr::EMPTY, arr).into_series())
     }
 }

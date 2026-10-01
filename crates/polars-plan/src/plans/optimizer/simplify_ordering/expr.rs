@@ -709,7 +709,7 @@ impl ExprOrderSimplifier<'_> {
                     | IRAggExpr::Max { input: node, .. }
                     | IRAggExpr::Mean(node)
                     | IRAggExpr::Median(node)
-                    | IRAggExpr::Sum(node)
+                    | IRAggExpr::Sum { input: node, .. }
                     | IRAggExpr::Item { input: node, .. } => {
                         let node = *node;
                         self.rec(node, RS::ALLOW_DEORDER);
@@ -825,7 +825,7 @@ fn is_order_insensitive(node: Node, arena: &Arena<AExpr>) -> bool {
             | IRAggExpr::NUnique(input)
             | IRAggExpr::Item { input, .. }
             | IRAggExpr::Mean(input)
-            | IRAggExpr::Sum(input)
+            | IRAggExpr::Sum { input, .. }
             | IRAggExpr::Count { input, .. }
             | IRAggExpr::Std(input, _)
             | IRAggExpr::Var(input, _) => is_order_insensitive(*input, arena),

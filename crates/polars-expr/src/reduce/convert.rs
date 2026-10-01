@@ -42,7 +42,10 @@ pub fn into_reduction(
     };
     let (gr, in_node) = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {
-            IRAggExpr::Sum(input) => (new_sum_reduction(get_dt(*input)?)?, *input),
+            IRAggExpr::Sum {
+                input,
+                null_on_empty,
+            } => (new_sum_reduction(get_dt(*input)?, *null_on_empty)?, *input),
             IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?)?, *input),
             IRAggExpr::Min {
                 propagate_nans,
