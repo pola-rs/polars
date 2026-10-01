@@ -11,7 +11,7 @@ use polars_utils::pl_str::PlSmallStr;
 use super::FileReader;
 use super::capabilities::ReaderCapabilities;
 use crate::execute::StreamingExecutionState;
-use crate::metrics::IOMetrics;
+use crate::metrics::{IOMetrics, NodeMetricsRegistry};
 
 pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
     fn reader_name(&self) -> PolarsResult<PlSmallStr>;
@@ -43,5 +43,6 @@ pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
         scan_source_idx: usize,
+        metrics_registry: &NodeMetricsRegistry,
     ) -> PolarsResult<Box<dyn FileReader>>;
 }

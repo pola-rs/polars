@@ -25,7 +25,7 @@ use super::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, calc_row_position_after_slice,
 };
 use super::shared::pipeline_budget::PipelineBudget;
-use crate::metrics::OptIOMetrics;
+use crate::metrics::{Metric, MetricUnit, NodeMetricsRegistry, OptIOMetrics, kind};
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::parquet::projection::{
@@ -53,10 +53,47 @@ pub struct ParquetFileReader {
     byte_source_builder: DynByteSourceBuilder,
     row_group_prefetch_sync: RowGroupPrefetchSync,
     io_metrics: OptIOMetrics,
+    metrics: ScanMetrics,
     verbose: bool,
 
     /// Set during initialize()
     init_data: Option<InitializedState>,
+}
+
+/// The scan's custom metrics, registered once per file. A task takes its own
+/// reporter of the metrics it writes.
+///
+/// They cover the data files: the deletion files of an Iceberg scan count in
+/// the node's IO metrics only.
+#[derive(Clone)]
+struct ScanMetrics {
+    /// Rows of the row groups read, before the predicate.
+    rows_read: Metric<kind::Sum>,
+    /// Rows of `rows_read` decoded prefiltered.
+    rows_read_prefiltered: Metric<kind::Sum>,
+    /// Rows of `rows_read_prefiltered` the predicate kept.
+    rows_kept_prefiltered: Metric<kind::Sum>,
+    /// Uncompressed size, per the file metadata, of the projected column chunks
+    /// of the row groups read. A slice or prefilter decompresses only some of
+    /// their pages.
+    uncompressed_bytes: Metric<kind::Sum>,
+    /// Row groups not read: pruned by the pre-slice, or ruled out by their
+    /// statistics for the static predicate or a runtime key range.
+    row_groups_skipped: Metric<kind::Sum>,
+}
+
+impl ScanMetrics {
+    fn register(registry: &NodeMetricsRegistry) -> Self {
+        Self {
+            rows_read: registry.new_counter("scan.rows_read", MetricUnit::Unit),
+            rows_read_prefiltered: registry
+                .new_counter("scan.rows_read_prefiltered", MetricUnit::Unit),
+            rows_kept_prefiltered: registry
+                .new_counter("scan.rows_kept_prefiltered", MetricUnit::Unit),
+            uncompressed_bytes: registry.new_counter("scan.uncompressed_bytes", MetricUnit::Bytes),
+            row_groups_skipped: registry.new_counter("scan.row_groups_skipped", MetricUnit::Unit),
+        }
+    }
 }
 
 fn schema_inference_options(config: &ParquetOptions) -> SchemaInferenceOptions {
@@ -416,6 +453,7 @@ impl FileReader for ParquetFileReader {
             rg_prefetch_current_all_spawned: Option::take(
                 &mut self.row_group_prefetch_sync.current_all_spawned,
             ),
+            metrics: self.metrics.clone(),
             disable_morsel_split,
             maintain_order,
         }
@@ -506,6 +544,7 @@ struct ParquetReadImpl {
     pipeline_budget: PipelineBudget,
     rg_prefetch_prev_all_spawned: Option<WaitGroup>,
     rg_prefetch_current_all_spawned: Option<WaitToken>,
+    metrics: ScanMetrics,
     disable_morsel_split: bool,
     /// If false, row groups are emitted in the order they finish decoding.
     maintain_order: bool,

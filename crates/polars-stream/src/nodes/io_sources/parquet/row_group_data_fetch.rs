@@ -10,7 +10,7 @@ use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, create_sorting_map};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
-use polars_parquet::read::RowGroupMetadata;
+use polars_parquet::read::{ColumnChunkMetadata, RowGroupMetadata};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
@@ -23,6 +23,8 @@ pub(super) struct RowGroupData {
     pub(super) slice: Option<(usize, usize)>,
     pub(super) row_group_metadata: RowGroupMetadata,
     pub(super) sorting_map: Vec<(usize, IsSorted)>,
+    /// Uncompressed size, per the metadata, of the projected column chunks.
+    pub(super) uncompressed_bytes: u64,
 }
 
 pub(super) struct RowGroupDataFetcher {
@@ -126,6 +128,10 @@ impl RowGroupDataFetcher {
 
             let handle = ASYNC.spawn(async move {
                 let row_group_metadata = &metadata.row_groups[idx];
+                let uncompressed_bytes =
+                    projected_column_chunks(row_group_metadata, is_full_projection, &projection)
+                        .map(|col| col.uncompressed_size().max(0) as u64)
+                        .sum();
                 let fetched_bytes = match current_byte_source.as_ref() {
                     DynByteSource::Buffer(mem_slice) => {
                         // Skip byte range calculation for `no_prefetch`.
@@ -224,6 +230,7 @@ impl RowGroupDataFetcher {
                     // @TODO: Remove clone
                     row_group_metadata: row_group_metadata.clone(),
                     sorting_map,
+                    uncompressed_bytes,
                 })
             });
 
@@ -257,6 +264,25 @@ impl FetchedBytes {
             },
         }
     }
+}
+
+/// The column chunks of a row group that `projection` reads.
+fn projected_column_chunks<'a>(
+    row_group_metadata: &'a RowGroupMetadata,
+    is_full_projection: bool,
+    projection: &'a [ArrowFieldProjection],
+) -> Box<dyn Iterator<Item = &'a ColumnChunkMetadata> + 'a> {
+    if is_full_projection {
+        return Box::new(row_group_metadata.parquet_columns().iter());
+    }
+    Box::new(projection.iter().flat_map(|field| {
+        row_group_metadata
+            .columns_under_root_iter(&field.arrow_field().name)
+            // `Option::into_iter` so that we return an empty iterator for the
+            // `allow_missing_columns` case
+            .into_iter()
+            .flatten()
+    }))
 }
 
 fn get_row_group_byte_ranges_for_projection<'a>(

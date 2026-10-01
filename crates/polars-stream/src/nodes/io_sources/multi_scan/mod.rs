@@ -107,7 +107,7 @@ impl ComputeNode for MultiScan {
             use MultiScanState::*;
 
             self.state
-                .initialize(state.clone(), self.metrics_registry.is_some())?;
+                .initialize(state.clone(), &self.metrics_registry)?;
 
             if let Initialized { io_metrics, .. } = &self.state {
                 if let Some(io_metrics) = io_metrics.as_ref() {
@@ -185,7 +185,7 @@ impl MultiScanState {
     fn initialize(
         &mut self,
         execution_state: StreamingExecutionState,
-        track_io_metrics: bool,
+        metrics_registry: &NodeMetricsRegistry,
     ) -> PolarsResult<()> {
         use MultiScanState::*;
 
@@ -201,7 +201,7 @@ impl MultiScanState {
             .file_reader_builder
             .set_execution_state(&execution_state);
 
-        let io_metrics: Option<Arc<IOMetrics>> = track_io_metrics.then(Default::default);
+        let io_metrics: Option<Arc<IOMetrics>> = metrics_registry.is_some().then(Default::default);
 
         if let Some(io_metrics) = io_metrics.clone() {
             config.file_reader_builder.set_io_metrics(io_metrics);
@@ -226,7 +226,12 @@ impl MultiScanState {
             task_handle,
             phase_channel_tx,
             bridge_state,
-        } = initialize_multi_scan_pipeline(config, execution_state, io_metrics.clone())?;
+        } = initialize_multi_scan_pipeline(
+            config,
+            execution_state,
+            io_metrics.clone(),
+            metrics_registry.clone(),
+        )?;
 
         let wait_group = WaitGroup::default();
 
