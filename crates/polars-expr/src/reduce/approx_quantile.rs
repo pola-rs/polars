@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::fmt;
 use std::marker::PhantomData;
 
@@ -17,7 +18,7 @@ pub fn new_approx_quantile_sketch_reduction(
     use VecGroupedReduction as VGR;
     Ok(match dtype {
         DataType::Boolean => Box::new(VGR::new(dtype, R::<BooleanType, bool>::new(method, error))),
-        DataType::String => Box::new(VGR::new(dtype, R::<StringType, String>::new(method, error))),
+        DataType::String => Box::new(VGR::new(dtype, R::<StringType, str>::new(method, error))),
         _ if dtype.is_primitive_numeric() || dtype.is_temporal() || dtype.is_decimal() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 type Item<$T> = <$T as PolarsNumericType>::Native;
@@ -30,12 +31,18 @@ pub fn new_approx_quantile_sketch_reduction(
     })
 }
 
-struct SketchReducer<T, I: fmt::Debug + Clone + TotalOrd> {
-    template: Sketch<I>,
+struct SketchReducer<T, B: ToOwned + ?Sized>
+where
+    B::Owned: fmt::Debug + Clone + TotalOrd,
+{
+    template: Sketch<B::Owned>,
     dtype: PhantomData<T>,
 }
 
-impl<T, I: fmt::Debug + Clone + TotalOrd> SketchReducer<T, I> {
+impl<T, B: ToOwned + ?Sized> SketchReducer<T, B>
+where
+    B::Owned: fmt::Debug + Clone + TotalOrd,
+{
     fn new(method: ApproxQuantileMethod, error: f64) -> Self {
         Self {
             template: Sketch::new(&method, error),
@@ -44,7 +51,10 @@ impl<T, I: fmt::Debug + Clone + TotalOrd> SketchReducer<T, I> {
     }
 }
 
-impl<T, I: fmt::Debug + Clone + TotalOrd> Clone for SketchReducer<T, I> {
+impl<T, B: ToOwned + ?Sized> Clone for SketchReducer<T, B>
+where
+    B::Owned: fmt::Debug + Clone + TotalOrd,
+{
     fn clone(&self) -> Self {
         Self {
             template: self.template.clone(),
@@ -53,20 +63,15 @@ impl<T, I: fmt::Debug + Clone + TotalOrd> Clone for SketchReducer<T, I> {
     }
 }
 
-impl<T, I> Reducer for SketchReducer<T, I>
+impl<T, B> Reducer for SketchReducer<T, B>
 where
     T: PolarsPhysicalType,
-    I: for<'a> From<T::Physical<'a>>
-        + fmt::Debug
-        + Clone
-        + TotalOrd
-        + Send
-        + Sync
-        + serde::Serialize
-        + 'static,
+    B: ToOwned + ?Sized + 'static,
+    B::Owned: fmt::Debug + Clone + TotalOrd + Send + Sync + serde::Serialize + 'static,
+    for<'a> T::Physical<'a>: Borrow<B>,
 {
     type Dtype = T;
-    type Value = Sketch<I>;
+    type Value = Sketch<B::Owned>;
 
     fn init(&self) -> Self::Value {
         self.template.clone()
@@ -84,13 +89,13 @@ where
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Physical<'_>>, _seq_id: u64) {
         if let Some(b) = b {
-            a.update_owned(I::from(b));
+            a.update(Borrow::<B>::borrow(&b));
         }
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<T>, _seq_id: u64) {
         for value in ca.iter().flatten() {
-            v.update_owned(I::from(value));
+            v.update(Borrow::<B>::borrow(&value));
         }
     }
 
