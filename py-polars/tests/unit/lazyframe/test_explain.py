@@ -66,4 +66,4 @@ def test_tmp_column_names_are_tagged_by_crate() -> None:
     physical = group_by.show_graph(
         engine="streaming", plan_stage="physical", raw_output=True
     )
-    assert tmp_tags(physical) == {"STREAM"}
+    assert tmp_tags(physical) == {"PHYS"}

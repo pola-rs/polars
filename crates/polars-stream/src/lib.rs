@@ -51,4 +51,4 @@ static DEFAULT_ZIP_HEAD_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| {
         .unwrap_or(4)
 });
 
-polars_utils::define_unique_column_name!("STREAM");
+polars_utils::define_unique_column_name!("PHYS");
