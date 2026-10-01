@@ -158,6 +158,8 @@ impl FileReader for IpcFileReader {
             .map(|md_str| serde_json::from_str::<PlIpcMetadata>(md_str))
             .transpose()
             .map_err(to_compute_err)?
+            // Older writers also counted dictionary batches, ignore such metadata.
+            .filter(|md| md.record_batch_cum_len.len() == file_metadata.blocks.len())
             .map(Arc::new);
 
         self.init_data = Some(InitializedState {

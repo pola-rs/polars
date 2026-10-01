@@ -20,7 +20,10 @@ impl PlIpcMetadata {
                 .custom_metadata
                 .as_ref()?
                 .get(POLARS_IPC_METADATA_KEY)?;
-            serde_json::from_str(raw).ok()
+            serde_json::from_str::<Self>(raw)
+                .ok()
+                // Older writers also counted dictionary batches, ignore such metadata.
+                .filter(|md| md.record_batch_cum_len.len() == metadata.blocks.len())
         }
         #[cfg(not(feature = "serde"))]
         {

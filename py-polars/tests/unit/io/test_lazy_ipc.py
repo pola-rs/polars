@@ -420,6 +420,38 @@ def test_sink_ipc_custom_metadata() -> None:
         assert reader.metadata is None
 
 
+def test_sink_ipc_custom_metadata_dictionary() -> None:
+    df = pl.DataFrame({"a": ["x", "y", "z", "x", "w"]}, schema={"a": pl.Categorical})
+
+    f = io.BytesIO()
+    df.lazy().sink_ipc(f, record_batch_size=2, _record_batch_statistics=True)
+
+    # Dictionary batches must not be counted.
+    with pa.ipc.open_file(f) as reader:
+        assert json.loads(reader.metadata.get(b"__POLARS_IPC_METADATA")) == {
+            "record_batch_cum_len": [2, 4, 5]
+        }
+
+    buf = f.getvalue()
+    assert_frame_equal(pl.scan_ipc(buf).tail(1).collect(), df.tail(1))
+    assert_frame_equal(pl.scan_ipc(buf).slice(1, 3).collect(), df.slice(1, 3))
+    assert pl.scan_ipc(buf).select(pl.len()).collect().item() == 5
+
+
+def test_scan_ipc_ignores_inconsistent_custom_metadata() -> None:
+    # Older versions of Polars also counted dictionary batches.
+    table = pa.table({"a": pa.array(["x", "y", "z"]).dictionary_encode()})
+    metadata = {b"__POLARS_IPC_METADATA": b'{"record_batch_cum_len": [3, 6]}'}
+
+    f = io.BytesIO()
+    with pa.ipc.new_file(f, table.schema, metadata=metadata) as writer:
+        writer.write_table(table)
+
+    buf = f.getvalue()
+    assert pl.scan_ipc(buf).tail(1).collect()["a"].to_list() == ["z"]
+    assert pl.scan_ipc(buf).select(pl.len()).collect().item() == 3
+
+
 def test_scan_ipc_slicing_and_count_with_custom_metadata(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
