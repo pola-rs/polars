@@ -516,6 +516,12 @@ impl SQLContext {
             .or_else(|| self.get_table_unaliased(name))
     }
 
+    /// Whether a table name resolves to the table of that name, not to another
+    /// relation through an alias spelled the same.
+    pub(super) fn names_own_table(&self, name: &str) -> bool {
+        get_ignoring_case(&self.table_aliases, name).is_none_or(|table| table == name)
+    }
+
     fn get_table_unaliased(&self, name: &str) -> Option<LazyFrame> {
         get_ignoring_case(&self.cte_map, name)
             .cloned()
@@ -1685,6 +1691,7 @@ impl SQLContext {
         // A correlated scalar subquery is lowered against the frame as it stands, so
         // the conjuncts that don't need it are applied first: the lowering can then
         // restrict its aggregate to the rows that survive them.
+        let mut join_tree = None;
         let where_expr: Option<Cow<'_, SQLExpr>> = match where_expr {
             Some(where_expr) if expr_contains_scalar_subquery(where_expr) => {
                 let n_grouping_calls = self.group_scope.grouping_calls.len();
@@ -1697,6 +1704,7 @@ impl SQLContext {
                     RewriteStage::BeforeScalarLowering,
                 )?;
                 self.reject_grouping_in_where(n_grouping_calls)?;
+                join_tree = self.outer_join_tree(select_stmt, where_expr, &residual)?;
                 schema = self.get_frame_schema(&mut lf)?;
                 combine_conditions(
                     residual.into_iter().cloned().collect(),
@@ -1718,6 +1726,7 @@ impl SQLContext {
                     where_expr,
                     LowerScope::ScalarOnly,
                     &mut bindings,
+                    join_tree.as_ref(),
                 )?;
                 if matches!(lowered, Cow::Owned(_)) {
                     schema = self.get_frame_schema(&mut lf)?;
@@ -1752,6 +1761,7 @@ impl SQLContext {
                     e,
                     LowerScope::ScalarAndPredicates,
                     &mut bindings,
+                    None,
                 )?;
                 if let Cow::Owned(lowered) = lowered {
                     changed = true;
@@ -1772,6 +1782,7 @@ impl SQLContext {
                     having,
                     LowerScope::ScalarAndPredicates,
                     &mut bindings,
+                    None,
                 )?;
                 changed |= matches!(lowered, Cow::Owned(_));
                 lowered_having = Some(lowered);
@@ -2334,6 +2345,7 @@ impl SQLContext {
                     e,
                     LowerScope::ScalarAndPredicates,
                     &mut bindings,
+                    None,
                 )?;
                 lowered_residuals.push(lowered);
             }
@@ -3021,6 +3033,7 @@ impl SQLContext {
                     &ob.expr,
                     LowerScope::ScalarAndPredicates,
                     &mut bindings,
+                    None,
                 )?;
 
                 // translate order expression, allowing ordinal values

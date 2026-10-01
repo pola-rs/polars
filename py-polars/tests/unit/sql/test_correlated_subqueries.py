@@ -945,3 +945,118 @@ def test_correlated_aggregate_limit_and_empty_results(engine: EngineType) -> Non
             "SELECT k, (SELECT SUM(v) FROM i WHERE i.k = o.k) AS r FROM o WHERE k < 0"
         ).collect(engine=engine)
         assert none_match.height == 0
+
+
+def _supply_frames() -> dict[str, pl.LazyFrame]:
+    # part 2 is listed twice, so the outer join pairs each of its supplies with two
+    # part rows
+    return {
+        "part": pl.LazyFrame(
+            {"p_partkey": [1, 2, 2, 3, 4], "p_size": [15, 15, 15, 15, 1]}
+        ),
+        "partsupp": pl.LazyFrame(
+            {
+                "ps_partkey": [1, 1, 2, 2, 2, 3, 3, 4],
+                "ps_suppkey": [10, 20, 10, 20, 30, 20, 30, 10],
+                "ps_supplycost": [5.0, 3.0, 7.0, 7.0, 9.0, 4.0, 1.0, 2.0],
+            }
+        ),
+        "supplier": pl.LazyFrame({"s_suppkey": [10, 20, 30], "s_nationkey": [1, 2, 1]}),
+        "nation": pl.LazyFrame({"n_nationkey": [1, 2], "n_name": ["FRANCE", "PERU"]}),
+    }
+
+
+def _supply_query(subquery: str, op: str, extra: str = "") -> str:
+    return f"""
+        SELECT p_partkey, s_suppkey, ps_supplycost
+        FROM part, partsupp, supplier, nation
+        WHERE p_partkey = ps_partkey AND s_suppkey = ps_suppkey
+          AND p_size = 15 AND s_nationkey = n_nationkey AND n_name = 'FRANCE'
+          AND ps_supplycost {op} ({subquery}) {extra}
+        ORDER BY p_partkey, s_suppkey, ps_supplycost
+    """
+
+
+def _partsupp_scans(query: str) -> int:
+    with pl.SQLContext(frames=_supply_frames()) as ctx:
+        plan = ctx.execute(query).explain()
+    return plan.count('DF ["ps_partkey"')
+
+
+SUPPLY_SUBQUERY = """
+    SELECT {agg}(ps_supplycost) FROM partsupp, supplier, nation
+    WHERE p_partkey = ps_partkey AND s_suppkey = ps_suppkey
+      AND s_nationkey = n_nationkey AND n_name = 'FRANCE'
+"""
+
+
+@pytest.mark.parametrize(
+    ("subquery", "op"),
+    [
+        (SUPPLY_SUBQUERY.format(agg="MIN"), "="),
+        (SUPPLY_SUBQUERY.format(agg="MAX"), "="),
+        (SUPPLY_SUBQUERY.format(agg="AVG"), "<="),
+        (SUPPLY_SUBQUERY.format(agg="2 * MIN"), "<"),
+        # the same joins written with other aliases and qualified columns
+        (
+            """
+            SELECT MIN(ps.ps_supplycost) FROM partsupp ps, supplier AS s, nation n
+            WHERE n.n_name = 'FRANCE' AND s.s_nationkey = n.n_nationkey
+              AND ps.ps_suppkey = s.s_suppkey AND ps.ps_partkey = part.p_partkey
+            """,
+            "=",
+        ),
+    ],
+)
+def test_correlated_aggregate_over_outer_join_tree(subquery: str, op: str) -> None:
+    # The subquery repeats the outer joins of its relations, so its aggregate is
+    # read from the outer join instead of joining its relations a second time.
+    query = _supply_query(subquery, op)
+    assert _partsupp_scans(query) == 1
+    assert_sql_matches(
+        frames=_supply_frames(),
+        query=query,
+        compare_with="duckdb",
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    ("subquery", "extra"),
+    [
+        # a sum counts the supplies of part 2 twice over the outer join
+        (SUPPLY_SUBQUERY.format(agg="SUM"), ""),
+        # a filter the outer query doesn't apply
+        (SUPPLY_SUBQUERY.format(agg="MIN") + " AND ps_supplycost > 4", ""),
+        # the outer query's nation filter is missing
+        (
+            """
+            SELECT MIN(ps_supplycost) FROM partsupp, supplier, nation
+            WHERE p_partkey = ps_partkey AND s_suppkey = ps_suppkey
+              AND s_nationkey = n_nationkey
+            """,
+            "",
+        ),
+        # the outer query links part to the supplier beyond the correlation
+        (SUPPLY_SUBQUERY.format(agg="MIN"), "AND p_partkey * 10 < s_suppkey"),
+        # correlated with the outer row's partsupp rather than its part
+        (
+            """
+            SELECT MIN(ps2.ps_supplycost) FROM partsupp AS ps2
+            WHERE ps2.ps_partkey = partsupp.ps_partkey
+            """,
+            "",
+        ),
+    ],
+)
+def test_correlated_aggregate_not_over_outer_join_tree(
+    subquery: str, extra: str
+) -> None:
+    query = _supply_query(subquery, "<=", extra)
+    assert _partsupp_scans(query) == 2
+    assert_sql_matches(
+        frames=_supply_frames(),
+        query=query,
+        compare_with="duckdb",
+        engines=ENGINES,
+    )
