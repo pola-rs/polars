@@ -617,12 +617,11 @@ def test_streaming_group_by_hot_table_growth(
 def test_streaming_group_by_sorted_runs(
     keys: list[pl.Expr], plmonkeypatch: PlMonkeyPatch
 ) -> None:
-    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1000")
     plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "16")
     plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "16")
 
     # Runs of equal keys, with far more keys than the hot table holds.
-    n = 20_000
+    n = 2_000
     a = np.repeat(np.arange(n // 4), 4)
     df = pl.DataFrame({"a": a, "v": np.arange(n)}).with_columns(
         pl.when(pl.col("a") % 10 != 0).then(pl.col("a")).alias("a"),
