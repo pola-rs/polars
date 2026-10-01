@@ -61,12 +61,19 @@ impl<K> FixedIndexTable<K> {
 
     /// Tries to insert a key with a given hash.
     ///
+    /// A missed key is inserted even if that evicts another key when
+    /// `force_insert` is set or when `next_hash`, the hash of the next key,
+    /// equals `hash`.
+    ///
     /// Returns Some((index, evict_old)) if successful, None otherwise.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_key<Q, E, I, V>(
         &mut self,
         hash: u64,
         key: Q,
         force_insert: bool,
+        next_hash: u64,
         mut eq: E,
         mut insert: I,
         mut evict_insert: V,
@@ -149,7 +156,7 @@ impl<K> FixedIndexTable<K> {
             self.prng = self.prng.wrapping_add(hash);
             let slot = self.slots.get_unchecked_mut(hr);
 
-            if (slot.last_access_tag == tag) | force_insert {
+            if (slot.last_access_tag == tag) | force_insert | (hash == next_hash) {
                 slot.hash = hash;
                 let evict_key = self.keys.get_unchecked_mut(slot.key_index as usize);
                 evict_insert(key, evict_key);
