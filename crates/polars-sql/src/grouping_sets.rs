@@ -6,10 +6,11 @@ use polars_plan::plans::typed_lit;
 use polars_plan::plans::visitor::{RewriteRecursion, RewritingVisitor, TreeWalker};
 use polars_plan::utils::has_expr;
 use polars_utils::aliases::PlIndexSet;
-use polars_utils::{TmpNamespace, format_pl_smallstr, unique_column_name};
+use polars_utils::format_pl_smallstr;
 use sqlparser::ast::Expr as SQLExpr;
 
 use crate::context::strip_outer_alias;
+use crate::unique_column_name;
 
 /// Cap on the number of grouping sets a single `GROUP BY` may expand to.
 const MAX_GROUPING_SETS: usize = 4096;
@@ -32,11 +33,7 @@ pub(crate) struct GroupingCall {
 }
 
 pub(crate) fn new_placeholder() -> PlSmallStr {
-    format_pl_smallstr!(
-        "{}{}",
-        PLACEHOLDER_PREFIX,
-        unique_column_name(TmpNamespace::Sql)
-    )
+    format_pl_smallstr!("{}{}", PLACEHOLDER_PREFIX, unique_column_name())
 }
 
 /// Whether `expr` refers to any of the given `GROUPING()` placeholders.
@@ -294,7 +291,7 @@ impl GroupingSets {
                 if matches!(inner, Expr::Column(_)) {
                     key.clone()
                 } else {
-                    let hidden = unique_column_name(TmpNamespace::Sql);
+                    let hidden = unique_column_name();
                     prepared.push(inner.clone().alias(hidden.clone()));
                     col(hidden).alias(name.clone())
                 }

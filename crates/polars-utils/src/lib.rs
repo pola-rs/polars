@@ -98,4 +98,3 @@ pub mod sys;
 
 pub use idx_vec::UnitVec;
 pub use index::{IdxSize, NullableIdxSize};
-pub use pl_str::{TmpNamespace, unique_column_name};

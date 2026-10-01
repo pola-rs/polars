@@ -17,17 +17,17 @@ use polars_plan::prelude::{AggExpr, DslPlan, Selector};
 use polars_plan::utils::{expr_to_leaf_column_names_iter, has_expr};
 use polars_utils::aliases::PlHashSet;
 use polars_utils::arena::Arena;
-use polars_utils::{TmpNamespace, format_pl_smallstr, unique_column_name};
+use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Query,
     Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
     UnaryOperator as SQLUnaryOperator, Visit, VisitMut, Visitor, VisitorMut, visit_expressions,
 };
 
-use crate::SQLContext;
 use crate::context::{CORRELATED_COL_PREFIX, FilterMode, combine_conditions, get_table_name};
 use crate::sql_expr::{parse_sql_expr, sql_in_membership};
 use crate::sql_visitors::{expr_contains_subquery, is_subquery_expr};
+use crate::{SQLContext, unique_column_name};
 
 impl SQLContext {
     // Entry point: offer each WHERE conjunct to the rewrites, returning the
@@ -296,10 +296,7 @@ impl SQLContext {
             return Ok(None);
         }
 
-        let prefix = format_pl_smallstr!(
-            "{CORRELATED_COL_PREFIX}{}_",
-            unique_column_name(TmpNamespace::Sql)
-        );
+        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let idx_name = format_pl_smallstr!("{prefix}idx");
         let count_name = format_pl_smallstr!("{prefix}cnt");
 
@@ -709,10 +706,7 @@ impl SQLContext {
             return Ok(None);
         }
 
-        let prefix = format_pl_smallstr!(
-            "{CORRELATED_COL_PREFIX}{}_",
-            unique_column_name(TmpNamespace::Sql)
-        );
+        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let result_name = format_pl_smallstr!("{prefix}res");
 
         // Apply inner-only filters, then rename inner columns to collision-free
@@ -836,10 +830,7 @@ impl SQLContext {
             return Ok(None);
         }
 
-        let prefix = format_pl_smallstr!(
-            "{CORRELATED_COL_PREFIX}{}_",
-            unique_column_name(TmpNamespace::Sql)
-        );
+        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let set_name = format_pl_smallstr!("{prefix}set");
 
         let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
@@ -946,10 +937,7 @@ impl SQLContext {
             None => (Vec::new(), Vec::new()),
         };
 
-        let prefix = format_pl_smallstr!(
-            "{CORRELATED_COL_PREFIX}{}_",
-            unique_column_name(TmpNamespace::Sql)
-        );
+        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let flag_name = format_pl_smallstr!("{prefix}exists");
         let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
 
@@ -1208,7 +1196,7 @@ fn refine_not_in_anti_join(
 ) -> PolarsResult<LazyFrame> {
     if corr_inner.is_empty() {
         // Uncorrelated
-        let flag_name = unique_column_name(TmpNamespace::Sql);
+        let flag_name = unique_column_name();
         let flag = when(len().eq(lit(0u32)))
             .then(lit(NULL).cast(DataType::Boolean))
             .otherwise(right_key.clone().is_null().any(true))

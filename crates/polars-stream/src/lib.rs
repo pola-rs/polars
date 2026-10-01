@@ -50,3 +50,10 @@ static DEFAULT_ZIP_HEAD_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| {
         .map(|x| x.parse().unwrap())
         .unwrap_or(4)
 });
+
+pub(crate) fn unique_column_name() -> polars_utils::pl_str::PlSmallStr {
+    static COUNTER: polars_utils::relaxed_cell::RelaxedCell<u64> =
+        polars_utils::relaxed_cell::RelaxedCell::new_u64(0);
+    let idx = COUNTER.fetch_add(1);
+    polars_utils::format_pl_smallstr!("_POLARS_TMP_STREAM_{idx}")
+}

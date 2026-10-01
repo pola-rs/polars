@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 pub use super::pl_ref_str::PlRefStr;
-use crate::relaxed_cell::RelaxedCell;
 
 #[macro_export]
 macro_rules! format_pl_smallstr {
@@ -307,32 +306,6 @@ impl core::fmt::Display for PlSmallStr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.as_str().fmt(f)
     }
-}
-
-/// The query stage that mints a temporary column name.
-#[derive(Clone, Copy, Debug)]
-pub enum TmpNamespace {
-    Sql,
-    Optimizer,
-    Lowering,
-    Execution,
-}
-
-impl TmpNamespace {
-    fn tag(self) -> &'static str {
-        match self {
-            Self::Sql => "SQL",
-            Self::Optimizer => "OPT",
-            Self::Lowering => "LOWER",
-            Self::Execution => "EXEC",
-        }
-    }
-}
-
-pub fn unique_column_name(namespace: TmpNamespace) -> PlSmallStr {
-    static COUNTER: RelaxedCell<u64> = RelaxedCell::new_u64(0);
-    let idx = COUNTER.fetch_add(1);
-    format_pl_smallstr!("_POLARS_TMP_{}_{idx}", namespace.tag())
 }
 
 #[cfg(feature = "python")]

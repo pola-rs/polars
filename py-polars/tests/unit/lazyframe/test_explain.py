@@ -42,7 +42,7 @@ def test_lf_explain_tree_format_removed() -> None:
         lf.explain(tree_format=True)  # type: ignore[call-arg]
 
 
-def test_tmp_column_names_are_tagged_by_stage() -> None:
+def test_tmp_column_names_are_tagged_by_crate() -> None:
     def tmp_tags(plan: str) -> set[str]:
         return set(re.findall(r"_POLARS_TMP_([A-Z]+)_\d+", plan))
 
@@ -59,11 +59,11 @@ def test_tmp_column_names_are_tagged_by_stage() -> None:
         pl.col("x").sum().over("g"), pl.col("x").min().over("g").alias("m")
     )
     assert tmp_tags(windows.explain(optimized=False)) == set()
-    assert tmp_tags(windows.explain(engine="streaming")) == {"OPT"}
+    assert tmp_tags(windows.explain(engine="streaming")) == {"PLAN"}
 
     group_by = lf.group_by("g").agg(pl.col("x").mean())
     assert tmp_tags(group_by.explain(engine="streaming")) == set()
     physical = group_by.show_graph(
         engine="streaming", plan_stage="physical", raw_output=True
     )
-    assert tmp_tags(physical) == {"LOWER"}
+    assert tmp_tags(physical) == {"STREAM"}

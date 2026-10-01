@@ -16,9 +16,9 @@ use polars_plan::plans::{
 };
 use polars_plan::prelude::*;
 use polars_plan::utils::rename_columns;
+use polars_utils::IdxSize;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::{IdxSize, TmpNamespace, unique_column_name};
 use recursive::recursive;
 use slotmap::DenseSlotMap;
 
@@ -30,6 +30,7 @@ use crate::physical_plan::lower_expr::{
 use crate::physical_plan::lower_ir::{
     build_filter_stream, build_row_idx_stream, build_slice_stream,
 };
+use crate::unique_column_name;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 #[derive(Copy, Clone, Debug)]
@@ -157,7 +158,7 @@ fn replace_agg_uniq(
                         input_ids.push(input_id);
                         let input_col = uniq_input_names
                             .entry(input_id)
-                            .or_insert_with(|| unique_column_name(TmpNamespace::Lowering))
+                            .or_insert_with(unique_column_name)
                             .clone();
                         expr_arena.add(AExpr::Column(input_col))
                     }
@@ -166,10 +167,7 @@ fn replace_agg_uniq(
             let trans_agg_node = expr_arena.add(aexpr.replace_inputs(&input_cols));
 
             // Add to aggregation expressions and replace with a reference to its output.
-            let agg_expr = ExprIR::new(
-                trans_agg_node,
-                OutputName::Alias(unique_column_name(TmpNamespace::Lowering)),
-            );
+            let agg_expr = ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()));
             agg_exprs.push(agg_expr.clone());
             (agg_expr, input_ids)
         })
@@ -197,7 +195,7 @@ fn replace_elementwise_components(
         let id = canonical_exprs.resolve(expr, expr_arena);
         let name = uniq_input_names
             .entry(id)
-            .or_insert_with(|| unique_column_name(TmpNamespace::Lowering))
+            .or_insert_with(unique_column_name)
             .clone();
         let node = uniq_elementwise_exprs
             .entry(id)
@@ -309,7 +307,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                     let id = canonical_exprs.resolve(expr, expr_arena);
                     let name = uniq_input_names
                         .entry(id)
-                        .or_insert_with(|| unique_column_name(TmpNamespace::Lowering))
+                        .or_insert_with(unique_column_name)
                         .clone();
                     let node = uniq_elementwise_exprs
                         .entry(id)
@@ -615,10 +613,7 @@ fn try_lower_elementwise_scalar_agg_expr(
             let name = uniq_agg_exprs
                 .entry(agg_id)
                 .or_insert_with(|| {
-                    let agg_expr = ExprIR::new(
-                        expr,
-                        OutputName::Alias(unique_column_name(TmpNamespace::Lowering)),
-                    );
+                    let agg_expr = ExprIR::new(expr, OutputName::Alias(unique_column_name()));
                     agg_exprs.push(agg_expr.clone());
                     (agg_expr, Vec::new())
                 })
@@ -667,7 +662,7 @@ fn try_lower_agg_input_expr(
                 return Ok(None);
             };
 
-            let output_name = unique_column_name(TmpNamespace::Lowering);
+            let output_name = unique_column_name();
             let mut gb_keys = keys.to_vec();
             gb_keys.push(ExprIR::new(node, OutputName::Alias(output_name.clone())));
 
@@ -704,8 +699,8 @@ fn try_lower_agg_input_expr(
                 return Ok(None);
             }
 
-            let output_name = unique_column_name(TmpNamespace::Lowering);
-            let predicate_name = unique_column_name(TmpNamespace::Lowering);
+            let output_name = unique_column_name();
+            let predicate_name = unique_column_name();
             let mut select_exprs = keys.to_vec();
             select_exprs.push(ExprIR::new(
                 *filter_input,
@@ -746,8 +741,8 @@ fn try_lower_agg_input_expr(
                 return Ok(None);
             }
 
-            let output_name = unique_column_name(TmpNamespace::Lowering);
-            let predicate_name = unique_column_name(TmpNamespace::Lowering);
+            let output_name = unique_column_name();
+            let predicate_name = unique_column_name();
             let mut select_exprs = keys.to_vec();
             select_exprs.push(ExprIR::new(
                 input.node(),
@@ -828,7 +823,7 @@ pub fn try_build_streaming_group_by(
     }
 
     // Augment with row index if maintaining order.
-    let row_idx_name = unique_column_name(TmpNamespace::Lowering);
+    let row_idx_name = unique_column_name();
     let row_idx_node = expr_arena.add(AExpr::Column(row_idx_name.clone()));
     let mut agg_storage;
     let aggs = if maintain_order {
@@ -856,7 +851,7 @@ pub fn try_build_streaming_group_by(
         let key_name = uniq_input_names
             .entry(key_id)
             .or_insert_with(|| {
-                let key_name = unique_column_name(TmpNamespace::Lowering);
+                let key_name = unique_column_name();
                 trans_keys.push(ExprIR::from_column_name(key_name.clone(), expr_arena));
                 key_name
             })
@@ -926,7 +921,7 @@ pub fn try_build_streaming_group_by(
         &must_preselect,
         &input_schema,
         expr_arena,
-        TmpNamespace::Lowering,
+        unique_column_name,
     )?;
 
     // A post-select expression that is a bare column reference means the split chose to
@@ -1175,7 +1170,7 @@ pub fn try_build_sorted_group_by(
     }
 
     let mut input = input;
-    let mut input_column = unique_column_name(TmpNamespace::Lowering);
+    let mut input_column = unique_column_name();
     let mut projected = false;
     let mut row_encoded: Option<Vec<Field>> = None;
 

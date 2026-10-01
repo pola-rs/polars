@@ -10,7 +10,7 @@ use polars_plan::plans::visitor::{TreeWalker, VisitRecursion, Visitor};
 use polars_plan::plans::{ArenaExprIter, ExprToIRContext, is_scalar_ae, to_expr_ir};
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
-use polars_utils::{TmpNamespace, format_pl_smallstr, unique_column_name};
+use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
@@ -42,6 +42,7 @@ use crate::sql_visitors::{
 use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
+use crate::unique_column_name;
 
 #[derive(Clone)]
 pub struct TableInfo {
@@ -737,7 +738,7 @@ impl SQLContext {
         };
 
         let lf = if bag_semantics {
-            let occurrence_col = unique_column_name(TmpNamespace::Sql);
+            let occurrence_col = unique_column_name();
             let mut lf_on = lf_cols.clone();
             let mut rf_on =
                 rf_cols.expect("ALL quantifier always resolves the right-hand columns above");
@@ -1559,10 +1560,7 @@ impl SQLContext {
         self.group_scope
             .whole_frame_partition
             .get_or_insert_with(|| {
-                format_pl_smallstr!(
-                    "__POLARS_WHOLE_FRAME_{}",
-                    unique_column_name(TmpNamespace::Sql)
-                )
+                format_pl_smallstr!("__POLARS_WHOLE_FRAME_{}", unique_column_name())
             })
             .clone()
     }
@@ -4183,10 +4181,7 @@ impl AggregateOutputs {
             _ => None,
         });
         let name = existing.unwrap_or_else(|| {
-            let name = format_pl_smallstr!(
-                "__POLARS_HOISTED_AGG_{}",
-                unique_column_name(TmpNamespace::Sql)
-            );
+            let name = format_pl_smallstr!("__POLARS_HOISTED_AGG_{}", unique_column_name());
             self.exprs.push(expr.alias(name.clone()));
             name
         });

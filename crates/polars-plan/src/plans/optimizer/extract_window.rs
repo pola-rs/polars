@@ -18,7 +18,6 @@
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
-use polars_utils::{TmpNamespace, unique_column_name};
 use recursive::recursive;
 
 use crate::plans::{
@@ -26,6 +25,7 @@ use crate::plans::{
     ToFieldContext, is_length_preserving_ae, is_splittable,
 };
 use crate::prelude::{ProjectionOptions, WindowMapping};
+use crate::unique_column_name;
 
 pub(super) fn extract_windows(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
     let mut visited = PlIndexSet::new();
@@ -78,7 +78,7 @@ impl Extractor {
             let AExpr::Over { function, .. } = expr_arena.get(node) else {
                 unreachable!()
             };
-            let name = unique_column_name(TmpNamespace::Optimizer);
+            let name = unique_column_name();
             self.windows.push(ExtractedWindow {
                 name: name.clone(),
                 function: *function,
@@ -240,7 +240,7 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
         let name = match expr_arena.get(key) {
             AExpr::Column(name) => name.clone(),
             _ => {
-                let name = unique_column_name(TmpNamespace::Optimizer);
+                let name = unique_column_name();
                 key_exprs.push(ExprIR::new(key, OutputName::Alias(name.clone())));
                 name
             },
