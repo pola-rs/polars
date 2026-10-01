@@ -1607,7 +1607,7 @@ def test_scan_delta_resolves_heavy_footers_on_object_store(
     # Match encoded paths to sizes, then read source 0 and the heavy-file footer.
     import threading
 
-    from tests.unit.io.cloud.test_metadata_prefetch import CountingS3
+    from tests.unit.io.cloud.moto_server import CountingS3
 
     s3 = CountingS3()
     threading.Thread(target=s3.server.serve_forever, daemon=True).start()

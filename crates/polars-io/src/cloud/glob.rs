@@ -231,13 +231,12 @@ pub async fn glob(
         expansion.as_deref(),
     )?;
 
-    let path = Path::from(prefix.as_str());
-    let path = Some(&path);
+    let path = &Path::from(prefix.as_str());
 
     let mut locations = store
-        .exec_with_rebuild_retry_on_err(|store| async move {
+        .exec_with_rebuild_retry_on_err(path, |store| async move {
             store
-                .list(path)
+                .list(Some(path))
                 .try_filter_map(|x| async move {
                     // Keep the LIST-reported byte size alongside the path.
                     let out = (x.size > 0 && matcher.is_matching(x.location.as_ref()))
