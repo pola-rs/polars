@@ -39,7 +39,9 @@ use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_group_by::{
     GroupByLowerKind, build_group_by_stream, try_build_streaming_group_by,
 };
-use crate::physical_plan::lower_ir::{build_filter_stream_with_ctx, build_row_idx_stream};
+use crate::physical_plan::lower_ir::{
+    build_filter_stream_with_ctx, build_row_idx_stream, build_slice_stream,
+};
 
 type ExprNodeKey = Node;
 
@@ -3149,7 +3151,13 @@ pub(crate) fn build_sort_stream_with_ctx(
     mut sort_options: SortMultipleOptions,
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<PhysStream> {
-    assert!(!by_column.is_empty());
+    // Any order is sorted by no keys, so the input order is kept.
+    if by_column.is_empty() {
+        return Ok(match slice {
+            Some((offset, len)) => build_slice_stream(input, offset, len, ctx.phys_sm),
+            None => input,
+        });
+    }
     let input_schema = input.output_schema(ctx.phys_sm).clone();
 
     _broadcast_bools(by_column.len(), &mut sort_options.descending);
@@ -3172,12 +3180,13 @@ pub(crate) fn build_sort_stream_with_ctx(
 
     let single_key_dtype = (dtypes.len() == 1).then(|| dtypes[0].clone());
     // Enum and Decimal are sortable through their numeric physical
-    // representation, Categorical is not: its order is lexical.
+    // representation, Categorical (also as extension storage) is not: its
+    // order is lexical.
     let is_directly_sortable = |dtype: &DataType| {
         matches!(
             dtype,
             DataType::String | DataType::Binary | DataType::BinaryOffset
-        ) || (!dtype.is_categorical() && dtype.to_physical().is_primitive_numeric())
+        ) || (!dtype.to_storage().is_categorical() && dtype.to_physical().is_primitive_numeric())
     };
 
     // The expression for a temporary key column, unless the key already is a

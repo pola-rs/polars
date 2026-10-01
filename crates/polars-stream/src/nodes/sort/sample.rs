@@ -90,7 +90,7 @@ impl KeySample {
             .map(|i| (2 * i + rng.random_range(0..2)) as IdxSize)
             .collect();
         // SAFETY: the indices are below the length of the concatenated sample.
-        self.parts = vec![unsafe { s.take_slice_unchecked(&idxs) }];
+        self.parts = vec![deshare(unsafe { s.take_slice_unchecked(&idxs) })];
         self.len = idxs.len();
         self.stride *= 2;
     }
