@@ -178,15 +178,12 @@ impl<I> SketchMergeReducer<I>
 where
     I: fmt::Debug + Clone + TotalOrd + serde::de::DeserializeOwned,
 {
-    fn merge_blob(&self, acc: &mut PolarsResult<Option<Sketch<I>>>, blob: &[u8]) {
+    fn merge_blob(&self, acc: &mut PolarsResult<Sketch<I>>, blob: &[u8]) {
         let Ok(sketch) = acc else {
             return;
         };
         match pl_serialize::deserialize_from_reader::<Sketch<I>, _, false>(blob) {
-            Ok(state) => match sketch {
-                Some(sketch) => sketch.merge(&state),
-                None => *sketch = Some(state),
-            },
+            Ok(state) => sketch.merge(&state),
             Err(e) => *acc = Err(e),
         }
     }
@@ -204,20 +201,17 @@ where
         + 'static,
 {
     type Dtype = BinaryType;
-    /// `None` until the group's first state, which is adopted rather than
-    /// merged into an empty sketch.
-    type Value = PolarsResult<Option<Sketch<I>>>;
+    type Value = PolarsResult<Sketch<I>>;
 
     fn init(&self) -> Self::Value {
-        Ok(None)
+        Ok(self.template.clone())
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
         match (a, b) {
-            (Ok(Some(a)), Ok(Some(b))) => a.merge(b),
-            (Ok(a @ None), Ok(b)) => *a = b.clone(),
-            (Ok(Some(_)), Ok(None)) | (Err(_), _) => {},
+            (Ok(a), Ok(b)) => a.merge(b),
             (a @ Ok(_), Err(e)) => *a = Err(e.clone()),
+            (Err(_), _) => {},
         }
     }
 
@@ -242,7 +236,7 @@ where
         assert!(m.is_none());
         let sketches = v
             .into_iter()
-            .map(|s| Ok(s?.unwrap_or_else(|| self.template.clone()).finalize()))
+            .map(|s| s.map(Sketch::finalize))
             .collect::<PolarsResult<Vec<_>>>()?;
         sketches_to_series(&sketches)
     }
