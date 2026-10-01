@@ -438,18 +438,27 @@ def test_sink_ipc_custom_metadata_dictionary() -> None:
     assert pl.scan_ipc(buf).select(pl.len()).collect().item() == 5
 
 
-def test_scan_ipc_ignores_inconsistent_custom_metadata() -> None:
-    # Older versions of Polars also counted dictionary batches.
+@pytest.mark.parametrize(
+    "custom_metadata",
+    [
+        # Older versions of Polars also counted dictionary batches.
+        b'{"record_batch_cum_len": [3, 6]}',
+        b"not json",
+    ],
+)
+def test_scan_ipc_ignores_unusable_custom_metadata(custom_metadata: bytes) -> None:
     table = pa.table({"a": pa.array(["x", "y", "z"]).dictionary_encode()})
-    metadata = {b"__POLARS_IPC_METADATA": b'{"record_batch_cum_len": [3, 6]}'}
+    metadata = {b"__POLARS_IPC_METADATA": custom_metadata}
 
     f = io.BytesIO()
     with pa.ipc.new_file(f, table.schema, metadata=metadata) as writer:
         writer.write_table(table)
 
     buf = f.getvalue()
-    assert pl.scan_ipc(buf).tail(1).collect()["a"].to_list() == ["z"]
-    assert pl.scan_ipc(buf).select(pl.len()).collect().item() == 3
+    with pytest.warns(UserWarning, match="ignoring unusable Polars metadata"):
+        assert pl.scan_ipc(buf).tail(1).collect()["a"].to_list() == ["z"]
+    with pytest.warns(UserWarning, match="ignoring unusable Polars metadata"):
+        assert pl.scan_ipc(buf).select(pl.len()).collect().item() == 3
 
 
 def test_scan_ipc_slicing_and_count_with_custom_metadata(
