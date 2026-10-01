@@ -15,6 +15,10 @@ Here is a curated (non-exhaustive) list of community-implemented plugins.
   functionality which isn't quite in-scope for the main library
 - [polars-hash](https://github.com/ion-elgreco/polars-hash) Stable non-cryptographic and
   cryptographic hashing functions for Polars
+- [polars-streaming-csv-decompression](https://github.com/ghuls/polars_streaming_csv_decompression)
+  Polars IO plugin for reading (compressed) CSV/TSV files and/or CSV/TSV files with a different
+  encoding in a streaming fashion with an API similar to `pl.scan_csv()`, but without decompressing
+  the whole file to RAM first
 
 ### Data science
 
