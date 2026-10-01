@@ -29,7 +29,7 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::{unique_column_name, unitvec};
-use slotmap::SlotMap;
+use slotmap::DenseSlotMap;
 
 use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
@@ -65,7 +65,7 @@ pub(crate) struct LowerExprContext<'a> {
     pub(crate) prepare_visualization: bool,
     pub(crate) sortedness: &'a IRPlanSorted,
     pub(crate) expr_arena: &'a mut Arena<AExpr>,
-    pub(crate) phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
+    pub(crate) phys_sm: &'a mut DenseSlotMap<PhysNodeKey, PhysNode>,
     pub(crate) cache: &'a mut ExprCache,
     pub(crate) node_scratch: &'a mut ScratchVec<Node>,
     pub(crate) ae_height_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
@@ -517,6 +517,10 @@ fn simplify_input_streams(
             {
                 if *inner == orig_input {
                     combined_exprs.extend(exprs.iter().cloned());
+                    // The IR attribution in the `lower_ir` method relies on there being no removals
+                    // from `phys_sm` from previous `lower_ir` calls. Here we only remove keys
+                    // inserted in `lower_reduce_node` during the current `lower_ir` call, so this
+                    // is okay.
                     ctx.phys_sm.remove(input_stream.node);
                     return false;
                 }
@@ -2963,7 +2967,7 @@ pub fn lower_exprs(
     input: PhysStream,
     exprs: &[ExprIR],
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>)> {
@@ -2993,7 +2997,7 @@ pub fn build_select_stream(
     input: PhysStream,
     exprs: &[ExprIR],
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
@@ -3014,7 +3018,7 @@ pub fn build_hstack_stream(
     input: PhysStream,
     exprs: &[ExprIR],
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
@@ -3265,7 +3269,7 @@ pub fn build_sort_stream(
     slice: Option<(i64, usize)>,
     sort_options: SortMultipleOptions,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
