@@ -722,7 +722,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             );
             let idx_dtype = &idxs_schema.get_at_index(0).unwrap().1;
             polars_ensure!(idx_dtype.is_integer(), 
-            InvalidOperation: "'gather' indices must have integer dtype, got `{}`", idx_dtype);
+                InvalidOperation: "'gather' indices must have integer dtype, got `{}`", idx_dtype);
             IR::Gather {
                 input,
                 idxs,
