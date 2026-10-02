@@ -164,11 +164,15 @@ def test_hive_fallible_predicate_with_file_filter_prunes_files_29494(
         if month == "2":
             path.write_bytes(b"not parquet")
 
-    lf = pl.scan_parquet(tmp_path / "**/*.parquet", hive_partitioning=True)
-    result = lf.filter(hive_filter, pl.col("flag")).collect(engine=engine)
+    lf = pl.scan_parquet(tmp_path / "**/*.parquet", hive_partitioning=True).filter(
+        hive_filter, pl.col("flag")
+    )
+    assert "FILTER" not in lf.explain()
+    result = lf.collect(engine=engine)
     assert result.rows() == [(True, 2026, 1)]
 
 
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
 @pytest.mark.parametrize(
     ("partition_month", "keep_partition", "expect_invalid_date"),
     [
@@ -183,6 +187,7 @@ def test_hive_date_predicate_with_file_filter_invalid_date_29494(
     partition_month: int,
     keep_partition: bool,
     expect_invalid_date: bool,
+    engine: EngineType,
 ) -> None:
     for month, flag_value in (
         (1, True),
@@ -197,11 +202,12 @@ def test_hive_date_predicate_with_file_filter_invalid_date_29494(
         .filter(pl.date("year", "month", 1) <= date(2026, 1, 1))
         .filter(pl.col("flag"))
     )
+    assert ("FILTER" in lf.explain()) == (partition_month == 13)
     if expect_invalid_date:
         with pytest.raises(ComputeError, match="Invalid date components"):
-            lf.collect()
+            lf.collect(engine=engine)
     else:
-        assert lf.collect().rows() == [(True, 2026, 1)]
+        assert lf.collect(engine=engine).rows() == [(True, 2026, 1)]
 
 
 @pytest.mark.write_disk
@@ -222,8 +228,47 @@ def test_hive_fallible_predicate_does_not_evaluate_udf_when_pruning_29494(
     lf = pl.scan_parquet(tmp_path / "**/*.parquet", hive_partitioning=True).filter(
         udf.cast(pl.Int8, strict=True) <= 1, pl.col("flag")
     )
-    lf.explain()
+    assert "FILTER" in lf.explain()
     assert calls == []
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.write_disk
+def test_hive_fallible_predicate_removed_excludes_null_partitions(
+    tmp_path: Path, engine: EngineType
+) -> None:
+    for month in ("1", "2", "__HIVE_DEFAULT_PARTITION__"):
+        path = tmp_path / f"month={month}/data.parquet"
+        path.parent.mkdir()
+        pl.DataFrame({"flag": [True, False]}).write_parquet(path)
+
+    # A null predicate result must exclude the file even if its physical Boolean
+    # value is true, as there will no longer be a row filter to discard its rows.
+    lf = pl.scan_parquet(tmp_path / "**/*.parquet", hive_partitioning=True).filter(
+        pl.col("month").cast(pl.Int8) != 2, pl.col("flag")
+    )
+    assert "FILTER" not in lf.explain()
+    assert lf.collect(engine=engine).rows() == [(True, 1)]
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.parametrize("with_row_index", [True, False])
+@pytest.mark.write_disk
+def test_hive_fallible_predicate_retained_without_partition_pruning(
+    tmp_path: Path, engine: EngineType, with_row_index: bool
+) -> None:
+    for month in (1, 2):
+        path = tmp_path / f"month={month}/data.parquet"
+        path.parent.mkdir()
+        pl.DataFrame({"flag": [True, False]}).write_parquet(path)
+
+    lf = pl.scan_parquet(tmp_path / "**/*.parquet", hive_partitioning=True)
+    lf = lf.with_row_index() if with_row_index else lf.head(3)
+    predicate = pl.col("month").cast(pl.Int8) <= 1
+    expected = lf.collect(engine=engine).filter(predicate, pl.col("flag"))
+    lf = lf.filter(predicate, pl.col("flag"))
+    assert "FILTER" in lf.explain()
+    assert_frame_equal(lf.collect(engine=engine), expected)
 
 
 @pytest.mark.parametrize("engine", ["streaming", "in-memory"])
@@ -292,8 +337,9 @@ def test_hive_fallible_predicate_group_by_prunes_only_branch_files(
     )
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
-    lf.explain(optimizations=pl.QueryOptFlags(pre_partition_hive=True))
+    plan = lf.explain(optimizations=pl.QueryOptFlags(pre_partition_hive=True))
     logs = capfd.readouterr().err
+    assert "FILTER" not in plan
     # Evaluate the retained predicate on each branch's two files, not repeatedly
     # over all six files while the branches are being constructed.
     assert logs.count("allows skipping 0 / 2 files") == 3

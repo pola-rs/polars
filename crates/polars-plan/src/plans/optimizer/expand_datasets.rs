@@ -221,9 +221,10 @@ pub(super) fn expand_datasets(
     Ok(())
 }
 
-/// Try a retained filter on the Hive values after the scan's own predicate has pruned files.
+/// Apply a retained filter to the Hive values after the scan's own predicate has pruned files.
 /// This runs after Hive rewriting so each branch evaluates only its surviving partitions,
 /// and removing all partitions cannot cause the rewrite to construct an empty union.
+/// Remove the row filter if pruning fully evaluates it.
 fn prune_hive_filter(
     node: Node,
     ir_arena: &mut Arena<IR>,
@@ -233,7 +234,8 @@ fn prune_hive_filter(
     let IR::Filter { input, predicate } = ir_arena.get(node) else {
         return;
     };
-    let mut scan_node = *input;
+    let input = *input;
+    let mut scan_node = input;
     let filter_predicate = predicate.clone();
     // Projection pushdown can insert a projection to drop columns used only by the
     // scan predicate. It does not change the rows or names seen by the retained filter.
@@ -264,9 +266,7 @@ fn prune_hive_filter(
 
     let scan_predicate = predicate.replace(filter_predicate);
     let scan_file_skip = predicate_file_skip_applied.take();
-    // The filter remains above the scan. If evaluation fails, let normal execution report
-    // the error on the rows that survive the scan predicate.
-    _ = apply_scan_predicate_to_scan_ir(scan_node, ir_arena, expr_arena);
+    let result = apply_scan_predicate_to_scan_ir(scan_node, ir_arena, expr_arena);
 
     let IR::Scan {
         predicate,
@@ -276,9 +276,17 @@ fn prune_hive_filter(
     else {
         unreachable!()
     };
+    // A successful call can also be a no-op. Only remove the filter when pruning
+    // confirms that the entire predicate has been applied to the surviving files.
+    let filter_applied = result.is_ok()
+        && predicate_file_skip_applied.is_some_and(|skip| skip.no_residual_predicate);
     *predicate = scan_predicate;
     // This metadata describes the original scan predicate, not the retained filter.
     *predicate_file_skip_applied = scan_file_skip;
+
+    if filter_applied {
+        ir_arena.replace(node, ir_arena.get(input).clone());
+    }
 }
 
 /// Await one dataset expansion, then read its heavy-source footers.
