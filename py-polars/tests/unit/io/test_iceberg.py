@@ -470,8 +470,7 @@ class TestIcebergScanIO:
         plmonkeypatch: PlMonkeyPatch,
         capfd: pytest.CaptureFixture[str],
     ) -> None:
-        # Unsafe name must not be pushed down. Uses `.explain()`, not
-        # `.collect()` - collecting hits an unrelated, separately tracked bug.
+        # Unsafe name must not be pushed down.
         tbl, _ = new_iceberg_table(
             tmp_path,
             schema=IcebergSchema(
@@ -479,7 +478,7 @@ class TestIcebergScanIO:
                 NestedField(
                     2,
                     "mydict",
-                    StructType(NestedField(3, "age!", LongType())),
+                    StructType(NestedField(3, "a!", LongType())),
                     required=False,
                 ),
             ),
@@ -487,7 +486,7 @@ class TestIcebergScanIO:
         plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
 
         capfd.readouterr()
-        pl.scan_iceberg(tbl).filter(pl.col("mydict").struct.field("age!") == 17).select(
+        pl.scan_iceberg(tbl).filter(pl.col("mydict").struct.field("a!") == 17).select(
             "id"
         ).explain()
         log = capfd.readouterr().err
