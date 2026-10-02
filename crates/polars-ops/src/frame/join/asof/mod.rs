@@ -211,13 +211,13 @@ pub fn _check_asof_columns(
         polars_ensure!(
             dtype_a.to_physical().is_primitive_numeric() && dtype_b.to_physical().is_primitive_numeric(),
             InvalidOperation:
-            "asof join with tolerance is only supported on numeric/temporal keys"
+            "asof join with tolerance is only supported on numeric/temporal keys, got left: `{}`, right: `{}`", dtype_a, dtype_b
         );
     } else {
         polars_ensure!(
             dtype_a.to_physical().is_primitive() && dtype_b.to_physical().is_primitive(),
             InvalidOperation:
-            "asof join is only supported on primitive key types"
+            "asof join is only supported on primitive key types, got left: `{}`, right: `{}`", dtype_a, dtype_b
         );
     }
     polars_ensure!(

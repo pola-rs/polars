@@ -159,7 +159,7 @@ impl PhysicalExpr for TernaryExpr {
                 (1, r) if r != 1 => return self.cast_arm(falsy),
                 (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
                 (l, r) => {
-                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height and falsy height in when/then/otherwise");
+                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and falsy height ({}) in when/then/otherwise", l, r);
                     return self.cast_arm(falsy);
                 },
             }
@@ -171,7 +171,7 @@ impl PhysicalExpr for TernaryExpr {
                 (1, r) if r != 1 => return self.cast_arm(truthy),
                 (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
                 (l, r) => {
-                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height and truthy height in when/then/otherwise");
+                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and truthy height ({}) in when/then/otherwise", l, r);
                     return self.cast_arm(truthy);
                 },
             }

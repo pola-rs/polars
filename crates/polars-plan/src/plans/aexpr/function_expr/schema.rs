@@ -385,7 +385,11 @@ impl IRFunctionExpr {
                 include_breaks,
             } => {
                 let cut_labels: Vec<PlSmallStr> = if let Some(l) = labels {
-                    polars_ensure!(l.len() == breaks.len() + 1, ShapeMismatch: "provide len(breaks) + 1 labels");
+                    polars_ensure!(
+                        l.len() == breaks.len() + 1,
+                        ShapeMismatch: "expected {} labels (len(breaks) + 1), got {}",
+                        breaks.len() + 1, l.len()
+                    );
                     l.clone()
                 } else {
                     use polars_core::utils::cut::compute_cut_labels;
