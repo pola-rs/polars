@@ -214,7 +214,10 @@ pub trait RoundSeries: SeriesSealed {
     /// Round underlying floating point array to the given number of significant digits.
     fn round_sig_figs(&self, digits: i32) -> PolarsResult<Series> {
         let s = self.as_series();
-        polars_ensure!(digits >= 1, InvalidOperation: "digits must be an integer >= 1, got `{}`", digits);
+        polars_ensure!(
+            digits >= 1,
+            InvalidOperation: "digits must be an integer >= 1, got {}", digits
+        );
 
         #[cfg(feature = "dtype-decimal")]
         if let Some(ca) = s.try_decimal() {
