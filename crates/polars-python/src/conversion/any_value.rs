@@ -22,7 +22,7 @@ use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::polars_arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
 use polars_core::utils::polars_arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
-use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyAttributeError, PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
@@ -408,6 +408,51 @@ pub(crate) fn py_object_to_any_value(
         }
     }
 
+    fn get_timestamp(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+        let py = ob.py();
+        let (timestamp, time_unit) = match ob.getattr(intern!(py, "unit")) {
+            Ok(unit) => {
+                let unit = unit.extract::<String>()?;
+                let ticks = ob
+                    .getattr(intern!(py, "asm8"))?
+                    .call_method1(intern!(py, "view"), (intern!(py, "i8"),))?
+                    .extract::<i64>()?;
+                match unit.as_str() {
+                    "ns" => (ticks, TimeUnit::Nanoseconds),
+                    "us" => (ticks, TimeUnit::Microseconds),
+                    "ms" => (ticks, TimeUnit::Milliseconds),
+                    "s" => (
+                        ticks.checked_mul(1_000).ok_or_else(|| {
+                            PyOverflowError::new_err(
+                                "Timestamp seconds value does not fit into milliseconds",
+                            )
+                        })?,
+                        TimeUnit::Milliseconds,
+                    ),
+                    _ => {
+                        return Err(PyValueError::new_err(format!(
+                            "unsupported Timestamp unit: {unit}"
+                        )));
+                    },
+                }
+            },
+            // Older pandas Timestamps have no `unit` attribute (always "ns")
+            Err(err) if err.is_instance_of::<PyAttributeError>(py) => (
+                ob.getattr(intern!(py, "value"))?.extract::<i64>()?,
+                TimeUnit::Nanoseconds,
+            ),
+            Err(err) => return Err(err),
+        };
+
+        match get_datetime(ob, strict)? {
+            AnyValue::Datetime(_, _, tz) => Ok(AnyValue::Datetime(timestamp, time_unit, tz)),
+            AnyValue::DatetimeOwned(_, _, tz) => {
+                Ok(AnyValue::DatetimeOwned(timestamp, time_unit, tz))
+            },
+            _ => unreachable!(),
+        }
+    }
+
     fn get_time(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let time = ob.extract::<NaiveTime>()?;
 
@@ -632,6 +677,18 @@ pub(crate) fn py_object_to_any_value(
         // note: datetime must be checked *before* date
         // (as python datetime is an instance of date)
         else if PyDateTime::type_check(ob) {
+            let py_type = ob.get_type();
+            if py_type.is(py.get_type::<PyDateTime>()) {
+                return Ok(get_datetime as InitFn);
+            }
+            if py_type.name()?.to_str()? == "Timestamp" {
+                let module = py_type
+                    .getattr(intern!(py, "__module__"))?
+                    .extract::<String>()?;
+                if module == "pandas" || module.starts_with("pandas.") {
+                    return Ok(get_timestamp as InitFn);
+                }
+            }
             Ok(get_datetime as InitFn)
         } else if PyDate::type_check(ob) {
             Ok(get_date as InitFn)

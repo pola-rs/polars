@@ -235,7 +235,7 @@ def sequence_to_pyseries(
     # temporal branch
     if issubclass(python_dtype, tuple(py_temporal_types)):
         if dtype is None:
-            dtype = parse_into_dtype(python_dtype)  # construct from integer
+            dtype = parse_into_dtype(python_dtype).base_type()
         elif dtype in py_temporal_types:
             dtype = parse_into_dtype(dtype)
 
