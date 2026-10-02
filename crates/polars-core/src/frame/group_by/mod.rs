@@ -420,8 +420,8 @@ impl<'a> GroupBy<'a> {
     where
         F: FnMut(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
-        if self.df.height() == 0 {
-            // return empty dataframe with correct schema
+        // Rolling and dynamic group-bys can have rows but no windows.
+        if self.df.height() == 0 || self.get_groups().is_empty() {
             if let Some(schema) = schema {
                 return Ok(DataFrame::empty_with_arc_schema(schema.clone()));
             }
