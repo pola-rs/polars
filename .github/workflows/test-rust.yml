@@ -65,6 +65,7 @@ jobs:
           -p polars-plan
           -p polars-row
           -p polars-sql
+          -p polars-stream
           -p polars-time
           -p polars-utils
 
@@ -83,6 +84,7 @@ jobs:
           -p polars-plan
           -p polars-row
           -p polars-sql
+          -p polars-stream
           -p polars-time
           -p polars-utils
 
