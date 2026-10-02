@@ -24,7 +24,7 @@ use super::in_memory_source::InMemorySourceNode;
 /// Only `num_pipelines` partitions are gathered, sorted and evaluated at the same time. More
 /// partitions make each one smaller, which lowers the memory used for that work. The input and the
 /// result are still held in memory in full.
-const PARTITIONS_PER_PIPELINE: usize = 16;
+pub(super) const PARTITIONS_PER_PIPELINE: usize = 16;
 
 /// How the node outputs its rows.
 #[derive(Clone, Copy, PartialEq, Eq)]

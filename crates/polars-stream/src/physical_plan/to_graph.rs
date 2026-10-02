@@ -29,6 +29,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use recursive::recursive;
 use slotmap::{DenseSlotMap, SecondaryMap};
 
+use super::scalar_window::scalar_window_params;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
@@ -602,9 +603,32 @@ fn to_graph_rec<'a>(
             exprs,
             ordered_eval,
             maintain_order,
+            scalar,
         } => {
             let input_schema = input.output_schema(ctx.phys_sm).clone();
             let output_schema = node.output_schema(0).clone();
+            if *scalar {
+                let params = scalar_window_params(
+                    partition_by,
+                    exprs,
+                    &input_schema,
+                    output_schema,
+                    *maintain_order,
+                    ctx.expr_arena,
+                )?;
+                let input_key = to_graph_rec(input.node, ctx)?;
+                let num_pipelines = ctx.num_pipelines;
+                return Ok(ctx.add_node_with_metrics(
+                    |registry| {
+                        nodes::scalar_window::ScalarWindowNode::new(
+                            Arc::new(params),
+                            num_pipelines,
+                            registry.task_metrics(),
+                        )
+                    },
+                    [(input_key, input.port)],
+                ));
+            }
             let window_exprs = exprs
                 .iter()
                 .map(|e| {

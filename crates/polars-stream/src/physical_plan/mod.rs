@@ -38,6 +38,7 @@ mod io;
 mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
+mod scalar_window;
 mod split_select;
 mod to_description;
 mod to_graph;
@@ -279,6 +280,8 @@ pub enum PhysNodeKind {
         /// Evaluate the rows of a partition in input order.
         ordered_eval: bool,
         maintain_order: bool,
+        /// Reduce each window to one value per partition, see `nodes::scalar_window`.
+        scalar: bool,
     },
 
     Map {

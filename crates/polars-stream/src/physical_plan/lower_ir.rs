@@ -41,6 +41,7 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 use slotmap::{DenseSlotMap, SecondaryMap};
 
 use super::lower_expr::{build_hstack_stream, build_sort_stream};
+use super::scalar_window::is_reducible_windows;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 #[cfg(feature = "python")]
 use crate::nodes::io_sources;
@@ -298,9 +299,9 @@ fn lower_ir_inner(
             schema,
             maintain_order,
             ordered_eval,
-        } if !is_scalar_window(exprs, order_by.is_some(), expr_arena)
+        } if
             // Objects cannot be hashed or gathered by the window node.
-            && !schema.iter_values().any(|dtype| dtype.contains_objects()) =>
+            !schema.iter_values().any(|dtype| dtype.contains_objects()) =>
         {
             // The node partitions and sorts on the keys of the IR, not on those of the exprs.
             debug_assert!(window_exprs_match_keys(
@@ -316,6 +317,13 @@ fn lower_ir_inner(
             let ordered_eval = *ordered_eval;
             let maintain_order = *maintain_order;
             let phys_input = lower_ir!(input)?;
+            let scalar =
+                is_reducible_windows(&exprs, phys_input.output_schema(phys_sm), expr_arena);
+            if !scalar && is_scalar_window(&exprs, order_by.is_some(), expr_arena) {
+                return build_hstack_stream(
+                    phys_input, &exprs, expr_arena, phys_sm, expr_cache, ctx,
+                );
+            }
             PhysNodeKind::Window {
                 input: phys_input,
                 partition_by,
@@ -323,6 +331,7 @@ fn lower_ir_inner(
                 exprs,
                 ordered_eval,
                 maintain_order,
+                scalar,
             }
         },
 
