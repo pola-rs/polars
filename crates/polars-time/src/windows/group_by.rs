@@ -987,6 +987,10 @@ pub struct GroupByDynamicWindower {
     past_range: bool,
 
     num_seen: IdxSize,
+    /// Window `k` starts at `origin + every * k`.
+    origin: i64,
+    /// Index and start of the next window that may open.
+    next_k: i64,
     next_lower_bound: i64,
     active: VecDeque<ActiveDynWindow>,
 
@@ -1028,6 +1032,8 @@ impl GroupByDynamicWindower {
             past_range: false,
 
             num_seen: 0,
+            origin: 0,
+            next_k: 0,
             next_lower_bound: 0,
             active: Default::default(),
             prev_upper_bound: None,
@@ -1035,31 +1041,38 @@ impl GroupByDynamicWindower {
         }
     }
 
-    pub fn find_first_window_around(
-        &self,
-        mut lower_bound: i64,
-        target: i64,
-    ) -> PolarsResult<Result<(i64, i64), i64>> {
+    fn window_start(&self, k: i64) -> PolarsResult<i64> {
+        (self.every * k).add(self.tu, self.origin, self.tz.as_ref())
+    }
+
+    /// Find the first window from window `k` on whose upper bound is not behind `target`.
+    /// Returns its index and bounds if it contains `target`, otherwise its index and start.
+    fn find_first_window_around(&self, mut k: i64, target: i64) -> PolarsResult<FirstWindowAround> {
+        let mut lower_bound = self.window_start(k)?;
         let mut upper_bound = self.period.add(self.tu, lower_bound, self.tz.as_ref())?;
         while !is_below_upper_bound(target, upper_bound, self.closed) {
             let gap = target - lower_bound;
             let every = self.every.nte_duration(self.tu);
             let period = self.period.nte_duration(self.tu);
             let nth = if gap > every + period {
-                ((gap - period) as usize) / (every as usize)
+                (gap - period) / every
             } else {
                 1
             };
 
-            let nth: i64 = nth.try_into().unwrap();
-            lower_bound = (self.every * nth).add(self.tu, lower_bound, self.tz.as_ref())?;
+            k += nth;
+            lower_bound = self.window_start(k)?;
             upper_bound = self.period.add(self.tu, lower_bound, self.tz.as_ref())?;
         }
 
         if is_above_lower_bound(target, lower_bound, self.closed) {
-            Ok(Ok((lower_bound, upper_bound)))
+            Ok(FirstWindowAround::ContainingTarget {
+                k,
+                lower_bound,
+                upper_bound,
+            })
         } else {
-            Ok(Err(lower_bound))
+            Ok(FirstWindowAround::NotContainingTarget { k, lower_bound })
         }
     }
 
@@ -1089,7 +1102,9 @@ impl GroupByDynamicWindower {
 
         if self.num_seen == 0 {
             debug_assert!(self.active.is_empty());
-            self.next_lower_bound = self.start_lower_bound(time[0])?;
+            self.origin = self.start_lower_bound(time[0])?;
+            self.next_k = 0;
+            self.next_lower_bound = self.origin;
         }
 
         for &t in time {
@@ -1134,10 +1149,14 @@ impl GroupByDynamicWindower {
             }
 
             while !self.past_range && is_above_lower_bound(t, self.next_lower_bound, self.closed) {
-                match self.find_first_window_around(self.next_lower_bound, t)? {
-                    Ok((lower_bound, upper_bound)) => {
-                        self.next_lower_bound =
-                            self.every.add(self.tu, lower_bound, self.tz.as_ref())?;
+                match self.find_first_window_around(self.next_k, t)? {
+                    FirstWindowAround::ContainingTarget {
+                        k,
+                        lower_bound,
+                        upper_bound,
+                    } => {
+                        self.next_k = k + 1;
+                        self.next_lower_bound = self.window_start(self.next_k)?;
                         if let Some(placement) = &self.placement {
                             if placement.start_range.is_past(lower_bound) {
                                 self.past_range = true;
@@ -1157,7 +1176,8 @@ impl GroupByDynamicWindower {
                             upper_bound,
                         });
                     },
-                    Err(lower_bound) => {
+                    FirstWindowAround::NotContainingTarget { k, lower_bound } => {
+                        self.next_k = k;
                         self.next_lower_bound = lower_bound;
                         break;
                     },
@@ -1220,6 +1240,8 @@ impl GroupByDynamicWindower {
             );
         }
 
+        self.origin = 0;
+        self.next_k = 0;
         self.next_lower_bound = 0;
         self.num_seen = 0;
         self.prev_upper_bound = None;
@@ -1234,6 +1256,18 @@ impl GroupByDynamicWindower {
     pub fn time_unit(&self) -> TimeUnit {
         self.tu
     }
+}
+
+enum FirstWindowAround {
+    ContainingTarget {
+        k: i64,
+        lower_bound: i64,
+        upper_bound: i64,
+    },
+    NotContainingTarget {
+        k: i64,
+        lower_bound: i64,
+    },
 }
 
 #[cfg(test)]
