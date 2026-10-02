@@ -9,6 +9,7 @@ use polars_core::runtime::ASYNC;
 use polars_core::utils::polars_arrow::io::ipc::read::{BlockReader, FileMetadata};
 use polars_error::constants::LENGTH_LIMIT_MSG;
 use polars_error::{PolarsResult, polars_err};
+use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_utils::IdxSize;
@@ -37,14 +38,25 @@ pub(super) struct RecordBatchDataFetcher {
     pub(super) subset_projection_idxs: Option<Arc<[usize]>>,
     pub(super) pre_slice: Option<Slice>,
 
-    pub(super) prefetch_send: Sender<(
-        tokio_handle_ext::AbortOnDropHandle<PolarsResult<RecordBatchData>>,
-        Option<PipelinePermit>,
-    )>,
+    pub(super) prefetch_send: Sender<RecordBatchFetchHandle>,
     pub(super) base_rb_metadata_fetch_count: u64,
 
     pub(super) pipeline_budget: PipelineBudget,
     pub(super) rb_prefetch_current_all_spawned: Option<WaitToken>,
+}
+
+/// A spawned fetch of one or more record batches, with the budget permit for its bytes.
+pub(super) type RecordBatchFetchHandle = (
+    tokio_handle_ext::AbortOnDropHandle<PolarsResult<Vec<RecordBatchData>>>,
+    Option<PipelinePermit>,
+);
+
+/// The byte range of one record batch to fetch.
+struct RecordBatchFetch {
+    record_batch_idx: usize,
+    num_rows: Option<IdxSize>,
+    row_offset: Option<IdxSize>,
+    range: Range<usize>,
 }
 
 impl RecordBatchDataFetcher {
@@ -68,6 +80,15 @@ impl RecordBatchDataFetcher {
 
         let global_slice = pre_slice.clone().map(Range::<usize>::from);
         let mut rb_fetch_count: u64 = 0;
+
+        // Fetch consecutive record batches from the cloud together, as the Parquet reader does
+        // per row group, so `get_ranges` can coalesce them into fewer requests.
+        let group_byte_limit = match byte_source.as_ref() {
+            DynByteSource::Buffer(_) | DynByteSource::File(_) => 0,
+            _ => FetchConfig::random_access().chunk_size,
+        };
+        let mut group: Vec<RecordBatchFetch> = Vec::new();
+        let mut group_bytes = 0;
 
         for record_batch_idx in 0..file_metadata.blocks.len() {
             let mut num_rows_this_rb: Option<IdxSize> = None;
@@ -128,65 +149,42 @@ impl RecordBatchDataFetcher {
                 ..usize::checked_add(block.offset as _, fetch_length)
                     .ok_or_else(|| polars_err!(ComputeError: "IPC block range overflows usize"))?;
 
-            let fetch_permit = match rb_fetch {
-                RbFetch::All | RbFetch::Metadata => {
-                    Some(pipeline_budget.acquire(fetch_length).await)
-                },
-                RbFetch::None => None,
-            };
-
-            let current_byte_source = byte_source.clone();
-
-            let fetch_handle = ASYNC.spawn(async move {
-                let fetched_bytes = if range.is_empty() {
-                    Buffer::new()
-                } else if let DynByteSource::Buffer(mem_slice) = current_byte_source.as_ref() {
-                    let slice = mem_slice.0.as_ref();
-
-                    if !std::ptr::eq(
-                        memory_prefetch_func as *const (),
-                        polars_utils::mem::prefetch::no_prefetch as *const (),
-                    ) {
-                        debug_assert!(range.end <= slice.len());
-                        memory_prefetch_func(unsafe { slice.get_unchecked(range.clone()) })
-                    }
-
-                    mem_slice.0.clone().sliced(range)
-                } else {
-                    // @NOTE. Performance can be optimized by grouping requests and downloading
-                    // through `get_ranges()`.
-                    current_byte_source.get_range(range).await?
-                };
-
-                // Extract the length (i.e., nr of rows) at the earliest possible opportunity.
-                let num_rows = if let Some(num_rows_this_rb) = num_rows_this_rb {
-                    num_rows_this_rb
-                } else {
-                    let mut reader = BlockReader::new(Cursor::new(fetched_bytes.as_ref()));
-                    let mut message_scratch = vec![];
-                    reader
-                        .record_batch_num_rows(&mut message_scratch)?
-                        .try_into()
-                        .map_err(|_| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?
-                };
-
-                PolarsResult::Ok(RecordBatchData {
-                    fetched_bytes,
-                    record_batch_idx,
-                    num_rows,
-                    row_offset,
-                })
-            });
-
-            let fetch_handle = tokio_handle_ext::AbortOnDropHandle(fetch_handle);
-
-            if prefetch_send
-                .send((fetch_handle, fetch_permit))
+            if !group.is_empty() && group_bytes + range.len() > group_byte_limit {
+                let group = std::mem::take(&mut group);
+                let group_bytes = std::mem::take(&mut group_bytes);
+                if !spawn_fetch(
+                    group,
+                    group_bytes,
+                    &byte_source,
+                    memory_prefetch_func,
+                    &pipeline_budget,
+                    &prefetch_send,
+                )
                 .await
-                .is_err()
-            {
-                break;
+                {
+                    break;
+                }
             }
+
+            group_bytes += range.len();
+            group.push(RecordBatchFetch {
+                record_batch_idx,
+                num_rows: num_rows_this_rb,
+                row_offset,
+                range,
+            });
+        }
+
+        if !group.is_empty() {
+            spawn_fetch(
+                group,
+                group_bytes,
+                &byte_source,
+                memory_prefetch_func,
+                &pipeline_budget,
+                &prefetch_send,
+            )
+            .await;
         }
 
         drop(rb_prefetch_current_all_spawned);
@@ -206,4 +204,107 @@ impl RecordBatchDataFetcher {
 
         Ok(())
     }
+}
+
+/// Spawns the fetch of a group of record batches. Returns `false` if the receiver is gone.
+async fn spawn_fetch(
+    group: Vec<RecordBatchFetch>,
+    group_bytes: usize,
+    byte_source: &Arc<DynByteSource>,
+    memory_prefetch_func: fn(&[u8]) -> (),
+    pipeline_budget: &PipelineBudget,
+    prefetch_send: &Sender<RecordBatchFetchHandle>,
+) -> bool {
+    let fetch_permit = if group_bytes > 0 {
+        Some(pipeline_budget.acquire(group_bytes).await)
+    } else {
+        None
+    };
+
+    let byte_source = byte_source.clone();
+    let fetch_handle = ASYNC.spawn(async move {
+        fetch_record_batches(&byte_source, memory_prefetch_func, group).await
+    });
+    let fetch_handle = tokio_handle_ext::AbortOnDropHandle(fetch_handle);
+
+    prefetch_send
+        .send((fetch_handle, fetch_permit))
+        .await
+        .is_ok()
+}
+
+async fn fetch_record_batches(
+    byte_source: &DynByteSource,
+    memory_prefetch_func: fn(&[u8]) -> (),
+    group: Vec<RecordBatchFetch>,
+) -> PolarsResult<Vec<RecordBatchData>> {
+    let fetched: Vec<Buffer<u8>> = if let DynByteSource::Buffer(mem_slice) = byte_source {
+        let slice = mem_slice.0.as_ref();
+
+        group
+            .iter()
+            .map(|fetch| {
+                let range = fetch.range.clone();
+
+                if !range.is_empty()
+                    && !std::ptr::eq(
+                        memory_prefetch_func as *const (),
+                        polars_utils::mem::prefetch::no_prefetch as *const (),
+                    )
+                {
+                    debug_assert!(range.end <= slice.len());
+                    memory_prefetch_func(unsafe { slice.get_unchecked(range.clone()) })
+                }
+
+                mem_slice.0.clone().sliced(range)
+            })
+            .collect()
+    } else {
+        let mut ranges: Vec<Range<usize>> = group
+            .iter()
+            .map(|fetch| fetch.range.clone())
+            .filter(|range| !range.is_empty())
+            .collect();
+        let mut bytes_map = if ranges.is_empty() {
+            Default::default()
+        } else {
+            byte_source.get_ranges(&mut ranges).await?
+        };
+
+        group
+            .iter()
+            .map(|fetch| {
+                if fetch.range.is_empty() {
+                    Buffer::new()
+                } else {
+                    bytes_map.remove(&fetch.range.start).unwrap()
+                }
+            })
+            .collect()
+    };
+
+    group
+        .into_iter()
+        .zip(fetched)
+        .map(|(fetch, fetched_bytes)| {
+            // Extract the length (i.e., nr of rows) at the earliest possible opportunity.
+            let num_rows = if let Some(num_rows) = fetch.num_rows {
+                num_rows
+            } else {
+                let mut reader = BlockReader::new(Cursor::new(fetched_bytes.as_ref()));
+                let mut message_scratch = vec![];
+                reader
+                    .record_batch_num_rows(&mut message_scratch)?
+                    .try_into()
+                    .map_err(|_| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?
+            };
+
+            Ok(RecordBatchData {
+                fetched_bytes,
+                record_batch_idx: fetch.record_batch_idx,
+                num_rows,
+                row_offset: fetch.row_offset,
+            })
+        })
+        .collect()
 }

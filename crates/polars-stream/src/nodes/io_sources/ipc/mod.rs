@@ -472,8 +472,21 @@ impl FileReader for IpcFileReader {
             let metrics = task_metrics.as_deref();
             let mut current_row_offset: IdxSize = 0;
 
-            while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
-                let mut record_batch_data = prefetch_task.await.unwrap()?;
+            // Record batches of the current fetch, which share its budget permit.
+            let mut fetched = Vec::new().into_iter();
+            let mut permit = None;
+
+            loop {
+                let Some(mut record_batch_data) = fetched.next() else {
+                    // Release the permit before waiting, the fetcher may need the budget.
+                    drop(permit.take());
+                    let Some((prefetch_task, fetch_permit)) = prefetch_recv.recv().await else {
+                        break;
+                    };
+                    fetched = prefetch_task.await.unwrap()?.into_iter();
+                    permit = fetch_permit.map(Arc::new);
+                    continue;
+                };
 
                 match record_batch_data.row_offset {
                     Some(row_offset) => current_row_offset = row_offset,
@@ -499,6 +512,7 @@ impl FileReader for IpcFileReader {
                 match record_batch_position {
                     SplitSlicePosition::Before => continue,
                     SplitSlicePosition::Overlapping(rows_offset, rows_len) => {
+                        let permit = permit.clone();
                         let record_batch_decoder = record_batch_decoder.clone();
                         let decode_fut = executor::spawn(TaskPriority::High, metrics, async move {
                             record_batch_decoder
