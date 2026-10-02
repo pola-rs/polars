@@ -171,6 +171,7 @@ pub fn optimize(
                     ir_arena,
                     expr_arena,
                     polars_config::config().allow_nested_cspe(),
+                    !opt_flags.streaming(),
                 );
             }
         });
@@ -313,8 +314,7 @@ pub fn optimize(
         })?;
     }
 
-    let streaming_windows = opt_flags.streaming() && !opt_flags.gpu();
-    if streaming_windows {
+    if opt_flags.streaming() && !opt_flags.gpu() {
         extract_window::extract_windows(root, ir_arena, expr_arena);
     }
 
@@ -330,12 +330,7 @@ pub fn optimize(
                         });
                     }
                 }
-                simplify_ordering::simplify_and_fetch_orderings(
-                    &roots,
-                    ir_arena,
-                    expr_arena,
-                    streaming_windows,
-                );
+                simplify_ordering::simplify_and_fetch_orderings(&roots, ir_arena, expr_arena);
             },
             ir => {
                 let mut tmp_top = root;
@@ -345,12 +340,7 @@ pub fn optimize(
                         payload: SinkTypeIR::Memory,
                     });
                 }
-                simplify_ordering::simplify_and_fetch_orderings(
-                    &[tmp_top],
-                    ir_arena,
-                    expr_arena,
-                    streaming_windows,
-                );
+                simplify_ordering::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena);
             },
         }
     }

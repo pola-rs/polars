@@ -603,3 +603,38 @@ def test_streaming_group_by_hot_table_growth(
     out = q.collect(engine="streaming")
     assert "[group-by]: hot table" in capfd.readouterr().err
     assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    "keys",
+    [
+        [pl.col("a")],
+        [pl.col("s")],
+        [pl.col("a"), pl.col("b")],
+        [pl.struct("a", "s")],
+    ],
+)
+def test_streaming_group_by_sorted_runs(
+    keys: list[pl.Expr], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "16")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "16")
+
+    # Runs of equal keys, with far more keys than the hot table holds.
+    n = 2_000
+    a = np.repeat(np.arange(n // 4), 4)
+    df = pl.DataFrame({"a": a, "v": np.arange(n)}).with_columns(
+        pl.when(pl.col("a") % 10 != 0).then(pl.col("a")).alias("a"),
+        b=pl.col("a") % 7,
+        s=pl.col("a").cast(pl.String),
+    )
+    q = (
+        df.lazy()
+        .group_by(keys)
+        .agg(pl.col("v").sum(), pl.col("v").min().alias("min"), pl.len())
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )

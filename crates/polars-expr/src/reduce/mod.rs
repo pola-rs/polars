@@ -27,6 +27,10 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
+#[cfg(feature = "approx_quantile")]
+pub use approx_quantile::{
+    new_approx_quantile_merge_reduction, new_approx_quantile_state_reduction,
+};
 pub use convert::into_reduction;
 pub use min_max::{new_max_reduction, new_min_reduction};
 use polars_arrow::array::{Array, PrimitiveArray, StaticArray};

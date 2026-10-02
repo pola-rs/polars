@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import datetime as dt
 import io
 import itertools
 import re
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.dataset as pad
@@ -11,6 +14,9 @@ import polars as pl
 from polars.exceptions import ArgumentRemovedError
 from polars.lazyframe.opt_flags import QueryOptFlags
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_is_null_followed_by_all() -> None:
@@ -163,6 +169,56 @@ def test_is_not_null_followed_by_sum() -> None:
     expected_df = pl.DataFrame({"val": [0]}, schema={"val": pl.get_index_type()})
     result_df = lf.select(pl.col("val").is_not_null().sum()).collect()
     assert_frame_equal(expected_df, result_df)
+
+
+def _count_guarded_sum(e: pl.Expr) -> pl.Expr:
+    return pl.when(e.count() > 0).then(e.sum()).otherwise(None)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Int8,
+        pl.Int64,
+        pl.UInt32,
+        pl.Float64,
+        pl.Decimal(10, 2),
+        pl.Boolean,
+        pl.Duration("ms"),
+    ],
+)
+def test_count_guarded_sum(engine: EngineType, dtype: pl.DataType) -> None:
+    v = pl.col("v")
+    lf = pl.LazyFrame(
+        {"g": [1, 1, 2, 2, 3], "v": [1, None, None, None, 0]}
+    ).with_columns(v.cast(dtype))
+
+    for q in [
+        lf.group_by("g").agg(_count_guarded_sum(v)),
+        lf.group_by("g").agg(_count_guarded_sum(v.filter(pl.col("g") == 1))),
+        lf.select(_count_guarded_sum(v).over("g")),
+        lf.select(_count_guarded_sum(v)),
+        lf.filter(pl.col("g") == 2).select(_count_guarded_sum(v)),
+        lf.clear().select(_count_guarded_sum(v)),
+    ]:
+        no_simplify = QueryOptFlags(simplify_expression=False)
+        assert "sum(null_on_empty=true)" in q.explain()
+        assert "null_on_empty" not in q.explain(optimizations=no_simplify)
+        expected = q.collect(optimizations=no_simplify)
+        assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+
+def test_count_guarded_sum_not_rewritten() -> None:
+    lf = pl.LazyFrame({"v": [1, None], "w": [1, 2]})
+    v, w = pl.col("v"), pl.col("w")
+    for e in [
+        pl.when(v.count() > 0).then(w.sum()).otherwise(None),
+        pl.when(v.count() > 1).then(v.sum()).otherwise(None),
+        pl.when(v.count() > 0).then(v.sum()).otherwise(0),
+        pl.when(v.len() > 0).then(v.sum()).otherwise(None),
+    ]:
+        assert "null_on_empty" not in lf.select(e).explain()
 
 
 def test_drop_nulls_followed_by_len() -> None:

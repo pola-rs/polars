@@ -114,6 +114,14 @@ def scan_iceberg(
     -------
     LazyFrame
 
+    Notes
+    -----
+    Iceberg manifest lists and manifests are cached in memory for the lifetime of
+    the process. Entries are only shared between scans with the same explicit storage
+    properties, and scans through REST catalogs are not cached. The cache assumes that
+    credentials taken from the environment, such as environment variables or an instance
+    role, stay the same for the lifetime of the process.
+
     Examples
     --------
     Creates a scan for an Iceberg table from local filesystem, or object store.

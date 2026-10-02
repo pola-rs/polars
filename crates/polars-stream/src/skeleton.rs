@@ -14,7 +14,7 @@ use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::{AExpr, ir_plan_to_description};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::relaxed_cell::RelaxedCell;
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::{DenseSlotMap, SecondaryMap};
 
 use crate::graph::{Graph, GraphNodeKey};
 use crate::metrics::GraphMetrics;
@@ -68,8 +68,12 @@ impl StreamingQuery {
         expr_arena: &Arena<AExpr>,
     ) -> PlannedQuery {
         let ir = ir_plan_to_description(&[ir_node], ir_arena, expr_arena);
-        let physical =
-            physical_plan_to_description(&[self.root_phys_node], &self.phys_sm, expr_arena);
+        let physical = physical_plan_to_description(
+            &[self.root_phys_node],
+            &self.phys_sm,
+            &self.phys_to_ir,
+            expr_arena,
+        );
         let mut query = PlannedQuery::new(ir).with_physical(physical);
         if let Some(snapshotter) = StreamingQueryMetricsSnapshotter::from_query(self) {
             query = query.with_metrics_snapshotter(snapshotter);
@@ -84,14 +88,14 @@ pub fn visualize_physical_plan(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<String> {
-    let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
     let sortedness = IRPlanSorted::resolve(node, ir_arena, expr_arena);
 
     let ctx = StreamingLowerIRContext {
         prepare_visualization: true,
         sortedness: &sortedness,
     };
-    let root_phys_node =
+    let mut phys_sm = DenseSlotMap::with_capacity_and_key(ir_arena.len());
+    let (root_phys_node, _phys_to_ir) =
         crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, &mut phys_sm, ctx)?;
 
     let out = crate::physical_plan::visualize_plan(root_phys_node, &phys_sm, expr_arena);
@@ -103,7 +107,8 @@ pub struct StreamingQuery {
     top_ir: IR,
     pub graph: Graph,
     pub root_phys_node: PhysNodeKey,
-    pub phys_sm: SlotMap<PhysNodeKey, PhysNode>,
+    pub phys_sm: DenseSlotMap<PhysNodeKey, PhysNode>,
+    pub phys_to_ir: SecondaryMap<PhysNodeKey, Node>,
     pub phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     pub metrics: Option<Arc<Mutex<GraphMetrics>>>,
 }
@@ -142,13 +147,13 @@ impl StreamingQuery {
             let visualization = plan.display_dot().to_string();
             std::fs::write(visual_path, visualization).unwrap();
         }
-        let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
         let sortedness = IRPlanSorted::resolve(node, ir_arena, expr_arena);
         let ctx = StreamingLowerIRContext {
             prepare_visualization: cfg_prepare_visualization_data(),
             sortedness: &sortedness,
         };
-        let root_phys_node = crate::physical_plan::build_physical_plan(
+        let mut phys_sm = DenseSlotMap::with_capacity_and_key(ir_arena.len());
+        let (root_phys_node, phys_to_ir) = crate::physical_plan::build_physical_plan(
             node,
             ir_arena,
             expr_arena,
@@ -165,7 +170,6 @@ impl StreamingQuery {
             || std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
             || observe
         {
-            polars_async::executor::track_task_metrics(true);
             Some(Arc::default())
         } else {
             None
@@ -185,6 +189,7 @@ impl StreamingQuery {
             graph,
             root_phys_node,
             phys_sm,
+            phys_to_ir,
             phys_to_graph,
             metrics,
         };
@@ -198,6 +203,7 @@ impl StreamingQuery {
             mut graph,
             root_phys_node,
             phys_sm,
+            phys_to_ir: _,
             phys_to_graph,
             metrics,
         } = self;

@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use components::row_deletions::ExternalFilterMask;
-use polars_async::executor::AbortOnDropHandle;
+use polars_async::executor::{AbortOnDropHandle, TaskMetricAggregator};
 use polars_async::primitives::connector;
 use polars_async::primitives::wait_group::WaitToken;
 use polars_core::prelude::PlHashMap;
@@ -91,6 +91,7 @@ pub(super) struct StartReaderArgsConstant {
     /// Precomputed last-morsel split factor; see `BeginReadArgs::last_morsel_pipelines`.
     pub(super) last_morsel_pipelines: usize,
     pub(super) verbose: bool,
+    pub(super) task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 pub(super) struct StartReaderArgsPerFile {

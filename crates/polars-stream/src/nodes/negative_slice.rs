@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 
@@ -30,13 +31,17 @@ pub struct NegativeSliceNode {
 }
 
 impl NegativeSliceNode {
-    pub fn new(slice_offset: i64, length: usize) -> Self {
+    pub fn new(
+        slice_offset: i64,
+        length: usize,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         assert!(slice_offset < 0);
         Self {
             state: NegativeSliceState::Buffering(Buffer::default()),
             slice_offset,
             length,
-            spill_ctx: MostRecentSpillContext::new("negative-slice".into()),
+            spill_ctx: MostRecentSpillContext::new("negative-slice".into(), task_metrics),
         }
     }
 }

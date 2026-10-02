@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use polars_arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
-use polars_async::executor::{self, JoinHandle, TaskPriority};
+use polars_async::executor::{self, JoinHandle, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_buffer::Buffer;
 use polars_config::config;
@@ -15,7 +15,7 @@ use polars_core::utils::polars_arrow::io::ipc::read::{
     BlockReader, FileMetadata, ProjectionInfo, prepare_projection, read_file_metadata,
 };
 use polars_error::constants::LENGTH_LIMIT_MSG;
-use polars_error::{ErrString, PolarsError, PolarsResult, polars_err, to_compute_err};
+use polars_error::{ErrString, PolarsError, PolarsResult, polars_err, polars_warn};
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
 use polars_io::ipc::pl_ipc_metadata::{POLARS_IPC_METADATA_KEY, PlIpcMetadata};
@@ -64,6 +64,7 @@ struct IpcFileReader {
     byte_source_builder: DynByteSourceBuilder,
     record_batch_prefetch_sync: RecordBatchPrefetchSync,
     io_metrics: OptIOMetrics,
+    task_metrics: Option<Arc<TaskMetricAggregator>>,
     verbose: bool,
     init_data: Option<InitializedState>,
     checked: UnsafeBool,
@@ -151,14 +152,19 @@ impl FileReader for IpcFileReader {
             Arc::new(Some(dictionaries))
         };
 
-        let file_pl_metadata = file_metadata
-            .custom_metadata
-            .as_ref()
-            .and_then(|md| md.get(POLARS_IPC_METADATA_KEY))
-            .map(|md_str| serde_json::from_str::<PlIpcMetadata>(md_str))
-            .transpose()
-            .map_err(to_compute_err)?
-            .map(Arc::new);
+        let file_pl_metadata = PlIpcMetadata::from_ipc_footer(&file_metadata).map(Arc::new);
+
+        if file_pl_metadata.is_none()
+            && file_metadata
+                .custom_metadata
+                .as_ref()
+                .is_some_and(|md| md.contains_key(POLARS_IPC_METADATA_KEY))
+        {
+            polars_warn!(
+                "ignoring unusable Polars metadata in IPC file, \
+                reading row counts from the record batches instead"
+            );
+        }
 
         self.init_data = Some(InitializedState {
             file_metadata,
@@ -459,8 +465,11 @@ impl FileReader for IpcFileReader {
             record_batch_data_fetcher.run().await
         }));
 
+        let task_metrics = self.task_metrics.clone();
+
         // Receives fetched record batches and synchronizes row position, then calls decode.
         let decode_dispatch_task = AbortOnDropHandle(ASYNC.spawn(async move {
+            let metrics = task_metrics.as_deref();
             let mut current_row_offset: IdxSize = 0;
 
             while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
@@ -491,7 +500,7 @@ impl FileReader for IpcFileReader {
                     SplitSlicePosition::Before => continue,
                     SplitSlicePosition::Overlapping(rows_offset, rows_len) => {
                         let record_batch_decoder = record_batch_decoder.clone();
-                        let decode_fut = executor::spawn(TaskPriority::High, async move {
+                        let decode_fut = executor::spawn(TaskPriority::High, metrics, async move {
                             record_batch_decoder
                                 .record_batch_data_to_df(record_batch_data, rows_offset, rows_len)
                                 .await
@@ -507,13 +516,15 @@ impl FileReader for IpcFileReader {
             PolarsResult::Ok(())
         }));
 
+        let task_metrics = self.task_metrics.as_deref();
+
         // Task: Distributor.
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
         //
         // `last_morsel_pipelines` is precomputed at the multi-scan layer so the split budget is
         // shared across files in the scan.
-        let distribute_task = executor::spawn(TaskPriority::High, async move {
+        let distribute_task = executor::spawn(TaskPriority::High, task_metrics, async move {
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
@@ -604,7 +615,9 @@ impl FileReader for IpcFileReader {
 
         Ok((
             morsel_recv,
-            executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
+            executor::spawn(TaskPriority::Low, task_metrics, async move {
+                handle.await.unwrap()
+            }),
         ))
     }
 }

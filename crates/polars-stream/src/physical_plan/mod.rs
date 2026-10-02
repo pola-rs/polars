@@ -38,6 +38,7 @@ mod io;
 mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
+mod split_select;
 mod to_description;
 mod to_graph;
 
@@ -51,7 +52,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use polars_utils::{UnitVec, unitvec};
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::{DenseSlotMap, SecondaryMap};
 pub use to_description::physical_plan_to_description;
 pub use to_graph::physical_plan_to_graph;
 
@@ -135,13 +136,16 @@ impl PhysStream {
         Self { node, port: 0 }
     }
 
-    pub fn output_schema<'sm>(&self, sm: &'sm SlotMap<PhysNodeKey, PhysNode>) -> &'sm Arc<Schema> {
+    pub fn output_schema<'sm>(
+        &self,
+        sm: &'sm DenseSlotMap<PhysNodeKey, PhysNode>,
+    ) -> &'sm Arc<Schema> {
         sm[self.node].output_schema(self.port)
     }
 
     pub fn output_schema_mut<'sm>(
         &self,
-        sm: &'sm mut SlotMap<PhysNodeKey, PhysNode>,
+        sm: &'sm mut DenseSlotMap<PhysNodeKey, PhysNode>,
     ) -> &'sm mut Arc<Schema> {
         sm[self.node].output_schema_mut(self.port)
     }
@@ -611,7 +615,7 @@ pub enum PhysNodeKind {
 
 fn visit_node_inputs_mut(
     roots: Vec<PhysNodeKey>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     visit: impl FnMut(&mut PhysStream),
 ) {
     _visit_nodes_impl(roots, phys_sm, |_, _| (), visit)
@@ -619,16 +623,16 @@ fn visit_node_inputs_mut(
 
 fn visit_nodes_mut(
     roots: Vec<PhysNodeKey>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
-    visit: impl FnMut(PhysNodeKey, &mut SlotMap<PhysNodeKey, PhysNode>),
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    visit: impl FnMut(PhysNodeKey, &mut DenseSlotMap<PhysNodeKey, PhysNode>),
 ) {
     _visit_nodes_impl(roots, phys_sm, visit, |_| ())
 }
 
 fn _visit_nodes_impl(
     roots: Vec<PhysNodeKey>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
-    mut visit_node: impl FnMut(PhysNodeKey, &mut SlotMap<PhysNodeKey, PhysNode>),
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    mut visit_node: impl FnMut(PhysNodeKey, &mut DenseSlotMap<PhysNodeKey, PhysNode>),
     mut visit_input: impl FnMut(&mut PhysStream),
 ) {
     let mut to_visit = roots;
@@ -861,7 +865,11 @@ fn _visit_nodes_impl(
     }
 }
 
-fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+fn insert_multiplexers(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+) {
     let mut refcount: PlIndexMap<_, usize> = PlIndexMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(*i).or_insert(0) += 1;
@@ -876,6 +884,8 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
                 (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
                 PhysNodeKind::Multiplexer { input: stream },
             ));
+            let source_ir_node = phys_to_ir[stream.node];
+            phys_to_ir.insert(multiplexer_node, source_ir_node);
             (stream, PhysStream::first(multiplexer_node))
         })
         .collect();
@@ -888,25 +898,33 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
     });
 }
 
-fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+fn split_multiplexers(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+) {
     let mut refcount: SecondaryMap<PhysNodeKey, usize> = SecondaryMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(i.node).unwrap().or_insert(0) += 1;
     });
 
-    let mut split_map: SecondaryMap<PhysNodeKey, PhysNode> = SecondaryMap::new();
+    let mut split_map: SecondaryMap<PhysNodeKey, (PhysNode, Node)> = SecondaryMap::new();
     for (k, n) in phys_sm.iter() {
         if let PhysNodeKind::Multiplexer { input } = n.kind {
             if let PhysNodeKind::InMemorySource { .. } = phys_sm[input.node].kind {
-                split_map.insert(k, phys_sm[input.node].clone());
+                split_map.insert(k, (phys_sm[input.node].clone(), phys_to_ir[input.node]));
             }
         }
     }
 
     let mut replacements: SecondaryMap<PhysNodeKey, Vec<PhysStream>> = split_map
         .into_iter()
-        .map(|(k, n)| {
-            let repls = (0..refcount[k]).map(|_| PhysStream::first(phys_sm.insert(n.clone())));
+        .map(|(k, (n, source_ir_node))| {
+            let repls = (0..refcount[k]).map(|_| {
+                let clone = phys_sm.insert(n.clone());
+                phys_to_ir.insert(clone, source_ir_node);
+                PhysStream::first(clone)
+            });
             (k, repls.collect())
         })
         .collect();
@@ -918,7 +936,11 @@ fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey
     });
 }
 
-fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+fn fuse_drops(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+) {
     // Collect first: fusing swaps nodes, which would stop the traversal from reaching the
     // inputs of the fused filter.
     let mut projection_keys = Vec::new();
@@ -966,6 +988,12 @@ fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNo
 
         if simple_proj_node.output_schemas.len() == 1 {
             std::mem::swap(simple_proj_node, input_node);
+            // The filter now lives in the projection's slot; move the attribution with it so
+            // the surviving node keeps the `Filter` IR node.
+            let proj_ir_node = phys_to_ir[key];
+            let filter_ir_node = phys_to_ir[input];
+            phys_to_ir.insert(key, filter_ir_node);
+            phys_to_ir.insert(input, proj_ir_node);
         }
     }
 }
@@ -974,7 +1002,10 @@ fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNo
 ///
 /// The group-by consumes the selected key/aggregation columns in bulk, so it is
 /// worth paying for a rechunk of the select's output to get contiguous inputs.
-fn rechunk_group_by_inputs(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+fn rechunk_group_by_inputs(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+) {
     visit_nodes_mut(roots, phys_sm, |key, phys_sm| {
         let PhysNodeKind::GroupBy { inputs, .. } = phys_sm[key].kind() else {
             return;
@@ -993,29 +1024,34 @@ pub fn build_physical_plan(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     ctx: StreamingLowerIRContext<'_>,
-) -> PolarsResult<PhysNodeKey> {
+) -> PolarsResult<(PhysNodeKey, SecondaryMap<PhysNodeKey, Node>)> {
+    let original_ir_len = ir_arena.len();
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
     let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
     let mut cache_nodes = PlHashMap::new();
+    let mut phys_to_ir: SecondaryMap<PhysNodeKey, Node> =
+        SecondaryMap::with_capacity(ir_arena.len());
     let phys_root = lower_ir::lower_ir(
         root,
         ir_arena,
         expr_arena,
         phys_sm,
+        &mut phys_to_ir,
+        original_ir_len,
         &mut schema_cache,
         &mut expr_cache,
         &mut cache_nodes,
         ctx,
         None,
     )?;
-    insert_multiplexers(vec![phys_root.node], phys_sm);
-    split_multiplexers(vec![phys_root.node], phys_sm);
-    fuse_drops(vec![phys_root.node], phys_sm);
+    insert_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
+    split_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
+    fuse_drops(vec![phys_root.node], phys_sm, &mut phys_to_ir);
 
     // TODO: remove this after fusing pre-select into group-by node.
     rechunk_group_by_inputs(vec![phys_root.node], phys_sm);
 
-    Ok(phys_root.node)
+    Ok((phys_root.node, phys_to_ir))
 }

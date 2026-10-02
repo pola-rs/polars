@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use polars_async::executor::TaskPriority;
+use polars_async::executor::{TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IntoColumn};
@@ -101,6 +101,7 @@ impl DynamicConjunct {
 /// Turns row group data into DataFrames.
 pub(super) struct RowGroupDecoder {
     pub(super) num_pipelines: usize,
+    pub(super) task_metrics: Option<Arc<TaskMetricAggregator>>,
     pub(super) projected_arrow_fields: Arc<[ArrowFieldProjection]>,
     pub(super) row_index: Option<RowIndex>,
     pub(super) predicate: Option<ScanIOPredicate>,
@@ -203,8 +204,13 @@ impl RowGroupDecoder {
             let mask = predicate.predicate.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
 
-            let filtered =
-                filter_cols(df.into_columns(), mask, self.target_values_per_thread).await?;
+            let filtered = filter_cols(
+                df.into_columns(),
+                mask,
+                self.target_values_per_thread,
+                self.task_metrics.as_deref(),
+            )
+            .await?;
 
             let height = if let Some(fst) = filtered.first() {
                 fst.len()
@@ -278,6 +284,7 @@ impl RowGroupDecoder {
 
             parallelize_first_to_local(
                 TaskPriority::Low,
+                self.task_metrics.as_deref(),
                 (0..projected_arrow_fields.len())
                     .step_by(cols_per_thread)
                     .map(move |offset| {
@@ -404,6 +411,7 @@ async fn filter_cols(
     cols: Vec<Column>,
     mask: &BooleanChunked,
     target_values_per_thread: usize,
+    task_metrics: Option<&TaskMetricAggregator>,
 ) -> PolarsResult<Vec<Column>> {
     if cols.is_empty() {
         return Ok(cols);
@@ -420,6 +428,7 @@ async fn filter_cols(
 
         parallelize_first_to_local(
             TaskPriority::Low,
+            task_metrics,
             (0..cols.len()).step_by(cols_per_thread).map(move |offset| {
                 let cols = cols.clone();
                 let mask = mask.clone();
@@ -837,6 +846,7 @@ impl RowGroupDecoder {
         let task_handles = {
             parallelize_first_to_local(
                 TaskPriority::Low,
+                self.task_metrics.as_deref(),
                 (0..n_items).step_by(cols_per_thread).map(move |offset| {
                     let items = items.clone();
                     let pass = pass.clone();
@@ -864,7 +874,13 @@ impl RowGroupDecoder {
         mask: &BooleanChunked,
     ) -> PolarsResult<Vec<(Source, Column)>> {
         let (sources, columns): (Vec<Source>, Vec<Column>) = live_columns.into_iter().unzip();
-        let columns = filter_cols(columns, mask, self.target_values_per_thread).await?;
+        let columns = filter_cols(
+            columns,
+            mask,
+            self.target_values_per_thread,
+            self.task_metrics.as_deref(),
+        )
+        .await?;
         Ok(sources.into_iter().zip(columns).collect())
     }
 }

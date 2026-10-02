@@ -18,7 +18,6 @@
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
-use polars_utils::unique_column_name;
 use recursive::recursive;
 
 use crate::plans::{
@@ -26,6 +25,7 @@ use crate::plans::{
     ToFieldContext, is_length_preserving_ae, is_splittable,
 };
 use crate::prelude::{ProjectionOptions, WindowMapping};
+use crate::unique_column_name;
 
 pub(super) fn extract_windows(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
     let mut visited = PlIndexSet::new();

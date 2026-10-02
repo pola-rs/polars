@@ -421,6 +421,14 @@ def test_approx_quantile_dyn_literal_input() -> None:
         assert lf.collect().schema["literal"] == dtype
 
 
+@pytest.mark.parametrize(("quantile", "expected"), [(0.5, 2), (1, 3)])
+def test_approx_quantile_dyn_literal_quantile(quantile: float, expected: int) -> None:
+    # The quantile is given its dtype, rather than staying a dynamic literal.
+    q = pl.LazyFrame({"a": [1, 2, 3]}).select(pl.col("a").approx_quantile(quantile))
+    assert "dyn" not in q.explain()
+    assert q.collect().item() == expected
+
+
 def test_approx_quantile_empty() -> None:
     # Matches exact quantile: no values to draw from means null, not an error.
     for s in (

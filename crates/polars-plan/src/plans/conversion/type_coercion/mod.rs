@@ -1042,6 +1042,25 @@ impl OptimizationRule for TypeCoercionRule {
                     Ok(Some(DataType::Int64))
                 },
             )?,
+            // The estimate casts the quantile to `Float64`, so give a dynamic literal
+            // that dtype rather than leaving it unknown in the plan.
+            #[cfg(feature = "approx_quantile")]
+            AExpr::Function {
+                function: IRFunctionExpr::ApproxQuantileEstimate { .. },
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, dtype| {
+                    let is_dyn_number = matches!(
+                        dtype,
+                        DataType::Unknown(UnknownKind::Int(_) | UnknownKind::Float)
+                    );
+                    Ok((i == 1 && is_dyn_number).then_some(DataType::Float64))
+                },
+            )?,
             #[cfg(feature = "moment")]
             AExpr::Function {
                 function: IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..),

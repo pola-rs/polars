@@ -102,7 +102,17 @@ impl IOWriter {
             );
 
             match batch_type {
-                IpcBatchType::Record => record_blocks.push(ipc_block),
+                IpcBatchType::Record => {
+                    record_blocks.push(ipc_block);
+
+                    if let Some(md) = custom_pl_metadata.as_mut() {
+                        if let Some(end_offset) = num_rows.checked_add(md.num_rows().unwrap_or(0)) {
+                            md.record_batch_cum_len.push(end_offset);
+                        } else {
+                            custom_pl_metadata = None;
+                        };
+                    }
+                },
                 IpcBatchType::Dictionary => dictionary_blocks.push(ipc_block),
             };
 
@@ -118,14 +128,6 @@ impl IOWriter {
                         }),
                 )
                 .await?;
-
-            if let Some(md) = custom_pl_metadata.as_mut() {
-                if let Some(end_offset) = num_rows.checked_add(md.num_rows().unwrap_or(0)) {
-                    md.record_batch_cum_len.push(end_offset);
-                } else {
-                    custom_pl_metadata = None;
-                };
-            }
 
             drop(morsel_permit);
             drop(finish_write_token);

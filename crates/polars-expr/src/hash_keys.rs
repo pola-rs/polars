@@ -21,6 +21,11 @@ use polars_utils::vec::PushUnchecked;
 pub use crate::key_rows::KeyRowKeys;
 use crate::key_rows::KeyRowLayout;
 
+/// Keys are hashed and prefetched in blocks of this many.
+pub(crate) const BLOCK_SIZE: usize = 256;
+/// Smaller tables fit in the cache and aren't prefetched.
+pub(crate) const MIN_PREFETCH_BUCKETS: usize = 1 << 15;
+
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum HashKeysVariant {
     RowEncoded,

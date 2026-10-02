@@ -9,7 +9,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import JoinStrategy
+    from polars._typing import JoinBuildSide, JoinStrategy
     from tests.conftest import PlMonkeyPatch
 
 pytestmark = pytest.mark.xdist_group("streaming")
@@ -104,6 +104,40 @@ def test_join_multi_column_keys(
     left = keys_frame(300, nulls=True).lazy()
     right = keys_frame(200, offset=50, nulls=True).lazy()
     assert_engines_equal(left.join(right, on=keys, how=how, nulls_equal=nulls_equal))
+
+
+def many_keys_frame(n: int, offset: int = 0) -> pl.LazyFrame:
+    i = pl.int_range(offset, offset + n)
+    return pl.select(
+        a=pl.when(i % 101 != 0).then(i % 1000),
+        b=pl.when(i % 103 != 0).then(i // 1000),
+        v=i,
+    ).lazy()
+
+
+def test_group_by_many_multi_column_keys() -> None:
+    # Large tables, looked up in many blocks, the last one partly.
+    lf = many_keys_frame(600_007)
+    assert_engines_equal(lf.group_by("a", "b").agg(pl.len(), pl.col("v").sum()))
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "semi", "anti"])
+@pytest.mark.parametrize("build_side", ["force_left", "force_right"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_join_many_multi_column_keys(
+    how: JoinStrategy, build_side: JoinBuildSide, nulls_equal: bool
+) -> None:
+    left = many_keys_frame(600_007)
+    right = many_keys_frame(500_001, offset=300_000)
+    assert_engines_equal(
+        left.join(
+            right,
+            on=["a", "b"],
+            how=how,
+            build_side=build_side,
+            nulls_equal=nulls_equal,
+        )
+    )
 
 
 @pytest.mark.parametrize("keys", KEYS, ids="-".join)

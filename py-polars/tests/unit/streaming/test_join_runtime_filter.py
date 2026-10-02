@@ -214,14 +214,29 @@ def test_barriers_between_join_and_scan(
     assert_matches_in_memory(q, out)
 
 
-def test_shared_scan_is_not_filtered(fact: pl.LazyFrame) -> None:
-    # The scan is cached for two consumers; a filter for one of them must not reach it.
-    q = fact.join(dim(220, 240), on="k").join(
-        fact.select("k", pl.col("v").alias("w")), on="k"
+def test_shared_subplan_is_not_filtered(fact: pl.LazyFrame) -> None:
+    # The subplan is cached for two consumers; a filter for one of them must not
+    # reach it.
+    shared = fact.with_columns(pl.col("v") + 1)
+    q = shared.join(dim(220, 240), on="k").join(
+        shared.select("k", pl.col("v").alias("w")), on="k"
     )
     plan = q.explain(engine="streaming")
     assert "CACHE" in plan
     assert "dynamic_predicate" not in plan
+    out = q.collect(engine="streaming")
+    assert_matches_in_memory(q, out)
+
+
+def test_scan_read_twice_is_filtered_once(fact: pl.LazyFrame) -> None:
+    # A plain scan is not cached, so each consumer reads it and only the one joined
+    # with the small side is filtered.
+    q = fact.join(dim(220, 240), on="k").join(
+        fact.select("k", pl.col("v").alias("w")), on="k"
+    )
+    plan = q.explain(engine="streaming")
+    assert "CACHE" not in plan
+    assert plan.count("dynamic_predicate") == 1
     out = q.collect(engine="streaming")
     assert_matches_in_memory(q, out)
 

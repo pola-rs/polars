@@ -88,7 +88,6 @@ impl RecursionState {
 
 pub(crate) struct ExprOrderSimplifier<'a> {
     struct_field_ordering: Option<ObservableOrders>,
-    order_insensitive_windows: bool,
 
     /// Entries for nodes whose subtrees will no longer change when revisited with a de-ordering
     /// recursion state.
@@ -102,11 +101,9 @@ impl<'a> ExprOrderSimplifier<'a> {
     pub fn new(
         expr_arena: &'a mut Arena<AExpr>,
         revisit_cache: &'a mut PlIndexMap<Node, ObservableOrders>,
-        order_insensitive_windows: bool,
     ) -> Self {
         Self {
             struct_field_ordering: None,
-            order_insensitive_windows,
 
             revisit_cache,
             internally_observed: ObservableOrders::empty(),
@@ -412,9 +409,7 @@ impl ExprOrderSimplifier<'_> {
             AExpr::Over { .. } => {
                 check_return_cached!();
 
-                if self.order_insensitive_windows
-                    && is_order_insensitive_window(current_ae_node, self.expr_arena)
-                {
+                if is_order_insensitive_window(current_ae_node, self.expr_arena) {
                     cache_output!(O::COLUMN);
                     return O::COLUMN;
                 }
@@ -709,7 +704,7 @@ impl ExprOrderSimplifier<'_> {
                     | IRAggExpr::Max { input: node, .. }
                     | IRAggExpr::Mean(node)
                     | IRAggExpr::Median(node)
-                    | IRAggExpr::Sum(node)
+                    | IRAggExpr::Sum { input: node, .. }
                     | IRAggExpr::Item { input: node, .. } => {
                         let node = *node;
                         self.rec(node, RS::ALLOW_DEORDER);
@@ -825,7 +820,7 @@ fn is_order_insensitive(node: Node, arena: &Arena<AExpr>) -> bool {
             | IRAggExpr::NUnique(input)
             | IRAggExpr::Item { input, .. }
             | IRAggExpr::Mean(input)
-            | IRAggExpr::Sum(input)
+            | IRAggExpr::Sum { input, .. }
             | IRAggExpr::Count { input, .. }
             | IRAggExpr::Std(input, _)
             | IRAggExpr::Var(input, _) => is_order_insensitive(*input, arena),

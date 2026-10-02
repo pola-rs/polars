@@ -155,9 +155,18 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            IRAggExpr::Sum(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Sum(Arc::new(exp)).into()
+            IRAggExpr::Sum {
+                input,
+                null_on_empty,
+            } => {
+                let exp = node_to_expr(input, expr_arena);
+                if null_on_empty {
+                    when(exp.clone().count().gt(lit(0)))
+                        .then(exp.sum())
+                        .otherwise(Expr::Literal(LiteralValue::untyped_null()))
+                } else {
+                    exp.sum()
+                }
             },
             IRAggExpr::Std(expr, ddof) => {
                 let exp = node_to_expr(expr, expr_arena);

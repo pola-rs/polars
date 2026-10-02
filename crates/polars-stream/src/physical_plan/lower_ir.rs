@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 use polars_arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor::ALLOW_RAYON_THREADS;
+use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
@@ -36,10 +37,10 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
-use slotmap::SlotMap;
+use polars_utils::{IdxSize, format_pl_smallstr};
+use slotmap::{DenseSlotMap, SecondaryMap};
 
-use super::lower_expr::build_hstack_stream;
+use super::lower_expr::{build_hstack_stream, build_sort_stream};
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 #[cfg(feature = "python")]
 use crate::nodes::io_sources;
@@ -53,6 +54,7 @@ use crate::physical_plan::lower_expr::{
     is_elementwise_rec_cached, lower_exprs,
 };
 use crate::physical_plan::lower_group_by::build_group_by_stream;
+use crate::unique_column_name;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 /// Creates a new PhysStream which outputs a slice of the input stream.
@@ -60,7 +62,7 @@ pub fn build_slice_stream(
     input: PhysStream,
     offset: i64,
     length: usize,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
 ) -> PhysStream {
     if offset >= 0 {
         let offset = offset as usize;
@@ -89,7 +91,7 @@ pub fn build_filter_stream(
     input: PhysStream,
     predicate: ExprIR,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
@@ -145,7 +147,7 @@ pub fn build_row_idx_stream(
     input: PhysStream,
     name: PlSmallStr,
     offset: Option<IdxSize>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
 ) -> PhysStream {
     let input_schema = input.output_schema(phys_sm);
     let mut output_schema = (**input_schema).clone();
@@ -173,7 +175,52 @@ pub fn lower_ir(
     node: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+    original_ir_len: usize,
+    schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
+    expr_cache: &mut ExprCache,
+    cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
+    ctx: StreamingLowerIRContext<'_>,
+    disable_morsel_split: Option<bool>,
+) -> PolarsResult<PhysStream> {
+    // Every key at or beyond this position was inserted by lowering `node` or one of its inputs.
+    let len_before = phys_sm.len();
+    let out = lower_ir_inner(
+        node,
+        ir_arena,
+        expr_arena,
+        phys_sm,
+        phys_to_ir,
+        original_ir_len,
+        schema_cache,
+        expr_cache,
+        cache_nodes,
+        ctx,
+        disable_morsel_split,
+    )?;
+
+    if node.0 < original_ir_len {
+        let (keys, _) = phys_sm.as_slices();
+        for &key in &keys[len_before..] {
+            // If the key is already present it was already claimed by a nested `lower_ir` call,
+            // so we shouldn't overwrite it.
+            if !phys_to_ir.contains_key(key) {
+                phys_to_ir.insert(key, node);
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn lower_ir_inner(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+    original_ir_len: usize,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
     cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
@@ -192,6 +239,8 @@ pub fn lower_ir(
                 ir_arena,
                 expr_arena,
                 phys_sm,
+                phys_to_ir,
+                original_ir_len,
                 schema_cache,
                 expr_cache,
                 cache_nodes,
@@ -560,10 +609,11 @@ pub fn lower_ir(
 
             let mut stream = phys_input;
 
-            // If we need to maintain order augment with row index. This is
-            // not yet necessary for the non-limiting case as that one
-            // dispatches to in-memory.
+            // TopK is not stable, so if we need to maintain order augment with
+            // row index. The sort node itself is stable.
             if sort_options.maintain_order && limit < u64::MAX {
+                _broadcast_bools(by_column.len(), &mut sort_options.descending);
+                _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
                 let row_idx_name = unique_column_name();
                 stream = build_row_idx_stream(stream, row_idx_name.clone(), None, phys_sm);
 
@@ -630,15 +680,16 @@ pub fn lower_ir(
                 )));
             }
 
-            stream = PhysStream::first(phys_sm.insert(PhysNode::new(
-                stream.output_schema(phys_sm).clone(),
-                PhysNodeKind::Sort {
-                    input: stream,
-                    by_column: trans_by_column,
-                    slice: slice.as_ref().map(|t| (t.0, t.1)),
-                    sort_options,
-                },
-            )));
+            stream = build_sort_stream(
+                stream,
+                trans_by_column,
+                slice.as_ref().map(|t| (t.0, t.1)),
+                sort_options,
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+            )?;
 
             // Remove any temporary columns we may have added.
             stream =
@@ -826,6 +877,7 @@ pub fn lower_ir(
                             shared_prefetch_wait_group_slot: Default::default(),
                             file_read_context: std::sync::OnceLock::new(),
                             io_metrics: std::sync::OnceLock::new(),
+                            task_metrics: std::sync::OnceLock::new(),
                         },
                     ) as _,
 
@@ -839,6 +891,7 @@ pub fn lower_ir(
                         pipeline_budget: std::sync::OnceLock::new(),
                         shared_prefetch_wait_group_slot: Default::default(),
                         io_metrics: std::sync::OnceLock::new(),
+                        task_metrics: std::sync::OnceLock::new(),
                     }) as _,
 
                     #[cfg(feature = "csv")]
@@ -849,6 +902,7 @@ pub fn lower_ir(
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
                             io_metrics: std::sync::OnceLock::new(),
+                            task_metrics: std::sync::OnceLock::new(),
                         }) as _
                     },
                     #[cfg(feature = "json")]
@@ -859,6 +913,7 @@ pub fn lower_ir(
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
                             io_metrics: std::sync::OnceLock::new(),
+                            task_metrics: std::sync::OnceLock::new(),
                         },
                     ) as _,
                     #[cfg(feature = "python")]
@@ -885,6 +940,7 @@ pub fn lower_ir(
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
                             io_metrics: std::sync::OnceLock::new(),
+                            task_metrics: std::sync::OnceLock::new(),
                             file_read_context: std::sync::OnceLock::new(),
                         }) as _
                     },
@@ -1984,7 +2040,7 @@ fn append_sorted_key_column(
     keys_sorted: Option<&Vec<AExprSorted>>,
     broadcast_nulls: Option<bool>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>, Option<PlSmallStr>)> {
@@ -2035,7 +2091,7 @@ fn lower_subtree_to_inmem_engine(
     ir_node_output_schema: Arc<Schema>,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
     let mem_engine_executor = create_physical_plan(

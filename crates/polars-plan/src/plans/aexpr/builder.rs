@@ -180,7 +180,13 @@ impl AExprBuilder {
     }
 
     pub fn sum(self, arena: &mut Arena<AExpr>) -> Self {
-        Self::agg(IRAggExpr::Sum(self.node()), arena)
+        Self::agg(
+            IRAggExpr::Sum {
+                input: self.node(),
+                null_on_empty: false,
+            },
+            arena,
+        )
     }
 
     pub fn len(self, arena: &mut Arena<AExpr>) -> Self {

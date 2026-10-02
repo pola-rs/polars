@@ -17,3 +17,5 @@ mod types;
 pub use context::{SQLContext, extract_table_identifiers};
 pub use resolver::register_sql_resolver;
 pub use sql_expr::sql_expr;
+
+polars_utils::define_unique_column_name!("SQL");
