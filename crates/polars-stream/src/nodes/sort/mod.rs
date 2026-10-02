@@ -518,7 +518,7 @@ async fn partition_frames(
             }
             // Reserving up front avoids repeated reallocation while growing.
             if builders[b].is_empty() {
-                builders[b].reserve(flush_rows + df.height());
+                builders[b].reserve(flush_rows + idxs_per_bucket[b].len());
             }
             // SAFETY: the indices are row offsets within the rechunked frame.
             unsafe {
