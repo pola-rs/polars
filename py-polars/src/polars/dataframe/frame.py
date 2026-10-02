@@ -247,6 +247,8 @@ class DataFrame:
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
+        A flat sequence of scalar values is treated as one column unless
+        `orient="row"` is specified, in which case it is treated as one row.
     infer_schema_length : int or None
         The maximum number of rows to scan for schema inference. If set to `None`, the
         full data may be scanned *(this can be slow)*. This parameter only applies if
@@ -389,18 +391,22 @@ class DataFrame:
         if height is not None:
             msg = "the `height` parameter of `DataFrame` is considered unstable."
             issue_unstable_warning(msg)
+        if orient is not None and orient not in ("col", "row"):
+            msg = f"orient must be one of {{'col', 'row'}}, got {orient!r}"
+            raise ValueError(msg)
 
         if data is None:
             self._df = dict_to_pydf(
-                {}, schema=schema, schema_overrides=schema_overrides
+                data={},
+                schema=schema,
+                schema_overrides=schema_overrides,
             )
-
             if height is not None and self.width == 0:
                 self._df = PyDataFrame.empty_with_height(height)
 
         elif isinstance(data, dict):
             self._df = dict_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -409,7 +415,7 @@ class DataFrame:
 
         elif isinstance(data, (list, tuple, Sequence)):
             self._df = sequence_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -420,12 +426,15 @@ class DataFrame:
 
         elif isinstance(data, pl.Series):
             self._df = series_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
             self._df = numpy_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -435,17 +444,23 @@ class DataFrame:
 
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
             self._df = pandas_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_torch(data) and isinstance(data, torch.Tensor):
             self._df = numpy_to_pydf(
-                data.numpy(force=False),
+                data=data.numpy(force=False),
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -459,7 +474,7 @@ class DataFrame:
             and isinstance(data, (Generator, Iterable))
         ):
             self._df = iterable_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -469,12 +484,15 @@ class DataFrame:
 
         elif isinstance(data, pl.DataFrame):
             self._df = dataframe_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif is_pycapsule(data):
             self._df = pycapsule_to_frame(
-                data,
+                obj=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
             )._df

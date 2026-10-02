@@ -952,6 +952,31 @@ def test_init_1d_sequence() -> None:
     assert df.schema == {"ts": pl.Datetime("ms", "Asia/Kathmandu")}
 
 
+@pytest.mark.parametrize("orient", ["row", "col", None])
+def test_init_1d_sequence_orientation(orient: Literal["row", "col"] | None) -> None:
+    data = ["apple", "red", 12.5, "good"]
+    result = pl.DataFrame(data, orient=orient, strict=False)
+    if orient == "row":
+        expected = pl.DataFrame(
+            {
+                "column_0": ["apple"],
+                "column_1": ["red"],
+                "column_2": [12.5],
+                "column_3": ["good"],
+            }
+        )
+    else:
+        expected = pl.DataFrame({"column_0": ["apple", "red", "12.5", "good"]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("orient", ["row", None])
+def test_init_scalar_iterator(orient: Literal["row"] | None) -> None:
+    result = pl.DataFrame(iter(range(1001)), orient=orient)
+    expected = pl.DataFrame({"column_0": range(1001)})
+    assert_frame_equal(result, expected)
+
+
 def test_init_pandas(plmonkeypatch: PlMonkeyPatch) -> None:
     pandas_df = pd.DataFrame([[1, 2], [3, 4]], columns=[1, 2])
 
