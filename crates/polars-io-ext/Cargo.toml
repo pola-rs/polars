@@ -1,0 +1,52 @@
+[package]
+name = "polars-io-ext"
+# Released independently of Polars; compatibility is decided by the plugin IDs it exports (see
+# `polars-io-ext-ffi`), not by this version.
+version = "0.1.0"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+publish = false
+repository = { workspace = true }
+description = "Native I/O plugins for Polars (Iceberg, ...), one feature per format."
+
+[lib]
+name = "polars_io_ext"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+chrono = { workspace = true, optional = true }
+flate2 = { workspace = true, features = ["zlib-rs"], optional = true }
+futures = { workspace = true }
+hex = { workspace = true, optional = true }
+# Used only to build Arrow data, which crosses the plugin boundary through the Arrow C Data
+# Interface; this does not couple the plugin to the host's Polars version.
+polars-arrow = { workspace = true }
+polars-error = { workspace = true }
+polars-io-ext-ffi = { workspace = true }
+polars-utils = { workspace = true }
+pyo3 = { workspace = true, optional = true, features = ["abi3-py310", "extension-module"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+snap = { version = "1", optional = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+zstd = { workspace = true, optional = true }
+
+[features]
+default = []
+# Iceberg scan planning (`iceberg`), contract `polars.io_plugin.iceberg.v1`.
+iceberg = [
+  "polars-io-ext-ffi/iceberg",
+  "dep:chrono",
+  "dep:flate2",
+  "dep:hex",
+  "dep:snap",
+  "dep:zstd",
+]
+# Python extension module exposing the plugin contracts as PyCapsules (module `polars_iceberg`
+# with feature `iceberg`).
+python = ["dep:pyo3"]
+
+[lints]
+workspace = true

@@ -28,6 +28,10 @@ requirements-all: .venv  ## Install/refresh all Python requirements (including t
 build: .venv  ## Compile and install Python Polars for development
 	@$(MAKE) -s -C .. $@
 
+.PHONY: build-polars-iceberg
+build-polars-iceberg: .venv  ## Compile and install the `polars_iceberg` I/O plugin (crates/polars-io-ext)
+	@$(MAKE) -s -C ../crates $@ VENV=$(abspath $(VENV))
+
 .PHONY: build-debug
 build-debug: .venv  ## Compile and install Python Polars for development with full debug symbols
 	@$(MAKE) -s -C .. $@
@@ -77,15 +81,15 @@ clippy:  ## Run clippy
 pre-commit: fmt lint clippy  ## Run all code formatting, lint, and clippy quality checks
 
 .PHONY: test
-test: .venv build  ## Run fast unittests
+test: .venv build build-polars-iceberg  ## Run fast unittests
 	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest -n auto $(PYTEST_ARGS)
 
 .PHONY: test-in-memory
-test-in-memory: .venv build  ## Run fast unittests with the in-memory engine
+test-in-memory: .venv build build-polars-iceberg  ## Run fast unittests with the in-memory engine
 	POLARS_TIMEOUT_MS=60000 POLARS_ENGINE_AFFINITY=in-memory $(VENV_BIN)/pytest -n auto $(PYTEST_ARGS)
 
 .PHONY: test-all
-test-all: .venv build  ## Run all tests
+test-all: .venv build build-polars-iceberg  ## Run all tests
 	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest -n auto -m "slow or not slow"
 	$(VENV_BIN)/python tests/docs/run_doctest.py
 
@@ -104,7 +108,7 @@ docs-clean: .venv  ## Build Python docs (full rebuild)
 	@$(MAKE) docs
 
 .PHONY: coverage
-coverage: .venv build  ## Run tests and report coverage
+coverage: .venv build build-polars-iceberg  ## Run tests and report coverage
 	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest --cov -n auto -m "not release and not benchmark"
 
 .PHONY: clean
