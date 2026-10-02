@@ -54,7 +54,6 @@ pub fn scalar_window_params(
     exprs: &[ExprIR],
     input_schema: &Schema,
     output_schema: Arc<Schema>,
-    maintain_order: bool,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<ScalarWindowParams> {
     let mut read_schema = Schema::default();
@@ -95,6 +94,5 @@ pub fn scalar_window_params(
         read_schema: Arc::new(read_schema),
         key_schema: Arc::new(key_schema),
         output_schema,
-        maintain_order,
     })
 }

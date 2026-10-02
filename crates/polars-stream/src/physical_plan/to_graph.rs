@@ -613,7 +613,6 @@ fn to_graph_rec<'a>(
                     exprs,
                     &input_schema,
                     output_schema,
-                    *maintain_order,
                     ctx.expr_arena,
                 )?;
                 let input_key = to_graph_rec(input.node, ctx)?;

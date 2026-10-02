@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import os
+import subprocess
+import sys
+import textwrap
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -50,6 +54,20 @@ def _is_scalar(q: pl.LazyFrame) -> bool:
     windows = _physical_windows(q)
     assert len(windows) == 1
     return "scalar-window[" in windows[0]
+
+
+def _reduce_paths(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: Any
+) -> set[str]:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    q.collect(engine="streaming")
+    plmonkeypatch.delenv("POLARS_VERBOSE")
+    return {
+        "local" if "per pipeline" in line else "partitioned"
+        for line in capfd.readouterr().err.splitlines()
+        if line.startswith("[scalar-window]: reduce")
+    }
 
 
 def _assert_same(q: pl.LazyFrame, *, check_row_order: bool = True) -> None:
@@ -220,8 +238,10 @@ def test_scalar_window_first_last_across_morsels(tmp_path: Path) -> None:
     _assert_same(q)
 
 
-@pytest.mark.parametrize("groups", [10, 70_000, 100_000])
-def test_scalar_window_many_groups(tmp_path: Path, groups: int) -> None:
+@pytest.mark.parametrize(("groups", "path"), [(10, "local"), (100_000, "partitioned")])
+def test_scalar_window_many_groups(
+    tmp_path: Path, groups: int, path: str, plmonkeypatch: PlMonkeyPatch, capfd: Any
+) -> None:
     n = 100_000
     df = pl.DataFrame({"id": pl.int_range(n, eager=True)}).with_columns(
         k=(pl.col("id") * 7919) % groups,
@@ -234,6 +254,7 @@ def test_scalar_window_many_groups(tmp_path: Path, groups: int) -> None:
         c=pl.len().over("k"),
     )
     assert _is_scalar(q)
+    assert _reduce_paths(q, plmonkeypatch, capfd) == {path}
     _assert_same(q)
     q = _scan(df, tmp_path).with_columns(a=pl.col("x").max().over("k", "j"))
     _assert_same(q)
@@ -271,7 +292,7 @@ def test_scalar_window_value_dtypes(dtype: pl.DataType) -> None:
     _assert_same(q)
 
 
-@pytest.mark.parametrize("groups", [7, 70_000])
+@pytest.mark.parametrize("groups", [7, 100_000])
 @pytest.mark.parametrize(
     "key",
     [
@@ -285,7 +306,13 @@ def test_scalar_window_value_dtypes(dtype: pl.DataType) -> None:
         pl.concat_list(pl.col("i"), pl.col("i") % 3),
     ],
 )
-def test_scalar_window_key_dtypes(tmp_path: Path, key: pl.Expr, groups: int) -> None:
+def test_scalar_window_key_dtypes(
+    tmp_path: Path,
+    key: pl.Expr,
+    groups: int,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: Any,
+) -> None:
     n = 100_000
     df = pl.DataFrame({"id": pl.int_range(n, eager=True)}).with_columns(
         i=pl.when(pl.col("id") % 11 == 0).then(None).otherwise(pl.col("id") % groups),
@@ -297,4 +324,101 @@ def test_scalar_window_key_dtypes(tmp_path: Path, key: pl.Expr, groups: int) -> 
         .with_columns(s=pl.col("x").sum().over("k"), c=pl.len().over("k"))
     )
     assert _is_scalar(q)
+    n_keys = df.select(key.n_unique()).item()
+    path = "local" if n_keys < 1_000 else "partitioned"
+    assert _reduce_paths(q, plmonkeypatch, capfd) == {path}
     _assert_same(q)
+
+
+# Spill everything the memory manager can: no budget, and every allocation is counted.
+SPILL_ENV = {
+    "POLARS_OOC_MEMORY_BUDGET_MB": "0",
+    "POLARS_OOC_SPILL_MIN_BYTES": "1",
+    "POLARS_OOC_DRIFT_THRESHOLD": "0",
+}
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("groups", "path"), [(7, "local"), (100_000, "partitioned")])
+def test_scalar_window_spilled(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any, groups: int, path: str
+) -> None:
+    spill_dir = tmp_path / "spill"
+    spill_dir.mkdir()
+    for name, value in SPILL_ENV.items():
+        plmonkeypatch.setenv(name, value)
+    plmonkeypatch.setenv("POLARS_OOC_SPILL_DIR", str(spill_dir))
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "5000")
+
+    n = 100_000
+    i = pl.col("id")
+    df = pl.DataFrame({"id": pl.int_range(n, eager=True)}).with_columns(
+        k=pl.when(i % 13 == 0).then(None).otherwise((i * 7919) % groups),
+        j=i % 3,
+        x=pl.when(i % 7 == 0).then(None).otherwise(i % 1_000),
+        y=(i % 17).cast(pl.Float64),
+    )
+    lf = _scan(df, tmp_path)
+    q = lf.with_columns(
+        a=pl.col("x").sum().over("k"),
+        b=pl.col("y").mean().over("k"),
+        c=pl.len().over("k"),
+        d=pl.col("x").max().over("k", "j"),
+    )
+    assert len(_physical_windows(q)) == 2
+    assert all("scalar-window[" in w for w in _physical_windows(q))
+    assert _reduce_paths(q.select("a", "b", "c"), plmonkeypatch, capfd) == {path}
+
+    _assert_same(q)
+    _assert_same(q.slice(1_000, 500))
+    _assert_same(q.head(5))
+    _assert_same(q.with_columns(e=pl.col("a").mean().over("j")))
+    _assert_same(pl.concat([q.filter(i % 2 == 0), q.filter(i % 2 == 1)]))
+    other = lf.select("id", z=i * 2)
+    _assert_same(q.join(other, on="id", maintain_order="left"))
+    _assert_same(other.join(q, on="id", how="left", maintain_order="left"))
+    _assert_same(q.filter(i < 0))
+
+
+@pytest.mark.write_disk
+def test_scalar_window_spill_files_removed(tmp_path: Path) -> None:
+    # The spill directory is fixed per process, so use a fresh one.
+    script = textwrap.dedent(
+        """
+        import os, pathlib, time
+        import polars as pl
+        from polars.testing import assert_frame_equal
+
+        n = 100_000
+        i = pl.col("id")
+        df = pl.DataFrame({"id": pl.int_range(n, eager=True)}).with_columns(
+            k=(i * 7919) % n, l=i % 7, x=i % 1_000, s=pl.lit("a")
+        )
+        for key in ["k", "l"]:
+            q = df.lazy().with_columns(w=pl.col("x").sum().over(key))
+            assert_frame_equal(q.collect(engine="streaming"), q.collect())
+            assert q.head(5).collect(engine="streaming").height == 5
+            try:
+                q.with_columns(pl.col("s").cast(pl.Int64)).collect(engine="streaming")
+                raise AssertionError("expected an error")
+            except pl.exceptions.InvalidOperationError:
+                pass
+
+        process_dir = pathlib.Path(os.environ["POLARS_OOC_SPILL_DIR"]) / str(os.getpid())
+        assert process_dir.exists(), "nothing was spilled"
+        for _ in range(200):
+            if not any(process_dir.iterdir()):
+                break
+            time.sleep(0.05)
+        assert not any(process_dir.iterdir()), list(process_dir.iterdir())
+        """
+    )
+    spill_dir = tmp_path / "spill"
+    spill_dir.mkdir()
+    env = {
+        **os.environ,
+        **SPILL_ENV,
+        "POLARS_OOC_SPILL_DIR": str(spill_dir),
+        "POLARS_IDEAL_MORSEL_SIZE": "5000",
+    }
+    subprocess.run([sys.executable, "-c", script], env=env, check=True)
