@@ -140,6 +140,11 @@ const DEFAULT_FILE_READ_CONCURRENCY: u64 = 32;
 const FILE_POSIX_FADV: &str = "POLARS_FILE_POSIX_FADV";
 const DEFAULT_FILE_POSIX_FADV: FileAdvice = FileAdvice::Normal;
 
+/// Read the column chunks of row groups that are in the page cache in the tasks that decode them,
+/// instead of prefetching them (Linux 6.5+, parquet).
+const FILE_DEFER_CACHED_READS: &str = "POLARS_FILE_DEFER_CACHED_READS";
+const DEFAULT_FILE_DEFER_CACHED_READS: bool = true;
+
 /// Initial number of slots of each hot table in the streaming group-by.
 const HOT_TABLE_SIZE: &str = "POLARS_HOT_TABLE_SIZE";
 const DEFAULT_HOT_TABLE_SIZE: u64 = if cfg!(debug_assertions) { 4 } else { 4096 };
@@ -208,6 +213,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     DIRECT_IO,
     FILE_READ_CONCURRENCY,
     FILE_POSIX_FADV,
+    FILE_DEFER_CACHED_READS,
     HOT_TABLE_SIZE,
     MAX_HOT_TABLE_SIZE,
 ];
@@ -251,6 +257,7 @@ pub struct Config {
     direct_io: AtomicBool,
     file_read_concurrency: AtomicU64,
     file_posix_fadv: AtomicU8,
+    file_defer_cached_reads: AtomicBool,
     hot_table_size: AtomicU64,
     max_hot_table_size: AtomicU64,
 
@@ -313,6 +320,7 @@ impl Config {
             direct_io: AtomicBool::new(DEFAULT_DIRECT_IO),
             file_read_concurrency: AtomicU64::new(DEFAULT_FILE_READ_CONCURRENCY),
             file_posix_fadv: AtomicU8::new(DEFAULT_FILE_POSIX_FADV as u8),
+            file_defer_cached_reads: AtomicBool::new(DEFAULT_FILE_DEFER_CACHED_READS),
             hot_table_size: AtomicU64::new(DEFAULT_HOT_TABLE_SIZE),
             max_hot_table_size: AtomicU64::new(DEFAULT_MAX_HOT_TABLE_SIZE),
             ooc_memory_prefetch_bytes: AtomicU64::new(0),
@@ -539,6 +547,11 @@ impl Config {
             FILE_POSIX_FADV => self.file_posix_fadv.store(
                 val.and_then(|x| parse::parse_file_advice(var, x))
                     .unwrap_or(DEFAULT_FILE_POSIX_FADV) as u8,
+                Ordering::Relaxed,
+            ),
+            FILE_DEFER_CACHED_READS => self.file_defer_cached_reads.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_FILE_DEFER_CACHED_READS),
                 Ordering::Relaxed,
             ),
             HOT_TABLE_SIZE => self.hot_table_size.store(
@@ -775,6 +788,11 @@ impl Config {
     #[inline(always)]
     pub fn file_posix_fadv(&self) -> FileAdvice {
         FileAdvice::from_discriminant(self.file_posix_fadv.load(Ordering::Relaxed))
+    }
+
+    #[inline(always)]
+    pub fn file_defer_cached_reads(&self) -> bool {
+        self.file_defer_cached_reads.load(Ordering::Relaxed)
     }
 
     /// Initial number of slots of each hot table in the streaming group-by.

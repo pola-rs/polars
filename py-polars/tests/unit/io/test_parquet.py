@@ -5440,6 +5440,30 @@ def test_file_posix_fadv(
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize("defer_cached_reads", ["1", "0"])
+def test_parquet_defer_cached_reads(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, defer_cached_reads: str
+) -> None:
+    # Files written by tests are in the page cache, so by default ("1") they take
+    # the deferred path wherever cachestat(2) is available; "0" keeps the prefetch
+    # path covered.
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "defer_cached_reads.parquet"
+    expect = _write_df_mixed_offset(path, n_rows=20_000, row_group_size=997)
+
+    plmonkeypatch.setenv("POLARS_FILE_DEFER_CACHED_READS", defer_cached_reads)
+    lf = pl.scan_parquet(path)
+    assert_frame_equal(lf.collect(), expect)
+    assert_frame_equal(lf.select("c", "a").collect(), expect.select("c", "a"))
+    # Pre-filtered decode reads the predicate column before the others.
+    pred = pl.col("b") % 7 == 0
+    assert_frame_equal(
+        pl.scan_parquet(path, parallel="prefiltered").filter(pred).collect(),
+        expect.filter(pred),
+    )
+
+
+@pytest.mark.write_disk
 @pytest.mark.parametrize("direct_io", ["0", "1"])
 def test_scan_parquet_from_file_handle(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, direct_io: str
