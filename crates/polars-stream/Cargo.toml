@@ -54,6 +54,10 @@ polars-plan = { workspace = true, features = ["cse", "rle", "peaks", "arg_where"
 polars-time = { workspace = true }
 polars-utils = { workspace = true, features = ["async-utils"] }
 
+[dev-dependencies]
+libc = { workspace = true }
+tempfile = "3"
+
 [build-dependencies]
 version_check = { workspace = true }
 

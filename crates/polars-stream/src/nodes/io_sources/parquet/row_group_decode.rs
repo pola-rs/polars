@@ -127,6 +127,8 @@ impl RowGroupDecoder {
         &self,
         mut row_group_data: RowGroupData,
     ) -> PolarsResult<DataFrame> {
+        row_group_data.fetched_bytes.fetch_if_evicted().await?;
+
         // If the slice consumes the entire row-group. Don't slice. This allows for prefiltering to
         // happen more often until we properly support prefiltering with pre-slices.
         row_group_data.slice.take_if(|slice| {
@@ -360,14 +362,14 @@ fn decode_column(
         .map(|col_md| {
             let byte_range = col_md.byte_range();
 
-            (
+            Ok((
                 col_md,
                 row_group_data
                     .fetched_bytes
-                    .get_range(byte_range.start as usize..byte_range.end as usize),
-            )
+                    .get_range(byte_range.start as usize..byte_range.end as usize)?,
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     let skip_num_rows_check = matches!(filter, Some(Filter::Predicate(_)));
 
@@ -616,7 +618,7 @@ impl RowGroupDecoder {
         debug_assert!(row_group_data.slice.is_none()); // Invariant of the optimizer.
         assert!(self.predicate_field_indices.len() <= self.projected_arrow_fields.len());
 
-        let row_group_data = Arc::new(row_group_data);
+        let mut row_group_data = Arc::new(row_group_data);
         let projection_height = row_group_data.row_group_metadata.num_rows();
         let mut passes = self.passes.lock().unwrap().clone();
         // A conjunct that just started filtering rows is measured on every row
@@ -756,6 +758,17 @@ impl RowGroupDecoder {
                     None => rest_mask,
                     Some(mask) => compose_masks(&mask, &rest_mask),
                 });
+            }
+        }
+
+        // A deferred row group's pages can be evicted while the passes run, so check again
+        // before reading the other columns. The pass tasks have finished, so nothing else holds
+        // `row_group_data`.
+        if !self.non_predicate_field_indices.is_empty() {
+            let data = Arc::get_mut(&mut row_group_data);
+            debug_assert!(data.is_some());
+            if let Some(data) = data {
+                data.fetched_bytes.fetch_if_evicted().await?;
             }
         }
 
@@ -926,14 +939,14 @@ fn decode_column_prefiltered(
         .map(|col_md| {
             let byte_range = col_md.byte_range();
 
-            (
+            Ok((
                 col_md,
                 row_group_data
                     .fetched_bytes
-                    .get_range(byte_range.start as usize..byte_range.end as usize),
-            )
+                    .get_range(byte_range.start as usize..byte_range.end as usize)?,
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     let prefilter = !arrow_field.dtype.is_nested();
 

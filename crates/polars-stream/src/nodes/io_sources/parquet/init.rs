@@ -15,7 +15,7 @@ use polars_parquet::read::PredicateFilter;
 use polars_utils::IdxSize;
 use tokio::sync::Semaphore;
 
-use super::row_group_data_fetch::RowGroupDataFetcher;
+use super::row_group_data_fetch::{ReadStats, RowGroupDataFetcher};
 use super::row_group_decode::{DynamicConjunct, PredicateColumn, RowGroupDecoder, Source};
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
@@ -187,6 +187,7 @@ impl ParquetReadImpl {
             )
             .await?;
 
+            let defer_cached_reads = polars_config::config().file_defer_cached_reads();
             let mut row_group_data_fetcher = RowGroupDataFetcher {
                 projection: projected_arrow_fields.clone(),
                 is_full_projection,
@@ -198,6 +199,7 @@ impl ParquetReadImpl {
                 row_group_slice,
                 row_group_mask,
                 row_offset,
+                read_stats: Arc::new(ReadStats::new(verbose, defer_cached_reads)),
             };
 
             if let Some(rg_prefetch_prev_all_spawned) = rg_prefetch_prev_all_spawned {
