@@ -105,8 +105,6 @@ pub(super) fn expand_datasets(
                                 predicate.as_ref().map(|x| {
                                     use polars_core::prelude::PlIndexSet;
 
-                                    use crate::utils::aexpr_to_leaf_names_iter;
-
                                     let mut out: Arc<[PlSmallStr]> = PlIndexSet::from_iter(
                                         aexpr_to_leaf_names_iter(x.node(), expr_arena),
                                     )

@@ -150,8 +150,11 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     [
         pl.date("year", "month", 1) <= date(2026, 1, 1),
         pl.col("month").cast(pl.Int8, strict=True) <= 1,
+        # Nulls must exclude files even when their physical Boolean value is true,
+        # since pruning removes the row filter.
+        pl.col("month").cast(pl.Int8, strict=True) != 2,
     ],
-    ids=["date", "strict_cast"],
+    ids=["date", "strict_cast", "strict_cast_ne"],
 )
 @pytest.mark.write_disk
 def test_hive_fallible_predicate_with_file_filter_prunes_files_29494(
@@ -230,25 +233,6 @@ def test_hive_fallible_predicate_does_not_evaluate_udf_when_pruning_29494(
     )
     assert "FILTER" in lf.explain()
     assert calls == []
-
-
-@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
-@pytest.mark.write_disk
-def test_hive_fallible_predicate_removed_excludes_null_partitions(
-    tmp_path: Path, engine: EngineType
-) -> None:
-    for month in ("1", "2", "__HIVE_DEFAULT_PARTITION__"):
-        path = tmp_path / f"month={month}/data.parquet"
-        path.parent.mkdir()
-        pl.DataFrame({"flag": [True, False]}).write_parquet(path)
-
-    # A null predicate result must exclude the file even if its physical Boolean
-    # value is true, as there will no longer be a row filter to discard its rows.
-    lf = pl.scan_parquet(tmp_path / "**/*.parquet", hive_partitioning=True).filter(
-        pl.col("month").cast(pl.Int8) != 2, pl.col("flag")
-    )
-    assert "FILTER" not in lf.explain()
-    assert lf.collect(engine=engine).rows() == [(True, 1)]
 
 
 @pytest.mark.parametrize("engine", ["streaming", "in-memory"])
