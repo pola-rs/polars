@@ -155,6 +155,11 @@ jobs:
           uv pip install --no-deps -e py-polars
           make build
 
+      - name: Install polars_iceberg plugin
+        run: |
+          make -C crates build-polars-iceberg
+          .venv/bin/python -c 'import polars_iceberg'
+
       - name: Run Python tests
         working-directory: py-polars
         env:

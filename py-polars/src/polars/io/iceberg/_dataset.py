@@ -11,6 +11,7 @@ import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
 from polars.exceptions import ComputeError
 from polars.io.iceberg._cache import get_metadata_file_cache
+from polars.io.iceberg._plugin import plugin_scan, use_plugin_planner
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
@@ -276,7 +277,7 @@ class IcebergScanResolver:
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
-    ) -> _NativeIcebergScanData | _PyIcebergScanData | None:
+    ) -> _NativeIcebergScanData | _PyIcebergScanData | _PluginIcebergScanData | None:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         import polars._utils.logging
@@ -394,6 +395,28 @@ class IcebergScanResolver:
                 f"'{reader_override}', expected one of ('native', 'pyiceberg')"
             )
             raise ValueError(msg)
+
+        if reader_override != "pyiceberg" and use_plugin_planner():
+            if verbose:
+                eprint(
+                    "IcebergScanResolver: to_dataset_scan(): "
+                    "plan with the polars_iceberg plugin"
+                )
+
+            lf = plugin_scan(
+                tbl,
+                snapshot_id=self.snapshot_id,
+                from_snapshot_id_exclusive=self.from_snapshot_id_exclusive,
+                to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,
+                projection=projection,
+                filter_columns=filter_columns,
+                iceberg_table_filter=iceberg_table_filter,
+                limit=limit,
+                use_metadata_statistics=self.use_metadata_statistics,
+                fast_deletion_count=self.fast_deletion_count,
+                user_storage_options=self.table.iceberg_storage_properties,
+            )
+            return _PluginIcebergScanData(lf=lf, snapshot_id_key=snapshot_id_key)
 
         fallback_reason = (
             "forced reader_override='pyiceberg'"
@@ -687,6 +710,17 @@ class _PyIcebergScanData(_ResolvedScanDataBase):
 
     # We're not interested in inspecting anything for the pyiceberg scan, so
     # this class is just a wrapper.
+    lf: pl.LazyFrame
+    snapshot_id_key: str
+
+    def to_lazyframe(self) -> pl.LazyFrame:
+        return self.lf
+
+
+@dataclass(kw_only=True)
+class _PluginIcebergScanData(_ResolvedScanDataBase):
+    """Native Iceberg scan planned by the `polars_iceberg` plugin."""
+
     lf: pl.LazyFrame
     snapshot_id_key: str
 

@@ -92,6 +92,14 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.io.conftest import normalize_path_separator_pl
 from tests.unit.io.test_scan_row_deletion import write_position_deletes  # noqa: F401
 
+
+@pytest.fixture(autouse=True)
+def _pyiceberg_planner(plmonkeypatch: PlMonkeyPatch) -> None:
+    # Tests the PyIceberg planner, independent of whether `polars_iceberg` is installed
+    # (`test_iceberg_plugin_suite.py` re-runs these tests with the plugin).
+    plmonkeypatch.setenv("POLARS_ICEBERG_PLANNER", "pyiceberg")
+
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -200,6 +208,35 @@ def new_iceberg_scan_resolver(
         fast_deletion_count=False,
         use_pyiceberg_filter=True,
     )
+
+
+def resolve_scan(
+    tbl: pyiceberg.table.Table, **kwargs: Any
+) -> tuple[pl.LazyFrame, dict[str, Any]]:
+    """
+    Resolve the scan as the engine does, returning it and its `unified_scan_args`.
+
+    Unlike `_to_dataset_scan_impl()`, this uses the plugin planner when re-run by
+    `test_iceberg_plugin_suite.py`.
+    """
+    resolved = new_iceberg_scan_resolver(tbl).to_dataset_scan(**kwargs)
+    assert resolved is not None
+    lf, _ = resolved
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="'json' serialization format")
+        plan = json.loads(lf.serialize(format="json"))
+
+    return lf, plan["Scan"]["unified_scan_args"]
+
+
+def resolved_table_statistics(
+    tbl: pyiceberg.table.Table, **kwargs: Any
+) -> pl.DataFrame | None:
+    """Min/max statistics passed to the resolved scan."""
+    _, scan_args = resolve_scan(tbl, **kwargs)
+    statistics = scan_args["table_statistics"]
+    return None if statistics is None else pl.read_ipc_stream(bytes(statistics))
 
 
 def new_iceberg_table(
@@ -4352,20 +4389,14 @@ def test_scan_iceberg_min_max_statistics_filter(
 
     # Begin inspecting statistics
 
-    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert resolved_table_statistics(tbl) is None
 
-    assert isinstance(scan_data, _NativeIcebergScanData)
-    assert scan_data.statistics_loader is None
-    assert scan_data.min_max_statistics is None
-
-    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl(
-        filter_columns=["height_provider"]
+    min_max_statistics = resolved_table_statistics(
+        tbl, filter_columns=["height_provider"]
     )
+    assert min_max_statistics is not None
 
-    assert isinstance(scan_data, _NativeIcebergScanData)
-    assert scan_data.min_max_statistics is not None
-
-    min_max_values = scan_data.min_max_statistics.with_columns(
+    min_max_values = min_max_statistics.with_columns(
         pl.all().cast(pl.String)
     ).transpose(include_header=True)
 
@@ -4461,9 +4492,14 @@ def test_scan_iceberg_min_max_statistics_filter(
         ),
     )
 
-    assert scan_data.min_max_statistics is not None
+    # The PyIceberg planner's statistics before coalescing (above) are internal to it,
+    # the coalesced statistics are those of the resolved scan.
+    min_max_statistics = resolved_table_statistics(
+        tbl, filter_columns=pl_schema.names()
+    )
+    assert min_max_statistics is not None
 
-    coalesced_min_max_values = scan_data.min_max_statistics.with_columns(
+    coalesced_min_max_values = min_max_statistics.with_columns(
         pl.all().cast(pl.String)
     ).transpose(include_header=True)
 
@@ -4689,14 +4725,10 @@ def test_scan_iceberg_negative_decimal_statistics_29449(tmp_path: Path) -> None:
             expect.filter(pl.col("profit") > 0),
         )
 
-    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl(
-        filter_columns=["profit"]
-    )
-
-    assert isinstance(scan_data, _NativeIcebergScanData)
-    assert scan_data.min_max_statistics is not None
+    min_max_statistics = resolved_table_statistics(tbl, filter_columns=["profit"])
+    assert min_max_statistics is not None
     assert_frame_equal(
-        scan_data.min_max_statistics.select("profit_min", "profit_max"),
+        min_max_statistics.select("profit_min", "profit_max"),
         pl.DataFrame(
             {
                 "profit_min": pl.Series([D("-9969.53")], dtype=dtype),
@@ -4916,12 +4948,11 @@ def test_scan_iceberg_passes_source_sizes(tmp_path: Path) -> None:
     expected = pl.DataFrame({"a": [1, 2, 3]})
     tbl.append(expected.to_arrow())
 
-    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
-    assert isinstance(scan_data, _NativeIcebergScanData)
-    assert scan_data.source_sizes == [
+    lf, scan_args = resolve_scan(tbl)
+    assert scan_args["source_sizes"] == [
         task.file.file_size_in_bytes for task in tbl.scan().plan_files()
     ]
-    assert_frame_equal(scan_data.to_lazyframe().collect(), expected)
+    assert_frame_equal(lf.collect(), expected)
 
 
 def test_scan_iceberg_idxsize_limit() -> None:

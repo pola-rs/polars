@@ -59,6 +59,7 @@ jobs:
           -p polars-core
           -p polars-defs
           -p polars-io
+          -p polars-io-ext-ffi
           -p polars-lazy
           -p polars-ops
           -p polars-parquet
@@ -77,6 +78,7 @@ jobs:
           -p polars-core
           -p polars-defs
           -p polars-io
+          -p polars-io-ext-ffi
           -p polars-lazy
           -p polars-ops
           -p polars-parquet
@@ -85,6 +87,15 @@ jobs:
           -p polars-sql
           -p polars-time
           -p polars-utils
+
+      # Built separately so its `python` feature (PyO3 `extension-module`) is not unified
+      # into the test builds of the crates above.
+      - name: Compile I/O plugin tests
+        run: cargo test --lib --tests --features iceberg -p polars-io-ext --no-run
+
+      - name: Run I/O plugin tests
+        if: github.event_name == 'pull_request'
+        run: cargo test --lib --tests --features iceberg -p polars-io-ext
 
   integration-test:
     runs-on: ${{ matrix.os }}

@@ -2,6 +2,14 @@
 
 SHELL=bash
 BASE ?= main
+ifeq ($(VENV),)
+VENV := ../.venv
+endif
+ifeq ($(OS),Windows_NT)
+	VENV_BIN=$(VENV)/Scripts
+else
+	VENV_BIN=$(VENV)/bin
+endif
 
 .PHONY: fix
 fix:
@@ -97,6 +105,11 @@ bench-save:  ## Run benchmark and save
 .PHONY: bench-cmp
 bench-cmp:  ## Run benchmark and compare
 	cargo bench --features=random --bench $(BENCH) -- --load-baseline $(FEAT) --baseline $(BASE)
+
+.PHONY: build-polars-iceberg
+build-polars-iceberg:  ## Compile and install the `polars_iceberg` I/O plugin (polars-io-ext) into the venv
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m polars-io-ext/Cargo.toml --release $(ARGS) --uv
 
 .PHONY: doctest
 doctest:  ## Check that documentation builds

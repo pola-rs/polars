@@ -163,6 +163,7 @@ module = [
   "polars.polars",
   "polars._plr",
   "polars_cloud",
+  "polars_iceberg",
   "pyarrow.*",
   "pydantic",
   "pyiceberg.*",
