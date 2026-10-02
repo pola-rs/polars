@@ -2,14 +2,19 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_arrow::io::ipc::read::FileMetadata;
+use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
+#[cfg(feature = "ipc")]
+use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "ipc")]
 use polars_io::cloud::concurrency::get_inflight_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::ipc::IpcScanOptions;
 use polars_plan::dsl::ScanSource;
+#[cfg(feature = "ipc")]
+use polars_utils::pl_str::PlSmallStr;
 
 use super::super::shared::pipeline_budget::{
     PipelineBudget, prefetch_kbytes_limit_from_env_or_default,
@@ -27,6 +32,7 @@ pub struct IpcReaderBuilder {
     pub pipeline_budget: std::sync::OnceLock<PipelineBudget>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
+    pub task_metrics: std::sync::OnceLock<Arc<TaskMetricAggregator>>,
 }
 
 impl std::fmt::Debug for IpcReaderBuilder {
@@ -41,17 +47,21 @@ impl std::fmt::Debug for IpcReaderBuilder {
 
 #[cfg(feature = "ipc")]
 impl FileReaderBuilder for IpcReaderBuilder {
-    fn reader_name(&self) -> &str {
-        "ipc"
+    fn reader_name(&self) -> PolarsResult<PlSmallStr> {
+        Ok(PlSmallStr::from_static("ipc"))
     }
 
-    fn reader_capabilities(&self) -> ReaderCapabilities {
+    fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
         use ReaderCapabilities as RC;
 
-        RC::ROW_INDEX | RC::PRE_SLICE
+        Ok(RC::ROW_INDEX | RC::PRE_SLICE | RC::UNORDERED_FILES)
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
+        if let Some(task_metrics) = execution_state.task_metrics.clone() {
+            self.task_metrics.set(task_metrics).ok().unwrap();
+        }
+
         let prefetch_limit = std::env::var("POLARS_RECORD_BATCH_PREFETCH_SIZE")
             .map(|x| {
                 x.parse::<NonZeroUsize>()
@@ -96,7 +106,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
         scan_source_idx: usize,
-    ) -> Box<dyn FileReader> {
+    ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::metrics::OptIOMetrics;
         use crate::nodes::io_sources::ipc::RecordBatchPrefetchSync;
 
@@ -136,11 +146,12 @@ impl FileReaderBuilder for IpcReaderBuilder {
                 current_all_spawned: None,
             },
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
+            task_metrics: self.task_metrics.get().cloned(),
             verbose,
             init_data: None,
             checked: self.options.checked,
         };
 
-        Box::new(reader) as Box<dyn FileReader>
+        Ok(Box::new(reader) as Box<dyn FileReader>)
     }
 }

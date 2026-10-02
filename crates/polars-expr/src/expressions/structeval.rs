@@ -5,12 +5,12 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::schema::Schema;
-use polars_plan::dsl::Expr;
+use polars_plan::dsl::{Expr, StructEvalVariant};
 use rayon::prelude::*;
 
 use super::PhysicalExpr;
 #[cfg(feature = "dtype-struct")]
-use crate::dispatch::struct_::with_fields;
+use crate::dispatch::struct_::struct_eval;
 use crate::prelude::{AggState, AggregationContext, UpdateGroups};
 use crate::state::ExecutionState;
 
@@ -19,6 +19,7 @@ pub struct StructEvalExpr {
     input: Arc<dyn PhysicalExpr>,
     evaluation: Vec<Arc<dyn PhysicalExpr>>,
     expr: Expr,
+    variant: StructEvalVariant,
     output_field: Field,
     operates_on_scalar: bool,
     allow_threading: bool,
@@ -29,6 +30,7 @@ impl StructEvalExpr {
         input: Arc<dyn PhysicalExpr>,
         evaluation: Vec<Arc<dyn PhysicalExpr>>,
         expr: Expr,
+        variant: StructEvalVariant,
         output_field: Field,
         operates_on_scalar: bool,
         allow_threading: bool,
@@ -37,6 +39,7 @@ impl StructEvalExpr {
             input,
             evaluation,
             expr,
+            variant,
             output_field,
             operates_on_scalar,
             allow_threading,
@@ -53,7 +56,7 @@ impl StructEvalExpr {
             .iter()
             .map(|ac| ac.get_values().clone())
             .collect::<Vec<_>>();
-        let out = with_fields(&cols)?;
+        let out = struct_eval(&cols, self.variant)?;
         polars_ensure!(
             out.len() == 1,
             ComputeError: "elementwise expression {:?} must return exactly 1 value on literals, got {}",
@@ -110,7 +113,9 @@ impl StructEvalExpr {
                         .iter()
                         .map(|ac| ac.flat_naive().into_owned())
                         .collect::<Vec<_>>();
-                    Ok(with_fields(&cols)?.as_materialized_series().clone())
+                    Ok(struct_eval(&cols, self.variant)?
+                        .as_materialized_series()
+                        .clone())
                 })?;
 
                 let out = out.into_column();
@@ -136,7 +141,7 @@ impl StructEvalExpr {
                     .collect::<Vec<_>>();
 
                 let input_len = cols[base_ac_idx].len();
-                let out = with_fields(&cols)?;
+                let out = struct_eval(&cols, self.variant)?;
                 assert!(input_len == out.len());
 
                 let mut ac = acs.swap_remove(base_ac_idx);
@@ -170,7 +175,7 @@ impl StructEvalExpr {
                         Some(s) => cols.push(s.as_ref().clone().into_column()),
                     }
                 }
-                let out = with_fields(&cols)?;
+                let out = struct_eval(&cols, self.variant)?;
                 Ok(Some(out))
             })
             .collect::<PolarsResult<ListChunked>>()?;
@@ -230,7 +235,7 @@ impl PhysicalExpr for StructEvalExpr {
             let result = e.evaluate(df, &state)?;
             polars_ensure!(
                 result.len() == input_len || result.len() == 1,
-                ShapeMismatch: "struct.with_fields expressions must have matching or unit length"
+                ShapeMismatch: "{} expressions must have matching or unit length", self.variant.to_name()
             );
             Ok(result)
         };
@@ -249,8 +254,8 @@ impl PhysicalExpr for StructEvalExpr {
         }?;
         eval.extend(cols);
 
-        // Apply with_fields.
-        with_fields(&eval)
+        // Merge the evaluated fields back into the input struct.
+        struct_eval(&eval, self.variant)
     }
 
     fn evaluate_on_groups_impl<'a>(

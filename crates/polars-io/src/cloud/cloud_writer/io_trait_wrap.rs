@@ -26,7 +26,6 @@ enum WriterState {
 enum PollOperation {
     // (slice_addr, slice_len)
     Write { slice_ptr: usize, written: usize },
-    Flush,
     Shutdown,
 }
 
@@ -167,23 +166,13 @@ impl std::io::Write for CloudWriterIoTraitWrap {
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        if self
-            .get_writer_mut_from_ready_state()
-            .is_some_and(|w| !w.has_buffered_bytes())
-        {
-            return Ok(());
+        // Nothing is visible before `finish()`, so we only drain an active poll and keep buffering.
+        match &self.state {
+            WriterState::Poll(..) => ASYNC
+                .block_in_place_on(self.finish_active_poll())
+                .map(|_| ()),
+            WriterState::Ready(_) | WriterState::Finished => Ok(()),
         }
-
-        ASYNC.block_in_place_on(async {
-            self.finish_active_poll().await?;
-
-            self.get_writer_mut_from_ready_state()
-                .unwrap()
-                .flush()
-                .await?;
-
-            Ok(())
-        })
     }
 }
 
@@ -257,22 +246,10 @@ impl tokio::io::AsyncWrite for CloudWriterIoTraitWrap {
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        loop {
-            match ready!(self.finish_active_poll().poll_unpin(cx))? {
-                Some(PollOperation::Flush) => return Poll::Ready(Ok(())),
-                Some(_) => panic!(),
-                None => {
-                    let mut writer = self.take_writer_from_ready_state().unwrap();
-
-                    self.state = WriterState::Poll(
-                        Box::pin(async move {
-                            writer.flush().await?;
-                            Ok(WriterState::Ready(writer))
-                        }),
-                        PollOperation::Flush,
-                    )
-                },
-            }
+        // Nothing is visible before `finish()`, so we only drain an active poll and keep buffering.
+        match ready!(self.finish_active_poll().poll_unpin(cx))? {
+            Some(_) => panic!(),
+            None => Poll::Ready(Ok(())),
         }
     }
 

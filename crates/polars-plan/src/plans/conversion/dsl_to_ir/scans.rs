@@ -93,8 +93,10 @@ pub(super) async fn dsl_to_ir(
                 },
                 #[cfg(feature = "scan_lines")]
                 FileScanDsl::Lines { .. } => sources.expand_paths(unified_scan_args).await?,
-
                 FileScanDsl::ExpandedPaths { .. } => {
+                    sources.expand_paths(unified_scan_args).await?
+                },
+                FileScanDsl::ExternalReaderBuilder { .. } => {
                     sources.expand_paths(unified_scan_args).await?
                 },
                 FileScanDsl::Anonymous { .. } => sources.clone(),
@@ -200,7 +202,11 @@ pub(super) async fn dsl_to_ir(
                 .unwrap();
         }
 
-        let ir = if sources.is_empty() && !matches!(&(*scan_type), FileScanDsl::Anonymous { .. }) {
+        let ir = if sources.is_empty()
+            && !matches!(
+                &(*scan_type),
+                FileScanDsl::Anonymous { .. } | FileScanDsl::ExternalReaderBuilder { .. }
+            ) {
             IR::DataFrameScan {
                 df: Arc::new(DataFrame::empty_with_schema(&file_info.schema)),
                 schema: file_info.schema,
@@ -218,6 +224,7 @@ pub(super) async fn dsl_to_ir(
                 scan_type: Box::new(scan_type_ir),
                 output_schema: None,
                 unified_scan_args,
+                maintain_order: true,
             }
         };
 
@@ -562,7 +569,7 @@ const CHUNK_BUDGET: usize = 8192;
 /// Fold per-column statistics out of the resolved parquet footers.
 ///
 /// Row groups beyond [`CHUNK_BUDGET`] chunks are sampled, which turns the
-/// per-column counts into estimates.
+/// per-column counts and ranges into estimates.
 ///
 /// `complete` says whether the footers cover every source.
 #[cfg(feature = "parquet")]
@@ -610,6 +617,7 @@ fn parquet_column_stats(
     #[allow(clippy::disallowed_types)]
     let mut acc: PlHashMap<PlSmallStr, Acc> = PlHashMap::default();
     let mut sampled_rows: u64 = 0;
+    let mut sampled_groups: u64 = 0;
 
     for (footer_buf, rg) in metadata
         .iter()
@@ -617,6 +625,7 @@ fn parquet_column_stats(
         .step_by(stride)
     {
         sampled_rows += rg.num_rows() as u64;
+        sampled_groups += 1;
 
         for chunk in rg.parquet_columns() {
             let path = &chunk.descriptor().path_in_schema;
@@ -665,6 +674,8 @@ fn parquet_column_stats(
     if sampled_rows == 0 {
         return ScanColumnStatsMap::default();
     }
+    // One sampled row group says nothing about how far the others reach.
+    let widen_range = sampled && sampled_groups > 1;
 
     acc.into_iter()
         .map(|(name, a)| {
@@ -687,14 +698,25 @@ fn parquet_column_stats(
                 avg_byte_width: Some(a.uncompressed as f32 / sampled_rows as f32),
                 int_range: if a.int_range_incomplete || a.nested {
                     None
+                } else if widen_range {
+                    a.int_range.map(|r| widen_sampled_range(r, sampled_groups))
                 } else {
                     a.int_range
                 },
-                int_range_partial: sampled || !complete,
+                int_range_partial: !complete || (sampled && !widen_range),
             };
             (name, stats)
         })
         .collect()
+}
+
+/// Widen a range folded over `groups` (at least two) evenly spaced sampled row
+/// groups by the span between two neighbouring samples. Rows past the outermost
+/// samples likely hold values outside it, e.g. when the column is sorted.
+#[cfg(feature = "parquet")]
+fn widen_sampled_range((min, max): (i128, i128), groups: u64) -> (i128, i128) {
+    let gap = (max - min) / i128::from(groups - 1);
+    (min.saturating_sub(gap), max.saturating_add(gap))
 }
 
 /// Inclusive integer range of one column chunk, or `None` if it is not an integer
@@ -1665,6 +1687,23 @@ impl SourcesToFileInfo {
                         stats: ScanStats::exact_rows(sources.len() as u64),
                     },
                     FileScanIR::ExpandedPaths { name },
+                )
+            },
+            FileScanDsl::ExternalReaderBuilder { external } => {
+                let schema = unified_scan_args.schema.clone().ok_or_else(|| {
+                    polars_err!(
+                        InvalidOperation:
+                        "scan_external_reader requires schema to be specified"
+                    )
+                })?;
+
+                (
+                    FileInfo {
+                        schema: schema.clone(),
+                        reader_schema: Some(either::Either::Right(schema.clone())),
+                        stats: ScanStats::unknown(),
+                    },
+                    FileScanIR::ExternalReaderBuilder { external },
                 )
             },
             FileScanDsl::Anonymous {

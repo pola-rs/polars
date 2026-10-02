@@ -238,7 +238,10 @@ fn try_expand_single(
 
 pub(crate) fn needs_expansion(expr: &Expr) -> bool {
     expr.into_iter().any(|e| {
-        let mut v = matches!(e, Expr::Selector(_) | Expr::Eval { .. });
+        let mut v = matches!(
+            e,
+            Expr::Selector(_) | Expr::Eval { .. } | Expr::PipeWithDtype { .. }
+        );
 
         #[cfg(feature = "dtype-struct")]
         {
@@ -868,7 +871,11 @@ fn expand_expression_rec(
             }
         },
         #[cfg(feature = "dtype-struct")]
-        Expr::StructEval { expr, evaluation } => {
+        Expr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => {
             let mut expr_out = Vec::with_capacity(1);
             expand_expression_rec(
                 expr,
@@ -899,6 +906,7 @@ fn expand_expression_rec(
                 out.push(Expr::StructEval {
                     expr,
                     evaluation: eval,
+                    variant: *variant,
                 });
             }
         },
@@ -914,6 +922,34 @@ fn expand_expression_rec(
                     function: function.clone(),
                 },
             )?
+        },
+        Expr::PipeWithDtype { input, callback } => {
+            let mut pipes = Vec::with_capacity(1);
+            expand_expression_by_combination(
+                input,
+                ignored_selector_columns,
+                schema,
+                &mut pipes,
+                opt_flags,
+                |e| Expr::PipeWithDtype {
+                    input: e.to_vec(),
+                    callback: callback.clone(),
+                },
+            )?;
+
+            // Now that inputs are expanded, dtypes can be resolved.
+            // Use these to call callbacks.
+            for pipe in pipes {
+                let Expr::PipeWithDtype { input, callback } = pipe else {
+                    unreachable!()
+                };
+                let dtypes = input
+                    .iter()
+                    .map(|e| Ok(e.to_field(schema)?.dtype))
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                let resolved = callback.call((input, dtypes))?;
+                expand_expression_rec(&resolved, ignored_selector_columns, schema, out, opt_flags)?;
+            }
         },
 
         #[cfg(feature = "dtype-struct")]

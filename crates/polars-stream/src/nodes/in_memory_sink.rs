@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext};
@@ -16,11 +17,11 @@ pub struct InMemorySinkNode {
 }
 
 impl InMemorySinkNode {
-    pub fn new(schema: Arc<Schema>) -> Self {
+    pub fn new(schema: Arc<Schema>, task_metrics: Option<Arc<TaskMetricAggregator>>) -> Self {
         Self {
             morsels_per_pipe: Mutex::default(),
             schema,
-            spill_ctx: LeastRecentSpillContext::new("in-memory-sink".into()),
+            spill_ctx: LeastRecentSpillContext::new("in-memory-sink".into(), task_metrics),
         }
     }
 }

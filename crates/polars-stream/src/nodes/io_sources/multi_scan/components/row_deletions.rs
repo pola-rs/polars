@@ -5,7 +5,7 @@ use polars_arrow::array::ListArray;
 use polars_arrow::array::{Array, BooleanArray};
 use polars_arrow::bitmap::bitmask::BitMask;
 use polars_arrow::bitmap::{Bitmap, MutableBitmap};
-use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
+use polars_async::executor::{self, AbortOnDropHandle, TaskMetricAggregator, TaskPriority};
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{BooleanChunked, ChunkAgg, DataType, NamedFrom, PlIndexMap};
@@ -58,6 +58,7 @@ pub enum DeletionFilesProvider {
         provider: DeltaDeletionVectorProvider,
         selected_paths: Buffer<PlRefPath>,
         cache: Arc<tokio::sync::OnceCell<Option<ListArray<i64>>>>,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     },
 }
 
@@ -87,6 +88,7 @@ impl DeletionFilesProvider {
                     shared_prefetch_wait_group_slot: Default::default(),
                     file_read_context: std::sync::OnceLock::new(),
                     io_metrics: io_metrics.map(OnceLock::from).unwrap_or_default(),
+                    task_metrics: std::sync::OnceLock::new(),
                 };
 
                 reader_builder.set_execution_state(execution_state);
@@ -119,6 +121,7 @@ impl DeletionFilesProvider {
                     provider,
                     selected_paths,
                     cache: Arc::new(tokio::sync::OnceCell::new()),
+                    task_metrics: execution_state.task_metrics.clone(),
                 })
             },
             None => Ok(Self::None),
@@ -149,6 +152,7 @@ impl DeletionFilesProvider {
                 use polars_plan::dsl::{ExtraColumnsPolicy, MissingColumnsPolicy};
 
                 let paths = paths.get(&scan_source_idx)?;
+                let task_metrics = reader_builder.task_metrics.get().map(Arc::as_ref);
 
                 if verbose {
                     let s = if paths.len() == 1 { "" } else { "s" };
@@ -168,7 +172,7 @@ impl DeletionFilesProvider {
                             .enumerate()
                             .map(|(deletion_file_idx, path)| {
                                 let source = ScanSource::Path(path.clone());
-                                let mut reader = reader_builder.build_file_reader(
+                                let reader = reader_builder.build_file_reader(
                                     source,
                                     cloud_options.clone(),
                                     deletion_file_idx,
@@ -186,7 +190,9 @@ impl DeletionFilesProvider {
 
                                 AbortOnDropHandle::new(executor::spawn(
                                     TaskPriority::Low,
+                                    task_metrics,
                                     async move {
+                                        let mut reader = reader?;
                                         reader.initialize().await?;
                                         PolarsResult::Ok(reader)
                                     },
@@ -195,6 +201,7 @@ impl DeletionFilesProvider {
                             .collect::<Vec<_>>();
 
                         let projected_schema = projected_schema.clone();
+                        let read_task_metrics = reader_builder.task_metrics.get().cloned();
 
                         // We choose to load deletion files immediately during the initialization phase -
                         // the main driver loop of the multi file may need to serially `.await` on this
@@ -204,34 +211,36 @@ impl DeletionFilesProvider {
                         // should be fine as the size of the data should not be too big.
 
                         Box::pin(async move {
-                            let handles = file_readers
-                                .into_iter()
-                                .map(|init_fut| {
-                                    use crate::nodes::io_sources::multi_scan::components::projection::Projection;
+                            let mut handles = Vec::with_capacity(file_readers.len());
 
-                                    let begin_read_args = BeginReadArgs {
-                                        projection: Projection::Plain(projected_schema.clone()),
-                                        row_index: None,
-                                        pre_slice: None,
-                                        predicate: None,
-                                        cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
-                                        extra_columns_policy: ExtraColumnsPolicy::Raise,
-                                        missing_columns_policy: MissingColumnsPolicy::Raise,
-                                        num_pipelines,
-                                        disable_morsel_split: false,
-                                        last_morsel_pipelines: 1,
-                                        callbacks: FileReaderCallbacks {
-                                            file_schema_tx: None,
-                                            n_rows_in_file_tx: None,
-                                            row_position_on_end_tx: None,
-                                        },
+                            for init_fut in file_readers {
+                                let mut reader = init_fut.await?;
+
+                                use crate::nodes::io_sources::multi_scan::components::projection::Projection;
+
+                                let begin_read_args = BeginReadArgs {
+                                    projection: Projection::Plain(projected_schema.clone()),
+                                    row_index: None,
+                                    pre_slice: None,
+                                    predicate: None,
+                                    cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
+                                    extra_columns_policy: ExtraColumnsPolicy::Raise,
+                                    missing_columns_policy: MissingColumnsPolicy::Raise,
+                                    num_pipelines,
+                                    disable_morsel_split: false,
+                                    maintain_order: true,
+                                    last_morsel_pipelines: 1,
+                                    callbacks: FileReaderCallbacks {
+                                        file_schema_tx: None,
+                                        n_rows_in_file_tx: None,
+                                        row_position_on_end_tx: None,
+                                    },
                                 };
 
-                                AbortOnDropHandle::new(executor::spawn(
+                                handles.push(AbortOnDropHandle::new(executor::spawn(
                                     TaskPriority::Low,
+                                    read_task_metrics.as_deref(),
                                     async move {
-                                        let mut reader = init_fut.await?;
-
                                         let (mut rx, handle) =
                                             reader.begin_read(begin_read_args)?;
 
@@ -268,9 +277,8 @@ impl DeletionFilesProvider {
 
                                         PolarsResult::Ok((positions_col, max_idx))
                                     },
-                                ))
-                            })
-                            .collect::<Vec<_>>();
+                                )))
+                            }
 
                             let mut position_columns = Vec::with_capacity(handles.len());
                             let mut filter_mask_len: usize = 0;
@@ -356,8 +364,10 @@ impl DeletionFilesProvider {
                     },
                 };
 
-                let handle =
-                    AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+                let handle = AbortOnDropHandle::new(executor::spawn(
+                    TaskPriority::Low,
+                    task_metrics,
+                    async move {
                         let mask = deletion_files_init_fut.await?;
 
                         if verbose {
@@ -373,7 +383,8 @@ impl DeletionFilesProvider {
                         }
 
                         Ok(mask)
-                    }));
+                    },
+                ));
 
                 Some(RowDeletionsInit::Initializing(handle))
             },
@@ -383,13 +394,16 @@ impl DeletionFilesProvider {
                 provider,
                 selected_paths,
                 cache,
+                task_metrics,
             } => {
                 let cache = cache.clone();
                 let provider = provider.clone();
                 let selected_paths = selected_paths.clone();
 
-                let handle =
-                    AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+                let handle = AbortOnDropHandle::new(executor::spawn(
+                    TaskPriority::Low,
+                    task_metrics.as_deref(),
+                    async move {
                         let deletion_vectors = cache
                             .get_or_try_init(|| async {
                                 let provider = provider.clone();
@@ -425,7 +439,8 @@ impl DeletionFilesProvider {
                         };
 
                         Ok(ExternalFilterMask::DeltaDeletionVector { mask })
-                    }));
+                    },
+                ));
 
                 Some(RowDeletionsInit::Initializing(handle))
             },
@@ -624,6 +639,10 @@ impl ExternalFilterMask {
             Self::Iceberg { mask } => mask.len(),
             Self::DeltaDeletionVector { mask } => mask.len(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 

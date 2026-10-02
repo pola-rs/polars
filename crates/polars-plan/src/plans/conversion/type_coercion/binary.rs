@@ -741,6 +741,14 @@ pub(super) fn coerce_comparison_literal(
                         Scalar::new(dtype_lhs.clone(), lit_casted_upper_equality_bound?);
                     return Some(ReplaceLit(upper_lit));
                 },
+                Operator::Gt if let Some(upper) = lit_casted_upper_equality_bound => {
+                    return Some(ReplaceLit(Scalar::new(dtype_lhs.clone(), upper)));
+                },
+                Operator::NotEq | Operator::EqValidity | Operator::NotEqValidity
+                    if lit_casted_upper_equality_bound.is_some() =>
+                {
+                    return None;
+                },
                 Operator::Eq => {
                     // E.g.
                     // In: datetime[ms] == 2026-01-01 (Date)

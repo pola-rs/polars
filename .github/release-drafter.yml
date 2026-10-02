@@ -105,6 +105,9 @@ autolabeler:
   - label: A-io-parquet
     title:
       - '/parquet/i'
+  - label: A-io-partitioning
+    title:
+      - '/\bHive\b/i'
   - label: A-io-spreadsheet
     title:
       - '/spreadsheet|excel|\bods\b/i'

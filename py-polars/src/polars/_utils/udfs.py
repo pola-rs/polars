@@ -16,7 +16,6 @@ from dis import get_instructions
 from enum import Enum, auto
 from inspect import signature
 from itertools import count, zip_longest
-from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -34,7 +33,7 @@ from polars.dataframe.frame import DataFrame
 from polars.datatypes import List, String
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, MutableMapping
+    from collections.abc import Callable, Iterable, Iterator, MutableMapping
     from collections.abc import Set as AbstractSet
     from dis import Instruction
     from typing import TypeAlias
@@ -67,8 +66,13 @@ _MIN_PY312: Final = _MIN_PY311 and sys.version_info >= (3, 12)
 _MIN_PY314: Final = _MIN_PY312 and sys.version_info >= (3, 14)
 
 _BYTECODE_PARSER_CACHE_: MutableMapping[
-    tuple[Callable[[Any], Any], str], BytecodeParser
-] = LRUCache(32)
+    tuple[Callable[[Any], Any], str],
+    BytecodeParser,
+] = LRUCache(64)
+_INSTRUCTIONS_CACHE_: MutableMapping[
+    types.CodeType,
+    list[Instruction],
+] = LRUCache(64)
 
 
 class OpNames:
@@ -332,33 +336,16 @@ _RE_SERIES_NAMES: Final = re.compile(r"^(s|srs\d?|series)\.")
 _RE_STRIP_BOOL: Final = re.compile(r"^bool\((.+)\)$")
 
 
-def _get_all_caller_variables() -> dict[str, Any]:
-    """Get all local and global variables from caller's frame."""
-    pkg_dir = Path(__file__).parent.parent
-
-    # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
-    frame = inspect.currentframe()
-    n = 0
-    try:
-        while frame:
-            fname = inspect.getfile(frame)
-            if fname.startswith(str(pkg_dir)):
-                frame = frame.f_back
-                n += 1
-            else:
-                break
-        variables: dict[str, Any]
-        if frame is None:
-            variables = {}
-        else:
-            variables = {**frame.f_locals, **frame.f_globals}
-    finally:
-        # https://docs.python.org/3/library/inspect.html
-        # > Though the cycle detector will catch these, destruction of the frames
-        # > (and local variables) can be made deterministic by removing the cycle
-        # > in a finally clause.
-        del frame
-    return variables
+def _get_function_variable(function: Callable[[Any], Any], name: str) -> Any:
+    """Resolve a name from the function's lexical scope (closure, then globals)."""
+    code = getattr(function, "__code__", None)
+    closure = getattr(function, "__closure__", None)
+    if code is not None and closure is not None and name in code.co_freevars:
+        try:
+            return closure[code.co_freevars.index(name)].cell_contents
+        except ValueError:  # empty cell
+            return NO_DEFAULT
+    return getattr(function, "__globals__", {}).get(name, NO_DEFAULT)
 
 
 def _get_target_name(col: str, expression: str, map_target: str) -> str:
@@ -391,7 +378,7 @@ class BytecodeParser:
 
     _map_target_name: str | None = None
     _can_attempt_rewrite: bool | None = None
-    _caller_variables: dict[str, Any] | None = None
+    _skipped_disassembly: bool = False
     _col_expression: tuple[str, str] | NoDefault | None = NO_DEFAULT
 
     def __init__(self, function: Callable[[Any], Any], map_target: MapTarget) -> None:
@@ -405,8 +392,21 @@ class BytecodeParser:
         map_target : {'expr','series','frame'}
             The underlying target object type of the map operation.
         """
+        original_instructions: Iterable[Instruction]
         try:
-            original_instructions = get_instructions(function)
+            if type(function) is types.FunctionType:
+                code = function.__code__
+                if code.co_code[::2].translate(None, _REWRITABLE_OPCODES):
+                    # bytecode contains ops we cannot rewrite, so skip disassembly
+                    self._skipped_disassembly = True
+                    original_instructions = []
+                elif (cached := _INSTRUCTIONS_CACHE_.get(code)) is not None:
+                    original_instructions = cached
+                else:
+                    original_instructions = list(get_instructions(code))
+                    _INSTRUCTIONS_CACHE_[code] = original_instructions
+            else:
+                original_instructions = get_instructions(function)
         except TypeError:
             # in case we hit something that can't be disassembled (eg: code object
             # unavailable, like a bare numpy ufunc that isn't in a lambda/function)
@@ -417,7 +417,6 @@ class BytecodeParser:
         self._param_name = self._get_param_name(function)
         self._rewritten_instructions = RewrittenInstructions(
             instructions=original_instructions,
-            caller_variables=self._caller_variables,
             function=function,
         )
 
@@ -525,6 +524,8 @@ class BytecodeParser:
     @property
     def original_instructions(self) -> list[Instruction]:
         """The original bytecode instructions from the function we are parsing."""
+        if self._skipped_disassembly:
+            return list(get_instructions(self._function))
         return list(self._rewritten_instructions._original_instructions)
 
     @property
@@ -574,7 +575,6 @@ class BytecodeParser:
                 {
                     offset: InstructionTranslator(
                         instructions=ops,
-                        caller_variables=self._caller_variables,
                         map_target=self._map_target,
                         function=self._function,
                         dtype=dtype,
@@ -682,28 +682,15 @@ class InstructionTranslator:
     def __init__(
         self,
         instructions: list[Instruction],
-        caller_variables: dict[str, Any] | None,
         function: Callable[[Any], Any],
         map_target: MapTarget,
         dtype: PolarsDataType | None = None,
     ) -> None:
         self._constants: dict[str, Any] = {}
         self._stack = self._to_intermediate_stack(instructions, map_target)
-        self._caller_variables = caller_variables
         self._function = function
         self._map_target = map_target
         self._dtype = dtype
-
-    def _get_function_variable(self, name: str) -> Any:
-        """Resolve a name from the function's lexical scope."""
-        code = getattr(self._function, "__code__", None)
-        closure = getattr(self._function, "__closure__", None)
-        if code is not None and closure is not None and name in code.co_freevars:
-            try:
-                return closure[code.co_freevars.index(name)].cell_contents
-            except ValueError:  # empty cell
-                return NO_DEFAULT
-        return getattr(self._function, "__globals__", {}).get(name, NO_DEFAULT)
 
     def _containment_kind(
         self, operand: StackEntry, param_name: str
@@ -725,7 +712,7 @@ class InstructionTranslator:
         if operand in self._constants:
             value = self._constants[operand]
         elif operand.isidentifier():
-            value = self._get_function_variable(operand)
+            value = _get_function_variable(self._function, operand)
         else:
             return None
 
@@ -838,9 +825,7 @@ class InstructionTranslator:
                         haystack, suffix = f"pl.lit({e2})", f'.alias("{col}")'
                     return f"{not_}{haystack}.str.contains({e1}, literal=True){suffix}"
                 elif op == "replace_strict":
-                    if not self._caller_variables:
-                        self._caller_variables = _get_all_caller_variables()
-                    if not isinstance(self._caller_variables.get(e1, None), dict):
+                    if not isinstance(_get_function_variable(self._function, e1), dict):
                         msg = "require dict mapping"
                         raise NotImplementedError(msg)
                     return f"{e2}.{op}({e1})"
@@ -934,12 +919,10 @@ class RewrittenInstructions:
 
     def __init__(
         self,
-        instructions: Iterator[Instruction],
+        instructions: Iterable[Instruction],
         function: Callable[[Any], Any],
-        caller_variables: dict[str, Any] | None,
     ) -> None:
         self._function = function
-        self._caller_variables = caller_variables
         self._original_instructions = list(instructions)
 
         normalised_instructions = []
@@ -1128,12 +1111,13 @@ class RewrittenInstructions:
                         attribute_count : 3 + attribute_count
                     ]
                     if check_globals:
-                        if not self._caller_variables:
-                            self._caller_variables = _get_all_caller_variables()
-                        if (expr_name := inst1.argval) not in self._caller_variables:
+                        expr_name = inst1.argval
+                        func = _get_function_variable(self._function, expr_name)
+                        if func is NO_DEFAULT:
                             continue
                         else:
-                            module_name = self._caller_variables[expr_name].__module__
+                            # (some callables have no module, eg: method-wrappers)
+                            module_name = getattr(func, "__module__", None)
                             if not any((module_name in m) for m in module_aliases):
                                 continue
                             expr_name = _MODULE_FUNC_TO_EXPR_NAME.get(
@@ -1186,75 +1170,38 @@ class RewrittenInstructions:
         self, idx: int, updated_instructions: list[Instruction]
     ) -> int:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
-        if matching_instructions := (
-            # method call with one arg, eg: "s.endswith('!')"
-            self._matches(
-                idx,
-                opnames=[_START_METHOD_REWRITE, {"LOAD_CONST"}, OpNames.CALL],
-                argvals=[_PYTHON_METHODS_MAP],
-            )
-            or
-            # method call with no arg, eg: "s.lower()"
-            self._matches(
-                idx,
-                opnames=[_START_METHOD_REWRITE, OpNames.CALL],
-                argvals=[_PYTHON_METHODS_MAP],
-            )
+        instructions = self._instructions
+        inst = instructions[idx]
+        if (
+            inst.opname not in _START_METHOD_REWRITE
+            or inst.argval not in _PYTHON_METHODS_MAP
         ):
-            inst = matching_instructions[0]
-            expr = _PYTHON_METHODS_MAP[inst.argval]
+            return 0
 
-            if matching_instructions[1].opname == "LOAD_CONST":
-                param_value = matching_instructions[1].argval
-                if isinstance(param_value, tuple) and expr in (
-                    "str.starts_with",
-                    "str.ends_with",
-                ):
-                    starts, ends = ("^", "") if "starts" in expr else ("", "$")
-                    rx = "|".join(re_escape(v) for v in param_value)
-                    q = '"' if "'" in param_value else "'"
-                    expr = f"str.contains(r{q}{starts}({rx}){ends}{q})"
-                else:
-                    expr += f"({param_value!r})"
+        end = idx + 1
+        stop = min(len(instructions), idx + 4)
+        while end < stop and instructions[end].opname == "LOAD_CONST":
+            end += 1
+        if end == len(instructions) or instructions[end].opname not in OpNames.CALL:
+            return 0
 
-            px = inst._replace(opname="POLARS_EXPRESSION", argval=expr, argrepr=expr)
-            updated_instructions.append(px)
-
-        elif matching_instructions := (
-            # method call with three args, eg: "s.replace('!','?',count=2)"
-            self._matches(
-                idx,
-                opnames=[
-                    _START_METHOD_REWRITE,
-                    {"LOAD_CONST"},
-                    {"LOAD_CONST"},
-                    {"LOAD_CONST"},
-                    OpNames.CALL,
-                ],
-                argvals=[_PYTHON_METHODS_MAP],
-            )
-            or
-            # method call with two args, eg: "s.replace('!','?')"
-            self._matches(
-                idx,
-                opnames=[
-                    _START_METHOD_REWRITE,
-                    {"LOAD_CONST"},
-                    {"LOAD_CONST"},
-                    OpNames.CALL,
-                ],
-                argvals=[_PYTHON_METHODS_MAP],
-            )
-        ):
-            inst = matching_instructions[0]
-            expr = _PYTHON_METHODS_MAP[inst.argval]
-
-            param_values = [
-                i.argval
-                for i in matching_instructions[1 : len(matching_instructions) - 1]
-            ]
+        expr = _PYTHON_METHODS_MAP[inst.argval]
+        param_values = [i.argval for i in instructions[idx + 1 : end]]
+        if (n_param_values := len(param_values)) == 1:
+            param_value = param_values[0]
+            if isinstance(param_value, tuple) and expr in (
+                "str.starts_with",
+                "str.ends_with",
+            ):
+                starts, ends = ("^", "") if "starts" in expr else ("", "$")
+                rx = "|".join(re_escape(v) for v in param_value)
+                q = '"' if "'" in param_value else "'"
+                expr = f"str.contains(r{q}{starts}({rx}){ends}{q})"
+            else:
+                expr += f"({param_value!r})"
+        elif n_param_values > 1:
             if expr == "str.replace":
-                if len(param_values) == 3:
+                if n_param_values == 3:
                     old, new, count = param_values
                     expr += f"({old!r},{new!r},n={count},literal=True)"
                 else:
@@ -1263,10 +1210,9 @@ class RewrittenInstructions:
             else:
                 expr += f"({','.join(repr(v) for v in param_values)})"
 
-            px = inst._replace(opname="POLARS_EXPRESSION", argval=expr, argrepr=expr)
-            updated_instructions.append(px)
-
-        return len(matching_instructions)
+        px = inst._replace(opname="POLARS_EXPRESSION", argval=expr, argrepr=expr)
+        updated_instructions.append(px)
+        return end - idx + 1
 
     @staticmethod
     def _unpack_superinstructions(
@@ -1314,12 +1260,27 @@ class RewrittenInstructions:
     def _is_stdlib_datetime(
         self, function_name: str, module_name: str, attribute_count: int
     ) -> bool:
-        if not self._caller_variables:
-            self._caller_variables = _get_all_caller_variables()
-        vars = self._caller_variables
         return (
-            attribute_count == 0 and vars.get(function_name) is datetime.datetime
-        ) or (attribute_count == 1 and vars.get(module_name) is datetime)
+            attribute_count == 0
+            and _get_function_variable(self._function, function_name)
+            is datetime.datetime
+        ) or (
+            attribute_count == 1
+            and _get_function_variable(self._function, module_name) is datetime
+        )
+
+
+# raw opcodes that can appear in a rewritable function; if a function's bytecode
+# contains any other opcode, `RewrittenInstructions` is guaranteed to bail out
+_REWRITABLE_OPCODES: Final = bytes(
+    dis.opmap[opname]
+    for opname in (
+        OpNames.MATCHABLE_OPS
+        | RewrittenInstructions._ignored_ops
+        | {"CACHE", "LOAD_FAST_LOAD_FAST", "LOAD_FAST_BORROW_LOAD_FAST_BORROW"}
+    )
+    if opname in dis.opmap and dis.opmap[opname] < 256
+)
 
 
 def _raw_function_meta(function: Callable[[Any], Any]) -> tuple[str, str]:

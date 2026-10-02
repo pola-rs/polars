@@ -95,6 +95,9 @@ impl TreeWalker for Expr {
             Element => Element,
             Len => Len,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
+            PipeWithDtype { input, callback } => {
+                PipeWithDtype { input: input.into_iter().map(f).collect::<Result<_, _>>()?, callback }
+            },
             Display { inputs,  fmt_str } => {
                 Display { inputs: inputs.into_iter().map(f).collect::<Result<_, _>>()?, fmt_str }
             },
@@ -103,8 +106,8 @@ impl TreeWalker for Expr {
             },
             Eval { expr: input, evaluation, variant } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)?, variant },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr: input, evaluation } => {
-                StructEval { expr: am(input, &mut f)?, evaluation: evaluation.into_iter().map(f).collect::<Result<_, _>>()?  }
+            StructEval { expr: input, evaluation, variant } => {
+                StructEval { expr: am(input, &mut f)?, evaluation: evaluation.into_iter().map(f).collect::<Result<_, _>>()?, variant  }
             },
             SubPlan(_, _) => self,
             Selector(_) => self,

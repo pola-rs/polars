@@ -22,15 +22,16 @@ use polars_plan::plans::options::JoinTypeOptionsIR;
 #[cfg(feature = "python")]
 use polars_plan::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
 use polars_utils::aliases::{InitHashMaps, PlIndexSet};
-use polars_utils::arena::Arena;
+use polars_utils::arena::{Arena, Node};
 use polars_utils::index::idxsize_to_u64;
-use slotmap::{Key, SlotMap};
+use slotmap::{DenseSlotMap, Key, SecondaryMap};
 
 use crate::{PhysNode, PhysNodeKey, PhysNodeKind};
 
 pub fn physical_plan_to_description(
     roots: &[PhysNodeKey],
-    phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &SecondaryMap<PhysNodeKey, Node>,
     expr_arena: &Arena<AExpr>,
 ) -> Vec<PhysicalNodeDescription> {
     let mut nodes = Vec::new();
@@ -44,12 +45,11 @@ pub fn physical_plan_to_description(
     }
 
     while let Some(key) = queue.pop_front() {
-        let node = &phys_sm[key];
-        let kind = node.kind();
-        let (properties, inputs) = phys_props(kind, expr_arena);
+        let (properties, inputs) = phys_props(phys_sm[key].kind(), expr_arena);
         let node = PhysicalNodeDescription {
             id: key.data().as_ffi(),
             input_ids: inputs.iter().map(|k| k.data().as_ffi()).collect(),
+            ir_node_id: Some(phys_to_ir[key].0),
             properties,
         };
 
@@ -273,6 +273,23 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
+        PhysNodeKind::Window {
+            input,
+            partition_by,
+            order_by,
+            exprs,
+            ordered_eval,
+            maintain_order,
+        } => (
+            PhysicalPropsDescription::Window {
+                partition_by: partition_by.iter().map(ToString::to_string).collect(),
+                order_by: order_by.as_ref().map(|(name, _)| name.to_string()),
+                exprs: fmt_exprs(exprs, expr_arena),
+                ordered_eval: *ordered_eval,
+                maintain_order: *maintain_order,
+            },
+            vec![input.node],
+        ),
         PhysNodeKind::Map { input, .. } => (PhysicalPropsDescription::Map, vec![input.node]),
         PhysNodeKind::ColumnarFunction {
             inputs, format_str, ..
@@ -282,6 +299,19 @@ pub fn phys_props(
                 name: format_str.clone(),
             },
             inputs.iter().map(|s| s.node).collect(),
+        ),
+        PhysNodeKind::RollingFixedWindowFunction {
+            input,
+            window,
+            format_str,
+            ..
+        } => (
+            PhysicalPropsDescription::RollingFixedWindowFunction {
+                name: format_str.clone(),
+                offset: window.offset,
+                length: window.length as u64,
+            },
+            vec![input.node],
         ),
         PhysNodeKind::SortedGroupBy {
             input,
@@ -455,7 +485,10 @@ pub fn phys_props(
             let pre_slice = pre_slice.as_ref().map(|x| x.to_signed_offset_len());
             (
                 PhysicalPropsDescription::MultiScan {
-                    scan_type: file_reader_builder.reader_name().to_string(),
+                    scan_type: match file_reader_builder.reader_name() {
+                        Ok(x) => x.to_string(),
+                        Err(e) => format!("(error fetching scan type: {e:?})"),
+                    },
                     num_sources: scan_sources.len(),
                     first_source: scan_sources
                         .first()

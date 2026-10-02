@@ -97,7 +97,7 @@ serde_stacker = "0.1.12"
 sha2 = "0.11"
 simd-json = { version = "0.17", features = ["known-key", "128bit"] }
 simdutf8 = "0.1.4"
-slotmap = "1"
+slotmap = "1.1.1"
 sqlparser = { version = "0.62", features = ["visitor"] }
 stacker = "0.1"
 streaming-iterator = "0.1.9"
@@ -161,6 +161,9 @@ color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "20f5
 
 # https://github.com/tikv/jemallocator/pull/168
 tikv-jemalloc-sys = { git = "https://github.com/pola-rs/jemallocator", rev = "0d683dfb157097e2075d5e0eaf25f71f514a7552" }
+
+# https://github.com/rust-lang/hashbrown/pull/727
+hashbrown = { git = "https://github.com/pola-rs/hashbrown", rev = "d76a6f81abd8f388676aff15068236a8d21c7e1a" }
 
 [profile.dev]
 debug = "line-tables-only"

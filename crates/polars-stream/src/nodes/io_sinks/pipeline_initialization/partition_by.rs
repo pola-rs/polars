@@ -34,6 +34,7 @@ pub fn start_partition_sink_pipeline(
     io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<executor::AbortOnDropHandle<PolarsResult<()>>> {
     let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
+    let task_metrics = execution_state.task_metrics();
 
     let inflight_morsel_limit = config.inflight_morsel_limit(num_pipelines);
     let num_pipelines_per_sink = config.num_pipelines_per_sink(num_pipelines);
@@ -149,12 +150,14 @@ pub fn start_partition_sink_pipeline(
 
     let partitioner_handle = executor::AbortOnDropHandle::new(executor::spawn(
         TaskPriority::High,
+        task_metrics,
         PartitionerPipeline {
             morsel_rx,
             partitioner: Arc::new(partitioner),
             inflight_morsel_semaphore: inflight_morsel_semaphore.clone(),
             partitioned_dfs_tx,
             in_memory_exec_state: Arc::clone(&in_memory_exec_state),
+            task_metrics: execution_state.task_metrics.clone(),
         }
         .run(),
     ));
@@ -169,6 +172,7 @@ pub fn start_partition_sink_pipeline(
         sync_on_close,
         num_pipelines_per_sink,
         sinked_path_info_list: sinked_path_info_list.clone(),
+        task_metrics: execution_state.task_metrics.clone(),
     };
 
     let partition_morsel_sender = PartitionMorselSender {
@@ -183,6 +187,7 @@ pub fn start_partition_sink_pipeline(
 
     let partition_distributor_handle = executor::AbortOnDropHandle::new(executor::spawn(
         TaskPriority::High,
+        task_metrics,
         PartitionDistributor {
             node_name: node_name.clone(),
             partitioned_dfs_rx,
@@ -198,7 +203,7 @@ pub fn start_partition_sink_pipeline(
         .run(),
     ));
 
-    let handle = executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+    let handle = executor::spawn(TaskPriority::Low, task_metrics, async move {
         partitioner_handle.await;
         partition_distributor_handle.await?;
 
@@ -212,7 +217,7 @@ pub fn start_partition_sink_pipeline(
         }
 
         Ok(())
-    }));
+    });
 
-    Ok(handle)
+    Ok(executor::AbortOnDropHandle::new(handle))
 }

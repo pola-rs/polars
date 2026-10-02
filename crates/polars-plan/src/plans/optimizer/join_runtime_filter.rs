@@ -1,13 +1,15 @@
 //! Let a hash join tell the parquet scan under its probe side which keys the build
 //! side holds.
 //!
-//! A join whose one side is known to be small gets that side forced as build side;
-//! one whose side is only estimated small gets it preferred. Every probe key that
+//! A join whose one side is known to be much smaller than a scan under its other
+//! side gets that side forced as build side; one whose side is only estimated to be
+//! much smaller gets it preferred. Every probe key that
 //! reads a parquet scan column unchanged gets a dynamic predicate on that scan. The
-//! join publishes the range of its build keys once the build is done, and the scan
-//! skips row groups outside it. When the build keys are estimated to be a small
-//! share of the scan's distinct keys the join also publishes a bloom filter over
-//! them, and the predicate is evaluated per row; otherwise it only skips batches.
+//! join publishes the range of its build keys once the build is done. The scan
+//! skips the row groups outside the range and drops the rows outside it. When the
+//! build keys are estimated to be a small share of the scan's distinct keys the
+//! join also publishes a bloom filter over them, which the scan probes per row
+//! instead. The scan stops checking rows once the filter keeps most of them.
 //!
 //! A forced join blocks its probe input until the build is done, so its range is
 //! always published before the scan opens. A preferred join with a filter reads its
@@ -18,6 +20,9 @@
 //! the pruning is lost. A predicate is only carried across joins that read their
 //! sides in this order.
 //!
+//! A key is followed into every input of a union, and each scan it reaches gets
+//! the predicate; they share the one filter the join publishes.
+//!
 //! Only a scan that skips batches by their statistics can use the range, so a plan
 //! without one is left alone, and a join is only given a build side once a key
 //! reached one.
@@ -25,7 +30,9 @@
 //! A semi join publishes from either side and an anti join from its left side
 //! only, as the rows of its right side that match no left key change nothing. A
 //! semi join may prefer its right side on an estimate; a left side is only built
-//! when forced, as building it keeps its rows.
+//! when forced, as building it keeps its rows. It is not forced when the right keys
+//! are known to be much fewer than its estimated rows, as a right build keeps only
+//! those.
 
 use std::sync::Arc;
 
@@ -37,21 +44,20 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::join_build_side::{LOPSIDED_FACTOR, side_stats};
 use super::predicate_pushdown::utils::{map_column_references, push_past};
+use super::pushdown_maintain_errors;
 use crate::dsl::{FileScanIR, ScanFlags};
+use crate::plans::aexpr::deep_clone_ae;
 use crate::plans::aexpr::predicates::supports_runtime_range;
-use crate::plans::optimizer::predicate_pushdown::{DynamicPred, new_batch_only_dynamic_pred};
+use crate::plans::optimizer::predicate_pushdown::{DynamicPred, new_dynamic_pred};
 use crate::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::StatsCache;
 use crate::plans::{
-    AExpr, ExprIR, IR, IRFunctionExpr, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator,
-    into_column, is_inherently_nondeterministic,
+    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator, into_column,
+    is_inherently_nondeterministic,
 };
 use crate::prelude::{JoinType, MaintainOrderJoin};
 use crate::utils::has_aexpr;
-
-/// Estimated bytes a build side chosen here may take.
-const BUILD_BYTES: f64 = 256.0 * 1024.0 * 1024.0;
 
 pub(super) fn attach_join_runtime_filters(
     root: Node,
@@ -114,24 +120,32 @@ fn process_join(
         return;
     };
     let on = on.clone();
-    let Some((left_stats, left_width)) = side_stats(input_left, ir_arena, expr_arena, stats) else {
+    let Some((left_stats, _)) = side_stats(input_left, ir_arena, expr_arena, stats) else {
         return;
     };
-    let Some((right_stats, right_width)) = side_stats(input_right, ir_arena, expr_arena, stats)
-    else {
+    let Some((right_stats, _)) = side_stats(input_right, ir_arena, expr_arena, stats) else {
         return;
     };
 
     // A bounded side before an estimated one, the smaller of two alike; the first
     // whose range prunes a scan much larger than itself is taken.
     // Try the right side first when candidates rank equally.
-    let mut sides = build_candidates(false, &right_stats, right_width);
-    sides.extend(build_candidates(true, &left_stats, left_width));
+    let mut sides = build_candidates(false, &right_stats);
+    sides.extend(build_candidates(true, &left_stats));
     let how = &options.args.how;
-    if how.is_semi() {
-        sides.retain(|s| s.forced || !s.left);
-    } else if how.is_anti() {
-        sides.retain(|s| s.forced && s.left);
+    if how.is_semi() || how.is_anti() {
+        let right_distinct = on.iter().try_fold(1.0, |acc, (_, right_key)| {
+            let name = into_column(right_key.node(), expr_arena)?;
+            Some(acc * right_stats.key_distinct_estimate(name)?)
+        });
+        sides.retain(|s| {
+            if s.left {
+                s.forced
+                    && right_distinct.is_none_or(|d| d * LOPSIDED_FACTOR >= left_stats.filtered)
+            } else {
+                how.is_semi()
+            }
+        });
     }
     sides.sort_by(|a, b| b.forced.cmp(&a.forced).then(a.rows.total_cmp(&b.rows)));
 
@@ -151,7 +165,8 @@ fn process_join(
             let other = if side.left { &right_stats } else { &left_stats };
             let probe_rows = filters
                 .iter()
-                .filter_map(|f| side_stats(f.scan, ir_arena, expr_arena, stats))
+                .flat_map(|f| &f.origins)
+                .filter_map(|(scan, _)| side_stats(*scan, ir_arena, expr_arena, stats))
                 .fold(other.filtered, |acc, (scan, _)| acc.max(scan.filtered));
             (filters, probe_rows)
         });
@@ -164,33 +179,45 @@ fn process_join(
     let build_stats = if left { &left_stats } else { &right_stats };
 
     let mut runtime_filters = Vec::with_capacity(filters.len());
-    for filter in filters {
+    for TracedKey {
+        key_idx,
+        pred,
+        origins,
+    } in filters
+    {
         // The key's distinct count is that of the unfiltered side.
-        let build_key = &on[filter.key_idx];
+        let build_key = &on[key_idx];
         let build_key = if left { &build_key.0 } else { &build_key.1 };
         let kept = (build_stats.filtered / build_stats.unfiltered).min(1.0);
         let build_distinct = into_column(build_key.node(), expr_arena)
             .and_then(|name| build_stats.key_distinct_estimate(name))
             .map_or(rows, |ndv| (ndv * kept).min(rows));
-        let scan_key = column_name(&filter.predicate, expr_arena).clone();
-        let probe_distinct = side_stats(filter.scan, ir_arena, expr_arena, stats)
-            .and_then(|(scan_stats, _)| scan_stats.key_distinct_estimate(&scan_key));
-        let bloom = !probe_distinct
-            .is_some_and(|probe| build_distinct > probe * MAX_BUILD_PROBE_DISTINCT_RATIO);
-        if polars_config::config().verbose() {
-            eprintln!(
-                "runtime filter on {scan_key}: {build_distinct:.0} distinct build keys of {rows:.0} rows, {probe_distinct:?} distinct probe keys, bloom: {bloom}"
-            );
+        let mut bloom_probes = BloomProbes::None;
+        for (scan, predicate) in origins {
+            let scan_key = column_name(&predicate, expr_arena).clone();
+            let probe_distinct = side_stats(scan, ir_arena, expr_arena, stats)
+                .and_then(|(scan_stats, _)| scan_stats.key_distinct_estimate(&scan_key));
+            let bloom = !probe_distinct
+                .is_some_and(|probe| build_distinct > probe * MAX_BUILD_PROBE_DISTINCT_RATIO);
+            if polars_config::config().verbose() {
+                eprintln!(
+                    "runtime filter on {scan_key}: {build_distinct:.0} distinct build keys of {rows:.0} rows, {probe_distinct:?} distinct probe keys, bloom: {bloom}"
+                );
+            }
+            if bloom {
+                bloom_probes.add(probe_distinct);
+            }
+            attach_to_scan(scan, predicate, ir_arena, expr_arena);
         }
-        if bloom {
-            evaluate_per_row(filter.predicate.node(), expr_arena);
-        }
-        attach_to_scan(filter.scan, filter.predicate, ir_arena, expr_arena);
         runtime_filters.push(RuntimeFilter {
-            key_idx: filter.key_idx,
-            pred: filter.pred,
-            bloom_keys: bloom.then_some(build_distinct.ceil() as usize),
-            probe_distinct: probe_distinct.map(|d| d.ceil() as usize),
+            key_idx,
+            pred,
+            bloom_keys: (!matches!(bloom_probes, BloomProbes::None))
+                .then_some(build_distinct.ceil() as usize),
+            probe_distinct: match bloom_probes {
+                BloomProbes::Distinct(d) => Some(d.ceil() as usize),
+                _ => None,
+            },
         });
     }
     let IR::Join { options, .. } = ir_arena.get_mut(node) else {
@@ -206,6 +233,33 @@ fn process_join(
     options.runtime_filters = runtime_filters;
 }
 
+/// The scans of one key that probe its bloom filter per row.
+///
+/// The join drops the bloom filter at run time when its keys turn out too many
+/// for the probe side's distinct keys. It is kept while it prunes any scan well,
+/// so that check uses the scan with the most distinct keys, and none when one of
+/// them has an unknown count.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum BloomProbes {
+    /// No scan probes it: it is not built.
+    None,
+    /// A scan whose distinct keys are unknown probes it.
+    UnknownDistinct,
+    /// The most distinct keys of any scan that probes it.
+    Distinct(f64),
+}
+
+impl BloomProbes {
+    /// Add a scan probing with `distinct` keys, if known.
+    fn add(&mut self, distinct: Option<f64>) {
+        *self = match (*self, distinct) {
+            (Self::UnknownDistinct, _) | (_, None) => Self::UnknownDistinct,
+            (Self::None, Some(d)) => Self::Distinct(d),
+            (Self::Distinct(a), Some(d)) => Self::Distinct(a.max(d)),
+        };
+    }
+}
+
 /// A side of the join that could be built from.
 struct BuildCandidate {
     left: bool,
@@ -214,41 +268,35 @@ struct BuildCandidate {
     forced: bool,
 }
 
-/// The ways a filtered side may be built from: forced when its bound fits the
-/// byte budget, preferred when its estimate fits.
-fn build_candidates(left: bool, stats: &NodeStats, width: f64) -> Vec<BuildCandidate> {
-    let mut candidates = Vec::new();
+/// The ways a filtered side may be built from: forced when it has a bound, and
+/// preferred on its estimate.
+fn build_candidates(left: bool, stats: &NodeStats) -> Vec<BuildCandidate> {
     if stats.filtered >= stats.unfiltered {
-        return candidates;
+        return Vec::new();
     }
-    let fits = |rows: f64| rows * width <= BUILD_BYTES;
-    if let Some(rows) = stats.max_rows().filter(|b| fits(*b)) {
-        candidates.push(BuildCandidate {
-            left,
-            rows,
-            forced: true,
-        });
-    }
-    if fits(stats.filtered) {
-        candidates.push(BuildCandidate {
-            left,
-            rows: stats.filtered,
-            forced: false,
-        });
-    }
-    candidates
+    let forced = stats.max_rows().map(|rows| BuildCandidate {
+        left,
+        rows,
+        forced: true,
+    });
+    let preferred = BuildCandidate {
+        left,
+        rows: stats.filtered,
+        forced: false,
+    };
+    forced.into_iter().chain([preferred]).collect()
 }
 
-/// A probe key that reached a scan.
+/// A probe key that reached one or more scans.
 struct TracedKey {
     key_idx: usize,
-    scan: Node,
-    predicate: ExprIR,
     pred: DynamicPred,
+    /// Each scan with the predicate to put on it.
+    origins: PlIndexMap<Node, ExprIR>,
 }
 
 /// The probe keys whose column reaches a scan that can skip batches, each with the
-/// batch-only predicate to put on that scan.
+/// predicates to put on those scans.
 fn trace_probe_keys(
     probe_input: Node,
     probe_keys: Vec<Option<PlSmallStr>>,
@@ -264,15 +312,14 @@ fn trace_probe_keys(
             continue;
         }
         let column = expr_arena.add(AExpr::Column(name));
-        let (dyn_node, pred) = new_batch_only_dynamic_pred(column, expr_arena);
-        let mut predicate = ExprIR::from_node(dyn_node, expr_arena);
-        if let Some(scan) = scan_origin(probe_input, &mut predicate, ir_arena, expr_arena, scratch)
-        {
+        let (dyn_node, pred) = new_dynamic_pred(column, expr_arena);
+        let predicate = ExprIR::from_node(dyn_node, expr_arena);
+        let origins = scan_origins(probe_input, predicate, ir_arena, expr_arena, scratch);
+        if !origins.is_empty() {
             traced.push(TracedKey {
                 key_idx,
-                scan,
-                predicate,
                 pred,
+                origins,
             });
         }
     }
@@ -301,108 +348,134 @@ fn is_eligible_join(options: &JoinOptionsIR, expr_arena: &Arena<AExpr>) -> bool 
         && !args.validation.needs_checks()
 }
 
-/// The scan whose column `predicate` reads, following the column down from `node`
-/// through nodes a predicate may be pushed past. `predicate` is rewritten to the
-/// scan's column name on the way.
+/// The scans whose column `predicate` reads, following the column down from `node`
+/// through nodes a predicate may be pushed past and into every input of a union,
+/// each with its own copy of `predicate` rewritten to the scan's column name.
 ///
 /// Besides the checks static predicate pushdown makes, a window function anywhere
 /// on the path is a barrier: it is lowered to a group-by that reads the scan on
 /// its own, before the forced join above has built.
-fn scan_origin(
-    mut node: Node,
-    predicate: &mut ExprIR,
+fn scan_origins(
+    node: Node,
+    predicate: ExprIR,
     ir_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut UnitVec<Node>,
-) -> Option<Node> {
+) -> PlIndexMap<Node, ExprIR> {
     let has_window = |exprs: &[ExprIR], expr_arena: &Arena<AExpr>| {
         exprs
             .iter()
             .any(|e| has_aexpr(e.node(), expr_arena, |ae| matches!(ae, AExpr::Over { .. })))
     };
-    loop {
-        match ir_arena.get(node) {
-            IR::Scan { scan_type, .. } => return skips_batches(scan_type).then_some(node),
-            IR::Filter {
-                predicate: filter, ..
-            } if has_window(std::slice::from_ref(filter), expr_arena) => return None,
-            IR::Select { expr, .. } | IR::HStack { exprs: expr, .. }
-                if has_window(expr, expr_arena) =>
-            {
-                return None;
-            },
-            IR::SimpleProjection { .. }
-            | IR::Filter { .. }
-            | IR::Select { .. }
-            | IR::HStack { .. } => {
-                node = push_past(node, predicate, ir_arena, expr_arena, scratch, true).ok()??;
-            },
-            IR::Join {
-                input_left,
-                input_right,
-                options,
-                ..
-            } => {
-                // A preferred side is only read first when the join carries runtime
-                // filters; an ordinary preference samples both sides at once.
-                let sequential = !options.runtime_filters.is_empty();
-                let probe_left = match options.args.build_side {
-                    Some(JoinBuildSide::ForceRight) => true,
-                    Some(JoinBuildSide::ForceLeft) => false,
-                    Some(JoinBuildSide::PreferRight) if sequential => true,
-                    Some(JoinBuildSide::PreferLeft) if sequential => false,
-                    _ => return None,
-                };
-                if !is_eligible_join(options, expr_arena) {
-                    return None;
-                }
-                let name = column_name(predicate, expr_arena).clone();
-                let schema_left = ir_arena.get(*input_left).schema(ir_arena);
-                let schema_right = ir_arena.get(*input_right).schema(ir_arena);
-                // A semi or anti join outputs the left columns only.
-                let from_right = if options.args.how.is_semi_anti() {
-                    None
-                } else {
-                    join_right_output_names(&schema_left, &schema_right, options)
-                        .ok()?
-                        .iter()
-                        .position(|output| output.as_ref() == Some(&name))
-                };
-                match from_right {
-                    Some(idx) if !probe_left => {
-                        let input_name = schema_right.get_at_index(idx)?.0.clone();
-                        if input_name != name {
-                            let mut renames = PlIndexMap::default();
-                            renames.insert(name, input_name);
-                            map_column_references(predicate, expr_arena, &renames);
-                        }
-                        node = *input_right;
-                    },
-                    None if probe_left && schema_left.contains(&name) => node = *input_left,
-                    _ => return None,
-                }
-            },
-            _ => return None,
+    let maintain_errors = pushdown_maintain_errors();
+    let mut origins = PlIndexMap::default();
+    let mut paths = vec![(node, predicate)];
+    'paths: while let Some((mut node, mut predicate)) = paths.pop() {
+        loop {
+            match ir_arena.get(node) {
+                IR::Scan { scan_type, .. } => {
+                    if skips_batches(scan_type) {
+                        origins.entry(node).or_insert(predicate);
+                    }
+                    continue 'paths;
+                },
+                IR::Filter {
+                    predicate: filter, ..
+                } if has_window(std::slice::from_ref(filter), expr_arena) => continue 'paths,
+                IR::Select { expr, .. } | IR::HStack { exprs: expr, .. }
+                    if has_window(expr, expr_arena) =>
+                {
+                    continue 'paths;
+                },
+                IR::SimpleProjection { .. }
+                | IR::Filter { .. }
+                | IR::Select { .. }
+                | IR::HStack { .. } => {
+                    match push_past(
+                        node,
+                        &mut predicate,
+                        ir_arena,
+                        expr_arena,
+                        scratch,
+                        maintain_errors,
+                    ) {
+                        Ok(Some(input)) => node = input,
+                        _ => continue 'paths,
+                    }
+                },
+                // A slice over the union would take other rows once some are pruned.
+                IR::Union { inputs, options } if options.slice.is_none() => {
+                    // Each input rewrites its own expression nodes; the filter they
+                    // refer to stays the one the join publishes.
+                    for &input in inputs.iter().rev() {
+                        let copy = deep_clone_ae(predicate.node(), expr_arena);
+                        paths.push((input, ExprIR::from_node(copy, expr_arena)));
+                    }
+                    continue 'paths;
+                },
+                IR::Join {
+                    input_left,
+                    input_right,
+                    options,
+                    ..
+                } => {
+                    // A preferred side is only read first when the join carries runtime
+                    // filters; an ordinary preference samples both sides at once.
+                    let sequential = !options.runtime_filters.is_empty();
+                    let probe_left = match options.args.build_side {
+                        Some(JoinBuildSide::ForceRight) => true,
+                        Some(JoinBuildSide::ForceLeft) => false,
+                        Some(JoinBuildSide::PreferRight) if sequential => true,
+                        Some(JoinBuildSide::PreferLeft) if sequential => false,
+                        _ => continue 'paths,
+                    };
+                    if !is_eligible_join(options, expr_arena) {
+                        continue 'paths;
+                    }
+                    let name = column_name(&predicate, expr_arena).clone();
+                    let schema_left = ir_arena.get(*input_left).schema(ir_arena);
+                    let schema_right = ir_arena.get(*input_right).schema(ir_arena);
+                    // A semi or anti join outputs the left columns only.
+                    let from_right = if options.args.how.is_semi_anti() {
+                        None
+                    } else {
+                        let Ok(names) =
+                            join_right_output_names(&schema_left, &schema_right, options)
+                        else {
+                            continue 'paths;
+                        };
+                        names
+                            .iter()
+                            .position(|output| output.as_ref() == Some(&name))
+                    };
+                    match from_right {
+                        Some(idx) if !probe_left => {
+                            let Some((input_name, _)) = schema_right.get_at_index(idx) else {
+                                continue 'paths;
+                            };
+                            let input_name = input_name.clone();
+                            if input_name != name {
+                                let mut renames = PlIndexMap::default();
+                                renames.insert(name, input_name);
+                                map_column_references(&mut predicate, expr_arena, &renames);
+                            }
+                            node = *input_right;
+                        },
+                        None if probe_left && schema_left.contains(&name) => node = *input_left,
+                        _ => continue 'paths,
+                    }
+                },
+                _ => continue 'paths,
+            }
         }
     }
+    origins
 }
 
 fn skips_batches(scan_type: &FileScanIR) -> bool {
     scan_type
         .flags()
         .contains(ScanFlags::SKIPS_BATCHES_BY_STATISTICS)
-}
-
-/// Let the scan evaluate the dynamic predicate per row, not only by statistics.
-fn evaluate_per_row(node: Node, expr_arena: &mut Arena<AExpr>) {
-    let AExpr::Function {
-        function: IRFunctionExpr::DynamicPred { batch_only, .. },
-        ..
-    } = expr_arena.get_mut(node)
-    else {
-        unreachable!()
-    };
-    *batch_only = false;
 }
 
 fn column_name<'a>(predicate: &ExprIR, expr_arena: &'a Arena<AExpr>) -> &'a PlSmallStr {
@@ -436,4 +509,37 @@ fn attach_to_scan(
             ExprIR::from_node(node, expr_arena)
         },
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BloomProbes;
+
+    fn probes(scans: &[Option<f64>]) -> BloomProbes {
+        let mut probes = BloomProbes::None;
+        for &distinct in scans {
+            probes.add(distinct);
+        }
+        probes
+    }
+
+    #[test]
+    fn bloom_probes_keep_the_widest_scan() {
+        assert_eq!(probes(&[]), BloomProbes::None);
+        assert_eq!(probes(&[Some(10.0)]), BloomProbes::Distinct(10.0));
+        assert_eq!(
+            probes(&[Some(10.0), Some(30.0), Some(20.0)]),
+            BloomProbes::Distinct(30.0)
+        );
+    }
+
+    #[test]
+    fn bloom_probes_with_an_unknown_scan_are_unknown() {
+        assert_eq!(probes(&[None]), BloomProbes::UnknownDistinct);
+        assert_eq!(
+            probes(&[Some(10.0), None, Some(30.0)]),
+            BloomProbes::UnknownDistinct
+        );
+        assert_eq!(probes(&[None, Some(30.0)]), BloomProbes::UnknownDistinct);
+    }
 }

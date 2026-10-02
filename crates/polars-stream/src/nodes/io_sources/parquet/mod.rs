@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use polars_arrow::datatypes::ArrowSchemaRef;
-use polars_async::executor::{self};
+use polars_async::executor::{self, TaskMetricAggregator};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::prelude::{ArrowSchema, DataType};
 use polars_core::runtime::ASYNC;
@@ -53,6 +53,7 @@ pub struct ParquetFileReader {
     byte_source_builder: DynByteSourceBuilder,
     row_group_prefetch_sync: RowGroupPrefetchSync,
     io_metrics: OptIOMetrics,
+    task_metrics: Option<Arc<TaskMetricAggregator>>,
     verbose: bool,
 
     /// Set during initialize()
@@ -236,6 +237,7 @@ impl FileReader for ParquetFileReader {
             missing_columns_policy: _,
             num_pipelines: _,
             disable_morsel_split: true,
+            maintain_order: _,
             last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
@@ -267,6 +269,7 @@ impl FileReader for ParquetFileReader {
             missing_columns_policy: _,
             num_pipelines,
             disable_morsel_split,
+            maintain_order,
             last_morsel_pipelines,
             callbacks:
                 FileReaderCallbacks {
@@ -300,6 +303,8 @@ impl FileReader for ParquetFileReader {
             _ = file_schema_tx.send(file_schema.clone());
         }
 
+        let task_metrics = self.task_metrics.as_deref();
+
         if normalized_pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
             let (_, rx) = FileReaderOutputSend::new_serial();
 
@@ -314,7 +319,7 @@ impl FileReader for ParquetFileReader {
 
             return Ok((
                 rx,
-                executor::spawn(TaskPriority::Low, std::future::ready(Ok(()))),
+                executor::spawn(TaskPriority::Low, task_metrics, std::future::ready(Ok(()))),
             ));
         }
 
@@ -338,20 +343,22 @@ impl FileReader for ParquetFileReader {
                 pre_slice: {:?}, \
                 resolved_pre_slice: {:?}, \
                 row_index: {:?}, \
-                predicate: {:?}",
+                predicate: {:?}, \
+                maintain_order: {}",
                 projected_arrow_fields()?.len(),
                 file_schema.len(),
                 pre_slice_arg,
                 normalized_pre_slice,
                 row_index,
                 predicate.as_ref().map(|_| "<predicate>"),
+                maintain_order,
             )
         }
 
         if let Some(single_morsel_height) = single_morsel_height {
             let (mut tx, rx) = FileReaderOutputSend::new_serial();
 
-            let handle = executor::spawn(TaskPriority::Low, async move {
+            let handle = executor::spawn(TaskPriority::Low, task_metrics, async move {
                 let _ = tx
                     .send_morsel(Morsel::new_unregistered(
                         DataFrame::empty_with_height(single_morsel_height),
@@ -386,7 +393,7 @@ impl FileReader for ParquetFileReader {
         let (output_recv, handle) = ParquetReadImpl {
             projected_arrow_fields,
             is_full_projection,
-            predicate,
+            predicate: predicate.map(|x| x.scan_io_predicate),
             // TODO: Refactor to avoid full clone
             options: Arc::unwrap_or_clone(self.config.clone()),
             byte_source,
@@ -413,12 +420,16 @@ impl FileReader for ParquetFileReader {
                 &mut self.row_group_prefetch_sync.current_all_spawned,
             ),
             disable_morsel_split,
+            maintain_order,
+            task_metrics: self.task_metrics.clone(),
         }
         .run();
 
         Ok((
             output_recv,
-            executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
+            executor::spawn(TaskPriority::Low, task_metrics, async move {
+                handle.await.unwrap()
+            }),
         ))
     }
 
@@ -502,6 +513,9 @@ struct ParquetReadImpl {
     rg_prefetch_prev_all_spawned: Option<WaitGroup>,
     rg_prefetch_current_all_spawned: Option<WaitToken>,
     disable_morsel_split: bool,
+    /// If false, row groups are emitted in the order they finish decoding.
+    maintain_order: bool,
+    task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 #[derive(Debug)]

@@ -764,6 +764,57 @@ def test_arrow_predicate_conversions(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("dtype", "values"),
+    [
+        (pl.Float64, [None, 1.0, float("nan"), 3.0]),
+        (pl.UInt64, [None, 0, 2**64 - 1]),
+        (pl.Null, [None, None]),
+    ],
+)
+@pytest.mark.parametrize(
+    ("predicate", "pyarrow_repr"),
+    [
+        (pl.col("value").is_nan(), "is_nan(value)"),
+        (pl.col("value").is_not_nan(), "invert(is_nan(value))"),
+    ],
+)
+def test_pyarrow_dataset_nan_predicate_pushdown(
+    dtype: type[pl.DataType],
+    values: list[float | int | None],
+    predicate: pl.Expr,
+    pyarrow_repr: str,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+    df = pl.DataFrame({"value": pl.Series(values, dtype=dtype)})
+    dset = ds.dataset(df.to_arrow())
+
+    capfd.readouterr()
+    actual = pl.scan_pyarrow_dataset(dset).filter(predicate).collect()
+    capture = capfd.readouterr().err
+
+    assert (
+        f"converted pyarrow predicate: <pyarrow.compute.Expression {pyarrow_repr}>, "
+        "residual predicate: None"
+    ) in capture
+    assert_frame_equal(actual, df.filter(predicate))
+
+
+@pytest.mark.parametrize("method", ["is_nan", "is_not_nan"])
+def test_pyarrow_dataset_nan_decimal_rejected(method: str) -> None:
+    df = pl.DataFrame({"value": pl.Series([None, 1, 2], dtype=pl.Decimal(10, 1))})
+    dset = ds.dataset(df.to_arrow())
+    predicate = getattr(pl.col("value"), method)()
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match=rf"`{method}` operation not supported for dtype `decimal",
+    ):
+        pl.scan_pyarrow_dataset(dset).filter(predicate).collect()
+
+
 def test_pyarrow_dataset_streaming_source() -> None:
     df = pl.DataFrame({"item": ["foo", "bar", "baz"], "price": [10.0, 20.0, 30.0]})
     dataset = pl.scan_pyarrow_dataset(
@@ -784,3 +835,31 @@ def test_pyarrow_dataset_residual_predicate() -> None:
     assert dataset.filter(
         pl.col("item").str.head(2).is_in(["do"]) & (pl.col("price") <= 2)
     ).collect().to_dict(as_series=False) == {"item": ["doo"], "price": [1]}
+
+
+def test_pyarrow_dataset_is_in_other_time_zone(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    # 01:00 UTC and 02:00 in Amsterdam are the same instant. The haystack is
+    # converted to the column's zone, so pyarrow compares like dtypes.
+    df = pl.DataFrame(
+        {"t": pl.Series([datetime(2020, 1, 1, 1)]).dt.replace_time_zone("UTC")}
+    )
+    dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+    haystack = pl.Series([datetime(2020, 1, 1, 2)]).dt.replace_time_zone(
+        "Europe/Amsterdam"
+    )
+    q = pl.scan_pyarrow_dataset(dset).filter(
+        pl.col("t").is_in(pl.lit(haystack).implode())
+    )
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "value_set=timestamp[us, tz=UTC]" in capture
+    assert "residual predicate: None" in capture
+    assert_frame_equal(result, df)

@@ -5,8 +5,8 @@ mod join;
 mod keys;
 pub(super) mod utils;
 
+pub(crate) use dynamic::new_dynamic_pred;
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
-pub(crate) use dynamic::{new_batch_only_dynamic_pred, new_dynamic_pred};
 use polars_buffer::Buffer;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
@@ -18,7 +18,7 @@ use utils::*;
 use super::*;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
-use crate::utils::{check_input_node, has_aexpr};
+use crate::utils::check_input_node;
 
 pub struct PredicatePushDown {
     // How many cache nodes a predicate may be pushed down to.
@@ -315,7 +315,39 @@ impl PredicatePushDown {
                 }
 
                 let alp = lp_arena.take(input);
-                let new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
+                let mut new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
+
+                // Note: fallible hive predicates stay above the scan but can still prune
+                // files *if* they evaluate on the hive partitions without error.
+                if let (
+                    [local_predicate],
+                    Scan {
+                        hive_parts: Some(hive_parts),
+                        predicate,
+                        predicate_file_skip_applied: None,
+                        ..
+                    },
+                ) = (local_predicates.as_slice(), &mut new_input)
+                    && !self.maintain_errors
+                    && aexpr_to_leaf_names_iter(local_predicate.node(), expr_arena)
+                        .all(|name| hive_parts.df().schema().contains(name))
+                    && is_elementwise_rec(local_predicate.node(), expr_arena)
+                    && !is_inherently_nondeterministic(local_predicate.node(), expr_arena)
+                {
+                    let scan_predicate = predicate.replace(local_predicate.clone());
+                    let node = lp_arena.add(new_input);
+                    _ = (self.hooks.apply_scan_predicate_to_scan_ir)(node, lp_arena, expr_arena);
+                    new_input = lp_arena.take(node);
+                    if let Scan {
+                        predicate,
+                        predicate_file_skip_applied,
+                        ..
+                    } = &mut new_input
+                    {
+                        *predicate = scan_predicate;
+                        *predicate_file_skip_applied = None;
+                    }
+                }
 
                 // TODO!
                 // If a predicates result would be influenced by earlier applied
@@ -361,6 +393,7 @@ impl PredicatePushDown {
                 scan_type,
                 unified_scan_args,
                 output_schema,
+                maintain_order,
             } => {
                 let mut blocked_names = Vec::with_capacity(2);
 
@@ -405,6 +438,7 @@ impl PredicatePushDown {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        maintain_order,
                     }
                 } else {
                     let lp = Scan {
@@ -416,6 +450,7 @@ impl PredicatePushDown {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        maintain_order,
                     };
                     if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);
@@ -662,6 +697,10 @@ impl PredicatePushDown {
             // NOT Pushed down passed these nodes
             // predicates influence slice sizes / indices
             lp @ (Slice { .. } | Gather { .. } | HConcat { .. }) => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
+            // Windows are created after predicate pushdown.
+            lp @ Window { .. } => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
             // Caches will run predicate push-down in the `cache_states` run.

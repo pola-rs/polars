@@ -102,11 +102,12 @@ pub struct ScanColumnStats {
     /// Average width of one value in the source, in bytes.
     pub avg_byte_width: Option<f32>,
     /// Inclusive value range of an integer column, folded over the chunks that were
-    /// read. A skipped chunk can only widen it, so a partial read understates it.
+    /// read. When the chunks were sampled, it is widened by the mean gap between
+    /// them and is an estimate.
     #[cfg_attr(feature = "serde", serde(default))]
     pub int_range: Option<(i128, i128)>,
-    /// `int_range` was folded over part of the data only, so values outside it may
-    /// exist.
+    /// `int_range` misses sources whose statistics were not read, or comes from a
+    /// single sampled row group, so values far outside it may exist.
     #[cfg_attr(feature = "serde", serde(default))]
     pub int_range_partial: bool,
 }

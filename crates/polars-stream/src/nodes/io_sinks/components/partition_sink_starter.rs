@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use polars_async::executor;
+use polars_async::executor::{self, TaskMetricAggregator};
 use polars_async::primitives::connector;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
@@ -23,6 +23,7 @@ pub struct PartitionSinkStarter {
     pub sync_on_close: SyncOnCloseType,
     pub num_pipelines_per_sink: NonZeroUsize,
     pub sinked_path_info_list: Option<SinkedPathInfoList>,
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 impl PartitionSinkStarter {
@@ -49,9 +50,11 @@ impl PartitionSinkStarter {
             morsel_rx,
             FileOpenTaskHandle::new(file_open_task, self.sync_on_close),
             self.num_pipelines_per_sink,
+            self.task_metrics.clone(),
         )?;
 
-        let task_handle = executor::spawn(TaskPriority::High, async move {
+        let task_metrics = self.task_metrics.as_deref();
+        let task_handle = executor::spawn(TaskPriority::High, task_metrics, async move {
             writer_handle.await?;
             Ok(file_permit)
         });

@@ -23,6 +23,7 @@ num-traits = { workspace = true }
 parking_lot = { workspace = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+rand = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 schemars = { workspace = true, optional = true }
@@ -30,7 +31,7 @@ serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
 strum_macros = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "macros"] }
 uuid = { workspace = true }
 
 polars-arrow = { workspace = true }
@@ -137,6 +138,7 @@ dtype-map = ["polars-core/dtype-map", "polars-expr/dtype-map", "polars-plan/dtyp
 ewma = ["polars-expr/ewma", "polars-plan/ewma"]
 mode = ["polars-expr/mode", "polars-plan/mode"]
 moment = ["polars-expr/moment", "polars-plan/moment"]
+rolling_window = ["polars-expr/rolling_window", "polars-plan/rolling_window"]
 object = ["polars-ops/object"]
 physical_plan_visualization_schema = [
   "dep:schemars",

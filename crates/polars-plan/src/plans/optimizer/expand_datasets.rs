@@ -45,7 +45,7 @@ pub(super) fn expand_datasets(
 
     #[cfg(feature = "python")]
     let py_scan_resolve_threadpool: LazyCell<Arc<PyScanResolveThreadPool>> =
-        LazyCell::new(|| Arc::new(PyScanResolveThreadPool::new()));
+        LazyCell::new(|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool()));
 
     match ir_graph_traversal(
         root,
@@ -63,6 +63,7 @@ pub(super) fn expand_datasets(
                         predicate,
                         predicate_file_skip_applied: _,
                         output_schema: _,
+                        maintain_order: _,
                     } = storage.get_mut(key)
                     else {
                         return Ok(());
@@ -290,6 +291,7 @@ fn rebuild_scan_from_expanded(
         predicate: _,
         predicate_file_skip_applied: _,
         output_schema: _,
+        maintain_order: _,
     } = scan_ir
     else {
         unreachable!()
@@ -426,6 +428,10 @@ fn rebuild_scan_from_expanded(
         FileScanDsl::Lines { name } => FileScanIR::Lines { name },
 
         FileScanDsl::ExpandedPaths { name } => FileScanIR::ExpandedPaths { name },
+
+        FileScanDsl::ExternalReaderBuilder { external } => {
+            FileScanIR::ExternalReaderBuilder { external }
+        },
 
         FileScanDsl::Anonymous {
             options,
@@ -766,6 +772,7 @@ mod tests {
                 bytes_per_source: None,
             }),
             unified_scan_args: Box::new(args),
+            maintain_order: true,
         }
     }
 

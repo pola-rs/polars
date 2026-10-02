@@ -1938,8 +1938,7 @@ dependencies = [
 [[package]]
 name = "hashbrown"
 version = "0.17.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+source = "git+https://github.com/pola-rs/hashbrown?rev=d76a6f81abd8f388676aff15068236a8d21c7e1a#d76a6f81abd8f388676aff15068236a8d21c7e1a"
 dependencies = [
  "allocator-api2",
  "equivalent",
@@ -3486,6 +3485,7 @@ dependencies = [
  "futures",
  "memmap2",
  "polars-arrow",
+ "polars-buffer",
  "polars-config",
  "polars-core",
  "polars-defs",
@@ -3843,6 +3843,7 @@ dependencies = [
  "polars-time",
  "polars-utils",
  "pyo3",
+ "rand 0.10.2",
  "rayon",
  "recursive",
  "schemars",

@@ -7,7 +7,7 @@ use polars_arrow::io::ipc::write2::array::{IpcBatchSerializationContext, write_a
 use polars_arrow::io::ipc::write2::message::{
     finish_encode_ipc_dictionary_batch, finish_encode_ipc_record_batch,
 };
-use polars_async::executor::{self, TaskPriority};
+use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
@@ -37,6 +37,7 @@ pub struct RecordBatchEncoder {
     pub write_statistics_flags: bool,
     pub bytes_bufferer_config: BytesBuffererConfig,
     pub finish_record_batch_write_wg: WaitGroup,
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 impl RecordBatchEncoder {
@@ -51,6 +52,7 @@ impl RecordBatchEncoder {
             write_statistics_flags,
             bytes_bufferer_config,
             finish_record_batch_write_wg,
+            task_metrics,
         } = self;
 
         let compression = write_options.compression;
@@ -80,6 +82,7 @@ impl RecordBatchEncoder {
             // Rechunk and convert to arrow in parallel.
             for fut in parallelize_first_to_local(
                 TaskPriority::High,
+                task_metrics.as_deref(),
                 columns.into_iter().zip(arrow_converters.drain(..)).map(
                     |(column, (mut arrow_converter, arrow_field))| async move {
                         let rechunked = column.as_materialized_series().rechunk();
@@ -104,8 +107,10 @@ impl RecordBatchEncoder {
 
             let bytes_bufferer_config = bytes_bufferer_config.clone();
 
-            let serialize_handle =
-                executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::High, async move {
+            let serialize_handle = executor::AbortOnDropHandle::new(executor::spawn(
+                TaskPriority::High,
+                task_metrics.as_deref(),
+                async move {
                     let mut arrow_data = BytesBufferer::new(&bytes_bufferer_config);
                     let mut ipc_message = BytesBufferer::new(&bytes_bufferer_config);
                     let mut ctx = IpcBatchSerializationContext::new(
@@ -134,7 +139,8 @@ impl RecordBatchEncoder {
                         arrow_data_num_bytes,
                         morsel_permit: Some(permit),
                     })
-                }));
+                },
+            ));
 
             // Wait -> acquire here applies backpressure from slow I/O.
             // However, if I/O is faster than record batch encoding, then acquiring a token here
@@ -207,8 +213,11 @@ impl RecordBatchEncoder {
                     })
             })
         {
-            let encode_handle =
-                executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::High, encode_fut));
+            let encode_handle = executor::AbortOnDropHandle::new(executor::spawn(
+                TaskPriority::High,
+                task_metrics.as_deref(),
+                encode_fut,
+            ));
 
             if ipc_batch_tx.send((encode_handle, None)).await.is_err() {
                 return Ok(());

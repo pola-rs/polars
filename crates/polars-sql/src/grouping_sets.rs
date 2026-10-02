@@ -6,10 +6,11 @@ use polars_plan::plans::typed_lit;
 use polars_plan::plans::visitor::{RewriteRecursion, RewritingVisitor, TreeWalker};
 use polars_plan::utils::has_expr;
 use polars_utils::aliases::PlIndexSet;
-use polars_utils::{format_pl_smallstr, unique_column_name};
+use polars_utils::format_pl_smallstr;
 use sqlparser::ast::Expr as SQLExpr;
 
 use crate::context::strip_outer_alias;
+use crate::unique_column_name;
 
 /// Cap on the number of grouping sets a single `GROUP BY` may expand to.
 const MAX_GROUPING_SETS: usize = 4096;

@@ -824,7 +824,10 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                     self.expr_arena.replace(
                         select_len_ae_node,
-                        AExpr::Agg(IRAggExpr::Sum(predicate_node)),
+                        AExpr::Agg(IRAggExpr::Sum {
+                            input: predicate_node,
+                            null_on_empty: false,
+                        }),
                     );
 
                     *out_edge.projection_mut() = Projection::Names;
@@ -1206,7 +1209,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
             },
 
-            IR::GroupBy { apply: Some(_), .. } => {
+            // Windows are created after projection pushdown.
+            IR::GroupBy { apply: Some(_), .. } | IR::Window { .. } => {
                 post_project_and_return!()
             },
 
@@ -1387,7 +1391,10 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             dtype: DataType::UInt128,
                             options: CastOptions::Overflowing,
                         };
-                        e = AExpr::Agg(IRAggExpr::Sum(self.expr_arena.add(e)));
+                        e = AExpr::Agg(IRAggExpr::Sum {
+                            input: self.expr_arena.add(e),
+                            null_on_empty: false,
+                        });
                         e = AExpr::Cast {
                             expr: self.expr_arena.add(e),
                             dtype: DataType::IDX_DTYPE,

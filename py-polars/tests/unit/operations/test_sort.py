@@ -13,7 +13,7 @@ from polars.testing.parametric import dataframes, series
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import PolarsDataType
+    from polars._typing import EngineType, PolarsDataType
 
 
 @given(
@@ -1283,6 +1283,103 @@ def test_sort_by_dynamic_24057(expr: pl.Expr, result: list[list[int]]) -> None:
     assert_frame_equal(out, expected)
 
 
+def test_sort_by_reordered_input_29630() -> None:
+    df = pl.DataFrame({"k": [0, 0, 1, 1], "a": [10, 11, 20, 21], "b": [2, 1, 4, 3]})
+
+    out = df.group_by("k", maintain_order=True).agg(pl.col("a").reverse().sort_by("b"))
+    assert out["a"].to_list() == [[10, 11], [20, 21]]
+    expected = out
+    q = (
+        df.lazy()
+        .group_by("k", maintain_order=True)
+        .agg(pl.col("a").reverse().sort_by("b"))
+    )
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_sort_by_reordered_key_29630() -> None:
+    df = pl.DataFrame({"k": [0, 0, 1, 1], "a": [10, 11, 20, 21], "b": [2, 1, 4, 3]})
+    out = df.group_by("k", maintain_order=True).agg(
+        pl.col("a").sort_by(pl.col("b").reverse())
+    )
+    assert out["a"].to_list() == [[10, 11], [20, 21]]
+
+
+def test_sort_by_reordered_later_key_29630() -> None:
+    df = pl.DataFrame({"k": [0, 0, 1, 1], "a": [10, 11, 20, 21], "b": [2, 1, 4, 3]})
+    out = (
+        df.with_columns(key1=1)
+        .group_by("k", maintain_order=True)
+        .agg(pl.col("a").sort_by(["key1", pl.col("b").reverse()]))
+    )
+    assert out["a"].to_list() == [[10, 11], [20, 21]]
+
+
+def test_sort_by_over_reordered_input_29630() -> None:
+    df = pl.DataFrame({"k": [0, 0, 1, 1], "a": [10, 11, 20, 21], "b": [2, 1, 4, 3]})
+    out = df.select(pl.col("a").reverse().sort_by("b").over("k"))
+    assert out["a"].to_list() == [10, 11, 20, 21]
+
+
+def test_sort_by_pending_group_update_29630() -> None:
+    df = pl.DataFrame({"k": [0, 1, 0, 1], "b": [2, 4, 1, 3]})
+    out = df.group_by("k", maintain_order=True).agg(
+        pl.arange(pl.len()).sort_by("b").alias("out")
+    )
+    assert out["out"].to_list() == [[1, 0], [1, 0]]
+
+
+def test_sort_by_multi_key_options_29630() -> None:
+    df = pl.DataFrame(
+        {
+            "k": [0, 0, 0, 1, 1, 1],
+            "a": [10, 11, 12, 20, 21, 22],
+            "b": [1, 1, None, 2, 2, None],
+            "c": [2, 1, 3, 1, 2, 3],
+        }
+    )
+    out = df.group_by("k", maintain_order=True).agg(
+        pl.col("a").sort_by(
+            ["b", pl.col("c").reverse()],
+            descending=[True, False],
+            nulls_last=[True, False],
+        )
+    )
+    assert out["a"].to_list() == [[11, 10, 12], [21, 20, 22]]
+
+
+def test_sort_by_empty_group_29630() -> None:
+    df = pl.DataFrame(
+        {
+            "k": [0, 0, 1, 1],
+            "a": [10, 11, 20, 21],
+            "b": [2, 1, None, None],
+        }
+    )
+    out = df.group_by("k", maintain_order=True).agg(
+        pl.col("a")
+        .filter(pl.col("b").is_not_null())
+        .reverse()
+        .sort_by(pl.col("b").filter(pl.col("b").is_not_null()))
+    )
+    assert out["a"].to_list() == [[10, 11], []]
+
+
+def test_sort_by_sliced_groups_29630() -> None:
+    df = pl.DataFrame(
+        {
+            "k": [0, 1, 0, 1, 0, 1],
+            "a": [10, 20, 11, 21, 12, 22],
+            "b": [3, 6, 1, 4, 2, 5],
+        }
+    )
+    out = df.group_by("k", maintain_order=True).agg(
+        pl.col("a").slice(1, 2).reverse().sort_by(pl.col("b").slice(1, 2))
+    )
+    assert out["a"].to_list() == [[12, 11], [22, 21]]
+
+
 def test_sort_by_empty_list_eval_25433() -> None:
     some_list = [2, 1, 3]
     df = pl.DataFrame({"a": [some_list, []]})
@@ -1478,3 +1575,12 @@ def test_sort_by_nested_categorical_keys(key: pl.Series) -> None:
 
     grouped = df.with_columns(g=1).group_by("g").agg(pl.col("x").sort_by("k", "y"))
     assert grouped["x"].to_list() == [[3, 2, 1]]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_sort_multiple_keys_maintain_order_reversed_input(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"a": [3, 2, 1, 1], "b": [6, 5, 4, 4]})
+    assert_frame_equal(
+        lf.sort("a", "b", maintain_order=True).collect(engine=engine),
+        pl.DataFrame({"a": [1, 1, 2, 3], "b": [4, 4, 5, 6]}),
+    )

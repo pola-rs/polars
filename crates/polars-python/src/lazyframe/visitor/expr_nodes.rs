@@ -10,7 +10,7 @@ use polars_defs::time::duration::Duration;
 use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptionsIR, RollingGroupOptionsIR};
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
-use polars_plan::dsl::DateRangeArgs;
+use polars_plan::dsl::{DateRangeArgs, StructEvalVariant};
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
     IRBooleanFunction, IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction,
@@ -592,6 +592,9 @@ pub struct StructEval {
     expr: usize,
     #[pyo3(get)]
     evaluation: Vec<PyExprIR>,
+    /// Either "with_fields" or "select".
+    #[pyo3(get)]
+    variant: &'static str,
 }
 
 #[pyclass(frozen)]
@@ -1018,10 +1021,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: maintain_order.into_py_any(py)?,
             },
-            IRAggExpr::Sum(n) => Agg {
+            IRAggExpr::Sum {
+                input: n,
+                null_on_empty,
+            } => Agg {
                 name: "sum".into_py_any(py)?,
                 arguments: vec![n.0],
-                options: py.None(),
+                options: null_on_empty.into_py_any(py)?,
             },
             IRAggExpr::Count {
                 input: n,
@@ -1057,6 +1063,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         AExpr::AnonymousAgg { .. } => {
             Err(PyNotImplementedError::new_err("anonymous_streaming_agg"))
         },
+        AExpr::Function { function, .. } if function.membership_needle_cast().is_some() => {
+            // The visitor has no field for a needle that is cast as the function runs.
+            Err(PyNotImplementedError::new_err(format!("{function}")))
+        },
         AExpr::Function {
             input,
             function,
@@ -1091,7 +1101,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         (PyArrayFunction::Join, *ignore_nulls).into_py_any(py)
                     },
                     #[cfg(feature = "is_in")]
-                    IRArrayFunction::Contains { nulls_equal } => {
+                    IRArrayFunction::Contains { nulls_equal, .. } => {
                         (PyArrayFunction::Contains, *nulls_equal).into_py_any(py)
                     },
                     #[cfg(feature = "array_count")]
@@ -1132,7 +1142,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::ListExpr(listfun) => match listfun {
                     IRListFunction::Concat => (PyListFunction::Concat,).into_py_any(py),
                     #[cfg(feature = "is_in")]
-                    IRListFunction::Contains { nulls_equal } => {
+                    IRListFunction::Contains { nulls_equal, .. } => {
                         (PyListFunction::Contains, nulls_equal).into_py_any(py)
                     },
                     #[cfg(feature = "list_drop_nulls")]
@@ -1580,7 +1590,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         (PyBooleanFunction::IsBetween, Into::<&str>::into(closed)).into_py_any(py)
                     },
                     #[cfg(feature = "is_in")]
-                    IRBooleanFunction::IsIn { nulls_equal } => {
+                    IRBooleanFunction::IsIn { nulls_equal, .. } => {
                         (PyBooleanFunction::IsIn, nulls_equal).into_py_any(py)
                     },
                     IRBooleanFunction::IsClose {
@@ -2260,9 +2270,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         AExpr::Len => Len {}.into_py_any(py),
         AExpr::Eval { .. } => Err(PyNotImplementedError::new_err("list.eval")),
-        AExpr::StructEval { expr, evaluation } => StructEval {
+        AExpr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => StructEval {
             expr: expr.0,
             evaluation: evaluation.iter().map(|e| e.into()).collect(),
+            variant: match variant {
+                StructEvalVariant::WithFields => "with_fields",
+                StructEvalVariant::Select => "select",
+            },
         }
         .into_py_any(py),
     }

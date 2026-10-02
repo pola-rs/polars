@@ -69,7 +69,11 @@ pub enum IRAggExpr {
         input: Node,
         maintain_order: bool,
     },
-    Sum(Node),
+    Sum {
+        input: Node,
+        /// Return a missing value if there are no non-null values.
+        null_on_empty: bool,
+    },
     Count {
         input: Node,
         include_nulls: bool,
@@ -95,6 +99,10 @@ impl Hash for IRAggExpr {
                 input: _,
                 include_nulls,
             } => include_nulls.hash(state),
+            Self::Sum {
+                input: _,
+                null_on_empty,
+            } => null_on_empty.hash(state),
             _ => {},
         }
     }
@@ -133,7 +141,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Item { allow_empty, .. } => GroupByMethod::Item { allow_empty },
             Mean(_) => GroupByMethod::Mean,
             Implode { maintain_order, .. } => GroupByMethod::Implode { maintain_order },
-            Sum(_) => GroupByMethod::Sum,
+            Sum { null_on_empty, .. } => GroupByMethod::Sum { null_on_empty },
             Count {
                 input: _,
                 include_nulls,
@@ -226,6 +234,7 @@ pub enum AExpr {
     StructEval {
         expr: Node,
         evaluation: Vec<ExprIR>,
+        variant: StructEvalVariant,
     },
     Function {
         /// Function arguments

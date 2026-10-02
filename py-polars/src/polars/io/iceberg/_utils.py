@@ -63,19 +63,25 @@ def _new_pyiceberg_scan(
     selected_fields: tuple[str, ...] = ("*",),
     limit: int | None = None,
 ) -> Any:
+    from polars.io.iceberg._cache import with_metadata_file_cache
+
+    scan: Any
+
     if from_snapshot_id_exclusive is None and to_snapshot_id_inclusive is None:
-        return tbl.scan(
+        scan = tbl.scan(
             snapshot_id=snapshot_id,
             selected_fields=selected_fields,
             limit=limit,
         )
+    else:
+        scan = tbl.incremental_append_scan(
+            from_snapshot_id_exclusive=from_snapshot_id_exclusive,
+            to_snapshot_id_inclusive=to_snapshot_id_inclusive,
+            selected_fields=selected_fields,
+            limit=limit,
+        )
 
-    return tbl.incremental_append_scan(
-        from_snapshot_id_exclusive=from_snapshot_id_exclusive,
-        to_snapshot_id_inclusive=to_snapshot_id_inclusive,
-        selected_fields=selected_fields,
-        limit=limit,
-    )
+    return with_metadata_file_cache(scan)
 
 
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
@@ -273,6 +279,9 @@ def _(a: Call) -> Any:
     elif f in _temporal_conversions:
         # convert from polars-native i64 to ISO8601 string
         return _temporal_conversions[f](*args).isoformat()
+    elif f == "starts_with":
+        pattern = _convert_predicate(a.keywords[0].value)
+        return pyiceberg.expressions.StartsWith(args[0][0], pattern)  # type: ignore[misc, call-arg]
     else:
         ref = _convert_predicate(a.func.value)[0]  # type: ignore[attr-defined]
         if f == "isin":
