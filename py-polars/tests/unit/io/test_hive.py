@@ -226,6 +226,102 @@ def test_hive_fallible_predicate_does_not_evaluate_udf_when_pruning_29494(
     assert calls == []
 
 
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.write_disk
+def test_hive_fallible_predicate_empty_group_by(
+    tmp_path: Path, engine: EngineType
+) -> None:
+    path = tmp_path / "month=1/data.parquet"
+    path.parent.mkdir()
+    pl.DataFrame({"flag": [True]}).write_parquet(path)
+
+    result = (
+        pl.scan_parquet(path, hive_partitioning=True)
+        .filter(pl.col("month").cast(pl.Int8) < 0, pl.col("flag"))
+        .group_by("month")
+        .len()
+        .collect(engine=engine)
+    )
+    assert_frame_equal(
+        result, pl.DataFrame(schema={"month": pl.Int64, "len": pl.UInt32})
+    )
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.write_disk
+def test_hive_fallible_predicate_prunes_after_scan_predicate(
+    tmp_path: Path, engine: EngineType
+) -> None:
+    for month in (1, 2, 13):
+        path = tmp_path / f"year=2026/month={month}/data.parquet"
+        path.parent.mkdir(parents=True)
+        pl.DataFrame({"flag": [True, False]}).write_parquet(path)
+        if month == 2:
+            path.write_bytes(b"not parquet")
+
+    # The scan predicate removes the invalid date before speculative evaluation.
+    # The date predicate can then prune the unreadable file in month=2.
+    result = (
+        pl.scan_parquet(tmp_path / "**/*.parquet", hive_partitioning=True)
+        .filter(
+            pl.date("year", "month", 1) <= date(2026, 1, 1),
+            pl.col("month") < 13,
+            pl.col("flag"),
+        )
+        .collect(engine=engine)
+    )
+    assert result.rows() == [(True, 2026, 1)]
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+def test_hive_fallible_predicate_group_by_prunes_only_branch_files(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
+) -> None:
+    for month in (1, 2, 3):
+        for file in (0, 1):
+            path = tmp_path / f"month={month}/{file}.parquet"
+            path.parent.mkdir(exist_ok=True)
+            pl.DataFrame({"flag": [True, False]}).write_parquet(path)
+
+    lf = (
+        pl.scan_parquet(tmp_path / "**/*.parquet", hive_partitioning=True)
+        .filter(pl.col("month").cast(pl.Int8) <= 3, pl.col("flag"))
+        .group_by("month")
+        .len()
+    )
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    lf.explain(optimizations=pl.QueryOptFlags(pre_partition_hive=True))
+    logs = capfd.readouterr().err
+    # Evaluate the retained predicate on each branch's two files, not repeatedly
+    # over all six files while the branches are being constructed.
+    assert logs.count("allows skipping 0 / 2 files") == 3
+    assert "allows skipping 0 / 6 files" not in logs
+    assert lf.collect().sort("month").rows() == [(1, 2), (2, 2), (3, 2)]
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+def test_hive_fallible_predicate_skips_evaluation_after_scan_prunes_all_files(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
+) -> None:
+    path = tmp_path / "year=2026/month=13/data.parquet"
+    path.parent.mkdir(parents=True)
+    pl.DataFrame({"flag": [True]}).write_parquet(path)
+
+    lf = pl.scan_parquet(path, hive_partitioning=True).filter(
+        pl.date("year", "month", 1) <= date(2026, 1, 1),
+        pl.col("year") == 2025,
+    )
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    lf.explain()
+    logs = capfd.readouterr().err
+    assert logs.count("Source filter mask initialization via hive partitions") == 1
+    assert "allows skipping 1 / 1 files" in logs
+
+
 @pytest.mark.write_disk
 def test_hive_streaming_pushdown_is_in_22212(tmp_path: Path) -> None:
     (
