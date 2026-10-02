@@ -365,16 +365,16 @@ fn decode_column(
 
     let columns_to_deserialize = iter
         .map(|col_md| {
-            let byte_range = col_md.byte_range();
+            let byte_range = col_md.byte_range()?;
 
-            (
+            PolarsResult::Ok((
                 col_md,
                 row_group_data
                     .fetched_bytes
                     .get_range(byte_range.start as usize..byte_range.end as usize),
-            )
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     let skip_num_rows_check = matches!(filter, Some(Filter::Predicate(_)));
 
@@ -940,16 +940,16 @@ fn decode_column_prefiltered(
 
     let columns_to_deserialize = iter
         .map(|col_md| {
-            let byte_range = col_md.byte_range();
+            let byte_range = col_md.byte_range()?;
 
-            (
+            PolarsResult::Ok((
                 col_md,
                 row_group_data
                     .fetched_bytes
                     .get_range(byte_range.start as usize..byte_range.end as usize),
-            )
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     let prefilter = !arrow_field.dtype.is_nested();
 

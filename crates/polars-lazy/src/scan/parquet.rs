@@ -70,6 +70,7 @@ impl LazyFileListReader for LazyParquetReader {
             parallel: self.args.parallel,
             low_memory: self.args.low_memory,
             use_statistics: self.args.use_statistics,
+            decryption_properties: None,
         };
 
         let unified_scan_args = UnifiedScanArgs {

@@ -12,14 +12,17 @@
 //!   See <https://github.com/apache/parquet-format/blob/96edf77704b60b6f3ca2232c218c64eff6c874d3/src/main/thrift/parquet.thrift> for spec
 
 use polars_buffer::Buffer;
-use polars_parquet_format::{KeyValue, SchemaElement, SortingColumn};
+use polars_parquet_format::{
+    AesGcmCtrV1, AesGcmV1, ColumnCryptoMetaData, EncryptionAlgorithm, EncryptionWithColumnKey,
+    EncryptionWithFooterKey, FileCryptoMetaData, KeyValue, SchemaElement, SortingColumn,
+};
 
 use super::parquet_thrift::{FieldType, ThriftCompactInputProtocol, ThriftSliceInputProtocol};
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{
-    ByteRange, ColumnOrderTag, CompactColumnChunk, CompactColumnMetaData, CompactFileMetaData,
-    CompactRowGroup, CompactStatistics,
+    ByteRange, ColumnOrderTag, CompactColumnChunk, CompactColumnCrypto, CompactColumnMetaData,
+    CompactFileMetaData, CompactRowGroup, CompactStatistics,
 };
 
 trait RequireField<T> {
@@ -85,6 +88,17 @@ pub(crate) fn decode_file_metadata(footer: Buffer<u8>) -> ParquetResult<CompactF
     read_file_metadata(&mut prot, origin_ptr, &footer)
 }
 
+/// Decode the `FileCryptoMetaData` that precedes the footer in files with
+/// an encrypted footer. Also returns the number of bytes consumed.
+pub(crate) fn decode_file_crypto_metadata(
+    buf: &[u8],
+) -> ParquetResult<(FileCryptoMetaData, usize)> {
+    let mut prot = ThriftSliceInputProtocol::new(buf);
+    let crypto_metadata = read_file_crypto_metadata(&mut prot)?;
+    let consumed = buf.len() - prot.as_slice().len();
+    Ok((crypto_metadata, consumed))
+}
+
 /// Decode just `FileMetaData.num_rows` (field 3) for the `RowCounts`
 /// resolve mode. Thrift field ids are ascending, so we can `break` once
 /// field 3 is read and leave the rest of the footer untouched.
@@ -113,8 +127,9 @@ fn read_file_metadata(
     let mut key_value_metadata: Option<Vec<KeyValue>> = None;
     let mut created_by: Option<String> = None;
     let mut column_orders: Option<Vec<ColumnOrderTag>> = None;
+    let mut encryption_algorithm: Option<EncryptionAlgorithm> = None;
+    let mut footer_signing_key_metadata: Option<Vec<u8>> = None;
 
-    // 8/9 (encryption): polars has no encryption support; skip via fallthrough.
     read_struct_fields!(prot, |f| {
         1 => version = Some(prot.read_i32()?),
         2 => schema = Some(read_list(prot, read_schema_element)?),
@@ -123,6 +138,8 @@ fn read_file_metadata(
         5 => key_value_metadata = Some(read_list(prot, read_key_value)?),
         6 => created_by = Some(prot.read_string()?.to_owned()),
         7 => column_orders = Some(read_list(prot, read_column_order)?),
+        8 => encryption_algorithm = Some(read_encryption_algorithm(prot)?),
+        9 => footer_signing_key_metadata = Some(prot.read_bytes_owned()?),
     });
 
     Ok(CompactFileMetaData {
@@ -133,7 +150,71 @@ fn read_file_metadata(
         key_value_metadata,
         created_by,
         column_orders,
+        encryption_algorithm,
+        footer_signing_key_metadata,
         footer_buf: footer.clone(),
+    })
+}
+
+fn read_file_crypto_metadata(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<FileCryptoMetaData> {
+    let mut encryption_algorithm: Option<EncryptionAlgorithm> = None;
+    let mut key_metadata: Option<Vec<u8>> = None;
+
+    read_struct_fields!(prot, |f| {
+        1 => encryption_algorithm = Some(read_encryption_algorithm(prot)?),
+        2 => key_metadata = Some(prot.read_bytes_owned()?),
+    });
+
+    Ok(FileCryptoMetaData {
+        encryption_algorithm: encryption_algorithm
+            .require("FileCryptoMetaData.encryption_algorithm")?,
+        key_metadata,
+    })
+}
+
+/// Decode an `EncryptionAlgorithm` union. An unknown variant is an error,
+/// as the file can't be decrypted without knowing the algorithm.
+fn read_encryption_algorithm(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<EncryptionAlgorithm> {
+    let mut ret: Option<EncryptionAlgorithm> = None;
+    read_struct_fields!(prot, |f| {
+        1 => {
+            let v = read_aes_gcm_v1(prot)?;
+            ret.get_or_insert(EncryptionAlgorithm::AESGCMV1(v));
+        },
+        2 => {
+            // AesGcmCtrV1 has the same fields as AesGcmV1.
+            let AesGcmV1 {
+                aad_prefix,
+                aad_file_unique,
+                supply_aad_prefix,
+            } = read_aes_gcm_v1(prot)?;
+            ret.get_or_insert(EncryptionAlgorithm::AESGCMCTRV1(AesGcmCtrV1 {
+                aad_prefix,
+                aad_file_unique,
+                supply_aad_prefix,
+            }));
+        },
+    });
+    ret.ok_or_else(|| ParquetError::oos("EncryptionAlgorithm union has no known variant set"))
+}
+
+fn read_aes_gcm_v1(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<AesGcmV1> {
+    let mut aad_prefix: Option<Vec<u8>> = None;
+    let mut aad_file_unique: Option<Vec<u8>> = None;
+    let mut supply_aad_prefix: Option<bool> = None;
+    read_struct_fields!(prot, |f| {
+        1 => aad_prefix = Some(prot.read_bytes_owned()?),
+        2 => aad_file_unique = Some(prot.read_bytes_owned()?),
+        3 => supply_aad_prefix = Some(f.bool_val.expect("thrift bool field")),
+    });
+    Ok(AesGcmV1 {
+        aad_prefix,
+        aad_file_unique,
+        supply_aad_prefix,
     })
 }
 
@@ -218,7 +299,8 @@ fn read_row_group(
 
 /// Decode a `ColumnChunk` into a [`CompactColumnChunk`].
 ///
-/// Skip-decode: `file_path`, `file_offset`, encryption fields.
+/// Skip-decode: `file_path`, `file_offset`. `encrypted_column_metadata` is recorded
+/// as a [`ByteRange`] into the footer, and decrypted once a decryptor is available.
 fn read_column_chunk(
     prot: &mut ThriftSliceInputProtocol<'_>,
     origin_ptr: *const u8,
@@ -228,10 +310,11 @@ fn read_column_chunk(
     let mut offset_index_length: Option<i32> = None;
     let mut column_index_offset: Option<i64> = None;
     let mut column_index_length: Option<i32> = None;
+    let mut crypto_metadata: Option<ColumnCryptoMetaData> = None;
+    let mut encrypted_column_metadata: Option<ByteRange> = None;
 
     // Inlined skips at ids 1/2 (file_path, file_offset): no in-tree consumer,
     // hot path runs once per column chunk × 200k chunks on wide fixtures.
-    // 8/9 (encryption_algorithm, encrypted_column_metadata): rare; fall through.
     read_struct_fields!(prot, |f| {
         1 => prot.skip_binary()?,
         2 => prot.skip_vlq()?,
@@ -240,14 +323,84 @@ fn read_column_chunk(
         5 => offset_index_length = Some(prot.read_i32()?),
         6 => column_index_offset = Some(prot.read_i64()?),
         7 => column_index_length = Some(prot.read_i32()?),
+        8 => crypto_metadata = Some(read_column_crypto_metadata(prot)?),
+        9 => {
+            let len = prot.read_vlq()? as u32;
+            let offset = prot.offset_from(origin_ptr);
+            prot.skip_bytes(len as usize)?;
+            encrypted_column_metadata = Some(ByteRange { offset, len });
+        },
     });
 
+    // Encrypted column metadata without crypto metadata is out of spec, and is ignored.
+    let crypto = crypto_metadata.map(|crypto_metadata| {
+        Box::new(CompactColumnCrypto {
+            crypto_metadata,
+            encrypted_column_metadata,
+        })
+    });
+
+    // Columns encrypted with a column key may only have encrypted metadata.
+    let has_encrypted_metadata = crypto
+        .as_ref()
+        .is_some_and(|c| c.encrypted_column_metadata.is_some());
+    if meta_data.is_none() && !has_encrypted_metadata {
+        return Err(ParquetError::oos("ColumnChunk.meta_data missing"));
+    }
+
     Ok(CompactColumnChunk {
-        meta_data: meta_data.require("ColumnChunk.meta_data")?,
+        meta_data,
         offset_index_offset,
         offset_index_length,
         column_index_offset,
         column_index_length,
+        crypto,
+    })
+}
+
+/// Decode a `ColumnMetaData` that starts at `start` within `buf`, such as decrypted
+/// column metadata. Statistics are recorded as [`ByteRange`]s into `buf`.
+pub(crate) fn decode_column_meta_data(
+    buf: &[u8],
+    start: usize,
+) -> ParquetResult<CompactColumnMetaData> {
+    let mut prot = ThriftSliceInputProtocol::new(&buf[start..]);
+    read_column_meta_data(&mut prot, buf.as_ptr())
+}
+
+/// Decode a `ColumnCryptoMetaData` union. An unknown variant is an error, as the
+/// column can't be decrypted without knowing which key to use.
+fn read_column_crypto_metadata(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<ColumnCryptoMetaData> {
+    let mut ret: Option<ColumnCryptoMetaData> = None;
+    read_struct_fields!(prot, |f| {
+        1 => {
+            read_empty_struct(prot)?;
+            ret.get_or_insert(ColumnCryptoMetaData::ENCRYPTIONWITHFOOTERKEY(
+                EncryptionWithFooterKey {},
+            ));
+        },
+        2 => {
+            let v = read_encryption_with_column_key(prot)?;
+            ret.get_or_insert(ColumnCryptoMetaData::ENCRYPTIONWITHCOLUMNKEY(v));
+        },
+    });
+    ret.ok_or_else(|| ParquetError::oos("ColumnCryptoMetaData union has no known variant set"))
+}
+
+fn read_encryption_with_column_key(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<EncryptionWithColumnKey> {
+    let mut path_in_schema: Option<Vec<String>> = None;
+    let mut key_metadata: Option<Vec<u8>> = None;
+    read_struct_fields!(prot, |f| {
+        1 => path_in_schema = Some(read_list(prot, |p| Ok(p.read_string()?.to_owned()))?),
+        2 => key_metadata = Some(prot.read_bytes_owned()?),
+    });
+    Ok(EncryptionWithColumnKey {
+        path_in_schema: path_in_schema.require("EncryptionWithColumnKey.path_in_schema")?,
+        key_metadata,
     })
 }
 
@@ -649,5 +802,59 @@ mod tests {
         assert_eq!(stats.null_count, Some(1));
         assert!(stats.min_value.is_none());
         assert!(stats.max_value.is_none());
+    }
+
+    fn read_encrypted_test_file(name: &str) -> Vec<u8> {
+        std::fs::read(crate::parquet::encryption::test_file_path(name)).unwrap()
+    }
+
+    /// Get the footer bytes of a file, excluding the trailing length and magic.
+    fn footer_bytes(file: &[u8]) -> &[u8] {
+        let len_start = file.len() - 8;
+        let footer_len = u32::from_le_bytes(file[len_start..len_start + 4].try_into().unwrap());
+        &file[len_start - footer_len as usize..len_start]
+    }
+
+    #[test]
+    fn file_crypto_metadata_from_encrypted_footer() {
+        let file = read_encrypted_test_file("uniform_encryption.parquet.encrypted");
+        assert_eq!(&file[file.len() - 4..], b"PARE");
+
+        // An encrypted footer is preceded by the plaintext FileCryptoMetaData.
+        let footer = footer_bytes(&file);
+        let (crypto_metadata, consumed) = decode_file_crypto_metadata(footer).unwrap();
+        // The encrypted footer follows, starting with its 4 byte length.
+        let encrypted_len = u32::from_le_bytes(footer[consumed..consumed + 4].try_into().unwrap());
+        assert_eq!(consumed + 4 + encrypted_len as usize, footer.len());
+
+        let EncryptionAlgorithm::AESGCMV1(algorithm) = crypto_metadata.encryption_algorithm else {
+            panic!("expected AES_GCM_V1");
+        };
+        assert_eq!(algorithm.aad_prefix, None);
+        assert_eq!(
+            algorithm.aad_file_unique.as_deref(),
+            Some(&[0xbd, 0xa5, 0x3a, 0x44, 0x42, 0xf8, 0x18, 0x32][..])
+        );
+        assert_eq!(algorithm.supply_aad_prefix, Some(false));
+        assert_eq!(crypto_metadata.key_metadata.as_deref(), Some(&b"kf"[..]));
+    }
+
+    #[test]
+    fn file_metadata_encryption_fields_from_plaintext_footer() {
+        let file = read_encrypted_test_file("encrypt_columns_plaintext_footer.parquet.encrypted");
+        assert_eq!(&file[file.len() - 4..], b"PAR1");
+
+        // The footer's trailing nonce and tag are ignored by the decoder.
+        let metadata =
+            decode_file_metadata(Buffer::from_vec(footer_bytes(&file).to_vec())).unwrap();
+
+        let Some(EncryptionAlgorithm::AESGCMV1(algorithm)) = metadata.encryption_algorithm else {
+            panic!("expected AES_GCM_V1");
+        };
+        assert_eq!(algorithm.aad_file_unique.map(|v| v.len()), Some(8));
+        assert_eq!(
+            metadata.footer_signing_key_metadata.as_deref(),
+            Some(&b"kf"[..])
+        );
     }
 }

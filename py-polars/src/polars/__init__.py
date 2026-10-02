@@ -214,6 +214,7 @@ from polars.functions import (
 from polars.interchange import CompatLevel
 from polars.io import (
     FileProviderArgs,
+    ParquetDecryptionProperties,
     PartitionBy,
     ScanCastOptions,
     defer,
@@ -347,6 +348,7 @@ __all__ = [
     # polars.io
     "defer",
     "FileProviderArgs",
+    "ParquetDecryptionProperties",
     "PartitionBy",
     "ScanCastOptions",
     "read_avro",
