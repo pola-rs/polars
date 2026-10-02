@@ -4,7 +4,7 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_io::configs::cloud_footer_read_size;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 
-/// Read the metadata bytes of a parquet file, does not decode the bytes. If during metadata fetch
+/// Read the metadata bytes of an IPC file, does not decode the bytes. If during metadata fetch
 /// the bytes of the entire file are loaded, it is returned in the second return value.
 pub async fn read_ipc_metadata_bytes(
     byte_source: &DynByteSource,
@@ -24,10 +24,9 @@ pub async fn read_ipc_metadata_bytes(
     // A suffix request returns the file size along with the tail, saving a round trip to
     // request the size separately.
     let (bytes, file_size) = byte_source.get_suffix(prefetch_size).await?;
-    let estimated_metadata_size = bytes.len();
 
     polars_ensure!(
-        file_size >= FOOTER_HEADER_SIZE,
+        bytes.len() >= FOOTER_HEADER_SIZE,
         ComputeError: "ipc file size is smaller than the minimum"
     );
 
@@ -54,8 +53,8 @@ pub async fn read_ipc_metadata_bytes(
         if verbose {
             eprintln!(
                 "[IpcFileReader]: Extra {} bytes need to be fetched for metadata \
-                (initial estimate = {}, actual size = {})",
-                footer_size - estimated_metadata_size,
+                (prefetched = {}, actual size = {})",
+                footer_size - bytes.len(),
                 bytes.len(),
                 footer_size,
             );
@@ -76,10 +75,10 @@ pub async fn read_ipc_metadata_bytes(
         if verbose && !matches!(byte_source, DynByteSource::Buffer(_)) {
             eprintln!(
                 "[IpcFileReader]: Fetched all bytes for metadata on first try \
-                (initial estimate = {}, actual size = {}, excess = {}, total file size = {})",
+                (prefetched = {}, actual size = {}, excess = {}, total file size = {})",
                 bytes.len(),
                 footer_size,
-                estimated_metadata_size - footer_size,
+                bytes.len() - footer_size,
                 file_size,
             );
         }
@@ -90,13 +89,6 @@ pub async fn read_ipc_metadata_bytes(
             Ok((metadata_bytes, Some(bytes)))
         } else {
             debug_assert!(!matches!(byte_source, DynByteSource::Buffer(_)));
-            let metadata_bytes = if bytes.len() - footer_size >= bytes.len() {
-                // Re-allocate to drop the excess bytes
-                Buffer::from_vec(metadata_bytes.to_vec())
-            } else {
-                metadata_bytes
-            };
-
             Ok((metadata_bytes, None))
         }
     }
