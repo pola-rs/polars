@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal, TypeAlias
 import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
 from polars.exceptions import ComputeError
+from polars.io.iceberg._cache import get_metadata_file_cache
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
@@ -444,6 +445,9 @@ class IcebergScanResolver:
             if verbose:
                 eprint("IcebergScanResolver: to_dataset_scan(): begin path expansion")
 
+            metadata_file_cache = get_metadata_file_cache()
+            cache_hits = metadata_file_cache.hits
+            cache_misses = metadata_file_cache.misses
             start_time = perf_counter()
 
             scan = _new_pyiceberg_scan(
@@ -530,6 +534,15 @@ class IcebergScanResolver:
                     "IcebergScanResolver: to_dataset_scan(): "
                     f"finish path expansion ({elapsed:.3f}s)"
                 )
+
+                if metadata_file_cache.enabled:
+                    eprint(
+                        "IcebergScanResolver: to_dataset_scan(): "
+                        "metadata file cache: "
+                        f"hits: {metadata_file_cache.hits - cache_hits}, "
+                        f"misses: {metadata_file_cache.misses - cache_misses}, "
+                        f"cached bytes: {metadata_file_cache.total_bytes}"
+                    )
 
         if not fallback_reason:
             if verbose:
