@@ -142,9 +142,6 @@ def test_local_date_sortedness(time_zone: str | None) -> None:
     assert not result.flags["SORTED_DESC"]
 
 
-# The streaming engine derives sortedness from the values themselves, so it may report
-# this genuinely sorted result as sorted regardless of what the conversion claims.
-@pytest.mark.may_fail_auto_streaming
 def test_local_date_sortedness_tz_aware_is_conservative() -> None:
     # A time zone with offset changes may move the local date backwards while the
     # underlying instants move forwards, so sortedness can't be carried over.
