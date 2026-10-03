@@ -1,0 +1,49 @@
+# `INSERT INTO <table> SELECT ...` setup shim: source is any query the
+# engine can run, not just a VALUES clause.
+
+statement ok
+CREATE TABLE src (a INTEGER, b INTEGER)
+
+statement ok
+INSERT INTO src VALUES (1, 10), (2, 20), (3, 30)
+
+statement ok
+CREATE TABLE dst (x INTEGER, y INTEGER)
+
+statement ok
+INSERT INTO dst SELECT * FROM src WHERE a > 1
+
+query II rowsort
+SELECT x, y FROM dst
+----
+2	20
+3	30
+
+# explicit column list maps source columns by position, not by name;
+# columns left untargeted get NULL
+
+statement ok
+CREATE TABLE dst_partial (x INTEGER, y INTEGER, z INTEGER)
+
+statement ok
+INSERT INTO dst_partial (x, y) SELECT a, b FROM src WHERE a = 1
+
+query III rowsort
+SELECT x, y, z FROM dst_partial
+----
+1	10	NULL
+
+# source can be an arbitrary projection, not just `SELECT *`
+
+statement ok
+CREATE TABLE dst_expr (x INTEGER)
+
+statement ok
+INSERT INTO dst_expr SELECT a + 1 FROM src
+
+query I rowsort
+SELECT x FROM dst_expr
+----
+2
+3
+4

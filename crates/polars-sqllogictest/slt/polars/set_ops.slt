@@ -1,0 +1,32 @@
+statement ok
+CREATE TABLE a (x INTEGER)
+
+statement ok
+INSERT INTO a VALUES (1), (2), (3), (3)
+
+statement ok
+CREATE TABLE b (x INTEGER)
+
+statement ok
+INSERT INTO b VALUES (3), (4), (5)
+
+query I
+SELECT x FROM a UNION SELECT x FROM b ORDER BY x
+----
+1
+2
+3
+4
+5
+
+query I
+SELECT x FROM a UNION ALL SELECT x FROM b ORDER BY x
+----
+1
+2
+3
+3
+3
+4
+5
+

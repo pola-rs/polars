@@ -116,6 +116,30 @@ jobs:
         if: github.event_name == 'pull_request'
         run: cargo test --all-features -p polars --test it
 
+  sqllogictest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
+
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          env-vars: ImageVersion
+          save-if: ${{ github.event_name == 'push' }}
+
+      - name: Compile sqllogictest
+        run: cargo build -p polars-sqllogictest
+
+      - name: Run sqllogictest
+        if: github.event_name == 'pull_request'
+        run: cargo run -p polars-sqllogictest
+
   check-features:
     runs-on: ubuntu-latest
     steps:

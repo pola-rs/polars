@@ -1,0 +1,120 @@
+# Correlated scalar (aggregate) subqueries, decorrelated into
+# join_where + group_by(row_index) + left join. Every projected expression is
+# aliased so these exercise decorrelation independently of the unaliased
+# output-name collision bug (plan.md 3h).
+
+statement ok
+CREATE TABLE t1 (a INT, b INT);
+
+statement ok
+INSERT INTO t1 VALUES (1, 10), (2, 20), (3, 30);
+
+statement ok
+CREATE TABLE t2 (g INT, w INT);
+
+statement ok
+INSERT INTO t2 VALUES (10, 1), (10, 2), (20, 3);
+
+# correlated COUNT with inequality correlation; empty match -> 0
+
+query II rowsort
+SELECT a, (SELECT COUNT(*) FROM t1 AS x WHERE x.b < t1.b) AS cnt FROM t1
+----
+1 0
+2 1
+3 2
+
+# correlated SUM with inequality correlation; empty match -> NULL
+
+query II rowsort
+SELECT a, (SELECT SUM(x.b) FROM t1 AS x WHERE x.b < t1.b) AS s FROM t1
+----
+1 NULL
+2 10
+3 30
+
+# correlated MIN / MAX; empty match -> NULL
+
+query II rowsort
+SELECT a, (SELECT MIN(x.b) FROM t1 AS x WHERE x.b < t1.b) AS mn FROM t1
+----
+1 NULL
+2 10
+3 10
+
+query II rowsort
+SELECT a, (SELECT MAX(x.b) FROM t1 AS x WHERE x.b < t1.b) AS mx FROM t1
+----
+1 NULL
+2 10
+3 20
+
+# correlated AVG; empty match -> NULL
+
+query IR rowsort
+SELECT a, (SELECT AVG(x.b) FROM t1 AS x WHERE x.b < t1.b) AS av FROM t1
+----
+1 NULL
+2 10.000
+3 15.000
+
+# correlated COUNT with equality correlation across two tables; empty -> 0
+
+query II rowsort
+SELECT a, (SELECT COUNT(*) FROM t2 WHERE t2.g = t1.b) AS c FROM t1
+----
+1 2
+2 1
+3 0
+
+# correlation predicate plus an inner-only local filter
+
+query II rowsort
+SELECT a, (SELECT COUNT(*) FROM t2 WHERE t2.g = t1.b AND t2.w > 1) AS c FROM t1
+----
+1 1
+2 1
+3 0
+
+# correlated subquery in the WHERE clause
+
+query I rowsort
+SELECT a FROM t1 WHERE (SELECT COUNT(*) FROM t1 AS x WHERE x.b < t1.b) > 0
+----
+2
+3
+
+# multiple correlated subqueries in a single query
+
+query III rowsort
+SELECT a,
+       (SELECT COUNT(*) FROM t1 AS x WHERE x.b < t1.b) AS c,
+       (SELECT SUM(x.b) FROM t1 AS x WHERE x.b < t1.b) AS s
+FROM t1
+----
+1 0 NULL
+2 1 10
+3 2 30
+
+# self-correlated equality with an inequality on the key excluding the row
+
+query II rowsort
+SELECT a,
+       (SELECT COUNT(*) FROM t1 AS x WHERE x.b = t1.b AND x.a <> t1.a) AS c
+FROM t1
+----
+1 0
+2 0
+3 0
+
+# correlated COUNT combined with an ordinary column and a constant, all aliased
+
+query III rowsort
+SELECT a AS id,
+       b AS val,
+       (SELECT COUNT(*) FROM t1 AS x WHERE x.b <= t1.b) AS le
+FROM t1
+----
+1 10 1
+2 20 2
+3 30 3

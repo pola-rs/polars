@@ -1,0 +1,62 @@
+statement ok
+CREATE TABLE words (id INTEGER, word TEXT)
+
+statement ok
+INSERT INTO words VALUES
+  (1, 'hello'),
+  (2, 'World'),
+  (3, 'polars'),
+  (4, '')
+
+query IT
+SELECT id, UPPER(word) FROM words ORDER BY id
+----
+1	HELLO
+2	WORLD
+3	POLARS
+4	(empty)
+
+query IT
+SELECT id, LOWER(word) FROM words ORDER BY id
+----
+1	hello
+2	world
+3	polars
+4	(empty)
+
+query II
+SELECT id, LENGTH(word) FROM words ORDER BY id
+----
+1	5
+2	5
+3	6
+4	0
+
+query IT
+SELECT id, SUBSTR(word, 1, 3) FROM words WHERE word <> '' ORDER BY id
+----
+1	hel
+2	Wor
+3	pol
+
+query T
+SELECT word || '!' FROM words WHERE id = 1
+----
+hello!
+
+query T
+SELECT CONCAT(word, '-', id) FROM words WHERE id = 3
+----
+polars-3
+
+query IT
+SELECT id, word FROM words WHERE word LIKE '%o%' ORDER BY id
+----
+1	hello
+2	World
+3	polars
+
+query T
+SELECT REPLACE(word, 'l', 'L') FROM words WHERE id = 1
+----
+heLLo

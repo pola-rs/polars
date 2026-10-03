@@ -1,0 +1,134 @@
+[package]
+name = "polars-sqllogictest"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "sqllogictest conformance harness for polars-sql"
+publish = false
+
+[dependencies]
+# The features py-polars ships; a missing feature shows up as a test failure.
+polars = { workspace = true, default-features = false, features = [
+  "abs",
+  "approx_quantile",
+  "approx_unique",
+  "arg_where",
+  "array_arithmetic",
+  "array_count",
+  "array_to_struct",
+  "asof_join",
+  "binary_encoding",
+  "bitwise",
+  "business",
+  "concat_str",
+  "cov",
+  "cross_join",
+  "cse",
+  "csv",
+  "cum_agg",
+  "cumulative_eval",
+  "cutqcut",
+  "dataframe_arithmetic",
+  "diagonal_concat",
+  "diff",
+  "dot_product",
+  "dtype-array",
+  "dtype-categorical",
+  "dtype-extension",
+  "dtype-full",
+  "dtype-map",
+  "dynamic_group_by",
+  "ewma",
+  "ewma_by",
+  "extract_groups",
+  "extract_jsonpath",
+  "find_many",
+  "fmt",
+  "fused",
+  "hist",
+  "iejoin",
+  "index_of",
+  "interpolate",
+  "interpolate_by",
+  "is_between",
+  "is_close",
+  "is_first_distinct",
+  "is_in",
+  "is_last_distinct",
+  "is_unique",
+  "lazy",
+  "list_arithmetic",
+  "list_count",
+  "list_drop_nulls",
+  "list_eval",
+  "list_filter",
+  "list_gather",
+  "list_sets",
+  "list_sample",
+  "list_to_struct",
+  "log",
+  "merge_sorted",
+  "meta",
+  "mode",
+  "moment",
+  "month_end",
+  "month_start",
+  "offset_by",
+  "partition_by",
+  "pct_change",
+  "peaks",
+  "performant",
+  "pivot",
+  "product",
+  "propagate_nans",
+  "random",
+  "range",
+  "rank",
+  "regex",
+  "reinterpret",
+  "repeat_by",
+  "replace",
+  "rle",
+  "rolling_window",
+  "rolling_window_by",
+  "round_series",
+  "row_hash",
+  "rows",
+  "search_sorted",
+  "semi_anti_join",
+  "sign",
+  "sql",
+  "string_encoding",
+  "string_normalize",
+  "string_pad",
+  "string_reverse",
+  "streaming",
+  "string_to_integer",
+  "strings",
+  "temporal",
+  "timezones",
+  "to_dummies",
+  "top_k",
+  "trigonometry",
+  "true_div",
+  "unique_counts",
+  "zip_with",
+] }
+polars-core = { workspace = true }
+polars-lazy = { workspace = true }
+polars-sql = { workspace = true }
+polars-utils = { workspace = true }
+
+regex = { workspace = true }
+sqllogictest = "0.29"
+sqlparser = { workspace = true }
+
+[[bin]]
+name = "polars-sqllogictest"
+path = "src/main.rs"
+
+[lints]
+workspace = true
