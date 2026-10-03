@@ -137,9 +137,6 @@ def test_truncate_sortedness(time_zone: str | None, every: str) -> None:
     assert not result.flags["SORTED_DESC"]
 
 
-# The streaming engine derives sortedness from the values themselves, so it may report
-# this genuinely sorted result as sorted regardless of what truncation claims.
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("every", ["1h", "1d", "1mo"])
 def test_truncate_sortedness_tz_aware_is_conservative(every: str) -> None:
     # Truncation floors on the local clock, so a time zone that changes offset can turn
