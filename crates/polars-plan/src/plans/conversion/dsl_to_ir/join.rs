@@ -119,7 +119,11 @@ pub fn resolve_join(
             match (&asof_options.left_by, &asof_options.right_by) {
                 (None, None) => {},
                 (Some(l), Some(r)) => {
-                    polars_ensure!(l.len() == r.len(), InvalidOperation: "expected equal number of columns in 'by_left' and 'by_right' in 'asof_join'");
+                    polars_ensure!(
+                        l.len() == r.len(),
+                        InvalidOperation: "expected equal number of columns in `by_left` ({}) and `by_right` ({}) in `asof_join`",
+                        l.len(), r.len()
+                    );
                     validate_columns_in_input(l, &schema_left, "asof_join")?;
                     validate_columns_in_input(r, &schema_right, "asof_join")?;
                 },

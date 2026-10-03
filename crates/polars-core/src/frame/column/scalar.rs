@@ -114,6 +114,20 @@ impl ScalarColumn {
             .unwrap_or_else(|| Self::_to_series(self.name, self.scalar, self.length))
     }
 
+    /// Estimated size of the column, see [`Series::estimated_size`].
+    ///
+    /// If the column is not materialized and `expanded` is false, only the scalar value is
+    /// counted. Otherwise, this is the size of the materialized [`Series`], computed without
+    /// materializing it.
+    pub fn estimated_size(&self, expanded: bool) -> usize {
+        if let Some(s) = self.materialized.get() {
+            return s.estimated_size();
+        }
+        let length = if expanded { self.length } else { 1 };
+        estimated_repeated_size(self.dtype(), self.scalar.value(), length)
+            .unwrap_or_else(|| self.as_single_value_series().estimated_size() * length)
+    }
+
     /// Take the [`ScalarColumn`] as a series with a single value.
     ///
     /// If the [`ScalarColumn`] has `length=0` the resulting `Series` will also have `length=0`.
@@ -325,6 +339,73 @@ impl ScalarColumn {
     }
 }
 
+/// [`Series::estimated_size`] of `value` repeated `length` times, as built by
+/// [`Series::new_from_index`].
+///
+/// Returns `None` if the size cannot be derived from `dtype` and `value`.
+fn estimated_repeated_size(dtype: &DataType, value: &AnyValue, length: usize) -> Option<usize> {
+    let is_null = value.is_null();
+    let validity_size = if is_null { length.div_ceil(8) } else { 0 };
+    let size = match dtype {
+        DataType::Null => 0,
+        DataType::Boolean => length.div_ceil(8) + validity_size,
+        // Views and validity are not counted for these types, see `estimated_bytes_size`.
+        DataType::String | DataType::Binary if is_null => 0,
+        DataType::String => length * value.extract_str()?.len(),
+        DataType::Binary => length * value.extract_bytes()?.len(),
+        DataType::List(_) => match value {
+            AnyValue::List(s) => {
+                estimated_repeated_series_size(s, length) + length * size_of::<i64>()
+            },
+            _ if is_null => length * size_of::<i64>() + validity_size,
+            _ => return None,
+        },
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(inner, width) => match value {
+            AnyValue::Array(s, _) => estimated_repeated_series_size(s, length),
+            _ if is_null => {
+                estimated_repeated_size(inner, &AnyValue::Null, length * width)? + validity_size
+            },
+            _ => return None,
+        },
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(fields) => match value {
+            AnyValue::StructOwned(payload) => payload
+                .0
+                .iter()
+                .zip(fields)
+                .map(|(value, field)| estimated_repeated_size(field.dtype(), value, length))
+                .sum::<Option<usize>>()?,
+            _ if is_null => {
+                fields
+                    .iter()
+                    .map(|field| estimated_repeated_size(field.dtype(), &AnyValue::Null, length))
+                    .sum::<Option<usize>>()?
+                    + validity_size
+            },
+            _ => return None,
+        },
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(_, storage) => return estimated_repeated_size(storage, value, length),
+        _ => length * dtype.byte_width()? as usize + validity_size,
+    };
+    Some(size)
+}
+
+/// [`Series::estimated_size`] of `s` repeated `n` times.
+fn estimated_repeated_series_size(s: &Series, n: usize) -> usize {
+    let dtype = s.dtype();
+    match dtype.byte_width() {
+        // Bitmaps round up to whole bytes, so scaling the size of `s` would count too much.
+        Some(width) if !dtype.is_nested() => {
+            let len = n * s.len();
+            let validity_size = if s.has_nulls() { len.div_ceil(8) } else { 0 };
+            (len as f64 * width).ceil() as usize + validity_size
+        },
+        _ => n * s.estimated_size(),
+    }
+}
+
 impl IntoColumn for ScalarColumn {
     #[inline(always)]
     fn into_column(self) -> Column {
@@ -430,5 +511,53 @@ mod serde_impl {
             SerializeWrap::deserialize(deserializer)
                 .and_then(|x| ScalarColumn::try_from(x).map_err(D::Error::custom))
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::prelude::*;
+
+    fn check_estimated_size(s: Series) {
+        let scalar = Scalar::new(s.dtype().clone(), s.get(0).unwrap().into_static());
+        let unit_size = ScalarColumn::new(s.name().clone(), scalar.clone(), 1)
+            .to_series()
+            .estimated_size();
+        let sc = ScalarColumn::new(s.name().clone(), scalar, 1001);
+        assert_eq!(sc.estimated_size(true), sc.to_series().estimated_size());
+        assert_eq!(sc.estimated_size(false), unit_size);
+
+        let materialized_size = sc.as_materialized_series().estimated_size();
+        assert_eq!(sc.estimated_size(false), materialized_size);
+    }
+
+    #[test]
+    fn test_estimated_size() -> PolarsResult<()> {
+        let list = Series::new("a".into(), [Series::new("".into(), [Some(1i32), None])]);
+        let mut series = vec![
+            Series::new("a".into(), [1i64]),
+            Series::new("a".into(), [true]),
+            Series::new("a".into(), ["a".repeat(20)]),
+            Series::new("a".into(), [b"ab".as_slice()]),
+            list.clone(),
+        ];
+        #[cfg(feature = "dtype-array")]
+        series.push(list.cast(&DataType::Array(Box::new(DataType::Int32), 2))?);
+        #[cfg(feature = "dtype-struct")]
+        series.push(
+            StructChunked::from_series(
+                "a".into(),
+                1,
+                [Series::new("x".into(), [1i8]), list.clone()].iter(),
+            )?
+            .into_series(),
+        );
+
+        for s in series {
+            check_estimated_size(Series::full_null("a".into(), 1, s.dtype()));
+            check_estimated_size(s);
+        }
+        Ok(())
     }
 }
