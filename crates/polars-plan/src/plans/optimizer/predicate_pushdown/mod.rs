@@ -315,39 +315,7 @@ impl PredicatePushDown {
                 }
 
                 let alp = lp_arena.take(input);
-                let mut new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
-
-                // Note: fallible hive predicates stay above the scan but can still prune
-                // files *if* they evaluate on the hive partitions without error.
-                if let (
-                    [local_predicate],
-                    Scan {
-                        hive_parts: Some(hive_parts),
-                        predicate,
-                        predicate_file_skip_applied: None,
-                        ..
-                    },
-                ) = (local_predicates.as_slice(), &mut new_input)
-                    && !self.maintain_errors
-                    && aexpr_to_leaf_names_iter(local_predicate.node(), expr_arena)
-                        .all(|name| hive_parts.df().schema().contains(name))
-                    && is_elementwise_rec(local_predicate.node(), expr_arena)
-                    && !is_inherently_nondeterministic(local_predicate.node(), expr_arena)
-                {
-                    let scan_predicate = predicate.replace(local_predicate.clone());
-                    let node = lp_arena.add(new_input);
-                    _ = (self.hooks.apply_scan_predicate_to_scan_ir)(node, lp_arena, expr_arena);
-                    new_input = lp_arena.take(node);
-                    if let Scan {
-                        predicate,
-                        predicate_file_skip_applied,
-                        ..
-                    } = &mut new_input
-                    {
-                        *predicate = scan_predicate;
-                        *predicate_file_skip_applied = None;
-                    }
-                }
+                let new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
 
                 // TODO!
                 // If a predicates result would be influenced by earlier applied

@@ -349,6 +349,7 @@ pub fn optimize(
         root,
         ir_arena,
         expr_arena,
+        opt_flags.predicate_pushdown() && !pushdown_maintain_errors,
         hooks.apply_scan_predicate_to_scan_ir,
     )?;
 
