@@ -61,6 +61,7 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     NO_DEFAULT,
+    _in_notebook,
     _is_generator,
     parse_version,
     qualified_type_name,
@@ -70,6 +71,7 @@ from polars._utils.various import (
     warn_null_comparison,
 )
 from polars._utils.wrap import wrap_df, wrap_s
+from polars.config import Config
 from polars.datatypes import (
     Array,
     Boolean,
@@ -138,6 +140,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         ComparisonOperator,
         FillNullStrategy,
+        FloatFmt,
         InterpolationMethod,
         IntoExpr,
         IntoExprColumn,
@@ -3561,6 +3564,104 @@ class Series(metaclass=_Meta):
         if n < 0:
             n = max(0, self.len() + n)
         return self._from_pyseries(self._s.head(n))
+
+    def show(
+        self,
+        limit: int | None = 5,
+        *,
+        decimal_separator: str_ | None = None,
+        thousands_separator: str_ | bool | None = None,
+        float_precision: int | None = None,
+        fmt_float: FloatFmt | None = None,
+        fmt_str_lengths: int | None = None,
+        fmt_table_cell_list_len: int | None = None,
+        trim_decimal_zeros: bool | None = True,
+    ) -> None:
+        """
+        Show the first `n` elements.
+
+        Parameters
+        ----------
+        limit : int
+            Number of elements to show. If a negative value is passed, show all
+            elements except the last `abs(n)`. If None is passed, show all elements.
+        decimal_separator : str
+            Set the decimal separator character. See
+            :func:`Config.set_decimal_separator` for more information.
+        thousands_separator : str, bool
+            Set the thousands grouping separator character. See
+            :func:`Config.set_thousands_separator` for more information.
+        float_precision : int
+            Number of decimal places to display for floating point values. See
+            :func:`Config.set_float_precision` for more information.
+        fmt_float : {"mixed", "full"}
+            Control how floating point values are displayed. See
+            :func:`Config.set_fmt_float` for more information. Supported options are:
+
+            * "mixed": Limit the number of decimal places and use scientific notation
+              for large/small values.
+            * "full": Print the full precision of the floating point number.
+
+        fmt_str_lengths : int
+            Number of characters to display for string values. See
+            :func:`Config.set_fmt_str_lengths` for more information.
+        fmt_table_cell_list_len : int
+            Number of elements to display for List values. See
+            :func:`Config.set_fmt_table_cell_list_len` for more information.
+        trim_decimal_zeros : bool
+            Strip trailing zeros from Decimal data type values. See
+            :func:`Config.set_trim_decimal_zeros` for more information.
+
+        See Also
+        --------
+        head
+        DataFrame.show
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5])
+        >>> s.show(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+        ]
+
+        Pass a negative value to show all elements `except` the last `abs(n)`.
+
+        >>> s.show(-3)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+        ]
+        """
+        if limit is None:
+            s = self
+            tbl_rows = -1
+        else:
+            s = self.head(limit)
+            tbl_rows = max(0, self.len() + limit) if limit < 0 else limit
+
+        with Config(
+            decimal_separator=decimal_separator,
+            thousands_separator=thousands_separator,
+            float_precision=float_precision,
+            fmt_float=fmt_float,
+            fmt_str_lengths=fmt_str_lengths,
+            fmt_table_cell_list_len=fmt_table_cell_list_len,
+            tbl_rows=tbl_rows,
+            trim_decimal_zeros=trim_decimal_zeros,
+        ):
+            if _in_notebook():
+                from IPython.display import display_html
+
+                display_html(s)
+            else:
+                print(s)
 
     def tail(self, n: int = 10) -> Series:
         """
