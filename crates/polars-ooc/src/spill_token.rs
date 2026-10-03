@@ -297,8 +297,7 @@ impl<T: Spillable> SpillTokenInner<T> {
         };
 
         // Now that we have invalidated ourselves from the bookkeeping we can
-        // fire off a prefetch request to our context if possible.
-        // Values prefetched while over the memory budget are spilled again before they are used.
+        // fire off a prefetch request to our context if there is memory headroom.
         if let Some((ctx, _param)) = cur_ctx
             && memory_manager().should_prefetch()
         {
