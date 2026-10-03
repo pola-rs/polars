@@ -102,8 +102,14 @@ impl DataFrame {
     /// the visible size of the buffer, not its total capacity.
     ///
     /// FFI buffers are included in this estimation.
-    pub fn estimated_size(&self) -> usize {
-        self.columns().iter().map(Column::estimated_size).sum()
+    ///
+    /// If `expanded` is true, scalar columns are counted as if they were materialized. Otherwise,
+    /// they are counted by the memory they currently use.
+    pub fn estimated_size(&self, expanded: bool) -> usize {
+        self.columns()
+            .iter()
+            .map(|c| c.estimated_size(expanded))
+            .sum()
     }
 
     pub fn try_apply_columns(
