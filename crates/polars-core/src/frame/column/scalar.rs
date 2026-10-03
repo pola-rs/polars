@@ -13,7 +13,7 @@ use crate::chunked_array::cast::CastOptions;
 #[derive(Debug, Clone)]
 pub struct ScalarColumn {
     name: PlSmallStr,
-    // The value of this scalar may be incoherent when `length == 0`.
+    // The value of this scalar may be unspecified when `length == 0`.
     scalar: Scalar,
     length: usize,
 
@@ -210,6 +210,35 @@ impl ScalarColumn {
         resized
     }
 
+    /// Append `other` to `self`, keeping both unmaterialized.
+    ///
+    /// Returns whether that was possible. `self` is left untouched when it was not.
+    pub fn try_append(&mut self, other: &Self) -> bool {
+        // Unequal dtypes either need a cast or must raise.
+        if self.dtype() != other.dtype() {
+            return false;
+        }
+
+        // The value of a length-0 column is unspecified, so it takes on the other's.
+        if other.is_empty() {
+            return true;
+        }
+        if self.is_empty() {
+            let name = std::mem::take(&mut self.name);
+            *self = other.clone();
+            self.rename(name);
+            return true;
+        }
+
+        if !is_same_value(self.dtype(), self.scalar.value(), other.scalar.value()) {
+            return false;
+        }
+
+        self.length += other.length;
+        self.materialized.take();
+        true
+    }
+
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
         // @NOTE: We expect that when casting the materialized series mostly does not need change
         // the physical array. Therefore, we try to cast the entire materialized array if it is
@@ -336,6 +365,24 @@ impl ScalarColumn {
         self.scalar.update(value);
         self.materialized.take();
         self
+    }
+}
+
+/// Whether `l` and `r`, both of `dtype`, are the same value and not only equal ones.
+///
+/// For floats `0.0 == -0.0`, and for objects `==` calls into Python, so those are only
+/// treated as the same when that is cheap to prove.
+fn is_same_value(dtype: &DataType, l: &AnyValue, r: &AnyValue) -> bool {
+    match (l, r) {
+        (AnyValue::Null, AnyValue::Null) => true,
+        (AnyValue::Float16(l), AnyValue::Float16(r)) => l.to_bits() == r.to_bits(),
+        (AnyValue::Float32(l), AnyValue::Float32(r)) => l.to_bits() == r.to_bits(),
+        (AnyValue::Float64(l), AnyValue::Float64(r)) => l.to_bits() == r.to_bits(),
+        _ => {
+            let mut eq_is_same = true;
+            dtype.visit_with(|dtype| eq_is_same &= !(dtype.is_float() || dtype.is_object()));
+            eq_is_same && l == r
+        },
     }
 }
 
