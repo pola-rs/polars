@@ -1,6 +1,6 @@
 use polars_error::polars_warn;
 
-use crate::{Engine, ResolveMode, SpillFormat};
+use crate::{Engine, FileAdvice, ResolveMode, SpillFormat};
 
 pub fn parse_bool(var: &str, val: &str) -> Option<bool> {
     match val.trim_ascii() {
@@ -56,6 +56,16 @@ pub fn parse_engine(var: &str, val: &str) -> Option<Engine> {
 
 pub fn parse_spill_format(var: &str, val: &str) -> Option<SpillFormat> {
     match val.trim_ascii().parse::<SpillFormat>() {
+        Ok(x) => Some(x),
+        Err(e) => {
+            polars_warn!("illegal value '{val}' found while parsing option '{var}' ({e})");
+            None
+        },
+    }
+}
+
+pub fn parse_file_advice(var: &str, val: &str) -> Option<FileAdvice> {
+    match val.trim_ascii().parse::<FileAdvice>() {
         Ok(x) => Some(x),
         Err(e) => {
             polars_warn!("illegal value '{val}' found while parsing option '{var}' ({e})");

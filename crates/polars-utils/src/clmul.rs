@@ -1,4 +1,5 @@
 #[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq"))]
+#[inline]
 fn intel_clmul64(x: u64, y: u64) -> u64 {
     use core::arch::x86_64::*;
     unsafe {
@@ -16,6 +17,7 @@ fn intel_clmul64(x: u64, y: u64) -> u64 {
     target_feature = "neon",
     target_feature = "aes"
 ))]
+#[inline]
 fn arm_clmul64(x: u64, y: u64) -> u64 {
     unsafe {
         // SAFETY: we have the target feature.

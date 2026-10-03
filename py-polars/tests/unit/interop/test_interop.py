@@ -406,19 +406,18 @@ def test_from_pyarrow_map() -> None:
     pl.DataFrame(pa_table.slice(0, 0))
 
     result = pl.DataFrame(pa_table)
+    assert result.schema == {"idx": pl.Int16, "mapping": pl.Map(pl.String, pl.String)}
     assert result.to_dict(as_series=False) == {
         "idx": [1, 2],
-        "mapping": [
-            [{"key": "a", "value": "something"}],
-            [{"key": "a", "value": "else"}, {"key": "b", "value": "another key"}],
-        ],
+        "mapping": [{"a": "something"}, {"a": "else", "b": "another key"}],
     }
 
 
 def test_from_pyarrow_map_preserves_nulls_28652() -> None:
     pa_map = pa.array([[], None, [("k", 1)]], type=pa.map_(pa.string(), pa.int64()))
     result = pl.Series(pa_map)
-    assert result.to_list() == [[], None, [{"key": "k", "value": 1}]]
+    assert result.dtype == pl.Map(pl.String, pl.Int64)
+    assert result.to_list() == [{}, None, {"k": 1}]
 
 
 def test_from_fixed_size_binary_list() -> None:
@@ -1120,37 +1119,38 @@ def test_from_arrow_map_containing_timestamp_23658() -> None:
         ),
     )
 
-    expect = pl.DataFrame(
+    out = pl.DataFrame(arrow_tbl)
+    assert out.schema == pl.Schema(
         {
-            "column_1": [
-                [
-                    {
-                        "field_1": [
-                            {"key": 1, "value": datetime(2025, 1, 1)},
-                            {"key": 2, "value": datetime(2025, 1, 2)},
-                            {"key": 2, "value": None},
-                        ]
-                    },
-                    {"field_1": []},
-                    None,
-                ]
-            ],
-        },
-        schema={
             "column_1": pl.List(
-                pl.Struct(
-                    {
-                        "field_1": pl.List(
-                            pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")})
-                        )
-                    }
-                )
+                pl.Struct({"field_1": pl.Map(pl.Int32, pl.Datetime("ms"))})
             )
-        },
+        }
     )
 
-    out = pl.DataFrame(arrow_tbl)
-    assert_frame_equal(out, expect)
+    # Arrow import does not canonicalize, so the duplicate key 2 survives in the
+    # entries; a Python dict cannot hold it, and keeps the last value.
+    entries = pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
+    assert out["column_1"].explode().struct.field("field_1").cast(
+        entries
+    ).to_list() == [
+        [
+            {"key": 1, "value": datetime(2025, 1, 1)},
+            {"key": 2, "value": datetime(2025, 1, 2)},
+            {"key": 2, "value": None},
+        ],
+        [],
+        None,
+    ]
+    assert out.to_dicts() == [
+        {
+            "column_1": [
+                {"field_1": {1: datetime(2025, 1, 1), 2: None}},
+                {"field_1": {}},
+                None,
+            ]
+        }
+    ]
 
 
 def test_schema_constructor_from_schema_capsule() -> None:
@@ -1158,9 +1158,7 @@ def test_schema_constructor_from_schema_capsule() -> None:
         [pa.field("test", pa.map_(pa.int32(), pa.timestamp("ms")))]
     )
 
-    assert pl.Schema(arrow_schema) == {
-        "test": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
-    }
+    assert pl.Schema(arrow_schema) == {"test": pl.Map(pl.Int32, pl.Datetime("ms"))}
 
     # Test __arrow_c_schema__ implementation on `pl.Schema`
     assert pa.schema(pl.Schema({"x": pl.Int32})) == pa.schema(

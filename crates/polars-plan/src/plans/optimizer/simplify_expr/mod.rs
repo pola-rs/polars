@@ -31,6 +31,41 @@ enum CountCmpInput {
     NullCount(Node),
 }
 
+/// `when(x.count() > 0).then(x.sum()).otherwise(null)` -> `x.sum(null_on_empty=true)`
+fn sum_null_on_empty(
+    predicate: Node,
+    truthy: Node,
+    falsy: Node,
+    expr_arena: &Arena<AExpr>,
+) -> Option<AExpr> {
+    if let AExpr::Literal(falsy) = expr_arena.get(falsy)
+        && falsy.is_null()
+        && let AExpr::Agg(IRAggExpr::Sum {
+            input,
+            null_on_empty: false,
+        }) = expr_arena.get(truthy)
+        && let AExpr::BinaryExpr {
+            left,
+            op: Operator::Gt,
+            right,
+        } = expr_arena.get(predicate)
+        && integer_literal_value(expr_arena.get(*right)) == Some(0)
+        && let AExpr::Agg(IRAggExpr::Count {
+            input: count_input,
+            include_nulls: false,
+        }) = expr_arena.get(*left)
+        && expr_arena
+            .get(*input)
+            .is_expr_equal_to(expr_arena.get(*count_input), expr_arena)
+    {
+        return Some(AExpr::Agg(IRAggExpr::Sum {
+            input: *input,
+            null_on_empty: true,
+        }));
+    }
+    None
+}
+
 fn maybe_negate(ae: AExpr, negate: bool, expr_arena: &mut Arena<AExpr>) -> AExpr {
     if negate {
         AExprBuilder::new_from_aexpr(ae, expr_arena)
@@ -333,7 +368,7 @@ impl OptimizationRule for SimplifyBooleanRule {
             },
             AExpr::Function {
                 input,
-                function: IRFunctionExpr::DynamicPred { pred },
+                function: IRFunctionExpr::DynamicPred { pred, .. },
                 options,
             } if pred.id().is_none() => {
                 // The sender of this dynamic predicate was dropped,
@@ -541,6 +576,11 @@ impl OptimizationRule for SimplifyExprRule {
 
         let out = match &expr {
             AExpr::SortBy { expr, by, .. } if by.is_empty() => Some(expr_arena.get(*expr).clone()),
+            AExpr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => sum_null_on_empty(*predicate, *truthy, *falsy, expr_arena),
             // drop_nulls().len() -> len() - null_count()
             // drop_nulls().count() -> len() - null_count()
             AExpr::Agg(IRAggExpr::Count {
@@ -578,7 +618,10 @@ impl OptimizationRule for SimplifyExprRule {
             },
             // is_null().sum() -> null_count()
             // is_not_null().sum() -> len() - null_count()
-            AExpr::Agg(IRAggExpr::Sum(input)) => {
+            AExpr::Agg(IRAggExpr::Sum {
+                input,
+                null_on_empty: false,
+            }) => {
                 let input_expr = expr_arena.get(*input);
                 match input_expr {
                     AExpr::Function {

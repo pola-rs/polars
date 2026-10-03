@@ -93,6 +93,7 @@ nav:
         - user-guide/misc/comparison.md
         - user-guide/misc/arrow.md
         - user-guide/misc/polars_llms.md
+        - user-guide/misc/monitoring.md
       - user-guide/gpu-support.md
     - API:
       - api/reference.md
@@ -158,6 +159,7 @@ theme:
 extra_javascript:
     - _build/js/mathjax.js
     - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+    - _build/js/posthog-init.js
 extra_css:
     - _build/css/extra.css
 extra:

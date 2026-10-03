@@ -1,6 +1,6 @@
-#[cfg(feature = "private")]
-pub use arrow as _arrow;
 pub use polars::*;
+#[cfg(feature = "private")]
+pub use polars_arrow as _arrow;
 #[cfg(feature = "private")]
 pub use polars_core as _core;
 #[cfg(feature = "private")]

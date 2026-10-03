@@ -67,6 +67,17 @@ impl Then {
     pub fn otherwise<E: Into<Expr>>(self, statement: E) -> Expr {
         ternary_expr(self.condition, self.statement, statement.into())
     }
+
+    /// Serialize with the compact format, not portable.
+    #[cfg(feature = "serde")]
+    pub fn serialize_compact_into(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        polars_utils::pl_serialize::serialize_into_writer::<_, _, false>(writer, self)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn deserialize_compact_from(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+        polars_utils::pl_serialize::deserialize_from_reader::<_, _, false>(reader)
+    }
 }
 
 impl ChainedWhen {
@@ -132,6 +143,17 @@ impl ChainedThen {
         }
 
         otherwise
+    }
+
+    /// Serialize with the compact format, not portable.
+    #[cfg(feature = "serde")]
+    pub fn serialize_compact_into(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        polars_utils::pl_serialize::serialize_into_writer::<_, _, false>(writer, self)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn deserialize_compact_from(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+        polars_utils::pl_serialize::deserialize_from_reader::<_, _, false>(reader)
     }
 }
 

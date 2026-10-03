@@ -239,23 +239,35 @@ fn is_sorted_rec(
             predicate: _,
         } => rec!(*input),
         IR::Scan { .. } => None,
-        IR::DataFrameScan { df, .. } => {
+        IR::DataFrameScan {
+            df, output_schema, ..
+        } => {
             let last_is_null = |c: &Column| Some(c.get(c.len().checked_sub(1)?).ok()?.is_null());
             let sorted_cols = df
                 .columns()
                 .iter()
-                .filter_map(|c| match c.is_sorted_flag() {
-                    IsSorted::Not => None,
-                    IsSorted::Ascending => Some(Sorted {
-                        column: c.name().clone(),
-                        descending: Some(false),
-                        nulls_last: Some(last_is_null(c).unwrap_or(false)),
-                    }),
-                    IsSorted::Descending => Some(Sorted {
-                        column: c.name().clone(),
-                        descending: Some(true),
-                        nulls_last: Some(last_is_null(c).unwrap_or(false)),
-                    }),
+                .filter_map(|c| {
+                    // Skip projected-out columns.
+                    if output_schema
+                        .as_ref()
+                        .is_some_and(|schema| !schema.contains(c.name()))
+                    {
+                        return None;
+                    }
+
+                    match c.is_sorted_flag() {
+                        IsSorted::Not => None,
+                        IsSorted::Ascending => Some(Sorted {
+                            column: c.name().clone(),
+                            descending: Some(false),
+                            nulls_last: Some(last_is_null(c).unwrap_or(false)),
+                        }),
+                        IsSorted::Descending => Some(Sorted {
+                            column: c.name().clone(),
+                            descending: Some(true),
+                            nulls_last: Some(last_is_null(c).unwrap_or(false)),
+                        }),
+                    }
                 })
                 .collect_vec();
             (!sorted_cols.is_empty()).then(|| IRSorted(sorted_cols.into()))
@@ -349,6 +361,26 @@ fn is_sorted_rec(
                 let input_schema = ir_arena.get(input).schema(ir_arena);
                 first_expr_ir_sorted(exprs, expr_arena, input_schema.as_ref(), None)
                     .map(|s| IRSorted([s].into()))
+            }
+        },
+        IR::Window {
+            input,
+            exprs,
+            maintain_order,
+            ..
+        } => {
+            if !*maintain_order {
+                return None;
+            }
+            let input_sorted = rec!(*input)?;
+            let first_overwritten_key = input_sorted
+                .0
+                .iter()
+                .position(|v| exprs.iter().any(|e| e.output_name() == &v.column));
+            match first_overwritten_key {
+                None => Some(input_sorted),
+                Some(0) => None,
+                Some(i) => Some(IRSorted(input_sorted.0.iter().take(i).cloned().collect())),
             }
         },
         IR::Sort {
@@ -578,6 +610,13 @@ fn is_sorted_rec(
             rec!(input)
         },
         IR::UnoptimizedDispatch { .. } => None,
+        IR::Resolver { resolved_ir, .. } => {
+            if let Some(node) = *resolved_ir {
+                rec!(node)
+            } else {
+                None
+            }
+        },
         IR::Invalid => unreachable!(),
     };
 

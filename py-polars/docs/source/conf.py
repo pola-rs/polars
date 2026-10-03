@@ -128,12 +128,15 @@ def _switcher_version(git_ref: str) -> str:
     return match.group(1) if match else "dev"
 
 
+# The major version served at /api/python/stable/. Bump on a major release.
+STABLE_MAJOR = "1"
+
 git_ref = os.environ.get("POLARS_VERSION", "main")
 switcher_version = _switcher_version(git_ref)
 
 html_context = {"is_dev_build": switcher_version == "dev"}
 
-if switcher_version != "dev" and int(switcher_version) >= 1:
+if switcher_version == STABLE_MAJOR:
     # In this case we generate a docs sitemap for stable
     extensions.append("sphinx_sitemap")
     html_baseurl = f"{web_root}/api/python/stable/"
@@ -145,6 +148,7 @@ html_js_files = [
         "https://plausible.io/js/script.js",
         {"data-domain": "docs.pola.rs,combined.pola.rs", "defer": "defer"},
     ),
+    "js/posthog-init.js",
 ]
 
 html_theme_options = {

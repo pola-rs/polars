@@ -1,4 +1,5 @@
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
+use polars_core::prelude::sort::arg_sort;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_utils::broadcast::broadcast_len;
@@ -42,6 +43,16 @@ fn prepare_bool_vec(values: &[bool], by_len: usize) -> Vec<bool> {
         (0, n) => vec![false; n],
         // Broadcast first.
         (_, n) => vec![values[0]; n],
+    }
+}
+
+/// Preserve logical ordering information, including inside nested columns
+fn to_sort_repr(c: &Column) -> Column {
+    let dtype = c.dtype();
+    if dtype.is_nested() || dtype.contains_categoricals() || dtype.contains_enums() {
+        c.clone()
+    } else {
+        c.to_physical_repr()
     }
 }
 
@@ -102,32 +113,50 @@ fn sort_by_groups_single_by(
     Ok((*first, new_idx))
 }
 
-fn sort_by_groups_no_match_single<'a>(
+fn sort_by_groups_no_match<'a>(
     mut ac_in: AggregationContext<'a>,
-    mut ac_by: AggregationContext<'a>,
-    options: SortOptions,
+    mut ac_sort_by: Vec<AggregationContext<'a>>,
+    options: SortMultipleOptions,
     expr: &Expr,
 ) -> PolarsResult<AggregationContext<'a>> {
     let s_in = ac_in.aggregated();
-    let s_by = ac_by.aggregated();
     let mut s_in = s_in.list().unwrap().clone();
-    let mut s_by = s_by.list().unwrap().clone();
+    let s_sort_by = ac_sort_by
+        .iter_mut()
+        .map(|ac| ac.aggregated().list().unwrap().clone())
+        .collect::<Vec<_>>();
 
     let dtype = s_in.dtype().clone();
     let ca: PolarsResult<ListChunked> = RAYON.install(|| {
         s_in.par_iter_indexed()
-            .zip(s_by.par_iter_indexed())
-            .map(|(opt_s, s_sort_by)| match (opt_s, s_sort_by) {
-                (Some(s), Some(s_sort_by)) => {
-                    polars_ensure!(s.len() == s_sort_by.len(), ComputeError: "series lengths don't match in 'sort_by' expression");
-                    let idx = s_sort_by.arg_sort(SortOptions {
-                        // We are already in par iter.
-                        multithreaded: false,
-                        ..options
-                    });
-                    Ok(Some(unsafe { s.take_unchecked(&idx) }))
-                },
-                _ => Ok(None),
+            .enumerate()
+            .map(|(idx, opt_s)| {
+                let s_sort_by = s_sort_by
+                    .iter()
+                    .map(|s| s.get_as_series(idx))
+                    .collect::<Option<Vec<_>>>();
+
+                match (opt_s, s_sort_by) {
+                    (Some(s), Some(s_sort_by)) => {
+                        let same_len = s_sort_by.iter().all(|s_sort_by| s_sort_by.len() == s.len());
+                        polars_ensure!(same_len, ComputeError: "series lengths don't match in 'sort_by' expression");
+                        let columns = s_sort_by
+                            .iter()
+                            .cloned()
+                            .map(Column::from)
+                            .collect::<Vec<_>>();
+                        let idx = arg_sort(
+                            &columns,
+                            SortMultipleOptions {
+                                // We are already in par iter.
+                                multithreaded: false,
+                                ..options.clone()
+                            },
+                        )?;
+                        Ok(Some(unsafe { s.take_unchecked(&idx) }))
+                    },
+                    _ => Ok(None),
+                }
             })
             .collect_ca_with_dtype(PlSmallStr::EMPTY, dtype)
     });
@@ -161,10 +190,7 @@ fn sort_by_groups_multiple_by(
                 limit: None,
             };
 
-            let sorted_idx = groups[0]
-                .as_materialized_series()
-                .arg_sort_multiple(&groups[1..], &options)
-                .unwrap();
+            let sorted_idx = arg_sort(&groups, options)?;
             map_sorted_indices_to_group_idx(&sorted_idx, idx)
         },
         GroupsIndicator::Slice([first, len]) => {
@@ -181,10 +207,7 @@ fn sort_by_groups_multiple_by(
                 maintain_order,
                 limit: None,
             };
-            let sorted_idx = groups[0]
-                .as_materialized_series()
-                .arg_sort_multiple(&groups[1..], &options)
-                .unwrap();
+            let sorted_idx = arg_sort(&groups, options)?;
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
     };
@@ -220,13 +243,7 @@ impl PhysicalExpr for SortByExpr {
                 let mut s_sort_by = self
                     .by
                     .iter()
-                    .map(|e| {
-                        e.evaluate(df, state).map(|c| match c.dtype() {
-                            #[cfg(feature = "dtype-categorical")]
-                            DataType::Categorical(_, _) | DataType::Enum(_, _) => c,
-                            _ => c.to_physical_repr(),
-                        })
-                    })
+                    .map(|e| e.evaluate(df, state).map(|c| to_sort_repr(&c)))
                     .collect::<PolarsResult<Vec<_>>>()?;
 
                 let broadcast_length = broadcast_len(s_sort_by.iter())
@@ -247,9 +264,7 @@ impl PhysicalExpr for SortByExpr {
                     .with_order_descending_multi(descending)
                     .with_nulls_last_multi(nulls_last);
 
-                s_sort_by[0]
-                    .as_materialized_series()
-                    .arg_sort_multiple(&s_sort_by[1..], &options)
+                arg_sort(&s_sort_by, options)
             };
             RAYON.install(|| rayon::join(series_f, sorted_idx_f))
         };
@@ -314,20 +329,35 @@ impl PhysicalExpr for SortByExpr {
             }
         }
 
+        // The physical positions of independently evaluated expressions can
+        // differ even when every group has the same length. In that case, sort
+        // their materialized logical group values instead of applying a
+        // permutation expressed in another expression's physical positions.
+        let groups_match = matches!(ac_in.update_groups, UpdateGroups::No)
+            && ac_sort_by.iter().all(|ac| {
+                matches!(ac.update_groups, UpdateGroups::No)
+                    && (ac_in.groups.is_same(&ac.groups)
+                        || ac_in.groups.as_ref().as_ref() == ac.groups.as_ref().as_ref())
+            });
+        if !groups_match {
+            let groups_in = ac_in.groups().clone();
+            for ac in &mut ac_sort_by {
+                let groups = ac.groups();
+                check_groups(groups_in.as_ref().as_ref(), groups.as_ref().as_ref())?;
+            }
+            return sort_by_groups_no_match(
+                ac_in,
+                ac_sort_by,
+                self.sort_options.clone(),
+                &self.expr,
+            );
+        }
+
         let mut sort_by_s = ac_sort_by
             .iter()
-            .map(|c| {
-                let c = c.flat_naive();
-                match c.dtype() {
-                    #[cfg(feature = "dtype-categorical")]
-                    DataType::Categorical(_, _) | DataType::Enum(_, _) => {
-                        c.as_materialized_series().clone()
-                    },
-                    // @scalar-opt
-                    // @partition-opt
-                    _ => c.to_physical_repr().take_materialized_series(),
-                }
-            })
+            // @scalar-opt
+            // @partition-opt
+            .map(|c| to_sort_repr(&c.flat_naive()).take_materialized_series())
             .collect::<Vec<_>>();
 
         let ordered_by_group_operation = matches!(
@@ -335,19 +365,8 @@ impl PhysicalExpr for SortByExpr {
             UpdateGroups::WithSeriesLen | UpdateGroups::WithGroupsLen
         );
 
-        let groups = if self.by.len() == 1 {
+        let groups = if ac_sort_by.len() == 1 {
             let mut ac_sort_by = ac_sort_by.pop().unwrap();
-
-            // The groups of the lhs of the expressions do not match the series values,
-            // we must take the slower path.
-            if !matches!(ac_in.update_groups, UpdateGroups::No) {
-                return sort_by_groups_no_match_single(
-                    ac_in,
-                    ac_sort_by,
-                    SortOptions::from(&self.sort_options),
-                    &self.expr,
-                );
-            };
 
             let sort_by_s = sort_by_s.pop().unwrap();
             let groups = ac_sort_by.groups();

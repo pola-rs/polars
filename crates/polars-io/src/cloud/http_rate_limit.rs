@@ -55,10 +55,19 @@ static CONTROLLER_ID: AtomicU32 = AtomicU32::new(0);
 static LOG_HTTP_RATE_LIMIT: LazyLock<bool> =
     LazyLock::new(|| std::env::var("POLARS_LOG_HTTP_RATE_LIMIT").is_ok());
 
-// Request/s rate init and boundaries.
-const DEFAULT_INIT_RATE: f64 = 1000.0;
-const DEFAULT_FLOOR_RATE: f64 = 10.0;
+// Request/s rate init and boundaries. Init is also the resting rate after idle.
+// Documented baselines (rps):
+// AWS S3 per prefix 5500 GET/HEAD, 3500 PUT/POST/DELETE;
+// GCS per bucket 5000 reads, 1000 writes;
+// Azure per account 20_000.
+const DEFAULT_READ_INIT_RATE: f64 = 5000.0;
+const DEFAULT_WRITE_INIT_RATE: f64 = 1000.0;
+const DEFAULT_READ_FLOOR_RATE: f64 = 50.0;
+const DEFAULT_WRITE_FLOOR_RATE: f64 = 10.0;
 const DEFAULT_CEILING_RATE: f64 = 50_000.0;
+
+// Growth out of a cut is multiplicative, so a zero rate cannot recover.
+const MIN_RATE: f64 = 1.0;
 
 // Increase / decrease parameters.
 // Cold-start multiplicative increase, per tick.
@@ -153,36 +162,73 @@ impl From<CloudRateLimitConfig> for RateLimitConfig {
     fn from(value: CloudRateLimitConfig) -> Self {
         fn to_rate_limit_config(
             config: &CloudDirectionalRateLimitConfig,
+            defaults: &DirectionalRateLimitConfig,
         ) -> DirectionalRateLimitConfig {
+            let ceiling_rate = config
+                .ceiling_rate
+                .map_or(defaults.ceiling_rate, |r| r as f64)
+                .max(MIN_RATE);
+
+            let floor_rate = config
+                .floor_rate
+                .map_or(defaults.floor_rate, |r| r as f64)
+                .min(ceiling_rate)
+                .max(MIN_RATE);
+
+            let init_rate = config
+                .init_rate
+                .map_or(defaults.init_rate, |r| r as f64)
+                .clamp(floor_rate, ceiling_rate);
+
             DirectionalRateLimitConfig {
-                init_rate: config.init_rate.map_or(DEFAULTS.init_rate, |r| r as f64),
-                floor_rate: config.floor_rate.map_or(DEFAULTS.floor_rate, |r| r as f64),
-                ceiling_rate: config
-                    .ceiling_rate
-                    .map_or(DEFAULTS.ceiling_rate, |r| r as f64),
-                horizon: DEFAULTS.horizon,
-                max_wait: DEFAULTS.max_wait,
-                init_policy: DEFAULTS.init_policy,
+                init_rate,
+                floor_rate,
+                ceiling_rate,
+                horizon: defaults.horizon,
+                max_wait: defaults.max_wait,
+                init_policy: defaults.init_policy,
             }
         }
 
-        let read_config = to_rate_limit_config(&value.read);
-        let write_config = to_rate_limit_config(&value.write);
+        let read_config = to_rate_limit_config(&value.read, &READ_DEFAULTS);
+        let write_config = to_rate_limit_config(&value.write, &WRITE_DEFAULTS);
 
         return RateLimitConfig {
             read: read_config,
             write: write_config,
         };
 
-        static DEFAULTS: LazyLock<DirectionalRateLimitConfig> =
-            LazyLock::new(|| DirectionalRateLimitConfig {
-                init_rate: parse_env_var(DEFAULT_INIT_RATE, "POLARS_CLOUD_INIT_RATE"),
-                floor_rate: {
-                    let floor_rate = parse_env_var(DEFAULT_FLOOR_RATE, "POLARS_CLOUD_FLOOR_RATE");
-                    assert!(floor_rate > 0.0);
-                    floor_rate
-                },
-                ceiling_rate: parse_env_var(DEFAULT_CEILING_RATE, "POLARS_CLOUD_CEILING_RATE"),
+        static READ_DEFAULTS: LazyLock<DirectionalRateLimitConfig> = LazyLock::new(|| {
+            directional_defaults(
+                DEFAULT_READ_INIT_RATE,
+                DEFAULT_READ_FLOOR_RATE,
+                "POLARS_CLOUD_READ_INIT_RATE",
+                "POLARS_CLOUD_READ_FLOOR_RATE",
+                "POLARS_CLOUD_READ_CEILING_RATE",
+            )
+        });
+
+        static WRITE_DEFAULTS: LazyLock<DirectionalRateLimitConfig> = LazyLock::new(|| {
+            directional_defaults(
+                DEFAULT_WRITE_INIT_RATE,
+                DEFAULT_WRITE_FLOOR_RATE,
+                "POLARS_CLOUD_WRITE_INIT_RATE",
+                "POLARS_CLOUD_WRITE_FLOOR_RATE",
+                "POLARS_CLOUD_WRITE_CEILING_RATE",
+            )
+        });
+
+        fn directional_defaults(
+            default_init_rate: f64,
+            default_floor_rate: f64,
+            init_rate_env: &'static str,
+            floor_rate_env: &'static str,
+            ceiling_rate_env: &'static str,
+        ) -> DirectionalRateLimitConfig {
+            DirectionalRateLimitConfig {
+                init_rate: parse_env_var(default_init_rate, init_rate_env),
+                floor_rate: parse_env_var(default_floor_rate, floor_rate_env),
+                ceiling_rate: parse_env_var(DEFAULT_CEILING_RATE, ceiling_rate_env),
                 horizon: Duration::from_millis(parse_env_var(
                     DEFAULT_RATE_HORIZON_MS,
                     "POLARS_CLOUD_RATE_HORIZON_MS",
@@ -192,7 +238,8 @@ impl From<CloudRateLimitConfig> for RateLimitConfig {
                     "POLARS_CLOUD_RATE_MAX_WAIT_MS",
                 )),
                 init_policy: InitPolicy::Inherit,
-            });
+            }
+        }
 
         fn parse_env_var<T: FromStr>(default: T, name: &'static str) -> T {
             std::env::var(name).map_or(default, |x| {
@@ -225,7 +272,6 @@ impl PacingBudget {
         self.horizon
     }
 
-    /// Helper so downstream doesn't have to re-implement the formula
     pub fn request_budget(&self, bdp: f64) -> f64 {
         bdp.min(self.rate() * self.horizon().as_secs_f64())
     }
@@ -637,7 +683,7 @@ impl AdaptiveRateController {
             state.set_last_max(Some(new_max.max(self.config.floor_rate)));
         }
 
-        // Evaluate and apply rate rate and regime changes.
+        // Evaluate and apply rate and regime changes.
         let verdict = {
             let rate = state.rate();
             let init_rate = self.config.init_rate;

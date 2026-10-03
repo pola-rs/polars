@@ -107,6 +107,49 @@ pre {
     color: #ffffff;
 }
 
+/* mark the tags whose hover text explains why support is only partial */
+.engine-tag--partially-streaming,
+.engine-tag--partially-distributed {
+    text-decoration: underline dotted currentColor;
+    text-underline-offset: 0.2em;
+}
+
+.engine-tag[data-engine-tooltip] {
+    position: relative;
+    cursor: help;
+}
+
+.engine-tag[data-engine-tooltip]::after {
+    content: attr(data-engine-tooltip);
+    position: absolute;
+    bottom: calc(100% + 0.5rem);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    width: max-content;
+    max-width: min(24rem, 70vw);
+    padding: 0.4rem 0.6rem;
+    border-radius: 0.25rem;
+    border: 1px solid var(--pst-color-border);
+    background-color: var(--pst-color-surface);
+    color: var(--pst-color-text-base);
+    box-shadow: 0 .2rem .5rem var(--pst-color-shadow);
+    font-weight: 400;
+    text-align: left;
+    text-decoration: none;
+    white-space: normal;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.1s ease-in 0.15s, visibility 0s linear 0.25s;
+}
+
+.engine-tag[data-engine-tooltip]:hover::after,
+.engine-tag[data-engine-tooltip]:focus-visible::after {
+    opacity: 1;
+    visibility: visible;
+    transition-delay: 0.15s, 0s;
+}
+
 .engine-tag--in-memory {
     background-color: #6b7280;
 }

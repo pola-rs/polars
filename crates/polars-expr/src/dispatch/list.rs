@@ -14,7 +14,14 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
     match func {
         Concat => wrap!(concat),
         #[cfg(feature = "is_in")]
-        Contains { nulls_equal } => map_as_slice!(contains, nulls_equal),
+        Contains {
+            nulls_equal,
+            needle_cast,
+        } => wrap!(move |s: &mut [Column]| {
+            super::membership::with_needle_cast(s, 1, 0, needle_cast.as_ref(), |s| {
+                contains(s, nulls_equal)
+            })
+        }),
         #[cfg(feature = "list_drop_nulls")]
         DropNulls => map!(drop_nulls),
         #[cfg(feature = "list_sample")]
@@ -59,6 +66,8 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
         ToArray(width) => map!(to_array, width),
         #[cfg(feature = "list_to_struct")]
         ToStruct(names) => map!(to_struct, &names),
+        #[cfg(feature = "dtype-map")]
+        ToMap => map!(to_map),
     }
 }
 
@@ -356,13 +365,13 @@ pub(super) fn sort(s: &Column, options: SortOptions) -> PolarsResult<Column> {
 #[cfg(feature = "list_sets")]
 pub(super) fn set_operation(
     s: &[Column],
-    set_type: polars_ops::prelude::SetOperation,
+    set_type: polars_defs::expr::SetOperation,
 ) -> PolarsResult<Column> {
     let s0 = &s[0];
     let s1 = &s[1];
 
     if s0.is_empty() || s1.is_empty() {
-        use polars_ops::prelude::SetOperation;
+        use polars_defs::expr::SetOperation;
 
         return match set_type {
             SetOperation::Intersection => {
@@ -406,4 +415,12 @@ pub(super) fn to_array(s: &Column, width: usize) -> PolarsResult<Column> {
 pub(super) fn to_struct(s: &Column, fields: &[PlSmallStr]) -> PolarsResult<Column> {
     use polars_ops::prelude::ToStruct;
     Ok(s.list()?.to_struct(fields)?.into_column())
+}
+
+#[cfg(feature = "dtype-map")]
+fn to_map(c: &Column) -> PolarsResult<Column> {
+    let DataType::List(entries) = c.dtype() else {
+        polars_bail!(InvalidOperation: "`list.to_map` requires a List dtype, got `{}`", c.dtype())
+    };
+    c.cast(&entries.map_from_named_entries_dtype()?)
 }

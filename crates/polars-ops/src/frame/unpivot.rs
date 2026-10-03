@@ -1,5 +1,5 @@
-use arrow::array::{MutableArray, MutablePlString};
-use arrow::compute::concatenate::concatenate_unchecked;
+use polars_arrow::array::{MutableArray, MutablePlString};
+use polars_arrow::compute::concatenate::concatenate_unchecked;
 use polars_core::datatypes::{DataType, PlSmallStr};
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::Column;

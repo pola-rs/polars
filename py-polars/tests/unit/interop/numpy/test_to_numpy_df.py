@@ -156,7 +156,6 @@ def test_df_to_numpy_zero_copy_path() -> None:
 
 
 @pytest.mark.may_fail_cloud
-@pytest.mark.may_fail_auto_streaming
 def test_df_to_numpy_zero_copy_path_temporal() -> None:
     values = [datetime(1970 + i, 1, 1) for i in range(12)]
     s = pl.Series(values)

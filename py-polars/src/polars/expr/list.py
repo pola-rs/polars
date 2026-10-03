@@ -842,11 +842,18 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
             Item that will be checked for membership
         nulls_equal : bool, default True
             If True, treat null as a distinct value. Null values will not propagate.
+            Note that :meth:`Expr.is_in` defaults to `False`.
 
         Returns
         -------
         Expr
             Expression of data type :class:`Boolean`.
+
+        Notes
+        -----
+        For supported dtype pairs, lossy conversions do not create matches. Values that
+        would overflow or require rounding match nothing. Cast explicitly to compare
+        integers and floats.
 
         Examples
         --------
@@ -1384,6 +1391,35 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
             raise TypeError(msg)
 
         return wrap_expr(self._pyexpr.list_to_struct(fields))
+
+    def to_map(self) -> Expr:
+        """
+        Convert the `List` of `Struct` entries to a `Map`.
+
+        The input must be a `List` of `Struct` with exactly two fields named `key`
+        and `value`. Keys must not be null; duplicate keys within a row are resolved
+        by keeping the first position and the last value.
+
+        The inverse of :meth:`Expr.map.entries`.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"m": [[{"key": "a", "value": 1}, {"key": "b", "value": 2}]]}
+        ... )
+        >>> df.select(pl.col("m").list.to_map())
+        shape: (1, 1)
+        ┌──────────────────┐
+        │ m                │
+        │ ---              │
+        │ map[str, i64]    │
+        ╞══════════════════╡
+        │ {"a": 1, "b": 2} │
+        └──────────────────┘
+        """
+        return wrap_expr(self._pyexpr.list_to_map())
 
     def eval(self, expr: Expr, *, parallel: bool = False) -> Expr:
         """

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crossbeam_channel::Sender;
 use parking_lot::Mutex;
-use polars_async::executor;
+use polars_async::executor::{self, TaskMetricAggregator};
 use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
@@ -14,7 +14,7 @@ use slotmap::{SecondaryMap, SparseSecondaryMap};
 use tokio::task::JoinHandle;
 
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
-use crate::metrics::{GraphMetrics, NodeMetricsRegistrator};
+use crate::metrics::GraphMetrics;
 use crate::pipe::PhysicalPipe;
 
 #[derive(Clone)]
@@ -25,11 +25,19 @@ pub struct StreamingExecutionState {
     /// The ExecutionState passed to any non-streaming operations.
     pub in_memory_exec_state: ExecutionState,
 
+    /// The aggregator for the metrics of tasks spawned by the node this state
+    /// belongs to.
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
+
     query_tasks_send: Sender<JoinHandle<PolarsResult<()>>>,
     subphase_tasks_send: Sender<JoinHandle<PolarsResult<()>>>,
 }
 
 impl StreamingExecutionState {
+    pub fn task_metrics(&self) -> Option<&TaskMetricAggregator> {
+        self.task_metrics.as_deref()
+    }
+
     /// Spawns a task which is awaited at the end of the query.
     #[allow(unused)]
     pub fn spawn_query_task<F: Future<Output = PolarsResult<()>> + Send + 'static>(&self, fut: F) {
@@ -148,6 +156,7 @@ fn run_subgraph(
     pipes: &[LogicalPipeKey],
     pipe_seq_offsets: &mut SecondaryMap<LogicalPipeKey, Arc<RelaxedCell<u64>>>,
     state: &StreamingExecutionState,
+    node_states: &SecondaryMap<GraphNodeKey, StreamingExecutionState>,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
 ) -> PolarsResult<()> {
     // Construct physical pipes for the logical pipes we'll use.
@@ -183,7 +192,7 @@ fn run_subgraph(
         }
     }
 
-    executor::task_scope(|scope| {
+    executor::task_scope(None, |scope| {
         // Using SlotMap::iter_mut we can get simultaneous mutable references. By storing them and
         // removing the references from the secondary map as we do our topological sort we ensure
         // they are unique.
@@ -217,29 +226,15 @@ fn run_subgraph(
             }
 
             // Spawn the tasks.
-            let pre_spawn_offset = join_handles.len();
-
-            if let Some(graph_metrics) = metrics.clone() {
-                node.compute
-                    .set_phase_metrics_registrator(NodeMetricsRegistrator {
-                        graph_key: node_key,
-                        graph_metrics,
-                    });
-            }
-
+            let node_state = &node_states[node_key];
+            scope.set_task_metrics(node_state.task_metrics());
             node.compute.spawn(
                 scope,
                 &mut recv_ports[..],
                 &mut send_ports[..],
-                state,
+                node_state,
                 &mut join_handles,
             );
-            if let Some(lock) = metrics.as_ref() {
-                let mut m = lock.lock();
-                for handle in &join_handles[pre_spawn_offset..] {
-                    m.add_task(node_key, handle.metrics().unwrap().clone());
-                }
-            }
 
             // Ensure the ports were consumed.
             assert!(recv_ports.iter().all(|p| p.is_none()));
@@ -282,7 +277,9 @@ fn run_subgraph(
 
         // Spawn tasks for all the physical pipes (no-op on most, but needed for
         // those with distributors or linearizers).
-        for pipe in physical_pipes.values_mut() {
+        for (pipe_key, pipe) in physical_pipes.iter_mut() {
+            let receiver = graph.pipes[pipe_key].receiver;
+            scope.set_task_metrics(node_states[receiver].task_metrics());
             pipe.spawn(scope, &mut join_handles);
         }
 
@@ -310,7 +307,17 @@ pub fn execute_graph(
         in_memory_exec_state: ExecutionState::default(),
         query_tasks_send,
         subphase_tasks_send,
+        task_metrics: None,
     };
+    let node_states: SecondaryMap<GraphNodeKey, StreamingExecutionState> = graph
+        .nodes
+        .keys()
+        .map(|key| {
+            let mut node_state = state.clone();
+            node_state.task_metrics = metrics.as_ref().map(|m| m.lock().node_task_metrics(key));
+            (key, node_state)
+        })
+        .collect();
 
     // Ensure everything is properly connected.
     for (node_key, node) in &graph.nodes {
@@ -330,7 +337,7 @@ pub fn execute_graph(
         if polars_core::config::verbose() {
             eprintln!("polars-stream: updating graph state");
         }
-        graph.update_all_states(&state, metrics.as_deref())?;
+        graph.update_all_states(&node_states, metrics.as_deref())?;
 
         if let Some(m) = metrics.as_ref() {
             m.lock().flush(&graph.pipes);
@@ -366,6 +373,7 @@ pub fn execute_graph(
             &pipes,
             &mut pipe_seq_offsets,
             &state,
+            &node_states,
             metrics.clone(),
         )?;
         ASYNC.block_in_place_on(async {

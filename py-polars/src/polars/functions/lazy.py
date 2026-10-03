@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
+    from polars._plr import PyExpr
     from polars._typing import (
         AsyncResult,
         CorrelationMethod,
@@ -47,6 +48,7 @@ if TYPE_CHECKING:
         QuantileMethod,
     )
     from polars._utils.async_ import _GeventDataFrameResult
+    from polars.datatypes import DataType
     from polars.lazyframe.opt_flags import (
         QueryOptFlags,
     )
@@ -1327,6 +1329,85 @@ def _wrap_acc_lambda(
     return wrapper
 
 
+@unstable()
+def pipe_with_dtype(
+    exprs: Sequence[str | Expr],
+    function: Callable[[list[tuple[Expr, DataType]]], IntoExpr],
+) -> Expr:
+    """
+    Replace `exprs`, at plan time, with the expression returned by `callback`.
+
+    `function` is not executed immediately but only during the plan stage, once
+    the dtypes of `exprs` are known. This allows choosing a different expression
+    depending on the dtypes of the inputs, including the metadata of extension
+    types. This also means that any exceptions raised by `function` will only be
+    emitted during the plan stage.
+
+    If any of `exprs` expands to multiple columns (e.g. a selector), `function` is
+    called once for every column, as with other functions taking multiple
+    expressions. It may also be called more than once for the same inputs, for
+    example when the schema is resolved separately. It should not have side
+    effects.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed at any
+        point without it being considered a breaking change.
+
+    .. engine-support:: in-memory, streaming, distributed
+
+    Parameters
+    ----------
+    exprs
+        Expression(s) whose dtypes are passed to `function`. Strings are parsed as
+        column names.
+    function
+        Callable; will receive a list with an `(expression, dtype)` pair for every
+        input, in the same order as `exprs`. The returned expression takes the
+        place of the inputs, including its output name.
+
+    See Also
+    --------
+    Expr.pipe_with_dtype : Same functionality for a single expressions.
+    LazyFrame.pipe_with_schema
+
+    Examples
+    --------
+    Sum the inputs, unless one of them is a string, in which case they are
+    concatenated instead.
+
+    >>> def sum_or_concat(inputs: list[tuple[pl.Expr, pl.DataType]]) -> pl.Expr:
+    ...     exprs = [expr for expr, _ in inputs]
+    ...     if any(dtype == pl.String for _, dtype in inputs):
+    ...         return pl.concat_str(exprs)
+    ...     return pl.sum_horizontal(exprs)
+    >>> df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": ["x", "y"]})
+    >>> df.select(
+    ...     ab=pl.pipe_with_dtype(["a", "b"], sum_or_concat),
+    ...     ac=pl.pipe_with_dtype(["a", "c"], sum_or_concat),
+    ... )
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ ab  ┆ ac  │
+    │ --- ┆ --- │
+    │ i64 ┆ str │
+    ╞═════╪═════╡
+    │ 4   ┆ 1x  │
+    │ 6   ┆ 2y  │
+    └─────┴─────┘
+    """
+    pyexprs = parse_into_list_of_expressions(exprs)
+
+    def wrapper(exprs_and_dtypes: Any) -> PyExpr:
+        pyexprs, dtypes = exprs_and_dtypes
+        inputs = [
+            (wrap_expr(pyexpr), dtype)
+            for pyexpr, dtype in zip(pyexprs, dtypes, strict=True)
+        ]
+        return parse_into_expression(function(inputs))
+
+    return wrap_expr(plr.pipe_with_dtype(pyexprs, wrapper))
+
+
 def fold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
@@ -1982,6 +2063,8 @@ def collect_all(
     Common Subplan Elimination is applied on the combined plan, meaning
     that diverging queries will run only once.
 
+    .. engine-support:: in-memory, streaming, distributed
+
     Parameters
     ----------
     lazy_frames
@@ -1999,13 +2082,11 @@ def collect_all(
         * ``"auto"``: use the engine set by
           :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
           or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
-          back to ``"in-memory"`` if unset (this default may change in
-          a future release).
-        * ``"in-memory"``: use the in-memory engine, this is the default engine.
+          back to ``"streaming"`` if unset.
+        * ``"in-memory"``: use the in-memory engine.
         * ``"streaming"``: use the streaming engine, which processes
           queries in batches, reducing memory pressure and often
-          outperforming the in-memory engine. This will soon become
-          the default engine of Polars.
+          outperforming the in-memory engine.
         * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
           ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
           fine-grained control (e.g. device selection on multi-GPU
@@ -2114,13 +2195,11 @@ def collect_all_async(
         * ``"auto"``: use the engine set by
           :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
           or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
-          back to ``"in-memory"`` if unset (this default may change in
-          a future release).
-        * ``"in-memory"``: use the in-memory engine, this is the default engine.
+          back to ``"streaming"`` if unset.
+        * ``"in-memory"``: use the in-memory engine.
         * ``"streaming"``: use the streaming engine, which processes
           queries in batches, reducing memory pressure and often
-          outperforming the in-memory engine. This will soon become
-          the default engine of Polars.
+          outperforming the in-memory engine.
         * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
           ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
           fine-grained control (e.g. device selection on multi-GPU
@@ -2538,6 +2617,8 @@ def rolling_cov(
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
 
+    .. engine-support:: in-memory, streaming
+
     Parameters
     ----------
     a
@@ -2584,6 +2665,8 @@ def rolling_corr(
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
+
+    .. engine-support:: in-memory, streaming
 
     Parameters
     ----------

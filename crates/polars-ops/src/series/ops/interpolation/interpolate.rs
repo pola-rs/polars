@@ -1,12 +1,11 @@
 use std::ops::{Add, Div, Mul, Sub};
 
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::MutableBitmap;
 use num_traits::{NumCast, Zero};
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
+use polars_defs::expr::InterpolationMethod;
 
 use super::linear_itp;
 
@@ -197,14 +196,6 @@ fn interpolate_linear(s: &Series) -> Series {
 
 fn linear_interp_signed<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Series {
     interpolate_impl(ca, signed_interp::<T::Native>).into_series()
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, strum_macros::IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum InterpolationMethod {
-    Linear,
-    Nearest,
 }
 
 pub fn interpolate(s: &Series, method: InterpolationMethod) -> Series {

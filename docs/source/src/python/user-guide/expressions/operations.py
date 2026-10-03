@@ -45,7 +45,7 @@ print(result.equals(result_named_operators))
 # --8<-- [start:comparison]
 result = df.select(
     (pl.col("nrs") > 1).alias("nrs > 1"),  # .gt
-    (pl.col("nrs") >= 3).alias("nrs >= 3"),  # ge
+    (pl.col("nrs") >= 3).alias("nrs >= 3"),  # .ge
     (pl.col("random") < 0.2).alias("random < .2"),  # .lt
     (pl.col("random") <= 0.5).alias("random <= .5"),  # .le
     (pl.col("nrs") != 1).alias("nrs != 1"),  # .ne

@@ -7,11 +7,11 @@ mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
-use arrow::array::ArrayRef;
+use polars_arrow::array::ArrayRef;
 use polars_core::runtime::RAYON;
 use polars_core::utils::_set_partition_size;
+use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::index::ChunkId;
-use polars_utils::unique_column_name;
 pub(super) use single_keys::*;
 pub use single_keys_dispatch::SeriesJoin;
 #[cfg(feature = "asof_join")]
@@ -26,6 +26,7 @@ pub(crate) use sort_merge::*;
 pub use super::*;
 #[cfg(feature = "chunked_ids")]
 use crate::chunked_array::gather::chunked::TakeChunkedHorPar;
+use crate::unique_column_name;
 
 pub fn default_join_ids() -> ChunkJoinOptIds {
     #[cfg(feature = "chunked_ids")]
@@ -49,9 +50,9 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-#[cfg(feature = "performant")]
-use arrow::legacy::conversion::primitive_to_vec;
 pub(super) use det_hash_prone_order;
+#[cfg(feature = "performant")]
+use polars_arrow::legacy::conversion::primitive_to_vec;
 
 pub trait JoinDispatch: IntoDf {
     /// # Safety

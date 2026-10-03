@@ -1,11 +1,11 @@
 //! Everything you need to get started with Polars.
 pub use std::sync::Arc;
 
-pub use arrow::array::ArrayRef;
-pub(crate) use arrow::array::*;
-pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
-pub use arrow::legacy::prelude::*;
-pub(crate) use arrow::trusted_len::TrustedLen;
+pub use polars_arrow::array::ArrayRef;
+pub(crate) use polars_arrow::array::*;
+pub use polars_arrow::datatypes::{ArrowSchema, Field as ArrowField};
+pub use polars_arrow::legacy::prelude::*;
+pub(crate) use polars_arrow::trusted_len::TrustedLen;
 pub use polars_compute::rolling::{
     QuantileMethod, RollingFnParams, RollingRankMethod, RollingVarParams,
 };

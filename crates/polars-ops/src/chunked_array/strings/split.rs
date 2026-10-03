@@ -1,6 +1,6 @@
-use arrow::array::ValueSize;
+use polars_arrow::array::ValueSize;
 #[cfg(feature = "dtype-struct")]
-use arrow::array::{MutableArray, MutableUtf8Array};
+use polars_arrow::array::{MutableArray, MutableUtf8Array};
 use polars_core::chunked_array::ops::arity::binary_elementwise_for_each;
 use polars_core::prelude::*;
 use polars_utils::regex_cache::compile_regex;

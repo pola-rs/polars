@@ -5,15 +5,17 @@ use std::time::Instant;
 
 use futures::{Stream, StreamExt as _, TryStreamExt as _};
 use hashbrown::hash_map::RawEntryMut;
+use object_store::client::{HttpError, HttpErrorKind};
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore, ObjectStoreExt};
 use polars_buffer::Buffer;
+use polars_core::config;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::{PolarsError, PolarsResult};
 use polars_utils::pl_path::PlRefPath;
 use tokio::io::AsyncWriteExt;
 
-use super::concurrency::IoSample;
+use super::concurrency::{ConcurrencyController, IoSample};
 use super::concurrency_config::{ConcurrencyStrategy, FetchConfig, get_download_chunk_size};
 use crate::pl_async::{
     self, MAX_BUDGET_PER_REQUEST, get_concurrency_limit, tune_with_concurrency_budget,
@@ -24,15 +26,6 @@ use crate::pl_async::{
 pub struct PolarsObjectStoreError {
     pub base_url: PlRefPath,
     pub source: object_store::Error,
-}
-
-impl PolarsObjectStoreError {
-    pub fn from_url(base_url: &PlRefPath) -> impl FnOnce(object_store::Error) -> Self {
-        |error| Self {
-            base_url: base_url.clone(),
-            source: error,
-        }
-    }
 }
 
 impl Display for PolarsObjectStoreError {
@@ -51,9 +44,54 @@ impl std::error::Error for PolarsObjectStoreError {
     }
 }
 
+/// The `io::ErrorKind` for an `object_store::Error`, taken from the error
+/// variant or from the innermost `io::Error` in its source chain.
+pub fn object_store_error_kind(source: &object_store::Error) -> std::io::ErrorKind {
+    use std::io::ErrorKind::*;
+
+    match source {
+        object_store::Error::NotFound { .. } => NotFound,
+        object_store::Error::PermissionDenied { .. }
+        | object_store::Error::Unauthenticated { .. } => PermissionDenied,
+        _ => io_error_kind_from_source(source),
+    }
+}
+
+/// The kind of the innermost `io::Error` in the source chain of `error`,
+/// falling back to the kind of the innermost `HttpError`, or `Other`.
+pub fn io_error_kind_from_source(error: &(dyn std::error::Error + 'static)) -> std::io::ErrorKind {
+    use std::io::ErrorKind::*;
+
+    let mut kind = Other;
+    let mut http_kind = None;
+    let mut cur = Some(error);
+    while let Some(e) = cur {
+        if let Some(io) = e.downcast_ref::<std::io::Error>()
+            && io.kind() != Other
+        {
+            kind = io.kind();
+        } else if let Some(http) = e.downcast_ref::<HttpError>() {
+            http_kind = Some(http.kind());
+        }
+        cur = e.source();
+    }
+    if kind == Other {
+        // object_store maps this in its private `From<RetryError> for io::Error`,
+        // but the kind is lost when the error is boxed into `Error::Generic`.
+        kind = match http_kind {
+            Some(HttpErrorKind::Timeout) => TimedOut,
+            Some(HttpErrorKind::Connect) => NotConnected,
+            Some(HttpErrorKind::Interrupted) => ConnectionAborted,
+            _ => Other,
+        };
+    }
+    kind
+}
+
 impl From<PolarsObjectStoreError> for std::io::Error {
     fn from(value: PolarsObjectStoreError) -> Self {
-        std::io::Error::other(value)
+        let kind = object_store_error_kind(&value.source);
+        std::io::Error::new(kind, value)
     }
 }
 
@@ -86,6 +124,7 @@ mod inner {
         store: tokio::sync::RwLock<Arc<dyn ObjectStore>>,
         builder: PolarsObjectStoreBuilder,
         rebuilt: RelaxedCell<bool>,
+        suffix_range_supported: RelaxedCell<bool>,
     }
 
     /// Polars wrapper around [`ObjectStore`] functionality. This struct is cheaply cloneable.
@@ -105,11 +144,15 @@ mod inner {
             builder: PolarsObjectStoreBuilder,
         ) -> Self {
             let initial_store = store.clone();
+            // Azure accepts only `bytes=start-` and `bytes=start-end`, so never attempt a
+            // suffix range there: https://learn.microsoft.com/en-us/rest/api/storageservices/specifying-the-range-header-for-blob-service-operations
+            let suffix_range_supported = RelaxedCell::from(!builder.is_azure());
             Self {
                 inner: Arc::new(Inner {
                     store: tokio::sync::RwLock::new(store),
                     builder,
                     rebuilt: RelaxedCell::from(false),
+                    suffix_range_supported,
                 }),
                 initial_store,
                 io_metrics: OptIOMetrics(None),
@@ -219,6 +262,14 @@ and use the storage account keys from Azure CLI to authenticate"
                     e
                 }
             })
+        }
+
+        pub(crate) fn suffix_range_supported(&self) -> bool {
+            self.inner.suffix_range_supported.load()
+        }
+
+        pub(crate) fn disable_suffix_range(&self) {
+            self.inner.suffix_range_supported.store(false);
         }
 
         pub fn error_context(&self) -> ObjectStoreErrorContext {
@@ -515,69 +566,198 @@ impl PolarsObjectStore {
         Ok(())
     }
 
-    /// Fetch the metadata of the parquet file, do not memoize it.
+    /// Fetch the last `n` bytes of the object, and the total size of the object. Returns fewer
+    /// than `n` bytes if the object is smaller than `n`.
+    ///
+    /// A suffix range request (`Range: bytes=-n`) carries the object size in its `Content-Range`,
+    /// saving a HEAD. Backends rejecting them (e.g. Azure) fall back to HEAD + bounded range.
+    pub async fn get_suffix(
+        &self,
+        path: &Path,
+        n: usize,
+        config: FetchConfig,
+    ) -> PolarsResult<(Buffer<u8>, usize)> {
+        let mut suffix_rejected = false;
+
+        if n > 0 && self.suffix_range_supported() {
+            match self.try_get_suffix(path, n, config.strategy).await {
+                Ok(v) => return Ok(v),
+                Err(e) if is_suffix_range_rejection(&e) => {
+                    suffix_rejected = true;
+
+                    if config::verbose() {
+                        eprintln!(
+                            "[PolarsObjectStore]: suffix range request rejected ({e}), \
+                            falling back to head + range request"
+                        );
+                    }
+                },
+                Err(e) => return Err(e),
+            }
+        }
+
+        let size = self.head(path, config.strategy).await?.size as usize;
+
+        // An empty object is rejected regardless of backend support, so it proves nothing.
+        if suffix_rejected && size > 0 {
+            self.disable_suffix_range();
+        }
+
+        let bytes = self
+            .get_range(path, size.saturating_sub(n)..size, config)
+            .await?;
+
+        Ok((bytes, size))
+    }
+
+    async fn try_get_suffix(
+        &self,
+        path: &Path,
+        n: usize,
+        strategy: ConcurrencyStrategy,
+    ) -> PolarsResult<(Buffer<u8>, usize)> {
+        match strategy {
+            ConcurrencyStrategy::BytesBased => {
+                let controller = self.get_or_init_concurrency();
+                let _permit = controller.acquire(n as u64).await;
+                self.try_get_suffix_inner(path, n, Some(&**controller))
+                    .await
+            },
+            ConcurrencyStrategy::Legacy => {
+                with_concurrency_budget(1, || self.try_get_suffix_inner(path, n, None)).await
+            },
+            ConcurrencyStrategy::Unbounded => self.try_get_suffix_inner(path, n, None).await,
+        }
+    }
+
+    async fn try_get_suffix_inner(
+        &self,
+        path: &Path,
+        n: usize,
+        controller: Option<&ConcurrencyController>,
+    ) -> PolarsResult<(Buffer<u8>, usize)> {
+        let metrics = self.io_metrics();
+
+        metrics.add_bytes_requested(n as u64);
+
+        let io_session = metrics.start_io_session();
+
+        let out = self
+            .exec_with_rebuild_retry_on_err(|s| async move {
+                let t0 = Instant::now();
+                let response = s
+                    .get_opts(
+                        path,
+                        object_store::GetOptions {
+                            range: Some(object_store::GetRange::Suffix(n as u64)),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                let ttfb = t0.elapsed();
+                // `get_opts()` rewrites this from `Content-Range`: the full object size.
+                let size = response.meta.size as usize;
+                let bytes = response.bytes().await?;
+
+                if let Some(controller) = controller {
+                    controller.record_io(IoSample {
+                        n_bytes: bytes.len() as u64,
+                        ttfb,
+                        completion_time: Instant::now(),
+                    });
+                }
+
+                Ok((Buffer::from_owner(bytes), size))
+            })
+            .await;
+
+        drop(io_session);
+
+        let (bytes, size) = out?;
+
+        // A suffix response is short when the object is smaller than `n`.
+        metrics.add_bytes_received(bytes.len() as u64);
+
+        Ok((bytes, size))
+    }
+
+    /// Fetch the object metadata with a HEAD request, do not memoize it.
     pub async fn head(
         &self,
         path: &Path,
         strategy: ConcurrencyStrategy,
     ) -> PolarsResult<ObjectMeta> {
-        // TODO: Refactor for updated concurrency strategy.
-        // For now, we fall back to 'Legacy' which is fine for metadata.
-        // Since this carries an early signal, the IO Sample is of interest regardless of
-        // the strategy in use.
-        with_concurrency_budget(1, || {
-            self.exec_with_rebuild_retry_on_err(|s| {
-                async move {
+        match strategy {
+            ConcurrencyStrategy::BytesBased => {
+                let controller = self.get_or_init_concurrency();
+                let _permit = controller.acquire(0).await;
+                self.head_inner(path, Some(&**controller)).await
+            },
+            ConcurrencyStrategy::Legacy => {
+                with_concurrency_budget(1, || self.head_inner(path, None)).await
+            },
+            ConcurrencyStrategy::Unbounded => self.head_inner(path, None).await,
+        }
+    }
+
+    async fn head_inner(
+        &self,
+        path: &Path,
+        controller: Option<&ConcurrencyController>,
+    ) -> PolarsResult<ObjectMeta> {
+        self.exec_with_rebuild_retry_on_err(|s| {
+            async move {
+                let t0 = Instant::now();
+                let head_result = self.io_metrics().record_io_read(0, s.head(path)).await;
+
+                if head_result.is_err() {
                     let t0 = Instant::now();
-                    let head_result = self.io_metrics().record_io_read(0, s.head(path)).await;
-                    if let ConcurrencyStrategy::BytesBased = strategy {
-                        // self.get_or_init_concurrency().record_ttfb(ttfb);
-                        self.get_or_init_concurrency().record_io(IoSample {
-                            n_bytes: 0,
-                            ttfb: t0.elapsed(),
-                            completion_time: Instant::now(),
-                        });
-                    }
 
-                    if head_result.is_err() {
-                        let t0 = Instant::now();
-                        // Pre-signed URLs forbid the HEAD method, but we can still retrieve the header
-                        // information with a range 0-1 request.
-                        let get_range_0_1_result = self
-                            .io_metrics()
-                            .record_io_read(
-                                0,
-                                s.get_opts(
-                                    path,
-                                    object_store::GetOptions {
-                                        range: Some((0..1).into()),
-                                        ..Default::default()
-                                    },
-                                ),
-                            )
-                            .await;
+                    // Pre-signed URLs forbid the HEAD method, but we can still retrieve the header
+                    // information with a range 0-1 request.
+                    let get_range_0_1_result = self
+                        .io_metrics()
+                        .record_io_read(
+                            0,
+                            s.get_opts(
+                                path,
+                                object_store::GetOptions {
+                                    range: Some((0..1).into()),
+                                    ..Default::default()
+                                },
+                            ),
+                        )
+                        .await;
 
-                        if let ConcurrencyStrategy::BytesBased = strategy {
-                            self.get_or_init_concurrency().record_io(IoSample {
-                                n_bytes: 0,
-                                ttfb: t0.elapsed(),
-                                completion_time: Instant::now(),
-                            });
+                    if let Ok(v) = get_range_0_1_result {
+                        if let Some(controller) = controller {
+                            controller.record_head_rtt(t0.elapsed());
                         }
-
-                        if let Ok(v) = get_range_0_1_result {
-                            return Ok(v.meta);
-                        }
+                        return Ok(v.meta);
                     }
-
-                    let out = head_result?;
-
-                    Ok(out)
                 }
-            })
+
+                let out = head_result?;
+
+                if let Some(controller) = controller {
+                    controller.record_head_rtt(t0.elapsed());
+                }
+
+                Ok(out)
+            }
         })
         .await
     }
+}
+
+/// Whether the error is about the suffix range rather than the object. Azure rejects them
+/// client-side, backends ignoring the header answer 200 instead of 206, strict ones answer 416.
+fn is_suffix_range_rejection(err: &PolarsError) -> bool {
+    let msg = err.to_string();
+
+    msg.contains("does not support suffix range requests")
+        || msg.contains("Received non-partial response")
+        || msg.contains("416 Range Not Satisfiable")
 }
 
 /// Splits a single range into multiple smaller ranges, which can be downloaded concurrently for

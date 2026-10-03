@@ -18,7 +18,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
-use crate::metrics::NodeMetricsRegistrator;
+use crate::metrics::NodeMetricsRegistry;
 use crate::nodes::ComputeNode;
 use crate::nodes::io_sources::multi_scan::components::bridge::BridgeState;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
@@ -31,19 +31,23 @@ use crate::pipe::PortSender;
 pub struct MultiScan {
     name: PlSmallStr,
     state: MultiScanState,
-    metrics_registrator: Option<NodeMetricsRegistrator>,
+    metrics_registry: NodeMetricsRegistry,
     verbose: bool,
 }
 
 impl MultiScan {
-    pub fn new(config: Arc<MultiScanConfig>) -> Self {
-        let name = format_pl_smallstr!("multi-scan[{}]", config.file_reader_builder.reader_name());
+    pub fn new(
+        config: Arc<MultiScanConfig>,
+        metrics_registry: NodeMetricsRegistry,
+        reader_name: PlSmallStr,
+    ) -> Self {
+        let name = format_pl_smallstr!("multi-scan[{}]", reader_name);
         let verbose = config.verbose;
 
         MultiScan {
             name,
             state: MultiScanState::Uninitialized { config },
-            metrics_registrator: None,
+            metrics_registry,
             verbose,
         }
     }
@@ -54,15 +58,11 @@ impl ComputeNode for MultiScan {
         &self.name
     }
 
-    fn set_phase_metrics_registrator(&mut self, metrics_registrator: NodeMetricsRegistrator) {
-        self.metrics_registrator = Some(metrics_registrator);
-    }
-
     fn update_state(
         &mut self,
         recv: &mut [crate::graph::PortState],
         send: &mut [crate::graph::PortState],
-        _state: &StreamingExecutionState,
+        state: &StreamingExecutionState,
     ) -> polars_error::PolarsResult<()> {
         use MultiScanState::*;
         assert!(recv.is_empty());
@@ -75,7 +75,7 @@ impl ComputeNode for MultiScan {
         } else {
             // Refresh first - in case there is an error we end here instead of ending when we go
             // into spawn.
-            executor::task_scope(|s| {
+            executor::task_scope(state.task_metrics(), |s| {
                 ASYNC.block_in_place_on(
                     s.spawn_task(TaskPriority::High, self.state.refresh(self.verbose)),
                 )
@@ -107,12 +107,13 @@ impl ComputeNode for MultiScan {
             use MultiScanState::*;
 
             self.state
-                .initialize(state.clone(), self.metrics_registrator.is_some());
+                .initialize(state.clone(), self.metrics_registry.is_some())?;
 
-            if let Some(metrics_registrator) = &self.metrics_registrator
-                && let Initialized { io_metrics, .. } = &self.state
-            {
-                metrics_registrator.register_io_metrics(io_metrics.clone().unwrap());
+            if let Initialized { io_metrics, .. } = &self.state {
+                if let Some(io_metrics) = io_metrics.as_ref() {
+                    self.metrics_registry
+                        .register_io_metrics(io_metrics.clone())
+                }
             }
 
             self.state.refresh(verbose).await?;
@@ -181,11 +182,15 @@ enum MultiScanState {
 
 impl MultiScanState {
     /// Initialize state if not yet initialized.
-    fn initialize(&mut self, execution_state: StreamingExecutionState, track_io_metrics: bool) {
+    fn initialize(
+        &mut self,
+        execution_state: StreamingExecutionState,
+        track_io_metrics: bool,
+    ) -> PolarsResult<()> {
         use MultiScanState::*;
 
         if !matches!(self, Self::Uninitialized { .. }) {
-            return;
+            return Ok(());
         }
 
         let Uninitialized { config } = std::mem::replace(self, Finished) else {
@@ -221,7 +226,7 @@ impl MultiScanState {
             task_handle,
             phase_channel_tx,
             bridge_state,
-        } = initialize_multi_scan_pipeline(config, execution_state, io_metrics.clone());
+        } = initialize_multi_scan_pipeline(config, execution_state, io_metrics.clone())?;
 
         let wait_group = WaitGroup::default();
 
@@ -232,6 +237,8 @@ impl MultiScanState {
             task_handle,
             io_metrics,
         };
+
+        Ok(())
     }
 
     /// Refresh the state. This checks the bridge state if `self` is initialized and updates accordingly.

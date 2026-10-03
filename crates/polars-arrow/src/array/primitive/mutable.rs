@@ -303,15 +303,6 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         self.values.clear();
         self.validity = None;
     }
-
-    /// Apply a function that temporarily freezes this `MutableArray` into a `PrimitiveArray`.
-    pub fn with_freeze<K, F: FnOnce(&PrimitiveArray<T>) -> K>(&mut self, f: F) -> K {
-        let mutable = std::mem::take(self);
-        let arr = mutable.freeze();
-        let out = f(&arr);
-        *self = arr.into_mut().right().unwrap();
-        out
-    }
 }
 
 /// Accessors

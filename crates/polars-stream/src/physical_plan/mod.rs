@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 #[cfg(any(
     feature = "dtype-date",
@@ -8,12 +9,14 @@ use polars_core::frame::DataFrame;
     feature = "dtype-time"
 ))]
 use polars_core::prelude::DataType;
-use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
+use polars_core::prelude::{
+    IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions, SortOptions,
+};
 use polars_core::schema::{Schema, SchemaRef};
+use polars_defs::join::JoinArgs;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
-use polars_ops::frame::JoinArgs;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
@@ -27,7 +30,7 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_plan::plans::options::JoinTypeOptionsIR;
+use polars_plan::plans::options::{JoinTypeOptionsIR, RuntimeFilter};
 use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
 
 mod fmt;
@@ -35,19 +38,22 @@ mod io;
 mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
+mod scalar_window;
+mod split_select;
 mod to_description;
 mod to_graph;
 
 pub use fmt::{NodeStyle, visualize_plan};
-use polars_plan::prelude::PlanCallback;
+use polars_defs::time::duration::Duration;
 #[cfg(feature = "dynamic_group_by")]
-use polars_time::DynamicGroupOptions;
-use polars_time::{ClosedWindow, Duration};
+use polars_defs::time::group_by::DynamicGroupOptionsIR;
+use polars_defs::time::group_by::{ClosedWindow, RollingWindowPlacement};
+use polars_plan::prelude::PlanCallback;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use polars_utils::{UnitVec, unitvec};
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::{DenseSlotMap, SecondaryMap};
 pub use to_description::physical_plan_to_description;
 pub use to_graph::physical_plan_to_graph;
 
@@ -55,6 +61,7 @@ pub use self::lower_ir::StreamingLowerIRContext;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::rolling_fixed_window::RollingFixedWindow;
 use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
@@ -130,13 +137,16 @@ impl PhysStream {
         Self { node, port: 0 }
     }
 
-    pub fn output_schema<'sm>(&self, sm: &'sm SlotMap<PhysNodeKey, PhysNode>) -> &'sm Arc<Schema> {
+    pub fn output_schema<'sm>(
+        &self,
+        sm: &'sm DenseSlotMap<PhysNodeKey, PhysNode>,
+    ) -> &'sm Arc<Schema> {
         sm[self.node].output_schema(self.port)
     }
 
     pub fn output_schema_mut<'sm>(
         &self,
-        sm: &'sm mut SlotMap<PhysNodeKey, PhysNode>,
+        sm: &'sm mut DenseSlotMap<PhysNodeKey, PhysNode>,
     ) -> &'sm mut Arc<Schema> {
         sm[self.node].output_schema_mut(self.port)
     }
@@ -170,6 +180,7 @@ pub enum PhysNodeKind {
         input: PhysStream,
         selectors: Vec<ExprIR>,
         extend_original: bool,
+        rechunk_input: bool,
     },
 
     InputIndependentSelect {
@@ -259,6 +270,20 @@ pub enum PhysNodeKind {
         format_str: Option<String>,
     },
 
+    /// Evaluates window expressions that share one partitioning and appends them to the input
+    /// columns. Without `maintain_order` the rows are output in an unspecified order.
+    Window {
+        input: PhysStream,
+        partition_by: Vec<PlSmallStr>,
+        order_by: Option<(PlSmallStr, SortOptions)>,
+        exprs: Vec<ExprIR>,
+        /// Evaluate the rows of a partition in input order.
+        ordered_eval: bool,
+        maintain_order: bool,
+        /// Reduce each window to one value per partition, see `nodes::scalar_window`.
+        scalar: bool,
+    },
+
     Map {
         input: PhysStream,
         map: Arc<dyn DataFrameUdf>,
@@ -272,6 +297,16 @@ pub enum PhysNodeKind {
         arg_map: Option<FunctionArgMap>,
         output_name: PlSmallStr,
         format_str: Option<String>,
+    },
+
+    /// Applies `func` to batches of consecutive rows, where the output of each row only depends
+    /// on the rows in its `window`.
+    RollingFixedWindowFunction {
+        input: PhysStream,
+        func: Arc<dyn ColumnsUdf>,
+        window: RollingFixedWindow,
+        output_name: PlSmallStr,
+        format_str: String,
     },
 
     /// Streaming strptime without an explicit format.
@@ -348,7 +383,7 @@ pub enum PhysNodeKind {
     #[cfg(feature = "interpolate")]
     Interpolate {
         input: PhysStream,
-        method: polars_ops::series::InterpolationMethod,
+        method: polars_defs::expr::InterpolationMethod,
     },
     Rle(PhysStream),
     RleId(PhysStream),
@@ -387,6 +422,8 @@ pub enum PhysNodeKind {
 
     MultiScan {
         scan_sources: ScanSources,
+        /// Bytes per source if loaded. For cloud visualization.
+        bytes_per_source: Option<Buffer<u64>>,
 
         file_reader_builder: Arc<dyn FileReaderBuilder>,
         cloud_options: Option<Arc<CloudOptions>>,
@@ -414,6 +451,8 @@ pub enum PhysNodeKind {
         /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
         file_schema: SchemaRef,
         disable_morsel_split: bool,
+        /// If false, rows within a file may be emitted in any order.
+        maintain_order: bool,
     },
 
     #[cfg(feature = "python")]
@@ -425,14 +464,18 @@ pub enum PhysNodeKind {
         inputs: Vec<PhysStream>,
         // Must have the same schema when applied for each input.
         key_per_input: Vec<Vec<ExprIR>>,
-        // Must be a 'simple' expression, a singular column feeding into a single aggregate, or Len.
+        // Elementwise expressions evaluated inside the group-by node, producing derived
+        // columns which `aggs_per_input` may reference in addition to the input columns.
+        fused_agg_inputs_per_input: Vec<Vec<ExprIR>>,
+        // Must be a 'simple' expression, a singular column (of the input or of
+        // `fused_agg_inputs_per_input`) feeding into a single aggregate, or Len.
         aggs_per_input: Vec<Vec<ExprIR>>,
     },
 
     #[cfg(feature = "dynamic_group_by")]
     DynamicGroupBy {
         input: PhysStream,
-        options: DynamicGroupOptions,
+        options: DynamicGroupOptionsIR,
         aggs: Vec<ExprIR>,
         slice: Option<(IdxSize, IdxSize)>,
     },
@@ -444,6 +487,7 @@ pub enum PhysNodeKind {
         period: Duration,
         offset: Duration,
         closed: ClosedWindow,
+        placement: Option<RollingWindowPlacement>,
         slice: Option<(IdxSize, IdxSize)>,
         aggs: Vec<ExprIR>,
     },
@@ -461,6 +505,11 @@ pub enum PhysNodeKind {
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
         args: JoinArgs,
+        /// Extra match condition, in the join's output namespace, applied per candidate
+        /// pair. See `JoinTypeOptionsIR::Equi`.
+        fused_predicate: Option<ExprIR>,
+        /// See `JoinOptionsIR::runtime_filters`.
+        runtime_filters: Vec<RuntimeFilter>,
     },
 
     MergeJoin {
@@ -483,6 +532,8 @@ pub enum PhysNodeKind {
         right_on: Vec<ExprIR>,
         args: JoinArgs,
         output_bool: bool,
+        /// See `JoinOptionsIR::runtime_filters`.
+        runtime_filters: Vec<RuntimeFilter>,
     },
 
     CrossJoin {
@@ -513,7 +564,7 @@ pub enum PhysNodeKind {
         tmp_right_key_cols: Vec<Option<PlSmallStr>>,
         descending: bool,
         args: JoinArgs,
-        options: polars_ops::frame::IEJoinOptions,
+        options: polars_defs::join::IEJoinOptions,
     },
 
     /// Generic fallback for (as-of-yet) unsupported streaming joins.
@@ -567,7 +618,7 @@ pub enum PhysNodeKind {
 
 fn visit_node_inputs_mut(
     roots: Vec<PhysNodeKey>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     visit: impl FnMut(&mut PhysStream),
 ) {
     _visit_nodes_impl(roots, phys_sm, |_, _| (), visit)
@@ -575,16 +626,16 @@ fn visit_node_inputs_mut(
 
 fn visit_nodes_mut(
     roots: Vec<PhysNodeKey>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
-    visit: impl FnMut(PhysNodeKey, &mut SlotMap<PhysNodeKey, PhysNode>),
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    visit: impl FnMut(PhysNodeKey, &mut DenseSlotMap<PhysNodeKey, PhysNode>),
 ) {
     _visit_nodes_impl(roots, phys_sm, visit, |_| ())
 }
 
 fn _visit_nodes_impl(
     roots: Vec<PhysNodeKey>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
-    mut visit_node: impl FnMut(PhysNodeKey, &mut SlotMap<PhysNodeKey, PhysNode>),
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    mut visit_node: impl FnMut(PhysNodeKey, &mut DenseSlotMap<PhysNodeKey, PhysNode>),
     mut visit_input: impl FnMut(&mut PhysStream),
 ) {
     let mut to_visit = roots;
@@ -617,8 +668,10 @@ fn _visit_nodes_impl(
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionedSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
+            | PhysNodeKind::Window { input, .. }
             | PhysNodeKind::SortedGroupBy { input, .. }
             | PhysNodeKind::Map { input, .. }
+            | PhysNodeKind::RollingFixedWindowFunction { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
             | PhysNodeKind::GatherEvery { input, .. }
@@ -815,7 +868,11 @@ fn _visit_nodes_impl(
     }
 }
 
-fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+fn insert_multiplexers(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+) {
     let mut refcount: PlIndexMap<_, usize> = PlIndexMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(*i).or_insert(0) += 1;
@@ -830,6 +887,8 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
                 (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
                 PhysNodeKind::Multiplexer { input: stream },
             ));
+            let source_ir_node = phys_to_ir[stream.node];
+            phys_to_ir.insert(multiplexer_node, source_ir_node);
             (stream, PhysStream::first(multiplexer_node))
         })
         .collect();
@@ -842,25 +901,33 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
     });
 }
 
-fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+fn split_multiplexers(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+) {
     let mut refcount: SecondaryMap<PhysNodeKey, usize> = SecondaryMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(i.node).unwrap().or_insert(0) += 1;
     });
 
-    let mut split_map: SecondaryMap<PhysNodeKey, PhysNode> = SecondaryMap::new();
+    let mut split_map: SecondaryMap<PhysNodeKey, (PhysNode, Node)> = SecondaryMap::new();
     for (k, n) in phys_sm.iter() {
         if let PhysNodeKind::Multiplexer { input } = n.kind {
             if let PhysNodeKind::InMemorySource { .. } = phys_sm[input.node].kind {
-                split_map.insert(k, phys_sm[input.node].clone());
+                split_map.insert(k, (phys_sm[input.node].clone(), phys_to_ir[input.node]));
             }
         }
     }
 
     let mut replacements: SecondaryMap<PhysNodeKey, Vec<PhysStream>> = split_map
         .into_iter()
-        .map(|(k, n)| {
-            let repls = (0..refcount[k]).map(|_| PhysStream::first(phys_sm.insert(n.clone())));
+        .map(|(k, (n, source_ir_node))| {
+            let repls = (0..refcount[k]).map(|_| {
+                let clone = phys_sm.insert(n.clone());
+                phys_to_ir.insert(clone, source_ir_node);
+                PhysStream::first(clone)
+            });
             (k, repls.collect())
         })
         .collect();
@@ -872,20 +939,33 @@ fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey
     });
 }
 
-fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+fn fuse_drops(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+) {
+    // Collect first: fusing swaps nodes, which would stop the traversal from reaching the
+    // inputs of the fused filter.
+    let mut projection_keys = Vec::new();
     visit_nodes_mut(roots, phys_sm, |key, phys_sm| {
+        if let PhysNodeKind::SimpleProjection { .. } = phys_sm[key].kind() {
+            projection_keys.push(key);
+        }
+    });
+
+    for key in projection_keys {
         let PhysNodeKind::SimpleProjection { input, .. } = phys_sm[key].kind() else {
-            return;
+            continue;
         };
         let len_before_drop = input.output_schema(phys_sm).len();
         let input = input.node;
 
         let Some([simple_proj_node, input_node]) = phys_sm.get_disjoint_mut([key, input]) else {
-            return;
+            continue;
         };
 
         if input_node.output_schemas.len() != 1 {
-            return;
+            continue;
         }
 
         let PhysNodeKind::SimpleProjection { input: _, columns } = simple_proj_node.kind_mut()
@@ -897,24 +977,48 @@ fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNo
 
         // TODO: Figure out why `input_schema.try_project` fails below with e.g. "\"_POLARS_TMP_7253\" not found"
         if has_rename {
-            return;
+            continue;
         }
 
-        match input_node.kind_mut() {
-            PhysNodeKind::Filter {
-                input: _,
-                predicate: _,
-                projection: projection @ None,
-            } => *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop)),
-
-            _ => return,
-        }
+        let PhysNodeKind::Filter { projection, .. } = input_node.kind_mut() else {
+            continue;
+        };
+        let len_before_drop = projection.as_ref().map_or(len_before_drop, |(_, len)| *len);
+        *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop));
 
         let input_schema = input_node.output_schema_mut(0);
         *input_schema = Arc::new(input_schema.try_project(columns.keys()).unwrap());
 
-        if !has_rename && simple_proj_node.output_schemas.len() == 1 {
+        if simple_proj_node.output_schemas.len() == 1 {
             std::mem::swap(simple_proj_node, input_node);
+            // The filter now lives in the projection's slot; move the attribution with it so
+            // the surviving node keeps the `Filter` IR node.
+            let proj_ir_node = phys_to_ir[key];
+            let filter_ir_node = phys_to_ir[input];
+            phys_to_ir.insert(key, filter_ir_node);
+            phys_to_ir.insert(input, proj_ir_node);
+        }
+    }
+}
+
+/// Sets `rechunk_input` on any `Select` node directly feeding into a `GroupBy`.
+///
+/// The group-by consumes the selected key/aggregation columns in bulk, so it is
+/// worth paying for a rechunk of the select's output to get contiguous inputs.
+fn rechunk_group_by_inputs(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+) {
+    visit_nodes_mut(roots, phys_sm, |key, phys_sm| {
+        let PhysNodeKind::GroupBy { inputs, .. } = phys_sm[key].kind() else {
+            return;
+        };
+
+        let input_nodes: Vec<PhysNodeKey> = inputs.iter().map(|i| i.node).collect();
+        for input_node in input_nodes {
+            if let PhysNodeKind::Select { rechunk_input, .. } = phys_sm[input_node].kind_mut() {
+                *rechunk_input = true;
+            }
         }
     });
 }
@@ -923,25 +1027,34 @@ pub fn build_physical_plan(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     ctx: StreamingLowerIRContext<'_>,
-) -> PolarsResult<PhysNodeKey> {
+) -> PolarsResult<(PhysNodeKey, SecondaryMap<PhysNodeKey, Node>)> {
+    let original_ir_len = ir_arena.len();
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
     let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
     let mut cache_nodes = PlHashMap::new();
+    let mut phys_to_ir: SecondaryMap<PhysNodeKey, Node> =
+        SecondaryMap::with_capacity(ir_arena.len());
     let phys_root = lower_ir::lower_ir(
         root,
         ir_arena,
         expr_arena,
         phys_sm,
+        &mut phys_to_ir,
+        original_ir_len,
         &mut schema_cache,
         &mut expr_cache,
         &mut cache_nodes,
         ctx,
         None,
     )?;
-    insert_multiplexers(vec![phys_root.node], phys_sm);
-    split_multiplexers(vec![phys_root.node], phys_sm);
-    fuse_drops(vec![phys_root.node], phys_sm);
-    Ok(phys_root.node)
+    insert_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
+    split_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
+    fuse_drops(vec![phys_root.node], phys_sm, &mut phys_to_ir);
+
+    // TODO: remove this after fusing pre-select into group-by node.
+    rechunk_group_by_inputs(vec![phys_root.node], phys_sm);
+
+    Ok((phys_root.node, phys_to_ir))
 }

@@ -2,27 +2,29 @@ use std::io::Cursor;
 use std::ops::Range;
 use std::sync::Arc;
 
-use arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
 use async_trait::async_trait;
-use polars_async::executor::{self, JoinHandle, TaskPriority};
+use futures::future::Either;
+use futures::stream::FuturesUnordered;
+use futures::{FutureExt, StreamExt};
+use polars_arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
+use polars_async::executor::{self, JoinHandle, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_buffer::Buffer;
 use polars_config::config;
 use polars_core::prelude::DataType;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt};
-use polars_core::utils::arrow::io::ipc::read::{
+use polars_core::utils::polars_arrow::io::ipc::read::{
     BlockReader, FileMetadata, ProjectionInfo, prepare_projection, read_file_metadata,
 };
 use polars_error::constants::LENGTH_LIMIT_MSG;
-use polars_error::{ErrString, PolarsError, PolarsResult, polars_err, to_compute_err};
+use polars_error::{ErrString, PolarsError, PolarsResult, polars_err, polars_warn};
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
 use polars_io::ipc::pl_ipc_metadata::{POLARS_IPC_METADATA_KEY, PlIpcMetadata};
 use polars_io::utils::byte_source::{
     BufferByteSource, ByteSource, DynByteSource, DynByteSourceBuilder,
 };
-use polars_io::utils::slice::SplitSlicePosition;
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
 use polars_utils::bool::UnsafeBool;
@@ -31,6 +33,7 @@ use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::slice_enum::Slice;
 use record_batch_data_fetch::RecordBatchDataFetcher;
 use record_batch_decode::RecordBatchDecoder;
+use tokio::sync::Semaphore;
 
 use super::multi_scan::reader_interface::BeginReadArgs;
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
@@ -64,6 +67,7 @@ struct IpcFileReader {
     byte_source_builder: DynByteSourceBuilder,
     record_batch_prefetch_sync: RecordBatchPrefetchSync,
     io_metrics: OptIOMetrics,
+    task_metrics: Option<Arc<TaskMetricAggregator>>,
     verbose: bool,
     init_data: Option<InitializedState>,
     checked: UnsafeBool,
@@ -151,14 +155,19 @@ impl FileReader for IpcFileReader {
             Arc::new(Some(dictionaries))
         };
 
-        let file_pl_metadata = file_metadata
-            .custom_metadata
-            .as_ref()
-            .and_then(|md| md.get(POLARS_IPC_METADATA_KEY))
-            .map(|md_str| serde_json::from_str::<PlIpcMetadata>(md_str))
-            .transpose()
-            .map_err(to_compute_err)?
-            .map(Arc::new);
+        let file_pl_metadata = PlIpcMetadata::from_ipc_footer(&file_metadata).map(Arc::new);
+
+        if file_pl_metadata.is_none()
+            && file_metadata
+                .custom_metadata
+                .as_ref()
+                .is_some_and(|md| md.contains_key(POLARS_IPC_METADATA_KEY))
+        {
+            polars_warn!(
+                "ignoring unusable Polars metadata in IPC file, \
+                reading row counts from the record batches instead"
+            );
+        }
 
         self.init_data = Some(InitializedState {
             file_metadata,
@@ -211,6 +220,7 @@ impl FileReader for IpcFileReader {
             missing_columns_policy: _,
             num_pipelines,
             disable_morsel_split,
+            maintain_order,
             last_morsel_pipelines,
             callbacks:
                 FileReaderCallbacks {
@@ -233,11 +243,6 @@ impl FileReader for IpcFileReader {
         if let Some(file_schema_tx) = file_schema_tx {
             _ = file_schema_tx.send(file_schema_pl.clone());
         }
-
-        // Always create a slice. If no slice was given, just make the biggest slice possible.
-        let slice_range: Range<usize> = pre_slice_arg
-            .clone()
-            .map_or(0..usize::MAX, Range::<usize>::from);
 
         // Avoid materializing projection info if we are projecting all the columns of this file.
         let projection_indices: Option<Arc<[usize]>> = if let Some(first_mismatch_idx) =
@@ -273,14 +278,16 @@ impl FileReader for IpcFileReader {
                 "[IpcFileReader]: \
                 project: {} / {}, \
                 pre_slice: {:?}, \
-                read_record_batch_statistics_flags: {}\
+                read_record_batch_statistics_flags: {}, \
+                maintain_order: {}\
                 ",
                 projection_indices
                     .as_ref()
                     .map_or(file_metadata.schema.len(), |x| x.len()),
                 file_metadata.schema.len(),
                 pre_slice_arg,
-                read_statistics_flags
+                read_statistics_flags,
+                maintain_order,
             )
         }
 
@@ -322,6 +329,15 @@ impl FileReader for IpcFileReader {
             );
         }
 
+        // Record batch lengths are needed before fetching: from the footer or an explicit metadata pass.
+        let need_row_offsets_up_front = pre_slice_arg.is_some()
+            || n_rows_in_file_tx.is_some()
+            || row_position_on_end_tx.is_some();
+
+        // Otherwise a row index counts offsets in arrival order, so fetches must arrive in order.
+        let fetches_in_order =
+            row_index.is_some() && file_pl_metadata.is_none() && !need_row_offsets_up_front;
+
         let record_batch_decoder = Arc::new(RecordBatchDecoder {
             file_metadata: file_metadata.clone(),
             pl_schema,
@@ -335,7 +351,10 @@ impl FileReader for IpcFileReader {
         // Set up channels.
         let (prefetch_send, mut prefetch_recv) =
             tokio::sync::mpsc::channel(record_batch_prefetch_size);
-        let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(num_pipelines);
+
+        // Unordered decodes are bounded by their own slots, so its channel stays shallow.
+        let (decode_send, mut decode_recv) =
+            tokio::sync::mpsc::channel(if maintain_order { num_pipelines } else { 1 });
         let (mut morsel_send, morsel_recv) = FileReaderOutputSend::new_serial();
 
         let pipeline_budget = self.record_batch_prefetch_sync.pipeline_budget.clone();
@@ -360,10 +379,7 @@ impl FileReader for IpcFileReader {
                 }
 
                 Some(Buffer::from_owner(CumLenWrap(file_pl_metadata)))
-            } else if pre_slice_arg.is_some()
-                || n_rows_in_file_tx.is_some()
-                || row_position_on_end_tx.is_some()
-            {
+            } else if need_row_offsets_up_front {
                 let mut metadata_ranges: Vec<Range<usize>> = file_metadata
                     .blocks
                     .iter()
@@ -458,53 +474,114 @@ impl FileReader for IpcFileReader {
             record_batch_data_fetcher.run().await
         }));
 
+        let task_metrics = self.task_metrics.clone();
+
         // Receives fetched record batches and synchronizes row position, then calls decode.
-        let decode_dispatch_task = AbortOnDropHandle(ASYNC.spawn(async move {
-            let mut current_row_offset: IdxSize = 0;
+        let decode_dispatch_task = if maintain_order {
+            AbortOnDropHandle(ASYNC.spawn(async move {
+                let metrics = task_metrics.as_deref();
+                let mut next_row_offset: IdxSize = 0;
 
-            while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
-                let mut record_batch_data = prefetch_task.await.unwrap()?;
+                while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
+                    let mut record_batch_data = prefetch_task.await.unwrap()?;
 
-                match record_batch_data.row_offset {
-                    Some(row_offset) => current_row_offset = row_offset,
-                    None => record_batch_data.row_offset = Some(current_row_offset),
-                };
+                    // Known up front, else counted in arrival order.
+                    let row_offset = *record_batch_data.row_offset.get_or_insert(next_row_offset);
+                    next_row_offset = row_offset
+                        .checked_add(record_batch_data.num_rows)
+                        .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
 
-                // Fetch every record batch so we can track the total row count.
-                let rb_num_rows = record_batch_data.num_rows;
-                let rb_num_rows =
-                    IdxSize::try_from(rb_num_rows).map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
+                    let record_batch_decoder = record_batch_decoder.clone();
+                    let decode_fut = executor::spawn(TaskPriority::High, metrics, async move {
+                        record_batch_decoder
+                            .record_batch_data_to_df(record_batch_data)
+                            .await
+                    });
+                    if decode_send
+                        .send((Either::Left(decode_fut), permit))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
 
-                // Only pass to decoder if we need the data.
-                let record_batch_position = SplitSlicePosition::split_slice_at_file(
-                    current_row_offset as usize,
-                    rb_num_rows as usize,
-                    slice_range.clone(),
+                PolarsResult::Ok(())
+            }))
+        } else {
+            // Decode in fetch completion order; each decode hands off its own result.
+            AbortOnDropHandle(ASYNC.spawn(async move {
+                let metrics = task_metrics.as_deref();
+                let fetches = futures::stream::poll_fn(move |cx| prefetch_recv.poll_recv(cx)).map(
+                    |(prefetch_task, permit)| async move { (prefetch_task.await.unwrap(), permit) },
                 );
-
-                current_row_offset = current_row_offset
-                    .checked_add(rb_num_rows)
-                    .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
-
-                match record_batch_position {
-                    SplitSlicePosition::Before => continue,
-                    SplitSlicePosition::Overlapping(rows_offset, rows_len) => {
-                        let record_batch_decoder = record_batch_decoder.clone();
-                        let decode_fut = executor::spawn(TaskPriority::High, async move {
-                            record_batch_decoder
-                                .record_batch_data_to_df(record_batch_data, rows_offset, rows_len)
-                                .await
-                        });
-                        if decode_send.send((decode_fut, permit)).await.is_err() {
-                            break;
-                        }
-                    },
-                    SplitSlicePosition::After => break,
+                let mut fetches = if fetches_in_order {
+                    fetches.buffered(record_batch_prefetch_size).left_stream()
+                } else {
+                    fetches
+                        .buffer_unordered(record_batch_prefetch_size)
+                        .right_stream()
                 };
-            }
 
-            PolarsResult::Ok(())
-        }));
+                let mut next_row_offset: IdxSize = 0;
+
+                // At most one decode per pipeline, plus one ahead.
+                let decode_slots = Arc::new(Semaphore::new(num_pipelines + 1));
+                let mut decode_handles = FuturesUnordered::new();
+
+                loop {
+                    let (record_batch_data, permit) = tokio::select! {
+                        biased;
+
+                        // Distributor is gone; dropping the handles cancels running decodes.
+                        _ = decode_send.closed() => return Ok(()),
+
+                        v = fetches.next() => match v {
+                            Some(v) => v,
+                            None => break,
+                        },
+                    };
+                    let mut record_batch_data = record_batch_data?;
+
+                    // Known up front, else counted in arrival order.
+                    let row_offset = *record_batch_data.row_offset.get_or_insert(next_row_offset);
+                    next_row_offset = row_offset
+                        .checked_add(record_batch_data.num_rows)
+                        .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
+
+                    // Backpressure: blocks the fetch drain until a slot frees.
+                    let slot = decode_slots.clone().acquire_owned().await.unwrap();
+
+                    // Keep the set bounded; panics surface on drain.
+                    while let Some(Some(())) = decode_handles.next().now_or_never() {}
+
+                    let record_batch_decoder = record_batch_decoder.clone();
+                    let decode_send = decode_send.clone();
+
+                    decode_handles.push(executor::AbortOnDropHandle::new(executor::spawn(
+                        TaskPriority::High,
+                        metrics,
+                        async move {
+                            let df = record_batch_decoder
+                                .record_batch_data_to_df(record_batch_data)
+                                .await;
+
+                            if !matches!(&df, Ok(df) if df.height() == 0) {
+                                let fut = Either::Right(std::future::ready(df));
+                                let _ = decode_send.send((fut, permit)).await;
+                            }
+                            drop(slot);
+                        },
+                    )));
+                }
+
+                drop(decode_send);
+                while decode_handles.next().await.is_some() {}
+                PolarsResult::Ok(())
+            }))
+        };
+
+        let task_metrics = self.task_metrics.as_deref();
 
         // Task: Distributor.
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
@@ -512,7 +589,7 @@ impl FileReader for IpcFileReader {
         //
         // `last_morsel_pipelines` is precomputed at the multi-scan layer so the split budget is
         // shared across files in the scan.
-        let distribute_task = executor::spawn(TaskPriority::High, async move {
+        let distribute_task = executor::spawn(TaskPriority::High, task_metrics, async move {
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
@@ -603,7 +680,9 @@ impl FileReader for IpcFileReader {
 
         Ok((
             morsel_recv,
-            executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
+            executor::spawn(TaskPriority::Low, task_metrics, async move {
+                handle.await.unwrap()
+            }),
         ))
     }
 }

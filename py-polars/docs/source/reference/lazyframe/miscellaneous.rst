@@ -14,6 +14,7 @@ Miscellaneous
     LazyFrame.collect_schema
     LazyFrame.collect_batches
     LazyFrame.execute
+    LazyFrame.from_lazyframe_resolver
     LazyFrame.sink_batches
     LazyFrame.lazy
     LazyFrame.map_batches

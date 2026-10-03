@@ -9,6 +9,8 @@ pub use datatype_fn::*;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
+#[cfg(feature = "serde")]
+use polars_error::to_compute_err;
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -172,6 +174,7 @@ pub enum Expr {
     StructEval {
         expr: Arc<Expr>,
         evaluation: Vec<Expr>,
+        variant: StructEvalVariant,
     },
     /// SQL SubQueries
     /// Plan,
@@ -180,6 +183,13 @@ pub enum Expr {
     RenameAlias {
         function: RenameAliasFn,
         expr: Arc<Expr>,
+    },
+    /// Call `callback` with the inputs and their resolved dtypes,
+    /// and replace this node with the expression it returns.
+    /// Resolved during expression expansion.
+    PipeWithDtype {
+        input: Vec<Expr>,
+        callback: PlanCallback<(Vec<Expr>, Vec<DataType>), Expr>,
     },
     /// Not a real expression. This is meant
     /// as catch-all for IR expressions that
@@ -405,10 +415,13 @@ impl Hash for Expr {
             Expr::StructEval {
                 expr: input,
                 evaluation,
+                variant,
             } => {
                 input.hash(state);
                 evaluation.hash(state);
+                variant.hash(state);
             },
+            Expr::PipeWithDtype { input: _, callback } => callback.hash_location(state),
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
             Expr::Field(names) => names.hash(state),
@@ -430,6 +443,35 @@ impl Default for Expr {
 pub enum Excluded {
     Name(PlSmallStr),
     Dtype(DataType),
+}
+
+#[cfg(feature = "serde")]
+impl Expr {
+    /// Serialize with the self-describing (forward compatible) format.
+    pub fn serialize_binary_into(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        polars_utils::pl_serialize::serialize_into_writer::<_, _, true>(writer, self)
+    }
+
+    pub fn deserialize_binary_from(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+        polars_utils::pl_serialize::deserialize_from_reader::<_, _, true>(reader)
+    }
+
+    /// Serialize with the compact format, not portable.
+    pub fn serialize_compact_into(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        polars_utils::pl_serialize::serialize_into_writer::<_, _, false>(writer, self)
+    }
+
+    pub fn deserialize_compact_from(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+        polars_utils::pl_serialize::deserialize_from_reader::<_, _, false>(reader)
+    }
+
+    pub fn serialize_json_into(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        serde_json::to_writer(writer, self).map_err(to_compute_err)
+    }
+
+    pub fn deserialize_json_from_str(json: &str) -> PolarsResult<Self> {
+        serde_json::from_str(json).map_err(to_compute_err)
+    }
 }
 
 impl Expr {
@@ -561,6 +603,29 @@ impl Expr {
     pub fn n_ary(function: impl Into<FunctionExpr>, input: Vec<Expr>) -> Expr {
         let function = function.into();
         Expr::Function { input, function }
+    }
+}
+
+/// Determines what happens to the fields of the input struct that are not part of the
+/// `evaluation` of an [`Expr::StructEval`].
+#[cfg(feature = "dtype-struct")]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum StructEvalVariant {
+    /// `struct.with_fields`: retain the input fields, overwriting on name collision.
+    WithFields,
+    /// `struct.eval`: drop the input fields that are not selected.
+    Select,
+}
+
+#[cfg(feature = "dtype-struct")]
+impl StructEvalVariant {
+    pub fn to_name(&self) -> &'static str {
+        match self {
+            Self::WithFields => "struct.with_fields",
+            Self::Select => "struct.eval",
+        }
     }
 }
 

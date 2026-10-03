@@ -27,6 +27,7 @@ pub struct IcebergSinkState {
     pub compression_level: Option<i32>,
     pub row_group_size: Option<usize>,
     pub maintain_order: bool,
+    pub sort_order_id: Option<i32>,
 
     pub sink_uuid_str: String,
 
@@ -71,7 +72,7 @@ mod _python_impl {
         pub(crate) fn into_sink_state_obj(self) -> PyResult<Py<PyAny>> {
             Python::attach(|py| {
                 polars_utils::python_convert_registry::get_python_convert_registry()
-                    .py_iceberg_sink_state_class()
+                    .py_iceberg_sink_state_class(py)
                     .call(py, (), Some(&self.into_pyobject(py)?))
             })
         }

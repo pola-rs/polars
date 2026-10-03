@@ -3,20 +3,22 @@ mod group_by;
 mod hive;
 mod join;
 mod keys;
-mod utils;
+pub(super) mod utils;
 
+pub(crate) use dynamic::new_dynamic_pred;
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
+use polars_buffer::Buffer;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
 use polars_utils::with_drop::WithDrop;
 use recursive::recursive;
+pub(crate) use utils::combine_predicates;
 use utils::*;
 
 use super::*;
-use crate::plans::optimizer::predicate_pushdown::dynamic::new_dynamic_pred;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
-use crate::utils::{check_input_node, has_aexpr};
+use crate::utils::check_input_node;
 
 pub struct PredicatePushDown {
     // How many cache nodes a predicate may be pushed down to.
@@ -32,10 +34,17 @@ pub struct PredicatePushDown {
     pub(super) hive_rewrite_active: bool,
     // Rewrite hive partitioned join.
     pub(super) partition_hive: bool,
+    // Functions supplied by the caller, e.g. the hive partition key frame join.
+    pub(super) hooks: ExecutionHooks,
 }
 
 impl PredicatePushDown {
-    pub fn new(maintain_errors: bool, streaming: bool, partition_hive: bool) -> Self {
+    pub fn new(
+        maintain_errors: bool,
+        streaming: bool,
+        partition_hive: bool,
+        hooks: ExecutionHooks,
+    ) -> Self {
         Self {
             caches_pass_allowance: 0,
             nodes_scratch: ScratchUnitVec::default(),
@@ -44,6 +53,7 @@ impl PredicatePushDown {
             maintain_errors,
             hive_rewrite_active: false,
             partition_hive,
+            hooks,
         }
     }
 }
@@ -351,6 +361,7 @@ impl PredicatePushDown {
                 scan_type,
                 unified_scan_args,
                 output_schema,
+                maintain_order,
             } => {
                 let mut blocked_names = Vec::with_capacity(2);
 
@@ -395,6 +406,7 @@ impl PredicatePushDown {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        maintain_order,
                     }
                 } else {
                     let lp = Scan {
@@ -406,6 +418,7 @@ impl PredicatePushDown {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        maintain_order,
                     };
                     if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);
@@ -654,6 +667,10 @@ impl PredicatePushDown {
             lp @ (Slice { .. } | Gather { .. } | HConcat { .. }) => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
+            // Windows are created after predicate pushdown.
+            lp @ Window { .. } => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
             // Caches will run predicate push-down in the `cache_states` run.
             Cache { .. } => {
                 if self.caches_pass_allowance == 0 {
@@ -705,6 +722,59 @@ impl PredicatePushDown {
             },
             UnoptimizedDispatch { .. } => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
+            // Already resolved: `resolved_ir` is the single input of this node, so we
+            // recurse into it through the normal input dispatch.
+            lp @ Resolver {
+                resolved_ir: Some(_),
+                ..
+            } => self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false),
+            // Not resolved, but a slice was already pushed into this node. Predicates
+            // influence slice sizes / indices, so absorbing them here would evaluate them
+            // before the slice (see the `Slice` arm above). The resolver is only given a
+            // `limit`, it cannot apply the offset itself, so we keep the predicates local.
+            lp @ Resolver { slice: Some(_), .. } => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
+            Resolver {
+                resolver,
+                resolver_schema,
+                projection,
+                slice,
+                mut filters,
+                filter_drop_columns_idx,
+                resolved_dsl,
+                resolved_ir,
+            } => {
+                for eir in filters.iter() {
+                    insert_predicate_dedup(
+                        &mut acc_predicates,
+                        eir,
+                        expr_arena,
+                        &mut self.dedup_state,
+                    );
+                }
+
+                filters = Buffer::from_iter(
+                    acc_predicates
+                        .iter()
+                        .flat_map(|(_, eir)| {
+                            MintermIter::new(eir.node(), expr_arena)
+                                .filter(|&node| !contains_dynamic_pred(node, expr_arena))
+                        })
+                        .map(|node| ExprIR::from_node(node, expr_arena)),
+                );
+
+                Ok(Resolver {
+                    resolver,
+                    resolver_schema,
+                    projection,
+                    slice,
+                    filters,
+                    filter_drop_columns_idx,
+                    resolved_dsl,
+                    resolved_ir,
+                })
             },
             Invalid => unreachable!(),
         }

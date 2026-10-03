@@ -20,7 +20,6 @@ from polars._dependencies import (
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
-    dataclasses,
 )
 from polars._dependencies import numpy as np
 from polars._dependencies import pandas as pd
@@ -28,6 +27,7 @@ from polars._dependencies import pyarrow as pa
 from polars._utils.construction.utils import (
     contains_nested,
     get_first_non_none,
+    is_dataclass_instance,
     is_namedtuple,
     is_pydantic_model,
     is_simple_numpy_backed_pandas_series,
@@ -446,6 +446,9 @@ def _expand_dict_data(
     return expanded_data
 
 
+_resolved_sequence_handlers: dict[type, Callable[..., PyDataFrame]] = {}
+
+
 def sequence_to_pydf(
     data: Sequence[Any],
     schema: SchemaDefinition | None = None,
@@ -460,8 +463,12 @@ def sequence_to_pydf(
     if not data:
         return dict_to_pydf({}, schema=schema, schema_overrides=schema_overrides)
 
-    return _sequence_to_pydf_dispatcher(
-        get_first_non_none(data),
+    first_element = get_first_non_none(data)
+    to_pydf = _resolved_sequence_handlers.get(
+        type(first_element), _sequence_to_pydf_dispatcher
+    )
+    return to_pydf(
+        first_element,
         data=data,
         schema=schema,
         schema_overrides=schema_overrides,
@@ -487,25 +494,19 @@ def _sequence_to_pydf_dispatcher(
     # note: ONLY python-native data should participate in singledispatch registration
     # via top-level decorators, otherwise we have to import the associated module.
     # third-party libraries (such as numpy/pandas) should be identified inline (below)
-    # and THEN registered for dispatch (here) so as not to break lazy-loading behaviour.
+    # and THEN memoized (here) so as not to break lazy-loading behaviour.
 
-    common_params: dict[str, Any] = {
-        "data": data,
-        "schema": schema,
-        "schema_overrides": schema_overrides,
-        "strict": strict,
-        "orient": orient,
-        "infer_schema_length": infer_schema_length,
-        "nan_to_null": nan_to_null,
-    }
     to_pydf: Callable[..., PyDataFrame]
-    register_with_singledispatch = True
+    memo_key = type(first_element)
+    memoize = True
 
     if isinstance(first_element, Generator):
         to_pydf = _sequence_of_sequence_to_pydf
         data = [list(row) for row in data]
         first_element = data[0]
-        register_with_singledispatch = False
+        # note: rows were materialised, so resolution
+        # belongs to the call rather than to the type
+        memoize = False
 
     elif isinstance(first_element, pl.Series):
         to_pydf = _sequence_of_series_to_pydf
@@ -518,7 +519,7 @@ def _sequence_to_pydf_dispatcher(
     ):
         to_pydf = _sequence_of_pandas_to_pydf
 
-    elif dataclasses.is_dataclass(first_element):
+    elif is_dataclass_instance(first_element):
         to_pydf = _sequence_of_dataclasses_to_pydf
 
     elif is_pydantic_model(first_element):
@@ -532,11 +533,19 @@ def _sequence_to_pydf_dispatcher(
     else:
         to_pydf = _sequence_of_elements_to_pydf
 
-    if register_with_singledispatch:
-        _sequence_to_pydf_dispatcher.register(type(first_element), to_pydf)
+    if memoize:
+        _resolved_sequence_handlers[memo_key] = to_pydf
 
-    common_params["first_element"] = first_element
-    return to_pydf(**common_params)
+    return to_pydf(
+        first_element,
+        data=data,
+        schema=schema,
+        schema_overrides=schema_overrides,
+        strict=strict,
+        orient=orient,
+        infer_schema_length=infer_schema_length,
+        nan_to_null=nan_to_null,
+    )
 
 
 @_sequence_to_pydf_dispatcher.register(list)
@@ -734,8 +743,20 @@ def _sequence_of_elements_to_pydf(
     schema_overrides: SchemaDict | None,
     *,
     strict: bool,
-    **kwargs: Any,  # noqa: ARG001
+    orient: Orientation | None,
+    **kwargs: Any,
 ) -> PyDataFrame:
+    if orient == "row":
+        return _sequence_of_sequence_to_pydf(
+            first_element=data,
+            data=[data],
+            schema=schema,
+            schema_overrides=schema_overrides,
+            strict=strict,
+            orient=orient,
+            **kwargs,
+        )
+
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=1
     )
@@ -945,7 +966,7 @@ def _establish_dataclass_or_model_schema(
         elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
             unpack_nested = contains_nested(
                 getattr(first_element, col, None),
-                is_pydantic_model if model_fields else dataclasses.is_dataclass,  # type: ignore[arg-type]
+                is_pydantic_model if model_fields else is_dataclass_instance,
             )
 
     if model_fields and len(model_fields) == len(overrides):
@@ -1008,11 +1029,20 @@ def iterable_to_pydf(
         )._df
 
     def to_frame_chunk(values: list[Any], schema: SchemaDefinition | None) -> DataFrame:
+        first_element = get_first_non_none(values)
+        row_oriented = (
+            isinstance(first_element, (Sequence, Generator))
+            and not isinstance(first_element, str)
+        ) or (
+            _check_for_numpy(first_element)
+            and isinstance(first_element, np.ndarray)
+            and first_element.ndim > 0
+        )
         return pl.DataFrame(
             data=values,
             schema=schema,
             strict=strict,
-            orient="row",
+            orient="row" if row_oriented else None,
             infer_schema_length=infer_schema_length,
             schema_overrides=schema_overrides,
         )

@@ -1,8 +1,8 @@
-use arrow::array::Array;
-use arrow::bitmap::BitmapBuilder;
-use arrow::compute::utils::combine_validities_and;
-use arrow::datatypes::IdxArr;
 use num_traits::{Bounded, ToPrimitive, Zero};
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::compute::utils::combine_validities_and;
+use polars_arrow::datatypes::IdxArr;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::prelude::{ChunkedArray, IdxCa, IdxSize, PolarsIntegerType, Series};
 use polars_core::with_match_physical_integer_polars_type;
@@ -97,7 +97,7 @@ pub fn convert_and_bound_index(
     let dtype = s.dtype();
     polars_ensure!(
         dtype.is_integer(),
-        InvalidOperation: "expected integers as index"
+        InvalidOperation: "expected integers as index, got `{}`", dtype
     );
 
     with_match_physical_integer_polars_type!(dtype, |$T| {

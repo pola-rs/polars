@@ -264,16 +264,20 @@ where
     )
 }
 
+/// Returns an iterator over all the unique column names found in the expression.
 pub fn aexpr_to_leaf_names_iter(
     node: Node,
     arena: &'_ Arena<AExpr>,
 ) -> impl Iterator<Item = &'_ PlSmallStr> + '_ {
-    aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node.0) {
-        AExpr::Column(name) => name,
+    #[allow(clippy::disallowed_types)] // Order non-observable.
+    let mut seen = PlHashSet::new();
+    aexpr_to_column_nodes_iter(node, arena).filter_map(move |node| match arena.get(node.0) {
+        AExpr::Column(name) => seen.insert(name).then_some(name),
         _ => unreachable!(),
     })
 }
 
+/// Returns all the unique column names found in the expression as a Vec.
 pub fn aexpr_to_leaf_names(node: Node, arena: &Arena<AExpr>) -> Vec<PlSmallStr> {
     aexpr_to_leaf_names_iter(node, arena).cloned().collect()
 }

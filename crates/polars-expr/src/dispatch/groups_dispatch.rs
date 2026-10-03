@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::trusted_len::TrustMyLength;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
@@ -522,7 +522,12 @@ pub fn quantile<'a>(
 
     let quantile_column = inputs[1].evaluate(df, state)?;
     polars_ensure!(
-        quantile_column.len() <= 1,
+        !quantile_column.is_empty(),
+        ComputeError:
+            "the 'quantile' expression input should produce a single quantile, got an empty input"
+    );
+    polars_ensure!(
+        quantile_column.len() == 1,
         ComputeError:
             "polars only supports computing a single quantile in a groupby aggregation context"
     );

@@ -5,8 +5,10 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, GroupPositions};
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
-use polars_plan::plans::{IRBooleanFunction, IRFunctionExpr, IRPowFunction};
+use polars_plan::plans::{AExpr, IRBooleanFunction, IRFunctionExpr, IRPowFunction};
+use polars_plan::prelude::expr_ir::ExprIR;
 use polars_utils::IdxSize;
+use polars_utils::arena::Arena;
 
 use crate::prelude::{AggregationContext, PhysicalExpr};
 use crate::state::ExecutionState;
@@ -112,6 +114,10 @@ mod extension;
 mod groups_dispatch;
 mod horizontal;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
+#[cfg(any(feature = "is_in", feature = "dtype-map"))]
+mod membership;
 mod misc;
 mod pow;
 #[cfg(feature = "random")]
@@ -136,7 +142,13 @@ mod trigonometry;
 
 pub use groups_dispatch::drop_items;
 
-pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUdf>> {
+/// `input` and `expr_arena` let a function pick a variant based on its arguments, e.g. a
+/// constant argument that can be prepared once.
+pub fn function_expr_to_udf(
+    func: IRFunctionExpr,
+    input: &[ExprIR],
+    expr_arena: &Arena<AExpr>,
+) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRFunctionExpr as F;
     match func {
         // Namespaces
@@ -148,6 +160,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "dtype-extension")]
         F::Extension(func) => extension::function_expr_to_udf(func),
         F::ListExpr(func) => list::function_expr_to_udf(func),
+        #[cfg(feature = "dtype-map")]
+        F::MapExpr(func) => map::function_expr_to_udf(func),
         #[cfg(feature = "strings")]
         F::StringExpr(func) => strings::function_expr_to_udf(func),
         #[cfg(feature = "dtype-struct")]
@@ -158,7 +172,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::Bitwise(func) => bitwise::function_expr_to_udf(func),
 
         // Other expressions
-        F::Boolean(func) => boolean::function_expr_to_udf(func),
+        F::Boolean(func) => boolean::function_expr_to_udf(func, input, expr_arena),
         #[cfg(feature = "business")]
         F::Business(func) => business::function_expr_to_udf(func),
         #[cfg(feature = "abs")]
@@ -338,6 +352,14 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::Reverse => map!(misc::reverse),
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => map!(misc::approx_n_unique),
+        #[cfg(feature = "approx_quantile")]
+        F::ApproxQuantileSketch { method, error } => {
+            map!(misc::approx_quantile_sketch, &method, error)
+        },
+        #[cfg(feature = "approx_quantile")]
+        F::ApproxQuantileEstimate { values_dtype } => {
+            map_as_slice!(misc::approx_quantile_estimate, &values_dtype)
+        },
         F::Coalesce => map_as_slice!(misc::coalesce),
         #[cfg(feature = "diff")]
         F::Diff(null_behavior) => map_as_slice!(misc::diff, null_behavior),
@@ -359,9 +381,16 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::Log1p => map!(misc::log1p),
         #[cfg(feature = "log")]
         F::Exp => map!(misc::exp),
+        #[cfg(feature = "log")]
+        F::Erf => map!(misc::erf),
+        #[cfg(feature = "log")]
+        F::Erfc => map!(misc::erfc),
         F::Unique(stable) => map!(misc::unique, stable),
         #[cfg(feature = "round_series")]
         F::Round { decimals, mode } => map!(round::round, decimals, mode),
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { op, scale } => map_as_slice!(misc::decimal_arith, op, scale),
+        F::TruncArith(op) => map_as_slice!(misc::trunc_arith, op),
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => map!(round::round_sig_figs, digits),
         #[cfg(feature = "round_series")]
@@ -411,6 +440,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             allow_duplicates,
             include_breaks
         ),
+        #[cfg(feature = "cutqcut")]
+        F::Bin(options) => map!(misc::bin, options.clone()),
         #[cfg(feature = "rle")]
         F::RLE => map!(polars_ops::series::rle),
         #[cfg(feature = "rle")]
@@ -439,6 +470,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags: _,
+            is_deterministic: _,
             lib,
             symbol,
             kwargs,
@@ -534,8 +566,11 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::RowDecode(fs, variants) => {
             map_as_slice!(misc::row_decode, fs.clone(), variants.clone())
         },
-        F::DynamicPred { pred } => {
+        F::DynamicPred { pred, .. } => {
             map_as_slice!(misc::dynamic_pred, &pred)
+        },
+        F::DynamicSkipBatch { pred } => {
+            map_as_slice!(misc::dynamic_skip_batch, &pred)
         },
     }
 }

@@ -15,8 +15,6 @@ pub use metadata::{
     read_num_rows,
 };
 pub use page::{PageIterator, PageMetaData, PageReader};
-#[cfg(feature = "async")]
-pub use page::{get_page_stream, get_page_stream_from_column_start};
 use polars_buffer::Buffer;
 #[cfg(feature = "async")]
 pub use stream::read_metadata as read_metadata_async;

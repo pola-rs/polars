@@ -955,7 +955,7 @@ class ExprArrayNameSpace:
         """
         Returns a column with a separate row for every array element.
 
-        .. engine-support:: in-memory, streaming, partially-distributed
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1005,11 +1005,18 @@ class ExprArrayNameSpace:
             Item that will be checked for membership
         nulls_equal : bool, default True
             If True, treat null as a distinct value. Null values will not propagate.
+            Note that :meth:`Expr.is_in` defaults to `False`.
 
         Returns
         -------
         Expr
             Expression of data type :class:`Boolean`.
+
+        Notes
+        -----
+        For supported dtype pairs, lossy conversions do not create matches. Values that
+        would overflow or require rounding match nothing. Cast explicitly to compare
+        integers and floats.
 
         Examples
         --------

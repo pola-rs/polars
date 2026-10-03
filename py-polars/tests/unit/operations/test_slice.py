@@ -6,7 +6,11 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, ShapeError
-from polars.testing import assert_frame_equal, assert_frame_not_equal
+from polars.testing import (
+    assert_frame_equal,
+    assert_frame_not_equal,
+    assert_series_equal,
+)
 
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
@@ -567,3 +571,38 @@ def test_slice_negative_offset_none_len_26150() -> None:
 
 def test_n_rows_slice_pushdown_26656() -> None:
     assert pl.scan_csv(b"x\n" * 20, n_rows=5).head(10).collect().height == 5
+
+
+def test_series_slice_neg_offset_29183() -> None:
+    a = pl.Series([1, 2, 3])
+    assert_series_equal(a.slice(-1), pl.Series([3]))
+    assert_series_equal(a.slice(-2), pl.Series([2, 3]))
+    assert_series_equal(a.slice(-3), a)
+    assert_series_equal(a.slice(-4), a)
+    assert_series_equal(a.slice(-5), a)
+    assert_series_equal(a.slice(-500), a)
+
+
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [
+        (-2, 1),
+        (-4, 3),
+        (-40, 5),
+        (-2, 5),
+        (-50, 45),
+        (-7, 0),
+    ],
+)
+def test_streaming_negative_slice_uneven_morsels_29398(
+    offset: int, length: int
+) -> None:
+    a = list(range(42))
+    lf = pl.concat([pl.LazyFrame({"x": a[:2]}), pl.LazyFrame({"x": a[2:]})])
+    expected = pl.DataFrame({"x": slice_ref(a, offset, length)}, schema={"x": pl.Int64})
+
+    assert_frame_equal(lf.slice(offset, length).collect(), expected)
+    assert_frame_equal(
+        lf.select(pl.col("x").slice(offset, length)).collect(),
+        expected,
+    )

@@ -76,7 +76,7 @@ impl Model {
             self.first_sample_time = Some(sample.completion_time);
             if polars_config::config().verbose() {
                 eprintln!(
-                    "[InFlightConcurrency]: observed first RTT sample: {} ms, for {} bytes",
+                    "[InFlightConcurrency]: observed first RTT sample (data): {} ms, for {} bytes",
                     sample.ttfb.as_millis(),
                     sample.n_bytes
                 )

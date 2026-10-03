@@ -184,6 +184,22 @@ impl ColumnSelectorBuilder {
         }
 
         if let DataType::List(target_inner) = target_dtype {
+            #[cfg(feature = "dtype-map")]
+            if let Some(incoming_entries) = incoming_dtype.map_entries_dtype() {
+                self.attach_transforms(
+                    ColumnSelector::Position(0),
+                    &incoming_entries,
+                    target_inner,
+                    target_name,
+                )?;
+
+                return Ok(ColumnTransform::Cast {
+                    dtype: target_dtype.clone(),
+                    options: CastOptions::NonStrict,
+                }
+                .into_selector(input_selector));
+            }
+
             let DataType::List(incoming_inner) = incoming_dtype else {
                 return mismatch_err("");
             };
@@ -226,6 +242,56 @@ impl ColumnSelectorBuilder {
                     },
                 },
             );
+        }
+
+        #[cfg(feature = "dtype-map")]
+        if let DataType::Map(target_key, target_value) = target_dtype {
+            if let DataType::List(incoming_inner) = incoming_dtype {
+                let target_entries = target_dtype.map_entries_dtype().unwrap();
+                self.attach_transforms(
+                    ColumnSelector::Position(0),
+                    incoming_inner,
+                    &target_entries,
+                    target_name,
+                )?;
+
+                return Ok(ColumnTransform::Cast {
+                    dtype: target_dtype.clone(),
+                    options: CastOptions::NonStrict,
+                }
+                .into_selector(input_selector));
+            }
+
+            let DataType::Map(incoming_key, incoming_value) = incoming_dtype else {
+                return mismatch_err("");
+            };
+
+            // Mirrors what `should_cast_column` does for non-streaming scans.
+            let Ok(cast_key) = incoming_key.matches_schema_type(target_key) else {
+                return mismatch_err("Map key types are not castable");
+            };
+
+            // We can transform the value child if needed, because it can not break the map invariants.
+            let mut selector = match self.attach_transforms(
+                ColumnSelector::Position(0),
+                incoming_value,
+                target_value,
+                target_name,
+            )? {
+                ColumnSelector::Position(0) => input_selector,
+                value_selector => ColumnTransform::MapValuesMapping { value_selector }
+                    .into_selector(input_selector),
+            };
+
+            if cast_key {
+                selector = ColumnTransform::Cast {
+                    dtype: target_dtype.clone(),
+                    options: CastOptions::NonStrict,
+                }
+                .into_selector(selector);
+            }
+
+            return Ok(selector);
         }
 
         // Eq here should be cheap as we have intercepted all nested types above.
@@ -408,7 +474,9 @@ impl ColumnSelectorBuilder {
         use IcebergColumnType as ICT;
 
         match &target_column.type_ {
-            ICT::FixedSizeList(..) | ICT::List(_) => iceberg_default_value_provider = None,
+            ICT::FixedSizeList(..) | ICT::List(_) | ICT::Map(..) => {
+                iceberg_default_value_provider = None
+            },
             ICT::Struct(_) | ICT::Primitive { .. } => {},
         }
 
@@ -572,6 +640,52 @@ impl ColumnSelectorBuilder {
                     })
                 },
 
+                ICT::Map(target_key, target_value) => {
+                    feature_gated!("dtype-map", {
+                        let ICT::Map(incoming_key, incoming_value) = incoming_dtype else {
+                            return mismatch_err("");
+                        };
+
+                        if incoming_key.physical_id != target_key.physical_id {
+                            return mismatch_err("physical ID mismatch for map keys column");
+                        }
+
+                        if incoming_value.physical_id != target_value.physical_id {
+                            return mismatch_err("physical ID mismatch for map values column");
+                        }
+
+                        let incoming_key_dtype = incoming_key.type_.to_polars_dtype();
+                        let target_key_dtype = target_key.type_.to_polars_dtype();
+
+                        let Ok(cast_key) =
+                            incoming_key_dtype.matches_schema_type(&target_key_dtype)
+                        else {
+                            return mismatch_err("Map key types are not castable");
+                        };
+
+                        let mut selector = match self.attach_iceberg_transforms(
+                            ColumnSelector::Position(0),
+                            incoming_value,
+                            target_value,
+                            iceberg_default_value_provider,
+                        )? {
+                            ColumnSelector::Position(0) => input_selector,
+                            value_selector => ColumnTransform::MapValuesMapping { value_selector }
+                                .into_selector(input_selector),
+                        };
+
+                        if cast_key {
+                            selector = ColumnTransform::Cast {
+                                dtype: target_column.type_.to_polars_dtype(),
+                                options: CastOptions::NonStrict,
+                            }
+                            .into_selector(selector);
+                        }
+
+                        selector
+                    })
+                },
+
                 ICT::Primitive {
                     dtype: target_dtype,
                 } => {
@@ -634,7 +748,7 @@ pub fn build_iceberg_default_value_impl(
     use IcebergColumnType as ICT;
 
     match &target_column.type_ {
-        ICT::FixedSizeList(..) | ICT::List(_) => Ok(None),
+        ICT::FixedSizeList(..) | ICT::List(_) | ICT::Map(..) => Ok(None),
 
         ICT::Struct(fields) => {
             use polars_core::prelude::StructChunked;

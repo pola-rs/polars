@@ -1,6 +1,6 @@
-use arrow::array::{MutableArray, MutableUtf8Array, TryExtendFromSelf, Utf8Array};
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{MutableArray, MutableUtf8Array, TryExtendFromSelf, Utf8Array};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
 
 #[test]
 fn capacities() {

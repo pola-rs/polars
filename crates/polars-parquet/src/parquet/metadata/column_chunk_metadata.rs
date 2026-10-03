@@ -48,8 +48,15 @@ impl ColumnChunkMetadata {
 
     /// The [`ColumnDescriptor`] for this column. This descriptor contains
     /// the physical and logical type of the pages.
+    #[inline]
     pub fn descriptor(&self) -> &ColumnDescriptor {
         &self.column_descr
+    }
+
+    /// Position of this column among the leaves of the file's schema.
+    #[inline]
+    pub fn leaf_index(&self) -> usize {
+        self.column_descr.leaf_index()
     }
 
     /// The [`PhysicalType`] of this column.
@@ -75,9 +82,22 @@ impl ColumnChunkMetadata {
         ))
     }
 
+    /// The plain-encoded min and max of the chunk, borrowed from `footer_buf`;
+    /// `None` when the chunk has no statistics.
+    pub fn raw_bounds<'a>(&self, footer_buf: &'a [u8]) -> Option<RawBounds<'a>> {
+        let stats = self.compact_metadata().statistics.as_ref()?;
+        Some(RawBounds {
+            min: stats.min_value.map(|range| range.resolve(footer_buf)),
+            max: stats.max_value.map(|range| range.resolve(footer_buf)),
+            min_is_exact: stats.is_min_value_exact != Some(false),
+            max_is_exact: stats.is_max_value_exact != Some(false),
+        })
+    }
+
     /// Total number of values in this column chunk. Note that this is not
     /// necessarily the number of rows. E.g. the (nested) array `[[1, 2], [3]]`
     /// has 2 rows and 3 values.
+    #[inline]
     pub fn num_values(&self) -> i64 {
         self.compact_metadata().num_values
     }
@@ -103,6 +123,7 @@ impl ColumnChunkMetadata {
     }
 
     /// Returns the total uncompressed data size of this column chunk.
+    #[inline]
     pub fn uncompressed_size(&self) -> i64 {
         self.compact_metadata().total_uncompressed_size
     }
@@ -165,6 +186,7 @@ impl ColumnChunkMetadata {
     /// Build from a [`CompactColumnChunk`] + descriptor handle.
     /// Infallible: the decoder rejects malformed chunks (missing
     /// `meta_data`) up front, so by here the invariant is type-enforced.
+    #[inline]
     pub(crate) fn from_compact(
         column_descr: ColumnDescriptorRef,
         column_chunk: CompactColumnChunk,
@@ -174,6 +196,17 @@ impl ColumnChunkMetadata {
             column_descr,
         }
     }
+}
+
+/// The min and max of a chunk as the footer stores them, see
+/// [`ColumnChunkMetadata::raw_bounds`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RawBounds<'a> {
+    pub min: Option<&'a [u8]>,
+    pub max: Option<&'a [u8]>,
+    /// Whether the value is the true bound; an inexact one bounds nothing.
+    pub min_is_exact: bool,
+    pub max_is_exact: bool,
 }
 
 /// Materialise a `polars_parquet_format::Statistics` from a `CompactStatistics`

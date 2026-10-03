@@ -1,9 +1,7 @@
 #[cfg(feature = "array_to_struct")]
 use polars_buffer::Buffer;
 use polars_core::utils::{slice_offsets, try_get_supertype};
-use polars_ops::chunked_array::array::is_supported_array_dot_dtype;
 
-use super::schema::function_sum_output_dtype;
 use super::*;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
@@ -27,6 +25,8 @@ pub enum IRArrayFunction {
     #[cfg(feature = "is_in")]
     Contains {
         nulls_equal: bool,
+        /// Runtime cast chosen by type coercion; inexact needles match nothing.
+        needle_cast: Option<DataType>,
     },
     #[cfg(feature = "array_count")]
     CountMatches,
@@ -101,13 +101,13 @@ impl IRArrayFunction {
                 );
                 let inner_dtype = try_get_supertype(lhs_inner, rhs_inner)?;
                 polars_ensure!(
-                    is_supported_array_dot_dtype(&inner_dtype),
+                    inner_dtype.is_supported_array_dot_input(),
                     InvalidOperation:
                     "arr.dot does not support input dtypes {} and {} with supertype {inner_dtype}",
                     args[0].dtype(), args[1].dtype()
                 );
 
-                mapper.with_dtype(function_sum_output_dtype(&inner_dtype))
+                mapper.with_dtype(sum_output_dtype(&inner_dtype))
             },
             ToList => mapper
                 .ensure_is_array()?
@@ -123,7 +123,7 @@ impl IRArrayFunction {
                 .map_to_list_and_array_inner_dtype(),
             Join(_) => mapper.ensure_is_array()?.with_dtype(DataType::String),
             #[cfg(feature = "is_in")]
-            Contains { nulls_equal: _ } => mapper.ensure_is_array()?.with_dtype(DataType::Boolean),
+            Contains { .. } => mapper.ensure_is_array()?.with_dtype(DataType::Boolean),
             #[cfg(feature = "array_count")]
             CountMatches => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
             Shift => mapper.ensure_is_array()?.with_same_dtype(),
@@ -151,7 +151,7 @@ impl IRArrayFunction {
         use IRArrayFunction as A;
         match self {
             #[cfg(feature = "is_in")]
-            A::Contains { nulls_equal: _ } => FunctionOptions::elementwise(),
+            A::Contains { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "array_count")]
             A::CountMatches => FunctionOptions::elementwise(),
             A::Concat => FunctionOptions::elementwise()
@@ -231,7 +231,7 @@ impl Display for IRArrayFunction {
             Get(_) => "get",
             Join(_) => "join",
             #[cfg(feature = "is_in")]
-            Contains { nulls_equal: _ } => "contains",
+            Contains { .. } => "contains",
             #[cfg(feature = "array_count")]
             CountMatches => "count_matches",
             Shift => "shift",

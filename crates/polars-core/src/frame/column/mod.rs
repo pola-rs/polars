@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::trusted_len::TrustMyLength;
 use num_traits::{Num, NumCast};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_error::{PolarsContext, PolarsResult};
 use polars_utils::aliases::PlSeedableRandomStateQuality;
@@ -11,14 +11,14 @@ use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
 pub use scalar::ScalarColumn;
 
-use self::compare_inner::{TotalEqInner, TotalOrdInner};
+use self::compare_inner::TotalOrdInner;
 use self::gather::check_bounds_ca;
 use self::series::SeriesColumn;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::ReshapeDimension;
 use crate::prelude::*;
-use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
+use crate::series::{BitRepr, IsSorted};
 use crate::utils::{Container, slice_offsets};
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
@@ -714,14 +714,11 @@ impl Column {
                     scalar.into_nulls().into_column()
                 } else {
                     let validity = indices.rechunk_validity();
-                    let series = scalar.take_materialized_series();
-                    let name = series.name().clone();
-                    let dtype = series.dtype().clone();
-                    let mut chunks = series.into_chunks();
-                    assert_eq!(chunks.len(), 1);
-                    chunks[0] = chunks[0].with_validity(validity);
-                    unsafe { Series::from_chunks_and_dtype_unchecked(name, chunks, &dtype) }
-                        .into_column()
+                    // Use dtype-aware validity updates so Struct fields see the nulls.
+                    let mut out = scalar.take_materialized_series().with_validity(validity);
+                    // Gather indices can insert nulls between equal values.
+                    out.set_sorted_flag(IsSorted::Not);
+                    out.into_column()
                 }
             },
         }
@@ -776,12 +773,10 @@ impl Column {
                     );
                 }
 
-                let mut scalar_col = s.resize(groups.len());
-                // The aggregation might change the type (e.g. mean changes int -> float), so we do
-                // a cast here to the output type.
-                if series_aggregation.dtype() != s.dtype() {
-                    scalar_col = scalar_col.cast(series_aggregation.dtype()).unwrap();
-                }
+                // Broadcast the single-group result: it already has the output dtype and value
+                // (e.g. `mean` changes int -> float, `arg_max` yields the index `0`).
+                let scalar_col =
+                    ScalarColumn::from_single_value_series(series_aggregation, groups.len());
 
                 let Some(first_empty_idx) = groups.iter().position(|g| g.is_empty()) else {
                     // Fast path: no empty groups. keep the scalar intact.
@@ -800,14 +795,9 @@ impl Column {
                 };
                 validity.extend_trusted_len_iter(iter);
 
-                let mut s = scalar_col.take_materialized_series().rechunk();
-                // SAFETY: We perform a compute_len afterwards.
-                let chunks = unsafe { s.chunks_mut() };
-                let arr = &mut chunks[0];
-                *arr = arr.with_validity(validity.into_opt_validity());
-                s.compute_len();
-
-                s.into_column()
+                // Use dtype-aware validity updates so Struct fields see the nulls.
+                let s = scalar_col.take_materialized_series().rechunk();
+                s.with_validity(validity.into_opt_validity()).into_column()
             },
         }
     }
@@ -836,6 +826,25 @@ impl Column {
         self.agg_with_scalar_identity(groups, |s, g| unsafe { s.agg_mean(g) })
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    fn scalar_agg_arg_min_max(sc: &ScalarColumn, groups: &GroupsType) -> Self {
+        let name = sc.name().clone();
+        if sc.is_empty() || sc.has_nulls() {
+            return Self::full_null(name, groups.len(), &IDX_DTYPE);
+        }
+
+        // Empty groups have no min or max.
+        if groups.iter().any(|g| g.is_empty()) {
+            return IdxCa::from_iter_options(
+                name,
+                groups.iter().map(|g| (!g.is_empty()).then_some(0)),
+            )
+            .into_column();
+        }
+
+        Self::new_scalar(name, Scalar::new_idxsize(0), groups.len())
+    }
+
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
@@ -843,14 +852,7 @@ impl Column {
     pub unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Self {
         match self {
             Column::Series(s) => unsafe { Column::from(s.agg_arg_min(groups)) },
-            Column::Scalar(sc) => {
-                let scalar = if sc.is_empty() || sc.has_nulls() {
-                    Scalar::null(IDX_DTYPE)
-                } else {
-                    Scalar::new_idxsize(0)
-                };
-                Column::new_scalar(self.name().clone(), scalar, 1)
-            },
+            Column::Scalar(sc) => Self::scalar_agg_arg_min_max(sc, groups),
         }
     }
 
@@ -861,14 +863,7 @@ impl Column {
     pub unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Self {
         match self {
             Column::Series(s) => unsafe { Column::from(s.agg_arg_max(groups)) },
-            Column::Scalar(sc) => {
-                let scalar = if sc.is_empty() || sc.has_nulls() {
-                    Scalar::null(IDX_DTYPE)
-                } else {
-                    Scalar::new_idxsize(0)
-                };
-                Column::new_scalar(self.name().clone(), scalar, 1)
-            },
+            Column::Scalar(sc) => Self::scalar_agg_arg_min_max(sc, groups),
         }
     }
 
@@ -980,7 +975,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub fn agg_valid_count(&self, groups: &GroupsType) -> Self {
+    pub unsafe fn agg_valid_count(&self, groups: &GroupsType) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_valid_count(groups) }.into()
     }
@@ -1553,11 +1548,6 @@ impl Column {
         self.as_materialized_series().product()
     }
 
-    pub fn phys_iter(&self) -> SeriesPhysIter<'_> {
-        // @scalar-opt
-        self.as_materialized_series().phys_iter()
-    }
-
     #[inline]
     pub fn get(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         polars_ensure!(index < self.len(), oob = index, self.len());
@@ -1746,9 +1736,11 @@ impl Column {
             .quantiles_reduce(quantiles, method)
     }
 
-    pub(crate) fn estimated_size(&self) -> usize {
-        // @scalar-opt
-        self.as_materialized_series().estimated_size()
+    pub(crate) fn estimated_size(&self, expanded: bool) -> usize {
+        match self {
+            Column::Series(s) => s.estimated_size(),
+            Column::Scalar(s) => s.estimated_size(expanded),
+        }
     }
 
     pub fn sort_with(&self, options: SortOptions) -> PolarsResult<Self> {
@@ -1894,11 +1886,6 @@ impl Column {
     pub(crate) fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         // @scalar-opt
         self.as_materialized_series().into_total_ord_inner()
-    }
-    #[expect(unused, clippy::wrong_self_convention)]
-    pub(crate) fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        // @scalar-opt
-        self.as_materialized_series().into_total_eq_inner()
     }
 
     pub fn rechunk_to_arrow(self, compat_level: CompatLevel) -> Box<dyn Array> {

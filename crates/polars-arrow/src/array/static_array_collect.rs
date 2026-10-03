@@ -344,6 +344,8 @@ trait IntoBytes {
 trait TrivialIntoBytes: AsRef<[u8]> {}
 impl<T: TrivialIntoBytes> IntoBytes for T {
     type AsRefT = Self;
+
+    #[inline(always)]
     fn into_bytes(self) -> Self {
         self
     }
@@ -355,6 +357,8 @@ impl TrivialIntoBytes for String {}
 impl TrivialIntoBytes for &str {}
 impl<'a> IntoBytes for Cow<'a, str> {
     type AsRefT = Cow<'a, [u8]>;
+
+    #[inline]
     fn into_bytes(self) -> Cow<'a, [u8]> {
         match self {
             Cow::Borrowed(a) => Cow::Borrowed(a.as_bytes()),
@@ -813,9 +817,7 @@ impl ArrayFromIterDtype<Box<dyn Array>> for FixedSizeListArray {
             let inner = dtype
                 .inner_dtype()
                 .expect("expected nested type in ListArray collect");
-            builder
-                .finish(Some(&inner.underlying_physical_type()))
-                .unwrap()
+            builder.finish(&inner.underlying_physical_type()).unwrap()
         }
         #[cfg(not(feature = "dtype-array"))]
         panic!("activate 'dtype-array'")
@@ -852,9 +854,7 @@ impl ArrayFromIterDtype<Option<Box<dyn Array>>> for FixedSizeListArray {
             let inner = dtype
                 .inner_dtype()
                 .expect("expected nested type in ListArray collect");
-            builder
-                .finish(Some(&inner.underlying_physical_type()))
-                .unwrap()
+            builder.finish(&inner.underlying_physical_type()).unwrap()
         }
         #[cfg(not(feature = "dtype-array"))]
         panic!("activate 'dtype-array'")

@@ -10,6 +10,9 @@ Manipulation/selection
     Expr.arg_sort
     Expr.arg_true
     Expr.backward_fill
+    Expr.bin_intervals
+    Expr.bin_quantiles
+    Expr.bin_ranks
     Expr.bottom_k
     Expr.bottom_k_by
     Expr.cast
@@ -36,6 +39,7 @@ Manipulation/selection
     Expr.limit
     Expr.lower_bound
     Expr.pipe
+    Expr.pipe_with_dtype
     Expr.qcut
     Expr.reinterpret
     Expr.repeat_by

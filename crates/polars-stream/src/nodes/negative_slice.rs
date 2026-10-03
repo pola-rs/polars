@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 
@@ -30,13 +31,17 @@ pub struct NegativeSliceNode {
 }
 
 impl NegativeSliceNode {
-    pub fn new(slice_offset: i64, length: usize) -> Self {
+    pub fn new(
+        slice_offset: i64,
+        length: usize,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         assert!(slice_offset < 0);
         Self {
             state: NegativeSliceState::Buffering(Buffer::default()),
             slice_offset,
             length,
-            spill_ctx: MostRecentSpillContext::new("negative-slice".into()),
+            spill_ctx: MostRecentSpillContext::new("negative-slice".into(), task_metrics),
         }
     }
 }
@@ -62,7 +67,7 @@ impl ComputeNode for NegativeSliceNode {
             if let Buffering(buffer) = &mut self.state {
                 // These offsets are relative to the start of buffer.
                 let mut signed_start_offset = buffer.total_len as i64 + self.slice_offset;
-                let signed_stop_offset =
+                let mut signed_stop_offset =
                     signed_start_offset.saturating_add_unsigned(self.length as u64);
 
                 // Trim the tokens in the buffer to just those that are relevant.
@@ -71,7 +76,9 @@ impl ComputeNode for NegativeSliceNode {
                 {
                     let len = buffer.frames.pop_front().unwrap().height();
                     buffer.total_len -= len;
+                    // Both offsets are relative to the start of the buffer.
                     signed_start_offset -= len as i64;
+                    signed_stop_offset -= len as i64;
                 }
 
                 while !buffer.frames.is_empty()

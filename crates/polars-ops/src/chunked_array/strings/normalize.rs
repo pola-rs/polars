@@ -1,15 +1,6 @@
 use polars_core::prelude::{StringChunked, StringChunkedBuilder};
+use polars_defs::expr::UnicodeForm;
 use unicode_normalization::UnicodeNormalization;
-
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum UnicodeForm {
-    NFC,
-    NFKC,
-    NFD,
-    NFKD,
-}
 
 pub fn normalize_with<F: Fn(&str, &mut String)>(
     ca: &StringChunked,

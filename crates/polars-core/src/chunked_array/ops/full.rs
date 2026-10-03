@@ -1,4 +1,4 @@
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;

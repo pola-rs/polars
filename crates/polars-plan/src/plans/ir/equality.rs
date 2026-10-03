@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_utils::itertools::Itertools;
 
 use super::IR;
+use crate::dsl::dsl_resolver::DslResolverTrait;
 use crate::plans::ExprIR;
 #[cfg(feature = "python")]
 use crate::plans::{PythonOptions, PythonPredicate};
@@ -144,6 +145,7 @@ impl IR {
                 output_schema: _,
                 scan_type: l_scan_type,
                 unified_scan_args: l_unified_scan_args,
+                maintain_order: l_maintain_order,
             } => {
                 let IR::Scan {
                     sources: r_sources,
@@ -154,6 +156,7 @@ impl IR {
                     output_schema: _,
                     scan_type: r_scan_type,
                     unified_scan_args: r_unified_scan_args,
+                    maintain_order: r_maintain_order,
                 } = other
                 else {
                     return false;
@@ -162,6 +165,7 @@ impl IR {
                     && expr_iter_eq!(l_predicate, r_predicate)
                     && l_scan_type == r_scan_type
                     && l_unified_scan_args == r_unified_scan_args
+                    && l_maintain_order == r_maintain_order
             },
             IR::DataFrameScan {
                 df: l_df,
@@ -303,6 +307,33 @@ impl IR {
                 };
                 expr_iter_eq!(l_exprs, r_exprs) && l_options == r_options
             },
+            IR::Window {
+                input: _,
+                partition_by: l_partition_by,
+                order_by: l_order_by,
+                exprs: l_exprs,
+                schema: _,
+                maintain_order: l_maintain_order,
+                ordered_eval: l_ordered_eval,
+            } => {
+                let IR::Window {
+                    input: _,
+                    partition_by: r_partition_by,
+                    order_by: r_order_by,
+                    exprs: r_exprs,
+                    schema: _,
+                    maintain_order: r_maintain_order,
+                    ordered_eval: r_ordered_eval,
+                } = other
+                else {
+                    return false;
+                };
+                l_partition_by == r_partition_by
+                    && l_order_by == r_order_by
+                    && expr_iter_eq!(l_exprs, r_exprs)
+                    && l_maintain_order == r_maintain_order
+                    && l_ordered_eval == r_ordered_eval
+            },
             IR::Distinct {
                 input: _,
                 options: l_options,
@@ -412,6 +443,35 @@ impl IR {
                     return false;
                 };
                 l_operation == r_operation && l_arg_map == r_arg_map
+            },
+            IR::Resolver {
+                resolver,
+                resolver_schema: _,
+                projection,
+                slice,
+                filters,
+                filter_drop_columns_idx: _,
+                resolved_dsl: _,
+                resolved_ir: _,
+            } => {
+                let IR::Resolver {
+                    resolver: r_resolver,
+                    resolver_schema: _,
+                    projection: r_projection,
+                    slice: r_slice,
+                    filters: r_filters,
+                    filter_drop_columns_idx: _,
+                    resolved_dsl: _,
+                    resolved_ir: _,
+                } = other
+                else {
+                    return false;
+                };
+
+                projection == r_projection
+                    && slice == r_slice
+                    && expr_iter_eq!(filters.iter(), r_filters.iter())
+                    && resolver.cse_eq(r_resolver).ok() == Some(true)
             },
             IR::Invalid => unreachable!("cannot compare `IR::Invalid`"),
         }

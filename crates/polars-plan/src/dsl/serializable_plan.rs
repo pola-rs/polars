@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 #[cfg(feature = "pivot")]
 use polars_core::frame::PivotColumnNaming;
 use polars_utils::unique_id::UniqueId;
@@ -6,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use super::*;
+use crate::dsl::dsl_resolver::DslResolver;
 
 new_key_type! {
     /// A key type for identifying DataFrame nodes in a serialized DSL plan.
@@ -155,6 +158,10 @@ pub(crate) enum SerializableDslPlanNode {
     IR {
         dsl: DslPlanKey,
         version: u32,
+    },
+    Resolver {
+        resolver: Arc<DslResolver>,
+        resolver_schema: Option<SchemaRef>,
     },
 }
 
@@ -387,6 +394,14 @@ fn convert_dsl_plan_to_serializable_plan(
             node: _,
             opt_flags: _,
         } => convert_dsl_plan_to_serializable_plan(dsl.as_ref(), arenas),
+        DP::Resolver {
+            resolver,
+            resolver_schema,
+            resolved_cache: _,
+        } => SP::Resolver {
+            resolver: Arc::clone(resolver),
+            resolver_schema: { resolver_schema.lock().unwrap().clone() },
+        },
     }
 }
 
@@ -645,6 +660,14 @@ fn try_convert_serializable_plan_to_dsl_plan(
             dsl: dsl_key,
             version: _,
         } => get_dsl_plan(*dsl_key, ser_dsl_plan, arenas).map(Arc::unwrap_or_clone),
+        SP::Resolver {
+            resolver,
+            resolver_schema,
+        } => Ok(DP::Resolver {
+            resolver: Arc::clone(resolver),
+            resolver_schema: Arc::new(Mutex::new(resolver_schema.clone())),
+            resolved_cache: Default::default(),
+        }),
     }
 }
 
@@ -752,9 +775,13 @@ mod tests {
     #[test]
     fn test_dsl_plan_serialization() {
         let name = || "a".into();
+        let other_name = || "b".into();
         let df = Arc::new(
-            DataFrame::new_infer_height(vec![Column::new(name(), Series::new(name(), &[1, 2, 3]))])
-                .unwrap(),
+            DataFrame::new_infer_height(vec![
+                Column::new(name(), vec![1, 2, 3]),
+                Column::new(other_name(), vec![4, 5, 6]),
+            ])
+            .unwrap(),
         );
         let dfscan = Arc::new(DslPlan::DataFrameScan {
             df: df.clone(),
@@ -769,7 +796,8 @@ mod tests {
             input_left: dfscan.clone(),
             input_right: dfscan,
             condition: JoinCondition::Equi {
-                on: vec![(Expr::Column(name()), Expr::Column(name()))],
+                left_on: vec![Expr::Selector(Selector::Wildcard)],
+                right_on: vec![Expr::Column(name()), Expr::Column(other_name())],
             },
             options: Arc::new(join_options),
         };

@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
+use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::tick_counter::tick_counter;
 use rand::RngExt;
@@ -178,10 +179,18 @@ pub(crate) enum InsertReason {
     TooSmall(Timestamp),
 }
 
+pub(crate) enum PrefetchScheduleResult {
+    NothingToPrefetch,
+    NoPermitsLeft,
+    Okay,
+    StaleContext,
+}
+
 #[derive(Default)]
 struct SharedState {
     spill_queue: SpillQueue,
     unspill_queue: SpillQueue,
+    task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 pub(crate) struct SpillContextInner {
@@ -195,12 +204,19 @@ pub(crate) struct SpillContextInner {
 }
 
 impl SpillContextInner {
-    fn new(name: PlSmallStr, policy: SpillContextPolicy) -> Self {
+    fn new(
+        name: PlSmallStr,
+        policy: SpillContextPolicy,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         let ctx_id = new_context_id();
         Self {
             staging: ThreadLocal::default(),
             staging_empty: AtomicBool::new(true),
-            shared: Mutex::default(),
+            shared: Mutex::new(SharedState {
+                task_metrics,
+                ..Default::default()
+            }),
             stats: Arc::new(SpillContextStatistics::new(name)),
             policy: AtomicU8::new(policy as u8),
             refcount: AtomicU64::new(0),
@@ -255,7 +271,12 @@ impl SpillContextInner {
         }
     }
 
-    fn reset(&self, name: PlSmallStr, policy: SpillContextPolicy) {
+    fn reset(
+        &self,
+        name: PlSmallStr,
+        policy: SpillContextPolicy,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) {
         let ctx_id = new_context_id();
         let old_ctx_id = self.context_id.swap(ctx_id, Ordering::Relaxed);
         self.policy.store(policy as u8, Ordering::Relaxed);
@@ -265,6 +286,7 @@ impl SpillContextInner {
         self.drain_staging(&mut shared, true);
         shared.spill_queue.unregister_all(old_ctx_id);
         shared.unspill_queue.unregister_all(old_ctx_id);
+        shared.task_metrics = task_metrics;
     }
 
     fn context_id(&self) -> u64 {
@@ -325,6 +347,50 @@ impl SpillContextInner {
             self.staging_empty.swap(false, Ordering::AcqRel);
         }
     }
+
+    pub(crate) fn schedule_prefetch(&self, ctx_id: u64) -> PrefetchScheduleResult {
+        let mut shared = self.shared.lock().unwrap();
+        if ctx_id != self.context_id.load(Ordering::Relaxed) {
+            return PrefetchScheduleResult::StaleContext;
+        }
+
+        self.drain_staging(&mut shared, false);
+
+        let mut prefetched = false;
+        let mm = memory_manager();
+        let mut rng = rand::rng();
+        for _ in 0..self.stats.suggested_prefetch_amount() {
+            let Some(permit) = mm.try_get_prefetch_permit() else {
+                return PrefetchScheduleResult::NoPermitsLeft;
+            };
+
+            let pop = match self.policy() {
+                SpillContextPolicy::MostRecent => shared.unspill_queue.pop_front(),
+                SpillContextPolicy::LeastRecent => shared.unspill_queue.pop_back(),
+                SpillContextPolicy::Random => shared.unspill_queue.pop_random(&mut rng),
+            };
+
+            let Some(rt) = pop else { break };
+            let Some(token) = rt.upgrade() else {
+                continue;
+            };
+
+            prefetched = true;
+            self.stats.add_prefetch_start();
+            let prefetch_fut = token.prefetch(); // Create fut outside of spawn to update statistics now.
+            let task_metrics = shared.task_metrics.as_deref();
+            executor::spawn(TaskPriority::Low, task_metrics, async move {
+                prefetch_fut.await;
+                drop(permit);
+            });
+        }
+
+        if prefetched {
+            PrefetchScheduleResult::Okay
+        } else {
+            PrefetchScheduleResult::NothingToPrefetch
+        }
+    }
 }
 
 // We leak (but do re-use) contexts such that a weak reference does not require any reference
@@ -336,13 +402,17 @@ static SPILL_CONTEXT_REUSE_ARENA: Mutex<Vec<&'static SpillContextInner>> = Mutex
 pub(crate) struct StrongSpillContext(&'static SpillContextInner);
 
 impl StrongSpillContext {
-    fn new(name: PlSmallStr, policy: SpillContextPolicy) -> Self {
+    fn new(
+        name: PlSmallStr,
+        policy: SpillContextPolicy,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         let mut arena = SPILL_CONTEXT_REUSE_ARENA.lock().unwrap();
         let inner = if let Some(inner) = arena.pop() {
-            inner.reset(name, policy);
+            inner.reset(name, policy, task_metrics);
             inner
         } else {
-            Box::leak(Box::new(SpillContextInner::new(name, policy)))
+            Box::leak(Box::new(SpillContextInner::new(name, policy, task_metrics)))
         };
 
         // Important: mark as live (refcnt >= 1) before registering.
@@ -384,6 +454,8 @@ impl Clone for StrongSpillContext {
 impl Drop for StrongSpillContext {
     fn drop(&mut self) {
         if self.0.refcount.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.0.stats().on_drop();
+            self.0.shared.lock().unwrap().task_metrics = None;
             SPILL_CONTEXT_REUSE_ARENA.lock().unwrap().push(self.0);
         }
     }
@@ -412,6 +484,14 @@ impl WeakSpillContext {
 
     pub(crate) fn is_dead(&self) -> bool {
         self.0.context_id() != self.1
+    }
+
+    pub(crate) fn task_metrics(&self) -> Option<Arc<TaskMetricAggregator>> {
+        let shared = self.0.shared.lock().unwrap();
+        if self.is_dead() {
+            return None;
+        }
+        shared.task_metrics.clone()
     }
 }
 
@@ -453,10 +533,11 @@ pub trait ParameterFreeSpillContext {
 pub struct MostRecentSpillContext(StrongSpillContext);
 
 impl MostRecentSpillContext {
-    pub fn new(name: PlSmallStr) -> Self {
+    pub fn new(name: PlSmallStr, task_metrics: Option<Arc<TaskMetricAggregator>>) -> Self {
         Self(StrongSpillContext::new(
             name,
             SpillContextPolicy::MostRecent,
+            task_metrics,
         ))
     }
 }
@@ -485,10 +566,11 @@ impl Debug for MostRecentSpillContext {
 pub struct LeastRecentSpillContext(StrongSpillContext);
 
 impl LeastRecentSpillContext {
-    pub fn new(name: PlSmallStr) -> Self {
+    pub fn new(name: PlSmallStr, task_metrics: Option<Arc<TaskMetricAggregator>>) -> Self {
         Self(StrongSpillContext::new(
             name,
             SpillContextPolicy::LeastRecent,
+            task_metrics,
         ))
     }
 }
@@ -516,8 +598,12 @@ impl Debug for LeastRecentSpillContext {
 pub struct RandomSpillContext(StrongSpillContext);
 
 impl RandomSpillContext {
-    pub fn new(name: PlSmallStr) -> Self {
-        Self(StrongSpillContext::new(name, SpillContextPolicy::Random))
+    pub fn new(name: PlSmallStr, task_metrics: Option<Arc<TaskMetricAggregator>>) -> Self {
+        Self(StrongSpillContext::new(
+            name,
+            SpillContextPolicy::Random,
+            task_metrics,
+        ))
     }
 }
 

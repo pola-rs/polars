@@ -2538,3 +2538,8 @@ def test_string_to_temporal_cast_unsupported() -> None:
         InvalidOperationError, match=r"^casting from string to date is not supported\."
     ):
         pl.Series(["2022-08-30"]).cast(pl.Date)
+
+    with pytest.raises(
+        InvalidOperationError, match=r"^casting from string to time is not supported\."
+    ):
+        pl.Series(["10:30:45"]).cast(pl.Time)

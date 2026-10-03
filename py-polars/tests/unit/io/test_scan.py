@@ -11,6 +11,7 @@ from math import ceil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
@@ -1577,6 +1578,8 @@ def test_scan_sink_metrics_multiple_phases(
 
     df.write_parquet(path, row_group_size=1)
     expected_read_amount_bytes = 44000
+    metadata = pq.read_metadata(tmp_path / "a")
+    created_by_size = len(metadata.created_by.encode("utf-8"))
 
     capfd.readouterr()
     pl.scan_parquet(path).collect()
@@ -1596,7 +1599,7 @@ def test_scan_sink_metrics_multiple_phases(
     (
         pl.scan_parquet(path)
         .join(pl.scan_parquet(path), on="a")
-        .sink_parquet(tmp_path / "b", row_group_size=1)
+        .sink_parquet(tmp_path / "b", row_group_size=1, engine="streaming")
     )
     capture = capfd.readouterr().err
 
@@ -1621,12 +1624,16 @@ def test_scan_sink_metrics_multiple_phases(
             maintain_order="right",
         )
         .collect(),
+        # Both sides of the join scan the file.
         pl.DataFrame(
             {
-                "io_total_bytes_requested": [f"{expected_read_amount_bytes}", "0"],
-                "io_total_bytes_received": [f"{expected_read_amount_bytes}", "0"],
-                "io_total_bytes_sent": ["0", "137260"],
-                "node_name": ["multi-scan[parquet]", "io-sink[single-file[parquet]]"],
+                "io_total_bytes_requested": [f"{expected_read_amount_bytes}"] * 2
+                + ["0"],
+                "io_total_bytes_received": [f"{expected_read_amount_bytes}"] * 2
+                + ["0"],
+                "io_total_bytes_sent": ["0", "0", f"{137254 + created_by_size}"],
+                "node_name": ["multi-scan[parquet]"] * 2
+                + ["io-sink[single-file[parquet]]"],
             }
         ),
     )
@@ -1730,3 +1737,16 @@ def test_scan_from_object_nonzero_offset(
         assert f_rb.read(100) == padding
 
         assert_frame_equal(read(f_rb), pl.DataFrame({"x": 1}))
+
+
+@pytest.mark.write_disk
+def test_scan_expand_paths_arg(tmp_path: Path) -> None:
+    pl.DataFrame({"a": 1}).write_parquet(tmp_path / "data.parquet")
+
+    q = pl.scan_parquet(tmp_path)
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 1}))
+
+    q = pl.scan_parquet(tmp_path, _expand_paths=False)
+
+    with pytest.raises(OSError):
+        q.collect()

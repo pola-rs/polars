@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import datetime as dt
 import io
 import itertools
 import re
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.dataset as pad
@@ -11,6 +14,9 @@ import polars as pl
 from polars.exceptions import ArgumentRemovedError
 from polars.lazyframe.opt_flags import QueryOptFlags
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_is_null_followed_by_all() -> None:
@@ -165,6 +171,56 @@ def test_is_not_null_followed_by_sum() -> None:
     assert_frame_equal(expected_df, result_df)
 
 
+def _count_guarded_sum(e: pl.Expr) -> pl.Expr:
+    return pl.when(e.count() > 0).then(e.sum()).otherwise(None)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Int8,
+        pl.Int64,
+        pl.UInt32,
+        pl.Float64,
+        pl.Decimal(10, 2),
+        pl.Boolean,
+        pl.Duration("ms"),
+    ],
+)
+def test_count_guarded_sum(engine: EngineType, dtype: pl.DataType) -> None:
+    v = pl.col("v")
+    lf = pl.LazyFrame(
+        {"g": [1, 1, 2, 2, 3], "v": [1, None, None, None, 0]}
+    ).with_columns(v.cast(dtype))
+
+    for q in [
+        lf.group_by("g").agg(_count_guarded_sum(v)),
+        lf.group_by("g").agg(_count_guarded_sum(v.filter(pl.col("g") == 1))),
+        lf.select(_count_guarded_sum(v).over("g")),
+        lf.select(_count_guarded_sum(v)),
+        lf.filter(pl.col("g") == 2).select(_count_guarded_sum(v)),
+        lf.clear().select(_count_guarded_sum(v)),
+    ]:
+        no_simplify = QueryOptFlags(simplify_expression=False)
+        assert "sum(null_on_empty=true)" in q.explain()
+        assert "null_on_empty" not in q.explain(optimizations=no_simplify)
+        expected = q.collect(optimizations=no_simplify)
+        assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+
+def test_count_guarded_sum_not_rewritten() -> None:
+    lf = pl.LazyFrame({"v": [1, None], "w": [1, 2]})
+    v, w = pl.col("v"), pl.col("w")
+    for e in [
+        pl.when(v.count() > 0).then(w.sum()).otherwise(None),
+        pl.when(v.count() > 1).then(v.sum()).otherwise(None),
+        pl.when(v.count() > 0).then(v.sum()).otherwise(0),
+        pl.when(v.len() > 0).then(v.sum()).otherwise(None),
+    ]:
+        assert "null_on_empty" not in lf.select(e).explain()
+
+
 def test_drop_nulls_followed_by_len() -> None:
     lf = pl.LazyFrame({"group": [0, 0, 0, 1, 2], "val": [6, 0, None, None, 5]})
 
@@ -274,6 +330,48 @@ def test_len_null_count_comparison_optimized(
     assert_frame_equal(
         result_lf.collect(),
         result_lf.collect(optimizations=pl.QueryOptFlags(simplify_expression=False)),
+    )
+
+
+@pytest.mark.parametrize(
+    ("op", "n", "expected_head_len"),
+    [
+        ("__eq__", 2, 3),
+        ("__ne__", 2, 3),
+        ("__lt__", 2, 2),
+        ("__le__", 2, 3),
+        ("__gt__", 2, 3),
+        ("__ge__", 2, 3),
+    ],
+)
+def test_len_cmp_head_insertion(op: str, n: int, expected_head_len: int) -> None:
+    # Filter first so the inserted slice isn't collapsed directly into the
+    # `DataFrameScan` (which would elide the `SLICE` node from the plan entirely).
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).filter(pl.col("a") > 0)
+    expr = getattr(pl.len(), op)(n)
+    result_lf = lf.select(expr.alias("out"))
+
+    plan = result_lf.explain()
+    assert f"SLICE[offset: 0, len: {expected_head_len}]" in plan
+
+    assert_frame_equal(
+        result_lf.collect(),
+        result_lf.collect(optimizations=pl.QueryOptFlags(slice_pushdown=False)),
+    )
+
+
+def test_len_cmp_head_insertion_pushed_into_filter() -> None:
+    lf = pl.LazyFrame({"a": list(range(10))})
+    result_lf = lf.filter(pl.col("a") >= 0).select((pl.len() > 3).alias("out"))
+
+    plan = result_lf.explain()
+    assert "SLICE[offset: 0, len: 4]" in plan
+    # The slice should have been pushed below the filter.
+    assert plan.index("SLICE") < plan.index("FILTER")
+
+    assert_frame_equal(
+        result_lf.collect(),
+        result_lf.collect(optimizations=pl.QueryOptFlags(slice_pushdown=False)),
     )
 
 
@@ -1305,6 +1403,31 @@ def test_streaming_engine_fused_filter_drop() -> None:
 
     assert phys_plan.index("project 2 / 3") > phys_plan.index("filter")
     assert_frame_equal(q.collect(), pl.DataFrame({"x": 1, "z": "Z"}))
+
+
+def test_streaming_engine_fused_filter_drop_stacked() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7], "d": [7, 8, 9]})
+    q = (
+        lf.filter(pl.col("d") > 7)
+        .select("a", "b", "c")
+        .with_columns(pl.col("a").cum_sum())
+        .filter(pl.col("c") > 6)
+        .select("a")
+    )
+
+    phys_plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert "project 1 / 2: a" in phys_plan
+    assert "project 2 / 3: a, c" in phys_plan
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 5}))
+
+    # Non-elementwise predicate.
+    q = lf.filter(pl.col("b") > pl.col("b").mean()).select("a", "c")
+
+    phys_plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert "project 2 / 4: a, c" in phys_plan
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 3, "c": 7}))
 
 
 def test_projection_pushdown_select_prune_expr_28729() -> None:

@@ -5,9 +5,9 @@ mod categorical;
 
 use std::ops::{BitAnd, BitOr, Not};
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
 use num_traits::{NumCast, ToPrimitive};
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};
 
 use crate::prelude::*;
@@ -830,7 +830,7 @@ where
     }
 
     if !is_missing && (a.has_nulls() || b.has_nulls()) {
-        use arrow::compute::utils::combine_validities_and;
+        use polars_arrow::compute::utils::combine_validities_and;
         let av = a.rechunk_validity();
         let bv = b.rechunk_validity();
         out.set_validity(combine_validities_and(av.as_ref(), bv.as_ref()));

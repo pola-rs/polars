@@ -1,7 +1,7 @@
 mod serializer;
 
-use arrow::array::NullArray;
-use arrow::legacy::time_zone::Tz;
+use polars_arrow::array::NullArray;
+use polars_arrow::legacy::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_error::polars_ensure;

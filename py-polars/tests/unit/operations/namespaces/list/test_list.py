@@ -990,9 +990,11 @@ def test_list_sum_bool_schema() -> None:
 
 
 def test_list_sum_decimal_schema() -> None:
-    dtype = pl.Decimal(10, 2)
-    q = pl.LazyFrame(schema={"x": pl.List(dtype)})
-    assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == dtype
+    # like `sum()`, the sum takes the full precision
+    q = pl.LazyFrame({"x": [[1, 2]]}, schema={"x": pl.List(pl.Decimal(10, 2))})
+    q = q.select(pl.col("x").list.sum())
+    assert q.collect_schema()["x"] == pl.Decimal(38, 2)
+    assert q.collect().schema == q.collect_schema()
 
 
 def test_list_concat_struct_19279() -> None:
@@ -1287,6 +1289,26 @@ def test_list_contains() -> None:
     assert_series_equal(
         s.list.contains(1, nulls_equal=True),
         pl.Series([True, False, None], dtype=pl.Boolean),
+    )
+
+
+def test_list_contains_multiple_sliced_chunks() -> None:
+    base = pl.DataFrame(
+        {
+            "n": pl.Series([9, 1, 2], dtype=pl.Int8),
+            "h": pl.Series([[9], [1], [2]], dtype=pl.List(pl.Int8)),
+        }
+    )
+    df = pl.concat([base.slice(1, 1), base.slice(2, 1)], rechunk=False)
+    assert df["h"].n_chunks() == 2
+
+    assert_series_equal(
+        df.select(pl.col("h").list.contains(pl.col("n"))).to_series(),
+        pl.Series("h", [True, True]),
+    )
+    assert_series_equal(
+        df.select(pl.col("h").list.contains(2)).to_series(),
+        pl.Series("h", [False, True]),
     )
 
 

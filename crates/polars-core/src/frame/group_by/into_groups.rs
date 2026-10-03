@@ -1,4 +1,4 @@
-use arrow::legacy::kernels::sort_partition::{
+use polars_arrow::legacy::kernels::sort_partition::{
     create_clean_partitions, partition_to_groups, partition_to_groups_amortized_varsize,
 };
 use polars_error::abort::try_raise_polars_abort;

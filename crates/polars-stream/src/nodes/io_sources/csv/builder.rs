@@ -1,14 +1,17 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
+use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 #[cfg(feature = "csv")]
 use polars_io::metrics::IOMetrics;
 use polars_io::prelude::CsvReadOptions;
 use polars_plan::dsl::ScanSource;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{CsvFileReader, DynByteSourceBuilder};
@@ -22,6 +25,7 @@ pub struct CsvReaderBuilder {
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
+    pub task_metrics: std::sync::OnceLock<Arc<TaskMetricAggregator>>,
 }
 
 impl std::fmt::Debug for CsvReaderBuilder {
@@ -35,21 +39,25 @@ impl std::fmt::Debug for CsvReaderBuilder {
 }
 
 impl FileReaderBuilder for CsvReaderBuilder {
-    fn reader_name(&self) -> &str {
-        "csv"
+    fn reader_name(&self) -> PolarsResult<PlSmallStr> {
+        Ok(PlSmallStr::from_static("csv"))
     }
 
-    fn reader_capabilities(&self) -> ReaderCapabilities {
+    fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
         use ReaderCapabilities as RC;
 
-        if self.options.parse_options.comment_prefix.is_some() {
+        Ok(if self.options.parse_options.comment_prefix.is_some() {
             RC::empty()
         } else {
             RC::PRE_SLICE
-        }
+        })
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
+        if let Some(task_metrics) = execution_state.task_metrics.clone() {
+            self.task_metrics.set(task_metrics).ok().unwrap();
+        }
+
         // The maximum number of chunks actively being prefetched at any given point in time.
         let prefetch_limit = std::env::var("POLARS_CSV_CHUNK_PREFETCH_LIMIT")
             .map(|x| {
@@ -86,7 +94,7 @@ impl FileReaderBuilder for CsvReaderBuilder {
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
         _scan_source_idx: usize,
-    ) -> Box<dyn FileReader> {
+    ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::metrics::OptIOMetrics;
         use crate::nodes::io_sources::csv::ChunkPrefetchSync;
 
@@ -116,8 +124,9 @@ impl FileReaderBuilder for CsvReaderBuilder {
             },
             init_data: None,
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
+            task_metrics: self.task_metrics.get().cloned(),
         };
 
-        Box::new(reader) as Box<dyn FileReader>
+        Ok(Box::new(reader) as Box<dyn FileReader>)
     }
 }

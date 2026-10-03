@@ -28,7 +28,14 @@ pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsU
         Get(null_on_oob) => map_as_slice!(get, null_on_oob),
         Join(ignore_nulls) => map_as_slice!(join, ignore_nulls),
         #[cfg(feature = "is_in")]
-        Contains { nulls_equal } => map_as_slice!(contains, nulls_equal),
+        Contains {
+            nulls_equal,
+            needle_cast,
+        } => wrap!(move |s: &mut [Column]| {
+            super::membership::with_needle_cast(s, 1, 0, needle_cast.as_ref(), |s| {
+                contains(s, nulls_equal)
+            })
+        }),
         #[cfg(feature = "array_count")]
         CountMatches => map_as_slice!(count_matches),
         Shift => map_as_slice!(shift),
@@ -75,9 +82,13 @@ pub(super) fn sum(s: &Column) -> PolarsResult<Column> {
 }
 
 pub(super) fn dot(s: &[Column]) -> PolarsResult<Column> {
-    let lhs = s[0].array()?;
-    let rhs = s[1].array()?;
-    lhs.array_dot(rhs).map(Column::from)
+    let lhs = s[0].as_materialized_series_maintain_scalar();
+    let rhs = s[1].as_materialized_series_maintain_scalar();
+
+    lhs.array()?
+        .array_dot(rhs.array()?)?
+        .into_column()
+        .broadcast_owned_to(broadcast_len(s)?)
 }
 
 pub(super) fn std(s: &Column, ddof: u8) -> PolarsResult<Column> {

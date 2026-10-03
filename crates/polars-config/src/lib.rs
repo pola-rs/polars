@@ -3,12 +3,14 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::time::Duration;
 
 mod engine;
+mod file_advice;
 mod parse;
 mod resolve_mode;
 mod spill_format;
 pub mod spill_path;
 
 pub use engine::Engine;
+pub use file_advice::FileAdvice;
 use polars_error::polars_warn;
 pub use resolve_mode::ResolveMode;
 pub use spill_format::SpillFormat;
@@ -32,7 +34,6 @@ fn default_max_threads() -> u64 {
 }
 
 const IDEAL_MORSEL_SIZE: &str = "POLARS_IDEAL_MORSEL_SIZE";
-const STREAMING_CHUNK_SIZE: &str = "POLARS_STREAMING_CHUNK_SIZE"; // Backwards compatibility.
 const DEFAULT_IDEAL_MORSEL_SIZE: u64 = 100_000;
 
 const ENGINE_AFFINITY: &str = "POLARS_ENGINE_AFFINITY";
@@ -79,7 +80,7 @@ const OOC_MEMORY_BUDGET_MB: &str = "POLARS_OOC_MEMORY_BUDGET_MB";
 const DEFAULT_OOC_MEMORY_BUDGET_MB: u64 = u64::MAX;
 
 const OOC_MEMORY_PREFETCH_FRACTION: &str = "POLARS_OOC_MEMORY_PREFETCH_FRACTION";
-const DEFAULT_OOC_MEMORY_PREFETCH_FRACTION: f64 = 0.8;
+const DEFAULT_OOC_MEMORY_PREFETCH_FRACTION: f64 = 0.9;
 
 const OOC_DISK_BUDGET_MB: &str = "POLARS_OOC_DISK_BUDGET_MB";
 const DEFAULT_OOC_DISK_BUDGET_MB: u64 = u64::MAX;
@@ -87,11 +88,21 @@ const DEFAULT_OOC_DISK_BUDGET_MB: u64 = u64::MAX;
 const OOC_SPILL_MIN_BYTES: &str = "POLARS_OOC_SPILL_MIN_BYTES";
 const DEFAULT_OOC_SPILL_MIN_BYTES: u64 = 64 * 1024; // 64 KB
 
+const OOC_MAX_PARALLEL_SPILL_TASKS: &str = "POLARS_OOC_MAX_PARALLEL_SPILL_TASKS";
+const DEFAULT_OOC_MAX_PARALLEL_SPILL_TASKS: u64 = 64;
+
+const OOC_MAX_PARALLEL_PREFETCH_TASKS: &str = "POLARS_OOC_MAX_PARALLEL_PREFETCH_TASKS";
+const DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS: u64 = 64;
+
 const OOC_LOG_METRICS: &str = "POLARS_OOC_LOG_METRICS";
 const DEFAULT_OOC_LOG_METRICS: bool = false;
 
 const JOIN_SAMPLE_LIMIT: &str = "POLARS_JOIN_SAMPLE_LIMIT";
 const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
+
+/// Whether hash joins publish key ranges to the parquet scans below them.
+const JOIN_RUNTIME_FILTERS: &str = "POLARS_JOIN_RUNTIME_FILTERS";
+const DEFAULT_JOIN_RUNTIME_FILTERS: bool = true;
 
 /// Allows pruning of strict hconcat inputs in projection pushdown. This can reduce data loading
 /// but may discard shape errors.
@@ -115,6 +126,33 @@ const DEFAULT_NUMA_MOCK_REGIONS: u64 = 0;
 const DISABLE_HTTP_RATE_LIMIT: &str = "POLARS_DISABLE_HTTP_RATE_LIMIT";
 const DEFAULT_DISABLE_HTTP_RATE_LIMIT: bool = false;
 
+const HTTP_SKIP_SYSTEM_CERTIFICATES: &str = "POLARS_HTTP_SKIP_SYSTEM_CERTIFICATES";
+const DEFAULT_HTTP_SKIP_SYSTEM_CERTIFICATES: bool = false;
+
+/// Use direct I/O (Linux: `O_DIRECT`), bypassing the page cache.
+const DIRECT_IO: &str = "POLARS_DIRECT_IO";
+const DEFAULT_DIRECT_IO: bool = false;
+
+const FILE_READ_CONCURRENCY: &str = "POLARS_FILE_READ_CONCURRENCY";
+const DEFAULT_FILE_READ_CONCURRENCY: u64 = 32;
+
+/// Access pattern hint for local file reads (Linux: `posix_fadvise`).
+const FILE_POSIX_FADV: &str = "POLARS_FILE_POSIX_FADV";
+const DEFAULT_FILE_POSIX_FADV: FileAdvice = FileAdvice::Normal;
+
+/// Read the column chunks of row groups that are in the page cache in the tasks that decode them,
+/// instead of prefetching them (Linux 6.5+, parquet).
+const FILE_DEFER_CACHED_READS: &str = "POLARS_FILE_DEFER_CACHED_READS";
+const DEFAULT_FILE_DEFER_CACHED_READS: bool = true;
+
+/// Initial number of slots of each hot table in the streaming group-by.
+const HOT_TABLE_SIZE: &str = "POLARS_HOT_TABLE_SIZE";
+const DEFAULT_HOT_TABLE_SIZE: u64 = if cfg!(debug_assertions) { 4 } else { 4096 };
+
+/// Number of slots up to which the hot tables in the streaming group-by may grow.
+const MAX_HOT_TABLE_SIZE: &str = "POLARS_MAX_HOT_TABLE_SIZE";
+const DEFAULT_MAX_HOT_TABLE_SIZE: u64 = if cfg!(debug_assertions) { 16 } else { 1 << 17 };
+
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
     VERBOSE,
@@ -122,7 +160,6 @@ static KNOWN_OPTIONS: &[&str] = &[
     WARN_UNSTABLE,
     MAX_THREADS,
     IDEAL_MORSEL_SIZE,
-    STREAMING_CHUNK_SIZE,
     ENGINE_AFFINITY,
     PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
     PRUNE_PARQUET_METADATA,
@@ -162,13 +199,23 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MEMORY_PREFETCH_FRACTION,
     OOC_DISK_BUDGET_MB,
     OOC_SPILL_MIN_BYTES,
+    OOC_MAX_PARALLEL_SPILL_TASKS,
+    OOC_MAX_PARALLEL_PREFETCH_TASKS,
     OOC_LOG_METRICS,
     JOIN_SAMPLE_LIMIT,
+    JOIN_RUNTIME_FILTERS,
     PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
     DNS_LOG_THRESHOLD_MS,
     NUMA_AWARE,
     NUMA_MOCK_REGIONS,
     DISABLE_HTTP_RATE_LIMIT,
+    HTTP_SKIP_SYSTEM_CERTIFICATES,
+    DIRECT_IO,
+    FILE_READ_CONCURRENCY,
+    FILE_POSIX_FADV,
+    FILE_DEFER_CACHED_READS,
+    HOT_TABLE_SIZE,
+    MAX_HOT_TABLE_SIZE,
 ];
 
 pub struct Config {
@@ -196,13 +243,23 @@ pub struct Config {
     ooc_memory_prefetch_fraction: AtomicU64,
     ooc_disk_budget_bytes: AtomicU64,
     ooc_spill_min_bytes: AtomicU64,
+    ooc_max_parallel_spill_tasks: AtomicU64,
+    ooc_max_parallel_prefetch_tasks: AtomicU64,
     ooc_log_metrics: AtomicBool,
     join_sample_limit: AtomicU64,
+    join_runtime_filters: AtomicBool,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
     dns_log_threshold_ms: AtomicU64,
     numa_aware: AtomicBool,
     numa_mock_regions: AtomicU64,
     disable_http_rate_limit: AtomicBool,
+    http_skip_system_certificates: AtomicBool,
+    direct_io: AtomicBool,
+    file_read_concurrency: AtomicU64,
+    file_posix_fadv: AtomicU8,
+    file_defer_cached_reads: AtomicBool,
+    hot_table_size: AtomicU64,
+    max_hot_table_size: AtomicU64,
 
     // Derived from others.
     ooc_memory_prefetch_bytes: AtomicU64,
@@ -244,8 +301,13 @@ impl Config {
                 DEFAULT_OOC_DISK_BUDGET_MB.saturating_mul(1_000_000),
             ),
             ooc_spill_min_bytes: AtomicU64::new(DEFAULT_OOC_SPILL_MIN_BYTES),
+            ooc_max_parallel_spill_tasks: AtomicU64::new(DEFAULT_OOC_MAX_PARALLEL_SPILL_TASKS),
+            ooc_max_parallel_prefetch_tasks: AtomicU64::new(
+                DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS,
+            ),
             ooc_log_metrics: AtomicBool::new(false),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
+            join_runtime_filters: AtomicBool::new(DEFAULT_JOIN_RUNTIME_FILTERS),
             projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
                 DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
             ),
@@ -254,7 +316,13 @@ impl Config {
             numa_aware: AtomicBool::new(DEFAULT_NUMA_AWARE),
             numa_mock_regions: AtomicU64::new(DEFAULT_NUMA_MOCK_REGIONS),
             disable_http_rate_limit: AtomicBool::new(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
-
+            http_skip_system_certificates: AtomicBool::new(DEFAULT_HTTP_SKIP_SYSTEM_CERTIFICATES),
+            direct_io: AtomicBool::new(DEFAULT_DIRECT_IO),
+            file_read_concurrency: AtomicU64::new(DEFAULT_FILE_READ_CONCURRENCY),
+            file_posix_fadv: AtomicU8::new(DEFAULT_FILE_POSIX_FADV as u8),
+            file_defer_cached_reads: AtomicBool::new(DEFAULT_FILE_DEFER_CACHED_READS),
+            hot_table_size: AtomicU64::new(DEFAULT_HOT_TABLE_SIZE),
+            max_hot_table_size: AtomicU64::new(DEFAULT_MAX_HOT_TABLE_SIZE),
             ooc_memory_prefetch_bytes: AtomicU64::new(0),
         };
         cfg.reload_env_vars();
@@ -281,7 +349,7 @@ impl Config {
 
     fn recompute_derived(&self) {
         let bytes = self.ooc_memory_budget_bytes.load(Ordering::Relaxed);
-        let frac = f64::from_bits(self.ooc_memory_budget_fraction.load(Ordering::Relaxed));
+        let frac = f64::from_bits(self.ooc_memory_prefetch_fraction.load(Ordering::Relaxed));
         self.ooc_memory_prefetch_bytes
             .store((bytes as f64 * frac) as u64, Ordering::Relaxed);
     }
@@ -309,7 +377,7 @@ impl Config {
                     .unwrap_or(default_max_threads()),
                 Ordering::Relaxed,
             ),
-            IDEAL_MORSEL_SIZE | STREAMING_CHUNK_SIZE => self.ideal_morsel_size.store(
+            IDEAL_MORSEL_SIZE => self.ideal_morsel_size.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_IDEAL_MORSEL_SIZE),
                 Ordering::Relaxed,
@@ -391,7 +459,7 @@ impl Config {
                 Ordering::Relaxed,
             ),
             OOC_MEMORY_PREFETCH_FRACTION => self.ooc_memory_prefetch_fraction.store(
-                val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 0.95))
+                val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 0.99))
                     .unwrap_or(DEFAULT_OOC_MEMORY_PREFETCH_FRACTION)
                     .to_bits(),
                 Ordering::Relaxed,
@@ -407,6 +475,18 @@ impl Config {
                     .unwrap_or(DEFAULT_OOC_SPILL_MIN_BYTES),
                 Ordering::Relaxed,
             ),
+            OOC_MAX_PARALLEL_SPILL_TASKS => self.ooc_max_parallel_spill_tasks.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_MAX_PARALLEL_SPILL_TASKS)
+                    .max(1), // A semaphore with zero permits would deadlock.
+                Ordering::Relaxed,
+            ),
+            OOC_MAX_PARALLEL_PREFETCH_TASKS => self.ooc_max_parallel_prefetch_tasks.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS)
+                    .max(1),
+                Ordering::Relaxed,
+            ),
             OOC_LOG_METRICS => self.ooc_log_metrics.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_OOC_LOG_METRICS),
@@ -415,6 +495,11 @@ impl Config {
             JOIN_SAMPLE_LIMIT => self.join_sample_limit.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_JOIN_SAMPLE_LIMIT),
+                Ordering::Relaxed,
+            ),
+            JOIN_RUNTIME_FILTERS => self.join_runtime_filters.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_JOIN_RUNTIME_FILTERS),
                 Ordering::Relaxed,
             ),
             PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS => {
@@ -442,6 +527,41 @@ impl Config {
             DISABLE_HTTP_RATE_LIMIT => self.disable_http_rate_limit.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
+                Ordering::Relaxed,
+            ),
+            HTTP_SKIP_SYSTEM_CERTIFICATES => self.http_skip_system_certificates.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_HTTP_SKIP_SYSTEM_CERTIFICATES),
+                Ordering::Relaxed,
+            ),
+            DIRECT_IO => self.direct_io.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_DIRECT_IO),
+                Ordering::Relaxed,
+            ),
+            FILE_READ_CONCURRENCY => self.file_read_concurrency.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_FILE_READ_CONCURRENCY),
+                Ordering::Relaxed,
+            ),
+            FILE_POSIX_FADV => self.file_posix_fadv.store(
+                val.and_then(|x| parse::parse_file_advice(var, x))
+                    .unwrap_or(DEFAULT_FILE_POSIX_FADV) as u8,
+                Ordering::Relaxed,
+            ),
+            FILE_DEFER_CACHED_READS => self.file_defer_cached_reads.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_FILE_DEFER_CACHED_READS),
+                Ordering::Relaxed,
+            ),
+            HOT_TABLE_SIZE => self.hot_table_size.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_HOT_TABLE_SIZE),
+                Ordering::Relaxed,
+            ),
+            MAX_HOT_TABLE_SIZE => self.max_hot_table_size.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_MAX_HOT_TABLE_SIZE),
                 Ordering::Relaxed,
             ),
             _ => {
@@ -587,6 +707,16 @@ impl Config {
     }
 
     #[inline(always)]
+    pub fn ooc_max_parallel_spill_tasks(&self) -> usize {
+        self.ooc_max_parallel_spill_tasks.load(Ordering::Relaxed) as usize
+    }
+
+    #[inline(always)]
+    pub fn ooc_max_parallel_prefetch_tasks(&self) -> usize {
+        self.ooc_max_parallel_prefetch_tasks.load(Ordering::Relaxed) as usize
+    }
+
+    #[inline(always)]
     pub fn ooc_log_metrics(&self) -> bool {
         self.ooc_log_metrics.load(Ordering::Relaxed)
     }
@@ -602,6 +732,11 @@ impl Config {
     #[inline(always)]
     pub fn join_sample_limit(&self) -> u64 {
         self.join_sample_limit.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn join_runtime_filters(&self) -> bool {
+        self.join_runtime_filters.load(Ordering::Relaxed)
     }
 
     #[inline(always)]
@@ -631,6 +766,45 @@ impl Config {
     #[inline(always)]
     pub fn disable_http_rate_limit(&self) -> bool {
         self.disable_http_rate_limit.load(Ordering::Relaxed)
+    }
+
+    /// Whether cleartext `http` clients skip the system trust store. Such a client fails the
+    /// handshake on a redirect to `https`.
+    #[inline(always)]
+    pub fn http_skip_system_certificates(&self) -> bool {
+        self.http_skip_system_certificates.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn direct_io(&self) -> bool {
+        self.direct_io.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn file_read_concurrency(&self) -> u64 {
+        self.file_read_concurrency.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn file_posix_fadv(&self) -> FileAdvice {
+        FileAdvice::from_discriminant(self.file_posix_fadv.load(Ordering::Relaxed))
+    }
+
+    #[inline(always)]
+    pub fn file_defer_cached_reads(&self) -> bool {
+        self.file_defer_cached_reads.load(Ordering::Relaxed)
+    }
+
+    /// Initial number of slots of each hot table in the streaming group-by.
+    #[inline(always)]
+    pub fn hot_table_size(&self) -> u64 {
+        self.hot_table_size.load(Ordering::Relaxed)
+    }
+
+    /// Number of slots up to which the hot tables in the streaming group-by may grow.
+    #[inline(always)]
+    pub fn max_hot_table_size(&self) -> u64 {
+        self.max_hot_table_size.load(Ordering::Relaxed)
     }
 }
 

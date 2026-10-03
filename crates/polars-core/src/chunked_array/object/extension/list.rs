@@ -1,4 +1,4 @@
-use arrow::offset::Offsets;
+use polars_arrow::offset::Offsets;
 
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::chunked_array::object::extension::create_extension;

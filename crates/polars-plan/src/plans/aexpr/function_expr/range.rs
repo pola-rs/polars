@@ -1,9 +1,11 @@
 use std::fmt::{Display, Formatter};
 
 use polars_core::prelude::*;
-use polars_ops::series::ClosedInterval;
+use polars_defs::expr::ClosedInterval;
 #[cfg(feature = "temporal")]
-use polars_time::{ClosedWindow, Duration};
+use polars_defs::time::duration::Duration;
+#[cfg(feature = "temporal")]
+use polars_defs::time::group_by::ClosedWindow;
 
 use super::{FunctionOptions, IRFunctionExpr};
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]

@@ -1,3 +1,4 @@
+use polars_arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_plan::prelude::*;
@@ -128,24 +129,25 @@ impl PhysicalExpr for TernaryExpr {
             }
         });
 
+        let masked_df = |names: &[PlSmallStr], mask: &Bitmap| -> PolarsResult<DataFrame> {
+            let columns = names
+                .iter()
+                .map(|c| df.column(c).unwrap().mask(mask))
+                .collect();
+            DataFrame::new(df.height(), columns)
+        };
         let op_truthy = || {
-            let mut mask_df = df.clone();
-            if !self.truthy_mask_columns.is_empty() && false_count != 0 {
-                for c in &self.truthy_mask_columns {
-                    mask_df
-                        .with_column(df.column(c).unwrap().mask(mask_bitmap.as_ref().unwrap()))?;
-                }
+            if self.truthy_mask_columns.is_empty() || false_count == 0 {
+                return self.truthy.evaluate(df, &state);
             }
+            let mask_df = masked_df(&self.truthy_mask_columns, mask_bitmap.as_ref().unwrap())?;
             self.truthy.evaluate(&mask_df, &state)
         };
         let op_falsy = || {
-            let mut mask_df = df.clone();
-            if !self.falsy_mask_columns.is_empty() && true_count != 0 {
-                for c in &self.falsy_mask_columns {
-                    mask_df
-                        .with_column(df.column(c).unwrap().mask(&!mask_bitmap.as_ref().unwrap()))?;
-                }
+            if self.falsy_mask_columns.is_empty() || true_count == 0 {
+                return self.falsy.evaluate(df, &state);
             }
+            let mask_df = masked_df(&self.falsy_mask_columns, &!mask_bitmap.as_ref().unwrap())?;
             self.falsy.evaluate(&mask_df, &state)
         };
 
@@ -157,7 +159,7 @@ impl PhysicalExpr for TernaryExpr {
                 (1, r) if r != 1 => return self.cast_arm(falsy),
                 (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
                 (l, r) => {
-                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height and falsy height in when/then/otherwise");
+                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and falsy height ({}) in when/then/otherwise", l, r);
                     return self.cast_arm(falsy);
                 },
             }
@@ -169,7 +171,7 @@ impl PhysicalExpr for TernaryExpr {
                 (1, r) if r != 1 => return self.cast_arm(truthy),
                 (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
                 (l, r) => {
-                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height and truthy height in when/then/otherwise");
+                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and truthy height ({}) in when/then/otherwise", l, r);
                     return self.cast_arm(truthy);
                 },
             }

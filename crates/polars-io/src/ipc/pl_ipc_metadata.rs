@@ -12,15 +12,19 @@ pub struct PlIpcMetadata {
 impl PlIpcMetadata {
     /// Reads the Polars metadata out of an already parsed IPC footer.
     ///
-    /// `None` for a file that was not written by Polars.
-    pub fn from_ipc_footer(metadata: &arrow::io::ipc::read::FileMetadata) -> Option<Self> {
+    /// `None` for a file that was not written by Polars, or whose Polars metadata
+    /// cannot be parsed or is inconsistent with the file.
+    pub fn from_ipc_footer(metadata: &polars_arrow::io::ipc::read::FileMetadata) -> Option<Self> {
         #[cfg(feature = "serde")]
         {
             let raw = metadata
                 .custom_metadata
                 .as_ref()?
                 .get(POLARS_IPC_METADATA_KEY)?;
-            serde_json::from_str(raw).ok()
+            serde_json::from_str::<Self>(raw)
+                .ok()
+                // Older writers also counted dictionary batches, ignore such metadata.
+                .filter(|md| md.record_batch_cum_len.len() == metadata.blocks.len())
         }
         #[cfg(not(feature = "serde"))]
         {

@@ -1,6 +1,6 @@
 use std::io::{Read, Seek};
 
-use arrow_format::ipc::planus::ReadAsRoot;
+use polars_arrow_format::ipc::planus::ReadAsRoot;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
 use polars_utils::bool::UnsafeBool;
 
@@ -23,7 +23,7 @@ pub struct StreamMetadata {
     pub custom_schema_metadata: Option<Metadata>,
 
     /// The IPC version of the stream
-    pub version: arrow_format::ipc::MetadataVersion,
+    pub version: polars_arrow_format::ipc::MetadataVersion,
 
     /// The IPC fields tracking dictionaries
     pub ipc_schema: IpcSchema,
@@ -138,7 +138,7 @@ fn read_next<R: Read + Seek>(
         .take(meta_length as u64)
         .read_to_end(message_buffer)?;
 
-    let message = arrow_format::ipc::MessageRef::read_as_root(message_buffer.as_ref())
+    let message = polars_arrow_format::ipc::MessageRef::read_as_root(message_buffer.as_ref())
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
 
     let header = message
@@ -153,7 +153,7 @@ fn read_next<R: Read + Seek>(
         .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
 
     match header {
-        arrow_format::ipc::MessageHeaderRef::RecordBatch(batch) => {
+        polars_arrow_format::ipc::MessageHeaderRef::RecordBatch(batch) => {
             let cur_pos = reader.stream_position()?;
 
             let chunk = read_record_batch(
@@ -186,7 +186,7 @@ fn read_next<R: Read + Seek>(
                 chunk.map(|x| Some(StreamState::Some(x)))
             }
         },
-        arrow_format::ipc::MessageHeaderRef::DictionaryBatch(batch) => {
+        polars_arrow_format::ipc::MessageHeaderRef::DictionaryBatch(batch) => {
             let cur_pos = reader.stream_position()?;
 
             read_dictionary(

@@ -34,3 +34,23 @@ def test_pruned_metadata(tmp_path: Path) -> None:
     # Empty predicate drops all stats.
     meta = json.loads(_parquet_metadata_pruned_json(str(path), ["a", "b", "c"], []))
     assert all(c["statistics"] is None for c in meta["row_groups"][0]["columns"])
+
+
+@pytest.mark.write_disk
+def test_pruned_metadata_keeps_column_orders(tmp_path: Path) -> None:
+    # One order per leaf of the pruned schema, in leaf order: `s` has two leaves.
+    path = tmp_path / "t.parquet"
+    pl.DataFrame({"a": [1], "s": [{"x": 1.5, "y": "y"}], "b": ["b"]}).write_parquet(
+        path
+    )
+
+    meta = json.loads(_parquet_metadata_pruned_json(str(path), ["s", "b"], ["b"]))
+    assert meta["column_orders"] == [
+        {"TypeDefinedOrder": "Signed"},
+        {"TypeDefinedOrder": "Unsigned"},
+        {"TypeDefinedOrder": "Unsigned"},
+    ]
+    # The exactness flags travel; this writer leaves them unset.
+    stats = meta["row_groups"][0]["columns"][2]["statistics"]
+    assert stats["is_min_value_exact"] is None
+    assert stats["is_max_value_exact"] is None

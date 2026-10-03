@@ -1,3 +1,4 @@
+import math
 from datetime import date
 from typing import Any
 
@@ -8,7 +9,6 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
 from polars.testing.parametric.strategies import dataframes, series
 
@@ -354,7 +354,6 @@ def test_sorted_flag() -> None:
     pl.Series([{"a": 1}], dtype=pl.Object).set_sorted(descending=True)
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud
 def test_sorted_flag_after_joins() -> None:
     np.random.seed(1)
@@ -528,14 +527,124 @@ def test_is_sorted_binary_asc_desc() -> None:
     assert not s.is_sorted(descending=True)
 
 
-def test_is_sorted_list_pairwise_fallback_error() -> None:
-    # List dtype falls through to row-wise comparison; but
-    # `<`/`<=` for lists are unsupported, so this raises an error.
-    s = pl.Series("_", [[1], [2], [3]])
-    assert isinstance(s.dtype, pl.List)
+NESTED_VALUES = [
+    pl.Series([[2, 1], None, [1, None], [1], [], [1, 5]], dtype=pl.List(pl.Int64)),
+    pl.Series([[2, 1], None, [1, None], [1, 1], [1, 5]], dtype=pl.Array(pl.Int64, 2)),
+    pl.Series([{"x": 2, "y": "a"}, None, {"x": 1, "y": None}, {"x": 1, "y": "b"}]),
+    # Maps are ordered by their entries in order, so these two differ.
+    pl.Series(
+        [{"a": 1, "b": 2}, None, {"b": 2, "a": 1}, {}, {"a": None}, {"a": 1}],
+        dtype=pl.Map(pl.String, pl.Int64),
+    ),
+]
 
-    with pytest.raises(InvalidOperationError) as exc:
-        s.is_sorted()
-    msg = str(exc.value).lower()
-    assert "<=" in msg
-    assert "list" in msg
+
+@pytest.mark.parametrize("s", NESTED_VALUES, ids=lambda s: str(s.dtype))
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_is_sorted_nested_matches_sort(
+    s: pl.Series, descending: bool, nulls_last: bool
+) -> None:
+    sorted_s = s.sort(descending=descending, nulls_last=nulls_last)
+    # Rebuild the values to drop the sorted flag, so `is_sorted` compares them.
+    for values, expected in [(sorted_s, True), (sorted_s.reverse(), False)]:
+        values = pl.Series(values.to_list(), dtype=s.dtype)
+        assert not is_sorted_any(values)
+        assert (
+            values.is_sorted(descending=descending, nulls_last=nulls_last) is expected
+        )
+        result = pl.select(
+            pl.lit(values).is_sorted(descending=None, nulls_last=nulls_last)
+        ).item()
+        assert result is expected
+
+
+@pytest.mark.parametrize("s", NESTED_VALUES, ids=lambda s: str(s.dtype))
+@pytest.mark.parametrize("descending", [None, False, True])
+def test_is_sorted_nested_streaming_across_chunks(
+    s: pl.Series, descending: bool | None
+) -> None:
+    # One value per chunk, so every comparison crosses a morsel boundary.
+    sorted_s = s.drop_nulls().sort(descending=bool(descending))
+    for values, expected in [
+        (sorted_s, True),
+        (sorted_s.reverse(), descending is None),
+    ]:
+        chunks = [pl.Series("a", [v], dtype=s.dtype) for v in values.to_list()]
+        chunked = pl.concat(chunks, rechunk=False)
+        assert chunked.n_chunks() == len(chunks)
+        q = pl.LazyFrame({"a": chunked}).select(
+            pl.col("a").is_sorted(descending=descending)
+        )
+        assert q.collect(engine="streaming").item() is expected
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+@pytest.mark.parametrize(
+    ("values", "descending"),
+    [
+        ([-math.inf, 1.0, math.inf], False),
+        ([math.inf, 1.0, -math.inf], True),
+        ([1.0, 5.0, math.nan], False),
+        ([math.nan, 5.0, 1.0], True),
+        ([math.nan, math.nan, math.nan], False),
+        ([math.nan, math.nan, math.nan], True),
+    ],
+)
+def test_is_sorted_float_multiple_chunks(
+    values: list[float], descending: bool, dtype: pl.DataType
+) -> None:
+    single = pl.Series("a", values, dtype=dtype)
+    assert single.n_chunks() == 1
+    assert single.is_sorted(descending=descending)
+
+    for split in range(1, len(values)):
+        chunked = pl.concat(
+            [
+                pl.Series("a", values[:split], dtype=dtype),
+                pl.Series("a", values[split:], dtype=dtype),
+            ],
+            rechunk=False,
+        )
+        assert chunked.n_chunks() == 2
+        assert chunked.is_sorted(descending=descending)
+
+    padded = pl.concat(
+        [pl.Series("a", [0.0], dtype=dtype), pl.Series("a", values, dtype=dtype)],
+        rechunk=False,
+    ).filter(pl.Series([False] + [True] * len(values)))
+    assert [len(c) for c in padded.get_chunks()] == [0, len(values)]
+    assert padded.is_sorted(descending=descending)
+
+
+def test_is_sorted_boolean_constant_with_sorted_flag() -> None:
+    all_true = pl.Series("a", [True, True, True]).sort()
+    assert all_true.flags["SORTED_ASC"]
+    assert all_true.is_sorted()
+    assert all_true.is_sorted(descending=True)
+
+    all_false = pl.Series("a", [False, False, False]).sort(descending=True)
+    assert all_false.flags["SORTED_DESC"]
+    assert all_false.is_sorted()
+    assert all_false.is_sorted(descending=True)
+
+    with_nulls = pl.Series("a", [None, True, True]).sort()
+    assert with_nulls.flags["SORTED_ASC"]
+    assert with_nulls.is_sorted()
+    assert with_nulls.is_sorted(descending=True)
+
+
+@pytest.mark.xfail(
+    reason="the sorted flag short-circuits `is_sorted` without checking null placement"
+)
+def test_is_sorted_flag_respects_null_placement() -> None:
+    # `nulls_last = false` for the key column.
+    nulls_last = pl.Series("a", [1, 2, None]).sort(nulls_last=True)
+    assert nulls_last.flags["SORTED_ASC"]
+    assert not nulls_last.is_sorted()
+    assert nulls_last.is_sorted(nulls_last=True)
+
+    desc_nulls_first = pl.Series("a", [1, 2, None]).sort(descending=True)
+    assert desc_nulls_first.flags["SORTED_DESC"]
+    assert desc_nulls_first.is_sorted(descending=True)
+    assert not desc_nulls_first.is_sorted(descending=True, nulls_last=True)

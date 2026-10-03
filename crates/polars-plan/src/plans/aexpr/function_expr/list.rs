@@ -9,6 +9,8 @@ pub enum IRListFunction {
     #[cfg(feature = "is_in")]
     Contains {
         nulls_equal: bool,
+        /// Runtime cast chosen by type coercion; inexact needles match nothing.
+        needle_cast: Option<DataType>,
     },
     #[cfg(feature = "list_drop_nulls")]
     DropNulls,
@@ -51,6 +53,8 @@ pub enum IRListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(Arc<[PlSmallStr]>),
+    #[cfg(feature = "dtype-map")]
+    ToMap,
 }
 
 impl<'a> FieldsMapper<'a> {
@@ -72,7 +76,7 @@ impl IRListFunction {
         match self {
             Concat => mapper.map_to_list_supertype(),
             #[cfg(feature = "is_in")]
-            Contains { nulls_equal: _ } => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
+            Contains { .. } => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
             #[cfg(feature = "list_drop_nulls")]
             DropNulls => mapper.ensure_is_list()?.with_same_dtype(),
             #[cfg(feature = "list_sample")]
@@ -153,6 +157,16 @@ impl IRListFunction {
                         .collect::<Vec<_>>(),
                 ))
             }),
+            #[cfg(feature = "dtype-map")]
+            ToMap => mapper.try_map_dtype(|dtype| {
+                let DataType::List(entries) = dtype else {
+                    polars_bail!(
+                        InvalidOperation:
+                        "`list.to_map` requires a List dtype, got `{dtype}`",
+                    );
+                };
+                entries.map_from_named_entries_dtype()
+            }),
         }
     }
 
@@ -162,7 +176,7 @@ impl IRListFunction {
             L::Concat => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             #[cfg(feature = "is_in")]
-            L::Contains { nulls_equal: _ } => FunctionOptions::elementwise(),
+            L::Contains { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_sample")]
             L::Sample { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_gather")]
@@ -200,6 +214,8 @@ impl IRListFunction {
             L::ToArray(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_to_struct")]
             L::ToStruct(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-map")]
+            L::ToMap => FunctionOptions::elementwise(),
         }
     }
 }
@@ -220,7 +236,7 @@ impl Display for IRListFunction {
         let name = match self {
             Concat => "concat",
             #[cfg(feature = "is_in")]
-            Contains { nulls_equal: _ } => "contains",
+            Contains { .. } => "contains",
             #[cfg(feature = "list_drop_nulls")]
             DropNulls => "drop_nulls",
             #[cfg(feature = "list_sample")]
@@ -260,6 +276,8 @@ impl Display for IRListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "dtype-map")]
+            ToMap => "to_map",
         };
         write!(f, "list.{name}")
     }

@@ -30,9 +30,6 @@ use std::fmt::{Display, Formatter};
 pub(crate) use aggregation::*;
 pub(crate) use alias::*;
 pub(crate) use apply::*;
-use arrow::array::ArrayRef;
-use arrow::bitmap::MutableBitmap;
-use arrow::legacy::utils::CustomIterTools;
 pub(crate) use binary::*;
 pub(crate) use cast::*;
 pub(crate) use column::*;
@@ -45,6 +42,9 @@ pub(crate) use filter::*;
 pub(crate) use gather::*;
 pub(crate) use len::*;
 pub(crate) use literal::*;
+use polars_arrow::array::ArrayRef;
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
 use polars_plan::prelude::*;
@@ -56,8 +56,7 @@ pub(crate) use sortby::*;
 #[cfg(feature = "dtype-struct")]
 pub(crate) use structeval::*;
 pub(crate) use ternary::*;
-pub use window::window_function_format_order_by;
-pub(crate) use window::*;
+pub use window::{WindowExpr, window_function_format_order_by};
 
 use crate::state::ExecutionState;
 

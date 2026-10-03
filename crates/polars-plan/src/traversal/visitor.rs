@@ -36,6 +36,7 @@ pub trait NodeVisitor {
     /// to that node, that node will not be visited.
     ///
     /// Called before pre_visit of each node.
+    #[inline]
     fn is_deleted_edge(&mut self, _edge: &Self::Edge) -> Option<bool> {
         None
     }

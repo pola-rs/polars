@@ -35,9 +35,9 @@
 use std::io::{Read, Seek};
 use std::path::PathBuf;
 
-use arrow::datatypes::{ArrowSchemaRef, Metadata};
-use arrow::io::ipc::read::{self, get_row_count};
-use arrow::record_batch::RecordBatch;
+use polars_arrow::datatypes::{ArrowSchemaRef, Metadata};
+use polars_arrow::io::ipc::read::{self, get_row_count};
+use polars_arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
 use polars_utils::bool::UnsafeBool;
 use polars_utils::pl_str::PlRefStr;

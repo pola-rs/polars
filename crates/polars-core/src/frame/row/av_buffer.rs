@@ -2,7 +2,7 @@
 
 use std::hint::unreachable_unchecked;
 
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::BitmapBuilder;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DecimalFmtBuffer;
 #[cfg(feature = "dtype-struct")]
@@ -49,7 +49,7 @@ pub enum AnyValueBuffer<'a> {
 
 impl<'a> AnyValueBuffer<'a> {
     #[inline]
-    pub fn add(&mut self, val: AnyValue<'a>) -> Option<()> {
+    pub fn add(&mut self, val: AnyValue<'_>) -> Option<()> {
         use AnyValueBuffer::*;
         match (self, val) {
             (Boolean(builder), AnyValue::Null) => builder.append_null(),
@@ -154,8 +154,8 @@ impl<'a> AnyValueBuffer<'a> {
         Some(())
     }
 
-    pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
-        self.add(val.clone()).ok_or_else(|| {
+    pub fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
+        self.add(val.as_borrowed()).ok_or_else(|| {
             polars_err!(
                 ComputeError: "could not append value: {} of type: {} to the builder; make sure that all rows \
                 have the same schema or consider increasing `infer_schema_length`\n\

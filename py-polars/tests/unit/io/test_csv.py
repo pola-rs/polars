@@ -2052,7 +2052,6 @@ def test_csv_ragged_lines(chunk_override: None) -> None:
             pl.read_csv(io.StringIO(s), has_header=True, truncate_ragged_lines=False)
 
 
-@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_provide_schema(chunk_override: None) -> None:
     # can be used to overload schema with ragged csv files
     assert pl.read_csv(

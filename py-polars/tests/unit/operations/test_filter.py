@@ -360,3 +360,47 @@ def test_filter_group_by_23681(maintain_order: bool) -> None:
     )
 
     assert_frame_equal(df, expected, check_row_order=maintain_order)
+
+
+def test_filter_zero_width_input_29320() -> None:
+    def zero_width(height: int) -> pl.DataFrame:
+        return pl.DataFrame({"x": [None] * height}).drop("x")
+
+    # This covers the elementwise lowering path, which needs a predicate that
+    # references no columns, otherwise the input schema would not be empty. The
+    # Python function is opaque to the optimizer, so the predicate cannot be
+    # folded into a constant and optimized away before lowering.
+    pred = pl.lit(True).map_batches(
+        lambda s: s, return_dtype=pl.Boolean, is_elementwise=True
+    )
+
+    u = pl.LazyFrame({"c": [1, 2, 3]})
+    v = pl.LazyFrame({"b": [1, 2, 3, 4, 5]})
+    joined = u.filter(pred).join(v, how="cross")
+
+    assert_frame_equal(
+        joined.select("b").collect(),
+        pl.DataFrame({"b": [1, 2, 3, 4, 5] * 3}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        joined.select(pl.len()).collect(),
+        pl.DataFrame({"len": [15]}, schema={"len": pl.UInt32}),
+    )
+    assert_frame_equal(
+        joined.group_by("b").len().collect(),
+        pl.DataFrame(
+            {"b": [1, 2, 3, 4, 5], "len": [3, 3, 3, 3, 3]},
+            schema={"b": pl.Int64, "len": pl.UInt32},
+        ),
+        check_row_order=False,
+    )
+
+    empty = u.drop("c")
+    assert_frame_equal(empty.filter(pred).collect(), zero_width(3))
+    assert_frame_equal(empty.filter(pl.len() > 2).collect(), zero_width(3))
+    assert_frame_equal(empty.filter(pl.len() > 5).collect(), zero_width(0))
+    assert_frame_equal(
+        empty.filter(pl.lit(pl.Series([True, False, True]))).collect(),
+        zero_width(2),
+    )

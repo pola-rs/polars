@@ -85,7 +85,7 @@ where
     F: Future + Send + 'a,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
     /// # Safety
     /// It is the responsibility of the caller that before lifetime 'a ends the
@@ -116,7 +116,7 @@ where
     F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
     fn wake(self: Arc<Self>) {
         if self.state.wake() {
@@ -138,7 +138,7 @@ where
     F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
 }
 
@@ -159,8 +159,9 @@ where
     F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
+    #[inline]
     fn metadata(&self) -> &M {
         &self.metadata
     }
@@ -218,7 +219,7 @@ where
     F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
     fn poll_join(&self, cx: &mut Context<'_>) -> Poll<F::Output> {
         self.join_waker.register(cx.waker());
@@ -239,6 +240,11 @@ where
     }
 }
 
+/// Task metadata that is notified when its task is cancelled.
+pub trait OnCancel {
+    fn on_cancel(&self);
+}
+
 /// Fully type-erased task.
 pub trait Cancellable: Send + Sync {
     fn cancel(&self);
@@ -249,7 +255,7 @@ where
     F: Future + Send,
     F::Output: Send + 'static,
     S: Send + Sync + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
     fn cancel(&self) {
         let mut data = self.data.lock();
@@ -260,6 +266,7 @@ where
             // Still in-progress, cancel.
             _ => {
                 *data = TaskData::Cancelled;
+                self.metadata.on_cancel();
                 if let Some(join_waker) = self.join_waker.take() {
                     join_waker.wake();
                 }
@@ -273,7 +280,7 @@ where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
     unsafe { Task::spawn(future, schedule, metadata) }.into_dyn()
 }
@@ -291,7 +298,7 @@ where
     F: Future + Send + 'a,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
     Task::spawn(future, schedule, metadata).into_dyn()
 }
@@ -340,6 +347,7 @@ mod std_shim {
         }
 
         // Decrement the reference count of the Arc on drop
+        #[inline]
         unsafe fn drop_waker<W: Wake + Send + Sync>(waker: *const ()) {
             unsafe { Arc::decrement_strong_count(waker as *const W) };
         }

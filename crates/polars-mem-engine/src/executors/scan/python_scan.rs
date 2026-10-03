@@ -136,9 +136,7 @@ impl Executor for PythonScanExec {
                                     chunks.push(df)
                                 },
                                 Err(err) if err.matches(py, PyStopIteration::type_object(py))? => break,
-                                Err(err) => {
-                                    polars_bail!(ComputeError: "caught exception during execution of a Python source, exception: {}", err)
-                                },
+                                Err(err) => return Err(err.into()),
                             }
                         }
                         if chunks.is_empty() {

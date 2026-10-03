@@ -9,7 +9,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use line_batch_processor::{LineBatchProcessor, LineBatchProcessorOutputPort};
 use negative_slice_pass::MorselStreamReverser;
-use polars_async::executor::{AbortOnDropHandle, spawn};
+use polars_async::executor::{AbortOnDropHandle, TaskMetricAggregator, spawn};
 use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::linearizer::Linearizer;
 use polars_async::primitives::oneshot_channel;
@@ -55,9 +55,10 @@ pub struct NDJsonFileReader {
     pub chunk_prefetch_sync: ChunkPrefetchSync,
     pub init_data: Option<InitializedState>,
     pub io_metrics: OptIOMetrics,
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
-pub(crate) struct ChunkPrefetchSync {
+pub struct ChunkPrefetchSync {
     pub(crate) prefetch_limit: usize,
     pub(crate) prefetch_semaphore: Arc<tokio::sync::Semaphore>,
     pub(crate) shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
@@ -169,6 +170,7 @@ impl FileReader for NDJsonFileReader {
 
             num_pipelines,
             disable_morsel_split: _,
+            maintain_order: _,
             last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
@@ -277,6 +279,7 @@ impl FileReader for NDJsonFileReader {
         let output_to_linearizer = opt_linearizer.is_some();
         let mut output_port = None;
 
+        let task_metrics = self.task_metrics.as_deref();
         let opt_post_process_handle = if is_negative_slice {
             // Note: This is right-to-left
             let negative_slice = global_slice.unwrap();
@@ -290,6 +293,7 @@ impl FileReader for NDJsonFileReader {
 
             Some(AbortOnDropHandle::new(spawn(
                 TaskPriority::High,
+                task_metrics,
                 MorselStreamReverser {
                     morsel_receiver: opt_linearizer.unwrap(),
                     morsel_senders,
@@ -301,6 +305,7 @@ impl FileReader for NDJsonFileReader {
                     // available. This is handled by the MorselStreamReverser.
                     row_index: row_index.take().map(|x| (x, total_row_count_rx.unwrap())),
                     verbose,
+                    task_metrics: self.task_metrics.clone(),
                 }
                 .run(),
             )))
@@ -345,6 +350,7 @@ impl FileReader for NDJsonFileReader {
             } else {
                 Some(AbortOnDropHandle::new(spawn(
                     TaskPriority::High,
+                    task_metrics,
                     task.run(),
                 )))
             }
@@ -380,6 +386,7 @@ impl FileReader for NDJsonFileReader {
 
                 AbortOnDropHandle::new(spawn(
                     TaskPriority::Low,
+                    task_metrics,
                     LineBatchProcessor {
                         worker_idx,
 
@@ -491,6 +498,7 @@ impl FileReader for NDJsonFileReader {
 
         let line_batch_distributor_task_handle = AbortOnDropHandle::new(spawn(
             TaskPriority::Low,
+            task_metrics,
             line_batch_distributor::LineBatchDistributor {
                 reader: reader_source,
                 reverse: is_negative_slice,
@@ -505,7 +513,7 @@ impl FileReader for NDJsonFileReader {
         ));
 
         // Task. Finishing handle.
-        let finishing_handle = spawn(TaskPriority::Low, async move {
+        let finishing_handle = spawn(TaskPriority::Low, task_metrics, async move {
             // Number of rows skipped by the line batch distributor.
             let n_rows_skipped: usize = line_batch_distributor_task_handle.await?;
 

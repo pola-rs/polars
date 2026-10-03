@@ -1,10 +1,10 @@
-use arrow::bitmap::utils::BitmapIter;
-use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
+use polars_arrow::bitmap::utils::BitmapIter;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 
 use super::utils::PageDecoder;
 use super::{Filter, utils};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
-use crate::parquet::error::ParquetResult;
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, split_buffer};
 use crate::parquet::read::levels::get_bit_width;
 use crate::read::deserialize::utils::Decoded;
@@ -593,6 +593,22 @@ impl<D: utils::Decoder> PageDecoder<D> {
 
         // Amortize the allocations.
         let (def_levels, rep_levels) = nested_state.levels();
+
+        // The decoder uses Arrow-derived levels. Check their maxima against
+        // the Parquet descriptor before decoding.
+        let max_def_level = def_levels.last().copied().unwrap_or(0);
+        let max_rep_level = rep_levels.last().copied().unwrap_or(0);
+        let descriptor = self.iter.descriptor();
+        if i32::from(max_def_level) != i32::from(descriptor.max_def_level)
+            || i32::from(max_rep_level) != i32::from(descriptor.max_rep_level)
+        {
+            return Err(ParquetError::oos(format!(
+                "Parquet nesting mismatch: the inferred nesting does not match the file's \
+                 definition/repetition levels (inferred {max_def_level}/{max_rep_level}, file \
+                 {}/{})",
+                descriptor.max_def_level, descriptor.max_rep_level,
+            )));
+        }
 
         let mut current_def_levels = Vec::<u16>::new();
         let mut current_rep_levels = Vec::<u16>::new();

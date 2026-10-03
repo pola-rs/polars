@@ -5,9 +5,11 @@ use polars_utils::IdxSize;
 
 use crate::EvictIdx;
 use crate::hash_keys::HashKeys;
+use crate::key_rows::KeyRowLayout;
 
 mod binview;
 mod fixed_index_table;
+mod key_rows;
 mod row_encoded;
 mod single_key;
 
@@ -21,8 +23,18 @@ pub trait HotGrouper: Any + Send + Sync {
     /// Returns the number of groups in this HotGrouper.
     fn num_groups(&self) -> IdxSize;
 
+    /// Returns the number of slots in the hot table.
+    fn num_slots(&self) -> usize;
+
+    /// Doubles the number of slots in the hot table. Group indices are unchanged.
+    fn double(&mut self);
+
     /// Inserts the given keys into this Grouper, extending groups_idxs with
     /// the group index of keys[i].
+    ///
+    /// A missed key that is followed by a key with the same hash is inserted
+    /// even if that evicts another key, as is every missed key with
+    /// `force_hot`. This keeps sorted keys from first going cold.
     fn insert_keys(
         &mut self,
         keys: &HashKeys,
@@ -45,7 +57,12 @@ pub trait HotGrouper: Any + Send + Sync {
 }
 
 pub fn new_hash_hot_grouper(key_schema: Arc<Schema>, num_groups: usize) -> Box<dyn HotGrouper> {
-    if key_schema.len() > 1 {
+    if let Some(layout) = KeyRowLayout::new(key_schema.iter_values()) {
+        Box::new(key_rows::KeyRowHashHotGrouper::new(
+            Arc::new(layout),
+            num_groups,
+        ))
+    } else if key_schema.len() > 1 {
         Box::new(row_encoded::RowEncodedHashHotGrouper::new(
             key_schema, num_groups,
         ))

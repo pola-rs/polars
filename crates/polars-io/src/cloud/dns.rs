@@ -1,15 +1,13 @@
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use futures::stream::{FuturesUnordered, StreamExt};
 use hashbrown::HashMap;
+use object_store::client::{DnsError, DnsFuture, DnsResolver};
 use polars_core::runtime::ASYNC;
-use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use tokio::sync::RwLock;
-
-type DynErr = Box<dyn std::error::Error + Send + Sync>;
 
 const DEFAULT_DNS_CACHE_TTL_SECS: u64 = 5;
 
@@ -81,7 +79,7 @@ pub(crate) fn get_dns_attempt_timeout() -> Duration {
 
 #[derive(Debug)]
 struct CachedAddrs {
-    addrs: Arc<Vec<SocketAddr>>,
+    addrs: Vec<IpAddr>,
     fetched_at: Instant,
     /// True while a background refresh for this host is in flight (single-flight gate).
     refreshing: Arc<AtomicBool>,
@@ -113,7 +111,6 @@ impl DnsResolverConfig {
 /// - case beyond max_stale (or max_stale = None): blocking resolve
 #[derive(Clone, Debug)]
 pub struct CachingResolver {
-    cache: &'static RwLock<HashMap<String, CachedAddrs>>,
     config: DnsResolverConfig,
 }
 
@@ -132,16 +129,13 @@ impl CachingResolver {
             );
         }
 
-        Self {
-            cache: &DNS_CACHE,
-            config,
-        }
+        Self { config }
     }
 }
 
-impl Resolve for CachingResolver {
-    fn resolve(&self, name: Name) -> Resolving {
-        let cache = self.cache;
+impl DnsResolver for CachingResolver {
+    fn resolve(&self, host: &str) -> DnsFuture {
+        let cache: &'static RwLock<HashMap<String, CachedAddrs>> = &DNS_CACHE;
         let DnsResolverConfig {
             ttl,
             max_stale,
@@ -149,7 +143,7 @@ impl Resolve for CachingResolver {
             attempt_timeout,
         } = self.config;
 
-        let key = name.as_str().to_string();
+        let key = host.to_string();
 
         Box::pin(async move {
             {
@@ -183,7 +177,7 @@ impl Resolve for CachingResolver {
                                     write_guard.insert(
                                         key,
                                         CachedAddrs {
-                                            addrs: Arc::new(addrs),
+                                            addrs,
                                             fetched_at: Instant::now(),
                                             refreshing: refreshing.clone(),
                                         },
@@ -209,19 +203,19 @@ impl Resolve for CachingResolver {
                 }
             }
 
-            let addrs = Arc::new(lookup_hedged(&key, lookup_attempts, attempt_timeout).await?);
+            let addrs = lookup_hedged(&key, lookup_attempts, attempt_timeout).await?;
+            let shuffled = shuffle_addrs(&addrs);
 
             write_guard.insert(
                 key,
                 CachedAddrs {
-                    addrs: addrs.clone(),
+                    addrs,
                     fetched_at: Instant::now(),
                     refreshing: Arc::new(AtomicBool::new(false)),
                 },
             );
-            drop(write_guard);
 
-            Ok(shuffle_addrs(&addrs))
+            Ok(shuffled)
         })
     }
 }
@@ -231,12 +225,12 @@ async fn lookup_hedged(
     key: &str,
     lookup_attempts: u64,
     attempt_timeout: Duration,
-) -> Result<Vec<SocketAddr>, DynErr> {
+) -> Result<Vec<IpAddr>, DnsError> {
     let spawn_lookup = |key: String| {
         ASYNC.spawn_blocking(move || {
             (key.as_str(), 0u16)
                 .to_socket_addrs()
-                .map(|it| it.collect::<Vec<_>>())
+                .map(|it| it.map(|addr| addr.ip()).collect::<Vec<_>>())
         })
     };
 
@@ -254,10 +248,10 @@ async fn lookup_hedged(
 
             completed = in_flight.next() => {
 
-                let completed: Option<Result<Vec<SocketAddr>, DynErr>> = completed.map(|joined| {
+                let completed: Option<Result<Vec<IpAddr>, DnsError>> = completed.map(|joined| {
                     joined
-                        .map_err(DynErr::from)
-                        .and_then(|res| res.map_err(DynErr::from))
+                        .map_err(DnsError::from)
+                        .and_then(|res| res.map_err(DnsError::from))
                 });
 
                 match completed {
@@ -305,9 +299,8 @@ async fn lookup_hedged(
     }
 }
 
-fn shuffle_addrs(addrs: &Arc<Vec<SocketAddr>>) -> Addrs {
-    let mut indices: Vec<usize> = (0..addrs.len()).collect();
-    fastrand::shuffle(&mut indices);
-    let addrs = addrs.clone();
-    Box::new(indices.into_iter().map(move |i| addrs[i]))
+fn shuffle_addrs(addrs: &[IpAddr]) -> Vec<IpAddr> {
+    let mut shuffled = addrs.to_vec();
+    fastrand::shuffle(&mut shuffled);
+    shuffled
 }

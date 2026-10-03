@@ -263,3 +263,14 @@ def test_kurtosis_streaming_matches_in_memory(
         .collect(engine="streaming")
     )
     assert_frame_equal(in_memory, streaming, rel_tol=1e-5)
+
+
+def test_spearman_corr_constant_column_29315() -> None:
+    df = pl.DataFrame({"col1": [0.0] * 245, "col2": list(range(245))})
+    assert math.isnan(df.select(pl.corr("col1", "col2", method="spearman")).item())
+
+
+@pytest.mark.parametrize("n", [117, 245])
+def test_pearson_corr_zero_column_29315(n: int) -> None:
+    df = pl.DataFrame({"col1": [0.0] * n, "col2": list(range(n))})
+    assert math.isnan(df.select(pl.corr("col1", "col2")).item())

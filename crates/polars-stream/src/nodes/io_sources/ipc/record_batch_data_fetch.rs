@@ -6,9 +6,9 @@ use polars_async::primitives::wait_group::WaitToken;
 use polars_buffer::Buffer;
 use polars_config::config;
 use polars_core::runtime::ASYNC;
-use polars_core::utils::arrow::io::ipc::read::{BlockReader, FileMetadata};
+use polars_core::utils::polars_arrow::io::ipc::read::{BlockReader, FileMetadata};
 use polars_error::constants::LENGTH_LIMIT_MSG;
-use polars_error::{PolarsResult, polars_err};
+use polars_error::{PolarsResult, polars_ensure, polars_err};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_utils::IdxSize;
@@ -24,6 +24,8 @@ pub(super) struct RecordBatchData {
     pub(super) record_batch_idx: usize,
     pub(super) num_rows: IdxSize,
     pub(super) row_offset: Option<IdxSize>,
+    /// Rows within the pre-slice, relative to the record batch. `None` for all rows.
+    pub(super) slice: Option<(usize, usize)>,
 }
 
 pub(super) struct RecordBatchDataFetcher {
@@ -67,11 +69,17 @@ impl RecordBatchDataFetcher {
         } = self;
 
         let global_slice = pre_slice.clone().map(Range::<usize>::from);
+
+        polars_ensure!(
+            global_slice.is_none() || record_batch_cum_len.is_some(),
+            ComputeError: "IPC pre-slice requires record batch lengths"
+        );
         let mut rb_fetch_count: u64 = 0;
 
         for record_batch_idx in 0..file_metadata.blocks.len() {
             let mut num_rows_this_rb: Option<IdxSize> = None;
             let mut row_offset: Option<IdxSize> = None;
+            let mut slice: Option<(usize, usize)> = None;
 
             if let Some(record_batch_cum_len) = record_batch_cum_len.as_deref() {
                 row_offset = Some(
@@ -89,7 +97,7 @@ impl RecordBatchDataFetcher {
                         global_slice,
                     ) {
                         SplitSlicePosition::Before => continue,
-                        SplitSlicePosition::Overlapping(_, _) => {},
+                        SplitSlicePosition::Overlapping(offset, len) => slice = Some((offset, len)),
                         SplitSlicePosition::After => break,
                     }
                 }
@@ -175,6 +183,7 @@ impl RecordBatchDataFetcher {
                     record_batch_idx,
                     num_rows,
                     row_offset,
+                    slice,
                 })
             });
 

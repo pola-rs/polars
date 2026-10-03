@@ -89,7 +89,9 @@ impl IR {
                 output_schema: _,
                 scan_type,
                 unified_scan_args,
+                maintain_order,
             } => {
+                maintain_order.hash(state);
                 // We don't have to traverse the schema, hive partitions etc. as they are derivative
                 // from the paths.
                 scan_type.hash(state);
@@ -183,6 +185,21 @@ impl IR {
                 hash_exprs(exprs, state);
                 options.hash(state);
             },
+            IR::Window {
+                input: _,
+                partition_by,
+                order_by,
+                exprs,
+                schema: _,
+                maintain_order,
+                ordered_eval,
+            } => {
+                partition_by.hash(state);
+                order_by.hash(state);
+                hash_exprs(exprs, state);
+                maintain_order.hash(state);
+                ordered_eval.hash(state);
+            },
             IR::Distinct { input: _, options } => {
                 options.hash(state);
             },
@@ -244,6 +261,21 @@ impl IR {
                 UnoptimizedOperation::DynamicSlice { output_name } => {
                     output_name.hash(state);
                 },
+            },
+            IR::Resolver {
+                resolver,
+                resolver_schema: _,
+                projection,
+                slice,
+                filters,
+                filter_drop_columns_idx: _,
+                resolved_dsl: _,
+                resolved_ir: _,
+            } => {
+                resolver.hash(state);
+                projection.hash(state);
+                slice.hash(state);
+                hash_exprs(filters, state);
             },
             IR::Invalid => unreachable!(),
         }

@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 use std::ops::RangeInclusive;
 
-use arrow::io::write_owned::WriteBytesOwned;
+use polars_arrow::io::write_owned::WriteBytesOwned;
 use polars_buffer::Buffer;
 
 #[derive(Debug, Clone)]

@@ -8,6 +8,7 @@ use crate::error::PyPolarsErr;
 use crate::interop;
 use crate::interop::arrow::to_py::series_to_stream;
 use crate::prelude::*;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PySeries {
@@ -163,6 +164,10 @@ impl PySeries {
                 DataType::BinaryOffset => {
                     unreachable!()
                 },
+                DataType::Map(_, _) => {
+                    let ca = series.map().map_err(PyPolarsErr::from)?;
+                    PyList::new(py, ca.any_value_iter().map(Wrap))?
+                },
                 DataType::Extension(_, _) => {
                     return to_list_recursive(py, series.ext().unwrap().storage());
                 },
@@ -179,12 +184,18 @@ impl PySeries {
         self.rechunk(py, true)?;
         let pyarrow = py.import("pyarrow")?;
 
-        let s = self.series.read();
-        interop::arrow::to_py::to_py_array(
-            s.to_arrow(0, compat_level.0),
-            &s.field().to_arrow(compat_level.0),
-            &pyarrow,
-        )
+        // Export out of the lock: `to_py_array` calls into Python, and holding the read
+        // lock across that lets any thread blocking on the write lock (which it does while
+        // holding the GIL) deadlock against us.
+        let (array, field) = py.enter_polars_ok(|| {
+            let s = self.series.read();
+            (
+                s.to_arrow(0, compat_level.0),
+                s.field().to_arrow(compat_level.0),
+            )
+        })?;
+
+        interop::arrow::to_py::to_py_array(array, &field, &pyarrow)
     }
 
     #[allow(unused_variables)]

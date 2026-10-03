@@ -25,6 +25,8 @@ mod from;
 pub mod function_expr;
 pub mod functions;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
 mod match_to_schema;
 #[cfg(feature = "meta")]
 mod meta;
@@ -62,12 +64,16 @@ pub use extension::*;
 pub use function_expr::*;
 pub use join::JoinCondition;
 pub use list::*;
+#[cfg(feature = "dtype-map")]
+pub use map::*;
 pub use match_to_schema::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
 pub use name::*;
 pub use options::*;
 pub use plan::*;
+#[cfg(feature = "approx_quantile")]
+pub use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
@@ -83,6 +89,7 @@ pub use struct_::*;
 pub use udf::UserDefinedFunction;
 mod file_scan;
 pub use file_scan::*;
+pub mod dsl_resolver;
 use functions::lit;
 pub use scan_sources::{ScanSource, ScanSourceIter, ScanSourceRef, ScanSources};
 
@@ -637,6 +644,11 @@ impl Expr {
         self.map_ternary(FunctionExpr::ShiftAndFill, n.into(), fill_value.into())
     }
 
+    /// Single-input version of [`functions::pipe_with_dtype`].
+    pub fn pipe_with_dtype(self, callback: PlanCallback<(Vec<Expr>, Vec<DataType>), Expr>) -> Self {
+        functions::pipe_with_dtype([self], callback)
+    }
+
     /// Cumulatively count values from 0 to len.
     #[cfg(feature = "cum_agg")]
     pub fn cumulative_eval(self, evaluation: Expr, min_samples: usize) -> Self {
@@ -843,15 +855,23 @@ impl Expr {
             if e.is_empty() {
                 return None;
             }
-            let e = if e.len() == 1 {
-                Arc::new(e[0].clone().into())
-            } else {
-                feature_gated!["dtype-struct", {
-                    let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
-                    Arc::new(functions::as_struct(e))
-                }]
-            };
-            Some((e, options))
+            if e.len() == 1 {
+                return Some((Arc::new(e[0].clone().into()), options));
+            }
+            // Row-encode the keys so the sort options apply to every key.
+            let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
+            let encoded = Expr::n_ary(
+                FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
+                    descending: Some(vec![options.descending]),
+                    nulls_last: Some(vec![options.nulls_last]),
+                    broadcast_nulls: None,
+                }),
+                e,
+            );
+            Some((
+                Arc::new(encoded),
+                SortOptions::default().with_maintain_order(options.maintain_order),
+            ))
         });
 
         Ok(Expr::Over {
@@ -975,6 +995,25 @@ impl Expr {
     #[cfg(feature = "approx_unique")]
     pub fn approx_n_unique(self) -> Self {
         self.map_unary(FunctionExpr::ApproxNUnique)
+    }
+
+    /// Get the approximate quantile value.
+    #[cfg(feature = "approx_quantile")]
+    pub fn approx_quantile<E: Into<Expr>>(
+        self,
+        quantile: E,
+        error: f64,
+        use_formal_bound: bool,
+        method: ApproxQuantileMethod,
+    ) -> Self {
+        self.map_binary(
+            FunctionExpr::ApproxQuantile {
+                method,
+                error,
+                use_formal_bound,
+            },
+            quantile.into(),
+        )
     }
 
     /// Bitwise "and" operation.
@@ -1414,6 +1453,12 @@ impl Expr {
         })
     }
 
+    #[cfg(feature = "cutqcut")]
+    /// Assign each value to a bin.
+    pub fn bin(self, options: BinOptions) -> Expr {
+        self.map_unary(FunctionExpr::Bin(options))
+    }
+
     #[cfg(feature = "rle")]
     /// Get the lengths of runs of identical values.
     pub fn rle(self) -> Expr {
@@ -1594,6 +1639,18 @@ impl Expr {
     }
 
     #[cfg(feature = "log")]
+    /// Compute the error function of all elements in the input array.
+    pub fn erf(self) -> Self {
+        self.map_unary(FunctionExpr::Erf)
+    }
+
+    #[cfg(feature = "log")]
+    /// Compute the complementary error function of all elements in the input array.
+    pub fn erfc(self) -> Self {
+        self.map_unary(FunctionExpr::Erfc)
+    }
+
+    #[cfg(feature = "log")]
     /// Compute the entropy as `-sum(pk * log(pk))`.
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
@@ -1680,6 +1737,14 @@ impl Expr {
     #[cfg(feature = "dtype-extension")]
     pub fn ext(self) -> extension::ExtensionNameSpace {
         extension::ExtensionNameSpace(self)
+    }
+
+    /// Get the [`map::MapNameSpace`].
+    ///
+    /// Named `map_` because [`Expr::map`] is the elementwise UDF entry point.
+    #[cfg(feature = "dtype-map")]
+    pub fn map_(self) -> map::MapNameSpace {
+        map::MapNameSpace(self)
     }
 
     /// Get the [`struct_::StructNameSpace`].

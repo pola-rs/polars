@@ -48,6 +48,7 @@ pub struct Buffer<T> {
 }
 
 impl<T> Clone for Buffer<T> {
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self {
             storage: self.storage.clone(),

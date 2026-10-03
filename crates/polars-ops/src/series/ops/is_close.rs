@@ -1,8 +1,8 @@
 use std::cmp::max_by;
 
-use arrow::array::BooleanArray;
-use arrow::compute::utils::combine_validities_and;
 use num_traits::AsPrimitive;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_core::prelude::arity::apply_binary_kernel_broadcast;
 use polars_core::prelude::*;
 

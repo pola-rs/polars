@@ -18,12 +18,14 @@ use std::cmp::Ordering;
 #[cfg(feature = "is_in")]
 use polars_core::prelude::{AnyValue, Series};
 use polars_core::scalar::Scalar;
+use polars_core::schema::Schema;
 use polars_utils::aliases::{InitHashMaps, PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::properties::ExprPushdownGroup;
 use super::{AExpr, IRBooleanFunction, IRFunctionExpr, LiteralValue, MintermIter, Operator};
+use crate::plans::iterator::ArenaExprIter;
 #[cfg(feature = "is_between")]
 use crate::prelude::ClosedInterval;
 
@@ -72,6 +74,34 @@ enum Nullability {
     Unconstrained,
     Null,
     NonNull,
+}
+
+// Whether the comparisons in `node` order their column the way they order the
+// literals it is compared against. A categorical or an enum orders by its
+// categories instead, so nothing here may reason about its bounds. A column that
+// is not in `schema` is treated the same way. So is an `is_in` that doesn't
+// compare in its column's dtype, such as strings searched for an enum.
+fn compares_in_literal_order(node: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> bool {
+    expr_arena.iter(node).all(|(_, ae)| match ae {
+        AExpr::Column(name) => schema
+            .get(name)
+            .is_some_and(|dtype| !dtype.contains_categoricals() && !dtype.contains_enums()),
+        #[cfg(feature = "is_in")]
+        AExpr::Function {
+            function: function @ IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
+            input,
+            ..
+        } => match (
+            expr_arena.get(input[0].node()),
+            expr_arena.get(input[1].node()),
+        ) {
+            (AExpr::Column(name), AExpr::Literal(lv)) => schema.get(name).is_some_and(|dtype| {
+                function.membership_compares_in_needle_dtype(dtype, &lv.get_datatype())
+            }),
+            _ => true,
+        },
+        _ => true,
+    })
 }
 
 // Orders two scalars; incomparable pairs give `None`, so we never declare a
@@ -140,6 +170,36 @@ impl ColumnConstraints {
                 },
             },
         }
+    }
+
+    // Keep the wider bound, dropping it when `other` has none or the values cannot be
+    // ordered. `wider` is the other-vs-existing ordering that means the other bound
+    // wins (`Less` lower, `Greater` upper).
+    fn widen_slot(
+        slot: &mut Option<(Scalar, bool)>,
+        other: &Option<(Scalar, bool)>,
+        wider: Ordering,
+    ) {
+        let (Some((value, inclusive)), Some((other_value, other_inclusive))) = (&*slot, other)
+        else {
+            *slot = None;
+            return;
+        };
+        match scalar_cmp(other_value, value) {
+            Some(ord) if ord == wider => *slot = Some((other_value.clone(), *other_inclusive)),
+            // Same value: the inclusive bound is the wider of the two.
+            Some(Ordering::Equal) => *slot = Some((value.clone(), *inclusive || *other_inclusive)),
+            Some(_) => {},
+            None => *slot = None,
+        }
+    }
+
+    // Loosens the bounds to also admit everything `other` admits. Returns whether a
+    // bound is left.
+    fn widen(&mut self, other: &Self) -> bool {
+        Self::widen_slot(&mut self.lower, &other.lower, Ordering::Less);
+        Self::widen_slot(&mut self.upper, &other.upper, Ordering::Greater);
+        self.lower.is_some() || self.upper.is_some()
     }
 
     fn add_lower(&mut self, value: Scalar, inclusive: bool) -> bool {
@@ -394,16 +454,20 @@ impl ColumnConstraints {
     }
 }
 
-/// Rewrites `predicate`'s `AND` chain to a tighter equivalent, or `None` if
-/// nothing changes. Either collapses to `Literal(false)` when the comparisons
-/// can't all hold (letting the filter become an empty scan), or merges redundant
-/// per-column comparisons into the tightest set (`a >= 1 AND a >= 5` to `a >= 5`,
-/// `a >= 3 AND a != 3` to `a > 3`).
-pub(crate) fn merge_filter_constraints(
-    predicate: Node,
-    maintain_errors: bool,
-    expr_arena: &mut Arena<AExpr>,
-) -> Option<Node> {
+// One `AND` chain modeled per column.
+struct ConstraintModel {
+    constraints: PlIndexMap<PlSmallStr, ColumnConstraints>,
+    // Conjuncts the model does not describe, kept for a rebuild.
+    opaque: Vec<Node>,
+    num_bound_conjuncts: usize,
+    normalized: bool,
+    propagated: bool,
+    dropped_equality: bool,
+    unsat: bool,
+}
+
+// Runs stages 1 to 3 of the module docs over `predicate`.
+fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> ConstraintModel {
     // Collect bounds per column; unmodeled conjuncts kept aside, `col == col`
     // routed to `edges` for cross-column propagation. Stop early once a column is
     // impossible (the whole filter is then false).
@@ -415,6 +479,13 @@ pub(crate) fn merge_filter_constraints(
     let mut unsat = false;
 
     for conjunct in MintermIter::new(predicate, expr_arena) {
+        // An `OR` is left opaque.
+        if expr_arena.get(conjunct).is_or()
+            || !compares_in_literal_order(conjunct, schema, expr_arena)
+        {
+            opaque.push(conjunct);
+            continue;
+        }
         match classify_into_constraints(expr_arena.get(conjunct), expr_arena, &mut constraints) {
             Classification::Unsat => {
                 unsat = true;
@@ -463,6 +534,126 @@ pub(crate) fn merge_filter_constraints(
             cc.unsat
         });
     }
+
+    ConstraintModel {
+        constraints,
+        opaque,
+        num_bound_conjuncts,
+        normalized,
+        propagated,
+        dropped_equality,
+        unsat,
+    }
+}
+
+/// The value constraints of one column in an `AND` chain, merged over its
+/// conjuncts.
+pub(crate) struct ColumnBounds {
+    pub name: PlSmallStr,
+    /// `bool` = inclusive.
+    pub lower: Option<(Scalar, bool)>,
+    pub upper: Option<(Scalar, bool)>,
+    /// `!= value` conjuncts left after merging with the bounds.
+    pub excluded: Vec<Scalar>,
+    /// Values every `is_in` on the column allows.
+    pub allowed: Option<Vec<Scalar>>,
+}
+
+/// `predicate`'s `AND` chain split into per-column constraints and the conjuncts
+/// they do not describe.
+pub(crate) struct AndChainBounds {
+    /// The conjuncts cannot all hold.
+    pub unsat: bool,
+    pub columns: Vec<ColumnBounds>,
+    pub other: Vec<Node>,
+}
+
+pub(crate) fn and_chain_bounds(
+    predicate: Node,
+    schema: &Schema,
+    expr_arena: &Arena<AExpr>,
+) -> AndChainBounds {
+    let model = model_and_chain(predicate, schema, expr_arena);
+    let other = model
+        .opaque
+        .iter()
+        .copied()
+        .filter(|&node| !is_in_allowed_set(node, &model.constraints, expr_arena))
+        .collect();
+    let columns = model
+        .constraints
+        .into_iter()
+        .filter(|(_, cc)| {
+            cc.lower.is_some()
+                || cc.upper.is_some()
+                || !cc.excluded.is_empty()
+                || cc.allowed.is_some()
+        })
+        .map(|(name, cc)| ColumnBounds {
+            name,
+            lower: cc.lower,
+            upper: cc.upper,
+            excluded: cc.excluded.into_iter().collect(),
+            allowed: cc.allowed.map(|allowed| allowed.into_iter().collect()),
+        })
+        .collect();
+    AndChainBounds {
+        unsat: model.unsat,
+        columns,
+        other,
+    }
+}
+
+// Whether `node` is an `is_in` whose haystack went into its column's allowed set.
+#[cfg(feature = "is_in")]
+fn is_in_allowed_set(
+    node: Node,
+    constraints: &PlIndexMap<PlSmallStr, ColumnConstraints>,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    let AExpr::Function {
+        input,
+        function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
+        ..
+    } = expr_arena.get(node)
+    else {
+        return false;
+    };
+    as_column(expr_arena.get(input[0].node()))
+        .and_then(|name| constraints.get(&name))
+        .is_some_and(|cc| cc.allowed.is_some())
+        && value_set_series(expr_arena.get(input[1].node())).is_some()
+}
+
+#[cfg(not(feature = "is_in"))]
+fn is_in_allowed_set(
+    _node: Node,
+    _constraints: &PlIndexMap<PlSmallStr, ColumnConstraints>,
+    _expr_arena: &Arena<AExpr>,
+) -> bool {
+    false
+}
+
+/// Rewrites `predicate`'s `AND` chain to a tighter equivalent, or `None` if
+/// nothing changes. Either collapses to `Literal(false)` when the comparisons
+/// can't all hold (letting the filter become an empty scan), or merges redundant
+/// per-column comparisons into the tightest set (`a >= 1 AND a >= 5` to `a >= 5`,
+/// `a >= 3 AND a != 3` to `a > 3`).
+pub(crate) fn merge_filter_constraints(
+    predicate: Node,
+    schema: &Schema,
+    maintain_errors: bool,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<Node> {
+    let ConstraintModel {
+        constraints,
+        mut opaque,
+        num_bound_conjuncts,
+        normalized,
+        propagated,
+        dropped_equality,
+        unsat,
+    } = model_and_chain(predicate, schema, expr_arena);
 
     if unsat {
         // Collapsing to `false` drops the filter, so an expression that would have
@@ -583,7 +774,8 @@ fn classify_into_constraints(
                 },
                 // Record the haystack as an allowed-set for contradiction detection
                 // only; keep the `is_in` node (we don't rewrite it, its null handling
-                // is subtle).
+                // is subtle). `compares_in_literal_order` admits only haystacks of the
+                // column's values.
                 #[cfg(feature = "is_in")]
                 IRBooleanFunction::IsIn { .. } => {
                     if let Some(col_name) = as_column(expr_arena.get(input[0].node())) {
@@ -921,13 +1113,25 @@ fn list_inner(av: &AnyValue) -> Option<Series> {
     }
 }
 
-// Extracts an `is_in` haystack as scalars. The haystack is one list of values,
-// wrapped either as a `Scalar` holding a `List` / `Array` (DSL `is_in([..])`) or a
-// length-1 `Series` of that one list (SQL `IN (..)`); both unwrap to the inner
-// series whose elements are the values. Bails on other shapes, an oversized
-// haystack, or a null member.
+// An `is_in` haystack as scalars.
 #[cfg(feature = "is_in")]
 fn as_value_set(ae: &AExpr) -> Option<Vec<Scalar>> {
+    let values = value_set_series(ae)?;
+    let dtype = values.dtype();
+    Some(
+        values
+            .iter()
+            .map(|av| Scalar::new(dtype.clone(), av.into_static()))
+            .collect(),
+    )
+}
+
+// An `is_in` haystack. The haystack is one list of values, wrapped either as a
+// `Scalar` holding a `List` / `Array` (DSL `is_in([..])`) or a length-1 `Series` of
+// that one list (SQL `IN (..)`); both unwrap to the inner series whose elements are
+// the values. Bails on other shapes, an oversized haystack, or a null member.
+#[cfg(feature = "is_in")]
+fn value_set_series(ae: &AExpr) -> Option<Series> {
     let AExpr::Literal(lit) = ae else {
         return None;
     };
@@ -936,20 +1140,7 @@ fn as_value_set(ae: &AExpr) -> Option<Vec<Scalar>> {
         LiteralValue::Series(s) if s.len() == 1 => list_inner(&s.get(0).ok()?)?,
         _ => return None,
     };
-
-    if values.len() > MAX_IS_IN_VALUES {
-        return None;
-    }
-
-    let dtype = values.dtype();
-    let mut scalars = Vec::with_capacity(values.len());
-    for av in values.iter() {
-        if av.is_null() {
-            return None;
-        }
-        scalars.push(Scalar::new(dtype.clone(), av.into_static()));
-    }
-    Some(scalars)
+    (values.len() <= MAX_IS_IN_VALUES && !values.has_nulls()).then_some(values)
 }
 
 // Collects the tightest comparisons for one column as borrowed `(name, op, value)`.
@@ -1011,4 +1202,98 @@ fn fold_and(nodes: Vec<Node>, expr_arena: &mut Arena<AExpr>) -> Node {
         });
     }
     acc
+}
+
+/// Comparisons that every predicate in `predicates` implies.
+///
+/// Each predicate is read as an `AND` chain of `col op lit` comparisons; a column
+/// bounded in all of them contributes the widest of those bounds. Any row a
+/// predicate keeps passes all the returned comparisons, so they may be applied
+/// below those filters.
+///
+/// Only bounds widen; `!=`, `is_in` and null checks are dropped. Returned one
+/// comparison per node, as pushdown moves a conjunct only when it is its own
+/// filter. Empty when nothing survives.
+///
+/// `schema` is the schema the predicates are evaluated against.
+pub(crate) fn widen_over_predicates(
+    predicates: &[Node],
+    schema: &Schema,
+    maintain_errors: bool,
+    expr_arena: &mut Arena<AExpr>,
+) -> Vec<Node> {
+    let mut widened: Option<PlIndexMap<PlSmallStr, ColumnConstraints>> = None;
+
+    for &predicate in predicates {
+        let bounds = match predicate_bounds(predicate, schema, maintain_errors, expr_arena) {
+            PredicateBounds::Blocked => return Vec::new(),
+            // Keeps no rows, so it asks nothing of the result.
+            PredicateBounds::Unsat => continue,
+            PredicateBounds::Bounds(bounds) => bounds,
+        };
+        match &mut widened {
+            None => widened = Some(bounds),
+            Some(widened) => {
+                widened.retain(|name, cc| bounds.get(name).is_some_and(|other| cc.widen(other)))
+            },
+        }
+        if widened.as_ref().is_some_and(PlIndexMap::is_empty) {
+            return Vec::new();
+        }
+    }
+
+    // Every predicate was unsatisfiable, so there is nothing to widen over.
+    let Some(widened) = widened else {
+        return Vec::new();
+    };
+    let mut comparisons: Vec<(&PlSmallStr, Operator, &Scalar)> = Vec::new();
+    for (name, cc) in &widened {
+        collect_column_comparisons(name, cc, &mut comparisons);
+    }
+    comparisons
+        .into_iter()
+        .map(|(name, op, value)| comparison_node(name, op, value.clone(), expr_arena))
+        .collect()
+}
+
+enum PredicateBounds {
+    // The predicate does not decide row by row: one reading its column as a whole
+    // sees a different column once rows are dropped beneath it, so no bound
+    // describes the rows it keeps.
+    Blocked,
+    Unsat,
+    Bounds(PlIndexMap<PlSmallStr, ColumnConstraints>),
+}
+
+// The bounds one predicate places on the columns it constrains.
+fn predicate_bounds(
+    predicate: Node,
+    schema: &Schema,
+    maintain_errors: bool,
+    expr_arena: &Arena<AExpr>,
+) -> PredicateBounds {
+    let mut group = ExprPushdownGroup::Pushable;
+    group.update_with_expr_rec(expr_arena.get(predicate), expr_arena, None);
+    if group.blocks_pushdown(maintain_errors) {
+        return PredicateBounds::Blocked;
+    }
+
+    let model = model_and_chain(predicate, schema, expr_arena);
+    if model.unsat {
+        return PredicateBounds::Unsat;
+    }
+    let mut constraints = model.constraints;
+    // Only bounds widen; drop the rest.
+    constraints.retain(|_, cc| {
+        if cc.lower.is_none() && cc.upper.is_none() {
+            return false;
+        }
+        *cc = ColumnConstraints {
+            lower: cc.lower.take(),
+            upper: cc.upper.take(),
+            ..Default::default()
+        };
+        true
+    });
+    PredicateBounds::Bounds(constraints)
 }

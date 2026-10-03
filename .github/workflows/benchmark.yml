@@ -22,8 +22,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  SCCACHE_GHA_ENABLED: 'true'
-  RUSTC_WRAPPER: sccache
   RUST_BACKTRACE: 1
 
 jobs:
@@ -66,12 +64,11 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          workspaces: py-polars
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
-
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.9
+          # This job builds with `-C target-cpu=native`, which the cache key does
+          # not capture, so reusing artifacts across runner CPUs risks SIGILL and
+          # makes timings incomparable; cache the registry only.
+          cache-targets: false
 
       - name: Build Polars release build
         working-directory: py-polars
@@ -95,23 +92,26 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           script: |
+              const marker = '<!-- polars-wheel-size-comment -->';
               const currentSize = process.env.LIB_SIZE || 'Unknown';
 
               // Convert to MB
               const currentSizeMB = currentSize !== 'Unknown' ? (currentSize / 1024 / 1024).toFixed(4) : 'Unknown';
 
-              let commentBody = `The uncompressed lib size after this PR is **${currentSizeMB} MB**.`;
+              const sha = context.payload.pull_request.head.sha;
+              const shortSha = sha.slice(0, 7);
+              const commitUrl = `${context.payload.repository.html_url}/commit/${sha}`;
+              const commentBody = `${marker}\nThe uncompressed lib size after this PR is **${currentSizeMB} MB** (at [\`${shortSha}\`](${commitUrl})).`;
 
-              const { data: comments } = await github.rest.issues.listComments({
+              const comments = await github.paginate(github.rest.issues.listComments, {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
+                per_page: 100,
               });
 
-              // Look for an existing comment
-              const existingComment = comments.find(comment =>
-                comment.body.includes('The previous uncompressed lib size was')
-              );
+              // Look for the existing comment by its hidden marker
+              const existingComment = comments.find(comment => comment.body?.includes(marker));
 
               if (existingComment) {
                 // Update the existing comment
@@ -134,14 +134,7 @@ jobs:
 
       - name: Run non-benchmark tests
         working-directory: py-polars
-        # TODO: Fix and re-enable may_fail_auto_streaming tests
-        run: pytest -m 'not may_fail_auto_streaming and not benchmark and not debug' -n auto
+        run: pytest -m 'not benchmark and not debug' -n auto
         env:
           POLARS_TIMEOUT_MS: 60000
 
-      - name: Run non-benchmark tests on new streaming engine
-        working-directory: py-polars
-        env:
-          POLARS_AUTO_STREAMING: 1
-          POLARS_TIMEOUT_MS: 60000
-        run: pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not debug and not ci_only"

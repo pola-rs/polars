@@ -36,11 +36,14 @@ pub mod reduce;
 pub mod repeat;
 pub mod rle;
 pub mod rle_id;
+pub mod rolling_fixed_window;
 #[cfg(feature = "dynamic_group_by")]
 pub mod rolling_group_by;
+pub mod scalar_window;
 pub mod select;
 pub mod shift;
 pub mod simple_projection;
+pub mod sort;
 pub mod sorted_group_by;
 pub mod sorted_unique;
 pub mod streaming_slice;
@@ -52,6 +55,7 @@ pub mod streaming_slice;
 pub mod strptime_infer;
 pub mod top_k;
 pub mod unordered_union;
+pub mod window;
 pub mod with_row_index;
 pub mod zip;
 
@@ -72,7 +76,6 @@ mod compute_node_prelude {
 use compute_node_prelude::*;
 
 use crate::execute::StreamingExecutionState;
-use crate::metrics::NodeMetricsRegistrator;
 
 pub trait ComputeNode: Send {
     /// The name of this node.
@@ -112,8 +115,6 @@ pub trait ComputeNode: Send {
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
-
-    fn set_phase_metrics_registrator(&mut self, _metrics_builder: NodeMetricsRegistrator) {}
 
     /// Called once after the last execution phase to extract output from
     /// in-memory nodes.

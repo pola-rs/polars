@@ -110,6 +110,7 @@ bitflags! {
 }
 
 impl Default for SuperTypeFlags {
+    #[inline]
     fn default() -> Self {
         SuperTypeFlags::from_bits_truncate(0) | SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING
     }
@@ -430,6 +431,19 @@ pub fn get_supertype_with_options(
                 let st = get_supertype(inner_left, inner_right)?;
                 Some(Array(Box::new(st), *width_left))
             }
+            #[cfg(feature = "dtype-map")]
+            (Map(key_left, value_left), Map(key_right, value_right)) => {
+                // We forbid casting the key type, as it might collapse distinct keys into one.
+                if key_left != key_right
+                    && !key_left.is_nested_null()
+                    && !key_right.is_nested_null()
+                {
+                    return None;
+                }
+                let key = get_supertype(key_left, key_right)?;
+                let value = get_supertype(value_left, value_right)?;
+                Some(Map(Box::new(key), Box::new(value)))
+            }
             (List(inner), other) | (other, List(inner)) if options.allow_implode_list() => {
                 let st = get_supertype(inner, other)?;
                 Some(List(Box::new(st)))
@@ -461,7 +475,11 @@ pub fn get_supertype_with_options(
             }
             #[cfg(feature = "dtype-decimal")]
             (Decimal(p1, s1), Decimal(p2, s2)) => {
-                Some(Decimal((*p1).max(*p2), (*s1).max(*s2)))
+                // Keep all integer digits and the larger scale. Beyond precision 38 values
+                // that don't fit raise when cast.
+                let s = (*s1).max(*s2);
+                let p = ((p1 - s1).max(p2 - s2) + s).min(DEC128_MAX_PREC);
+                Some(Decimal(p, s))
             },
             #[cfg(all(feature = "dtype-decimal", feature = "dtype-f16"))]
             (Decimal(_, _), Float16) => Some(Float64),

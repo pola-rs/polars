@@ -9,7 +9,6 @@ mod dictionary_to;
 mod primitive_to;
 mod utf8_to;
 
-use arrow::bitmap::MutableBitmap;
 pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
@@ -18,14 +17,15 @@ pub use binview_to::{binview_to_fixed_binary, utf8view_to_utf8};
 pub use boolean_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use decimal_to::*;
+use polars_arrow::bitmap::MutableBitmap;
 pub mod temporal;
-use arrow::array::*;
-use arrow::datatypes::*;
-use arrow::match_integer_type;
-use arrow::offset::{Offset, Offsets};
 use binview_to::{binview_to_dictionary, utf8view_to_dictionary, view_to_binary};
 pub use binview_to::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use dictionary_to::*;
+use polars_arrow::array::*;
+use polars_arrow::datatypes::*;
+use polars_arrow::match_integer_type;
+use polars_arrow::offset::{Offset, Offsets};
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
@@ -555,6 +555,13 @@ pub fn cast(
                         It was removed in Polars 2.0. Use `str.to_date()` instead."
                     );
                 },
+                Time64(_) | Time32(_) => {
+                    polars_bail!(
+                        InvalidOperation:
+                        "casting from string to time is not supported.\n\
+                        It was removed in Polars 2.0. Use `str.to_time()` instead."
+                    );
+                },
                 #[cfg(feature = "dtype-decimal")]
                 Decimal(precision, scale) => {
                     Ok(binview_to_decimal(&arr.to_binview(), *precision, *scale).to_boxed())
@@ -991,11 +998,13 @@ pub fn cast(
         #[cfg(all(feature = "dtype-decimal", feature = "dtype-i128"))]
         (Decimal(_, _), Int128) => decimal_to_integer_dyn::<i128>(array),
         #[cfg(all(feature = "dtype-decimal", feature = "dtype-f16"))]
-        (Decimal(_, _), Float16) => decimal_to_float_dyn::<pf16>(array),
+        (Decimal(_, _), Float16) => decimal_to_float_dyn(array, |x, s| {
+            pf16::from(crate::decimal::dec128_to_f64(x, s))
+        }),
         #[cfg(feature = "dtype-decimal")]
-        (Decimal(_, _), Float32) => decimal_to_float_dyn::<f32>(array),
+        (Decimal(_, _), Float32) => decimal_to_float_dyn(array, crate::decimal::dec128_to_f32),
         #[cfg(feature = "dtype-decimal")]
-        (Decimal(_, _), Float64) => decimal_to_float_dyn::<f64>(array),
+        (Decimal(_, _), Float64) => decimal_to_float_dyn(array, crate::decimal::dec128_to_f64),
         #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), Decimal(to_p, to_s)) => decimal_to_decimal_dyn(array, *to_p, *to_s),
         // end numeric casts
@@ -1132,7 +1141,7 @@ fn from_to_binview(
 
 #[cfg(test)]
 mod tests {
-    use arrow::offset::OffsetsBuffer;
+    use polars_arrow::offset::OffsetsBuffer;
     use polars_error::PolarsError;
 
     use super::*;

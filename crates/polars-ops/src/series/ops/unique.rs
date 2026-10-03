@@ -157,6 +157,8 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
         DataType::List(..) => {
             unreachable!("row encoded")
         },
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(..) => unreachable!("row encoded"),
         #[cfg(feature = "object")]
         dt @ DataType::Object(..) => polars_bail!(opq = unique_counts, dt),
         dt @ DataType::Unknown(..) => polars_bail!(opq = unique_counts, dt),

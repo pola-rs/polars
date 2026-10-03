@@ -1,5 +1,5 @@
-use arrow::array::{Array, DictionaryArray, DictionaryKey};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::array::{Array, DictionaryArray, DictionaryKey};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 
 use super::TotalEqKernel;
 use crate::comparisons::dyn_array::{array_tot_eq_missing_kernel, array_tot_ne_missing_kernel};
@@ -65,11 +65,11 @@ impl<K: DictionaryKey> TotalEqKernel for DictionaryArray<K> {
         bitmap.freeze()
     }
 
-    fn tot_eq_kernel_broadcast(&self, _other: &Self::Scalar) -> arrow::bitmap::Bitmap {
+    fn tot_eq_kernel_broadcast(&self, _other: &Self::Scalar) -> polars_arrow::bitmap::Bitmap {
         todo!()
     }
 
-    fn tot_ne_kernel_broadcast(&self, _other: &Self::Scalar) -> arrow::bitmap::Bitmap {
+    fn tot_ne_kernel_broadcast(&self, _other: &Self::Scalar) -> polars_arrow::bitmap::Bitmap {
         todo!()
     }
 }

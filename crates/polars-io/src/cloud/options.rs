@@ -48,8 +48,9 @@ use crate::pl_async::with_concurrency_budget;
 
 #[cfg(feature = "aws")]
 fn to_io_err(err: reqwest::Error) -> PolarsError {
+    let kind = super::polars_object_store::io_error_kind_from_source(&err);
     PolarsError::IO {
-        error: Arc::new(std::io::Error::other(err)),
+        error: Arc::new(std::io::Error::new(kind, err)),
         msg: None,
     }
 }
@@ -736,6 +737,11 @@ impl CloudOptions {
             .with_url(url.to_string())
             .with_client_options({
                 let mut opts = super::get_client_options();
+                if url.scheme() == Some(CloudScheme::Http)
+                    && polars_config::config().http_skip_system_certificates()
+                {
+                    opts = opts.with_no_system_certificates(true);
+                }
                 if let Some(CloudConfig::Http { headers }) = &self.config {
                     opts = opts.with_default_headers(try_build_http_header_map_from_items_slice(
                         headers.as_slice(),

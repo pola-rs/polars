@@ -225,7 +225,11 @@ where
             // TODO @ cat-rework: remove after exposing to/from physical functions.
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(cats, _mapping) => {
-                polars_ensure!(self.dtype() == &cats.physical().dtype(), ComputeError: "cannot cast numeric types to 'Categorical'");
+                polars_ensure!(
+                    self.dtype() == &cats.physical().dtype(),
+                    ComputeError: "cannot cast `{}` to `Categorical`; only the physical type `{}` is supported",
+                    self.dtype(), cats.physical().dtype()
+                );
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
                     // SAFETY: we are guarded by the type system.
                     type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
@@ -294,6 +298,11 @@ impl ChunkCast for StringChunked {
                 let result = cast_chunks(&self.chunks, dtype, options)?;
                 let out = Series::try_from((self.name().clone(), result))?;
                 Ok(out)
+            },
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => {
+                let result = cast_chunks(&self.chunks, dtype, options)?;
+                Series::try_from((self.name().clone(), result))
             },
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(time_unit, time_zone) => match time_zone {
@@ -411,8 +420,6 @@ impl ChunkCast for BooleanChunked {
     }
 }
 
-/// We cannot cast anything to or from List/LargeList
-/// So this implementation casts the inner type
 impl ChunkCast for ListChunked {
     fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         let ca = self
@@ -482,6 +489,23 @@ impl ChunkCast for ListChunked {
                     ))
                 }
             },
+            #[cfg(feature = "dtype-map")]
+            Map(to_key, to_value) => {
+                let storage = if ca.inner_dtype().is_nested_null() {
+                    // Every row is empty, so there are no entry children to transform.
+                    ca.cast_with_options(&dtype.map_storage_dtype().unwrap(), options)?
+                } else {
+                    try_apply_map_entries(ca.as_ref(), |key, value| {
+                        Ok((
+                            key.cast_with_options(to_key, options)?,
+                            value.cast_with_options(to_value, options)?,
+                        ))
+                    })?
+                    .into_series()
+                };
+
+                Ok(MapChunked::try_from_storage(dtype.clone(), storage)?.into_series())
+            },
             _ => {
                 polars_bail!(
                     InvalidOperation: "cannot cast List type (inner: '{:?}', to: '{:?}')",
@@ -523,7 +547,7 @@ impl ChunkCast for ArrayChunked {
                     (old, new) if old == new => Ok(ca.into_owned().into_series()),
                     // TODO @ cat-rework: can we implement this now?
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, Categorical(_, _) | Enum(_, _)) if !matches!(dt, String) => {
+                    (dt, Categorical(_, _) | Enum(_, _)) if !matches!(dt, String | Null) => {
                         polars_bail!(InvalidOperation: "cannot cast Array inner type: '{:?}' to dtype: {:?}", dt, child_type)
                     },
                     _ => {

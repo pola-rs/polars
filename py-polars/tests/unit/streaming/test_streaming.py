@@ -85,10 +85,6 @@ def test_streaming_streamable_functions(
 @pytest.mark.slow
 @pytest.mark.may_fail_cloud  # reason: timing
 def test_cross_join_stack() -> None:
-    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
-    if morsel_size is not None and int(morsel_size) < 1000:
-        pytest.skip("test is too slow for small morsel sizes")
-
     a = pl.Series(np.arange(100_000)).to_frame().lazy()
     t0 = time.time()
     assert a.join(a, how="cross").head().collect(engine="streaming").shape == (5, 2)
@@ -408,16 +404,16 @@ def test_streaming_str_replace_scalar_pattern_26789(
     assert out.to_dict(as_series=False) == {"foo": ["A", "xyz 678 910t"]}
 
 
-def test_streaming_strptime_infer_datetime(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+def test_streaming_strptime_infer_datetime(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
     df = pl.DataFrame({"s": ["2020-01-01 00:00:00", "2021-06-15 12:30:00"]})
     result = df.lazy().select(pl.col("s").str.to_datetime()).collect(engine="streaming")
     expected = df.lazy().select(pl.col("s").str.to_datetime()).collect()
     assert_frame_equal(result, expected)
 
 
-def test_streaming_strptime_infer_date(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+def test_streaming_strptime_infer_date(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
     df = pl.DataFrame({"s": ["2020-01-01", "2021-06-15", "2022-12-31"]})
     result = df.lazy().select(pl.col("s").str.to_date()).collect(engine="streaming")
     expected = df.lazy().select(pl.col("s").str.to_date()).collect()
@@ -432,9 +428,9 @@ def test_streaming_strptime_infer_all_null() -> None:
 
 
 def test_streaming_strptime_infer_leading_nulls(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
     df = pl.DataFrame({"s": [None, None, "2020-01-01", "2021-06-15"]})
     result = df.lazy().select(pl.col("s").str.to_date()).collect(engine="streaming")
     expected = df.lazy().select(pl.col("s").str.to_date()).collect()

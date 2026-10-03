@@ -5,6 +5,8 @@ use super::*;
 use crate::reduce::any_all::{new_all_reduction, new_any_reduction};
 #[cfg(feature = "approx_unique")]
 use crate::reduce::approx_n_unique::new_approx_n_unique_reduction;
+#[cfg(feature = "approx_quantile")]
+use crate::reduce::approx_quantile::new_approx_quantile_sketch_reduction;
 #[cfg(feature = "bitwise")]
 use crate::reduce::bitwise::{
     new_bitwise_and_reduction, new_bitwise_or_reduction, new_bitwise_xor_reduction,
@@ -40,7 +42,10 @@ pub fn into_reduction(
     };
     let (gr, in_node) = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {
-            IRAggExpr::Sum(input) => (new_sum_reduction(get_dt(*input)?)?, *input),
+            IRAggExpr::Sum {
+                input,
+                null_on_empty,
+            } => (new_sum_reduction(get_dt(*input)?, *null_on_empty)?, *input),
             IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?)?, *input),
             IRAggExpr::Min {
                 propagate_nans,
@@ -128,6 +133,18 @@ pub fn into_reduction(
             assert!(inner_exprs.len() == 1);
             let input = inner_exprs[0].node();
             let out = new_approx_n_unique_reduction(get_dt(input)?)?;
+            (out, input)
+        },
+
+        #[cfg(feature = "approx_quantile")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::ApproxQuantileSketch { method, error },
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            let out = new_approx_quantile_sketch_reduction(get_dt(input)?, method.clone(), *error)?;
             (out, input)
         },
 
