@@ -174,6 +174,16 @@ def test_scalar_window_empty() -> None:
     assert_frame_equal(out, q.collect(engine="in-memory"))
 
 
+def test_scalar_window_logged_metrics(plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
+    plmonkeypatch.setenv("POLARS_LOG_METRICS", "1")
+    q = pl.LazyFrame({"k": [1, 1, 2], "x": [10, 20, 30]}).with_columns(
+        w=pl.col("x").sum().over("k")
+    )
+    capfd.readouterr()
+    q.collect(engine="streaming")
+    assert "scalar-window: tot(" in capfd.readouterr().err
+
+
 def test_scalar_window_stops_early(tmp_path: Path) -> None:
     q = _scan(_frame(), tmp_path).with_columns(w=pl.col("x").sum().over("k")).head(5)
     _assert_same(q)

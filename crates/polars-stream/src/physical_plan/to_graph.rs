@@ -617,7 +617,7 @@ fn to_graph_rec<'a>(
                 )?;
                 let input_key = to_graph_rec(input.node, ctx)?;
                 let num_pipelines = ctx.num_pipelines;
-                return Ok(ctx.add_node_with_metrics(
+                ctx.add_node_with_metrics(
                     |registry| {
                         nodes::scalar_window::ScalarWindowNode::new(
                             Arc::new(params),
@@ -626,51 +626,52 @@ fn to_graph_rec<'a>(
                         )
                     },
                     [(input_key, input.port)],
-                ));
+                )
+            } else {
+                let window_exprs = exprs
+                    .iter()
+                    .map(|e| {
+                        let expr = create_window_expr(
+                            e.node(),
+                            ctx.expr_arena,
+                            &input_schema,
+                            &mut ctx.expr_conversion_state,
+                        )?;
+                        PolarsResult::Ok((e.output_name().clone(), expr))
+                    })
+                    .try_collect_vec()?;
+                let mut read = PlHashSet::new();
+                for e in exprs {
+                    read.extend(aexpr_to_leaf_names_iter(e.node(), ctx.expr_arena).cloned());
+                }
+                let read_schema: Schema = input_schema
+                    .iter()
+                    .filter(|(name, _)| read.contains(*name))
+                    .map(|(name, dtype)| (name.clone(), dtype.clone()))
+                    .collect();
+                let params = nodes::window::WindowParams::new(
+                    partition_by.clone(),
+                    order_by.clone(),
+                    window_exprs,
+                    &input_schema,
+                    read_schema,
+                    output_schema,
+                    *ordered_eval,
+                    *maintain_order,
+                );
+                let input_key = to_graph_rec(input.node, ctx)?;
+                let num_pipelines = ctx.num_pipelines;
+                ctx.add_node_with_metrics(
+                    |registry| {
+                        nodes::window::WindowNode::new(
+                            Arc::new(params),
+                            num_pipelines,
+                            registry.task_metrics(),
+                        )
+                    },
+                    [(input_key, input.port)],
+                )
             }
-            let window_exprs = exprs
-                .iter()
-                .map(|e| {
-                    let expr = create_window_expr(
-                        e.node(),
-                        ctx.expr_arena,
-                        &input_schema,
-                        &mut ctx.expr_conversion_state,
-                    )?;
-                    PolarsResult::Ok((e.output_name().clone(), expr))
-                })
-                .try_collect_vec()?;
-            let mut read = PlHashSet::new();
-            for e in exprs {
-                read.extend(aexpr_to_leaf_names_iter(e.node(), ctx.expr_arena).cloned());
-            }
-            let read_schema: Schema = input_schema
-                .iter()
-                .filter(|(name, _)| read.contains(*name))
-                .map(|(name, dtype)| (name.clone(), dtype.clone()))
-                .collect();
-            let params = nodes::window::WindowParams::new(
-                partition_by.clone(),
-                order_by.clone(),
-                window_exprs,
-                &input_schema,
-                read_schema,
-                output_schema,
-                *ordered_eval,
-                *maintain_order,
-            );
-            let input_key = to_graph_rec(input.node, ctx)?;
-            let num_pipelines = ctx.num_pipelines;
-            ctx.add_node_with_metrics(
-                |registry| {
-                    nodes::window::WindowNode::new(
-                        Arc::new(params),
-                        num_pipelines,
-                        registry.task_metrics(),
-                    )
-                },
-                [(input_key, input.port)],
-            )
         },
 
         Map {
