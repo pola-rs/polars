@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["VERSION"],"macro":[["apply_method_all_arrow_series",1],["df",1]],"mod":["chunked_array","datatypes","docs","error","frame","functions","prelude","series","testing"]};

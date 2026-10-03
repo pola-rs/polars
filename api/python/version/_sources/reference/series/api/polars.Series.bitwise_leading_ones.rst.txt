@@ -1,0 +1,6 @@
+﻿polars.Series.bitwise\_leading\_ones
+====================================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.bitwise_leading_ones

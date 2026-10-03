@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.gather
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.gather

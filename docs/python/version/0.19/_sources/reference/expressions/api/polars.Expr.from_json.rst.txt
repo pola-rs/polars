@@ -1,0 +1,6 @@
+﻿polars.Expr.from\_json
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.from_json

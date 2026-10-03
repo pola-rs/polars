@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_object_array_getter","get_object_builder","get_object_converter","get_object_physical_type","register_object_builder","run_with_gil"],"struct":["ObjectRegistry"],"trait":["AnonymousObjectBuilder"],"type":["BuilderConstructor","ObjectArrayGetter","ObjectConverter","WithGIL"]};

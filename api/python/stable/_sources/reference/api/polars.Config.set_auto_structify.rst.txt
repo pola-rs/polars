@@ -1,0 +1,6 @@
+﻿polars.Config.set\_auto\_structify
+==================================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.set_auto_structify

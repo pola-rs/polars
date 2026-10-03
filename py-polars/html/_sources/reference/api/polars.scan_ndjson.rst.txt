@@ -1,0 +1,6 @@
+﻿polars.scan\_ndjson
+===================
+
+.. currentmodule:: polars
+
+.. autofunction:: scan_ndjson

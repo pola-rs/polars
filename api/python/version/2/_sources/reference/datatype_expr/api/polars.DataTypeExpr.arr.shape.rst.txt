@@ -1,0 +1,6 @@
+﻿polars.DataTypeExpr.arr.shape
+=============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: DataTypeExpr.arr.shape

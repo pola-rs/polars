@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["apply_predicate"],"struct":["BatchStats","ColumnStats"],"trait":["PhysicalIoExpr","StatsEvaluator"]};

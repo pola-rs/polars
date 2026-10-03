@@ -1,0 +1,6 @@
+﻿polars.Series.dt.round
+======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.dt.round

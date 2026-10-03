@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["count_rows","infer_schema"],"mod":["core"],"struct":["NDJsonWriterOptions"]};

@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.show\_graph
+============================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.show_graph

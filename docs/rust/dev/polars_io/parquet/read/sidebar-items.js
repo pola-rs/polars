@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ParallelStrategy"],"fn":["materialize_empty_df"],"struct":["BatchedParquetReader","ParquetAsyncReader","ParquetOptions","ParquetReader"]};
