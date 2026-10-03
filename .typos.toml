@@ -23,6 +23,8 @@ strat = "strat"
 striter = "striter"
 typ = "typ"
 aimd = "aimd"
+# `flate2` crate.
+flate = "flate"
 
 [default.extend-identifiers]
 AKS = "AKS"
@@ -52,3 +54,4 @@ NDJsonWriterStarter = "NDJsonWriterStarter"
 NDJsonWriterOptions = "NDJsonWriterOptions"
 opt_nd = "opt_nd"
 tpe = "tpe"
+lits = "lits"

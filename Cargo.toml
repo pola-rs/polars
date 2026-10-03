@@ -12,7 +12,41 @@ members = [
   "pyo3-polars/pyo3-polars",
   "pyo3-polars/pyo3-polars-derive",
 ]
-default-members = ["crates/*"]
+# `crates/polars-io-ext` holds separately released I/O plugins and is excluded from default builds.
+default-members = [
+  "crates/polars",
+  "crates/polars-arrow",
+  "crates/polars-async",
+  "crates/polars-buffer",
+  "crates/polars-compute",
+  "crates/polars-config",
+  "crates/polars-core",
+  "crates/polars-defs",
+  "crates/polars-descriptions",
+  "crates/polars-dtype",
+  "crates/polars-dylib",
+  "crates/polars-error",
+  "crates/polars-expr",
+  "crates/polars-ffi",
+  "crates/polars-io",
+  "crates/polars-io-ext-ffi",
+  "crates/polars-json",
+  "crates/polars-lazy",
+  "crates/polars-mem-engine",
+  "crates/polars-observer",
+  "crates/polars-ooc",
+  "crates/polars-ops",
+  "crates/polars-parquet",
+  "crates/polars-plan",
+  "crates/polars-python",
+  "crates/polars-row",
+  "crates/polars-schema",
+  "crates/polars-sql",
+  "crates/polars-stream",
+  "crates/polars-testing",
+  "crates/polars-time",
+  "crates/polars-utils",
+]
 
 [workspace.package]
 version = "0.55.1"
@@ -27,6 +61,7 @@ aho-corasick = "1.1"
 arboard = { version = "3.4.0", default-features = false }
 argminmax = { version = "0.6.3", default-features = false, features = ["float", "half"] }
 async-channel = { version = "2.3.1" }
+async-ffi = { version = "0.5.1" }
 async-trait = { version = "0.1.59" }
 atoi_simd = "0.18"
 atomic-waker = "1"
@@ -130,6 +165,7 @@ polars-error = { version = "0.55.1", path = "crates/polars-error", default-featu
 polars-expr = { version = "0.55.1", path = "crates/polars-expr", default-features = false }
 polars-ffi = { version = "0.55.1", path = "crates/polars-ffi", default-features = false }
 polars-io = { version = "0.55.1", path = "crates/polars-io", default-features = false }
+polars-io-ext-ffi = { version = "0.1.0", path = "crates/polars-io-ext-ffi" }
 polars-json = { version = "0.55.1", path = "crates/polars-json", default-features = false }
 polars-lazy = { version = "0.55.1", path = "crates/polars-lazy", default-features = false }
 polars-mem-engine = { version = "0.55.1", path = "crates/polars-mem-engine", default-features = false }

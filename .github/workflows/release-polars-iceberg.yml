@@ -1,0 +1,154 @@
+name: Release polars-iceberg
+
+# Releases the `polars-iceberg` I/O plugin (crates/polars-io-ext) to PyPI. The plugin is versioned
+# independently of Polars (version from crates/polars-io-ext/Cargo.toml) and built as an abi3 wheel,
+# so one wheel per target covers every supported Python version.
+
+on:
+  workflow_dispatch:
+    inputs:
+      # Latest commit to include with the release. If omitted, use the latest commit on the main branch.
+      sha:
+        description: Commit SHA
+        type: string
+      # Create the sdist and build the wheels, but do not publish to PyPI.
+      dry-run:
+        description: Dry run
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.10'
+  MANIFEST_PATH: crates/polars-io-ext/Cargo.toml
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  create-sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Create source distribution
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: >
+            --manifest-path ${{ env.MANIFEST_PATH }}
+            --out dist
+          maturin-version: 1.15.0
+
+      - name: Test sdist
+        run: |
+          pip install --force-reinstall --verbose dist/*.tar.gz
+          python -c 'import polars_iceberg'
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdist-polars-iceberg
+          path: dist/*.tar.gz
+
+  build-wheels:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # TODO: win-arm64 needs the manual toolchain setup from release-python.yml.
+        job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64]
+        include:
+          - job_config: linux-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - job_config: linux-arm64
+            os: linux-arm-large
+            target: aarch64-unknown-linux-gnu
+          - job_config: linux-musl-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - job_config: linux-musl-arm64
+            os: linux-arm-large
+            target: aarch64-unknown-linux-musl
+          - job_config: macos-x64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+          - job_config: macos-arm64
+            os: macos-15
+            target: aarch64-apple-darwin
+          - job_config: win-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          args: >
+            --profile ${{ inputs.dry-run == true && 'dev' || 'dist-release' }}
+            --manifest-path ${{ env.MANIFEST_PATH }}
+            --out dist
+          manylinux: auto
+          maturin-version: 1.15.0
+
+      - name: Test wheel
+        # musl wheels cannot be installed on the glibc runners.
+        if: endsWith(matrix.target, '-musl') == false
+        run: |
+          pip install --force-reinstall --verbose dist/*.whl
+          python -c 'import polars_iceberg'
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheel-polars-iceberg-${{ matrix.job_config }}
+          path: dist/*.whl
+
+  publish-to-pypi:
+    needs: [create-sdist, build-wheels]
+    environment:
+      name: release-polars-iceberg
+      url: https://pypi.org/project/polars-iceberg
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download sdist and wheels
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        if: inputs.dry-run == false
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+          verbose: true

@@ -1,0 +1,14 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "polars-iceberg"
+description = "Native Iceberg scan resolution plugin for Polars"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dynamic = ["version"]
+
+[tool.maturin]
+features = ["python", "iceberg"]
+module-name = "polars_iceberg"
