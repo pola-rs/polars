@@ -1736,10 +1736,10 @@ impl Column {
             .quantiles_reduce(quantiles, method)
     }
 
-    pub(crate) fn estimated_size(&self) -> usize {
+    pub(crate) fn estimated_size(&self, expanded: bool) -> usize {
         match self {
             Column::Series(s) => s.estimated_size(),
-            Column::Scalar(s) => s.estimated_size(),
+            Column::Scalar(s) => s.estimated_size(expanded),
         }
     }
 

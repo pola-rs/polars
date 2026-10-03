@@ -114,15 +114,18 @@ impl ScalarColumn {
             .unwrap_or_else(|| Self::_to_series(self.name, self.scalar, self.length))
     }
 
-    /// Estimated size of the materialized [`Series`], computed without materializing it.
+    /// Estimated size of the column, see [`Series::estimated_size`].
     ///
-    /// See [`Series::estimated_size`].
-    pub fn estimated_size(&self) -> usize {
+    /// If the column is not materialized and `expanded` is false, only the scalar value is
+    /// counted. Otherwise, this is the size of the materialized [`Series`], computed without
+    /// materializing it.
+    pub fn estimated_size(&self, expanded: bool) -> usize {
         if let Some(s) = self.materialized.get() {
             return s.estimated_size();
         }
-        estimated_repeated_size(self.dtype(), self.scalar.value(), self.length)
-            .unwrap_or_else(|| self.as_single_value_series().estimated_size() * self.length)
+        let length = if expanded { self.length } else { 1 };
+        estimated_repeated_size(self.dtype(), self.scalar.value(), length)
+            .unwrap_or_else(|| self.as_single_value_series().estimated_size() * length)
     }
 
     /// Take the [`ScalarColumn`] as a series with a single value.
@@ -508,5 +511,53 @@ mod serde_impl {
             SerializeWrap::deserialize(deserializer)
                 .and_then(|x| ScalarColumn::try_from(x).map_err(D::Error::custom))
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::prelude::*;
+
+    fn check_estimated_size(s: Series) {
+        let scalar = Scalar::new(s.dtype().clone(), s.get(0).unwrap().into_static());
+        let unit_size = ScalarColumn::new(s.name().clone(), scalar.clone(), 1)
+            .to_series()
+            .estimated_size();
+        let sc = ScalarColumn::new(s.name().clone(), scalar, 1001);
+        assert_eq!(sc.estimated_size(true), sc.to_series().estimated_size());
+        assert_eq!(sc.estimated_size(false), unit_size);
+
+        let materialized_size = sc.as_materialized_series().estimated_size();
+        assert_eq!(sc.estimated_size(false), materialized_size);
+    }
+
+    #[test]
+    fn test_estimated_size() -> PolarsResult<()> {
+        let list = Series::new("a".into(), [Series::new("".into(), [Some(1i32), None])]);
+        let mut series = vec![
+            Series::new("a".into(), [1i64]),
+            Series::new("a".into(), [true]),
+            Series::new("a".into(), ["a".repeat(20)]),
+            Series::new("a".into(), [b"ab".as_slice()]),
+            list.clone(),
+        ];
+        #[cfg(feature = "dtype-array")]
+        series.push(list.cast(&DataType::Array(Box::new(DataType::Int32), 2))?);
+        #[cfg(feature = "dtype-struct")]
+        series.push(
+            StructChunked::from_series(
+                "a".into(),
+                1,
+                [Series::new("x".into(), [1i8]), list.clone()].iter(),
+            )?
+            .into_series(),
+        );
+
+        for s in series {
+            check_estimated_size(Series::full_null("a".into(), 1, s.dtype()));
+            check_estimated_size(s);
+        }
+        Ok(())
     }
 }

@@ -209,14 +209,13 @@ def test_estimated_size_sliced_list_25068() -> None:
 )
 def test_estimated_size_scalar_column(value: Any, dtype: pl.DataType) -> None:
     df = pl.select(pl.repeat(value, 1001, dtype=dtype))
-    size = df.estimated_size()
-    assert size == df.to_series().estimated_size()
+    unit = pl.select(pl.repeat(value, 1, dtype=dtype)).to_series()
+    assert df.estimated_size() == unit.estimated_size()
 
 
-def test_estimated_size_scalar_column_not_materialized() -> None:
-    n = 2**31
-    df = pl.select(pl.repeat(1, n, dtype=pl.Int64))
-    assert df.estimated_size() == 8 * n
+def test_estimated_size_scalar_column_not_expanded() -> None:
+    df = pl.select(pl.repeat(1, 2**31, dtype=pl.Int64))
+    assert df.estimated_size() == 8
 
 
 @pytest.mark.parametrize(
