@@ -179,6 +179,47 @@ def test_estimated_size_sliced_list_25068() -> None:
 
 
 @pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        (1, pl.Int64),
+        (None, pl.Int64),
+        (True, pl.Boolean),
+        (None, pl.Boolean),
+        ("a" * 20, pl.String),
+        (None, pl.String),
+        (b"ab", pl.Binary),
+        (date(2020, 1, 1), pl.Date),
+        (None, pl.Datetime("us")),
+        (1, pl.Decimal(10, 2)),
+        ("a", pl.Categorical()),
+        ("b", pl.Enum(["a", "b"])),
+        ([1, 2, 3], pl.List(pl.Int32)),
+        ([1], pl.List(pl.Int32)),
+        ([1, None, 3], pl.List(pl.Int32)),
+        ([True, False, True], pl.List(pl.Boolean)),
+        (["xy", "z"], pl.List(pl.String)),
+        ([[1], [2, 3]], pl.List(pl.List(pl.Int32))),
+        (None, pl.List(pl.Int32)),
+        ([1, 2], pl.Array(pl.Int16, 2)),
+        (None, pl.Array(pl.Int16, 2)),
+        ({"a": 1, "b": "xy"}, pl.Struct({"a": pl.Int8, "b": pl.String})),
+        ({"a": None, "b": [1]}, pl.Struct({"a": pl.Int8, "b": pl.List(pl.Int8)})),
+        (None, pl.Struct({"a": pl.Int8, "b": pl.Array(pl.Int8, 2)})),
+    ],
+)
+def test_estimated_size_scalar_column(value: Any, dtype: pl.DataType) -> None:
+    df = pl.select(pl.repeat(value, 1001, dtype=dtype))
+    size = df.estimated_size()
+    assert size == df.to_series().estimated_size()
+
+
+def test_estimated_size_scalar_column_not_materialized() -> None:
+    n = 2**31
+    df = pl.select(pl.repeat(1, n, dtype=pl.Int64))
+    assert df.estimated_size() == 8 * n
+
+
+@pytest.mark.parametrize(
     ("v1", "v2"),
     [
         ("0.16.8", "0.16.7"),

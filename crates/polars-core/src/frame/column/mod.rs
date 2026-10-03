@@ -1737,8 +1737,10 @@ impl Column {
     }
 
     pub(crate) fn estimated_size(&self) -> usize {
-        // @scalar-opt
-        self.as_materialized_series().estimated_size()
+        match self {
+            Column::Series(s) => s.estimated_size(),
+            Column::Scalar(s) => s.estimated_size(),
+        }
     }
 
     pub fn sort_with(&self, options: SortOptions) -> PolarsResult<Self> {

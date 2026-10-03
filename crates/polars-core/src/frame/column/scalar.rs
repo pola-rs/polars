@@ -114,6 +114,17 @@ impl ScalarColumn {
             .unwrap_or_else(|| Self::_to_series(self.name, self.scalar, self.length))
     }
 
+    /// Estimated size of the materialized [`Series`], computed without materializing it.
+    ///
+    /// See [`Series::estimated_size`].
+    pub fn estimated_size(&self) -> usize {
+        if let Some(s) = self.materialized.get() {
+            return s.estimated_size();
+        }
+        estimated_repeated_size(self.dtype(), self.scalar.value(), self.length)
+            .unwrap_or_else(|| self.as_single_value_series().estimated_size() * self.length)
+    }
+
     /// Take the [`ScalarColumn`] as a series with a single value.
     ///
     /// If the [`ScalarColumn`] has `length=0` the resulting `Series` will also have `length=0`.
@@ -322,6 +333,73 @@ impl ScalarColumn {
         self.scalar.update(value);
         self.materialized.take();
         self
+    }
+}
+
+/// [`Series::estimated_size`] of `value` repeated `length` times, as built by
+/// [`Series::new_from_index`].
+///
+/// Returns `None` if the size cannot be derived from `dtype` and `value`.
+fn estimated_repeated_size(dtype: &DataType, value: &AnyValue, length: usize) -> Option<usize> {
+    let is_null = value.is_null();
+    let validity_size = if is_null { length.div_ceil(8) } else { 0 };
+    let size = match dtype {
+        DataType::Null => 0,
+        DataType::Boolean => length.div_ceil(8) + validity_size,
+        // Views and validity are not counted for these types, see `estimated_bytes_size`.
+        DataType::String | DataType::Binary if is_null => 0,
+        DataType::String => length * value.extract_str()?.len(),
+        DataType::Binary => length * value.extract_bytes()?.len(),
+        DataType::List(_) => match value {
+            AnyValue::List(s) => {
+                estimated_repeated_series_size(s, length) + length * size_of::<i64>()
+            },
+            _ if is_null => length * size_of::<i64>() + validity_size,
+            _ => return None,
+        },
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(inner, width) => match value {
+            AnyValue::Array(s, _) => estimated_repeated_series_size(s, length),
+            _ if is_null => {
+                estimated_repeated_size(inner, &AnyValue::Null, length * width)? + validity_size
+            },
+            _ => return None,
+        },
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(fields) => match value {
+            AnyValue::StructOwned(payload) => payload
+                .0
+                .iter()
+                .zip(fields)
+                .map(|(value, field)| estimated_repeated_size(field.dtype(), value, length))
+                .sum::<Option<usize>>()?,
+            _ if is_null => {
+                fields
+                    .iter()
+                    .map(|field| estimated_repeated_size(field.dtype(), &AnyValue::Null, length))
+                    .sum::<Option<usize>>()?
+                    + validity_size
+            },
+            _ => return None,
+        },
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(_, storage) => return estimated_repeated_size(storage, value, length),
+        _ => length * dtype.byte_width()? as usize + validity_size,
+    };
+    Some(size)
+}
+
+/// [`Series::estimated_size`] of `s` repeated `n` times.
+fn estimated_repeated_series_size(s: &Series, n: usize) -> usize {
+    let dtype = s.dtype();
+    match dtype.byte_width() {
+        // Bitmaps round up to whole bytes, so scaling the size of `s` would count too much.
+        Some(width) if !dtype.is_nested() => {
+            let len = n * s.len();
+            let validity_size = if s.has_nulls() { len.div_ceil(8) } else { 0 };
+            (len as f64 * width).ceil() as usize + validity_size
+        },
+        _ => n * s.estimated_size(),
     }
 }
 
