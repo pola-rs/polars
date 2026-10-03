@@ -234,7 +234,8 @@ impl ScalarColumn {
             return false;
         }
 
-        *self = self.resize(self.length + other.length);
+        self.length += other.length;
+        self.materialized.take();
         true
     }
 

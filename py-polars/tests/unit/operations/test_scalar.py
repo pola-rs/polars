@@ -222,9 +222,14 @@ def test_vstack_scalar_columns_stay_scalar() -> None:
     }
 
 
-def test_extend_scalar_columns_stay_scalar() -> None:
+@pytest.mark.parametrize("materialize", [False, True])
+def test_extend_scalar_columns_stay_scalar(materialize: bool) -> None:
     df = pl.DataFrame({"a": [1, 2]}).with_columns(i=pl.lit(5))
     other = pl.DataFrame({"a": [3, 4]}).with_columns(i=pl.lit(5))
+
+    if materialize:
+        df.get_column("i")
+        other.get_column("i")
 
     df.extend(other)
 
@@ -257,11 +262,20 @@ def test_extend_scalar_columns_stay_scalar() -> None:
         ),
     ],
 )
+@pytest.mark.parametrize("materialize", [False, True])
 def test_vstack_scalar(
-    lhs: pl.Expr, rhs: pl.Expr, expected_repr: str, expected: list[Any]
+    lhs: pl.Expr,
+    rhs: pl.Expr,
+    expected_repr: str,
+    expected: list[Any],
+    materialize: bool,
 ) -> None:
     a = pl.DataFrame({"a": [1, 2]}).with_columns(v=lhs)
     b = pl.DataFrame({"a": [3, 4]}).with_columns(v=rhs)
+
+    if materialize:
+        a.get_column("v")
+        b.get_column("v")
 
     out = a.vstack(b)
 
@@ -373,3 +387,29 @@ def test_concat_scalar_run_keeps_sorted_flag() -> None:
 
     assert out["a"].to_list() == [5, 5, 3, 2]
     assert out["a"].flags["SORTED_DESC"]
+
+
+@pytest.mark.parametrize("materialize", [False, True])
+@pytest.mark.parametrize("value", ["right", None, {"x": 1}])
+def test_chunked_left_join_scalar_columns(materialize: bool, value: Any) -> None:
+    left = pl.concat(
+        [pl.DataFrame({"k": [1, 2]}), pl.DataFrame({"k": [3, 4]})], rechunk=False
+    ).with_columns(l=pl.lit("left"))
+    right = pl.concat(
+        [pl.DataFrame({"k": [1, 5]}), pl.DataFrame({"k": [3, 6]})], rechunk=False
+    ).with_columns(r=pl.lit(value))
+
+    if materialize:
+        left.get_column("l")
+        right.get_column("r")
+
+    assert left.n_chunks("all") == [2, 1]
+    assert right.n_chunks("all") == [2, 1]
+
+    out = left.join(right, on="k", how="left").sort("k")
+
+    assert out.to_dict(as_series=False) == {
+        "k": [1, 2, 3, 4],
+        "l": ["left"] * 4,
+        "r": [value, None, value, None],
+    }
