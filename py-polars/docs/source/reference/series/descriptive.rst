@@ -28,6 +28,7 @@ Descriptive
     Series.n_chunks
     Series.n_unique
     Series.null_count
+    Series.show
     Series.unique_counts
     Series.upper_bound
     Series.value_counts
