@@ -2,6 +2,7 @@
 //! DataFrame module.
 use std::borrow::Cow;
 
+use either::Either;
 use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_utils::UnitVec;
@@ -321,12 +322,15 @@ impl DataFrame {
 
     /// Returns true if the chunks of the columns do not align and re-chunking should be done
     pub fn should_rechunk(&self) -> bool {
+        // Scalar columns have no chunks of their own and align with any layout, even when they
+        // are materialized.
+        //
         // Fast check. It is also needed for correctness, as code below doesn't check if the number
-        // of chunks is equal. Columns without chunks of their own align with any layout.
+        // of chunks is equal.
         if !self
             .columns()
             .iter()
-            .filter_map(Column::lazy_as_materialized_series)
+            .filter_map(Column::as_series)
             .map(|s| s.n_chunks())
             .all_equal()
         {
@@ -336,7 +340,7 @@ impl DataFrame {
         let mut chunk_lengths = self
             .columns()
             .iter()
-            .filter_map(Column::lazy_as_materialized_series)
+            .filter_map(Column::as_series)
             .map(|s| s.chunk_lengths());
         match chunk_lengths.next() {
             None => false,
@@ -455,6 +459,14 @@ impl DataFrame {
             None if self.width() == 0 => 0,
             None => 1,
             Some(s) => s.n_chunks(),
+        }
+    }
+
+    /// The chunk lengths of the first column that has chunks, see [`Self::first_col_n_chunks`].
+    pub(crate) fn first_col_chunk_lengths(&self) -> impl Iterator<Item = usize> + '_ {
+        match self.columns().iter().find_map(|col| col.as_series()) {
+            None => Either::Right((self.width() > 0).then_some(self.height()).into_iter()),
+            Some(s) => Either::Left(s.chunk_lengths()),
         }
     }
 
@@ -1155,11 +1167,8 @@ impl DataFrame {
         } else {
             // Rechunk when not all chunks are aligned. This avoid O(n*m) overhead,
             // where n = number of chunks, and m = number of columns.
-            let all_chunks_aligned = !self.should_rechunk()
-                && self
-                    .materialized_column_iter()
-                    .next()
-                    .is_some_and(|s| s.chunk_lengths().eq(mask.chunk_lengths()));
+            let all_chunks_aligned =
+                !self.should_rechunk() && self.first_col_chunk_lengths().eq(mask.chunk_lengths());
 
             let mask = if all_chunks_aligned {
                 Cow::Borrowed(mask)
@@ -1188,11 +1197,8 @@ impl DataFrame {
                 Ok(self.clear())
             }
         } else {
-            let all_chunks_aligned = !self.should_rechunk()
-                && self
-                    .materialized_column_iter()
-                    .next()
-                    .is_some_and(|s| s.chunk_lengths().eq(mask.chunk_lengths()));
+            let all_chunks_aligned =
+                !self.should_rechunk() && self.first_col_chunk_lengths().eq(mask.chunk_lengths());
 
             let mask = if all_chunks_aligned {
                 Cow::Borrowed(mask)
@@ -2647,11 +2653,7 @@ struct ChunkCursor<'a> {
 
 impl<'a> ChunkCursor<'a> {
     fn new(df: &'a DataFrame) -> Self {
-        let chunks = match df
-            .columns()
-            .iter()
-            .find_map(Column::lazy_as_materialized_series)
-        {
+        let chunks = match df.columns().iter().find_map(Column::as_series) {
             Some(s) => s.chunks().as_slice(),
             None => &[],
         };
@@ -2698,7 +2700,7 @@ impl Iterator for RecordBatchIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         let (idx, length) = self.cursor.next()?;
 
-        let to_arrow = |c: &Column| match c.lazy_as_materialized_series() {
+        let to_arrow = |c: &Column| match c.as_series() {
             Some(s) => s.to_arrow(idx, self.compat_level),
             None => c.slice(0, length).rechunk_to_arrow(self.compat_level),
         };
@@ -2734,9 +2736,14 @@ impl Iterator for PhysRecordBatchIter<'_> {
             .df
             .columns()
             .iter()
-            .map(|c| match c.lazy_as_materialized_series() {
+            .map(|c| match c.as_series() {
                 Some(s) => s.chunks()[idx].clone(),
-                None => c.slice(0, length).as_materialized_series().chunks()[0].clone(),
+                None => c
+                    .slice(0, length)
+                    .take_materialized_series()
+                    .rechunk()
+                    .chunks()[0]
+                    .clone(),
             })
             .collect::<Vec<_>>();
 
@@ -3006,19 +3013,33 @@ mod test {
     fn test_chunk_alignment_with_scalar_column() {
         let mut df = df! { "int" => [0, 1] }.unwrap();
         df.vstack_mut(&df! { "int" => [2] }.unwrap()).unwrap();
-        df.with_column(Column::new_scalar(
-            "str".into(),
-            Scalar::from(PlSmallStr::from_static("a")),
-            3,
-        ))
+        df.insert_column(
+            0,
+            Column::new_scalar("str".into(), Scalar::from(PlSmallStr::from_static("a")), 3),
+        )
         .unwrap();
 
-        assert!(!df.should_rechunk());
+        // A materialized scalar column still follows the layout of the other columns.
+        for materialize in [false, true] {
+            if materialize {
+                df.columns()[0].as_materialized_series();
+            }
+            assert!(!df.should_rechunk());
 
-        let batches = df
-            .iter_chunks(CompatLevel::newest(), false)
-            .collect::<Vec<_>>();
-        assert_eq!(batches.iter().map(|b| b.len()).collect::<Vec<_>>(), [2, 1]);
+            let batch_lengths = |batches: Vec<RecordBatch>| {
+                batches
+                    .iter()
+                    .map(|b| {
+                        assert!(b.arrays().iter().all(|arr| arr.len() == b.len()));
+                        b.len()
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let batches = df.iter_chunks(CompatLevel::newest(), false).collect();
+            assert_eq!(batch_lengths(batches), [2, 1]);
+            let batches = df.iter_chunks_physical().collect();
+            assert_eq!(batch_lengths(batches), [2, 1]);
+        }
     }
 
     #[test]

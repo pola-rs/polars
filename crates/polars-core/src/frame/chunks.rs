@@ -109,9 +109,8 @@ pub fn chunk_df_for_writing(
     // Accumulate many small chunks to the row group size.
     // See: #16403
     if !df.columns().is_empty()
-        && df.columns()[0]
-            .as_materialized_series()
-            .chunk_lengths()
+        && df
+            .first_col_chunk_lengths()
             .take(5)
             .all(|len| len < row_group_size)
     {

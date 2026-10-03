@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -381,3 +382,25 @@ def test_object_column_unique_after_append(engine: EngineType) -> None:
 
     assert df.select("o").unique().height == 1
     assert df.unique().height == 4
+
+
+def test_write_materialized_scalar_beside_chunked_column() -> None:
+    # The scalar column comes first and is materialized, but it must not decide the
+    # chunk layout of the frame.
+    df = pl.concat(
+        [pl.DataFrame({"a": [1, 2]}), pl.DataFrame({"a": [3]})], rechunk=False
+    ).select(s=pl.lit("x"), a=pl.col("a"))
+    assert _reprs(df) == ["scalar", "series"]
+    assert df.n_chunks("all") == [1, 2]
+    df.get_column("s")
+
+    expected = {"s": ["x"] * 3, "a": [1, 2, 3]}
+    buf = io.BytesIO()
+    df.write_parquet(buf, row_group_size=2)
+    buf.seek(0)
+    assert pl.read_parquet(buf).to_dict(as_series=False) == expected
+    buf = io.BytesIO()
+    df.write_ipc(buf)
+    buf.seek(0)
+    assert pl.read_ipc(buf).to_dict(as_series=False) == expected
+    assert df.to_arrow().to_pydict() == expected
