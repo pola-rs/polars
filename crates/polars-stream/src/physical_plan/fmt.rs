@@ -376,9 +376,11 @@ fn visualize_plan_rec(
             exprs,
             ordered_eval,
             maintain_order,
+            scalar,
         } => {
+            let name = if *scalar { "scalar-window" } else { "window" };
             let mut label = format!(
-                "window[maintain_order: {maintain_order}, ordered_eval: {ordered_eval}]\\npartition by: "
+                "{name}[maintain_order: {maintain_order}, ordered_eval: {ordered_eval}]\\npartition by: "
             );
             for (i, name) in partition_by.iter().enumerate() {
                 if i > 0 {
