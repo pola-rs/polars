@@ -363,3 +363,13 @@ def test_write_materialized_scalar_beside_chunked_column() -> None:
     buf.seek(0)
     assert pl.read_ipc(buf).to_dict(as_series=False) == expected
     assert df.to_arrow().to_pydict() == expected
+
+
+def test_concat_scalar_run_keeps_sorted_flag() -> None:
+    # The first two frames become one scalar column of two rows. A run of one value
+    # is sorted in both directions, so the descending flag must survive.
+    tail = pl.DataFrame({"a": [3, 2]}).sort("a", descending=True)
+    out = pl.concat([pl.DataFrame({"a": [5]}), pl.DataFrame({"a": [5]}), tail])
+
+    assert out["a"].to_list() == [5, 5, 3, 2]
+    assert out["a"].flags["SORTED_DESC"]
