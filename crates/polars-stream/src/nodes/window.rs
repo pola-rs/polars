@@ -162,7 +162,7 @@ impl PartitionedMorsels {
                 *c = c.rechunk();
             }
             if self.record_bytes {
-                self.morsel_bytes.push(df.estimated_size());
+                self.morsel_bytes.push(df.estimated_size(false));
             }
         }
         let keys = morsel.df().await.select(partition_by)?;
