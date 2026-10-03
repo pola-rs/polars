@@ -39,7 +39,7 @@ impl PyDataFrame {
     }
 
     pub fn estimated_size(&self) -> usize {
-        self.df.read().estimated_size()
+        self.df.read().estimated_size(false)
     }
 
     pub fn dtype_strings(&self) -> Vec<String> {

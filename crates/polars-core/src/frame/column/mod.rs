@@ -1736,9 +1736,11 @@ impl Column {
             .quantiles_reduce(quantiles, method)
     }
 
-    pub(crate) fn estimated_size(&self) -> usize {
-        // @scalar-opt
-        self.as_materialized_series().estimated_size()
+    pub(crate) fn estimated_size(&self, expanded: bool) -> usize {
+        match self {
+            Column::Series(s) => s.estimated_size(),
+            Column::Scalar(s) => s.estimated_size(expanded),
+        }
     }
 
     pub fn sort_with(&self, options: SortOptions) -> PolarsResult<Self> {
