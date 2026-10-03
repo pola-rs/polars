@@ -1403,3 +1403,29 @@ def test_read_database_uri_pre_execution_query_not_supported_success(
     )
 
     assert cx_mock.read_sql.call_args.kwargs.get("pre_execution_query") is None
+
+
+def test_sync_sqlalchemy_read_does_not_require_asyncio_extra(monkeypatch: pytest.MonkeyPatch) -> None:
+    # SQLAlchemy 2.1 raises ImportError from sqlalchemy.ext.asyncio when greenlet
+    # is absent. A synchronous connection must not take that import.
+    import builtins
+
+    real_import = builtins.__import__
+
+    def guarded(
+        name: str,
+        globals: Any = None,
+        locals: Any = None,
+        fromlist: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> Any:
+        if name == "sqlalchemy.ext.asyncio":
+            raise ImportError("greenlet is not installed")
+        return real_import(name, globals, locals, fromlist, level)
+
+    engine = create_sqlite_engine("sqlite://")
+    with engine.connect() as conn:
+        monkeypatch.setattr(builtins, "__import__", guarded)
+        assert ConnectionExecutor._is_alchemy_session(conn) is False
+        df = pl.read_database("SELECT 1 AS x", connection=conn)
+    assert df.to_dicts() == [{"x": 1}]
