@@ -1080,8 +1080,7 @@ def _pandas_index_column_names(index: pd.Index) -> list[str]:
     if len(names) == 1 and names[0] is None:
         return ["index"]
     return [
-        str(name) if name is not None else f"level_{i}"
-        for i, name in enumerate(names)
+        str(name) if name is not None else f"level_{i}" for i, name in enumerate(names)
     ]
 
 
