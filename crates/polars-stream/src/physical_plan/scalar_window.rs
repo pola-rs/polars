@@ -56,21 +56,22 @@ pub fn scalar_window_params(
     output_schema: Arc<Schema>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<ScalarWindowParams> {
-    let mut read_schema = Schema::default();
-    let mut key_schema = Schema::default();
-    for name in partition_by {
-        let dtype = input_schema.try_get(name)?;
-        read_schema.insert(name.clone(), dtype.clone());
-        key_schema.insert(name.clone(), dtype.clone());
-    }
+    let key_schema = input_schema.try_project(partition_by)?;
+    let mut read_schema = key_schema.clone();
 
     let mut windows = Vec::with_capacity(exprs.len());
     for e in exprs {
         let AExpr::Over { function, .. } = expr_arena.get(e.node()) else {
             unreachable!()
         };
-        // `len` reads the first input column.
-        let (reduction, inputs) = into_reduction(*function, expr_arena, input_schema, false)?;
+        let function = *function;
+        // `len` reads the first column of the schema, which here is a key.
+        let schema = if matches!(expr_arena.get(function), AExpr::Len) {
+            &key_schema
+        } else {
+            input_schema
+        };
+        let (reduction, inputs) = into_reduction(function, expr_arena, schema, false)?;
         let [input] = inputs.as_slice() else {
             unreachable!()
         };
@@ -89,7 +90,6 @@ pub fn scalar_window_params(
     }
 
     Ok(ScalarWindowParams {
-        partition_by: partition_by.to_vec(),
         windows,
         read_schema: Arc::new(read_schema),
         key_schema: Arc::new(key_schema),

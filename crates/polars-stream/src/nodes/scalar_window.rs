@@ -6,10 +6,11 @@ use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::schema::Schema;
-use polars_expr::groups::new_hash_grouper;
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_expr::groups::{Grouper, new_hash_grouper};
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::reduce::GroupedReduction;
-use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame, memory_manager};
+use polars_ooc::{MostRecentSpillContext, SpillFrame, memory_manager};
 use polars_utils::IdxSize;
 use polars_utils::aliases::PlRandomState;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -18,12 +19,11 @@ use polars_utils::pl_str::PlSmallStr;
 use rayon::prelude::*;
 
 use super::compute_node_prelude::*;
-use super::window::PARTITIONS_PER_PIPELINE;
+use super::window::{PARTITIONS_PER_PIPELINE, PartitionedMorsels};
 use crate::morsel::{MorselSeq, SourceToken};
 
 /// Up to this many estimated groups, every pipeline reduces its own morsels and the results are
-/// merged. With few groups the hash partitions are too few and too uneven to keep all pipelines
-/// busy.
+/// merged.
 const MAX_LOCAL_GROUPS: usize = 1 << 16;
 
 /// The hash partitions are reduced over blocks of about this many rows per partition.
@@ -39,10 +39,10 @@ pub struct ScalarWindow {
 }
 
 pub struct ScalarWindowParams {
-    pub partition_by: Vec<PlSmallStr>,
     pub windows: Vec<ScalarWindow>,
     /// The partition keys and the columns the reductions read.
     pub read_schema: Arc<Schema>,
+    /// The partition keys.
     pub key_schema: Arc<Schema>,
     pub output_schema: Arc<Schema>,
 }
@@ -56,6 +56,9 @@ pub struct ScalarWindowParams {
 /// groups and their reduced values until all morsels are output.
 pub struct ScalarWindowNode {
     params: Arc<ScalarWindowParams>,
+    /// If there is a memory budget, a block of the partitioned reduction loads at most this many
+    /// bytes of input morsels, or one morsel.
+    max_block_bytes: Option<usize>,
     spill_ctx: MostRecentSpillContext,
     state: ScalarWindowState,
 }
@@ -70,23 +73,11 @@ enum ScalarWindowState {
     Done,
 }
 
-#[derive(Default)]
 struct LocalBuilder {
-    morsels: Vec<(MorselSeq, SpillFrame)>,
+    input: PartitionedMorsels,
+    /// The hashed keys of `input.morsels[i]`.
     hash_keys: Vec<HashKeys>,
     sketch_per_p: Vec<CardinalitySketch>,
-    // The rows of morsels[i] in partition p are
-    // idxs_per_p[p][offsets_per_p[i * num_partitions + p]..offsets_per_p[(i + 1) * num_partitions + p]].
-    idxs_per_p: Vec<Vec<IdxSize>>,
-    offsets_per_p: Vec<usize>,
-}
-
-impl LocalBuilder {
-    /// The range in `idxs_per_p[p]` of the rows of morsel `i` in partition `p`.
-    fn partition_range(&self, i: usize, p: usize) -> std::ops::Range<usize> {
-        let num_partitions = self.idxs_per_p.len();
-        self.offsets_per_p[i * num_partitions + p]..self.offsets_per_p[(i + 1) * num_partitions + p]
-    }
 }
 
 impl ScalarWindowNode {
@@ -96,16 +87,18 @@ impl ScalarWindowNode {
         task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         let num_partitions = num_pipelines * PARTITIONS_PER_PIPELINE;
+        let budget = polars_config::config().ooc_memory_budget_bytes();
+        let max_block_bytes = (budget != u64::MAX).then_some((budget / 8) as usize);
         let builders = (0..num_pipelines)
             .map(|_| LocalBuilder {
-                idxs_per_p: vec![Vec::new(); num_partitions],
-                offsets_per_p: vec![0; num_partitions],
+                input: PartitionedMorsels::new(num_partitions, max_block_bytes.is_some()),
+                hash_keys: Vec::new(),
                 sketch_per_p: vec![CardinalitySketch::new(); num_partitions],
-                ..Default::default()
             })
             .collect();
         Self {
             params,
+            max_block_bytes,
             spill_ctx: MostRecentSpillContext::new("scalar-window".into(), task_metrics),
             state: ScalarWindowState::Sink {
                 builders,
@@ -129,7 +122,7 @@ impl ComputeNode for ScalarWindowNode {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
-        if send[0] == PortState::Done && !matches!(self.state, ScalarWindowState::Done) {
+        if send[0] == PortState::Done {
             self.state = ScalarWindowState::Done;
         }
 
@@ -137,7 +130,6 @@ impl ComputeNode for ScalarWindowNode {
             builders,
             partitioner,
             random_state,
-            ..
         } = &mut self.state
             && recv[0] == PortState::Done
         {
@@ -147,6 +139,7 @@ impl ComputeNode for ScalarWindowNode {
                 builders,
                 partitioner.num_partitions(),
                 random_state,
+                self.max_block_bytes,
             )?;
             self.state = ScalarWindowState::Replay(replay);
         }
@@ -188,7 +181,6 @@ impl ComputeNode for ScalarWindowNode {
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.len() == 1 && send_ports.len() == 1);
-        let spill_ctx = &self.spill_ctx;
         match &mut self.state {
             ScalarWindowState::Sink {
                 builders,
@@ -200,43 +192,24 @@ impl ComputeNode for ScalarWindowNode {
                 let params = &*self.params;
                 let partitioner = &*partitioner;
                 let random_state = &*random_state;
+                let spill_ctx = &self.spill_ctx;
 
                 for (local, mut recv) in builders.iter_mut().zip(receivers) {
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                        while let Ok(mut morsel) = recv.recv().await {
-                            morsel.take_consume_token();
-                            {
-                                let mut df = morsel.df_mut().await;
-                                // SAFETY: the lengths and names of the columns do not change.
-                                let columns = unsafe { df.columns_mut_retain_schema() };
-                                // The reductions need single-chunk columns.
-                                for c in columns.iter_mut().filter(|c| {
-                                    c.n_chunks() > 1 && params.read_schema.contains(c.name())
-                                }) {
-                                    *c = c.rechunk();
-                                }
-                            }
-                            let keys = morsel
-                                .df()
-                                .await
-                                .select(params.partition_by.iter().cloned())?;
-                            let hash_keys =
-                                HashKeys::from_df(&keys, random_state.clone(), true, false);
-                            hash_keys.gen_idxs_per_partition(
-                                partitioner,
-                                &mut local.idxs_per_p,
-                                &mut local.sketch_per_p,
-                                None,
-                                true,
-                            );
-                            local
-                                .offsets_per_p
-                                .extend(local.idxs_per_p.iter().map(|idxs| idxs.len()));
+                        while let Ok(morsel) = recv.recv().await {
+                            let hash_keys = local
+                                .input
+                                .push(
+                                    morsel,
+                                    params.key_schema.iter_names(),
+                                    &params.read_schema,
+                                    partitioner,
+                                    random_state,
+                                    &mut local.sketch_per_p,
+                                    spill_ctx,
+                                )
+                                .await?;
                             local.hash_keys.push(hash_keys);
-                            let seq = morsel.seq();
-                            let sf = morsel.into_sf();
-                            spill_ctx.register(&sf).await;
-                            local.morsels.push((seq, sf));
                         }
                         Ok(())
                     }));
@@ -298,15 +271,21 @@ impl Replay {
         builders: Vec<LocalBuilder>,
         num_partitions: usize,
         random_state: &PlRandomState,
+        max_block_bytes: Option<usize>,
     ) -> PolarsResult<Self> {
-        let mut estimated_groups = 0;
-        for p in 0..num_partitions {
-            let mut sketch = CardinalitySketch::new();
-            for builder in &builders {
-                sketch.combine(&builder.sketch_per_p[p]);
-            }
-            estimated_groups += sketch.estimate();
-        }
+        let estimated_groups_per_p = RAYON.install(|| {
+            (0..num_partitions)
+                .into_par_iter()
+                .map(|p| {
+                    let mut sketch = CardinalitySketch::new();
+                    for builder in &builders {
+                        sketch.combine(&builder.sketch_per_p[p]);
+                    }
+                    sketch.estimate()
+                })
+                .collect::<Vec<_>>()
+        });
+        let estimated_groups = estimated_groups_per_p.iter().sum::<usize>();
 
         let local = estimated_groups <= MAX_LOCAL_GROUPS;
         if polars_config::config().verbose() {
@@ -318,21 +297,15 @@ impl Replay {
             eprintln!("[scalar-window]: reduce {how} (estimated groups: {estimated_groups})");
         }
         let (groups, values) = if local {
-            reduce_locally(params, &builders, random_state)?
+            reduce_locally(params, &builders, estimated_groups, random_state)?
         } else {
-            reduce_partitions(params, &builders, num_partitions)?
+            reduce_partitions(params, &builders, &estimated_groups_per_p, max_block_bytes)?
         };
-        let values = params
-            .windows
-            .iter()
-            .zip(values)
-            .map(|(window, values)| values.with_name(window.name.clone()).into_column())
-            .collect();
 
         let mut morsels = builders
             .into_iter()
             .zip(groups)
-            .flat_map(|(builder, groups)| builder.morsels.into_iter().zip(groups))
+            .flat_map(|(builder, groups)| builder.input.morsels.into_iter().zip(groups))
             .collect::<Vec<_>>();
         morsels.sort_by_key(|((seq, _), _)| *seq);
         let morsels = morsels
@@ -343,7 +316,7 @@ impl Replay {
         Ok(Self {
             params: params.clone(),
             morsels,
-            values,
+            values: values.into_columns(),
             next: AtomicUsize::new(0),
         })
     }
@@ -378,32 +351,86 @@ impl Replay {
     }
 }
 
-/// The group of every row of `builders[b].morsels[i]`, as `groups[b][i]`.
+/// The group of every row of `builders[b].input.morsels[i]`, as `groups[b][i]`.
 type MorselGroups = Vec<Vec<Vec<IdxSize>>>;
 
-/// Concatenates the values of the partitions of every window.
-fn concat_values(
-    values_per_partition: Vec<Vec<Series>>,
-    num_windows: usize,
-) -> PolarsResult<Vec<Series>> {
-    let mut values_per_window = vec![Vec::with_capacity(values_per_partition.len()); num_windows];
-    for values in values_per_partition {
-        for (parts, series) in values_per_window.iter_mut().zip(values) {
-            parts.push(series);
+/// A grouper and the reductions of its groups.
+struct Reducer {
+    grouper: Box<dyn Grouper>,
+    reductions: Vec<Box<dyn GroupedReduction>>,
+}
+
+impl Reducer {
+    fn new(params: &ScalarWindowParams, estimated_groups: usize) -> Self {
+        let mut grouper = new_hash_grouper(params.key_schema.clone());
+        grouper.reserve(estimated_groups);
+        let reductions = params
+            .windows
+            .iter()
+            .map(|window| {
+                let mut reduction = window.reduction.new_empty();
+                reduction.reserve(estimated_groups);
+                reduction
+            })
+            .collect();
+        Self {
+            grouper,
+            reductions,
         }
     }
-    values_per_window
-        .into_iter()
-        .map(|parts| {
-            let mut parts = parts.into_iter();
-            let mut values = parts.next().unwrap();
-            for part in parts {
-                values.append_owned(part)?;
-            }
-            // The replay gathers from one chunk much faster than from many.
-            Ok(values.rechunk())
-        })
-        .collect()
+
+    /// Adds rows `rows` of `df` and pushes the group of each row to `group_ids`.
+    ///
+    /// # Safety
+    /// The rows must be in-bounds of `df` and of `hash_keys`, the keys of `df`.
+    unsafe fn update(
+        &mut self,
+        params: &ScalarWindowParams,
+        df: &DataFrame,
+        hash_keys: &HashKeys,
+        rows: &[IdxSize],
+        seq: MorselSeq,
+        group_ids: &mut Vec<IdxSize>,
+    ) -> PolarsResult<()> {
+        let start = group_ids.len();
+        unsafe {
+            self.grouper
+                .insert_keys_subset(hash_keys, rows, Some(group_ids))
+        };
+        let num_groups = self.grouper.num_groups();
+        for (window, reduction) in params.windows.iter().zip(&mut self.reductions) {
+            reduction.resize(num_groups);
+            let column = df.column(&window.input)?;
+            // SAFETY: the group ids are below `num_groups`.
+            unsafe {
+                reduction.update_groups_subset(
+                    &[column],
+                    rows,
+                    &group_ids[start..],
+                    seq.to_u64(),
+                )?
+            };
+        }
+        Ok(())
+    }
+
+    /// The reduced value of every group, with one column per window.
+    fn finalize(mut self, params: &ScalarWindowParams) -> PolarsResult<DataFrame> {
+        let num_groups = self.grouper.num_groups();
+        let columns = params
+            .windows
+            .iter()
+            .zip(&mut self.reductions)
+            .map(|(window, reduction)| {
+                reduction.resize(num_groups);
+                Ok(reduction
+                    .finalize()?
+                    .with_name(window.name.clone())
+                    .into_column())
+            })
+            .collect::<PolarsResult<_>>()?;
+        DataFrame::new(num_groups as usize, columns)
+    }
 }
 
 /// Reduces every hash partition on its own. All partitions read a block of morsels while it is
@@ -411,44 +438,60 @@ fn concat_values(
 fn reduce_partitions(
     params: &ScalarWindowParams,
     builders: &[LocalBuilder],
-    num_partitions: usize,
-) -> PolarsResult<(MorselGroups, Vec<Series>)> {
+    estimated_groups_per_p: &[usize],
+    max_block_bytes: Option<usize>,
+) -> PolarsResult<(MorselGroups, DataFrame)> {
     struct Partition {
-        grouper: Box<dyn polars_expr::groups::Grouper>,
-        reductions: Vec<Box<dyn GroupedReduction>>,
-        /// The group of each row in `builders[b].idxs_per_p[p]`, as `group_ids[b]`.
+        reducer: Reducer,
+        /// The group of each row in `builders[b].input.idxs_per_p[p]`, as `group_ids[b]`.
         group_ids: Vec<Vec<IdxSize>>,
     }
 
-    let mut partitions = (0..num_partitions)
-        .map(|_| Partition {
-            grouper: new_hash_grouper(params.key_schema.clone()),
-            reductions: new_reductions(params),
-            group_ids: vec![Vec::new(); builders.len()],
-        })
-        .collect::<Vec<_>>();
+    let num_partitions = estimated_groups_per_p.len();
+    let mut partitions = RAYON.install(|| {
+        estimated_groups_per_p
+            .par_iter()
+            .enumerate()
+            .map(|(p, estimated_groups)| Partition {
+                reducer: Reducer::new(params, estimated_groups * 5 / 4),
+                group_ids: builders
+                    .iter()
+                    .map(|builder| Vec::with_capacity(builder.input.idxs_per_p[p].len()))
+                    .collect(),
+            })
+            .collect::<Vec<_>>()
+    });
 
     // Visit the morsels in input order, the order in which they are also output.
     let mut morsels = builders
         .iter()
         .enumerate()
-        .flat_map(|(b, builder)| (0..builder.morsels.len()).map(move |i| (b, i)))
+        .flat_map(|(b, builder)| (0..builder.input.morsels.len()).map(move |i| (b, i)))
         .collect::<Vec<_>>();
-    morsels.sort_by_key(|(b, i)| builders[*b].morsels[*i].0);
+    morsels.sort_by_key(|(b, i)| builders[*b].input.morsels[*i].0);
     // The groups of a builder are pushed in the order of its morsels.
     debug_assert!(
         builders
             .iter()
-            .all(|builder| builder.morsels.is_sorted_by_key(|(seq, _)| *seq))
+            .all(|builder| builder.input.morsels.is_sorted_by_key(|(seq, _)| *seq))
     );
     let block_rows = num_partitions * ROWS_PER_PARTITION_PER_BLOCK;
     let mut block_start = 0;
+    let mut num_blocks = 0;
     while block_start < morsels.len() {
         let mut block_end = block_start;
         let mut rows_in_block = 0;
+        let mut bytes_in_block = 0;
         while block_end < morsels.len() && rows_in_block < block_rows {
             let (b, i) = morsels[block_end];
-            rows_in_block += builders[b].morsels[i].1.height();
+            if let Some(max_block_bytes) = max_block_bytes {
+                let bytes = builders[b].input.morsel_bytes[i];
+                if block_end > block_start && bytes_in_block + bytes > max_block_bytes {
+                    break;
+                }
+                bytes_in_block += bytes;
+            }
+            rows_in_block += builders[b].input.morsels[i].1.height();
             block_end += 1;
         }
         let block = &morsels[block_start..block_end];
@@ -456,54 +499,49 @@ fn reduce_partitions(
         RAYON.install(|| {
             let dfs = block
                 .par_iter()
-                .map(|(b, i)| builders[*b].morsels[*i].1.get_blocking())
+                .map(|(b, i)| builders[*b].input.morsels[*i].1.get_blocking())
                 .collect::<Vec<_>>();
             partitions
                 .par_iter_mut()
                 .enumerate()
                 .try_for_each(|(p, partition)| {
-                    let Partition {
-                        grouper,
-                        reductions,
-                        group_ids,
-                    } = partition;
                     for ((b, i), df) in block.iter().zip(&dfs) {
                         let builder = &builders[*b];
-                        let rows = &builder.idxs_per_p[p][builder.partition_range(*i, p)];
+                        let rows =
+                            &builder.input.idxs_per_p[p][builder.input.partition_range(*i, p)];
                         if rows.is_empty() {
                             continue;
                         }
-                        let ids = &mut group_ids[*b];
-                        let start = ids.len();
                         // SAFETY: the rows were generated from this morsel and its keys.
                         unsafe {
-                            grouper.insert_keys_subset(&builder.hash_keys[*i], rows, Some(ids))
+                            partition.reducer.update(
+                                params,
+                                df,
+                                &builder.hash_keys[*i],
+                                rows,
+                                builder.input.morsels[*i].0,
+                                &mut partition.group_ids[*b],
+                            )?
                         };
-                        update_reductions(
-                            params,
-                            reductions,
-                            grouper.num_groups(),
-                            df,
-                            rows,
-                            &ids[start..],
-                            &builder.morsels[*i].0,
-                        )?;
                     }
                     PolarsResult::Ok(())
                 })
         })?;
         memory_manager().spill_blocking();
         block_start = block_end;
+        num_blocks += 1;
+    }
+    if polars_config::config().verbose() {
+        eprintln!(
+            "[scalar-window]: reduced {} morsels in {num_blocks} blocks",
+            morsels.len()
+        );
     }
 
     let partitions = RAYON.install(|| {
         partitions
             .into_par_iter()
-            .map(|mut partition| {
-                let num_groups = partition.grouper.num_groups();
-                let values = finalize_reductions(&mut partition.reductions, num_groups)?;
-                Ok((num_groups, values, partition.group_ids))
-            })
+            .map(|partition| Ok((partition.reducer.finalize(params)?, partition.group_ids)))
             .collect::<PolarsResult<Vec<_>>>()
     })?;
 
@@ -514,27 +552,28 @@ fn reduce_partitions(
     let mut partition_offsets = Vec::with_capacity(num_partitions);
     let mut num_groups = 0 as IdxSize;
     let mut values = Vec::with_capacity(num_partitions);
-    for (partition_num_groups, partition_values, group_ids) in partitions {
+    for (partition_values, group_ids) in partitions {
         partition_offsets.push(num_groups);
-        num_groups += partition_num_groups;
+        num_groups += partition_values.height() as IdxSize;
         values.push(partition_values);
         for (groups, per_builder) in partition_groups.iter_mut().zip(group_ids) {
             groups.push(per_builder);
         }
     }
-    let values = concat_values(values, params.windows.len())?;
+    let mut values = accumulate_dataframes_vertical_unchecked(values);
+    values.rechunk_mut_par();
 
     let groups = RAYON.install(|| {
         builders
             .par_iter()
             .zip(partition_groups)
             .map(|(builder, partition_groups)| {
-                (0..builder.morsels.len())
+                (0..builder.input.morsels.len())
                     .map(|i| {
-                        let mut groups = vec![0 as IdxSize; builder.morsels[i].1.height()];
+                        let mut groups = vec![0 as IdxSize; builder.input.morsels[i].1.height()];
                         for (p, offset) in partition_offsets.iter().enumerate() {
-                            let range = builder.partition_range(i, p);
-                            let rows = &builder.idxs_per_p[p][range.clone()];
+                            let range = builder.input.partition_range(i, p);
+                            let rows = &builder.input.idxs_per_p[p][range.clone()];
                             for (row, group) in rows.iter().zip(&partition_groups[p][range]) {
                                 // SAFETY: the rows were generated from this morsel.
                                 unsafe {
@@ -555,68 +594,50 @@ fn reduce_partitions(
 fn reduce_locally(
     params: &ScalarWindowParams,
     builders: &[LocalBuilder],
+    estimated_groups: usize,
     random_state: &PlRandomState,
-) -> PolarsResult<(MorselGroups, Vec<Series>)> {
-    struct Local {
-        grouper: Box<dyn polars_expr::groups::Grouper>,
-        reductions: Vec<Box<dyn GroupedReduction>>,
-        groups: Vec<Vec<IdxSize>>,
-    }
-
+) -> PolarsResult<(MorselGroups, DataFrame)> {
     let locals = RAYON.install(|| {
         builders
             .par_iter()
             .map(|builder| {
-                let mut grouper = new_hash_grouper(params.key_schema.clone());
-                let mut reductions = new_reductions(params);
-                let mut groups = Vec::with_capacity(builder.morsels.len());
+                let mut reducer = Reducer::new(params, 0);
+                let mut groups = Vec::with_capacity(builder.input.morsels.len());
                 let mut all_rows = Vec::new();
-                for (i, (seq, sf)) in builder.morsels.iter().enumerate() {
+                for ((seq, sf), hash_keys) in builder.input.morsels.iter().zip(&builder.hash_keys) {
                     let df = sf.get_blocking();
                     let height = df.height() as IdxSize;
                     all_rows.extend(all_rows.len() as IdxSize..height);
                     let rows = &all_rows[..height as usize];
                     let mut ids = Vec::with_capacity(rows.len());
                     // SAFETY: the rows are in-bounds of this morsel and its keys.
-                    unsafe {
-                        grouper.insert_keys_subset(&builder.hash_keys[i], rows, Some(&mut ids))
-                    };
-                    update_reductions(
-                        params,
-                        &mut reductions,
-                        grouper.num_groups(),
-                        &df,
-                        rows,
-                        &ids,
-                        seq,
-                    )?;
+                    unsafe { reducer.update(params, &df, hash_keys, rows, *seq, &mut ids)? };
                     drop(df);
                     memory_manager().spill_blocking();
                     groups.push(ids);
                 }
-                Ok(Local {
-                    grouper,
-                    reductions,
-                    groups,
-                })
+                Ok((reducer, groups))
             })
             .collect::<PolarsResult<Vec<_>>>()
     })?;
 
-    let mut grouper = new_hash_grouper(params.key_schema.clone());
-    let mut reductions = new_reductions(params);
+    let mut merged = Reducer::new(params, estimated_groups);
     let mut groups = Vec::with_capacity(locals.len());
-    for local in locals {
+    for (local, local_morsel_groups) in locals {
         let keys = local.grouper.get_keys_in_group_order(&params.key_schema);
         let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
         let local_groups = (0..local.grouper.num_groups()).collect::<Vec<_>>();
         let mut group_of_local_group = Vec::with_capacity(local_groups.len());
         // SAFETY: the local groups are the rows of `keys`.
         unsafe {
-            grouper.insert_keys_subset(&hash_keys, &local_groups, Some(&mut group_of_local_group))
+            merged.grouper.insert_keys_subset(
+                &hash_keys,
+                &local_groups,
+                Some(&mut group_of_local_group),
+            )
         };
-        for (reduction, local_reduction) in reductions.iter_mut().zip(&local.reductions) {
-            reduction.resize(grouper.num_groups());
+        for (reduction, local_reduction) in merged.reductions.iter_mut().zip(&local.reductions) {
+            reduction.resize(merged.grouper.num_groups());
             // SAFETY: the local groups are in-bounds of the local reduction and
             // `group_of_local_group` of the merged one.
             unsafe {
@@ -627,7 +648,7 @@ fn reduce_locally(
                 )?
             };
         }
-        groups.push((local.groups, group_of_local_group));
+        groups.push((local_morsel_groups, group_of_local_group));
     }
     let groups = RAYON.install(|| {
         groups
@@ -641,46 +662,5 @@ fn reduce_locally(
             })
             .collect()
     });
-    let values = finalize_reductions(&mut reductions, grouper.num_groups())?;
-    Ok((groups, values))
-}
-
-fn new_reductions(params: &ScalarWindowParams) -> Vec<Box<dyn GroupedReduction>> {
-    params
-        .windows
-        .iter()
-        .map(|window| window.reduction.new_empty())
-        .collect()
-}
-
-/// Feeds rows `rows` of `df`, with groups `group_ids`, to the reductions.
-fn update_reductions(
-    params: &ScalarWindowParams,
-    reductions: &mut [Box<dyn GroupedReduction>],
-    num_groups: IdxSize,
-    df: &DataFrame,
-    rows: &[IdxSize],
-    group_ids: &[IdxSize],
-    seq: &MorselSeq,
-) -> PolarsResult<()> {
-    for (window, reduction) in params.windows.iter().zip(reductions) {
-        reduction.resize(num_groups);
-        let column = df.column(&window.input)?;
-        // SAFETY: the rows are in-bounds and the group ids are below `num_groups`.
-        unsafe { reduction.update_groups_subset(&[column], rows, group_ids, seq.to_u64())? };
-    }
-    Ok(())
-}
-
-fn finalize_reductions(
-    reductions: &mut [Box<dyn GroupedReduction>],
-    num_groups: IdxSize,
-) -> PolarsResult<Vec<Series>> {
-    reductions
-        .iter_mut()
-        .map(|reduction| {
-            reduction.resize(num_groups);
-            reduction.finalize()
-        })
-        .collect()
+    Ok((groups, merged.finalize(params)?))
 }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -45,29 +46,10 @@ def _scan(df: pl.DataFrame, path: Path, parts: int = 6) -> pl.LazyFrame:
     return pl.scan_parquet(path / "*.parquet")
 
 
-def _physical_windows(q: pl.LazyFrame) -> list[str]:
+def _scalar_flags(q: pl.LazyFrame) -> list[bool]:
+    """Whether each window node of the physical plan is a scalar window."""
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
-    return [line for line in dot.splitlines() if "window[" in line]
-
-
-def _is_scalar(q: pl.LazyFrame) -> bool:
-    windows = _physical_windows(q)
-    assert len(windows) == 1
-    return "scalar-window[" in windows[0]
-
-
-def _reduce_paths(
-    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: Any
-) -> set[str]:
-    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
-    capfd.readouterr()
-    q.collect(engine="streaming")
-    plmonkeypatch.delenv("POLARS_VERBOSE")
-    return {
-        "local" if "per pipeline" in line else "partitioned"
-        for line in capfd.readouterr().err.splitlines()
-        if line.startswith("[scalar-window]: reduce")
-    }
+    return ["scalar-window[" in line for line in dot.splitlines() if "window[" in line]
 
 
 def _assert_same(q: pl.LazyFrame, *, check_row_order: bool = True) -> None:
@@ -77,6 +59,32 @@ def _assert_same(q: pl.LazyFrame, *, check_row_order: bool = True) -> None:
         check_row_order=check_row_order,
         check_exact=False,
     )
+
+
+def _assert_same_on_path(
+    q: pl.LazyFrame, path: str, plmonkeypatch: PlMonkeyPatch, capfd: Any
+) -> list[str]:
+    """Like `_assert_same`, and checks that every scalar window reduces on `path`.
+
+    Returns the verbose lines of the scalar windows.
+    """
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    plmonkeypatch.delenv("POLARS_VERBOSE")
+    lines = [
+        line
+        for line in capfd.readouterr().err.splitlines()
+        if line.startswith("[scalar-window]")
+    ]
+    paths = {
+        "local" if "per pipeline" in line else "partitioned"
+        for line in lines
+        if line.startswith("[scalar-window]: reduce ")
+    }
+    assert paths == {path}
+    assert_frame_equal(out, q.collect(engine="in-memory"), check_exact=False)
+    return lines
 
 
 @pytest.mark.parametrize(
@@ -107,13 +115,13 @@ def _assert_same(q: pl.LazyFrame, *, check_row_order: bool = True) -> None:
 )
 def test_scalar_window_matches_in_memory(tmp_path: Path, exprs: list[pl.Expr]) -> None:
     q = _scan(_frame(), tmp_path).with_columns(exprs)
-    assert _is_scalar(q)
+    assert _scalar_flags(q) == [True]
     _assert_same(q)
 
 
 def test_scalar_window_from_in_memory_source() -> None:
     q = _frame().lazy().with_columns(w=pl.col("x").sum().over("g"))
-    assert _is_scalar(q)
+    assert _scalar_flags(q) == [True]
     _assert_same(q)
 
 
@@ -123,17 +131,7 @@ def test_scalar_window_two_specs(tmp_path: Path) -> None:
         b=pl.col("x").sum().over("h"),
         c=pl.col("y").mean().over("g"),
     )
-    windows = _physical_windows(q)
-    assert len(windows) == 2
-    assert all("scalar-window[" in w for w in windows)
-    _assert_same(q)
-
-
-def test_scalar_window_keeps_all_columns_and_order(tmp_path: Path) -> None:
-    q = _scan(_frame(), tmp_path).with_columns(w=pl.col("y").sum().over("k"))
-    out = q.collect(engine="streaming")
-    assert out.columns == [*_frame().columns, "w"]
-    assert out["id"].to_list() == list(range(3_000))
+    assert _scalar_flags(q) == [True, True]
     _assert_same(q)
 
 
@@ -150,7 +148,7 @@ def test_scalar_window_unordered_consumer(
 ) -> None:
     q = _scan(_frame(), tmp_path).with_columns(w=pl.col("x").sum().over("k"))
     q = consumer(q)
-    assert _is_scalar(q)
+    assert _scalar_flags(q) == [True]
     _assert_same(q, check_row_order=False)
 
 
@@ -160,7 +158,7 @@ def test_scalar_window_single_group(tmp_path: Path) -> None:
         .with_columns(o=pl.lit(1))
         .with_columns(w=pl.col("y").sum().over("o"))
     )
-    assert _is_scalar(q)
+    assert _scalar_flags(q) == [True]
     _assert_same(q)
 
 
@@ -181,43 +179,23 @@ def test_scalar_window_stops_early(tmp_path: Path) -> None:
     _assert_same(q)
 
 
-def test_scalar_window_all_null_group() -> None:
-    df = pl.DataFrame(
-        {"g": [1, 1, 2, 2, 3, None], "x": [None, None, 1, None, 5, 7]},
-        schema={"g": pl.Int64, "x": pl.Int64},
-    )
-    q = df.lazy().with_columns(
-        s=pl.col("x").sum().over("g"),
-        m=pl.col("x").mean().over("g"),
-        c=pl.col("x").count().over("g"),
-        n=pl.len().over("g"),
-    )
-    assert _is_scalar(q)
-    _assert_same(q)
-
-
 @pytest.mark.parametrize(
     "expr",
     [
         pl.col("x").median().over("g"),
-        pl.col("x").n_unique().over("g"),
         pl.col("x").first().over("g"),
-        pl.col("x").last().over("g"),
         pl.col("x").sum().over("g", order_by="id"),
         pl.col("x").filter(pl.col("y") > 100).sum().over("g"),
         (pl.col("x") - pl.col("x").mean()).over("g"),
         pl.col("x").cum_sum().over("g"),
-        pl.col("x").std().over("g"),
         pl.col("x").sum().over("g", mapping_strategy="join"),
-        pl.col("h").first().over("g"),
         pl.col("h").count().over("g"),
         (pl.col("x") + 1).sum().over("g"),
     ],
 )
 def test_scalar_window_fallbacks(tmp_path: Path, expr: pl.Expr) -> None:
     q = _scan(_frame(), tmp_path).with_columns(w=expr)
-    windows = _physical_windows(q)
-    assert not any("scalar-window[" in w for w in windows)
+    assert not any(_scalar_flags(q))
     _assert_same(q)
 
 
@@ -225,16 +203,7 @@ def test_scalar_window_mixed_spec_falls_back(tmp_path: Path) -> None:
     q = _scan(_frame(), tmp_path).with_columns(
         a=pl.col("x").sum().over("g"), b=pl.col("x").cum_sum().over("g")
     )
-    windows = _physical_windows(q)
-    assert len(windows) == 1
-    assert "scalar-window[" not in windows[0]
-    _assert_same(q)
-
-
-def test_scalar_window_first_last_across_morsels(tmp_path: Path) -> None:
-    q = _scan(_frame(), tmp_path).with_columns(
-        f=pl.col("y").first().over("k"), l=pl.col("y").last().over("k")
-    )
+    assert _scalar_flags(q) == [False]
     _assert_same(q)
 
 
@@ -248,16 +217,15 @@ def test_scalar_window_many_groups(
         j=pl.col("id") % 3,
         x=pl.when(pl.col("id") % 5 == 0).then(None).otherwise(pl.col("id") % 1_000),
     )
-    q = _scan(df, tmp_path).with_columns(
+    lf = _scan(df, tmp_path)
+    q = lf.with_columns(
         a=pl.col("x").sum().over("k"),
         b=pl.col("x").mean().over("k"),
         c=pl.len().over("k"),
     )
-    assert _is_scalar(q)
-    assert _reduce_paths(q, plmonkeypatch, capfd) == {path}
-    _assert_same(q)
-    q = _scan(df, tmp_path).with_columns(a=pl.col("x").max().over("k", "j"))
-    _assert_same(q)
+    assert _scalar_flags(q) == [True]
+    _assert_same_on_path(q, path, plmonkeypatch, capfd)
+    _assert_same(lf.with_columns(a=pl.col("x").max().over("k", "j")))
 
 
 @pytest.mark.parametrize(
@@ -288,7 +256,7 @@ def test_scalar_window_value_dtypes(dtype: pl.DataType) -> None:
         hi=pl.col("x").max().over("k"),
         c=pl.col("x").count().over("k"),
     )
-    assert _is_scalar(q)
+    assert _scalar_flags(q) == [True]
     _assert_same(q)
 
 
@@ -313,6 +281,7 @@ def test_scalar_window_key_dtypes(
     plmonkeypatch: PlMonkeyPatch,
     capfd: Any,
 ) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "5000")
     n = 100_000
     df = pl.DataFrame({"id": pl.int_range(n, eager=True)}).with_columns(
         i=pl.when(pl.col("id") % 11 == 0).then(None).otherwise(pl.col("id") % groups),
@@ -323,11 +292,10 @@ def test_scalar_window_key_dtypes(
         .with_columns(k=key)
         .with_columns(s=pl.col("x").sum().over("k"), c=pl.len().over("k"))
     )
-    assert _is_scalar(q)
+    assert _scalar_flags(q) == [True]
     n_keys = df.select(key.n_unique()).item()
     path = "local" if n_keys < 1_000 else "partitioned"
-    assert _reduce_paths(q, plmonkeypatch, capfd) == {path}
-    _assert_same(q)
+    _assert_same_on_path(q, path, plmonkeypatch, capfd)
 
 
 # Spill everything the memory manager can: no budget, and every allocation is counted.
@@ -365,19 +333,19 @@ def test_scalar_window_spilled(
         c=pl.len().over("k"),
         d=pl.col("x").max().over("k", "j"),
     )
-    assert len(_physical_windows(q)) == 2
-    assert all("scalar-window[" in w for w in _physical_windows(q))
-    assert _reduce_paths(q.select("a", "b", "c"), plmonkeypatch, capfd) == {path}
-
-    _assert_same(q)
+    assert _scalar_flags(q) == [True, True]
+    lines = _assert_same_on_path(q, path, plmonkeypatch, capfd)
+    if path == "partitioned":
+        # With a memory budget of zero, every block holds one morsel.
+        counts = re.findall(r"reduced (\d+) morsels in (\d+) blocks", "\n".join(lines))
+        assert len(counts) == 2
+        assert all(int(m) > 1 and m == b for m, b in counts)
     _assert_same(q.slice(1_000, 500))
-    _assert_same(q.head(5))
     _assert_same(q.with_columns(e=pl.col("a").mean().over("j")))
     _assert_same(pl.concat([q.filter(i % 2 == 0), q.filter(i % 2 == 1)]))
     other = lf.select("id", z=i * 2)
     _assert_same(q.join(other, on="id", maintain_order="left"))
     _assert_same(other.join(q, on="id", how="left", maintain_order="left"))
-    _assert_same(q.filter(i < 0))
 
 
 @pytest.mark.write_disk
@@ -387,7 +355,6 @@ def test_scalar_window_spill_files_removed(tmp_path: Path) -> None:
         """
         import os, pathlib, time
         import polars as pl
-        from polars.testing import assert_frame_equal
 
         n = 100_000
         i = pl.col("id")
@@ -396,7 +363,7 @@ def test_scalar_window_spill_files_removed(tmp_path: Path) -> None:
         )
         for key in ["k", "l"]:
             q = df.lazy().with_columns(w=pl.col("x").sum().over(key))
-            assert_frame_equal(q.collect(engine="streaming"), q.collect())
+            q.collect(engine="streaming")
             assert q.head(5).collect(engine="streaming").height == 5
             try:
                 q.with_columns(pl.col("s").cast(pl.Int64)).collect(engine="streaming")

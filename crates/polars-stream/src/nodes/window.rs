@@ -10,9 +10,10 @@ use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::groups::new_hash_grouper;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::prelude::WindowExpr;
-use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
+use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext, SpillFrame, memory_manager};
 use polars_utils::IdxSize;
 use polars_utils::aliases::PlRandomState;
+use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::sync::SyncPtr;
@@ -97,7 +98,7 @@ pub struct WindowNode {
 
 enum WindowState {
     Sink {
-        builders: Vec<LocalBuilder>,
+        builders: Vec<PartitionedMorsels>,
         partitioner: HashPartitioner,
         random_state: PlRandomState,
         spill_ctx: LeastRecentSpillContext,
@@ -106,13 +107,76 @@ enum WindowState {
     Done,
 }
 
-#[derive(Default)]
-struct LocalBuilder {
-    morsels: Vec<(MorselSeq, SpillFrame)>,
+/// The input morsels of one pipeline, with their rows split into hash partitions.
+pub(super) struct PartitionedMorsels {
+    pub morsels: Vec<(MorselSeq, SpillFrame)>,
+    record_bytes: bool,
+    /// The estimated size of each morsel, only if `record_bytes`.
+    pub morsel_bytes: Vec<usize>,
     // The rows of morsels[i] in partition p are
     // idxs_per_p[p][offsets_per_p[i * num_partitions + p]..offsets_per_p[(i + 1) * num_partitions + p]].
-    idxs_per_p: Vec<Vec<IdxSize>>,
+    pub idxs_per_p: Vec<Vec<IdxSize>>,
     offsets_per_p: Vec<usize>,
+}
+
+impl PartitionedMorsels {
+    pub fn new(num_partitions: usize, record_bytes: bool) -> Self {
+        Self {
+            morsels: Vec::new(),
+            record_bytes,
+            morsel_bytes: Vec::new(),
+            idxs_per_p: vec![Vec::new(); num_partitions],
+            offsets_per_p: vec![0; num_partitions],
+        }
+    }
+
+    /// The range in `idxs_per_p[p]` of the rows of morsel `i` in partition `p`.
+    pub fn partition_range(&self, i: usize, p: usize) -> std::ops::Range<usize> {
+        let num_partitions = self.idxs_per_p.len();
+        self.offsets_per_p[i * num_partitions + p]..self.offsets_per_p[(i + 1) * num_partitions + p]
+    }
+
+    /// Splits the rows of `morsel` into partitions on the hash of its keys and keeps it as a
+    /// spillable frame. Returns the hashed keys.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn push<C: ParameterFreeSpillContext>(
+        &mut self,
+        mut morsel: Morsel,
+        partition_by: impl IntoIterator<Item = impl AsRef<str>>,
+        read_schema: &Schema,
+        partitioner: &HashPartitioner,
+        random_state: &PlRandomState,
+        sketches: &mut [CardinalitySketch],
+        spill_ctx: &C,
+    ) -> PolarsResult<HashKeys> {
+        morsel.take_consume_token();
+        {
+            let mut df = morsel.df_mut().await;
+            // SAFETY: the lengths and names of the columns do not change.
+            let columns = unsafe { df.columns_mut_retain_schema() };
+            // Reading rows by index needs single-chunk columns.
+            for c in columns
+                .iter_mut()
+                .filter(|c| c.n_chunks() > 1 && read_schema.contains(c.name()))
+            {
+                *c = c.rechunk();
+            }
+            if self.record_bytes {
+                self.morsel_bytes.push(df.estimated_size());
+            }
+        }
+        let keys = morsel.df().await.select(partition_by)?;
+        let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
+        hash_keys.gen_idxs_per_partition(partitioner, &mut self.idxs_per_p, sketches, None, true);
+        self.offsets_per_p
+            .extend(self.idxs_per_p.iter().map(|idxs| idxs.len()));
+        let seq = morsel.seq();
+        let sf = morsel.into_sf();
+        spill_ctx.register_no_spill_check(&sf);
+        memory_manager().spill().await;
+        self.morsels.push((seq, sf));
+        Ok(hash_keys)
+    }
 }
 
 impl WindowNode {
@@ -123,11 +187,7 @@ impl WindowNode {
     ) -> Self {
         let num_partitions = num_pipelines * PARTITIONS_PER_PIPELINE;
         let builders = (0..num_pipelines)
-            .map(|_| LocalBuilder {
-                morsels: Vec::new(),
-                idxs_per_p: vec![Vec::new(); num_partitions],
-                offsets_per_p: vec![0; num_partitions],
-            })
+            .map(|_| PartitionedMorsels::new(num_partitions, false))
             .collect();
         Self {
             params,
@@ -226,39 +286,18 @@ impl ComputeNode for WindowNode {
 
                 for (local, mut recv) in builders.iter_mut().zip(receivers) {
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                        while let Ok(mut morsel) = recv.recv().await {
-                            morsel.take_consume_token();
-                            {
-                                let mut df = morsel.df_mut().await;
-                                // SAFETY: the lengths and names of the columns do not change.
-                                let columns = unsafe { df.columns_mut_retain_schema() };
-                                // Gathers need single-chunk columns.
-                                for c in columns.iter_mut().filter(|c| {
-                                    c.n_chunks() > 1 && params.read_schema.contains(c.name())
-                                }) {
-                                    *c = c.rechunk();
-                                }
-                            }
-                            let keys = morsel
-                                .df()
-                                .await
-                                .select(params.partition_by.iter().cloned())?;
-                            let hash_keys =
-                                HashKeys::from_df(&keys, random_state.clone(), true, false);
-                            hash_keys.gen_idxs_per_partition(
-                                partitioner,
-                                &mut local.idxs_per_p,
-                                &mut [],
-                                None,
-                                true,
-                            );
+                        while let Ok(morsel) = recv.recv().await {
                             local
-                                .offsets_per_p
-                                .extend(local.idxs_per_p.iter().map(|idxs| idxs.len()));
-                            let seq = morsel.seq();
-                            let sf = morsel.into_sf();
-                            spill_ctx.register(&sf).await;
-                            local.morsels.push((seq, sf));
+                                .push(
+                                    morsel,
+                                    &params.partition_by,
+                                    &params.read_schema,
+                                    partitioner,
+                                    random_state,
+                                    &mut [],
+                                    spill_ctx,
+                                )
+                                .await?;
                         }
                         Ok(())
                     }));
@@ -277,7 +316,7 @@ impl ComputeNode for WindowNode {
 struct InputMorsel<'a> {
     seq: MorselSeq,
     sf: &'a SpillFrame,
-    builder: &'a LocalBuilder,
+    builder: &'a PartitionedMorsels,
     /// The index of the morsel in `builder.morsels`.
     idx: usize,
     /// The input row of the first row of the morsel.
@@ -287,11 +326,7 @@ struct InputMorsel<'a> {
 impl InputMorsel<'_> {
     /// The rows of the morsel in partition `p`.
     fn partition_rows(&self, p: usize) -> &[IdxSize] {
-        let b = self.builder;
-        let num_partitions = b.idxs_per_p.len();
-        let start = b.offsets_per_p[self.idx * num_partitions + p];
-        let stop = b.offsets_per_p[(self.idx + 1) * num_partitions + p];
-        &b.idxs_per_p[p][start..stop]
+        &self.builder.idxs_per_p[p][self.builder.partition_range(self.idx, p)]
     }
 }
 
@@ -322,7 +357,7 @@ struct PartitionWindows {
 
 fn evaluate_partitions(
     params: &WindowParams,
-    builders: Vec<LocalBuilder>,
+    builders: Vec<PartitionedMorsels>,
     num_partitions: usize,
     random_state: &PlRandomState,
     state: &ExecutionState,

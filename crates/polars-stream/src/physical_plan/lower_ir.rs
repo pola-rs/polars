@@ -299,9 +299,14 @@ fn lower_ir_inner(
             schema,
             maintain_order,
             ordered_eval,
-        } if
+        } if (!is_scalar_window(exprs, order_by.is_some(), expr_arena)
+            || is_reducible_windows(
+                exprs,
+                &IR::schema_with_cache(*input, ir_arena, schema_cache),
+                expr_arena,
+            ))
             // Objects cannot be hashed or gathered by the window node.
-            !schema.iter_values().any(|dtype| dtype.contains_objects()) =>
+            && !schema.iter_values().any(|dtype| dtype.contains_objects()) =>
         {
             // The node partitions and sorts on the keys of the IR, not on those of the exprs.
             debug_assert!(window_exprs_match_keys(
@@ -319,11 +324,6 @@ fn lower_ir_inner(
             let phys_input = lower_ir!(input)?;
             let scalar =
                 is_reducible_windows(&exprs, phys_input.output_schema(phys_sm), expr_arena);
-            if !scalar && is_scalar_window(&exprs, order_by.is_some(), expr_arena) {
-                return build_hstack_stream(
-                    phys_input, &exprs, expr_arena, phys_sm, expr_cache, ctx,
-                );
-            }
             PhysNodeKind::Window {
                 input: phys_input,
                 partition_by,
