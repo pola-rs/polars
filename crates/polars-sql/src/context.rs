@@ -4400,7 +4400,18 @@ fn process_join_constraint(
     ctx: &mut SQLContext,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>, Vec<Expr>)> {
     match constraint {
-        JoinConstraint::On(expr) => process_join_on(ctx, expr, tbl_left, tbl_right),
+        JoinConstraint::On(expr) => {
+            let (left_on, right_on, predicates) = process_join_on(ctx, expr, tbl_left, tbl_right)?;
+            // `a = b AND b = a` gives the same key pair twice.
+            let mut keys: Vec<(Expr, Expr)> = Vec::with_capacity(left_on.len());
+            for key in left_on.into_iter().zip(right_on) {
+                if !keys.contains(&key) {
+                    keys.push(key);
+                }
+            }
+            let (left_on, right_on) = keys.into_iter().unzip();
+            Ok((left_on, right_on, predicates))
+        },
         JoinConstraint::Using(idents) if !idents.is_empty() => {
             let using: Vec<Expr> = idents
                 .iter()
