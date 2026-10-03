@@ -1,17 +1,11 @@
-from __future__ import annotations
-
 import io
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
-import numpy as np
 import pytest
 
 import polars as pl
 from polars.exceptions import SchemaError
 from polars.testing import assert_frame_equal
-
-if TYPE_CHECKING:
-    from polars._typing import EngineType
 
 
 @pytest.mark.may_fail_cloud
@@ -285,16 +279,23 @@ def test_vstack_scalar_empty_frame() -> None:
     assert empty.vstack(empty).to_dict(as_series=False) == {"a": [], "i": []}
 
 
-def test_vstack_scalar_signed_zero() -> None:
-    # Polars treats -0.0 and 0.0 as the same value (`Series.unique` collapses them), so
-    # the fast path may merge them, keeping the left-hand value.
-    pos = pl.DataFrame({"a": [1, 2]}).with_columns(z=pl.lit(0.0))
-    neg = pl.DataFrame({"a": [3, 4]}).with_columns(z=pl.lit(-0.0))
+@pytest.mark.parametrize(
+    ("lhs", "rhs"),
+    [
+        (pl.lit(0.0), pl.lit(-0.0)),
+        (pl.lit([0.0]), pl.lit([-0.0])),
+        (pl.struct(x=pl.lit(0.0)), pl.struct(x=pl.lit(-0.0))),
+    ],
+)
+def test_vstack_scalar_signed_zero(lhs: pl.Expr, rhs: pl.Expr) -> None:
+    # 0.0 and -0.0 are equal, but not the same value. Both have to be kept.
+    pos = pl.DataFrame({"a": [1, 2]}).with_columns(z=lhs)
+    neg = pl.DataFrame({"a": [3, 4]}).with_columns(z=rhs)
 
     out = pos.vstack(neg)
 
-    assert _reprs(out) == ["series", "scalar"]
-    assert np.signbit(out["z"].to_numpy()).tolist() == [False] * 4
+    assert _reprs(out) == ["series", "series"]
+    assert str(out["z"].to_list()) == str(pos["z"].to_list() + neg["z"].to_list())
 
 
 def test_vstack_scalar_nan() -> None:
@@ -317,12 +318,7 @@ def test_vstack_scalar_dtype_mismatch_still_raises() -> None:
 
 
 class _AlwaysEqual:
-    """An object whose `__eq__` reports equality with everything.
-
-    Mirrors `Foo` in `test_hashing_on_python_objects`. Polars requires object equality
-    to mean the values are the same, so it is entitled to treat these as one value -- as
-    `group_by` and `unique` already do.
-    """
+    """An object whose `__eq__` reports equality with everything."""
 
     def __init__(self, i: int) -> None:
         self.i = i
@@ -334,54 +330,17 @@ class _AlwaysEqual:
         return 0
 
 
-class _Distinct:
-    """An object with well-behaved equality: distinct values compare unequal."""
-
-    def __init__(self, i: int) -> None:
-        self.i = i
-
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, _Distinct) and self.i == other.i
-
-    def __hash__(self) -> int:
-        return hash(self.i)
-
-
-def _object_frame(value: object) -> pl.DataFrame:
-    return pl.DataFrame({"o": pl.Series("o", [value], dtype=pl.Object)})
-
-
-def test_append_distinct_object_scalars_not_merged() -> None:
-    # Distinct values must survive the fast path. `vstack` reaches `Column::append` and
-    # `pl.concat` reaches `append_owned`, so both are worth checking.
-    a, b = _object_frame(_Distinct(1)), _object_frame(_Distinct(2))
-
-    assert [o.i for o in a.vstack(b)["o"]] == [1, 2]
-    assert [o.i for o in pl.concat([a, b])["o"]] == [1, 2]
-
-
-def test_scalar_object_column_is_sorted() -> None:
-    # A constant column is sorted whatever it holds, `Object` included. Consumers have
-    # to cope with that: `unique` used to pick the row-encoding `SortedUnique` strategy
-    # off the back of it and panic.
-    df = _object_frame(_AlwaysEqual(1)).vstack(_object_frame(_AlwaysEqual(2)))
-    md = df._to_metadata(stats=["column_name", "repr", "sorted_asc"])
-
-    assert md["repr"].to_list() == ["scalar"]
-    assert md["sorted_asc"].to_list() == [True]
-
-
-@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_object_column_unique_after_append(engine: EngineType) -> None:
-    # Regression test: the streaming engine appends per-morsel results, and the
-    # resulting scalar object column used to panic in `unique` via row encoding.
-    lf = pl.LazyFrame({"a": [1, 2, 3, 4]}).with_columns(
-        pl.col("a").map_elements(_AlwaysEqual, return_dtype=pl.Object).alias("o")
+def test_append_object_scalars_not_merged() -> None:
+    # Object equality runs Python code and does not have to mean the values are the
+    # same. `vstack` reaches `Column::append` and `pl.concat` reaches `append_owned`.
+    a, b = (
+        pl.DataFrame({"o": pl.Series([_AlwaysEqual(i)], dtype=pl.Object)})
+        for i in range(2)
     )
-    df = lf.collect(engine=engine)
 
-    assert df.select("o").unique().height == 1
-    assert df.unique().height == 4
+    for out in [a.vstack(b), pl.concat([a, b])]:
+        assert _reprs(out) == ["series"]
+        assert [o.i for o in out["o"]] == [0, 1]
 
 
 def test_write_materialized_scalar_beside_chunked_column() -> None:
