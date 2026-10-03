@@ -379,14 +379,14 @@ impl Reducer {
         }
     }
 
-    /// Adds rows `rows` of `df` and pushes the group of each row to `group_ids`.
+    /// Adds rows `rows` of a morsel with window inputs `inputs` and pushes the group of each row
+    /// to `group_ids`.
     ///
     /// # Safety
-    /// The rows must be in-bounds of `df` and of `hash_keys`, the keys of `df`.
+    /// The rows must be in-bounds of `inputs` and of `hash_keys`, the keys of the morsel.
     unsafe fn update(
         &mut self,
-        params: &ScalarWindowParams,
-        df: &DataFrame,
+        inputs: &[Column],
         hash_keys: &HashKeys,
         rows: &[IdxSize],
         seq: MorselSeq,
@@ -398,17 +398,11 @@ impl Reducer {
                 .insert_keys_subset(hash_keys, rows, Some(group_ids))
         };
         let num_groups = self.grouper.num_groups();
-        for (window, reduction) in params.windows.iter().zip(&mut self.reductions) {
+        for (input, reduction) in inputs.iter().zip(&mut self.reductions) {
             reduction.resize(num_groups);
-            let column = df.column(&window.input)?;
             // SAFETY: the group ids are below `num_groups`.
             unsafe {
-                reduction.update_groups_subset(
-                    &[column],
-                    rows,
-                    &group_ids[start..],
-                    seq.to_u64(),
-                )?
+                reduction.update_groups_subset(&[input], rows, &group_ids[start..], seq.to_u64())?
             };
         }
         Ok(())
@@ -431,6 +425,20 @@ impl Reducer {
             .collect::<PolarsResult<_>>()?;
         DataFrame::new(num_groups as usize, columns)
     }
+}
+
+/// The input column of every window in `df`, with scalar columns materialized in a copy.
+fn window_inputs(params: &ScalarWindowParams, df: &DataFrame) -> PolarsResult<Vec<Column>> {
+    params
+        .windows
+        .iter()
+        .map(|window| {
+            Ok(match df.column(&window.input)? {
+                Column::Scalar(s) => s.clone().take_materialized_series().into_column(),
+                c => c.clone(),
+            })
+        })
+        .collect()
 }
 
 /// Reduces every hash partition on its own. All partitions read a block of morsels while it is
@@ -497,15 +505,17 @@ fn reduce_partitions(
         let block = &morsels[block_start..block_end];
 
         RAYON.install(|| {
-            let dfs = block
+            let inputs = block
                 .par_iter()
-                .map(|(b, i)| builders[*b].input.morsels[*i].1.get_blocking())
-                .collect::<Vec<_>>();
+                .map(|(b, i)| {
+                    window_inputs(params, &builders[*b].input.morsels[*i].1.get_blocking())
+                })
+                .collect::<PolarsResult<Vec<_>>>()?;
             partitions
                 .par_iter_mut()
                 .enumerate()
                 .try_for_each(|(p, partition)| {
-                    for ((b, i), df) in block.iter().zip(&dfs) {
+                    for ((b, i), inputs) in block.iter().zip(&inputs) {
                         let builder = &builders[*b];
                         let rows =
                             &builder.input.idxs_per_p[p][builder.input.partition_range(*i, p)];
@@ -515,8 +525,7 @@ fn reduce_partitions(
                         // SAFETY: the rows were generated from this morsel and its keys.
                         unsafe {
                             partition.reducer.update(
-                                params,
-                                df,
+                                inputs,
                                 &builder.hash_keys[*i],
                                 rows,
                                 builder.input.morsels[*i].0,
@@ -605,14 +614,14 @@ fn reduce_locally(
                 let mut groups = Vec::with_capacity(builder.input.morsels.len());
                 let mut all_rows = Vec::new();
                 for ((seq, sf), hash_keys) in builder.input.morsels.iter().zip(&builder.hash_keys) {
-                    let df = sf.get_blocking();
-                    let height = df.height() as IdxSize;
+                    let inputs = window_inputs(params, &sf.get_blocking())?;
+                    let height = sf.height() as IdxSize;
                     all_rows.extend(all_rows.len() as IdxSize..height);
                     let rows = &all_rows[..height as usize];
                     let mut ids = Vec::with_capacity(rows.len());
                     // SAFETY: the rows are in-bounds of this morsel and its keys.
-                    unsafe { reducer.update(params, &df, hash_keys, rows, *seq, &mut ids)? };
-                    drop(df);
+                    unsafe { reducer.update(&inputs, hash_keys, rows, *seq, &mut ids)? };
+                    drop(inputs);
                     memory_manager().spill_blocking();
                     groups.push(ids);
                 }

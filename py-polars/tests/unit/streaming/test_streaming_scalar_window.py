@@ -162,6 +162,17 @@ def test_scalar_window_single_group(tmp_path: Path) -> None:
     _assert_same(q)
 
 
+def test_scalar_window_scalar_columns(tmp_path: Path) -> None:
+    q = (
+        _scan(_frame(), tmp_path)
+        .with_columns(o=pl.lit(3), s=pl.lit("a"))
+        .with_columns(w=pl.col("o").sum().over("k"), m=pl.col("o").max().over("g"))
+        .with_columns(c=pl.len().over("o"))
+    )
+    assert _scalar_flags(q) == [True, True, True]
+    _assert_same(q)
+
+
 def test_scalar_window_empty() -> None:
     q = (
         _frame()
