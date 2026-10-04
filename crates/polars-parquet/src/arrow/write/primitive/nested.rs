@@ -3,7 +3,7 @@ use polars_arrow::types::NativeType as ArrowNativeType;
 use polars_error::PolarsResult;
 
 use super::super::{WriteOptions, nested, utils};
-use super::basic::{build_statistics, encode_plain};
+use super::basic::{IsFloatNan, build_statistics, encode_plain};
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::Nested;
 use crate::parquet::encoding::Encoding;
@@ -19,7 +19,7 @@ pub fn array_to_page<T, R>(
     nested: &[Nested],
 ) -> PolarsResult<DataPage>
 where
-    T: ArrowNativeType,
+    T: ArrowNativeType + IsFloatNan,
     R: NativeType,
     T: num_traits::AsPrimitive<R>,
 {

@@ -2,6 +2,7 @@ use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::scalar::PrimitiveScalar;
 use polars_arrow::types::NativeType;
 use polars_error::{PolarsResult, polars_bail};
+use polars_utils::float16::pf16;
 
 use super::super::{WriteOptions, utils};
 use crate::arrow::read::schema::is_nullable;
@@ -112,7 +113,7 @@ pub fn array_to_page_plain<T, P>(
     type_: PrimitiveType,
 ) -> PolarsResult<DataPage>
 where
-    T: NativeType,
+    T: NativeType + IsFloatNan,
     P: ParquetNativeType,
     T: num_traits::AsPrimitive<P>,
 {
@@ -126,7 +127,7 @@ pub fn array_to_page_integer<T, P>(
     encoding: Encoding,
 ) -> PolarsResult<Page>
 where
-    T: NativeType,
+    T: NativeType + IsFloatNan,
     P: ParquetNativeType,
     T: num_traits::AsPrimitive<P>,
     P: num_traits::AsPrimitive<i64>,
@@ -147,7 +148,7 @@ pub fn array_to_page<T, P, F: Fn(&PrimitiveArray<T>, EncodeNullability, Vec<u8>)
     encode: F,
 ) -> PolarsResult<DataPage>
 where
-    T: NativeType,
+    T: NativeType + IsFloatNan,
     P: ParquetNativeType,
     // constraint required to build statistics
     T: num_traits::AsPrimitive<P>,
@@ -190,39 +191,90 @@ where
     )
 }
 
+/// Whether a primitive value is a floating-point NaN.
+///
+/// Only floating-point types can hold NaN; every other primitive type reports
+/// `false`. Used to keep NaN out of Parquet page statistics, which the Parquet
+/// specification forbids.
+pub(crate) trait IsFloatNan: Copy {
+    fn is_float_nan(self) -> bool;
+}
+
+macro_rules! impl_is_float_nan_false {
+    ($($t:ty),*) => {
+        $(
+            impl IsFloatNan for $t {
+                #[inline]
+                fn is_float_nan(self) -> bool {
+                    false
+                }
+            }
+        )*
+    };
+}
+
+impl_is_float_nan_false!(u8, u16, u32, u64, i8, i16, i32, i64);
+
+impl IsFloatNan for f32 {
+    #[inline]
+    fn is_float_nan(self) -> bool {
+        self.is_nan()
+    }
+}
+
+impl IsFloatNan for f64 {
+    #[inline]
+    fn is_float_nan(self) -> bool {
+        self.is_nan()
+    }
+}
+
+impl IsFloatNan for pf16 {
+    #[inline]
+    fn is_float_nan(self) -> bool {
+        self.is_nan()
+    }
+}
+
 pub fn build_statistics<T, P>(
     array: &PrimitiveArray<T>,
     primitive_type: PrimitiveType,
     options: &StatisticsOptions,
 ) -> PrimitiveStatistics<P>
 where
-    T: NativeType,
+    T: NativeType + IsFloatNan,
     P: ParquetNativeType,
     T: num_traits::AsPrimitive<P>,
 {
+    // The Parquet specification forbids NaN in column statistics: NaN values
+    // are ignored when computing min/max, so a single NaN must not poison the
+    // statistics of the page containing it (which would let readers wrongly
+    // skip that page).
     let (min_value, max_value) = match (options.min_value, options.max_value) {
         (true, true) => {
-            match polars_compute::min_max::dyn_array_min_max_propagate_nan(array as &dyn Array) {
+            match polars_compute::min_max::dyn_array_min_max_ignore_nan(array as &dyn Array) {
                 None => (None, None),
                 Some((l, r)) => (Some(l), Some(r)),
             }
         },
         (true, false) => (
-            polars_compute::min_max::dyn_array_min_propagate_nan(array as &dyn Array),
+            polars_compute::min_max::dyn_array_min_ignore_nan(array as &dyn Array),
             None,
         ),
         (false, true) => (
             None,
-            polars_compute::min_max::dyn_array_max_propagate_nan(array as &dyn Array),
+            polars_compute::min_max::dyn_array_max_ignore_nan(array as &dyn Array),
         ),
         (false, false) => (None, None),
     };
 
+    // A page whose values are all NaN carries no min/max statistics at all.
     let min_value = min_value.and_then(|s| {
         s.as_any()
             .downcast_ref::<PrimitiveScalar<T>>()
             .unwrap()
             .value()
+            .filter(|x| !x.is_float_nan())
             .map(|x| x.as_().norm_min())
     });
     let max_value = max_value.and_then(|s| {
@@ -230,6 +282,7 @@ where
             .downcast_ref::<PrimitiveScalar<T>>()
             .unwrap()
             .value()
+            .filter(|x| !x.is_float_nan())
             .map(|x| x.as_().norm_max())
     });
 
@@ -239,5 +292,71 @@ where
         distinct_count: None,
         max_value,
         min_value,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parquet::schema::types::PhysicalType;
+
+    fn test_options() -> StatisticsOptions {
+        StatisticsOptions {
+            min_value: true,
+            max_value: true,
+            distinct_count: false,
+            null_count: false,
+            binary_statistics_truncate_length: None,
+        }
+    }
+
+    fn double_type() -> PrimitiveType {
+        PrimitiveType::from_physical("".into(), PhysicalType::Double)
+    }
+
+    // Regression test for https://github.com/pola-rs/polars/issues/29640: a
+    // single NaN must not poison the page min/max statistics, otherwise
+    // readers wrongly skip pages that hold matching rows.
+    #[test]
+    fn test_build_statistics_ignores_nan_f64() {
+        let array = PrimitiveArray::<f64>::from_vec(vec![3.0, f64::NAN, 1.0, 2.0]);
+        let stats = build_statistics::<f64, f64>(&array, double_type(), &test_options());
+        assert_eq!(stats.min_value, Some(1.0));
+        assert_eq!(stats.max_value, Some(3.0));
+    }
+
+    #[test]
+    fn test_build_statistics_ignores_nan_f32() {
+        let array = PrimitiveArray::<f32>::from_vec(vec![f32::NAN, -1.0, 4.0]);
+        let stats = build_statistics::<f32, f32>(
+            &array,
+            PrimitiveType::from_physical("".into(), PhysicalType::Float),
+            &test_options(),
+        );
+        assert_eq!(stats.min_value, Some(-1.0));
+        assert_eq!(stats.max_value, Some(4.0));
+    }
+
+    // A page whose values are all NaN must not carry min/max statistics at
+    // all: the Parquet specification forbids NaN in statistics.
+    #[test]
+    fn test_build_statistics_all_nan_omits_bounds() {
+        let array = PrimitiveArray::<f64>::from_vec(vec![f64::NAN, f64::NAN]);
+        let stats = build_statistics::<f64, f64>(&array, double_type(), &test_options());
+        assert_eq!(stats.min_value, None);
+        assert_eq!(stats.max_value, None);
+    }
+
+    // Non-float types are unaffected by the NaN handling.
+    #[test]
+    fn test_build_statistics_int_unaffected() {
+        let array = PrimitiveArray::<i64>::from_vec(vec![3, 1, 2]);
+        let stats = build_statistics::<i64, i64>(
+            &array,
+            PrimitiveType::from_physical("".into(), PhysicalType::Int64),
+            &test_options(),
+        );
+        assert_eq!(stats.min_value, Some(1));
+        assert_eq!(stats.max_value, Some(3));
     }
 }

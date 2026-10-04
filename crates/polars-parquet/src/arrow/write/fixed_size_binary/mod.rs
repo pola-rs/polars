@@ -60,6 +60,8 @@ pub(super) fn build_statistics_float16(
     primitive_type: PrimitiveType,
     options: &StatisticsOptions,
 ) -> FixedLenStatistics {
+    // NaN values are ignored when computing min/max (the Parquet specification
+    // forbids NaN in column statistics); an all-NaN page omits the bound.
     FixedLenStatistics {
         primitive_type,
         null_count: options.null_count.then_some(array.null_count() as i64),
@@ -68,7 +70,8 @@ pub(super) fn build_statistics_float16(
             .max_value
             .then(|| {
                 array
-                    .max_propagate_nan_kernel()
+                    .max_ignore_nan_kernel()
+                    .filter(|x| !x.is_nan())
                     .map(|x| x.norm_max().to_le_bytes().as_ref().to_vec())
             })
             .flatten(),
@@ -76,7 +79,8 @@ pub(super) fn build_statistics_float16(
             .min_value
             .then(|| {
                 array
-                    .min_propagate_nan_kernel()
+                    .min_ignore_nan_kernel()
+                    .filter(|x| !x.is_nan())
                     .map(|x| x.norm_min().to_le_bytes().as_ref().to_vec())
             })
             .flatten(),

@@ -1146,6 +1146,38 @@ def test_parquet_statistics_uint64_16683() -> None:
     assert statistics.max == u64_max
 
 
+def test_parquet_float_nan_statistics_29640() -> None:
+    # A single NaN must not poison the page min/max statistics: the row-group
+    # statistics have to cover the true value range, otherwise scan_parquet
+    # wrongly skips row groups that hold matching rows.
+    vals = [float(i) for i in range(1_000_000)]
+    vals[5] = float("nan")
+    df = pl.DataFrame({"c0": vals})
+    file = io.BytesIO()
+    df.write_parquet(file)
+    file.seek(0)
+
+    # The writer splits the frame into several row groups, so the true value
+    # range is covered by the min/max across all row groups, not by any single
+    # one. No row group may carry NaN (or missing) min/max statistics.
+    md = pq.read_metadata(file)
+    mins = []
+    maxs = []
+    for i in range(md.num_row_groups):
+        statistics = md.row_group(i).column(0).statistics
+        assert statistics.has_min_max
+        mins.append(statistics.min)
+        maxs.append(statistics.max)
+    assert min(mins) == 0.0
+    assert max(maxs) == 999999.0
+
+    file.seek(0)
+    eager = pl.read_parquet(file).filter(pl.col("c0") == 100.0).height
+    file.seek(0)
+    lazy = pl.scan_parquet(file).filter(pl.col("c0") == 100.0).collect().height
+    assert eager == lazy == 1
+
+
 def test_parquet_enum_statistics() -> None:
     df = pl.Series(
         "a", ["d", "b", "d", None, None, None], dtype=pl.Enum(["z", "d", "b", "a"])
