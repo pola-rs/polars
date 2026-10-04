@@ -1981,8 +1981,10 @@ impl SQLFunctionVisitor<'_> {
         };
         // Only computed over the whole partition.
         let whole_partition = match function {
-            ApproxQuantile | ArrayAgg | Avg | Corr | CovarPop | CovarSamp | Last | Median
-            | QuantileCont | QuantileDisc | StdDev | StringAgg | Variance => true,
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile => true,
+            ArrayAgg | Avg | Corr | CovarPop | CovarSamp | Last | Median | QuantileCont
+            | QuantileDisc | StdDev | StringAgg | Variance => true,
             Count => is_distinct,
             _ => false,
         };
