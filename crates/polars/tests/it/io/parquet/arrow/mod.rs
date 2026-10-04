@@ -4,13 +4,13 @@ mod write;
 use std::io::{Cursor, Read, Seek};
 use std::sync::Arc;
 
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::*;
-use arrow::record_batch::RecordBatchT;
-use arrow::types::{NativeType, i256};
 use ethnum::AsI256;
 use polars::prelude::{PlSmallStr, get_encodings};
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::*;
+use polars_arrow::record_batch::RecordBatchT;
+use polars_arrow::types::{NativeType, i256};
 use polars_error::PolarsResult;
 use polars_parquet::read::{self as p_read};
 use polars_parquet::write::*;
@@ -695,20 +695,21 @@ fn integration_write(
 type IntegrationRead = (ArrowSchema, Vec<RecordBatchT<Box<dyn Array>>>);
 
 fn integration_read(data: &[u8], limit: Option<usize>) -> PolarsResult<IntegrationRead> {
-    let mut reader = Cursor::new(data);
-    let metadata = p_read::read_metadata(&mut reader)?;
+    let metadata = p_read::read_metadata(&mut Cursor::new(data))?;
     let schema = p_read::infer_schema(&metadata)?;
-
-    let reader = FileReader::new(
-        Cursor::new(data),
-        metadata.row_groups,
-        schema.clone(),
-        limit,
-    );
-
-    let batches = reader.collect::<PolarsResult<Vec<_>>>()?;
+    let batches = read_with_schema(data, schema.clone(), limit)?;
 
     Ok((schema, batches))
+}
+
+/// Decodes `data` as `schema`, instead of the schema inferred from the file.
+fn read_with_schema(
+    data: &[u8],
+    schema: ArrowSchema,
+    limit: Option<usize>,
+) -> PolarsResult<Vec<RecordBatchT<Box<dyn Array>>>> {
+    let metadata = p_read::read_metadata(&mut Cursor::new(data))?;
+    FileReader::new(Cursor::new(data), metadata.row_groups, schema, limit).collect()
 }
 
 fn assert_roundtrip(
@@ -873,6 +874,31 @@ fn list_int_nullable() -> PolarsResult<()> {
     );
     array.try_extend(data).unwrap();
     assert_array_roundtrip(true, array.into_box(), None)
+}
+
+#[test]
+fn list_nesting_mismatch_is_refused() -> PolarsResult<()> {
+    let array = data(0..12i64, true);
+    let schema = ArrowSchema::from_iter([Field::new("a1".into(), array.dtype().clone(), true)]);
+    let chunk = RecordBatchT::try_new(array.len(), Arc::new(schema.clone()), vec![array])?;
+    let data = integration_write(&schema, &[chunk])?;
+
+    let mismatched = ArrowSchema::from_iter([Field::new(
+        "a1".into(),
+        ArrowDataType::LargeList(Box::new(Field::new(
+            "item".into(),
+            ArrowDataType::Int64,
+            false,
+        ))),
+        true,
+    )]);
+    let err = read_with_schema(&data, mismatched, None).unwrap_err();
+    assert!(
+        err.to_string().contains("nesting mismatch"),
+        "unexpected error: {err}"
+    );
+
+    Ok(())
 }
 
 #[test]

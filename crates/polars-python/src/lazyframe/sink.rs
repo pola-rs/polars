@@ -23,7 +23,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<polars_plan::dsl::SinkTarget> {
                 PyResult::Ok(
                     crate::file::try_get_pyfile(py, py_f, true)?
                         .0
-                        .into_writeable(),
+                        .into_writable(),
                 )
             })?;
 
@@ -49,11 +49,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<FileProviderReturn> {
         } else {
             let py = ob.py();
 
-            let writeable = crate::file::try_get_pyfile(py, ob.to_owned(), true)?
+            let writable = crate::file::try_get_pyfile(py, ob.to_owned(), true)?
                 .0
-                .into_writeable();
+                .into_writable();
 
-            Ok(Wrap(FileProviderReturn::Writeable(writeable)))
+            Ok(Wrap(FileProviderReturn::Writable(writable)))
         }
     }
 }

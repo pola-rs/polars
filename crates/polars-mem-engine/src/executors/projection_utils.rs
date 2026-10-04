@@ -1,17 +1,8 @@
+use polars_defs::time::group_by::RollingGroupOptionsIR;
 use polars_plan::constants::CSE_REPLACED;
 use polars_utils::itertools::Itertools;
 
 use super::*;
-
-pub(super) fn profile_name(
-    s: &dyn PhysicalExpr,
-    input_schema: &Schema,
-) -> PolarsResult<PlSmallStr> {
-    match s.to_field(input_schema) {
-        Err(e) => Err(e),
-        Ok(fld) => Ok(fld.name),
-    }
-}
 
 type IdAndExpression = (u32, Arc<dyn PhysicalExpr>);
 
@@ -19,7 +10,7 @@ type IdAndExpression = (u32, Arc<dyn PhysicalExpr>);
 fn rolling_evaluate(
     df: &DataFrame,
     state: &ExecutionState,
-    rolling: PlHashMap<RollingGroupOptions, Vec<IdAndExpression>>,
+    rolling: PlHashMap<RollingGroupOptionsIR, Vec<IdAndExpression>>,
 ) -> PolarsResult<Vec<Vec<(u32, Column)>>> {
     RAYON.install(|| {
         rolling
@@ -148,7 +139,7 @@ fn execute_projection_cached_window_fns(
     // u32: index,
     let mut windows: PlHashMap<String, Vec<IdAndExpression>> = PlHashMap::default();
     #[cfg(feature = "dynamic_group_by")]
-    let mut rolling: PlHashMap<RollingGroupOptions, Vec<IdAndExpression>> = PlHashMap::default();
+    let mut rolling: PlHashMap<RollingGroupOptionsIR, Vec<IdAndExpression>> = PlHashMap::default();
     let mut other = Vec::with_capacity(exprs.len());
 
     // first we partition the window function by the values they group over.
@@ -167,11 +158,12 @@ fn execute_projection_cached_window_fns(
                         closed_window,
                     } => {
                         if let Expr::Column(index_column) = index_column.as_ref() {
-                            let options = RollingGroupOptions {
+                            let options = RollingGroupOptionsIR {
                                 index_column: index_column.clone(),
                                 period: *period,
                                 offset: *offset,
                                 closed_window: *closed_window,
+                                placement: None,
                             };
                             let entry = rolling.entry(options).or_default();
                             entry.push((index, phys.clone()));

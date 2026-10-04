@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use arrow::array::builder::ShareStrategy;
+use polars_arrow::array::builder::ShareStrategy;
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::schema::Schema;
+use polars_defs::join::{JoinArgs, JoinBuildSide, MaintainOrderJoin};
 use polars_error::polars_warn;
-use polars_ops::frame::{JoinArgs, JoinBuildSide, MaintainOrderJoin};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -25,6 +26,7 @@ impl CrossJoinNode {
         left_input_schema: Arc<Schema>,
         right_input_schema: Arc<Schema>,
         args: &JoinArgs,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         let left_is_build = match args.maintain_order {
             MaintainOrderJoin::None => match args.build_side {
@@ -50,7 +52,7 @@ impl CrossJoinNode {
         } else {
             &right_input_schema
         };
-        let sink_node = InMemorySinkNode::new(build_input_schema.clone());
+        let sink_node = InMemorySinkNode::new(build_input_schema.clone(), task_metrics);
         let right_rename = right_input_schema
             .iter_names()
             .map(|rname| {
@@ -197,14 +199,14 @@ impl ComputeNode for CrossJoinNode {
                                         }
 
                                         left_join_df.hstack_mut_unchecked(right_join_df.columns());
-                                        Morsel::new(
+                                        Morsel::new_unregistered(
                                             left_join_df,
                                             morsel.seq(),
                                             morsel.source_token().clone(),
                                         )
                                     };
 
-                                let probe_df = morsel.df();
+                                let probe_df = morsel.df().await;
                                 if build_df.height() >= ideal_morsel_size {
                                     for probe_offset in 0..probe_df.height() {
                                         let mut build_offset = 0;
@@ -244,7 +246,7 @@ impl ComputeNode for CrossJoinNode {
                                             cached_build_df_repeated.slice(0, build_height);
 
                                         probe_repeater.subslice_extend_each_repeated(
-                                            probe_df,
+                                            &probe_df,
                                             probe_offset,
                                             build_repeats,
                                             build_df.height(),

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::prelude::*;
 use polars_ops::frame::gather::GatherDf;
 
@@ -18,9 +19,13 @@ enum GatherState {
 }
 
 impl GatherNode {
-    pub fn new(input_schema: Arc<Schema>, null_on_oob: bool) -> Self {
+    pub fn new(
+        input_schema: Arc<Schema>,
+        null_on_oob: bool,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         Self {
-            state: GatherState::Sink(InMemorySinkNode::new(input_schema)),
+            state: GatherState::Sink(InMemorySinkNode::new(input_schema, task_metrics)),
             null_on_oob,
         }
     }
@@ -101,10 +106,12 @@ impl ComputeNode for GatherNode {
                     let input = &*input;
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                         while let Ok(morsel) = recv.recv().await {
-                            let morsel = morsel.try_map(|idx_df| {
-                                assert!(idx_df.width() == 1);
-                                input.gather_with_column(&idx_df.columns()[0], null_on_oob)
-                            })?;
+                            let morsel = morsel
+                                .try_map(|idx_df| {
+                                    assert!(idx_df.width() == 1);
+                                    input.gather_with_column(&idx_df.columns()[0], null_on_oob)
+                                })
+                                .await?;
 
                             if send.send(morsel).await.is_err() {
                                 break;

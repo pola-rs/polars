@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import OrderedDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -1284,6 +1285,40 @@ def test_from_rows_dtype() -> None:
     assert df.item() == dc
 
 
+@pytest.mark.parametrize(
+    ("rows", "schema", "infer_schema_length", "msg"),
+    [
+        ([(1,), (2, 3)], None, 100, "row at index 1 has length 2 (expected 1)"),
+        ([[1, 2], [3]], None, 100, "row at index 1 has length 1 (expected 2)"),
+        ([(1,)] * 3 + [(2, 3)], None, 2, "row at index 3 has length 2 (expected 1)"),
+        (
+            [(1, 2), (3, 4, 5)],
+            ["a", "b"],
+            100,
+            "row at index 1 has length 3 (expected 2)",
+        ),
+    ],
+)
+def test_from_rows_ragged(
+    rows: list[Any], schema: list[str] | None, infer_schema_length: int, msg: str
+) -> None:
+    # later rows must match the first row's width
+    with pytest.raises(ShapeError, match=re.escape(msg)):
+        pl.DataFrame(
+            rows,
+            orient="row",
+            schema=schema,
+            infer_schema_length=infer_schema_length,
+        )
+    with pytest.raises(ShapeError, match=re.escape(msg)):
+        pl.from_records(
+            rows,
+            orient="row",
+            schema=schema,
+            infer_schema_length=infer_schema_length,
+        )
+
+
 def test_from_dicts_schema() -> None:
     data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]
 
@@ -1543,8 +1578,11 @@ def test_arrow_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
 
     original_array = pa.chunked_array([[1, 2, 3]], type=pa.int64())
     pyseries = arrow_to_pyseries("", original_array)
+
+    # Exporting back to Arrow is zero-copy.
+    result_array = pl.Series._from_pyseries(pyseries).to_arrow()
     assert (
-        pyseries.get_chunks()[0]._get_buffer_info()[0]
+        result_array.buffers()[1].address
         == original_array.chunks[0].buffers()[1].address
     )
 
@@ -1722,7 +1760,6 @@ def test_array_construction() -> None:
     assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_pycapsule_interface(df: pl.DataFrame) -> None:
     df = df.rechunk()
     pyarrow_table = df.to_arrow()

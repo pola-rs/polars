@@ -1,6 +1,6 @@
 use std::ops::Not;
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 
 use super::*;
 use crate::chunked_array::StructChunked;
@@ -35,16 +35,6 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
 
     fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags);
-    }
-
-    // TODO! remove this. Very slow. Asof join should use row-encoding.
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        let other = other.struct_().unwrap();
-        self.0
-            .fields_as_series()
-            .iter()
-            .zip(other.fields_as_series())
-            .all(|(s, other)| s.equal_element(idx_self, idx_other, &other))
     }
 
     fn vec_hash(
@@ -95,8 +85,34 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
-        let ca = self.0.get_row_encoded(Default::default())?;
-        ca.group_tuples(multithreaded, sorted)
+        if self.struct_fields().is_empty() {
+            if self.has_nulls() {
+                BooleanChunked::with_chunk(
+                    self.name().clone(),
+                    BooleanArray::new(
+                        ArrowDataType::Boolean,
+                        self.rechunk_validity().unwrap(),
+                        None,
+                    ),
+                )
+                .group_tuples(multithreaded, sorted)
+            } else {
+                use polars_error::constants::LENGTH_LIMIT_MSG;
+
+                Ok(GroupsType::Slice {
+                    groups: vec![[
+                        0,
+                        IdxSize::try_from(self.len())
+                            .map_err(|_| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?,
+                    ]],
+                    overlapping: false,
+                    monotonic: true,
+                })
+            }
+        } else {
+            let ca = self.0.get_row_encoded(Default::default())?;
+            ca.group_tuples(multithreaded, sorted)
+        }
     }
 
     #[cfg(feature = "zip_with")]
@@ -106,9 +122,6 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
             .map(|ca| ca.into_series())
     }
 
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        invalid_operation_panic!(into_total_eq_inner, self)
-    }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         invalid_operation_panic!(into_total_ord_inner, self)
     }
@@ -268,6 +281,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         Ok(IdxCa::from_vec(self.name().clone(), first))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         let ca = encode_rows_unordered(&[self.0.clone().into_column()])?;
         ChunkUnique::unique_id(&ca)

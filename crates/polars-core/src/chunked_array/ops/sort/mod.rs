@@ -12,9 +12,9 @@ use std::cmp::Ordering;
 
 pub(crate) use arg_sort::arg_sort_row_fmt;
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::legacy::trusted_len::TrustedLenPush;
 use compare_inner::NonNull;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use polars_buffer::Buffer;
 use polars_utils::nulls::IsNull;
 use polars_utils::sort::reorder_cmp;
@@ -681,7 +681,11 @@ impl ChunkSort<StructType> for StructChunked {
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
         let bin = self.get_row_encoded(options).unwrap();
-        bin.arg_sort(Default::default())
+        bin.arg_sort(SortOptions {
+            maintain_order: options.maintain_order,
+            multithreaded: options.multithreaded,
+            ..Default::default()
+        })
     }
 }
 
@@ -713,7 +717,11 @@ impl ChunkSort<ListType> for ListChunked {
             false,
         )
         .unwrap();
-        bin.arg_sort(Default::default())
+        bin.arg_sort(SortOptions {
+            maintain_order: options.maintain_order,
+            multithreaded: options.multithreaded,
+            ..Default::default()
+        })
     }
 }
 

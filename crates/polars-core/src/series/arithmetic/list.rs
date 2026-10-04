@@ -123,12 +123,12 @@ use inner::ListNumericOpHelper;
 
 #[cfg(feature = "list_arithmetic")]
 mod inner {
-    use arrow::bitmap::Bitmap;
-    use arrow::compute::utils::combine_validities_and;
-    use arrow::offset::OffsetsBuffer;
     use either::Either;
     use list_utils::with_match_pl_num_arith;
     use num_traits::Zero;
+    use polars_arrow::bitmap::Bitmap;
+    use polars_arrow::compute::utils::combine_validities_and;
+    use polars_arrow::offset::OffsetsBuffer;
     use polars_compute::arithmetic::pl_num::PlNumArithmetic;
     use polars_utils::float::IsFloat;
 

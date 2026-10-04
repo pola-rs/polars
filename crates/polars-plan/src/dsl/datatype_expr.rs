@@ -13,7 +13,7 @@ use super::{
 use crate::frame::OptFlags;
 use crate::plans::{ExprToIRContext, ToFieldContext, expand_expression, to_expr_ir};
 
-#[derive(Clone, PartialEq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DataTypeExpr {
@@ -38,7 +38,7 @@ pub enum DataTypeExpr {
     SelfDtype,
 }
 
-#[derive(Clone, PartialEq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum SequenceKind {
@@ -46,7 +46,7 @@ pub enum SequenceKind {
     Array,
 }
 
-#[derive(PartialEq, Clone, Hash)]
+#[derive(PartialEq, Eq, Clone, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IntDataTypeExpr {
@@ -54,7 +54,7 @@ pub enum IntDataTypeExpr {
     ToSigned,
 }
 
-#[derive(PartialEq, Clone, Hash)]
+#[derive(PartialEq, Eq, Clone, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum StructDataTypeExpr {
@@ -196,8 +196,8 @@ fn into_datatype_impl(
             )
         }),
         D::StructWithFields(field_exprs) => feature_gated!("dtype-struct", {
-            use polars_core::prelude::{Field, InitHashMaps, PlHashSet};
-            let mut seen = PlHashSet::with_capacity(field_exprs.len());
+            use polars_core::prelude::{Field, InitHashMaps, PlIndexSet};
+            let mut seen = PlIndexSet::with_capacity(field_exprs.len());
             let mut fields = Vec::with_capacity(field_exprs.len());
             for (name, dt_expr) in field_exprs {
                 let dt = into_datatype_impl(dt_expr, schema, self_dtype)?;

@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import (
     ColumnNotFoundError,
     ComputeError,
@@ -23,15 +24,21 @@ from tests.unit.conftest import time_func
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import JoinStrategy, PolarsDataType
+    from polars._typing import (
+        EngineType,
+        JoinStrategy,
+        MaintainOrderJoin,
+        PolarsDataType,
+    )
 
 
 def test_semi_anti_join() -> None:
     df_a = pl.DataFrame({"key": [1, 2, 3], "payload": ["f", "i", None]})
-
     df_b = pl.DataFrame({"key": [3, 4, 5, None]})
 
-    assert df_a.join(df_b, on="key", how="anti").to_dict(as_series=False) == {
+    assert df_a.join(df_b, on="key", how="anti", maintain_order="left").to_dict(
+        as_series=False
+    ) == {
         "key": [1, 2],
         "payload": ["f", "i"],
     }
@@ -41,7 +48,11 @@ def test_semi_anti_join() -> None:
     }
 
     # lazy
-    result = df_a.lazy().join(df_b.lazy(), on="key", how="anti").collect()
+    result = (
+        df_a.lazy()
+        .join(df_b.lazy(), on="key", how="anti", maintain_order="left")
+        .collect()
+    )
     expected_values = {"key": [1, 2], "payload": ["f", "i"]}
     assert result.to_dict(as_series=False) == expected_values
 
@@ -52,10 +63,11 @@ def test_semi_anti_join() -> None:
     df_a = pl.DataFrame(
         {"a": [1, 2, 3, 1], "b": ["a", "b", "c", "a"], "payload": [10, 20, 30, 40]}
     )
-
     df_b = pl.DataFrame({"a": [3, 3, 4, 5], "b": ["c", "c", "d", "e"]})
 
-    assert df_a.join(df_b, on=["a", "b"], how="anti").to_dict(as_series=False) == {
+    assert df_a.join(df_b, on=["a", "b"], how="anti", maintain_order="left").to_dict(
+        as_series=False
+    ) == {
         "a": [1, 2, 1],
         "b": ["a", "b", "a"],
         "payload": [10, 20, 40],
@@ -169,15 +181,6 @@ def test_deprecated() -> None:
         .to_numpy(),
         result.to_numpy(),
     )
-
-
-def test_deprecated_parameter_join_nulls() -> None:
-    df = pl.DataFrame({"a": [1, None]})
-    with pytest.deprecated_call(
-        match=r"the argument `join_nulls` for `DataFrame.join` is deprecated. It was renamed to `nulls_equal`"
-    ):
-        result = df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]
-    assert_frame_equal(result, df, check_row_order=False)
 
 
 def test_join_on_expressions() -> None:
@@ -399,7 +402,6 @@ def test_join_chunks_alignment_4720() -> None:
     )
 
 
-@pytest.mark.may_fail_auto_streaming  # SORTED_ASC flags
 def test_jit_sort_joins() -> None:
     n = 200
     # Explicitly specify numpy dtype because of different defaults on Windows
@@ -484,7 +486,7 @@ def test_semi_join_projection_pushdown_6455() -> None:
 
     latest = df.group_by("id").agg(pl.col("timestamp").max())
     df = df.join(latest, on=["id", "timestamp"], how="semi")
-    assert df.select(["id", "value"]).collect().to_dict(as_series=False) == {
+    assert df.select(["id", "value"]).sort("id").collect().to_dict(as_series=False) == {
         "id": [1, 2],
         "value": [2, 4],
     }
@@ -506,7 +508,6 @@ def test_update() -> None:
             ],
         }
     )
-
     df2 = pl.DataFrame(
         {
             "key1": [1, 2, 3, 4],
@@ -673,25 +674,40 @@ def test_join_concat_projection_pd_case_7071() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming  # legacy full join is not order-preserving whereas new-streaming is
-def test_join_sorted_fast_paths_null() -> None:
+def test_join_sorted_fast_paths_null_8269() -> None:
     df1 = pl.DataFrame({"x": [0, 1, 0]}).sort("x")
     df2 = pl.DataFrame({"x": [0, None], "y": [0, 1]})
-    assert df1.join(df2, on="x", how="inner").to_dict(as_series=False) == {
-        "x": [0, 0],
-        "y": [0, 0],
-    }
-    assert df1.join(df2, on="x", how="left").to_dict(as_series=False) == {
-        "x": [0, 0, 1],
-        "y": [0, 0, None],
-    }
-    assert df1.join(df2, on="x", how="anti").to_dict(as_series=False) == {"x": [1]}
-    assert df1.join(df2, on="x", how="semi").to_dict(as_series=False) == {"x": [0, 0]}
-    assert df1.join(df2, on="x", how="full").to_dict(as_series=False) == {
-        "x": [0, 0, 1, None],
-        "x_right": [0, 0, None, None],
-        "y": [0, 0, None, 1],
-    }
+    assert_frame_equal(
+        df1.join(df2, on="x", how="inner"),
+        pl.DataFrame({"x": [0, 0], "y": [0, 0]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df1.join(df2, on="x", how="left"),
+        pl.DataFrame({"x": [0, 0, 1], "y": [0, 0, None]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df1.join(df2, on="x", how="anti"),
+        pl.DataFrame({"x": [1]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df1.join(df2, on="x", how="semi"),
+        pl.DataFrame({"x": [0, 0]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df1.join(df2, on="x", how="full"),
+        pl.DataFrame(
+            {
+                "x": [0, 0, 1, None],
+                "x_right": [0, 0, None, None],
+                "y": [0, 0, None, 1],
+            }
+        ),
+        check_row_order=False,
+    )
 
 
 def test_full_outer_join_list_() -> None:
@@ -874,28 +890,314 @@ def test_full_outer_join_coalesce_different_names_13450() -> None:
             "R2": [7, 8, 9, None],
         }
     )
-
     out = df1.join(df2, left_on="L1", right_on="L3", how="full", coalesce=True)
     assert_frame_equal(out, expected, check_row_order=False)
 
 
 # https://github.com/pola-rs/polars/issues/10663
-def test_join_on_wildcard_error() -> None:
-    df = pl.DataFrame({"x": [1]})
+def test_join_on_wildcard() -> None:
+    df1 = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
+
     with pytest.raises(
         InvalidOperationError,
+        match=r"join keys expanded.*\(left: 1, right: 2\)",
     ):
-        df.join(df2, on=pl.all())
+        df1.join(df2, on=pl.all())
+
+    df1 = pl.DataFrame({"x": [1, 2], "value": ["a", "b"]})
+    df2 = pl.DataFrame({"x": [1, 3], "value": ["a", "c"]})
+
+    assert_frame_equal(
+        df1.join(df2, on=pl.all()),
+        df1.join(df2, on=["x", "value"]),
+    )
 
 
-def test_join_on_nth_error() -> None:
+def test_join_on_nth() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
+    expected = pl.DataFrame({"x": [1], "y": [2]})
+
+    assert_frame_equal(df.join(df2, on=pl.first()), expected)
+    assert_frame_equal(df.lazy().join(df2.lazy(), on=pl.first()).collect(), expected)
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        cs.by_name("a", "b"),
+        cs.integer(),
+        cs.matches(r"^[ab]$"),
+        cs.by_index(0, 1),
+        cs.all() - cs.string(),
+        pl.col("a", "b"),
+    ],
+)
+def test_join_on_selectors(selector: pl.Expr) -> None:
+    left = pl.DataFrame(
+        {"a": [1, 1, 2], "b": [10, 20, 10], "left_value": ["l1", "l2", "l3"]}
+    )
+    right = pl.DataFrame(
+        {"a": [1, 2, 2], "b": [10, 10, 30], "right_value": ["r1", "r2", "r3"]}
+    )
+
+    assert_frame_equal(
+        left.join(right, on=selector),
+        left.join(right, on=["a", "b"]),
+        check_row_order=False,
+    )
+
+
+def test_join_on_multi_column_string_selectors() -> None:
+    left = pl.DataFrame({"a": ["x", "y"], "b": ["u", "v"], "left_value": [1, 2]})
+    right = pl.DataFrame({"x": ["x", "y"], "y": ["u", "w"], "right_value": [3, 4]})
+
+    assert_frame_equal(
+        left.join(right, left_on=cs.string(), right_on=cs.string()),
+        left.join(right, left_on=["a", "b"], right_on=["x", "y"]),
+    )
+
+
+def test_join_on_regex_string() -> None:
+    left = pl.DataFrame({"key_a": [1, 2], "key_b": [10, 20], "left_value": ["x", "y"]})
+    right = pl.DataFrame(
+        {"key_a": [1, 2], "key_b": [10, 30], "right_value": ["x", "y"]}
+    )
+
+    assert_frame_equal(
+        left.join(right, on=r"^key_.*$"),
+        left.join(right, on=["key_a", "key_b"]),
+    )
+
+    literal = pl.DataFrame({r"^key_.*$": [1, 2]})
+    assert_frame_equal(
+        literal.join(literal, on=cs.by_name(r"^key_.*$")),
+        literal,
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full", "semi", "anti"])
+def test_join_selector_keyed_variants(how: JoinStrategy) -> None:
+    left = pl.LazyFrame(
+        {"a": [1, 1, 2], "b": [10, 20, 10], "left_value": ["l1", "l2", "l3"]}
+    )
+    right = pl.LazyFrame(
+        {"a": [1, 2, 2], "b": [10, 10, 30], "right_value": ["r1", "r2", "r3"]}
+    )
+    actual = left.join(right, on=cs.by_name("a", "b"), how=how)
+    expected = left.join(right, on=["a", "b"], how=how)
+
+    assert actual.collect_schema() == expected.collect_schema()
+    for engine in ("in-memory", "streaming"):
+        assert_frame_equal(
+            actual.collect(engine=engine),
+            expected.collect(engine=engine),
+            check_row_order=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("left_on", "right_on", "expected_left_on", "expected_right_on"),
+    [
+        pytest.param(
+            [cs.by_name("a", "b").cast(pl.Int64), pl.col("c")],
+            [cs.by_name("x", "y").cast(pl.Int64), pl.col("z")],
+            [pl.col("a").cast(pl.Int64), pl.col("b").cast(pl.Int64), "c"],
+            [pl.col("x").cast(pl.Int64), pl.col("y").cast(pl.Int64), "z"],
+            id="casted-selectors-with-plain-key",
+        ),
+        pytest.param(
+            [cs.by_name("a", "b").cast(pl.Int64), pl.col("c")],
+            ["x", "y", "z"],
+            [pl.col("a").cast(pl.Int64), pl.col("b").cast(pl.Int64), "c"],
+            ["x", "y", "z"],
+            id="nested-selector-unequal-raw-counts",
+        ),
+        pytest.param(cs.by_name("a"), pl.col("x"), "a", "x", id="single-selector"),
+        pytest.param(
+            [cs.by_name("a", "b"), "c"],
+            ["x", cs.by_name("y", "z")],
+            ["a", "b", "c"],
+            ["x", "y", "z"],
+            id="mixed-selector-positions",
+        ),
+        pytest.param(
+            cs.by_name("a", "b"),
+            ["x", "y"],
+            ["a", "b"],
+            ["x", "y"],
+            id="selector-left",
+        ),
+        pytest.param(
+            ["a", "b"],
+            cs.by_name("x", "y"),
+            ["a", "b"],
+            ["x", "y"],
+            id="selector-right",
+        ),
+    ],
+)
+def test_join_selector_expansion(
+    left_on: pl.Expr | str | list[pl.Expr | str],
+    right_on: pl.Expr | str | list[pl.Expr | str],
+    expected_left_on: pl.Expr | str | list[pl.Expr | str],
+    expected_right_on: pl.Expr | str | list[pl.Expr | str],
+) -> None:
+    left = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30], "c": [100, 200, 300]})
+    right = pl.DataFrame({"x": [1, 2, 3], "y": [10, 99, 30], "z": [100, 200, 999]})
+
+    assert_frame_equal(
+        left.join(right, left_on=left_on, right_on=right_on),
+        left.join(right, left_on=expected_left_on, right_on=expected_right_on),
+        check_row_order=False,
+    )
+
+
+def test_join_selector_order_is_positional() -> None:
+    left = pl.DataFrame({"a": [1, 2], "b": [10, 20], "left_value": ["x", "y"]})
+    right = pl.DataFrame({"b": [1, 2], "a": [10, 30], "right_value": ["x", "y"]})
+
+    assert_frame_equal(
+        left.join(right, on=cs.integer()),
+        left.join(right, left_on=["a", "b"], right_on=["b", "a"]),
+    )
+    assert_frame_equal(
+        left.join(right, on=cs.by_name("a", "b")),
+        left.join(right, on=["a", "b"]),
+    )
+
+    renamed_right = pl.DataFrame(
+        {"right_value": ["x", "z"], "x": [10, 99], "y": [1, 2]}
+    )
+    assert_frame_equal(
+        left.join(
+            renamed_right,
+            left_on=["left_value", cs.by_name("b", "a")],
+            right_on=[cs.by_name("right_value", "x"), "y"],
+        ),
+        left.join(
+            renamed_right,
+            left_on=["left_value", "b", "a"],
+            right_on=["right_value", "x", "y"],
+        ),
+    )
+
+
+def test_join_selector_empty_expansion() -> None:
+    left = pl.DataFrame({"a": [1, 2]})
+    right = pl.DataFrame({"a": [1, 3]})
+
+    with pytest.raises(
+        InvalidOperationError, match="left join keys expanded to zero expressions"
+    ):
+        left.join(right, on=cs.string())
+
+    assert_frame_equal(
+        left.join(right, on=[cs.string(), "a"]),
+        left.join(right, on="a"),
+    )
+
+    with pytest.raises(ValueError, match="cross join should not pass join keys"):
+        left.join(right, on=cs.empty(), how="cross")
+
+
+@pytest.mark.parametrize(
+    ("left_on", "right_on", "side"),
+    [
+        (cs.string(), "a", "left"),
+        ("a", cs.string(), "right"),
+    ],
+)
+def test_join_selector_empty_expansion_side(
+    left_on: str | pl.Expr, right_on: str | pl.Expr, side: str
+) -> None:
+    left = pl.LazyFrame({"a": [1, 2]})
+    right = pl.LazyFrame({"a": [1, 3]})
+
     with pytest.raises(
         InvalidOperationError,
+        match=rf"{side} join keys expanded to zero expressions",
     ):
-        df.join(df2, on=pl.first())
+        left.join(right, left_on=left_on, right_on=right_on).collect_schema()
+
+
+@pytest.mark.parametrize(
+    ("left_on", "right_on"),
+    [
+        ("a", ["x", "y"]),
+        (pl.col("missing") + 1, [pl.col("x"), pl.col("y")]),
+        (pl.col("missing").cast(pl.Int64), [pl.col("x"), pl.col("y")]),
+        (pl.lit(1), [pl.lit(1), pl.lit(2)]),
+    ],
+)
+@pytest.mark.parametrize("swap", [False, True])
+def test_join_non_expanding_key_count_mismatch_errors_at_construction(
+    left_on: pl.Expr | str | list[pl.Expr | str],
+    right_on: pl.Expr | str | list[pl.Expr | str],
+    swap: bool,
+) -> None:
+    left = pl.LazyFrame({"a": [1]})
+    right = pl.LazyFrame({"x": [1], "y": [2]})
+
+    if swap:
+        left, right = right, left
+        left_on, right_on = right_on, left_on
+    left_count, right_count = (2, 1) if swap else (1, 2)
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=rf"number of columns given as join key \(left: {left_count}, right:{right_count}\)",
+    ):
+        left.join(right, left_on=left_on, right_on=right_on)
+
+
+def test_join_selector_expansion_count_mismatch() -> None:
+    left = pl.LazyFrame({"a": [1], "b": [2], "s": ["x"]})
+    right = pl.LazyFrame({"x": [1], "y": [2], "s": ["x"], "t": ["y"]})
+
+    result = left.join(
+        right,
+        left_on=[cs.integer(), cs.string()],
+        right_on=cs.integer(),
+    )
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"join keys expanded.*\(left: 3, right: 2\)",
+    ):
+        result.collect_schema()
+
+
+def test_join_overlapping_and_aliased_selectors() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2]})
+
+    with pytest.raises(InvalidOperationError, match="joining with repeated key names"):
+        df.join(df, on=[cs.by_name("a"), cs.integer()])
+
+    for selector in (cs.by_name("a").alias("key"), cs.empty().alias("key")):
+        with pytest.raises(InvalidOperationError, match="'alias' is not allowed"):
+            df.join(df, on=[selector, "b"])
+
+
+def test_join_selector_coalescing() -> None:
+    left = pl.DataFrame({"a": [1], "b": [2], "left_value": [3]})
+    right = pl.DataFrame({"a": [1], "b": [2], "right_value": [4]})
+
+    bare = left.join(right, on=cs.by_name("a", "b"), coalesce=True)
+    assert bare.columns == ["a", "b", "left_value", "right_value"]
+
+    with pytest.warns(UserWarning, match="turning off key coalescing"):
+        computed = left.join(right, on=cs.by_name("a", "b") + 0, coalesce=True)
+    assert computed.columns == [
+        "a",
+        "b",
+        "left_value",
+        "a_right",
+        "b_right",
+        "right_value",
+    ]
 
 
 def test_join_results_in_duplicate_names() -> None:
@@ -997,6 +1299,23 @@ def test_join_4_columns_with_validity() -> None:
         115,
         4,
     )
+
+
+def test_join_4_columns_with_all_null_validity() -> None:
+    # join on 4 columns so we trigger combine validities
+    # use only None values so every chunk has an all-unset validity bitmap
+    keys = ["a", "b", "c", "d"]
+    df = pl.DataFrame(
+        {key: [None] * 8 for key in keys},
+        schema=dict.fromkeys(keys, pl.Int64),
+    )
+    result = df.join(
+        df,
+        on=keys,
+        how="inner",
+        nulls_equal=False,
+    )
+    assert result.is_empty()
 
 
 @pytest.mark.release
@@ -1266,7 +1585,9 @@ def test_join_key_type_coercion_19597() -> None:
 
 def test_array_explode_join_19763() -> None:
     q = pl.LazyFrame().select(
-        pl.lit(pl.Series([[1], [2]], dtype=pl.Array(pl.Int64, 1))).explode().alias("k")
+        pl.lit(pl.Series([[1], [2]], dtype=pl.Array(pl.Int64, 1)))
+        .explode(empty_as_null=False)
+        .alias("k")
     )
 
     q = q.join(pl.LazyFrame({"k": [1, 2]}), on="k")
@@ -1308,24 +1629,9 @@ def test_join_preserve_order_inner() -> None:
     assert inner_right.get_column("a").equals(inner_right_left.get_column("a"))
 
 
-# The new streaming engine does not provide the same maintain_order="none"
-# ordering guarantee that is currently kept for compatibility on the in-memory
-# engine.
-@pytest.mark.may_fail_auto_streaming
 def test_join_preserve_order_left() -> None:
     left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
     right = pl.LazyFrame({"a": [1, None, 2, 6], "b": [6, 7, 8, 9]})
-
-    # Right now the left join algorithm is ordered without explicitly setting any order
-    # This behaviour is deprecated but can only be removed in 2.0
-    left_none = left.join(right, on="a", how="left", maintain_order="none").collect()
-    assert left_none.get_column("a").cast(pl.UInt32).to_list() == [
-        None,
-        2,
-        1,
-        1,
-        5,
-    ]
 
     left_left = left.join(right, on="a", how="left", maintain_order="left").collect()
     assert left_left.get_column("a").cast(pl.UInt32).to_list() == [
@@ -1485,6 +1791,7 @@ def test_join_preserve_order_full() -> None:
     ],
 )  # fmt: skip
 @pytest.mark.parametrize("swap", [True, False])
+@pytest.mark.may_fail_lazy_schema  # TODO: upcast
 def test_join_numeric_key_upcast_15338(
     dtypes: tuple[str, str, str], swap: bool
 ) -> None:
@@ -1676,9 +1983,8 @@ def test_join_where_predicate_type_coercion_21009() -> None:
     )
 
     plan = q1.explain().splitlines()
-    assert plan[0].strip().startswith("FILTER")
-    assert plan[1] == "FROM"
-    assert plan[2].strip().startswith("INNER JOIN")
+    assert plan[0].strip().startswith("INNER JOIN")
+    assert plan[1].strip().startswith("FUSED PREDICATE")
 
     q2 = left_frame.join_where(
         right_frame,
@@ -1687,9 +1993,8 @@ def test_join_where_predicate_type_coercion_21009() -> None:
     )
 
     plan = q2.explain().splitlines()
-    assert plan[0].strip().startswith("FILTER")
-    assert plan[1] == "FROM"
-    assert plan[2].strip().startswith("INNER JOIN")
+    assert plan[0].strip().startswith("INNER JOIN")
+    assert plan[1].strip().startswith("FUSED PREDICATE")
 
     assert_frame_equal(q1.collect(), q2.collect())
 
@@ -2181,6 +2486,251 @@ def _extract_plan_joins_and_filters(plan: str) -> list[str]:
     ]
 
 
+def _assert_matches_without_predicate_pushdown(q: pl.LazyFrame) -> None:
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+        check_row_order=False,
+    )
+
+
+def test_redundant_join_key_filter_inner_join_21710() -> None:
+    left = pl.LazyFrame(
+        {"a": [1, 2, 3, 4], "b": [1, 2, 4, 4], "payload": ["aa", "bb", "cc", "dd"]}
+    )
+    right = pl.LazyFrame({"x": [1, 2, 4], "value": [10, 20, 40]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="inner",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER col("a") == col("b")',
+        'RIGHT PLAN ON: [col("x")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_partial_reduction_21710() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [9, 9, 8, 8], "c": [1, 0, 4, 4]})
+    right = pl.LazyFrame({"x": [1, 4], "y": [9, 8], "value": [10, 40]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b"), pl.col("c")],
+        right_on=[pl.col("x"), pl.col("y"), pl.col("x")],
+        how="inner",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'FILTER col("a") == col("c")',
+        'RIGHT PLAN ON: [col("x"), col("y")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_restores_schema_21710() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3], "payload": ["aa", "bb", "cc"]})
+    right = pl.LazyFrame({"x": [1, 2, 3], "y": [1, 0, 3], "value": [10, 20, 30]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("a")],
+        right_on=[pl.col("x"), pl.col("y")],
+        how="inner",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'RIGHT PLAN ON: [col("x")]',
+        'FILTER col("x") == col("y")',
+    ]
+    assert q.collect().columns == ["a", "payload", "value"]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_respects_nulls_equal_21710() -> None:
+    left = pl.LazyFrame({"a": [1, None, 2], "b": [1, None, 3]})
+    right = pl.LazyFrame({"x": [1, None, 3], "value": [10, 20, 30]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="inner",
+        nulls_equal=True,
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER col("a") ==v col("b")',
+        'RIGHT PLAN ON: [col("x")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+@pytest.mark.parametrize("how", ["left", "right", "full"])
+def test_redundant_join_key_filter_does_not_filter_preserved_side_21710(
+    how: JoinStrategy,
+) -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3], "b": [1, 0, 3]})
+    right = pl.LazyFrame({"x": [1, 3], "value": [10, 30]})
+
+    if how == "right":
+        q = right.join(
+            left,
+            left_on=[pl.col("x"), pl.col("x")],
+            right_on=[pl.col("a"), pl.col("b")],
+            how=how,
+        )
+        expected_plan = [
+            'LEFT PLAN ON: [col("x"), col("x")]',
+            'RIGHT PLAN ON: [col("a"), col("b")]',
+        ]
+    else:
+        q = left.join(
+            right,
+            left_on=[pl.col("a"), pl.col("b")],
+            right_on=[pl.col("x"), pl.col("x")],
+            how=how,
+        )
+        expected_plan = [
+            'LEFT PLAN ON: [col("a"), col("b")]',
+            'RIGHT PLAN ON: [col("x"), col("x")]',
+        ]
+
+    assert _extract_plan_joins_and_filters(q.explain()) == expected_plan
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_semi_join_duplicate_right_21710() -> None:
+    left = pl.LazyFrame(
+        {"a": [1, 2, 3, 4], "b": [1, 2, 4, 4], "payload": ["aa", "bb", "cc", "dd"]}
+    )
+    right = pl.LazyFrame({"x": [1, 2, 4]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="semi",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER col("a") == col("b")',
+        'RIGHT PLAN ON: [col("x")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_semi_join_duplicate_left_21710() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3, 4], "payload": ["aa", "bb", "cc", "dd"]})
+    right = pl.LazyFrame({"x": [1, 2, 4], "y": [1, 0, 4]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("a")],
+        right_on=[pl.col("x"), pl.col("y")],
+        how="semi",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'RIGHT PLAN ON: [col("x")]',
+        'FILTER col("x") == col("y")',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+@pytest.mark.parametrize(
+    ("nulls_equal", "expected_filter"),
+    [
+        (False, 'FILTER col("a") == col("b")'),
+        (True, 'FILTER col("a") ==v col("b")'),
+    ],
+)
+def test_redundant_join_key_filter_semi_join_nulls_equal_21710(
+    nulls_equal: bool, expected_filter: str
+) -> None:
+    left = pl.LazyFrame({"a": [1, None, 2], "b": [1, None, 3]})
+    right = pl.LazyFrame({"x": [1, None, 3]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="semi",
+        nulls_equal=nulls_equal,
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        expected_filter,
+        'RIGHT PLAN ON: [col("x")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+@pytest.mark.parametrize(
+    ("nulls_equal", "expected_filter"),
+    [
+        (False, 'FILTER col("x") == col("y")'),
+        (True, 'FILTER col("x") ==v col("y")'),
+    ],
+)
+def test_redundant_join_key_filter_semi_join_duplicate_left_nulls_equal_21710(
+    nulls_equal: bool, expected_filter: str
+) -> None:
+    left = pl.LazyFrame({"a": [1, None, 2]})
+    right = pl.LazyFrame({"x": [1, None, 2], "y": [1, None, 3]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("a")],
+        right_on=[pl.col("x"), pl.col("y")],
+        how="semi",
+        nulls_equal=nulls_equal,
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'RIGHT PLAN ON: [col("x")]',
+        expected_filter,
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_does_not_filter_anti_join_21710() -> None:
+    left = pl.LazyFrame(
+        {"a": [1, 2, 3, 4], "b": [1, 2, 4, 4], "payload": ["aa", "bb", "cc", "dd"]}
+    )
+    right = pl.LazyFrame({"x": [1, 2, 4]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="anti",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'RIGHT PLAN ON: [col("x"), col("x")]',
+    ]
+    assert q.collect().to_dict(as_series=False) == {
+        "a": [3],
+        "b": [4],
+        "payload": ["cc"],
+    }
+    _assert_matches_without_predicate_pushdown(q)
+
+
 def test_join_filter_pushdown_inner_join() -> None:
     lhs = pl.LazyFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
@@ -2202,9 +2752,9 @@ def test_join_filter_pushdown_inner_join() -> None:
 
     assert _extract_plan_joins_and_filters(plan) == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2224,12 +2774,12 @@ def test_join_filter_pushdown_inner_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[0] == 'LEFT PLAN ON: [col("a"), col("b")]'
-    assert 'col("c")) == ("a")' in extract[1]
-    assert 'col("b")) <= (2)' in extract[1]
+    assert 'col("c") == "a"' in extract[1]
+    assert 'col("b") <= 2' in extract[1]
 
     assert extract[2] == 'RIGHT PLAN ON: [col("a"), col("b")]'
-    assert 'col("b")) <= (2)' in extract[3]
-    assert 'col("c")) == ("A")' in extract[3]
+    assert 'col("b") <= 2' in extract[3]
+    assert 'col("c") == "A"' in extract[3]
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
@@ -2257,9 +2807,9 @@ def test_join_filter_pushdown_inner_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("a")) <= (2)]',
+        'FILTER col("a") <= 2',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("a")) <= (2)]',
+        'FILTER col("a") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2285,9 +2835,9 @@ def test_join_filter_pushdown_inner_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) <= (2)]',
+        'FILTER col("a") <= 2',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2319,9 +2869,9 @@ def test_join_filter_pushdown_inner_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) <= (2)]',
+        'FILTER col("a") <= 2',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2362,21 +2912,19 @@ def test_join_filter_pushdown_inner_join() -> None:
         extract[0]
         == 'LEFT PLAN ON: [col("a").cast(Int64), col("_POLARS_0").cast(Int64)]'
     )
-    assert '(col("a")) == (1)' in extract[1]
-    assert '(col("b")) >= (1)' in extract[1]
+    assert 'col("a") == 1' in extract[1]
+    assert 'col("b") >= 1' in extract[1]
     assert (
         extract[2]
         == 'RIGHT PLAN ON: [col("_POLARS_1").cast(Int64), col("b").cast(Int64)]'
     )
-    assert '(col("b")) >= (0)' in extract[3]
-    assert 'col("a")) <= (1)' in extract[3]
+    assert 'col("b") >= 0' in extract[3]
+    assert 'col("a") <= 1' in extract[3]
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
     # Filters don't pass if they refer to columns from both tables
-    # TODO: In the optimizer we can add additional equalities into the join
-    # condition itself for some cases.
     q = lhs.join(rhs, on=["a"], how="inner", maintain_order="left_right").filter(
         pl.col("b") == pl.col("b_right")
     )
@@ -2393,12 +2941,13 @@ def test_join_filter_pushdown_inner_join() -> None:
 
     plan = q.explain()
 
+    # An equality spanning both sides becomes another key pair.
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
-        'FILTER [(col("b")) == (col("b_right"))]',
-        'LEFT PLAN ON: [col("a")]',
-        'RIGHT PLAN ON: [col("a")]',
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'RIGHT PLAN ON: [col("a"), col("b").alias("__POLARS_JOIN_KEY_0_b")]',
     ]
+    assert "FUSED PREDICATE" not in plan
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
@@ -2426,9 +2975,9 @@ def test_join_filter_pushdown_inner_join() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("x")]',
-        'FILTER [(col("x")) == (2)]',
+        'FILTER col("x") == 2',
         'RIGHT PLAN ON: [col("x")]',
-        'FILTER [(col("x")) == (2)]',
+        'FILTER col("x") == 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2457,9 +3006,9 @@ def test_join_filter_pushdown_left_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2486,9 +3035,9 @@ def test_join_filter_pushdown_left_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) <= (2)]',
+        'FILTER col("a") <= 2',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2506,7 +3055,7 @@ def test_join_filter_pushdown_left_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("c")) == ("b")]',
+        'FILTER col("c") == "b"',
         'RIGHT PLAN ON: [col("a"), col("b")]',
     ]
 
@@ -2526,7 +3075,7 @@ def test_join_filter_pushdown_left_join() -> None:
 
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
-        'FILTER [(col("c_right")) ==v ("B")]',
+        'FILTER col("c_right") ==v "B"',
         'LEFT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("a"), col("b")]',
     ]
@@ -2559,7 +3108,7 @@ def test_join_filter_pushdown_left_join() -> None:
 
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
-        'FILTER [(col("b_right")) ==v (2)]',
+        'FILTER col("b_right") ==v 2',
         'LEFT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("a"), col("b")]',
     ]
@@ -2590,9 +3139,9 @@ def test_join_filter_pushdown_right_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2621,9 +3170,9 @@ def test_join_filter_pushdown_right_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) <= (2)]',
+        'FILTER col("a") <= 2',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2642,7 +3191,7 @@ def test_join_filter_pushdown_right_join() -> None:
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("c")) == ("B")]',
+        'FILTER col("c") == "B"',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2661,7 +3210,7 @@ def test_join_filter_pushdown_right_join() -> None:
 
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
-        'FILTER [(col("c")) ==v ("b")]',
+        'FILTER col("c") ==v "b"',
         'LEFT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("a"), col("b")]',
     ]
@@ -2690,7 +3239,7 @@ def test_join_filter_pushdown_right_join() -> None:
 
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
-        'FILTER [(col("b")) ==v (2)]',
+        'FILTER col("b") ==v 2',
         'LEFT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("a"), col("b")]',
     ]
@@ -2732,9 +3281,9 @@ def test_join_filter_pushdown_full_join() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) == (2)]',
+        'FILTER col("a") == 2',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("b")) == (2)]',
+        'FILTER col("b") == 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2811,13 +3360,13 @@ def test_join_filter_pushdown_semi_join() -> None:
     #   the right.
 
     assert extract[0] == 'LEFT PLAN ON: [col("a"), col("b").cast(Int64)]'
-    assert 'col("a")) == (2)' in extract[1]
-    assert 'col("b")) == (2)' in extract[1]
-    assert 'col("c")) == ("b")' in extract[1]
+    assert 'col("a") == 2' in extract[1]
+    assert 'col("b") == 2' in extract[1]
+    assert 'col("c") == "b"' in extract[1]
 
     assert extract[2:] == [
         'RIGHT PLAN ON: [col("b"), col("_POLARS_0").cast(Int64)]',
-        'FILTER [(col("b")) == (2)]',
+        'FILTER col("b") == 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2852,13 +3401,13 @@ def test_join_filter_pushdown_anti_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[0] == 'LEFT PLAN ON: [col("a"), col("b").cast(Int64)]'
-    assert 'col("a")) == (2)' in extract[1]
-    assert 'col("b")) == (2)' in extract[1]
-    assert 'col("c")) == ("b")' in extract[1]
+    assert 'col("a") == 2' in extract[1]
+    assert 'col("b") == 2' in extract[1]
+    assert 'col("c") == "b"' in extract[1]
 
     assert extract[2:] == [
         'RIGHT PLAN ON: [col("b"), col("_POLARS_0").cast(Int64)]',
-        'FILTER [(col("b")) == (2)]',
+        'FILTER col("b") == 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2899,15 +3448,15 @@ def test_join_filter_pushdown_cross_join() -> None:
 
     plan = q.explain()
 
-    assert 'NESTED LOOP JOIN ON [(col("a")) != (col("a_right"))]' in plan
+    assert 'NESTED LOOP JOIN ON col("a") != col("a_right")' in plan
 
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract == [
         "LEFT PLAN:",
-        'FILTER [(col("a")) <= (4)]',
+        'FILTER col("a") <= 4',
         "RIGHT PLAN:",
-        'FILTER [(col("c")) <= ("B")]',
+        'FILTER col("c") <= "B"',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2937,9 +3486,9 @@ def test_join_filter_pushdown_cross_join() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) <= (4)]',
-        'RIGHT PLAN ON: [[(col("a")) + (1)]]',
-        'FILTER [(col("c")) <= ("B")]',
+        'FILTER col("a") <= 4',
+        'RIGHT PLAN ON: [col("a") + 1]',
+        'FILTER col("c") <= "B"',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2987,10 +3536,41 @@ def test_join_filter_pushdown_cross_join() -> None:
 
     plan = q.explain()
 
-    assert plan.startswith('NESTED LOOP JOIN ON [(col("c")) <= (col("b"))]:')
+    assert plan.startswith('NESTED LOOP JOIN ON col("c") <= col("b"):')
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_categorical_28426() -> None:
+    categories = pl.Categories("test_join_filter_pushdown_categorical_28426")
+    dtype = pl.Categorical(categories)
+
+    left = pl.LazyFrame(
+        {
+            "left_id": [1, 2],
+            "left_category": pl.Series(["cc", "aa"], dtype=dtype),
+        }
+    )
+    right = pl.LazyFrame(
+        {
+            "right_id": [101, 102],
+            "right_category": pl.Series(["bb", "cc"], dtype=dtype),
+        }
+    )
+
+    q = (
+        left.join(right, how="cross")
+        .filter(pl.col("left_category") < pl.col("right_category"))
+        .select("left_id", "right_id")
+        .sort("left_id", "right_id")
+    )
+
+    expected = pl.DataFrame({"left_id": [2, 2], "right_id": [101, 102]})
+
+    assert "IEJOIN JOIN" not in q.explain()
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expected)
 
 
 def test_join_filter_pushdown_iejoin() -> None:
@@ -3031,13 +3611,13 @@ def test_join_filter_pushdown_iejoin() -> None:
 
     assert extract[:3] == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) >= (1)]',
+        'FILTER col("a") >= 1',
         'RIGHT PLAN ON: [col("a")]',
     ]
 
     assert extract[3].startswith("FILTER")
-    assert 'col("c")) <= ("B")' in extract[3]
-    assert '(col("a")) >= (1)' in extract[3]
+    assert 'col("c") <= "B"' in extract[3]
+    assert 'col("a") >= 1' in extract[3]
     assert len(extract) == 4
 
     assert_frame_equal(q.collect(), expect)
@@ -3080,9 +3660,9 @@ def test_join_filter_pushdown_iejoin() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) >= (1)]',
+        'FILTER col("a") >= 1',
         'RIGHT PLAN ON: [col("a")]',
-        'FILTER [(col("c")) <= ("B")]',
+        'FILTER col("c") <= "B"',
     ]
 
     assert_frame_equal(q.collect().sort(pl.all()), expect)
@@ -3112,7 +3692,7 @@ def test_join_filter_pushdown_iejoin() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("x")]',
-        'FILTER [(col("x")) > (1)]',
+        'FILTER col("x") > 1',
         'RIGHT PLAN ON: [col("x")]',
     ]
 
@@ -3148,25 +3728,18 @@ def test_join_filter_pushdown_iejoin() -> None:
 
     extract = _extract_plan_joins_and_filters(plan)
 
+    assert plan.count("CACHE") == 2
+    assert len(extract) == 3
+
     assert extract[0] in {
         'LEFT PLAN ON: [col("a"), col("b")]',
         'LEFT PLAN ON: [col("b"), col("a")]',
     }
-    assert extract[1] == 'FILTER [(col("a")) > (0)]'
+    assert extract[1] == 'FILTER col("a") > 0'
     assert extract[2] in {
         'RIGHT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("b"), col("a")]',
     }
-    assert extract[3] in {
-        'LEFT PLAN ON: [col("a"), col("b")]',
-        'LEFT PLAN ON: [col("b"), col("a")]',
-    }
-    assert extract[4] == 'FILTER [(col("a")) > (0)]'
-    assert extract[5] in {
-        'RIGHT PLAN ON: [col("a"), col("b")]',
-        'RIGHT PLAN ON: [col("b"), col("a")]',
-    }
-    assert len(extract) == 6
 
     assert_frame_equal(q.collect().sort(pl.all()), expect)
     assert_frame_equal(
@@ -3189,8 +3762,8 @@ def test_join_filter_pushdown_asof_join() -> None:
 
     q = lhs.join_asof(
         rhs,
-        left_on=pl.col("a").set_sorted(),
-        right_on=pl.col("b").set_sorted(),
+        left_on=pl.col("a").set_sorted(nulls_last=True),
+        right_on=pl.col("b").set_sorted(nulls_last=True),
         tolerance=0,
     ).filter(
         pl.col("a") >= 2,
@@ -3214,13 +3787,13 @@ def test_join_filter_pushdown_asof_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[:2] == [
-        'FILTER [(col("c_right")) >= ("B")]',
+        'FILTER col("c_right") >= "B"',
         'LEFT PLAN ON: [col("a").set_sorted()]',
     ]
 
-    assert 'col("b")) >= (3)' in extract[2]
-    assert 'col("c")) >= ("A")' in extract[2]
-    assert 'col("a")) >= (2)' in extract[2]
+    assert 'col("b") >= 3' in extract[2]
+    assert 'col("c") >= "A"' in extract[2]
+    assert 'col("a") >= 2' in extract[2]
 
     assert extract[3:] == ['RIGHT PLAN ON: [col("b").set_sorted()]']
 
@@ -3256,15 +3829,15 @@ def test_join_filter_pushdown_asof_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[:2] == [
-        'FILTER [(col("c_right")) >= ("B")]',
+        'FILTER col("c_right") >= "B"',
         'LEFT PLAN ON: [col("a")]',
     ]
-    assert 'col("a")) >= (2)' in extract[2]
-    assert 'col("b")) >= (3)' in extract[2]
+    assert 'col("a") >= 2' in extract[2]
+    assert 'col("b") >= 3' in extract[2]
 
     assert extract[3:] == [
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("a")) >= (3)]',
+        'FILTER col("a") >= 3',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -3308,9 +3881,9 @@ def test_join_filter_pushdown_full_join_rewrite() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) >= (3)]',
+        'FILTER col("b") >= 3',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) >= (3)]',
+        'FILTER col("b") >= 3',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -3341,9 +3914,9 @@ def test_join_filter_pushdown_full_join_rewrite() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) >= (3)]',
+        'FILTER col("a") >= 3',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("b")) >= (3)]',
+        'FILTER col("b") >= 3',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -3382,15 +3955,15 @@ def test_join_filter_pushdown_full_join_rewrite() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert [
-        'FILTER [([(col("b")) >= (2)]) | (col("b").is_null())]',
+        'FILTER ([col("b") >= 2]) | (col("b").is_null())',
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [([(col("a")) >= (1)]) | (col("a").is_null())]',
+        'FILTER ([col("a") >= 1]) | (col("a").is_null())',
         'RIGHT PLAN ON: [col("b")]',
     ]
 
-    assert 'col("a")) >= (3)' in extract[4]
-    assert '(col("b")) >= (1)]) | (col("b").alias("a").is_null())' in extract[4]
-    assert 'col("c")) >= ("C")' in extract[4]
+    assert 'col("a") >= 3' in extract[4]
+    assert 'col("b") >= 1) | col("b").alias("a").is_null()' in extract[4]
+    assert 'col("c") >= "C"' in extract[4]
 
     assert len(extract) == 5
 
@@ -3421,12 +3994,14 @@ def test_join_filter_pushdown_full_join_rewrite() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[0] == 'LEFT PLAN ON: [col("a"), col("b")]'
-    assert 'col("b").is_not_null()' in extract[1]
-    assert 'col("b").alias("b_right").is_not_null()' in extract[1]
+    assert ('col("b").is_not_null()' in extract[1]) or (
+        'col("b").alias("b_right").is_not_null()' in extract[1]
+    )
 
     assert extract[2] == 'RIGHT PLAN ON: [col("a"), col("b")]'
-    assert 'col("b").is_not_null()' in extract[3]
-    assert 'col("b").alias("b_right").is_not_null()' in extract[3]
+    assert ('col("b").is_not_null()' in extract[3]) or (
+        'col("b").alias("b_right").is_not_null()' in extract[3]
+    )
 
     assert len(extract) == 4
 
@@ -3455,9 +4030,9 @@ def test_join_filter_pushdown_full_join_rewrite() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) >= (3)]',
+        'FILTER col("b") >= 3',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) >= (3)]',
+        'FILTER col("b") >= 3',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -3504,12 +4079,12 @@ def test_join_filter_pushdown_right_join_rewrite() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[0] == 'LEFT PLAN ON: [col("a")]'
-    assert 'col("a")) <= (10)' in extract[1]
-    assert 'col("c")) <= ("b")' in extract[1]
+    assert 'col("a") <= 10' in extract[1]
+    assert 'col("c") <= "b"' in extract[1]
 
     assert extract[2] == 'RIGHT PLAN ON: [col("b")]'
-    assert 'col("a")) <= (7)' in extract[3]
-    assert 'col("b")) <= (10)' in extract[3]
+    assert 'col("a") <= 7' in extract[3]
+    assert 'col("b") <= 10' in extract[3]
 
     assert len(extract) == 4
 
@@ -3587,7 +4162,7 @@ def test_join_filter_pushdown_left_join_rewrite() -> None:
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("c")) <= ("B")]',
+        'FILTER col("c") <= "B"',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -3634,12 +4209,12 @@ def test_join_filter_pushdown_left_join_rewrite_23133() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[0] == 'LEFT PLAN ON: [col("ham")]'
-    assert '(col("foo")) <= (2)' in extract[1]
-    assert 'col("ham")) == ("a")' in extract[1]
+    assert 'col("foo") <= 2' in extract[1]
+    assert 'col("ham") == "a"' in extract[1]
 
     assert extract[2] == 'RIGHT PLAN ON: [col("ham")]'
-    assert 'col("ham")) == ("a")' in extract[3]
-    assert 'col("apple")) == ("x")' in extract[3]
+    assert 'col("ham") == "a"' in extract[3]
+    assert 'col("apple") == "x"' in extract[3]
 
     assert len(extract) == 4
 
@@ -3922,7 +4497,6 @@ def test_join_i128_23688(
     rhs = rhs.collect().sort("a").lazy() if sort_right else rhs
 
     q = lhs.join(rhs, on="a", how=how, coalesce=False)  # type: ignore[arg-type]
-
     assert_frame_equal(
         q.collect().sort(pl.all()),
         expected,
@@ -3938,7 +4512,6 @@ def test_join_i128_23688(
         )
         .select(expected.columns)
     )
-
     assert_frame_equal(
         q.collect().sort(pl.all()),
         expected,
@@ -3980,6 +4553,7 @@ def test_join_lazyframe_with_itself_after_sort_25395() -> None:
     assert_frame_equal(result, pl.DataFrame({"a": [1]}))
 
 
+@pytest.mark.may_fail_lazy_schema  # TODO: pushdown
 def test_join_right_with_cast_predicate_pushdown() -> None:
     lhs = pl.LazyFrame({"x": [0, 1], "z": [4, 5]})
     rhs = pl.LazyFrame({"y": [2, 3]}).cast(pl.Int32)
@@ -4050,3 +4624,343 @@ def test_full_join_coalesce_empty_suffix_non_key_collision_27368() -> None:
 
     with pytest.raises(DuplicateError):
         df1.join(df2, how="full", on="a", coalesce=True, suffix="")
+
+
+_EXPECTED_OUTPUT_28264 = pl.DataFrame(
+    {"a": [1, 9], "x": [10, 90], "b": [1, 9], "y": [100, 900]}
+)
+
+
+@pytest.mark.parametrize(
+    ("how", "expected"),
+    [
+        ("inner", _EXPECTED_OUTPUT_28264),
+        ("left", _EXPECTED_OUTPUT_28264),
+        ("right", _EXPECTED_OUTPUT_28264),
+        ("full", _EXPECTED_OUTPUT_28264),
+        ("semi", pl.DataFrame({"a": [1, 9], "x": [10, 90]})),
+        (
+            "anti",
+            pl.DataFrame({"a": [], "x": []}, schema={"a": pl.Int64, "x": pl.Int64}),
+        ),
+    ],
+)
+def test_join_computed_key_no_temp_column_leak_28264(
+    how: JoinStrategy, expected: pl.DataFrame
+) -> None:
+    left = pl.LazyFrame({"a": [1, 9], "x": [10, 90]})
+    right = pl.LazyFrame({"b": [1, 9], "y": [100, 900]})
+    group = [1]
+
+    result = left.join(
+        right,
+        left_on=pl.col("a").is_in(group),
+        right_on=pl.col("b").is_in(group),
+        how=how,
+    ).collect()
+
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_full_join_coalesce_computed_payload_filter_28264() -> None:
+    left = pl.LazyFrame({"a": [1, 2], "x": [10, 20]})
+    right = pl.LazyFrame({"a": [2, 3], "y": [30, 40]})
+
+    result = left.join(right, on="a", how="full", coalesce=True).collect()
+
+    expected = pl.DataFrame({"a": [1, 2, 3], "x": [10, 20, None], "y": [None, 30, 40]})
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_join_slice_maintain_order_28419_28448() -> None:
+    lf1 = pl.LazyFrame({"a": [1, 0], "s": ["k", "k"]})
+    lf2 = pl.LazyFrame({"a": [0, 1]})
+    q = (
+        lf1.join(lf2, on="a", maintain_order="left_right")
+        .filter(pl.col("s") == "k")
+        .slice(1, 1)
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 0, "s": "k"}))
+
+    lf1 = pl.LazyFrame({"a": [1, 0, 2, 0, 1], "v": [10, 20, 30, 40, 50]})
+    lf2 = pl.LazyFrame({"a": [0, 1, 2], "jx": [9, 8, 7]})
+    q = lf1.join(lf2, on="a", maintain_order="right_left").slice(1, 2)
+
+    assert_frame_equal(
+        q.collect(), pl.DataFrame({"a": [0, 1], "v": [40, 10], "jx": [9, 8]})
+    )
+
+
+def test_join_slice_maintain_order_negative_offset_overshoot_28538() -> None:
+    lf = pl.LazyFrame({"a": [1, 2]})
+    q = lf.join(lf, on="a", maintain_order="left").tail(6)
+    expected = pl.DataFrame({"a": [1, 2]})
+
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(
+        q.collect(optimizations=pl.QueryOptFlags().update(slice_pushdown=False)),
+        expected,
+    )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "present", "missing", "inner_null"),
+    [
+        (pl.List(pl.Int64), [1], None, [None]),
+        (pl.Array(pl.Int64, 1), [1], None, [None]),
+        (pl.Struct({"a": pl.Int64}), {"a": 1}, None, {"a": None}),
+    ],
+)
+def test_join_nested_key_nulls_not_equal_28584(
+    dtype: pl.DataType, present: Any, missing: Any, inner_null: Any
+) -> None:
+    left = pl.DataFrame({"k": pl.Series([present, missing], dtype=dtype), "l": [0, 1]})
+    right = pl.DataFrame(
+        {"k": pl.Series([missing, present], dtype=dtype), "r": [10, 11]}
+    )
+
+    # default, nulls_equal=False
+    assert left.join(right, on="k", how="inner").height == 1
+    assert left.join(right, on="k", how="left").sort("l")["r"].to_list() == [11, None]
+    assert left.join(right, on="k", how="full").height == 3
+    assert left.join(right, on="k", how="semi").height == 1
+    assert left.join(right, on="k", how="anti").height == 1
+
+    # inner nulls still match
+    left2 = pl.DataFrame({"k": pl.Series([inner_null], dtype=dtype), "l": [0]})
+    right2 = pl.DataFrame({"k": pl.Series([inner_null], dtype=dtype), "r": [9]})
+    assert left2.join(right2, on="k", how="inner").height == 1
+
+    # nulls_equal=True
+    assert left.join(right, on="k", how="inner", nulls_equal=True).height == 2
+    lr = left.join(right, on="k", how="left", nulls_equal=True)
+    assert lr.sort("l")["r"].to_list() == [11, 10]
+    assert left.join(right, on="k", how="right", nulls_equal=True).height == 2
+    assert left.join(right, on="k", how="full", nulls_equal=True).height == 2
+    assert left.join(right, on="k", how="semi", nulls_equal=True).height == 2
+    assert left.join(right, on="k", how="anti", nulls_equal=True).height == 0
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full", "semi", "anti"])
+@pytest.mark.parametrize(
+    "maintain_order", ["left", "right", "left_right", "right_left"]
+)
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [(0, 1), (0, 3), (1, 2), (2, 4), (0, 100), (3, 10), (-1, 1), (-3, 2), (-100, 3)],
+)
+def test_join_slice_pushdown_maintain_order_matrix_28551(
+    how: JoinStrategy,
+    maintain_order: MaintainOrderJoin,
+    offset: int,
+    length: int,
+) -> None:
+    lf1 = pl.LazyFrame({"a": [2, 5, 1, 3], "v": [20, 50, 10, 30]})  # left-only key: 5
+    lf2 = pl.LazyFrame({"a": [3, 1, 4, 2], "w": [300, 100, 400, 200]})  # right-only: 4
+
+    q = lf1.join(lf2, on="a", how=how, maintain_order=maintain_order).slice(
+        offset, length
+    )
+    expected = q.collect(
+        optimizations=pl.QueryOptFlags().update(slice_pushdown=False),
+    )
+    result = q.collect()
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(("offset", "length"), [(0, 2), (0, 4), (1, 2), (2, 5)])
+def test_full_join_slice_pushdown_no_maintain_order_28551(
+    offset: int, length: int
+) -> None:
+    lf1 = pl.LazyFrame({"a": [1, 2, 3, 4]})
+    lf2 = pl.LazyFrame({"a": [4, 3, 2, 1]})
+
+    q = lf1.join(lf2, on="a", how="full").slice(offset, length)
+    result = q.collect()
+
+    # We should never push the slice left or right (or both), otherwise some rows will
+    # not match
+    assert result.null_count().sum_horizontal().item() == 0
+
+
+def test_join_coalesce_empty_suffix_28783() -> None:
+    left = pl.LazyFrame({"k": [1], "a": [2]})
+    right = pl.LazyFrame({"k": [1], "b": [3]})
+    lf = left.join(right, on="k", how="inner", suffix="")
+    expected = pl.LazyFrame({"k": [1], "a": [2], "b": [3]})
+    assert_frame_equal(lf, expected)
+
+
+def test_empty_join_result_with_chunked_array_29093() -> None:
+    lhs = pl.DataFrame(
+        {
+            "x": [1, 2, 3],
+            "y": pl.Series(
+                [[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=pl.Array(pl.Int64, 3)
+            ),
+        }
+    )
+    lhs = pl.concat([lhs[:1], lhs[1:]])
+    assert lhs.n_chunks() == 2
+
+    rhs = pl.DataFrame({"x": [0]})
+    result = lhs.join(rhs, on="x")
+    expected = pl.DataFrame(schema={"x": pl.Int64, "y": pl.Array(pl.Int64, 3)})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("coalesce", [True, False])
+def test_merge_join_coalesce_right_payload_name_collision(
+    how: JoinStrategy, coalesce: bool
+) -> None:
+    # The right payload `a` shares its name with the left key, which the merge join
+    # must not confuse with its own key `b`.
+    left = pl.LazyFrame({"a": [1, 2, 3], "p": [10, 20, 30]}).sort("a")
+    right = pl.LazyFrame({"b": [1, 2, 4], "a": [7, 8, 9]}).sort("b")
+    q = left.join(
+        right,
+        left_on="a",
+        right_on="b",
+        how=how,
+        coalesce=coalesce,
+        maintain_order="left_right",
+    )
+
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64])
+def test_computed_join_key_uses_own_input_schema(
+    engine: EngineType, dtype: PolarsDataType
+) -> None:
+    left = pl.LazyFrame({"a": [3, 12, 57], "k": ["left"] * 3, "j": ["x"] * 3})
+    right = pl.LazyFrame({"k": [1, 5], "j": [2, 7]}, schema={"k": dtype, "j": dtype})
+    query = left.join(
+        right, left_on="a", right_on=pl.col("k") + pl.col("j"), coalesce=False
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [3, 12],
+            "k": ["left", "left"],
+            "j": ["x", "x"],
+            "k_right": pl.Series([1, 5], dtype=dtype),
+            "j_right": pl.Series([2, 7], dtype=dtype),
+        }
+    )
+    assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("outer_how", "next_how", "key", "expected_outer"),
+    [
+        # A key that must be non-null on the outer join's nullable side tightens it.
+        ("left", "inner", "reason", "INNER"),
+        ("left", "semi", "reason", "INNER"),
+        ("left", "right", "reason", "INNER"),
+        ("full", "inner", "reason", "RIGHT"),
+        ("full", "inner", "amount", "LEFT"),
+        # The preserved side may keep NULL keys; an anti join drops nothing on its left.
+        ("left", "inner", "amount", "LEFT"),
+        ("left", "inner", "ticket", "LEFT"),
+        ("left", "anti", "reason", "LEFT"),
+    ],
+)
+def test_join_key_downgrades_outer_join_below(
+    outer_how: JoinStrategy, next_how: JoinStrategy, key: str, expected_outer: str
+) -> None:
+    sales = pl.LazyFrame({"ticket": [1, 2, 3, 4], "amount": [10, 20, 30, 40]})
+    returns = pl.LazyFrame({"ticket": [2, 4, 5], "reason": [7, None, 7]})
+    lookup = pl.LazyFrame({key: [7, 10], "desc": ["x", "y"]})
+
+    q = sales.join(returns, on="ticket", how=outer_how, coalesce=True).join(
+        lookup, on=key, how=next_how
+    )
+
+    plan = q.explain()
+    assert f"{expected_outer} JOIN:" in plan
+    if expected_outer != outer_how.upper():
+        assert f"{outer_how.upper()} JOIN:" not in plan
+    else:
+        assert "is_not_null" not in plan
+
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+def test_join_key_downgrade_follows_pushdown_through_projections() -> None:
+    sales = pl.LazyFrame({"ticket": [1, 2, 3, 4], "amount": [10, 20, 30, 40]})
+    returns = pl.LazyFrame({"ticket": [2, 4, 5], "reason": [7, None, 7]})
+    lookup = pl.LazyFrame({"reason": [7, 10], "desc": ["x", "y"]})
+    joined = sales.join(returns, on="ticket", how="left", coalesce=True)
+
+    def check(q: pl.LazyFrame, *, downgraded: bool) -> None:
+        plan = q.explain()
+        assert ("LEFT JOIN:" in plan) != downgraded
+        assert ("is_not_null" in plan) == downgraded
+        expect = q.collect(optimizations=pl.QueryOptFlags.none())
+        assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+    # The key is recomputed in between, so the predicate stays above it.
+    q = joined.with_columns(pl.col("reason").fill_null(7)).join(lookup, on="reason")
+    check(q, downgraded=False)
+
+    # A filter that blocks pushdown stops the walk as well.
+    q = joined.filter(pl.col("amount") > pl.col("amount").mean()).join(
+        lookup, on="reason"
+    )
+    check(q, downgraded=False)
+
+    # A window filter keeps itself local but lets a predicate on its partition key pass.
+    q = joined.filter(pl.col("amount") >= pl.col("amount").mean().over("reason")).join(
+        lookup, on="reason"
+    )
+    check(q, downgraded=True)
+
+    # A plain filter is passed.
+    q = joined.filter(pl.col("amount") > 15).join(lookup, on="reason")
+    check(q, downgraded=True)
+
+    # A rename is followed down.
+    q = joined.rename({"reason": "r"}).join(lookup.rename({"reason": "r"}), on="r")
+    check(q, downgraded=True)
+    assert 'FILTER col("reason").is_not_null()' in q.explain()
+
+
+def test_join_key_downgrade_ignores_the_unreachable_join_side() -> None:
+    sales = pl.LazyFrame(
+        {"ticket": [1, 2, 3], "amount": [10, 20, 30], "reason": [7, None, 7]}
+    )
+    a = pl.LazyFrame({"ticket": [2, 3], "x": [1, 2]})
+    b = pl.LazyFrame({"ticket": [2], "reason": [9]})
+    lookup = pl.LazyFrame({"reason": [7, 10], "desc": ["x", "y"]})
+
+    # The key is the left `reason`; the right input holds another `reason`.
+    returns = a.join(b, on="ticket", how="left")
+    q = sales.join(returns, on="ticket", how="left").join(lookup, on="reason")
+
+    plan = q.explain()
+    assert plan.count("LEFT JOIN:") == 2
+    assert "is_not_null" not in plan
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+def test_join_key_keeps_outer_join_when_nulls_match() -> None:
+    sales = pl.LazyFrame({"ticket": [1, 2, 3], "amount": [10, 20, 30]})
+    returns = pl.LazyFrame({"ticket": [2, 4], "reason": [7, None]})
+    reasons = pl.LazyFrame({"reason": [7, None]})
+
+    q = sales.join(returns, on="ticket", how="left", coalesce=True).join(
+        reasons, on="reason", how="inner", nulls_equal=True
+    )
+
+    assert "LEFT JOIN:" in q.explain()
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)

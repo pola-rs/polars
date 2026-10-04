@@ -11,8 +11,8 @@ pub(super) fn process_group_by(
     schema: SchemaRef,
     maintain_order: bool,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
-    options: Arc<GroupbyOptions>,
-    acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
+    options: Arc<GroupbyOptionsIR>,
+    acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
     use IR::*;
 
@@ -23,7 +23,8 @@ pub(super) fn process_group_by(
     let no_push = false;
 
     // Don't pushdown predicates on these cases.
-    if apply.is_some() || no_push || options.slice.is_some() {
+    if apply.is_some() || no_push || options.slice.is_some() || !all_elementwise(&keys, expr_arena)
+    {
         let lp = GroupBy {
             input,
             keys,
@@ -44,7 +45,7 @@ pub(super) fn process_group_by(
     // rewriting the predicate to reference the original column name.
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
     let input_schema = lp_arena.get(input).schema(lp_arena);
-    let mut alias_rename_map: PlHashMap<PlSmallStr, PlSmallStr> = PlHashMap::new();
+    let mut alias_rename_map: PlIndexMap<PlSmallStr, PlSmallStr> = PlIndexMap::new();
     let mut key_schema = Schema::with_capacity(keys.len());
     for key in &keys {
         if let AExpr::Column(c) = expr_arena.get(key.node()) {
@@ -58,11 +59,10 @@ pub(super) fn process_group_by(
         }
     }
 
-    let mut new_acc_predicates = PlHashMap::with_capacity(acc_predicates.len());
+    let mut new_acc_predicates = init_indexmap(Some(acc_predicates.len()));
 
     for (pred_name, predicate) in acc_predicates {
-        // Counts change due to groupby's
-        let mut push_down = !has_aexpr(predicate.node(), expr_arena, |ae| matches!(ae, AExpr::Len));
+        let mut push_down = true;
 
         for name in aexpr_to_leaf_names_iter(predicate.node(), expr_arena) {
             push_down &= key_schema.contains(name.as_ref());
@@ -86,14 +86,25 @@ pub(super) fn process_group_by(
 
     opt.pushdown_and_assign(input, new_acc_predicates, lp_arena, expr_arena)?;
 
-    let lp = GroupBy {
-        input,
-        keys,
-        aggs,
-        schema,
-        apply,
-        maintain_order,
-        options,
-    };
+    let lp = hive::rewrite_hive(
+        IR::GroupBy {
+            input,
+            keys,
+            aggs,
+            schema,
+            maintain_order,
+            options,
+            apply,
+        },
+        opt,
+        lp_arena,
+        expr_arena,
+    )?;
+
+    let rewrote_to_union = matches!(lp, IR::Union { .. });
+    if rewrote_to_union {
+        opt.hive_rewrite_active = true;
+    }
+
     Ok(opt.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
 }

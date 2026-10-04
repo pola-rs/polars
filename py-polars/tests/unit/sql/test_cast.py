@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from datetime import date, datetime, time
 from typing import Any
 
 import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import InvalidOperationError, SQLInterfaceError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    SQLInterfaceError,
+)
 from polars.testing import assert_frame_equal
 
 
@@ -164,27 +169,156 @@ def test_cast() -> None:
 
 
 @pytest.mark.parametrize(
-    ("values", "cast_op", "error"),
+    ("values", "cast_op", "exc", "error"),
     [
-        ([1.0, -1.0], "values::uint8", "conversion from `f64` to `u64` failed"),
-        ([10, 0, -1], "values::uint4", "conversion from `i64` to `u32` failed"),
-        ([int(1e8)], "values::int1", "conversion from `i64` to `i8` failed"),
-        (["a", "b"], "values::date", "conversion from `str` to `date` failed"),
-        (["a", "b"], "values::time", "conversion from `str` to `time` failed"),
-        (["a", "b"], "values::int4", "conversion from `str` to `i32` failed"),
+        (
+            [1.0, -1.0],
+            "values::uint8",
+            InvalidOperationError,
+            "conversion from `f64` to `u64` failed",
+        ),
+        (
+            [10, 0, -1],
+            "values::uint4",
+            InvalidOperationError,
+            "conversion from `i64` to `u32` failed",
+        ),
+        (
+            [int(1e8)],
+            "values::int1",
+            InvalidOperationError,
+            "conversion from `i64` to `i8` failed",
+        ),
+        (
+            ["a", "b"],
+            "values::time",
+            ComputeError,
+            "could not find an appropriate format to parse times",
+        ),
+        (
+            ["a", "b"],
+            "values::int4",
+            InvalidOperationError,
+            "conversion from `str` to `i32` failed",
+        ),
     ],
 )
-def test_cast_errors(values: Any, cast_op: str, error: str) -> None:
+def test_cast_errors(
+    values: Any, cast_op: str, exc: type[Exception], error: str
+) -> None:
     df = pl.DataFrame({"values": values})
 
     # invalid CAST should raise an error...
-    with pytest.raises(InvalidOperationError, match=error):
+    with pytest.raises(exc, match=error):
         df.sql(f"SELECT {cast_op} FROM self")
 
     # ... or return `null` values if using TRY_CAST
     target_type = cast_op.split("::")[1]
     res = df.sql(f"SELECT TRY_CAST(values AS {target_type}) AS cast_values FROM self")
     assert None in res.to_series()
+
+
+@pytest.mark.parametrize(
+    ("sql_type", "dtype", "value", "expected"),
+    [
+        ("date", pl.Date, "2000-02-01", date(2000, 2, 1)),
+        (
+            "timestamp",
+            pl.Datetime("us"),
+            "2000-02-01 12:30:00",
+            datetime(2000, 2, 1, 12, 30),
+        ),
+        (
+            "datetime",
+            pl.Datetime("us"),
+            "2000-02-01 12:30:00",
+            datetime(2000, 2, 1, 12, 30),
+        ),
+        ("time", pl.Time, "12:30:00", time(12, 30)),
+    ],
+)
+def test_cast_string_to_temporal(
+    sql_type: str, dtype: pl.DataType, value: str, expected: Any
+) -> None:
+    df = pl.DataFrame({"s": [value, None]})
+
+    # a column operand keeps the frame's null; a literal broadcasts to both rows
+    for operand, rows in (("s", [expected, None]), (f"'{value}'", [expected] * 2)):
+        for cast_op in (
+            f"CAST({operand} AS {sql_type})",
+            f"TRY_CAST({operand} AS {sql_type})",
+            f"{operand}::{sql_type}",
+        ):
+            res = df.sql(f"SELECT {cast_op} AS x FROM self")
+            assert_frame_equal(res, pl.DataFrame({"x": rows}, schema={"x": dtype}))
+
+
+@pytest.mark.parametrize(
+    ("sql_type", "dtype"),
+    [
+        ("date", pl.Date),
+        ("timestamp", pl.Datetime("us")),
+        ("time", pl.Time),
+    ],
+)
+def test_try_cast_string_to_temporal_nulls(sql_type: str, dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"s": ["not a temporal value"]})
+
+    for operand in ("s", "'not a temporal value'"):
+        res = df.sql(f"SELECT TRY_CAST({operand} AS {sql_type}) AS x FROM self")
+        assert_frame_equal(res, pl.DataFrame({"x": [None]}, schema={"x": dtype}))
+
+        with pytest.raises(ComputeError, match="could not find an appropriate format"):
+            df.sql(f"SELECT CAST({operand} AS {sql_type}) AS x FROM self")
+
+
+def test_cast_temporal_to_temporal_is_not_parsed() -> None:
+    df = pl.DataFrame(
+        {"dtm": [datetime(2000, 2, 1, 12, 30)]},
+        schema={"dtm": pl.Datetime("us")},
+    )
+    res = df.sql(
+        """
+        SELECT
+          CAST(dtm AS date) AS d,
+          CAST(dtm AS time) AS t
+        FROM self
+        """
+    )
+    assert_frame_equal(
+        res,
+        pl.DataFrame({"d": [date(2000, 2, 1)], "t": [time(12, 30)]}),
+    )
+
+
+def test_cast_string_to_date_in_between() -> None:
+    df = pl.DataFrame(
+        {"d": [date(1999, 1, 1), date(1999, 3, 1), date(2000, 1, 1)]},
+    )
+    res = df.sql(
+        "SELECT * FROM self WHERE d BETWEEN CAST('1999-02-22' AS date) AND CAST('1999-03-24' AS date)"
+    )
+    assert_frame_equal(res, pl.DataFrame({"d": [date(1999, 3, 1)]}))
+
+
+def test_temporal_in_string_list() -> None:
+    df = pl.DataFrame(
+        {"d": [date(1999, 1, 1), date(1999, 3, 1), date(2000, 1, 1)]},
+    )
+    res = df.sql("SELECT * FROM self WHERE d IN ('1999-03-01', '2000-01-01')")
+    assert_frame_equal(res, pl.DataFrame({"d": [date(1999, 3, 1), date(2000, 1, 1)]}))
+
+
+def test_try_cast_string_to_temporal_partial() -> None:
+    df = pl.DataFrame({"s": ["2000-02-01", "nope"]})
+
+    res = df.sql("SELECT TRY_CAST(s AS date) AS x FROM self")
+    assert_frame_equal(
+        res, pl.DataFrame({"x": [date(2000, 2, 1), None]}, schema={"x": pl.Date})
+    )
+
+    with pytest.raises(InvalidOperationError, match=r"conversion .* failed"):
+        df.sql("SELECT CAST(s AS date) AS x FROM self")
 
 
 @pytest.mark.may_fail_cloud  # reason: eager construct to_struct

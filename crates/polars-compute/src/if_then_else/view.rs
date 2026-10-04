@@ -2,9 +2,9 @@ use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use arrow::array::{Array, BinaryViewArray, MutablePlBinary, Utf8ViewArray, View};
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{Array, BinaryViewArray, MutablePlBinary, Utf8ViewArray, View};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
 use polars_buffer::Buffer;
 use polars_utils::aliases::{InitHashMaps, PlHashSet};
 

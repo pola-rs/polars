@@ -58,7 +58,7 @@ where
         check_filter_len!(self, filter);
         let chunks = self.downcast_iter().collect::<Vec<_>>();
         let mut builder = ObjectChunkedBuilder::<T>::new(self.name().clone(), self.len());
-        for (idx, mask) in filter.into_iter().enumerate() {
+        for (idx, mask) in filter.iter().enumerate() {
             if mask.unwrap_or(false) {
                 let (chunk_idx, idx) = self.index_to_chunked_index(idx);
                 unsafe {

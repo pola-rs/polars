@@ -1,5 +1,5 @@
-use arrow::array::*;
-use arrow::offset::Offset;
+use polars_arrow::array::*;
+use polars_arrow::offset::Offset;
 
 use super::{binary_cases, test_equal};
 

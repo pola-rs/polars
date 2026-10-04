@@ -1,91 +1,39 @@
 use std::num::NonZeroUsize;
 use std::sync::LazyLock;
 
-use polars_core::config::verbose;
-use polars_utils::sys::total_memory;
-
-pub fn upload_chunk_size() -> usize {
-    return *UPLOAD_CHUNK_SIZE;
-
-    static UPLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
-        let mut v: usize = 32 * 1024 * 1024;
-
-        if let Ok(s) = std::env::var("POLARS_UPLOAD_CHUNK_SIZE") {
-            v = s
-                .parse::<usize>()
-                .unwrap_or_else(|_| panic!("invalid value for POLARS_UPLOAD_CHUNK_SIZE: {s}"))
-        }
-
-        if verbose() {
-            eprintln!("upload_chunk_size: {v}")
-        }
-
-        v
-    });
+pub fn env_upload_chunk_size() -> Option<NonZeroUsize> {
+    std::env::var("POLARS_UPLOAD_CHUNK_SIZE").ok().map(|s| {
+        s.parse::<NonZeroUsize>()
+            .unwrap_or_else(|_| panic!("invalid value for POLARS_UPLOAD_CHUNK_SIZE: {s}"))
+    })
 }
 
-pub fn partitioned_upload_chunk_size() -> usize {
-    return *PARTITIONED_UPLOAD_CHUNK_SIZE;
-
-    static PARTITIONED_UPLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
-        let mut v: usize = 6 * 1024 * 1024;
-
-        if let Ok(s) = std::env::var("POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE") {
-            v = s.parse::<usize>().unwrap_or_else(|_| {
+pub fn env_partitioned_upload_chunk_size() -> Option<NonZeroUsize> {
+    std::env::var("POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE")
+        .ok()
+        .map(|s| {
+            s.parse::<NonZeroUsize>().unwrap_or_else(|_| {
                 panic!("invalid value for POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE: {s}")
             })
-        }
-
-        if verbose() {
-            eprintln!("partitioned_upload_chunk_size: {v}")
-        }
-
-        v
-    });
+        })
 }
 
 /// Max concurrent tasks within a single cloud writer.
-pub fn upload_concurrency() -> NonZeroUsize {
-    return *UPLOAD_CONCURRENCY;
-
-    static UPLOAD_CONCURRENCY: LazyLock<NonZeroUsize> = LazyLock::new(|| {
-        let buffer_limit: usize = (total_memory() / 32) as _;
-
-        let mut v: NonZeroUsize =
-            NonZeroUsize::new(usize::clamp(buffer_limit / upload_chunk_size(), 8, 256)).unwrap();
-
-        if let Ok(s) = std::env::var("POLARS_UPLOAD_CONCURRENCY") {
-            v = s
-                .parse::<NonZeroUsize>()
-                .unwrap_or_else(|_| panic!("invalid value for POLARS_UPLOAD_CONCURRENCY: {s}"))
-        }
-
-        if verbose() {
-            eprintln!("upload_concurrency: {v}")
-        }
-
-        v
-    });
+pub fn env_upload_concurrency() -> Option<NonZeroUsize> {
+    std::env::var("POLARS_UPLOAD_CONCURRENCY").ok().map(|s| {
+        s.parse::<NonZeroUsize>()
+            .unwrap_or_else(|_| panic!("invalid value for POLARS_UPLOAD_CONCURRENCY: {s}"))
+    })
 }
 
-pub fn partitioned_upload_concurrency() -> NonZeroUsize {
-    return *PARTITIONED_UPLOAD_CONCURRENCY;
-
-    static PARTITIONED_UPLOAD_CONCURRENCY: LazyLock<NonZeroUsize> = LazyLock::new(|| {
-        let mut v: NonZeroUsize = NonZeroUsize::new(64).unwrap();
-
-        if let Ok(s) = std::env::var("POLARS_PARTITIONED_UPLOAD_CONCURRENCY") {
-            v = s.parse::<NonZeroUsize>().unwrap_or_else(|_| {
+pub fn env_partitioned_upload_concurrency() -> Option<NonZeroUsize> {
+    std::env::var("POLARS_PARTITIONED_UPLOAD_CONCURRENCY")
+        .ok()
+        .map(|s| {
+            s.parse::<NonZeroUsize>().unwrap_or_else(|_| {
                 panic!("invalid value for POLARS_PARTITIONED_UPLOAD_CONCURRENCY: {s}")
             })
-        }
-
-        if verbose() {
-            eprintln!("partitioned_upload_concurrency: {v}")
-        }
-
-        v
-    });
+        })
 }
 
 /// Runs of this many values whose total bytes are <= `copy_buffer_reserve_size` will be copied into
@@ -132,4 +80,19 @@ pub(crate) fn cloud_writer_copy_buffer_size() -> NonZeroUsize {
 
         v
     });
+}
+
+/// Tail size to speculatively fetch when reading file metadata from a cloud source. Sized
+/// generously as the cost of overfetching is low (extra KB) vs the cost of underfetching
+/// (extra round-trip).
+pub const DEFAULT_CLOUD_FOOTER_READ_SIZE: usize = 256 * 1024;
+
+// Not cached - lookup cost is low compared to I/O, allows for testing.
+pub fn cloud_footer_read_size() -> usize {
+    let Ok(s) = std::env::var("POLARS_CLOUD_FOOTER_READ_SIZE") else {
+        return DEFAULT_CLOUD_FOOTER_READ_SIZE;
+    };
+
+    s.parse::<usize>()
+        .unwrap_or_else(|_| panic!("invalid value for POLARS_CLOUD_FOOTER_READ_SIZE: {s}"))
 }

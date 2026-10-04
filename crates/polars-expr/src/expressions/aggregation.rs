@@ -1,5 +1,8 @@
 use std::borrow::Cow;
 
+use polars_arrow::bitmap::Bitmap;
+use polars_core::frame::group_by::aggregations::{_use_rolling_kernels, rolling_numeric_minmax_by};
+use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
@@ -139,8 +142,14 @@ impl PhysicalExpr for AggregationExpr {
                 1 => s,
                 n => polars_bail!(item_agg_count_not_one = n, allow_empty = allow_empty),
             }),
-            GroupByMethod::Sum => parallel_op_columns(
-                |s| s.sum_reduce().map(|sc| sc.into_column(s.name().clone())),
+            GroupByMethod::Sum { null_on_empty } => parallel_op_columns(
+                |s| {
+                    let mut sc = s.sum_reduce()?;
+                    if null_on_empty && s.null_count() == s.len() {
+                        sc = Scalar::null(sc.dtype().clone());
+                    }
+                    Ok(sc.into_column(s.name().clone()))
+                },
                 s,
                 allow_threading,
             ),
@@ -245,9 +254,15 @@ impl PhysicalExpr for AggregationExpr {
                     let agg_c = c.agg_mean(&groups);
                     AggregatedScalar(agg_c.with_name(keep_name))
                 },
-                GroupByMethod::Sum => {
+                GroupByMethod::Sum { null_on_empty } => {
                     let (c, groups) = ac.get_final_aggregation();
-                    let agg_c = c.agg_sum(&groups);
+                    let mut agg_c = c.agg_sum(&groups);
+                    if null_on_empty {
+                        let counts = c.agg_valid_count(&groups);
+                        let has_values: Bitmap =
+                            counts.idx()?.into_no_null_iter().map(|n| n > 0).collect();
+                        agg_c = agg_c.mask(&has_values);
+                    }
                     AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Count { include_nulls } => {
@@ -296,7 +311,7 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::Implode { maintain_order: _ } => {
                     let col = match ac.agg_state() {
                         AggState::LiteralScalar(_) => unreachable!(), // handled above
-                        AggState::AggregatedScalar(c) => c.as_list().into_column(),
+                        AggState::AggregatedScalar(c) => c.to_unit_list(),
                         AggState::AggregatedList(c) => c.clone(),
                         AggState::NotAggregated(_) => ac.aggregated(),
                     };
@@ -308,7 +323,7 @@ impl PhysicalExpr for AggregationExpr {
                         GroupsType::new_slice(groups, false, true).into_sliceable()
                     });
                     let mut out = AggregationContext::from_agg_state(AggregatedScalar(col), groups);
-                    out.set_original_len(false);
+                    out.set_original_groups(false);
                     return Ok(out);
                 },
                 GroupByMethod::Groups => {
@@ -458,7 +473,36 @@ impl PhysicalExpr for AggMinMaxByExpr {
         let (by_col, by_groups) = ac_by.get_final_aggregation();
         GroupsType::check_lengths(&input_groups, &by_groups)?;
 
-        // Dispatch to arg_min/arg_max and then gather
+        // Fast path: rolling context with numeric by column — O(n) via deque.
+        if let GroupsType::Slice {
+            groups: slices,
+            overlapping,
+            monotonic,
+        } = by_groups.as_ref().as_ref()
+        {
+            let by_phys = by_col.as_materialized_series().to_physical_repr();
+            if by_phys.dtype().is_primitive_numeric()
+                && !by_col.dtype().is_categorical()
+                && _use_rolling_kernels(slices, *overlapping, *monotonic, by_phys.chunks())
+            {
+                let gather_idxs = rolling_numeric_minmax_by(&by_col, slices, self.is_max_by);
+                let gathered = input_col.take(&gather_idxs)?;
+                let agg_state = AggregatedScalar(gathered.with_name(keep_name));
+                return Ok(AggregationContext::from_agg_state(
+                    agg_state,
+                    Cow::Borrowed(groups),
+                ));
+            }
+        }
+
+        // Slow path: per-group agg_arg_min/agg_arg_max.
+        let by_col = if by_col.dtype().is_nested() {
+            let encoded =
+                _get_rows_encoded_ca(by_col.name().clone(), &[by_col], &[false], &[false], true)?;
+            encoded.cast(&DataType::Binary)?.into_column()
+        } else {
+            by_col
+        };
         // SAFETY: Groups are correct.
         let idxs_in_groups = if self.is_max_by {
             unsafe { by_col.agg_arg_max(&by_groups) }

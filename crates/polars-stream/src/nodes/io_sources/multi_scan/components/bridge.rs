@@ -1,5 +1,7 @@
 use crate::morsel::{Morsel, MorselLinearizer};
-use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputRecv;
+use crate::nodes::io_sources::multi_scan::reader_interface::output::{
+    FileReaderOutputRecv, RecvError,
+};
 
 #[derive(Copy, Clone)]
 pub enum BridgeState {
@@ -27,10 +29,14 @@ pub enum BridgeRecvPort {
     },
     /// Parallel post-apply ops will connect through this.
     Linearized { rx: MorselLinearizer },
+    /// Morsels of several concurrent files, in arrival order.
+    Merged {
+        rx: tokio::sync::mpsc::Receiver<Morsel>,
+    },
 }
 
 impl BridgeRecvPort {
-    pub async fn recv(&mut self) -> Result<Morsel, ()> {
+    pub async fn recv(&mut self) -> Result<Morsel, RecvError> {
         use BridgeRecvPort::*;
         match self {
             Direct { rx, first_morsel } => {
@@ -40,7 +46,8 @@ impl BridgeRecvPort {
                     rx.recv().await
                 }
             },
-            Linearized { rx } => rx.get().await.ok_or(()),
+            Linearized { rx } => rx.get().await.ok_or(RecvError),
+            Merged { rx } => rx.recv().await.ok_or(RecvError),
         }
     }
 }

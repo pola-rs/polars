@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
@@ -14,6 +15,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import (
+    ArgumentRemovedError,
     ComputeError,
     DuplicateError,
     InvalidOperationError,
@@ -22,7 +24,7 @@ from polars.exceptions import (
 )
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
+from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
@@ -267,11 +269,23 @@ def test_from_arrow_with_bigquery_metadata() -> None:
         schema=arrow_schema,
     )
 
+    df = pl.from_arrow(arrow_tbl)
+    assert isinstance(df, pl.DataFrame)
+
+    # The BigQuery sql-type metadata is retained as an extension dtype,
+    # but must not affect the underlying storage dtypes
+    assert df.schema == {
+        "id": pl.Extension("google:sqlType:integer", pl.Int64),
+        "misc": pl.Extension(
+            "google:sqlType:struct", pl.Struct({"num": pl.Int32, "val": pl.String})
+        ),
+    }
+
     expected_data = {"id": [1, 2], "num": [None, None], "val": [None, None]}
     expected_schema = {"id": pl.Int64, "num": pl.Int32, "val": pl.String}
     assert_frame_equal(
+        df.select(pl.all().ext.storage()).unnest("misc"),
         pl.DataFrame(expected_data, schema=expected_schema),
-        pl.from_arrow(arrow_tbl).unnest("misc"),  # type: ignore[union-attr]
     )
 
 
@@ -392,13 +406,18 @@ def test_from_pyarrow_map() -> None:
     pl.DataFrame(pa_table.slice(0, 0))
 
     result = pl.DataFrame(pa_table)
+    assert result.schema == {"idx": pl.Int16, "mapping": pl.Map(pl.String, pl.String)}
     assert result.to_dict(as_series=False) == {
         "idx": [1, 2],
-        "mapping": [
-            [{"key": "a", "value": "something"}],
-            [{"key": "a", "value": "else"}, {"key": "b", "value": "another key"}],
-        ],
+        "mapping": [{"a": "something"}, {"a": "else", "b": "another key"}],
     }
+
+
+def test_from_pyarrow_map_preserves_nulls_28652() -> None:
+    pa_map = pa.array([[], None, [("k", 1)]], type=pa.map_(pa.string(), pa.int64()))
+    result = pl.Series(pa_map)
+    assert result.dtype == pl.Map(pl.String, pl.Int64)
+    assert result.to_list() == [{}, None, {"k": 1}]
 
 
 def test_from_fixed_size_binary_list() -> None:
@@ -407,6 +426,12 @@ def test_from_fixed_size_binary_list() -> None:
     s = cast("pl.Series", pl.from_arrow(arrow_array))
     assert s.dtype == pl.List(pl.Binary)
     assert s.to_list() == val
+
+
+def test_from_repr_tbl_removed() -> None:
+    msg = "It was renamed to 'data'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.from_repr(tbl="")  # type: ignore[call-arg]
 
 
 def test_dataframe_from_repr() -> None:
@@ -1009,10 +1034,10 @@ def test_df_pycapsule_interface() -> None:
     expected_schema = pl.Schema([("a", pl.Int128), ("b", pl.String), ("c", pl.String)])
 
     for arrow_obj in (
-        pl.from_arrow(capsule_df),  # capsule
+        pl.DataFrame(capsule_df),  # capsule
         out,  # table loaded from capsule
     ):
-        df_res = pl.from_arrow(arrow_obj, schema_overrides=schema_overrides)
+        df_res = pl.DataFrame(arrow_obj, schema_overrides=schema_overrides)
         assert expected_schema == df_res.schema  # type: ignore[union-attr]
         assert isinstance(df_res, pl.DataFrame)
         assert df.equals(df_res)
@@ -1026,15 +1051,6 @@ def test_misaligned_nested_arrow_19097() -> None:
     assert_series_equal(pl.Series("a", a.to_arrow()), a)
 
 
-def test_arrow_roundtrip_lex_cat_20288() -> None:
-    tb = pl.Series("a", ["A", "B"], pl.Categorical()).to_frame().to_arrow()
-    df = pl.from_arrow(tb)
-    assert isinstance(df, pl.DataFrame)
-    dt = df.schema["a"]
-    assert isinstance(dt, pl.Categorical)
-    assert dt.ordering == "lexical"
-
-
 def test_from_arrow_20271() -> None:
     df = pl.from_arrow(
         pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
@@ -1044,6 +1060,12 @@ def test_from_arrow_20271() -> None:
         df.to_series(),
         pl.Series("b", ["D", "E"], pl.Categorical),
     )
+
+
+def test_series_to_arrow_future_removed() -> None:
+    msg = "It was renamed to 'compat_level'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.Series("a", [1, 2, 3]).to_arrow(future=True)  # type: ignore[call-arg]
 
 
 def test_to_arrow_empty_chunks_20627() -> None:
@@ -1097,37 +1119,38 @@ def test_from_arrow_map_containing_timestamp_23658() -> None:
         ),
     )
 
-    expect = pl.DataFrame(
+    out = pl.DataFrame(arrow_tbl)
+    assert out.schema == pl.Schema(
         {
-            "column_1": [
-                [
-                    {
-                        "field_1": [
-                            {"key": 1, "value": datetime(2025, 1, 1)},
-                            {"key": 2, "value": datetime(2025, 1, 2)},
-                            {"key": 2, "value": None},
-                        ]
-                    },
-                    {"field_1": []},
-                    None,
-                ]
-            ],
-        },
-        schema={
             "column_1": pl.List(
-                pl.Struct(
-                    {
-                        "field_1": pl.List(
-                            pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")})
-                        )
-                    }
-                )
+                pl.Struct({"field_1": pl.Map(pl.Int32, pl.Datetime("ms"))})
             )
-        },
+        }
     )
 
-    out = pl.DataFrame(arrow_tbl)
-    assert_frame_equal(out, expect)
+    # Arrow import does not canonicalize, so the duplicate key 2 survives in the
+    # entries; a Python dict cannot hold it, and keeps the last value.
+    entries = pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
+    assert out["column_1"].explode().struct.field("field_1").cast(
+        entries
+    ).to_list() == [
+        [
+            {"key": 1, "value": datetime(2025, 1, 1)},
+            {"key": 2, "value": datetime(2025, 1, 2)},
+            {"key": 2, "value": None},
+        ],
+        [],
+        None,
+    ]
+    assert out.to_dicts() == [
+        {
+            "column_1": [
+                {"field_1": {1: datetime(2025, 1, 1), 2: None}},
+                {"field_1": {}},
+                None,
+            ]
+        }
+    ]
 
 
 def test_schema_constructor_from_schema_capsule() -> None:
@@ -1135,9 +1158,7 @@ def test_schema_constructor_from_schema_capsule() -> None:
         [pa.field("test", pa.map_(pa.int32(), pa.timestamp("ms")))]
     )
 
-    assert pl.Schema(arrow_schema) == {
-        "test": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
-    }
+    assert pl.Schema(arrow_schema) == {"test": pl.Map(pl.Int32, pl.Datetime("ms"))}
 
     # Test __arrow_c_schema__ implementation on `pl.Schema`
     assert pa.schema(pl.Schema({"x": pl.Int32})) == pa.schema(
@@ -1274,7 +1295,9 @@ def test_pycapsule_stream_interface_all_types() -> None:
     assert_frame_equal(
         df.map_columns(
             pl.selectors.all(),
-            lambda s: pl.Series(PyCapsuleStreamHolder(s.implode())).explode(),
+            lambda s: pl.Series(PyCapsuleStreamHolder(s.implode())).explode(
+                empty_as_null=True
+            ),
         ),
         df,
     )
@@ -1292,7 +1315,9 @@ def test_pycapsule_stream_interface_all_types() -> None:
         pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.struct("*")))).unnest("*"), df
     )
     assert_frame_equal(
-        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.all().implode()))).explode("*"),
+        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.all().implode()))).explode(
+            "*", empty_as_null=True
+        ),
         df,
     )
     assert_frame_equal(
@@ -1546,3 +1571,116 @@ def test_from_pandas_timestamp_17382() -> None:
     assert isinstance(result, datetime)
     assert result.tzinfo == ZoneInfo("UTC")
     assert result == datetime(2021, 1, 1, 0, 0, 0, tzinfo=ZoneInfo("UTC"))
+
+
+def test_sliced_struct_arrow_export_19612() -> None:
+    df = pl.DataFrame(
+        {"x": [{"value": "A"}, None, {"value": "B"}, None]},
+    )
+
+    arrow_tbls = [
+        df.slice(0, 1).to_arrow(),
+        df.slice(1, 1).to_arrow(),
+        df.slice(2, 1).to_arrow(),
+        df.slice(3, 1).to_arrow(),
+    ]
+
+    expected_row_values = [{"value": "A"}, None, {"value": "B"}, None]
+
+    for arrow_tbl, expect_row_value in zip(
+        arrow_tbls, expected_row_values, strict=True
+    ):
+        assert_frame_equal(
+            pl.DataFrame(arrow_tbl),
+            pl.DataFrame({"x": [expect_row_value]}, schema=df.schema),
+        )
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "expected"),
+    [
+        (
+            [[0, 0], [1, 2], [3, 4], None, [7, 8]],
+            pl.Array(pl.Int64, 2),
+            [[1, 2], [3, 4], None],
+        ),
+        (
+            [[0], [1, 2], [3, 4, 5], None, [7, 8]],
+            pl.List(pl.Int64),
+            [[1, 2], [3, 4, 5], None],
+        ),
+    ],
+)
+def test_sliced_nested_arrow_export_28583(
+    values: list[Any], dtype: pl.DataType, expected: list[Any]
+) -> None:
+    s = pl.Series(values, dtype=dtype).slice(1, 3)
+
+    assert s.to_list() == expected
+    assert s.to_arrow().to_pylist() == expected
+    assert pa.table(s.to_frame()).column(0).to_pylist() == expected
+
+
+def test_from_arrow_capsule_24511() -> None:
+    assert_series_equal(
+        pl.from_arrow(PyCapsuleStreamHolder(pl.DataFrame({"x": 1}))),  # type: ignore[arg-type]
+        pl.Series([{"x": 1}]),
+    )
+
+    assert_series_equal(
+        pl.from_arrow(PyCapsuleArrayHolder(pl.Series([{"x": 1}]).to_arrow())),  # type: ignore[arg-type]
+        pl.Series([{"x": 1}]),
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        (["short", "a_string_longer_than_12"], pl.String),
+        ([b"short", b"a_string_longer_than_12"], pl.Binary),
+    ],
+)
+def test_binview_sliced_buffer_arrow_export_28612(
+    values: list[Any], dtype: pl.DataType
+) -> None:
+    df = pl.DataFrame({"c": values}, schema={"c": dtype})
+    df = pl.DataFrame(df.to_arrow())
+
+    assert df.to_series().to_list() == values
+    assert df.to_arrow().column("c").to_pylist() == values
+    assert pa.table(df).column("c").to_pylist() == values
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        [["a"], ["b"]],
+        [["x" * 13]],
+        [[["a"]]],
+        [[1], [2]],
+    ],
+)
+def test_series_from_arrow_large_list_child_cast_28626(values: list[Any]) -> None:
+    s = pl.Series("c", values)
+    assert pl.Series("c", s.to_arrow()).to_list() == values
+    assert (
+        pl.DataFrame(pl.DataFrame({"c": s}).to_arrow()).to_series().to_list() == values
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "fast_explode", "exploded"),
+    [
+        ([["a", "b"], ["c"]], True, ["a", "b", "c"]),
+        ([["a"], [], ["b"]], False, ["a", None, "b"]),
+        ([["a"], None, ["b"]], False, ["a", None, "b"]),
+    ],
+)
+def test_series_from_arrow_large_list_keeps_fast_explode_28626(
+    values: list[Any], fast_explode: bool, exploded: list[Any]
+) -> None:
+    imported = pl.Series("c", pl.Series("c", values).to_arrow())
+
+    assert imported.to_list() == values
+    assert imported.flags["FAST_EXPLODE"] is fast_explode
+    assert imported.explode(empty_as_null=True, keep_nulls=True).to_list() == exploded

@@ -2,7 +2,7 @@ use std::cmp::Reverse;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
-use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
+use polars_async::executor::{self, AbortOnDropHandle, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::linearizer::Linearizer;
 use polars_async::primitives::oneshot_channel;
 use polars_core::frame::DataFrame;
@@ -28,6 +28,7 @@ pub struct MorselStreamReverser {
     pub offset_len_rtl: (usize, usize),
     pub row_index: Option<(RowIndex, oneshot_channel::Receiver<usize>)>,
     pub verbose: bool,
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 impl MorselStreamReverser {
@@ -38,6 +39,7 @@ impl MorselStreamReverser {
             offset_len_rtl,
             row_index,
             verbose,
+            task_metrics,
         } = self;
 
         // Accumulated morsels
@@ -168,6 +170,7 @@ impl MorselStreamReverser {
         // Otherwise we will wrap around on fetch_add
         assert!(usize::MAX - n_chunks >= n_tasks);
 
+        let metrics = task_metrics.as_deref();
         let sender_join_handles = morsel_senders
             .into_iter()
             .take(n_tasks)
@@ -175,7 +178,7 @@ impl MorselStreamReverser {
                 let chunk_idx_arc = chunk_idx_arc.clone();
                 let combined_df = combined_df.clone();
                 let row_index = row_index.clone();
-                AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+                AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, metrics, async move {
                     loop {
                         let chunk_idx =
                             chunk_idx_arc.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -205,8 +208,11 @@ impl MorselStreamReverser {
                             unsafe { df.with_row_index_mut(row_index.name.clone(), Some(offset)) };
                         }
 
-                        let morsel =
-                            Morsel::new(df, MorselSeq::new(chunk_idx as u64), SourceToken::new());
+                        let morsel = Morsel::new_unregistered(
+                            df,
+                            MorselSeq::new(chunk_idx as u64),
+                            SourceToken::new(),
+                        );
 
                         if morsel_tx.send_morsel(morsel).await.is_err() {
                             break;

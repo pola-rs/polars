@@ -17,8 +17,9 @@
 //!    on [`super::FileMetadata::footer_buf`].
 
 use polars_buffer::Buffer;
-use polars_parquet_format::{ColumnOrder, KeyValue, SchemaElement, SortingColumn};
+use polars_parquet_format::{KeyValue, SchemaElement, SortingColumn};
 
+use super::column_order::ColumnOrderTag;
 use crate::parquet::compression::Compression;
 
 /// `(offset, len)` into a shared [`Buffer<u8>`] holding the footer bytes.
@@ -115,12 +116,11 @@ pub(crate) struct CompactRowGroup {
 
 /// Compact replacement for `polars_parquet_format::FileMetaData`.
 ///
-/// `schema`, `key_value_metadata`, `column_orders` stay as lists of
-/// format-crate structs because downstream consumers
-/// (`SchemaDescriptor::try_from_thrift`, `FileMetadata::key_value_metadata`,
-/// `parse_column_orders`) expect that shape. Refactoring those would cross
-/// the `polars-parquet-format` boundary. (Note: `sorting_columns` lives on
-/// `CompactRowGroup`, not here, and is also kept as the format-crate type.)
+/// `schema` and `key_value_metadata` stay as lists of format-crate structs
+/// because downstream consumers (`SchemaDescriptor::try_from_thrift`,
+/// `FileMetadata::key_value_metadata`) expect that shape. `column_orders` uses
+/// the local [`ColumnOrderTag`] (the format crate has no `IEEE754TotalOrder`
+/// variant). `sorting_columns` lives on `CompactRowGroup` and stays format-crate.
 #[derive(Debug, Clone)]
 pub(crate) struct CompactFileMetaData {
     pub version: i32,
@@ -129,7 +129,7 @@ pub(crate) struct CompactFileMetaData {
     pub row_groups: Vec<CompactRowGroup>,
     pub key_value_metadata: Option<Vec<KeyValue>>,
     pub created_by: Option<String>,
-    pub column_orders: Option<Vec<ColumnOrder>>,
+    pub column_orders: Option<Vec<ColumnOrderTag>>,
     /// The footer buffer the [`CompactStatistics`] `ByteRange`s point into.
     /// `from_compact` stores it on [`super::FileMetadata::footer_buf`] so
     /// stats payloads remain resolvable for the lifetime of the metadata.

@@ -5,7 +5,6 @@ import pytest
 
 import polars as pl
 from polars._utils.cloud import prepare_cloud_plan
-from polars.exceptions import InvalidOperationError
 
 CLOUD_SOURCE = "s3://my-nonexistent-bucket/dataset"
 DST = "s3://my-nonexistent-bucket/output"
@@ -25,7 +24,7 @@ DST = "s3://my-nonexistent-bucket/output"
     ],
 )
 def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
-    (result, _flags) = prepare_cloud_plan(lf, allow_local_scans=False)
+    (result, _flags) = prepare_cloud_plan(lf)
     assert isinstance(result, bytes)
 
     deserialized = pl.LazyFrame.deserialize(BytesIO(result))
@@ -53,7 +52,7 @@ def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
     ],
 )
 def test_prepare_cloud_plan_udf(lf: pl.LazyFrame) -> None:
-    (result, _flags) = prepare_cloud_plan(lf, allow_local_scans=False)
+    (result, _flags) = prepare_cloud_plan(lf)
     assert isinstance(result, bytes)
 
     deserialized = pl.LazyFrame.deserialize(BytesIO(result))
@@ -65,7 +64,6 @@ def test_prepare_cloud_plan_optimization_toggle() -> None:
 
     (result, _flags) = prepare_cloud_plan(
         lf,
-        allow_local_scans=False,
         optimizations=pl.QueryOptFlags(projection_pushdown=False),
     )
     assert isinstance(result, bytes)
@@ -84,23 +82,8 @@ def test_prepare_cloud_plan_optimization_toggle() -> None:
         pl.scan_ipc(["data-1.feather", "data-2.feather"]).sink_parquet(DST, lazy=True),
     ],
 )
-def test_prepare_cloud_plan_fail_on_local_data_source(lf: pl.LazyFrame) -> None:
-    with pytest.raises(
-        InvalidOperationError,
-        match="logical plan ineligible for execution on Polars Cloud",
-    ):
-        prepare_cloud_plan(lf, allow_local_scans=False)
-
-
-@pytest.mark.parametrize(
-    "lf",
-    [
-        pl.scan_parquet("data.parquet").sink_parquet(DST, lazy=True),
-        pl.scan_ndjson(Path("data.ndjson")).sink_parquet(DST, lazy=True),
-        pl.scan_csv("data-*.csv").sink_parquet(DST, lazy=True),
-        pl.scan_ipc(["data-1.feather", "data-2.feather"]).sink_parquet(DST, lazy=True),
-    ],
-)
 def test_prepare_cloud_plan_succeed_on_local_data_source(lf: pl.LazyFrame) -> None:
-    (result, _flags) = prepare_cloud_plan(lf, allow_local_scans=True)
+    # Client-side checks for local data source has been moved to the scheduler and will
+    # be validated during planning.
+    (result, _flags) = prepare_cloud_plan(lf)
     assert isinstance(result, bytes)

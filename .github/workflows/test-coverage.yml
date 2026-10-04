@@ -1,48 +1,51 @@
 name: Code coverage
 
 on:
-  pull_request:
-    paths:
-      - '**.rs'
-      - '**.py'
-      - .github/workflows/test-coverage.yml
   push:
     branches:
       - main
+      - "1.x"
     paths:
-      - '**.rs'
-      - '**.py'
+      - "**.rs"
+      - "**.py"
       - .github/workflows/test-coverage.yml
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 defaults:
   run:
     shell: bash
 
 env:
-  RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
+  RUSTFLAGS: "-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target"
   RUST_BACKTRACE: 1
-  # Coverage data comes from instrumentation, not DWARF symbols.
-  # Keep macOS test binaries smaller to avoid linker/disk exhaustion.
-  CARGO_PROFILE_DEV_DEBUG: 0
-  CARGO_PROFILE_TEST_DEBUG: 0
-  LLVM_PROFILE_FILE: ${{ github.workspace }}/target/polars-%p-%3m.profraw
   CARGO_LLVM_COV: 1
   CARGO_LLVM_COV_SHOW_ENV: 1
   CARGO_LLVM_COV_TARGET_DIR: ${{ github.workspace }}/target
+  # %m keeps counters correct when a PID is reused across the four test runs,
+  # and bounds the profraw count; #14255's SIGBUS is addressed by freeing disk.
+  LLVM_PROFILE_FILE: ${{ github.workspace }}/target/polars-%p-%3m.profraw
+  # Coverage comes from instrumentation rather than DWARF symbols, so dropping
+  # debug info keeps the instrumented binaries from exhausting the runner disk.
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
   # We use the stable ABI, silences error from PyO3 that the system Python is too new.
   PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
 
 jobs:
   coverage-rust:
-    # Running under ubuntu doesn't seem to work:
-    # https://github.com/pola-rs/polars/issues/14255
-    runs-on: macos-15
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          # Instrumented builds link near the runner's memory ceiling, so keep swap.
+          swap-storage: false
 
       - name: Set up Rust
         run: rustup component add llvm-tools-preview
@@ -54,7 +57,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Prepare coverage
         run: cargo llvm-cov clean --workspace
@@ -65,6 +68,7 @@ jobs:
           -p polars-arrow
           -p polars-compute
           -p polars-core
+          -p polars-defs
           -p polars-io
           -p polars-lazy
           -p polars-ops
@@ -84,22 +88,26 @@ jobs:
         run: cargo llvm-cov report --lcov --output-path coverage-rust.lcov
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-rust
           path: coverage-rust.lcov
 
   coverage-python:
-    # Running under ubuntu doesn't seem to work:
-    # https://github.com/pola-rs/polars/issues/14255
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          # Instrumented builds link near the runner's memory ceiling, so keep swap.
+          swap-storage: false
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: "3.12"
           check-latest: true
 
       - name: Install uv
@@ -115,11 +123,14 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: py-polars
+        env:
+          # Dependencies built from source must not use the coverage flags.
+          RUSTFLAGS: ''
         run: |
           # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
           # doesn't have an up-to-date typing-extensions, see
           # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
-          uv pip install -U typing-extensions 
+          uv pip install -U typing-extensions
           uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
 
       - name: Set up Rust
@@ -132,7 +143,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Prepare coverage
         run: cargo llvm-cov clean --workspace
@@ -155,28 +166,27 @@ jobs:
           -k 'not test_polars_import'
           --cov --cov-report xml:main.xml --cov-fail-under=0
 
-      - name: Run Python tests - streaming
+      - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
         working-directory: py-polars
         env:
-          POLARS_AUTO_NEW_STREAMING: 1
+          POLARS_ENGINE_AFFINITY: in-memory
           POLARS_TIMEOUT_MS: 60000
         run: >
           pytest
           -n auto
-          -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not benchmark and not docs"
+          -m "not release and not benchmark and not docs"
           -k 'not test_polars_import'
-          --cov --cov-report xml:auto-streaming.xml --cov-fail-under=0
+          --cov --cov-report xml:in-memory.xml --cov-fail-under=0
 
-      - name: Run Python tests - streaming with morsel size 4
+      - name: Run Python tests - morsel size 4
         working-directory: py-polars
         env:
-          POLARS_AUTO_NEW_STREAMING: 1
           POLARS_IDEAL_MORSEL_SIZE: 4
           POLARS_TIMEOUT_MS: 60000
         run: >
           pytest
           -n auto
-          -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not benchmark and not docs"
+          -m "not slow and not write_disk and not release and not benchmark and not docs"
           -k 'not test_polars_import'
           --cov --cov-report xml:small-morsel.xml --cov-fail-under=0
 
@@ -195,13 +205,13 @@ jobs:
         run: cargo llvm-cov report --lcov --output-path coverage-python.lcov
 
       - name: Upload coverage reports
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-python
           path: |
             coverage-python.lcov
             py-polars/main.xml
-            py-polars/auto-streaming.xml
+            py-polars/in-memory.xml
             py-polars/small-morsel.xml
             py-polars/async.xml
 
@@ -211,15 +221,15 @@ jobs:
 
     steps:
       # Needed to fetch the Codecov config file
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Download coverage reports
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           merge-multiple: true
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage-rust.lcov,coverage-python.lcov,py-polars/main.xml,py-polars/async.xml

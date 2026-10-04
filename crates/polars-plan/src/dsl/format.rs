@@ -174,7 +174,6 @@ impl fmt::Debug for Expr {
                     },
                     NUnique(expr) => write!(f, "{expr:?}.n_unique()"),
                     Sum(expr) => write!(f, "{expr:?}.sum()"),
-                    AggGroups(expr) => write!(f, "{expr:?}.groups()"),
                     Count {
                         input,
                         include_nulls: false,
@@ -185,7 +184,6 @@ impl fmt::Debug for Expr {
                     } => write!(f, "{input:?}.len()"),
                     Var(expr, _) => write!(f, "{expr:?}.var()"),
                     Std(expr, _) => write!(f, "{expr:?}.std()"),
-                    Quantile { expr, .. } => write!(f, "{expr:?}.quantile()"),
                 }
             },
             Cast {
@@ -266,8 +264,10 @@ impl fmt::Debug for Expr {
             StructEval {
                 expr: input,
                 evaluation,
+                variant,
             } => {
-                write!(f, "{input:?}.struct.eval({evaluation:?}")
+                let name = variant.to_name();
+                write!(f, "{input:?}.{name}({evaluation:?})")
             },
             Slice {
                 input,
@@ -294,6 +294,10 @@ impl fmt::Debug for Expr {
                     f,
                     "{expr:?}.replace(\"{pattern}\", \"{value}\", literal=true)"
                 ),
+            },
+            PipeWithDtype { input, .. } => match input.as_slice() {
+                [input] => write!(f, "{input:?}.pipe_with_dtype()"),
+                input => write!(f, "pipe_with_dtypes({input:?})"),
             },
             Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]

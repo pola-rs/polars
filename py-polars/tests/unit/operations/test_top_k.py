@@ -9,7 +9,7 @@ from hypothesis.strategies import booleans
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError
+from polars.exceptions import ArgumentRemovedError, ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
@@ -226,17 +226,23 @@ def test_top_k() -> None:
 
     assert_frame_equal(
         df2.select(
-            pl.col("a", "b", "c").top_k_by(["c", "a"], 2).name.suffix("_top_by_ca"),
-            pl.col("a", "b", "c").top_k_by(["c", "b"], 2).name.suffix("_top_by_cb"),
+            pl.col("a", "b", "c")
+            .top_k_by(["c", "a"], 2)
+            .name.suffix("_top_by_ca")
+            .sort(),
+            pl.col("a", "b", "c")
+            .top_k_by(["c", "b"], 2)
+            .name.suffix("_top_by_cb")
+            .sort(),
         ),
         pl.DataFrame(
             {
                 "a_top_by_ca": [2, 6],
-                "b_top_by_ca": [11, 7],
-                "c_top_by_ca": ["Orange", "Banana"],
+                "b_top_by_ca": [7, 11],
+                "c_top_by_ca": ["Banana", "Orange"],
                 "a_top_by_cb": [2, 5],
-                "b_top_by_cb": [11, 8],
-                "c_top_by_cb": ["Orange", "Banana"],
+                "b_top_by_cb": [8, 11],
+                "c_top_by_cb": ["Banana", "Orange"],
             }
         ),
         check_row_order=False,
@@ -429,8 +435,8 @@ def test_bottom_k_nulls(s: pl.Series, should_sort: bool) -> None:
     assert_series_equal(result, s, check_order=False)
 
 
-def test_top_k_descending_deprecated() -> None:
-    with pytest.deprecated_call():
+def test_top_k_descending_removed() -> None:
+    with pytest.raises(ArgumentRemovedError):
         pl.col("a").top_k_by("b", descending=True)  # type: ignore[call-arg]
 
 
@@ -649,3 +655,18 @@ def test_top_k_dyn_pred_pushdown() -> None:
     assert pred is not None
     assert with_cols is not None
     assert pred.start() > with_cols.start()
+
+
+def test_top_k_bottom_k_categorical_lexical_28344() -> None:
+    s = pl.Series("c", ["9", "1", "5", "3"], dtype=pl.Categorical)
+
+    assert_series_equal(
+        s.top_k(2),
+        pl.Series("c", ["9", "5"], dtype=pl.Categorical),
+        check_order=False,
+    )
+    assert_series_equal(
+        s.bottom_k(2),
+        pl.Series("c", ["1", "3"], dtype=pl.Categorical),
+        check_order=False,
+    )

@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
+use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::metrics::IOMetrics;
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
 use polars_io::utils::compression::SupportedCompression;
@@ -58,7 +59,7 @@ pub async fn is_compressed_source(
 ) -> PolarsResult<bool> {
     let byte_source_builder = if scan_source.is_cloud_url() || polars_config::config().force_async()
     {
-        DynByteSourceBuilder::ObjectStore
+        DynByteSourceBuilder::ObjectStore(FetchConfig::legacy())
     } else {
         DynByteSourceBuilder::Mmap
     };
@@ -68,9 +69,13 @@ pub async fn is_compressed_source(
         .to_dyn_byte_source(&byte_source_builder, cloud_options.as_deref(), io_metrics)
         .await?;
 
-    let Ok(first_4_bytes) = byte_source.get_range(0..4).await else {
+    // Note: `get_range()` requires the range to be in-bounds, so clamp against the file size -
+    // sources smaller than the magic are simply not compressed.
+    let n_magic_bytes = byte_source.get_size().await?.min(4);
+
+    let Ok(magic_bytes) = byte_source.get_range(0..n_magic_bytes).await else {
         return Ok(false);
     };
 
-    Ok(SupportedCompression::check(&first_4_bytes).is_some())
+    Ok(SupportedCompression::check(&magic_bytes).is_some())
 }

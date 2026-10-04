@@ -134,7 +134,7 @@ impl PhysicalExpr for SliceExpr {
                     return Ok(ac);
                 }
                 if let AggregatedScalar(c) = ac.state {
-                    ac.state = AggregatedList(c.as_list().into_column());
+                    ac.state = AggregatedList(c.to_unit_list());
                     ac.update_groups = UpdateGroups::WithSeriesLen;
                 }
                 let groups = ac.groups();
@@ -164,7 +164,7 @@ impl PhysicalExpr for SliceExpr {
                 if matches!(ac.state, LiteralScalar(_)) {
                     ac.aggregated();
                 } else if let AggregatedScalar(c) = ac.state {
-                    ac.state = AggregatedList(c.as_list().into_column());
+                    ac.state = AggregatedList(c.to_unit_list());
                     ac.update_groups = UpdateGroups::WithSeriesLen;
                 }
                 let groups = ac.groups();
@@ -206,7 +206,7 @@ impl PhysicalExpr for SliceExpr {
                 if matches!(ac.state, LiteralScalar(_)) {
                     ac.aggregated();
                 } else if let AggregatedScalar(c) = ac.state {
-                    ac.state = AggregatedList(c.as_list().into_column());
+                    ac.state = AggregatedList(c.to_unit_list());
                     ac.update_groups = UpdateGroups::WithSeriesLen;
                 }
                 let groups = ac.groups();
@@ -248,7 +248,7 @@ impl PhysicalExpr for SliceExpr {
                 if matches!(ac.state, LiteralScalar(_)) {
                     ac.aggregated();
                 } else if let AggregatedScalar(c) = ac.state {
-                    ac.state = AggregatedList(c.as_list().into_column());
+                    ac.state = AggregatedList(c.to_unit_list());
                     ac.update_groups = UpdateGroups::WithSeriesLen;
                 }
 
@@ -296,7 +296,7 @@ impl PhysicalExpr for SliceExpr {
         };
 
         ac.with_groups(groups.into_sliceable())
-            .set_original_len(false);
+            .set_original_groups(false);
 
         Ok(ac)
     }

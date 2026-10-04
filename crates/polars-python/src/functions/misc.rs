@@ -26,6 +26,7 @@ pub fn register_plugin_function(
     cast_to_supertype: bool,
     pass_name_to_apply: bool,
     changes_length: bool,
+    is_deterministic: bool,
 ) -> PyResult<PyExpr> {
     let cast_to_supertypes = if cast_to_supertype {
         Some(CastingRules::cast_to_supertypes())
@@ -55,6 +56,7 @@ pub fn register_plugin_function(
         input: args.to_exprs(),
         function: FunctionExpr::FfiPlugin {
             flags: options,
+            is_deterministic,
             lib: plugin_path.into(),
             symbol: function_name.into(),
             kwargs: kwargs.into(),
@@ -64,11 +66,13 @@ pub fn register_plugin_function(
 }
 
 #[pyfunction]
-pub fn __register_startup_deps() {
+pub fn __register_startup_deps(warn_function: Py<PyAny>) {
     #[cfg(feature = "object")]
     unsafe {
-        crate::on_startup::register_startup_deps(true)
+        crate::on_startup::register_startup_deps(true, warn_function)
     }
+    #[cfg(not(feature = "object"))]
+    let _ = warn_function;
 }
 
 #[pyfunction]

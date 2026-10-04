@@ -1,7 +1,7 @@
 use std::ops::{BitAnd, BitOr, BitXor};
 
-use arrow::compute::bitwise;
-use arrow::compute::utils::combine_validities_and;
+use polars_arrow::compute::bitwise;
+use polars_arrow::compute::utils::combine_validities_and;
 
 use super::*;
 use crate::chunked_array::arity::apply_binary_kernel_broadcast;

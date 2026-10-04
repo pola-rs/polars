@@ -11,7 +11,7 @@ from hypothesis import assume, given, reject
 import polars as pl
 from polars._utils.various import parse_version
 from polars.exceptions import ComputeError, ShapeError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_business_day_count() -> None:
@@ -264,3 +264,29 @@ def test_business_day_count_bad_holidays() -> None:
                 "start", "end", holidays=pl.Series([["abc"], [], ["def"]])
             )
         )
+
+
+def test_business_day_nulls_28018() -> None:
+    holiday = dt.date(2023, 11, 23)
+    end = dt.date(2023, 11, 24)
+
+    df = pl.DataFrame(
+        {
+            "start": [holiday, holiday],
+            "end": [None, end],
+        },
+        schema={
+            "start": pl.Date,
+            "end": pl.Date,
+        },
+    )
+
+    expected = pl.DataFrame({"start": [None, 0]}, schema={"start": pl.Int32})
+    out = df.select(
+        pl.business_day_count(
+            "start",
+            "end",
+            holidays=[holiday],
+        )
+    )
+    assert_frame_equal(expected, out)

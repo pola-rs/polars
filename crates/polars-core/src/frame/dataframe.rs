@@ -1,8 +1,9 @@
+use std::borrow::Cow;
 use std::sync::{Arc, OnceLock};
 
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail};
+use polars_utils::broadcast::broadcast_len;
 
-use super::broadcast::{broadcast_columns, infer_broadcast_height};
 use super::validation::validate_columns_slice;
 use crate::frame::column::Column;
 use crate::schema::{Schema, SchemaRef};
@@ -164,13 +165,16 @@ impl DataFrame {
     /// Broadcasts unit-length columns to `height`. Errors if a column has height that is non-unit
     /// length and not equal to `self.height()`.
     pub fn new_with_broadcast(height: usize, mut columns: Vec<Column>) -> PolarsResult<Self> {
-        broadcast_columns(height, &mut columns)?;
+        for col in &mut columns {
+            col.broadcast_in_place_to(height)?;
+        }
         DataFrame::new(height, columns)
     }
 
     /// Infers height as the first non-unit length column or 1 if not found.
     pub fn new_infer_broadcast(columns: Vec<Column>) -> PolarsResult<Self> {
-        DataFrame::new_with_broadcast(infer_broadcast_height(&columns), columns)
+        let height = broadcast_len(columns.iter())?;
+        DataFrame::new_with_broadcast(height, columns)
     }
 
     /// Broadcasts unit-length columns to `height`. Errors if a column has height that is non-unit
@@ -182,14 +186,47 @@ impl DataFrame {
         height: usize,
         mut columns: Vec<Column>,
     ) -> PolarsResult<Self> {
-        broadcast_columns(height, &mut columns)?;
+        for col in &mut columns {
+            col.broadcast_in_place_to(height)?;
+        }
         Ok(unsafe { DataFrame::new_unchecked(height, columns) })
     }
 
     /// # Safety
     /// [`Column`]s must have unique names.
     pub unsafe fn new_unchecked_infer_broadcast(columns: Vec<Column>) -> PolarsResult<Self> {
-        DataFrame::new_unchecked_with_broadcast(infer_broadcast_height(&columns), columns)
+        let height = broadcast_len(columns.iter())?;
+        DataFrame::new_unchecked_with_broadcast(height, columns)
+    }
+
+    /// Returns a DataFrame with the given height.
+    ///
+    /// Errors if this DataFrame's height is not 1 and also not equal to the requested height.
+    pub fn broadcast_to(&self, height: usize) -> PolarsResult<Cow<'_, Self>> {
+        let len = self.height();
+        if len == height {
+            Ok(Cow::Borrowed(self))
+        } else if len == 1 {
+            Ok(Cow::Owned(self.new_from_index(0, height)))
+        } else {
+            polars_bail!(
+                ShapeMismatch: "can't broadcast DataFrame of height {len} to height {height}",
+            );
+        }
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_in_place_to(&mut self, length: usize) -> PolarsResult<()> {
+        if let Cow::Owned(new) = self.broadcast_to(length)? {
+            *self = new;
+        }
+        Ok(())
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_owned_to(mut self, length: usize) -> PolarsResult<Self> {
+        self.broadcast_in_place_to(length)?;
+        Ok(self)
     }
 
     /// Create a `DataFrame` 0 height and columns as per the `schema`.

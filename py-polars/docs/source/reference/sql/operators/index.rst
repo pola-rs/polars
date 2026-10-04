@@ -469,14 +469,18 @@ Numeric
 .. _op_mul_div:
 
 | ``*``: Multiplication.
-| ``/``: Division.
+| ``/``: Division (always returns a float).
 | ``//``: Integer division.
+
+.. versionchanged:: 1.41.0
+    The ``/`` operator now performs true division, always returning a float result.
+    Use ``//`` for integer (floor) division.
 
 **Example:**
 
 .. code-block:: python
 
-    df = pl.DataFrame({"a": [10, 20, 30], "b": [5.55, 4.25, 3.33]})
+    df = pl.DataFrame({"a": [10, 20, 30], "b": [3, 4, 5]})
     df.sql("""
         SELECT
           *,
@@ -485,16 +489,16 @@ Numeric
           a // b AS int_div
         FROM self
     """)
-    # shape: (3, 2)
-    # ┌─────┬─────┐
-    # │ mul ┆ div │
-    # │ --- ┆ --- │
-    # │ i64 ┆ i64 │
-    # ╞═════╪═════╡
-    # │ 30  ┆ 3   │
-    # │ 140 ┆ 2   │
-    # │ 120 ┆ 7   │
-    # └─────┴─────┘
+    # shape: (3, 5)
+    # ┌─────┬─────┬─────┬──────────┬─────────┐
+    # │ a   ┆ b   ┆ mul ┆ div      ┆ int_div │
+    # │ --- ┆ --- ┆ --- ┆ ---      ┆ ---     │
+    # │ i64 ┆ i64 ┆ i64 ┆ f64      ┆ i64     │
+    # ╞═════╪═════╪═════╪══════════╪═════════╡
+    # │ 10  ┆ 3   ┆ 30  ┆ 3.333333 ┆ 3       │
+    # │ 20  ┆ 4   ┆ 80  ┆ 5.0      ┆ 5       │
+    # │ 30  ┆ 5   ┆ 150 ┆ 6.0      ┆ 6       │
+    # └─────┴─────┴─────┴──────────┴─────────┘
 
 .. _op_modulo:
 

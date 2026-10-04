@@ -3,12 +3,12 @@ use polars_utils::pl_str::PlSmallStr;
 use super::*;
 
 pub(super) fn process_rename(
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
     existing: &[PlSmallStr],
     new: &[PlSmallStr],
 ) {
-    let rename_map: PlHashMap<PlSmallStr, PlSmallStr> =
+    let rename_map: PlIndexMap<PlSmallStr, PlSmallStr> =
         new.iter().cloned().zip(existing.iter().cloned()).collect();
 
     if !rename_map.is_empty() {

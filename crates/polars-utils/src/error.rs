@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 
-use crate::config::verbose;
 use crate::format_pl_smallstr;
 
 type ErrString = Cow<'static, str>;
@@ -29,7 +28,7 @@ pub struct TruncateErrorDetail<'a>(pub &'a str);
 
 impl std::fmt::Display for TruncateErrorDetail<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let maybe_truncated = if verbose() {
+        let maybe_truncated = if polars_config::config().verbose() {
             self.0
         } else {
             // Clamp the output on non-verbose

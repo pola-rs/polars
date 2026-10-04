@@ -10,7 +10,7 @@ pub fn prepare_projection(
     schema: &Schema,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<(Vec<Expr>, Schema)> {
-    let exprs = rewrite_projections(exprs, &PlHashSet::new(), schema, opt_flags)?;
+    let exprs = rewrite_projections(exprs, &PlIndexSet::new(), schema, opt_flags)?;
     let schema = expressions_to_schema(&exprs, schema, |duplicate_name: &str| {
         format!("projections contained duplicate output name '{duplicate_name}'")
     })?;
@@ -23,12 +23,12 @@ pub fn is_regex_projection(name: &str) -> bool {
 
 pub fn expand_expression(
     expr: &Expr,
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<()> {
-    if expr.into_iter().all(|e| !needs_expansion(e)) {
+    if !needs_expansion(expr) {
         out.push(expr.clone());
         return Ok(());
     }
@@ -37,14 +37,17 @@ pub fn expand_expression(
     Ok(())
 }
 
-/// In case of single col(*) -> do nothing, no selection is the same as select all
-/// In other cases replace the wildcard with an expression with all columns
+/// Expand selectors and multi-output expressions against the input schema.
 pub fn rewrite_projections(
     exprs: Vec<Expr>,
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Vec<Expr>> {
+    if !exprs.iter().any(needs_expansion) {
+        return Ok(exprs);
+    }
+
     let mut result = Vec::with_capacity(exprs.len() + schema.len());
     for expr in &exprs {
         expand_expression(
@@ -60,7 +63,7 @@ pub fn rewrite_projections(
 }
 
 fn toggle_cse_for_structs(opt_flags: &mut OptFlags) {
-    if opt_flags.contains(OptFlags::EAGER) && !opt_flags.contains(OptFlags::NEW_STREAMING) {
+    if opt_flags.contains(OptFlags::EAGER) && !opt_flags.contains(OptFlags::STREAMING) {
         use polars_core::config::verbose;
         if verbose() {
             eprintln!("CSE turned on because of struct expansion")
@@ -81,6 +84,7 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
         F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
             | F::Coalesce
             | F::ListExpr(ListFunction::Concat)
+            | F::AsList
             | F::ConcatExpr(..)
             | F::MinHorizontal
             | F::MaxHorizontal
@@ -128,7 +132,7 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
 
 fn expand_expression_by_combination(
     exprs: &[Expr],
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
@@ -199,7 +203,7 @@ fn expand_expression_by_combination(
 
 fn expand_single(
     subexpr: &Expr,
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
@@ -217,7 +221,7 @@ fn expand_single(
 
 fn try_expand_single(
     subexpr: &Expr,
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
@@ -232,9 +236,12 @@ fn try_expand_single(
     Ok(did_expand)
 }
 
-fn needs_expansion(expr: &Expr) -> bool {
+pub(crate) fn needs_expansion(expr: &Expr) -> bool {
     expr.into_iter().any(|e| {
-        let mut v = matches!(e, Expr::Selector(_) | Expr::Eval { .. });
+        let mut v = matches!(
+            e,
+            Expr::Selector(_) | Expr::Eval { .. } | Expr::PipeWithDtype { .. }
+        );
 
         #[cfg(feature = "dtype-struct")]
         {
@@ -256,7 +263,7 @@ fn needs_expansion(expr: &Expr) -> bool {
 
 fn expand_expression_rec(
     expr: &Expr,
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
@@ -386,26 +393,6 @@ fn expand_expression_rec(
                     expr: Arc::new(e[0].clone()),
                     by: e[1..].to_vec(),
                     sort_options: sort_options.clone(),
-                },
-            )?
-        },
-        Expr::Agg(AggExpr::Quantile {
-            expr,
-            quantile,
-            method,
-        }) => {
-            _ = expand_expression_by_combination(
-                &[expr.as_ref().clone(), quantile.as_ref().clone()],
-                ignored_selector_columns,
-                schema,
-                out,
-                opt_flags,
-                |e| {
-                    Expr::Agg(AggExpr::Quantile {
-                        expr: Arc::new(e[0].clone()),
-                        quantile: Arc::new(e[1].clone()),
-                        method: *method,
-                    })
                 },
             )?
         },
@@ -552,14 +539,6 @@ fn expand_expression_rec(
                     opt_flags,
                     |e| Expr::Agg(AggExpr::Sum(Arc::new(e))),
                 )?,
-                AggExpr::AggGroups(expr) => expand_single(
-                    expr.as_ref(),
-                    ignored_selector_columns,
-                    schema,
-                    out,
-                    opt_flags,
-                    |e| Expr::Agg(AggExpr::AggGroups(Arc::new(e))),
-                )?,
                 AggExpr::Std(expr, ddof) => expand_single(
                     expr.as_ref(),
                     ignored_selector_columns,
@@ -575,24 +554,6 @@ fn expand_expression_rec(
                     out,
                     opt_flags,
                     |e| Expr::Agg(AggExpr::Var(Arc::new(e), *ddof)),
-                )?,
-                AggExpr::Quantile {
-                    expr,
-                    quantile,
-                    method,
-                } => expand_expression_by_combination(
-                    &[expr.as_ref().clone(), quantile.as_ref().clone()],
-                    ignored_selector_columns,
-                    schema,
-                    out,
-                    opt_flags,
-                    |e| {
-                        Expr::Agg(AggExpr::Quantile {
-                            expr: Arc::new(e[0].clone()),
-                            quantile: Arc::new(e[1].clone()),
-                            method: *method,
-                        })
-                    },
                 )?,
             }
         },
@@ -910,7 +871,11 @@ fn expand_expression_rec(
             }
         },
         #[cfg(feature = "dtype-struct")]
-        Expr::StructEval { expr, evaluation } => {
+        Expr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => {
             let mut expr_out = Vec::with_capacity(1);
             expand_expression_rec(
                 expr,
@@ -941,6 +906,7 @@ fn expand_expression_rec(
                 out.push(Expr::StructEval {
                     expr,
                     evaluation: eval,
+                    variant: *variant,
                 });
             }
         },
@@ -956,6 +922,34 @@ fn expand_expression_rec(
                     function: function.clone(),
                 },
             )?
+        },
+        Expr::PipeWithDtype { input, callback } => {
+            let mut pipes = Vec::with_capacity(1);
+            expand_expression_by_combination(
+                input,
+                ignored_selector_columns,
+                schema,
+                &mut pipes,
+                opt_flags,
+                |e| Expr::PipeWithDtype {
+                    input: e.to_vec(),
+                    callback: callback.clone(),
+                },
+            )?;
+
+            // Now that inputs are expanded, dtypes can be resolved.
+            // Use these to call callbacks.
+            for pipe in pipes {
+                let Expr::PipeWithDtype { input, callback } = pipe else {
+                    unreachable!()
+                };
+                let dtypes = input
+                    .iter()
+                    .map(|e| Ok(e.to_field(schema)?.dtype))
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                let resolved = callback.call((input, dtypes))?;
+                expand_expression_rec(&resolved, ignored_selector_columns, schema, out, opt_flags)?;
+            }
         },
 
         #[cfg(feature = "dtype-struct")]

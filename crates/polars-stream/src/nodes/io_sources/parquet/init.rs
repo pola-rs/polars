@@ -1,15 +1,22 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use futures::future::Either;
+use futures::stream::FuturesUnordered;
+use futures::{FutureExt, StreamExt};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor;
 use polars_core::frame::DataFrame;
+use polars_core::prelude::DataType;
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
-use polars_io::prelude::_internal::PrefilterMaskSetting;
+use polars_io::predicates::{ColumnPredicateExpr, SpecializedColumnPredicate};
 use polars_io::prelude::ParallelStrategy;
+use polars_parquet::read::PredicateFilter;
 use polars_utils::IdxSize;
+use tokio::sync::Semaphore;
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
-use super::row_group_decode::RowGroupDecoder;
+use super::row_group_decode::{DynamicConjunct, PredicateColumn, RowGroupDecoder, Source};
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -18,12 +25,35 @@ use crate::nodes::io_sources::parquet::statistics::calculate_row_group_pred_push
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::tokio_handle_ext::{self, AbortOnDropHandle};
 
+/// Whether the decoder may evaluate a predicate on this column as it decodes the values.
+fn filter_while_decoding(projection: &ArrowFieldProjection) -> bool {
+    use ArrowDataType as A;
+    let ArrowFieldProjection::Plain(arrow_field) = projection else {
+        return false;
+    };
+    match arrow_field.dtype() {
+        A::Dictionary(..)
+        | A::Decimal(..)
+        | A::Decimal32(..)
+        | A::Decimal64(..)
+        | A::Decimal256(..)
+        | A::Float16
+        | A::Float32
+        | A::Float64
+        | A::Int128
+        | A::UInt128
+        | A::FixedSizeBinary(_) => false,
+        dtype => !dtype.is_nested(),
+    }
+}
+
 impl ParquetReadImpl {
     /// Constructs the task that distributes morsels across the engine pipelines.
     #[allow(clippy::type_complexity)]
     pub(super) fn init_morsel_distributor(&mut self) -> AsyncTaskData {
         let verbose = self.verbose;
         let use_statistics = self.options.use_statistics;
+        let maintain_order = self.maintain_order;
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
 
@@ -47,7 +77,15 @@ impl ParquetReadImpl {
         let ideal_morsel_size = get_ideal_morsel_size();
 
         if verbose {
-            eprintln!("[ParquetFileReader]: ideal_morsel_size: {ideal_morsel_size}");
+            eprintln!(
+                "[ParquetFileReader]: ideal_morsel_size: {ideal_morsel_size}, \
+                use_async_prefetch: {}, \
+                concurrency: {:?}, \
+                chunk_size: {:?}",
+                self.byte_source.is_cloud(),
+                self.byte_source.concurrency_strategy(),
+                self.byte_source.chunk_size(),
+            );
         }
 
         let metadata = self.metadata.clone();
@@ -55,15 +93,35 @@ impl ParquetReadImpl {
         let byte_source = self.byte_source.clone();
 
         // Prefetch loop (spawns prefetches on the tokio scheduler).
+
+        // Three concurrency limits bound the pipeline:
+        // (a) rg_prefetch_kbytes_semaphore: bounds possibly compressed projected bytes
+        //     in the pipeline. Primary memory bound, but does not account for decompression.
+        // (b) rg_prefetch_semaphore: bounds row group count in the pipeline. Secondary
+        //     bound, only binding for degenerate cases (many tiny row groups where
+        //     (a) is not exhausted).
+        // (c) prefetch channel depth: sized >= (b) so it is never the binding constraint.
+        //     The channel is a handoff queue between the prefetch and decode tasks, not
+        //     a concurrency gate.
+        //
+        // Note: in-flight concurrency is separately controlled inside the object store using
+        // a combination of a bytes-based and count-based semaphore. These operate at the
+        // network layer and are independent of the pipeline limits above.
+        // The pipeline channel depth must be >= in-flight concurrency to avoid
+        // stalling the prefetch loop before the semaphores are exhausted.
+
         let (prefetch_send, mut prefetch_recv) =
             tokio::sync::mpsc::channel(row_group_prefetch_size);
 
         let row_index = self.row_index.clone();
 
-        let rg_prefetch_semaphore = Arc::clone(&self.rg_prefetch_semaphore);
+        let pipeline_budget = self.pipeline_budget.clone();
+
         let rg_prefetch_prev_all_spawned = Option::take(&mut self.rg_prefetch_prev_all_spawned);
         let rg_prefetch_current_all_spawned =
             Option::take(&mut self.rg_prefetch_current_all_spawned);
+
+        let task_metrics = self.task_metrics.clone();
 
         let prefetch_task = AbortOnDropHandle(ASYNC.spawn(async move {
             polars_ensure!(
@@ -128,6 +186,7 @@ impl ParquetReadImpl {
                 projected_arrow_fields.clone(),
                 row_index,
                 verbose,
+                task_metrics.as_deref(),
             )
             .await?;
 
@@ -148,14 +207,20 @@ impl ParquetReadImpl {
                 rg_prefetch_prev_all_spawned.wait().await;
             }
 
-            loop {
-                let fetch_permit = rg_prefetch_semaphore.clone().acquire_owned().await.unwrap();
+            while let Some(fetch_length) = row_group_data_fetcher.peek_next_bytes() {
+                let fetch_length = usize::try_from(fetch_length)
+                    .expect("ParquetReadImpl: fetch_length too large for usize: {fetch_length}");
 
+                let permit = pipeline_budget.acquire(fetch_length).await;
+
+                // Budget reserved, spawn request
                 let Some(prefetch) = row_group_data_fetcher.next().await else {
+                    // Mask skipped all remaining row groups between peek and next — release permits
+                    drop(permit);
                     break;
                 };
 
-                if prefetch_send.send((prefetch?, fetch_permit)).await.is_err() {
+                if prefetch_send.send((prefetch?, permit)).await.is_err() {
                     break;
                 }
             }
@@ -166,20 +231,90 @@ impl ParquetReadImpl {
         }));
 
         // Decode loop (spawns decodes on the computational executor).
-        let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
-        let decode_task = AbortOnDropHandle(ASYNC.spawn(async move {
-            while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
-                let row_group_data = prefetch_task.await.unwrap()?;
-                let row_group_decoder = row_group_decoder.clone();
-                let decode_fut = executor::spawn(TaskPriority::High, async move {
-                    row_group_decoder.row_group_data_to_df(row_group_data).await
-                });
-                if decode_send.send((decode_fut, permit)).await.is_err() {
-                    break;
+        // Unordered decodes are bounded by their own slots, so its channel stays shallow.
+        let num_pipelines = self.config.num_pipelines;
+        let (decode_send, mut decode_recv) =
+            tokio::sync::mpsc::channel(if maintain_order { num_pipelines } else { 1 });
+        let decode_task = if maintain_order {
+            AbortOnDropHandle(ASYNC.spawn(async move {
+                let metrics = row_group_decoder.task_metrics.as_deref();
+                while let Some((prefetch_task, permits)) = prefetch_recv.recv().await {
+                    let row_group_data = prefetch_task.await.unwrap()?;
+                    let row_group_decoder = row_group_decoder.clone();
+                    let decode_fut = executor::spawn(TaskPriority::High, metrics, async move {
+                        row_group_decoder.row_group_data_to_df(row_group_data).await
+                    });
+                    if decode_send
+                        .send((Either::Left(decode_fut), permits))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
-            }
-            PolarsResult::Ok(())
-        }));
+                PolarsResult::Ok(())
+            }))
+        } else {
+            // Decode in fetch completion order; each decode hands off its own result.
+            AbortOnDropHandle(ASYNC.spawn(async move {
+                let metrics = row_group_decoder.task_metrics.as_deref();
+                let mut fetches = FuturesUnordered::new();
+                let mut prefetch_done = false;
+                // In-flight bound of num_pipelines + 1, matching the ordered path.
+                let decode_slots = Arc::new(Semaphore::new(num_pipelines + 1));
+                let mut decode_handles = FuturesUnordered::new();
+
+                // `closed()` is always enabled, so `select!` never sees every branch disabled.
+                while !(prefetch_done && fetches.is_empty()) {
+                    tokio::select! {
+                        biased;
+
+                        // Distributor is gone; dropping the handles cancels running decodes.
+                        _ = decode_send.closed() => return Ok(()),
+
+                        v = prefetch_recv.recv(), if !prefetch_done => match v {
+                            Some((prefetch_task, permits)) => {
+                                fetches.push(async move { (prefetch_task.await.unwrap(), permits) })
+                            },
+                            None => prefetch_done = true,
+                        },
+
+                        Some((row_group_data, permits)) = fetches.next() => {
+                            let row_group_data = row_group_data?;
+
+                            // Backpressure: blocks the prefetch drain until a slot frees.
+                            let slot = decode_slots.clone().acquire_owned().await.unwrap();
+
+                            // Keep the set bounded; panics surface on drain.
+                            while let Some(Some(())) = decode_handles.next().now_or_never() {}
+
+                            let row_group_decoder = row_group_decoder.clone();
+                            let decode_send = decode_send.clone();
+
+                            decode_handles.push(executor::AbortOnDropHandle::new(executor::spawn(
+                                TaskPriority::High,
+                                metrics,
+                                async move {
+                                    let df = row_group_decoder
+                                        .row_group_data_to_df(row_group_data)
+                                        .await;
+
+                                    if !matches!(&df, Ok(df) if df.height() == 0) {
+                                        let fut = Either::Right(std::future::ready(df));
+                                        let _ = decode_send.send((fut, permits)).await;
+                                    }
+                                    drop(slot);
+                                },
+                            )));
+                        },
+                    }
+                }
+
+                drop(decode_send);
+                while decode_handles.next().await.is_some() {}
+                PolarsResult::Ok(())
+            }))
+        };
 
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
@@ -188,7 +323,8 @@ impl ParquetReadImpl {
         // is shared across files in the scan.
         let last_morsel_pipelines = self.config.last_morsel_pipelines;
         let disable_morsel_split = self.disable_morsel_split;
-        let distribute_task = executor::spawn(TaskPriority::High, async move {
+        let task_metrics = self.task_metrics.as_deref();
+        let distribute_task = executor::spawn(TaskPriority::High, task_metrics, async move {
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
@@ -196,7 +332,7 @@ impl ParquetReadImpl {
             // Decode first non-empty morsel.
             let mut next = None;
             loop {
-                let Some((decode_fut, permit)) = decode_recv.recv().await else {
+                let Some((decode_fut, permits)) = decode_recv.recv().await else {
                     break;
                 };
                 let df = decode_fut.await?;
@@ -206,28 +342,32 @@ impl ParquetReadImpl {
 
                 if disable_morsel_split {
                     if morsel_sender
-                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .send_morsel(Morsel::new_unregistered(
+                            df,
+                            morsel_seq,
+                            source_token.clone(),
+                        ))
                         .await
                         .is_err()
                     {
                         return Ok(());
                     }
-                    drop(permit);
+                    drop(permits);
                     morsel_seq = morsel_seq.successor();
                     continue;
                 }
 
-                next = Some((df, permit));
+                next = Some((df, permits));
                 break;
             }
 
-            while let Some((df, permit)) = next.take() {
+            while let Some((df, permits)) = next.take() {
                 // Try to decode the next non-empty morsel first, so we know
                 // whether the df is the last morsel.
 
                 // Important: Drop this before awaiting the next one, or could
                 // deadlock if the permit limit is 1.
-                drop(permit);
+                drop(permits);
 
                 loop {
                     let Some((decode_fut, permit)) = decode_recv.recv().await else {
@@ -248,7 +388,11 @@ impl ParquetReadImpl {
                     last_morsel_pipelines,
                 ) {
                     if morsel_sender
-                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .send_morsel(Morsel::new_unregistered(
+                            df,
+                            morsel_seq,
+                            source_token.clone(),
+                        ))
                         .await
                         .is_err()
                     {
@@ -281,9 +425,10 @@ impl ParquetReadImpl {
         let target_values_per_thread = self.config.target_values_per_thread;
         let predicate = self.predicate.clone();
 
-        let mut use_prefiltered = matches!(self.options.parallel, ParallelStrategy::Prefiltered);
-        use_prefiltered |=
-            predicate.is_some() && matches!(self.options.parallel, ParallelStrategy::Auto);
+        let filters_rows = predicate.as_ref().is_some_and(|p| p.filters_rows);
+        let mut use_prefiltered =
+            filters_rows && matches!(self.options.parallel, ParallelStrategy::Prefiltered);
+        use_prefiltered |= filters_rows && matches!(self.options.parallel, ParallelStrategy::Auto);
 
         let predicate_field_indices: Arc<[usize]> =
             if use_prefiltered && let Some(predicate) = predicate.as_ref() {
@@ -301,9 +446,7 @@ impl ParquetReadImpl {
                 Default::default()
             };
 
-        let use_prefiltered = use_prefiltered.then(PrefilterMaskSetting::init_from_env);
-
-        let non_predicate_field_indices: Arc<[usize]> = if use_prefiltered.is_some() {
+        let non_predicate_field_indices: Arc<[usize]> = if use_prefiltered {
             filtered_range(
                 predicate_field_indices.as_ref(),
                 projected_arrow_fields.len(),
@@ -313,31 +456,112 @@ impl ParquetReadImpl {
             Default::default()
         };
 
-        if use_prefiltered.is_some() && self.verbose {
+        // The predicate columns, each with its decode filter when the decoder may evaluate
+        // the predicate on the values as it decodes them.
+        let staged = predicate.as_ref().and_then(|p| p.staged.as_ref());
+        let predicate_columns: Arc<[PredicateColumn]> = match staged {
+            Some(staged) if use_prefiltered => staged
+                .column_predicates
+                .iter()
+                .map(|(name, p)| {
+                    let dynamic = p
+                        .dynamic
+                        .iter()
+                        .map(|d| DynamicConjunct::new(d.predicate.clone(), d.source.clone()))
+                        .collect();
+                    let Some(field_idx) = projected_arrow_fields
+                        .iter()
+                        .position(|f| f.output_name() == name)
+                    else {
+                        assert_eq!(Some(name), row_index.as_ref().map(|ri| &ri.name));
+                        return PredicateColumn {
+                            source: Source::RowIndex,
+                            predicate: p.predicate.clone(),
+                            decode_filter: None,
+                            constant: None,
+                            dynamic,
+                        };
+                    };
+                    let projection = &projected_arrow_fields[field_idx];
+                    let arrow_field = projection.arrow_field();
+                    let constant = p.specialized.as_ref().and_then(|s| match s {
+                        SpecializedColumnPredicate::Equal(sc) if !sc.is_null() => Some(sc.clone()),
+                        _ => None,
+                    });
+                    let decode_filter = p
+                        .predicate
+                        .as_ref()
+                        .filter(|_| filter_while_decoding(projection))
+                        .map(|predicate| PredicateFilter {
+                            predicate: Arc::new(ColumnPredicateExpr::new(
+                                name.clone(),
+                                DataType::from_arrow_field(arrow_field),
+                                arrow_field.dtype.clone(),
+                                predicate.clone(),
+                                p.specialized.clone(),
+                            )),
+                            include_values: constant.is_none(),
+                        });
+                    PredicateColumn {
+                        source: Source::Field(field_idx),
+                        predicate: p.predicate.clone(),
+                        decode_filter,
+                        constant,
+                        dynamic,
+                    }
+                })
+                .collect(),
+            _ => Default::default(),
+        };
+        let rest_predicate = match staged {
+            Some(staged) if use_prefiltered => staged.rest.clone(),
+            _ => predicate.as_ref().map(|p| p.predicate.clone()),
+        };
+        let rest_field_indices: Arc<[usize]> = predicate_field_indices
+            .iter()
+            .copied()
+            .filter(|&i| {
+                predicate_columns
+                    .iter()
+                    .all(|c| c.source != Source::Field(i))
+            })
+            .collect();
+        // Until a row group is measured: the predicate columns with something to
+        // evaluate, then the ones whose conjuncts all keep every row, with the rest.
+        let (evaluated, unset): (Vec<usize>, Vec<usize>) =
+            (0..predicate_columns.len()).partition(|&c| {
+                let c = &predicate_columns[c];
+                c.predicate.is_some() || c.dynamic.iter().any(|d| d.source.filters_rows())
+            });
+        let mut passes = vec![evaluated];
+        if !unset.is_empty() {
+            passes.push(unset);
+        } else if !predicate_columns.is_empty() && !rest_field_indices.is_empty() {
+            passes.push(Vec::new());
+        }
+
+        if use_prefiltered && self.verbose {
             eprintln!(
-                "[ParquetFileReader]: Pre-filtered decode enabled ({} live, {} non-live)",
+                "[ParquetFileReader]: Pre-filtered decode enabled ({} live [{} column predicates, {} rest], {} non-live)",
                 predicate_field_indices.len(),
+                predicate_columns.len(),
+                rest_field_indices.len(),
                 non_predicate_field_indices.len()
             )
         }
 
-        let allow_column_predicates = predicate
-            .as_ref()
-            .is_some_and(|x| x.column_predicates.is_sumwise_complete)
-            && row_index.is_none()
-            && !projected_arrow_fields.iter().any(|x| {
-                x.arrow_field().dtype().is_nested()
-                    || matches!(x, ArrowFieldProjection::Mapped { .. })
-            });
-
         RowGroupDecoder {
             num_pipelines: self.config.num_pipelines,
+            task_metrics: self.task_metrics.clone(),
             projected_arrow_fields,
             row_index,
             predicate,
-            allow_column_predicates,
             use_prefiltered,
             predicate_field_indices,
+            predicate_columns,
+            rest_predicate,
+            rest_field_indices,
+            passes: Mutex::new(Arc::new(passes)),
             non_predicate_field_indices,
             target_values_per_thread,
         }

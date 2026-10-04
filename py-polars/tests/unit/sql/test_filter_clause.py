@@ -63,6 +63,19 @@ def test_filter_clause_misc_aggfuncs(
     )
 
 
+def test_filter_clause_approx_quantile(lf: pl.LazyFrame) -> None:
+    # not compared against a reference backend: other engines use a different sketch
+    assert_sql_matches(
+        frames=lf,
+        query="""
+            SELECT grp, APPROX_QUANTILE(x, 0.5) FILTER (WHERE y > 20) AS v
+            FROM self GROUP BY grp ORDER BY grp
+        """,
+        compare_with=None,
+        expected={"grp": ["a", "b"], "v": [3, 6]},
+    )
+
+
 @pytest.mark.parametrize(
     ("agg", "value"),
     [
@@ -129,4 +142,6 @@ def test_filter_clause_multi_parameter_func() -> None:
 def test_filter_clause_filter_plus_over_unsupported() -> None:
     df = pl.DataFrame({"grp": ["a", "b"], "x": [1, 2], "y": [10, 30]})
     with pytest.raises(SQLInterfaceError, match=r"FILTER.*OVER"):
-        pl.sql("SELECT SUM(x) FILTER (WHERE y > 20) OVER (PARTITION BY grp) FROM df")
+        pl.sql(
+            "SELECT SUM(x) FILTER (WHERE y > 20) OVER (PARTITION BY grp) FROM df"
+        ).collect()

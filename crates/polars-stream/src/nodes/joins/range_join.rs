@@ -1,12 +1,13 @@
 use std::mem;
 use std::ops::BitAnd;
 
-use arrow::array::builder::ShareStrategy;
-use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_arrow::array::builder::ShareStrategy;
+use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
-use polars_ops::frame::{_finish_join, IEJoinOptions, InequalityOperator, JoinArgs, JoinBuildSide};
+use polars_defs::join::{IEJoinOptions, InequalityOperator, JoinArgs, JoinBuildSide};
+use polars_ops::frame::_finish_join;
 use polars_ops::series::{SearchSortedSide, search_sorted};
 
 use crate::execute::StreamingExecutionState;
@@ -85,6 +86,7 @@ impl RangeJoinNode {
         descending: bool,
         args: JoinArgs,
         options: IEJoinOptions,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         let left_is_point = left_is_point(&left_on, &right_on, &args);
         let ops_n = if options.operator2.is_some() { 2 } else { 1 };
@@ -167,7 +169,7 @@ impl RangeJoinNode {
             args,
         };
         RangeJoinNode {
-            state: RangeJoinState::Build(InMemorySinkNode::new(point_schema)),
+            state: RangeJoinState::Build(InMemorySinkNode::new(point_schema, task_metrics)),
             params,
         }
     }
@@ -330,7 +332,8 @@ async fn compute_and_emit_task(
     let mut builder_point = DataFrameBuilder::new(params.point_schema.clone());
     let mut builder_interval = DataFrameBuilder::new(params.interval_schema.clone());
     while let Ok(morsel) = recv.recv().await {
-        let (interval_df, seq, st, _) = morsel.into_inner();
+        let (interval_sf, seq, st, _) = morsel.into_inner();
+        let interval_df = interval_sf.into_df().await;
 
         // Range join is always an INNER join, so remove nulls first
         let mut acc: Option<BooleanChunked> = None;
@@ -444,7 +447,7 @@ async fn freeze_builders_and_emit(
     };
 
     drop_key_columns(&mut output, params);
-    let mut morsel = Morsel::new(output, seq, st);
+    let mut morsel = Morsel::new_unregistered(output, seq, st);
     if let Some(wt) = wt {
         morsel.set_consume_token(wt);
     }

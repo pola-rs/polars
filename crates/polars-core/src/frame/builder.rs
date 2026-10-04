@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::builder::ShareStrategy;
+use polars_arrow::array::builder::ShareStrategy;
 use polars_utils::IdxSize;
 
 use crate::frame::DataFrame;
@@ -40,7 +40,7 @@ impl DataFrameBuilder {
             .zip(self.builders)
             .map(|(n, b)| {
                 let s = b.freeze(n.clone());
-                assert!(s.len() == self.height);
+                assert_eq!(s.len(), self.height);
                 Column::from(s)
             })
             .collect();
@@ -81,7 +81,6 @@ impl DataFrameBuilder {
     /// if other does not match the schema of this builder.
     pub fn extend(&mut self, other: &DataFrame, share: ShareStrategy) {
         self.subslice_extend(other, 0, other.height(), share);
-        self.height += other.height();
     }
 
     /// Extends this builder with the contents of the given dataframe subslice.

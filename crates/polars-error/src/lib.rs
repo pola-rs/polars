@@ -9,7 +9,7 @@ use std::fmt::{self, Display, Formatter, Write};
 use std::ops::Deref;
 use std::sync::{Arc, LazyLock};
 use std::{env, io};
-pub mod signals;
+pub mod abort;
 
 pub use warning::*;
 
@@ -142,7 +142,7 @@ impl Error for PolarsError {
 impl Display for PolarsError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         use PolarsError::*;
-        match self {
+        match self.clone().context_trace() {
             ComputeError(msg)
             | InvalidOperation(msg)
             | OutOfBounds(msg)
@@ -214,9 +214,9 @@ impl From<simdutf8::basic::Utf8Error> for PolarsError {
         polars_err!(ComputeError: "invalid utf8: {}", value)
     }
 }
-#[cfg(feature = "arrow-format")]
-impl From<arrow_format::ipc::planus::Error> for PolarsError {
-    fn from(err: arrow_format::ipc::planus::Error) -> Self {
+#[cfg(feature = "polars-arrow-format")]
+impl From<polars_arrow_format::ipc::planus::Error> for PolarsError {
+    fn from(err: polars_arrow_format::ipc::planus::Error) -> Self {
         polars_err!(ComputeError: "parquet error: {err:?}")
     }
 }
@@ -388,6 +388,27 @@ impl PolarsError {
             error: Box::new(self),
             expr,
         }
+    }
+}
+
+pub trait PolarsContext<T> {
+    fn context(self, ctx: &'static str) -> PolarsResult<T>;
+
+    fn with_context<F>(self, f: F) -> PolarsResult<T>
+    where
+        F: FnOnce() -> String;
+}
+
+impl<T> PolarsContext<T> for PolarsResult<T> {
+    fn context(self, ctx: &'static str) -> PolarsResult<T> {
+        self.map_err(|e| e.context(ErrString::new_static(ctx)))
+    }
+
+    fn with_context<F>(self, f: F) -> PolarsResult<T>
+    where
+        F: FnOnce() -> String,
+    {
+        self.map_err(|e| e.context(f().into()))
     }
 }
 

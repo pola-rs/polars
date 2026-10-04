@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - main
+      - "1.x"
     paths:
       - crates/**
       - examples/**
@@ -33,7 +34,11 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        if: ${{ runner.os == 'Linux' }}
 
       - name: Set up Rust
         run: rustup show
@@ -42,7 +47,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
 
       # Note that we specify --lib, --bins etc
       # to exclude the doc tests.
@@ -52,6 +57,7 @@ jobs:
           -p polars-arrow
           -p polars-compute
           -p polars-core
+          -p polars-defs
           -p polars-io
           -p polars-lazy
           -p polars-ops
@@ -63,12 +69,13 @@ jobs:
           -p polars-utils
 
       - name: Run tests
-        if: github.ref_name != 'main'
+        if: github.event_name == 'pull_request'
         run: >
           cargo test --lib --tests --bins --all-features
           -p polars-arrow
           -p polars-compute
           -p polars-core
+          -p polars-defs
           -p polars-io
           -p polars-lazy
           -p polars-ops
@@ -87,7 +94,11 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        if: ${{ runner.os == 'Linux' }}
 
       - name: Set up Rust
         run: rustup show
@@ -96,19 +107,22 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Compile integration tests
         run: cargo test --all-features -p polars --test it --no-run
 
       - name: Run integration tests
-        if: github.ref_name != 'main'
+        if: github.event_name == 'pull_request'
         run: cargo test --all-features -p polars --test it
 
   check-features:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
 
       - name: Set up Rust
         run: rustup show
@@ -117,7 +131,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Install cargo hack
         uses: taiki-e/install-action@v2
@@ -127,10 +141,16 @@ jobs:
       - name: Run cargo hack
         run: cargo hack check -p polars --each-feature --no-dev-deps && cargo check -p polars-stream
 
+      - name: Test pyo3-polars and bigidx
+        run: cargo check -p pyo3-polars --no-default-features --features pyo3-polars/derive,polars/bigidx
+
   check-dsl-schema:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
 
       - name: Set up Rust
         run: rustup show
@@ -139,7 +159,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Build DSL schema check
         run: cargo build --all-features

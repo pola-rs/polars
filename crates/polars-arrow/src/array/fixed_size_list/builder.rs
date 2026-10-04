@@ -32,7 +32,7 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
     }
 
     fn reserve(&mut self, additional: usize) {
-        self.inner_builder.reserve(additional);
+        self.inner_builder.reserve(additional * self.size);
         self.validity.reserve(additional);
     }
 

@@ -1,6 +1,6 @@
 use chrono::NaiveTime;
 use polars_compute::decimal::DecimalFmtBuffer;
-use polars_core::utils::arrow::temporal_conversions::date32_to_date;
+use polars_core::utils::polars_arrow::temporal_conversions::date32_to_date;
 use pyo3::BoundObject;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyNone};
@@ -115,7 +115,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DateChunked> {
         let iter = self
             .0
             .physical()
-            .into_iter()
+            .iter()
             .map(|opt_v| opt_v.map(date32_to_date));
         PyList::new(py, iter)
     }

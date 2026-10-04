@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use polars_async::executor;
-use polars_async::executor::{JoinHandle, TaskPriority};
+use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
 use polars_async::primitives::wait_group::WaitToken;
 
@@ -13,6 +13,7 @@ use crate::pipe::PortSender;
 
 pub fn spawn_bridge(
     bridge_state: Arc<Mutex<BridgeState>>,
+    task_metrics: Option<&TaskMetricAggregator>,
 ) -> (
     JoinHandle<()>,
     // For attaching file reader output port
@@ -25,6 +26,7 @@ pub fn spawn_bridge(
 
     let handle = executor::spawn(
         TaskPriority::Low,
+        task_metrics,
         Bridge {
             incoming,
             outgoing,

@@ -3,6 +3,8 @@ use polars_async::primitives::wait_group::WaitGroup;
 
 use crate::morsel::{Morsel, MorselInserter, MorselLinearizer};
 
+pub struct RecvError;
+
 /// This is just a generic enum that can receive from either single or multiple senders.
 pub enum FileReaderOutputRecv {
     Connector(connector::Receiver<Morsel>),
@@ -17,11 +19,11 @@ pub enum FileReaderOutputSend {
 }
 
 impl FileReaderOutputRecv {
-    pub async fn recv(&mut self) -> Result<Morsel, ()> {
+    pub async fn recv(&mut self) -> Result<Morsel, RecvError> {
         use FileReaderOutputRecv::*;
         match self {
-            Connector(v) => v.recv().await,
-            Linearized(v) => v.get().await.ok_or(()),
+            Connector(v) => v.recv().await.map_err(|_| RecvError),
+            Linearized(v) => v.get().await.ok_or(RecvError),
         }
     }
 }

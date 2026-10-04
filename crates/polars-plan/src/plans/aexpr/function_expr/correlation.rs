@@ -1,7 +1,7 @@
 use super::*;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Copy, Clone, PartialEq, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Debug, Hash, Eq)]
 pub enum IRCorrelationMethod {
     Pearson,
     #[cfg(all(feature = "rank", feature = "propagate_nans"))]

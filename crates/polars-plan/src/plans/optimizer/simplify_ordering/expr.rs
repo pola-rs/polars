@@ -1,9 +1,9 @@
 use bitflags::bitflags;
-use polars_core::prelude::PlHashMap;
+use polars_core::prelude::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 
-use crate::dsl::EvalVariant;
-use crate::plans::{AExpr, IRAggExpr, IRFunctionExpr, is_length_preserving_ae};
+use crate::dsl::{EvalVariant, WindowMapping};
+use crate::plans::{AExpr, ExprIR, IRAggExpr, IRFunctionExpr, is_length_preserving_ae};
 
 bitflags! {
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -91,7 +91,7 @@ pub(crate) struct ExprOrderSimplifier<'a> {
 
     /// Entries for nodes whose subtrees will no longer change when revisited with a de-ordering
     /// recursion state.
-    revisit_cache: &'a mut PlHashMap<Node, ObservableOrders>,
+    revisit_cache: &'a mut PlIndexMap<Node, ObservableOrders>,
     internally_observed: ObservableOrders,
 
     expr_arena: &'a mut Arena<AExpr>,
@@ -100,7 +100,7 @@ pub(crate) struct ExprOrderSimplifier<'a> {
 impl<'a> ExprOrderSimplifier<'a> {
     pub fn new(
         expr_arena: &'a mut Arena<AExpr>,
-        revisit_cache: &'a mut PlHashMap<Node, ObservableOrders>,
+        revisit_cache: &'a mut PlIndexMap<Node, ObservableOrders>,
     ) -> Self {
         Self {
             struct_field_ordering: None,
@@ -212,7 +212,9 @@ impl ExprOrderSimplifier<'_> {
             AExpr::Element => O::INDEPENDENT,
 
             #[cfg(feature = "dtype-struct")]
-            AExpr::StructEval { expr, evaluation } => {
+            AExpr::StructEval {
+                expr, evaluation, ..
+            } => {
                 check_return_cached!();
 
                 let evaluation_len = evaluation.len();
@@ -404,14 +406,23 @@ impl ExprOrderSimplifier<'_> {
                 output_observable
             },
 
-            AExpr::Over {
-                function,
-                partition_by,
-                order_by,
-                mapping: _,
-            } => {
+            AExpr::Over { .. } => {
                 check_return_cached!();
 
+                if is_order_insensitive_window(current_ae_node, self.expr_arena) {
+                    cache_output!(O::COLUMN);
+                    return O::COLUMN;
+                }
+
+                let AExpr::Over {
+                    function,
+                    partition_by,
+                    order_by,
+                    mapping: _,
+                } = self.expr_arena.get(current_ae_node)
+                else {
+                    unreachable!()
+                };
                 let function = *function;
                 let partition_by_len = partition_by.len();
                 let order_by = order_by.as_ref().map(|(node, _)| *node);
@@ -529,7 +540,7 @@ impl ExprOrderSimplifier<'_> {
 
                 let observable_in_offset = self.rec(offset, RS::NO_DEORDER);
                 let observable_in_length = self.rec(length, RS::NO_DEORDER);
-                let observable_in_input = self.rec(input, recursion);
+                let observable_in_input = self.rec(input, RS::NO_DEORDER);
 
                 let mut acc = ExprOrderAcc::default();
                 acc.add(observable_in_offset, offset);
@@ -543,6 +554,24 @@ impl ExprOrderSimplifier<'_> {
                 }
 
                 observable_in_input
+            },
+
+            // Asserts an order on its input, so downstream may rely on that order.
+            AExpr::Function {
+                input,
+                function: IRFunctionExpr::SetSortedFlag(_),
+                ..
+            } => {
+                check_return_cached!();
+
+                assert_eq!(input.len(), 1);
+                let node = input[0].node();
+                let observable = self.rec(node, RS::NO_DEORDER);
+                self.internal_observe(observable);
+
+                cache_output!(observable);
+
+                observable
             },
 
             AExpr::Function {
@@ -675,7 +704,7 @@ impl ExprOrderSimplifier<'_> {
                     | IRAggExpr::Max { input: node, .. }
                     | IRAggExpr::Mean(node)
                     | IRAggExpr::Median(node)
-                    | IRAggExpr::Sum(node)
+                    | IRAggExpr::Sum { input: node, .. }
                     | IRAggExpr::Item { input: node, .. } => {
                         let node = *node;
                         self.rec(node, RS::ALLOW_DEORDER);
@@ -732,14 +761,6 @@ impl ExprOrderSimplifier<'_> {
 
                         O::empty()
                     },
-
-                    IRAggExpr::AggGroups(node) => {
-                        let node = *node;
-                        let input_observable = self.rec(node, RS::NO_DEORDER);
-                        self.internal_observe(input_observable);
-
-                        input_observable | O::INDEPENDENT
-                    },
                 };
 
                 cache_output!(output_observable);
@@ -747,5 +768,79 @@ impl ExprOrderSimplifier<'_> {
                 output_observable
             },
         }
+    }
+}
+
+/// Whether `node` is a `GroupsToRows` window whose result for a row does not depend on the order
+/// of the rows.
+pub(crate) fn is_order_insensitive_window(node: Node, arena: &Arena<AExpr>) -> bool {
+    let AExpr::Over {
+        function,
+        partition_by,
+        order_by,
+        mapping,
+    } = arena.get(node)
+    else {
+        return false;
+    };
+
+    *mapping == WindowMapping::GroupsToRows
+        && is_order_insensitive(*function, arena)
+        && partition_by.iter().all(|n| is_order_insensitive(*n, arena))
+        && order_by
+            .as_ref()
+            .is_none_or(|(n, _)| is_order_insensitive(*n, arena))
+}
+
+/// Whether every output value only depends on the values in its own row and on the set of rows
+/// in the group, not on the order of those rows.
+#[recursive::recursive]
+fn is_order_insensitive(node: Node, arena: &Arena<AExpr>) -> bool {
+    let inputs_insensitive =
+        |input: &[ExprIR]| input.iter().all(|e| is_order_insensitive(e.node(), arena));
+
+    match arena.get(node) {
+        AExpr::Column(_) | AExpr::Len => true,
+        AExpr::Literal(lv) => lv.is_scalar(),
+        AExpr::Cast { expr, .. } => is_order_insensitive(*expr, arena),
+        AExpr::BinaryExpr { left, op: _, right } => {
+            is_order_insensitive(*left, arena) && is_order_insensitive(*right, arena)
+        },
+        AExpr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => [*predicate, *truthy, *falsy]
+            .into_iter()
+            .all(|n| is_order_insensitive(n, arena)),
+        AExpr::Agg(agg) => match agg {
+            IRAggExpr::Min { input, .. }
+            | IRAggExpr::Max { input, .. }
+            | IRAggExpr::Median(input)
+            | IRAggExpr::NUnique(input)
+            | IRAggExpr::Item { input, .. }
+            | IRAggExpr::Mean(input)
+            | IRAggExpr::Sum { input, .. }
+            | IRAggExpr::Count { input, .. }
+            | IRAggExpr::Std(input, _)
+            | IRAggExpr::Var(input, _) => is_order_insensitive(*input, arena),
+            IRAggExpr::First(_)
+            | IRAggExpr::FirstNonNull(_)
+            | IRAggExpr::Last(_)
+            | IRAggExpr::LastNonNull(_)
+            | IRAggExpr::Implode { .. } => false,
+        },
+        AExpr::Function {
+            function: IRFunctionExpr::SetSortedFlag(_),
+            ..
+        } => false,
+        AExpr::Function { input, options, .. } => {
+            let flags = options.flags;
+            !flags.observes_input_order()
+                && flags.non_order_producing()
+                && (flags.is_length_preserving() || flags.returns_scalar())
+                && inputs_insensitive(input)
+        },
+        _ => false,
     }
 }

@@ -179,3 +179,16 @@ def test_dataframe_numpy_records_mixed_dims() -> None:
         {"arr1d": 2, "arr2d": [3.0, 4.0]},
         {"arr1d": 3, "arr2d": [5.0, 6.0]},
     ]
+
+
+def test_from_numpy_unaligned_structured_array_27794() -> None:
+    # Unaligned (packed) structured-array fields are strided views that may also
+    # be unaligned; constructing a DataFrame from them must not panic.
+    for buf, dtype in [
+        (b"012", [("a", "u1"), ("b", "u2")]),  # single row, unaligned
+        (b"012345", [("a", "u1"), ("b", "u2")]),  # multiple rows, unaligned
+    ]:
+        arr = np.frombuffer(buf, dtype=dtype)
+        df = pl.DataFrame(arr)
+        assert df["a"].to_list() == arr["a"].tolist()
+        assert df["b"].to_list() == arr["b"].tolist()

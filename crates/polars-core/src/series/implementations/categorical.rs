@@ -1,5 +1,4 @@
 use super::*;
-use crate::chunked_array::comparison::*;
 use crate::prelude::*;
 
 unsafe impl<T: PolarsCategoricalType> IntoSeries for CategoricalChunked<T> {
@@ -57,10 +56,6 @@ macro_rules! impl_cat_series {
                 self.0.set_flags(flags)
             }
 
-            unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-                self.0.physical().equal_element(idx_self, idx_other, other)
-            }
-
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
                 polars_ensure!(self.dtype() == other.dtype(), SchemaMismatch: "expected '{}' found '{}'", self.dtype(), other.dtype());
@@ -79,10 +74,6 @@ macro_rules! impl_cat_series {
                     self.0.physical().into_total_ord_inner()
                 }
             }
-            fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-                invalid_operation_panic!(into_total_eq_inner, self)
-            }
-
             fn vec_hash(
                 &self,
                 random_state: PlSeedableRandomStateQuality,
@@ -307,6 +298,7 @@ macro_rules! impl_cat_series {
                 self.0.physical().arg_unique()
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
                 ChunkUnique::unique_id(self.0.physical())
             }

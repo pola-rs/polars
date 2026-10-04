@@ -29,7 +29,7 @@ pub fn build_streaming_query_executor(
         }),
     };
 
-    crate::StreamingQuery::build(node, ir_arena, expr_arena)
+    crate::StreamingQuery::build(node, ir_arena, expr_arena, false)
         .map(Some)
         .map(Mutex::new)
         .map(Arc::new)

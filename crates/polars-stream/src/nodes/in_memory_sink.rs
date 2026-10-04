@@ -1,26 +1,27 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_ooc::{LeastRecentSpillContext, SpillFrame};
+use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext};
 
 use super::compute_node_prelude::*;
 use crate::utils::in_memory_linearize::linearize;
 
 #[derive(Debug)]
 pub struct InMemorySinkNode {
-    morsels_per_pipe: Mutex<Vec<Vec<(MorselSeq, SpillFrame)>>>,
+    morsels_per_pipe: Mutex<Vec<Vec<Morsel>>>,
     schema: Arc<Schema>,
-    spill_ctx: Arc<LeastRecentSpillContext>,
+    spill_ctx: LeastRecentSpillContext,
 }
 
 impl InMemorySinkNode {
-    pub fn new(schema: Arc<Schema>) -> Self {
+    pub fn new(schema: Arc<Schema>, task_metrics: Option<Arc<TaskMetricAggregator>>) -> Self {
         Self {
             morsels_per_pipe: Mutex::default(),
             schema,
-            spill_ctx: LeastRecentSpillContext::new(),
+            spill_ctx: LeastRecentSpillContext::new("in-memory-sink".into(), task_metrics),
         }
     }
 }
@@ -68,9 +69,8 @@ impl ComputeNode for InMemorySinkNode {
                 let mut morsels = Vec::new();
                 while let Ok(mut morsel) = recv.recv().await {
                     morsel.take_consume_token();
-                    let seq = morsel.seq();
-                    let sf = SpillFrame::new(morsel.into_df(), &*slf.spill_ctx).await;
-                    morsels.push((seq, sf));
+                    slf.spill_ctx.register(morsel.sf()).await;
+                    morsels.push(morsel);
                 }
 
                 slf.morsels_per_pipe.lock().push(morsels);

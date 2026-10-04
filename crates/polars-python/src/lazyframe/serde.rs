@@ -27,9 +27,12 @@ impl PyLazyFrame {
     #[cfg(feature = "json")]
     fn serialize_json(&self, py: Python<'_>, py_f: Py<PyAny>) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
-        let writer = BufWriter::new(file);
+        let mut writer = BufWriter::new(file);
         py.enter_polars(|| {
-            serde_json::to_writer(writer, &self.ldf.read().logical_plan)
+            self.ldf
+                .read()
+                .logical_plan
+                .serialize_json_into(&mut writer)
                 .map_err(|err| ComputeError::new_err(err.to_string()))
         })
     }
@@ -64,7 +67,7 @@ impl PyLazyFrame {
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 
         let lp = py.enter_polars(|| {
-            serde_json::from_str::<DslPlan>(json)
+            DslPlan::deserialize_json_from_str(json)
                 .map_err(|err| ComputeError::new_err(err.to_string()))
         })?;
         Ok(LazyFrame::from(lp).into())

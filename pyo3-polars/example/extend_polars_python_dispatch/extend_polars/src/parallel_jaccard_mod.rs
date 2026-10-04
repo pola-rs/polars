@@ -29,8 +29,8 @@ fn compute_jaccard_similarity(sa: &Series, sb: &Series) -> PolarsResult<Series> 
     let sb = sb.list()?;
 
     let ca = sa
-        .into_iter()
-        .zip(sb)
+        .series_iter()
+        .zip(sb.series_iter())
         .map(|(a, b)| {
             match (a, b) {
                 (Some(a), Some(b)) => {
@@ -39,8 +39,8 @@ fn compute_jaccard_similarity(sa: &Series, sb: &Series) -> PolarsResult<Series> 
                     let b = b.i64()?;
 
                     // convert to hashsets over Option<i64>
-                    let s1 = a.into_iter().collect::<PlHashSet<_>>();
-                    let s2 = b.into_iter().collect::<PlHashSet<_>>();
+                    let s1 = a.iter().collect::<PlHashSet<_>>();
+                    let s2 = b.iter().collect::<PlHashSet<_>>();
 
                     // count the number of intersections
                     let s3_len = s1.intersection(&s2).count();

@@ -1,18 +1,19 @@
 //! This module implements logic shared between nulls and no_nulls.
 
-use arrow::array::{ArrayRef, PrimitiveArray};
-use arrow::bitmap::MutableBitmap;
-use arrow::trusted_len::TrustedLen;
-use arrow::types::NativeType;
 use bytemuck::allocation::zeroed_vec;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+use polars_arrow::array::{ArrayRef, PrimitiveArray};
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::trusted_len::TrustedLen;
+use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_core::prelude::*;
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::ClosedWindow;
 
-use crate::windows::duration::Duration;
-use crate::windows::group_by::{ClosedWindow, group_by_values_iter};
+use crate::windows::group_by::group_by_values_iter;
 
 pub(crate) trait RollingAggWindow<T: NativeType, Out: NativeType> {
     /// # Safety
@@ -24,6 +25,8 @@ pub(crate) trait RollingAggWindow<T: NativeType, Out: NativeType> {
 
     /// Returns the length of the underlying input.
     fn slice_len(&self) -> usize;
+
+    fn is_valid(&self, min_periods: usize) -> bool;
 }
 
 #[repr(transparent)]
@@ -46,6 +49,10 @@ impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNoNulls<T, Out>> Rolli
     fn slice_len(&self) -> usize {
         self.0.slice_len()
     }
+
+    fn is_valid(&self, _min_periods: usize) -> bool {
+        true
+    }
 }
 
 impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNulls<T, Out>> RollingAggWindow<T, Out>
@@ -62,6 +69,10 @@ impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNulls<T, Out>> Rolling
 
     fn slice_len(&self) -> usize {
         self.0.slice_len()
+    }
+
+    fn is_valid(&self, min_periods: usize) -> bool {
+        self.0.is_valid(min_periods)
     }
 }
 
@@ -121,7 +132,11 @@ where
                 } else {
                     // SAFETY: we are in bounds
                     unsafe { agg_window.update(start as usize, end as usize) }
-                    agg_window.get_agg(idx)
+                    if agg_window.is_valid(min_periods) {
+                        agg_window.get_agg(idx)
+                    } else {
+                        None
+                    }
                 }
             })
         })
@@ -157,7 +172,13 @@ where
             // SAFETY:
             // we are in bound
             unsafe { agg_window.update(start as usize, end as usize) };
-            let res = agg_window.get_agg(*out_idx as usize);
+            // idx is the position of the current element in the window,
+            // because the values were sorted by 'by' before.
+            let res = if agg_window.is_valid(min_periods) {
+                agg_window.get_agg(idx)
+            } else {
+                None
+            };
 
             if let Some(res) = res {
                 // SAFETY: `idx` is in bounds because `sorting_indices` was just taken from

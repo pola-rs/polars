@@ -6,10 +6,12 @@ use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
-use crate::array::binview::{DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE};
+use crate::array::binview::{
+    BINVIEW_ARROW_BUFFER_LEN_LIMIT, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE,
+};
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
-use crate::array::{Array, BinaryViewArrayGeneric, View, ViewType};
-use crate::bitmap::OptBitmapBuilder;
+use crate::array::{Array, BINVIEW_MAX_ROW_BYTE_LEN, BinaryViewArrayGeneric, View, ViewType};
+use crate::bitmap::{Bitmap, OptBitmapBuilder};
 use crate::datatypes::ArrowDataType;
 use crate::pushable::Pushable;
 
@@ -38,8 +40,6 @@ pub struct BinaryViewArrayGenericBuilder<V: ViewType + ?Sized> {
 }
 
 impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
-    pub const MAX_ROW_BYTE_LEN: usize = (u32::MAX - 1) as _;
-
     pub fn new(dtype: ArrowDataType) -> Self {
         Self {
             dtype,
@@ -62,7 +62,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     fn reserve_active_buffer(&mut self, additional: usize) {
         let len = self.active_buffer.len();
         let cap = self.active_buffer.capacity();
-        if additional > cap - len || len + additional >= Self::MAX_ROW_BYTE_LEN {
+        if len.saturating_add(additional) > usize::min(BINVIEW_ARROW_BUFFER_LEN_LIMIT, cap) {
             self.reserve_active_buffer_slow(additional);
         }
     }
@@ -70,14 +70,19 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     #[cold]
     fn reserve_active_buffer_slow(&mut self, additional: usize) {
         assert!(
-            additional <= Self::MAX_ROW_BYTE_LEN,
+            additional <= BINVIEW_MAX_ROW_BYTE_LEN,
             "strings longer than 2^32 - 2 are not supported"
         );
 
+        const {
+            assert!(MAX_EXP_BLOCK_SIZE < BINVIEW_ARROW_BUFFER_LEN_LIMIT);
+        }
+
         // Allocate a new buffer and flush the old buffer.
-        let new_capacity = (self.active_buffer.capacity() * 2)
-            .clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE)
-            .max(additional);
+        let new_capacity = usize::max(
+            additional,
+            (self.active_buffer.capacity() * 2).clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE),
+        );
 
         let old_buffer =
             core::mem::replace(&mut self.active_buffer, Vec::with_capacity(new_capacity));
@@ -113,6 +118,32 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
         debug_assert!(view.is_inline());
         self.total_bytes_len += view.length as usize;
         self.views.push(view);
+    }
+
+    pub fn push_null_ignore_validity(&mut self) {
+        self.views.push(View::default());
+    }
+
+    /// Freeze with a validity that was built separately. Validity pushed to this builder is
+    /// dropped.
+    pub fn freeze_with_validity(mut self, validity: Option<Bitmap>) -> BinaryViewArrayGeneric<V> {
+        // Flush active buffer and/or remove extra placeholder buffer.
+        if !self.active_buffer.is_empty() {
+            self.buffer_set[self.active_buffer_idx as usize] = Buffer::from(self.active_buffer);
+        } else if self.buffer_set.last().is_some_and(|b| b.is_empty()) {
+            self.buffer_set.pop();
+        }
+
+        unsafe {
+            BinaryViewArrayGeneric::new_unchecked(
+                self.dtype,
+                Buffer::from(self.views),
+                Buffer::from(self.buffer_set),
+                validity,
+                Some(self.total_bytes_len),
+                self.total_buffer_len,
+            )
+        }
     }
 
     fn switch_active_stealing_bufferset_to(&mut self, buffer_set: &Buffer<Buffer<u8>>) {
@@ -229,23 +260,8 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
     }
 
     fn freeze(mut self) -> Self::Array {
-        // Flush active buffer and/or remove extra placeholder buffer.
-        if !self.active_buffer.is_empty() {
-            self.buffer_set[self.active_buffer_idx as usize] = Buffer::from(self.active_buffer);
-        } else if self.buffer_set.last().is_some_and(|b| b.is_empty()) {
-            self.buffer_set.pop();
-        }
-
-        unsafe {
-            BinaryViewArrayGeneric::new_unchecked(
-                self.dtype,
-                Buffer::from(self.views),
-                Buffer::from(self.buffer_set),
-                self.validity.into_opt_validity(),
-                Some(self.total_bytes_len),
-                self.total_buffer_len,
-            )
-        }
+        let validity = core::mem::take(&mut self.validity).into_opt_validity();
+        self.freeze_with_validity(validity)
     }
 
     fn freeze_reset(&mut self) -> Self::Array {

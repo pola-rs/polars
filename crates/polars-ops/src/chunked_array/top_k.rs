@@ -1,5 +1,5 @@
-use arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
@@ -195,6 +195,12 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
     }
 
     let origin_dtype = src.dtype();
+
+    // Categoricals sort lexically, but their physical codes are in first-appearance order
+    // so the numeric fast path below would return incorrect results.
+    if origin_dtype.is_categorical() {
+        return top_k_by_impl(k, src, std::slice::from_ref(src), vec![descending]);
+    }
 
     let s = src.to_physical_repr();
 

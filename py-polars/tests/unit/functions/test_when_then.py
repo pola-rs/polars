@@ -9,7 +9,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import InvalidOperationError, ShapeError
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -338,29 +338,8 @@ def test_single_element_broadcast(
         .drop("key")
     )
     if expected.height > 1:
-        result = result.explode(cs.all())
+        result = result.explode(cs.all(), empty_as_null=True)
     assert_frame_equal(result, expected, check_row_order=maintain_order)
-
-
-@pytest.mark.parametrize(
-    "df",
-    [pl.DataFrame({"x": range(5)}), pl.DataFrame({"x": 5 * [[*range(5)]]})],
-)
-@pytest.mark.parametrize(
-    "ternary_expr",
-    [
-        pl.when(True).then(pl.col("x").head(2)).otherwise(pl.col("x")),
-        pl.when(False).then(pl.col("x").head(2)).otherwise(pl.col("x")),
-    ],
-)
-def test_mismatched_height_should_raise(
-    df: pl.DataFrame, ternary_expr: pl.Expr
-) -> None:
-    with pytest.raises(ShapeError):
-        df.select(ternary_expr)
-
-    with pytest.raises(ShapeError):
-        df.group_by(pl.lit(True).alias("key")).agg(ternary_expr)
 
 
 @pytest.mark.parametrize("maintain_order", [False, True])
@@ -382,7 +361,7 @@ def test_when_then_output_name_12380(maintain_order: bool) -> None:
             df.group_by(pl.lit(True).alias("key"), maintain_order=maintain_order)
             .agg(ternary_expr)
             .drop("key")
-            .explode(cs.all())
+            .explode(cs.all(), empty_as_null=True)
         )
         assert_frame_equal(expect, actual, check_row_order=maintain_order)
 
@@ -406,7 +385,7 @@ def test_when_then_output_name_12380(maintain_order: bool) -> None:
             df.group_by(pl.lit(True).alias("key"))
             .agg(ternary_expr)
             .drop("key")
-            .explode(cs.all())
+            .explode(cs.all(), empty_as_null=True)
         )
         assert_frame_equal(
             expect,
@@ -826,7 +805,7 @@ def test_when_then_simplification() -> None:
         ).explain()
     )
     assert (
-        """(col("a")) * (2)"""
+        """col("a") * 2"""
         in (
             lf.select(pl.when(False).then(pl.col("a")).otherwise(pl.col("a") * 2))
         ).explain()
@@ -839,4 +818,49 @@ def test_when_then_in_group_by_aggregated_22922() -> None:
         expr=pl.when(group="x").then(pl.col.value.max()).first()
     )
     expected = pl.DataFrame({"group": ["x", "y"], "expr": [3, None]})
+    assert_frame_equal(out, expected)
+
+
+def test_when_then_nested_null_28941() -> None:
+    df = pl.DataFrame({"a": [None, 1.0], "b": [True, True]})
+    out = df.select(
+        pl.when(pl.col("a") >= 0)
+        .then(pl.col("a"))
+        .otherwise(pl.when(pl.col("b")).then(-2.0).otherwise(-1.0))
+    )
+    expected = pl.DataFrame({"a": [-2.0, 1.0]})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("true_len", [0, 1, 8])
+@pytest.mark.parametrize("false_len", [0, 1, 8])
+@pytest.mark.parametrize("null_len", [0, 1, 8])
+@pytest.mark.parametrize("broadcast_then", [True, False])
+@pytest.mark.parametrize("broadcast_otherwise", [True, False])
+def test_when_otherwise_broadcast_28969(
+    true_len: int,
+    false_len: int,
+    null_len: int,
+    broadcast_then: bool,
+    broadcast_otherwise: bool,
+) -> None:
+    input = [True] * true_len + [False] * false_len + [None] * null_len
+    df = pl.DataFrame(
+        {
+            "x": input,
+            "t": [1] * len(input),
+            "o": [2] * len(input),
+        },
+        schema={"x": pl.Boolean, "t": pl.Int64, "o": pl.Int64},
+    )
+    out = df.select(
+        pl.when("x")
+        .then(pl.lit(1, dtype=pl.Int64).alias("t") if broadcast_then else pl.col.t)
+        .otherwise(
+            pl.lit(2, dtype=pl.Int64).alias("o") if broadcast_otherwise else pl.col.o
+        )
+    )
+    expected = pl.DataFrame(
+        {"t": [1 if x else 2 for x in input]}, schema={"t": pl.Int64}
+    )
     assert_frame_equal(out, expected)

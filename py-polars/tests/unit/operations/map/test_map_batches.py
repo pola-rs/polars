@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import re
 from functools import reduce
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ArgumentRemovedError,
+    ComputeError,
+    InvalidOperationError,
+)
 from polars.testing import assert_frame_equal
 
 
@@ -38,7 +43,7 @@ def test_map_no_dtype_set_8531() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")  # cut
 def test_error_on_reducing_map() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
@@ -108,6 +113,7 @@ def test_ufunc_args() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_lazy_schema  # reason: validate_output_schema=False
 def test_lazy_map_schema() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
 
@@ -172,3 +178,13 @@ def test_map_batches_no_return_dtype_25601(
     )
     expected = pl.DataFrame({"colx": expected_data})
     assert_frame_equal(result, expected)
+
+
+def test_removed_no_optimizations_parameter() -> None:
+    lf = pl.LazyFrame({"a": [1]})
+    msg = (
+        "Use the `predicate_pushdown`, `projection_pushdown`,"
+        " and `slice_pushdown` flags instead."
+    )
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        lf.map_batches(lambda df: df, no_optimizations=True)  # type: ignore[call-arg]

@@ -8,8 +8,6 @@
 //! (depending on the result) cast back to the original type
 //!
 use super::*;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for DateChunked {
@@ -27,6 +25,7 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
         Cow::Owned(self.0.field())
     }
 
+    #[inline]
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
@@ -46,10 +45,6 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
             .physical()
             .zip_with(mask, other.as_ref().as_ref())
             .map(|ca| ca.into_date().into_series())
-    }
-
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        self.0.physical().into_total_eq_inner()
     }
 
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
@@ -172,6 +167,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         self.0.physical().chunk_lengths()
     }
 
+    #[inline]
     fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
@@ -281,6 +277,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             .into_series()
     }
 
+    #[inline]
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -375,6 +372,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         self.0.physical().arg_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         ChunkUnique::unique_id(self.0.physical())
     }

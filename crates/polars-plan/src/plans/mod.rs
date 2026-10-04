@@ -18,14 +18,18 @@ mod functions;
 pub mod hive;
 pub(crate) mod iterator;
 mod lit;
-pub(crate) mod optimizer;
-pub(crate) mod options;
+pub mod optimizer;
+pub mod options;
+#[cfg(feature = "parquet")]
+pub(crate) mod parquet_footers;
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]
 pub use python::*;
 pub mod prune;
 mod schema;
+mod stats;
+mod to_description;
 pub mod visitor;
 
 pub use aexpr::*;
@@ -40,3 +44,5 @@ pub use iterator::*;
 pub use lit::*;
 pub use optimizer::*;
 pub use schema::*;
+pub use stats::*;
+pub use to_description::*;

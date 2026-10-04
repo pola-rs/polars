@@ -3,11 +3,11 @@ use std::hash::{BuildHasher, Hash, Hasher};
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 
-use arrow::array::builder::StaticArrayBuilder;
-use arrow::array::{Utf8ViewArray, Utf8ViewArrayBuilder};
-use arrow::datatypes::ArrowDataType;
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
+use polars_arrow::array::builder::StaticArrayBuilder;
+use polars_arrow::array::{Utf8ViewArray, Utf8ViewArrayBuilder};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::aliases::*;
 use polars_utils::pl_str::PlSmallStr;

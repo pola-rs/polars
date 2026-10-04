@@ -30,7 +30,7 @@ where
     // See: https://numpy.org/doc/stable/reference/c-api/array.html
     let array = PY_ARRAY_API.PyArray_NewFromDescr(
         py,
-        PY_ARRAY_API.get_type_object(py, npyffi::NpyTypes::PyArray_Type),
+        npyffi::get_type_object(py, npyffi::NpyTypes::PyArray_Type),
         dtype.into_dtype_ptr(),
         shape.ndim_cint(),
         shape.as_dims_ptr(),

@@ -169,6 +169,16 @@ def test_extension_native_to_extension_cast_27193() -> None:
     assert_series_equal(casted, expected)
 
 
+def test_extension_cast_schema_28542() -> None:
+    dtype = PythonTestExtension(storage=pl.Int64)
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).with_columns(pl.col("a").cast(dtype))
+
+    result = lf.collect()
+
+    assert result.collect_schema() == lf.collect_schema() == {"a": dtype}
+    assert result["a"].ext.storage().to_list() == [1, 2, 3]
+
+
 def test_extension_to_extension_raises_27519() -> None:
     AExtension = pl.Extension(name="a.ext", storage=pl.Int64)
     BExtension = pl.Extension(name="b.ext", storage=pl.Int64)
@@ -190,3 +200,25 @@ def test_ext_to_mismatched_storage_raises_27519() -> None:
         match=r"column dtype must match",
     ):
         s.to_frame().select(pl.col("x").ext.to(Ext))
+
+
+def test_ext_concat_27512() -> None:
+    ExtensionA = pl.Extension(name="extension.a", storage=pl.Int64)
+    ExtensionAFloat = pl.Extension(name="extension.a", storage=pl.Float64)
+    ExtensionB = pl.Extension(name="extension.b", storage=pl.Int64)
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        pl.concat(
+            [
+                pl.DataFrame(range(2), schema={"col": ExtensionA}),
+                pl.DataFrame(range(2), schema={"col": ExtensionB}),
+            ]
+        )
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        pl.concat(
+            [
+                pl.DataFrame(range(2), schema={"col": ExtensionA}),
+                pl.DataFrame(range(2), schema={"col": ExtensionAFloat}),
+            ]
+        )

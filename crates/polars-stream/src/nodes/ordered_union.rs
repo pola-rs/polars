@@ -37,6 +37,12 @@ impl ComputeNode for OrderedUnionNode {
     ) -> PolarsResult<()> {
         assert!(self.cur_input_idx <= recv.len() && send.len() == 1);
 
+        // Mark inputs as done when the output is done and stop processing.
+        if send[0] == PortState::Done {
+            recv.fill(PortState::Done);
+            return Ok(());
+        }
+
         // Skip inputs that are done.
         while self.cur_input_idx < recv.len() && recv[self.cur_input_idx] == PortState::Done {
             self.cur_input_idx += 1;
@@ -82,7 +88,10 @@ impl ComputeNode for OrderedUnionNode {
                 while let Ok(mut morsel) = recv.recv().await {
                     // Ensure the morsel matches the expected output schema,
                     // casting nulls to the appropriate output type.
-                    morsel.df_mut().ensure_matches_schema(&output_schema)?;
+                    morsel
+                        .df_mut()
+                        .await
+                        .ensure_matches_schema(&output_schema)?;
 
                     // Ensure the morsel sequence id stream is monotonic.
                     let seq = morsel.seq().offset_by(morsel_offset);

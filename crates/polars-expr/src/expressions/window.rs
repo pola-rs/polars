@@ -1,8 +1,8 @@
 use std::fmt::Write;
 
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::Bitmap;
-use arrow::trusted_len::TrustMyLength;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::trusted_len::TrustMyLength;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::error::feature_gated;
 use polars_core::prelude::row_encode::encode_rows_unordered;
@@ -11,6 +11,8 @@ use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
+use polars_defs::expr::{RankMethod, RankOptions};
+use polars_defs::join::JoinValidation;
 use polars_ops::frame::SeriesJoin;
 use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::*;
@@ -56,7 +58,7 @@ impl WindowExpr {
         out_column: Column,
         flattened: &Column,
         mut ac: AggregationContext,
-        gb: GroupBy,
+        gb: &GroupBy,
     ) -> PolarsResult<IdxCa> {
         // idx (new-idx, original-idx)
         let mut idx_mapping = Vec::with_capacity(out_column.len());
@@ -129,7 +131,7 @@ impl WindowExpr {
         flattened: &Column,
         mut ac: AggregationContext,
         group_by_columns: &[Column],
-        gb: GroupBy,
+        gb: &GroupBy,
         cache_key: String,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
@@ -161,7 +163,7 @@ impl WindowExpr {
         if flattened.len() != df.height() {
             let ca = out_column.list().unwrap();
             let non_matching_group =
-                ca.into_iter()
+                ca.series_iter()
                     .zip(ac.groups().iter())
                     .find(|(output, group)| {
                         if let Some(output) = output {
@@ -254,22 +256,18 @@ impl WindowExpr {
     fn is_simple_column_expr(&self) -> bool {
         // col()
         // or col().alias()
-        let mut simple_col = false;
-        for e in &self.expr {
-            if let Expr::Over { function, .. } = e {
-                // or list().alias
-                for e in &**function {
-                    match e {
-                        Expr::Column(_) => {
-                            simple_col = true;
-                        },
-                        Expr::Alias(_, _) => {},
-                        _ => break,
-                    }
-                }
+        let Expr::Over { function, .. } = &self.expr else {
+            return false;
+        };
+
+        let mut function = function.as_ref();
+        loop {
+            match function {
+                Expr::Alias(inner, _) => function = inner.as_ref(),
+                Expr::Column(_) => return true,
+                _ => return false,
             }
         }
-        simple_col
     }
 
     fn is_aggregation(&self) -> bool {
@@ -339,6 +337,89 @@ impl WindowExpr {
             // literals, do nothing and let broadcast
             (_, AggState::LiteralScalar(_)) => Ok(MapStrategy::Nothing),
         }
+    }
+
+    fn map_explode(&self, ac: &mut AggregationContext) -> PolarsResult<Column> {
+        if self.phys_function.is_scalar() {
+            Ok(ac.get_values().clone())
+        } else {
+            ac.aggregated().explode(ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            })
+        }
+    }
+}
+
+fn map_nothing(ac: &AggregationContext, height: usize) -> Column {
+    let out = ac.flat_naive().into_owned();
+    if ac.is_literal() {
+        out.new_from_index(0, height)
+    } else {
+        out
+    }
+}
+
+impl WindowExpr {
+    /// Evaluates the window function on `df`, whose partitions are the contiguous slices in
+    /// `groups`, each already in evaluation order. Returns one value per row of `df`.
+    pub fn evaluate_on_sorted_partitions(
+        &self,
+        df: &DataFrame,
+        groups: GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<Column> {
+        debug_assert!(matches!(self.mapping, WindowMapping::GroupsToRows));
+        debug_assert!(matches!(groups.as_ref(), GroupsType::Slice { .. }));
+
+        let name = self.output_field.name().clone();
+        if df.height() == 0 {
+            return Ok(Column::full_null(name, 0, self.output_field.dtype()));
+        }
+
+        let gb = GroupBy::new(df, vec![], groups, Some(self.apply_columns.clone()));
+        let mut ac = self.run_aggregation(df, state, &gb)?;
+
+        let out = match self.determine_map_strategy(&mut ac, &gb)? {
+            MapStrategy::Nothing => map_nothing(&ac, df.height()),
+            MapStrategy::Explode => self.map_explode(&mut ac)?,
+            // The partitions are in row order, so values that still belong to the original
+            // groups are already on their rows.
+            MapStrategy::Map => {
+                let groups_unchanged = matches!(ac.update_groups, UpdateGroups::No)
+                    && std::ptr::eq(ac.groups().as_ref(), gb.get_groups());
+                if groups_unchanged && matches!(ac.agg_state(), AggState::NotAggregated(_)) {
+                    ac.flat_naive().into_owned()
+                } else {
+                    let flattened = ac.aggregated().explode(ExplodeOptions {
+                        empty_as_null: true,
+                        keep_nulls: true,
+                    })?;
+                    polars_ensure!(
+                        flattened.len() == df.height(),
+                        expr = self.expr, ShapeMismatch:
+                        "the length of the window expression did not match that of the group"
+                    );
+                    flattened
+                }
+            },
+            // One value per partition.
+            MapStrategy::Join => {
+                let out = ac.aggregated();
+                let GroupsType::Slice { groups, .. } = gb.get_groups().as_ref() else {
+                    unreachable!()
+                };
+                let idx = groups
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(i, [_, len])| std::iter::repeat_n(i as IdxSize, *len as usize))
+                    .collect::<Vec<_>>();
+                let idx = IdxCa::from_vec(PlSmallStr::EMPTY, idx);
+                // SAFETY: there is one aggregated value per group.
+                unsafe { out.take_unchecked(&idx) }
+            },
+        };
+        Ok(out.with_name(name))
     }
 }
 
@@ -478,7 +559,7 @@ impl PhysicalExpr for WindowExpr {
         // the groups, so that the cached groups and join keys
         // are consistent among all windows
         if sort_groups || state.cache_window() {
-            groups.sort();
+            groups.sort_by_first_idx();
             state
                 .window_cache
                 .insert_groups(cache_key.clone(), groups.clone());
@@ -486,13 +567,8 @@ impl PhysicalExpr for WindowExpr {
 
         // broadcast if required
         for col in group_by_columns.iter_mut() {
-            if col.len() != df.height() {
-                polars_ensure!(
-                    col.len() == 1,
-                    ShapeMismatch: "columns used as `partition_by` must have the same length as the DataFrame"
-                );
-                *col = col.new_from_index(0, df.height())
-            }
+            col.broadcast_in_place_to(df.height())
+                .context("partition_by")?;
         }
 
         let gb = GroupBy::new(df, group_by_columns.clone(), groups, Some(apply_columns));
@@ -502,25 +578,8 @@ impl PhysicalExpr for WindowExpr {
         use MapStrategy::*;
 
         match self.determine_map_strategy(&mut ac, &gb)? {
-            Nothing => {
-                let mut out = ac.flat_naive().into_owned();
-
-                if ac.is_literal() {
-                    out = out.new_from_index(0, df.height())
-                }
-                Ok(out.into_column())
-            },
-            Explode => {
-                let out = if self.phys_function.is_scalar() {
-                    ac.get_values().clone()
-                } else {
-                    ac.aggregated().explode(ExplodeOptions {
-                        empty_as_null: true,
-                        keep_nulls: true,
-                    })?
-                };
-                Ok(out.into_column())
-            },
+            Nothing => Ok(map_nothing(&ac, df.height())),
+            Explode => self.map_explode(&mut ac),
             Map => {
                 // TODO!
                 // investigate if sorted arrays can be return directly
@@ -529,18 +588,13 @@ impl PhysicalExpr for WindowExpr {
                     empty_as_null: true,
                     keep_nulls: true,
                 })?;
-                // we extend the lifetime as we must convince the compiler that ac lives
-                // long enough. We drop `GrouBy` when we are done with `ac`.
-                let ac = unsafe {
-                    std::mem::transmute::<AggregationContext<'_>, AggregationContext<'static>>(ac)
-                };
                 self.map_by_arg_sort(
                     df,
                     out_column,
                     &flattened,
                     ac,
                     &group_by_columns,
-                    gb,
+                    &gb,
                     cache_key,
                     state,
                 )
@@ -676,24 +730,16 @@ impl PhysicalExpr for WindowExpr {
             .group_by
             .iter()
             .map(|e| {
-                let mut e = e.evaluate(df, state)?;
-                if e.len() == 1 {
-                    e = e.new_from_index(0, length_preserving_height);
-                }
-                // Sanity check: Length Preserving.
-                assert_eq!(e.len(), length_preserving_height,);
-                Ok(e)
+                e.evaluate(df, state)?
+                    .broadcast_owned_to(length_preserving_height)
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         let order_by = match &self.order_by {
             None => None,
             Some((e, options)) => {
-                let mut e = e.evaluate(df, state)?;
-                if e.len() == 1 {
-                    e = e.new_from_index(0, length_preserving_height);
-                }
-                // Sanity check: Length Preserving.
-                assert_eq!(e.len(), length_preserving_height);
+                let e = e
+                    .evaluate(df, state)?
+                    .broadcast_owned_to(length_preserving_height)?;
                 let arr: Option<PrimitiveArray<IdxSize>> = if needs_remap_to_rows {
                     feature_gated!("rank", {
                         // Performance: precompute the rank here, so we can avoid dispatching per group
@@ -984,7 +1030,7 @@ impl PhysicalExpr for WindowExpr {
                     GroupsType::Idx(idx) => idx
                         .all()
                         .iter()
-                        .zip(&lengths)
+                        .zip(lengths.iter())
                         .any(|(i, l)| i.len() as IdxSize != l.unwrap()),
                     GroupsType::Slice {
                         groups,
@@ -992,7 +1038,7 @@ impl PhysicalExpr for WindowExpr {
                         monotonic: _,
                     } => groups
                         .iter()
-                        .zip(&lengths)
+                        .zip(lengths.iter())
                         .any(|([_, i], l)| *i != l.unwrap()),
                 };
 
@@ -1017,7 +1063,7 @@ impl PhysicalExpr for WindowExpr {
             state: AggState::NotAggregated(data),
             groups: Cow::Owned(final_groups),
             update_groups: UpdateGroups::No,
-            original_len: false,
+            original_groups: false,
         })
     }
 
@@ -1028,7 +1074,7 @@ impl PhysicalExpr for WindowExpr {
 
 fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Column {
     {
-        use arrow::Either;
+        use polars_arrow::Either;
         use polars_ops::chunked_array::TakeChunked;
 
         match join_opt_ids {
@@ -1051,7 +1097,7 @@ fn set_by_groups(
     let groups = match ac.agg_state() {
         AggState::AggregatedScalar(_) | AggState::LiteralScalar(_) => gb_groups,
         AggState::NotAggregated(_) | AggState::AggregatedList(_) => {
-            if update_groups || !ac.original_len {
+            if update_groups || !ac.original_groups {
                 return None;
             } else {
                 &ac.groups

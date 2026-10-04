@@ -1,12 +1,14 @@
 //! The typed heart of every Series column.
 #![allow(unsafe_op_in_unsafe_fn)]
+use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
-use arrow::compute::concatenate::concatenate_unchecked;
-use arrow::compute::utils::combine_validities_and;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::compute::concatenate::concatenate_unchecked;
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_compute::filter::filter_with_bitmap;
+use polars_utils::broadcast::BroadcastLength;
 
 use crate::prelude::{ChunkTakeUnchecked, *};
 
@@ -51,7 +53,6 @@ pub mod temporal;
 mod to_vec;
 mod trusted_len;
 pub(crate) use arg_min_max::*;
-use arrow::legacy::prelude::*;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::StructChunked;
 
@@ -238,6 +239,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.get_flags().can_fast_explode_list()
     }
 
+    #[inline]
     pub fn get_flags(&self) -> StatisticsFlags {
         self.flags.get()
     }
@@ -285,17 +287,23 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         else if self.null_count() == self.len() {
             Some(0)
         } else if self.is_sorted_any() {
-            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+            let out = if self
+                .chunks
+                .iter()
+                .find(|arr| !arr.is_empty())
+                .unwrap()
+                .is_null(0)
+            {
                 // nulls are all at the start
                 0
             } else {
                 // nulls are all at the end
-                self.null_count()
+                self.len() - self.null_count()
             };
 
             debug_assert!(
                 // If we are lucky this catches something.
-                unsafe { self.get_unchecked(out) }.is_some(),
+                unsafe { self.get_unchecked(out) }.is_none(),
                 "incorrect sorted flag"
             );
 
@@ -314,7 +322,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         else if self.null_count() == 0 {
             Some(0)
         } else if self.is_sorted_any() {
-            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+            let out = if self
+                .chunks
+                .iter()
+                .find(|arr| !arr.is_empty())
+                .unwrap()
+                .is_null(0)
+            {
                 // nulls are all at the start
                 self.null_count()
             } else {
@@ -343,7 +357,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         else if self.null_count() == 0 {
             Some(self.len() - 1)
         } else if self.is_sorted_any() {
-            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+            let out = if self
+                .chunks
+                .iter()
+                .find(|arr| !arr.is_empty())
+                .unwrap()
+                .is_null(0)
+            {
                 // nulls are all at the start
                 self.len() - 1
             } else {
@@ -473,11 +493,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         &mut self.chunks
     }
 
-    /// Returns true if contains a single chunk and has no null values
-    pub fn is_optimal_aligned(&self) -> bool {
-        self.chunks.len() == 1 && self.null_count() == 0
-    }
-
     /// Create a new [`ChunkedArray`] from self, where the chunks are replaced.
     ///
     /// # Safety
@@ -487,6 +502,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Get data type of [`ChunkedArray`].
+    #[inline(always)]
     pub fn dtype(&self) -> &DataType {
         self.field.dtype()
     }
@@ -496,11 +512,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Name of the [`ChunkedArray`].
+    #[inline]
     pub fn name(&self) -> &PlSmallStr {
         self.field.name()
     }
 
     /// Get a reference to the field.
+    #[inline(always)]
     pub fn ref_field(&self) -> &Field {
         &self.field
     }
@@ -619,6 +637,43 @@ where
     pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
         self.set_validity(validity);
         self
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: ChunkExpandAtIndex<T>,
+{
+    /// Returns a ChunkedArray with the given length.
+    ///
+    /// Errors if this ChunkedArray's length is not 1 and also not equal to the requested length.
+    pub fn broadcast_to(&self, length: usize) -> PolarsResult<Cow<'_, Self>> {
+        let len = self.len();
+        if len == length {
+            Ok(Cow::Borrowed(self))
+        } else if len == 1 {
+            Ok(Cow::Owned(self.new_from_index(0, length)))
+        } else {
+            polars_bail!(
+                ShapeMismatch: "can't broadcast Series '{}' of length {len} to length {length}",
+                self.name()
+            );
+        }
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_in_place_to(&mut self, length: usize) -> PolarsResult<()> {
+        if let Cow::Owned(new) = self.broadcast_to(length)? {
+            *self = new;
+        }
+        Ok(())
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_owned_to(mut self, length: usize) -> PolarsResult<Self> {
+        self.broadcast_in_place_to(length)?;
+        Ok(self)
     }
 }
 
@@ -745,10 +800,13 @@ impl ArrayChunked {
         length: usize,
     ) -> Self {
         let dtype = DataType::Array(Box::new(inner_dtype.clone()), width);
-        let arrow_dtype = dtype.to_arrow(CompatLevel::newest()).to_storage_recursive();
+        let arrow_dtype = inner_dtype
+            .to_physical()
+            .to_arrow(CompatLevel::newest())
+            .to_fixed_size_list(width, true);
         let field = Arc::new(Field::new(name, dtype));
         if width == 0 {
-            use arrow::array::builder::{ArrayBuilder, make_builder};
+            use polars_arrow::array::builder::{ArrayBuilder, make_builder};
             let values = make_builder(&inner_dtype.to_arrow(CompatLevel::newest())).freeze();
             return ArrayChunked::new_with_compute_len(
                 field,
@@ -757,12 +815,13 @@ impl ArrayChunked {
         }
         let mut total_len = 0;
         let chunks = chunks
-            .into_iter()
+            .iter()
             .map(|chunk| {
                 debug_assert_eq!(chunk.len() % width, 0);
                 let chunk_len = chunk.len() / width;
                 total_len += chunk_len;
-                FixedSizeListArray::new(arrow_dtype.clone(), chunk_len, chunk, None).into_boxed()
+                FixedSizeListArray::new(arrow_dtype.clone(), chunk_len, chunk.clone(), None)
+                    .into_boxed()
             })
             .collect();
         debug_assert_eq!(total_len, length);
@@ -778,7 +837,7 @@ impl ArrayChunked {
         let chunks = self
             .downcast_iter()
             .map(|chunk| {
-                use arrow::offset::OffsetsBuffer;
+                use polars_arrow::offset::OffsetsBuffer;
 
                 let inner_dtype = chunk.dtype().inner_dtype().unwrap();
                 let dtype = inner_dtype.clone().to_large_list(true);
@@ -1024,6 +1083,37 @@ impl ValueSize for BinaryOffsetChunked {
     }
 }
 
+/// Re-chunk `values` so that its chunk lengths match `chunk_lens`.
+///
+/// The sum of `chunk_lens` must equal `values.len()`. Returns a clone when the chunks
+/// already line up, so passing already-aligned values costs nothing.
+pub(crate) fn align_inner_chunks(
+    chunk_lens: impl Iterator<Item = usize>,
+    values: &Series,
+) -> Series {
+    let chunk_lens = chunk_lens.collect::<Vec<_>>();
+
+    if chunk_lens.len() == values.chunks().len()
+        && chunk_lens
+            .iter()
+            .zip(values.chunks())
+            .all(|(len, arr)| *len == arr.len())
+    {
+        return values.clone();
+    }
+
+    let mut values = values.rechunk();
+    let chunks = unsafe { values.chunks_mut() };
+    let mut arr = chunks.pop().unwrap();
+    chunks.extend(chunk_lens.into_iter().map(|len| {
+        let chunk;
+        (chunk, arr) = arr.split_at_boxed(len);
+        chunk
+    }));
+    assert!(arr.is_empty());
+    values
+}
+
 pub(crate) fn to_primitive<T: PolarsNumericType>(
     values: Vec<T::Native>,
     validity: Option<Bitmap>,
@@ -1059,6 +1149,16 @@ impl<T: PolarsDataType> Default for ChunkedArray<T> {
     }
 }
 
+impl<T: PolarsDataType> BroadcastLength for ChunkedArray<T> {
+    fn _broadcast_len(&self) -> usize {
+        self.len()
+    }
+
+    fn _column_name(&self) -> Option<&str> {
+        Some(self.name())
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;
@@ -1072,13 +1172,13 @@ pub(crate) mod test {
         let a = Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 9, 3, 2]);
         let b = a
             .sort(false)
-            .into_iter()
+            .iter()
             .map(|opt| opt.unwrap())
             .collect::<Vec<_>>();
         assert_eq!(b, [1, 2, 3, 9]);
         let a = StringChunked::new(PlSmallStr::from_static("a"), &["b", "a", "c"]);
         let a = a.sort(false);
-        let b = a.into_iter().collect::<Vec<_>>();
+        let b = a.iter().collect::<Vec<_>>();
         assert_eq!(b, [Some("a"), Some("b"), Some("c")]);
         assert!(a.is_sorted_ascending_flag());
     }
@@ -1100,7 +1200,7 @@ pub(crate) mod test {
     fn iter() {
         let s1 = get_chunked_array();
         // sum
-        assert_eq!(s1.into_iter().fold(0, |acc, val| { acc + val.unwrap() }), 6)
+        assert_eq!(s1.iter().fold(0, |acc, val| { acc + val.unwrap() }), 6)
     }
 
     #[test]
@@ -1121,7 +1221,7 @@ pub(crate) mod test {
             ))
             .unwrap();
         assert_eq!(b.len(), 1);
-        assert_eq!(b.into_iter().next(), Some(Some(1)));
+        assert_eq!(b.iter().next(), Some(Some(1)));
     }
 
     #[test]
@@ -1183,18 +1283,18 @@ pub(crate) mod test {
         let s: StringChunked = ["b", "a", "z"].iter().collect();
         let sorted = s.sort(false);
         assert_eq!(
-            sorted.into_iter().collect::<Vec<_>>(),
+            sorted.iter().collect::<Vec<_>>(),
             &[Some("a"), Some("b"), Some("z")]
         );
         let sorted = s.sort(true);
         assert_eq!(
-            sorted.into_iter().collect::<Vec<_>>(),
+            sorted.iter().collect::<Vec<_>>(),
             &[Some("z"), Some("b"), Some("a")]
         );
         let s: StringChunked = [Some("b"), None, Some("z")].iter().copied().collect();
         let sorted = s.sort(false);
         assert_eq!(
-            sorted.into_iter().collect::<Vec<_>>(),
+            sorted.iter().collect::<Vec<_>>(),
             &[None, Some("b"), Some("z")]
         );
     }
@@ -1231,7 +1331,7 @@ pub(crate) mod test {
         );
         let ca = ca.cast(&DataType::from_categories(cats)).unwrap();
         let ca = ca.cat32().unwrap();
-        let v: Vec<_> = ca.physical().into_iter().collect();
+        let v: Vec<_> = ca.physical().iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);
     }
 
@@ -1244,13 +1344,13 @@ pub(crate) mod test {
         let before = arr
             .chunks()
             .iter()
-            .map(|arr| arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
+            .map(|arr| polars_arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
             .sum::<usize>();
         arr.shrink_to_fit();
         let after = arr
             .chunks()
             .iter()
-            .map(|arr| arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
+            .map(|arr| polars_arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
             .sum::<usize>();
         assert!(before > after);
     }

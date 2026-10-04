@@ -1,14 +1,24 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use arrow::io::ipc::read::FileMetadata;
+use polars_arrow::io::ipc::read::FileMetadata;
+use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
+#[cfg(feature = "ipc")]
+use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
+#[cfg(feature = "ipc")]
+use polars_io::cloud::concurrency::get_inflight_request_budget;
+use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::ipc::IpcScanOptions;
 use polars_plan::dsl::ScanSource;
-use polars_utils::relaxed_cell::RelaxedCell;
+#[cfg(feature = "ipc")]
+use polars_utils::pl_str::PlSmallStr;
 
+use super::super::shared::pipeline_budget::{
+    PipelineBudget, prefetch_kbytes_limit_from_env_or_default,
+};
 use super::{DynByteSourceBuilder, IpcFileReader};
 #[cfg(feature = "ipc")]
 use crate::metrics::IOMetrics;
@@ -19,10 +29,10 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 pub struct IpcReaderBuilder {
     pub first_metadata: Option<Arc<FileMetadata>>,
     pub options: Arc<IpcScanOptions>,
-    pub prefetch_limit: RelaxedCell<usize>,
-    pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
+    pub pipeline_budget: std::sync::OnceLock<PipelineBudget>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
+    pub task_metrics: std::sync::OnceLock<Arc<TaskMetricAggregator>>,
 }
 
 impl std::fmt::Debug for IpcReaderBuilder {
@@ -30,24 +40,28 @@ impl std::fmt::Debug for IpcReaderBuilder {
         f.debug_struct("IpcBuilder")
             .field("first_metadata", &self.first_metadata)
             .field("options", &self.options)
-            .field("prefetch_semaphore", &self.prefetch_semaphore)
+            .field("pipeline_budget", &self.pipeline_budget)
             .finish()
     }
 }
 
 #[cfg(feature = "ipc")]
 impl FileReaderBuilder for IpcReaderBuilder {
-    fn reader_name(&self) -> &str {
-        "ipc"
+    fn reader_name(&self) -> PolarsResult<PlSmallStr> {
+        Ok(PlSmallStr::from_static("ipc"))
     }
 
-    fn reader_capabilities(&self) -> ReaderCapabilities {
+    fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
         use ReaderCapabilities as RC;
 
-        RC::ROW_INDEX | RC::PRE_SLICE
+        Ok(RC::ROW_INDEX | RC::PRE_SLICE | RC::UNORDERED_FILES)
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
+        if let Some(task_metrics) = execution_state.task_metrics.clone() {
+            self.task_metrics.set(task_metrics).ok().unwrap();
+        }
+
         let prefetch_limit = std::env::var("POLARS_RECORD_BATCH_PREFETCH_SIZE")
             .map(|x| {
                 x.parse::<NonZeroUsize>()
@@ -56,20 +70,30 @@ impl FileReaderBuilder for IpcReaderBuilder {
                     })
                     .get()
             })
-            .unwrap_or(execution_state.num_pipelines.saturating_mul(2))
+            .unwrap_or(
+                // Similar to Parquet.
+                execution_state
+                    .num_pipelines
+                    .saturating_mul(2)
+                    .max(get_inflight_request_budget() as usize)
+                    .clamp(16, 2048),
+            )
             .max(1);
 
-        self.prefetch_limit.store(prefetch_limit);
+        let prefetch_kbytes_limit = prefetch_kbytes_limit_from_env_or_default(
+            "POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET",
+            execution_state.num_pipelines,
+        );
 
         if config::verbose() {
             eprintln!(
-                "[IpcReaderBuilder]: prefetch_limit: {}",
-                self.prefetch_limit.load()
+                "[IpcReaderBuilder]: prefetch_limit: {}, prefetch_kbytes_limit: {}",
+                prefetch_limit, prefetch_kbytes_limit
             );
         }
 
-        self.prefetch_semaphore
-            .set(Arc::new(tokio::sync::Semaphore::new(prefetch_limit)))
+        self.pipeline_budget
+            .set(PipelineBudget::new(prefetch_limit, prefetch_kbytes_limit))
             .unwrap()
     }
 
@@ -82,7 +106,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
         scan_source_idx: usize,
-    ) -> Box<dyn FileReader> {
+    ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::metrics::OptIOMetrics;
         use crate::nodes::io_sources::ipc::RecordBatchPrefetchSync;
 
@@ -98,10 +122,16 @@ impl FileReaderBuilder for IpcReaderBuilder {
 
         let byte_source_builder =
             if scan_source.is_cloud_url() || polars_config::config().force_async() {
-                DynByteSourceBuilder::ObjectStore
+                DynByteSourceBuilder::ObjectStore(FetchConfig::random_access())
             } else {
                 DynByteSourceBuilder::Mmap
             };
+
+        let pipeline_budget = self
+            .pipeline_budget
+            .get()
+            .expect("set_execution_state must be called before build_file_reader")
+            .clone();
 
         let reader = IpcFileReader {
             scan_source,
@@ -110,18 +140,18 @@ impl FileReaderBuilder for IpcReaderBuilder {
             metadata,
             byte_source_builder,
             record_batch_prefetch_sync: RecordBatchPrefetchSync {
-                prefetch_limit: self.prefetch_limit.load(),
-                prefetch_semaphore: Arc::clone(self.prefetch_semaphore.get().unwrap()),
+                pipeline_budget,
                 shared_prefetch_wait_group_slot: Arc::clone(&self.shared_prefetch_wait_group_slot),
                 prev_all_spawned: None,
                 current_all_spawned: None,
             },
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
+            task_metrics: self.task_metrics.get().cloned(),
             verbose,
             init_data: None,
             checked: self.options.checked,
         };
 
-        Box::new(reader) as Box<dyn FileReader>
+        Ok(Box::new(reader) as Box<dyn FileReader>)
     }
 }

@@ -1,0 +1,18 @@
+[package]
+name = "polars-observer"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Process-wide hook for observing polars queries as they are built and executed."
+
+[dependencies]
+polars-descriptions = { workspace = true }
+polars-error = { workspace = true }
+
+parking_lot = { workspace = true }
+
+[lints]
+workspace = true

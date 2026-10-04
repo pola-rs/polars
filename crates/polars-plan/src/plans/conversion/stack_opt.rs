@@ -17,7 +17,7 @@ pub struct ConversionOptimizer {
     // then it can occur that we take a slot multiple times.
     // So we keep track of the arena versions used and allow only
     // one unique IR cache to be reused.
-    pub(super) used_arenas: PlHashSet<u32>,
+    pub(super) used_arenas: PlIndexSet<u32>,
 }
 
 struct ExtendVec<'a> {
@@ -155,7 +155,10 @@ impl ConversionOptimizer {
             // Similar for StructEval
             // Effectively, we are mimicking in-order processing traversal logic (left > parent > right).
             #[cfg(feature = "dtype-struct")]
-            if let AExpr::StructEval { expr, evaluation } = expr {
+            if let AExpr::StructEval {
+                expr, evaluation, ..
+            } = expr
+            {
                 let schema = if schema_idx == 0 {
                     &schema
                 } else {

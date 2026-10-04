@@ -7,6 +7,8 @@ Aggregate
 
    * - Function
      - Description
+   * - :ref:`APPROX_QUANTILE <approx_quantile>`
+     - Returns an approximation of the given quantile of the grouping.
    * - :ref:`AVG <avg>`
      - Returns the average (mean) of all the elements in the grouping.
    * - :ref:`CORR <corr>`
@@ -36,6 +38,8 @@ Aggregate
      - Concatenates the input string values into a single string, separated by a delimiter.
    * - :ref:`SUM <sum>`
      - Returns the sum of all the elements in the grouping.
+   * - :ref:`TOTAL <total>`
+     - Returns the sum of all the elements in the grouping, returning zero (rather than null) if there are no non-null values.
    * - :ref:`VARIANCE <variance>`
      - Returns the variance of all the elements in the grouping.
 
@@ -84,6 +88,40 @@ so multiple aggregates in the same ``SELECT`` can see different row sets.
     # │ B        ┆ 120   ┆ 100        ┆ 20        ┆ 2     │
     # └──────────┴───────┴────────────┴───────────┴───────┘
 
+
+.. _approx_quantile:
+
+APPROX_QUANTILE
+---------------
+Returns an approximation of the given quantile of the grouping, computed from a sketch that
+trades accuracy for memory. Prefer :ref:`QUANTILE_CONT <quantile_cont>` when the data fits in
+memory.
+
+Takes an optional allowed rank error (a fraction of the number of rows; default ``0.001``) and
+an optional sketch method: one of ``'auto'``, ``'kll'``, ``'req_lo'``, ``'req_hi'`` or
+``'req_both'`` (default ``'auto'``).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": [5, 20, 10, 30, 70, 40, 10, 90]})
+    df.sql("""
+      SELECT
+        APPROX_QUANTILE(foo, 0.25) AS foo_q25,
+        APPROX_QUANTILE(foo, 0.50) AS foo_q50,
+        APPROX_QUANTILE(foo, 0.75, 0.01) AS foo_q75,
+        APPROX_QUANTILE(foo, 0.99, 0.01, 'req_hi') AS foo_q99,
+      FROM self
+    """)
+    # shape: (1, 4)
+    # ┌─────────┬─────────┬─────────┬─────────┐
+    # │ foo_q25 ┆ foo_q50 ┆ foo_q75 ┆ foo_q99 │
+    # │ ---     ┆ ---     ┆ ---     ┆ ---     │
+    # │ i64     ┆ i64     ┆ i64     ┆ i64     │
+    # ╞═════════╪═════════╪═════════╪═════════╡
+    # │ 10      ┆ 30      ┆ 40      ┆ 90      │
+    # └─────────┴─────────┴─────────┴─────────┘
 
 .. _avg:
 
@@ -470,6 +508,38 @@ Returns the sum of all the elements in the grouping.
     # ╞═════════╪═════════╡
     # │ 6       ┆ 21      │
     # └─────────┴─────────┘
+
+.. _total:
+
+TOTAL
+-----
+Returns the sum of all the elements in the grouping. Unlike :ref:`SUM <sum>` (which
+returns null for an all-null input, per the SQL standard), ``TOTAL`` returns zero.
+The result preserves the summed column's dtype.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+        {"foo": [1, 2, 3], "bar": [None, None, None]},
+        schema={"foo": pl.Int64, "bar": pl.Int64},
+    )
+    df.sql("""
+      SELECT
+        SUM(bar) AS bar_sum,
+        TOTAL(foo) AS foo_total,
+        TOTAL(bar) AS bar_total
+      FROM self
+    """)
+    # shape: (1, 3)
+    # ┌─────────┬───────────┬───────────┐
+    # │ bar_sum ┆ foo_total ┆ bar_total │
+    # │ ---     ┆ ---       ┆ ---       │
+    # │ i64     ┆ i64       ┆ i64       │
+    # ╞═════════╪═══════════╪═══════════╡
+    # │ null    ┆ 6         ┆ 0         │
+    # └─────────┴───────────┴───────────┘
 
 .. _variance:
 

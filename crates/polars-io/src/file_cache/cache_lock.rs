@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
-use fs4::fs_std::FileExt;
+use fs4::FileExt;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use polars_core::runtime::ASYNC;
 
@@ -214,7 +214,7 @@ impl GlobalLock {
                 FileExt::unlock(&this.file).unwrap();
             }
 
-            if this.file.try_lock_exclusive().is_ok() {
+            if this.file.try_lock().is_ok() {
                 this.state = Some(LockedState::Eviction);
                 return Some(this);
             }

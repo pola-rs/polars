@@ -3,10 +3,11 @@ use std::sync::{Arc, LazyLock};
 use polars_core::prelude::PlIndexSet;
 use polars_core::schema::Schema;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::itertools::iters_eq::iters_eq;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::plans::IR;
-use crate::plans::optimizer::projection_pushdown::{iters_eq, min_dtype_size_col};
+use crate::plans::optimizer::projection_pushdown::min_dtype_size_col;
 
 #[derive(Debug, Clone)]
 pub struct Edge(ProjectionState, ParentKeyAndPort);
@@ -82,7 +83,13 @@ pub trait GetProjectionState {
                         .insert(min_dtype_size_col(input_schema.iter()).unwrap().clone());
                 } else {
                     assert_eq!(self.names().len(), 1);
-                    assert!(input_schema.contains(self.names().first().unwrap()));
+                    if self
+                        .names()
+                        .first()
+                        .is_none_or(|name| !input_schema.contains(name))
+                    {
+                        panic!("{:?}, {:?}", input_schema, self.names().first())
+                    }
                 }
             },
             Projection::Names => {

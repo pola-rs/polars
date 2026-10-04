@@ -1,5 +1,6 @@
 mod count;
 mod dispersion;
+mod dot;
 mod get;
 mod join;
 mod min_max;

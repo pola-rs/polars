@@ -5,15 +5,18 @@ use polars_core::frame::PivotColumnNaming;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::CsvReadOptions;
+use polars_io::external_reader::ExternalReaderBuilder;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetOptions;
 use polars_utils::unique_id::UniqueId;
 
+use crate::dsl::dsl_resolver::DslResolver;
 use crate::dsl::functions::lit;
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonFunction;
+use crate::plans::conversion::needs_expansion;
 use crate::prelude::*;
 pub struct DslBuilder(pub DslPlan);
 
@@ -147,6 +150,31 @@ impl DslBuilder {
         .into()
     }
 
+    pub fn from_dsl_resolver(dsl_resolver: Arc<DslResolver>) -> DslBuilder {
+        DslPlan::Resolver {
+            resolver: dsl_resolver,
+            resolver_schema: Default::default(),
+            resolved_cache: Default::default(),
+        }
+        .into()
+    }
+
+    pub fn from_external_reader_builder(
+        sources: ScanSources,
+        external_reader_builder: ExternalReaderBuilder,
+        unified_scan_args: UnifiedScanArgs,
+    ) -> DslBuilder {
+        DslPlan::Scan {
+            sources,
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScanDsl::ExternalReaderBuilder {
+                external: external_reader_builder,
+            }),
+            cached_ir: Default::default(),
+        }
+        .into()
+    }
+
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
         DslPlan::Cache {
@@ -157,7 +185,13 @@ impl DslBuilder {
     }
 
     pub fn drop(self, columns: Selector) -> Self {
-        self.project(vec![Expr::Selector(!columns)], ProjectionOptions::default())
+        self.project(
+            vec![Expr::Selector(!columns)],
+            ProjectionOptions {
+                maintain_dataframe_height: true,
+                ..Default::default()
+            },
+        )
     }
 
     pub fn project(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
@@ -234,14 +268,6 @@ impl DslBuilder {
         DslPlan::PipeWithSchema {
             input: Arc::from(input),
             callback,
-        }
-        .into()
-    }
-
-    pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
-        DslPlan::ExtContext {
-            input: Arc::new(self.0),
-            contexts,
         }
         .into()
     }
@@ -399,16 +425,25 @@ impl DslBuilder {
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         options: Arc<JoinOptions>,
-    ) -> Self {
-        DslPlan::Join {
+    ) -> PolarsResult<Self> {
+        if left_on.len() != right_on.len()
+            && left_on.iter().chain(&right_on).all(|e| !needs_expansion(e))
+        {
+            polars_bail!(
+                InvalidOperation:
+                "the number of columns given as join key (left: {}, right:{}) should be equal",
+                left_on.len(),
+                right_on.len()
+            );
+        }
+
+        Ok(DslPlan::Join {
             input_left: Arc::new(self.0),
             input_right: Arc::new(other),
-            left_on,
-            right_on,
-            predicates: Default::default(),
+            condition: JoinCondition::Equi { left_on, right_on },
             options,
         }
-        .into()
+        .into())
     }
 
     pub fn gather(self, idxs: DslPlan, null_on_oob: bool) -> Self {
@@ -443,7 +478,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
+                streamable: optimizations.contains(OptFlags::STREAMING),
                 validate_output,
             }),
         }
@@ -469,7 +504,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
+                streamable: optimizations.contains(OptFlags::STREAMING),
                 fmt_str: name,
             }),
         }

@@ -39,13 +39,13 @@ pub static FILE_CACHE: LazyLock<FileCache> = LazyLock::new(|| {
         )
     }
 
-    EvictionManager {
+    Box::leak(Box::new(EvictionManager {
         data_dir,
         metadata_dir,
         files_to_remove: None,
         min_ttl: min_ttl.clone(),
         notify_ttl_updated: notify_ttl_updated.clone(),
-    }
+    }))
     .run_in_background();
 
     // Safety: We have created the data and metadata directories.

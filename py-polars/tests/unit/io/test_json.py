@@ -103,6 +103,11 @@ def test_write_json_categoricals() -> None:
     assert df.write_json() == expected
 
 
+def test_write_json_sliced_list_of_categoricals() -> None:
+    s = pl.Series("l", [["a", "b"], ["c"], ["d", "e"]], dtype=pl.List(pl.Categorical))
+    assert s[1:].to_frame().write_ndjson() == '{"l":["c"]}\n{"l":["d","e"]}\n'
+
+
 def test_write_json_duration() -> None:
     df = pl.DataFrame(
         {
@@ -149,6 +154,40 @@ def test_write_json_list_of_arrays() -> None:
     value = df.write_json()
     expected = '[{"a":[[1.0,2.0,3.0],[4.0,5.0,6.0]]},{"a":[[7.0,8.0,9.0]]}]'
     assert value == expected
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ([None, [0, 1]], '[{"a":null},{"a":[0,1]}]'),
+        ([[0, 1], None, [3, 3]], '[{"a":[0,1]},{"a":null},{"a":[3,3]}]'),
+        (
+            [[0, 1], None, None, [7, 7]],
+            '[{"a":[0,1]},{"a":null},{"a":null},{"a":[7,7]}]',
+        ),
+        ([None, None], '[{"a":null},{"a":null}]'),
+    ],
+)
+def test_write_json_array_with_nulls(
+    values: list[list[int] | None], expected: str
+) -> None:
+    df = pl.DataFrame({"a": values}, schema={"a": pl.Array(pl.Int8, 2)})
+    assert df.write_json() == expected
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ([None, [0, 1]], '{"a":null}\n{"a":[0,1]}\n'),
+        ([[0, 1], None, [3, 3]], '{"a":[0,1]}\n{"a":null}\n{"a":[3,3]}\n'),
+        ([None, None], '{"a":null}\n{"a":null}\n'),
+    ],
+)
+def test_write_ndjson_array_with_nulls(
+    values: list[list[int] | None], expected: str
+) -> None:
+    df = pl.DataFrame({"a": values}, schema={"a": pl.Array(pl.Int8, 2)})
+    assert df.write_ndjson() == expected
 
 
 def test_write_json_decimal() -> None:

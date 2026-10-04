@@ -4,21 +4,27 @@ use std::ops::Neg;
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
+#[cfg(feature = "cutqcut")]
+use polars_plan::dsl::{BinMethod, BinOptions, DslIntervalSpec, FractionSpec};
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
 use polars_plan::plans::{
     AExprSorted, ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir,
 };
 use polars_utils::arena::Arena;
+use polars_utils::python_function::PythonObject;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 
 use super::datatype::PyDataTypeExpr;
 use super::selector::PySelector;
-use crate::conversion::{Wrap, parse_fill_null_strategy};
+use crate::conversion::{Wrap, parse_fill_null_strategy, strings_to_pl_smallstr};
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
-use crate::{PyDataType, PyExpr};
+use crate::{PyDataType, PyExpr, PySeries};
 
 #[pymethods]
 impl PyExpr {
@@ -242,6 +248,151 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (intervals, labels, include_intervals, right_closed))]
+    fn bin_intervals(
+        &self,
+        intervals: PySeries,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> Self {
+        let breaks = intervals.series.into_inner();
+
+        self.inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Intervals {
+                    spec: DslIntervalSpec::from_breaks(breaks),
+                    right_closed,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into()
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (n_bins, labels, include_intervals, right_closed))]
+    fn bin_intervals_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Intervals {
+                    spec: DslIntervalSpec::from_count(n_bins)
+                        .context("bin_intervals")
+                        .map_err(PyPolarsErr::from)?,
+                    right_closed,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into())
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (quantiles, labels, include_intervals, right_closed))]
+    fn bin_quantiles(
+        &self,
+        quantiles: Vec<f64>,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Quantiles {
+                    spec: FractionSpec::from_fractions(quantiles)
+                        .context("bin_quantiles")
+                        .map_err(PyPolarsErr::from)?,
+                    right_closed,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into())
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (n_bins, labels, include_intervals, right_closed))]
+    fn bin_quantiles_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Quantiles {
+                    spec: FractionSpec::from_count(n_bins)
+                        .context("bin_quantiles")
+                        .map_err(PyPolarsErr::from)?,
+                    right_closed,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into())
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (ranks, labels, include_intervals))]
+    fn bin_ranks(
+        &self,
+        ranks: Vec<f64>,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Ranks {
+                    spec: FractionSpec::from_fractions(ranks)
+                        .context("bin_ranks")
+                        .map_err(PyPolarsErr::from)?,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into())
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (n_bins, labels, include_intervals))]
+    fn bin_ranks_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Ranks {
+                    spec: FractionSpec::from_count(n_bins)
+                        .context("bin_ranks")
+                        .map_err(PyPolarsErr::from)?,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into())
+    }
+
     #[cfg(feature = "rle")]
     fn rle(&self) -> Self {
         self.inner.clone().rle().into()
@@ -251,9 +402,6 @@ impl PyExpr {
         self.inner.clone().rle_id().into()
     }
 
-    fn agg_groups(&self) -> Self {
-        self.inner.clone().agg_groups().into()
-    }
     fn count(&self) -> Self {
         self.inner.clone().count().into()
     }
@@ -454,9 +602,41 @@ impl PyExpr {
             .into()
     }
 
+    fn is_sorted(&self, descending: Option<bool>, nulls_last: Option<bool>) -> Self {
+        self.inner.clone().is_sorted(descending, nulls_last).into()
+    }
+
     #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> Self {
         self.inner.clone().approx_n_unique().into()
+    }
+
+    #[cfg(feature = "approx_quantile")]
+    fn approx_quantile(
+        &self,
+        quantile: Bound<'_, PyAny>,
+        method: Wrap<ApproxQuantileMethod>,
+        error: f64,
+        use_formal_bound: bool,
+    ) -> PyResult<Self> {
+        let quantile = if let Ok(expr) = quantile.extract::<PyExpr>() {
+            expr.inner
+        } else if let Ok(q) = quantile.extract::<f64>() {
+            lit(q)
+        } else if let Ok(qs) = quantile.extract::<Vec<f64>>() {
+            let s = Series::new(PlSmallStr::from_static("literal"), qs.as_slice());
+            let dtype = DataType::List(Box::new(DataType::Float64));
+            lit(Scalar::new(dtype, AnyValue::List(s)))
+        } else {
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "`quantile` must be a float, a list of floats, or an expression",
+            ));
+        };
+        Ok(self
+            .inner
+            .clone()
+            .approx_quantile(quantile, error, use_formal_bound, method.0)
+            .into())
     }
 
     fn is_first_distinct(&self) -> Self {
@@ -487,10 +667,6 @@ impl PyExpr {
 
     fn append(&self, other: Self, upcast: bool) -> Self {
         self.inner.clone().append(other.inner, upcast).into()
-    }
-
-    fn rechunk(&self) -> Self {
-        self.inner.clone().rechunk().into()
     }
 
     fn round(&self, decimals: u32, mode: Wrap<RoundMode>) -> Self {
@@ -640,7 +816,7 @@ impl PyExpr {
                 SortOptions {
                     descending: order_by_descending,
                     nulls_last: order_by_nulls_last,
-                    maintain_order: false,
+                    maintain_order: true,
                     ..Default::default()
                 },
             )
@@ -722,6 +898,13 @@ impl PyExpr {
         self.inner.clone().cum_count(reverse).into()
     }
 
+    fn pipe_with_dtype(&self, callback: Py<PyAny>) -> Self {
+        self.inner
+            .clone()
+            .pipe_with_dtype(PlanCallback::new_python(PythonObject(callback)))
+            .into()
+    }
+
     fn cumulative_eval(&self, expr: Self, min_samples: usize) -> Self {
         self.inner
             .clone()
@@ -801,7 +984,13 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (n, with_replacement, shuffle, seed))]
-    fn sample_n(&self, n: Self, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
+    fn sample_n(
+        &self,
+        n: Self,
+        with_replacement: bool,
+        shuffle: Option<bool>,
+        seed: Option<u64>,
+    ) -> Self {
         self.inner
             .clone()
             .sample_n(n.inner, with_replacement, shuffle, seed)
@@ -813,7 +1002,7 @@ impl PyExpr {
         &self,
         frac: Self,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> Self {
         self.inner
@@ -832,6 +1021,16 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
+    fn ewm_sum(&self, alpha: f64, min_periods: usize, ignore_nulls: bool) -> Self {
+        let options = EWMOptions {
+            alpha,
+            bias: false,
+            min_periods,
+            ignore_nulls,
+            ..Default::default()
+        };
+        self.inner.clone().ewm_sum(options).into()
+    }
     fn ewm_mean_by(&self, times: PyExpr, half_life: &str) -> PyResult<Self> {
         let half_life = Duration::try_parse(half_life).map_err(PyPolarsErr::from)?;
         Ok(self
@@ -839,6 +1038,10 @@ impl PyExpr {
             .clone()
             .ewm_mean_by(times.inner, half_life)
             .into())
+    }
+    fn ewm_sum_by(&self, times: PyExpr, half_life: &str) -> PyResult<Self> {
+        let half_life = Duration::try_parse(half_life).map_err(PyPolarsErr::from)?;
+        Ok(self.inner.clone().ewm_sum_by(times.inner, half_life).into())
     }
 
     fn ewm_std(
@@ -892,6 +1095,10 @@ impl PyExpr {
         self.inner.clone().is_empty(ignore_nulls).into()
     }
 
+    fn has_nulls(&self) -> Self {
+        self.inner.clone().has_nulls().into()
+    }
+
     fn log(&self, base: PyExpr) -> Self {
         self.inner.clone().log(base.inner).into()
     }
@@ -904,11 +1111,19 @@ impl PyExpr {
         self.inner.clone().exp().into()
     }
 
+    fn erf(&self) -> Self {
+        self.inner.clone().erf().into()
+    }
+
+    fn erfc(&self) -> Self {
+        self.inner.clone().erfc().into()
+    }
+
     fn entropy(&self, base: f64, normalize: bool) -> Self {
         self.inner.clone().entropy(base, normalize).into()
     }
-    fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
-        self.inner.clone().hash(seed, seed_1, seed_2, seed_3).into()
+    fn hash(&self, seed: u64) -> Self {
+        self.inner.clone().hash(seed).into()
     }
     fn set_sorted_flag(&self, descending: bool, nulls_last: bool) -> Self {
         let sortedness = AExprSorted::default()

@@ -17,7 +17,6 @@ pub enum IRTemporalFunction {
     OrdinalDay,
     Time,
     Date,
-    Datetime,
     #[cfg(feature = "dtype-duration")]
     Duration(TimeUnit),
     Hour,
@@ -56,7 +55,6 @@ pub enum IRTemporalFunction {
     },
     ToString(String),
     CastTimeUnit(TimeUnit),
-    WithTimeUnit(TimeUnit),
     #[cfg(feature = "timezones")]
     ConvertTimeZone(TimeZone),
     TimeStamp(TimeUnit),
@@ -107,7 +105,7 @@ impl IRTemporalFunction {
                 }
             },
             ToString(_) => mapper.with_dtype(DataType::String),
-            WithTimeUnit(tu) | CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
+            CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Duration(_) => Ok(DataType::Duration(*tu)),
                 DataType::Datetime(_, tz) => Ok(DataType::Datetime(*tu, tz.clone())),
                 dtype => polars_bail!(ComputeError: "expected duration or datetime, got {dtype}"),
@@ -123,10 +121,6 @@ impl IRTemporalFunction {
             #[cfg(feature = "dtype-duration")]
             Duration(tu) => mapper.with_dtype(DataType::Duration(*tu)),
             Date => mapper.with_dtype(DataType::Date),
-            Datetime => mapper.try_map_dtype(|dt| match dt {
-                DataType::Datetime(tu, _) => Ok(DataType::Datetime(*tu, None)),
-                dtype => polars_bail!(ComputeError: "expected Datetime, got {dtype}"),
-            }),
             Truncate => mapper.with_same_dtype(),
             #[cfg(feature = "offset_by")]
             OffsetBy => mapper.with_same_dtype(),
@@ -176,7 +170,6 @@ impl IRTemporalFunction {
             | T::OrdinalDay
             | T::Time
             | T::Date
-            | T::Datetime
             | T::Hour
             | T::Minute
             | T::Second
@@ -185,8 +178,7 @@ impl IRTemporalFunction {
             | T::Nanosecond
             | T::ToString(_)
             | T::TimeStamp(_)
-            | T::CastTimeUnit(_)
-            | T::WithTimeUnit(_) => FunctionOptions::elementwise(),
+            | T::CastTimeUnit(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-duration")]
             T::TotalDays { .. }
             | T::TotalHours { .. }
@@ -238,7 +230,6 @@ impl Display for IRTemporalFunction {
             OrdinalDay => "ordinal_day",
             Time => "time",
             Date => "date",
-            Datetime => "datetime",
             #[cfg(feature = "dtype-duration")]
             Duration(_) => "duration",
             Hour => "hour",
@@ -265,7 +256,6 @@ impl Display for IRTemporalFunction {
             #[cfg(feature = "timezones")]
             ConvertTimeZone(_) => "convert_time_zone",
             CastTimeUnit(_) => "cast_time_unit",
-            WithTimeUnit(_) => "with_time_unit",
             TimeStamp(tu) => return write!(f, "dt.timestamp({tu})"),
             Truncate => "truncate",
             #[cfg(feature = "offset_by")]

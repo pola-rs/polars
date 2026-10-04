@@ -766,7 +766,9 @@ def test_window_implode_explode() -> None:
             "y": [2, 2, 2, 3, 3, 3, 4, 4, 4],
         }
     ).select(
-        works=(pl.col.x * pl.col.x.implode().explode()).over(pl.col.y),
+        works=(pl.col.x * pl.col.x.implode().explode(empty_as_null=False)).over(
+            pl.col.y
+        ),
     ).to_dict(as_series=False) == {"works": [1, 4, 9, 1, 4, 9, 1, 4, 9]}
 
 
@@ -906,8 +908,6 @@ def test_aggregate_gather_over_dtype_24632(
     assert q.collect_schema() == q.collect().schema
 
 
-@pytest.mark.may_fail_auto_streaming  # reason: issue
-# https://github.com/pola-rs/polars/issues/24865
 @pytest.mark.parametrize(
     ("expr", "mapping_strategy", "result"),
     [
@@ -968,8 +968,6 @@ def test_mapping_strategy_scalar_matrix(
         assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming  # reason: issue
-# https://github.com/pola-rs/polars/issues/24865
 @pytest.mark.parametrize(
     "expr",
     [
@@ -1061,3 +1059,47 @@ def test_over_literal_cum_sum_26800() -> None:
     out = q.collect()
 
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_window_order_by_multiple_keys_nulls_last_29390(
+    descending: bool, nulls_last: bool
+) -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["x", "x", "x", "y", "y", "y"],
+            "a": [20.0, None, 10.0, None, 40.0, 30.0],
+            "b": [1, 2, 3, 4, 5, 6],
+        }
+    )
+    out = df.select(
+        pl.int_range(1, pl.len() + 1)
+        .over(
+            pl.lit(1),
+            order_by=["a", "grp"],
+            descending=descending,
+            nulls_last=nulls_last,
+        )
+        .alias("rn")
+    )
+    expected = (
+        df.sort(["a", "grp"], descending=descending, nulls_last=nulls_last)
+        .with_row_index("rn", offset=1)
+        .sort("b")
+        .select(pl.col("rn").cast(pl.Int64))
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("key", [pl.lit(0), pl.len(), pl.lit(None)])
+def test_window_order_by_multiple_keys_scalar(key: pl.Expr) -> None:
+    df = pl.DataFrame({"a": [3, 1, 2]})
+    out = df.select(rn=pl.int_range(pl.len()).over(pl.lit(1), order_by=["a", key]))
+    assert out["rn"].to_list() == [2, 0, 1]
+    assert (
+        df.clear()
+        .select(rn=pl.int_range(pl.len()).over(pl.lit(1), order_by=["a", key]))
+        .height
+        == 0
+    )

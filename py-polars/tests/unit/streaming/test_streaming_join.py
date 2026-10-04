@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import AsofJoinStrategy, JoinStrategy, MaintainOrderJoin
+    from tests.conftest import PlMonkeyPatch
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -470,6 +471,20 @@ def test_merge_join(
     assert_frame_equal(actual, expected, check_row_order=check_row_order)
 
 
+def test_merge_join_ignores_projected_out_dataframe_columns() -> None:
+    left = pl.LazyFrame({"key": [10, 11]}).with_row_index()
+    right = pl.LazyFrame({"unused": [20, 21]}).with_row_index().select("index")
+    q = left.join(right, on="index")
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert "merge-join" in dot, "merge-join not used in plan"
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
 @pytest.mark.parametrize(
     ("keys", "dtype"),
     [
@@ -570,32 +585,38 @@ def test_merge_join_exprs() -> None:
         left_on="key",
         right_on=pl.concat_str(pl.col("key"), ignore_nulls=False),
         how="full",
-        maintain_order="none",
+        maintain_order="left_right",
     )
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert "merge-join" in dot, "merge-join not used in plan"
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
+@pytest.mark.parametrize("df_level_hint", [False, True])
 @pytest.mark.parametrize("left_descending", [False, True])
 @pytest.mark.parametrize("right_descending", [False, True])
-@pytest.mark.parametrize("left_nulls_last", [False, True, None])
-@pytest.mark.parametrize("right_nulls_last", [False, True, None])
+@pytest.mark.parametrize("left_nulls_last", [False, True])
+@pytest.mark.parametrize("right_nulls_last", [False, True])
 def test_merge_join_applicable(
+    df_level_hint: bool,
     left_descending: bool,
     right_descending: bool,
-    left_nulls_last: bool | None,
-    right_nulls_last: bool | None,
+    left_nulls_last: bool,
+    right_nulls_last: bool,
 ) -> None:
-    def make_set_sorted_lf(descending: bool, nulls_last: bool | None) -> pl.LazyFrame:
+    def make_set_sorted_lf(
+        df_level_hint: bool, descending: bool, nulls_last: bool
+    ) -> pl.LazyFrame:
         lf = pl.LazyFrame({"key": [1]})
-        if nulls_last is None:
-            return lf.with_columns(pl.col("key").set_sorted(descending=descending))
-        else:
+        if df_level_hint:
             return lf.set_sorted("key", descending=descending, nulls_last=nulls_last)
+        else:
+            return lf.with_columns(
+                pl.col("key").set_sorted(descending=descending, nulls_last=nulls_last)
+            )
 
-    left = make_set_sorted_lf(left_descending, left_nulls_last)
-    right = make_set_sorted_lf(right_descending, right_nulls_last)
+    left = make_set_sorted_lf(df_level_hint, left_descending, left_nulls_last)
+    right = make_set_sorted_lf(df_level_hint, right_descending, right_nulls_last)
     q = left.join(right, on="key", how="full", maintain_order="left_right")
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     if (
@@ -635,7 +656,7 @@ def test_merge_join_applicable(
 )
 @pytest.mark.parametrize("n_groups", [0, 1, 2])
 @given(data=st.data())
-@settings(max_examples=10)
+@settings(max_examples=20)
 def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,
@@ -732,3 +753,97 @@ def test_streaming_merge_join_send_port_done_27547() -> None:
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
     assert_frame_equal(actual, expected)
+
+
+@pytest.mark.parametrize("threads", ["1", "2", "4"])
+@pytest.mark.parametrize("morsel_size", ["1", "4", "100000"])
+@pytest.mark.parametrize(
+    ("how", "maintain_order", "swap"),
+    [
+        ("right", "left_right", False),
+        ("full", "left_right", False),
+        ("left", "right_left", True),
+        ("full", "right_left", True),
+    ],
+)
+def test_streaming_join_unmatched_build_order_29362(
+    plmonkeypatch: PlMonkeyPatch,
+    threads: str,
+    morsel_size: str,
+    how: JoinStrategy,
+    maintain_order: MaintainOrderJoin,
+    swap: bool,
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", threads)
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", morsel_size)
+
+    n = 200
+    # Interleaved duplicate keys, nulls, and matches so that unmatched rows
+    # from the build side come from many hash-table slots and partitions.
+    keys = [None if i % 7 == 0 else i % 5 for i in range(n)]
+    build = pl.LazyFrame({"k": keys, "row": range(n)})
+    probe = pl.LazyFrame({"k": [1], "probe_row": [0]})
+
+    left, right = (build, probe) if swap else (probe, build)
+    q = left.join(right, on="k", how=how, maintain_order=maintain_order)
+
+    plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "equi-join" in plan
+
+    expected = q.collect(engine="in-memory")
+    unmatched = expected.filter(pl.col("probe_row").is_null())["row"].to_list()
+    assert unmatched == sorted(unmatched)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+@pytest.mark.parametrize("threads", ["1", "2"])
+def test_streaming_join_unmatched_build_order_string_keys_29362(
+    plmonkeypatch: PlMonkeyPatch, threads: str
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", threads)
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "3")
+
+    n = 100
+    right = pl.LazyFrame(
+        {
+            "k": [None if i % 11 == 0 else f"k{i % 6}" for i in range(n)],
+            "k2": [i % 3 for i in range(n)],
+            "row": range(n),
+        }
+    )
+    left = pl.LazyFrame({"k": ["k1", "k4"], "k2": [1, 0], "lv": ["a", "b"]})
+    q = left.join(right, on=["k", "k2"], how="full", maintain_order="left_right")
+
+    plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "equi-join" in plan
+
+    expected = q.collect(engine="in-memory")
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+@pytest.mark.parametrize(
+    ("left_keys", "how", "coalesce"),
+    [
+        ([1], "right", True),
+        ([1], "full", True),
+        ([42], "right", False),
+        ([], "right", False),
+    ],
+)
+def test_streaming_join_unmatched_build_order_coalesce_29362(
+    plmonkeypatch: PlMonkeyPatch,
+    left_keys: list[int],
+    how: JoinStrategy,
+    coalesce: bool,
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "2")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100000")
+
+    left = pl.LazyFrame({"k": left_keys}, {"k": pl.Int64})
+    right = pl.LazyFrame({"k": [1, 2, 3, 2, 3, 2, 3, 2, 3], "row": range(9)})
+    q = left.join(
+        right, on="k", how=how, maintain_order="left_right", coalesce=coalesce
+    )
+    expected = q.collect(engine="in-memory")
+    assert expected["row"].to_list() == list(range(9))
+    assert_frame_equal(q.collect(engine="streaming"), expected)

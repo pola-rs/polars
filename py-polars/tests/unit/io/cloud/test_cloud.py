@@ -1,18 +1,26 @@
 from __future__ import annotations
 
 import contextlib
+import os
+import re
 import subprocess
 import sys
+import time
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
 from polars.io.cloud._utils import _is_aws_cloud
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from tests.conftest import PlMonkeyPatch
+    from tests.unit.io.cloud.conftest import CountingS3
 
 
 @pytest.mark.slow
@@ -58,8 +66,8 @@ def test_scan_err_rebuild_store_19933() -> None:
     with contextlib.suppress(Exception):
         q.collect()
 
-    # Note: We get called 2 times per attempt
-    if call_count != 4:
+    # Note: We get called once per attempt, and the store is rebuilt once on error.
+    if call_count != 2:
         raise AssertionError(call_count)
 
 
@@ -92,6 +100,7 @@ def test_is_aws_cloud() -> None:
     )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_storage_options_retry_config(
     plmonkeypatch: PlMonkeyPatch,
@@ -172,3 +181,177 @@ max_retries: 0, \
 retry_timeout: 23ms"""
         in capture
     )
+
+
+def test_huggingface_token_env_var() -> None:
+    try:
+        subprocess.check_output(
+            [
+                sys.executable,
+                "-c",
+                """\
+import polars as pl
+
+pl.scan_csv("hf://...").collect()
+""",
+            ],
+            env={
+                **os.environ,
+                "POLARS_VERBOSE_SENSITIVE": "1",
+                "HF_TOKEN": "of news",
+            },
+            stderr=subprocess.STDOUT,
+        )
+    except subprocess.CalledProcessError as err:
+        capture = err.stdout
+    else:
+        raise AssertionError
+
+    assert b"Bearer of news" in capture
+
+
+@pytest.mark.parametrize(
+    "func",
+    [
+        pl.read_parquet,
+        pl.read_parquet_metadata,
+        pl.scan_parquet,
+        pl.scan_ipc,
+        pl.read_ndjson,
+        pl.scan_ndjson,
+    ],
+)
+def test_retries_removed(func: Any) -> None:
+    msg = 'Pass {"max_retries": n} via `storage_options` instead.'
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        func("s3://.../...", retries=3)
+
+
+@pytest.mark.parametrize(
+    "func",
+    [pl.scan_ipc, pl.read_ndjson, pl.scan_ndjson],
+)
+def test_file_cache_ttl_removed(func: Any) -> None:
+    msg = "The file cache is no longer supported."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        func("s3://.../...", file_cache_ttl=7)
+
+
+def test_scan_ipc_cache_removed() -> None:
+    msg = "The file cache is no longer supported."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.scan_ipc("s3://.../...", cache=True)  # type: ignore[call-arg]
+
+
+def _scan_s3_endpoint(endpoint: str, **storage_options: Any) -> pl.LazyFrame:
+    return pl.scan_parquet(
+        "s3://bucket/x.parquet",
+        storage_options={
+            "aws_endpoint_url": endpoint,
+            "aws_allow_http": "true",
+            "aws_access_key_id": "a",
+            "aws_secret_access_key": "b",
+            "aws_region": "us-east-1",
+            "max_retries": 0,
+            **storage_options,
+        },
+        credential_provider=None,
+    )
+
+
+@contextlib.contextmanager
+def _http_server(delay: float = 0.0) -> Iterator[str]:
+    """Serve 404 for every request, after an optional delay."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def _not_found(self) -> None:
+            time.sleep(delay)
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        do_GET = do_HEAD = _not_found
+
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+    with HTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{server.server_address[1]}"
+        finally:
+            server.shutdown()
+            thread.join()
+
+
+@pytest.mark.slow
+def test_cloud_connection_refused_error() -> None:
+    q = _scan_s3_endpoint("http://127.0.0.1:1")
+
+    with pytest.raises(ConnectionRefusedError, match="Caused by:") as exc:
+        q.collect()
+
+    assert "tcp connect error" in str(exc.value)
+
+
+@pytest.mark.slow
+def test_cloud_not_found_error() -> None:
+    with _http_server() as endpoint:
+        q = _scan_s3_endpoint(endpoint)
+        with pytest.raises(FileNotFoundError, match=re.escape("x.parquet")):
+            q.collect()
+
+
+@pytest.mark.slow
+def test_cloud_timeout_error() -> None:
+    with _http_server(delay=2.0) as endpoint:
+        q = _scan_s3_endpoint(endpoint, timeout="100ms", max_retries=1)
+        with pytest.raises(TimeoutError, match="after 1 retries") as exc:
+            q.collect()
+
+    assert "operation timed out" in str(exc.value)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    ("sink", "scan"),
+    [
+        (pl.LazyFrame.sink_ipc, pl.scan_ipc),
+        (pl.LazyFrame.sink_parquet, pl.scan_parquet),
+    ],
+)
+def test_sink_single_put_28356(
+    s3: CountingS3, sink: Any, scan: Any, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # S3 minimum part size.
+    plmonkeypatch.setenv("POLARS_UPLOAD_CHUNK_SIZE", str(5 * 1024 * 1024))
+
+    requests: list[str] = []
+
+    def record(environ: dict[str, Any]) -> None:
+        # E.g. "PUT", "POST uploads", "PUT partNumber", "POST uploadId".
+        query = environ["QUERY_STRING"].partition("=")[0]
+        requests.append(f"{environ['REQUEST_METHOD']} {query}".strip())
+
+    s3.on_request = record
+
+    small = pl.DataFrame({"x": range(10)})
+    sink(small.lazy(), "s3://bucket/small", storage_options=s3.storage_options)
+
+    assert requests == ["PUT"]
+
+    # Incompressible, so that it spans multiple parts.
+    large = pl.DataFrame({"x": pl.int_range(1_000_000, eager=True).hash()})
+    requests.clear()
+    sink(large.lazy(), "s3://bucket/large", storage_options=s3.storage_options)
+
+    assert requests[0] == "POST uploads"
+    assert set(requests[1:-1]) == {"PUT partNumber"}
+    assert requests[-1] == "POST uploadId"
+
+    for df, key in [(small, "small"), (large, "large")]:
+        out = scan(f"s3://bucket/{key}", storage_options=s3.storage_options)
+        assert_frame_equal(out.collect(), df)

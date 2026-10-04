@@ -6,7 +6,7 @@
 # BUILD
 # -----
 
-maturin<=1.12.4  # https://github.com/PyO3/maturin/issues/3106
+maturin>=1.13.0  # 1.12.5/1.12.6 regress macOS build times: https://github.com/PyO3/maturin/issues/3106
 # extra dependency for maturin (linux-only)
 patchelf; platform_system == 'Linux'
 pip
@@ -19,7 +19,7 @@ polars-cloud
 # Interop
 numba >= 0.54
 numpy
-pandas
+pandas!=3.0.4
 pyarrow
 pydantic>=2.0.0
 # Datetime / time zones
@@ -36,8 +36,6 @@ azure-identity
 boto3
 cloudpickle
 fsspec
-pyiceberg>=0.7.1; python_version < '3.13'
-pyiceberg-core!=0.9.0  # 0.9.0 is missing a wheel
 s3fs>=2026.2.0
 # Spreadsheet
 fastexcel>=0.11.5
@@ -45,7 +43,11 @@ openpyxl
 xlsx2csv
 xlsxwriter>=3.2.9
 # Other I/O
-deltalake>=1.5.1
+deltalake>=1.6.0
+lancedb>=0.38.0
+pyiceberg>=0.12.0; python_version < '3.13'
+pyiceberg-core!=0.9.0  # 0.9.0 is missing a wheel
+pylance>=11.0.0
 # Csv
 zstandard
 # Plotting
@@ -58,6 +60,7 @@ gevent
 matplotlib
 # Testing
 hypothesis
+msgpack
 # Miscellaneous
 orjson
 
@@ -65,11 +68,9 @@ orjson
 # TOOLING
 # -------
 
-tomlkit
-pytest==8.3.2
-pytest-codspeed==3.2.0
-pytest-cov==6.0.0
-pytest-xdist==3.6.1
+pytest==9.0.3
+pytest-cov==7.1.0
+pytest-xdist==3.8.0
 
 # Need moto.server to mock s3fs - see: https://github.com/aio-libs/aiobotocore/issues/755
 moto[s3]==5.0.9

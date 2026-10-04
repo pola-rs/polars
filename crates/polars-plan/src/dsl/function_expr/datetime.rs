@@ -18,7 +18,6 @@ pub enum TemporalFunction {
     OrdinalDay,
     Time,
     Date,
-    Datetime,
     #[cfg(feature = "dtype-duration")]
     Duration(TimeUnit),
     Hour,
@@ -57,7 +56,6 @@ pub enum TemporalFunction {
     },
     ToString(String),
     CastTimeUnit(TimeUnit),
-    WithTimeUnit(TimeUnit),
     #[cfg(feature = "timezones")]
     ConvertTimeZone(TimeZone),
     TimeStamp(TimeUnit),
@@ -101,7 +99,6 @@ impl Display for TemporalFunction {
             OrdinalDay => "ordinal_day",
             Time => "time",
             Date => "date",
-            Datetime => "datetime",
             #[cfg(feature = "dtype-duration")]
             Duration(_) => "duration",
             Hour => "hour",
@@ -128,7 +125,6 @@ impl Display for TemporalFunction {
             #[cfg(feature = "timezones")]
             ConvertTimeZone(_) => "convert_time_zone",
             CastTimeUnit(_) => "cast_time_unit",
-            WithTimeUnit(_) => "with_time_unit",
             TimeStamp(tu) => return write!(f, "dt.timestamp({tu})"),
             Truncate => "truncate",
             #[cfg(feature = "offset_by")]

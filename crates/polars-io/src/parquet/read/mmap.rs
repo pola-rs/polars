@@ -1,8 +1,8 @@
 use std::io::Cursor;
 
-use arrow::array::Array;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::Field;
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::Field;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_parquet::read::{

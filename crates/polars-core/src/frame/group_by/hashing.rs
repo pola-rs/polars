@@ -59,7 +59,7 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsType {
         };
         out.sort_unstable_by_key(|g| g.0);
         let mut idx = GroupsIdx::from_iter(out);
-        idx.sorted = true;
+        idx.sorted_by_first_idx = true;
         GroupsType::Idx(idx)
     } else {
         // we can just take the first value, no need to flatten

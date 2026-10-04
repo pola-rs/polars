@@ -20,6 +20,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::{
 pub mod builder {
     use std::sync::{Arc, Mutex};
 
+    use polars_error::PolarsResult;
     use polars_utils::pl_str::PlSmallStr;
 
     use super::BatchFnReader;
@@ -35,12 +36,12 @@ pub mod builder {
     }
 
     impl FileReaderBuilder for BatchFnReaderBuilder {
-        fn reader_name(&self) -> &str {
-            &self.name
+        fn reader_name(&self) -> PolarsResult<PlSmallStr> {
+            Ok(self.name.clone())
         }
 
-        fn reader_capabilities(&self) -> ReaderCapabilities {
-            ReaderCapabilities::empty()
+        fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
+            Ok(ReaderCapabilities::empty())
         }
 
         fn set_execution_state(&self, execution_state: &StreamingExecutionState) {
@@ -52,7 +53,7 @@ pub mod builder {
             _source: polars_plan::prelude::ScanSource,
             _cloud_options: Option<Arc<polars_io::cloud::CloudOptions>>,
             scan_source_idx: usize,
-        ) -> Box<dyn FileReader> {
+        ) -> PolarsResult<Box<dyn FileReader>> {
             assert_eq!(scan_source_idx, 0);
 
             let mut reader = self
@@ -64,7 +65,7 @@ pub mod builder {
 
             reader.execution_state = Some(self.execution_state.lock().unwrap().clone().unwrap());
 
-            Box::new(reader) as Box<dyn FileReader>
+            Ok(Box::new(reader) as Box<dyn FileReader>)
         }
     }
 
@@ -179,8 +180,11 @@ impl FileReader for BatchFnReader {
             pre_slice: None,
             predicate: None,
             cast_columns_policy: _,
+            extra_columns_policy: _,
+            missing_columns_policy: _,
             num_pipelines: _,
             disable_morsel_split: _,
+            maintain_order: _,
             last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
@@ -190,7 +194,7 @@ impl FileReader for BatchFnReader {
                 },
         } = args
         else {
-            panic!("unsupported args: {:?}", &args)
+            panic!("unsupported args: {:?}", args)
         };
 
         let execution_state = self.execution_state().clone();
@@ -216,7 +220,8 @@ impl FileReader for BatchFnReader {
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
 
-        let handle = spawn(TaskPriority::Low, async move {
+        let task_metrics = self.execution_state().task_metrics();
+        let handle = spawn(TaskPriority::Low, task_metrics, async move {
             if let Some(file_schema_tx) = file_schema_tx {
                 let opt_df;
 
@@ -245,7 +250,11 @@ impl FileReader for BatchFnReader {
                 n_rows_seen = n_rows_seen.saturating_add(df.height());
 
                 if morsel_sender
-                    .send_morsel(Morsel::new(df, MorselSeq::new(seq), source_token.clone()))
+                    .send_morsel(Morsel::new_unregistered(
+                        df,
+                        MorselSeq::new(seq),
+                        source_token.clone(),
+                    ))
                     .await
                     .is_err()
                 {

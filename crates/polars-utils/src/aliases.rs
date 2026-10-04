@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 use foldhash::SharedSeed;
 
 pub type PlRandomState = foldhash::quality::RandomState;
@@ -77,10 +79,12 @@ pub trait InitHashMaps {
 impl<K, V> InitHashMaps for PlHashMap<K, V> {
     type HashMap = Self;
 
+    #[inline]
     fn new() -> Self::HashMap {
         Self::with_capacity_and_hasher(0, Default::default())
     }
 
+    #[inline]
     fn with_capacity(capacity: usize) -> Self {
         Self::with_capacity_and_hasher(capacity, Default::default())
     }
@@ -88,10 +92,12 @@ impl<K, V> InitHashMaps for PlHashMap<K, V> {
 impl<K> InitHashMaps for PlHashSet<K> {
     type HashMap = Self;
 
+    #[inline]
     fn new() -> Self::HashMap {
         Self::with_capacity_and_hasher(0, Default::default())
     }
 
+    #[inline]
     fn with_capacity(capacity: usize) -> Self {
         Self::with_capacity_and_hasher(capacity, Default::default())
     }
@@ -100,10 +106,12 @@ impl<K> InitHashMaps for PlHashSet<K> {
 impl<K> InitHashMaps for PlIndexSet<K> {
     type HashMap = Self;
 
+    #[inline]
     fn new() -> Self::HashMap {
         Self::with_capacity_and_hasher(0, Default::default())
     }
 
+    #[inline]
     fn with_capacity(capacity: usize) -> Self::HashMap {
         Self::with_capacity_and_hasher(capacity, Default::default())
     }
@@ -112,11 +120,50 @@ impl<K> InitHashMaps for PlIndexSet<K> {
 impl<K, V> InitHashMaps for PlIndexMap<K, V> {
     type HashMap = Self;
 
+    #[inline]
     fn new() -> Self::HashMap {
         Self::with_capacity_and_hasher(0, Default::default())
     }
 
+    #[inline]
     fn with_capacity(capacity: usize) -> Self::HashMap {
         Self::with_capacity_and_hasher(capacity, Default::default())
+    }
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[repr(transparent)]
+pub struct PlIndexMapHashable<K: Eq + Hash, V>(pub PlIndexMap<K, V>);
+
+impl<K: Eq + Hash + PartialEq, V: PartialEq> PartialEq for PlIndexMapHashable<K, V> {
+    fn eq(&self, other: &Self) -> bool {
+        PartialEq::eq(&self.0, &other.0)
+    }
+}
+
+impl<K: Eq + Hash + PartialEq, V: PartialEq> Eq for PlIndexMapHashable<K, V> {}
+
+impl<K: Eq + Hash, V> Hash for PlIndexMapHashable<K, V> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.keys().len().hash(state);
+        for key in self.keys() {
+            key.hash(state);
+        }
+    }
+}
+
+impl<K: Eq + Hash, V> std::ops::Deref for PlIndexMapHashable<K, V> {
+    type Target = PlIndexMap<K, V>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<K: Eq + Hash, V> std::ops::DerefMut for PlIndexMapHashable<K, V> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }

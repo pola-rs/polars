@@ -2,9 +2,9 @@
 //! The implementation mostly stubs all the function and just keeps track of the length in the
 //! `DecodedState`.
 
-use arrow::array::NullArray;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::NullArray;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
 
 use super::utils::filter::Filter;
 use super::utils::{self};
@@ -83,7 +83,7 @@ impl utils::Decoder for NullDecoder {
     fn extend_decoded(
         &self,
         decoded: &mut Self::DecodedState,
-        additional: &dyn arrow::array::Array,
+        additional: &dyn polars_arrow::array::Array,
         _is_optional: bool,
     ) -> ParquetResult<()> {
         let additional = additional.as_any().downcast_ref::<NullArray>().unwrap();

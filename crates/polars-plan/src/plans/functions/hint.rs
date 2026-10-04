@@ -5,7 +5,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Debug, Clone, Hash, PartialEq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Sorted {
     pub column: PlSmallStr,
     /// None -> either way / unsure
@@ -20,7 +20,7 @@ pub struct Sorted {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Hash, strum_macros::IntoStaticStr)]
+#[derive(Clone, Hash, PartialEq, Eq, strum_macros::IntoStaticStr)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum HintIR {
     Sorted(Arc<[Sorted]>),
@@ -34,20 +34,15 @@ impl HintIR {
     {
         match self {
             Self::Sorted(s) => {
-                let Some(i) = s.iter().position(|s| f(&s.column)) else {
-                    return false;
-                };
+                // If a column was removed all later columns in the sort order are also
+                // invalid.
+                if let Some(first_invalidated) = s.iter().position(|s| !f(&s.column)) {
+                    *s = s[..first_invalidated].iter().cloned().collect();
+                }
 
-                *s = s
-                    .get(i)
-                    .into_iter()
-                    .chain(s.iter().skip(1 + i).filter(|s| f(&s.column)))
-                    .cloned()
-                    .collect()
+                !s.is_empty()
             },
         }
-
-        true
     }
 }
 

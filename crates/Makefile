@@ -48,6 +48,7 @@ test:  ## Run tests
 	cargo test --all-features \
 		-p polars-compute \
 		-p polars-core \
+		-p polars-defs \
 		-p polars-io \
 		-p polars-lazy \
 		-p polars-ops \
@@ -65,6 +66,7 @@ nextest:  ## Run tests with nextest
 	cargo nextest run --all-features \
 		-p polars-compute \
 		-p polars-core \
+		-p polars-defs \
 		-p polars-io \
 		-p polars-lazy \
 		-p polars-ops \
@@ -107,11 +109,42 @@ doctest:  ## Check that documentation builds
 	cargo doc --no-deps --features=docs-selection -p polars
 	cargo doc --no-deps --all-features -p polars-sql
 
+# disable object-store CRC64NVME and DNS
 .PHONY: publish
 publish:  ## Publish Polars crates
-	cargo publish --allow-dirty -p polars-error
-	cargo publish --allow-dirty -p polars-buffer
+	cargo c  -p polars-error \
+	 -p polars-buffer \
+	 -p polars-config \
+	 -p polars-async \
+	 -p polars-utils \
+	 -p polars-schema \
+	 -p polars-arrow \
+	 -p polars-compute \
+	 -p polars-dtype \
+	 -p polars-row \
+	 -p polars-json \
+	 -p polars-core \
+	 -p polars-defs \
+	 -p polars-ffi \
+	 -p polars-ops \
+	 -p polars-testing \
+	 -p polars-time \
+	 -p polars-parquet \
+	 -p polars-io \
+	 -p polars-ooc \
+	 -p polars-plan \
+	 -p polars-expr \
+	 -p polars-mem-engine \
+	 -p polars-stream \
+	 -p polars-lazy \
+	 -p polars-sql \
+	 -p polars
+
+	cargo publish --allow-dirty -p polars-error 
+	cargo publish --allow-dirty -p polars-config
 	cargo publish --allow-dirty -p polars-utils
+	cargo publish --allow-dirty -p polars-buffer
+	cargo publish --allow-dirty -p polars-async
 	cargo publish --allow-dirty -p polars-schema
 	cargo publish --allow-dirty -p polars-arrow
 	cargo publish --allow-dirty -p polars-compute
@@ -119,12 +152,14 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-row
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
+	cargo publish --allow-dirty -p polars-defs
 	cargo publish --allow-dirty -p polars-ffi
 	cargo publish --allow-dirty -p polars-ops
 	cargo publish --allow-dirty -p polars-testing
 	cargo publish --allow-dirty -p polars-time
 	cargo publish --allow-dirty -p polars-parquet
 	cargo publish --allow-dirty -p polars-io
+	cargo publish --allow-dirty -p polars-ooc
 	cargo publish --allow-dirty -p polars-plan
 	cargo publish --allow-dirty -p polars-expr
 	cargo publish --allow-dirty -p polars-mem-engine

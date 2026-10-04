@@ -172,7 +172,16 @@ class _PartitionByInner:
 class SinkedPathsCallbackArgs:
     """Information on sinked paths."""
 
-    paths: list[str]
+    paths: list[SinkedPath]
+
+
+@dataclass(kw_only=True)
+class SinkedPath:
+    """Information on a sinked path."""
+
+    path: str
+    num_rows: int
+    num_bytes: int
 
 
 SinkedPathsCallback: TypeAlias = Callable[[SinkedPathsCallbackArgs], None]

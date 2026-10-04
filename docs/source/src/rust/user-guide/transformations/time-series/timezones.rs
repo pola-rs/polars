@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .alias("tz_aware")])
         .collect()?;
 
-    println!("{}", &time_zones_df);
+    println!("{}", time_zones_df);
     // --8<-- [end:example]
 
     // --8<-- [start:example2]
@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("unset time zone"),
         ])
         .collect()?;
-    println!("{}", &time_zones_operations);
+    println!("{}", time_zones_operations);
     // --8<-- [end:example2]
 
     Ok(())

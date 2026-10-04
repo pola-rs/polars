@@ -4,10 +4,11 @@ use std::sync::Arc;
 use polars_buffer::{Buffer, SharedStorage};
 use polars_error::{PolarsResult, polars_bail};
 
-use super::{ArrowArray, InternalArrowArray};
+use super::ArrowArray;
 use crate::array::{BooleanArray, FromFfi, PrimitiveArray};
 use crate::bitmap::Bitmap;
 use crate::datatypes::ArrowDataType;
+use crate::ffi::InternalArrowArray;
 use crate::types::NativeType;
 
 #[allow(dead_code)]

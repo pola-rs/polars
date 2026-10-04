@@ -21,17 +21,11 @@ impl Executor for UniqueExec {
             .as_ref()
             .map(|v| v.iter().cloned().collect::<Vec<_>>());
         let keep = self.options.keep_strategy;
-
-        state.record(
-            || {
-                df.unique_impl(
-                    self.options.maintain_order,
-                    subset,
-                    keep,
-                    self.options.slice,
-                )
-            },
-            Cow::Borrowed("unique()"),
+        df.unique_impl(
+            self.options.maintain_order,
+            subset,
+            keep,
+            self.options.slice,
         )
     }
 }

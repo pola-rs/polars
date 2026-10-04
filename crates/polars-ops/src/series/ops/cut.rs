@@ -1,7 +1,7 @@
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::builder::CategoricalChunkedBuilder;
 use polars_core::prelude::*;
-use polars_utils::format_pl_smallstr;
+use polars_core::utils::cut::compute_cut_labels;
 
 fn map_enum_cats(
     s: &Series,
@@ -13,7 +13,7 @@ fn map_enum_cats(
     let out_name = PlSmallStr::from_static("category");
 
     let s2 = s.cast(&DataType::Float64)?;
-    let s_iter = s2.f64()?.into_iter();
+    let s_iter = s2.f64()?.iter();
 
     let op: fn(&f64, &f64) -> bool = if left_closed {
         PartialOrd::ge
@@ -77,7 +77,7 @@ fn map_categorical_cats(
 
     let s2 = s.cast(&DataType::Float64)?;
     // It would be nice to parallelize this
-    let s_iter = s2.f64()?.into_iter();
+    let s_iter = s2.f64()?.iter();
 
     let op: fn(&f64, &f64) -> bool = if left_closed {
         PartialOrd::ge
@@ -131,23 +131,6 @@ fn map_categorical_cats(
     }
 }
 
-pub fn compute_labels(breaks: &[f64], left_closed: bool) -> PolarsResult<Vec<PlSmallStr>> {
-    let lo = std::iter::once(&f64::NEG_INFINITY).chain(breaks.iter());
-    let hi = breaks.iter().chain(std::iter::once(&f64::INFINITY));
-
-    let ret = lo
-        .zip(hi)
-        .map(|(l, h)| {
-            if left_closed {
-                format_pl_smallstr!("[{}, {})", l, h)
-            } else {
-                format_pl_smallstr!("({}, {}]", l, h)
-            }
-        })
-        .collect();
-    Ok(ret)
-}
-
 pub fn cut(
     s: &Series,
     mut breaks: Vec<f64>,
@@ -169,7 +152,7 @@ pub fn cut(
         polars_ensure!(l.len() == breaks.len() + 1, ShapeMismatch: "provide len(quantiles) + 1 labels");
         l
     } else {
-        compute_labels(&breaks, left_closed)?
+        compute_cut_labels(&breaks, left_closed)?
     };
     map_enum_cats(s, &cut_labels, &breaks, left_closed, include_breaks)
 }
@@ -184,24 +167,44 @@ pub fn qcut(
 ) -> PolarsResult<Series> {
     polars_ensure!(!probs.iter().any(|x| x.is_nan()), ComputeError: "quantiles cannot be NaN");
 
-    if s.null_count() == s.len() {
-        // If we only have nulls we don't have any breakpoints.
-        return Ok(Series::full_null(
-            s.name().clone(),
-            s.len(),
-            &DataType::from_categories(Categories::global()),
-        ));
-    }
-
     let s = s.cast(&DataType::Float64)?;
     let s2 = s.sort(SortOptions::default())?;
     let ca = s2.f64()?;
+    let ca = ca.set(&ca.is_nan(), None)?;
+
+    if ca.null_count() == ca.len() {
+        // No usable values (all null/NaN/empty): no breakpoints. With
+        // `include_breaks` the output must still be a Struct to match the schema.
+        let cat_dtype = DataType::from_categories(Categories::global());
+        if include_breaks {
+            let brk = Series::full_null(
+                PlSmallStr::from_static("breakpoint"),
+                s.len(),
+                &DataType::Float64,
+            );
+            let cat = Series::full_null(PlSmallStr::from_static("category"), s.len(), &cat_dtype);
+            return Ok(StructChunked::from_series(
+                s.name().clone(),
+                s.len(),
+                [&brk, &cat].into_iter(),
+            )?
+            .into_series());
+        }
+        return Ok(Series::full_null(s.name().clone(), s.len(), &cat_dtype));
+    }
 
     let mut qbreaks: Vec<_> = ca
         .quantiles(&probs, QuantileMethod::Linear)?
         .into_iter()
         .map(|opt| opt.unwrap())
         .collect();
+
+    // Interpolating across an infinity gives a NaN breakpoint that would panic
+    // the sort below; reject it, as `cut` already does.
+    polars_ensure!(
+        !qbreaks.iter().any(|x| x.is_nan()),
+        ComputeError: "quantile breakpoint is NaN (the input may contain infinite values)"
+    );
 
     qbreaks.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
 
@@ -213,7 +216,7 @@ pub fn qcut(
         polars_ensure!(l.len() == qbreaks.len() + 1, ShapeMismatch: "provide len(quantiles) + 1 labels");
         l
     } else {
-        compute_labels(&qbreaks, left_closed)?
+        compute_cut_labels(&qbreaks, left_closed)?
     };
 
     map_categorical_cats(&s, &cut_labels, &qbreaks, left_closed, include_breaks)

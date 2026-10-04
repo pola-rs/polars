@@ -123,11 +123,12 @@ fn read_int96_timestamps() -> PolarsResult<()> {
     let parse = |time_unit: TimeUnit| {
         let mut reader = Cursor::new(timestamp_data);
         let metadata = read_metadata(&mut reader)?;
-        let schema = arrow::datatypes::ArrowSchema::from_iter([arrow::datatypes::Field::new(
-            "timestamps".into(),
-            arrow::datatypes::ArrowDataType::Timestamp(time_unit, None),
-            false,
-        )]);
+        let schema =
+            polars_arrow::datatypes::ArrowSchema::from_iter([polars_arrow::datatypes::Field::new(
+                "timestamps".into(),
+                polars_arrow::datatypes::ArrowDataType::Timestamp(time_unit, None),
+                false,
+            )]);
         let reader = FileReader::new(reader, metadata.row_groups, schema, None);
         reader.collect::<PolarsResult<Vec<_>>>()
     };
@@ -136,10 +137,10 @@ fn read_int96_timestamps() -> PolarsResult<()> {
     // Timestamp(TimeUnit::Nanoseconds). With checked arithmetic, out-of-range values return None
     // instead of panicking. All time units should now work without error.
     for time_unit in [
-        arrow::datatypes::TimeUnit::Nanosecond,
-        arrow::datatypes::TimeUnit::Microsecond,
-        arrow::datatypes::TimeUnit::Millisecond,
-        arrow::datatypes::TimeUnit::Second,
+        polars_arrow::datatypes::TimeUnit::Nanosecond,
+        polars_arrow::datatypes::TimeUnit::Microsecond,
+        polars_arrow::datatypes::TimeUnit::Millisecond,
+        polars_arrow::datatypes::TimeUnit::Second,
     ] {
         parse(time_unit).expect("Should not panic with saturating arithmetic");
     }

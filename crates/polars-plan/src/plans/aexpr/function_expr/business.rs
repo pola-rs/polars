@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 use polars_core::prelude::*;
-use polars_ops::prelude::Roll;
+use polars_defs::expr::Roll;
 
 use super::FunctionOptions;
 use crate::plans::aexpr::function_expr::FieldsMapper;

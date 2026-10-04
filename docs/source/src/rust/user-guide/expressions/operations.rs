@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "groups" => &["A", "A", "B", "A", "B"],
     )?;
 
-    println!("{}", &df);
+    println!("{}", df);
     // --8<-- [end:dataframe]
 
     // --8<-- [start:arithmetic]

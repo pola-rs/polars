@@ -1,5 +1,5 @@
-use arrow::array::{Array, PrimitiveArray};
-use arrow::types::NativeType as ArrowNativeType;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::types::NativeType as ArrowNativeType;
 use polars_error::PolarsResult;
 
 use super::super::{WriteOptions, nested, utils};

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 import polars._reexport as pl
 from polars._utils.unstable import unstable
@@ -15,6 +15,50 @@ if TYPE_CHECKING:
     from polars._typing import SchemaDict
 
 
+@runtime_checkable
+class IOSourceScanFunction(Protocol):
+    """
+    The callable Polars invokes for a source registered with `register_io_source`.
+
+    This is for authors of Polars execution engines. If you are writing an IO
+    source, you do not need it.
+
+    Polars does not call the registered source directly. It calls this wrapper,
+    which deserializes the predicate and forwards the call. An engine holding
+    the scan function of a `PythonScan` node can use this protocol to identify
+    the sources it knows about.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    Examples
+    --------
+    >>> # `scan_fn` is the scan function of the `PythonScan` node being executed.
+    >>> if isinstance(scan_fn, IOSourceScanFunction):  # doctest: +SKIP
+    ...     source = scan_fn.io_source
+    """
+
+    io_source: Callable[
+        [list[str] | None, Expr | None, int | None, int | None], Iterator[DataFrame]
+    ]
+    """The source that was passed to :func:`register_io_source`."""
+
+    def __call__(
+        self,
+        with_columns: list[str] | None,
+        predicate: bytes | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> tuple[Iterator[DataFrame], bool]:
+        """
+        Call the source.
+
+        Returns the source's chunks and whether it applied the predicate.
+        """
+        ...
+
+
 @unstable()
 def register_io_source(
     io_source: Callable[
@@ -24,6 +68,8 @@ def register_io_source(
     schema: Callable[[], SchemaDict] | SchemaDict,
     validate_schema: bool = False,
     is_pure: bool = False,
+    explain_name: str | None = None,
+    explain_detail: str | None = None,
 ) -> LazyFrame:
     """
     Register your IO plugin and initialize a LazyFrame.
@@ -66,6 +112,13 @@ def register_io_source(
         Whether the IO source is pure. Repeated occurrences of same IO source in
         a LazyFrame plan can be de-duplicated during optimization if they are
         pure.
+    explain_name
+        Custom label for the scan node in the query plan produced by ``explain``,
+        shown as
+        ``PYTHON[<name>] SCAN ...``.
+    explain_detail
+        Short, single-line detail appended under the scan header in the query plan
+        produced by ``explain`` (for example, a summary of source configuration).
 
     Returns
     -------
@@ -95,12 +148,17 @@ def register_io_source(
             with_columns, parsed_predicate, n_rows, batch_size
         ), parsed_predicate_success
 
+    scan_fn = cast("IOSourceScanFunction", wrap)
+    scan_fn.io_source = io_source
+
     return pl.LazyFrame._scan_python_function(
         schema=schema,
-        scan_fn=wrap,
+        scan_fn=scan_fn,
         pyarrow=False,
         validate_schema=validate_schema,
         is_pure=is_pure,
+        explain_name=explain_name,
+        explain_detail=explain_detail,
     )
 
 
@@ -116,6 +174,8 @@ def _defer(
 
     Takes a function that produces a `DataFrame` but defers execution until the
     `LazyFrame` is collected.
+
+    .. engine-support:: in-memory, streaming, distributed
 
     Parameters
     ----------
@@ -179,7 +239,7 @@ def _defer(
             lf = lf.filter(predicate)
         if n_rows is not None:
             lf = lf.limit(n_rows)
-        yield lf.collect()
+        yield lf._collect_eager()
 
     return register_io_source(
         io_source=source, schema=schema, validate_schema=validate_schema

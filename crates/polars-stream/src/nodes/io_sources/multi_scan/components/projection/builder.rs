@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::{IcebergSchema, IcebergSchemaRef};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
-use polars_plan::dsl::default_values::IcebergIdentityTransformedPartitionFields;
+use polars_plan::dsl::default_values::IcebergDefaultFieldValues;
 use polars_plan::dsl::{CastColumnsPolicy, ColumnMapping, MissingColumnsPolicy};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -29,7 +29,7 @@ pub enum ProjectionBuilder {
         /// `(physical_id, iceberg_column)`
         projected_iceberg_schema: IcebergSchemaRef,
         /// Used for filling missing fields.
-        identity_transformed_values: Option<Arc<IcebergIdentityTransformedPartitionFields>>,
+        default_values: Option<Arc<IcebergDefaultFieldValues>>,
     },
 }
 
@@ -47,7 +47,7 @@ impl ProjectionBuilder {
     pub fn new(
         projected_schema: SchemaRef,
         column_mapping: Option<&ColumnMapping>,
-        identity_transformed_values: Option<Arc<IcebergIdentityTransformedPartitionFields>>,
+        default_values: Option<Arc<IcebergDefaultFieldValues>>,
     ) -> Self {
         match column_mapping {
             None => ProjectionBuilder::Plain(projected_schema),
@@ -86,7 +86,7 @@ impl ProjectionBuilder {
                 Self::Iceberg {
                     projected_schema,
                     projected_iceberg_schema,
-                    identity_transformed_values,
+                    default_values,
                 }
             },
         }
@@ -158,6 +158,10 @@ impl ProjectionBuilder {
                     }
                 }
 
+                if mapping.is_none() && missing_columns_mask.is_none() {
+                    return Ok(Projection::Plain(projected_schema.clone()));
+                }
+
                 Projection::Mapped {
                     projected_schema: projected_schema.clone(),
                     mapping: mapping.map(Arc::new),
@@ -169,7 +173,7 @@ impl ProjectionBuilder {
             Self::Iceberg {
                 projected_schema,
                 projected_iceberg_schema,
-                identity_transformed_values,
+                default_values,
             } => (|| {
                 let file_iceberg_schema = file_iceberg_schema.ok_or_else(|| {
                     polars_err!(
@@ -184,7 +188,7 @@ impl ProjectionBuilder {
                 let mut mapping: Option<PlHashMap<usize, ProjectionTransform>> = None;
                 let mut missing_columns_mask: Option<MutableBitmap> = None;
                 let mut missing_column_defaults: Option<PlHashMap<usize, Scalar>> = None;
-                let iceberg_default_value_provider = identity_transformed_values
+                let iceberg_default_value_provider = default_values
                     .as_deref()
                     .map(|x| IcebergDefaultValueProviderRef::new(x, scan_source_idx));
 

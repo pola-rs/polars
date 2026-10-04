@@ -5,10 +5,10 @@ use std::fmt;
 use std::ops::Range;
 use std::sync::OnceLock;
 
-use arrow::array::{Array, IntoBoxedArray, Splitable};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
-use arrow::pushable::Pushable;
+use polars_arrow::array::{Array, IntoBoxedArray, Splitable};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::pushable::Pushable;
 use polars_compute::filter::filter_boolean_kernel;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -89,6 +89,7 @@ impl<'a, D: Decoder> State<'a, D> {
         })
     }
 
+    #[inline]
     pub fn decode(
         self,
         decoder: &mut D,
@@ -208,6 +209,7 @@ pub(crate) fn unspecialized_decode<T: Default>(
         },
         (Some(Filter::Range(_)), _) => unreachable!(),
         (Some(Filter::Mask(mut mask)), None) => {
+            let num_rows = mask.set_bits();
             target.reserve(num_rows);
 
             while !mask.is_empty() {
@@ -366,7 +368,7 @@ pub(super) trait Decoder: Sized {
             let mask = predicate.predicate.evaluate(ignore_validity_array.as_ref());
 
             if predicate.predicate.evaluate_null() {
-                arrow::bitmap::or_not(&mask, validity)
+                polars_arrow::bitmap::or_not(&mask, validity)
             } else {
                 &mask & validity
             }
@@ -824,7 +826,7 @@ impl<D: Decoder> PageDecoder<D> {
         self,
         filter: Option<Filter>,
     ) -> ParquetResult<(Option<NestedState>, Vec<Box<dyn Array>>, Bitmap)> {
-        use arrow::array::IntoBoxedArray;
+        use polars_arrow::array::IntoBoxedArray;
         let (nested, array, ptm) = self.collect(filter)?;
         let array = array.into_iter().map(|arr| arr.into_boxed()).collect();
         Ok((nested, array, ptm))

@@ -1,7 +1,7 @@
 use std::fs::{File, OpenOptions};
 use std::path::Path;
 
-use fs4::fs_std::FileExt;
+use fs4::FileExt;
 
 /// Note: this creates the file if it does not exist when acquiring locks.
 pub(super) struct FileLock<T: AsRef<Path>>(T);
@@ -46,7 +46,7 @@ impl<T: AsRef<Path>> FileLock<T> {
             .read(true)
             .write(true)
             .open(self.0.as_ref())?;
-        file.lock_exclusive().map(|_| FileLockExclusiveGuard(file))
+        file.lock().map(|_| FileLockExclusiveGuard(file))
     }
 }
 

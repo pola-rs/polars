@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import ast
 import contextlib
+import uuid
 from _ast import GtE, Lt, LtE
 from ast import (
     Attribute,
@@ -17,6 +18,7 @@ from ast import (
     Invert,
     List,
     Name,
+    NotEq,
     UnaryOp,
 )
 from dataclasses import dataclass
@@ -28,16 +30,17 @@ from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_s
 from polars.exceptions import ComputeError
+from polars.io._utils import null_count_dtype
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Sequence
     from datetime import date, datetime
 
     import pyiceberg
     import pyiceberg.schema
     from pyiceberg.manifest import DataFile
     from pyiceberg.table import Table
-    from pyiceberg.types import IcebergType
+    from pyiceberg.types import IcebergType, NestedField
 
     from polars import DataFrame
 else:
@@ -49,6 +52,30 @@ _temporal_conversions: dict[str, Callable[..., datetime | date]] = {
 }
 
 ICEBERG_TIME_TO_NS: int = 1000
+
+
+def _new_pyiceberg_scan(
+    tbl: Table,
+    *,
+    snapshot_id: int | None,
+    from_snapshot_id_exclusive: int | None,
+    to_snapshot_id_inclusive: int | None,
+    selected_fields: tuple[str, ...] = ("*",),
+    limit: int | None = None,
+) -> Any:
+    if from_snapshot_id_exclusive is None and to_snapshot_id_inclusive is None:
+        return tbl.scan(
+            snapshot_id=snapshot_id,
+            selected_fields=selected_fields,
+            limit=limit,
+        )
+
+    return tbl.incremental_append_scan(
+        from_snapshot_id_exclusive=from_snapshot_id_exclusive,
+        to_snapshot_id_inclusive=to_snapshot_id_inclusive,
+        selected_fields=selected_fields,
+        limit=limit,
+    )
 
 
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
@@ -65,8 +92,10 @@ def _scan_pyarrow_dataset_impl(
     iceberg_table_filter: Any | None = None,
     n_rows: int | None = None,
     snapshot_id: int | None = None,
+    from_snapshot_id_exclusive: int | None = None,
+    to_snapshot_id_inclusive: int | None = None,
     **kwargs: Any,  # noqa: ARG001
-) -> tuple[Iterator[DataFrame], bool]:
+) -> tuple[Iterable[DataFrame], bool]:
     """
     Take the projected columns and materialize an arrow table.
 
@@ -82,6 +111,10 @@ def _scan_pyarrow_dataset_impl(
         Materialize only n rows from the arrow dataset.
     snapshot_id:
         The snapshot ID to scan from.
+    from_snapshot_id_exclusive
+        The exclusive start of an incremental append scan.
+    to_snapshot_id_inclusive
+        The inclusive end of an incremental append scan.
     batch_size
         The maximum row count for scanned pyarrow record batches.
     kwargs:
@@ -96,11 +129,28 @@ def _scan_pyarrow_dataset_impl(
     that could not be converted
     to pyarrow and need to be applied as post-predicate.
     """
-    from polars import from_arrow
-
-    scan = tbl.scan(limit=n_rows, snapshot_id=snapshot_id)
+    scan = _new_pyiceberg_scan(
+        tbl,
+        snapshot_id=snapshot_id,
+        from_snapshot_id_exclusive=from_snapshot_id_exclusive,
+        to_snapshot_id_inclusive=to_snapshot_id_inclusive,
+        limit=n_rows,
+    )
 
     if with_columns is not None:
+        if not with_columns:
+            assert iceberg_table_filter is None
+
+            def gen() -> Iterable[pl.DataFrame]:
+                remaining = scan.count()
+
+                if n_rows is not None:
+                    remaining = min(remaining, n_rows)
+
+                yield pl.DataFrame(height=remaining)
+
+            return (gen(), False)
+
         scan = scan.select(*with_columns)
 
     if iceberg_table_filter is not None:
@@ -108,7 +158,7 @@ def _scan_pyarrow_dataset_impl(
 
     batches = scan.to_arrow_batch_reader()
 
-    return ((from_arrow(batch) for batch in batches), False)  # type: ignore[misc]
+    return ((pl.DataFrame(batch) for batch in batches), False)
 
 
 def _ensure_boolean_expression(result: Any) -> Any:
@@ -123,12 +173,39 @@ def _ensure_boolean_expression(result: Any) -> Any:
 
 
 def try_convert_pyarrow_predicate(pyarrow_predicate: str) -> Any | None:
-    with contextlib.suppress(Exception):
+    try:
         expr_ast = _to_ast(pyarrow_predicate)
-        result = _convert_predicate(expr_ast)
-        return _ensure_boolean_expression(result)
+    except Exception:
+        return None
 
-    return None
+    # Polars hands us a conjunction of independently converted minterms, and
+    # PyIceberg has no equivalent for some of them (arithmetic, for one). Keep
+    # the conjuncts that do convert: dropping one only widens the filter, and
+    # the engine re-applies the full predicate after the scan.
+    converted: list[Any] = []
+
+    for conjunct in _split_conjuncts(expr_ast):
+        with contextlib.suppress(Exception):
+            converted.append(_ensure_boolean_expression(_convert_predicate(conjunct)))
+
+    if not converted:
+        return None
+
+    result = converted[0]
+
+    for expr in converted[1:]:
+        result = pyiceberg.expressions.And(result, expr)
+
+    return result
+
+
+def _split_conjuncts(a: ast.expr) -> Iterable[ast.expr]:
+    """Yield the operands of a (possibly nested) top-level `&`."""
+    if isinstance(a, BinOp) and isinstance(a.op, BitAnd):
+        yield from _split_conjuncts(a.left)
+        yield from _split_conjuncts(a.right)
+    else:
+        yield a
 
 
 def _to_ast(expr: str) -> ast.expr:
@@ -169,6 +246,9 @@ def _(a: Constant) -> Any:
 
 @_convert_predicate.register(Name)
 def _(a: Name) -> Any:
+    if a.id == "NaN":
+        msg = "NaN literal is not supported in this predicate position"
+        raise ValueError(msg)
     return a.id
 
 
@@ -193,6 +273,9 @@ def _(a: Call) -> Any:
     elif f in _temporal_conversions:
         # convert from polars-native i64 to ISO8601 string
         return _temporal_conversions[f](*args).isoformat()
+    elif f == "starts_with":
+        pattern = _convert_predicate(a.keywords[0].value)
+        return pyiceberg.expressions.StartsWith(args[0][0], pattern)  # type: ignore[misc, call-arg]
     else:
         ref = _convert_predicate(a.func.value)[0]  # type: ignore[attr-defined]
         if f == "isin":
@@ -230,7 +313,15 @@ def _(a: BinOp) -> Any:
 def _(a: Compare) -> Any:
     op = a.ops[0]
     lhs = _convert_predicate(a.left)[0]
-    rhs = _convert_predicate(a.comparators[0])
+    rhs_ast = a.comparators[0]
+
+    if isinstance(rhs_ast, Name) and rhs_ast.id == "NaN":
+        if isinstance(op, Eq):
+            return pyiceberg.expressions.IsNaN(lhs)  # type: ignore[misc]
+        if isinstance(op, NotEq):
+            return pyiceberg.expressions.NotNaN(lhs)  # type: ignore[misc]
+
+    rhs = _convert_predicate(rhs_ast)
 
     if isinstance(op, Gt):
         return pyiceberg.expressions.GreaterThan(lhs, rhs)  # type: ignore[misc, call-arg]
@@ -238,6 +329,8 @@ def _(a: Compare) -> Any:
         return pyiceberg.expressions.GreaterThanOrEqual(lhs, rhs)  # type: ignore[misc, call-arg]
     if isinstance(op, Eq):
         return pyiceberg.expressions.EqualTo(lhs, rhs)  # type: ignore[misc, call-arg]
+    if isinstance(op, NotEq):
+        return pyiceberg.expressions.NotEqualTo(lhs, rhs)  # type: ignore[misc, call-arg]
     if isinstance(op, Lt):
         return pyiceberg.expressions.LessThan(lhs, rhs)  # type: ignore[misc, call-arg]
     if isinstance(op, LtE):
@@ -250,6 +343,43 @@ def _(a: Compare) -> Any:
 @_convert_predicate.register(List)
 def _(a: List) -> Any:
     return [_convert_predicate(e) for e in a.elts]
+
+
+def extract_field_initial_default(field: NestedField) -> pl.Series | None:
+    from pyiceberg.types import (
+        UUIDType,
+    )
+
+    if field.initial_default is None:
+        return None
+
+    value = field.initial_default
+
+    if isinstance(field.field_type, UUIDType):
+        assert isinstance(value, uuid.UUID)
+        value = value.bytes
+
+    return pl.Series([value], dtype=pl_dtype_from_iceberg_field(field))
+
+
+def pl_dtype_from_iceberg_field(field: NestedField) -> pl.DataType:
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    _, field_polars_dtype = pl.Schema(
+        schema_to_pyarrow(pyiceberg.schema.Schema(field))
+    ).popitem()
+
+    return field_polars_dtype
+
+
+def load_puffin_deletion_file(puffin_bytes: bytes) -> dict[str, pl.Series]:
+    import pyiceberg.table.puffin
+
+    import polars as pl
+
+    positions = pyiceberg.table.puffin.PuffinFile(puffin_bytes).to_vector()
+
+    return {k: pl.Series(v).reinterpret(dtype=pl.UInt64) for k, v in positions.items()}
 
 
 class IdentityTransformedPartitionValuesBuilder:
@@ -404,10 +534,6 @@ class IcebergStatisticsLoader:
         table: Table,
         projected_filter_schema: pyiceberg.schema.Schema,
     ) -> None:
-        import pyiceberg.schema
-        from pyiceberg.io.pyarrow import schema_to_pyarrow
-
-        import polars as pl
         import polars._utils.logging
 
         verbose = polars._utils.logging.verbose()
@@ -424,9 +550,7 @@ class IcebergStatisticsLoader:
                 with contextlib.suppress(ValueError):
                     field_all_types.add(schema.find_field(field.field_id).field_type)
 
-            _, field_polars_dtype = pl.Schema(
-                schema_to_pyarrow(pyiceberg.schema.Schema(field))
-            ).popitem()
+            field_polars_dtype = pl_dtype_from_iceberg_field(field)
 
             load_from_bytes_impl = LoadFromBytesImpl.init_for_field_type(
                 field.field_type,
@@ -517,7 +641,9 @@ class IcebergColumnStatisticsLoader:
         c = self.column_name
         assert len(self.null_count) == expected_height
 
-        out = pl.Series(f"{c}_nc", self.null_count, dtype=pl.UInt32).to_frame()
+        out = pl.Series(
+            f"{c}_nc", self.null_count, dtype=null_count_dtype(self.column_dtype)
+        ).to_frame()
 
         if self.load_from_bytes_impl is None:
             s = (

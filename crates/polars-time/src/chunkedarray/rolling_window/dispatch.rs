@@ -1,17 +1,18 @@
 use std::borrow::Cow;
 
-use arrow::types::NativeType;
 #[cfg(feature = "dtype-f16")]
 use num_traits::real::Real;
+use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls};
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_numeric_polars_type};
+use polars_defs::time::duration::ensure_duration_matches_dtype;
+use polars_defs::time::group_by::ClosedWindow;
 use polars_ops::series::SeriesMethods;
 use polars_utils::float::IsFloat;
 
 use super::*;
-use crate::prelude::*;
 use crate::series::AsSeries;
 
 #[cfg(feature = "rolling_window")]
@@ -97,6 +98,36 @@ where
         !options.window_size.is_zero() && !options.window_size.negative,
         InvalidOperation: "`window_size` must be strictly positive"
     );
+
+    if by.has_nulls() {
+        let n = ca.len();
+        let by = by.rechunk();
+        let validity = by.rechunk_validity().unwrap();
+
+        let mut valid_indices: Vec<IdxSize> = Vec::with_capacity(n - by.null_count());
+        let mut ranks: Vec<IdxSize> = Vec::with_capacity(n);
+        let mut rank: IdxSize = 0;
+        for (orig_pos, valid) in validity.iter().enumerate() {
+            if valid {
+                valid_indices.push(orig_pos as IdxSize);
+                ranks.push(rank);
+                rank += 1;
+            } else {
+                ranks.push(0);
+            }
+        }
+
+        let valid_idx_ca = IdxCa::from_vec(PlSmallStr::EMPTY, valid_indices);
+        let ca_filtered = unsafe { ca.rechunk().take_unchecked(&valid_idx_ca) };
+        let by_filtered = unsafe { by.take_unchecked(&valid_idx_ca) };
+
+        let computed =
+            rolling_agg_by::<T, Out, NoNullsAgg, NullsAgg>(&ca_filtered, &by_filtered, options)?;
+
+        let gather_arr = IdxArr::from_vec(ranks).with_validity_typed(Some(validity));
+        let gather_ca = IdxCa::with_chunk(PlSmallStr::EMPTY, gather_arr);
+        return Ok(unsafe { computed.take_unchecked(&gather_ca) });
+    }
 
     let (by, tz) = match by.dtype() {
         DataType::Datetime(tu, tz) => (by.cast(&DataType::Datetime(*tu, None))?, tz),

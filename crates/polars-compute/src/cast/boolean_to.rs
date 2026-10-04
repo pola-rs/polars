@@ -1,5 +1,5 @@
-use arrow::array::{Array, BooleanArray, PrimitiveArray};
-use arrow::types::NativeType;
+use polars_arrow::array::{Array, BooleanArray, PrimitiveArray};
+use polars_arrow::types::NativeType;
 use polars_error::PolarsResult;
 
 use super::{ArrayFromIter, BinaryViewArray, Utf8ViewArray};

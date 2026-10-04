@@ -1,5 +1,10 @@
+#[cfg(feature = "cse")]
+mod canonical;
 mod dot;
+mod equality;
 mod format;
+#[cfg(feature = "cse")]
+mod hash;
 pub mod inputs;
 mod schema;
 pub(crate) mod tree_format;
@@ -7,9 +12,16 @@ mod unoptimized;
 
 use std::borrow::Cow;
 use std::fmt;
+use std::sync::Mutex;
 
+#[cfg(feature = "cse")]
+pub(crate) use canonical::{CanonicalIRId, CanonicalIRMap};
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
+pub use equality::ExpressionComparator;
 pub use format::{ExprIRDisplay, IRDisplay, write_group_by, write_ir_non_recursive};
+#[cfg(feature = "cse")]
+pub use hash::ExpressionHasher;
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
@@ -19,6 +31,7 @@ use strum_macros::IntoStaticStr;
 pub use unoptimized::{FunctionArgMap, UnoptimizedOperation};
 
 use self::hive::HivePartitionsDf;
+use crate::dsl::dsl_resolver::{DslResolver, ResolveDslArgs, ResolvedDsl};
 use crate::prelude::*;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
@@ -67,6 +80,8 @@ pub enum IR {
         scan_type: Box<FileScanIR>,
         /// generic options that can be used for all file types.
         unified_scan_args: Box<UnifiedScanArgs>,
+        /// Whether the output order is observed. Cleared by the optimizer if it is not.
+        maintain_order: bool,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -105,15 +120,14 @@ pub enum IR {
         aggs: Vec<ExprIR>,
         schema: SchemaRef,
         maintain_order: bool,
-        options: Arc<GroupbyOptions>,
+        options: Arc<GroupbyOptionsIR>,
         apply: Option<PlanCallback<DataFrame, DataFrame>>,
     },
     Join {
         input_left: Node,
         input_right: Node,
         schema: SchemaRef,
-        left_on: Vec<ExprIR>,
-        right_on: Vec<ExprIR>,
+        /// Holds the match condition, including the join keys.
         options: Arc<JoinOptionsIR>,
     },
     Gather {
@@ -126,6 +140,26 @@ pub enum IR {
         exprs: Vec<ExprIR>,
         schema: SchemaRef,
         options: ProjectionOptions,
+    },
+    /// Appends window expressions that share one partitioning and order to the input columns.
+    ///
+    /// - Every expression is an `over` with `GroupsToRows` mapping on exactly `partition_by`
+    ///   and `order_by`. The result for a row only depends on the rows with the same key.
+    /// - `partition_by` and `order_by` are columns of the input.
+    /// - `maintain_order`: rows are output in input order. If false, the output order is
+    ///   unspecified.
+    /// - `ordered_eval`: the rows of a partition are evaluated in input order (ties in the
+    ///   `order_by` column in input order, unless its `maintain_order` is false). If false, any
+    ///   order within a partition is valid.
+    /// - Only whole rows are moved, so the columns of an output row always belong together.
+    Window {
+        input: Node,
+        partition_by: Vec<PlSmallStr>,
+        order_by: Option<(PlSmallStr, SortOptions)>,
+        exprs: Vec<ExprIR>,
+        schema: SchemaRef,
+        maintain_order: bool,
+        ordered_eval: bool,
     },
     Distinct {
         input: Node,
@@ -146,11 +180,6 @@ pub enum IR {
         schema: SchemaRef,
         options: HConcatOptions,
     },
-    ExtContext {
-        input: Node,
-        contexts: Vec<Node>,
-        schema: SchemaRef,
-    },
     Sink {
         input: Node,
         payload: SinkTypeIR,
@@ -164,7 +193,7 @@ pub enum IR {
     MergeSorted {
         input_left: Node,
         input_right: Node,
-        key: PlSmallStr,
+        key: Arc<[PlSmallStr]>,
         maintain_order: bool,
     },
     UnoptimizedDispatch {
@@ -172,8 +201,60 @@ pub enum IR {
         arg_map: FunctionArgMap,
         operation: UnoptimizedOperation,
     },
+    Resolver {
+        resolver: Arc<DslResolver>,
+        resolver_schema: SchemaRef,
+
+        projection: Option<Buffer<PlSmallStr>>,
+        slice: Option<(i64, u64)>,
+        filters: Buffer<ExprIR>,
+        filter_drop_columns_idx: Option<usize>,
+
+        // Note: Mutex from DslPlan this IR was created with. So that we cache
+        // on repeated `collect()`s in  notebook environments.
+        resolved_dsl: Arc<Mutex<PlIndexMap<ResolveDslArgs, ResolvedDsl>>>,
+        // This should be tied to `resolved_dsl`, but it is stored outside the
+        // Mutex as we need to be able to provide mutable references to the `Node`.
+        resolved_ir: Option<Node>,
+    },
     #[default]
     Invalid,
+}
+
+/// Whether every expression is an `over` with `GroupsToRows` mapping on exactly `partition_by`
+/// and `order_by`, as [`IR::Window`] requires.
+pub fn window_exprs_match_keys(
+    exprs: &[ExprIR],
+    partition_by: &[PlSmallStr],
+    order_by: Option<&(PlSmallStr, SortOptions)>,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    let is_column = |node: &Node, name: &PlSmallStr| match expr_arena.get(*node) {
+        AExpr::Column(column) => column == name,
+        _ => false,
+    };
+    exprs.iter().all(|e| match expr_arena.get(e.node()) {
+        AExpr::Over {
+            partition_by: expr_partition_by,
+            order_by: expr_order_by,
+            mapping: WindowMapping::GroupsToRows,
+            ..
+        } => {
+            expr_partition_by.len() == partition_by.len()
+                && expr_partition_by
+                    .iter()
+                    .zip(partition_by)
+                    .all(|(node, name)| is_column(node, name))
+                && match (expr_order_by, order_by) {
+                    (None, None) => true,
+                    (Some((node, expr_options)), Some((name, options))) => {
+                        is_column(node, name) && expr_options == options
+                    },
+                    _ => false,
+                }
+        },
+        _ => false,
+    })
 }
 
 impl IRPlan {

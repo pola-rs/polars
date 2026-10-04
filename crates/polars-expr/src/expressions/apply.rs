@@ -152,7 +152,7 @@ impl ApplyExpr {
 
         // At this point, calling aggregated() will not lead to memory explosion.
         let agg = match ac.agg_state() {
-            AggState::AggregatedScalar(s) => s.as_list().into_column(),
+            AggState::AggregatedScalar(s) => s.to_unit_list(),
             _ => ac.aggregated(),
         };
 
@@ -184,7 +184,7 @@ impl ApplyExpr {
         } else {
             agg.list()
                 .unwrap()
-                .into_iter()
+                .series_iter()
                 .map(f)
                 .collect::<PolarsResult<_>>()?
         };
@@ -442,12 +442,35 @@ impl PhysicalExpr for ApplyExpr {
             self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
         }?;
 
-        if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
-            self.eval_and_flatten(&mut inputs)
+        // If the function is elementwise and all columns are scalar
+        // we can only evaluate once and then broadcast.
+        let constant_len = if self.flags.is_elementwise() {
+            constant_broadcast_len(&inputs)
+        } else {
+            None
+        };
+        if constant_len.is_some() {
+            for c in inputs.iter_mut() {
+                if c.len() > 1 {
+                    *c = c.new_from_index(0, 1);
+                }
+            }
+        }
+
+        let out = if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
+            self.eval_and_flatten(&mut inputs)?
         } else {
             let in_name = inputs[0].name().clone();
-            Ok(self.eval_and_flatten(&mut inputs)?.with_name(in_name))
-        }
+            self.eval_and_flatten(&mut inputs)?.with_name(in_name)
+        };
+
+        Ok(match constant_len {
+            Some(len) => {
+                debug_assert_eq!(out.len(), 1);
+                out.new_from_index(0, len)
+            },
+            None => out,
+        })
     }
 
     #[allow(clippy::ptr_arg)]
@@ -615,4 +638,16 @@ impl PhysicalExpr for ApplyExpr {
         self.flags.returns_scalar()
             || (self.function_operates_on_scalar && self.flags.is_length_preserving())
     }
+}
+
+fn constant_broadcast_len(inputs: &[Column]) -> Option<usize> {
+    let len = inputs.iter().map(|c| c.len()).max()?;
+    if len <= 1 {
+        return None;
+    }
+    // Only a single row, or a scalar already at the full length, can be repeated.
+    inputs
+        .iter()
+        .all(|c| c.len() == 1 || (c.len() == len && matches!(c, Column::Scalar(_))))
+        .then_some(len)
 }

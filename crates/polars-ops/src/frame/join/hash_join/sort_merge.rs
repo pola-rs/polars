@@ -1,9 +1,10 @@
 #[cfg(feature = "performant")]
-use arrow::legacy::kernels::sorted_join;
+use polars_arrow::legacy::kernels::sorted_join;
 #[cfg(feature = "performant")]
 use polars_core::utils::_split_offsets;
 #[cfg(feature = "performant")]
 use polars_core::utils::flatten::flatten_par;
+use polars_defs::join::JoinValidation;
 
 use super::*;
 
@@ -23,11 +24,11 @@ where
     let slice_left = s_left.cont_slice().unwrap();
     let slice_right = s_right.cont_slice().unwrap();
 
-    let indexes = offsets.into_par_iter().map(|(offset, len)| {
+    let indexes = par_map_collect(offsets.len(), &|i| {
+        let (offset, len) = offsets[i];
         let slice_left = &slice_left[offset..offset + len];
         sorted_join::left::join(slice_left, slice_right, offset as IdxSize)
     });
-    let indexes = RAYON.install(|| indexes.collect::<Vec<_>>());
 
     let lefts = indexes.iter().map(|t| &t.0).collect::<Vec<_>>();
     let rights = indexes.iter().map(|t| &t.1).collect::<Vec<_>>();
@@ -107,11 +108,11 @@ where
     let slice_left = s_left.cont_slice().unwrap();
     let slice_right = s_right.cont_slice().unwrap();
 
-    let indexes = offsets.into_par_iter().map(|(offset, len)| {
+    let indexes = par_map_collect(offsets.len(), &|i| {
+        let (offset, len) = offsets[i];
         let slice_left = &slice_left[offset..offset + len];
         sorted_join::inner::join(slice_left, slice_right, offset as IdxSize)
     });
-    let indexes = RAYON.install(|| indexes.collect::<Vec<_>>());
 
     let lefts = indexes.iter().map(|t| &t.0).collect::<Vec<_>>();
     let rights = indexes.iter().map(|t| &t.1).collect::<Vec<_>>();
