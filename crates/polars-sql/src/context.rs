@@ -2047,12 +2047,25 @@ impl SQLContext {
             // `GROUP BY ALL` may infer no keys; nothing here runs in a group context.
             self.group_scope.mark_whole_frame_windows = false;
             // A window over the whole frame has one value per row, so for the output
-            // height it counts like a literal.
+            // height it counts like a literal. One over aggregates (`SUM(SUM(x)) OVER ()`)
+            // makes the block an aggregation, which has one row.
             let height_exprs: Vec<Expr> = projections
                 .iter()
-                .map(|e| self.map_whole_frame_windows(e.clone(), |_| lit(1)))
+                .map(|e| {
+                    self.map_whole_frame_windows(e.clone(), |function| {
+                        if has_nested_aggregate(function) {
+                            function.clone()
+                        } else {
+                            lit(1)
+                        }
+                    })
+                })
                 .collect();
             projections = projections
+                .into_iter()
+                .map(|e| self.resolve_whole_frame_windows(e))
+                .collect();
+            select_modifiers.replace = std::mem::take(&mut select_modifiers.replace)
                 .into_iter()
                 .map(|e| self.resolve_whole_frame_windows(e))
                 .collect();
@@ -4708,6 +4721,16 @@ fn parse_sql(query: &str) -> PolarsResult<Vec<Statement>> {
         .map_err(to_sql_interface_err)?
         .parse_statements()
         .map_err(to_sql_interface_err)
+}
+
+/// Whether `expr` aggregates the result of another aggregate, as in `SUM(SUM(x))`.
+fn has_nested_aggregate(expr: &Expr) -> bool {
+    expr.into_iter().any(|e| {
+        matches!(e, Expr::Agg(_))
+            && e.into_iter()
+                .skip(1)
+                .any(|inner| matches!(inner, Expr::Agg(_) | Expr::Len))
+    })
 }
 
 bitflags::bitflags! {

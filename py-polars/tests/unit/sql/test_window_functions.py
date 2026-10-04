@@ -965,22 +965,29 @@ def test_window_last_value(df_window: pl.DataFrame) -> None:
 
 
 @pytest.mark.parametrize(
-    "window_fn",
+    "query",
     [
-        "LAST_VALUE(x) OVER ()",
-        "FIRST_VALUE(x) OVER ()",
-        "SUM(x) OVER ()",
-        "COUNT(*) OVER ()",
-        "AVG(x) OVER w",
-        "1 + MAX(x) OVER ()",
+        "SELECT LAST_VALUE(x) OVER () AS a FROM t",
+        "SELECT FIRST_VALUE(x) OVER () AS a FROM t",
+        "SELECT SUM(x) OVER () AS a FROM t",
+        "SELECT COUNT(*) OVER () AS a FROM t",
+        "SELECT AVG(x) OVER w AS a FROM t WINDOW w AS ()",
+        "SELECT 1 + MAX(x) OVER () AS a FROM t",
+        "SELECT LAST_VALUE(x) OVER (PARTITION BY 1) AS a FROM t",
+        "SELECT FIRST_VALUE(x) OVER (PARTITION BY 'a') AS a FROM t",
+        "SELECT COUNT(*) OVER (PARTITION BY 1 + 1) AS a FROM t",
+        "SELECT * REPLACE (SUM(x) OVER () AS x) FROM t",
+        # a window over aggregates makes the query an aggregation, with one row
+        "SELECT SUM(SUM(x)) OVER () AS a FROM t",
+        "SELECT AVG(MAX(x)) OVER () AS a FROM t",
     ],
 )
 @pytest.mark.parametrize("n_rows", [0, 3])
-def test_window_over_whole_frame_keeps_rows(window_fn: str, n_rows: int) -> None:
+def test_window_over_whole_frame_row_count(query: str, n_rows: int) -> None:
     df = pl.DataFrame({"x": [7, 8, 9][:n_rows]}, schema={"x": pl.Int64})
     assert_sql_matches(
         {"t": df},
-        query=f"SELECT {window_fn} AS a FROM t WINDOW w AS ()",
+        query=query,
         compare_with="duckdb",
         engines=["in-memory", "streaming"],
     )

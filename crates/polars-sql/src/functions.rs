@@ -18,6 +18,7 @@ use polars_plan::dsl::functions::{
 use polars_plan::dsl::{FunctionExpr, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
 use polars_plan::prelude::StrptimeOptions;
+use polars_plan::utils::has_expr;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
@@ -2746,17 +2747,15 @@ impl SQLFunctionVisitor<'_> {
         };
         self.validate_window_frame(&window_spec.window_frame)?;
 
-        let partition_by = if window_spec.partition_by.is_empty() {
-            None
-        } else {
-            Some(
-                window_spec
-                    .partition_by
-                    .iter()
-                    .map(|p| parse_sql_expr(p, self.ctx, self.active_schema))
-                    .collect::<PolarsResult<Vec<_>>>()?,
-            )
-        };
+        // A key without a column, as in `PARTITION BY 1`, does not split the frame.
+        let mut partition_by = Vec::with_capacity(window_spec.partition_by.len());
+        for p in &window_spec.partition_by {
+            let key = parse_sql_expr(p, self.ctx, self.active_schema)?;
+            if has_expr(&key, |e| matches!(e, Expr::Column(_) | Expr::Selector(_))) {
+                partition_by.push(key);
+            }
+        }
+        let partition_by = (!partition_by.is_empty()).then_some(partition_by);
         let order_by = if window_spec.order_by.is_empty() {
             None
         } else {
