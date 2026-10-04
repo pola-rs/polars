@@ -150,7 +150,7 @@ impl StringNameSpace {
         self.0.map_unary(StringFunction::Base64Decode(strict))
     }
 
-    /// Extract a regex pattern from the a string value. If `group_index` is out of bounds, null is returned.
+    /// Extract a regex pattern from a string value. If `group_index` is out of bounds, null is returned.
     pub fn extract(self, pat: Expr, group_index: usize) -> Expr {
         self.0.map_binary(StringFunction::Extract(group_index), pat)
     }
