@@ -1908,7 +1908,11 @@ fn to_graph_rec<'a>(
                     let get_batch_fn = Box::new(move |state: &StreamingExecutionState| {
                         let df = Python::attach(|py| {
                             match generator.bind(py).call_method0(intern!(py, "__next__")) {
-                                Ok(out) => polars_plan::plans::python_df_to_rust(py, out).map(Some),
+                                // SAFETY: The Python scan contract requires yielded values to be Polars DataFrames.
+                                Ok(out) => {
+                                    unsafe { polars_plan::plans::python_df_to_rust(py, out) }
+                                        .map(Some)
+                                },
                                 Err(err)
                                     if err.matches(py, PyStopIteration::type_object(py))? =>
                                 {
