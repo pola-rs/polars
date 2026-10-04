@@ -283,11 +283,18 @@ def ordered_unique(values: Sequence[Any]) -> list[Any]:
 
 def deduplicate_names(names: Iterable[str]) -> list[str]:
     """Ensure name uniqueness by appending a counter to subsequent duplicates."""
-    seen: MutableMapping[str, int] = Counter()
+    counter: MutableMapping[str, int] = Counter()
+    # The suffixed name can itself already be taken, either by a later entry or by
+    # an earlier rename, so keep counting until the result is actually unused.
+    used: set[str] = set()
     deduped = []
     for nm in names:
-        deduped.append(f"{nm}{seen[nm] - 1}" if nm in seen else nm)
-        seen[nm] += 1
+        name = nm
+        while name in used:
+            name = f"{nm}{counter[nm]}"
+            counter[nm] += 1
+        used.add(name)
+        deduped.append(name)
     return deduped
 
 
