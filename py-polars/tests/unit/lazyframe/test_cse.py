@@ -18,6 +18,7 @@ from polars.testing import assert_frame_equal, assert_frame_not_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1580,6 +1581,31 @@ def test_projection_pushdown_cache_node_inputs_point_to_same_node_28367() -> Non
     q3 = q1.join(q2.select("x", "z"), on="x")
     q4 = q3.join(q1, on="x").filter(pl.col("z").is_not_null())
     assert_frame_equal(q4.select(pl.col.x.min()).collect(), pl.DataFrame({"x": [1]}))
+
+
+@pytest.mark.parametrize("cache_outer", [True, False])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_projection_pushdown_nested_caches_keep_projection_29707(
+    cache_outer: bool, engine: EngineType
+) -> None:
+    lf = pl.LazyFrame({"k": [1, 2, 3], "v": [1, 2, 2]}).cache()
+    x = lf.select("k")
+    if cache_outer:
+        x = x.cache()
+
+    q = pl.concat([x, x]).join(lf, on="k")
+    assert_frame_equal(
+        q.collect(engine=engine),
+        pl.DataFrame({"k": [1, 1, 2, 2, 3, 3], "v": [1, 1, 2, 2, 2, 2]}),
+        check_row_order=False,
+    )
+
+    q = x.join(x, on="k").join(lf, on="k")
+    assert_frame_equal(
+        q.collect(engine=engine),
+        pl.DataFrame({"k": [1, 2, 3], "v": [1, 2, 2]}),
+        check_row_order=False,
+    )
 
 
 def test_csee_height_mismatch_28364() -> None:
