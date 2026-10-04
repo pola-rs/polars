@@ -965,6 +965,28 @@ def test_window_last_value(df_window: pl.DataFrame) -> None:
 
 
 @pytest.mark.parametrize(
+    "window_fn",
+    [
+        "LAST_VALUE(x) OVER ()",
+        "FIRST_VALUE(x) OVER ()",
+        "SUM(x) OVER ()",
+        "COUNT(*) OVER ()",
+        "AVG(x) OVER w",
+        "1 + MAX(x) OVER ()",
+    ],
+)
+@pytest.mark.parametrize("n_rows", [0, 3])
+def test_window_over_whole_frame_keeps_rows(window_fn: str, n_rows: int) -> None:
+    df = pl.DataFrame({"x": [7, 8, 9][:n_rows]}, schema={"x": pl.Int64})
+    assert_sql_matches(
+        {"t": df},
+        query=f"SELECT {window_fn} AS a FROM t WINDOW w AS ()",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
     "frame",
     [
         "ROWS 2 PRECEDING",

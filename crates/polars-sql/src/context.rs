@@ -247,12 +247,12 @@ pub struct SQLContext {
 pub(crate) struct GroupScope {
     /// `GROUPING()` calls parsed in the block.
     grouping_calls: Vec<GroupingCall>,
-    /// Whether the clause being parsed feeds the `GROUP BY`, where windows must
-    /// stay distinguishable from group aggregates; cleared once the clauses that
-    /// run on the aggregated frame are parsed.
-    pub(crate) parsing_group_input: bool,
+    /// Whether an empty `OVER ()` being parsed must stay distinguishable from an
+    /// aggregate: in the clauses that feed the `GROUP BY` (cleared once the clauses
+    /// that run on the aggregated frame are parsed), and in the SELECT list.
+    pub(crate) mark_whole_frame_windows: bool,
     /// Partition column standing for an empty `OVER ()` parsed in such a clause,
-    /// until the window is separated from the group aggregates.
+    /// until the window is separated from the aggregates.
     whole_frame_partition: Option<PlSmallStr>,
 }
 
@@ -1612,9 +1612,14 @@ impl SQLContext {
             .clone()
     }
 
-    /// Lower the whole-frame windows of a block that turned out to have no group
-    /// keys back to their bare expression, as a non-grouped block parses them.
+    /// Lower the whole-frame windows of a block without group keys back to their
+    /// bare expression.
     fn resolve_whole_frame_windows(&self, expr: Expr) -> Expr {
+        self.map_whole_frame_windows(expr, |function| function.clone())
+    }
+
+    /// Replace each whole-frame window in `expr` by `f` of its function.
+    fn map_whole_frame_windows(&self, expr: Expr, f: impl Fn(&Expr) -> Expr) -> Expr {
         let Some(partition) = &self.group_scope.whole_frame_partition else {
             return expr;
         };
@@ -1625,7 +1630,7 @@ impl SQLContext {
                 order_by: None,
                 ..
             } if matches!(partition_by.as_slice(), [Expr::Column(name)] if name == partition) => {
-                function.as_ref().clone()
+                f(function)
             },
             _ => e,
         })
@@ -1644,7 +1649,7 @@ impl SQLContext {
     /// Execute the 'SELECT' part of the query.
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
         let scope = GroupScope {
-            parsing_group_input: match &select_stmt.group_by {
+            mark_whole_frame_windows: match &select_stmt.group_by {
                 GroupByExpr::Expressions(exprs, _) => !exprs.is_empty(),
                 GroupByExpr::All(_) => true,
             },
@@ -1863,12 +1868,15 @@ impl SQLContext {
             PlHashSet::new()
         };
 
+        let mark_whole_frame_windows =
+            std::mem::replace(&mut self.group_scope.mark_whole_frame_windows, true);
         let mut projections_with_flags = self.column_projections(
             projection,
             select_stmt.flavor,
             &schema,
             &mut select_modifiers,
         )?;
+        self.group_scope.mark_whole_frame_windows = mark_whole_frame_windows;
         let subquery_names;
         (lf, subquery_names) = self.process_subqueries(
             lf,
@@ -2037,7 +2045,13 @@ impl SQLContext {
                 SQLSyntax: "GROUPING() requires a GROUP BY clause"
             );
             // `GROUP BY ALL` may infer no keys; nothing here runs in a group context.
-            self.group_scope.parsing_group_input = false;
+            self.group_scope.mark_whole_frame_windows = false;
+            // A window over the whole frame has one value per row, so for the output
+            // height it counts like a literal.
+            let height_exprs: Vec<Expr> = projections
+                .iter()
+                .map(|e| self.map_whole_frame_windows(e.clone(), |_| lit(1)))
+                .collect();
             projections = projections
                 .into_iter()
                 .map(|e| self.resolve_whole_frame_windows(e))
@@ -2061,13 +2075,13 @@ impl SQLContext {
             // and new projections) and *then* select the final cols; the retained cols
             // are used to ensure a correct final projection. If there's no 'order by',
             // clause then we can project the final column *expressions* directly.
-            for p in projections.iter() {
+            for (p, height_expr) in projections.iter().zip(&height_exprs) {
                 let name = p.to_field(schema.deref())?.name.to_string();
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
                     projection_heights |= ExprSqlProjectionHeightBehavior::identify_from_expr(
-                        &without_resolved_subqueries(p, &subquery_names),
+                        &without_resolved_subqueries(height_expr, &subquery_names),
                     );
 
                     retained_cols.push(if have_order_by {
@@ -2177,7 +2191,7 @@ impl SQLContext {
                 grouping.as_ref(),
             )?;
             // The remaining clauses run on the aggregated frame.
-            self.group_scope.parsing_group_input = false;
+            self.group_scope.mark_whole_frame_windows = false;
             let visible_cols: Vec<_> = output_names.iter().cloned().map(col).collect();
             lf = self.process_order_by(lf, &order_by, Some(&visible_cols))?;
 
