@@ -90,11 +90,8 @@ impl DatetimeChunked {
         v: I,
         tu: TimeUnit,
     ) -> Self {
-        let vals = v
-            .into_iter()
-            .map(|dt| tu.datetime_to_timestamp(dt))
-            .collect::<Vec<_>>();
-        Int64Chunked::from_vec(name, vals).into_datetime(tu, None)
+        let vals = v.into_iter().map(|dt| tu.datetime_to_timestamp_opt(dt));
+        Int64Chunked::from_iter_options(name, vals).into_datetime(tu, None)
     }
 
     pub fn from_naive_datetime_options<I: IntoIterator<Item = Option<NaiveDateTime>>>(
@@ -104,7 +101,7 @@ impl DatetimeChunked {
     ) -> Self {
         let vals = v
             .into_iter()
-            .map(|opt_nd| opt_nd.map(|dt| tu.datetime_to_timestamp(dt)));
+            .map(|opt_nd| opt_nd.and_then(|dt| tu.datetime_to_timestamp_opt(dt)));
         Int64Chunked::from_iter_options(name, vals).into_datetime(tu, None)
     }
 
@@ -183,7 +180,7 @@ impl DatetimeChunked {
 
 #[cfg(test)]
 mod test {
-    use chrono::NaiveDateTime;
+    use chrono::{DateTime, NaiveDate, NaiveDateTime};
 
     use crate::prelude::*;
 
@@ -212,5 +209,80 @@ mod test {
             ],
             dt.physical().cont_slice().unwrap()
         );
+    }
+
+    #[test]
+    fn from_datetime_nanosecond_boundaries() {
+        let datetimes = [
+            DateTime::from_timestamp_nanos(i64::MIN).naive_utc(),
+            DateTime::from_timestamp_nanos(i64::MAX).naive_utc(),
+        ];
+
+        let dt = DatetimeChunked::from_naive_datetime(
+            PlSmallStr::from_static("name"),
+            datetimes,
+            TimeUnit::Nanoseconds,
+        );
+
+        assert_eq!(dt.physical().cont_slice().unwrap(), &[i64::MIN, i64::MAX]);
+    }
+
+    #[test]
+    fn from_datetime_out_of_nanosecond_range() {
+        let valid = DateTime::from_timestamp_nanos(i64::MIN).naive_utc();
+        let out_of_range = NaiveDate::from_ymd_opt(1600, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        assert_eq!(out_of_range.and_utc().timestamp_nanos_opt(), None);
+
+        let dt = DatetimeChunked::from_naive_datetime(
+            PlSmallStr::from_static("name"),
+            [valid, out_of_range],
+            TimeUnit::Nanoseconds,
+        );
+        assert_eq!(
+            dt.physical().iter().collect::<Vec<_>>(),
+            [Some(i64::MIN), None]
+        );
+
+        let dt = DatetimeChunked::from_naive_datetime_options(
+            PlSmallStr::from_static("name"),
+            [Some(valid), Some(out_of_range), None],
+            TimeUnit::Nanoseconds,
+        );
+        assert_eq!(
+            dt.physical().iter().collect::<Vec<_>>(),
+            [Some(i64::MIN), None, None]
+        );
+    }
+
+    #[test]
+    fn from_datetime_non_nanosecond_units() {
+        let datetime = DateTime::from_timestamp(1, 234_567_890)
+            .unwrap()
+            .naive_utc();
+
+        for (time_unit, expected) in [
+            (TimeUnit::Microseconds, 1_234_567),
+            (TimeUnit::Milliseconds, 1_234),
+        ] {
+            let dt = DatetimeChunked::from_naive_datetime(
+                PlSmallStr::from_static("name"),
+                [datetime],
+                time_unit,
+            );
+            assert_eq!(dt.physical().get(0), Some(expected));
+
+            let dt = DatetimeChunked::from_naive_datetime_options(
+                PlSmallStr::from_static("name"),
+                [Some(datetime), None],
+                time_unit,
+            );
+            assert_eq!(
+                dt.physical().iter().collect::<Vec<_>>(),
+                [Some(expected), None]
+            );
+        }
     }
 }
