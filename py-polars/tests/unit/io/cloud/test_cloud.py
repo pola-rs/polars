@@ -100,7 +100,6 @@ def test_is_aws_cloud() -> None:
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_storage_options_retry_config(
     plmonkeypatch: PlMonkeyPatch,
