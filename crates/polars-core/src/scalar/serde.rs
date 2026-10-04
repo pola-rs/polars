@@ -79,8 +79,12 @@ pub enum SerializableScalar {
     /// A 16-bit floating point number.
     Float16(pf16),
     /// A 32-bit floating point number.
+    #[serde(with = "polars_utils::serde_float")]
+    #[cfg_attr(feature = "dsl-schema", schemars(with = "f32"))]
     Float32(f32),
     /// A 64-bit floating point number.
+    #[serde(with = "polars_utils::serde_float")]
+    #[cfg_attr(feature = "dsl-schema", schemars(with = "f64"))]
     Float64(f64),
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
