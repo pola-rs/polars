@@ -311,7 +311,7 @@ impl JoinSampleStats {
                     None => hash_keys.sketch_cardinality(&mut sketch),
                 }
                 let row_size = match payload_select {
-                    None => df.estimated_size(),
+                    None => df.estimated_size(true),
                     Some(select) => {
                         let payload = df
                             .columns()
@@ -321,13 +321,13 @@ impl JoinSampleStats {
                             .map(|(c, _)| c.clone())
                             .collect();
                         let payload = unsafe { DataFrame::new_unchecked(df.height(), payload) };
-                        payload.estimated_size() + keys.estimated_size()
+                        payload.estimated_size(true) + keys.estimated_size(true)
                     },
                 };
                 Ok((
                     sketch,
                     min_hash,
-                    key_bytes + keys.estimated_size(),
+                    key_bytes + keys.estimated_size(true),
                     row_bytes + row_size,
                 ))
             },

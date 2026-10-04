@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict, UserDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
@@ -952,6 +952,31 @@ def test_init_1d_sequence() -> None:
     assert df.schema == {"ts": pl.Datetime("ms", "Asia/Kathmandu")}
 
 
+@pytest.mark.parametrize("orient", ["row", "col", None])
+def test_init_1d_sequence_orientation(orient: Literal["row", "col"] | None) -> None:
+    data = ["apple", "red", 12.5, "good"]
+    result = pl.DataFrame(data, orient=orient, strict=False)
+    if orient == "row":
+        expected = pl.DataFrame(
+            {
+                "column_0": ["apple"],
+                "column_1": ["red"],
+                "column_2": [12.5],
+                "column_3": ["good"],
+            }
+        )
+    else:
+        expected = pl.DataFrame({"column_0": ["apple", "red", "12.5", "good"]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("orient", ["row", None])
+def test_init_scalar_iterator(orient: Literal["row"] | None) -> None:
+    result = pl.DataFrame(iter(range(1001)), orient=orient)
+    expected = pl.DataFrame({"column_0": range(1001)})
+    assert_frame_equal(result, expected)
+
+
 def test_init_pandas(plmonkeypatch: PlMonkeyPatch) -> None:
     pandas_df = pd.DataFrame([[1, 2], [3, 4]], columns=[1, 2])
 
@@ -1190,6 +1215,10 @@ def test_from_dicts_missing_columns() -> None:
     expected = pl.DataFrame({"a": [1, None], "b": [None, 2]})
     assert_frame_equal(result, expected)
 
+    # ...and from some of the (non-dict) mappings
+    result = pl.from_dicts([UserDict(d) for d in data])
+    assert_frame_equal(result, expected)
+
     # partial schema with some columns missing; only load the declared keys
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["a"])
@@ -1317,6 +1346,24 @@ def test_from_rows_ragged(
             schema=schema,
             infer_schema_length=infer_schema_length,
         )
+
+
+def test_from_rows_owned_values() -> None:
+    # values that own their data (long strings, tz-aware datetimes, binary, structs)
+    dt = datetime(2024, 1, 1, 12, tzinfo=ZoneInfo("Asia/Tokyo"))
+    rows = [
+        ("x" * 30, dt, b"\x00" * 30, {"a": "y" * 30}),
+        (None, None, None, None),
+        ("short", dt, b"b", {"a": "z"}),
+    ]
+    df = pl.DataFrame(rows, schema=["s", "dt", "bin", "st"], orient="row")
+    assert df.schema == {
+        "s": pl.String,
+        "dt": pl.Datetime("us", "Asia/Tokyo"),
+        "bin": pl.Binary,
+        "st": pl.Struct({"a": pl.String}),
+    }
+    assert df.rows() == rows
 
 
 def test_from_dicts_schema() -> None:

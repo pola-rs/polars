@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import UserDict
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -7,6 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -255,3 +257,27 @@ def test_from_dict_cast_logical_type(dtype: pl.DataType, data: Any) -> None:
     )
 
     assert_frame_equal(df_from_dicts, df)
+
+
+def test_from_dicts_mixed_mappings() -> None:
+    result = pl.from_dicts([{"a": 1}, UserDict({"a": 2, "b": 3}), {"b": 4}])
+    expected = pl.DataFrame({"a": [1, 2, None], "b": [None, 3, 4]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("data", "schema", "infer_schema_length", "value"),
+    [
+        ([{"x": 1}], None, 0, "1 of type: i64"),
+        ([{"x": 1}] * 3 + [{"x": "a"}], None, 3, '"a" of type: str'),
+        ([{"x": 1}, {"x": 1000}], {"x": pl.Int8}, 100, "1000 of type: i64"),
+    ],
+)
+def test_from_dicts_rejected_value(
+    data: list[dict[str, Any]],
+    schema: dict[str, pl.DataType] | None,
+    infer_schema_length: int,
+    value: str,
+) -> None:
+    with pytest.raises(ComputeError, match=f"could not append value: {value}"):
+        pl.from_dicts(data, schema=schema, infer_schema_length=infer_schema_length)

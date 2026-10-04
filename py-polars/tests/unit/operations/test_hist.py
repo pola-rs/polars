@@ -163,7 +163,7 @@ def test_hist_invalid_bins() -> None:
 def test_hist_non_numeric_dtype_raises() -> None:
     s = pl.Series("a", ["A", "G", "Y", "Z"])
     bins = pl.Series("bins", ["N"])
-    msg = "'hist' is only supported for numeric data"
+    msg = "`hist` operation not supported for dtype"
     with pytest.raises(pl.exceptions.InvalidOperationError, match=msg):
         s.to_frame().select(pl.col("a").hist(bins=bins))
     with pytest.raises(pl.exceptions.InvalidOperationError, match=msg):

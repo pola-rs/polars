@@ -97,7 +97,7 @@ pub fn convert_and_bound_index(
     let dtype = s.dtype();
     polars_ensure!(
         dtype.is_integer(),
-        InvalidOperation: "expected integers as index"
+        InvalidOperation: "expected integers as index, got `{}`", dtype
     );
 
     with_match_physical_integer_polars_type!(dtype, |$T| {

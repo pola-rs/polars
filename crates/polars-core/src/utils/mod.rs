@@ -160,8 +160,7 @@ impl Container for DataFrame {
     }
 
     fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
-        // @scalar-correctness?
-        self.columns()[0].as_materialized_series().chunk_lengths()
+        self.first_col_chunk_lengths()
     }
 }
 

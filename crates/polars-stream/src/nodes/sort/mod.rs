@@ -407,7 +407,7 @@ impl ComputeNode for SortNode {
                             morsel.take_consume_token();
                             {
                                 let df = morsel.sf().get().await;
-                                bytes.fetch_add(df.estimated_size() as u64, Ordering::Relaxed);
+                                bytes.fetch_add(df.estimated_size(false) as u64, Ordering::Relaxed);
                                 let keys = key_series(&df, key)?;
                                 sample.add(&keys);
                             }
@@ -520,7 +520,7 @@ async fn partition_frames(
             }
             // Reserving up front avoids repeated reallocation while growing.
             if builders[b].is_empty() {
-                builders[b].reserve(flush_rows + df.height());
+                builders[b].reserve(flush_rows + idxs_per_bucket[b].len());
             }
             // SAFETY: the indices are row offsets within the rechunked frame.
             unsafe {

@@ -239,7 +239,12 @@ pub fn hist_series(
     include_category: bool,
     include_breakpoint: bool,
 ) -> PolarsResult<Series> {
-    polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "'hist' is only supported for numeric data");
+    polars_ensure!(
+        s.dtype().is_primitive_numeric(),
+        opq = hist,
+        got = s.dtype(),
+        expected = "integer or float"
+    );
 
     let mut bins_arg = None;
 

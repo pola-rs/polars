@@ -50,8 +50,14 @@ pub trait LogSeries: SeriesSealed {
     /// Compute the logarithm to a given base
     fn log(&self, base: &Series) -> PolarsResult<Series> {
         let s = self.as_series();
-        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'log'");
-        polars_ensure!(base.dtype().is_numeric() || base.dtype().is_bool(), InvalidOperation: "expected numerical input for 'log'");
+        polars_ensure!(
+            s.dtype().is_numeric() || s.dtype().is_bool(),
+            InvalidOperation: "expected numeric or boolean input for `log`, got `{}`", s.dtype()
+        );
+        polars_ensure!(
+            base.dtype().is_numeric() || base.dtype().is_bool(),
+            InvalidOperation: "expected numeric or boolean input for `base`, got `{}`", base.dtype()
+        );
 
         match (s.dtype(), base.dtype()) {
             (dt1, dt2) if dt1 == dt2 && dt1.is_float() => {

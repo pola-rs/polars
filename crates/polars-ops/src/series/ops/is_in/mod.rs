@@ -312,6 +312,7 @@ where
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
     debug_assert_ne!(other.len(), 1);
+    let other = &other.rechunk();
     let offsets = other.offsets()?;
     let inner = other.get_inner();
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();
