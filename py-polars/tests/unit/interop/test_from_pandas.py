@@ -468,7 +468,5 @@ def test_from_pandas_unnamed_index_name_clash_29531() -> None:
         {"level_0": [1, 2, 3, 4]},
         index=pd.MultiIndex.from_product([["x", "y"], [1, 2]]),
     )
-    with pytest.raises(
-        ValueError, match="indices and column names must not overlap"
-    ):
+    with pytest.raises(ValueError, match="indices and column names must not overlap"):
         pl.from_pandas(pd_df, include_index=True)
