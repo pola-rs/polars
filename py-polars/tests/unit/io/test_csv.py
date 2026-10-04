@@ -3289,6 +3289,18 @@ def test_read_csv_use_pyarrow_multiple_sources_unsupported() -> None:
         pl.read_csv([b"a\n1"], use_pyarrow=True)
 
 
+def test_read_csv_use_pyarrow_newlines_in_values_29717() -> None:
+    # A quoted value that spans a pyarrow block boundary must not desync the
+    # parser: without `newlines_in_values` this either raises "CSV parser got
+    # out of sync with chunker" or returns wrong values.
+    value = '"' + "x" * 600 + "\n" + "y" * 600 + '"\n'
+    data = ("v\n" + value * 8000).encode()
+
+    expected = pl.read_csv(io.BytesIO(data))
+
+    assert_frame_equal(pl.read_csv(io.BytesIO(data), use_pyarrow=True), expected)
+
+
 def test_read_csv_from_file_offset() -> None:
     f = io.StringIO("""\
 A|B|C|D

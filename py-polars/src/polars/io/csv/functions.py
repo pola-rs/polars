@@ -433,6 +433,9 @@ def read_csv(
                         delimiter=separator,
                         quote_char=quote_char if quote_char else False,
                         double_quote=quote_char is not None and quote_char == '"',
+                        # Quoted values may span multiple lines, so the block
+                        # chunker must not split inside them.
+                        newlines_in_values=bool(quote_char),
                     ),
                     pa.csv.ConvertOptions(
                         column_types=None,
