@@ -18,7 +18,6 @@ use polars_plan::dsl::functions::{
 use polars_plan::dsl::{FunctionExpr, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
 use polars_plan::prelude::StrptimeOptions;
-use polars_plan::utils::has_expr;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
@@ -2747,11 +2746,11 @@ impl SQLFunctionVisitor<'_> {
         };
         self.validate_window_frame(&window_spec.window_frame)?;
 
-        // A key without a column, as in `PARTITION BY 1`, does not split the frame.
+        // A constant key, as in `PARTITION BY 1`, does not split the frame.
         let mut partition_by = Vec::with_capacity(window_spec.partition_by.len());
         for p in &window_spec.partition_by {
             let key = parse_sql_expr(p, self.ctx, self.active_schema)?;
-            if has_expr(&key, |e| matches!(e, Expr::Column(_) | Expr::Selector(_))) {
+            if !is_constant(&key) {
                 partition_by.push(key);
             }
         }
@@ -2796,6 +2795,17 @@ fn sql_corr(a: Expr, b: Expr) -> Expr {
     when(has_corr_pairs)
         .then(polars_lazy::dsl::pearson_corr(a, b))
         .otherwise(lit(LiteralValue::untyped_null()))
+}
+
+/// Whether `expr` has the same value for every row whatever the input, as `1` or `1 + 1`.
+fn is_constant(expr: &Expr) -> bool {
+    expr.into_iter().all(|e| match e {
+        Expr::Literal(lv) => lv.is_scalar(),
+        Expr::BinaryExpr { .. } | Expr::Cast { .. } | Expr::Alias(..) | Expr::Ternary { .. } => {
+            true
+        },
+        _ => false,
+    })
 }
 
 /// Returns true if the SQL expression is a non-null literal value (e.g. `1`, `'hello'`, `TRUE`).

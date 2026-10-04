@@ -2053,7 +2053,7 @@ impl SQLContext {
                 .iter()
                 .map(|e| {
                     self.map_whole_frame_windows(e.clone(), |function| {
-                        if has_nested_aggregate(function) {
+                        if has_nested_aggregate(function, &schema) {
                             function.clone()
                         } else {
                             lit(1)
@@ -4724,13 +4724,24 @@ fn parse_sql(query: &str) -> PolarsResult<Vec<Statement>> {
 }
 
 /// Whether `expr` aggregates the result of another aggregate, as in `SUM(SUM(x))`.
-fn has_nested_aggregate(expr: &Expr) -> bool {
-    expr.into_iter().any(|e| {
-        matches!(e, Expr::Agg(_))
-            && e.into_iter()
-                .skip(1)
-                .any(|inner| matches!(inner, Expr::Agg(_) | Expr::Len))
-    })
+fn has_nested_aggregate(expr: &Expr, schema: &Schema) -> bool {
+    let mut arena = Arena::new();
+    let mut ctx = ExprToIRContext::new(&mut arena, schema);
+    ctx.allow_unknown = true;
+    ctx.check_column_names = false;
+    let Ok(ir) = to_expr_ir(expr.clone(), &mut ctx) else {
+        return false;
+    };
+    let reduces = |ae: &AExpr| match ae {
+        AExpr::Agg(_) | AExpr::AnonymousAgg { .. } | AExpr::Len => true,
+        AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
+            options.returns_scalar()
+        },
+        _ => false,
+    };
+    arena
+        .iter(ir.node())
+        .any(|(node, ae)| reduces(ae) && arena.iter(node).skip(1).any(|(_, inner)| reduces(inner)))
 }
 
 bitflags::bitflags! {

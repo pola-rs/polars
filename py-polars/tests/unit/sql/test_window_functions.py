@@ -980,6 +980,8 @@ def test_window_last_value(df_window: pl.DataFrame) -> None:
         # a window over aggregates makes the query an aggregation, with one row
         "SELECT SUM(SUM(x)) OVER () AS a FROM t",
         "SELECT AVG(MAX(x)) OVER () AS a FROM t",
+        "SELECT APPROX_QUANTILE(SUM(x), 0.5) OVER () AS a FROM t",
+        "SELECT CORR(SUM(x), SUM(x)) OVER () AS a FROM t",
     ],
 )
 @pytest.mark.parametrize("n_rows", [0, 3])
@@ -990,6 +992,22 @@ def test_window_over_whole_frame_row_count(query: str, n_rows: int) -> None:
         query=query,
         compare_with="duckdb",
         engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "partition_by",
+    ["COUNT(*)", "COUNT(*) > 1", "1, COUNT(*)"],
+)
+def test_window_partition_by_aggregate_after_group_by(partition_by: str) -> None:
+    df = pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
+    assert_sql_matches(
+        df,
+        query=f"""
+            SELECT g, ROW_NUMBER() OVER (PARTITION BY {partition_by} ORDER BY g) AS r
+            FROM self GROUP BY g ORDER BY g
+        """,
+        compare_with="duckdb",
     )
 
 
