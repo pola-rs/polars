@@ -406,3 +406,69 @@ def test_from_pandas_string_with_natype_17355(null: Any) -> None:
     result = pl.from_pandas(pd_df)
     expected = pl.DataFrame({"col": ["a", None]})
     assert_frame_equal(result, expected)
+
+
+def test_from_pandas_unnamed_index_include_index_29531() -> None:
+    # https://github.com/pola-rs/polars/issues/29531
+    # an unnamed index should follow the pandas `reset_index()` naming
+    # convention ("index" / "level_0", ...) instead of the literal "None"
+    pd_df = pd.DataFrame({"a": [1, 2, 3]}, index=pd.Index([7, 8, 9]))
+    result = pl.from_pandas(pd_df, include_index=True)
+    expected = pl.DataFrame({"index": [7, 8, 9], "a": [1, 2, 3]})
+    assert_frame_equal(result, expected)
+
+    # an unnamed MultiIndex must not raise a false non-unique-columns error
+    pd_df = pd.DataFrame(
+        {"a": [1, 2, 3, 4]},
+        index=pd.MultiIndex.from_product([["x", "y"], [1, 2]]),
+    )
+    result = pl.from_pandas(pd_df, include_index=True)
+    expected = pl.DataFrame(
+        {
+            "level_0": ["x", "x", "y", "y"],
+            "level_1": [1, 2, 1, 2],
+            "a": [1, 2, 3, 4],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    # mixed named/unnamed levels: named levels keep their names
+    pd_df = pd.DataFrame(
+        {"a": [1, 2, 3, 4]},
+        index=pd.MultiIndex.from_product([["x", "y"], [1, 2]], names=["letter", None]),
+    )
+    result = pl.from_pandas(pd_df, include_index=True)
+    expected = pl.DataFrame(
+        {
+            "letter": ["x", "x", "y", "y"],
+            "level_1": [1, 2, 1, 2],
+            "a": [1, 2, 3, 4],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    pd_df = pd.DataFrame(
+        {"a": [1, 2, 3, 4]},
+        index=pd.MultiIndex.from_product([["x", "y"], [1, 2]], names=[None, "number"]),
+    )
+    result = pl.from_pandas(pd_df, include_index=True)
+    expected = pl.DataFrame(
+        {
+            "level_0": ["x", "x", "y", "y"],
+            "number": [1, 2, 1, 2],
+            "a": [1, 2, 3, 4],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_from_pandas_unnamed_index_name_clash_29531() -> None:
+    # normalized index names still take part in the overlap check
+    pd_df = pd.DataFrame(
+        {"level_0": [1, 2, 3, 4]},
+        index=pd.MultiIndex.from_product([["x", "y"], [1, 2]]),
+    )
+    with pytest.raises(
+        ValueError, match="indices and column names must not overlap"
+    ):
+        pl.from_pandas(pd_df, include_index=True)
