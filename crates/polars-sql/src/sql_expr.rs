@@ -1102,11 +1102,16 @@ impl SQLExprVisitor<'_> {
     ///
     /// See [SQLFunctionVisitor] for more details
     fn visit_function(&mut self, function: &SQLFunction) -> PolarsResult<Expr> {
+        let window = match &function.over {
+            Some(window) => Some(self.ctx.resolve_window(window)?),
+            None => None,
+        };
         let mut visitor = SQLFunctionVisitor {
             func: function,
             ctx: self.ctx,
             active_schema: self.active_schema,
             filter: None,
+            window,
         };
         visitor.visit_function()
     }

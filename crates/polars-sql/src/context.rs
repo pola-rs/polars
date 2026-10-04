@@ -19,7 +19,8 @@ use sqlparser::ast::{
     OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
     TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
-    ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec, visit_expressions_mut,
+    ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec, WindowType,
+    visit_expressions_mut,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -1144,11 +1145,57 @@ impl SQLContext {
                         )
                     })?
                     .clone(),
-                NamedWindowExpr::WindowSpec(spec) => spec.clone(),
+                NamedWindowExpr::WindowSpec(spec) => self.resolve_window_spec(spec)?,
             };
             self.named_windows.insert(name.value.clone(), spec);
         }
         Ok(())
+    }
+
+    /// The window of an `OVER` clause, with any named window filled in.
+    pub(crate) fn resolve_window(&self, window: &WindowType) -> PolarsResult<WindowSpec> {
+        match window {
+            WindowType::NamedWindow(name) => self.named_window(name),
+            WindowType::WindowSpec(spec) => self.resolve_window_spec(spec),
+        }
+    }
+
+    fn named_window(&self, name: &Ident) -> PolarsResult<WindowSpec> {
+        self.named_windows
+            .get(&name.value)
+            .cloned()
+            .ok_or_else(|| polars_err!(SQLInterface: "named window '{}' was not found", name.value))
+    }
+
+    /// `(w ORDER BY x)` takes the PARTITION BY of `w`, and its ORDER BY if it has one.
+    /// As in PostgreSQL, it may not replace either of them, and `w` may not have a frame.
+    fn resolve_window_spec(&self, spec: &WindowSpec) -> PolarsResult<WindowSpec> {
+        let Some(base_name) = &spec.window_name else {
+            return Ok(spec.clone());
+        };
+        let base = self.named_window(base_name)?;
+        polars_ensure!(
+            spec.partition_by.is_empty(),
+            SQLSyntax: "cannot override PARTITION BY of window '{}'", base_name.value
+        );
+        polars_ensure!(
+            spec.order_by.is_empty() || base.order_by.is_empty(),
+            SQLSyntax: "cannot override ORDER BY of window '{}'", base_name.value
+        );
+        polars_ensure!(
+            base.window_frame.is_none(),
+            SQLSyntax: "cannot copy window '{}' because it has a frame clause", base_name.value
+        );
+        Ok(WindowSpec {
+            window_name: None,
+            partition_by: base.partition_by,
+            order_by: if spec.order_by.is_empty() {
+                base.order_by
+            } else {
+                spec.order_by.clone()
+            },
+            window_frame: spec.window_frame.clone(),
+        })
     }
 
     /// execute the 'FROM' part of the query
