@@ -1881,19 +1881,15 @@ impl SQLFunctionVisitor<'_> {
         let Some(spec) = &self.window else {
             polars_bail!(SQLSyntax: "{} requires an OVER clause", self.func.name);
         };
-        let keys = spec
-            .order_by
-            .clone()
-            .iter()
-            .map(|o| parse_sql_expr(&o.expr, self.ctx, self.active_schema))
-            .collect::<PolarsResult<Vec<_>>>()?;
+        let order_by = spec.order_by.clone();
+        let keys = self.parse_window_order_keys(&order_by)?;
 
         let (row_index, n) = window_row_index();
         let row_number = row_index.clone() + lit(1i64);
         // A row is the first (last) of its peers if a key differs from the row before (after).
         let mut is_first_peer = row_index.clone().eq(lit(0i64));
         let mut is_last_peer = row_index.eq(n.clone() - lit(1i64));
-        for key in keys {
+        for (key, _) in keys {
             is_first_peer = is_first_peer.or(key.clone().neq_missing(key.clone().shift(lit(1))));
             is_last_peer = is_last_peer.or(key.clone().neq_missing(key.shift(lit(-1))));
         }
@@ -2752,45 +2748,52 @@ impl SQLFunctionVisitor<'_> {
         self.apply_order_by(expr, order_by)
     }
 
-    /// Parse ORDER BY (in OVER clause), validating that all keys sort alike.
+    /// The keys of a window ORDER BY with their sort options. Constant keys, as `1`, are left
+    /// out, as they don't change the order.
+    fn parse_window_order_keys(
+        &mut self,
+        order_by: &[OrderByExpr],
+    ) -> PolarsResult<Vec<(Expr, SortOptions)>> {
+        let mut keys = Vec::with_capacity(order_by.len());
+        for o in order_by {
+            let key = parse_sql_expr(&o.expr, self.ctx, self.active_schema)?;
+            if !is_constant_key(&key) {
+                keys.push((key, order_by_sort_options(&o.options)));
+            }
+        }
+        Ok(keys)
+    }
+
     /// The sort key of a window ORDER BY. Several keys are row-encoded into one, so that each
     /// key keeps its own direction and NULL order.
     fn parse_order_by_in_window(
         &mut self,
         order_by: &[OrderByExpr],
     ) -> PolarsResult<Option<(Expr, SortOptions)>> {
+        let mut keys = self.parse_window_order_keys(order_by)?;
         // Rows with equal keys (peers) may be processed in any order.
-        match order_by {
-            [] => Ok(None),
-            [o] => {
-                let key = parse_sql_expr(&o.expr, self.ctx, self.active_schema)?;
-                let options = order_by_sort_options(&o.options).with_maintain_order(false);
-                Ok(Some((key, options)))
+        Ok(match keys.len() {
+            0 => None,
+            1 => {
+                let (key, options) = keys.pop().unwrap();
+                Some((key, options.with_maintain_order(false)))
             },
             _ => {
-                let mut keys = Vec::with_capacity(order_by.len());
-                let mut descending = Vec::with_capacity(order_by.len());
-                let mut nulls_last = Vec::with_capacity(order_by.len());
-                for o in order_by {
-                    let options = order_by_sort_options(&o.options);
-                    keys.push(parse_sql_expr(&o.expr, self.ctx, self.active_schema)?);
-                    descending.push(options.descending);
-                    nulls_last.push(options.nulls_last);
-                }
+                let (descending, nulls_last) = keys
+                    .iter()
+                    .map(|(_, options)| (options.descending, options.nulls_last))
+                    .unzip();
                 let key = Expr::n_ary(
                     FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
                         descending: Some(descending),
                         nulls_last: Some(nulls_last),
                         broadcast_nulls: None,
                     }),
-                    keys,
+                    keys.into_iter().map(|(key, _)| key).collect(),
                 );
-                Ok(Some((
-                    key,
-                    SortOptions::default().with_maintain_order(false),
-                )))
+                Some((key, SortOptions::default().with_maintain_order(false)))
             },
-        }
+        })
     }
 
     fn apply_window_spec(&mut self, expr: Expr) -> PolarsResult<Expr> {
@@ -2803,7 +2806,7 @@ impl SQLFunctionVisitor<'_> {
         let mut partition_by = Vec::with_capacity(window_spec.partition_by.len());
         for p in &window_spec.partition_by {
             let key = parse_sql_expr(p, self.ctx, self.active_schema)?;
-            if !matches!(key.clone().meta().is_input_independent_scalar(), Ok(true)) {
+            if !is_constant_key(&key) {
                 partition_by.push(key);
             }
         }
@@ -2831,6 +2834,11 @@ impl SQLFunctionVisitor<'_> {
             self.func.to_string()
         );
     }
+}
+
+/// Whether a window key has the same value on every row, as `1` or `LOWER('A')`.
+fn is_constant_key(key: &Expr) -> bool {
+    matches!(key.clone().meta().is_input_independent_scalar(), Ok(true))
 }
 
 /// The row index (from 0) in the window partition, and the number of rows in it.

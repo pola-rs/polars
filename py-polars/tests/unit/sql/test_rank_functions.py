@@ -158,6 +158,9 @@ def df_ties() -> pl.DataFrame:
         "x DESC NULLS LAST",
         "x, y DESC",
         "x DESC NULLS LAST, y NULLS FIRST",
+        # constant keys don't change the order
+        "x, 1",
+        "LOWER('A'), x DESC",
     ],
 )
 @pytest.mark.parametrize("partition_by", ["", "PARTITION BY g"])
@@ -177,6 +180,24 @@ def test_rank_funcs_nulls_and_ties(
     """
     assert_sql_matches(
         df_ties,
+        query=query,
+        compare_with="duckdb",
+        check_dtypes=True,
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_rank_funcs_empty_input(df_ties: pl.DataFrame) -> None:
+    query = """
+        SELECT
+            RANK() OVER () AS rank,
+            PERCENT_RANK() OVER () AS percent_rank,
+            CUME_DIST() OVER (ORDER BY x) AS cume_dist,
+            NTILE(2) OVER (PARTITION BY g ORDER BY id) AS ntile
+        FROM self
+    """
+    assert_sql_matches(
+        df_ties.clear(),
         query=query,
         compare_with="duckdb",
         check_dtypes=True,
