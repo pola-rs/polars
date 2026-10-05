@@ -1902,7 +1902,7 @@ impl SQLContext {
             SubqueryShape::Scalar,
         )?;
         for (expr, _) in projections_with_flags.iter_mut() {
-            *expr = broadcast_subqueries_in_windows(expr.clone(), &subquery_names);
+            *expr = broadcast_subqueries_in_inputs(expr.clone(), &subquery_names);
         }
         schema = self.get_frame_schema(&mut lf)?;
 
@@ -1957,7 +1957,7 @@ impl SQLContext {
                     subquery_names.extend(qualify_subquery_names);
                     schema = self.get_frame_schema(&mut lf)?;
                 }
-                let qualify = broadcast_subqueries_in_windows(qualify, &subquery_names);
+                let qualify = broadcast_subqueries_in_inputs(qualify, &subquery_names);
                 Some(qualify.alias(qualify_column.clone()))
             },
             None => None,
@@ -3370,6 +3370,8 @@ impl SQLContext {
                 let having_subquery_names;
                 (lf, having_subquery_names) =
                     self.process_subqueries(lf, vec![&mut having_expr], SubqueryShape::Scalar)?;
+                let having_expr =
+                    broadcast_subqueries_in_inputs(having_expr, &having_subquery_names);
                 subquery_names.extend(having_subquery_names);
                 Some(having_expr)
             },
@@ -3989,12 +3991,18 @@ pub(crate) fn strip_outer_alias(expr: &Expr) -> Expr {
 }
 
 /// Reduce decorrelated correlated-subquery columns, which hold one value per input row,
-/// to the single value they take within a group.
+/// to the single value they take within a group. An aggregate reads them per row.
 fn reduce_correlated_cols_in_group_context(expr: Expr) -> Expr {
-    expr.map_expr(|e| match e {
+    match expr {
         Expr::Column(name) if is_correlated_result_col(&name) => Expr::Column(name).first(),
-        e => e,
-    })
+        e if is_marked_aggregate(&e) => e,
+        e => e
+            .map_children(
+                &mut |c, _| Ok(reduce_correlated_cols_in_group_context(c)),
+                &mut (),
+            )
+            .unwrap(),
+    }
 }
 
 /// How a resolved subquery placeholder column should be referenced.
@@ -4007,23 +4015,23 @@ enum SubqueryShape {
     Broadcast,
 }
 
-/// Read the resolved scalar subqueries in the inputs of the windows of `expr` as their
-/// column, which holds the value on every row: a window function reads one value per row.
-fn broadcast_subqueries_in_windows(expr: Expr, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
-    fn broadcast(expr: Expr, in_window: bool, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
+/// Read the resolved scalar subqueries in the inputs of the windows and aggregates of `expr`
+/// as their column, which holds the value on every row: these functions read one value per
+/// row.
+fn broadcast_subqueries_in_inputs(expr: Expr, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
+    fn broadcast(expr: Expr, in_inputs: bool, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
         match expr {
             Expr::Agg(AggExpr::First(inner))
-                if in_window
+                if in_inputs
                     && matches!(inner.as_ref(), Expr::Column(name) if subquery_names.contains(name)) =>
             {
                 Arc::unwrap_or_clone(inner)
             },
-            // A marked aggregate is computed per group, where the subquery is one value.
-            e if is_marked_aggregate(&e) => e,
             e => {
-                let in_window = in_window || matches!(e, Expr::Over { .. });
+                let in_inputs =
+                    in_inputs || matches!(e, Expr::Over { .. }) || is_marked_aggregate(&e);
                 e.map_children(
-                    &mut |c, _| Ok(broadcast(c, in_window, subquery_names)),
+                    &mut |c, _| Ok(broadcast(c, in_inputs, subquery_names)),
                     &mut (),
                 )
                 .unwrap()
