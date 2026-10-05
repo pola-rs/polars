@@ -407,7 +407,7 @@ impl ComputeNode for SortNode {
                             morsel.take_consume_token();
                             {
                                 let df = morsel.sf().get().await;
-                                bytes.fetch_add(df.estimated_size() as u64, Ordering::Relaxed);
+                                bytes.fetch_add(df.estimated_size(false) as u64, Ordering::Relaxed);
                                 let keys = key_series(&df, key)?;
                                 sample.add(&keys);
                             }

@@ -22,7 +22,7 @@ impl RowCountAndSize {
     pub fn new_from_df(df: &DataFrame) -> Self {
         Self {
             num_rows: IdxSize::try_from(df.height()).unwrap(),
-            num_bytes: u64::try_from(df.estimated_size()).unwrap(),
+            num_bytes: u64::try_from(df.estimated_size(true)).unwrap(),
         }
     }
 

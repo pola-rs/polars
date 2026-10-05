@@ -29,6 +29,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use recursive::recursive;
 use slotmap::{DenseSlotMap, SecondaryMap};
 
+use super::scalar_window::scalar_window_params;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
@@ -602,52 +603,75 @@ fn to_graph_rec<'a>(
             exprs,
             ordered_eval,
             maintain_order,
+            scalar,
         } => {
             let input_schema = input.output_schema(ctx.phys_sm).clone();
             let output_schema = node.output_schema(0).clone();
-            let window_exprs = exprs
-                .iter()
-                .map(|e| {
-                    let expr = create_window_expr(
-                        e.node(),
-                        ctx.expr_arena,
-                        &input_schema,
-                        &mut ctx.expr_conversion_state,
-                    )?;
-                    PolarsResult::Ok((e.output_name().clone(), expr))
-                })
-                .try_collect_vec()?;
-            let mut read = PlHashSet::new();
-            for e in exprs {
-                read.extend(aexpr_to_leaf_names_iter(e.node(), ctx.expr_arena).cloned());
+            if *scalar {
+                let params = scalar_window_params(
+                    partition_by,
+                    exprs,
+                    &input_schema,
+                    output_schema,
+                    ctx.expr_arena,
+                )?;
+                let input_key = to_graph_rec(input.node, ctx)?;
+                let num_pipelines = ctx.num_pipelines;
+                ctx.add_node_with_metrics(
+                    |registry| {
+                        nodes::scalar_window::ScalarWindowNode::new(
+                            Arc::new(params),
+                            num_pipelines,
+                            registry.task_metrics(),
+                        )
+                    },
+                    [(input_key, input.port)],
+                )
+            } else {
+                let window_exprs = exprs
+                    .iter()
+                    .map(|e| {
+                        let expr = create_window_expr(
+                            e.node(),
+                            ctx.expr_arena,
+                            &input_schema,
+                            &mut ctx.expr_conversion_state,
+                        )?;
+                        PolarsResult::Ok((e.output_name().clone(), expr))
+                    })
+                    .try_collect_vec()?;
+                let mut read = PlHashSet::new();
+                for e in exprs {
+                    read.extend(aexpr_to_leaf_names_iter(e.node(), ctx.expr_arena).cloned());
+                }
+                let read_schema: Schema = input_schema
+                    .iter()
+                    .filter(|(name, _)| read.contains(*name))
+                    .map(|(name, dtype)| (name.clone(), dtype.clone()))
+                    .collect();
+                let params = nodes::window::WindowParams::new(
+                    partition_by.clone(),
+                    order_by.clone(),
+                    window_exprs,
+                    &input_schema,
+                    read_schema,
+                    output_schema,
+                    *ordered_eval,
+                    *maintain_order,
+                );
+                let input_key = to_graph_rec(input.node, ctx)?;
+                let num_pipelines = ctx.num_pipelines;
+                ctx.add_node_with_metrics(
+                    |registry| {
+                        nodes::window::WindowNode::new(
+                            Arc::new(params),
+                            num_pipelines,
+                            registry.task_metrics(),
+                        )
+                    },
+                    [(input_key, input.port)],
+                )
             }
-            let read_schema: Schema = input_schema
-                .iter()
-                .filter(|(name, _)| read.contains(*name))
-                .map(|(name, dtype)| (name.clone(), dtype.clone()))
-                .collect();
-            let params = nodes::window::WindowParams::new(
-                partition_by.clone(),
-                order_by.clone(),
-                window_exprs,
-                &input_schema,
-                read_schema,
-                output_schema,
-                *ordered_eval,
-                *maintain_order,
-            );
-            let input_key = to_graph_rec(input.node, ctx)?;
-            let num_pipelines = ctx.num_pipelines;
-            ctx.add_node_with_metrics(
-                |registry| {
-                    nodes::window::WindowNode::new(
-                        Arc::new(params),
-                        num_pipelines,
-                        registry.task_metrics(),
-                    )
-                },
-                [(input_key, input.port)],
-            )
         },
 
         Map {
