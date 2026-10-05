@@ -1,6 +1,6 @@
-use std::ops::{Add, Sub};
+use std::ops::Sub;
 
-use polars_core::chunked_array::ops::{FillNullStrategy, SortMultipleOptions, SortOptions};
+use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
     DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit, polars_bail,
     polars_err,
@@ -35,6 +35,7 @@ use crate::sql_expr::{
     order_by_sort_options, parse_extract_date_part, parse_sql_array, parse_sql_expr, sql_binary,
 };
 use crate::sql_visitors::grouping_call_args;
+use crate::window_frames::is_frame_aggregate;
 
 pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
@@ -1220,12 +1221,12 @@ impl SQLFunctionVisitor<'_> {
             polars_bail!(SQLInterface: "'IGNORE|RESPECT NULLS' is not currently supported")
         }
         if let Some(filter_expr) = &function.filter {
-            if function.over.is_some() {
-                polars_bail!(SQLInterface: "'FILTER' combined with 'OVER' is not supported")
-            }
             self.filter = Some(parse_sql_expr(filter_expr, self.ctx, self.active_schema)?);
         }
         self.check_window_shape(&function_name)?;
+        if self.window.is_some() && is_frame_aggregate(&function_name, self.is_distinct()) {
+            return self.visit_window_aggregate(&function_name);
+        }
 
         let log_with_base =
             |e: Expr, base: f64| e.log(LiteralValue::Dyn(DynLiteralValue::Float(base)).lit());
@@ -1731,7 +1732,7 @@ impl SQLFunctionVisitor<'_> {
             First => self.visit_unary(Expr::first),
             Grouping | GroupingId => self.visit_grouping(),
             Last => self.visit_unary(Expr::last),
-            Max => self.visit_min_max(Expr::max, Expr::cum_max),
+            Max => self.visit_min_max(Expr::max),
             Median => self.visit_unary(Expr::median),
             QuantileCont | QuantileDisc => {
                 let (fname, method) = if matches!(function_name, QuantileCont) {
@@ -1750,7 +1751,7 @@ impl SQLFunctionVisitor<'_> {
                     },
                 }
             },
-            Min => self.visit_min_max(Expr::min, Expr::cum_min),
+            Min => self.visit_min_max(Expr::min),
             StdDev => self.visit_unary(|e| e.std(1)),
             StringAgg => self.visit_string_agg(),
             Sum => self.visit_sum(),
@@ -2019,41 +2020,39 @@ impl SQLFunctionVisitor<'_> {
         self.apply_window_spec(expr)
     }
 
+    fn is_distinct(&self) -> bool {
+        matches!(
+            &self.func.args,
+            FunctionArguments::List(list)
+                if list.duplicate_treatment == Some(DuplicateTreatment::Distinct)
+        )
+    }
+
     /// Raise for window shapes that would otherwise give a wrong result.
     fn check_window_shape(&self, function: &PolarsSQLFunctions) -> PolarsResult<()> {
         use PolarsSQLFunctions::*;
         let Some(spec) = &self.window else {
             return Ok(());
         };
-        let is_distinct = matches!(
-            &self.func.args,
-            FunctionArguments::List(list)
-                if list.duplicate_treatment == Some(DuplicateTreatment::Distinct)
-        );
+        let is_distinct = self.is_distinct();
         let has_order_by = !spec.order_by.is_empty();
         let has_frame = spec.window_frame.is_some();
 
-        // Lowered to a running aggregate (`cum_sum` etc.) when the window has an ORDER BY.
-        let running = match function {
-            Sum | Min | Max | Total => true,
-            Count => !is_distinct,
-            _ => false,
-        };
+        if self.func.filter.is_some() && !is_frame_aggregate(function, is_distinct) {
+            polars_bail!(
+                SQLInterface: "'FILTER' combined with 'OVER' is not supported for {}",
+                self.func.name
+            );
+        }
         // Only computed over the whole partition.
         let whole_partition = match function {
             #[cfg(feature = "approx_quantile")]
             ApproxQuantile => true,
-            ArrayAgg | Avg | Corr | CovarPop | CovarSamp | Last | Median | QuantileCont
+            ArrayAgg | Corr | CovarPop | CovarSamp | Last | Median | QuantileCont
             | QuantileDisc | StdDev | StringAgg | Variance => true,
             Count => is_distinct,
             _ => false,
         };
-        if running && has_frame && !has_order_by {
-            polars_bail!(
-                SQLInterface: "{} with a window frame but no ORDER BY is not supported",
-                self.func.name
-            );
-        }
         if whole_partition && has_order_by {
             polars_bail!(
                 SQLInterface: "{} with ORDER BY in OVER is not supported yet; without ORDER BY it uses the whole partition",
@@ -2087,18 +2086,9 @@ impl SQLFunctionVisitor<'_> {
         Ok(())
     }
 
-    /// Validate window frame specifications.
-    ///
-    /// Polars only supports ROWS frame semantics, and does
-    /// not currently support customising the window.
-    ///
-    /// **Supported Frame Spec**
-    /// - `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
-    ///
-    /// **Unsupported Frame Spec**
-    /// - `RANGE ...` (peer group semantics not implemented)
-    /// - `GROUPS ...` (peer group semantics not implemented)
-    /// - `ROWS` with other bounds (e.g., `<n> PRECEDING`, `FOLLOWING`, etc)
+    /// Validate the window frame of functions other than the aggregates in
+    /// `visit_window_aggregate`. Only `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` is
+    /// supported.
     fn validate_window_frame(&self, window_frame: &Option<WindowFrame>) -> PolarsResult<()> {
         if let Some(frame) = window_frame {
             match frame.units {
@@ -2139,54 +2129,6 @@ impl SQLFunctionVisitor<'_> {
             }
         }
         Ok(())
-    }
-
-    /// Window specs that map to cumulative functions.
-    ///
-    /// Converts SQL window functions with ORDER BY to compatible cumulative ops:
-    /// - `SUM(a) OVER (ORDER BY b)` → `a.cum_sum().over(order_by=b)`
-    /// - `MAX(a) OVER (ORDER BY b)` → `a.cum_max().over(order_by=b)`
-    /// - `MIN(a) OVER (ORDER BY b)` → `a.cum_min().over(order_by=b)`
-    ///
-    /// ROWS vs RANGE Semantics (show default behaviour if no frame spec):
-    ///
-    /// **Polars (ROWS)**
-    /// Each row gets its own cumulative value row-by-row.
-    /// ```text
-    /// Data: [(A,X,10), (A,X,15), (A,Y,20)]
-    /// Query: SUM(value) OVER (ORDER BY category, subcategory)
-    /// Result: [10, 25, 45]  ← row-by-row cumulative
-    /// ```
-    ///
-    /// **SQL (RANGE)**
-    /// Rows with identical ORDER BY values (peers) get the same result.
-    /// ```text
-    /// Same data, query with RANGE (eg: using a relational DB):
-    /// Result: [25, 25, 45]  ← both (A,X) rows get 25
-    /// ```
-    fn apply_cumulative_window(
-        &mut self,
-        f: impl Fn(Expr) -> Expr,
-        cumulative_fn: impl Fn(Expr, bool) -> Expr,
-        WindowSpec { order_by, .. }: &WindowSpec,
-    ) -> PolarsResult<Expr> {
-        if !order_by.is_empty() {
-            // Get the base expr/column
-            let args = extract_args(self.func)?;
-            let base_expr = match args.as_slice() {
-                [FunctionArgExpr::Expr(sql_expr)] => {
-                    parse_sql_expr(sql_expr, self.ctx, self.active_schema)?
-                },
-                _ => return self.not_supported_error(),
-            };
-
-            // Apply cumulative function; the forward-fill ensures we match SQL semantics
-            let cumulative_expr = cumulative_fn(base_expr, false)
-                .fill_null_with_strategy(FillNullStrategy::Forward(None));
-            self.apply_window_spec(cumulative_expr)
-        } else {
-            self.visit_unary(f)
-        }
     }
 
     /// Parse an argument of the function currently being visited.
@@ -2248,19 +2190,6 @@ impl SQLFunctionVisitor<'_> {
             _ => self.not_supported_error(),
         }
         .and_then(|e| self.apply_window_spec(e))
-    }
-
-    /// Some functions have cumulative equivalents that can be applied to window specs
-    /// e.g. SUM(a) OVER (ORDER BY b DESC) -> CUMSUM(a, false)
-    fn visit_unary_with_opt_cumulative(
-        &mut self,
-        f: impl Fn(Expr) -> Expr,
-        cumulative_fn: impl Fn(Expr, bool) -> Expr,
-    ) -> PolarsResult<Expr> {
-        match self.window.clone() {
-            Some(spec) => self.apply_cumulative_window(f, cumulative_fn, &spec),
-            None => self.visit_unary(f),
-        }
     }
 
     fn visit_binary<Arg: FromSQLExpr>(
@@ -2569,63 +2498,23 @@ impl SQLFunctionVisitor<'_> {
         if is_distinct {
             arg = arg.unique();
         }
-        self.apply_window_spec(arg.mean())
+        Ok(arg.mean())
     }
 
-    /// Like `visit_unary_with_opt_cumulative`, but also accepts a DISTINCT modifier, which is a
-    /// no-op for MIN/MAX.
-    fn visit_min_max(
-        &mut self,
-        f: impl Fn(Expr) -> Expr,
-        cumulative_fn: impl Fn(Expr, bool) -> Expr,
-    ) -> PolarsResult<Expr> {
-        match self.window.clone() {
-            Some(spec) => self.apply_cumulative_window(f, cumulative_fn, &spec),
-            None => {
-                let (args, _) = extract_args_distinct(self.func)?;
-                let e = match args.as_slice() {
-                    [FunctionArgExpr::Expr(sql_expr)] => f(self.parse_sql_arg(sql_expr)?),
-                    [FunctionArgExpr::Wildcard] => {
-                        f(self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?)
-                    },
-                    _ => return self.not_supported_error(),
-                };
-                self.apply_window_spec(e)
-            },
+    /// Like `visit_unary`, but also accepts a DISTINCT modifier, which is a no-op for MIN/MAX.
+    fn visit_min_max(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
+        let (args, _) = extract_args_distinct(self.func)?;
+        match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => Ok(f(self.parse_sql_arg(sql_expr)?)),
+            [FunctionArgExpr::Wildcard] => Ok(f(
+                self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
+            )),
+            _ => self.not_supported_error(),
         }
     }
 
     fn visit_count(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
-
-        let has_order_by = self
-            .window
-            .as_ref()
-            .is_some_and(|spec| !spec.order_by.is_empty());
-        if has_order_by && !is_distinct {
-            let is_count_star = match args.as_slice() {
-                [FunctionArgExpr::Wildcard] | [] => true,
-                [FunctionArgExpr::Expr(e)] => is_non_null_literal(e),
-                _ => false,
-            };
-            match args.as_slice() {
-                _ if is_count_star => {
-                    // COUNT(*) / COUNT(1) with ORDER BY -> map to `int_range`
-                    let row_number = int_range(lit(0), len(), 1, DataType::Int64).add(lit(1)); // SQL is 1-indexed
-                    return self.apply_window_spec(row_number);
-                },
-                [FunctionArgExpr::Expr(_)] => {
-                    // COUNT(column) with ORDER BY -> use cum_count
-                    return self
-                        .visit_unary_with_opt_cumulative(
-                            |e| e.count(),
-                            |e, reverse| e.cum_count(reverse),
-                        )
-                        .map(|e| e.cast(DataType::Int64));
-                },
-                _ => {},
-            }
-        }
         // COUNT(*), COUNT(1) with FILTER: count rows where the predicate is true.
         let count_star = || match &self.filter {
             Some(pred) => pred.clone().sum(),
@@ -2654,77 +2543,36 @@ impl SQLFunctionVisitor<'_> {
     }
 
     fn visit_sum(&mut self) -> PolarsResult<Expr> {
-        match self.window.clone() {
-            Some(spec) => {
-                if spec.order_by.is_empty() {
-                    // Non-cumulative windowed SUM: broadcast the null-guarded aggregate.
-                    // SQL requires NULL, not 0, for an empty or all-null input.
-                    let args = extract_args(self.func)?;
-                    let arg = match args.as_slice() {
-                        [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
-                        [FunctionArgExpr::Wildcard] => {
-                            self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
-                        },
-                        _ => return self.not_supported_error(),
-                    };
-                    let (total, non_empty) = match literal_sum(&arg) {
-                        Some(total) => (total, len().gt(lit(0))),
-                        None => (arg.clone().sum(), arg.count().gt(lit(0))),
-                    };
-                    let guarded = when(non_empty)
-                        .then(total)
-                        .otherwise(Expr::Literal(LiteralValue::untyped_null()));
-                    self.apply_window_spec(guarded)
-                } else {
-                    self.apply_cumulative_window(Expr::sum, Expr::cum_sum, &spec)
-                }
+        let (args, is_distinct) = extract_args_distinct(self.func)?;
+        let mut arg = match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
+            [FunctionArgExpr::Wildcard] => {
+                self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
             },
-            None => {
-                let (args, is_distinct) = extract_args_distinct(self.func)?;
-                let mut arg = match args.as_slice() {
-                    [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
-                    [FunctionArgExpr::Wildcard] => {
-                        self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
-                    },
-                    _ => return self.not_supported_error(),
-                };
-                if is_distinct {
-                    // Also bypasses the literal fast path, no longer matching a literal
-                    // once wrapped.
-                    arg = arg.unique();
-                }
-                let (total, non_empty) = match literal_sum(&arg) {
-                    Some(total) => (total, len().gt(lit(0))),
-                    None => (arg.clone().sum(), arg.count().gt(lit(0))),
-                };
-                Ok(when(non_empty)
-                    .then(total)
-                    .otherwise(Expr::Literal(LiteralValue::untyped_null())))
-            },
+            _ => return self.not_supported_error(),
+        };
+        if is_distinct {
+            // Also bypasses the literal fast path, no longer matching a literal
+            // once wrapped.
+            arg = arg.unique();
         }
+        Ok(sql_sum(arg))
     }
 
     fn visit_total(&mut self) -> PolarsResult<Expr> {
-        match self.window.clone() {
-            Some(spec) => self
-                .apply_cumulative_window(Expr::sum, Expr::cum_sum, &spec)
-                .map(|e| e.cast(DataType::Float64)),
-            None => {
-                let (args, is_distinct) = extract_args_distinct(self.func)?;
-                let mut arg = match args.as_slice() {
-                    [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
-                    [FunctionArgExpr::Wildcard] => {
-                        self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
-                    },
-                    _ => return self.not_supported_error(),
-                };
-                if is_distinct {
-                    arg = arg.unique();
-                }
-                let total = literal_sum(&arg).unwrap_or_else(|| arg.sum());
-                Ok(total.cast(DataType::Float64))
+        let (args, is_distinct) = extract_args_distinct(self.func)?;
+        let mut arg = match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
+            [FunctionArgExpr::Wildcard] => {
+                self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
             },
+            _ => return self.not_supported_error(),
+        };
+        if is_distinct {
+            arg = arg.unique();
         }
+        let total = literal_sum(&arg).unwrap_or_else(|| arg.sum());
+        Ok(total.cast(DataType::Float64))
     }
 
     fn apply_order_by(&mut self, expr: Expr, order_by: &[OrderByExpr]) -> PolarsResult<Expr> {
@@ -2765,7 +2613,7 @@ impl SQLFunctionVisitor<'_> {
 
     /// The keys of the window ORDER BY with their sort options. Input-independent scalar keys,
     /// as `1`, are left out, as they don't change the order.
-    fn parse_window_order_keys(&mut self) -> PolarsResult<Vec<(Expr, SortOptions)>> {
+    pub(crate) fn parse_window_order_keys(&mut self) -> PolarsResult<Vec<(Expr, SortOptions)>> {
         let Some(spec) = &self.window else {
             return Ok(Vec::new());
         };
@@ -2791,11 +2639,24 @@ impl SQLFunctionVisitor<'_> {
         expr: Expr,
         order_keys: Vec<(Expr, SortOptions)>,
     ) -> PolarsResult<Expr> {
-        let Some(window_spec) = self.window.clone() else {
+        let Some(window_spec) = &self.window else {
             return Ok(expr);
         };
         self.validate_window_frame(&window_spec.window_frame)?;
+        self.apply_over(expr, Vec::new(), order_keys)
+    }
 
+    /// Evaluate `expr` per window partition, split further by `extra_partition_by` and sorted
+    /// by `order_keys`.
+    pub(crate) fn apply_over(
+        &mut self,
+        expr: Expr,
+        extra_partition_by: Vec<Expr>,
+        order_keys: Vec<(Expr, SortOptions)>,
+    ) -> PolarsResult<Expr> {
+        let Some(window_spec) = self.window.clone() else {
+            return Ok(expr);
+        };
         // A constant key, as in `PARTITION BY 1`, does not split the frame.
         let mut partition_by = Vec::with_capacity(window_spec.partition_by.len());
         for p in &window_spec.partition_by {
@@ -2804,6 +2665,7 @@ impl SQLFunctionVisitor<'_> {
                 partition_by.push(key);
             }
         }
+        partition_by.extend(extra_partition_by);
         let partition_by = (!partition_by.is_empty()).then_some(partition_by);
         let order_by = window_sort_key(order_keys).map(|(key, options)| (vec![key], options));
 
@@ -2819,7 +2681,7 @@ impl SQLFunctionVisitor<'_> {
         })
     }
 
-    fn not_supported_error(&self) -> PolarsResult<Expr> {
+    pub(crate) fn not_supported_error(&self) -> PolarsResult<Expr> {
         polars_bail!(
             SQLInterface:
             "no function matches the given name and arguments: `{}`",
@@ -2829,7 +2691,7 @@ impl SQLFunctionVisitor<'_> {
 }
 
 /// Whether a window key is a scalar that doesn't depend on the input, as `1` or `LOWER('A')`.
-fn is_constant_key(key: &Expr) -> bool {
+pub(crate) fn is_constant_key(key: &Expr) -> bool {
     matches!(key.clone().meta().is_input_independent_scalar(), Ok(true))
 }
 
@@ -2908,7 +2770,7 @@ fn percent_rank(rank: Expr, n: Expr) -> Expr {
 
 /// Whether each row is the first of its peers in the sorted window: the first row, or a row
 /// where a key differs from the row before.
-fn is_first_peer(keys: &[Expr], row_index: &Expr) -> Expr {
+pub(crate) fn is_first_peer(keys: &[Expr], row_index: &Expr) -> Expr {
     keys.iter()
         .fold(row_index.clone().eq(lit(0i64)), |acc, key| {
             acc.or(key.clone().neq_missing(key.clone().shift(lit(1))))
@@ -2916,7 +2778,7 @@ fn is_first_peer(keys: &[Expr], row_index: &Expr) -> Expr {
 }
 
 /// Whether each row is the last of its peers in the sorted window of `n` rows.
-fn is_last_peer(keys: &[Expr], row_index: &Expr, n: &Expr) -> Expr {
+pub(crate) fn is_last_peer(keys: &[Expr], row_index: &Expr, n: &Expr) -> Expr {
     keys.iter()
         .fold(row_index.clone().eq(n.clone() - lit(1i64)), |acc, key| {
             acc.or(key.clone().neq_missing(key.clone().shift(lit(-1))))
@@ -2924,7 +2786,7 @@ fn is_last_peer(keys: &[Expr], row_index: &Expr, n: &Expr) -> Expr {
 }
 
 /// The row index (from 0) in the window partition, and the number of rows in it.
-fn window_row_index() -> (Expr, Expr) {
+pub(crate) fn window_row_index() -> (Expr, Expr) {
     let n = len().cast(DataType::Int64);
     (int_range(lit(0i64), n.clone(), 1, DataType::Int64), n)
 }
@@ -2944,7 +2806,7 @@ fn sql_corr(a: Expr, b: Expr) -> Expr {
 }
 
 /// Returns true if the SQL expression is a non-null literal value (e.g. `1`, `'hello'`, `TRUE`).
-fn is_non_null_literal(expr: &SQLExpr) -> bool {
+pub(crate) fn is_non_null_literal(expr: &SQLExpr) -> bool {
     matches!(
         expr,
         SQLExpr::Value(ValueWithSpan {
@@ -2963,6 +2825,17 @@ fn sql_to_float(e: Expr) -> Expr {
 /// default rounding.
 fn sql_round(e: Expr, decimals: u32) -> Expr {
     e.map_unary(FunctionExpr::Sql(SqlFunction::Round { decimals }))
+}
+
+/// SQL `SUM`: NULL, not 0, when there are no non-NULL values.
+pub(crate) fn sql_sum(arg: Expr) -> Expr {
+    let (total, non_empty) = match literal_sum(&arg) {
+        Some(total) => (total, len().gt(lit(0))),
+        None => (arg.clone().sum(), arg.count().gt(lit(0))),
+    };
+    when(non_empty)
+        .then(total)
+        .otherwise(Expr::Literal(LiteralValue::untyped_null()))
 }
 
 /// SUM of a numeric literal counts it once per row.
@@ -3008,7 +2881,9 @@ fn extract_args(func: &SQLFunction) -> PolarsResult<Vec<&FunctionArgExpr>> {
     Ok(args)
 }
 
-fn extract_args_distinct(func: &SQLFunction) -> PolarsResult<(Vec<&FunctionArgExpr>, bool)> {
+pub(crate) fn extract_args_distinct(
+    func: &SQLFunction,
+) -> PolarsResult<(Vec<&FunctionArgExpr>, bool)> {
     let (args, is_distinct, _) = _extract_func_args(func, true, false)?;
     Ok((args, is_distinct))
 }

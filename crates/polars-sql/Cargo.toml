@@ -45,6 +45,7 @@ json = ["polars-lazy/json", "polars-plan/json", "polars-lazy/extract_jsonpath", 
 list_eval = ["polars-lazy/list_eval"]
 parquet = ["polars-lazy/parquet"]
 rank = ["polars-lazy/rank"]
+rolling_window = ["polars-lazy/rolling_window"]
 semi_anti_join = ["polars-lazy/semi_anti_join"]
 serde = ["polars-utils/serde"]
 timezones = ["polars-lazy/timezones"]

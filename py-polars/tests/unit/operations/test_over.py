@@ -274,3 +274,25 @@ def test_over_multi_key_order_by_directions(engine: EngineType) -> None:
     )
     expected = pl.DataFrame({"asc": [1, 3, 2, 4], "desc": [4, 2, 3, 1]})
     assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("n_rows", [0, 2])
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.lit(1).over(order_by="o"), pl.Series("a", [1, 1], pl.Int32)),
+        (pl.lit(1.5).over("g", order_by="o"), pl.Series("a", [1.5, 1.5])),
+        (
+            pl.lit(1).cum_max().over("g", order_by="o"),
+            pl.Series("a", [1, 1], pl.Int32),
+        ),
+    ],
+)
+def test_over_literal_dtype(
+    engine: EngineType, n_rows: int, expr: pl.Expr, expected: pl.Series
+) -> None:
+    lf = pl.LazyFrame({"g": [1, 1], "o": [2, 1]}).head(n_rows)
+    assert_frame_equal(
+        lf.select(a=expr).collect(engine=engine), expected.head(n_rows).to_frame()
+    )
