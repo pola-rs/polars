@@ -956,6 +956,11 @@ def test_window_last_value(df_window: pl.DataFrame) -> None:
         "SELECT AVG(MAX(x)) OVER () AS a FROM t",
         "SELECT APPROX_QUANTILE(SUM(x), 0.5) OVER () AS a FROM t",
         "SELECT CORR(SUM(x), SUM(x)) OVER () AS a FROM t",
+        # so does an aggregate next to a window, which then reads that one row
+        "SELECT SUM(x) AS s, COUNT(*) OVER () AS a FROM t",
+        "SELECT COUNT(*) AS c, ROW_NUMBER() OVER () AS a FROM t",
+        "SELECT RANK() OVER (ORDER BY SUM(x)) AS a FROM t",
+        "SELECT 1 AS one, MAX(x) AS m, LAG(MAX(x), 1, 0) OVER (ORDER BY MAX(x)) AS a FROM t",
     ],
 )
 @pytest.mark.parametrize("n_rows", [0, 3])
@@ -983,6 +988,187 @@ def test_window_partition_by_aggregate_after_group_by(partition_by: str) -> None
         """,
         compare_with="duckdb",
     )
+
+
+@pytest.fixture
+def df_grouped() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 3, 3, None],
+            "h": ["a", "b", "a", "a", "b", "a", None, "b"],
+            "x": [5, 3, None, 2, 4, 1, 1, 6],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "window",
+    [
+        # group keys
+        "SUM(g) OVER ()",
+        "MAX(g) OVER (ORDER BY g DESC)",
+        "COUNT(g) OVER (ORDER BY g ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)",
+        "LAST_VALUE(g) OVER (ORDER BY g ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)",
+        "COUNT(*) OVER ()",
+        "COUNT(*) FILTER (WHERE g > 1) OVER ()",
+        # aggregates
+        "SUM(COUNT(*)) OVER ()",
+        "SUM(COUNT(*)) OVER (PARTITION BY MAX(x) > 4)",
+        "SUM(SUM(x)) FILTER (WHERE COUNT(*) > 2) OVER ()",
+        "SUM(g * COUNT(*)) OVER (ORDER BY g)",
+        "SUM(x) * 100 / SUM(SUM(x)) OVER ()",
+        "AVG(SUM(x)) OVER (ORDER BY COUNT(*))",
+        "LAG(COUNT(*)) OVER (ORDER BY g)",
+        "LEAD(SUM(x), 1, 0) OVER (ORDER BY g)",
+        "FIRST_VALUE(g) OVER (ORDER BY COUNT(*) DESC, g)",
+        "NTH_VALUE(SUM(x), 2) OVER (ORDER BY g)",
+        # ties of an aggregate ORDER BY key
+        "RANK() OVER (ORDER BY COUNT(*) DESC)",
+        "DENSE_RANK() OVER (ORDER BY COUNT(*))",
+        "PERCENT_RANK() OVER (ORDER BY COUNT(*))",
+        "CUME_DIST() OVER (ORDER BY COUNT(*))",
+        "RANK() OVER (ORDER BY COUNT(*), MAX(h) DESC)",
+    ],
+)
+def test_window_over_grouped_rows(df_grouped: pl.DataFrame, window: str) -> None:
+    assert_sql_matches(
+        {"t": df_grouped},
+        query=f"SELECT g, {window} AS w FROM t GROUP BY g ORDER BY g",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        """
+        SELECT g, h, COUNT(*) AS c, SUM(COUNT(*)) OVER (PARTITION BY g) AS w
+        FROM t GROUP BY g, h ORDER BY g, h
+        """,
+        """
+        SELECT g, h, RANK() OVER (PARTITION BY h ORDER BY SUM(x) DESC) AS w
+        FROM t GROUP BY g, h ORDER BY g, h
+        """,
+        "SELECT g AS k, SUM(g) OVER (ORDER BY g) AS w FROM t GROUP BY k ORDER BY k",
+        "SELECT g % 2 AS k, SUM(g % 2) OVER () AS w FROM t GROUP BY g % 2 ORDER BY k",
+        """
+        SELECT g, RANK() OVER (ORDER BY SUM(x)) AS w
+        FROM t GROUP BY g HAVING COUNT(*) > 1 ORDER BY g
+        """,
+        """
+        SELECT g, h, SUM(g) OVER () AS w
+        FROM t GROUP BY GROUPING SETS ((g), (h)) ORDER BY g, h
+        """,
+        """
+        SELECT g, h, RANK() OVER (PARTITION BY GROUPING(g, h) ORDER BY SUM(x) DESC) AS w
+        FROM t GROUP BY ROLLUP(g, h) ORDER BY g, h, w
+        """,
+        # SELECT aliases of aggregates in a window of the ORDER BY
+        """
+        SELECT g, COUNT(*) AS n
+        FROM t GROUP BY g ORDER BY LAG(n, 1, 0) OVER (ORDER BY g) DESC, g
+        """,
+        """
+        SELECT g, SUM(x) AS s
+        FROM t GROUP BY g ORDER BY SUM(s) OVER (ORDER BY g DESC), g
+        """,
+    ],
+)
+def test_window_over_grouped_rows_queries(df_grouped: pl.DataFrame, query: str) -> None:
+    assert_sql_matches(
+        {"t": df_grouped},
+        query=query,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT SUM(SUM(x)) OVER () FROM t",
+        "SELECT COUNT(COUNT(*)) OVER () FROM t",
+        "SELECT g, SUM(SUM(x)) OVER () FROM t GROUP BY g ORDER BY g",
+        """
+        SELECT g, SUM(COUNT(*)) OVER (PARTITION BY GROUPING(g))
+        FROM t GROUP BY ROLLUP(g) ORDER BY g
+        """,
+    ],
+)
+def test_window_over_aggregates_unaliased(df_grouped: pl.DataFrame, query: str) -> None:
+    assert_sql_matches(
+        {"t": df_grouped},
+        query=query,
+        compare_with="duckdb",
+        check_column_names=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT x, SUM((SELECT 2)) OVER () AS w FROM t ORDER BY x",
+        "SELECT x, COUNT((SELECT 2)) OVER (ORDER BY x) AS w FROM t ORDER BY x",
+        "SELECT x, LAG((SELECT 2)) OVER (ORDER BY x) AS w FROM t ORDER BY x",
+        "SELECT g, SUM((SELECT 2)) OVER () AS w FROM t GROUP BY g ORDER BY g",
+        """
+        SELECT g, LAG((SELECT 2) + COUNT(*)) OVER (ORDER BY g) AS w
+        FROM t GROUP BY g ORDER BY g
+        """,
+        "SELECT COUNT(*) AS c, SUM((SELECT 2)) OVER () AS w FROM t",
+        "SELECT g, SUM(MAX(g + (SELECT 2))) OVER () AS w FROM t GROUP BY g ORDER BY g",
+        "SELECT SUM(MAX(g + (SELECT 2))) OVER () AS w FROM t",
+        """
+        SELECT g, SUM(MAX(g + ARRAY_LENGTH(ARRAY_REVERSE((SELECT ARRAY[1, 2])))))
+            OVER () AS w
+        FROM t GROUP BY g ORDER BY g
+        """,
+        "SELECT SUM(MAX(g + ARRAY_LENGTH(ARRAY_REVERSE((SELECT ARRAY[1, 2]))))) OVER () AS w FROM t",
+        "SELECT x, SUM(ABS(CAST(1 IN (SELECT x FROM t) AS INT))) OVER () AS w FROM t ORDER BY x",
+    ],
+)
+def test_window_of_scalar_subquery(query: str) -> None:
+    # A scalar subquery has its value on every row of the window.
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [3, 1, 2]})
+    assert_sql_matches(
+        {"t": df},
+        query=query,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "error"),
+    [
+        (
+            "SELECT g, SUM(x) OVER () FROM t GROUP BY g",
+            "'x' should participate in the GROUP BY clause",
+        ),
+        (
+            "SELECT g, RANK() OVER (ORDER BY x) FROM t GROUP BY g",
+            "'x' should participate in the GROUP BY clause",
+        ),
+        (
+            "SELECT SUM(x), SUM(x) OVER () FROM t",
+            "'x' should participate in the GROUP BY clause",
+        ),
+        (
+            "SELECT g, SUM(SUM(COUNT(*))) OVER () FROM t GROUP BY g",
+            "aggregate function calls cannot be nested",
+        ),
+        (
+            "SELECT g, SUM(MAX(ARRAY_LENGTH(ARRAY_REVERSE(ARRAY_AGG(x))))) OVER () FROM t GROUP BY g",
+            "aggregate function calls cannot be nested",
+        ),
+    ],
+)
+def test_window_over_grouped_rows_errors(
+    df_grouped: pl.DataFrame, query: str, error: str
+) -> None:
+    with pytest.raises(SQLSyntaxError, match=error):
+        df_grouped.sql(query.replace("FROM t", "FROM self"))
 
 
 @pytest.mark.parametrize(
