@@ -470,16 +470,17 @@ impl PhysicalExpr for WindowExpr {
 
         if df.height() == 0 {
             let field = self.phys_function.to_field(df.schema())?;
+            let dtype = field.dtype().clone().materialize_unknown(true)?;
             match self.mapping {
                 WindowMapping::Join => {
                     return Ok(Column::full_null(
                         field.name().clone(),
                         0,
-                        &DataType::List(Box::new(field.dtype().clone())),
+                        &DataType::List(Box::new(dtype)),
                     ));
                 },
                 _ => {
-                    return Ok(Column::full_null(field.name().clone(), 0, field.dtype()));
+                    return Ok(Column::full_null(field.name().clone(), 0, &dtype));
                 },
             }
         }
