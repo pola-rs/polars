@@ -29,15 +29,24 @@ thread_local! {
 fn update_alloc_size(bytes: i64) {
     LOCAL_ALLOC_DRIFT.with(|drift| {
         let new = drift.get().wrapping_add(bytes);
-        if new.unsigned_abs() <= polars_config::get_ooc_drift_threshold() {
-            drift.set(new);
-        } else {
-            let old = GLOBAL_ALLOC_SIZE.fetch_add(new as u64, Ordering::AcqRel);
-            drift.set(0);
-            let total = old.wrapping_add(new as u64);
-            if total <= i64::MAX as u64 && total > polars_config::get_oomkill_threshold_bytes() {
-                oomkill();
-            }
+        drift.set(new);
+        if new.unsigned_abs() > polars_config::get_ooc_drift_threshold() {
+            flush_local_drift();
+        }
+    })
+}
+
+#[cold]
+#[inline(never)]
+fn flush_local_drift() {
+    LOCAL_ALLOC_DRIFT.with(|drift| {
+        let drift_bytes = drift.get();
+        let old = GLOBAL_ALLOC_SIZE.fetch_add(drift_bytes as u64, Ordering::AcqRel);
+        drift.set(0);
+
+        let total = old.wrapping_add(drift_bytes as u64);
+        if total <= i64::MAX as u64 && total > polars_config::get_oomkill_threshold_bytes() {
+            oomkill();
         }
     })
 }
