@@ -69,7 +69,8 @@ def test_rank_funcs_with_partition(df_test: pl.DataFrame) -> None:
         },
     )
 
-    # We expect to see differences (in the same query) when there *are* ties
+    # We expect to see differences (in the same query) when there *are* ties;
+    # ROW_NUMBER also orders by `id`, as the order of tied rows is not defined
     df = pl.DataFrame(
         {
             "id": [1, 2, 3, 4, 5, 6, 7, 8],
@@ -77,6 +78,16 @@ def test_rank_funcs_with_partition(df_test: pl.DataFrame) -> None:
             "value": [10, 10, 20, 20, 30, 30, 30, 30],
         }
     )
+    query = """
+        SELECT
+            category,
+            value,
+            ROW_NUMBER() OVER (PARTITION BY category ORDER BY value, id) AS row_num,
+            RANK() OVER (PARTITION BY category ORDER BY value) AS rank,
+            DENSE_RANK() OVER (PARTITION BY category ORDER BY value) AS dense
+        FROM self
+        ORDER BY category, value, id
+    """
     assert_sql_matches(
         df,
         query=query,
@@ -238,3 +249,14 @@ def test_ntile(df_ties: pl.DataFrame, buckets: int) -> None:
 def test_rank_funcs_errors(df_ties: pl.DataFrame, window_fn: str, error: str) -> None:
     with pytest.raises(pl.exceptions.SQLSyntaxError, match=error):
         df_ties.sql(f"SELECT {window_fn} AS a FROM self")
+
+
+@pytest.mark.parametrize("func", ["RANK()", "DENSE_RANK()", "PERCENT_RANK()"])
+def test_rank_funcs_order_by_count_after_group_by(func: str) -> None:
+    df = pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
+    assert_sql_matches(
+        df,
+        query=f"SELECT g, {func} OVER (ORDER BY COUNT(*) DESC) AS r FROM self GROUP BY g ORDER BY g",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )

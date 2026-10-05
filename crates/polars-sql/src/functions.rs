@@ -6,6 +6,8 @@ use polars_core::prelude::{
     polars_err,
 };
 use polars_defs::expr::UnicodeForm;
+#[cfg(feature = "rank")]
+use polars_defs::expr::{RankMethod, RankOptions};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "approx_quantile")]
 use polars_lazy::prelude::ApproxQuantileMethod;
@@ -1882,11 +1884,27 @@ impl SQLFunctionVisitor<'_> {
         if self.window.is_none() {
             polars_bail!(SQLSyntax: "{} requires an OVER clause", self.func.name);
         }
-        // The same keys sort the window and find the peers.
         let order_keys = self.parse_window_order_keys()?;
-        let keys: Vec<Expr> = order_keys.iter().map(|(key, _)| key.clone()).collect();
-
         let (row_index, n) = window_row_index();
+
+        // With one ORDER BY key, the key is ranked directly, without sorting the window. Not
+        // for keys with COUNT(*): in a window function it counts the rows of the window
+        // (`hoist_rec` in context.rs), so `RANK() OVER (ORDER BY COUNT(*))` would rank a constant.
+        #[cfg(feature = "rank")]
+        if let ([(key, options)], Rank | DenseRank | PercentRank) =
+            (order_keys.as_slice(), function)
+            && !key.into_iter().any(|e| matches!(e, Expr::Len))
+        {
+            let rank = rank_of_key(key.clone(), *options, matches!(function, DenseRank));
+            let expr = match function {
+                PercentRank => percent_rank(rank, n),
+                _ => rank,
+            };
+            return self.apply_window_spec_with_order_keys(expr, Vec::new());
+        }
+
+        // The same keys sort the window and find the peers.
+        let keys: Vec<Expr> = order_keys.iter().map(|(key, _)| key.clone()).collect();
         let row_number = row_index.clone() + lit(1i64);
         // The row number of the first peer.
         let rank = || {
@@ -1901,9 +1919,7 @@ impl SQLFunctionVisitor<'_> {
             DenseRank => is_first_peer(&keys, &row_index)
                 .cast(DataType::Int64)
                 .cum_sum(false),
-            PercentRank => when(n.clone().gt(lit(1i64)))
-                .then((rank() - lit(1i64)).cast(DataType::Float64) / (n - lit(1i64)))
-                .otherwise(lit(0.0)),
+            PercentRank => percent_rank(rank(), n),
             CumeDist => {
                 // The row number of the last peer.
                 let last_peer = when(is_last_peer(&keys, &row_index, &n))
@@ -2843,6 +2859,51 @@ fn window_sort_key(mut keys: Vec<(Expr, SortOptions)>) -> Option<(Expr, SortOpti
             Some((key, SortOptions::default().with_maintain_order(false)))
         },
     }
+}
+
+/// RANK, or DENSE_RANK if `dense`, of a single ORDER BY key. NULL keys are peers, and come
+/// first or last as `options` says.
+#[cfg(feature = "rank")]
+fn rank_of_key(key: Expr, options: SortOptions, dense: bool) -> Expr {
+    let method = if dense {
+        RankMethod::Dense
+    } else {
+        RankMethod::Min
+    };
+    let rank = key
+        .clone()
+        .rank(
+            RankOptions {
+                method,
+                descending: options.descending,
+            },
+            None,
+        )
+        .cast(DataType::Int64);
+    // The engine gives NULL keys a NULL rank.
+    if options.nulls_last {
+        let null_rank = if dense {
+            rank.clone().max().fill_null(lit(0i64)) + lit(1i64)
+        } else {
+            key.count().cast(DataType::Int64) + lit(1i64)
+        };
+        rank.fill_null(null_rank)
+    } else {
+        let null_count = key.null_count().cast(DataType::Int64);
+        let offset = if dense {
+            null_count.gt(lit(0i64)).cast(DataType::Int64)
+        } else {
+            null_count
+        };
+        (rank + offset).fill_null(lit(1i64))
+    }
+}
+
+/// PERCENT_RANK from the rank and the number of rows `n` in the window.
+fn percent_rank(rank: Expr, n: Expr) -> Expr {
+    when(n.clone().gt(lit(1i64)))
+        .then((rank - lit(1i64)).cast(DataType::Float64) / (n - lit(1i64)))
+        .otherwise(lit(0.0))
 }
 
 /// Whether each row is the first of its peers in the sorted window: the first row, or a row
