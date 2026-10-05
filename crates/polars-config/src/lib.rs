@@ -1,5 +1,5 @@
-use std::sync::{LazyLock, Once};
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::{LazyLock, Once};
 use std::time::Duration;
 
 mod engine;
@@ -367,7 +367,8 @@ impl Config {
             self.ooc_memory_budget_bytes.load(Ordering::Relaxed),
             (total_memory() as f64 * budget_frac) as u64,
         );
-        self.ooc_effective_memory_budget_bytes.store(bytes, Ordering::Relaxed);
+        self.ooc_effective_memory_budget_bytes
+            .store(bytes, Ordering::Relaxed);
         let frac = f64::from_bits(self.ooc_memory_prefetch_fraction.load(Ordering::Relaxed));
         self.ooc_memory_prefetch_bytes
             .store((bytes as f64 * frac) as u64, Ordering::Relaxed);
@@ -710,7 +711,8 @@ impl Config {
     /// `POLARS_OOC_MEMORY_BUDGET_MB`.
     #[inline(always)]
     pub fn ooc_memory_budget_bytes(&self) -> u64 {
-        self.ooc_effective_memory_budget_bytes.load(Ordering::Relaxed)
+        self.ooc_effective_memory_budget_bytes
+            .load(Ordering::Relaxed)
     }
 
     #[inline(always)]
