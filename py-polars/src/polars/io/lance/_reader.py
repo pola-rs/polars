@@ -249,17 +249,15 @@ class LanceFragmentReader(FileReader):
             conversion_threadpool.shutdown(wait=False, cancel_futures=True)
             return
 
+        except CancelledError:
+            with CX_LOCK:
+                if (exc := self.multi_scan_context.get(CX_ERROR_KEY)) is not None:
+                    raise exc from None
+
+                raise
+
         except BaseException as e:
             conversion_threadpool.shutdown(wait=False, cancel_futures=True)
-
-            if isinstance(e, CancelledError):
-                # The shared conversion threadpool may have been shut down due
-                # to an error in another reader, raise that error instead.
-                with CX_LOCK:
-                    exc = self.multi_scan_context.get(CX_ERROR_KEY)
-
-                if exc is not None:
-                    raise exc from None
 
             raise
 
