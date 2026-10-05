@@ -976,6 +976,9 @@ def test_window_last_value(df_window: pl.DataFrame) -> None:
         "SELECT LAST_VALUE(x) OVER (PARTITION BY 1) AS a FROM t",
         "SELECT FIRST_VALUE(x) OVER (PARTITION BY 'a') AS a FROM t",
         "SELECT COUNT(*) OVER (PARTITION BY 1 + 1) AS a FROM t",
+        "SELECT LAST_VALUE(x) OVER (PARTITION BY LOWER('A')) AS a FROM t",
+        "SELECT LAST_VALUE(x) OVER (PARTITION BY ABS(1)) AS a FROM t",
+        "SELECT LAST_VALUE(x) OVER (PARTITION BY COALESCE(NULL, 1)) AS a FROM t",
         "SELECT * REPLACE (SUM(x) OVER () AS x) FROM t",
         # a window over aggregates makes the query an aggregation, with one row
         "SELECT SUM(SUM(x)) OVER () AS a FROM t",

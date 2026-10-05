@@ -2750,7 +2750,7 @@ impl SQLFunctionVisitor<'_> {
         let mut partition_by = Vec::with_capacity(window_spec.partition_by.len());
         for p in &window_spec.partition_by {
             let key = parse_sql_expr(p, self.ctx, self.active_schema)?;
-            if !is_constant(&key) {
+            if !matches!(key.clone().meta().is_input_independent_scalar(), Ok(true)) {
                 partition_by.push(key);
             }
         }
@@ -2795,17 +2795,6 @@ fn sql_corr(a: Expr, b: Expr) -> Expr {
     when(has_corr_pairs)
         .then(polars_lazy::dsl::pearson_corr(a, b))
         .otherwise(lit(LiteralValue::untyped_null()))
-}
-
-/// Whether `expr` has the same value for every row whatever the input, as `1` or `1 + 1`.
-fn is_constant(expr: &Expr) -> bool {
-    expr.into_iter().all(|e| match e {
-        Expr::Literal(lv) => lv.is_scalar(),
-        Expr::BinaryExpr { .. } | Expr::Cast { .. } | Expr::Alias(..) | Expr::Ternary { .. } => {
-            true
-        },
-        _ => false,
-    })
 }
 
 /// Returns true if the SQL expression is a non-null literal value (e.g. `1`, `'hello'`, `TRUE`).
