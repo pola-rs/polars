@@ -879,6 +879,10 @@ impl ComputeNode for GroupByNode {
         "group-by"
     }
 
+    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
+        matches!(self.state, GroupByState::Sink { .. })
+    }
+
     fn update_state(
         &mut self,
         recv: &mut [PortState],
