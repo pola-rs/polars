@@ -280,11 +280,19 @@ fn categorical_haystack<T: PolarsCategoricalType>(
     let out = match (needle_dtype, flat.dtype()) {
         (DataType::Enum(_, mapping) | DataType::Categorical(_, mapping), DataType::String) => {
             let ca = flat.str().unwrap();
-            // Strings without a category can never match; only nulls stay null.
+            // Later batches can add these labels, so reserve their categories now.
+            let is_enum = needle_dtype.is_enum();
             ca.iter()
                 .filter_map(|opt_s| match opt_s {
                     None => Some(None),
-                    Some(s) => mapping.get_cat(s).map(|c| Some(T::Native::from_cat(c))),
+                    Some(s) => {
+                        let cat = if is_enum {
+                            mapping.get_cat(s)
+                        } else {
+                            mapping.insert_cat(s).ok()
+                        };
+                        cat.map(|c| Some(T::Native::from_cat(c)))
+                    },
                 })
                 .collect_ca(PlSmallStr::EMPTY)
         },

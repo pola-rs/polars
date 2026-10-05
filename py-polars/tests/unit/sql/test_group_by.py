@@ -760,6 +760,7 @@ def test_sum_and_total_28434() -> None:
     assert_frame_equal(
         all_null.sql("SELECT SUM(a) AS s, TOTAL(a) AS t FROM self"), expected
     )
+    # a window keeps one row per input row
     assert_frame_equal(
         all_null.sql("""
             SELECT
@@ -767,7 +768,7 @@ def test_sum_and_total_28434() -> None:
               TOTAL(a) OVER () AS t,
             FROM self
         """),
-        expected,
+        pl.concat([expected, expected]),
     )
 
     # all-null group -> (NULL, 0.0); a group with values sums identically for both

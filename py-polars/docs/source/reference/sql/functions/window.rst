@@ -7,6 +7,8 @@ Window
 
    * - Function
      - Description
+   * - :ref:`CUME_DIST <cume_dist>`
+     - Returns the fraction of rows in the window partition that come before or are tied with the current row.
    * - :ref:`DENSE_RANK <dense_rank>`
      - Returns the rank of each row within a window partition, without gaps for ties.
    * - :ref:`FIRST_VALUE <first_value>`
@@ -17,8 +19,14 @@ Window
      - Returns the last value in an ordered set of values with respect to the window declared in `OVER`.
    * - :ref:`LEAD <lead>`
      - Returns the value of a column at a given offset after the current row within a window partition.
+   * - :ref:`NTH_VALUE <nth_value>`
+     - Returns the value at a given row of the window frame.
+   * - :ref:`NTILE <ntile>`
+     - Splits the rows of a window partition into a number of buckets and returns the bucket number.
    * - :ref:`OVER <over>`
      - Define a window (a set of rows) within which a function is applied.
+   * - :ref:`PERCENT_RANK <percent_rank>`
+     - Returns the relative rank of each row within a window partition, from 0 to 1.
    * - :ref:`RANK <rank>`
      - Returns the rank of each row within a window partition, with gaps for ties.
    * - :ref:`ROW_NUMBER <row_number>`
@@ -27,16 +35,64 @@ Window
 
 .. note::
 
-    As a DataFrame engine Polars defaults to `ROWS` framing semantics for window functions when an explicit
-    window specification is omitted; specifically, `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. This
-    differs from the default `RANGE` framing semantics typically used by database engines.
+    Without a frame clause, a window with `ORDER BY` uses the frame
+    `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`, as in other databases: rows with equal
+    `ORDER BY` values (peers) get the same result. Without `ORDER BY`, the frame is the whole
+    partition. See :ref:`OVER <over>` for the supported frames.
 
 .. note::
 
     Rows that have equal values for the `ORDER BY` of a window (peers) may be processed in any
-    order. Functions such as `ROW_NUMBER`, `LAG`, `LEAD`, `FIRST_VALUE` and running aggregates
-    can then give tied rows different results between runs. Add columns to the `ORDER BY` to make
+    order. Functions such as `ROW_NUMBER`, `LAG`, `LEAD`, `FIRST_VALUE`, `LAST_VALUE`,
+    `NTH_VALUE` and aggregates with a `ROWS` frame can then give tied rows different results
+    between runs. Add columns to the `ORDER BY` to make
     the order unique.
+
+
+.. _cume_dist:
+
+CUME_DIST
+---------
+Returns the fraction of rows in the window partition that come before the current row or are
+tied with it: ``(rows up to and including the last tied row) / (rows in partition)``.
+
+**Requirements:**
+
+- Must be used with an ``OVER`` clause.
+- Without ``ORDER BY`` in the window specification all rows are tied, so the result is 1.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({
+        "id": [1, 2, 3, 4, 5, 6],
+        "category": ["A", "A", "A", "B", "B", "B"],
+        "score": [85, 90, 90, 75, 80, 80]
+    })
+    df.sql("""
+      SELECT
+        id,
+        category,
+        score,
+        PERCENT_RANK() OVER (PARTITION BY category ORDER BY score DESC) AS pct_rank,
+        CUME_DIST() OVER (PARTITION BY category ORDER BY score DESC) AS cume_dist
+      FROM self
+      ORDER BY category, score DESC, id
+    """)
+    # shape: (6, 5)
+    # ┌─────┬──────────┬───────┬──────────┬───────────┐
+    # │ id  ┆ category ┆ score ┆ pct_rank ┆ cume_dist │
+    # │ --- ┆ ---      ┆ ---   ┆ ---      ┆ ---       │
+    # │ i64 ┆ str      ┆ i64   ┆ f64      ┆ f64       │
+    # ╞═════╪══════════╪═══════╪══════════╪═══════════╡
+    # │ 2   ┆ A        ┆ 90    ┆ 0.0      ┆ 0.666667  │
+    # │ 3   ┆ A        ┆ 90    ┆ 0.0      ┆ 0.666667  │
+    # │ 1   ┆ A        ┆ 85    ┆ 1.0      ┆ 1.0       │
+    # │ 5   ┆ B        ┆ 80    ┆ 0.0      ┆ 0.666667  │
+    # │ 6   ┆ B        ┆ 80    ┆ 0.0      ┆ 0.666667  │
+    # │ 4   ┆ B        ┆ 75    ┆ 1.0      ┆ 1.0       │
+    # └─────┴──────────┴───────┴──────────┴───────────┘
 
 
 .. _dense_rank:
@@ -49,7 +105,7 @@ equal values receive the same rank, and the next rank number is consecutive (no 
 **Requirements:**
 
 - Must be used with an ``OVER`` clause.
-- That clause must have ``ORDER BY`` in the window specification.
+- Without ``ORDER BY`` in the window specification all rows are tied, so every rank is 1.
 
 **Example:**
 
@@ -74,7 +130,7 @@ equal values receive the same rank, and the next rank number is consecutive (no 
     # ┌─────┬──────────┬───────┬──────┬────────────┐
     # │ id  ┆ category ┆ score ┆ rank ┆ dense_rank │
     # │ --- ┆ ---      ┆ ---   ┆ ---  ┆ ---        │
-    # │ i64 ┆ str      ┆ i64   ┆ u32  ┆ u32        │
+    # │ i64 ┆ str      ┆ i64   ┆ i64  ┆ i64        │
     # ╞═════╪══════════╪═══════╪══════╪════════════╡
     # │ 2   ┆ A        ┆ 90    ┆ 1    ┆ 1          │
     # │ 3   ┆ A        ┆ 90    ┆ 1    ┆ 1          │
@@ -89,7 +145,8 @@ equal values receive the same rank, and the next rank number is consecutive (no 
 
 FIRST_VALUE
 -----------
-Returns the first value in an ordered set of values with respect to the window declared in `OVER`.
+Returns the value at the first row of the window frame, or NULL if the frame is empty. See
+:ref:`NTH_VALUE <nth_value>` for an example.
 
 
 .. _lag:
@@ -102,7 +159,10 @@ If the offset goes beyond the partition boundary, NULL is returned.
 **Syntax:**
 
 * ``LAG(expr) OVER (...)`` - offset defaults to 1.
-* ``LAG(expr, n) OVER (...)`` - offset of ``n`` rows.
+* ``LAG(expr, n) OVER (...)`` - offset of ``n`` rows. ``n`` can be 0 (the current row) or
+  negative (rows after the current row).
+* ``LAG(expr, n, default) OVER (...)`` - returns ``default`` instead of NULL when the offset goes
+  beyond the partition boundary.
 
 **Requirements:**
 
@@ -147,7 +207,9 @@ If the offset goes beyond the partition boundary, NULL is returned.
 
 LAST_VALUE
 ----------
-Returns the last value in an ordered set of values with respect to the window declared in `OVER`.
+Returns the value at the last row of the window frame, or NULL if the frame is empty. With
+``ORDER BY`` and no frame clause, the frame ends at the last row tied with the current row. See
+:ref:`NTH_VALUE <nth_value>` for an example.
 
 
 .. _lead:
@@ -160,7 +222,10 @@ If the offset goes beyond the partition boundary, NULL is returned.
 **Syntax:**
 
 * ``LEAD(expr) OVER (...)`` - offset defaults to 1.
-* ``LEAD(expr, n) OVER (...)`` - offset of ``n`` rows.
+* ``LEAD(expr, n) OVER (...)`` - offset of ``n`` rows. ``n`` can be 0 (the current row) or
+  negative (rows before the current row).
+* ``LEAD(expr, n, default) OVER (...)`` - returns ``default`` instead of NULL when the offset goes
+  beyond the partition boundary.
 
 **Requirements:**
 
@@ -201,6 +266,114 @@ If the offset goes beyond the partition boundary, NULL is returned.
     # └─────┴──────────┴───────┴────────────┴─────────────┘
 
 
+.. _nth_value:
+
+NTH_VALUE
+---------
+Returns the value at row ``n`` of the window frame, counting from 1, or NULL if the frame has
+fewer than ``n`` rows.
+
+**Syntax:**
+
+* ``NTH_VALUE(expr, n) OVER (...)`` - ``n`` must be a positive integer literal.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({
+        "id": [1, 2, 3, 4, 5, 6],
+        "category": ["A", "A", "A", "B", "B", "B"],
+        "value": [10, 20, 30, 40, 50, 60],
+    })
+    df.sql("""
+      SELECT
+        id,
+        category,
+        value,
+        FIRST_VALUE(value) OVER w AS first_val,
+        LAST_VALUE(value) OVER w AS last_val,
+        NTH_VALUE(value, 2) OVER w AS second_val
+      FROM self
+      WINDOW w AS (
+        PARTITION BY category ORDER BY id
+        ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING
+      )
+      ORDER BY category, id
+    """)
+    # shape: (6, 6)
+    # ┌─────┬──────────┬───────┬───────────┬──────────┬────────────┐
+    # │ id  ┆ category ┆ value ┆ first_val ┆ last_val ┆ second_val │
+    # │ --- ┆ ---      ┆ ---   ┆ ---       ┆ ---      ┆ ---        │
+    # │ i64 ┆ str      ┆ i64   ┆ i64       ┆ i64      ┆ i64        │
+    # ╞═════╪══════════╪═══════╪═══════════╪══════════╪════════════╡
+    # │ 1   ┆ A        ┆ 10    ┆ 10        ┆ 20       ┆ 20         │
+    # │ 2   ┆ A        ┆ 20    ┆ 10        ┆ 30       ┆ 20         │
+    # │ 3   ┆ A        ┆ 30    ┆ 20        ┆ 30       ┆ 30         │
+    # │ 4   ┆ B        ┆ 40    ┆ 40        ┆ 50       ┆ 50         │
+    # │ 5   ┆ B        ┆ 50    ┆ 40        ┆ 60       ┆ 50         │
+    # │ 6   ┆ B        ┆ 60    ┆ 50        ┆ 60       ┆ 60         │
+    # └─────┴──────────┴───────┴───────────┴──────────┴────────────┘
+
+
+.. _ntile:
+
+NTILE
+-----
+Splits the rows of a window partition into ``n`` buckets of near-equal size, in the order of the
+window's ``ORDER BY``, and returns the bucket number of each row, starting from 1. When the rows
+don't split evenly, the first buckets get one more row.
+
+**Syntax:**
+
+* ``NTILE(n) OVER (...)`` - ``n`` must be a positive integer literal.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({
+        "id": [1, 2, 3, 4, 5, 6, 7],
+        "value": [10, 20, 30, 40, 50, 60, 70],
+    })
+    df.sql("""
+      SELECT
+        id,
+        value,
+        NTILE(3) OVER (ORDER BY value) AS bucket
+      FROM self
+      ORDER BY id
+    """)
+    # shape: (7, 3)
+    # ┌─────┬───────┬────────┐
+    # │ id  ┆ value ┆ bucket │
+    # │ --- ┆ ---   ┆ ---    │
+    # │ i64 ┆ i64   ┆ i64    │
+    # ╞═════╪═══════╪════════╡
+    # │ 1   ┆ 10    ┆ 1      │
+    # │ 2   ┆ 20    ┆ 1      │
+    # │ 3   ┆ 30    ┆ 1      │
+    # │ 4   ┆ 40    ┆ 2      │
+    # │ 5   ┆ 50    ┆ 2      │
+    # │ 6   ┆ 60    ┆ 3      │
+    # │ 7   ┆ 70    ┆ 3      │
+    # └─────┴───────┴────────┘
+
+
+.. _percent_rank:
+
+PERCENT_RANK
+------------
+Returns the relative rank of each row within a window partition:
+``(rank - 1) / (rows in partition - 1)``, or 0 when the partition has one row. Tied rows get the
+same value. See :ref:`CUME_DIST <cume_dist>` for an example.
+
+**Requirements:**
+
+- Must be used with an ``OVER`` clause.
+- Without ``ORDER BY`` in the window specification all rows are tied, so the result is 0.
+
+
 .. _rank:
 
 RANK
@@ -211,7 +384,7 @@ receive the same rank, and the next rank skips numbers (creating gaps).
 **Requirements:**
 
 - Must be used with an ``OVER`` clause.
-- That clause must have ``ORDER BY`` in the window specification.
+- Without ``ORDER BY`` in the window specification all rows are tied, so every rank is 1.
 
 **Example:**
 
@@ -236,14 +409,14 @@ receive the same rank, and the next rank skips numbers (creating gaps).
     # ┌─────┬──────────┬───────┬────────────┬──────┐
     # │ id  ┆ category ┆ score ┆ dense_rank ┆ rank │
     # │ --- ┆ ---      ┆ ---   ┆ ---        ┆ ---  │
-    # │ i64 ┆ str      ┆ i64   ┆ u32        ┆ u32  │
+    # │ i64 ┆ str      ┆ i64   ┆ i64        ┆ i64  │
     # ╞═════╪══════════╪═══════╪════════════╪══════╡
     # │ 2   ┆ A        ┆ 90    ┆ 1          ┆ 1    │
     # │ 3   ┆ A        ┆ 90    ┆ 1          ┆ 1    │
-    # │ 1   ┆ A        ┆ 85    ┆ 2          ┆ 3    │2)
+    # │ 1   ┆ A        ┆ 85    ┆ 2          ┆ 3    │
     # │ 5   ┆ B        ┆ 80    ┆ 1          ┆ 1    │
     # │ 6   ┆ B        ┆ 80    ┆ 1          ┆ 1    │
-    # │ 4   ┆ B        ┆ 75    ┆ 2          ┆ 3    │2)
+    # │ 4   ┆ B        ┆ 75    ┆ 2          ┆ 3    │
     # └─────┴──────────┴───────┴────────────┴──────┘
 
 
@@ -277,7 +450,7 @@ Returns the sequential row number, optionally within a window partition, startin
     # ┌─────┬─────┬─────┬──────────┬───────┐
     # │ x   ┆ y   ┆ z   ┆ category ┆ value │
     # │ --- ┆ --- ┆ --- ┆ ---      ┆ ---   │
-    # │ u32 ┆ u32 ┆ u32 ┆ str      ┆ i64   │
+    # │ i64 ┆ i64 ┆ i64 ┆ str      ┆ i64   │
     # ╞═════╪═════╪═════╪══════════╪═══════╡
     # │ 1   ┆ 1   ┆ 3   ┆ A        ┆ 100   │
     # │ 2   ┆ 2   ┆ 2   ┆ A        ┆ 200   │
@@ -295,10 +468,27 @@ OVER
 Used to define a window (a set of rows) within which a function is applied.
 
 **Notes:**
-As a DataFrame engine Polars defaults to `ROWS` framing semantics for window
-functions when an explicit window specification is omitted; specifically,
-`ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. This differs from the
-default `RANGE` framing semantics typically used by database engines.
+Without a frame clause, a window with ``ORDER BY`` uses the frame
+``RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW``: rows with equal ``ORDER BY``
+values (peers) get the same result. Without ``ORDER BY``, the frame is the whole partition.
+
+``SUM``, ``COUNT``, ``MIN``, ``MAX``, ``AVG`` and ``TOTAL`` support these frames, with
+``ROWS``, ``RANGE`` or ``GROUPS``:
+
+* ``BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW``
+* ``BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING``
+* ``BETWEEN CURRENT ROW AND CURRENT ROW``
+* ``BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING``
+* ``ROWS BETWEEN <n> PRECEDING AND CURRENT ROW`` (not for ``MIN`` and ``MAX`` of strings,
+  or ``SUM``, ``MIN`` and ``MAX`` of decimals)
+
+``FIRST_VALUE``, ``LAST_VALUE`` and ``NTH_VALUE`` support these frames, and ``ROWS`` frames
+that start or end ``<n> PRECEDING`` or ``<n> FOLLOWING``. With ``RANGE`` or ``GROUPS``,
+``FIRST_VALUE`` also supports ``BETWEEN UNBOUNDED PRECEDING AND <n> FOLLOWING`` and
+``BETWEEN CURRENT ROW AND <n> FOLLOWING``, and ``LAST_VALUE`` supports
+``BETWEEN <n> PRECEDING AND CURRENT ROW`` and ``BETWEEN <n> PRECEDING AND UNBOUNDED FOLLOWING``.
+
+Other frames raise an error.
 
 **Example:**
 

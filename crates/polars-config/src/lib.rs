@@ -83,10 +83,10 @@ const OOC_MEMORY_PREFETCH_FRACTION: &str = "POLARS_OOC_MEMORY_PREFETCH_FRACTION"
 const DEFAULT_OOC_MEMORY_PREFETCH_FRACTION: f64 = 0.9;
 
 const OOC_DISK_BUDGET_MB: &str = "POLARS_OOC_DISK_BUDGET_MB";
-const DEFAULT_OOC_DISK_BUDGET_MB: u64 = u64::MAX;
+const DEFAULT_OOC_DISK_BUDGET_MB: u64 = 64 * 1000; // 64 GB
 
 const OOC_SPILL_MIN_BYTES: &str = "POLARS_OOC_SPILL_MIN_BYTES";
-const DEFAULT_OOC_SPILL_MIN_BYTES: u64 = 64 * 1024; // 64 KB
+const DEFAULT_OOC_SPILL_MIN_BYTES: u64 = 64 * 1024; // 64 KiB
 
 const OOC_MAX_PARALLEL_SPILL_TASKS: &str = "POLARS_OOC_MAX_PARALLEL_SPILL_TASKS";
 const DEFAULT_OOC_MAX_PARALLEL_SPILL_TASKS: u64 = 64;
@@ -96,6 +96,9 @@ const DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS: u64 = 64;
 
 const OOC_LOG_METRICS: &str = "POLARS_OOC_LOG_METRICS";
 const DEFAULT_OOC_LOG_METRICS: bool = false;
+
+const OOMKILL_THRESHOLD_MB: &str = "POLARS_OOMKILL_THRESHOLD_MB";
+const DEFAULT_OOMKILL_THRESHOLD_MB: u64 = u64::MAX;
 
 const JOIN_SAMPLE_LIMIT: &str = "POLARS_JOIN_SAMPLE_LIMIT";
 const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
@@ -202,6 +205,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MAX_PARALLEL_SPILL_TASKS,
     OOC_MAX_PARALLEL_PREFETCH_TASKS,
     OOC_LOG_METRICS,
+    OOMKILL_THRESHOLD_MB,
     JOIN_SAMPLE_LIMIT,
     JOIN_RUNTIME_FILTERS,
     PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
@@ -492,6 +496,12 @@ impl Config {
                     .unwrap_or(DEFAULT_OOC_LOG_METRICS),
                 Ordering::Relaxed,
             ),
+            OOMKILL_THRESHOLD_MB => OOMKILL_THRESHOLD_BYTES_ATOMIC.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOMKILL_THRESHOLD_MB)
+                    .saturating_mul(1_000_000),
+                Ordering::Relaxed,
+            ),
             JOIN_SAMPLE_LIMIT => self.join_sample_limit.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_JOIN_SAMPLE_LIMIT),
@@ -730,6 +740,11 @@ impl Config {
     }
 
     #[inline(always)]
+    pub fn oomkill_threshold_bytes(&self) -> u64 {
+        get_oomkill_threshold_bytes()
+    }
+
+    #[inline(always)]
     pub fn join_sample_limit(&self) -> u64 {
         self.join_sample_limit.load(Ordering::Relaxed)
     }
@@ -813,11 +828,18 @@ pub fn config() -> &'static Config {
     &CONFIG
 }
 
-// Has to be a standalone because LazyLock may not be called from allocator.
+// These have to be standalone because LazyLock may not be called from allocator.
 // Plus, it's faster this way.
 static OOC_DRIFT_THRESHOLD_ATOMIC: AtomicU64 = AtomicU64::new(DEFAULT_OOC_DRIFT_THRESHOLD);
+static OOMKILL_THRESHOLD_BYTES_ATOMIC: AtomicU64 =
+    AtomicU64::new(DEFAULT_OOMKILL_THRESHOLD_MB.saturating_mul(1_000_000));
 
 #[inline(always)]
 pub fn get_ooc_drift_threshold() -> u64 {
     OOC_DRIFT_THRESHOLD_ATOMIC.load(Ordering::Relaxed)
+}
+
+#[inline(always)]
+pub fn get_oomkill_threshold_bytes() -> u64 {
+    OOMKILL_THRESHOLD_BYTES_ATOMIC.load(Ordering::Relaxed)
 }
