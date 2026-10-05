@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import queue
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 import polars._utils.logging
@@ -239,7 +239,20 @@ class LanceFragmentReader(FileReader):
 
         try:
             while (fut := fut_queue.get()) is not None:
-                yield fut.result()
+                try:
+                    df = fut.result()
+                except CancelledError:
+                    # The shared conversion threadpool may have been shut down
+                    # due to an error in another reader, raise that error instead.
+                    with CX_LOCK:
+                        exc = self.multi_scan_context.get(CX_ERROR_KEY)
+
+                    if exc is not None:
+                        raise exc from None
+
+                    raise
+
+                yield df
 
             with CX_LOCK:
                 if (exc := self.multi_scan_context.pop(CX_ERROR_KEY, None)) is not None:
