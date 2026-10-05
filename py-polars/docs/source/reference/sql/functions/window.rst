@@ -7,6 +7,8 @@ Window
 
    * - Function
      - Description
+   * - :ref:`CUME_DIST <cume_dist>`
+     - Returns the fraction of rows in the window partition that come before or are tied with the current row.
    * - :ref:`DENSE_RANK <dense_rank>`
      - Returns the rank of each row within a window partition, without gaps for ties.
    * - :ref:`FIRST_VALUE <first_value>`
@@ -17,8 +19,12 @@ Window
      - Returns the last value in an ordered set of values with respect to the window declared in `OVER`.
    * - :ref:`LEAD <lead>`
      - Returns the value of a column at a given offset after the current row within a window partition.
+   * - :ref:`NTILE <ntile>`
+     - Splits the rows of a window partition into a number of buckets and returns the bucket number.
    * - :ref:`OVER <over>`
      - Define a window (a set of rows) within which a function is applied.
+   * - :ref:`PERCENT_RANK <percent_rank>`
+     - Returns the relative rank of each row within a window partition, from 0 to 1.
    * - :ref:`RANK <rank>`
      - Returns the rank of each row within a window partition, with gaps for ties.
    * - :ref:`ROW_NUMBER <row_number>`
@@ -39,6 +45,52 @@ Window
     the order unique.
 
 
+.. _cume_dist:
+
+CUME_DIST
+---------
+Returns the fraction of rows in the window partition that come before the current row or are
+tied with it: ``(rows up to and including the last tied row) / (rows in partition)``.
+
+**Requirements:**
+
+- Must be used with an ``OVER`` clause.
+- Without ``ORDER BY`` in the window specification all rows are tied, so the result is 1.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({
+        "id": [1, 2, 3, 4, 5, 6],
+        "category": ["A", "A", "A", "B", "B", "B"],
+        "score": [85, 90, 90, 75, 80, 80]
+    })
+    df.sql("""
+      SELECT
+        id,
+        category,
+        score,
+        PERCENT_RANK() OVER (PARTITION BY category ORDER BY score DESC) AS pct_rank,
+        CUME_DIST() OVER (PARTITION BY category ORDER BY score DESC) AS cume_dist
+      FROM self
+      ORDER BY category, score DESC, id
+    """)
+    # shape: (6, 5)
+    # ┌─────┬──────────┬───────┬──────────┬───────────┐
+    # │ id  ┆ category ┆ score ┆ pct_rank ┆ cume_dist │
+    # │ --- ┆ ---      ┆ ---   ┆ ---      ┆ ---       │
+    # │ i64 ┆ str      ┆ i64   ┆ f64      ┆ f64       │
+    # ╞═════╪══════════╪═══════╪══════════╪═══════════╡
+    # │ 2   ┆ A        ┆ 90    ┆ 0.0      ┆ 0.666667  │
+    # │ 3   ┆ A        ┆ 90    ┆ 0.0      ┆ 0.666667  │
+    # │ 1   ┆ A        ┆ 85    ┆ 1.0      ┆ 1.0       │
+    # │ 5   ┆ B        ┆ 80    ┆ 0.0      ┆ 0.666667  │
+    # │ 6   ┆ B        ┆ 80    ┆ 0.0      ┆ 0.666667  │
+    # │ 4   ┆ B        ┆ 75    ┆ 1.0      ┆ 1.0       │
+    # └─────┴──────────┴───────┴──────────┴───────────┘
+
+
 .. _dense_rank:
 
 DENSE_RANK
@@ -49,7 +101,7 @@ equal values receive the same rank, and the next rank number is consecutive (no 
 **Requirements:**
 
 - Must be used with an ``OVER`` clause.
-- That clause must have ``ORDER BY`` in the window specification.
+- Without ``ORDER BY`` in the window specification all rows are tied, so every rank is 1.
 
 **Example:**
 
@@ -74,7 +126,7 @@ equal values receive the same rank, and the next rank number is consecutive (no 
     # ┌─────┬──────────┬───────┬──────┬────────────┐
     # │ id  ┆ category ┆ score ┆ rank ┆ dense_rank │
     # │ --- ┆ ---      ┆ ---   ┆ ---  ┆ ---        │
-    # │ i64 ┆ str      ┆ i64   ┆ u32  ┆ u32        │
+    # │ i64 ┆ str      ┆ i64   ┆ i64  ┆ i64        │
     # ╞═════╪══════════╪═══════╪══════╪════════════╡
     # │ 2   ┆ A        ┆ 90    ┆ 1    ┆ 1          │
     # │ 3   ┆ A        ┆ 90    ┆ 1    ┆ 1          │
@@ -201,6 +253,64 @@ If the offset goes beyond the partition boundary, NULL is returned.
     # └─────┴──────────┴───────┴────────────┴─────────────┘
 
 
+.. _ntile:
+
+NTILE
+-----
+Splits the rows of a window partition into ``n`` buckets of near-equal size, in the order of the
+window's ``ORDER BY``, and returns the bucket number of each row, starting from 1. When the rows
+don't split evenly, the first buckets get one more row.
+
+**Syntax:**
+
+* ``NTILE(n) OVER (...)`` - ``n`` must be a positive integer literal.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({
+        "id": [1, 2, 3, 4, 5, 6, 7],
+        "value": [10, 20, 30, 40, 50, 60, 70],
+    })
+    df.sql("""
+      SELECT
+        id,
+        value,
+        NTILE(3) OVER (ORDER BY value) AS bucket
+      FROM self
+      ORDER BY id
+    """)
+    # shape: (7, 3)
+    # ┌─────┬───────┬────────┐
+    # │ id  ┆ value ┆ bucket │
+    # │ --- ┆ ---   ┆ ---    │
+    # │ i64 ┆ i64   ┆ i64    │
+    # ╞═════╪═══════╪════════╡
+    # │ 1   ┆ 10    ┆ 1      │
+    # │ 2   ┆ 20    ┆ 1      │
+    # │ 3   ┆ 30    ┆ 1      │
+    # │ 4   ┆ 40    ┆ 2      │
+    # │ 5   ┆ 50    ┆ 2      │
+    # │ 6   ┆ 60    ┆ 3      │
+    # │ 7   ┆ 70    ┆ 3      │
+    # └─────┴───────┴────────┘
+
+
+.. _percent_rank:
+
+PERCENT_RANK
+------------
+Returns the relative rank of each row within a window partition:
+``(rank - 1) / (rows in partition - 1)``, or 0 when the partition has one row. Tied rows get the
+same value. See :ref:`CUME_DIST <cume_dist>` for an example.
+
+**Requirements:**
+
+- Must be used with an ``OVER`` clause.
+- Without ``ORDER BY`` in the window specification all rows are tied, so the result is 0.
+
+
 .. _rank:
 
 RANK
@@ -211,7 +321,7 @@ receive the same rank, and the next rank skips numbers (creating gaps).
 **Requirements:**
 
 - Must be used with an ``OVER`` clause.
-- That clause must have ``ORDER BY`` in the window specification.
+- Without ``ORDER BY`` in the window specification all rows are tied, so every rank is 1.
 
 **Example:**
 
@@ -236,14 +346,14 @@ receive the same rank, and the next rank skips numbers (creating gaps).
     # ┌─────┬──────────┬───────┬────────────┬──────┐
     # │ id  ┆ category ┆ score ┆ dense_rank ┆ rank │
     # │ --- ┆ ---      ┆ ---   ┆ ---        ┆ ---  │
-    # │ i64 ┆ str      ┆ i64   ┆ u32        ┆ u32  │
+    # │ i64 ┆ str      ┆ i64   ┆ i64        ┆ i64  │
     # ╞═════╪══════════╪═══════╪════════════╪══════╡
     # │ 2   ┆ A        ┆ 90    ┆ 1          ┆ 1    │
     # │ 3   ┆ A        ┆ 90    ┆ 1          ┆ 1    │
-    # │ 1   ┆ A        ┆ 85    ┆ 2          ┆ 3    │2)
+    # │ 1   ┆ A        ┆ 85    ┆ 2          ┆ 3    │
     # │ 5   ┆ B        ┆ 80    ┆ 1          ┆ 1    │
     # │ 6   ┆ B        ┆ 80    ┆ 1          ┆ 1    │
-    # │ 4   ┆ B        ┆ 75    ┆ 2          ┆ 3    │2)
+    # │ 4   ┆ B        ┆ 75    ┆ 2          ┆ 3    │
     # └─────┴──────────┴───────┴────────────┴──────┘
 
 
@@ -277,7 +387,7 @@ Returns the sequential row number, optionally within a window partition, startin
     # ┌─────┬─────┬─────┬──────────┬───────┐
     # │ x   ┆ y   ┆ z   ┆ category ┆ value │
     # │ --- ┆ --- ┆ --- ┆ ---      ┆ ---   │
-    # │ u32 ┆ u32 ┆ u32 ┆ str      ┆ i64   │
+    # │ i64 ┆ i64 ┆ i64 ┆ str      ┆ i64   │
     # ╞═════╪═════╪═════╪══════════╪═══════╡
     # │ 1   ┆ 1   ┆ 3   ┆ A        ┆ 100   │
     # │ 2   ┆ 2   ┆ 2   ┆ A        ┆ 200   │

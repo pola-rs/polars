@@ -1,9 +1,14 @@
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_implode_explode_over_22188() -> None:
@@ -257,3 +262,15 @@ def test_nested_over_row_mapping_28712() -> None:
     result = df.with_columns(pl.col("a").over("g").over("g"))
 
     assert_frame_equal(result, df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_over_multi_key_order_by_directions(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 1, 2], "b": [1, 1, 2, 2]})
+    row_number = pl.int_range(1, pl.len() + 1)
+    q = lf.select(
+        row_number.over(order_by=["a", "b"]).alias("asc"),
+        row_number.over(order_by=["a", "b"], descending=True).alias("desc"),
+    )
+    expected = pl.DataFrame({"asc": [1, 3, 2, 4], "desc": [4, 2, 3, 1]})
+    assert_frame_equal(q.collect(engine=engine), expected)

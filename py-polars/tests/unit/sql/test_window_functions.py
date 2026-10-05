@@ -746,18 +746,19 @@ def test_window_order_by_nulls_default_placement() -> None:
     }
 
 
-def test_window_order_by_mixed_nulls_placement_error() -> None:
-    df = pl.DataFrame({"a": [1.0, None], "b": [2, 1]})
-    with (
-        pl.SQLContext(df=df, eager=True) as ctx,
-        pytest.raises(
-            SQLSyntaxError,
-            match=r"does not .*support mixed NULLS FIRST/LAST",
-        ),
-    ):
-        ctx.execute(
-            "SELECT ROW_NUMBER() OVER (ORDER BY a NULLS LAST, b NULLS FIRST) FROM df"
-        )
+def test_window_order_by_mixed_directions() -> None:
+    df = pl.DataFrame({"a": [1.0, None, 1.0, None], "b": [2, 1, None, 2]})
+    query = """
+        SELECT
+            a,
+            b,
+            ROW_NUMBER() OVER (ORDER BY a NULLS LAST, b NULLS FIRST) AS x,
+            ROW_NUMBER() OVER (ORDER BY a DESC, b) AS y,
+            SUM(b) OVER (ORDER BY a NULLS FIRST, b DESC) AS z
+        FROM self
+        ORDER BY a, b
+    """
+    assert_sql_matches(df, query=query, compare_with="duckdb")
 
 
 @pytest.mark.parametrize(

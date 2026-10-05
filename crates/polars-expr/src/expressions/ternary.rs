@@ -132,7 +132,16 @@ impl PhysicalExpr for TernaryExpr {
         let masked_df = |names: &[PlSmallStr], mask: &Bitmap| -> PolarsResult<DataFrame> {
             let columns = names
                 .iter()
-                .map(|c| df.column(c).unwrap().mask(mask))
+                .map(|c| {
+                    let c = df.column(c).unwrap();
+                    // Common subexpression elimination can add a scalar column of one row to a
+                    // frame with another height.
+                    if c.len() == 1 && df.height() != 1 {
+                        c.new_from_index(0, df.height()).mask(mask)
+                    } else {
+                        c.mask(mask)
+                    }
+                })
                 .collect();
             DataFrame::new(df.height(), columns)
         };
