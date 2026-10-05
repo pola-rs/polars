@@ -259,7 +259,7 @@ class TestWriteDatabase:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Appending data in a different column order must not swap values (ref: #29724)."""
+        """Appending data in a different order must not swap values (ref: #29724)."""
         if engine != "adbc":
             pytest.skip("column-order binding only applies to the 'adbc' engine")
 
@@ -276,10 +276,9 @@ class TestWriteDatabase:
         original_ingest = adbc_dbapi.Cursor.adbc_ingest
 
         def _record_order(self: Any, *args: Any, **kwargs: Any) -> Any:
-            data = kwargs.get("data", args[1] if len(args) > 1 else None)
-            ingest_orders.append(
-                list(getattr(data, "column_names", None) or data.columns)
-            )
+            data: Any = kwargs.get("data", args[1] if len(args) > 1 else None)
+            names = getattr(data, "column_names", None)
+            ingest_orders.append(list(names if names is not None else data.columns))
             return original_ingest(self, *args, **kwargs)
 
         monkeypatch.setattr(adbc_dbapi.Cursor, "adbc_ingest", _record_order)
