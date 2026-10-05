@@ -260,3 +260,18 @@ def test_rank_funcs_order_by_count_after_group_by(func: str) -> None:
         compare_with="duckdb",
         engines=["in-memory", "streaming"],
     )
+
+
+@pytest.mark.parametrize("func", ["RANK()", "DENSE_RANK()", "PERCENT_RANK()"])
+@pytest.mark.parametrize("nulls", ["NULLS FIRST", "NULLS LAST"])
+def test_rank_funcs_order_by_group_key(func: str, nulls: str) -> None:
+    df = pl.DataFrame({"g": [1, 2, 2, None]})
+    assert_sql_matches(
+        df,
+        query=f"""
+            SELECT g, {func} OVER (ORDER BY g {nulls}) AS r
+            FROM self GROUP BY g ORDER BY g NULLS LAST
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )

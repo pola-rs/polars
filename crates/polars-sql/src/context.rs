@@ -245,6 +245,8 @@ pub struct SQLContext {
 /// State of the query block being executed that its `GROUP BY` binds.
 #[derive(Clone, Default)]
 pub(crate) struct GroupScope {
+    /// Whether the block has a `GROUP BY`.
+    pub(crate) has_group_by: bool,
     /// `GROUPING()` calls parsed in the block.
     grouping_calls: Vec<GroupingCall>,
     /// Whether an empty `OVER ()` being parsed must stay distinguishable from an
@@ -1648,11 +1650,13 @@ impl SQLContext {
 
     /// Execute the 'SELECT' part of the query.
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
+        let has_group_by = match &select_stmt.group_by {
+            GroupByExpr::Expressions(exprs, _) => !exprs.is_empty(),
+            GroupByExpr::All(_) => true,
+        };
         let scope = GroupScope {
-            mark_whole_frame_windows: match &select_stmt.group_by {
-                GroupByExpr::Expressions(exprs, _) => !exprs.is_empty(),
-                GroupByExpr::All(_) => true,
-            },
+            has_group_by,
+            mark_whole_frame_windows: has_group_by,
             ..Default::default()
         };
         let outer_scope = std::mem::replace(&mut self.group_scope, scope);

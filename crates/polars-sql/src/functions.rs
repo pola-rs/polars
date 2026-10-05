@@ -1887,13 +1887,13 @@ impl SQLFunctionVisitor<'_> {
         let order_keys = self.parse_window_order_keys()?;
         let (row_index, n) = window_row_index();
 
-        // With one ORDER BY key, the key is ranked directly, without sorting the window. Not
-        // for keys with COUNT(*): in a window function it counts the rows of the window
-        // (`hoist_rec` in context.rs), so `RANK() OVER (ORDER BY COUNT(*))` would rank a constant.
+        // With one ORDER BY key, the key is ranked directly, without sorting the window. Not in
+        // a GROUP BY block: there the reductions in `rank_of_key` can be moved into the GROUP BY
+        // (`hoist_rec` in context.rs), and a COUNT(*) key counts the rows of the window.
         #[cfg(feature = "rank")]
         if let ([(key, options)], Rank | DenseRank | PercentRank) =
             (order_keys.as_slice(), function)
-            && !key.into_iter().any(|e| matches!(e, Expr::Len))
+            && !self.ctx.group_scope.has_group_by
         {
             let rank = rank_of_key(key.clone(), *options, matches!(function, DenseRank));
             let expr = match function {
