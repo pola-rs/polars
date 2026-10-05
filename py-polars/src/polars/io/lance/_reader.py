@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import queue
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 import polars._utils.logging
@@ -249,8 +249,16 @@ class LanceFragmentReader(FileReader):
             conversion_threadpool.shutdown(wait=False, cancel_futures=True)
             return
 
+        except CancelledError:
+            with CX_LOCK:
+                if (exc := self.multi_scan_context.get(CX_ERROR_KEY)) is not None:
+                    raise exc from None
+
+                raise
+
         except BaseException:
             conversion_threadpool.shutdown(wait=False, cancel_futures=True)
+
             raise
 
         finally:
