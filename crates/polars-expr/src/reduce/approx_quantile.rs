@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::fmt;
 use std::marker::PhantomData;
 
-use polars_compute::approx_quantile::{ApproxQuantileMethod, FinalizedSketch, Sketch};
+use polars_compute::approx_quantile::{ApproxQuantileMethod, Sketch};
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_ops::series::sketches_to_series;
 use polars_utils::pl_serialize;
@@ -70,12 +70,18 @@ fn new_sketch_reduction(
     }))
 }
 
-/// Merge the sketches of [`new_approx_quantile_sketch_reduction`] over values of `values_dtype`.
+/// Merges the states of [`new_approx_quantile_state_reduction`] over values of
+/// `values_dtype`, and outputs the same sketches as
+/// [`new_approx_quantile_sketch_reduction`].
 pub fn new_approx_quantile_merge_reduction(
     values_dtype: DataType,
+    method: ApproxQuantileMethod,
+    error: f64,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
     Ok(with_match_sketch_item!(&values_dtype, |_T, B| {
-        let reducer = SketchMergeReducer::<<B as ToOwned>::Owned>(PhantomData);
+        let reducer = SketchMergeReducer::<<B as ToOwned>::Owned> {
+            template: Sketch::new(&method, error),
+        };
         Box::new(VecGroupedReduction::new(DataType::Binary, reducer))
     }))
 }
@@ -167,24 +173,21 @@ where
     }
 }
 
-struct SketchMergeReducer<I>(PhantomData<I>);
-
-impl<I> Clone for SketchMergeReducer<I> {
-    fn clone(&self) -> Self {
-        Self(PhantomData)
-    }
+#[derive(Clone)]
+struct SketchMergeReducer<I: fmt::Debug + Clone + TotalOrd> {
+    template: Sketch<I>,
 }
 
 impl<I> SketchMergeReducer<I>
 where
     I: fmt::Debug + Clone + TotalOrd + serde::de::DeserializeOwned,
 {
-    fn push_blob(&self, acc: &mut PolarsResult<Vec<FinalizedSketch<I>>>, blob: &[u8]) {
-        let Ok(parts) = acc else {
+    fn merge_blob(&self, acc: &mut PolarsResult<Sketch<I>>, blob: &[u8]) {
+        let Ok(sketch) = acc else {
             return;
         };
-        match pl_serialize::deserialize_from_reader::<FinalizedSketch<I>, _, false>(blob) {
-            Ok(part) => parts.push(part),
+        match pl_serialize::deserialize_from_reader::<Sketch<I>, _, false>(blob) {
+            Ok(state) => sketch.merge(&state),
             Err(e) => *acc = Err(e),
         }
     }
@@ -202,15 +205,15 @@ where
         + 'static,
 {
     type Dtype = BinaryType;
-    type Value = PolarsResult<Vec<FinalizedSketch<I>>>;
+    type Value = PolarsResult<Sketch<I>>;
 
     fn init(&self) -> Self::Value {
-        Ok(Vec::new())
+        Ok(self.template.clone())
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
         match (a, b) {
-            (Ok(a), Ok(b)) => a.extend_from_slice(b),
+            (Ok(a), Ok(b)) => a.merge(b),
             (a @ Ok(_), Err(e)) => *a = Err(e.clone()),
             (Err(_), _) => {},
         }
@@ -218,13 +221,13 @@ where
 
     fn reduce_one(&self, a: &mut Self::Value, b: Option<&[u8]>, _seq_id: u64) {
         if let Some(b) = b {
-            self.push_blob(a, b);
+            self.merge_blob(a, b);
         }
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &BinaryChunked, _seq_id: u64) {
         for blob in ca.iter().flatten() {
-            self.push_blob(v, blob);
+            self.merge_blob(v, blob);
         }
     }
 
@@ -237,7 +240,7 @@ where
         assert!(m.is_none());
         let sketches = v
             .into_iter()
-            .map(|parts| parts.map(FinalizedSketch::union))
+            .map(|s| s.map(Sketch::finalize))
             .collect::<PolarsResult<Vec<_>>>()?;
         sketches_to_series(&sketches)
     }
