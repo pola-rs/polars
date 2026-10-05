@@ -208,6 +208,42 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
             weight_factor,
         }
     }
+
+    /// Combine sketches of disjoint items into one, retaining every item.
+    pub fn union(parts: Vec<Self>) -> Self {
+        let mut parts = parts.into_iter().filter(|p| !p.items.is_empty()).peekable();
+        let Some(weight_factor) = parts.peek().map(|p| p.weight_factor) else {
+            return Self::new(Box::default(), None);
+        };
+
+        let mut is_weighted = false;
+        let mut merged = Vec::new();
+        for part in parts {
+            assert_eq!(part.weight_factor, weight_factor);
+            is_weighted |= part.cum_weight.is_some();
+            let (items, weights) = part.into_items_and_weights();
+            merged.extend(Iterator::zip(items.into_iter(), weights));
+        }
+
+        merged.sort_by(|(item1, weight1), (item2, weight2)| {
+            TotalOrd::tot_cmp(item1, item2).then(u64::cmp(weight1, weight2))
+        });
+
+        let cum_weight = is_weighted.then(|| {
+            merged
+                .iter()
+                .scan(0, |cum_weight, (_, weight)| {
+                    *cum_weight += weight;
+                    Some(*cum_weight)
+                })
+                .collect()
+        });
+        Self {
+            items: merged.into_iter().map(|(item, _)| item).collect(),
+            cum_weight,
+            weight_factor,
+        }
+    }
 }
 
 #[inline(never)]
@@ -1325,9 +1361,9 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::ApproxQuantileMethod;
     use super::kll::KLLSketch;
     use super::req::ReqSketch;
+    use super::{ApproxQuantileMethod, FinalizedSketch, Sketch};
 
     #[test]
     fn auto_resolves_by_queried_quantiles() {
@@ -1383,5 +1419,44 @@ mod tests {
 
         assert_diverges!("ReqSketch", ReqSketch::new(0.01, true));
         assert_diverges!("KLLSketch", KLLSketch::new(0.01));
+    }
+
+    /// `union` retains every weighted item of its parts, independent of their order.
+    #[test]
+    fn union_retains_all_items() {
+        let data: Vec<f64> = (0..60_000).map(|i| ((i * 7919) % 1_000) as f64).collect();
+        for method in [
+            ApproxQuantileMethod::KLL,
+            ApproxQuantileMethod::DoubleReqSketch,
+        ] {
+            let parts: Vec<_> = [&data[..10], &data[10..25_000], &data[25_000..]]
+                .into_iter()
+                .map(|chunk| {
+                    let mut s = Sketch::new(&method, 0.01);
+                    chunk.iter().for_each(|v| s.update_owned(*v));
+                    s.finalize()
+                })
+                .chain([FinalizedSketch::new(Box::default(), None)])
+                .collect();
+
+            let mut expected: Vec<_> = parts
+                .iter()
+                .flat_map(|p| {
+                    let (items, weights) = p.clone().into_items_and_weights();
+                    Iterator::zip(items.into_iter(), weights)
+                })
+                .collect();
+            expected.sort_by(|a, b| f64::total_cmp(&a.0, &b.0).then(u64::cmp(&a.1, &b.1)));
+
+            let forward = FinalizedSketch::union(parts.clone());
+            let backward = FinalizedSketch::union(parts.into_iter().rev().collect());
+            assert_eq!(forward.num_items(), data.len() as u64);
+            assert_eq!(forward.weight_factor, backward.weight_factor);
+            for union in [forward, backward] {
+                let (items, weights) = union.into_items_and_weights();
+                let pairs: Vec<_> = Iterator::zip(items.into_iter(), weights).collect();
+                assert_eq!(pairs, expected);
+            }
+        }
     }
 }
