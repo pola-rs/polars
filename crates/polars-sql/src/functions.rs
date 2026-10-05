@@ -35,7 +35,7 @@ use crate::sql_expr::{
     order_by_sort_options, parse_extract_date_part, parse_sql_array, parse_sql_expr, sql_binary,
 };
 use crate::sql_visitors::grouping_call_args;
-use crate::window_frames::is_frame_aggregate;
+use crate::window_frames::{MAX_ROW_OFFSET, is_frame_aggregate};
 
 pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
@@ -801,11 +801,18 @@ pub(crate) enum PolarsSQLFunctions {
     FirstValue,
     /// SQL 'last_value' window function.
     /// Returns the last value in an ordered set of values (respecting window frame).
-    /// With default frame, returns the current row's value.
+    /// With ORDER BY and no frame, the frame ends at the last row tied with the current row.
     /// ```sql
     /// SELECT LAST_VALUE(col1) OVER (PARTITION BY category ORDER BY id) FROM df;
     /// ```
     LastValue,
+    /// SQL 'nth_value' window function.
+    /// Returns the value at row `n` of the window frame (from 1), or NULL if the frame has fewer
+    /// rows. `n` must be a positive integer literal.
+    /// ```sql
+    /// SELECT NTH_VALUE(col1, 2) OVER (PARTITION BY category ORDER BY id) FROM df;
+    /// ```
+    NthValue,
     /// SQL 'lag' function.
     /// Returns the value of the expression evaluated at the row n rows before the current row.
     /// ```sql
@@ -965,6 +972,7 @@ impl PolarsSQLFunctions {
             "minute",
             "mod",
             "month",
+            "nth_value",
             "ntile",
             "nullif",
             "octet_length",
@@ -1184,6 +1192,7 @@ impl PolarsSQLFunctions {
             "last_value" => Self::LastValue,
             "lag" => Self::Lag,
             "lead" => Self::Lead,
+            "nth_value" => Self::NthValue,
             "ntile" => Self::Ntile,
             "percent_rank" => Self::PercentRank,
             "rank" => Self::Rank,
@@ -1226,6 +1235,9 @@ impl SQLFunctionVisitor<'_> {
         self.check_window_shape(&function_name)?;
         if self.window.is_some() && is_frame_aggregate(&function_name, self.is_distinct()) {
             return self.visit_window_aggregate(&function_name);
+        }
+        if self.window.is_some() && matches!(function_name, FirstValue | LastValue | NthValue) {
+            return self.visit_window_value(&function_name);
         }
 
         let log_with_base =
@@ -1831,28 +1843,10 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Window functions
             // ----
+            // With an OVER clause, see `visit_window_value`.
             FirstValue => self.visit_unary(Expr::first),
-            LastValue => {
-                let args = extract_args(function)?;
-                let expr = match args.as_slice() {
-                    [FunctionArgExpr::Expr(sql_expr)] => {
-                        parse_sql_expr(sql_expr, self.ctx, self.active_schema)?
-                    },
-                    _ => polars_bail!(
-                        SQLSyntax: "LAST_VALUE expects exactly 1 argument (found {})",
-                        args.len()
-                    ),
-                };
-                match &self.window {
-                    // Without ORDER BY or a frame, the frame is the whole partition.
-                    Some(spec) if spec.order_by.is_empty() && spec.window_frame.is_none() => {
-                        self.apply_window_spec(expr.last())
-                    },
-                    // Otherwise the frame ends at the current row (see `check_window_shape`),
-                    // so the last value is the current row's.
-                    _ => Ok(expr),
-                }
-            },
+            LastValue => self.visit_unary(|e| e),
+            NthValue => polars_bail!(SQLSyntax: "NTH_VALUE requires an OVER clause"),
             Lag => self.visit_window_offset_function(1),
             Lead => self.visit_window_offset_function(-1),
             Rank | DenseRank | PercentRank | CumeDist => self.visit_rank_function(&function_name),
@@ -1967,7 +1961,9 @@ impl SQLFunctionVisitor<'_> {
         self.apply_window_spec(bucket + lit(1i64))
     }
 
-    fn visit_window_offset_function(&mut self, offset_multiplier: i64) -> PolarsResult<Expr> {
+    /// LAG (`direction` 1) or LEAD (`direction` -1): the value `offset` rows before or after the
+    /// current row, or the default (NULL if not given) where that row is outside the partition.
+    fn visit_window_offset_function(&mut self, direction: i64) -> PolarsResult<Expr> {
         let Some(window_spec) = &self.window else {
             polars_bail!(SQLSyntax: "{} requires an OVER clause", self.func.name);
         };
@@ -1976,26 +1972,55 @@ impl SQLFunctionVisitor<'_> {
         }
 
         let args = extract_args(self.func)?;
-
-        match args.as_slice() {
-            [FunctionArgExpr::Expr(sql_expr)] => {
-                let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
-                Ok(expr.shift(offset_multiplier.into()))
+        let (value, offset, default) = match args.as_slice() {
+            [FunctionArgExpr::Expr(value)] => (value, None, None),
+            [FunctionArgExpr::Expr(value), FunctionArgExpr::Expr(offset)] => {
+                (value, Some(offset), None)
             },
-            [FunctionArgExpr::Expr(sql_expr), FunctionArgExpr::Expr(offset_expr)] => {
-                let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
-                let offset = parse_sql_expr(offset_expr, self.ctx, self.active_schema)?;
-                if let Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) = offset {
-                    if n <= 0 {
-                        polars_bail!(SQLSyntax: "offset must be positive (found {})", n)
-                    }
-                    Ok(expr.shift((offset_multiplier * n as i64).into()))
+            [
+                FunctionArgExpr::Expr(value),
+                FunctionArgExpr::Expr(offset),
+                FunctionArgExpr::Expr(default),
+            ] => (value, Some(offset), Some(default)),
+            _ => polars_bail!(
+                SQLSyntax: "{} expects 1 to 3 arguments (found {})",
+                self.func.name, args.len()
+            ),
+        };
+        let value = parse_sql_expr(value, self.ctx, self.active_schema)?;
+        let offset = match offset {
+            None => 1,
+            Some(offset) => match parse_sql_expr(offset, self.ctx, self.active_schema)? {
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => n,
+                offset => polars_bail!(SQLSyntax: "offset must be an integer (found {:?})", offset),
+            },
+        };
+        // Each row reads the row `shift` rows before it.
+        let max_offset = i128::from(MAX_ROW_OFFSET);
+        let shift = (i128::from(direction) * offset).clamp(-max_offset, max_offset) as i64;
+        // A scalar, as in `LAG(1)`, is the value at every row.
+        let is_scalar = is_constant_key(&value);
+        let expr = match default {
+            None if !is_scalar => value.shift(lit(shift)),
+            default => {
+                let default = match default {
+                    Some(default) => parse_sql_expr(default, self.ctx, self.active_schema)?,
+                    None => Expr::Literal(LiteralValue::untyped_null()),
+                };
+                let shifted = if is_scalar {
+                    value
                 } else {
-                    polars_bail!(SQLSyntax: "offset must be an integer (found {:?})", offset)
-                }
+                    value.shift(lit(shift))
+                };
+                let (row_index, n) = window_row_index();
+                let in_partition = row_index
+                    .clone()
+                    .gt_eq(lit(shift))
+                    .and(row_index.lt(n + lit(shift)));
+                when(in_partition).then(shifted).otherwise(default)
             },
-            _ => polars_bail!(SQLSyntax: "{} expects 1 or 2 arguments (found {})", self.func.name, args.len()),
-        }.and_then(|e| self.apply_window_spec(e))
+        };
+        self.apply_window_spec(expr)
     }
 
     fn visit_udf(&mut self, func_name: &str) -> PolarsResult<Expr> {
@@ -2064,24 +2089,6 @@ impl SQLFunctionVisitor<'_> {
                 SQLInterface: "{} with a window frame is not supported yet",
                 self.func.name
             );
-        }
-        // TODO: in a RANGE or GROUPS frame, rows with equal ORDER BY values should all get
-        // the LAST_VALUE of the last of them.
-        if let (LastValue, Some(frame)) = (function, &spec.window_frame) {
-            let ends_at_current_row =
-                matches!(frame.end_bound, None | Some(WindowFrameBound::CurrentRow));
-            let starts_after_current_row =
-                matches!(frame.start_bound, WindowFrameBound::Following(_));
-            if !ends_at_current_row || starts_after_current_row {
-                polars_bail!(
-                    SQLInterface:
-                    "{} only supports window frames that end at the current row; found '{} BETWEEN {} AND {}'",
-                    self.func.name,
-                    frame.units,
-                    frame.start_bound,
-                    frame.end_bound.as_ref().unwrap_or(&WindowFrameBound::CurrentRow),
-                );
-            }
         }
         Ok(())
     }
@@ -2876,7 +2883,7 @@ fn parse_quantile_literal(
     }
 }
 
-fn extract_args(func: &SQLFunction) -> PolarsResult<Vec<&FunctionArgExpr>> {
+pub(crate) fn extract_args(func: &SQLFunction) -> PolarsResult<Vec<&FunctionArgExpr>> {
     let (args, _, _) = _extract_func_args(func, false, false)?;
     Ok(args)
 }
