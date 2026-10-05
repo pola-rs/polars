@@ -79,9 +79,10 @@ impl SQLFunctionVisitor<'_> {
             (None, value) => value,
         };
         // A scalar counts once per row, as in `SUM(1)`.
+        let is_scalar = value.as_ref().is_some_and(is_constant_key);
         let value = value.map(|value| match frame {
             FrameShape::Partition | FrameShape::Peers => value,
-            _ if is_constant_key(&value) => repeat(value, len()),
+            _ if is_scalar => repeat(value, len()),
             _ => value,
         });
 
@@ -110,8 +111,8 @@ impl SQLFunctionVisitor<'_> {
 
         let keys: Vec<Expr> = order_keys.iter().map(|(key, _)| key.clone()).collect();
         let (expr, peer_keys, order_keys) = match frame {
-            FrameShape::Partition => (aggregate.whole(), Vec::new(), Vec::new()),
-            FrameShape::Peers => (aggregate.whole(), keys, Vec::new()),
+            FrameShape::Partition => (aggregate.whole(is_scalar), Vec::new(), Vec::new()),
+            FrameShape::Peers => (aggregate.whole(is_scalar), keys, Vec::new()),
             FrameShape::ToCurrentRow { peers } => {
                 let running = aggregate.running(false);
                 let expr = if peers {
@@ -200,9 +201,13 @@ impl SQLFunctionVisitor<'_> {
 }
 
 impl Aggregate {
-    /// The aggregate over all rows.
-    fn whole(self) -> Expr {
+    /// The aggregate over all rows. A `scalar` value counts once per row.
+    fn whole(self, scalar: bool) -> Expr {
         match self {
+            // Scaled by the number of rows, not repeated: a reduction inside a reduction reads
+            // as a nested aggregate (`SUM(SUM(x))`), which gives one output row.
+            Aggregate::Count(value) if scalar => (value.count() * len()).cast(DataType::Int64),
+            Aggregate::Sum(value) if scalar => value * len().cast(DataType::Int64),
             Aggregate::Avg(value) => value.mean(),
             Aggregate::Count(value) => value.count().cast(DataType::Int64),
             Aggregate::CountRows => len().cast(DataType::Int64),
@@ -223,9 +228,10 @@ impl Aggregate {
         };
         match self {
             Aggregate::Avg(value) => {
-                let sum = Aggregate::Sum(value.clone()).running(reverse);
+                // Sum in Float64, so that an integer sum can't overflow.
+                let sum = Aggregate::Sum(value.clone().cast(DataType::Float64)).running(reverse);
                 let count = Aggregate::Count(value.clone()).running(reverse);
-                sum.cast(DataType::Float64) / count
+                sum / count
             },
             Aggregate::Count(value) => value.clone().cum_count(reverse).cast(DataType::Int64),
             Aggregate::CountRows => {
@@ -261,7 +267,7 @@ impl Aggregate {
                     .rolling_sum(options),
                 Aggregate::CountRows => {
                     let (row_index, _) = window_row_index();
-                    let window_size = lit(window_size as i64);
+                    let window_size = lit(i64::try_from(window_size).unwrap_or(i64::MAX));
                     when(row_index.clone().lt(window_size.clone()))
                         .then(row_index + lit(1i64))
                         .otherwise(window_size)

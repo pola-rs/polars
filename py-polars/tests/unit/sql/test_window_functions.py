@@ -1126,6 +1126,12 @@ def test_window_aggregate_frames(
         "SUM(x) OVER (PARTITION BY g RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)",
         "AVG(DISTINCT x) OVER (PARTITION BY g)",
         "MAX(DISTINCT x) OVER (ORDER BY o)",
+        "SUM(1) FILTER (WHERE TRUE) OVER ()",
+        "COUNT(*) FILTER (WHERE TRUE) OVER (PARTITION BY g)",
+        "SUM(1 + 1) OVER (ORDER BY o RANGE BETWEEN CURRENT ROW AND CURRENT ROW)",
+        "SUM(CAST(x AS DECIMAL(10, 2))) OVER (ORDER BY id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)",
+        "COUNT(*) OVER (ORDER BY id ROWS 9223372036854775807 PRECEDING)",
+        "SUM(x) OVER (ORDER BY id ROWS 9223372036854775807 PRECEDING)",
     ],
 )
 @pytest.mark.parametrize("n_rows", [0, 9])
@@ -1135,6 +1141,53 @@ def test_window_aggregate_shapes(
     assert_sql_matches(
         {"t": df_frames.head(n_rows)},
         query=f"SELECT id, {window_fn} AS a FROM t ORDER BY id",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "window_fn",
+    [
+        "SUM(1) OVER ()",
+        "SUM(1) FILTER (WHERE TRUE) OVER ()",
+        "COUNT(*) FILTER (WHERE TRUE) OVER ()",
+        "SUM(1 + 1) OVER ()",
+        "AVG(1 + 1) OVER ()",
+        "SUM(1) OVER (ORDER BY id)",
+        "SUM(x) OVER ()",
+        "SUM(SUM(x)) OVER ()",
+        "COUNT(COUNT(*)) OVER ()",
+    ],
+)
+@pytest.mark.parametrize("n_rows", [0, 3])
+def test_window_aggregate_output_height(
+    df_frames: pl.DataFrame, window_fn: str, n_rows: int
+) -> None:
+    assert_sql_matches(
+        {"t": df_frames.head(n_rows)},
+        query=f"SELECT {window_fn} AS a FROM t",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_window_avg_of_large_integers() -> None:
+    df = pl.DataFrame(
+        {"id": [1, 2, 3], "x": [2_000_000_000, 2_000_000_000, 2_000_000_000]},
+        schema_overrides={"x": pl.Int32},
+    )
+    assert_sql_matches(
+        {"t": df},
+        query="""
+            SELECT
+              id,
+              AVG(x) OVER (ORDER BY id) AS a,
+              AVG(x) OVER (ORDER BY id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS b,
+              AVG(x) OVER (ORDER BY id ROWS 1 PRECEDING) AS c
+            FROM t ORDER BY id
+        """,
         compare_with="duckdb",
         engines=["in-memory", "streaming"],
     )
