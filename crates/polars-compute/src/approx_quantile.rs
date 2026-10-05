@@ -208,6 +208,42 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
             weight_factor,
         }
     }
+
+    /// Combine sketches of disjoint items into one, retaining every item.
+    pub fn union(parts: Vec<Self>) -> Self {
+        let mut parts = parts.into_iter().filter(|p| !p.items.is_empty()).peekable();
+        let Some(weight_factor) = parts.peek().map(|p| p.weight_factor) else {
+            return Self::new(Box::default(), None);
+        };
+
+        let mut is_weighted = false;
+        let mut merged = Vec::new();
+        for part in parts {
+            assert_eq!(part.weight_factor, weight_factor);
+            is_weighted |= part.cum_weight.is_some();
+            let (items, weights) = part.into_items_and_weights();
+            merged.extend(Iterator::zip(items.into_iter(), weights));
+        }
+
+        merged.sort_by(|(item1, weight1), (item2, weight2)| {
+            TotalOrd::tot_cmp(item1, item2).then(u64::cmp(weight1, weight2))
+        });
+
+        let cum_weight = is_weighted.then(|| {
+            merged
+                .iter()
+                .scan(0, |cum_weight, (_, weight)| {
+                    *cum_weight += weight;
+                    Some(*cum_weight)
+                })
+                .collect()
+        });
+        Self {
+            items: merged.into_iter().map(|(item, _)| item).collect(),
+            cum_weight,
+            weight_factor,
+        }
+    }
 }
 
 #[inline(never)]
