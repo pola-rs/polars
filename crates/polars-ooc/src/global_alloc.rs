@@ -32,10 +32,25 @@ fn update_alloc_size(bytes: i64) {
         if new.unsigned_abs() <= polars_config::get_ooc_drift_threshold() {
             drift.set(new);
         } else {
-            GLOBAL_ALLOC_SIZE.fetch_add(new as u64, Ordering::AcqRel);
-            drift.set(0)
+            let old = GLOBAL_ALLOC_SIZE.fetch_add(new as u64, Ordering::AcqRel);
+            drift.set(0);
+            let total = old.wrapping_add(new as u64);
+            if total <= i64::MAX as u64 && total > polars_config::get_oomkill_threshold_bytes() {
+                oomkill();
+            }
         }
     })
+}
+
+#[cold]
+#[inline(never)]
+fn oomkill() -> ! {
+    // Can't allocate here, so write directly to stderr.
+    const MSG: &[u8] = b"polars: memory usage exceeded POLARS_OOMKILL_THRESHOLD_MB, aborting\n";
+    unsafe {
+        libc::write(2, MSG.as_ptr().cast(), MSG.len() as _);
+        libc::abort()
+    }
 }
 
 #[cfg(all(
