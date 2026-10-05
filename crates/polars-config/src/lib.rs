@@ -848,13 +848,16 @@ pub fn config() -> &'static Config {
 }
 
 /// Return the total system memory in bytes, respecting cgroup limits and
-/// `POLARS_OVERRIDE_TOTAL_MEMORY`.
+/// `POLARS_OVERRIDE_TOTAL_MEMORY_MB`.
 pub fn total_memory() -> u64 {
     static TOTAL_MEMORY: LazyLock<u64> = LazyLock::new(|| {
-        if let Ok(s) = std::env::var("POLARS_OVERRIDE_TOTAL_MEMORY") {
+        if let Ok(s) = std::env::var("POLARS_OVERRIDE_TOTAL_MEMORY_MB") {
             return s
                 .parse::<u64>()
-                .unwrap_or_else(|_| panic!("invalid value for POLARS_OVERRIDE_TOTAL_MEMORY: {s}"));
+                .unwrap_or_else(|_| {
+                    panic!("invalid value for POLARS_OVERRIDE_TOTAL_MEMORY_MB: {s}")
+                })
+                .saturating_mul(1_000_000);
         }
 
         let mut sys = sysinfo::System::new();
