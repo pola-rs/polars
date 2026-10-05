@@ -949,8 +949,10 @@ def test_window_last_value(df_window: pl.DataFrame) -> None:
         "SELECT LAST_VALUE(x) OVER (PARTITION BY ABS(1)) AS a FROM t",
         "SELECT LAST_VALUE(x) OVER (PARTITION BY COALESCE(NULL, 1)) AS a FROM t",
         "SELECT * REPLACE (SUM(x) OVER () AS x) FROM t",
+        "SELECT NTH_VALUE(x, 2) OVER () AS a FROM t",
         # a window over aggregates makes the query an aggregation, with one row
         "SELECT SUM(SUM(x)) OVER () AS a FROM t",
+        "SELECT NTH_VALUE(SUM(x), 1) OVER () AS a FROM t",
         "SELECT AVG(MAX(x)) OVER () AS a FROM t",
         "SELECT APPROX_QUANTILE(SUM(x), 0.5) OVER () AS a FROM t",
         "SELECT CORR(SUM(x), SUM(x)) OVER () AS a FROM t",
@@ -1026,13 +1028,18 @@ def test_window_last_value_frame_ends_at_current_row(
             "is not supported",
         ),
         (
-            "LAST_VALUE(x) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)",
-            "LAST_VALUE only supports window frames that end at the current row; "
-            "found 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING'",
+            "LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING)",
+            "LAST_VALUE with window frame 'RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING' "
+            "is not supported",
         ),
         (
-            "LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING)",
-            "LAST_VALUE only supports window frames that end at the current row",
+            "NTH_VALUE(x, 2) OVER (ORDER BY id GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW)",
+            "NTH_VALUE with window frame 'GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW' "
+            "is not supported",
+        ),
+        (
+            "FIRST_VALUE(x) OVER (PARTITION BY g ROWS 1 PRECEDING)",
+            "FIRST_VALUE with a ROWS window frame but no ORDER BY is not supported",
         ),
     ],
 )
@@ -1187,6 +1194,197 @@ def test_window_avg_of_large_integers() -> None:
               AVG(x) OVER (ORDER BY id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS b,
               AVG(x) OVER (ORDER BY id ROWS 1 PRECEDING) AS c
             FROM t ORDER BY id
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+# ROWS frames for FIRST_VALUE, LAST_VALUE and NTH_VALUE, including empty frames.
+VALUE_ROWS_FRAMES = [
+    "ROWS UNBOUNDED PRECEDING",
+    "ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING",
+    "ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING",
+    "ROWS BETWEEN 1 FOLLOWING AND 3 FOLLOWING",
+    "ROWS BETWEEN 3 FOLLOWING AND 1 FOLLOWING",
+    "ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING",
+    "ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING",
+    "ROWS BETWEEN 9223372036854775807 PRECEDING AND 9223372036854775807 FOLLOWING",
+]
+
+
+@pytest.mark.parametrize(
+    ("frame", "order_by", "values"),
+    [
+        # With peers in the frame, read the ORDER BY key, which peers share.
+        *(
+            (frame, order_by, "o")
+            for frame in PEER_FRAMES
+            for order_by in ("o", "o DESC")
+        ),
+        *(
+            (frame, order_by, value)
+            for frame in VALUE_ROWS_FRAMES
+            for order_by in ("o, id", "o DESC, id DESC")
+            for value in ("x", "s")
+        ),
+    ],
+)
+@pytest.mark.parametrize("partition_by", ["", "PARTITION BY g"])
+def test_window_value_frames(
+    df_frames: pl.DataFrame, frame: str, order_by: str, values: str, partition_by: str
+) -> None:
+    funcs = [
+        f"FIRST_VALUE({values})",
+        f"LAST_VALUE({values})",
+        f"NTH_VALUE({values}, 2)",
+        f"NTH_VALUE({values}, 4)",
+    ]
+    select = ", ".join(f"{func} OVER w AS a{i}" for i, func in enumerate(funcs))
+    assert_sql_matches(
+        {"t": df_frames},
+        query=f"""
+            SELECT id, {select} FROM t
+            WINDOW w AS ({partition_by} ORDER BY {order_by} {frame})
+            ORDER BY id
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW",
+        "RANGE BETWEEN 2 PRECEDING AND CURRENT ROW",
+    ],
+)
+def test_window_last_value_range_offset_start(
+    df_frames: pl.DataFrame, frame: str
+) -> None:
+    assert_sql_matches(
+        {"t": df_frames},
+        query=f"""
+            SELECT id, LAST_VALUE(o) OVER (PARTITION BY g ORDER BY o {frame}) AS a
+            FROM t ORDER BY id
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "window_fn",
+    [
+        "FIRST_VALUE(1) OVER ()",
+        "LAST_VALUE(1) OVER (ORDER BY id)",
+        "LAST_VALUE('a') OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)",
+        "FIRST_VALUE(1 + 1) OVER (ORDER BY id ROWS BETWEEN 2 FOLLOWING AND 3 FOLLOWING)",
+        "NTH_VALUE(1, 2) OVER ()",
+        "NTH_VALUE(1, 2) OVER (ORDER BY id)",
+        "NTH_VALUE(1, 4) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)",
+        "LAG(1) OVER (ORDER BY id)",
+        "LAG(1, 1, 99) OVER (ORDER BY id)",
+        "LEAD('a', 2) OVER (ORDER BY id)",
+    ],
+)
+@pytest.mark.parametrize("n_rows", [0, 3])
+def test_window_value_of_scalar(
+    df_frames: pl.DataFrame, window_fn: str, n_rows: int
+) -> None:
+    assert_sql_matches(
+        {"t": df_frames.head(n_rows)},
+        query=f"SELECT {window_fn} AS a FROM t",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "error"),
+    [
+        ("SELECT NTH_VALUE(x, 2) FROM t", "NTH_VALUE requires an OVER clause"),
+        (
+            "SELECT NTH_VALUE(x, 0) OVER (ORDER BY id) FROM t",
+            "NTH_VALUE expects a positive integer literal as the position",
+        ),
+        (
+            "SELECT FIRST_VALUE(x) OVER (ORDER BY id ROWS BETWEEN 1 FOLLOWING AND CURRENT ROW) FROM t",
+            "invalid window frame 'ROWS BETWEEN 1 FOLLOWING AND CURRENT ROW'",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN CURRENT ROW AND 1 PRECEDING) FROM t",
+            "invalid window frame 'RANGE BETWEEN CURRENT ROW AND 1 PRECEDING'",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id GROUPS BETWEEN -1 PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative integer",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN -1.5 PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN x PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT FIRST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN CURRENT ROW AND NULL FOLLOWING) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN TRUE PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN DATE '2024-01-01' PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN (1 - 2) PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN CAST(-1 AS BIGINT) PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN -INTERVAL '1 day' PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+    ],
+)
+def test_window_value_errors(df_frames: pl.DataFrame, query: str, error: str) -> None:
+    with pytest.raises(SQLSyntaxError, match=error):
+        pl.SQLContext(t=df_frames).execute(query, eager=True)
+
+
+@pytest.mark.parametrize("partition_by", ["", "PARTITION BY g"])
+@pytest.mark.parametrize("order_by", ["id", "o DESC, id DESC"])
+def test_window_lag_lead_default(
+    df_frames: pl.DataFrame, partition_by: str, order_by: str
+) -> None:
+    funcs = [
+        "LAG(x, 2, 0)",
+        "LEAD(x, 1, -1)",
+        "LAG(s, 1, 'none')",
+        "LEAD(x, 2, x)",
+        "LAG(x, 1, NULL)",
+        "LAG(x, 0)",
+        "LEAD(x, 0, 99)",
+        "LAG(x, -1)",
+        "LEAD(x, -2, 7)",
+        "LAG(x, 100, 3)",
+    ]
+    select = ", ".join(f"{func} OVER w AS a{i}" for i, func in enumerate(funcs))
+    assert_sql_matches(
+        {"t": df_frames},
+        query=f"""
+            SELECT id, {select} FROM t
+            WINDOW w AS ({partition_by} ORDER BY {order_by})
+            ORDER BY id
         """,
         compare_with="duckdb",
         engines=["in-memory", "streaming"],

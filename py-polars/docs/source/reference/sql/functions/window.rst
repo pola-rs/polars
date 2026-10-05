@@ -19,6 +19,8 @@ Window
      - Returns the last value in an ordered set of values with respect to the window declared in `OVER`.
    * - :ref:`LEAD <lead>`
      - Returns the value of a column at a given offset after the current row within a window partition.
+   * - :ref:`NTH_VALUE <nth_value>`
+     - Returns the value at a given row of the window frame.
    * - :ref:`NTILE <ntile>`
      - Splits the rows of a window partition into a number of buckets and returns the bucket number.
    * - :ref:`OVER <over>`
@@ -41,8 +43,9 @@ Window
 .. note::
 
     Rows that have equal values for the `ORDER BY` of a window (peers) may be processed in any
-    order. Functions such as `ROW_NUMBER`, `LAG`, `LEAD`, `FIRST_VALUE` and aggregates with a
-    `ROWS` frame can then give tied rows different results between runs. Add columns to the `ORDER BY` to make
+    order. Functions such as `ROW_NUMBER`, `LAG`, `LEAD`, `FIRST_VALUE`, `LAST_VALUE`,
+    `NTH_VALUE` and aggregates with a `ROWS` frame can then give tied rows different results
+    between runs. Add columns to the `ORDER BY` to make
     the order unique.
 
 
@@ -142,7 +145,8 @@ equal values receive the same rank, and the next rank number is consecutive (no 
 
 FIRST_VALUE
 -----------
-Returns the first value in an ordered set of values with respect to the window declared in `OVER`.
+Returns the value at the first row of the window frame, or NULL if the frame is empty. See
+:ref:`NTH_VALUE <nth_value>` for an example.
 
 
 .. _lag:
@@ -155,7 +159,10 @@ If the offset goes beyond the partition boundary, NULL is returned.
 **Syntax:**
 
 * ``LAG(expr) OVER (...)`` - offset defaults to 1.
-* ``LAG(expr, n) OVER (...)`` - offset of ``n`` rows.
+* ``LAG(expr, n) OVER (...)`` - offset of ``n`` rows. ``n`` can be 0 (the current row) or
+  negative (rows after the current row).
+* ``LAG(expr, n, default) OVER (...)`` - returns ``default`` instead of NULL when the offset goes
+  beyond the partition boundary.
 
 **Requirements:**
 
@@ -200,7 +207,9 @@ If the offset goes beyond the partition boundary, NULL is returned.
 
 LAST_VALUE
 ----------
-Returns the last value in an ordered set of values with respect to the window declared in `OVER`.
+Returns the value at the last row of the window frame, or NULL if the frame is empty. With
+``ORDER BY`` and no frame clause, the frame ends at the last row tied with the current row. See
+:ref:`NTH_VALUE <nth_value>` for an example.
 
 
 .. _lead:
@@ -213,7 +222,10 @@ If the offset goes beyond the partition boundary, NULL is returned.
 **Syntax:**
 
 * ``LEAD(expr) OVER (...)`` - offset defaults to 1.
-* ``LEAD(expr, n) OVER (...)`` - offset of ``n`` rows.
+* ``LEAD(expr, n) OVER (...)`` - offset of ``n`` rows. ``n`` can be 0 (the current row) or
+  negative (rows before the current row).
+* ``LEAD(expr, n, default) OVER (...)`` - returns ``default`` instead of NULL when the offset goes
+  beyond the partition boundary.
 
 **Requirements:**
 
@@ -252,6 +264,56 @@ If the offset goes beyond the partition boundary, NULL is returned.
     # │ 5   ┆ B        ┆ 50    ┆ 60         ┆ null        │
     # │ 6   ┆ B        ┆ 60    ┆ null       ┆ null        │
     # └─────┴──────────┴───────┴────────────┴─────────────┘
+
+
+.. _nth_value:
+
+NTH_VALUE
+---------
+Returns the value at row ``n`` of the window frame, counting from 1, or NULL if the frame has
+fewer than ``n`` rows.
+
+**Syntax:**
+
+* ``NTH_VALUE(expr, n) OVER (...)`` - ``n`` must be a positive integer literal.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({
+        "id": [1, 2, 3, 4, 5, 6],
+        "category": ["A", "A", "A", "B", "B", "B"],
+        "value": [10, 20, 30, 40, 50, 60],
+    })
+    df.sql("""
+      SELECT
+        id,
+        category,
+        value,
+        FIRST_VALUE(value) OVER w AS first_val,
+        LAST_VALUE(value) OVER w AS last_val,
+        NTH_VALUE(value, 2) OVER w AS second_val
+      FROM self
+      WINDOW w AS (
+        PARTITION BY category ORDER BY id
+        ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING
+      )
+      ORDER BY category, id
+    """)
+    # shape: (6, 6)
+    # ┌─────┬──────────┬───────┬───────────┬──────────┬────────────┐
+    # │ id  ┆ category ┆ value ┆ first_val ┆ last_val ┆ second_val │
+    # │ --- ┆ ---      ┆ ---   ┆ ---       ┆ ---      ┆ ---        │
+    # │ i64 ┆ str      ┆ i64   ┆ i64       ┆ i64      ┆ i64        │
+    # ╞═════╪══════════╪═══════╪═══════════╪══════════╪════════════╡
+    # │ 1   ┆ A        ┆ 10    ┆ 10        ┆ 20       ┆ 20         │
+    # │ 2   ┆ A        ┆ 20    ┆ 10        ┆ 30       ┆ 20         │
+    # │ 3   ┆ A        ┆ 30    ┆ 20        ┆ 30       ┆ 30         │
+    # │ 4   ┆ B        ┆ 40    ┆ 40        ┆ 50       ┆ 50         │
+    # │ 5   ┆ B        ┆ 50    ┆ 40        ┆ 60       ┆ 50         │
+    # │ 6   ┆ B        ┆ 60    ┆ 50        ┆ 60       ┆ 60         │
+    # └─────┴──────────┴───────┴───────────┴──────────┴────────────┘
 
 
 .. _ntile:
@@ -419,6 +481,12 @@ values (peers) get the same result. Without ``ORDER BY``, the frame is the whole
 * ``BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING``
 * ``ROWS BETWEEN <n> PRECEDING AND CURRENT ROW`` (not for ``MIN`` and ``MAX`` of strings,
   or ``SUM``, ``MIN`` and ``MAX`` of decimals)
+
+``FIRST_VALUE``, ``LAST_VALUE`` and ``NTH_VALUE`` support these frames, and ``ROWS`` frames
+that start or end ``<n> PRECEDING`` or ``<n> FOLLOWING``. With ``RANGE`` or ``GROUPS``,
+``FIRST_VALUE`` also supports ``BETWEEN UNBOUNDED PRECEDING AND <n> FOLLOWING`` and
+``BETWEEN CURRENT ROW AND <n> FOLLOWING``, and ``LAST_VALUE`` supports
+``BETWEEN <n> PRECEDING AND CURRENT ROW`` and ``BETWEEN <n> PRECEDING AND UNBOUNDED FOLLOWING``.
 
 Other frames raise an error.
 
