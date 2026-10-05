@@ -97,9 +97,8 @@ impl ParquetReadImpl {
         // Three concurrency limits bound the pipeline:
         // (a) rg_prefetch_kbytes_semaphore: bounds possibly compressed projected bytes
         //     in the pipeline. Primary memory bound, but does not account for decompression.
-        // (b) rg_prefetch_semaphore: bounds row group count in the pipeline. Secondary
-        //     bound, only binding for degenerate cases (many tiny row groups where
-        //     (a) is not exhausted).
+        // (b) rg_prefetch_semaphore: bounds row group count in the pipeline. Binds before (a)
+        //     for row groups smaller than the kbytes limit divided by the count limit.
         // (c) prefetch channel depth: sized >= (b) so it is never the binding constraint.
         //     The channel is a handoff queue between the prefetch and decode tasks, not
         //     a concurrency gate.
