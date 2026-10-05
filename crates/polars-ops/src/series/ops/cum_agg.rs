@@ -268,7 +268,13 @@ fn cum_sum_decimal(
         }
     };
     if reverse {
-        ca.iter().rev().map(update).try_collect_ca_trusted_like(ca)
+        // The scan starts at the last row, so its output is in reverse row order.
+        Ok(ca
+            .iter()
+            .rev()
+            .map(update)
+            .try_collect_ca_trusted_like(ca)?
+            .reverse())
     } else {
         ca.iter().map(update).try_collect_ca_trusted_like(ca)
     }
