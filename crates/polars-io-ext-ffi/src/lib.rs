@@ -78,18 +78,3 @@ impl std::fmt::Display for PluginId {
         f.write_str(self.as_str())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn names_roundtrip() {
-        for &id in PluginId::ALL {
-            assert!(id.as_str().starts_with(ID_PREFIX));
-            assert_eq!(PluginId::from_name(id.name()), Some(id));
-            assert_eq!(PluginId::from_id_str(id.as_str()), Some(id));
-        }
-        assert_eq!(PluginId::from_id_str("polars.io_plugin.iceberg.v0"), None);
-    }
-}

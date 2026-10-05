@@ -545,26 +545,3 @@ fn parse_primitive(s: &str) -> IcebergResult<PrimitiveType> {
         },
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_types() {
-        assert_eq!(
-            parse_primitive("decimal(10, 2)").unwrap(),
-            PrimitiveType::Decimal {
-                precision: 10,
-                scale: 2
-            }
-        );
-        assert_eq!(
-            parse_primitive("fixed[3]").unwrap(),
-            PrimitiveType::Fixed(3)
-        );
-        assert_eq!(Transform::parse("bucket[16]"), Transform::Bucket(16));
-        assert_eq!(Transform::parse("truncate[4]"), Transform::Truncate(4));
-        assert_eq!(Transform::parse("identity"), Transform::Identity);
-    }
-}

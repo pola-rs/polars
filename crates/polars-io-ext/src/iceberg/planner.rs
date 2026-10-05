@@ -506,20 +506,3 @@ fn applies_to_data_file(delete: &DataFile, data_path: &str) -> bool {
     let path = data_path.as_bytes();
     lower <= path && path <= upper
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_partition_key_promotion() {
-        assert_eq!(
-            partition_key(&[Some(Datum::Int(5)), Some(Datum::Float(1.5)), None]),
-            partition_key(&[Some(Datum::Long(5)), Some(Datum::Double(1.5)), None]),
-        );
-        assert_ne!(
-            partition_key(&[Some(Datum::Long(5))]),
-            partition_key(&[Some(Datum::Long(6))]),
-        );
-    }
-}

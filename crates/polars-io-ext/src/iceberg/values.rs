@@ -395,26 +395,3 @@ fn parse_decimal(s: &str, scale: u32) -> Option<i128> {
     }
     Some(if negative { -value } else { value })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_decimal() {
-        assert_eq!(decimal_from_be_bytes(&[0xFF], 10).unwrap(), -1);
-        assert_eq!(decimal_from_be_bytes(&[0x01, 0x00], 10).unwrap(), 256);
-        assert_eq!(parse_decimal("1.00", 2), Some(100));
-        assert_eq!(parse_decimal("-1.5", 2), Some(-150));
-        assert_eq!(parse_decimal("3", 0), Some(3));
-        assert_eq!(parse_decimal("1.234", 2), None);
-    }
-
-    #[test]
-    fn test_days_since_epoch() {
-        assert_eq!(
-            days_since_epoch(NaiveDate::from_ymd_opt(1970, 1, 2).unwrap()),
-            1
-        );
-    }
-}

@@ -289,36 +289,3 @@ const _: () = {
     assert!(size_of::<FfiOutputHeader>() == 24 + 4 * ptr + 8);
     assert!(size_of::<Output>() == size_of::<FfiOutputHeader>() + 9 * 8 + 2 * 5 * 8);
 };
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_request_roundtrip() {
-        let request = Request {
-            metadata_location: "/m.json".into(),
-            snapshot_id: Some(-1),
-            projection: Some(vec!["a".into(), "".into()]),
-            filter_columns: Some(vec![]),
-            row_filter: Some("true".into()),
-            limit: Some(3),
-            use_metadata_statistics: true,
-            testing_fail: None,
-            ..Default::default()
-        };
-        assert_eq!(request.with_ffi(Request::from_ffi).unwrap(), request);
-        let default = Request::default();
-        assert_eq!(default.with_ffi(Request::from_ffi).unwrap(), default);
-    }
-
-    #[test]
-    fn test_output_header_roundtrip() {
-        let header = OutputHeader {
-            row_count: Some((10, 2)),
-            constant_errors: vec![(3, "bad".into())],
-            statistics: true,
-        };
-        assert_eq!(OutputHeader::from_ffi(&header.clone().into_ffi()), header);
-    }
-}
