@@ -1106,6 +1106,9 @@ impl SQLExprVisitor<'_> {
             Some(window) => Some(self.ctx.resolve_window(window)?),
             None => None,
         };
+        let is_window = window.is_some();
+        let in_window = self.ctx.group_scope.in_window;
+        self.ctx.group_scope.in_window |= is_window;
         let mut visitor = SQLFunctionVisitor {
             func: function,
             ctx: self.ctx,
@@ -1113,7 +1116,17 @@ impl SQLExprVisitor<'_> {
             filter: None,
             window,
         };
-        visitor.visit_function()
+        let expr = visitor.visit_function();
+        self.ctx.group_scope.in_window = in_window;
+        let expr = expr?;
+
+        if in_window && !is_window {
+            let empty = Schema::default();
+            return self
+                .ctx
+                .mark_aggregate_call(expr, self.active_schema.unwrap_or(&empty));
+        }
+        Ok(expr)
     }
 
     /// Visit a SQL `ALL` expression.
