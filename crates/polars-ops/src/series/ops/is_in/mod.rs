@@ -67,6 +67,12 @@ enum Lookup {
     /// Only the null count of the haystack matters.
     NullNeedle,
     Primitive(Box<dyn PrimitiveProbe>),
+    /// Category ids, which only mean something while their mapping is alive.
+    #[cfg(feature = "dtype-categorical")]
+    Categorical {
+        mapping: Arc<CategoricalMapping>,
+        lookup: Box<dyn PrimitiveProbe>,
+    },
     Binary(BinaryLookup),
     RowEncoded(RowEncodedLookup),
     Boolean {
@@ -119,11 +125,15 @@ impl IsInHaystack {
 
         let lookup = match needle_dtype {
             #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
-                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+            dt @ (DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)) => {
+                let lookup = with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
                     let phys = categorical_haystack::<$C>(dt, haystack.dtype(), &flat)?;
-                    Lookup::Primitive(Box::new(PrimitiveLookup::<<$C as PolarsCategoricalType>::PolarsPhysical>::new(&phys)))
-                })
+                    Box::new(PrimitiveLookup::<<$C as PolarsCategoricalType>::PolarsPhysical>::new(&phys)) as Box<dyn PrimitiveProbe>
+                });
+                Lookup::Categorical {
+                    mapping: mapping.clone(),
+                    lookup,
+                }
             },
             DataType::String => {
                 let flat = match flat.dtype() {
@@ -220,6 +230,20 @@ impl IsInHaystack {
                 }
             },
             Lookup::Primitive(lookup) => {
+                lookup.probe_series(&needle.to_physical_repr(), nulls_equal, has_null)
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Lookup::Categorical { mapping, lookup } => {
+                let (DataType::Categorical(_, needle_mapping) | DataType::Enum(_, needle_mapping)) =
+                    needle.dtype()
+                else {
+                    unreachable!()
+                };
+                polars_ensure!(
+                    Arc::ptr_eq(mapping, needle_mapping),
+                    SchemaMismatch: "is_in: needle of dtype {} uses another category mapping",
+                    needle.dtype()
+                );
                 lookup.probe_series(&needle.to_physical_repr(), nulls_equal, has_null)
             },
             Lookup::Binary(lookup) => match needle.dtype() {
