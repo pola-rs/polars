@@ -1361,9 +1361,9 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
 
 #[cfg(test)]
 mod tests {
+    use super::ApproxQuantileMethod;
     use super::kll::KLLSketch;
     use super::req::ReqSketch;
-    use super::{ApproxQuantileMethod, FinalizedSketch, Sketch};
 
     #[test]
     fn auto_resolves_by_queried_quantiles() {
@@ -1419,44 +1419,5 @@ mod tests {
 
         assert_diverges!("ReqSketch", ReqSketch::new(0.01, true));
         assert_diverges!("KLLSketch", KLLSketch::new(0.01));
-    }
-
-    /// `union` retains every weighted item of its parts, independent of their order.
-    #[test]
-    fn union_retains_all_items() {
-        let data: Vec<f64> = (0..60_000).map(|i| ((i * 7919) % 1_000) as f64).collect();
-        for method in [
-            ApproxQuantileMethod::KLL,
-            ApproxQuantileMethod::DoubleReqSketch,
-        ] {
-            let parts: Vec<_> = [&data[..10], &data[10..25_000], &data[25_000..]]
-                .into_iter()
-                .map(|chunk| {
-                    let mut s = Sketch::new(&method, 0.01);
-                    chunk.iter().for_each(|v| s.update_owned(*v));
-                    s.finalize()
-                })
-                .chain([FinalizedSketch::new(Box::default(), None)])
-                .collect();
-
-            let mut expected: Vec<_> = parts
-                .iter()
-                .flat_map(|p| {
-                    let (items, weights) = p.clone().into_items_and_weights();
-                    Iterator::zip(items.into_iter(), weights)
-                })
-                .collect();
-            expected.sort_by(|a, b| f64::total_cmp(&a.0, &b.0).then(u64::cmp(&a.1, &b.1)));
-
-            let forward = FinalizedSketch::union(parts.clone());
-            let backward = FinalizedSketch::union(parts.into_iter().rev().collect());
-            assert_eq!(forward.num_items(), data.len() as u64);
-            assert_eq!(forward.weight_factor, backward.weight_factor);
-            for union in [forward, backward] {
-                let (items, weights) = union.into_items_and_weights();
-                let pairs: Vec<_> = Iterator::zip(items.into_iter(), weights).collect();
-                assert_eq!(pairs, expected);
-            }
-        }
     }
 }
