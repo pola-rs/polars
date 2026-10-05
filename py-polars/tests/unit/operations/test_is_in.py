@@ -1401,6 +1401,15 @@ def test_is_in_categorical_needle_keeps_its_categories() -> None:
     assert q.collect()["c"].to_list() == [True, False]
 
 
+def test_is_in_categorical_needle_matches_categories_of_later_batches_29743() -> None:
+    # Fresh categories only gain "b" in the last batch, after the haystack is prepared.
+    cats = pl.Categories.random()
+    lf = pl.LazyFrame({"s": ["a"] * 10_000 + ["b"]})
+    q = lf.select(pl.col("s").cast(pl.Categorical(cats)).is_in(["b"]).sum())
+    with pl.Config(streaming_chunk_size=100):
+        assert q.collect(engine="streaming").item() == 1
+
+
 def test_is_in_native_pair_does_not_skip_row_groups_by_category_order() -> None:
     # The Enum orders "z" before "a", so comparing String statistics with the
     # haystack's Enum min/max would wrongly skip the row group holding "z".
