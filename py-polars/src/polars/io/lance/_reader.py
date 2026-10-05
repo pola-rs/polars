@@ -239,20 +239,7 @@ class LanceFragmentReader(FileReader):
 
         try:
             while (fut := fut_queue.get()) is not None:
-                try:
-                    df = fut.result()
-                except CancelledError:
-                    # The shared conversion threadpool may have been shut down
-                    # due to an error in another reader, raise that error instead.
-                    with CX_LOCK:
-                        exc = self.multi_scan_context.get(CX_ERROR_KEY)
-
-                    if exc is not None:
-                        raise exc from None
-
-                    raise
-
-                yield df
+                yield fut.result()
 
             with CX_LOCK:
                 if (exc := self.multi_scan_context.pop(CX_ERROR_KEY, None)) is not None:
@@ -262,8 +249,18 @@ class LanceFragmentReader(FileReader):
             conversion_threadpool.shutdown(wait=False, cancel_futures=True)
             return
 
-        except BaseException:
+        except BaseException as e:
             conversion_threadpool.shutdown(wait=False, cancel_futures=True)
+
+            if isinstance(e, CancelledError):
+                # The shared conversion threadpool may have been shut down due
+                # to an error in another reader, raise that error instead.
+                with CX_LOCK:
+                    exc = self.multi_scan_context.get(CX_ERROR_KEY)
+
+                if exc is not None:
+                    raise exc from None
+
             raise
 
         finally:
