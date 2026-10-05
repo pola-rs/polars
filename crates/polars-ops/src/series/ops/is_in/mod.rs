@@ -312,6 +312,7 @@ where
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
     debug_assert_ne!(other.len(), 1);
+    let other = &other.rechunk();
     let offsets = other.offsets()?;
     let inner = other.get_inner();
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();
@@ -575,9 +576,14 @@ where
         (DataType::Enum(_, mapping) | DataType::Categorical(_, mapping), DataType::String) => {
             (&|s: Series| {
                 let ca = s.str()?;
+                // A string without a category must not read as a null element, so it maps to
+                // an id no category has: the physical type always leaves its maximum unused.
+                let absent = <T::Native as num_traits::Bounded>::max_value();
                 let ca: ChunkedArray<T::PolarsPhysical> = ca
                     .iter()
-                    .map(|opt_s| opt_s.and_then(|s| mapping.get_cat(s).map(T::Native::from_cat)))
+                    .map(|opt_s| {
+                        opt_s.map(|s| mapping.get_cat(s).map_or(absent, T::Native::from_cat))
+                    })
                     .collect_ca(PlSmallStr::EMPTY);
                 Ok(ca.into_series())
             }) as _
@@ -607,13 +613,14 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
     if nulls_equal {
         let ca_in = s.null()?;
         Ok(match other.dtype() {
-            DataType::List(_) => other.list()?.apply_amortized_generic(|opt_s| {
-                Some(opt_s.map(|s| s.as_ref().has_nulls()) == Some(true))
-            }),
+            // A null container stays null.
+            DataType::List(_) => other
+                .list()?
+                .apply_amortized_generic(|opt_s| opt_s.map(|s| s.as_ref().has_nulls())),
             #[cfg(feature = "dtype-array")]
-            DataType::Array(_, _) => other.array()?.apply_amortized_generic(|opt_s| {
-                Some(opt_s.map(|s| s.as_ref().has_nulls()) == Some(true))
-            }),
+            DataType::Array(_, _) => other
+                .array()?
+                .apply_amortized_generic(|opt_s| opt_s.map(|s| s.as_ref().has_nulls())),
             _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
         })
     } else {
@@ -699,16 +706,24 @@ fn is_in_row_encoded(
         _ => unreachable!(),
     }?;
 
+    // The helpers already null rows whose container is null. Row encoding keeps null needles
+    // as values, so their nulls are applied here, replacing the helpers' validity.
     let mut validity = other.rechunk_validity();
     if !nulls_equal {
-        validity = match (validity, s.rechunk_validity()) {
+        // A single needle is broadcast over every container.
+        let needle_validity = if s.len() == mask.len() {
+            s.rechunk_validity()
+        } else {
+            s.has_nulls()
+                .then(|| polars_arrow::bitmap::Bitmap::new_zeroed(mask.len()))
+        };
+        validity = match (validity, needle_validity) {
             (None, None) => None,
             (Some(v), None) | (None, Some(v)) => Some(v),
             (Some(l), Some(r)) => Some(polars_arrow::bitmap::and(&l, &r)),
         };
     }
 
-    assert_eq!(mask.null_count(), 0);
     mask.with_validities(&[validity]);
 
     Ok(mask)

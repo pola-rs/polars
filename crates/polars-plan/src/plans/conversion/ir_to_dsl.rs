@@ -155,9 +155,18 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            IRAggExpr::Sum(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Sum(Arc::new(exp)).into()
+            IRAggExpr::Sum {
+                input,
+                null_on_empty,
+            } => {
+                let exp = node_to_expr(input, expr_arena);
+                if null_on_empty {
+                    when(exp.clone().count().gt(lit(0)))
+                        .then(exp.sum())
+                        .otherwise(Expr::Literal(LiteralValue::untyped_null()))
+                } else {
+                    exp.sum()
+                }
             },
             IRAggExpr::Std(expr, ddof) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -322,7 +331,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::Get(v) => A::Get(v),
                 IA::Join(v) => A::Join(v),
                 #[cfg(feature = "is_in")]
-                IA::Contains { nulls_equal } => A::Contains { nulls_equal },
+                IA::Contains { nulls_equal, .. } => A::Contains { nulls_equal },
                 #[cfg(feature = "array_count")]
                 IA::CountMatches => A::CountMatches,
                 IA::Shift => A::Shift,
@@ -386,8 +395,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IM::Keys => M::Keys,
                 IM::Values => M::Values,
                 IM::Length => M::Length,
-                IM::ContainsKey => M::ContainsKey,
-                IM::Get => M::Get,
+                IM::ContainsKey { .. } => M::ContainsKey,
+                IM::Get { .. } => M::Get,
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -405,7 +414,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             F::ListExpr(match f {
                 IL::Concat => L::Concat,
                 #[cfg(feature = "is_in")]
-                IL::Contains { nulls_equal } => L::Contains { nulls_equal },
+                IL::Contains { nulls_equal, .. } => L::Contains { nulls_equal },
                 #[cfg(feature = "list_drop_nulls")]
                 IL::DropNulls => L::DropNulls,
                 #[cfg(feature = "list_sample")]
@@ -706,7 +715,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "is_between")]
                 IB::IsBetween { closed } => B::IsBetween { closed },
                 #[cfg(feature = "is_in")]
-                IB::IsIn { nulls_equal } => B::IsIn { nulls_equal },
+                IB::IsIn { nulls_equal, .. } => B::IsIn { nulls_equal },
                 #[cfg(feature = "is_close")]
                 IB::IsClose {
                     abs_tol,

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use polars_arrow::datatypes::ArrowSchemaRef;
-use polars_async::executor::{self};
+use polars_async::executor::{self, TaskMetricAggregator};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::prelude::{ArrowSchema, DataType};
 use polars_core::runtime::ASYNC;
@@ -53,6 +53,7 @@ pub struct ParquetFileReader {
     byte_source_builder: DynByteSourceBuilder,
     row_group_prefetch_sync: RowGroupPrefetchSync,
     io_metrics: OptIOMetrics,
+    task_metrics: Option<Arc<TaskMetricAggregator>>,
     verbose: bool,
 
     /// Set during initialize()
@@ -302,6 +303,8 @@ impl FileReader for ParquetFileReader {
             _ = file_schema_tx.send(file_schema.clone());
         }
 
+        let task_metrics = self.task_metrics.as_deref();
+
         if normalized_pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
             let (_, rx) = FileReaderOutputSend::new_serial();
 
@@ -316,7 +319,7 @@ impl FileReader for ParquetFileReader {
 
             return Ok((
                 rx,
-                executor::spawn(TaskPriority::Low, std::future::ready(Ok(()))),
+                executor::spawn(TaskPriority::Low, task_metrics, std::future::ready(Ok(()))),
             ));
         }
 
@@ -355,7 +358,7 @@ impl FileReader for ParquetFileReader {
         if let Some(single_morsel_height) = single_morsel_height {
             let (mut tx, rx) = FileReaderOutputSend::new_serial();
 
-            let handle = executor::spawn(TaskPriority::Low, async move {
+            let handle = executor::spawn(TaskPriority::Low, task_metrics, async move {
                 let _ = tx
                     .send_morsel(Morsel::new_unregistered(
                         DataFrame::empty_with_height(single_morsel_height),
@@ -418,12 +421,15 @@ impl FileReader for ParquetFileReader {
             ),
             disable_morsel_split,
             maintain_order,
+            task_metrics: self.task_metrics.clone(),
         }
         .run();
 
         Ok((
             output_recv,
-            executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
+            executor::spawn(TaskPriority::Low, task_metrics, async move {
+                handle.await.unwrap()
+            }),
         ))
     }
 
@@ -509,6 +515,7 @@ struct ParquetReadImpl {
     disable_morsel_split: bool,
     /// If false, row groups are emitted in the order they finish decoding.
     maintain_order: bool,
+    task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 #[derive(Debug)]

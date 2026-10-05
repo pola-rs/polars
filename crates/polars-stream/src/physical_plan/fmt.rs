@@ -11,7 +11,7 @@ use polars_plan::prelude::FileWriteFormat;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
 use polars_utils::slice_enum::Slice;
-use slotmap::{Key, SecondaryMap, SlotMap};
+use slotmap::{DenseSlotMap, Key, SecondaryMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::physical_plan::ZipBehavior;
@@ -44,6 +44,7 @@ impl NodeStyle {
             | K::SemiAntiJoin { .. }
             | K::CrossJoin { .. }
             | K::Multiplexer { .. }
+            | K::Window { .. }
             | K::Gather { .. } => Self::MemoryIntensive,
             #[cfg(feature = "iejoin")]
             K::RangeJoin { .. } => Self::MemoryIntensive,
@@ -177,7 +178,7 @@ fn fmt_join_label(base_label: &str, left_on: &str, right_on: &str, args: &JoinAr
 #[recursive::recursive]
 fn visualize_plan_rec(
     node_key: PhysNodeKey,
-    phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &Arena<AExpr>,
     visited: &mut SecondaryMap<PhysNodeKey, ()>,
     out: &mut Vec<String>,
@@ -368,6 +369,36 @@ fn visualize_plan_rec(
             }
             (label, from_ref(input))
         },
+        PhysNodeKind::Window {
+            input,
+            partition_by,
+            order_by,
+            exprs,
+            ordered_eval,
+            maintain_order,
+            scalar,
+        } => {
+            let name = if *scalar { "scalar-window" } else { "window" };
+            let mut label = format!(
+                "{name}[maintain_order: {maintain_order}, ordered_eval: {ordered_eval}]\\npartition by: "
+            );
+            for (i, name) in partition_by.iter().enumerate() {
+                if i > 0 {
+                    label.push_str(", ");
+                }
+                label.push_str(&escape_graphviz(name));
+            }
+            if let Some((name, _)) = order_by {
+                write!(&mut label, "\\norder by: {}", escape_graphviz(name)).unwrap();
+            }
+            write!(
+                &mut label,
+                "\\n{}",
+                fmt_exprs_to_label(exprs, expr_arena, FormatExprStyle::Select)
+            )
+            .unwrap();
+            (label, from_ref(input))
+        },
         PhysNodeKind::Map {
             input,
             map: _,
@@ -399,6 +430,19 @@ fn visualize_plan_rec(
                 write!(f, "{output_name} = {format_str}(...)").unwrap();
             }
             (label, &inputs[..])
+        },
+        PhysNodeKind::RollingFixedWindowFunction {
+            input,
+            func: _,
+            window,
+            output_name: _,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("rolling-fixed-window-function\\n");
+            let mut f = EscapeLabel(&mut label);
+            write!(f, "{format_str}\nwindow: {window}").unwrap();
+            (label, from_ref(input))
         },
         PhysNodeKind::SortedGroupBy {
             input,
@@ -972,7 +1016,7 @@ fn visualize_plan_rec(
 
 pub fn visualize_plan(
     root: PhysNodeKey,
-    phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &Arena<AExpr>,
 ) -> String {
     let mut visited: SecondaryMap<PhysNodeKey, ()> = SecondaryMap::new();

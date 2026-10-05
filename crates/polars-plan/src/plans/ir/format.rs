@@ -1,10 +1,12 @@
 use std::fmt::{self, Display, Formatter, Write};
 
 use polars_core::frame::DataFrame;
+use polars_core::prelude::SortOptions;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_utils::aliases::{InitHashMaps as _, PlIndexMap, PlIndexSet};
 use polars_utils::format_list_truncated;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
@@ -63,6 +65,40 @@ impl AsExpr for ExprIR {
     }
     fn output_name(&self) -> &OutputName {
         self.output_name_inner()
+    }
+}
+
+pub(crate) struct WindowHeaderDisplay<'a> {
+    pub(crate) partition_by: &'a [PlSmallStr],
+    pub(crate) order_by: Option<&'a (PlSmallStr, SortOptions)>,
+    pub(crate) maintain_order: bool,
+    pub(crate) ordered_eval: bool,
+}
+
+impl Display for WindowHeaderDisplay<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "WINDOW[maintain_order: {}, ordered_eval: {}] PARTITION BY [",
+            self.maintain_order, self.ordered_eval
+        )?;
+        for (i, name) in self.partition_by.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "\"{name}\"")?;
+        }
+        f.write_char(']')?;
+        if let Some((name, options)) = self.order_by {
+            write!(f, " ORDER BY \"{name}\"")?;
+            if options.descending {
+                f.write_str(" DESC")?;
+            }
+            if options.nulls_last {
+                f.write_str(" NULLS LAST")?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -605,11 +641,17 @@ impl Display for ExprIRDisplay<'_> {
                         "{}.n_unique()",
                         self.with_root(expr).parenthesize_if_binexpr()
                     ),
-                    Sum(expr) => write!(
-                        f,
-                        "{}.sum()",
-                        self.with_root(expr).parenthesize_if_binexpr()
-                    ),
+                    Sum {
+                        input,
+                        null_on_empty,
+                    } => {
+                        self.with_root(input).parenthesize_if_binexpr().fmt(f)?;
+                        if *null_on_empty {
+                            write!(f, ".sum(null_on_empty=true)")
+                        } else {
+                            write!(f, ".sum()")
+                        }
+                    },
                     Count {
                         input,
                         include_nulls: false,
@@ -1111,6 +1153,25 @@ pub fn write_ir_non_recursive(
             let exprs = ExprIRSliceDisplay { exprs, expr_arena };
 
             write!(f, "{:indent$} WITH_COLUMNS:", "",)?;
+            write!(f, "\n{:indent$} {exprs} ", "")
+        },
+        IR::Window {
+            input: _,
+            partition_by,
+            order_by,
+            exprs,
+            schema: _,
+            maintain_order,
+            ordered_eval,
+        } => {
+            let header = WindowHeaderDisplay {
+                partition_by,
+                order_by: order_by.as_ref(),
+                maintain_order: *maintain_order,
+                ordered_eval: *ordered_eval,
+            };
+            let exprs = ExprIRSliceDisplay { exprs, expr_arena };
+            write!(f, "{:indent$}{header}:", "")?;
             write!(f, "\n{:indent$} {exprs} ", "")
         },
         IR::Distinct { input: _, options } => {

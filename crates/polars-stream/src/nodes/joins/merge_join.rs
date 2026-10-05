@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::ops::RangeBounds;
 
-use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority, TaskScope};
 use polars_async::primitives::distributor_channel::{self, distributor_channel};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::builder::DataFrameBuilder;
@@ -127,6 +127,7 @@ impl MergeJoinNode {
         nulls_last: bool,
         keys_row_encoded: bool,
         args: JoinArgs,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> PolarsResult<Self> {
         let left_key_col = tmp_left_key_col.as_ref().unwrap_or(&left_on[0]);
         let right_key_col = tmp_right_key_col.as_ref().unwrap_or(&right_on[0]);
@@ -161,11 +162,11 @@ impl MergeJoinNode {
         };
         let build_unmerged = SpillFrameSearchBuffer::empty_with_schema(
             build_schema.clone(),
-            RandomSpillContext::new("merge-join-build-buffer".into()),
+            RandomSpillContext::new("merge-join-build-buffer".into(), task_metrics.clone()),
         );
         let probe_unmerged = SpillFrameSearchBuffer::empty_with_schema(
             probe_schema.clone(),
-            RandomSpillContext::new("merge-join-probe-buffer".into()),
+            RandomSpillContext::new("merge-join-probe-buffer".into(), task_metrics),
         );
         Ok(MergeJoinNode {
             state,

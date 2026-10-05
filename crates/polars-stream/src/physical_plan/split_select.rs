@@ -8,15 +8,14 @@
 use polars_core::prelude::{DataType, InitHashMaps, PlIndexMap, PlIndexSet};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
+use polars_plan::plans::expr_ir::{ExprIR, OutputName};
+use polars_plan::plans::{AExpr, CanonicalExprId, CanonicalExprMap, ToFieldContext, is_splittable};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::unique_column_name;
 use recursive::recursive;
 
-use crate::plans::{
-    AExpr, CanonicalExprId, CanonicalExprMap, ExprIR, OutputName, ToFieldContext, is_elementwise,
-};
+use crate::unique_column_name;
 
 /// Assumed payload of one variable-length value, in bits.
 const ESTIMATED_VARLEN_PAYLOAD_BITS: u64 = 16 * 8;
@@ -45,7 +44,6 @@ fn expected_row_bits(dtype: &DataType) -> u64 {
             D::List(inner) => 64 + ESTIMATED_LIST_LEN * expected_row_bits(inner),
             #[cfg(feature = "dtype-array")]
             D::Array(inner, width) => (*width as u64).saturating_mul(expected_row_bits(inner)),
-            #[cfg(feature = "dtype-struct")]
             D::Struct(fields) => fields
                 .iter()
                 .map(|f| expected_row_bits(f.dtype()))
@@ -170,24 +168,6 @@ struct DagNode {
     splittable: bool,
     /// Expected bits per row when this node is materialized.
     weight: u64,
-}
-
-/// Whether `ae`'s own operation may be moved into the post-select, leaving its inputs to
-/// be produced by the pre-select. `inputs_rev` must be `ae.inputs_rev()`.
-fn is_splittable(ae: &AExpr, inputs_rev: &[Node], expr_arena: &Arena<AExpr>) -> bool {
-    match ae {
-        AExpr::Column(_) | AExpr::Element => return false,
-        #[cfg(feature = "dtype-struct")]
-        AExpr::StructEval { .. } => return false,
-        _ => {},
-    }
-
-    // `is_elementwise` reports which sub-expressions may be split off. Where that differs
-    // from `inputs_rev` an input has to stay attached to its parent (the literal
-    // right-hand side of `is_in`, say) and `replace_inputs` could no longer put rebuilt
-    // inputs back in the right places.
-    let mut detachable = UnitVec::new();
-    is_elementwise(&mut detachable, ae, expr_arena) && *detachable == *inputs_rev
 }
 
 #[recursive]

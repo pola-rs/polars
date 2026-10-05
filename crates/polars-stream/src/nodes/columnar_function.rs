@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::schema::Schema;
 use polars_plan::dsl::ColumnsUdf;
 use polars_plan::plans::FunctionArgMap;
@@ -27,11 +28,12 @@ impl ColumnarFunctionNode {
         func: Arc<dyn ColumnsUdf>,
         arg_map: Option<FunctionArgMap>,
         output_name: PlSmallStr,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         Self::Sink {
             sink_nodes: input_schemas
                 .into_iter()
-                .map(InMemorySinkNode::new)
+                .map(|schema| InMemorySinkNode::new(schema, task_metrics.clone()))
                 .collect(),
             func,
             arg_map,

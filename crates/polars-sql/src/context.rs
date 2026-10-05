@@ -10,7 +10,7 @@ use polars_plan::plans::visitor::{TreeWalker, VisitRecursion, Visitor};
 use polars_plan::plans::{ArenaExprIter, ExprToIRContext, is_scalar_ae, to_expr_ir};
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
-use polars_utils::{format_pl_smallstr, unique_column_name};
+use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
@@ -42,6 +42,7 @@ use crate::sql_visitors::{
 use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
+use crate::unique_column_name;
 
 #[derive(Clone)]
 pub struct TableInfo {
@@ -1684,6 +1685,7 @@ impl SQLContext {
         // A correlated scalar subquery is lowered against the frame as it stands, so
         // the conjuncts that don't need it are applied first: the lowering can then
         // restrict its aggregate to the rows that survive them.
+        let mut join_tree = None;
         let where_expr: Option<Cow<'_, SQLExpr>> = match where_expr {
             Some(where_expr) if expr_contains_scalar_subquery(where_expr) => {
                 let n_grouping_calls = self.group_scope.grouping_calls.len();
@@ -1696,6 +1698,7 @@ impl SQLContext {
                     RewriteStage::BeforeScalarLowering,
                 )?;
                 self.reject_grouping_in_where(n_grouping_calls)?;
+                join_tree = self.outer_join_tree(select_stmt, where_expr, &residual)?;
                 schema = self.get_frame_schema(&mut lf)?;
                 combine_conditions(
                     residual.into_iter().cloned().collect(),
@@ -1717,6 +1720,7 @@ impl SQLContext {
                     where_expr,
                     LowerScope::ScalarOnly,
                     &mut bindings,
+                    join_tree.as_ref(),
                 )?;
                 if matches!(lowered, Cow::Owned(_)) {
                     schema = self.get_frame_schema(&mut lf)?;
@@ -1751,6 +1755,7 @@ impl SQLContext {
                     e,
                     LowerScope::ScalarAndPredicates,
                     &mut bindings,
+                    None,
                 )?;
                 if let Cow::Owned(lowered) = lowered {
                     changed = true;
@@ -1771,6 +1776,7 @@ impl SQLContext {
                     having,
                     LowerScope::ScalarAndPredicates,
                     &mut bindings,
+                    None,
                 )?;
                 changed |= matches!(lowered, Cow::Owned(_));
                 lowered_having = Some(lowered);
@@ -2333,6 +2339,7 @@ impl SQLContext {
                     e,
                     LowerScope::ScalarAndPredicates,
                     &mut bindings,
+                    None,
                 )?;
                 lowered_residuals.push(lowered);
             }
@@ -3020,6 +3027,7 @@ impl SQLContext {
                     &ob.expr,
                     LowerScope::ScalarAndPredicates,
                     &mut bindings,
+                    None,
                 )?;
 
                 // translate order expression, allowing ordinal values
@@ -4392,7 +4400,18 @@ fn process_join_constraint(
     ctx: &mut SQLContext,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>, Vec<Expr>)> {
     match constraint {
-        JoinConstraint::On(expr) => process_join_on(ctx, expr, tbl_left, tbl_right),
+        JoinConstraint::On(expr) => {
+            let (left_on, right_on, predicates) = process_join_on(ctx, expr, tbl_left, tbl_right)?;
+            // `a = b AND b = a` gives the same key pair twice.
+            let mut keys: Vec<(Expr, Expr)> = Vec::with_capacity(left_on.len());
+            for key in left_on.into_iter().zip(right_on) {
+                if !keys.contains(&key) {
+                    keys.push(key);
+                }
+            }
+            let (left_on, right_on) = keys.into_iter().unzip();
+            Ok((left_on, right_on, predicates))
+        },
         JoinConstraint::Using(idents) if !idents.is_empty() => {
             let using: Vec<Expr> = idents
                 .iter()

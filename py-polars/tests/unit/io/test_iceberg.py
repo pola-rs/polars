@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import io
 import itertools
 import json
@@ -348,6 +349,51 @@ class TestIcebergScanIO:
         res = pl.scan_iceberg(tbl).filter(pl.col("s").str.starts_with("be"))
         assert res.collect()["s"].to_list() == ["berry"]
 
+    def test_scan_iceberg_filter_is_nan(
+        self,
+        tmp_path: Path,
+        plmonkeypatch: PlMonkeyPatch,
+        capfd: pytest.CaptureFixture[str],
+    ) -> None:
+        schema = IcebergSchema(NestedField(1, "value", DoubleType(), required=False))
+        tbl, _ = new_iceberg_table(tmp_path, schema=schema)
+        data = pl.DataFrame({"value": [None, 1.0, float("nan"), 2.0]})
+        data.write_iceberg(tbl, mode="append")
+        plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+        capfd.readouterr()
+        res = pl.scan_iceberg(tbl).filter(pl.col("value").is_nan())
+        [(value,)] = res.collect().rows()
+        assert math.isnan(value)
+        assert f"iceberg_table_filter = {IsNaN('value')!r}" in capfd.readouterr().err
+
+        res = pl.scan_iceberg(tbl).filter(pl.col("value").is_not_nan())
+        assert res.collect()["value"].to_list() == [1.0, 2.0]
+        assert (
+            f"iceberg_table_filter = {Not(IsNaN('value'))!r}" in capfd.readouterr().err
+        )
+
+    @pytest.mark.parametrize("method", ["is_nan", "is_not_nan"])
+    def test_scan_iceberg_nan_decimal_rejected(
+        self, tmp_path: Path, method: str
+    ) -> None:
+        # `is_nan`/`is_not_nan` on a Decimal column must raise, same as every
+        # other Polars path - not be silently dropped by predicate pushdown.
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(NestedField(1, "value", DecimalType(10, 1))),
+        )
+        pl.DataFrame(
+            {"value": [D("1.0"), D("2.0")]}, schema={"value": pl.Decimal(10, 1)}
+        ).write_iceberg(tbl, mode="append")
+
+        predicate = getattr(pl.col("value"), method)()
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError,
+            match=rf"`{method}` operation not supported for dtype `decimal",
+        ):
+            pl.scan_iceberg(tbl).filter(predicate).collect()
+
     def test_scan_iceberg_filter_starts_with_non_literal_prefix(
         self, tmp_path: Path
     ) -> None:
@@ -554,6 +600,8 @@ class TestIcebergExpressions:
             "(pa.compute.field('value') == 'NaN')",
             lambda: EqualTo("value", "NaN"),
         ),
+        ("(pa.compute.field('value')).is_nan()", lambda: IsNaN("value")),
+        ("~(pa.compute.field('value')).is_nan()", lambda: Not(IsNaN("value"))),
     ],
 )
 def test_convert_nan_predicate(
@@ -4356,31 +4404,31 @@ def test_scan_iceberg_min_max_statistics_filter(
                 ("height_provider_nc", "0"),
                 ("height_provider_min", "1"),
                 ("height_provider_max", "1"),
-                ("BooleanType_nc", "0", "1"),
+                ("BooleanType_nc", "0"),
                 ("BooleanType_min", "true"),
                 ("BooleanType_max", "true"),
-                ("IntegerType_nc", "0", "1"),
+                ("IntegerType_nc", "0"),
                 ("IntegerType_min", "1"),
                 ("IntegerType_max", "1"),
-                ("LongType_nc", "0", "1"),
+                ("LongType_nc", "0"),
                 ("LongType_min", "1"),
                 ("LongType_max", "1"),
-                ("FloatType_nc", "0", "1"),
+                ("FloatType_nc", "0"),
                 ("FloatType_min", None),
                 ("FloatType_max", None),
-                ("DoubleType_nc", "0", "1"),
+                ("DoubleType_nc", "0"),
                 ("DoubleType_min", None),
                 ("DoubleType_max", None),
-                ("DateType_nc", "0", "1"),
+                ("DateType_nc", "0"),
                 ("DateType_min", "2025-01-01"),
                 ("DateType_max", "2025-01-01"),
-                ("TimeType_nc", "0", "1"),
+                ("TimeType_nc", "0"),
                 ("TimeType_min", "11:30:00"),
                 ("TimeType_max", "11:30:00"),
-                ("TimestampType_nc", "0", "1"),
+                ("TimestampType_nc", "0"),
                 ("TimestampType_min", "2025-01-01 00:00:00.000000"),
                 ("TimestampType_max", "2025-01-01 00:00:00.000000"),
-                ("TimestamptzType_nc", "0", "1"),
+                ("TimestamptzType_nc", "0"),
                 ("TimestamptzType_min", "2025-01-01 00:00:00.000000+00:00"),
                 ("TimestamptzType_max", "2025-01-01 00:00:00.000000+00:00"),
                 ("StringType_nc", "0"),
@@ -4392,7 +4440,7 @@ def test_scan_iceberg_min_max_statistics_filter(
                 ("DecimalType_nc", "0"),
                 ("DecimalType_min", "1.00"),
                 ("DecimalType_max", "1.00"),
-                ("DecimalTypeLargeValue_nc", "0", "1"),
+                ("DecimalTypeLargeValue_nc", "0"),
                 ("DecimalTypeLargeValue_min", "73377733337777733333377777773333333377"),
                 ("DecimalTypeLargeValue_max", "73377733337777733333377777773333333377"),
                 ("DecimalTypeLargeNegativeValue_nc", "0"),
@@ -5357,3 +5405,282 @@ def test_scan_iceberg_renamed_column_with_pruned_metadata(
     )
 
     assert lf.select("new").collect().to_series().to_list() == [1, 2, 3]
+
+
+def _count_avro_opens(
+    monkeypatch: pytest.MonkeyPatch, tbl: pyiceberg.table.Table
+) -> list[str]:
+    from polars.io.iceberg._cache import CachingFileIO
+
+    assert not isinstance(tbl.io, CachingFileIO)
+
+    file_io_type = type(tbl.io)
+    original_new_input = file_io_type.new_input
+    opened: list[str] = []
+
+    def new_input(self: Any, location: str) -> Any:
+        if location.endswith(".avro"):
+            opened.append(location)
+        return original_new_input(self, location)
+
+    monkeypatch.setattr(file_io_type, "new_input", new_input)
+    return opened
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_metadata_file_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from polars.io.iceberg._cache import CachingFileIO, reset_metadata_file_cache
+
+    reset_metadata_file_cache()
+
+    try:
+        tbl, _ = new_iceberg_table(
+            tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+        )
+        for i in range(3):
+            pl.DataFrame({"a": [i]}).write_iceberg(tbl, mode="append")
+
+        opened = _count_avro_opens(monkeypatch, tbl)
+        expected = pl.DataFrame({"a": [0, 1, 2]})
+
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).collect(), expected, check_row_order=False
+        )
+        first_scan = set(opened)
+        assert first_scan
+        assert not isinstance(tbl.io, CachingFileIO)
+
+        opened.clear()
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).collect(), expected, check_row_order=False
+        )
+        assert opened == []
+
+        # After a commit, files read by earlier scans are not fetched again.
+        pl.DataFrame({"a": [3]}).write_iceberg(tbl, mode="append")
+        opened.clear()
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).collect(),
+            pl.DataFrame({"a": [0, 1, 2, 3]}),
+            check_row_order=False,
+        )
+        assert first_scan.isdisjoint(opened)
+    finally:
+        reset_metadata_file_cache()
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_metadata_file_cache_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    from polars.io.iceberg._cache import reset_metadata_file_cache
+
+    plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_CACHE_MB", "0")
+    reset_metadata_file_cache()
+
+    try:
+        tbl, _ = new_iceberg_table(
+            tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+        )
+        pl.DataFrame({"a": [1]}).write_iceberg(tbl, mode="append")
+
+        opened = _count_avro_opens(monkeypatch, tbl)
+
+        assert pl.scan_iceberg(tbl).collect().item() == 1
+        first_scan = len(opened)
+        assert first_scan > 0
+
+        opened.clear()
+        assert pl.scan_iceberg(tbl).collect().item() == 1
+        assert len(opened) == first_scan
+    finally:
+        reset_metadata_file_cache()
+
+
+def test_iceberg_metadata_file_cache_eviction() -> None:
+    from polars.io.iceberg._cache import IcebergMetadataFileCache
+
+    cache = IcebergMetadataFileCache(max_bytes=10)
+
+    cache.put("a", b"123456")
+    cache.put("b", b"123456")
+    assert cache.get("a") is None
+    assert cache.get("b") == b"123456"
+
+    # Entries larger than the budget are not stored.
+    cache.put("c", b"12345678901")
+    assert cache.get("c") is None
+
+    fetches: list[str] = []
+
+    def fetch() -> bytes:
+        fetches.append("fetch")
+        return b"1234"
+
+    assert cache.get_or_fetch("d", fetch) == b"1234"
+    assert cache.get_or_fetch("d", fetch) == b"1234"
+    assert len(fetches) == 1
+
+    def fetch_fail() -> bytes:
+        raise OSError
+
+    # A failed fetch is not cached.
+    with pytest.raises(OSError):
+        cache.get_or_fetch("e", fetch_fail)
+    assert cache.get_or_fetch("e", fetch) == b"1234"
+    assert len(fetches) == 2
+
+
+def test_iceberg_metadata_file_cache_invalid_size(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    from polars.io.iceberg._cache import (
+        get_metadata_file_cache,
+        reset_metadata_file_cache,
+    )
+
+    try:
+        for value in ("256MiB", "-1"):
+            plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_CACHE_MB", value)
+            reset_metadata_file_cache()
+            with pytest.raises(ValueError, match="POLARS_ICEBERG_METADATA_CACHE_MB"):
+                get_metadata_file_cache()
+
+        plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_CACHE_MB", "5")
+        reset_metadata_file_cache()
+        assert get_metadata_file_cache().max_bytes == 5_000_000
+    finally:
+        reset_metadata_file_cache()
+
+
+@pytest.mark.write_disk
+def test_iceberg_caching_file_io_scope(tmp_path: Path) -> None:
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    from polars.io.iceberg._cache import CachingFileIO, IcebergMetadataFileCache
+
+    cache = IcebergMetadataFileCache(max_bytes=1024)
+
+    manifest = tmp_path / f"{uuid.uuid4()}-m0.avro"
+    manifest.write_bytes(b"data")
+    no_uuid = tmp_path / "manifest.avro"
+    no_uuid.write_bytes(b"data")
+
+    def read(properties: dict[str, Any], path: Path) -> bytes:
+        file_io = CachingFileIO(PyArrowFileIO(properties), cache)
+        with file_io.new_input(format_file_uri_iceberg(path)).open() as f:
+            return f.read()  # type: ignore[no-any-return]
+
+    assert read({"s3.access-key-id": "a"}, manifest) == b"data"
+    assert (cache.hits, cache.misses) == (0, 1)
+
+    # Table metadata pointers do not change the scope.
+    pointers = {"metadata_location": "v2", "previous_metadata_location": "v1"}
+    assert read({"s3.access-key-id": "a", **pointers}, manifest) == b"data"
+    assert (cache.hits, cache.misses) == (1, 1)
+
+    # Entries are not shared across credentials.
+    assert read({"s3.access-key-id": "b"}, manifest) == b"data"
+    assert (cache.hits, cache.misses) == (1, 2)
+
+    # Values that are not of a plain type bypass the cache.
+    class Redacted(str):
+        def __repr__(self) -> str:
+            return "'***'"
+
+    for opaque in (
+        {"auth": {"type": "basic", "basic": {"username": "a", "password": "x"}}},
+        {"auth.manager": object()},
+        {"s3.secret-access-key": Redacted("x")},
+    ):
+        assert read({"s3.access-key-id": "a", **opaque}, manifest) == b"data"
+    assert (cache.hits, cache.misses) == (1, 2)
+
+    # FileIO classes other than PyIceberg's built-in ones bypass the cache.
+    class CustomFileIO(PyArrowFileIO):  # type: ignore[misc]
+        pass
+
+    custom = CachingFileIO(CustomFileIO({"s3.access-key-id": "a"}), cache)
+    with custom.new_input(format_file_uri_iceberg(manifest)).open() as f:
+        assert f.read() == b"data"
+    assert (cache.hits, cache.misses) == (1, 2)
+
+    # File names without a UUID are not cached.
+    assert read({"s3.access-key-id": "a"}, no_uuid) == b"data"
+    assert (cache.hits, cache.misses) == (1, 2)
+    assert len(cache) == 2
+
+
+@pytest.mark.write_disk
+def test_iceberg_caching_file_io_copy_pickle(tmp_path: Path) -> None:
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    from polars.io.iceberg._cache import CachingFileIO, IcebergMetadataFileCache
+
+    manifest = tmp_path / f"{uuid.uuid4()}-m0.avro"
+    manifest.write_bytes(b"data")
+
+    file_io = CachingFileIO(PyArrowFileIO(), IcebergMetadataFileCache(1024))
+
+    for copied in (
+        copy.copy(file_io),
+        copy.deepcopy(file_io),
+        pickle.loads(pickle.dumps(file_io)),
+    ):
+        input_file = copied.new_input(format_file_uri_iceberg(manifest))
+        with input_file.open(False) as f:
+            assert f.read() == b"data"
+
+
+def test_iceberg_metadata_file_cache_wraps_once() -> None:
+    from types import SimpleNamespace
+
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    from polars.io.iceberg._cache import CachingFileIO, with_metadata_file_cache
+
+    scan = SimpleNamespace(io=PyArrowFileIO())
+    with_metadata_file_cache(scan)
+    wrapped = scan.io
+    assert isinstance(wrapped, CachingFileIO)
+
+    with_metadata_file_cache(scan)
+    assert scan.io is wrapped
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_metadata_file_cache_incremental(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from polars.io.iceberg._cache import reset_metadata_file_cache
+
+    reset_metadata_file_cache()
+
+    try:
+        tbl, _ = new_iceberg_table(
+            tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+        )
+        for i in range(3):
+            pl.DataFrame({"a": [i]}).write_iceberg(tbl, mode="append")
+
+        snapshots = tbl.snapshots()
+        opened = _count_avro_opens(monkeypatch, tbl)
+        expected = pl.DataFrame({"a": [1, 2]})
+
+        def scan() -> pl.DataFrame:
+            return pl.scan_iceberg(
+                tbl,
+                from_snapshot_id_exclusive=snapshots[0].snapshot_id,
+                to_snapshot_id_inclusive=snapshots[-1].snapshot_id,
+            ).collect()
+
+        assert_frame_equal(scan(), expected, check_row_order=False)
+        assert opened
+
+        opened.clear()
+        assert_frame_equal(scan(), expected, check_row_order=False)
+        assert opened == []
+    finally:
+        reset_metadata_file_cache()

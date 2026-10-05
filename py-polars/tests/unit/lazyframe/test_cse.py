@@ -18,6 +18,7 @@ from polars.testing import assert_frame_equal, assert_frame_not_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1019,11 +1020,19 @@ def test_cse_custom_io_source_same_object() -> None:
     assert io_source.call_count == 0
 
     assert_frame_equal(
-        pl.concat(pl.collect_all(lfs)),
+        pl.concat(pl.collect_all(lfs, engine="in-memory")),
         pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
     )
 
     assert io_source.call_count == 1
+
+    # The streaming engine reads a pure source again instead of caching it.
+    assert_frame_equal(
+        pl.concat(pl.collect_all(lfs, engine="streaming")),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
+    )
+
+    assert io_source.call_count == 3
 
     io_source = Mock(wraps=lambda *_: iter([df]))
 
@@ -1572,6 +1581,33 @@ def test_projection_pushdown_cache_node_inputs_point_to_same_node_28367() -> Non
     q3 = q1.join(q2.select("x", "z"), on="x")
     q4 = q3.join(q1, on="x").filter(pl.col("z").is_not_null())
     assert_frame_equal(q4.select(pl.col.x.min()).collect(), pl.DataFrame({"x": [1]}))
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("cache_mode", ["manual", "source", "automatic"])
+@pytest.mark.parametrize("projection", [["k"], ["v", "k"]])
+def test_nested_cache_preserves_projection_29707(
+    engine: EngineType,
+    cache_mode: str,
+    projection: list[str],
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_ALLOW_NESTED_CSPE", "1")
+
+    source = pl.LazyFrame({"k": [1, 2, 3], "v": [1, 2, 2]})
+    if cache_mode != "automatic":
+        source = source.cache()
+    projected = source.select(projection)
+    if cache_mode == "manual":
+        projected = projected.cache()
+    query = pl.concat([projected, projected]).join(source, on="k")
+
+    expected = pl.DataFrame({"k": [1, 2, 3, 1, 2, 3], "v": [1, 2, 2, 1, 2, 2]})
+    if projection == ["v", "k"]:
+        expected = expected.select("v", "k", pl.col("v").alias("v_right"))
+
+    assert query.collect_schema() == expected.schema
+    assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
 
 
 def test_csee_height_mismatch_28364() -> None:

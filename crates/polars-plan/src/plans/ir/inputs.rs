@@ -66,7 +66,7 @@ impl IR {
 
             Sort { by_column, .. } => Exprs::slice(by_column),
             Select { expr, .. } => Exprs::slice(expr),
-            HStack { exprs, .. } => Exprs::slice(exprs),
+            HStack { exprs, .. } | Window { exprs, .. } => Exprs::slice(exprs),
 
             GroupBy { keys, aggs, .. } => Exprs::double_slice(keys, aggs),
 
@@ -127,7 +127,7 @@ impl IR {
 
             Sort { by_column, .. } => ExprsMut::slice(by_column),
             Select { expr, .. } => ExprsMut::slice(expr),
-            HStack { exprs, .. } => ExprsMut::slice(exprs),
+            HStack { exprs, .. } | Window { exprs, .. } => ExprsMut::slice(exprs),
 
             GroupBy { keys, aggs, .. } => ExprsMut::double_slice(keys, aggs),
 
@@ -191,6 +191,7 @@ impl IR {
             } => Inputs::double(*input_left, *input_right),
             Gather { input, idxs, .. } => Inputs::double(*input, *idxs),
             HStack { input, .. } => Inputs::single(*input),
+            Window { input, .. } => Inputs::single(*input),
             Distinct { input, .. } => Inputs::single(*input),
             MapFunction { input, .. } => Inputs::single(*input),
             Sink { input, .. } => Inputs::single(*input),
@@ -230,6 +231,7 @@ impl IR {
             } => InputsMut::double(input_left, input_right),
             Gather { input, idxs, .. } => InputsMut::double(input, idxs),
             HStack { input, .. } => InputsMut::single(input),
+            Window { input, .. } => InputsMut::single(input),
             Distinct { input, .. } => InputsMut::single(input),
             MapFunction { input, .. } => InputsMut::single(input),
             Sink { input, .. } => InputsMut::single(input),

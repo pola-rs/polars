@@ -12,7 +12,9 @@ use polars_utils::scratch_vec::ScratchVec;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::dsl::{SinkTypeIR, UnionOptions};
-use crate::plans::simplify_ordering::expr::{ExprOrderSimplifier, ObservableOrders};
+use crate::plans::simplify_ordering::expr::{
+    ExprOrderSimplifier, ObservableOrders, is_order_insensitive_window,
+};
 use crate::plans::simplify_ordering::ir_node_key::IRNodeKey;
 use crate::plans::{IRAggExpr, is_scalar_ae};
 use crate::prelude::{AExpr, IR};
@@ -296,6 +298,37 @@ impl SimplifyIRNodeOrder<'_> {
                 {
                     *out_edge = Edge::Unordered;
                     *maintain_order = false;
+                }
+            },
+
+            // The out edge is never marked unordered here: a reordered result can still expose
+            // the order in which the rows were evaluated.
+            IR::Window {
+                order_by,
+                exprs,
+                maintain_order,
+                ordered_eval,
+                ..
+            } => {
+                let ([in_edge], [out_edge]) = unpack_edges!(2);
+
+                // Without `maintain_order` on the order key, rows with equal keys may be
+                // evaluated in any order.
+                let ties_in_input_order = order_by
+                    .as_ref()
+                    .is_none_or(|(_, options)| options.maintain_order);
+                let observes = ties_in_input_order
+                    && exprs
+                        .iter()
+                        .any(|e| !is_order_insensitive_window(e.node(), self.expr_arena));
+
+                if out_edge.is_unordered() {
+                    *maintain_order = false;
+                }
+                *ordered_eval = observes;
+
+                if !*maintain_order && !observes {
+                    *in_edge = Edge::Unordered;
                 }
             },
 

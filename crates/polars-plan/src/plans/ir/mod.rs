@@ -141,6 +141,26 @@ pub enum IR {
         schema: SchemaRef,
         options: ProjectionOptions,
     },
+    /// Appends window expressions that share one partitioning and order to the input columns.
+    ///
+    /// - Every expression is an `over` with `GroupsToRows` mapping on exactly `partition_by`
+    ///   and `order_by`. The result for a row only depends on the rows with the same key.
+    /// - `partition_by` and `order_by` are columns of the input.
+    /// - `maintain_order`: rows are output in input order. If false, the output order is
+    ///   unspecified.
+    /// - `ordered_eval`: the rows of a partition are evaluated in input order (ties in the
+    ///   `order_by` column in input order, unless its `maintain_order` is false). If false, any
+    ///   order within a partition is valid.
+    /// - Only whole rows are moved, so the columns of an output row always belong together.
+    Window {
+        input: Node,
+        partition_by: Vec<PlSmallStr>,
+        order_by: Option<(PlSmallStr, SortOptions)>,
+        exprs: Vec<ExprIR>,
+        schema: SchemaRef,
+        maintain_order: bool,
+        ordered_eval: bool,
+    },
     Distinct {
         input: Node,
         options: DistinctOptionsIR,
@@ -199,6 +219,42 @@ pub enum IR {
     },
     #[default]
     Invalid,
+}
+
+/// Whether every expression is an `over` with `GroupsToRows` mapping on exactly `partition_by`
+/// and `order_by`, as [`IR::Window`] requires.
+pub fn window_exprs_match_keys(
+    exprs: &[ExprIR],
+    partition_by: &[PlSmallStr],
+    order_by: Option<&(PlSmallStr, SortOptions)>,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    let is_column = |node: &Node, name: &PlSmallStr| match expr_arena.get(*node) {
+        AExpr::Column(column) => column == name,
+        _ => false,
+    };
+    exprs.iter().all(|e| match expr_arena.get(e.node()) {
+        AExpr::Over {
+            partition_by: expr_partition_by,
+            order_by: expr_order_by,
+            mapping: WindowMapping::GroupsToRows,
+            ..
+        } => {
+            expr_partition_by.len() == partition_by.len()
+                && expr_partition_by
+                    .iter()
+                    .zip(partition_by)
+                    .all(|(node, name)| is_column(node, name))
+                && match (expr_order_by, order_by) {
+                    (None, None) => true,
+                    (Some((node, expr_options)), Some((name, options))) => {
+                        is_column(node, name) && expr_options == options
+                    },
+                    _ => false,
+                }
+        },
+        _ => false,
+    })
 }
 
 impl IRPlan {

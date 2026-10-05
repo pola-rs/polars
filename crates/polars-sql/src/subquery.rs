@@ -17,17 +17,18 @@ use polars_plan::prelude::{AggExpr, DslPlan, Selector};
 use polars_plan::utils::{expr_to_leaf_column_names_iter, has_expr};
 use polars_utils::aliases::PlHashSet;
 use polars_utils::arena::Arena;
-use polars_utils::{format_pl_smallstr, unique_column_name};
+use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Query,
     Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
     UnaryOperator as SQLUnaryOperator, Visit, VisitMut, Visitor, VisitorMut, visit_expressions,
+    visit_expressions_mut,
 };
 
-use crate::SQLContext;
 use crate::context::{CORRELATED_COL_PREFIX, FilterMode, combine_conditions, get_table_name};
 use crate::sql_expr::{parse_sql_expr, sql_in_membership};
 use crate::sql_visitors::{expr_contains_subquery, is_subquery_expr};
+use crate::{SQLContext, unique_column_name};
 
 impl SQLContext {
     // Entry point: offer each WHERE conjunct to the rewrites, returning the
@@ -613,13 +614,84 @@ impl SQLContext {
         Ok(Some(parse_sql_expr(sql_expr, self, Some(inner_schema))?))
     }
 
+    // The join tree of a block whose frame is its FROM relations joined and
+    // filtered by the WHERE conjuncts that hold no subquery, and nothing more.
+    // `residual` is what the early subquery rewrites left of `where_expr`: the
+    // frame is still the tree when that is every subquery conjunct and nothing
+    // else. `None` as well when the FROM isn't a list of distinct plain tables
+    // whose columns all have distinct names.
+    pub(crate) fn outer_join_tree(
+        &mut self,
+        select: &Select,
+        where_expr: &SQLExpr,
+        residual: &[&SQLExpr],
+    ) -> PolarsResult<Option<OuterJoinTree>> {
+        let Some(selection) = &select.selection else {
+            return Ok(None);
+        };
+        let n_with_subquery = MintermIter::new(where_expr)
+            .filter(|c| expr_contains_subquery(c))
+            .count();
+        if select.from.len() < 2
+            || residual.len() != n_with_subquery
+            || !residual.iter().all(|c| expr_contains_subquery(c))
+        {
+            return Ok(None);
+        }
+
+        let mut relations: Vec<TreeRelation> = Vec::with_capacity(select.from.len());
+        for tbl_expr in &select.from {
+            let Some((table, name)) = plain_table(tbl_expr) else {
+                return Ok(None);
+            };
+            if relations.iter().any(|r| r.table == table || r.name == name) {
+                return Ok(None);
+            }
+            let mut rel_lf = self.execute_from_statement(tbl_expr)?;
+            let schema = self.get_frame_schema(&mut rel_lf)?;
+            relations.push(TreeRelation {
+                table: table.to_string(),
+                name: name.to_string(),
+                schema,
+            });
+        }
+        let n_columns: usize = relations.iter().map(|r| r.schema.len()).sum();
+        let n_distinct = relations
+            .iter()
+            .flat_map(|r| r.schema.iter_names())
+            .collect::<PlHashSet<_>>()
+            .len();
+        if n_distinct != n_columns {
+            return Ok(None);
+        }
+
+        let own: Vec<(&str, usize)> = relations
+            .iter()
+            .enumerate()
+            .map(|(idx, r)| (r.name.as_str(), idx))
+            .collect();
+        let selection = factored_selection(selection);
+        let mut conjuncts = Vec::new();
+        for conj in MintermIter::new(&selection).filter(|c| !expr_contains_subquery(c)) {
+            let Some(spelled) = spell_conjunct(conj, &own, &relations, false) else {
+                return Ok(None);
+            };
+            conjuncts.push(spelled);
+        }
+        Ok(Some(OuterJoinTree {
+            relations,
+            conjuncts,
+        }))
+    }
+
     // Lower every correlated subquery reachable from `expr` into a decorrelated
     // join over `lf`, substituting each one for the column its lowering
     // materialised. Returns the updated frame together with the rewritten
     // expression, which borrows `expr` unchanged when nothing was lowered.
     // Subqueries that can't be lowered are left in place.
     //
-    // See [`SubqueryBindings`] for when a set may be shared across calls.
+    // See [`SubqueryBindings`] for when a set may be shared across calls. Pass
+    // `join_tree` only while `lf` is still the frame it describes.
     pub(crate) fn lower_correlated_subqueries<'a>(
         &mut self,
         lf: LazyFrame,
@@ -627,6 +699,7 @@ impl SQLContext {
         expr: &'a SQLExpr,
         scope: LowerScope,
         bindings: &mut SubqueryBindings,
+        join_tree: Option<&OuterJoinTree>,
     ) -> PolarsResult<(LazyFrame, Cow<'a, SQLExpr>)> {
         // The mutable visit needs an owned expression; skip the clone when there is
         // nothing to rewrite.
@@ -640,6 +713,7 @@ impl SQLContext {
             outer_schema,
             scope,
             bindings,
+            join_tree,
             query_depth: 0,
             changed: false,
         };
@@ -662,11 +736,14 @@ impl SQLContext {
     // handles inequality), aggregate per outer row, then left-join back on the
     // row index. Either way, `COUNT` over no matches is 0, every other aggregate
     // is NULL. Returns `None` when uncorrelated or not a scalar-aggregate shape.
+    // When `join_tree` describes the outer frame and the subquery repeats a part
+    // of it, the aggregate is taken over the outer frame itself instead.
     fn try_decorrelate_scalar_subquery(
         &mut self,
         mut lf: LazyFrame,
         outer_schema: &Schema,
         subquery: &Query,
+        join_tree: Option<&OuterJoinTree>,
     ) -> PolarsResult<Option<(LazyFrame, PlSmallStr)>> {
         let Some(select) = eligible_subquery_select(subquery) else {
             return Ok(None);
@@ -708,6 +785,40 @@ impl SQLContext {
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let result_name = format_pl_smallstr!("{prefix}res");
+        let equality_only = corr_preds.iter().all(|p| p.op == SQLBinaryOperator::Eq);
+
+        // When the subquery repeats a part of the outer join tree, the outer frame
+        // holds each outer row's subquery rows, each one repeated once per match
+        // of the row's other relations on the keys. An aggregate that ignores such
+        // repeats is then read from the outer frame, grouped by the outer keys.
+        if equality_only
+            && ignores_uniform_repeats(&agg_expr)
+            && let Some(tree) = join_tree
+            && tree.covers(&select.from, &factored_selection(selection), &inner_schema)
+        {
+            let mut keys: Vec<Expr> = Vec::with_capacity(corr_preds.len());
+            for p in &corr_preds {
+                let key = col(p.outer.clone());
+                if !keys.contains(&key) {
+                    keys.push(key);
+                }
+            }
+            if expr_to_leaf_column_names_iter(&agg_expr)
+                .chain(corr_preds.iter().map(|p| p.outer.clone()))
+                .all(|name| outer_schema.contains(&name))
+            {
+                let outer = lf.cache();
+                let joined = equality_correlated_aggregate(
+                    outer.clone(),
+                    outer,
+                    keys.clone(),
+                    keys,
+                    agg_expr.alias(result_name.clone()),
+                    false,
+                )?;
+                return Ok(Some((joined, result_name)));
+            }
+        }
 
         // Apply inner-only filters, then rename inner columns to collision-free
         // names so they can't clash with outer columns of the same name (as in a
@@ -719,7 +830,6 @@ impl SQLContext {
             .map(|name| prefixed_inner(&prefix, name))
             .collect();
         let mut inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
-        let equality_only = corr_preds.iter().all(|p| p.op == SQLBinaryOperator::Eq);
         let restrict = equality_only && group_local_aggregate(&agg_expr) && {
             let inner_rows = ctx.estimated_rows(&mut inner_renamed)?;
             let outer_rows = self.estimated_rows(&mut lf)?;
@@ -1161,8 +1271,8 @@ fn try_prepare_join_keys(
 ) -> Option<(Vec<Expr>, Vec<Expr>)> {
     let untyped_literal = |e: &Expr| matches!(e, Expr::Literal(LiteralValue::Dyn(_)));
     for (left, right) in left_on.iter_mut().zip(right_on.iter_mut()) {
-        if !usable_as_join_key(left)
-            || !usable_as_join_key(right)
+        if !is_elementwise(left)
+            || !is_elementwise(right)
             || expr_to_leaf_column_names_iter(left).next().is_none()
             || has_expr(left, untyped_literal)
             || has_expr(right, untyped_literal)
@@ -1711,6 +1821,7 @@ struct CorrelatedLowering<'a> {
     outer_schema: &'a Schema,
     scope: LowerScope,
     bindings: &'a mut SubqueryBindings,
+    join_tree: Option<&'a OuterJoinTree>,
     query_depth: usize,
     changed: bool,
 }
@@ -1737,6 +1848,7 @@ impl CorrelatedLowering<'_> {
                 self.lf.clone(),
                 self.outer_schema,
                 subquery,
+                self.join_tree,
             )?,
             SubqueryKind::In(lhs) => self.ctx.try_decorrelate_in_subquery(
                 self.lf.clone(),
@@ -1805,29 +1917,25 @@ impl VisitorMut for CorrelatedLowering<'_> {
     }
 }
 
-// Whether an expression can serve as a join key. Join keys must be elementwise,
-// so that every key is as long as the frame it is built from. Anything this does
-// not recognise declines the rewrite, which costs an optimisation rather than
-// correctness.
-fn usable_as_join_key(expr: &Expr) -> bool {
+// Whether an expression is elementwise: one value per row, from that row alone.
+// Join keys must be, so that every key is as long as the frame it is built from.
+// Anything this does not recognise declines the rewrite, which costs an
+// optimisation rather than correctness.
+fn is_elementwise(expr: &Expr) -> bool {
     match expr {
         Expr::Column(_) | Expr::Literal(_) => true,
-        Expr::Alias(inner, _) | Expr::Cast { expr: inner, .. } => usable_as_join_key(inner),
-        Expr::BinaryExpr { left, op: _, right } => {
-            usable_as_join_key(left) && usable_as_join_key(right)
-        },
+        Expr::Alias(inner, _) | Expr::Cast { expr: inner, .. } => is_elementwise(inner),
+        Expr::BinaryExpr { left, op: _, right } => is_elementwise(left) && is_elementwise(right),
         // SQL operators that are lowered once the dtypes are known are elementwise.
         Expr::Function {
             input,
             function: FunctionExpr::Sql(_),
-        } => input.iter().all(usable_as_join_key),
+        } => input.iter().all(is_elementwise),
         Expr::Ternary {
             predicate,
             truthy,
             falsy,
-        } => {
-            usable_as_join_key(predicate) && usable_as_join_key(truthy) && usable_as_join_key(falsy)
-        },
+        } => is_elementwise(predicate) && is_elementwise(truthy) && is_elementwise(falsy),
         _ => false,
     }
 }
@@ -1856,6 +1964,228 @@ fn restriction_pays_off(outer: Option<&NodeStats>, inner: Option<&NodeStats>) ->
     };
     outer.unfiltered * RESTRICTION_LOPSIDED_FACTOR <= inner.unfiltered
         || outer.filtered * RESTRICTION_LOPSIDED_FACTOR <= inner.filtered
+}
+
+/// The relations and filters of a query block whose frame is its FROM relations
+/// joined and filtered by its WHERE conjuncts that hold no subquery, and nothing
+/// more. A correlated scalar subquery over some of these relations can then be
+/// answered from the frame itself.
+pub(crate) struct OuterJoinTree {
+    relations: Vec<TreeRelation>,
+    conjuncts: Vec<SpelledConjunct>,
+}
+
+struct TreeRelation {
+    // The name of the table it reads.
+    table: String,
+    // The name that qualifies its columns: its alias, else its table name.
+    name: String,
+    schema: SchemaRef,
+}
+
+// A conjunct with each column spelled `<relation index>.<column>`, so that one
+// condition written in two scopes, under different aliases, compares equal.
+struct SpelledConjunct {
+    expr: SQLExpr,
+    // The relations it reads through its own scope's FROM.
+    own: Vec<usize>,
+    // The relations it reads as correlated outer columns.
+    outer: Vec<usize>,
+}
+
+impl OuterJoinTree {
+    // Whether a subquery over `from` filtered by `selection` reads, for each row
+    // of the frame, exactly the rows of its relations that the row was joined
+    // with: its relations are tree relations, its filters are exactly the
+    // tree's conditions on those relations alone, and its correlation
+    // predicates are exactly the tree's conditions linking them to the other
+    // relations. `inner_schema` is the schema the subquery's FROM resolved to.
+    fn covers(&self, from: &[TableWithJoins], selection: &SQLExpr, inner_schema: &Schema) -> bool {
+        let mut own: Vec<(&str, usize)> = Vec::with_capacity(from.len());
+        for tbl_expr in from {
+            let Some((table, name)) = plain_table(tbl_expr) else {
+                return false;
+            };
+            let Some(idx) = self.relations.iter().position(|r| r.table == table) else {
+                return false;
+            };
+            if own.iter().any(|&(n, i)| n == name || i == idx) {
+                return false;
+            }
+            own.push((name, idx));
+        }
+        // An alias spelled like a table name can make the subquery read another table.
+        let n_columns: usize = own
+            .iter()
+            .map(|&(_, idx)| self.relations[idx].schema.len())
+            .sum();
+        let same_tables = own.iter().all(|&(_, idx)| {
+            self.relations[idx]
+                .schema
+                .iter()
+                .all(|(name, dtype)| inner_schema.get(name) == Some(dtype))
+        });
+        if n_columns != inner_schema.len() || !same_tables {
+            return false;
+        }
+
+        let is_own = |idx: &usize| own.iter().any(|&(_, i)| i == *idx);
+        let mut filters = Vec::new();
+        let mut links = Vec::new();
+        for conj in MintermIter::new(selection) {
+            let Some(spelled) = spell_conjunct(conj, &own, &self.relations, true) else {
+                return false;
+            };
+            if spelled.outer.is_empty() {
+                filters.push(spelled.expr);
+            } else if spelled.outer.iter().any(is_own) {
+                // The outer row's column of a relation the subquery reads itself.
+                return false;
+            } else {
+                links.push(spelled.expr);
+            }
+        }
+        let mut tree_filters = Vec::new();
+        let mut tree_links = Vec::new();
+        for conj in &self.conjuncts {
+            match conj.own.iter().filter(|idx| is_own(idx)).count() {
+                n if n == conj.own.len() => tree_filters.push(&conj.expr),
+                0 => {},
+                _ => tree_links.push(&conj.expr),
+            }
+        }
+        let same = |ours: &[SQLExpr], tree: &[&SQLExpr]| {
+            ours.iter().all(|e| tree.contains(&e)) && tree.iter().all(|e| ours.contains(e))
+        };
+        same(&filters, &tree_filters) && same(&links, &tree_links)
+    }
+}
+
+// A FROM item that is a plain table without joins: the table's name and the
+// name that qualifies its columns.
+fn plain_table(tbl_expr: &TableWithJoins) -> Option<(&str, &str)> {
+    let TableFactor::Table {
+        name,
+        alias,
+        args: None,
+        ..
+    } = &tbl_expr.relation
+    else {
+        return None;
+    };
+    let [part] = name.0.as_slice() else {
+        return None;
+    };
+    let table = part.as_ident()?.value.as_str();
+    if !tbl_expr.joins.is_empty() || alias.as_ref().is_some_and(|a| !a.columns.is_empty()) {
+        return None;
+    }
+    let qualifier = alias.as_ref().map_or(table, |a| a.name.value.as_str());
+    Some((table, qualifier))
+}
+
+// Spell a conjunct's columns by relation index. A column resolves against the
+// relations its scope declares, `own` as (name, relation index), and then, when
+// `correlated`, against all relations as an outer column. `None` when a column
+// doesn't resolve to exactly one relation, or the conjunct holds a subquery.
+fn spell_conjunct(
+    expr: &SQLExpr,
+    own: &[(&str, usize)],
+    relations: &[TreeRelation],
+    correlated: bool,
+) -> Option<SpelledConjunct> {
+    let has = |idx: usize, column: &str| relations[idx].schema.contains(column);
+    let resolve = |qualifier: Option<&str>, column: &str| -> Option<(usize, bool)> {
+        let own_matches: Vec<usize> = own
+            .iter()
+            .filter(|&&(name, idx)| qualifier.map_or(has(idx, column), |q| q == name))
+            .map(|&(_, idx)| idx)
+            .collect();
+        match own_matches.as_slice() {
+            [idx] => return has(*idx, column).then_some((*idx, false)),
+            [] if correlated => {},
+            _ => return None,
+        }
+        let outer_matches: Vec<usize> = (0..relations.len())
+            .filter(|&idx| qualifier.is_none_or(|q| relations[idx].name == q) && has(idx, column))
+            .collect();
+        match outer_matches.as_slice() {
+            [idx] => Some((*idx, true)),
+            _ => None,
+        }
+    };
+
+    let mut spelled = expr.clone();
+    let mut own_read = Vec::new();
+    let mut outer_read = Vec::new();
+    let flow = visit_expressions_mut(&mut spelled, |e| {
+        if is_subquery_expr(e) {
+            return ControlFlow::Break(());
+        }
+        if let SQLExpr::Nested(inner) = e {
+            let inner = inner.as_ref().clone();
+            *e = inner;
+            return ControlFlow::Continue(());
+        }
+        // An (in)equality reads the same either way round.
+        if let SQLExpr::BinaryOp {
+            left,
+            op: SQLBinaryOperator::Eq | SQLBinaryOperator::NotEq,
+            right,
+        } = e
+        {
+            if left.to_string() > right.to_string() {
+                std::mem::swap(left, right);
+            }
+            return ControlFlow::Continue(());
+        }
+        let resolved = match &*e {
+            SQLExpr::Identifier(ident) => resolve(None, &ident.value).zip(Some(ident.clone())),
+            SQLExpr::CompoundIdentifier(parts) => match parts.as_slice() {
+                [qualifier, ident] => {
+                    resolve(Some(&qualifier.value), &ident.value).zip(Some(ident.clone()))
+                },
+                _ => None,
+            },
+            _ => return ControlFlow::Continue(()),
+        };
+        let Some(((idx, outer), ident)) = resolved else {
+            return ControlFlow::Break(());
+        };
+        if outer {
+            outer_read.push(idx);
+        } else {
+            own_read.push(idx);
+        }
+        *e = SQLExpr::CompoundIdentifier(vec![Ident::new(idx.to_string()), ident]);
+        ControlFlow::Continue(())
+    });
+    flow.is_continue().then_some(SpelledConjunct {
+        expr: spelled,
+        own: own_read,
+        outer: outer_read,
+    })
+}
+
+// Whether an aggregate keeps its exact value when every input row is repeated
+// the same number of times. A mean does not: summing the repeats rounds
+// differently, and can overflow.
+fn ignores_uniform_repeats(agg: &Expr) -> bool {
+    match agg {
+        Expr::Agg(
+            AggExpr::Min { input, .. } | AggExpr::Max { input, .. } | AggExpr::NUnique(input),
+        ) => is_elementwise(input),
+        Expr::Alias(inner, _) | Expr::Cast { expr: inner, .. } => ignores_uniform_repeats(inner),
+        Expr::BinaryExpr { left, op: _, right } => {
+            ignores_uniform_repeats(left) && ignores_uniform_repeats(right)
+        },
+        Expr::Function {
+            input,
+            function: FunctionExpr::Sql(_),
+        } => input.iter().all(ignores_uniform_repeats),
+        Expr::Literal(_) => true,
+        _ => false,
+    }
 }
 
 // Lower an equality-correlated scalar aggregate: group the inner frame by the

@@ -95,6 +95,7 @@ async fn resolve_negative_slice(
             .min(num_pipelines.saturating_add(4)),
     );
 
+    let metrics = execution_state.task_metrics();
     let mut readers_init_iter = futures::stream::iter((0..config.sources.len()).rev())
         .map(|scan_source_idx| {
             let sources = config.sources.clone();
@@ -114,7 +115,7 @@ async fn resolve_negative_slice(
                     )
                 });
 
-            AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+            AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, metrics, async move {
                 let mut reader = reader?;
 
                 if verbose {

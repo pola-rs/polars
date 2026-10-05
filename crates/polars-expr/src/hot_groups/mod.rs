@@ -23,8 +23,18 @@ pub trait HotGrouper: Any + Send + Sync {
     /// Returns the number of groups in this HotGrouper.
     fn num_groups(&self) -> IdxSize;
 
+    /// Returns the number of slots in the hot table.
+    fn num_slots(&self) -> usize;
+
+    /// Doubles the number of slots in the hot table. Group indices are unchanged.
+    fn double(&mut self);
+
     /// Inserts the given keys into this Grouper, extending groups_idxs with
     /// the group index of keys[i].
+    ///
+    /// A missed key that is followed by a key with the same hash is inserted
+    /// even if that evicts another key, as is every missed key with
+    /// `force_hot`. This keeps sorted keys from first going cold.
     fn insert_keys(
         &mut self,
         keys: &HashKeys,

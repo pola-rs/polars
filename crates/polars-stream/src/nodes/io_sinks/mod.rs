@@ -215,7 +215,8 @@ impl IOSinkNodeState {
             SourceToken::default(),
         ));
 
-        executor::spawn(TaskPriority::High, async move {
+        let task_metrics = execution_state.task_metrics();
+        executor::spawn(TaskPriority::High, task_metrics, async move {
             let mut morsel_seq: u64 = 1;
 
             while let Ok(mut phase_rx) = phase_channel_rx.recv().await {

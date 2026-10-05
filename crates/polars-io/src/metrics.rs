@@ -52,6 +52,24 @@ impl OptIOMetrics {
         out
     }
 
+    /// [`Self::record_io_read`] for a read done on the calling thread.
+    pub fn record_io_read_blocking<F, O>(&self, num_bytes: u64, f: F) -> O
+    where
+        F: FnOnce() -> O,
+    {
+        self.add_bytes_requested(num_bytes);
+
+        let io_session = self.start_io_session();
+
+        let out = f();
+
+        drop(io_session);
+
+        self.add_bytes_received(num_bytes);
+
+        out
+    }
+
     pub async fn record_bytes_tx<F, O>(&self, num_bytes: u64, fut: F) -> O
     where
         F: Future<Output = O>,

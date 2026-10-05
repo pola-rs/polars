@@ -2,7 +2,7 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 
 use polars_arrow::datatypes::ArrowSchemaRef;
-use polars_async::executor::{self, TaskPriority};
+use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
@@ -78,6 +78,7 @@ impl FileWriterStarter for ParquetWriterStarter {
         morsel_rx: connector::Receiver<SinkMorsel>,
         file: FileOpenTaskHandle,
         num_pipelines: std::num::NonZeroUsize,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>> {
         let InitializedState {
             encodings,
@@ -132,6 +133,7 @@ impl FileWriterStarter for ParquetWriterStarter {
         let arrow_schema = Arc::clone(&self.arrow_schema);
         let compute_handle = executor::AbortOnDropHandle::new(executor::spawn(
             TaskPriority::High,
+            task_metrics.as_deref(),
             row_group_encoder::RowGroupEncoder {
                 morsel_rx,
                 encoded_row_group_tx,
@@ -140,11 +142,13 @@ impl FileWriterStarter for ParquetWriterStarter {
                 write_options,
                 encodings,
                 num_leaf_columns,
+                task_metrics: task_metrics.clone(),
             }
             .run(),
         ));
 
-        Ok(executor::spawn(TaskPriority::Low, async move {
+        let metrics = task_metrics.as_deref();
+        Ok(executor::spawn(TaskPriority::Low, metrics, async move {
             compute_handle.await?;
             io_handle.await.unwrap()?;
             Ok(())

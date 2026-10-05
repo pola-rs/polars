@@ -845,6 +845,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             should_broadcast: options.should_broadcast,
         }
         .into_py_any(py),
+        IR::Window { input, exprs, .. } => HStack {
+            input: input.0,
+            exprs: exprs.iter().map(|e| e.into()).collect(),
+            should_broadcast: true,
+        }
+        .into_py_any(py),
         IR::Distinct { input, options } => Distinct {
             input: input.0,
             options: (

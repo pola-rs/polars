@@ -35,6 +35,15 @@ impl HotGrouper for KeyRowHashHotGrouper {
         self.table.len() as IdxSize
     }
 
+    fn num_slots(&self) -> usize {
+        self.table.num_slots()
+    }
+
+    fn double(&mut self) {
+        self.table.double();
+        self.replaced.resize(self.table.num_slots(), false);
+    }
+
     fn insert_keys(
         &mut self,
         keys: &HashKeys,
@@ -68,7 +77,7 @@ impl HotGrouper for KeyRowHashHotGrouper {
             let batch_hashes = &hashes[start..start + n];
             let (slots, hot_keys, ok) = (&mut slots[..n], &mut hot_keys[..n], &mut ok[..n]);
 
-            // Find the candidate hot key of each key by its tag, hot key 0 standing in
+            // Find the candidate hot key of each key by its hash, hot key 0 standing in
             // for keys without one.
             let num_keys = self.table.len() as IdxSize;
             let mut num_found = 0;
@@ -78,7 +87,7 @@ impl HotGrouper for KeyRowHashHotGrouper {
                 .zip(hot_keys.iter_mut())
                 .zip(ok.iter_mut())
             {
-                let (found_slot, found_k) = self.table.find_tag(*h);
+                let (found_slot, found_k) = self.table.find_hash(*h);
                 let found = found_k < num_keys;
                 *slot = found_slot as IdxSize;
                 *k = if found { found_k } else { 0 };
@@ -129,6 +138,7 @@ impl HotGrouper for KeyRowHashHotGrouper {
                         h,
                         i,
                         force_hot,
+                        *hashes.get(i + 1).unwrap_or(&u64::MAX),
                         |i, k| (*hot).eq_key(*k, keys, *i),
                         |i| (*hot).push(keys, i),
                         |i, k| {

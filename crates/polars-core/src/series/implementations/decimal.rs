@@ -1,4 +1,4 @@
-use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add_scaled};
+use polars_compute::decimal::{DEC128_MAX_PREC, dec128_fits};
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
@@ -451,10 +451,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .physical()
             .iter()
             .flatten()
-            .try_fold(0i128, |acc, v| {
-                dec128_add_scaled(acc, scale, v, scale, scale)
-                    .ok_or_else(|| polars_err!(ComputeError: "overflow in decimal addition in sum"))
-            })?;
+            .try_fold(0i128, i128::checked_add)
+            .filter(|sum| dec128_fits(*sum, prec))
+            .ok_or_else(|| polars_err!(ComputeError: "overflow in decimal addition in sum"))?;
         let av = AnyValue::Decimal(sum, prec, scale);
         Ok(Scalar::new(DataType::Decimal(prec, scale), av))
     }

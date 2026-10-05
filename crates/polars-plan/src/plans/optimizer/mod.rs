@@ -26,6 +26,7 @@ mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;
 mod expand_datasets;
+mod extract_window;
 #[cfg(feature = "python")]
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
 mod collapse_sort;
@@ -170,6 +171,7 @@ pub fn optimize(
                     ir_arena,
                     expr_arena,
                     polars_config::config().allow_nested_cspe(),
+                    !opt_flags.streaming(),
                 );
             }
         });
@@ -312,6 +314,10 @@ pub fn optimize(
         })?;
     }
 
+    if opt_flags.streaming() && !opt_flags.gpu() {
+        extract_window::extract_windows(root, ir_arena, expr_arena);
+    }
+
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
         match ir_arena.get(root) {
             IR::SinkMultiple { inputs } => {
@@ -343,6 +349,7 @@ pub fn optimize(
         root,
         ir_arena,
         expr_arena,
+        opt_flags.predicate_pushdown() && !pushdown_maintain_errors,
         hooks.apply_scan_predicate_to_scan_ir,
     )?;
 

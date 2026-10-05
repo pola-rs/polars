@@ -2335,6 +2335,10 @@ def map_expr(
     is_elementwise: bool,
     returns_scalar: bool,
 ) -> PyExpr: ...
+def pipe_with_dtype(
+    exprs: Sequence[PyExpr],
+    callback: Callable[[tuple[pylist[PyExpr], pylist[DataType]]], PyExpr],
+) -> PyExpr: ...
 def pearson_corr(a: PyExpr, b: PyExpr) -> PyExpr: ...
 def reduce(
     lambda_func: Any,

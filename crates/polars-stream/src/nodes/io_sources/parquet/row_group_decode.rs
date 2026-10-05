@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use polars_async::executor::TaskPriority;
+use polars_async::executor::{TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IntoColumn};
@@ -101,6 +101,7 @@ impl DynamicConjunct {
 /// Turns row group data into DataFrames.
 pub(super) struct RowGroupDecoder {
     pub(super) num_pipelines: usize,
+    pub(super) task_metrics: Option<Arc<TaskMetricAggregator>>,
     pub(super) projected_arrow_fields: Arc<[ArrowFieldProjection]>,
     pub(super) row_index: Option<RowIndex>,
     pub(super) predicate: Option<ScanIOPredicate>,
@@ -127,6 +128,8 @@ impl RowGroupDecoder {
         &self,
         mut row_group_data: RowGroupData,
     ) -> PolarsResult<DataFrame> {
+        row_group_data.fetched_bytes.fetch_if_evicted().await?;
+
         // If the slice consumes the entire row-group. Don't slice. This allows for prefiltering to
         // happen more often until we properly support prefiltering with pre-slices.
         row_group_data.slice.take_if(|slice| {
@@ -203,8 +206,13 @@ impl RowGroupDecoder {
             let mask = predicate.predicate.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
 
-            let filtered =
-                filter_cols(df.into_columns(), mask, self.target_values_per_thread).await?;
+            let filtered = filter_cols(
+                df.into_columns(),
+                mask,
+                self.target_values_per_thread,
+                self.task_metrics.as_deref(),
+            )
+            .await?;
 
             let height = if let Some(fst) = filtered.first() {
                 fst.len()
@@ -278,6 +286,7 @@ impl RowGroupDecoder {
 
             parallelize_first_to_local(
                 TaskPriority::Low,
+                self.task_metrics.as_deref(),
                 (0..projected_arrow_fields.len())
                     .step_by(cols_per_thread)
                     .map(move |offset| {
@@ -360,14 +369,14 @@ fn decode_column(
         .map(|col_md| {
             let byte_range = col_md.byte_range();
 
-            (
+            Ok((
                 col_md,
                 row_group_data
                     .fetched_bytes
-                    .get_range(byte_range.start as usize..byte_range.end as usize),
-            )
+                    .get_range(byte_range.start as usize..byte_range.end as usize)?,
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     let skip_num_rows_check = matches!(filter, Some(Filter::Predicate(_)));
 
@@ -404,6 +413,7 @@ async fn filter_cols(
     cols: Vec<Column>,
     mask: &BooleanChunked,
     target_values_per_thread: usize,
+    task_metrics: Option<&TaskMetricAggregator>,
 ) -> PolarsResult<Vec<Column>> {
     if cols.is_empty() {
         return Ok(cols);
@@ -420,6 +430,7 @@ async fn filter_cols(
 
         parallelize_first_to_local(
             TaskPriority::Low,
+            task_metrics,
             (0..cols.len()).step_by(cols_per_thread).map(move |offset| {
                 let cols = cols.clone();
                 let mask = mask.clone();
@@ -616,7 +627,7 @@ impl RowGroupDecoder {
         debug_assert!(row_group_data.slice.is_none()); // Invariant of the optimizer.
         assert!(self.predicate_field_indices.len() <= self.projected_arrow_fields.len());
 
-        let row_group_data = Arc::new(row_group_data);
+        let mut row_group_data = Arc::new(row_group_data);
         let projection_height = row_group_data.row_group_metadata.num_rows();
         let mut passes = self.passes.lock().unwrap().clone();
         // A conjunct that just started filtering rows is measured on every row
@@ -759,6 +770,17 @@ impl RowGroupDecoder {
             }
         }
 
+        // A deferred row group's pages can be evicted while the passes run, so check again
+        // before reading the other columns. The pass tasks have finished, so nothing else holds
+        // `row_group_data`.
+        if !self.non_predicate_field_indices.is_empty() {
+            let data = Arc::get_mut(&mut row_group_data);
+            debug_assert!(data.is_some());
+            if let Some(data) = data {
+                data.fetched_bytes.fetch_if_evicted().await?;
+            }
+        }
+
         let dead_columns = self
             .decode_items(
                 self.non_predicate_field_indices
@@ -837,6 +859,7 @@ impl RowGroupDecoder {
         let task_handles = {
             parallelize_first_to_local(
                 TaskPriority::Low,
+                self.task_metrics.as_deref(),
                 (0..n_items).step_by(cols_per_thread).map(move |offset| {
                     let items = items.clone();
                     let pass = pass.clone();
@@ -864,7 +887,13 @@ impl RowGroupDecoder {
         mask: &BooleanChunked,
     ) -> PolarsResult<Vec<(Source, Column)>> {
         let (sources, columns): (Vec<Source>, Vec<Column>) = live_columns.into_iter().unzip();
-        let columns = filter_cols(columns, mask, self.target_values_per_thread).await?;
+        let columns = filter_cols(
+            columns,
+            mask,
+            self.target_values_per_thread,
+            self.task_metrics.as_deref(),
+        )
+        .await?;
         Ok(sources.into_iter().zip(columns).collect())
     }
 }
@@ -926,14 +955,14 @@ fn decode_column_prefiltered(
         .map(|col_md| {
             let byte_range = col_md.byte_range();
 
-            (
+            Ok((
                 col_md,
                 row_group_data
                     .fetched_bytes
-                    .get_range(byte_range.start as usize..byte_range.end as usize),
-            )
+                    .get_range(byte_range.start as usize..byte_range.end as usize)?,
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     let prefilter = !arrow_field.dtype.is_nested();
 

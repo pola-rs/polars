@@ -247,14 +247,6 @@ impl Column {
         }
     }
 
-    /// Get the [`ScalarColumn`] as [`Series`] if it was already materialized.
-    #[inline]
-    pub fn lazy_as_materialized_series(&self) -> Option<&Series> {
-        match self {
-            Column::Series(s) => Some(s),
-            Column::Scalar(s) => s.lazy_as_materialized_series(),
-        }
-    }
     #[inline]
     pub fn as_scalar_column(&self) -> Option<&ScalarColumn> {
         match self {
@@ -773,12 +765,10 @@ impl Column {
                     );
                 }
 
-                let mut scalar_col = s.resize(groups.len());
-                // The aggregation might change the type (e.g. mean changes int -> float), so we do
-                // a cast here to the output type.
-                if series_aggregation.dtype() != s.dtype() {
-                    scalar_col = scalar_col.cast(series_aggregation.dtype()).unwrap();
-                }
+                // Broadcast the single-group result: it already has the output dtype and value
+                // (e.g. `mean` changes int -> float, `arg_max` yields the index `0`).
+                let scalar_col =
+                    ScalarColumn::from_single_value_series(series_aggregation, groups.len());
 
                 let Some(first_empty_idx) = groups.iter().position(|g| g.is_empty()) else {
                     // Fast path: no empty groups. keep the scalar intact.
@@ -828,6 +818,25 @@ impl Column {
         self.agg_with_scalar_identity(groups, |s, g| unsafe { s.agg_mean(g) })
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    fn scalar_agg_arg_min_max(sc: &ScalarColumn, groups: &GroupsType) -> Self {
+        let name = sc.name().clone();
+        if sc.is_empty() || sc.has_nulls() {
+            return Self::full_null(name, groups.len(), &IDX_DTYPE);
+        }
+
+        // Empty groups have no min or max.
+        if groups.iter().any(|g| g.is_empty()) {
+            return IdxCa::from_iter_options(
+                name,
+                groups.iter().map(|g| (!g.is_empty()).then_some(0)),
+            )
+            .into_column();
+        }
+
+        Self::new_scalar(name, Scalar::new_idxsize(0), groups.len())
+    }
+
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
@@ -835,14 +844,7 @@ impl Column {
     pub unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Self {
         match self {
             Column::Series(s) => unsafe { Column::from(s.agg_arg_min(groups)) },
-            Column::Scalar(sc) => {
-                let scalar = if sc.is_empty() || sc.has_nulls() {
-                    Scalar::null(IDX_DTYPE)
-                } else {
-                    Scalar::new_idxsize(0)
-                };
-                Column::new_scalar(self.name().clone(), scalar, 1)
-            },
+            Column::Scalar(sc) => Self::scalar_agg_arg_min_max(sc, groups),
         }
     }
 
@@ -853,14 +855,7 @@ impl Column {
     pub unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Self {
         match self {
             Column::Series(s) => unsafe { Column::from(s.agg_arg_max(groups)) },
-            Column::Scalar(sc) => {
-                let scalar = if sc.is_empty() || sc.has_nulls() {
-                    Scalar::null(IDX_DTYPE)
-                } else {
-                    Scalar::new_idxsize(0)
-                };
-                Column::new_scalar(self.name().clone(), scalar, 1)
-            },
+            Column::Scalar(sc) => Self::scalar_agg_arg_min_max(sc, groups),
         }
     }
 
@@ -1081,13 +1076,30 @@ impl Column {
             .vec_hash_combine(build_hasher, hashes)
     }
 
+    /// Try to append `other` to `self` without materializing, when both are scalar columns.
+    ///
+    /// Returns whether that was possible.
+    fn try_append_scalar(&mut self, other: &Column) -> bool {
+        let (Column::Scalar(lhs), Column::Scalar(rhs)) = (&mut *self, other) else {
+            return false;
+        };
+        lhs.try_append(rhs)
+    }
+
     pub fn append(&mut self, other: &Column) -> PolarsResult<&mut Self> {
-        // @scalar-opt
+        if self.try_append_scalar(other) {
+            return Ok(self);
+        }
+
         self.into_materialized_series()
             .append(other.as_materialized_series())?;
         Ok(self)
     }
     pub fn append_owned(&mut self, other: Column) -> PolarsResult<&mut Self> {
+        if self.try_append_scalar(&other) {
+            return Ok(self);
+        }
+
         self.into_materialized_series()
             .append_owned(other.take_materialized_series())?;
         Ok(self)
@@ -1258,7 +1270,12 @@ impl Column {
     }
 
     pub fn extend(&mut self, other: &Column) -> PolarsResult<&mut Self> {
-        // @scalar-opt
+        // `extend` only differs from `append` in the chunk layout of the result, and a
+        // `ScalarColumn` has no chunks to lay out.
+        if self.try_append_scalar(other) {
+            return Ok(self);
+        }
+
         self.into_materialized_series()
             .extend(other.as_materialized_series())?;
         Ok(self)
@@ -1733,9 +1750,11 @@ impl Column {
             .quantiles_reduce(quantiles, method)
     }
 
-    pub(crate) fn estimated_size(&self) -> usize {
-        // @scalar-opt
-        self.as_materialized_series().estimated_size()
+    pub(crate) fn estimated_size(&self, expanded: bool) -> usize {
+        match self {
+            Column::Series(s) => s.estimated_size(),
+            Column::Scalar(s) => s.estimated_size(expanded),
+        }
     }
 
     pub fn sort_with(&self, options: SortOptions) -> PolarsResult<Self> {
@@ -1871,8 +1890,7 @@ impl Column {
     pub fn n_chunks(&self) -> usize {
         match self {
             Column::Series(s) => s.n_chunks(),
-            // A materialized scalar column can hold more than one chunk, and those
-            // chunks still have to take part in alignment.
+            // A materialized scalar column can hold more than one chunk.
             Column::Scalar(s) => s.lazy_as_materialized_series().map_or(1, |x| x.n_chunks()),
         }
     }

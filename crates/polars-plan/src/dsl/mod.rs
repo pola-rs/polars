@@ -644,6 +644,11 @@ impl Expr {
         self.map_ternary(FunctionExpr::ShiftAndFill, n.into(), fill_value.into())
     }
 
+    /// Single-input version of [`functions::pipe_with_dtype`].
+    pub fn pipe_with_dtype(self, callback: PlanCallback<(Vec<Expr>, Vec<DataType>), Expr>) -> Self {
+        functions::pipe_with_dtype([self], callback)
+    }
+
     /// Cumulatively count values from 0 to len.
     #[cfg(feature = "cum_agg")]
     pub fn cumulative_eval(self, evaluation: Expr, min_samples: usize) -> Self {
@@ -863,7 +868,10 @@ impl Expr {
                 }),
                 e,
             );
-            Some((Arc::new(encoded), SortOptions::default()))
+            Some((
+                Arc::new(encoded),
+                SortOptions::default().with_maintain_order(options.maintain_order),
+            ))
         });
 
         Ok(Expr::Over {

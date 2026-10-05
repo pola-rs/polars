@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 use polars_error::PolarsResult;
@@ -24,6 +25,7 @@ pub struct LineReaderBuilder {
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
+    pub task_metrics: std::sync::OnceLock<Arc<TaskMetricAggregator>>,
     pub file_read_context: std::sync::OnceLock<FileReadContext>,
 }
 
@@ -47,6 +49,10 @@ impl FileReaderBuilder for LineReaderBuilder {
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
+        if let Some(task_metrics) = execution_state.task_metrics.clone() {
+            self.task_metrics.set(task_metrics).ok().unwrap();
+        }
+
         // The maximum number of chunks actively being prefetched at any point in time.
         let prefetch_limit = std::env::var("POLARS_LINES_CHUNK_PREFETCH_LIMIT")
             .map(|x| {
@@ -143,6 +149,7 @@ impl FileReaderBuilder for LineReaderBuilder {
             },
             init_data: None,
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
+            task_metrics: self.task_metrics.get().cloned(),
         };
 
         Ok(Box::new(reader) as _)

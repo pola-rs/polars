@@ -53,7 +53,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
     );
 
     #[allow(clippy::disallowed_types)]
-    let mut cache_inputs = PlHashMap::default();
+    let mut optimized_cache_nodes = PlHashMap::default();
 
     ir_graph_traversal(
         optimize_root,
@@ -67,7 +67,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
             names_set_scratch3: &mut ScratchIndexSet::default(),
             names_vec_scratch: &mut ScratchVec::default(),
             rename_map: &mut ScratchIndexMap::default(),
-            cache_inputs: &mut cache_inputs,
+            optimized_cache_nodes: &mut optimized_cache_nodes,
             default_edge: Edge::new(
                 Projection::All,
                 None,
@@ -82,13 +82,6 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
     .continue_value()
     .unwrap();
 
-    // Assign optimized plan back to root node.
-    let IR::SimpleProjection { input, columns: _ } = ir_arena.take(root) else {
-        unreachable!()
-    };
-
-    ir_arena.swap(root, input);
-
     // Ensure cache nodes for an ID all point to same input Node.
     let cache_nodes = Vec::from_iter(
         ir_arena
@@ -97,13 +90,27 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
     );
 
     for node in cache_nodes {
-        let IR::Cache { input, id } = ir_arena.get_mut(node) else {
+        let IR::Cache { id, .. } = ir_arena.get(node) else {
             unreachable!()
         };
-        if let Some(optimized_cache) = cache_inputs.get(id) {
-            *input = *optimized_cache;
+        if let Some(optimized_cache) = optimized_cache_nodes.get(id) {
+            let IR::Cache { input, .. } = ir_arena.get(*optimized_cache) else {
+                unreachable!()
+            };
+            let optimized_input = *input;
+            let IR::Cache { input, .. } = ir_arena.get_mut(node) else {
+                unreachable!()
+            };
+            *input = optimized_input;
         }
     }
+
+    // Assign optimized plan back to root node after resolving the recorded cache node keys.
+    let IR::SimpleProjection { input, columns: _ } = ir_arena.take(root) else {
+        unreachable!()
+    };
+
+    ir_arena.swap(root, input);
 }
 
 pub struct ProjectionPushdownVisitor<'a, 'arena> {
@@ -118,7 +125,7 @@ pub struct ProjectionPushdownVisitor<'a, 'arena> {
     names_vec_scratch: &'a mut ScratchVec<PlSmallStr>,
     rename_map: &'a mut ScratchIndexMap<PlSmallStr, PlSmallStr>,
     #[allow(clippy::disallowed_types)] // We don't iterate over cache.
-    cache_inputs: &'a mut PlHashMap<UniqueId, Node>,
+    optimized_cache_nodes: &'a mut PlHashMap<UniqueId, Node>,
     default_edge: Edge,
     maintain_errors: bool,
 }
@@ -178,8 +185,9 @@ impl<'a, 'arena> NodeVisitor for ProjectionPushdownVisitor<'a, 'arena> {
                 debug_assert_eq!(inputs.len(), edges.inputs().len());
             },
 
-            IR::Cache { input, id } => {
-                self.cache_inputs.insert(*id, *input);
+            IR::Cache { id, .. } => {
+                // Nested caches can still modify this cache's input after post_visit.
+                self.optimized_cache_nodes.insert(*id, key);
             },
 
             _ => {},
@@ -824,7 +832,10 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                     self.expr_arena.replace(
                         select_len_ae_node,
-                        AExpr::Agg(IRAggExpr::Sum(predicate_node)),
+                        AExpr::Agg(IRAggExpr::Sum {
+                            input: predicate_node,
+                            null_on_empty: false,
+                        }),
                     );
 
                     *out_edge.projection_mut() = Projection::Names;
@@ -1206,7 +1217,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
             },
 
-            IR::GroupBy { apply: Some(_), .. } => {
+            // Windows are created after projection pushdown.
+            IR::GroupBy { apply: Some(_), .. } | IR::Window { .. } => {
                 post_project_and_return!()
             },
 
@@ -1387,7 +1399,10 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             dtype: DataType::UInt128,
                             options: CastOptions::Overflowing,
                         };
-                        e = AExpr::Agg(IRAggExpr::Sum(self.expr_arena.add(e)));
+                        e = AExpr::Agg(IRAggExpr::Sum {
+                            input: self.expr_arena.add(e),
+                            null_on_empty: false,
+                        });
                         e = AExpr::Cast {
                             expr: self.expr_arena.add(e),
                             dtype: DataType::IDX_DTYPE,

@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 
 use AsofStrategy::*;
-use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority, TaskScope};
 use polars_async::primitives::distributor_channel as dc;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
@@ -108,6 +108,7 @@ impl AsOfJoinNode {
         by_descending: Option<Vec<bool>>,
         by_nulls_last: Option<Vec<bool>>,
         args: JoinArgs,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         let JoinType::AsOf(ref options) = args.how else {
             unreachable!();
@@ -151,7 +152,7 @@ impl AsOfJoinNode {
             left_buffer: Default::default(),
             right_buffer: SpillFrameSearchBuffer::empty_with_schema(
                 right_input_schema,
-                RandomSpillContext::new("asof-join-search-buffer".into()),
+                RandomSpillContext::new("asof-join-search-buffer".into(), task_metrics),
             ),
             output_seq: Default::default(),
             last_non_null_row_left: None,

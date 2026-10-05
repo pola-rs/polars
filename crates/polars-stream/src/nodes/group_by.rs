@@ -12,6 +12,7 @@ use polars_expr::hot_groups::{HotGrouper, new_hash_hot_grouper};
 use polars_expr::reduce::GroupedReduction;
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_utils::cardinality_sketch::CardinalitySketch;
+use polars_utils::f2_sketch::F2Sketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -27,11 +28,6 @@ use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
 #[cfg(debug_assertions)]
-const DEFAULT_HOT_TABLE_SIZE: usize = 4;
-#[cfg(not(debug_assertions))]
-const DEFAULT_HOT_TABLE_SIZE: usize = 4096;
-
-#[cfg(debug_assertions)]
 const KEY_SLICE_SIZE: usize = 64;
 #[cfg(not(debug_assertions))]
 const KEY_SLICE_SIZE: usize = 4096;
@@ -39,6 +35,22 @@ const KEY_SLICE_SIZE: usize = 4096;
 /// The number of hot groups up to which the reductions of a sliced morsel are updated
 /// per slice.
 const MAX_SLICE_REDUCTION_GROUPS: usize = 64;
+
+/// The hot tables only grow if the frequently missed keys were missed at least this
+/// many times each.
+const HOT_TABLE_GROW_MIN_REPEAT: f64 = 8.0;
+
+/// The hot tables only grow if the frequently missed keys make up at least this
+/// fraction of the missed rows.
+const HOT_TABLE_GROW_MIN_HEAVY_SHARE: f64 = 0.5;
+
+/// The hot tables grow to hold this many slots per key they should hold, if the
+/// maximum size allows.
+const HOT_TABLE_GROW_SLOTS_PER_KEY: f64 = 1.5;
+
+/// The hot tables only grow if the keys they should hold fill at most this fraction
+/// of the slots after growing.
+const HOT_TABLE_GROW_MAX_LOAD: f64 = 0.75;
 
 struct PreAgg {
     keys: HashKeys,
@@ -52,6 +64,10 @@ struct LocalGroupBySinkState {
 
     // A cardinality sketch per partition for the keys seen by this builder.
     sketch_per_p: Vec<CardinalitySketch>,
+
+    // The number of slots of each hot grouper, and the rows missed by them.
+    hot_table_size: usize,
+    miss_f2: F2Sketch,
 
     // morsel_idxs_values_per_p[p][start..stop] contains the offsets into cold_morsels[i]
     // for partition p, where start, stop are:
@@ -85,6 +101,9 @@ impl LocalGroupBySinkState {
 
             sketch_per_p: vec![CardinalitySketch::new(); num_partitions],
 
+            hot_table_size,
+            miss_f2: F2Sketch::new(),
+
             cold_morsels: Vec::new(),
             morsel_idxs_values_per_p: vec![Vec::new(); num_partitions],
             morsel_idxs_offsets_per_p: vec![0; num_partitions],
@@ -93,41 +112,6 @@ impl LocalGroupBySinkState {
             pre_agg_idxs_values_per_p: vec![Vec::new(); num_partitions],
             pre_agg_idxs_offsets_per_p: vec![0; num_partitions],
         }
-    }
-
-    /// Resizes the hot reductions of input `input_idx` to its hot groups and feeds them
-    /// rows `hot_idxs` of `df`, which go to groups `hot_group_idxs`.
-    #[allow(clippy::too_many_arguments)]
-    async fn update_hot_reductions(
-        &mut self,
-        input_idx: usize,
-        df: &DataFrame,
-        hot_idxs: &[IdxSize],
-        hot_group_idxs: &[EvictIdx],
-        identity_idxs: &mut Vec<IdxSize>,
-        reductions_per_input: &[Vec<usize>],
-        payload: &InputPayload,
-        grouped_reduction_cols: &[Vec<PlSmallStr>],
-        exec_state: &ExecutionState,
-        seq: u64,
-    ) -> PolarsResult<()> {
-        let num_groups = self.hot_grouper_per_input[input_idx].num_groups();
-        for red_idx in &reductions_per_input[input_idx] {
-            self.hot_grouped_reductions[*red_idx].resize(num_groups);
-        }
-        payload
-            .update_reductions(
-                df,
-                hot_idxs,
-                identity_idxs,
-                grouped_reduction_cols,
-                &mut self.hot_grouped_reductions,
-                exec_state,
-                |reduction, in_cols, subset| unsafe {
-                    reduction.update_groups_while_evicting(in_cols, subset, hot_group_idxs, seq)
-                },
-            )
-            .await
     }
 
     fn flush_evictions(
@@ -141,20 +125,24 @@ impl LocalGroupBySinkState {
             .iter()
             .map(|r| self.hot_grouped_reductions[*r].take_evictions())
             .collect_vec();
-        self.add_pre_agg(hash_keys, reduction_idxs, reductions, partitioner);
+        self.add_pre_agg(hash_keys, reduction_idxs, reductions, partitioner, true);
     }
 
+    /// Adds a pre-aggregate over `hash_keys`, which count as missed by the hot table
+    /// if `is_miss`.
     fn add_pre_agg(
         &mut self,
         hash_keys: HashKeys,
         reduction_idxs: &[usize],
         reductions: Vec<Box<dyn GroupedReduction>>,
         partitioner: &HashPartitioner,
+        is_miss: bool,
     ) {
         hash_keys.gen_idxs_per_partition(
             partitioner,
             &mut self.pre_agg_idxs_values_per_p,
             &mut self.sketch_per_p,
+            is_miss.then_some(&mut self.miss_f2),
             true,
         );
         self.pre_agg_idxs_offsets_per_p
@@ -165,6 +153,65 @@ impl LocalGroupBySinkState {
             reductions,
         };
         self.pre_aggs.push(pre_agg);
+    }
+
+    /// Grows the hot tables at once to a size that holds the frequently missed keys,
+    /// if there are few enough of them and they make up enough of the missed rows.
+    fn maybe_grow_hot_tables(&mut self, max_size: usize) {
+        let size = self.hot_table_size;
+        if size >= max_size {
+            return;
+        }
+
+        // Cheap early exit before estimating the number of distinct missed keys.
+        let misses = self.miss_f2.num_inserts() as f64;
+        if misses < HOT_TABLE_GROW_MIN_REPEAT * size as f64 {
+            return;
+        }
+
+        // Model the missed rows as `heavy` keys missed `repeat` times each plus keys
+        // missed once. The row count, the distinct key count and F2 then determine
+        // both.
+        let f2 = self.miss_f2.estimate();
+        let distinct: f64 = self.sketch_per_p.iter().map(|s| s.estimate() as f64).sum();
+        let distinct = distinct.min(misses);
+        let excess = misses - distinct;
+        let denom = f2 - 2.0 * misses + distinct;
+        if excess <= 0.0 || denom <= 0.0 {
+            return;
+        }
+        let repeat = (f2 - misses) / excess;
+        let heavy = excess * excess / denom;
+        let heavy_share = heavy * repeat / misses;
+        if repeat < HOT_TABLE_GROW_MIN_REPEAT || heavy_share < HOT_TABLE_GROW_MIN_HEAVY_SHARE {
+            return;
+        }
+
+        let num_hot_keys = self
+            .hot_grouper_per_input
+            .iter()
+            .map(|g| g.num_groups() as usize)
+            .max()
+            .unwrap_or(0);
+        let want = num_hot_keys as f64 + heavy;
+        let new_size = ((HOT_TABLE_GROW_SLOTS_PER_KEY * want) as usize)
+            .next_power_of_two()
+            .min(max_size);
+        if new_size <= size || want > HOT_TABLE_GROW_MAX_LOAD * new_size as f64 {
+            return;
+        }
+
+        for hot_grouper in &mut self.hot_grouper_per_input {
+            while hot_grouper.num_slots() < new_size {
+                hot_grouper.double();
+            }
+        }
+        self.hot_table_size = new_size;
+        if polars_config::config().verbose() {
+            eprintln!(
+                "[group-by]: hot table {size} -> {new_size} slots (missed rows: {misses}, distinct: {distinct:.0}, heavy keys: {heavy:.0}, repeat: {repeat:.1}, heavy share: {heavy_share:.2})"
+            );
+        }
     }
 }
 
@@ -268,6 +315,7 @@ struct GroupBySinkState {
     random_state: PlRandomState,
     partitioner: HashPartitioner,
     has_order_sensitive_agg: bool,
+    max_hot_table_size: usize,
 
     estimated_groups: Metric<kind::Sum>,
     actual_groups: Metric<kind::Sum>,
@@ -290,6 +338,7 @@ impl GroupBySinkState {
             let random_state = &self.random_state;
             let partitioner = self.partitioner.clone();
             let has_order_sensitive_agg = self.has_order_sensitive_agg;
+            let max_hot_table_size = self.max_hot_table_size;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut hot_idxs = Vec::new();
                 let mut hot_group_idxs = Vec::new();
@@ -324,9 +373,13 @@ impl GroupBySinkState {
                         && local.hot_grouper_per_input[input_idx].num_groups() as usize
                             <= MAX_SLICE_REDUCTION_GROUPS;
                     all_hot_per_input[input_idx] = true;
+                    let mut evictions_before = 0;
                     for offset in (0..df.height()).step_by(slice_size) {
                         // Compute hot group indices from key.
                         let hot_grouper = &mut local.hot_grouper_per_input[input_idx];
+                        if hot_idxs.is_empty() {
+                            evictions_before = hot_grouper.num_evictions();
+                        }
                         let slice_keys = keys.slice(offset as i64, slice_size);
                         let hash_keys =
                             HashKeys::from_df(&slice_keys, random_state.clone(), true, false);
@@ -359,6 +412,7 @@ impl GroupBySinkState {
                                         &partitioner,
                                         &mut local.morsel_idxs_values_per_p,
                                         &mut local.sketch_per_p,
+                                        Some(&mut local.miss_f2),
                                         true,
                                     );
                                 }
@@ -372,6 +426,7 @@ impl GroupBySinkState {
                                     &partitioner,
                                     &mut local.morsel_idxs_values_per_p,
                                     &mut local.sketch_per_p,
+                                    Some(&mut local.miss_f2),
                                     true,
                                 );
                             }
@@ -389,18 +444,37 @@ impl GroupBySinkState {
                             } else {
                                 &df
                             };
-                            local
-                                .update_hot_reductions(
-                                    input_idx,
+                            let has_evictions = local.hot_grouper_per_input[input_idx]
+                                .num_evictions()
+                                != evictions_before;
+                            let num_groups = local.hot_grouper_per_input[input_idx].num_groups();
+                            for red_idx in &reductions_per_input[input_idx] {
+                                local.hot_grouped_reductions[*red_idx].resize(num_groups);
+                            }
+                            payload
+                                .update_reductions(
                                     reduce_df,
                                     &hot_idxs,
-                                    &hot_group_idxs,
                                     &mut identity_idxs,
-                                    reductions_per_input,
-                                    payload,
                                     grouped_reduction_cols,
+                                    &mut local.hot_grouped_reductions,
                                     &state.in_memory_exec_state,
-                                    seq,
+                                    |reduction, in_cols, subset| unsafe {
+                                        if has_evictions {
+                                            reduction.update_groups_while_evicting(
+                                                in_cols,
+                                                subset,
+                                                &hot_group_idxs,
+                                                seq,
+                                            )
+                                        } else {
+                                            let group_idxs =
+                                                EvictIdx::cast_to_idxs(&hot_group_idxs);
+                                            reduction.update_groups_subset(
+                                                in_cols, subset, group_idxs, seq,
+                                            )
+                                        }
+                                    },
                                 )
                                 .await?;
                             hot_idxs.clear();
@@ -417,6 +491,8 @@ impl GroupBySinkState {
                             &partitioner,
                         );
                     }
+
+                    local.maybe_grow_hot_tables(max_hot_table_size);
                 }
                 Ok(())
             }));
@@ -425,8 +501,9 @@ impl GroupBySinkState {
 
     fn combine_locals(
         &mut self,
-        exec_state: &ExecutionState,
+        state: &StreamingExecutionState,
     ) -> PolarsResult<Vec<GroupByPartition>> {
+        let exec_state = &state.in_memory_exec_state;
         // Finalize pre-aggregations.
         RAYON.install(|| {
             self.locals
@@ -450,7 +527,7 @@ impl GroupBySinkState {
                             .iter()
                             .map(|r| opt_hot_reductions[*r].take().unwrap())
                             .collect_vec();
-                        l.add_pre_agg(hot_keys, r_idxs, hot_reductions, &self.partitioner);
+                        l.add_pre_agg(hot_keys, r_idxs, hot_reductions, &self.partitioner, false);
                     }
                 });
         });
@@ -487,7 +564,7 @@ impl GroupBySinkState {
         let estimated_groups_metric = &self.estimated_groups.reporter();
         let actual_groups_metric = &self.actual_groups.reporter();
 
-        executor::task_scope(|s| {
+        executor::task_scope(state.task_metrics(), |s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_morsels_per_local = Arc::new(morsels_per_local);
@@ -745,9 +822,13 @@ impl GroupByNode {
         has_order_sensitive_agg: bool,
         metrics_registry: NodeMetricsRegistry,
     ) -> Self {
-        let hot_table_size = std::env::var("POLARS_HOT_TABLE_SIZE")
-            .map(|sz| sz.parse::<usize>().unwrap())
-            .unwrap_or(DEFAULT_HOT_TABLE_SIZE);
+        let config = polars_config::config();
+        let hot_table_size = (config.hot_table_size() as usize)
+            .next_power_of_two()
+            .max(2);
+        let max_hot_table_size = (config.max_hot_table_size() as usize)
+            .next_power_of_two()
+            .max(hot_table_size);
         let num_inputs = key_selectors_per_input.len();
         let num_partitions = num_pipelines;
         let locals = (0..num_pipelines)
@@ -775,6 +856,7 @@ impl GroupByNode {
                 locals,
                 partitioner,
                 has_order_sensitive_agg,
+                max_hot_table_size,
                 estimated_groups: metrics_registry
                     .new_counter("group_by.estimated_groups", MetricUnit::Unit),
                 actual_groups: metrics_registry
@@ -784,7 +866,10 @@ impl GroupByNode {
             num_inputs,
             num_pipelines,
             output_schema,
-            spill_ctx: MostRecentSpillContext::new("group-by".into()),
+            spill_ctx: MostRecentSpillContext::new(
+                "group-by".into(),
+                metrics_registry.task_metrics(),
+            ),
         }
     }
 }
@@ -815,7 +900,7 @@ impl ComputeNode for GroupByNode {
                 else {
                     unreachable!()
                 };
-                let partitions = sink.combine_locals(&state.in_memory_exec_state)?;
+                let partitions = sink.combine_locals(state)?;
                 let dfs = RAYON.install(|| {
                     partitions
                         .into_par_iter()

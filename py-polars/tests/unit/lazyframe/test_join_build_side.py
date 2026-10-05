@@ -152,6 +152,61 @@ def test_cross_join_estimate_uses_the_range_a_filter_keeps(tmp_path: Path) -> No
     assert q.select(pl.len()).collect(engine="streaming").item() == 640_000
 
 
+@pytest.mark.parametrize("keep", ["head", "tail"])
+def test_cross_join_estimate_uses_the_range_of_sampled_row_groups(
+    tmp_path: Path, keep: str
+) -> None:
+    # More row groups than the planner reads statistics from, so it only sees a
+    # sample of their ranges. The filter keeps 0.1% of the sorted left side, at
+    # either end of the range.
+    tmp_path.mkdir(exist_ok=True)
+    pl.DataFrame({"k": range(20_000)}).write_parquet(
+        tmp_path / "big.parquet", row_group_size=2
+    )
+    pl.DataFrame({"k": range(2_000), "w": range(2_000)}).write_parquet(
+        tmp_path / "small.parquet"
+    )
+    kept = pl.col("k") < 20 if keep == "head" else pl.col("k") >= 19_980
+    big = pl.scan_parquet(tmp_path / "big.parquet").filter(kept)
+    small = pl.scan_parquet(tmp_path / "small.parquet")
+    joined = small.join(small, on="k", suffix="_r").select("w")
+
+    q = big.join(joined, how="cross")
+    assert cross_join_build_side(q.explain()) == "PreferLeft"
+    assert q.select(pl.len()).collect(engine="streaming").item() == 40_000
+
+
+@pytest.mark.parametrize(
+    ("n_columns", "n_row_groups", "expected"),
+    [
+        # The planner reads row groups 0, 4 and 8; the filter keeps only the last.
+        (2_049, 12, "PreferRight"),
+        # It reads only row group 0, which says nothing about the others.
+        (4_097, 2, None),
+    ],
+)
+def test_filter_past_the_sampled_row_groups_is_not_estimated_empty(
+    tmp_path: Path, n_columns: int, n_row_groups: int, expected: str | None
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    # `k` is the index of its row group; the many columns make the planner sample.
+    n = 100 * n_row_groups
+    pl.DataFrame({"k": [i // 100 for i in range(n)], "v": range(n)}).with_columns(
+        pl.lit(0).alias(f"c{i}") for i in range(n_columns - 2)
+    ).write_parquet(tmp_path / "wide.parquet", row_group_size=100)
+    pl.DataFrame({"k": range(10), "w": range(10)}).write_parquet(
+        tmp_path / "small.parquet"
+    )
+    last = pl.col("k") >= n_row_groups - 1
+    wide = pl.scan_parquet(tmp_path / "wide.parquet").filter(last).select("v")
+    small = pl.scan_parquet(tmp_path / "small.parquet")
+    joined = small.join(small, on="k", suffix="_r").select("w")
+
+    q = wide.join(joined, how="cross")
+    assert cross_join_build_side(q.explain()) == expected
+    assert q.select(pl.len()).collect(engine="streaming").item() == 1_000
+
+
 def test_no_cross_join_build_side_for_similar_sizes(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     for name in ("a", "b"):
