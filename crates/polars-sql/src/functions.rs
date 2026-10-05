@@ -6,17 +6,15 @@ use polars_core::prelude::{
     polars_err,
 };
 use polars_defs::expr::UnicodeForm;
-#[cfg(feature = "rank")]
-use polars_defs::expr::{RankMethod, RankOptions};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "approx_quantile")]
 use polars_lazy::prelude::ApproxQuantileMethod;
 use polars_plan::dsl::functions::{
-    as_struct, coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal,
-    min_horizontal, when,
+    coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal, min_horizontal,
+    when,
 };
 use polars_plan::dsl::{FunctionExpr, SqlBinaryOp, SqlFunction};
-use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
+use polars_plan::plans::{DynLiteralValue, LiteralValue, RowEncodingVariant, typed_lit};
 use polars_plan::prelude::StrptimeOptions;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
@@ -831,7 +829,6 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT RANK() OVER (ORDER BY col1) FROM df;
     /// SELECT RANK() OVER (PARTITION BY col1 ORDER BY col2 DESC) FROM df;
     /// ```
-    #[cfg(feature = "rank")]
     Rank,
     /// SQL 'dense_rank' function.
     /// Returns the rank of each row within a window partition, without gaps for ties.
@@ -840,8 +837,27 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT DENSE_RANK() OVER (ORDER BY col1) FROM df;
     /// SELECT DENSE_RANK() OVER (PARTITION BY col1 ORDER BY col2 DESC) FROM df;
     /// ```
-    #[cfg(feature = "rank")]
     DenseRank,
+    /// SQL 'percent_rank' function.
+    /// Returns `(rank - 1) / (rows in partition - 1)`, or 0 for a partition of one row.
+    /// ```sql
+    /// SELECT PERCENT_RANK() OVER (ORDER BY col1) FROM df;
+    /// ```
+    PercentRank,
+    /// SQL 'cume_dist' function.
+    /// Returns the fraction of rows in the partition that come before the current row or are
+    /// equal to it.
+    /// ```sql
+    /// SELECT CUME_DIST() OVER (ORDER BY col1) FROM df;
+    /// ```
+    CumeDist,
+    /// SQL 'ntile' function.
+    /// Splits the partition into `n` buckets of near-equal size and returns the bucket number,
+    /// starting from 1. The first buckets get one more row when the rows don't split evenly.
+    /// ```sql
+    /// SELECT NTILE(4) OVER (ORDER BY col1) FROM df;
+    /// ```
+    Ntile,
 
     // ----
     // Column selection
@@ -903,6 +919,7 @@ impl PolarsSQLFunctions {
             "covar",
             "covar_pop",
             "covar_samp",
+            "cume_dist",
             "date",
             "date_part",
             "day",
@@ -944,8 +961,10 @@ impl PolarsSQLFunctions {
             "minute",
             "mod",
             "month",
+            "ntile",
             "nullif",
             "octet_length",
+            "percent_rank",
             "pi",
             "pow",
             "power",
@@ -1155,13 +1174,14 @@ impl PolarsSQLFunctions {
             // ----
             // Window functions
             // ----
-            #[cfg(feature = "rank")]
+            "cume_dist" => Self::CumeDist,
             "dense_rank" => Self::DenseRank,
             "first_value" => Self::FirstValue,
             "last_value" => Self::LastValue,
             "lag" => Self::Lag,
             "lead" => Self::Lead,
-            #[cfg(feature = "rank")]
+            "ntile" => Self::Ntile,
+            "percent_rank" => Self::PercentRank,
             "rank" => Self::Rank,
             "row_number" => Self::RowNumber,
 
@@ -1831,51 +1851,15 @@ impl SQLFunctionVisitor<'_> {
             },
             Lag => self.visit_window_offset_function(1),
             Lead => self.visit_window_offset_function(-1),
-            #[cfg(feature = "rank")]
-            Rank | DenseRank => {
-                let (func_name, rank_method) = match function_name {
-                    Rank => ("RANK", RankMethod::Min),
-                    DenseRank => ("DENSE_RANK", RankMethod::Dense),
-                    _ => unreachable!(),
-                };
-                let args = extract_args(function)?;
-                if !args.is_empty() {
-                    polars_bail!(SQLSyntax: "{} expects 0 arguments (found {})", func_name, args.len());
-                }
-                let order_by = match &self.window {
-                    Some(spec) if !spec.order_by.is_empty() => spec.order_by.clone(),
-                    _ => {
-                        polars_bail!(SQLSyntax: "{} requires an OVER clause with ORDER BY", func_name)
-                    },
-                };
-                let (order_exprs, sort_opts) = self.parse_order_by_in_window(&order_by)?;
-                let rank_expr = if order_exprs.len() == 1 {
-                    order_exprs[0].clone().rank(
-                        RankOptions {
-                            method: rank_method,
-                            descending: sort_opts.descending,
-                        },
-                        None,
-                    )
-                } else {
-                    as_struct(order_exprs).rank(
-                        RankOptions {
-                            method: rank_method,
-                            descending: sort_opts.descending,
-                        },
-                        None,
-                    )
-                };
-                self.apply_window_spec(rank_expr)
-            },
+            Rank | DenseRank | PercentRank | CumeDist => self.visit_rank_function(&function_name),
+            Ntile => self.visit_ntile(),
             RowNumber => {
                 let args = extract_args(function)?;
                 if !args.is_empty() {
                     polars_bail!(SQLSyntax: "ROW_NUMBER expects 0 arguments (found {})", args.len());
                 }
-                // note: SQL is 1-indexed
-                let row_num_expr = int_range(lit(0i64), len(), 1, DataType::UInt32) + lit(1u32);
-                self.apply_window_spec(row_num_expr)
+                let (row_index, _) = window_row_index();
+                self.apply_window_spec(row_index + lit(1i64))
             },
 
             // ----
@@ -1883,6 +1867,92 @@ impl SQLFunctionVisitor<'_> {
             // ----
             Udf(func_name) => self.visit_udf(&func_name),
         }
+    }
+
+    /// RANK, DENSE_RANK, PERCENT_RANK and CUME_DIST. The window sorts each partition, so rows
+    /// with equal ORDER BY values (peers) are next to each other and get the same result.
+    /// Without ORDER BY, all rows of the partition are peers.
+    fn visit_rank_function(&mut self, function: &PolarsSQLFunctions) -> PolarsResult<Expr> {
+        use PolarsSQLFunctions::*;
+        let args = extract_args(self.func)?;
+        if !args.is_empty() {
+            polars_bail!(SQLSyntax: "{} expects 0 arguments (found {})", self.func.name, args.len());
+        }
+        let Some(spec) = &self.window else {
+            polars_bail!(SQLSyntax: "{} requires an OVER clause", self.func.name);
+        };
+        let keys = spec
+            .order_by
+            .clone()
+            .iter()
+            .map(|o| parse_sql_expr(&o.expr, self.ctx, self.active_schema))
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        let (row_index, n) = window_row_index();
+        let row_number = row_index.clone() + lit(1i64);
+        // A row is the first (last) of its peers if a key differs from the row before (after).
+        let mut is_first_peer = row_index.clone().eq(lit(0i64));
+        let mut is_last_peer = row_index.eq(n.clone() - lit(1i64));
+        for key in keys {
+            is_first_peer = is_first_peer.or(key.clone().neq_missing(key.clone().shift(lit(1))));
+            is_last_peer = is_last_peer.or(key.clone().neq_missing(key.shift(lit(-1))));
+        }
+        // The row number of the first peer.
+        let rank = when(is_first_peer.clone())
+            .then(row_number.clone())
+            .otherwise(lit(0i64))
+            .cum_max(false);
+
+        let expr = match function {
+            Rank => rank,
+            DenseRank => is_first_peer.cast(DataType::Int64).cum_sum(false),
+            PercentRank => when(n.clone().gt(lit(1i64)))
+                .then((rank - lit(1i64)).cast(DataType::Float64) / (n - lit(1i64)))
+                .otherwise(lit(0.0)),
+            CumeDist => {
+                // The row number of the last peer.
+                let last_peer = when(is_last_peer)
+                    .then(row_number)
+                    .otherwise(n.clone())
+                    .cum_min(true);
+                last_peer.cast(DataType::Float64) / n
+            },
+            _ => unreachable!(),
+        };
+        self.apply_window_spec(expr)
+    }
+
+    /// NTILE(k): with `q = n / k` and `rem = n % k` for `n` rows, the first `rem` buckets get
+    /// `q + 1` rows and the others get `q` rows.
+    fn visit_ntile(&mut self) -> PolarsResult<Expr> {
+        if self.window.is_none() {
+            polars_bail!(SQLSyntax: "NTILE requires an OVER clause");
+        }
+        let args = extract_args(self.func)?;
+        let buckets = match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => {
+                match parse_sql_expr(sql_expr, self.ctx, self.active_schema)? {
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
+                        i64::try_from(n).ok().filter(|n| *n > 0)
+                    },
+                    _ => None,
+                }
+            },
+            _ => polars_bail!(SQLSyntax: "NTILE expects 1 argument (found {})", args.len()),
+        };
+        let Some(buckets) = buckets else {
+            polars_bail!(SQLSyntax: "NTILE expects a positive integer number of buckets");
+        };
+
+        let (row_index, n) = window_row_index();
+        let buckets = lit(buckets);
+        let q = n.clone().floor_div(buckets.clone());
+        let rem = n % buckets;
+        let rows_in_larger_buckets = rem.clone() * (q.clone() + lit(1i64));
+        let bucket = when(row_index.clone().lt(rows_in_larger_buckets))
+            .then(row_index.clone().floor_div(q.clone() + lit(1i64)))
+            .otherwise((row_index - rem).floor_div(q));
+        self.apply_window_spec(bucket + lit(1i64))
     }
 
     fn visit_window_offset_function(&mut self, offset_multiplier: i64) -> PolarsResult<Expr> {
@@ -2087,18 +2157,9 @@ impl SQLFunctionVisitor<'_> {
         &mut self,
         f: impl Fn(Expr) -> Expr,
         cumulative_fn: impl Fn(Expr, bool) -> Expr,
-        WindowSpec {
-            partition_by,
-            order_by,
-            window_frame,
-            ..
-        }: &WindowSpec,
+        WindowSpec { order_by, .. }: &WindowSpec,
     ) -> PolarsResult<Expr> {
-        self.validate_window_frame(window_frame)?;
-
         if !order_by.is_empty() {
-            let (order_by_exprs, sort_opts) = self.parse_order_by_in_window(order_by)?;
-
             // Get the base expr/column
             let args = extract_args(self.func)?;
             let base_expr = match args.as_slice() {
@@ -2107,25 +2168,11 @@ impl SQLFunctionVisitor<'_> {
                 },
                 _ => return self.not_supported_error(),
             };
-            let partition_by_exprs = if partition_by.is_empty() {
-                None
-            } else {
-                Some(
-                    partition_by
-                        .iter()
-                        .map(|p| parse_sql_expr(p, self.ctx, self.active_schema))
-                        .collect::<PolarsResult<Vec<_>>>()?,
-                )
-            };
 
             // Apply cumulative function; the forward-fill ensures we match SQL semantics
             let cumulative_expr = cumulative_fn(base_expr, false)
                 .fill_null_with_strategy(FillNullStrategy::Forward(None));
-            cumulative_expr.over_with_options(
-                partition_by_exprs,
-                Some((order_by_exprs, sort_opts)),
-                Default::default(),
-            )
+            self.apply_window_spec(cumulative_expr)
         } else {
             self.visit_unary(f)
         }
@@ -2706,35 +2753,44 @@ impl SQLFunctionVisitor<'_> {
     }
 
     /// Parse ORDER BY (in OVER clause), validating that all keys sort alike.
+    /// The sort key of a window ORDER BY. Several keys are row-encoded into one, so that each
+    /// key keeps its own direction and NULL order.
     fn parse_order_by_in_window(
         &mut self,
         order_by: &[OrderByExpr],
-    ) -> PolarsResult<(Vec<Expr>, SortOptions)> {
-        let Some(first) = order_by.first() else {
-            return Ok((Vec::new(), SortOptions::default()));
-        };
-        // TODO: per-key sort options are not currently supported; we need to
-        //  enhance `over_with_options` to take SortMultipleOptions
+    ) -> PolarsResult<Option<(Expr, SortOptions)>> {
         // Rows with equal keys (peers) may be processed in any order.
-        let sort_options = order_by_sort_options(&first.options).with_maintain_order(false);
-        let mut exprs = Vec::with_capacity(order_by.len());
-        for o in order_by {
-            let options = order_by_sort_options(&o.options);
-            if options.descending != sort_options.descending {
-                polars_bail!(
-                    SQLSyntax:
-                    "OVER does not (yet) support mixed asc/desc directions for ORDER BY"
-                )
-            }
-            if options.nulls_last != sort_options.nulls_last {
-                polars_bail!(
-                    SQLSyntax:
-                    "OVER does not (yet) support mixed NULLS FIRST/LAST ordering for ORDER BY"
-                )
-            }
-            exprs.push(parse_sql_expr(&o.expr, self.ctx, self.active_schema)?);
+        match order_by {
+            [] => Ok(None),
+            [o] => {
+                let key = parse_sql_expr(&o.expr, self.ctx, self.active_schema)?;
+                let options = order_by_sort_options(&o.options).with_maintain_order(false);
+                Ok(Some((key, options)))
+            },
+            _ => {
+                let mut keys = Vec::with_capacity(order_by.len());
+                let mut descending = Vec::with_capacity(order_by.len());
+                let mut nulls_last = Vec::with_capacity(order_by.len());
+                for o in order_by {
+                    let options = order_by_sort_options(&o.options);
+                    keys.push(parse_sql_expr(&o.expr, self.ctx, self.active_schema)?);
+                    descending.push(options.descending);
+                    nulls_last.push(options.nulls_last);
+                }
+                let key = Expr::n_ary(
+                    FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
+                        descending: Some(descending),
+                        nulls_last: Some(nulls_last),
+                        broadcast_nulls: None,
+                    }),
+                    keys,
+                );
+                Ok(Some((
+                    key,
+                    SortOptions::default().with_maintain_order(false),
+                )))
+            },
         }
-        Ok((exprs, sort_options))
     }
 
     fn apply_window_spec(&mut self, expr: Expr) -> PolarsResult<Expr> {
@@ -2752,12 +2808,9 @@ impl SQLFunctionVisitor<'_> {
             }
         }
         let partition_by = (!partition_by.is_empty()).then_some(partition_by);
-        let order_by = if window_spec.order_by.is_empty() {
-            None
-        } else {
-            let (order_exprs, sort_opts) = self.parse_order_by_in_window(&window_spec.order_by)?;
-            Some((order_exprs, sort_opts))
-        };
+        let order_by = self
+            .parse_order_by_in_window(&window_spec.order_by)?
+            .map(|(key, options)| (vec![key], options));
 
         // Apply window spec; an empty window still has to be told apart from an
         // aggregate (see `GroupScope::mark_whole_frame_windows`).
@@ -2778,6 +2831,12 @@ impl SQLFunctionVisitor<'_> {
             self.func.to_string()
         );
     }
+}
+
+/// The row index (from 0) in the window partition, and the number of rows in it.
+fn window_row_index() -> (Expr, Expr) {
+    let n = len().cast(DataType::Int64);
+    (int_range(lit(0i64), n.clone(), 1, DataType::Int64), n)
 }
 
 /// SQL semantics require `NULL` when there are no complete (eg: both non-null)

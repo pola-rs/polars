@@ -78,7 +78,7 @@ def test_modulo() -> None:
                 "c4": [3, 0, 1, 2, 3],
                 "d55": [0.0, 0.5, 2.0, None, 3.5],
             },
-            schema_overrides={"idx": pl.UInt32},
+            schema_overrides={"idx": pl.Int64},
         ),
     )
 
