@@ -67,7 +67,6 @@ enum Lookup {
     /// Only the null count of the haystack matters.
     NullNeedle,
     Primitive(Box<dyn PrimitiveProbe>),
-    /// Category ids, which only mean something while their mapping is alive.
     #[cfg(feature = "dtype-categorical")]
     Categorical {
         mapping: Arc<CategoricalMapping>,
