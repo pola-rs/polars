@@ -37,7 +37,8 @@ use sqlparser::keywords;
 use sqlparser::parser::{Parser, ParserOptions};
 use sqlparser::tokenizer::Token;
 
-use crate::functions::SQLFunctionVisitor;
+use crate::functions::{PolarsSQLFunctions, SQLFunctionVisitor};
+use crate::group_context::{has_marked_aggregate, mark_aggregate};
 use crate::literal_folding::{
     decimal_lit, fold_scalar, parse_exact_literal, try_fold_decimal_arithmetic,
 };
@@ -1120,11 +1121,16 @@ impl SQLExprVisitor<'_> {
         self.ctx.group_scope.in_window = in_window;
         let expr = expr?;
 
-        if in_window && !is_window {
-            let empty = Schema::default();
-            return self
-                .ctx
-                .mark_aggregate_call(expr, self.active_schema.unwrap_or(&empty));
+        if !is_window
+            && (in_window || self.ctx.group_scope.mark_aggregates)
+            && PolarsSQLFunctions::is_aggregate_call(function, self.ctx, &expr)?
+        {
+            // A window reads each aggregate in its inputs as one value per group.
+            polars_ensure!(
+                !in_window || !has_marked_aggregate(&expr),
+                SQLSyntax: "aggregate function calls cannot be nested"
+            );
+            return Ok(mark_aggregate(expr));
         }
         Ok(expr)
     }
