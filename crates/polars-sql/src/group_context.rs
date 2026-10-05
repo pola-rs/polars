@@ -173,6 +173,20 @@ impl GroupContextSplitter<'_> {
         }
     }
 
+    /// Read the group keys in `expr`, which runs in the group context, as one value per
+    /// group, as HAVING reads them.
+    pub(crate) fn read_keys_per_group(&self, expr: Expr) -> Expr {
+        if self.key_exprs.iter().any(|(key, _)| *key == expr) {
+            return expr.first();
+        }
+        match expr {
+            e if is_marked_aggregate(&e) || self.is_group_value(&e) => e,
+            e => e
+                .map_children(&mut |c, _| Ok(self.read_keys_per_group(c)), &mut ())
+                .unwrap(),
+        }
+    }
+
     /// Bind an input of a window function to the aggregated rows: an aggregate reads its
     /// hoisted output and a group key reads its key column.
     fn bind_window_input(&mut self, expr: Expr) -> PolarsResult<Expr> {

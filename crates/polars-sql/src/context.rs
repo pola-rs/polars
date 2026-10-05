@@ -3506,7 +3506,9 @@ impl SQLContext {
             None => {
                 let group_by = lf.group_by(group_by_keys);
                 match having {
-                    Some(having) => group_by.having(strip_aggregate_marks(having)),
+                    Some(having) => {
+                        group_by.having(strip_aggregate_marks(splitter.read_keys_per_group(having)))
+                    },
                     None => group_by,
                 }
                 .agg(strip_group_implode(splitter.aggregates.into_exprs()))
