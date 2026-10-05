@@ -854,6 +854,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'ntile' function.
     /// Splits the partition into `n` buckets of near-equal size and returns the bucket number,
     /// starting from 1. The first buckets get one more row when the rows don't split evenly.
+    /// `n` must be a positive integer literal.
     /// ```sql
     /// SELECT NTILE(4) OVER (ORDER BY col1) FROM df;
     /// ```
@@ -1878,48 +1879,46 @@ impl SQLFunctionVisitor<'_> {
         if !args.is_empty() {
             polars_bail!(SQLSyntax: "{} expects 0 arguments (found {})", self.func.name, args.len());
         }
-        let Some(spec) = &self.window else {
+        if self.window.is_none() {
             polars_bail!(SQLSyntax: "{} requires an OVER clause", self.func.name);
-        };
-        let order_by = spec.order_by.clone();
-        let keys = self.parse_window_order_keys(&order_by)?;
+        }
+        // The same keys sort the window and find the peers.
+        let order_keys = self.parse_window_order_keys()?;
+        let keys: Vec<Expr> = order_keys.iter().map(|(key, _)| key.clone()).collect();
 
         let (row_index, n) = window_row_index();
         let row_number = row_index.clone() + lit(1i64);
-        // A row is the first (last) of its peers if a key differs from the row before (after).
-        let mut is_first_peer = row_index.clone().eq(lit(0i64));
-        let mut is_last_peer = row_index.eq(n.clone() - lit(1i64));
-        for (key, _) in keys {
-            is_first_peer = is_first_peer.or(key.clone().neq_missing(key.clone().shift(lit(1))));
-            is_last_peer = is_last_peer.or(key.clone().neq_missing(key.shift(lit(-1))));
-        }
         // The row number of the first peer.
-        let rank = when(is_first_peer.clone())
-            .then(row_number.clone())
-            .otherwise(lit(0i64))
-            .cum_max(false);
+        let rank = || {
+            when(is_first_peer(&keys, &row_index))
+                .then(row_number.clone())
+                .otherwise(lit(0i64))
+                .cum_max(false)
+        };
 
         let expr = match function {
-            Rank => rank,
-            DenseRank => is_first_peer.cast(DataType::Int64).cum_sum(false),
+            Rank => rank(),
+            DenseRank => is_first_peer(&keys, &row_index)
+                .cast(DataType::Int64)
+                .cum_sum(false),
             PercentRank => when(n.clone().gt(lit(1i64)))
-                .then((rank - lit(1i64)).cast(DataType::Float64) / (n - lit(1i64)))
+                .then((rank() - lit(1i64)).cast(DataType::Float64) / (n - lit(1i64)))
                 .otherwise(lit(0.0)),
             CumeDist => {
                 // The row number of the last peer.
-                let last_peer = when(is_last_peer)
-                    .then(row_number)
+                let last_peer = when(is_last_peer(&keys, &row_index, &n))
+                    .then(row_number.clone())
                     .otherwise(n.clone())
                     .cum_min(true);
                 last_peer.cast(DataType::Float64) / n
             },
             _ => unreachable!(),
         };
-        self.apply_window_spec(expr)
+        self.apply_window_spec_with_order_keys(expr, order_keys)
     }
 
-    /// NTILE(k): with `q = n / k` and `rem = n % k` for `n` rows, the first `rem` buckets get
-    /// `q + 1` rows and the others get `q` rows.
+    /// NTILE(k), with `k` a positive integer literal: with `q = n / k` and `rem = n % k` for `n`
+    /// rows, the first `rem` buckets get `q + 1` rows and the others get `q` rows.
     fn visit_ntile(&mut self) -> PolarsResult<Expr> {
         if self.window.is_none() {
             polars_bail!(SQLSyntax: "NTILE requires an OVER clause");
@@ -1937,7 +1936,7 @@ impl SQLFunctionVisitor<'_> {
             _ => polars_bail!(SQLSyntax: "NTILE expects 1 argument (found {})", args.len()),
         };
         let Some(buckets) = buckets else {
-            polars_bail!(SQLSyntax: "NTILE expects a positive integer number of buckets");
+            polars_bail!(SQLSyntax: "NTILE expects a positive integer literal as the number of buckets");
         };
 
         let (row_index, n) = window_row_index();
@@ -2748,14 +2747,15 @@ impl SQLFunctionVisitor<'_> {
         self.apply_order_by(expr, order_by)
     }
 
-    /// The keys of a window ORDER BY with their sort options. Constant keys, as `1`, are left
-    /// out, as they don't change the order.
-    fn parse_window_order_keys(
-        &mut self,
-        order_by: &[OrderByExpr],
-    ) -> PolarsResult<Vec<(Expr, SortOptions)>> {
+    /// The keys of the window ORDER BY with their sort options. Input-independent scalar keys,
+    /// as `1`, are left out, as they don't change the order.
+    fn parse_window_order_keys(&mut self) -> PolarsResult<Vec<(Expr, SortOptions)>> {
+        let Some(spec) = &self.window else {
+            return Ok(Vec::new());
+        };
+        let order_by = spec.order_by.clone();
         let mut keys = Vec::with_capacity(order_by.len());
-        for o in order_by {
+        for o in &order_by {
             let key = parse_sql_expr(&o.expr, self.ctx, self.active_schema)?;
             if !is_constant_key(&key) {
                 keys.push((key, order_by_sort_options(&o.options)));
@@ -2764,39 +2764,17 @@ impl SQLFunctionVisitor<'_> {
         Ok(keys)
     }
 
-    /// The sort key of a window ORDER BY. Several keys are row-encoded into one, so that each
-    /// key keeps its own direction and NULL order.
-    fn parse_order_by_in_window(
-        &mut self,
-        order_by: &[OrderByExpr],
-    ) -> PolarsResult<Option<(Expr, SortOptions)>> {
-        let mut keys = self.parse_window_order_keys(order_by)?;
-        // Rows with equal keys (peers) may be processed in any order.
-        Ok(match keys.len() {
-            0 => None,
-            1 => {
-                let (key, options) = keys.pop().unwrap();
-                Some((key, options.with_maintain_order(false)))
-            },
-            _ => {
-                let (descending, nulls_last) = keys
-                    .iter()
-                    .map(|(_, options)| (options.descending, options.nulls_last))
-                    .unzip();
-                let key = Expr::n_ary(
-                    FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
-                        descending: Some(descending),
-                        nulls_last: Some(nulls_last),
-                        broadcast_nulls: None,
-                    }),
-                    keys.into_iter().map(|(key, _)| key).collect(),
-                );
-                Some((key, SortOptions::default().with_maintain_order(false)))
-            },
-        })
+    fn apply_window_spec(&mut self, expr: Expr) -> PolarsResult<Expr> {
+        let order_keys = self.parse_window_order_keys()?;
+        self.apply_window_spec_with_order_keys(expr, order_keys)
     }
 
-    fn apply_window_spec(&mut self, expr: Expr) -> PolarsResult<Expr> {
+    /// `apply_window_spec` with the ORDER BY keys from `parse_window_order_keys`.
+    fn apply_window_spec_with_order_keys(
+        &mut self,
+        expr: Expr,
+        order_keys: Vec<(Expr, SortOptions)>,
+    ) -> PolarsResult<Expr> {
         let Some(window_spec) = self.window.clone() else {
             return Ok(expr);
         };
@@ -2811,9 +2789,7 @@ impl SQLFunctionVisitor<'_> {
             }
         }
         let partition_by = (!partition_by.is_empty()).then_some(partition_by);
-        let order_by = self
-            .parse_order_by_in_window(&window_spec.order_by)?
-            .map(|(key, options)| (vec![key], options));
+        let order_by = window_sort_key(order_keys).map(|(key, options)| (vec![key], options));
 
         // Apply window spec; an empty window still has to be told apart from an
         // aggregate (see `GroupScope::mark_whole_frame_windows`).
@@ -2836,9 +2812,54 @@ impl SQLFunctionVisitor<'_> {
     }
 }
 
-/// Whether a window key has the same value on every row, as `1` or `LOWER('A')`.
+/// Whether a window key is a scalar that doesn't depend on the input, as `1` or `LOWER('A')`.
 fn is_constant_key(key: &Expr) -> bool {
     matches!(key.clone().meta().is_input_independent_scalar(), Ok(true))
+}
+
+/// The sort key of a window ORDER BY. Several keys are row-encoded into one, so that each key
+/// keeps its own direction and NULL order.
+fn window_sort_key(mut keys: Vec<(Expr, SortOptions)>) -> Option<(Expr, SortOptions)> {
+    // Rows with equal keys (peers) may be processed in any order.
+    match keys.len() {
+        0 => None,
+        1 => {
+            let (key, options) = keys.pop().unwrap();
+            Some((key, options.with_maintain_order(false)))
+        },
+        _ => {
+            let (descending, nulls_last) = keys
+                .iter()
+                .map(|(_, options)| (options.descending, options.nulls_last))
+                .unzip();
+            let key = Expr::n_ary(
+                FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
+                    descending: Some(descending),
+                    nulls_last: Some(nulls_last),
+                    broadcast_nulls: None,
+                }),
+                keys.into_iter().map(|(key, _)| key).collect(),
+            );
+            Some((key, SortOptions::default().with_maintain_order(false)))
+        },
+    }
+}
+
+/// Whether each row is the first of its peers in the sorted window: the first row, or a row
+/// where a key differs from the row before.
+fn is_first_peer(keys: &[Expr], row_index: &Expr) -> Expr {
+    keys.iter()
+        .fold(row_index.clone().eq(lit(0i64)), |acc, key| {
+            acc.or(key.clone().neq_missing(key.clone().shift(lit(1))))
+        })
+}
+
+/// Whether each row is the last of its peers in the sorted window of `n` rows.
+fn is_last_peer(keys: &[Expr], row_index: &Expr, n: &Expr) -> Expr {
+    keys.iter()
+        .fold(row_index.clone().eq(n.clone() - lit(1i64)), |acc, key| {
+            acc.or(key.clone().neq_missing(key.clone().shift(lit(-1))))
+        })
 }
 
 /// The row index (from 0) in the window partition, and the number of rows in it.

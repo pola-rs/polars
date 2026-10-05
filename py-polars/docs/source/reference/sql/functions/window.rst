@@ -263,7 +263,7 @@ don't split evenly, the first buckets get one more row.
 
 **Syntax:**
 
-* ``NTILE(n) OVER (...)`` - ``n`` must be a positive integer.
+* ``NTILE(n) OVER (...)`` - ``n`` must be a positive integer literal.
 
 **Example:**
 
