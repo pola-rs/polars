@@ -72,7 +72,7 @@ impl PipelineBudget {
             count_limit: Arc::new(AtomicUsize::new(count_limit)),
             kbytes_limit,
             can_grow_for_ordered,
-            grown_for_ordered: Arc::default(),
+            grown_for_ordered: Arc::new(Once::new()),
             last_reported: Arc::new(Mutex::new(Instant::now())),
             report_interval: Duration::from_millis(100),
         }
