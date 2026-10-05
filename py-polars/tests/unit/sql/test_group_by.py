@@ -132,6 +132,64 @@ def test_group_by_all() -> None:
     assert_frame_equal(expected, res.sort(by="grp"))
 
 
+@pytest.mark.parametrize(
+    "agg", ["CORR(x, y)", "COVAR_POP(x, y)", "QUANTILE_CONT(x, 0.5)"]
+)
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g, {agg} AS a FROM t GROUP BY ALL ORDER BY g",
+        "SELECT g, {agg} AS a FROM t GROUP BY g ORDER BY {agg}, g",
+    ],
+)
+def test_group_by_aggregates_lowered_to_functions(agg: str, query: str) -> None:
+    # These aggregates lower to plain functions, not to aggregation expressions.
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 2, 2, 2],
+            "x": [3.0, 1.0, 2.0, 5.0, 4.0],
+            "y": [1.0, 2.0, 2.0, 1.0, 3.0],
+        }
+    )
+    assert_sql_matches(
+        {"t": df},
+        query=query.format(agg=agg),
+        compare_with="duckdb",
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        'SELECT g AS "__POLARS_AGGREGATE" FROM t ORDER BY "__POLARS_AGGREGATE"',
+        'SELECT g, SUM(x) AS "__POLARS_AGGREGATE" FROM t GROUP BY g ORDER BY g',
+        'SELECT SUM(x) AS "__POLARS_AGGREGATE", COUNT(*) OVER () AS n FROM t',
+    ],
+)
+def test_alias_named_like_internal_column(query: str) -> None:
+    df = pl.DataFrame({"g": [1, 2, 2], "x": [1, 2, 3]})
+    assert_sql_matches({"t": df}, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g, SUM(MAX(x)) FROM self GROUP BY g",
+        "SELECT SUM(x) + AVG(COUNT(*)) FROM self",
+        "SELECT g FROM self GROUP BY g HAVING SUM(MAX(x)) > 1",
+        "SELECT g FROM self GROUP BY g ORDER BY SUM(MAX(x))",
+        "SELECT g FROM self WHERE g = 1 GROUP BY g ORDER BY SUM(MAX(x))",
+        "SELECT SUM(x) FROM self ORDER BY SUM(MAX(x))",
+    ],
+)
+def test_nested_aggregates_error(query: str) -> None:
+    df = pl.DataFrame({"g": [1, 2, 2], "x": [1, 2, 3]})
+    with pytest.raises(
+        SQLSyntaxError, match="aggregate function calls cannot be nested"
+    ):
+        df.sql(query)
+
+
 def test_group_by_all_multi() -> None:
     dt1 = date(1999, 12, 31)
     dt2 = date(2028, 7, 5)

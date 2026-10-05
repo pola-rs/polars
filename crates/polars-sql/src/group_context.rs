@@ -1,0 +1,306 @@
+//! The group context of a SELECT block: which parts of its expressions are computed per
+//! group, and which run on the aggregated rows.
+
+use std::sync::LazyLock;
+
+use polars_core::prelude::*;
+use polars_lazy::prelude::*;
+use polars_plan::plans::visitor::{TreeWalker, VisitRecursion, Visitor};
+use polars_plan::prelude::*;
+use polars_utils::aliases::PlHashSet;
+use polars_utils::format_pl_smallstr;
+
+use crate::context::is_correlated_result_col;
+use crate::unique_column_name;
+
+/// The expressions computed in the group context, without aggregate marks.
+pub(crate) struct AggregateOutputs {
+    exprs: Vec<Expr>,
+}
+
+impl AggregateOutputs {
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
+        Self {
+            exprs: Vec::with_capacity(capacity),
+        }
+    }
+
+    pub(crate) fn push(&mut self, expr: Expr) {
+        self.exprs.push(strip_aggregate_marks(expr));
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &Expr> {
+        self.exprs.iter()
+    }
+
+    pub(crate) fn into_exprs(self) -> Vec<Expr> {
+        self.exprs
+    }
+
+    /// Reference to the output computing `expr`, reusing an existing aggregate with
+    /// the same expression (from SELECT, or the same aggregate repeated in a window).
+    fn get_or_insert_hoisted(&mut self, expr: Expr) -> Expr {
+        let expr = strip_aggregate_marks(expr);
+        let existing = self.exprs.iter().find_map(|agg| match agg {
+            Expr::Alias(inner, name) if **inner == expr => Some(name.clone()),
+            _ => None,
+        });
+        let name = existing.unwrap_or_else(|| {
+            let name = format_pl_smallstr!("__POLARS_HOISTED_AGG_{}", unique_column_name());
+            self.exprs.push(expr.alias(name.clone()));
+            name
+        });
+        col(name)
+    }
+}
+
+/// Splits post-aggregation expressions from the aggregates they contain.
+pub(crate) struct GroupContextSplitter<'a> {
+    pub(crate) keys: &'a Schema,
+    /// Each group key without its alias, and the column holding it after aggregation.
+    pub(crate) key_exprs: Vec<(Expr, PlSmallStr)>,
+    pub(crate) whole_frame_partition: Option<&'a PlSmallStr>,
+    /// Columns holding the result of a scalar subquery.
+    pub(crate) subquery_names: &'a PlHashSet<PlSmallStr>,
+    pub(crate) aggregates: AggregateOutputs,
+}
+
+impl GroupContextSplitter<'_> {
+    /// Whether `expr` has one value per group without being an aggregate call: a scalar
+    /// subquery, or a correlated column.
+    fn is_group_value(&self, expr: &Expr) -> bool {
+        matches!(expr, Expr::Agg(AggExpr::First(inner)) if matches!(inner.as_ref(), Expr::Column(name)
+            if self.subquery_names.contains(name) || is_correlated_result_col(name)))
+    }
+
+    /// Whether a SELECT projection must be processed in the group context rather
+    /// than passed through as a group key: it contains an aggregate, a window, or a
+    /// function over a non-key column.
+    pub(crate) fn requires_group_processing(&self, expr: &Expr) -> bool {
+        has_expr(expr, |e| match e {
+            _ if is_marked_aggregate(e) => true,
+            Expr::Agg(_) | Expr::Len | Expr::Over { .. } => true,
+            #[cfg(feature = "dynamic_group_by")]
+            Expr::Rolling { .. } => true,
+            Expr::AnonymousFunction { options, .. } => options.returns_scalar(),
+            Expr::Function { function: func, .. }
+                if !matches!(func, FunctionExpr::StructExpr(_)) =>
+            {
+                has_expr(
+                    e,
+                    |e| matches!(e, Expr::Column(name) if !self.keys.contains(name)),
+                )
+            },
+            _ => false,
+        })
+    }
+
+    /// Whether `expr` must run after aggregation: it holds a window, or combines
+    /// an aggregate with a grouped key.
+    pub(crate) fn needs_post_aggregation(&self, expr: &Expr) -> bool {
+        struct Finder<'a, 'b> {
+            splitter: &'a GroupContextSplitter<'b>,
+            has_window: bool,
+            has_group_key: bool,
+            has_aggregate: bool,
+        }
+        impl Visitor for Finder<'_, '_> {
+            type Node = Expr;
+            type Arena = ();
+
+            fn pre_visit(&mut self, node: &Expr, _: &()) -> PolarsResult<VisitRecursion> {
+                // Siblings are still visited so that no aggregate goes unnoticed.
+                Ok(match node {
+                    Expr::Over { .. } => {
+                        self.has_window = true;
+                        VisitRecursion::Skip
+                    },
+                    Expr::Column(name) => {
+                        self.has_group_key |= self.splitter.keys.contains(name);
+                        VisitRecursion::Skip
+                    },
+                    _ if is_marked_aggregate(node) || self.splitter.is_group_value(node) => {
+                        self.has_aggregate = true;
+                        VisitRecursion::Skip
+                    },
+                    _ => VisitRecursion::Continue,
+                })
+            }
+        }
+        let mut finder = Finder {
+            splitter: self,
+            has_window: false,
+            has_group_key: false,
+            has_aggregate: false,
+        };
+        let _ = expr.visit(&mut finder, &());
+        finder.has_window || (finder.has_group_key && finder.has_aggregate)
+    }
+
+    /// Replace every aggregate in `expr` with a reference to a hoisted aggregation output,
+    /// recorded in `self.aggregates`. A window runs on the aggregated rows; its inputs are
+    /// bound by `bind_window_input`.
+    pub(crate) fn hoist(&mut self, expr: Expr) -> PolarsResult<Expr> {
+        match expr {
+            Expr::Over {
+                function,
+                partition_by,
+                order_by,
+                mapping,
+            } => Ok(Expr::Over {
+                function: Arc::new(self.bind_window_input(Arc::unwrap_or_clone(function))?),
+                partition_by: partition_by
+                    .into_iter()
+                    .map(|e| match e {
+                        Expr::Column(name) if Some(&name) == self.whole_frame_partition => {
+                            Ok(lit(1))
+                        },
+                        e => self.bind_window_input(e),
+                    })
+                    .collect::<PolarsResult<_>>()?,
+                order_by: order_by
+                    .map(|(e, options)| {
+                        let e = self.bind_window_input(Arc::unwrap_or_clone(e))?;
+                        PolarsResult::Ok((Arc::new(e), options))
+                    })
+                    .transpose()?,
+                mapping,
+            }),
+            e if is_marked_aggregate(&e) || self.is_group_value(&e) => {
+                Ok(self.aggregates.get_or_insert_hoisted(e))
+            },
+            e => e.map_children(&mut |c, _| self.hoist(c), &mut ()),
+        }
+    }
+
+    /// Bind an input of a window function to the aggregated rows: an aggregate reads its
+    /// hoisted output and a group key reads its key column.
+    fn bind_window_input(&mut self, expr: Expr) -> PolarsResult<Expr> {
+        if let Some((_, name)) = self.key_exprs.iter().find(|(key, _)| *key == expr) {
+            return Ok(col(name.clone()));
+        }
+        match expr {
+            e if is_marked_aggregate(&e) || self.is_group_value(&e) => {
+                Ok(self.aggregates.get_or_insert_hoisted(e))
+            },
+            Expr::Column(name) if self.subquery_names.contains(&name) => {
+                Ok(self.aggregates.get_or_insert_hoisted(col(name).first()))
+            },
+            Expr::Column(name) => {
+                polars_ensure!(
+                    self.keys.contains(&name),
+                    SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", name
+                );
+                Ok(Expr::Column(name))
+            },
+            e => e.map_children(&mut |c, _| self.bind_window_input(c), &mut ()),
+        }
+    }
+}
+
+/// The names that QUALIFY and ORDER BY can read besides the input columns: columns renamed
+/// by `SELECT * RENAME`, then SELECT aliases. Each stands for an expression over the input
+/// columns, of a type that is known if it could be inferred.
+pub(crate) struct OutputNames {
+    names: PlHashMap<PlSmallStr, (Expr, Option<DataType>)>,
+}
+
+impl OutputNames {
+    /// The output names of `projections` and `renames` over the input `schema`. An input
+    /// column comes before an output name of the same name. `typed_schema` is `schema` with
+    /// the columns that the projections read before the block resolves them.
+    pub(crate) fn new(
+        projections: &[Expr],
+        renames: &PlHashMap<PlSmallStr, PlSmallStr>,
+        schema: &Schema,
+        typed_schema: &Schema,
+    ) -> Self {
+        let mut names = PlHashMap::new();
+        for (before, after) in renames {
+            if !schema.contains(after) {
+                names
+                    .entry(after.clone())
+                    .or_insert_with(|| (col(before.clone()), schema.get(before).cloned()));
+            }
+        }
+        for projection in projections {
+            if let Expr::Alias(inner, name) = projection
+                && !schema.contains(name)
+                && !names.contains_key(name)
+            {
+                let dtype = projection.to_field(typed_schema).ok().map(|f| f.dtype);
+                names.insert(name.clone(), (inner.as_ref().clone(), dtype));
+            }
+        }
+        Self { names }
+    }
+
+    /// `schema` with the output names of a known type, to parse an expression that can
+    /// read them.
+    pub(crate) fn extend_schema(&self, schema: &Schema) -> Schema {
+        let mut schema = schema.clone();
+        for (name, (_, dtype)) in &self.names {
+            if let Some(dtype) = dtype {
+                schema.with_column(name.clone(), dtype.clone());
+            }
+        }
+        schema
+    }
+
+    /// Replace the output names in `expr` by their expressions.
+    pub(crate) fn resolve(&self, expr: Expr) -> Expr {
+        expr.map_expr(|e| match e {
+            Expr::Column(name) => match self.names.get(&name) {
+                Some((expr, _)) => expr.clone(),
+                None => Expr::Column(name),
+            },
+            e => e,
+        })
+    }
+}
+
+/// Whether a block without GROUP BY has both windows and aggregates, as in
+/// `SELECT SUM(x), COUNT(*) OVER () FROM t`.
+pub(crate) fn has_windows_over_aggregates(projections: &[Expr]) -> bool {
+    projections
+        .iter()
+        .any(|e| has_expr(e, |e| matches!(e, Expr::Over { .. })))
+        && projections.iter().any(has_marked_aggregate)
+}
+
+/// Marks the call of an aggregate function: a SQL aggregate, or a user-defined function that
+/// returns one value. The parser sets it in the clauses that run in the group context of a
+/// block (the SELECT list, QUALIFY, HAVING and the aggregates of ORDER BY), and in the inputs
+/// of window functions, as on `COUNT(*)` in `SUM(COUNT(*)) OVER ()`. A window function is not
+/// marked, nor are the reductions that its lowering adds.
+///
+/// The mark is a rename that keeps the name, by a callback that only this module holds, so no
+/// alias written in the query is taken for it. `GroupContextSplitter` computes each marked
+/// aggregate per group, and a block without GROUP BY or windows removes the marks, so none
+/// reach the plan.
+static AGGREGATE_MARK: LazyLock<PlanCallback<PlSmallStr, PlSmallStr>> =
+    LazyLock::new(|| PlanCallback::new(Ok));
+
+pub(crate) fn mark_aggregate(expr: Expr) -> Expr {
+    Expr::RenameAlias {
+        function: RenameAliasFn::Map(AGGREGATE_MARK.clone()),
+        expr: Arc::new(expr),
+    }
+}
+
+pub(crate) fn is_marked_aggregate(expr: &Expr) -> bool {
+    matches!(expr, Expr::RenameAlias { function: RenameAliasFn::Map(f), .. } if *f == *AGGREGATE_MARK)
+}
+
+/// Whether `expr` holds a marked aggregate.
+pub(crate) fn has_marked_aggregate(expr: &Expr) -> bool {
+    has_expr(expr, is_marked_aggregate)
+}
+
+/// `expr` without aggregate marks.
+pub(crate) fn strip_aggregate_marks(expr: Expr) -> Expr {
+    expr.map_expr(|e| match e {
+        Expr::RenameAlias { expr, .. } if is_marked_aggregate(&e) => Arc::unwrap_or_clone(expr),
+        e => e,
+    })
+}

@@ -60,7 +60,6 @@ impl PipelineBudget {
         self.count_limit
     }
 
-    #[allow(unused)]
     pub(crate) fn kbytes_limit(&self) -> usize {
         self.kbytes_limit
     }
@@ -74,12 +73,7 @@ impl PipelineBudget {
     /// The requested capacity is capped at the kbytes limit, so a fetch larger than the
     /// limit still proceeds, and any positive limit makes progress.
     pub(crate) async fn acquire(&self, n_bytes: usize) -> PipelinePermit {
-        // Prevent deadlock.
-        let n_kbytes: u32 = n_bytes
-            .div_ceil(1 << 10)
-            .min(self.kbytes_limit)
-            .try_into()
-            .unwrap_or(u32::MAX);
+        let n_kbytes: u32 = self.permit_kbytes(n_bytes).try_into().unwrap_or(u32::MAX);
 
         // Semaphores are never closed, so acquire cannot fail.
         let _kbytes = self
@@ -117,6 +111,12 @@ impl PipelineBudget {
         }
 
         PipelinePermit { _count, _kbytes }
+    }
+
+    /// Kilobytes taken by the permit for a fetch of `n_bytes`.
+    pub(crate) fn permit_kbytes(&self, n_bytes: usize) -> usize {
+        // Capped at the limit to prevent deadlock.
+        n_bytes.div_ceil(1 << 10).min(self.kbytes_limit)
     }
 }
 

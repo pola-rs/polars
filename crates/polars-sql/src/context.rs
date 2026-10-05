@@ -6,8 +6,7 @@ use polars_core::prelude::*;
 use polars_defs::join::{JoinArgs, JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_lazy::prelude::*;
 use polars_plan::dsl::function_expr::StructFunction;
-use polars_plan::plans::visitor::{TreeWalker, VisitRecursion, Visitor};
-use polars_plan::plans::{ArenaExprIter, ExprToIRContext, is_scalar_ae, to_expr_ir};
+use polars_plan::plans::visitor::TreeWalker;
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
@@ -26,6 +25,10 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
+use crate::group_context::{
+    AggregateOutputs, GroupContextSplitter, OutputNames, has_windows_over_aggregates,
+    is_marked_aggregate, strip_aggregate_marks,
+};
 use crate::grouping_sets::{
     GroupingCall, GroupingSets, canonicalize_keys, contains_grouping_placeholder,
     expand_grouping_sets, new_placeholder,
@@ -245,8 +248,11 @@ pub struct SQLContext {
 /// State of the query block being executed that its `GROUP BY` binds.
 #[derive(Clone, Default)]
 pub(crate) struct GroupScope {
-    /// Whether the inputs of a window function are being parsed. An aggregate there
-    /// is computed per group, before the window (see `WINDOW_AGGREGATE`).
+    /// Whether the aggregate calls being parsed are marked (see `AGGREGATE_MARK`): in the
+    /// clauses that run in the group context of the block. Marked calls cannot be nested.
+    pub(crate) mark_aggregates: bool,
+    /// Whether the inputs of a window function are being parsed. Aggregates there are
+    /// marked too.
     pub(crate) in_window: bool,
     /// `GROUPING()` calls parsed in the block.
     grouping_calls: Vec<GroupingCall>,
@@ -1652,6 +1658,14 @@ impl SQLContext {
         })
     }
 
+    /// Run `f` with the aggregate calls it parses marked (see `GroupScope::mark_aggregates`).
+    fn marking_aggregates<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        let mark_aggregates = std::mem::replace(&mut self.group_scope.mark_aggregates, true);
+        let result = f(self);
+        self.group_scope.mark_aggregates = mark_aggregates;
+        result
+    }
+
     fn contains_grouping_placeholder(&self, expr: &Expr) -> bool {
         contains_grouping_placeholder(
             expr,
@@ -1872,12 +1886,14 @@ impl SQLContext {
 
         let mark_whole_frame_windows =
             std::mem::replace(&mut self.group_scope.mark_whole_frame_windows, true);
-        let mut projections_with_flags = self.column_projections(
-            projection,
-            select_stmt.flavor,
-            &schema,
-            &mut select_modifiers,
-        )?;
+        let mut projections_with_flags = self.marking_aggregates(|ctx| {
+            ctx.column_projections(
+                projection,
+                select_stmt.flavor,
+                &schema,
+                &mut select_modifiers,
+            )
+        })?;
         self.group_scope.mark_whole_frame_windows = mark_whole_frame_windows;
         let mut subquery_names;
         (lf, subquery_names) = self.process_subqueries(
@@ -1889,19 +1905,6 @@ impl SQLContext {
             *expr = broadcast_subqueries_in_windows(expr.clone(), &subquery_names);
         }
         schema = self.get_frame_schema(&mut lf)?;
-
-        // The alias marking an aggregate in a window must not name the projection.
-        let mut name_schema = None;
-        for (expr, is_explicit_alias) in projections_with_flags.iter_mut() {
-            if !*is_explicit_alias && has_window_aggregate(expr) {
-                let name_schema =
-                    name_schema.get_or_insert_with(|| self.with_placeholder_columns(&schema));
-                let name = map_window_aggregates(expr.clone(), |e| e)
-                    .to_field(name_schema)?
-                    .name;
-                *expr = expr.clone().alias(name);
-            }
-        }
 
         // Placeholder names are generated per execution, so an unaliased projection
         // named after one gets the name given to any other unnamed scalar expression.
@@ -1936,14 +1939,14 @@ impl SQLContext {
                     &select_modifiers.rename,
                     &schema,
                     &self.with_placeholder_columns(&schema),
-                    &subquery_names,
                 );
                 let output_schema = output_names.extend_schema(&schema);
                 let mark_whole_frame_windows =
                     std::mem::replace(&mut self.group_scope.mark_whole_frame_windows, true);
-                let parsed = parse_sql_expr(qualify, self, Some(&output_schema));
+                let parsed = self
+                    .marking_aggregates(|ctx| parse_sql_expr(qualify, ctx, Some(&output_schema)));
                 self.group_scope.mark_whole_frame_windows = mark_whole_frame_windows;
-                let mut qualify = output_names.resolve(parsed?, &schema);
+                let mut qualify = output_names.resolve(parsed?);
                 if qualify.clone().meta().has_multiple_outputs() {
                     qualify = all_horizontal([qualify])?;
                 }
@@ -2063,7 +2066,8 @@ impl SQLContext {
                     _ => {
                         // If not quick-matched, add if no nested agg/window expressions
                         if !has_expr(expr, |e| {
-                            matches!(e, Expr::Agg(_))
+                            is_marked_aggregate(e)
+                                || matches!(e, Expr::Agg(_))
                                 || matches!(e, Expr::Len)
                                 || matches!(e, Expr::Over { .. })
                                 || {
@@ -2109,9 +2113,7 @@ impl SQLContext {
             .chain(&qualify)
             .cloned()
             .collect::<Vec<_>>();
-        lf = if !has_group_by
-            && !has_windows_over_aggregates(&all_projections, &subquery_names, &schema)
-        {
+        lf = if !has_group_by && !has_windows_over_aggregates(&all_projections) {
             // `GROUP BY ALL` may infer no keys; nothing here runs in a group context.
             self.group_scope.mark_whole_frame_windows = false;
             projections = all_projections;
@@ -2124,11 +2126,11 @@ impl SQLContext {
                 .collect();
             projections = projections
                 .into_iter()
-                .map(|e| self.resolve_whole_frame_windows(e))
+                .map(|e| strip_aggregate_marks(self.resolve_whole_frame_windows(e)))
                 .collect();
             select_modifiers.replace = std::mem::take(&mut select_modifiers.replace)
                 .into_iter()
-                .map(|e| self.resolve_whole_frame_windows(e))
+                .map(|e| strip_aggregate_marks(self.resolve_whole_frame_windows(e)))
                 .collect();
 
             // Disambiguate SELECT-list output-name collisions.
@@ -2156,7 +2158,7 @@ impl SQLContext {
                         && !select_modifiers.exclude.contains(&name))
                 {
                     projection_heights |= ExprSqlProjectionHeightBehavior::identify_from_expr(
-                        &without_resolved_subqueries(height_expr, &subquery_names, &schema),
+                        &without_resolved_subqueries(height_expr, &subquery_names),
                     );
 
                     retained_cols.push(if have_order_by {
@@ -2246,7 +2248,7 @@ impl SQLContext {
         } else {
             let having = lowered_having
                 .as_deref()
-                .map(|expr| parse_sql_expr(expr, self, Some(&schema)))
+                .map(|expr| self.marking_aggregates(|ctx| parse_sql_expr(expr, ctx, Some(&schema))))
                 .transpose()?;
             let grouping = self.bind_grouping_sets(
                 &group_by_keys,
@@ -3141,16 +3143,13 @@ impl SQLContext {
                 )?;
 
                 // translate order expression, allowing ordinal values
-                by.push(self.expr_or_ordinal(
-                    &lowered,
-                    columns,
-                    selected,
-                    Some(&schema),
-                    "ORDER BY",
-                )?)
+                by.push(self.marking_aggregates(|ctx| {
+                    ctx.expr_or_ordinal(&lowered, columns, selected, Some(&schema), "ORDER BY")
+                })?)
             }
         }
 
+        let mut by: Vec<Expr> = by.into_iter().map(strip_aggregate_marks).collect();
         let subquery_names;
         (lf, subquery_names) =
             self.process_subqueries(lf, by.iter_mut().collect(), SubqueryShape::Broadcast)?;
@@ -3173,7 +3172,6 @@ impl SQLContext {
         order_by: &Option<OrderBy>,
         projections: &[Expr],
         schema: &Schema,
-        subquery_names: &PlHashSet<PlSmallStr>,
     ) -> PolarsResult<ResolvedOrderBy> {
         let mut clause = order_by.clone();
         let mut extra: Vec<(PlSmallStr, Expr)> = Vec::new();
@@ -3183,24 +3181,22 @@ impl SQLContext {
             ..
         }) = &mut clause
         {
-            let output_names = OutputNames::new(
-                projections,
-                &PlHashMap::new(),
-                schema,
-                schema,
-                subquery_names,
-            );
+            let output_names = OutputNames::new(projections, &PlHashMap::new(), schema, schema);
             let output_schema = output_names.extend_schema(schema);
             for ob in exprs {
                 // Anything without an aggregate already resolves against the
                 // aggregated frame.
-                let Ok(parsed) = parse_sql_expr(&ob.expr, self, Some(&output_schema)) else {
+                let Ok(parsed) = self
+                    .marking_aggregates(|ctx| parse_sql_expr(&ob.expr, ctx, Some(&output_schema)))
+                else {
                     continue;
                 };
-                if !has_expr(&parsed, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
+                if !has_expr(&parsed, |e| {
+                    is_marked_aggregate(e) || matches!(e, Expr::Agg(_) | Expr::Len)
+                }) {
                     continue;
                 }
-                let parsed = output_names.resolve(strip_outer_alias(&parsed), schema);
+                let parsed = output_names.resolve(strip_outer_alias(&parsed));
                 let name = match projections.iter().find(|p| strip_outer_alias(p) == parsed) {
                     Some(projection) => projection.to_field(schema)?.name,
                     None => {
@@ -3345,12 +3341,8 @@ impl SQLContext {
         )?;
         // Hidden output columns: the ORDER BY aggregates, and the QUALIFY predicate that the
         // block filters on after the aggregation.
-        let (order_by, mut extra_projections) = self.resolve_order_by_aggregates(
-            order_by,
-            &projections,
-            &schema_before,
-            subquery_names,
-        )?;
+        let (order_by, mut extra_projections) =
+            self.resolve_order_by_aggregates(order_by, &projections, &schema_before)?;
         extra_projections
             .extend(qualify.map(|(name, e)| (name, reduce_correlated_cols_in_group_context(e))));
 
@@ -3358,6 +3350,31 @@ impl SQLContext {
             .into_iter()
             .map(reduce_correlated_cols_in_group_context)
             .collect();
+
+        // Note: HAVING is evaluated in the group context (`group_by().having(...)` for
+        // ordinary grouping, a post-union filter for grouping sets), so any reference
+        // to a SELECT alias is resolved to the aggregate it names.
+        let having = having.map(|having_expr| {
+            let having_expr = having_expr.map_expr(|e| match &e {
+                Expr::Column(name) => resolve_select_alias(name, &projections, &schema_before)
+                    .map_or(e, |resolved| strip_outer_alias(&resolved)),
+                _ => e,
+            });
+            reduce_correlated_cols_in_group_context(having_expr)
+        });
+
+        // Resolve scalar subqueries in HAVING against the pre-aggregation frame.
+        let mut subquery_names = subquery_names.clone();
+        let having = match having {
+            Some(mut having_expr) => {
+                let having_subquery_names;
+                (lf, having_subquery_names) =
+                    self.process_subqueries(lf, vec![&mut having_expr], SubqueryShape::Scalar)?;
+                subquery_names.extend(having_subquery_names);
+                Some(having_expr)
+            },
+            None => None,
+        };
 
         // Note: remove the `group_by` keys as Polars adds those implicitly.
         let mut aliased_aggregations: PlHashMap<PlSmallStr, PlSmallStr> = PlHashMap::new();
@@ -3381,14 +3398,13 @@ impl SQLContext {
         // ORDER BY extras were parsed above and may have registered the partition.
         let whole_frame_partition = self.group_scope.whole_frame_partition.clone();
         let mut splitter = GroupContextSplitter {
-            schema: &schema_before,
             keys: &group_by_keys_schema,
             key_exprs: group_key_data
                 .iter()
                 .filter_map(|(key, name)| Some((key.clone(), name.clone()?)))
                 .collect(),
             whole_frame_partition: whole_frame_partition.as_ref(),
-            subquery_names,
+            subquery_names: &subquery_names,
             aggregates: AggregateOutputs::with_capacity(projections.len()),
         };
         // Post-aggregation expressions read computed keys from their stored columns.
@@ -3466,28 +3482,6 @@ impl SQLContext {
             }
         }
 
-        // Note: HAVING is evaluated in the group context (`group_by().having(...)` for
-        // ordinary grouping, a post-union filter for grouping sets), so any reference
-        // to a SELECT alias is resolved to the aggregate it names.
-        let having = having.map(|having_expr| {
-            let having_expr = having_expr.map_expr(|e| match &e {
-                Expr::Column(name) => resolve_select_alias(name, &projections, &schema_before)
-                    .map_or(e, |resolved| strip_outer_alias(&resolved)),
-                _ => e,
-            });
-            reduce_correlated_cols_in_group_context(having_expr)
-        });
-
-        // Resolve scalar subqueries in HAVING against the pre-aggregation frame.
-        let (lf, having) = match having {
-            Some(mut having_expr) => {
-                let (lf, _) =
-                    self.process_subqueries(lf, vec![&mut having_expr], SubqueryShape::Scalar)?;
-                (lf, Some(having_expr))
-            },
-            None => (lf, None),
-        };
-
         for (name, e) in &extra_projections {
             let bound = bind_keys(strip_outer_alias(e));
             if splitter.needs_post_aggregation(&bound) {
@@ -3510,7 +3504,7 @@ impl SQLContext {
             None => {
                 let group_by = lf.group_by(group_by_keys);
                 match having {
-                    Some(having) => group_by.having(having),
+                    Some(having) => group_by.having(strip_aggregate_marks(having)),
                     None => group_by,
                 }
                 .agg(strip_group_implode(splitter.aggregates.into_exprs()))
@@ -4025,7 +4019,7 @@ fn broadcast_subqueries_in_windows(expr: Expr, subquery_names: &PlHashSet<PlSmal
                 Arc::unwrap_or_clone(inner)
             },
             // A marked aggregate is computed per group, where the subquery is one value.
-            e if is_window_aggregate(&e) => e,
+            e if is_marked_aggregate(&e) => e,
             e => {
                 let in_window = in_window || matches!(e, Expr::Over { .. });
                 e.map_children(
@@ -4042,22 +4036,17 @@ fn broadcast_subqueries_in_windows(expr: Expr, subquery_names: &PlHashSet<PlSmal
     broadcast(expr, false, subquery_names)
 }
 
-/// Replace every resolved scalar subquery in `expr` with a NULL of its type, so the
-/// expression can be classified on its own terms. The result is only inspected for its
-/// shape, never evaluated.
-fn without_resolved_subqueries(
-    expr: &Expr,
-    subquery_names: &PlHashSet<PlSmallStr>,
-    schema: &Schema,
-) -> Expr {
-    expr.clone().map_expr(|e| match e {
-        Expr::Agg(AggExpr::First(inner)) => match inner.as_ref() {
-            Expr::Column(name) if subquery_names.contains(name) => {
-                Scalar::null(infer_dtype(&inner, schema)).lit()
-            },
-            _ => Expr::Agg(AggExpr::First(inner)),
-        },
-        e => e,
+/// Replace every resolved scalar subquery in `expr` with a scalar literal, so the
+/// expression can be height-classified on its own terms. The result is only inspected
+/// for its shape, never evaluated.
+fn without_resolved_subqueries(expr: &Expr, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
+    expr.clone().map_expr(|e| {
+        let is_placeholder = matches!(
+            &e,
+            Expr::Agg(AggExpr::First(inner))
+                if matches!(inner.as_ref(), Expr::Column(n) if subquery_names.contains(n))
+        );
+        if is_placeholder { lit(1i32) } else { e }
     })
 }
 
@@ -4318,317 +4307,6 @@ fn strip_group_implode(aggs: Vec<Expr>) -> Vec<Expr> {
         .collect()
 }
 
-/// The expressions computed in the group context.
-struct AggregateOutputs {
-    exprs: Vec<Expr>,
-}
-
-impl AggregateOutputs {
-    fn with_capacity(capacity: usize) -> Self {
-        Self {
-            exprs: Vec::with_capacity(capacity),
-        }
-    }
-
-    fn push(&mut self, expr: Expr) {
-        self.exprs.push(expr);
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &Expr> {
-        self.exprs.iter()
-    }
-
-    fn into_exprs(self) -> Vec<Expr> {
-        self.exprs
-    }
-
-    /// Reference to the output computing `expr`, reusing an existing aggregate with
-    /// the same expression (from SELECT, or the same aggregate repeated in a window).
-    fn get_or_insert_hoisted(&mut self, expr: Expr) -> Expr {
-        let existing = self.exprs.iter().find_map(|agg| match agg {
-            Expr::Alias(inner, name) if **inner == expr => Some(name.clone()),
-            _ => None,
-        });
-        let name = existing.unwrap_or_else(|| {
-            let name = format_pl_smallstr!("__POLARS_HOISTED_AGG_{}", unique_column_name());
-            self.exprs.push(expr.alias(name.clone()));
-            name
-        });
-        col(name)
-    }
-}
-
-/// Splits post-aggregation expressions from the group-context reductions they
-/// contain, over the pre-aggregation schema.
-struct GroupContextSplitter<'a> {
-    schema: &'a Schema,
-    keys: &'a Schema,
-    /// Each group key without its alias, and the column holding it after aggregation.
-    key_exprs: Vec<(Expr, PlSmallStr)>,
-    whole_frame_partition: Option<&'a PlSmallStr>,
-    /// Columns holding the result of a scalar subquery.
-    subquery_names: &'a PlHashSet<PlSmallStr>,
-    aggregates: AggregateOutputs,
-}
-
-impl GroupContextSplitter<'_> {
-    fn is_reduction(&self, expr: &Expr) -> bool {
-        is_reduction(expr, self.schema)
-    }
-
-    /// Whether a SELECT projection must be processed in the group context rather
-    /// than passed through as a group key: it contains an aggregate, a window, a
-    /// function over a non-key column, or reduces to a scalar (which also covers
-    /// aggregates lowered to plain functions, such as `COVAR_POP`).
-    fn requires_group_processing(&self, expr: &Expr) -> bool {
-        has_expr(expr, |e| match e {
-            Expr::Agg(_) | Expr::Len | Expr::Over { .. } => true,
-            #[cfg(feature = "dynamic_group_by")]
-            Expr::Rolling { .. } => true,
-            Expr::AnonymousFunction { options, .. } => options.returns_scalar(),
-            Expr::Function { function: func, .. }
-                if !matches!(func, FunctionExpr::StructExpr(_)) =>
-            {
-                has_expr(
-                    e,
-                    |e| matches!(e, Expr::Column(name) if !self.keys.contains(name)),
-                )
-            },
-            _ => false,
-        }) || self.is_reduction(&strip_outer_alias(expr))
-    }
-
-    /// Whether `expr` must run after aggregation: it holds a window, or combines
-    /// a reduction with a grouped key.
-    fn needs_post_aggregation(&self, expr: &Expr) -> bool {
-        struct Finder<'a, 'b> {
-            splitter: &'a GroupContextSplitter<'b>,
-            has_window: bool,
-            has_group_key: bool,
-            has_reduction: bool,
-        }
-        impl Visitor for Finder<'_, '_> {
-            type Node = Expr;
-            type Arena = ();
-
-            fn pre_visit(&mut self, node: &Expr, _: &()) -> PolarsResult<VisitRecursion> {
-                // Siblings are still visited so that no reduction goes unnoticed.
-                Ok(match node {
-                    Expr::Over { .. } => {
-                        self.has_window = true;
-                        VisitRecursion::Skip
-                    },
-                    Expr::Column(name) => {
-                        self.has_group_key |= self.splitter.keys.contains(name);
-                        VisitRecursion::Skip
-                    },
-                    _ if self.splitter.is_reduction(node) => {
-                        self.has_reduction = true;
-                        VisitRecursion::Skip
-                    },
-                    _ => VisitRecursion::Continue,
-                })
-            }
-        }
-        let mut finder = Finder {
-            splitter: self,
-            has_window: false,
-            has_group_key: false,
-            has_reduction: false,
-        };
-        let _ = expr.visit(&mut finder, &());
-        finder.has_window || (finder.has_group_key && finder.has_reduction)
-    }
-
-    /// Replace every reduction in `expr` with a reference to a hoisted aggregation
-    /// output, recorded in `self.aggregates`. A window runs on the aggregated rows, so in
-    /// its inputs only the marked aggregates are hoisted (see `WINDOW_AGGREGATE`).
-    fn hoist(&mut self, expr: Expr) -> PolarsResult<Expr> {
-        match expr {
-            Expr::Over {
-                function,
-                partition_by,
-                order_by,
-                mapping,
-            } => Ok(Expr::Over {
-                function: Arc::new(self.bind_window_input(Arc::unwrap_or_clone(function))?),
-                partition_by: partition_by
-                    .into_iter()
-                    .map(|e| match e {
-                        Expr::Column(name) if Some(&name) == self.whole_frame_partition => {
-                            Ok(lit(1))
-                        },
-                        e => self.bind_window_input(e),
-                    })
-                    .collect::<PolarsResult<_>>()?,
-                order_by: order_by
-                    .map(|(e, options)| {
-                        let e = self.bind_window_input(Arc::unwrap_or_clone(e))?;
-                        PolarsResult::Ok((Arc::new(e), options))
-                    })
-                    .transpose()?,
-                mapping,
-            }),
-            e if is_window_aggregate(&e) => {
-                Ok(self.aggregates.get_or_insert_hoisted(strip_outer_alias(&e)))
-            },
-            e if self.is_reduction(&e) => Ok(self.aggregates.get_or_insert_hoisted(e)),
-            e => e.map_children(&mut |c, _| self.hoist(c), &mut ()),
-        }
-    }
-
-    /// Bind an input of a window function to the aggregated rows: a marked aggregate
-    /// reads its hoisted output and a group key reads its key column.
-    fn bind_window_input(&mut self, expr: Expr) -> PolarsResult<Expr> {
-        if let Some((_, name)) = self.key_exprs.iter().find(|(key, _)| *key == expr) {
-            return Ok(col(name.clone()));
-        }
-        match expr {
-            e if is_window_aggregate(&e) => {
-                Ok(self.aggregates.get_or_insert_hoisted(strip_outer_alias(&e)))
-            },
-            // A scalar subquery, or a correlated column, which has one value per group.
-            Expr::Agg(AggExpr::First(inner))
-                if matches!(inner.as_ref(), Expr::Column(name)
-                    if self.subquery_names.contains(name) || is_correlated_result_col(name)) =>
-            {
-                Ok(self
-                    .aggregates
-                    .get_or_insert_hoisted(Expr::Agg(AggExpr::First(inner))))
-            },
-            Expr::Column(name) if self.subquery_names.contains(&name) => {
-                Ok(self.aggregates.get_or_insert_hoisted(col(name).first()))
-            },
-            Expr::Column(name) => {
-                polars_ensure!(
-                    self.keys.contains(&name),
-                    SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", name
-                );
-                Ok(Expr::Column(name))
-            },
-            e => e.map_children(&mut |c, _| self.bind_window_input(c), &mut ()),
-        }
-    }
-}
-
-/// Whether `expr` reduces its input columns to one value, judged by the plan it lowers
-/// to; this covers SQL aggregates lowered to non-`Agg` reductions.
-///
-/// An expression that fails to lower is not treated as a reduction; it is left in place
-/// and reports its error when the plan is built.
-pub(crate) fn is_reduction(expr: &Expr, schema: &Schema) -> bool {
-    let mut arena = Arena::new();
-    let mut ctx = ExprToIRContext::new(&mut arena, schema);
-    ctx.allow_unknown = true;
-    ctx.check_column_names = false;
-    let Ok(ir) = to_expr_ir(expr.clone(), &mut ctx) else {
-        return false;
-    };
-    // A literal expression is scalar too, but reduces nothing.
-    let reduces = arena.iter(ir.node()).any(|(_, ae)| match ae {
-        AExpr::Agg(_) | AExpr::AnonymousAgg { .. } | AExpr::Len => true,
-        AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
-            options.returns_scalar()
-        },
-        _ => false,
-    });
-    reduces && is_scalar_ae(ir.node(), &arena)
-}
-
-/// The type of `expr`, or `Unknown` if it can't be inferred.
-fn infer_dtype(expr: &Expr, schema: &Schema) -> DataType {
-    let mut arena = Arena::new();
-    let mut ctx = ExprToIRContext::new(&mut arena, schema);
-    ctx.allow_unknown = true;
-    ctx.check_column_names = false;
-    to_expr_ir(expr.clone(), &mut ctx)
-        .and_then(|ir| ir.dtype(schema, &arena).cloned())
-        .unwrap_or(DataType::Unknown(Default::default()))
-}
-
-/// The names that QUALIFY and ORDER BY can read besides the input columns: columns renamed
-/// by `SELECT * RENAME`, then SELECT aliases. Each stands for an expression over the input
-/// columns, of a type that is known if it could be inferred.
-struct OutputNames<'a> {
-    names: PlHashMap<PlSmallStr, (Expr, Option<DataType>)>,
-    /// Columns holding the result of a scalar subquery.
-    subquery_names: &'a PlHashSet<PlSmallStr>,
-}
-
-impl<'a> OutputNames<'a> {
-    /// The output names of `projections` and `renames` over the input `schema`. An input
-    /// column comes before an output name of the same name. `typed_schema` is `schema` with
-    /// the columns that the projections read before the block resolves them.
-    fn new(
-        projections: &[Expr],
-        renames: &PlHashMap<PlSmallStr, PlSmallStr>,
-        schema: &Schema,
-        typed_schema: &Schema,
-        subquery_names: &'a PlHashSet<PlSmallStr>,
-    ) -> Self {
-        let mut names = PlHashMap::new();
-        for (before, after) in renames {
-            if !schema.contains(after) {
-                names
-                    .entry(after.clone())
-                    .or_insert_with(|| (col(before.clone()), schema.get(before).cloned()));
-            }
-        }
-        for projection in projections {
-            if let Expr::Alias(inner, name) = projection
-                && !schema.contains(name)
-                && !names.contains_key(name)
-            {
-                let dtype = projection.to_field(typed_schema).ok().map(|f| f.dtype);
-                names.insert(name.clone(), (inner.as_ref().clone(), dtype));
-            }
-        }
-        Self {
-            names,
-            subquery_names,
-        }
-    }
-
-    /// `schema` with the output names of a known type, to parse an expression that can
-    /// read them.
-    fn extend_schema(&self, schema: &Schema) -> Schema {
-        let mut schema = schema.clone();
-        for (name, (_, dtype)) in &self.names {
-            if let Some(dtype) = dtype {
-                schema.with_column(name.clone(), dtype.clone());
-            }
-        }
-        schema
-    }
-
-    /// Replace the output names in `expr` by their expressions. An aggregate that an alias
-    /// brings into the inputs of a window is marked, as the parser marks the aggregates it
-    /// finds there.
-    fn resolve(&self, expr: Expr, schema: &Schema) -> Expr {
-        self.resolve_rec(expr, false, schema)
-    }
-
-    fn resolve_rec(&self, expr: Expr, in_window: bool, schema: &Schema) -> Expr {
-        match expr {
-            Expr::Column(name) => match self.names.get(&name) {
-                Some((expr, _)) if in_window => {
-                    mark_aggregates(expr.clone(), schema, self.subquery_names)
-                },
-                Some((expr, _)) => expr.clone(),
-                None => Expr::Column(name),
-            },
-            e => {
-                let in_window = in_window || matches!(e, Expr::Over { .. });
-                e.map_children(
-                    &mut |c, _| Ok(self.resolve_rec(c, in_window, schema)),
-                    &mut (),
-                )
-                .unwrap()
-            },
-        }
-    }
-}
-
 /// Check that a QUALIFY predicate reads a window function, directly or through a SELECT
 /// alias.
 fn check_qualify(qualify: &SQLExpr, projection: &[SelectItem]) -> PolarsResult<()> {
@@ -4642,145 +4320,6 @@ fn check_qualify(qualify: &SQLExpr, projection: &[SelectItem]) -> PolarsResult<(
         SQLSyntax: "QUALIFY clause must reference window functions either explicitly or via SELECT aliases"
     );
     Ok(())
-}
-
-/// Whether a block without GROUP BY has both windows and aggregates, as in
-/// `SELECT SUM(x), COUNT(*) OVER () FROM t`.
-fn has_windows_over_aggregates(
-    projections: &[Expr],
-    subquery_names: &PlHashSet<PlSmallStr>,
-    schema: &Schema,
-) -> bool {
-    struct Finder<'a> {
-        schema: &'a Schema,
-        has_window: bool,
-        has_reduction: bool,
-    }
-    impl Visitor for Finder<'_> {
-        type Node = Expr;
-        type Arena = ();
-
-        fn pre_visit(&mut self, node: &Expr, _: &()) -> PolarsResult<VisitRecursion> {
-            Ok(match node {
-                Expr::Over { .. } => {
-                    self.has_window = true;
-                    self.has_reduction |= has_window_aggregate(node);
-                    VisitRecursion::Skip
-                },
-                _ if is_reduction(node, self.schema) => {
-                    self.has_reduction = true;
-                    VisitRecursion::Skip
-                },
-                _ => VisitRecursion::Continue,
-            })
-        }
-    }
-    let mut finder = Finder {
-        schema,
-        has_window: false,
-        has_reduction: false,
-    };
-    for e in projections {
-        let _ = without_resolved_subqueries(e, subquery_names, schema).visit(&mut finder, &());
-    }
-    finder.has_window && finder.has_reduction
-}
-
-/// Alias that marks a grouped aggregate in the inputs (arguments, FILTER, PARTITION BY,
-/// ORDER BY) of a window function, as `COUNT(*)` in `SUM(COUNT(*)) OVER ()`. The aggregate
-/// is computed per group, and the window reads its result on the aggregated rows. The
-/// reductions that the lowering of a window adds itself, as the row count of
-/// `COUNT(*) OVER ()`, are not marked.
-///
-/// Markers are set when a function call is parsed (`mark_aggregate_call`), and when a SELECT
-/// alias brings an aggregate into a window (`OutputNames::resolve`). `GroupContextSplitter::hoist`
-/// replaces each one with a column of the aggregation, so none reach the plan.
-const WINDOW_AGGREGATE: &str = "__POLARS_WINDOW_AGG";
-
-fn is_window_aggregate(expr: &Expr) -> bool {
-    matches!(expr, Expr::Alias(_, name) if name == WINDOW_AGGREGATE)
-}
-
-/// Whether `expr` holds a marked aggregate.
-fn has_window_aggregate(expr: &Expr) -> bool {
-    has_expr(expr, is_window_aggregate)
-}
-
-/// Replace each marked aggregate in `expr` by `f` of the aggregate.
-fn map_window_aggregates(expr: Expr, f: impl Fn(Expr) -> Expr) -> Expr {
-    expr.map_expr(|e| match e {
-        Expr::Alias(inner, name) if name == WINDOW_AGGREGATE => f(Arc::unwrap_or_clone(inner)),
-        e => e,
-    })
-}
-
-impl SQLContext {
-    /// Mark `expr`, a function call parsed in the inputs of a window, if it is an aggregate.
-    pub(crate) fn mark_aggregate_call(
-        &mut self,
-        expr: Expr,
-        schema: &Schema,
-    ) -> PolarsResult<Expr> {
-        // A subquery, which is not resolved yet, and an aggregate already marked inside the
-        // call are values here, not reductions. Each is read as a NULL of its type, as
-        // lowering checks types.
-        let mut subquery_dtypes = PlHashMap::new();
-        for e in &expr {
-            if let Expr::SubPlan(lp, names) = e {
-                let mut lf = LazyFrame::from((***lp).clone()).select([names[0].1.clone()]);
-                let dtype = self
-                    .get_frame_schema(&mut lf)
-                    .ok()
-                    .and_then(|schema| schema.iter_values().next().cloned())
-                    .unwrap_or(DataType::Unknown(Default::default()));
-                subquery_dtypes.insert(names[0].0.clone(), dtype);
-            }
-        }
-        let unmarked = expr.clone().map_expr(|e| match e {
-            Expr::SubPlan(_, names) => Scalar::null(subquery_dtypes[&names[0].0].clone()).lit(),
-            // `IN (subquery)` also reads the subquery's column.
-            Expr::Agg(AggExpr::First(inner)) => match inner.as_ref() {
-                Expr::Column(name) if subquery_dtypes.contains_key(name) => {
-                    Scalar::null(subquery_dtypes[name].clone()).lit()
-                },
-                _ => Expr::Agg(AggExpr::First(inner)),
-            },
-            Expr::Alias(inner, name) if name == WINDOW_AGGREGATE => {
-                Scalar::null(infer_dtype(&inner, schema)).lit()
-            },
-            e => e,
-        });
-        if !is_reduction(&unmarked, schema) {
-            return Ok(expr);
-        }
-        polars_ensure!(
-            !has_window_aggregate(&expr),
-            SQLSyntax: "aggregate function calls cannot be nested"
-        );
-        Ok(expr.alias(WINDOW_AGGREGATE))
-    }
-}
-
-/// Mark the aggregates of an expression that a SELECT alias brings into the inputs of a
-/// window.
-fn mark_aggregates(expr: Expr, schema: &Schema, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
-    match expr {
-        Expr::Over { .. } => expr,
-        // The result of a scalar subquery is one value, not an aggregate of the rows.
-        e if is_reduction(
-            &without_resolved_subqueries(&e, subquery_names, schema),
-            schema,
-        ) =>
-        {
-            e.alias(WINDOW_AGGREGATE)
-        },
-        e => e
-            .map_children(
-                &mut |c, _| Ok(mark_aggregates(c, schema, subquery_names)),
-                &mut (),
-            )
-            .unwrap(),
-    }
 }
 
 /// Whether `expr` yields one value independent of any input frame.
