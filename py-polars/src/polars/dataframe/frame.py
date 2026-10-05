@@ -4590,10 +4590,11 @@ class DataFrame:
 
                 # 'append' requires the table to exist; if it doesn't, upgrade the mode
                 # to 'create_append'; only do this when the table is confirmed missing.
+                df_to_write = self
                 if mode == "append" and driver_manager_version >= (0, 7):
                     schema_filter = {"db_schema_filter": db_schema} if db_schema else {}
                     try:
-                        conn.adbc_get_table_schema(
+                        table_schema = conn.adbc_get_table_schema(
                             unpacked_table_name,
                             catalog_filter=catalog,
                             **schema_filter,
@@ -4606,6 +4607,17 @@ class DataFrame:
                             == driver_manager.AdbcStatusCode.NOT_FOUND
                         ):
                             mode = "create_append"
+                    else:
+                        # adbc_ingest appends column values positionally, so
+                        # reorder the data to match the physical column order of
+                        # the existing table; some drivers (e.g. MySQL) otherwise
+                        # write swapped values when the orders differ.
+                        # Ref: https://github.com/pola-rs/polars/issues/29724
+                        if (
+                            list(table_schema.names) != self.columns
+                            and set(table_schema.names) == set(self.columns)
+                        ):
+                            df_to_write = self.select(table_schema.names)
 
                 # For Snowflake, we convert to PyArrow until string_view columns can be
                 # written. Ref: https://github.com/apache/arrow-adbc/issues/3420
@@ -4624,9 +4636,9 @@ class DataFrame:
                 # As of adbc_driver_manager 1.6.0, adbc_ingest can take a Polars
                 # DataFrame via the PyCapsule interface
                 data = (
-                    self
+                    df_to_write
                     if (driver_manager_version >= (1, 6)) and not is_snowflake_driver
-                    else self.to_arrow()
+                    else df_to_write.to_arrow()
                 )
 
                 # use of schema-qualified table names was released in

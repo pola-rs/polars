@@ -252,6 +252,66 @@ class TestWriteDatabase:
         assert_frame_equal(result, pl.concat([df, df]))
         close_connections(conn)
 
+    def test_write_database_append_column_order(
+        self,
+        engine: DbWriteEngine,
+        uri_connection: bool,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Appending data in a different column order must not swap values (ref: #29724)."""
+        if engine != "adbc":
+            pytest.skip("column-order binding only applies to the 'adbc' engine")
+
+        adbc_driver_manager = pytest.importorskip("adbc_driver_manager")
+        if parse_version(getattr(adbc_driver_manager, "__version__", "0.0")) < (0, 7):
+            pytest.skip("adbc-driver-manager < 0.7.0 has no table schema lookup")
+
+        import adbc_driver_manager.dbapi as adbc_dbapi
+
+        # record the column order of the data handed to each ingest, as drivers
+        # that INSERT positionally (e.g. MySQL) write swapped values when the
+        # DataFrame order differs from the physical table order
+        ingest_orders: list[list[str]] = []
+        original_ingest = adbc_dbapi.Cursor.adbc_ingest
+
+        def _record_order(self: Any, *args: Any, **kwargs: Any) -> Any:
+            data = kwargs.get("data", args[1] if len(args) > 1 else None)
+            ingest_orders.append(
+                list(getattr(data, "column_names", None) or data.columns)
+            )
+            return original_ingest(self, *args, **kwargs)
+
+        monkeypatch.setattr(adbc_dbapi.Cursor, "adbc_ingest", _record_order)
+
+        tmp_path.mkdir(exist_ok=True)
+        test_db_uri = f"sqlite:///{tmp_path}/test_append_order_{int(uri_connection)}.db"
+        table_name = "test_append_order"
+        conn = self._get_connection(test_db_uri, engine, uri_connection)
+
+        # create the table as (a, b), then append data declared as (b, a)
+        df = pl.DataFrame({"a": ["a1"], "b": ["b1"]})
+        df.write_database(
+            table_name=table_name,
+            connection=conn,
+            engine=engine,
+        )
+        df_unordered = pl.DataFrame({"b": ["b2"], "a": ["a2"]})
+        df_unordered.write_database(
+            table_name=table_name,
+            connection=conn,
+            if_table_exists="append",
+            engine=engine,
+        )
+        # the appended data must have been reordered to the table's physical
+        # column order before ingest
+        assert ingest_orders == [["a", "b"], ["a", "b"]]
+
+        expected = pl.concat([df, pl.DataFrame({"a": ["a2"], "b": ["b2"]})])
+        result = _read_via_uri(f"SELECT * FROM {table_name}", test_db_uri)
+        assert_frame_equal(result, expected)
+        close_connections(conn)
+
     def test_write_database_create_quoted_tablename(
         self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
     ) -> None:
