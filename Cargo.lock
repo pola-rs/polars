@@ -3204,6 +3204,7 @@ version = "0.55.1"
 dependencies = [
  "polars-error",
  "serde",
+ "sysinfo",
 ]
 
 [[package]]
