@@ -875,3 +875,199 @@ def test_window_order_by_scalar_and_literal_keys(order_by: str) -> None:
         compare_with="sqlite",
         engines=["in-memory", "streaming"],
     )
+
+
+@pytest.fixture
+def df_window() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6, 7],
+            "g": [1, 1, 1, 2, 2, None, None],
+            "x": [5, 3, None, 2, 2, 4, None],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id, SUM(x) OVER (w ORDER BY id) AS a FROM t WINDOW w AS (PARTITION BY g)",
+        "SELECT id, RANK() OVER (w ORDER BY id DESC) AS a FROM t WINDOW w AS (PARTITION BY g)",
+        "SELECT id, LAG(x) OVER (w ORDER BY id) AS a FROM t WINDOW w AS (PARTITION BY g)",
+        "SELECT id, COUNT(*) OVER w AS a, COUNT(x) OVER w AS b, SUM(x) OVER w AS c FROM t WINDOW w AS (PARTITION BY g ORDER BY id)",
+        "SELECT id, ROW_NUMBER() OVER v AS a FROM t WINDOW w AS (PARTITION BY g), v AS (w ORDER BY id DESC)",
+        "SELECT id, SUM(x) OVER (w ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS a FROM t WINDOW w AS (PARTITION BY g ORDER BY id)",
+    ],
+)
+def test_window_named_window_extended(df_window: pl.DataFrame, query: str) -> None:
+    assert_sql_matches(
+        {"t": df_window}, query=query, compare_with="duckdb", check_row_order=False
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "error_type", "error"),
+    [
+        (
+            "SELECT SUM(x) OVER (w PARTITION BY id) FROM t WINDOW w AS (PARTITION BY g)",
+            SQLSyntaxError,
+            "cannot override PARTITION BY of window 'w'",
+        ),
+        (
+            "SELECT SUM(x) OVER (w ORDER BY x) FROM t WINDOW w AS (ORDER BY id)",
+            SQLSyntaxError,
+            "cannot override ORDER BY of window 'w'",
+        ),
+        (
+            "SELECT SUM(x) OVER (w ORDER BY id) FROM t WINDOW w AS (ROWS UNBOUNDED PRECEDING)",
+            SQLSyntaxError,
+            "cannot copy window 'w' because it has a frame clause",
+        ),
+        (
+            "SELECT SUM(x) OVER v FROM t WINDOW v AS (w ORDER BY id)",
+            SQLInterfaceError,
+            "named window 'w' was not found",
+        ),
+    ],
+)
+def test_window_named_window_errors(
+    df_window: pl.DataFrame, query: str, error_type: type[Exception], error: str
+) -> None:
+    with pytest.raises(error_type, match=error):
+        pl.SQLContext(t=df_window).execute(query, eager=True)
+
+
+def test_window_last_value(df_window: pl.DataFrame) -> None:
+    query = """
+        SELECT
+            id,
+            LAST_VALUE(x) OVER (PARTITION BY g) AS a,
+            LAST_VALUE(x) OVER () AS b,
+            LAST_VALUE(x) OVER (PARTITION BY g ORDER BY id) AS c,
+            LAST_VALUE(x) OVER (
+                ORDER BY id DESC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+            ) AS d
+        FROM t
+        ORDER BY id
+    """
+    assert_sql_matches(
+        {"t": df_window},
+        query=query,
+        compare_with=None,
+        expected={
+            "id": [1, 2, 3, 4, 5, 6, 7],
+            "a": [None, None, None, 2, 2, None, None],
+            "b": [None] * 7,
+            "c": [5, 3, None, 2, 2, 4, None],
+            "d": [5, 3, None, 2, 2, 4, None],
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT LAST_VALUE(x) OVER () AS a FROM t",
+        "SELECT FIRST_VALUE(x) OVER () AS a FROM t",
+        "SELECT SUM(x) OVER () AS a FROM t",
+        "SELECT COUNT(*) OVER () AS a FROM t",
+        "SELECT AVG(x) OVER w AS a FROM t WINDOW w AS ()",
+        "SELECT 1 + MAX(x) OVER () AS a FROM t",
+        "SELECT LAST_VALUE(x) OVER (PARTITION BY 1) AS a FROM t",
+        "SELECT FIRST_VALUE(x) OVER (PARTITION BY 'a') AS a FROM t",
+        "SELECT COUNT(*) OVER (PARTITION BY 1 + 1) AS a FROM t",
+        "SELECT LAST_VALUE(x) OVER (PARTITION BY LOWER('A')) AS a FROM t",
+        "SELECT LAST_VALUE(x) OVER (PARTITION BY ABS(1)) AS a FROM t",
+        "SELECT LAST_VALUE(x) OVER (PARTITION BY COALESCE(NULL, 1)) AS a FROM t",
+        "SELECT * REPLACE (SUM(x) OVER () AS x) FROM t",
+        # a window over aggregates makes the query an aggregation, with one row
+        "SELECT SUM(SUM(x)) OVER () AS a FROM t",
+        "SELECT AVG(MAX(x)) OVER () AS a FROM t",
+        "SELECT APPROX_QUANTILE(SUM(x), 0.5) OVER () AS a FROM t",
+        "SELECT CORR(SUM(x), SUM(x)) OVER () AS a FROM t",
+    ],
+)
+@pytest.mark.parametrize("n_rows", [0, 3])
+def test_window_over_whole_frame_row_count(query: str, n_rows: int) -> None:
+    df = pl.DataFrame({"x": [7, 8, 9][:n_rows]}, schema={"x": pl.Int64})
+    assert_sql_matches(
+        {"t": df},
+        query=query,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "partition_by",
+    ["COUNT(*)", "COUNT(*) > 1", "1, COUNT(*)"],
+)
+def test_window_partition_by_aggregate_after_group_by(partition_by: str) -> None:
+    df = pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
+    assert_sql_matches(
+        df,
+        query=f"""
+            SELECT g, ROW_NUMBER() OVER (PARTITION BY {partition_by} ORDER BY g) AS r
+            FROM self GROUP BY g ORDER BY g
+        """,
+        compare_with="duckdb",
+    )
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "ROWS 2 PRECEDING",
+        "ROWS BETWEEN 1 PRECEDING AND CURRENT ROW",
+        "ROWS BETWEEN CURRENT ROW AND CURRENT ROW",
+        "RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW",
+        "GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW",
+    ],
+)
+def test_window_last_value_frame_ends_at_current_row(
+    df_window: pl.DataFrame, frame: str
+) -> None:
+    query = f"SELECT id, LAST_VALUE(x) OVER (PARTITION BY g ORDER BY id {frame}) AS a FROM t"
+    assert_sql_matches(
+        {"t": df_window}, query=query, compare_with="duckdb", check_row_order=False
+    )
+
+
+@pytest.mark.parametrize(
+    ("window_fn", "error"),
+    [
+        (
+            "AVG(x) OVER (PARTITION BY g ORDER BY id)",
+            "AVG with ORDER BY in OVER is not supported yet",
+        ),
+        ("STDDEV(x) OVER (ORDER BY id)", "STDDEV with ORDER BY in OVER"),
+        ("VARIANCE(x) OVER w", "VARIANCE with ORDER BY in OVER"),
+        ("MEDIAN(x) OVER (w)", "MEDIAN with ORDER BY in OVER"),
+        ("STRING_AGG(x, ',') OVER (ORDER BY id)", "STRING_AGG with ORDER BY in OVER"),
+        ("LAST(x) OVER (ORDER BY id)", "LAST with ORDER BY in OVER"),
+        ("COUNT(DISTINCT x) OVER (ORDER BY id)", "COUNT with ORDER BY in OVER"),
+        (
+            "AVG(x) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
+            "AVG with a window frame is not supported yet",
+        ),
+        (
+            "SUM(x) OVER (PARTITION BY g ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
+            "SUM with a window frame but no ORDER BY is not supported",
+        ),
+        (
+            "LAST_VALUE(x) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)",
+            "LAST_VALUE only supports window frames that end at the current row; "
+            "found 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING'",
+        ),
+        (
+            "LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING)",
+            "LAST_VALUE only supports window frames that end at the current row",
+        ),
+    ],
+)
+def test_window_unsupported_shapes(
+    df_window: pl.DataFrame, window_fn: str, error: str
+) -> None:
+    query = f"SELECT id, {window_fn} AS a FROM t WINDOW w AS (ORDER BY id)"
+    with pytest.raises(SQLInterfaceError, match=error):
+        pl.SQLContext(t=df_window).execute(query, eager=True)

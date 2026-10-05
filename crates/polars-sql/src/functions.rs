@@ -24,7 +24,7 @@ use sqlparser::ast::{
     DateTimeField, DuplicateTreatment, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList, FunctionArguments, Ident,
     OrderByExpr, Value as SQLValue, ValueWithSpan, WindowFrame, WindowFrameBound, WindowFrameUnits,
-    WindowSpec, WindowType,
+    WindowSpec,
 };
 use sqlparser::tokenizer::Span;
 
@@ -41,6 +41,8 @@ pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) ctx: &'a mut SQLContext,
     pub(crate) active_schema: Option<&'a Schema>,
     pub(crate) filter: Option<Expr>,
+    /// The `OVER` clause, with named windows resolved.
+    pub(crate) window: Option<WindowSpec>,
 }
 
 /// SQL functions that are supported by Polars
@@ -1200,6 +1202,7 @@ impl SQLFunctionVisitor<'_> {
             }
             self.filter = Some(parse_sql_expr(filter_expr, self.ctx, self.active_schema)?);
         }
+        self.check_window_shape(&function_name)?;
 
         let log_with_base =
             |e: Expr, base: f64| e.log(LiteralValue::Dyn(DynLiteralValue::Float(base)).lit());
@@ -1806,18 +1809,24 @@ impl SQLFunctionVisitor<'_> {
             // ----
             FirstValue => self.visit_unary(Expr::first),
             LastValue => {
-                // With the default window frame (ROWS UNBOUNDED PRECEDING TO CURRENT ROW),
-                // LAST_VALUE returns the last value from the start of the partition up
-                // to the current row - which is simply the current row's value.
                 let args = extract_args(function)?;
-                match args.as_slice() {
+                let expr = match args.as_slice() {
                     [FunctionArgExpr::Expr(sql_expr)] => {
-                        parse_sql_expr(sql_expr, self.ctx, self.active_schema)
+                        parse_sql_expr(sql_expr, self.ctx, self.active_schema)?
                     },
                     _ => polars_bail!(
                         SQLSyntax: "LAST_VALUE expects exactly 1 argument (found {})",
                         args.len()
                     ),
+                };
+                match &self.window {
+                    // Without ORDER BY or a frame, the frame is the whole partition.
+                    Some(spec) if spec.order_by.is_empty() && spec.window_frame.is_none() => {
+                        self.apply_window_spec(expr.last())
+                    },
+                    // Otherwise the frame ends at the current row (see `check_window_shape`),
+                    // so the last value is the current row's.
+                    _ => Ok(expr),
                 }
             },
             Lag => self.visit_window_offset_function(1),
@@ -1833,14 +1842,13 @@ impl SQLFunctionVisitor<'_> {
                 if !args.is_empty() {
                     polars_bail!(SQLSyntax: "{} expects 0 arguments (found {})", func_name, args.len());
                 }
-                let window_spec = match &self.func.over {
-                    Some(WindowType::WindowSpec(spec)) if !spec.order_by.is_empty() => spec,
+                let order_by = match &self.window {
+                    Some(spec) if !spec.order_by.is_empty() => spec.order_by.clone(),
                     _ => {
                         polars_bail!(SQLSyntax: "{} requires an OVER clause with ORDER BY", func_name)
                     },
                 };
-                let (order_exprs, sort_opts) =
-                    self.parse_order_by_in_window(&window_spec.order_by)?;
+                let (order_exprs, sort_opts) = self.parse_order_by_in_window(&order_by)?;
                 let rank_expr = if order_exprs.len() == 1 {
                     order_exprs[0].clone().rank(
                         RankOptions {
@@ -1858,7 +1866,7 @@ impl SQLFunctionVisitor<'_> {
                         None,
                     )
                 };
-                self.apply_window_spec(rank_expr, &self.func.over)
+                self.apply_window_spec(rank_expr)
             },
             RowNumber => {
                 let args = extract_args(function)?;
@@ -1867,7 +1875,7 @@ impl SQLFunctionVisitor<'_> {
                 }
                 // note: SQL is 1-indexed
                 let row_num_expr = int_range(lit(0i64), len(), 1, DataType::UInt32) + lit(1u32);
-                self.apply_window_spec(row_num_expr, &self.func.over)
+                self.apply_window_spec(row_num_expr)
             },
 
             // ----
@@ -1878,14 +1886,9 @@ impl SQLFunctionVisitor<'_> {
     }
 
     fn visit_window_offset_function(&mut self, offset_multiplier: i64) -> PolarsResult<Expr> {
-        // LAG/LEAD require an OVER clause
-        if self.func.over.is_none() {
+        let Some(window_spec) = &self.window else {
             polars_bail!(SQLSyntax: "{} requires an OVER clause", self.func.name);
-        }
-
-        // LAG/LEAD require ORDER BY in the OVER clause
-        let window_type = self.func.over.as_ref().unwrap();
-        let window_spec = self.resolve_window_spec(window_type)?;
+        };
         if window_spec.order_by.is_empty() {
             polars_bail!(SQLSyntax: "{} requires an ORDER BY in the OVER clause", self.func.name);
         }
@@ -1910,7 +1913,7 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             _ => polars_bail!(SQLSyntax: "{} expects 1 or 2 arguments (found {})", self.func.name, args.len()),
-        }.and_then(|e| self.apply_window_spec(e, &self.func.over))
+        }.and_then(|e| self.apply_window_spec(e))
     }
 
     fn visit_udf(&mut self, func_name: &str) -> PolarsResult<Expr> {
@@ -1932,7 +1935,75 @@ impl SQLFunctionVisitor<'_> {
             .ok_or_else(|| polars_err!(SQLInterface: "UDF {} not found", func_name))?
             .call(args);
 
-        self.apply_window_spec(expr, &self.func.over)
+        self.apply_window_spec(expr)
+    }
+
+    /// Raise for window shapes that would otherwise give a wrong result.
+    fn check_window_shape(&self, function: &PolarsSQLFunctions) -> PolarsResult<()> {
+        use PolarsSQLFunctions::*;
+        let Some(spec) = &self.window else {
+            return Ok(());
+        };
+        let is_distinct = matches!(
+            &self.func.args,
+            FunctionArguments::List(list)
+                if list.duplicate_treatment == Some(DuplicateTreatment::Distinct)
+        );
+        let has_order_by = !spec.order_by.is_empty();
+        let has_frame = spec.window_frame.is_some();
+
+        // Lowered to a running aggregate (`cum_sum` etc.) when the window has an ORDER BY.
+        let running = match function {
+            Sum | Min | Max | Total => true,
+            Count => !is_distinct,
+            _ => false,
+        };
+        // Only computed over the whole partition.
+        let whole_partition = match function {
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile => true,
+            ArrayAgg | Avg | Corr | CovarPop | CovarSamp | Last | Median | QuantileCont
+            | QuantileDisc | StdDev | StringAgg | Variance => true,
+            Count => is_distinct,
+            _ => false,
+        };
+        if running && has_frame && !has_order_by {
+            polars_bail!(
+                SQLInterface: "{} with a window frame but no ORDER BY is not supported",
+                self.func.name
+            );
+        }
+        if whole_partition && has_order_by {
+            polars_bail!(
+                SQLInterface: "{} with ORDER BY in OVER is not supported yet; without ORDER BY it uses the whole partition",
+                self.func.name
+            );
+        }
+        if whole_partition && has_frame {
+            polars_bail!(
+                SQLInterface: "{} with a window frame is not supported yet",
+                self.func.name
+            );
+        }
+        // TODO: in a RANGE or GROUPS frame, rows with equal ORDER BY values should all get
+        // the LAST_VALUE of the last of them.
+        if let (LastValue, Some(frame)) = (function, &spec.window_frame) {
+            let ends_at_current_row =
+                matches!(frame.end_bound, None | Some(WindowFrameBound::CurrentRow));
+            let starts_after_current_row =
+                matches!(frame.start_bound, WindowFrameBound::Following(_));
+            if !ends_at_current_row || starts_after_current_row {
+                polars_bail!(
+                    SQLInterface:
+                    "{} only supports window frames that end at the current row; found '{} BETWEEN {} AND {}'",
+                    self.func.name,
+                    frame.units,
+                    frame.start_bound,
+                    frame.end_bound.as_ref().unwrap_or(&WindowFrameBound::CurrentRow),
+                );
+            }
+        }
+        Ok(())
     }
 
     /// Validate window frame specifications.
@@ -2102,7 +2173,7 @@ impl SQLFunctionVisitor<'_> {
                 .dot(self.parse_array_inner_product_arg(rhs)?)),
             _ => self.not_supported_error(),
         }
-        .and_then(|e| self.apply_window_spec(e, &self.func.over))
+        .and_then(|e| self.apply_window_spec(e))
     }
 
     fn visit_unary(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
@@ -2118,26 +2189,7 @@ impl SQLFunctionVisitor<'_> {
             },
             _ => self.not_supported_error(),
         }
-        .and_then(|e| self.apply_window_spec(e, &self.func.over))
-    }
-
-    /// Resolve a WindowType to a concrete WindowSpec (handles named window references)
-    fn resolve_window_spec(&self, window_type: &WindowType) -> PolarsResult<WindowSpec> {
-        match window_type {
-            WindowType::WindowSpec(spec) => Ok(spec.clone()),
-            WindowType::NamedWindow(name) => self
-                .ctx
-                .named_windows
-                .get(&name.value)
-                .cloned()
-                .ok_or_else(|| {
-                    polars_err!(
-                        SQLInterface:
-                        "named window '{}' was not found",
-                        name.value
-                    )
-                }),
-        }
+        .and_then(|e| self.apply_window_spec(e))
     }
 
     /// Some functions have cumulative equivalents that can be applied to window specs
@@ -2147,11 +2199,8 @@ impl SQLFunctionVisitor<'_> {
         f: impl Fn(Expr) -> Expr,
         cumulative_fn: impl Fn(Expr, bool) -> Expr,
     ) -> PolarsResult<Expr> {
-        match self.func.over.as_ref() {
-            Some(window_type) => {
-                let spec = self.resolve_window_spec(window_type)?;
-                self.apply_cumulative_window(f, cumulative_fn, &spec)
-            },
+        match self.window.clone() {
+            Some(spec) => self.apply_cumulative_window(f, cumulative_fn, &spec),
             None => self.visit_unary(f),
         }
     }
@@ -2179,7 +2228,7 @@ impl SQLFunctionVisitor<'_> {
             },
             _ => self.not_supported_error(),
         }
-        .and_then(|e| self.apply_window_spec(e, &self.func.over))
+        .and_then(|e| self.apply_window_spec(e))
     }
 
     fn visit_variadic(&mut self, f: impl Fn(&[Expr]) -> Expr) -> PolarsResult<Expr> {
@@ -2199,7 +2248,7 @@ impl SQLFunctionVisitor<'_> {
                 return self.not_supported_error();
             };
         }
-        f(&expr_args).and_then(|e| self.apply_window_spec(e, &self.func.over))
+        f(&expr_args).and_then(|e| self.apply_window_spec(e))
     }
 
     fn try_visit_ternary<Arg: FromSQLExpr>(
@@ -2220,7 +2269,7 @@ impl SQLFunctionVisitor<'_> {
             },
             _ => self.not_supported_error(),
         }
-        .and_then(|e| self.apply_window_spec(e, &self.func.over))
+        .and_then(|e| self.apply_window_spec(e))
     }
 
     fn visit_nullary(&self, f: impl Fn() -> Expr) -> PolarsResult<Expr> {
@@ -2290,7 +2339,7 @@ impl SQLFunctionVisitor<'_> {
                     sql_expr,
                     "ARRAY_AGG",
                 )?;
-                self.apply_window_spec(base.implode(true), &self.func.over)
+                self.apply_window_spec(base.implode(true))
             },
             _ => {
                 polars_bail!(SQLSyntax: "ARRAY_AGG must have exactly one argument; found {}", args.len())
@@ -2344,10 +2393,7 @@ impl SQLFunctionVisitor<'_> {
             None => ApproxQuantileMethod::Auto,
         };
 
-        self.apply_window_spec(
-            expr.approx_quantile(quantile, error, false, method),
-            &self.func.over,
-        )
+        self.apply_window_spec(expr.approx_quantile(quantile, error, false, method))
     }
 
     fn visit_string_agg(&mut self) -> PolarsResult<Expr> {
@@ -2394,7 +2440,6 @@ impl SQLFunctionVisitor<'_> {
             when(base.clone().null_count().lt(base.len()))
                 .then(joined)
                 .otherwise(lit(LiteralValue::untyped_null())),
-            &self.func.over,
         )
     }
 
@@ -2466,7 +2511,7 @@ impl SQLFunctionVisitor<'_> {
         if is_distinct {
             arg = arg.unique();
         }
-        self.apply_window_spec(arg.mean(), &self.func.over)
+        self.apply_window_spec(arg.mean())
     }
 
     /// Like `visit_unary_with_opt_cumulative`, but also accepts a DISTINCT modifier, which is a
@@ -2476,11 +2521,8 @@ impl SQLFunctionVisitor<'_> {
         f: impl Fn(Expr) -> Expr,
         cumulative_fn: impl Fn(Expr, bool) -> Expr,
     ) -> PolarsResult<Expr> {
-        match self.func.over.as_ref() {
-            Some(window_type) => {
-                let spec = self.resolve_window_spec(window_type)?;
-                self.apply_cumulative_window(f, cumulative_fn, &spec)
-            },
+        match self.window.clone() {
+            Some(spec) => self.apply_cumulative_window(f, cumulative_fn, &spec),
             None => {
                 let (args, _) = extract_args_distinct(self.func)?;
                 let e = match args.as_slice() {
@@ -2490,7 +2532,7 @@ impl SQLFunctionVisitor<'_> {
                     },
                     _ => return self.not_supported_error(),
                 };
-                self.apply_window_spec(e, &self.func.over)
+                self.apply_window_spec(e)
             },
         }
     }
@@ -2498,54 +2540,32 @@ impl SQLFunctionVisitor<'_> {
     fn visit_count(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
 
-        // Window function with an ORDER BY clause?
-        let has_order_by = match &self.func.over {
-            Some(WindowType::WindowSpec(spec)) => !spec.order_by.is_empty(),
-            _ => false,
-        };
+        let has_order_by = self
+            .window
+            .as_ref()
+            .is_some_and(|spec| !spec.order_by.is_empty());
         if has_order_by && !is_distinct {
-            if let Some(WindowType::WindowSpec(spec)) = &self.func.over {
-                self.validate_window_frame(&spec.window_frame)?;
-
-                let is_count_star = match args.as_slice() {
-                    [FunctionArgExpr::Wildcard] | [] => true,
-                    [FunctionArgExpr::Expr(e)] => is_non_null_literal(e),
-                    _ => false,
-                };
-                match args.as_slice() {
-                    _ if is_count_star => {
-                        // COUNT(*) / COUNT(1) with ORDER BY -> map to `int_range`
-                        let (order_by_exprs, sort_opts) =
-                            self.parse_order_by_in_window(&spec.order_by)?;
-                        let partition_by_exprs = if spec.partition_by.is_empty() {
-                            None
-                        } else {
-                            Some(
-                                spec.partition_by
-                                    .iter()
-                                    .map(|p| parse_sql_expr(p, self.ctx, self.active_schema))
-                                    .collect::<PolarsResult<Vec<_>>>()?,
-                            )
-                        };
-                        let row_number = int_range(lit(0), len(), 1, DataType::Int64).add(lit(1)); // SQL is 1-indexed
-
-                        return row_number.over_with_options(
-                            partition_by_exprs,
-                            Some((order_by_exprs, sort_opts)),
-                            Default::default(),
-                        );
-                    },
-                    [FunctionArgExpr::Expr(_)] => {
-                        // COUNT(column) with ORDER BY -> use cum_count
-                        return self
-                            .visit_unary_with_opt_cumulative(
-                                |e| e.count(),
-                                |e, reverse| e.cum_count(reverse),
-                            )
-                            .map(|e| e.cast(DataType::Int64));
-                    },
-                    _ => {},
-                }
+            let is_count_star = match args.as_slice() {
+                [FunctionArgExpr::Wildcard] | [] => true,
+                [FunctionArgExpr::Expr(e)] => is_non_null_literal(e),
+                _ => false,
+            };
+            match args.as_slice() {
+                _ if is_count_star => {
+                    // COUNT(*) / COUNT(1) with ORDER BY -> map to `int_range`
+                    let row_number = int_range(lit(0), len(), 1, DataType::Int64).add(lit(1)); // SQL is 1-indexed
+                    return self.apply_window_spec(row_number);
+                },
+                [FunctionArgExpr::Expr(_)] => {
+                    // COUNT(column) with ORDER BY -> use cum_count
+                    return self
+                        .visit_unary_with_opt_cumulative(
+                            |e| e.count(),
+                            |e, reverse| e.cum_count(reverse),
+                        )
+                        .map(|e| e.cast(DataType::Int64));
+                },
+                _ => {},
             }
         }
         // COUNT(*), COUNT(1) with FILTER: count rows where the predicate is true.
@@ -2572,13 +2592,12 @@ impl SQLFunctionVisitor<'_> {
             },
             _ => self.not_supported_error()?,
         };
-        self.apply_window_spec(count_expr.cast(DataType::Int64), &self.func.over)
+        self.apply_window_spec(count_expr.cast(DataType::Int64))
     }
 
     fn visit_sum(&mut self) -> PolarsResult<Expr> {
-        match self.func.over.as_ref() {
-            Some(window_type) => {
-                let spec = self.resolve_window_spec(window_type)?;
+        match self.window.clone() {
+            Some(spec) => {
                 if spec.order_by.is_empty() {
                     // Non-cumulative windowed SUM: broadcast the null-guarded aggregate.
                     // SQL requires NULL, not 0, for an empty or all-null input.
@@ -2597,7 +2616,7 @@ impl SQLFunctionVisitor<'_> {
                     let guarded = when(non_empty)
                         .then(total)
                         .otherwise(Expr::Literal(LiteralValue::untyped_null()));
-                    self.apply_window_spec(guarded, &self.func.over)
+                    self.apply_window_spec(guarded)
                 } else {
                     self.apply_cumulative_window(Expr::sum, Expr::cum_sum, &spec)
                 }
@@ -2628,12 +2647,10 @@ impl SQLFunctionVisitor<'_> {
     }
 
     fn visit_total(&mut self) -> PolarsResult<Expr> {
-        match self.func.over.as_ref() {
-            Some(window_type) => {
-                let spec = self.resolve_window_spec(window_type)?;
-                self.apply_cumulative_window(Expr::sum, Expr::cum_sum, &spec)
-                    .map(|e| e.cast(DataType::Float64))
-            },
+        match self.window.clone() {
+            Some(spec) => self
+                .apply_cumulative_window(Expr::sum, Expr::cum_sum, &spec)
+                .map(|e| e.cast(DataType::Float64)),
             None => {
                 let (args, is_distinct) = extract_args_distinct(self.func)?;
                 let mut arg = match args.as_slice() {
@@ -2720,28 +2737,21 @@ impl SQLFunctionVisitor<'_> {
         Ok((exprs, sort_options))
     }
 
-    fn apply_window_spec(
-        &mut self,
-        expr: Expr,
-        window_type: &Option<WindowType>,
-    ) -> PolarsResult<Expr> {
-        let Some(window_type) = window_type else {
+    fn apply_window_spec(&mut self, expr: Expr) -> PolarsResult<Expr> {
+        let Some(window_spec) = self.window.clone() else {
             return Ok(expr);
         };
-        let window_spec = self.resolve_window_spec(window_type)?;
         self.validate_window_frame(&window_spec.window_frame)?;
 
-        let partition_by = if window_spec.partition_by.is_empty() {
-            None
-        } else {
-            Some(
-                window_spec
-                    .partition_by
-                    .iter()
-                    .map(|p| parse_sql_expr(p, self.ctx, self.active_schema))
-                    .collect::<PolarsResult<Vec<_>>>()?,
-            )
-        };
+        // A constant key, as in `PARTITION BY 1`, does not split the frame.
+        let mut partition_by = Vec::with_capacity(window_spec.partition_by.len());
+        for p in &window_spec.partition_by {
+            let key = parse_sql_expr(p, self.ctx, self.active_schema)?;
+            if !matches!(key.clone().meta().is_input_independent_scalar(), Ok(true)) {
+                partition_by.push(key);
+            }
+        }
+        let partition_by = (!partition_by.is_empty()).then_some(partition_by);
         let order_by = if window_spec.order_by.is_empty() {
             None
         } else {
@@ -2749,10 +2759,10 @@ impl SQLFunctionVisitor<'_> {
             Some((order_exprs, sort_opts))
         };
 
-        // Apply window spec; under a GROUP BY an empty window still has to be
-        // told apart from a group aggregate.
+        // Apply window spec; an empty window still has to be told apart from an
+        // aggregate (see `GroupScope::mark_whole_frame_windows`).
         Ok(match (partition_by, order_by) {
-            (None, None) if self.ctx.group_scope.parsing_group_input => {
+            (None, None) if self.ctx.group_scope.mark_whole_frame_windows => {
                 expr.over([col(self.ctx.whole_frame_partition())])?
             },
             (None, None) => expr,
