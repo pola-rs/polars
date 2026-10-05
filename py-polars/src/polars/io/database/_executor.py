@@ -373,13 +373,14 @@ class ConnectionExecutor:
     def _is_alchemy_async(conn: Any) -> bool:
         """Check if the given connection is SQLALchemy async."""
         try:
-            from sqlalchemy.ext.asyncio import (
-                AsyncConnection,
-                AsyncSession,
-                async_sessionmaker,
-            )
+            from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
-            return isinstance(conn, (AsyncConnection, AsyncSession, async_sessionmaker))
+            if isinstance(conn, (AsyncConnection, AsyncSession)):
+                return True
+
+            from sqlalchemy.ext.asyncio import async_sessionmaker
+
+            return isinstance(conn, async_sessionmaker)
         except ImportError:
             return False
 
@@ -411,9 +412,14 @@ class ConnectionExecutor:
             return True
 
         try:
-            from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+            from sqlalchemy.ext.asyncio import AsyncSession
 
-            return isinstance(conn, (AsyncSession, async_sessionmaker))
+            if isinstance(conn, AsyncSession):
+                return True
+
+            from sqlalchemy.ext.asyncio import async_sessionmaker
+
+            return isinstance(conn, async_sessionmaker)
         except ImportError:
             # SQLAlchemy 2.1 imports greenlet while loading the asyncio extra.
             # A synchronous connection must still be usable without it.
