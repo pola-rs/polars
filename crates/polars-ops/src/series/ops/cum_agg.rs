@@ -195,6 +195,31 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
     BooleanChunked::with_chunk_like(ca, arr.with_validity(ca.rechunk_validity()))
 }
 
+fn cum_min_max_binary<'a>(
+    ca: &'a BinaryChunked,
+    reverse: bool,
+    init: Option<&'a [u8]>,
+    is_max: bool,
+) -> BinaryChunked {
+    let mut state = init;
+    let update = |v: Option<&'a [u8]>| {
+        let v = v?;
+        let keep_state = state.is_some_and(|s| if is_max { s >= v } else { s <= v });
+        if !keep_state {
+            state = Some(v);
+        }
+        state
+    };
+    let out: BinaryChunked = if reverse {
+        let mut values: Vec<_> = ca.iter().rev().map(update).collect();
+        values.reverse();
+        values.into_iter().collect()
+    } else {
+        ca.iter().map(update).collect()
+    };
+    out.with_name(ca.name().clone())
+}
+
 fn cum_sum_numeric<T>(
     ca: &ChunkedArray<T>,
     reverse: bool,
@@ -359,6 +384,16 @@ pub fn cum_min_with_init(
         DataType::Boolean => {
             Ok(cum_min_bool(s.bool()?, reverse, init.extract_bool()).into_series())
         },
+        DataType::String => {
+            let ca = s.str()?.as_binary();
+            let init = init.extract_str().map(str::as_bytes);
+            let out = cum_min_max_binary(&ca, reverse, init, false);
+            Ok(unsafe { out.to_string_unchecked() }.into_series())
+        },
+        DataType::Binary => {
+            let out = cum_min_max_binary(s.binary()?, reverse, init.extract_bytes(), false);
+            Ok(out.into_series())
+        },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(precision, scale) => {
             let ca = s.decimal().unwrap().physical();
@@ -396,6 +431,16 @@ pub fn cum_max_with_init(
     match s.dtype() {
         DataType::Boolean => {
             Ok(cum_max_bool(s.bool()?, reverse, init.extract_bool()).into_series())
+        },
+        DataType::String => {
+            let ca = s.str()?.as_binary();
+            let init = init.extract_str().map(str::as_bytes);
+            let out = cum_min_max_binary(&ca, reverse, init, true);
+            Ok(unsafe { out.to_string_unchecked() }.into_series())
+        },
+        DataType::Binary => {
+            let out = cum_min_max_binary(s.binary()?, reverse, init.extract_bytes(), true);
+            Ok(out.into_series())
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(precision, scale) => {
