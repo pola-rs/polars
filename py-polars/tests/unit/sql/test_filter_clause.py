@@ -139,9 +139,35 @@ def test_filter_clause_multi_parameter_func() -> None:
     )
 
 
-def test_filter_clause_filter_plus_over_unsupported() -> None:
+@pytest.mark.parametrize(
+    "agg", ["SUM(x)", "COUNT(*)", "COUNT(x)", "MIN(x)", "MAX(x)", "AVG(x)"]
+)
+@pytest.mark.parametrize(
+    "over",
+    ["PARTITION BY grp", "PARTITION BY grp ORDER BY y", "ORDER BY y ROWS 1 PRECEDING"],
+)
+def test_filter_clause_with_over(agg: str, over: str) -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["a", "a", "b", "b", "b"],
+            "x": [1, None, 2, 3, 4],
+            "y": [10, 30, 20, 40, 50],
+        }
+    )
+    assert_sql_matches(
+        df,
+        query=f"SELECT y, {agg} FILTER (WHERE y > 15) OVER ({over}) AS v FROM self ORDER BY y",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_filter_clause_with_over_unsupported() -> None:
     df = pl.DataFrame({"grp": ["a", "b"], "x": [1, 2], "y": [10, 30]})
-    with pytest.raises(SQLInterfaceError, match=r"FILTER.*OVER"):
+    with pytest.raises(
+        SQLInterfaceError,
+        match="'FILTER' combined with 'OVER' is not supported for STDDEV",
+    ):
         pl.sql(
-            "SELECT SUM(x) FILTER (WHERE y > 20) OVER (PARTITION BY grp) FROM df"
+            "SELECT STDDEV(x) FILTER (WHERE y > 20) OVER (PARTITION BY grp) FROM df"
         ).collect()

@@ -55,7 +55,8 @@ so multiple aggregates in the same ``SELECT`` can see different row sets.
 
 .. note::
 
-   ``FILTER`` cannot be combined with ``OVER`` on the same aggregate call.
+   ``FILTER`` can be combined with ``OVER`` only for ``SUM``, ``COUNT``, ``MIN``, ``MAX``,
+   ``AVG`` and ``TOTAL``.
 
 **Example:**
 

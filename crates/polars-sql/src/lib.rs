@@ -13,6 +13,7 @@ mod sql_visitors;
 mod subquery;
 mod table_functions;
 mod types;
+mod window_frames;
 
 pub use context::{SQLContext, extract_table_identifiers};
 pub use resolver::register_sql_resolver;

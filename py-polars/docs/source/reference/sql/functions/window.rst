@@ -33,15 +33,16 @@ Window
 
 .. note::
 
-    As a DataFrame engine Polars defaults to `ROWS` framing semantics for window functions when an explicit
-    window specification is omitted; specifically, `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. This
-    differs from the default `RANGE` framing semantics typically used by database engines.
+    Without a frame clause, a window with `ORDER BY` uses the frame
+    `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`, as in other databases: rows with equal
+    `ORDER BY` values (peers) get the same result. Without `ORDER BY`, the frame is the whole
+    partition. See :ref:`OVER <over>` for the supported frames.
 
 .. note::
 
     Rows that have equal values for the `ORDER BY` of a window (peers) may be processed in any
-    order. Functions such as `ROW_NUMBER`, `LAG`, `LEAD`, `FIRST_VALUE` and running aggregates
-    can then give tied rows different results between runs. Add columns to the `ORDER BY` to make
+    order. Functions such as `ROW_NUMBER`, `LAG`, `LEAD`, `FIRST_VALUE` and aggregates with a
+    `ROWS` frame can then give tied rows different results between runs. Add columns to the `ORDER BY` to make
     the order unique.
 
 
@@ -405,10 +406,21 @@ OVER
 Used to define a window (a set of rows) within which a function is applied.
 
 **Notes:**
-As a DataFrame engine Polars defaults to `ROWS` framing semantics for window
-functions when an explicit window specification is omitted; specifically,
-`ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. This differs from the
-default `RANGE` framing semantics typically used by database engines.
+Without a frame clause, a window with ``ORDER BY`` uses the frame
+``RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW``: rows with equal ``ORDER BY``
+values (peers) get the same result. Without ``ORDER BY``, the frame is the whole partition.
+
+``SUM``, ``COUNT``, ``MIN``, ``MAX``, ``AVG`` and ``TOTAL`` support these frames, with
+``ROWS``, ``RANGE`` or ``GROUPS``:
+
+* ``BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW``
+* ``BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING``
+* ``BETWEEN CURRENT ROW AND CURRENT ROW``
+* ``BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING``
+* ``ROWS BETWEEN <n> PRECEDING AND CURRENT ROW`` (not for ``MIN`` and ``MAX`` of strings,
+  or ``SUM``, ``MIN`` and ``MAX`` of decimals)
+
+Other frames raise an error.
 
 **Example:**
 
