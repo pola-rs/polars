@@ -1824,30 +1824,9 @@ impl SQLFunctionVisitor<'_> {
                     Some(spec) if spec.order_by.is_empty() && spec.window_frame.is_none() => {
                         self.apply_window_spec(expr.last())
                     },
-                    // The frame ends at the current row, so the last value is the current row's.
-                    // TODO: in a RANGE or GROUPS frame, rows with equal ORDER BY values should all
-                    // get the value of the last of them.
-                    Some(spec) => {
-                        if let Some(frame) = &spec.window_frame {
-                            let ends_at_current_row = matches!(
-                                frame.end_bound,
-                                None | Some(WindowFrameBound::CurrentRow)
-                            );
-                            let starts_after_current_row =
-                                matches!(frame.start_bound, WindowFrameBound::Following(_));
-                            if !ends_at_current_row || starts_after_current_row {
-                                polars_bail!(
-                                    SQLInterface:
-                                    "LAST_VALUE only supports window frames that end at the current row; found '{} BETWEEN {} AND {}'",
-                                    frame.units,
-                                    frame.start_bound,
-                                    frame.end_bound.as_ref().unwrap_or(&WindowFrameBound::CurrentRow),
-                                );
-                            }
-                        }
-                        Ok(expr)
-                    },
-                    None => Ok(expr),
+                    // Otherwise the frame ends at the current row (see `check_window_shape`),
+                    // so the last value is the current row's.
+                    _ => Ok(expr),
                 }
             },
             Lag => self.visit_window_offset_function(1),
@@ -2005,6 +1984,24 @@ impl SQLFunctionVisitor<'_> {
                 SQLInterface: "{} with a window frame is not supported yet",
                 self.func.name
             );
+        }
+        // TODO: in a RANGE or GROUPS frame, rows with equal ORDER BY values should all get
+        // the LAST_VALUE of the last of them.
+        if let (LastValue, Some(frame)) = (function, &spec.window_frame) {
+            let ends_at_current_row =
+                matches!(frame.end_bound, None | Some(WindowFrameBound::CurrentRow));
+            let starts_after_current_row =
+                matches!(frame.start_bound, WindowFrameBound::Following(_));
+            if !ends_at_current_row || starts_after_current_row {
+                polars_bail!(
+                    SQLInterface:
+                    "{} only supports window frames that end at the current row; found '{} BETWEEN {} AND {}'",
+                    self.func.name,
+                    frame.units,
+                    frame.start_bound,
+                    frame.end_bound.as_ref().unwrap_or(&WindowFrameBound::CurrentRow),
+                );
+            }
         }
         Ok(())
     }
