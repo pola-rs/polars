@@ -1125,9 +1125,8 @@ impl SQLExprVisitor<'_> {
             && (in_window || self.ctx.group_scope.mark_aggregates)
             && PolarsSQLFunctions::is_aggregate_call(function, self.ctx, &expr)?
         {
-            // A window reads each aggregate in its inputs as one value per group.
             polars_ensure!(
-                !in_window || !has_marked_aggregate(&expr),
+                !has_marked_aggregate(&expr),
                 SQLSyntax: "aggregate function calls cannot be nested"
             );
             return Ok(mark_aggregate(expr));

@@ -171,6 +171,25 @@ def test_alias_named_like_internal_column(query: str) -> None:
     assert_sql_matches({"t": df}, query=query, compare_with="duckdb")
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g, SUM(MAX(x)) FROM self GROUP BY g",
+        "SELECT SUM(x) + AVG(COUNT(*)) FROM self",
+        "SELECT g FROM self GROUP BY g HAVING SUM(MAX(x)) > 1",
+        "SELECT g FROM self GROUP BY g ORDER BY SUM(MAX(x))",
+        "SELECT g FROM self WHERE g = 1 GROUP BY g ORDER BY SUM(MAX(x))",
+        "SELECT SUM(x) FROM self ORDER BY SUM(MAX(x))",
+    ],
+)
+def test_nested_aggregates_error(query: str) -> None:
+    df = pl.DataFrame({"g": [1, 2, 2], "x": [1, 2, 3]})
+    with pytest.raises(
+        SQLSyntaxError, match="aggregate function calls cannot be nested"
+    ):
+        df.sql(query)
+
+
 def test_group_by_all_multi() -> None:
     dt1 = date(1999, 12, 31)
     dt2 = date(2028, 7, 5)

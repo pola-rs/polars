@@ -249,10 +249,10 @@ pub struct SQLContext {
 #[derive(Clone, Default)]
 pub(crate) struct GroupScope {
     /// Whether the aggregate calls being parsed are marked (see `AGGREGATE_MARK`): in the
-    /// clauses that run in the group context of the block.
+    /// clauses that run in the group context of the block. Marked calls cannot be nested.
     pub(crate) mark_aggregates: bool,
     /// Whether the inputs of a window function are being parsed. Aggregates there are
-    /// marked too, and cannot be nested.
+    /// marked too.
     pub(crate) in_window: bool,
     /// `GROUPING()` calls parsed in the block.
     grouping_calls: Vec<GroupingCall>,
@@ -3143,13 +3143,9 @@ impl SQLContext {
                 )?;
 
                 // translate order expression, allowing ordinal values
-                by.push(self.expr_or_ordinal(
-                    &lowered,
-                    columns,
-                    selected,
-                    Some(&schema),
-                    "ORDER BY",
-                )?)
+                by.push(self.marking_aggregates(|ctx| {
+                    ctx.expr_or_ordinal(&lowered, columns, selected, Some(&schema), "ORDER BY")
+                })?)
             }
         }
 
