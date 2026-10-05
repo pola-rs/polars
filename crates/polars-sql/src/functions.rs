@@ -44,6 +44,9 @@ pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) filter: Option<Expr>,
     /// The `OVER` clause, with named windows resolved.
     pub(crate) window: Option<WindowSpec>,
+    /// Whether the value arguments are read once per row, as by an aggregate without `OVER`
+    /// (see `parse_sql_arg`).
+    pub(crate) reads_rows: bool,
 }
 
 /// SQL functions that are supported by Polars
@@ -1220,8 +1223,18 @@ impl PolarsSQLFunctions {
         ctx: &SQLContext,
         call: &Expr,
     ) -> PolarsResult<bool> {
-        use PolarsSQLFunctions::*;
         Ok(match Self::try_from_sql(function, ctx)? {
+            Self::Udf(_) => {
+                matches!(call, Expr::AnonymousFunction { options, .. } if options.returns_scalar())
+            },
+            function => function.is_builtin_aggregate(),
+        })
+    }
+
+    /// Whether this is a SQL aggregate function when called without OVER.
+    fn is_builtin_aggregate(&self) -> bool {
+        use PolarsSQLFunctions::*;
+        match self {
             #[cfg(feature = "approx_quantile")]
             ApproxQuantile => true,
             ArrayAgg | Avg | Corr | Count | CovarPop | CovarSamp | First | Last | Max | Median
@@ -1230,11 +1243,8 @@ impl PolarsSQLFunctions {
             },
             // Without OVER, FIRST_VALUE is FIRST.
             FirstValue => true,
-            Udf(_) => {
-                matches!(call, Expr::AnonymousFunction { options, .. } if options.returns_scalar())
-            },
             _ => false,
-        })
+        }
     }
 }
 
@@ -1256,6 +1266,7 @@ impl SQLFunctionVisitor<'_> {
         if let Some(filter_expr) = &function.filter {
             self.filter = Some(parse_sql_expr(filter_expr, self.ctx, self.active_schema)?);
         }
+        self.reads_rows = self.window.is_none() && function_name.is_builtin_aggregate();
         self.check_window_shape(&function_name)?;
         if self.window.is_some() && is_frame_aggregate(&function_name, self.is_distinct()) {
             return self.visit_window_aggregate(&function_name);
@@ -1777,11 +1788,17 @@ impl SQLFunctionVisitor<'_> {
                     ("QUANTILE_DISC", QuantileMethod::Equiprobable)
                 };
                 let args = extract_args(function)?;
-                match args.len() {
-                    2 => self.try_visit_binary(|e, q| {
-                        let value = parse_quantile_literal(q, fname, args[1])?;
-                        Ok(e.quantile(value, method))
-                    }),
+                match args.as_slice() {
+                    [
+                        FunctionArgExpr::Expr(value),
+                        FunctionArgExpr::Expr(quantile),
+                    ] => {
+                        let e = self.parse_sql_arg(value)?;
+                        // Parameters are not subject to an active FILTER clause; only the values are.
+                        let quantile = parse_sql_expr(quantile, self.ctx, self.active_schema)?;
+                        let quantile = parse_quantile_literal(quantile, fname, args[1])?;
+                        self.apply_window_spec(e.quantile(quantile, method))
+                    },
                     _ => {
                         polars_bail!(SQLSyntax: "{} expects 2 arguments (found {})", fname, args.len())
                     },
@@ -2163,8 +2180,13 @@ impl SQLFunctionVisitor<'_> {
     ///
     /// Behaves like [`parse_sql_expr`] but also accounts for any
     /// active `FILTER (WHERE …)` clause from the surrounding call.
+    /// Parse a value argument, as opposed to a parameter. A function that reads its values
+    /// once per row reads a constant once per row too.
     fn parse_sql_arg(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
-        let parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
+        let mut parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
+        if self.reads_rows && is_constant_key(&parsed) {
+            parsed = polars_lazy::dsl::repeat(parsed, len());
+        }
         Ok(self.apply_filter(parsed))
     }
 
@@ -2573,6 +2595,12 @@ impl SQLFunctionVisitor<'_> {
     fn visit_sum(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
         let mut arg = match args.as_slice() {
+            // `sql_sum` sums a literal as `literal * len()`.
+            [FunctionArgExpr::Expr(sql_expr @ SQLExpr::Value(_))]
+                if !is_distinct && self.filter.is_none() =>
+            {
+                parse_sql_expr(sql_expr, self.ctx, self.active_schema)?
+            },
             [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
             [FunctionArgExpr::Wildcard] => {
                 self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
@@ -2580,8 +2608,6 @@ impl SQLFunctionVisitor<'_> {
             _ => return self.not_supported_error(),
         };
         if is_distinct {
-            // Also bypasses the literal fast path, no longer matching a literal
-            // once wrapped.
             arg = arg.unique();
         }
         Ok(sql_sum(arg))
@@ -2599,8 +2625,7 @@ impl SQLFunctionVisitor<'_> {
         if is_distinct {
             arg = arg.unique();
         }
-        let total = literal_sum(&arg).unwrap_or_else(|| arg.sum());
-        Ok(total.cast(DataType::Float64))
+        Ok(arg.sum().cast(DataType::Float64))
     }
 
     fn apply_order_by(&mut self, expr: Expr, order_by: &[OrderByExpr]) -> PolarsResult<Expr> {

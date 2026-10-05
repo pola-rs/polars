@@ -233,6 +233,33 @@ def test_sum_avg_distinct_empty_table() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "agg",
+    [
+        "MIN(1)",
+        "MAX(1)",
+        "AVG(1)",
+        "MEDIAN(1)",
+        "STDDEV(1)",
+        "VARIANCE(1)",
+        "FIRST(1)",
+        "SUM(1 + 1)",
+        "COUNT(DISTINCT 1)",
+        "QUANTILE_CONT(1, 0.5)",
+        "STRING_AGG('a', ',')",
+    ],
+)
+@pytest.mark.parametrize("n_rows", [0, 3])
+def test_aggregate_of_constant(agg: str, n_rows: int) -> None:
+    # A constant is read once per row, as a column is.
+    df = pl.DataFrame({"g": [1, 2, 2][:n_rows]}, schema={"g": pl.Int64})
+    for query in [
+        f"SELECT {agg} AS a FROM self",
+        f"SELECT g, {agg} AS a FROM self GROUP BY g ORDER BY g",
+    ]:
+        assert_sql_matches(df, query=query, compare_with="duckdb")
+
+
 def test_group_concat_distinct_with_separator_errors() -> None:
     df = pl.DataFrame({"a": [1, 1, 2]})
 

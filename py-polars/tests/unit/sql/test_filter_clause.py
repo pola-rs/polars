@@ -50,6 +50,7 @@ def test_filter_clause_grouped(lf: pl.LazyFrame, agg: str, values: list[Any]) ->
         ("MEDIAN(x) FILTER (WHERE y > 20)", [3.0, 5.0]),
         ("STDDEV_SAMP(x) FILTER (WHERE y > 20)", [None, math.sqrt(2.0)]),
         ("VAR_SAMP(x) FILTER (WHERE y > 20)", [None, 2.0]),
+        ("QUANTILE_CONT(x, 0.5) FILTER (WHERE y > 20)", [3.0, 5.0]),
     ],
 )
 def test_filter_clause_misc_aggfuncs(
