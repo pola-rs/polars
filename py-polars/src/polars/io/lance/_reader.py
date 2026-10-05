@@ -256,7 +256,7 @@ class LanceFragmentReader(FileReader):
 
                 raise
 
-        except BaseException as e:
+        except BaseException:
             conversion_threadpool.shutdown(wait=False, cancel_futures=True)
 
             raise
