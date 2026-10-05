@@ -296,7 +296,8 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
                 .get(e.node())
                 .to_field(&ToFieldContext::new(expr_arena, &input_schema))
                 .unwrap();
-            schema.with_column(e.output_name().clone(), field.dtype);
+            let dtype = field.dtype.materialize_unknown(true).unwrap();
+            schema.with_column(e.output_name().clone(), dtype);
         }
 
         top = ir_arena.add(IR::Window {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import operator
 from dataclasses import dataclass
 from functools import reduce
 from time import perf_counter
@@ -15,6 +16,7 @@ from polars.schema import Schema
 
 if TYPE_CHECKING:
     import lance
+    import pyarrow.compute as pc
 
     import polars as pl
     from polars._typing import StorageOptionsDict
@@ -128,10 +130,39 @@ class LanceScanResolver(LazyFrameResolver):
                 f"LanceScanResolver: resolve_lazyframe(): serialize fragments: {elapsed:.3f}s"
             )
 
+        pushed_filters: list[pc.Expression] = []
+        remaining_filters: list[pl.Expr] = []
+
+        for filter_expr in filters:
+            try:
+                pa_expr = filter_expr.pyarrow_expr
+            except Exception:
+                pa_expr = None
+
+            # `limit` must be applied before filters, but lance applies filters
+            # before the limit, so filters cannot be pushed in the presence of a limit.
+            if (
+                limit is None
+                and pa_expr is not None
+                and is_filter_supported_by_lance(dataset, pa_expr)
+            ):
+                pushed_filters.append(pa_expr)
+            else:
+                remaining_filters.append(filter_expr.expr)
+
+        if verbose and filters:
+            eprint(
+                "LanceScanResolver: resolve_lazyframe(): "
+                f"filters pushed to lance: {len(pushed_filters)} / {len(filters)}"
+            )
+
         lf = pl.scan_external_reader(
             LanceReaderBuilder(
                 dataset=dataset,
                 projected_schema=projected_schema,
+                filter=(
+                    reduce(operator.and_, pushed_filters) if pushed_filters else None
+                ),
             ),
             sources=fragment_ids,
             schema=schema,
@@ -143,11 +174,11 @@ class LanceScanResolver(LazyFrameResolver):
         if projection is not None:
             lf = lf.select(projection) if projection else lf.drop("*")
 
-        applied_filters = set()
+        if remaining_filters:
+            lf = lf.filter(reduce(pl.Expr.__and__, remaining_filters))
 
-        if filters:
-            lf = lf.filter(reduce(pl.Expr.__and__, (x.expr for x in filters)))
-            applied_filters = set(range(len(filters)))
+        # Filters not pushed to lance are applied by the returned LazyFrame.
+        applied_filters = set(range(len(filters)))
 
         return lf, ResolvedLazyFrameProps(
             version_key=version_key,
@@ -202,7 +233,12 @@ class LanceScanResolver(LazyFrameResolver):
         dataset: lance.LanceDataset = self.dataset_.get()  # type: ignore[no-redef]
 
         if self.version is None:
-            dataset.checkout_latest()  # type: ignore[no-untyped-call]
+            # Note: Not using `checkout_latest()`, as it mutates the dataset in-place,
+            # which can race with readers from a previous query that are still
+            # using the dataset ("RuntimeError: Already borrowed").
+            if (latest_version := dataset.latest_version) != dataset.version:
+                dataset = dataset.checkout_version(latest_version)
+                self.dataset_.set(dataset)
         else:
             dataset = dataset.checkout_version(self.version)
 
@@ -214,3 +250,17 @@ class LanceScanResolver(LazyFrameResolver):
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         self.__dict__ = state
+
+
+def is_filter_supported_by_lance(
+    dataset: lance.LanceDataset, filter: pc.Expression
+) -> bool:
+    """Check whether lance can evaluate the given filter."""
+    try:
+        # Planning errors on unsupported filters (e.g. functions without a
+        # substrait conversion).
+        dataset.scanner(filter=filter).explain_plan()
+    except Exception:
+        return False
+
+    return True

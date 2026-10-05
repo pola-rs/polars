@@ -4,7 +4,7 @@ import datetime as dt
 import io
 import itertools
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import pyarrow.dataset as pad
@@ -1103,6 +1103,24 @@ def test_slice_pushdown_expr_leaf_ae_without_col_input_27820() -> None:
     out = q.collect()
 
     assert_frame_equal(out, pl.DataFrame({"a": 1, "s": -1}))
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.col("a").first().over(pl.lit(1)), [1, 1, 1]),
+        (pl.col("a").last().over(pl.lit(1)), [3, 3, 3]),
+        ((pl.col("a") + 1).last().over(pl.lit(1)), [4, 4, 4]),
+        (pl.col("a").slice(0, 2).sum().over(pl.lit(1)), [3, 3, 3]),
+        ((pl.len() > 1).over(pl.lit(1)), [True, True, True]),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_slice_pushdown_expr_window_keeps_frame_height(
+    expr: pl.Expr, expected: list[Any], engine: EngineType
+) -> None:
+    q = pl.LazyFrame({"a": [1, 2, 3]}).select(expr.alias("out"))
+    assert q.collect(engine=engine).to_series().to_list() == expected
 
 
 def test_slice_pushdown_joins_27199() -> None:

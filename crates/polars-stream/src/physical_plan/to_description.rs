@@ -280,6 +280,7 @@ pub fn phys_props(
             exprs,
             ordered_eval,
             maintain_order,
+            scalar: _,
         } => (
             PhysicalPropsDescription::Window {
                 partition_by: partition_by.iter().map(ToString::to_string).collect(),
