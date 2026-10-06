@@ -3204,6 +3204,7 @@ version = "0.55.1"
 dependencies = [
  "polars-error",
  "serde",
+ "sysinfo",
 ]
 
 [[package]]
@@ -3742,7 +3743,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "2.0.0-rc.2"
+version = "2.0.0"
 dependencies = [
  "either",
  "libc",
@@ -3753,7 +3754,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "2.0.0-rc.2"
+version = "2.0.0"
 dependencies = [
  "either",
  "libc",
@@ -3764,7 +3765,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "2.0.0-rc.2"
+version = "2.0.0"
 dependencies = [
  "either",
  "libc",

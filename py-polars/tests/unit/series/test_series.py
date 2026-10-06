@@ -125,6 +125,38 @@ def test_cum_min_max_bool() -> None:
     )
 
 
+@pytest.mark.parametrize("dtype", [pl.String, pl.Binary])
+def test_cum_min_max_string(dtype: pl.DataType) -> None:
+    s = pl.Series("a", [None, "b", "c", None, "a", "bb"]).cast(dtype)
+    expected_min = pl.Series("a", [None, "b", "b", None, "a", "a"]).cast(dtype)
+    expected_max = pl.Series("a", [None, "b", "c", None, "c", "c"]).cast(dtype)
+    assert_series_equal(s.cum_min(), expected_min)
+    assert_series_equal(s.cum_max(), expected_max)
+    expected_min = pl.Series("a", [None, "a", "a", None, "a", "bb"]).cast(dtype)
+    expected_max = pl.Series("a", [None, "c", "c", None, "bb", "bb"]).cast(dtype)
+    assert_series_equal(s.cum_min(reverse=True), expected_min)
+    assert_series_equal(s.cum_max(reverse=True), expected_max)
+
+
+@pytest.mark.parametrize("dtype", [pl.String, pl.Binary])
+def test_cum_min_max_string_streaming(dtype: pl.DataType) -> None:
+    # Each frame is its own morsel, so the running value carries over between morsels.
+    lfs = [
+        pl.LazyFrame({"a": values}).cast(dtype)
+        for values in (["b", None], [None, "c"], ["a", "bb"])
+    ]
+    out = pl.concat(lfs).select(
+        pl.col("a").cum_min().alias("min"), pl.col("a").cum_max().alias("max")
+    )
+    expected = pl.DataFrame(
+        {
+            "min": ["b", None, None, "b", "a", "a"],
+            "max": ["b", None, None, "c", "c", "c"],
+        }
+    ).cast(dtype)
+    assert_frame_equal(out.collect(engine="streaming"), expected)
+
+
 def test_init_inputs(plmonkeypatch: PlMonkeyPatch) -> None:
     nan = float("nan")
     # Good inputs

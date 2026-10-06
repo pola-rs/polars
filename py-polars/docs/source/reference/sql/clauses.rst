@@ -521,7 +521,8 @@ Multiple windows, multiple expressions:
 
 QUALIFY
 -------
-Filter rows in a query based on window function results.
+Filter rows in a query based on window function results. It runs after `GROUP BY` and
+`HAVING`, and can use columns that are not in the `SELECT` list.
 
 **Example:**
 
