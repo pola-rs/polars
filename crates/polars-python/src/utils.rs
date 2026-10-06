@@ -11,6 +11,7 @@ use pyo3::{PyErr, PyResult, Python};
 
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
+use crate::exceptions::ComputeError;
 use crate::series::PySeries;
 use crate::timeout::{is_timeout_enabled, schedule_polars_timeout};
 
@@ -148,10 +149,9 @@ impl EnterPolarsExt for Python<'_> {
             Ok(Ok(ret)) => Ok(ret),
             Ok(Err(err)) => Err(PyErr::from(err.into())),
             Err(QueryAborted::KeyboardInterrupt) => Err(PyKeyboardInterrupt::new_err("")),
-            Err(QueryAborted::OocOutOfDisk) => Err(PyPolarsErr::Other(
-                "query aborted, raise POLARS_OOC_DISK_BUDGET_MB".to_string(),
-            )
-            .into()),
+            Err(QueryAborted::OocOutOfDisk) => Err(ComputeError::new_err(
+                "query aborted: spilled data exceeded the out-of-core disk budget, raise POLARS_OOC_DISK_BUDGET_MB",
+            )),
         }
     }
 }
