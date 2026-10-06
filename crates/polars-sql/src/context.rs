@@ -2116,8 +2116,10 @@ impl SQLContext {
         lf = if !has_group_by && !has_windows_over_aggregates(&all_projections) {
             // `GROUP BY ALL` may infer no keys; nothing here runs in a group context.
             self.group_scope.mark_whole_frame_windows = false;
-            check_columns_in_aggregates(&all_projections, &subquery_names)?;
             projections = all_projections;
+            // Aggregates are marked only until the projections are resolved below.
+            let marked_projections = projections.clone();
+            let marked_replace = select_modifiers.replace.clone();
             explicit_aliases.extend(qualify.is_some().then_some(true));
             // A window over the whole frame has one value per row, so for the output
             // height it counts like a literal.
@@ -2143,6 +2145,7 @@ impl SQLContext {
             // Final/selected cols, accounting for 'SELECT *' modifiers
             let mut retained_cols = Vec::with_capacity(projections.len());
             let mut retained_names = Vec::with_capacity(projections.len());
+            let mut retained_marked = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
 
             // Initialize containing InheritsContext to handle empty projection case.
@@ -2152,12 +2155,23 @@ impl SQLContext {
             // and new projections) and *then* select the final cols; the retained cols
             // are used to ensure a correct final projection. If there's no 'order by',
             // clause then we can project the final column *expressions* directly.
-            for (p, height_expr) in projections.iter().zip(&height_exprs) {
+            for ((p, height_expr), marked) in projections
+                .iter()
+                .zip(&height_exprs)
+                .zip(&marked_projections)
+            {
                 let name = p.to_field(schema.deref())?.name.to_string();
                 if name == qualify_column
                     || (select_modifiers.matches_ilike(&name)
                         && !select_modifiers.exclude.contains(&name))
                 {
+                    let replacement = match marked {
+                        Expr::Column(name) => marked_replace
+                            .iter()
+                            .find(|e| expr_output_name(e) == Some(name)),
+                        _ => None,
+                    };
+                    retained_marked.push(replacement.unwrap_or(marked).clone());
                     projection_heights |= ExprSqlProjectionHeightBehavior::identify_from_expr(
                         &without_resolved_subqueries(height_expr, &subquery_names),
                     );
@@ -2170,6 +2184,7 @@ impl SQLContext {
                     retained_names.push(col(name));
                 }
             }
+            check_columns_in_aggregates(&retained_marked, &subquery_names)?;
 
             // Apply the remaining modifiers and establish the final projection
             if have_order_by {

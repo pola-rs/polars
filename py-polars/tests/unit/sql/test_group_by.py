@@ -213,12 +213,24 @@ def test_having_on_group_key(query: str) -> None:
         "SELECT SUM(x), x FROM self",
         "SELECT x / SUM(x) FROM self",
         "SELECT *, COUNT(*) FROM self",
+        "SELECT * EXCLUDE (g), SUM(x) AS s FROM self",
+        "SELECT * EXCLUDE (g) REPLACE (x + SUM(x) AS x) FROM self",
     ],
 )
 def test_column_outside_aggregate_without_group_by_error(query: str) -> None:
-    df = pl.DataFrame({"x": [1, 2, 3]})
+    df = pl.DataFrame({"x": [1, 2, 3], "g": [1, 1, 2]})
     with pytest.raises(SQLSyntaxError, match="'x' should participate in the GROUP BY"):
         df.sql(query)
+
+
+def test_aggregate_with_excluded_columns() -> None:
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [3, 1, 2]})
+    assert_sql_matches(
+        df,
+        query="SELECT * EXCLUDE (g, x), SUM(x) AS s FROM self",
+        compare_with="duckdb",
+        expected={"s": [6]},
+    )
 
 
 def test_group_by_all_multi() -> None:
