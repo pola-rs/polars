@@ -125,7 +125,7 @@ impl DynamicPred {
         }
     }
 
-    fn downgrade(&self) -> DynamicPredWeakRef {
+    pub fn downgrade(&self) -> DynamicPredWeakRef {
         DynamicPredWeakRef {
             inner: Arc::downgrade(&self.inner),
         }
