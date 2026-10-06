@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import os
 import re
 import subprocess
@@ -355,3 +356,24 @@ def test_sink_single_put_28356(
     for df, key in [(small, "small"), (large, "large")]:
         out = scan(f"s3://bucket/{key}", storage_options=s3.storage_options)
         assert_frame_equal(out.collect(), df)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("model", ["knee", "ttfb"])
+def test_scan_parquet_inflight_byte_budget_model(
+    s3: CountingS3, model: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Both in-flight byte budget models read correctly: the knee (default) and the
+    # TTFB fallback.
+    plmonkeypatch.setenv("POLARS_INFLIGHT_BYTE_BUDGET_MODEL", model)
+    df = pl.DataFrame({"x": pl.int_range(200_000, eager=True)})
+    buf = io.BytesIO()
+    df.write_parquet(buf, row_group_size=10_000)
+    s3.client.put_object(Bucket="bucket", Key="data.parquet", Body=buf.getvalue())
+
+    out = pl.scan_parquet(
+        "s3://bucket/data.parquet", storage_options=s3.storage_options
+    ).collect()
+
+    assert_frame_equal(out, df)
+    assert s3.n_requests("GET bytes=") >= 2

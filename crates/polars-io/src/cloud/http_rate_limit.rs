@@ -260,12 +260,18 @@ impl From<CloudRateLimitConfig> for RateLimitConfig {
 #[derive(Debug, Clone)]
 pub struct PacingBudget {
     rate_bits: RateCell,
+    admitted: Arc<AtomicU64>,
     horizon: Duration,
 }
 
 impl PacingBudget {
     pub fn rate(&self) -> f64 {
         f64::from_bits(self.rate_bits.load(Relaxed))
+    }
+
+    /// Requests admitted by the pacer so far (monotonic).
+    pub fn admitted(&self) -> u64 {
+        self.admitted.load(Relaxed)
     }
 
     pub fn horizon(&self) -> Duration {
@@ -281,6 +287,8 @@ impl PacingBudget {
 pub(crate) struct RateState {
     pub rate_bits: RateCell,
     pub max_bits: RateCell, // NaN represents None
+    // Requests admitted by the pacer, across rebuilds (monotonic).
+    pub admitted: Arc<AtomicU64>,
 }
 
 impl RateState {
@@ -288,6 +296,7 @@ impl RateState {
         Self {
             rate_bits: Arc::new(AtomicU64::new(init_rate.to_bits())),
             max_bits: Arc::new(AtomicU64::new(f64::NAN.to_bits())),
+            admitted: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -371,6 +380,7 @@ impl RateLimiter {
     pub(crate) fn read_budget(&self) -> PacingBudget {
         PacingBudget {
             rate_bits: Arc::clone(&self.state.read_state.rate_bits),
+            admitted: Arc::clone(&self.state.read_state.admitted),
             horizon: self.config.read.horizon,
         }
     }
@@ -381,6 +391,7 @@ impl RateLimiter {
     pub(crate) fn write_budget(&self) -> PacingBudget {
         PacingBudget {
             rate_bits: Arc::clone(&self.state.write_state.rate_bits),
+            admitted: Arc::clone(&self.state.write_state.admitted),
             horizon: self.config.write.horizon,
         }
     }
@@ -503,7 +514,7 @@ impl AdaptiveRateController {
         };
 
         let token_bucket = Arc::new(TokenBucket::new(shared.rate_bits.clone()));
-        let pacer = Pacer::start(token_bucket, config.max_wait);
+        let pacer = Pacer::start(token_bucket, config.max_wait, shared.admitted.clone());
 
         let signal = PacerSignal {
             window_end_ns: AtomicU64::new(u64::MAX),
@@ -880,18 +891,25 @@ pub struct Pacer {
     max_wait: Duration,
     // Decided to admit.
     admitted: AtomicU64,
+    // Decided to admit, across rebuilds (`PacingBudget::admitted`).
+    admitted_total: Arc<AtomicU64>,
     // Decided not to park.
     denied: AtomicU64,
 }
 
 impl Pacer {
     /// Construct and spawn the wake tick. The tick is per-pacer.
-    pub fn start(bucket: Arc<TokenBucket>, max_wait: Duration) -> Arc<Self> {
+    pub fn start(
+        bucket: Arc<TokenBucket>,
+        max_wait: Duration,
+        admitted_total: Arc<AtomicU64>,
+    ) -> Arc<Self> {
         let pacer = Arc::new(Self {
             bucket,
             queue: Arc::new(WaiterQueue::default()),
             max_wait,
             admitted: AtomicU64::new(0),
+            admitted_total,
             denied: AtomicU64::new(0),
         });
         Self::spawn_wake_tick(Arc::downgrade(&pacer));
@@ -904,6 +922,7 @@ impl Pacer {
         // Anti-barge plus fast path.
         if self.queue.depth() == 0 && self.bucket.try_acquire().is_ok() {
             self.admitted.fetch_add(1, Relaxed);
+            self.admitted_total.fetch_add(1, Relaxed);
             return Ok(());
         }
 
@@ -926,6 +945,7 @@ impl Pacer {
         // Wait. On Err, allow through unpaced when WaiterQueue/Pacer is torn down.
         let _ = rx.await;
         self.admitted.fetch_add(1, Relaxed);
+        self.admitted_total.fetch_add(1, Relaxed);
         Ok(())
     }
 
