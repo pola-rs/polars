@@ -74,7 +74,10 @@ impl ParquetObjectStore {
     /// Not memoized. Used by `RowCounts` resolve mode.
     pub async fn num_rows_only(&mut self) -> PolarsResult<i64> {
         let footer = fetch_footer_bytes(&self.store, &self.path).await?;
-        Ok(deserialize_num_rows(footer)?)
+        Ok(deserialize_num_rows(
+            footer,
+            self.decryption_properties.as_ref().map(|p| &p.0),
+        )?)
     }
 
     pub async fn schema(&mut self) -> PolarsResult<ArrowSchemaRef> {

@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from tests.conftest import PlMonkeyPatch
+
 # Test files are written with PyArrow, which only supports uniform encryption
 # (where the footer and all columns are encrypted with the footer key) when
 # using keys directly rather than a KMS.
@@ -268,6 +270,32 @@ def test_scan_multiple_encrypted_files(
 
     assert lf.select(pl.len()).collect().item() == 2 * NUM_ROWS
     assert_frame_equal(lf.collect(), pl.concat([expected, expected]))
+
+
+@pytest.mark.parametrize("mode", ["row_counts", "full"])
+@parametrize_source
+def test_scan_resolve_metadata_level(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    mode: str,
+    to_source: Callable[[Path], Any],
+) -> None:
+    # Source 0's full footer is always read, but in row_counts mode only the row
+    # counts are read from the other footers, so put the encrypted files last.
+    encrypted = write_encrypted(tmp_path / "encrypted.parquet")
+    plaintext_footer = write_encrypted(
+        tmp_path / "plaintext_footer.parquet", plaintext_footer=True
+    )
+    unencrypted = tmp_path / "unencrypted.parquet"
+    expected_data().write_parquet(unencrypted)
+    sources = [to_source(p) for p in [unencrypted, encrypted, plaintext_footer]]
+
+    plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", mode)
+
+    decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
+    lf = pl.scan_parquet(sources, decryption_properties=decryption_properties)
+    assert f"ESTIMATED ROWS: {3 * NUM_ROWS}" in lf.explain(optimized=True)
+    assert lf.select(pl.len()).collect().item() == 3 * NUM_ROWS
 
 
 def test_scan_encrypted_footer_with_wrong_key(encrypted_file_path: Path) -> None:

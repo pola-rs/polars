@@ -243,24 +243,23 @@ pub(crate) async fn read_parquet_num_rows(
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
     decryption_properties: Option<&PlFileDecryptionProperties>,
 ) -> PolarsResult<i64> {
-    if decryption_properties.is_some() {
-        // TODO: We need to decrypt the full metadata, but shouldn't need to parse all the thrift.
-        return read_parquet_metadata(source, cloud_options, decryption_properties)
-            .await
-            .map(|md| md.num_rows as i64);
-    }
     if source.is_cloud_url() {
         #[allow(unused)]
         let path = source.as_path().unwrap();
         feature_gated!("cloud", {
             let mut reader =
                 polars_io::prelude::ParquetObjectStore::from_uri(path.clone(), cloud_options, None)
-                    .await?;
+                    .await?
+                    .with_decryption_properties(decryption_properties.cloned());
             reader.num_rows_only().await
         })
     } else {
         let memslice = source.to_memslice()?;
         let mut cursor = Cursor::new(memslice);
-        polars_parquet::parquet::read::read_num_rows(&mut cursor).map_err(Into::into)
+        polars_parquet::parquet::read::read_num_rows(
+            &mut cursor,
+            decryption_properties.map(|p| &p.0),
+        )
+        .map_err(Into::into)
     }
 }

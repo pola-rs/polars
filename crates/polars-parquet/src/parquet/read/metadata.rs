@@ -83,16 +83,7 @@ fn decode_footer(
     };
 
     if footer.encrypted {
-        // First read the FileCryptoMetaData, which comes before the encrypted footer and is
-        // needed to decrypt the footer.
-        let (crypto_metadata, encrypted_footer) =
-            deserialize_file_crypto_metadata(footer.metadata())?;
-        let decryptor = FileDecryptor::from_encryption_algorithm(
-            decryption_properties,
-            crypto_metadata.encryption_algorithm,
-            crypto_metadata.key_metadata.as_deref(),
-        )?;
-        let footer = Buffer::from_vec(decryptor.decrypt_footer(&encrypted_footer)?);
+        let (footer, decryptor) = decrypt_footer(&footer, decryption_properties)?;
         let compact = decode_file_metadata(footer)?;
         FileMetadata::from_compact(compact, Some(Arc::new(decryptor)))
     } else {
@@ -118,6 +109,24 @@ fn decode_footer(
     }
 }
 
+/// Decrypt an encrypted footer, returning the plaintext footer and the file decryptor.
+fn decrypt_footer(
+    footer: &FooterBuffer,
+    decryption_properties: &Arc<FileDecryptionProperties>,
+) -> ParquetResult<(Buffer<u8>, FileDecryptor)> {
+    debug_assert!(footer.encrypted);
+    // First read the FileCryptoMetaData, which comes before the encrypted footer and is
+    // needed to decrypt the footer.
+    let (crypto_metadata, encrypted_footer) = deserialize_file_crypto_metadata(footer.metadata())?;
+    let decryptor = FileDecryptor::from_encryption_algorithm(
+        decryption_properties,
+        crypto_metadata.encryption_algorithm,
+        crypto_metadata.key_metadata.as_deref(),
+    )?;
+    let footer = Buffer::from_vec(decryptor.decrypt_footer(&encrypted_footer)?);
+    Ok((footer, decryptor))
+}
+
 /// Parses the file crypto metadata of a Parquet file with an encrypted footer,
 /// and returns the remaining encrypted footer bytes.
 ///
@@ -134,24 +143,36 @@ pub fn deserialize_file_crypto_metadata(
 /// [`crate::parquet::handwritten_thrift::decode_num_rows`].
 ///
 /// `footer` must include the trailing metadata length and magic bytes.
-/// Errors if the footer is encrypted.
-pub fn deserialize_num_rows(footer: Buffer<u8>) -> ParquetResult<i64> {
-    decode_num_rows(FooterBuffer::try_new(footer)?.into_plaintext()?)
+/// An encrypted footer is decrypted first, which requires the decryption properties.
+/// The footer signature of a plaintext footer isn't verified.
+pub fn deserialize_num_rows(
+    footer: Buffer<u8>,
+    decryption_properties: Option<&Arc<FileDecryptionProperties>>,
+) -> ParquetResult<i64> {
+    decode_footer_num_rows(FooterBuffer::try_new(footer)?, decryption_properties)
 }
 
 /// Sync variant of [`deserialize_num_rows`] that owns the reader.
-pub fn read_num_rows<R: Read + Seek>(reader: &mut R) -> ParquetResult<i64> {
+pub fn read_num_rows<R: Read + Seek>(
+    reader: &mut R,
+    decryption_properties: Option<&Arc<FileDecryptionProperties>>,
+) -> ParquetResult<i64> {
     let file_size = stream_len(reader)?;
-    read_num_rows_with_size(reader, file_size)
+    let footer = fetch_footer_buf(reader, file_size)?;
+    decode_footer_num_rows(footer, decryption_properties)
 }
 
-/// As [`read_num_rows`] but with a pre-fetched file size.
-pub(crate) fn read_num_rows_with_size<R: Read + Seek>(
-    reader: &mut R,
-    file_size: u64,
+fn decode_footer_num_rows(
+    footer: FooterBuffer,
+    decryption_properties: Option<&Arc<FileDecryptionProperties>>,
 ) -> ParquetResult<i64> {
-    let footer = fetch_footer_buf(reader, file_size)?;
-    decode_num_rows(footer.into_plaintext()?)
+    match decryption_properties {
+        Some(decryption_properties) if footer.encrypted => {
+            let (footer, _) = decrypt_footer(&footer, decryption_properties)?;
+            decode_num_rows(footer)
+        },
+        _ => decode_num_rows(footer.into_plaintext()?),
+    }
 }
 
 struct FooterBuffer {
