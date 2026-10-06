@@ -59,6 +59,8 @@ enum GroupBytes<F> {
     /// One `get_ranges` call for the group, shared by its record batches and dropped, cancelling
     /// the fetch, with the last of them.
     Fetched(F),
+    /// No record batch of the group needs bytes.
+    None,
 }
 
 pub(super) struct RecordBatchDataFetcher {
@@ -121,6 +123,7 @@ impl RecordBatchDataFetcher {
                         panic!("invalid value for POLARS_RECORD_BATCH_GROUP_MAX_BYTES: {x}")
                     })
                     .get()
+                    .min(chunk_size)
             })
         });
         let max_group_len = (pipeline_budget.count_limit() / GROUP_BUDGET_SHARE).max(1);
@@ -286,14 +289,31 @@ async fn spawn_group(
                 .map(|rb| rb.range.clone())
                 .filter(|range| !range.is_empty())
                 .collect();
-            let byte_source = byte_source.clone();
-            GroupBytes::Fetched(
-                async move { byte_source.get_ranges(&mut ranges).await.map(Arc::new) }.shared(),
-            )
+            if ranges.is_empty() {
+                GroupBytes::None
+            } else {
+                let byte_source = byte_source.clone();
+                // In its own task, so body chunks wake only the fetch, not every record batch task.
+                let fetch =
+                    tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
+                        byte_source.get_ranges(&mut ranges).await.map(Arc::new)
+                    }));
+                GroupBytes::Fetched(
+                    fetch
+                        .map(|r| {
+                            r.unwrap_or_else(|e| {
+                                if e.is_panic() {
+                                    std::panic::resume_unwind(e.into_panic())
+                                }
+                                Err(polars_err!(ComputeError: "IPC record batch fetch was cancelled"))
+                            })
+                        })
+                        .shared(),
+                )
+            }
         },
     };
-    let n_fetches = (matches!(group_bytes, GroupBytes::Fetched(_))
-        && group.iter().any(|rb| !rb.range.is_empty())) as u64;
+    let n_fetches = matches!(group_bytes, GroupBytes::Fetched(_)) as u64;
 
     for PendingRecordBatch {
         record_batch_idx,
@@ -307,30 +327,28 @@ async fn spawn_group(
         let group_bytes = group_bytes.clone();
 
         let fetch_handle = ASYNC.spawn(async move {
-            let fetched_bytes = if range.is_empty() {
-                Buffer::new()
-            } else {
-                match group_bytes {
-                    GroupBytes::Memory(mem) => {
-                        if !std::ptr::eq(
-                            memory_prefetch_func as *const (),
-                            polars_utils::mem::prefetch::no_prefetch as *const (),
-                        ) {
-                            debug_assert!(range.end <= mem.len());
-                            memory_prefetch_func(unsafe { mem.as_ref().get_unchecked(range.clone()) })
-                        }
+            let fetched_bytes = match group_bytes {
+                GroupBytes::None => Buffer::new(),
+                _ if range.is_empty() => Buffer::new(),
+                GroupBytes::Memory(mem) => {
+                    if !std::ptr::eq(
+                        memory_prefetch_func as *const (),
+                        polars_utils::mem::prefetch::no_prefetch as *const (),
+                    ) {
+                        debug_assert!(range.end <= mem.len());
+                        memory_prefetch_func(unsafe { mem.as_ref().get_unchecked(range.clone()) })
+                    }
 
-                        mem.sliced(range)
-                    },
-                    GroupBytes::Fetched(group_fetch) => group_fetch
-                        .await?
-                        .get(&range.start)
-                        .filter(|bytes| bytes.len() == range.len())
-                        .cloned()
-                        .ok_or_else(|| {
-                            polars_err!(ComputeError: "IPC record batch {record_batch_idx} not in its group fetch")
-                        })?,
-                }
+                    mem.sliced(range)
+                },
+                GroupBytes::Fetched(group_fetch) => group_fetch
+                    .await?
+                    .get(&range.start)
+                    .filter(|bytes| bytes.len() == range.len())
+                    .cloned()
+                    .ok_or_else(|| {
+                        polars_err!(ComputeError: "IPC record batch {record_batch_idx} not in its group fetch")
+                    })?,
             };
 
             // Extract the length (i.e., nr of rows) at the earliest possible opportunity.
