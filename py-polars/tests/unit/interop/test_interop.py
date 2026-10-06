@@ -252,6 +252,49 @@ def test_from_arrow() -> None:
     assert df.schema == {"a": pl.UInt32, "b": pl.UInt64}  # type: ignore[union-attr]
 
 
+def test_from_arrow_struct_duplicate_field_names_24899() -> None:
+    # https://github.com/pola-rs/polars/issues/24899
+    # Importing an Arrow struct with duplicate field names must raise a
+    # DuplicateError instead of panicking.
+    struct_arr = pa.StructArray.from_arrays(
+        [[1], [2]],
+        fields=[pa.field("x", pa.int64()), pa.field("x", pa.int64())],
+    )
+
+    with pytest.raises(DuplicateError):
+        pl.from_arrow(struct_arr)
+
+    with pytest.raises(DuplicateError):
+        pl.from_arrow(pa.table({"s": struct_arr}))
+
+    # Nested case from the original report: a list of structs with
+    # duplicate field names.
+    list_arr = pa.ListArray.from_arrays(
+        [0, 1],
+        pa.StructArray.from_arrays(
+            [[1], [2]],
+            fields=[pa.field("", pa.int64()), pa.field("", pa.int64())],
+        ),
+    )
+    with pytest.raises(DuplicateError):
+        pl.from_arrow(list_arr)
+
+
+def test_from_arrow_struct_duplicate_field_names_pycapsule_24899() -> None:
+    # https://github.com/pola-rs/polars/issues/24899
+    # PyCapsule path: an object exposing only __arrow_c_array__ (the
+    # PyCapsuleArrayHolder wrapper) holding a struct with duplicate field
+    # names. This is the path that used to raise PanicException; it must
+    # raise DuplicateError instead.
+    struct_arr = pa.StructArray.from_arrays(
+        [[1], [2]],
+        fields=[pa.field("x", pa.int64()), pa.field("x", pa.int64())],
+    )
+
+    with pytest.raises(DuplicateError):
+        pl.Series(PyCapsuleArrayHolder(struct_arr))  # type: ignore[arg-type]
+
+
 def test_from_arrow_with_bigquery_metadata() -> None:
     arrow_schema = pa.schema(
         [
