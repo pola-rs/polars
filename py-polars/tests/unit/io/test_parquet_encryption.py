@@ -312,7 +312,9 @@ def test_scan_encrypted_footer_with_wrong_key(encrypted_file_path: Path) -> None
 
 def test_serialize_with_decryption_properties(encrypted_file_path: Path) -> None:
     decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
-    lf = pl.scan_parquet(encrypted_file_path, decryption_properties=decryption_properties)
+    lf = pl.scan_parquet(
+        encrypted_file_path, decryption_properties=decryption_properties
+    )
     with pytest.raises(
         pl.exceptions.ComputeError,
         match="cannot serialize parquet decryption properties",
