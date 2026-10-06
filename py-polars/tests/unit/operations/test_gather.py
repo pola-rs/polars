@@ -504,12 +504,14 @@ def test_gather_null_on_oob_group_by() -> None:
     q = lf.group_by("g").agg(
         pos=pl.col("x").gather([0, 5], null_on_oob=True),
         neg=pl.col("x").gather([-1, -5], null_on_oob=True),
+        big=pl.col("x").gather([0, 2**32], null_on_oob=True),
     )
     expected = pl.DataFrame(
         {
             "g": [1, 2],
             "pos": [[1.0, None], [2.0, None]],
             "neg": [[1.0, None], [3.0, None]],
+            "big": [[1.0, None], [2.0, None]],
         }
     )
     for engine in ["in-memory", "streaming"]:
