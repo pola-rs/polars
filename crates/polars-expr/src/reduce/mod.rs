@@ -20,6 +20,7 @@ mod min_max;
 mod min_max_by;
 #[cfg(feature = "moment")]
 mod skew_kurtosis;
+mod split;
 mod sum;
 mod var_std;
 
@@ -37,6 +38,13 @@ use polars_arrow::array::{Array, PrimitiveArray, StaticArray};
 use polars_arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 use polars_core::prelude::*;
+#[cfg(all(feature = "moment", feature = "serde"))]
+pub use skew_kurtosis::{
+    new_kurtosis_merge_reduction, new_kurtosis_state_reduction, new_skew_merge_reduction,
+    new_skew_state_reduction,
+};
+#[cfg(feature = "serde")]
+pub use var_std::{new_var_std_merge_reduction, new_var_std_state_reduction};
 
 use crate::EvictIdx;
 

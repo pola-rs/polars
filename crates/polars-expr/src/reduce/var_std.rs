@@ -4,6 +4,7 @@ use num_traits::AsPrimitive;
 use polars_compute::moment::VarState;
 use polars_core::with_match_physical_numeric_polars_type;
 
+use super::split::{SplitStage, split_reduction};
 use super::*;
 
 pub fn new_var_std_reduction(
@@ -11,24 +12,51 @@ pub fn new_var_std_reduction(
     is_std: bool,
     ddof: u8,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
+    var_std_reduction(dtype, is_std, ddof, SplitStage::Whole)
+}
+
+/// Like [`new_var_std_reduction`], but outputs the serialized state of each group, to be merged
+/// by [`new_var_std_merge_reduction`].
+#[cfg(feature = "serde")]
+pub fn new_var_std_state_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // The state is the same for `var` and `std` and any `ddof`, which only finalizing uses.
+    var_std_reduction(dtype, false, 0, SplitStage::State)
+}
+
+/// Merges the states of [`new_var_std_state_reduction`] over values of `values_dtype`, and
+/// outputs what [`new_var_std_reduction`] does.
+#[cfg(feature = "serde")]
+pub fn new_var_std_merge_reduction(
+    values_dtype: DataType,
+    is_std: bool,
+    ddof: u8,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
+    var_std_reduction(values_dtype, is_std, ddof, SplitStage::Merge)
+}
+
+fn var_std_reduction(
+    dtype: DataType,
+    is_std: bool,
+    ddof: u8,
+    stage: SplitStage,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
     // TODO: Move the error checks up and make this function infallible
     use DataType::*;
-    use VecGroupedReduction as VGR;
     let op_name = if is_std { "std" } else { "var" };
     Ok(match dtype {
-        Boolean => Box::new(VGR::new(dtype, BoolVarStdReducer { is_std, ddof })),
+        Boolean => split_reduction(dtype, BoolVarStdReducer { is_std, ddof }, stage),
         _ if dtype.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, VarStdReducer::<$T> {
+                split_reduction(dtype, VarStdReducer::<$T> {
                     is_std,
                     ddof,
                     needs_cast: false,
                     _phantom: PhantomData,
-                }))
+                }, stage)
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::new(
+        Decimal(_, _) => split_reduction(
             dtype,
             VarStdReducer::<Float64Type> {
                 is_std,
@@ -36,7 +64,8 @@ pub fn new_var_std_reduction(
                 needs_cast: true,
                 _phantom: PhantomData,
             },
-        )),
+            stage,
+        ),
         Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
             DataType::Null,
         ))),
