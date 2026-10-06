@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use polars_buffer::Buffer;
 use polars_parquet_format::{ColumnCryptoMetaData, EncryptionAlgorithm};
@@ -255,8 +255,8 @@ impl CryptoContext {
                 };
                 let data_decryptor = file_decryptor
                     .get_column_data_decryptor(column_name, key_metadata.as_deref())?;
-                let metadata_decryptor = file_decryptor
-                    .get_column_metadata_decryptor(column_name, key_metadata.as_deref())?;
+                // The data and metadata decryptors are the same until GCM-CTR is supported.
+                let metadata_decryptor = Arc::clone(&data_decryptor);
                 (data_decryptor, metadata_decryptor)
             },
         };
@@ -610,10 +610,17 @@ impl DecryptionPropertiesBuilderWithRetriever {
     }
 }
 
-#[derive(Clone, Debug)]
+/// A cached column decryptor, along with the key metadata used to get its key.
+type CachedColumnDecryptor = (Option<Vec<u8>>, Arc<dyn BlockDecryptor>);
+
+#[derive(Debug)]
 pub(crate) struct FileDecryptor {
     decryption_properties: Arc<FileDecryptionProperties>,
     footer_decryptor: Arc<dyn BlockDecryptor>,
+    /// Decryptors for columns encrypted with column keys, by column name. Cached as there
+    /// may be many column chunks per column, and creating a decryptor requires key setup
+    /// and possibly key retrieval.
+    column_decryptors: RwLock<PlHashMap<String, CachedColumnDecryptor>>,
     file_aad: Vec<u8>,
 }
 
@@ -640,6 +647,7 @@ impl FileDecryptor {
         Ok(Self {
             footer_decryptor: Arc::new(footer_decryptor),
             decryption_properties: Arc::clone(decryption_properties),
+            column_decryptors: Default::default(),
             file_aad,
         })
     }
@@ -727,10 +735,23 @@ impl FileDecryptor {
         column_name: &str,
         key_metadata: Option<&[u8]>,
     ) -> ParquetResult<Arc<dyn BlockDecryptor>> {
+        if let Some((cached_key_metadata, decryptor)) =
+            self.column_decryptors.read().unwrap().get(column_name)
+            && cached_key_metadata.as_deref() == key_metadata
+        {
+            return Ok(Arc::clone(decryptor));
+        }
+
+        // Create the decryptor without holding the lock, as key retrieval may be slow.
         let column_key = self
             .decryption_properties
             .column_key(column_name, key_metadata)?;
-        Ok(Arc::new(AesGcmBlockDecryptor::new(&column_key)?))
+        let decryptor: Arc<dyn BlockDecryptor> = Arc::new(AesGcmBlockDecryptor::new(&column_key)?);
+        self.column_decryptors.write().unwrap().insert(
+            column_name.to_owned(),
+            (key_metadata.map(<[u8]>::to_vec), Arc::clone(&decryptor)),
+        );
+        Ok(decryptor)
     }
 
     pub(crate) fn get_column_metadata_decryptor(
@@ -744,5 +765,61 @@ impl FileDecryptor {
 
     pub(crate) fn file_aad(&self) -> &Vec<u8> {
         &self.file_aad
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+
+    /// Returns the key metadata as the key, counting how many keys were retrieved.
+    struct CountingKeyRetriever(AtomicUsize);
+
+    impl KeyRetriever for CountingKeyRetriever {
+        fn retrieve_key(&self, key_metadata: &[u8]) -> ParquetResult<Vec<u8>> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Ok(key_metadata.to_vec())
+        }
+    }
+
+    #[test]
+    fn column_decryptors_are_cached() {
+        let retriever = Arc::new(CountingKeyRetriever(AtomicUsize::new(0)));
+        let decryption_properties = FileDecryptionProperties::with_key_retriever(retriever.clone())
+            .build()
+            .unwrap();
+        let file_decryptor = FileDecryptor::new(
+            &decryption_properties,
+            Some(b"0123456789012345"),
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        // The footer key is retrieved when creating the file decryptor.
+        assert_eq!(retriever.0.load(Ordering::Relaxed), 1);
+
+        let key_a = b"1234567890123450";
+        let key_b = b"1234567890123451";
+        let a = file_decryptor
+            .get_column_data_decryptor("a", Some(key_a))
+            .unwrap();
+        let a_metadata = file_decryptor
+            .get_column_metadata_decryptor("a", Some(key_a))
+            .unwrap();
+        assert!(Arc::ptr_eq(&a, &a_metadata));
+        let b = file_decryptor
+            .get_column_data_decryptor("b", Some(key_b))
+            .unwrap();
+        assert!(!Arc::ptr_eq(&a, &b));
+        assert_eq!(retriever.0.load(Ordering::Relaxed), 3);
+
+        // Different key metadata for the same column needs a new decryptor.
+        let a_new_key = file_decryptor
+            .get_column_data_decryptor("a", Some(key_b))
+            .unwrap();
+        assert!(!Arc::ptr_eq(&a, &a_new_key));
+        assert_eq!(retriever.0.load(Ordering::Relaxed), 4);
     }
 }
