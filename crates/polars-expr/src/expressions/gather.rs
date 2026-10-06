@@ -86,7 +86,19 @@ impl PhysicalExpr for GatherExpr {
             ),
         })?;
 
-        let taken = if idx.inner_dtype() == &IDX_DTYPE {
+        let taken = if self.null_on_oob {
+            ac_list
+                .amortized_iter()
+                .zip(idx.amortized_iter())
+                .map(|(s, idx)| {
+                    let s = s?;
+                    let idx = convert_and_bound_index(idx?.as_ref(), s.as_ref().len(), true);
+                    Some(idx.and_then(|idx| s.as_ref().take(&idx)))
+                })
+                .map(|opt_res| opt_res.transpose())
+                .collect::<PolarsResult<ListChunked>>()?
+                .with_name(ac.get_values().name().clone())
+        } else if idx.inner_dtype() == &IDX_DTYPE {
             // Fast path: all indices are positive.
 
             ac_list

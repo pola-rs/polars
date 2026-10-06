@@ -497,3 +497,26 @@ def test_gather_scalar_with_interleaved_nulls(
     assert_frame_equal(
         result.sort("x", nulls_last=nulls_last), pl.DataFrame({"x": values})
     )
+
+
+def test_gather_null_on_oob_group_by() -> None:
+    lf = pl.LazyFrame({"g": [1, 2, 2], "x": [1.0, 2.0, 3.0]})
+    q = lf.group_by("g").agg(
+        pos=pl.col("x").gather([0, 5], null_on_oob=True),
+        neg=pl.col("x").gather([-1, -5], null_on_oob=True),
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "pos": [[1.0, None], [2.0, None]],
+            "neg": [[1.0, None], [3.0, None]],
+        }
+    )
+    for engine in ["in-memory", "streaming"]:
+        assert_frame_equal(
+            q.collect(engine=engine),  # type: ignore[call-overload]
+            expected,
+            check_row_order=False,
+        )
+    with pytest.raises(OutOfBoundsError):
+        lf.group_by("g").agg(pl.col("x").gather([0, 5])).collect()
