@@ -249,11 +249,21 @@ impl StructChunked {
                                 s.cast_with_options(&new_field.dtype, cast_options)
                             }
                         },
-                        None => Ok(Series::full_null(
-                            new_field.name().clone(),
-                            struct_len,
-                            &new_field.dtype,
-                        )),
+                        None => {
+                            if !unchecked && cast_options.is_strict() {
+                                polars_bail!(
+                                    SchemaMismatch:
+                                    "cannot cast struct to `{}`: field `{}` not found in source struct with fields {:?}",
+                                    dtype, new_field.name(),
+                                    fields.iter().map(|s| s.name().as_str()).collect::<Vec<_>>()
+                                );
+                            }
+                            Ok(Series::full_null(
+                                new_field.name().clone(),
+                                struct_len,
+                                &new_field.dtype,
+                            ))
+                        },
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
