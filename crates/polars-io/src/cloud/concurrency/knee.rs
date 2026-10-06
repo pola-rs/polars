@@ -10,7 +10,9 @@
 //! in this RampUp: bandwidth that grows for reasons other than the budget (scan warm-up)
 //! otherwise keeps the doubling going. Only rounds that use the budget and deliver bandwidth
 //! count (not scan start, not stalls), and a rise must hold for a second round. The knee comes
-//! from rounds where the budget bound only; without one, RampUp holds.
+//! from rounds where the budget bound only; without one, RampUp holds. While the requests
+//! admitted by the HTTP rate limiter reach its rate, bandwidth follows the limiter, not the
+//! budget: RampUp and Probe hold, and the brake and `bw_max` skip the round.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -49,6 +51,10 @@ pub struct KneeTick {
     pub bytes_sat: f64,
     /// Byte budget applied by the admission.
     pub bytes_budget: u64,
+    /// Rate of the HTTP rate limiter (requests/s), if on.
+    pub limiter_rate: Option<f64>,
+    /// Requests admitted by the HTTP rate limiter in this tick (data, metadata and retries).
+    pub limiter_admitted: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -87,6 +93,10 @@ pub struct KneeController {
     round_budget: u64,
     round_in_use: u64,
     round_applied_max: u64,
+    round_limiter_admitted: u64,
+    // Requests the HTTP rate limiter's rate allowed over the round (sum of rate x tick length).
+    round_limiter_tokens: Option<f64>,
+    last_tick: Option<Instant>,
     last_round_end: Option<Instant>,
 
     // RampUp.
@@ -134,6 +144,9 @@ impl KneeController {
             round_budget: budget,
             round_in_use: 0,
             round_applied_max: 0,
+            round_limiter_admitted: 0,
+            round_limiter_tokens: None,
+            last_tick: None,
             last_round_end: None,
             best_bw: 0.0,
             min_lifetime: f64::INFINITY,
@@ -208,6 +221,15 @@ impl KneeController {
         self.round_sat_max = self.round_sat_max.max(t.bytes_sat);
         self.round_in_use += t.bytes_in_use;
         self.round_applied_max = self.round_applied_max.max(t.bytes_budget);
+        let tick_secs = self.last_tick.map_or_else(
+            || self.cfg.tick.as_secs_f64(),
+            |last| t.now.duration_since(last).as_secs_f64(),
+        );
+        self.last_tick = Some(t.now);
+        if let Some(rate) = t.limiter_rate {
+            self.round_limiter_admitted += t.limiter_admitted;
+            *self.round_limiter_tokens.get_or_insert(0.0) += rate * tick_secs;
+        }
         if self.round_ticks >= self.cfg.round_ticks {
             self.end_round(t.now);
         }
@@ -255,6 +277,10 @@ impl KneeController {
         self.last_round_end = Some(now);
         let bw_round = self.round_bytes as f64 / secs;
         let binding = self.round_parked > 0 || self.round_sat_max >= 0.9;
+        // Admitted requests reach the HTTP rate limiter's rate: bandwidth follows the limiter.
+        let limiter_bound = self
+            .round_limiter_tokens
+            .is_some_and(|tokens| self.round_limiter_admitted as f64 >= 0.9 * tokens);
         let round_budget = self.round_budget;
         self.last_bw_round = bw_round;
         let mean_in_use = self.round_in_use as f64 / self.round_ticks as f64;
@@ -273,7 +299,7 @@ impl KneeController {
         let lifetime_measured =
             binding && lifetime > 0.0 && mean_in_use >= 0.5 * self.round_applied_max as f64;
 
-        if self.brake_signal() {
+        if !limiter_bound && self.brake_signal() {
             self.brake_hits += 1;
             self.calm_rounds = 0;
         } else {
@@ -294,11 +320,19 @@ impl KneeController {
                     self.min_lifetime = f64::INFINITY;
                     self.lifetime_held = false;
                     self.ramp_hist.clear();
-                    if binding {
+                    if binding && !limiter_bound {
                         self.ramp_hist.push((round_budget, bw_round));
                         self.set_budget(self.budget.saturating_mul(2));
                     }
                 }
+            },
+            // Bandwidth follows the HTTP rate limiter, not the budget: hold.
+            KneePhase::RampUp if limiter_bound => {
+                // Growth is judged from the bandwidth at the end of the hold.
+                self.best_bw = bw_round;
+                self.no_growth_rounds = 0;
+                self.not_binding_rounds = 0;
+                self.lifetime_held = false;
             },
             KneePhase::RampUp => {
                 let ratio = self.cfg.ramp_lifetime_ratio;
@@ -346,7 +380,7 @@ impl KneeController {
                 }
             },
             KneePhase::Stable => {
-                if binding {
+                if binding && !limiter_bound {
                     self.bw_max = self.bw_max.max(sustained_bw);
                 }
                 let target = self.stable_target();
@@ -370,7 +404,7 @@ impl KneeController {
                 self.probe_rounds += 1;
                 if self.braking {
                     self.resume_stable(now);
-                } else if binding && sustained_bw >= 1.1 * self.bw_max {
+                } else if binding && !limiter_bound && sustained_bw >= 1.1 * self.bw_max {
                     // More bandwidth appeared while the budget binds: ramp again from here.
                     self.phase = KneePhase::RampUp;
                     self.best_bw = bw_round;
@@ -397,6 +431,8 @@ impl KneeController {
         self.round_sat_max = 0.0;
         self.round_in_use = 0;
         self.round_applied_max = 0;
+        self.round_limiter_admitted = 0;
+        self.round_limiter_tokens = None;
         self.round_budget = self.budget;
     }
 
@@ -409,6 +445,7 @@ impl KneeController {
         self.last_io = None;
         self.reset_round();
         self.last_round_end = None;
+        self.last_tick = None;
         self.recent_bw.clear();
         self.in_use_hist.clear();
         self.bytes_hist.clear();
@@ -492,6 +529,8 @@ mod tests {
             bytes_waiting: 0,
             bytes_sat: in_use as f64 / budget as f64,
             bytes_budget: budget,
+            limiter_rate: None,
+            limiter_admitted: 0,
         });
     }
 
@@ -572,6 +611,35 @@ mod tests {
         }
         run(&mut c, t0, 530, 1600, 1);
         assert_eq!(c.knee(), None);
+        assert_eq!(c.budget(), 100);
+    }
+
+    /// The HTTP rate limiter admits requests at its rate, half of them metadata, and doubles the
+    /// rate every round: data bandwidth doubles too, but RampUp holds.
+    #[test]
+    fn ramp_up_holds_while_the_limiter_binds() {
+        let mut c = KneeController::new(cfg());
+        let t0 = Instant::now();
+        let mut rate = 100.0;
+        for i in 0..20u64 {
+            if i > 0 && i % 2 == 0 {
+                rate *= 2.0;
+            }
+            let budget = c.budget();
+            let admitted = (rate * 0.1) as u64;
+            c.step(KneeTick {
+                now: t0 + Duration::from_millis(100 * (i + 1)),
+                bytes_done: 10 * (admitted / 2),
+                bytes_in_use: budget,
+                bytes_parked: 1,
+                bytes_waiting: 0,
+                bytes_sat: 1.0,
+                bytes_budget: budget,
+                limiter_rate: Some(rate),
+                limiter_admitted: admitted,
+            });
+        }
+        assert_eq!(c.phase(), KneePhase::RampUp);
         assert_eq!(c.budget(), 100);
     }
 }
