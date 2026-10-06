@@ -89,6 +89,7 @@ impl Default for ControllerConfig {
         // Only used for bytes-based budget.
         let target_chunk_size = get_random_access_chunk_size() as u64;
         let init_byte_budget = get_init_byte_budget(target_chunk_size);
+        let request_budget = get_inflight_request_budget();
         Self {
             window: Duration::from_millis(1000),
 
@@ -109,7 +110,7 @@ impl Default for ControllerConfig {
             floor_byte_budget: target_chunk_size,
 
             // Count-based budget.
-            request_budget: get_inflight_request_budget(),
+            request_budget,
             floor_request_budget: get_inflight_floor_request_budget(),
             control_interval: Duration::from_millis(100),
             budget_resize_threshold: 0.05,
@@ -121,16 +122,24 @@ impl Default for ControllerConfig {
             knee_gain: 1.0,
             knee_round_ticks: 2,
             knee_ramp_lifetime_ratio: 2.0,
-            knee_max_bytes: get_knee_max_byte_budget(init_byte_budget),
+            knee_max_bytes: get_knee_max_byte_budget(
+                init_byte_budget,
+                request_budget.saturating_mul(target_chunk_size),
+            ),
         }
     }
 }
 
-/// Ceiling for the knee's in-flight byte budget: total memory / 16 (cgroup-aware), at least the
+/// Ceiling for the knee's in-flight byte budget: total memory / 16 (cgroup-aware), at most what the
+/// request budget can hold (`max_inflight_bytes` = request budget x max request size), at least the
 /// initial budget.
-fn get_knee_max_byte_budget(init_byte_budget: u64) -> u64 {
+fn get_knee_max_byte_budget(init_byte_budget: u64, max_inflight_bytes: u64) -> u64 {
     std::env::var("PLDEV_BDP_MAX_BYTES").map_or_else(
-        |_| (polars_utils::sys::total_memory() / 16).max(init_byte_budget),
+        |_| {
+            (polars_utils::sys::total_memory() / 16)
+                .min(max_inflight_bytes)
+                .max(init_byte_budget)
+        },
         |v| {
             v.parse()
                 .unwrap_or_else(|_| panic!("invalid value for PLDEV_BDP_MAX_BYTES: {v}"))
