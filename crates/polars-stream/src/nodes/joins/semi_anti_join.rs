@@ -199,6 +199,8 @@ struct SampleState {
     left_len: usize,
     right: Vec<Morsel>,
     right_len: usize,
+    /// The number of rows each side may sample.
+    limits: [Arc<RelaxedCell<usize>>; 2],
     /// The only side being read: the preferred build side of a join with runtime
     /// filters, until it ends or reaches the sample limit. A side that ends is
     /// complete, so its keys are published before the other side is read.
@@ -1048,11 +1050,24 @@ impl ComputeNode for SemiAntiJoinNode {
             SemiAntiJoinState::Sample(sample_state) => {
                 send[0] = PortState::Blocked;
                 for (idx, left) in [(0, true), (1, false)] {
+                    // While both sides are sampled, sampling stops once a side has
+                    // `LOPSIDED_SAMPLE_FACTOR` times the rows of the other, done, side.
+                    let lopsided =
+                        sample_state.only_side.is_none() && recv[1 - idx] == PortState::Done;
+                    let limit = if lopsided {
+                        let lopsided_limit = sample_state
+                            .len(!left)
+                            .saturating_mul(LOPSIDED_SAMPLE_FACTOR);
+                        self.params.sample_limit.min(lopsided_limit)
+                    } else {
+                        self.params.sample_limit
+                    };
+                    sample_state.limits[idx].store(limit);
                     if recv[idx] == PortState::Done {
                         continue;
                     }
                     let open = sample_state.is_open(left);
-                    recv[idx] = if open && sample_state.len(left) < self.params.sample_limit {
+                    recv[idx] = if open && sample_state.len(left) < limit {
                         PortState::Ready
                     } else {
                         PortState::Blocked
@@ -1129,20 +1144,6 @@ impl ComputeNode for SemiAntiJoinNode {
         match &mut self.state {
             SemiAntiJoinState::Sample(sample_state) => {
                 assert!(send_ports[0].is_none());
-                // A side without a port is done, unless it is not being read.
-                let final_len = |left: bool| {
-                    let idx = if left { 0 } else { 1 };
-                    let known = recv_ports[idx].is_none() && sample_state.is_open(left);
-                    let len = if known {
-                        sample_state.len(left)
-                    } else {
-                        usize::MAX
-                    };
-                    Arc::new(RelaxedCell::from(len))
-                };
-                let left_final_len = final_len(true);
-                let right_final_len = final_len(false);
-
                 if let Some(left_recv) = recv_ports[0].take() {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
@@ -1150,9 +1151,8 @@ impl ComputeNode for SemiAntiJoinNode {
                             left_recv.serial(),
                             &mut sample_state.left,
                             &mut sample_state.left_len,
-                            left_final_len.clone(),
-                            right_final_len.clone(),
-                            self.params.sample_limit,
+                            sample_state.limits[0].clone(),
+                            sample_state.limits[1].clone(),
                         ),
                     ));
                 }
@@ -1163,9 +1163,8 @@ impl ComputeNode for SemiAntiJoinNode {
                             right_recv.serial(),
                             &mut sample_state.right,
                             &mut sample_state.right_len,
-                            right_final_len,
-                            left_final_len,
-                            self.params.sample_limit,
+                            sample_state.limits[1].clone(),
+                            sample_state.limits[0].clone(),
                         ),
                     ));
                 }
