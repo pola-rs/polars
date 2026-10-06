@@ -13,7 +13,6 @@ bitflags::bitflags! {
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct StatisticsFlags: u32 {
         const IS_SORTED_ANY = 0x03;
-
         const IS_SORTED_ASC = 0x01;
         const IS_SORTED_DSC = 0x02;
         const CAN_FAST_EXPLODE_LIST = 0x04;

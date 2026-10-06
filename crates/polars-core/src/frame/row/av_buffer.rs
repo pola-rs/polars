@@ -2,6 +2,7 @@
 
 use std::hint::unreachable_unchecked;
 
+use polars_arrow::array::builder::ShareStrategy;
 use polars_arrow::bitmap::BitmapBuilder;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DecimalFmtBuffer;
@@ -10,8 +11,10 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
 use crate::chunked_array::builder::NullChunkedBuilder;
+use crate::chunked_array::flags::StatisticsFlags;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
+use crate::series::builder::SeriesBuilder;
 
 #[derive(Clone)]
 pub enum AnyValueBuffer<'a> {
@@ -330,6 +333,94 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             // Struct and List can be recursive so use AnyValues for that
             dt => AnyValueBuffer::All(dt.clone(), Vec::with_capacity(len)),
         }
+    }
+}
+
+/// An [`AnyValueBuffer`] that converts nested values in batches; as each value
+/// retains a [`Series`] (until converted), this saves a huge amount of memory.
+pub struct AnyValueBufferBatched<'a> {
+    values: AnyValueBuffer<'a>,
+    converted: Option<SeriesBuilder>,
+    fast_explode: bool,
+}
+
+impl<'a> AnyValueBufferBatched<'a> {
+    const BATCH_SIZE: usize = 1024;
+
+    pub fn new(dtype: &DataType, capacity: usize) -> Self {
+        if dtype.is_nested() && Self::can_batch(dtype) {
+            let mut converted = SeriesBuilder::new(dtype.clone());
+            converted.reserve(capacity);
+            Self {
+                values: AnyValueBuffer::new(dtype, capacity.min(Self::BATCH_SIZE)),
+                converted: Some(converted),
+                fast_explode: dtype.is_list(),
+            }
+        } else {
+            Self {
+                values: AnyValueBuffer::new(dtype, capacity),
+                converted: None,
+                fast_explode: false,
+            }
+        }
+    }
+
+    /// Whether values can convert in batches.
+    fn can_batch(dtype: &DataType) -> bool {
+        match dtype {
+            DataType::List(inner) => Self::can_batch(inner),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) => Self::can_batch(inner),
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => fields.iter().all(|f| Self::can_batch(f.dtype())),
+            _ => {
+                !(dtype.is_nested()
+                    || dtype.is_extension()
+                    || dtype.is_null()
+                    || dtype.is_unknown()
+                    || dtype.is_object())
+            },
+        }
+    }
+
+    #[inline]
+    pub fn add(&mut self, val: AnyValue<'_>) -> Option<()> {
+        self.values.add(val)
+    }
+
+    pub fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
+        self.values.add_fallible(val)
+    }
+
+    /// Whether a full batch of nested values is ready to [`flush`](Self::flush).
+    #[inline]
+    pub fn needs_flush(&self) -> bool {
+        self.converted.is_some()
+            && matches!(&self.values, AnyValueBuffer::All(_, vals) if vals.len() == Self::BATCH_SIZE)
+    }
+
+    /// Converts the buffered nested values, extending the converted [`SeriesBuilder`].
+    /// Frees the memory used by the buffered values.
+    pub fn flush(&mut self) -> PolarsResult<()> {
+        if let Some(converted) = &mut self.converted {
+            let batch = self.values.reset(Self::BATCH_SIZE, false)?;
+            self.fast_explode &= batch.is_empty() || batch.get_flags().can_fast_explode_list();
+            converted.extend(&batch, ShareStrategy::Never);
+        }
+        Ok(())
+    }
+
+    pub fn into_series(mut self) -> PolarsResult<Series> {
+        if self.converted.as_ref().is_none_or(SeriesBuilder::is_empty) {
+            return self.values.into_series();
+        }
+        self.flush()?;
+        let mut series = self.converted.unwrap().freeze(PlSmallStr::EMPTY);
+        if self.fast_explode {
+            // `freeze` drops the flags set by the batches' list builders; put them back
+            series.set_flags(series.get_flags() | StatisticsFlags::CAN_FAST_EXPLODE_LIST);
+        }
+        Ok(series)
     }
 }
 
